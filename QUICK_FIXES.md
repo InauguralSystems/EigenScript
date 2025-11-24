@@ -338,7 +338,9 @@ Save this as `apply_quick_fixes.sh`:
 #!/bin/bash
 set -e
 
-cd /home/runner/work/EigenScript/EigenScript
+# Get the repository root directory (where this script is located)
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
 
 echo "Applying quick fixes to EigenScript..."
 
@@ -377,6 +379,8 @@ chmod +x apply_quick_fixes.sh
 ## After Applying Fixes
 
 ### Verification Checklist:
+
+Run these commands from the repository root:
 
 ```bash
 # 1. Run tests
