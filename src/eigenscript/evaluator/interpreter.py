@@ -6,6 +6,7 @@ in LRVM space.
 """
 
 import numpy as np
+import os
 from typing import Dict, Optional, List, Union
 from dataclasses import dataclass
 from eigenscript.parser.ast_builder import (
@@ -26,6 +27,8 @@ from eigenscript.parser.ast_builder import (
     Slice,
     Identifier,
     Interrogative,
+    Import,
+    MemberAccess,
 )
 from eigenscript.semantic.lrvm import LRVMVector, LRVMSpace
 from eigenscript.semantic.metric import MetricTensor
@@ -98,6 +101,22 @@ class EigenList:
         return self.elements.pop()
 
 
+@dataclass
+class ModuleNamespace:
+    """
+    Represents a loaded module's namespace.
+
+    Modules are collections of functions and values that can be imported
+    and accessed via member notation (module.function).
+    """
+
+    name: str
+    environment: "Environment"
+
+    def __repr__(self) -> str:
+        return f"Module({self.name!r})"
+
+
 class ReturnValue(Exception):
     """
     Exception used to implement return statements.
@@ -132,12 +151,15 @@ class Environment:
             parent: Parent environment for nested scopes
         """
         self.bindings: Dict[
-            str, Union[LRVMVector, Function, BuiltinFunction, EigenList]
+            str,
+            Union[LRVMVector, Function, BuiltinFunction, EigenList, ModuleNamespace],
         ] = {}
         self.parent = parent
 
     def bind(
-        self, name: str, value: Union[LRVMVector, Function, BuiltinFunction, EigenList]
+        self,
+        name: str,
+        value: Union[LRVMVector, Function, BuiltinFunction, EigenList, ModuleNamespace],
     ) -> None:
         """
         Create an immutable binding.
@@ -147,13 +169,13 @@ class Environment:
 
         Args:
             name: Variable name
-            value: LRVM vector, Function object, or BuiltinFunction
+            value: LRVM vector, Function object, BuiltinFunction, EigenList, or ModuleNamespace
         """
         self.bindings[name] = value
 
     def lookup(
         self, name: str
-    ) -> Union[LRVMVector, Function, BuiltinFunction, EigenList]:
+    ) -> Union[LRVMVector, Function, BuiltinFunction, EigenList, ModuleNamespace]:
         """
         Resolve a variable to its value.
 
@@ -163,7 +185,7 @@ class Environment:
             name: Variable name
 
         Returns:
-            LRVM vector, Function, BuiltinFunction, or EigenList bound to the name
+            LRVM vector, Function, BuiltinFunction, EigenList, or ModuleNamespace bound to the name
 
         Raises:
             NameError: If variable is not defined
@@ -222,6 +244,9 @@ class Interpreter:
         self.environment = Environment()
         self.fs_tracker = FrameworkStrengthTracker()
         self.max_iterations = max_iterations
+
+        # Module loading
+        self.loaded_modules: Dict[str, ModuleNamespace] = {}
 
         # Convergence detection
         self.convergence_threshold = convergence_threshold
@@ -332,6 +357,10 @@ class Interpreter:
             return self._eval_index(node)
         elif isinstance(node, Slice):
             return self._eval_slice(node)
+        elif isinstance(node, Import):
+            return self._eval_import(node)
+        elif isinstance(node, MemberAccess):
+            return self._eval_member_access(node)
         else:
             raise RuntimeError(f"Unknown AST node type: {type(node).__name__}")
 
@@ -1473,3 +1502,153 @@ class Interpreter:
             classification = "spacelike"  # Exploring, unstable
 
         return float(signature), classification
+
+    def _resolve_module_path(self, module_name: str) -> str:
+        """
+        Resolve a module name to a file path.
+
+        Search order:
+        1. Current working directory
+        2. EIGEN_PATH environment variable paths
+        3. Standard library directory
+
+        Args:
+            module_name: Module name (e.g., "physics", "control")
+
+        Returns:
+            Absolute path to module file
+
+        Raises:
+            ImportError: If module cannot be found
+        """
+        # Construct filename
+        filename = f"{module_name}.eigs"
+
+        # Search paths
+        search_paths = [os.getcwd()]
+
+        # Add EIGEN_PATH directories
+        eigen_path = os.environ.get("EIGEN_PATH")
+        if eigen_path:
+            search_paths.extend(eigen_path.split(":"))
+
+        # Add standard library path
+        eigenscript_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        stdlib_dir = os.path.join(eigenscript_dir, "stdlib")
+        search_paths.append(stdlib_dir)
+
+        # Search for module
+        for search_dir in search_paths:
+            module_path = os.path.join(search_dir, filename)
+            if os.path.exists(module_path):
+                return os.path.abspath(module_path)
+
+        # Module not found
+        raise ImportError(
+            f"Cannot find module {module_name!r}. "
+            f"Searched in: {', '.join(search_paths)}"
+        )
+
+    def _eval_import(self, node: Import) -> LRVMVector:
+        """
+        Evaluate import statement.
+
+        Loads a module file, evaluates it in its own environment,
+        and binds the module namespace to a name.
+
+        Args:
+            node: Import AST node
+
+        Returns:
+            Zero vector (imports are side-effecting)
+
+        Example:
+            import physics
+            import math as m
+        """
+        module_name = node.module_name
+        alias = node.alias if node.alias else module_name
+
+        # Check if module already loaded
+        if module_name in self.loaded_modules:
+            module_namespace = self.loaded_modules[module_name]
+        else:
+            # Resolve module path
+            module_path = self._resolve_module_path(module_name)
+
+            # Read and parse module
+            with open(module_path, "r") as f:
+                source = f.read()
+
+            from eigenscript.lexer.tokenizer import Tokenizer
+            from eigenscript.parser.ast_builder import Parser
+
+            tokenizer = Tokenizer(source)
+            tokens = tokenizer.tokenize()
+            parser = Parser(tokens)
+            module_ast = parser.parse()
+
+            # Create isolated environment for module (no parent scope)
+            module_env = Environment()
+
+            # Load builtins into module environment
+            builtins = get_builtins(self.space)
+            for name, builtin_func in builtins.items():
+                module_env.bind(name, builtin_func)
+
+            # Save current environment and switch to module environment
+            saved_env = self.environment
+            self.environment = module_env
+
+            try:
+                # Evaluate module in its own environment
+                self.evaluate(module_ast)
+            finally:
+                # Restore original environment
+                self.environment = saved_env
+
+            # Create module namespace
+            module_namespace = ModuleNamespace(name=module_name, environment=module_env)
+
+            # Cache loaded module
+            self.loaded_modules[module_name] = module_namespace
+
+        # Bind module to alias in current environment
+        self.environment.bind(alias, module_namespace)
+
+        # Return zero vector (imports are side-effecting)
+        return self.space.zero_vector()
+
+    def _eval_member_access(self, node: MemberAccess) -> Union[LRVMVector, EigenList]:
+        """
+        Evaluate member access (module.member).
+
+        Args:
+            node: MemberAccess AST node
+
+        Returns:
+            Value from module's environment
+
+        Example:
+            physics.gravity
+            control.apply_damping
+        """
+        # Evaluate the object (should be a module or identifier)
+        if isinstance(node.object, Identifier):
+            obj = self.environment.lookup(node.object.name)
+        else:
+            obj = self.evaluate(node.object)
+
+        # Check if object is a module
+        if not isinstance(obj, ModuleNamespace):
+            raise TypeError(
+                f"Cannot access member {node.member!r} on non-module type {type(obj).__name__}"
+            )
+
+        # Look up member in module's environment
+        try:
+            return obj.environment.lookup(node.member)
+        except NameError:
+            raise AttributeError(
+                f"Module {obj.name!r} has no attribute {node.member!r}"
+            )
