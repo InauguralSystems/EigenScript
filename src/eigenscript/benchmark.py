@@ -156,7 +156,7 @@ def benchmark_function(
             pass
 
     # Benchmark runs
-    total_time = 0
+    total_time = 0.0
     max_memory = 0
     all_success = True
     last_error = None
