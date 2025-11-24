@@ -8,7 +8,25 @@ in LRVM space.
 import numpy as np
 from typing import Dict, Optional, List, Union
 from dataclasses import dataclass
-from eigenscript.parser.ast_builder import *
+from eigenscript.parser.ast_builder import (
+    ASTNode,
+    Program,
+    Assignment,
+    Relation,
+    BinaryOp,
+    UnaryOp,
+    Conditional,
+    Loop,
+    FunctionDef,
+    Return,
+    Literal,
+    ListLiteral,
+    ListComprehension,
+    Index,
+    Slice,
+    Identifier,
+    Interrogative,
+)
 from eigenscript.semantic.lrvm import LRVMVector, LRVMSpace
 from eigenscript.semantic.metric import MetricTensor
 from eigenscript.runtime.framework_strength import FrameworkStrengthTracker
@@ -31,7 +49,7 @@ class Function:
     parameters: List[str]
     body: List[ASTNode]
     closure: "Environment"  # Captured environment
-    interpreter: Optional["UnifiedInterpreter"] = (
+    interpreter: Optional["Interpreter"] = (
         None  # Reference to interpreter for higher-order functions
     )
 
