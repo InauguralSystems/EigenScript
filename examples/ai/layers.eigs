@@ -1,0 +1,33 @@
+# AI/ML Layers Module
+
+define relu as:
+    x is n
+    if x > 0:
+        return x
+    return 0
+
+define leaky_relu as:
+    x is n
+    alpha is 0.01
+    if x > 0:
+        return x
+    return alpha * x
+
+define dense_forward as:
+    input is n
+    weight is 0.5
+    bias is 0.1
+    output is input * weight + bias
+    return output
+
+define batch_norm as:
+    x is n
+    normalized is x / 1.001
+    result is normalized
+    return result
+
+define dropout as:
+    x is n
+    keep_prob is 0.5
+    result is x * keep_prob
+    return result

@@ -1,0 +1,45 @@
+# AI/ML Optimizers Module
+
+define sgd_step as:
+    weight is n
+    gradient is 0.1
+    learning_rate is 0.01
+    new_weight is weight - learning_rate * gradient
+    return new_weight
+
+define sgd_with_momentum as:
+    weight is n
+    gradient is 0.1
+    momentum is 0.9
+    learning_rate is 0.01
+    new_velocity is momentum * 0.0 - learning_rate * gradient
+    new_weight is weight + new_velocity
+    return new_weight
+
+define adam_step as:
+    weight is n
+    learning_rate is 0.001
+    new_weight is weight - learning_rate * 0.1
+    return new_weight
+
+define rmsprop_step as:
+    weight is n
+    learning_rate is 0.01
+    new_weight is weight - learning_rate * 0.1
+    return new_weight
+
+define lr_exponential_decay as:
+    initial_lr is n
+    decay_rate is 0.95
+    new_lr is initial_lr * decay_rate
+    return new_lr
+
+define clip_gradient_norm as:
+    gradient is n
+    max_norm is 1.0
+    neg_max is 0 - max_norm
+    if gradient > max_norm:
+        return max_norm
+    if gradient < neg_max:
+        return neg_max
+    return gradient
