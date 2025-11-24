@@ -1,0 +1,6 @@
+define square as:
+    result is n * n
+    return result
+
+x is 5
+y is square of x

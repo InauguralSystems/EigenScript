@@ -1,0 +1,13 @@
+# Sum of 1 to 1,000,000
+# This is the ultimate test of scalar iteration speed
+# Tests the Scalar Fast Path with while loops
+
+i is 0
+sum is 0
+limit is 1000000
+
+loop while i < limit:
+    i is i + 1
+    sum is sum + i
+
+print of sum

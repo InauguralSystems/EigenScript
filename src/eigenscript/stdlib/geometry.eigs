@@ -1,0 +1,88 @@
+# EigenScript Standard Library: Geometry
+# Euclidean and manifold operations
+
+# norm
+# Input: scalar value
+# Output: absolute value (L1 norm for scalars)
+define norm as:
+    x is n
+
+    if x < 0:
+        return x * (-1)
+
+    return x
+
+
+# distance_1d
+# Input: two scalars [a, b]
+# Output: |a - b|
+define distance_1d as:
+    a is n
+    b is n
+
+    diff is a - b
+
+    if diff < 0:
+        return diff * (-1)
+
+    return diff
+
+
+# lerp
+# Linear interpolation between two values
+# Input: [start, end, t] where t in [0, 1]
+# Output: interpolated value
+define lerp as:
+    start is n
+    goal is n
+    t is n
+
+    # lerp(a, b, t) = a + t * (b - a)
+    diff is goal - start
+    delta is diff * t
+    result is start + delta
+
+    return result
+
+
+# clamp
+# Constrain value to range [min, max]
+# Input: [value, min, max]
+define clamp as:
+    val is n
+    min_val is n
+    max_val is n
+
+    if val < min_val:
+        return min_val
+
+    if val > max_val:
+        return max_val
+
+    return val
+
+
+# smooth_step
+# Smooth interpolation using smoothstep function
+# Input: [edge0, edge1, x]
+# Output: smoothly interpolated value
+define smooth_step as:
+    edge0 is n
+    edge1 is n
+    x is n
+
+    # Clamp x to [0, 1]
+    t is (x - edge0) / (edge1 - edge0)
+
+    if t < 0:
+        return 0
+
+    if t > 1:
+        return 1
+
+    # Smoothstep: 3t² - 2t³
+    t2 is t * t
+    t3 is t2 * t
+
+    result is (3 * t2) - (2 * t3)
+    return result

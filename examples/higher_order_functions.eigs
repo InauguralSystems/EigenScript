@@ -1,0 +1,164 @@
+# Higher-Order Functions in EigenScript
+# Demonstrating map, filter, and reduce
+
+print of "=== Higher-Order Functions Demo ==="
+print of ""
+
+# ============================================================================
+# MAP: Transform each element in a list
+# ============================================================================
+
+print of "--- MAP Examples ---"
+
+# Example 1: Double each number
+define double as:
+    return n * 2
+
+numbers is [1, 2, 3, 4, 5]
+doubled is map of [double, numbers]
+print of "Original:"
+print of numbers
+print of "Doubled:"
+print of doubled
+print of ""
+
+# Example 2: Square each number
+define square as:
+    return n * n
+
+squared is map of [square, numbers]
+print of "Squared:"
+print of squared
+print of ""
+
+# Example 3: Increment each number
+define increment as:
+    return n + 1
+
+incremented is map of [increment, numbers]
+print of "Incremented:"
+print of incremented
+print of ""
+
+# ============================================================================
+# FILTER: Select elements matching criteria
+# ============================================================================
+
+print of "--- FILTER Examples ---"
+
+# Example 1: Keep only positive numbers
+define is_positive as:
+    return n > 0
+
+mixed_numbers is [-2, -1, 0, 1, 2, 3]
+positives is filter of [is_positive, mixed_numbers]
+print of "Mixed numbers:"
+print of mixed_numbers
+print of "Only positives:"
+print of positives
+print of ""
+
+# Example 2: Keep only even numbers
+define is_even as:
+    remainder is n % 2
+    return remainder = 0
+
+all_numbers is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+evens is filter of [is_even, all_numbers]
+print of "All numbers:"
+print of all_numbers
+print of "Only evens:"
+print of evens
+print of ""
+
+# Example 3: Keep numbers greater than 5
+define greater_than_5 as:
+    return n > 5
+
+large_nums is filter of [greater_than_5, all_numbers]
+print of "Numbers > 5:"
+print of large_nums
+print of ""
+
+# ============================================================================
+# REDUCE: Fold/accumulate values
+# ============================================================================
+
+print of "--- REDUCE Examples ---"
+
+# Example 1: Sum all numbers
+define add as:
+    a is n[0]
+    b is n[1]
+    return a + b
+
+numbers_to_sum is [1, 2, 3, 4, 5]
+total is reduce of [add, numbers_to_sum, 0]
+print of "Numbers:"
+print of numbers_to_sum
+print of "Sum:"
+print of total
+print of ""
+
+# Example 2: Product of all numbers
+define multiply as:
+    a is n[0]
+    b is n[1]
+    return a * b
+
+numbers_to_multiply is [1, 2, 3, 4, 5]
+product is reduce of [multiply, numbers_to_multiply, 1]
+print of "Numbers:"
+print of numbers_to_multiply
+print of "Product:"
+print of product
+print of ""
+
+# Example 3: Find maximum using reduce
+define max_of_two as:
+    a is n[0]
+    b is n[1]
+    result is a
+    if b > a:
+        result is b
+    return result
+
+values is [3, 7, 2, 9, 1, 5]
+maximum is reduce of [max_of_two, values, 0]
+print of "Values:"
+print of values
+print of "Maximum:"
+print of maximum
+print of ""
+
+# ============================================================================
+# COMBINING Higher-Order Functions
+# ============================================================================
+
+print of "--- Combining Higher-Order Functions ---"
+
+# Chain operations: filter positives, double them, then sum
+define double_again as:
+    return n * 2
+
+combined_numbers is [1, 2, 3, 4, 5]
+print of "Original:"
+print of combined_numbers
+
+# Step 1: Filter positives (all are positive in this case)
+only_positives is filter of [is_positive, combined_numbers]
+print of "Step 1 - Filter positives:"
+print of only_positives
+
+# Step 2: Double them
+doubled_nums is map of [double_again, only_positives]
+print of "Step 2 - Double them:"
+print of doubled_nums
+
+# Step 3: Sum them
+final_sum is reduce of [add, doubled_nums, 0]
+print of "Step 3 - Sum doubled numbers:"
+print of final_sum
+print of ""
+
+print of "=== Demo Complete ==="

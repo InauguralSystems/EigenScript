@@ -1,0 +1,17 @@
+# Simple test of stdlib functions - no cross-module calls
+
+print of "=== Testing Standalone Functions ==="
+
+# Test basic arithmetic
+x is 10
+y is 5
+result is x + y
+print of result
+
+# Test control flow
+if x > y:
+    print of 1
+else:
+    print of 0
+
+print of "=== Test Complete ==="

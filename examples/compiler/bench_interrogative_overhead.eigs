@@ -1,0 +1,38 @@
+x is 0
+x is x + 1
+x is x + 1
+x is x + 1
+x is x + 1
+x is x + 1
+x is x + 1
+x is x + 1
+x is x + 1
+x is x + 1
+x is x + 1
+
+v1 is what is x
+v2 is what is x
+v3 is what is x
+v4 is what is x
+v5 is what is x
+
+g1 is why is x
+g2 is why is x
+g3 is why is x
+g4 is why is x
+g5 is why is x
+
+s1 is how is x
+s2 is how is x
+s3 is how is x
+s4 is how is x
+s5 is how is x
+
+i1 is when is x
+i2 is when is x
+i3 is when is x
+i4 is when is x
+i5 is when is x
+
+result is v1 + g1 + s1 + i1
+print of result

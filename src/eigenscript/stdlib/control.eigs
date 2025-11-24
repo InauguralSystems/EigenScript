@@ -1,0 +1,58 @@
+# EigenScript Standard Library: Control Systems
+# Provides stability mechanisms for dynamic systems
+
+# apply_damping
+# Input: velocity (scalar)
+# Output: damped velocity
+# Usage: new_v is apply_damping of v
+define apply_damping as:
+    vel is n
+
+    # Paradox Mediation:
+    # If the system is oscillating (period-2 loops), energy is trapped.
+    # We must dissipate it to resolve the paradox.
+    if oscillating:
+        return vel * 0.5
+
+    # Divergence Check:
+    # If the system is exploring too fast (spacelike expansion),
+    # apply emergency braking.
+    if diverging:
+        return vel * 0.1
+
+    # If stable (timelike), preserve momentum.
+    return vel
+
+
+# pid_step
+# Input: error (scalar)
+# Output: control signal
+# Simple proportional control with adaptive gain
+define pid_step as:
+    error is n
+
+    # Base proportional gain
+    kp is 0.1
+
+    # Auto-tuning:
+    # If the trajectory is stable, we can afford to move faster.
+    if stable:
+        kp is kp * 1.5
+
+    # If diverging, reduce gain to prevent overshoot
+    if diverging:
+        kp is kp * 0.5
+
+    return error * kp
+
+
+# convergence_check
+# Input: value (scalar)
+# Output: 1 if converged, 0 otherwise
+define convergence_check as:
+    x is n
+
+    if converged:
+        return 1
+
+    return 0

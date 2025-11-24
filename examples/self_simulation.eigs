@@ -1,0 +1,91 @@
+# Self-Simulation Stability Test
+
+define eval_step as:
+    result is n + 1
+    if converged:
+        return result
+    return result
+
+level1 is eval_step of 5
+print of level1
+
+define eval_level2 as:
+    first is eval_step of n
+    second is eval_step of first
+    return second
+
+level2 is eval_level2 of 5
+print of level2
+
+define eval_level3 as:
+    first is eval_step of n
+    second is eval_level2 of first
+    return second
+
+level3 is eval_level3 of 5
+print of level3
+
+define eval_level4 as:
+    first is eval_step of n
+    second is eval_level2 of first
+    third is eval_level3 of second
+    return third
+
+level4 is eval_level4 of 5
+print of level4
+
+define liar as:
+    if n > 0:
+        inverted is 1 - n
+        result is liar of inverted
+        if oscillating:
+            return 0
+        else:
+            return result
+    else:
+        return 1
+
+liar_result is liar of 1
+print of liar_result
+
+define self_ref as:
+    if n < 10:
+        next is n + 1
+        result is self_ref of next
+        if converged:
+            return result
+        return result
+    else:
+        return n
+
+self_ref_result is self_ref of 1
+print of self_ref_result
+
+define find_fixed_point as:
+    x is n
+    fx is eval_step of x
+    if converged:
+        return fx
+    if n < 20:
+        next is n + 1
+        result is find_fixed_point of next
+        return result
+    else:
+        return fx
+
+fixed_point_result is find_fixed_point of 1
+print of fixed_point_result
+
+define unbounded_self_sim as:
+    value is n * 2
+    prev is unbounded_self_sim of value
+    if converged:
+        return prev
+    result is value + prev
+    return result
+
+unbounded_result is unbounded_self_sim of 1
+print of unbounded_result
+
+summary_val is 999
+print of summary_val

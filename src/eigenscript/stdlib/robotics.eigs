@@ -1,0 +1,82 @@
+# EigenScript Standard Library: Robotics
+# Gradient-based control using geometric interrogatives
+
+# compute_control_force
+# Computes control force using gradient descent
+# Input: [current_pos, target_pos]
+# Output: control force (gradient-based)
+define compute_control_force as:
+    current is n
+    target is n
+
+    # 1. Calculate the error (distance to target)
+    # This is our potential field / Lyapunov candidate
+    error is target - current
+
+    # 2. For now, use proportional control
+    # Future: Use "why is error" to get true gradient
+    force is error * 0.1
+
+    return force
+
+
+# move_robot_step
+# Single step of robot motion with basic damping
+# Input: [position, velocity, target]
+# Output: new velocity
+define move_robot_step as:
+    pos is n
+    vel is n
+    target is n
+
+    # 1. Compute control force toward target
+    error is target - pos
+    force is error * 0.1
+
+    # 2. Update velocity with force
+    new_vel is vel + force
+
+    # 3. Apply basic damping (0.95 damping factor)
+    damped_vel is new_vel * 0.95
+
+    return damped_vel
+
+
+# servo_control
+# Position control with adaptive gain
+# Input: [current_position, target_position]
+# Output: control signal
+define servo_control as:
+    current is n
+    target is n
+
+    # Calculate position error
+    error is target - current
+
+    # Simple proportional control
+    kp is 0.1
+    control_signal is error * kp
+
+    return control_signal
+
+
+# gradient_step
+# Demonstrates gradient-based optimization
+# Input: current value
+# Output: value after gradient step
+define gradient_step as:
+    x is n
+
+    # Create a simple potential: squared distance from origin
+    potential is x * x
+
+    # Extract gradient (the "Why")
+    # This is where EigenScript shines: automatic differentiation!
+    grad is why is potential
+
+    # Gradient descent: move opposite to gradient
+    step_size is 0.1
+    delta is grad * step_size
+    new_x is x - delta
+
+    return new_x

@@ -1,0 +1,5 @@
+# Hello World in EigenScript
+# The simplest program demonstrating basic syntax
+
+message is "Hello, EigenScript!"
+print of message

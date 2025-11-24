@@ -1,0 +1,79 @@
+# Interrogatives and Self-Awareness Showcase
+# Demonstrates EigenScript's unique ability to examine its own computation
+
+print of "=== Interrogatives: Ask Questions About Values ==="
+
+# Create a variable
+x is 42
+
+# Ask "what is x" to get its magnitude/value
+value is what is x
+print of "What is x?"
+print of value
+
+# Ask "who is x" to get its identity/name
+identity is who is x
+print of "Who is x?"
+print of identity
+
+print of "=== Self-Aware Mathematics ==="
+
+# Calculate with self-awareness
+number is 16
+print of "Original number:"
+print of number
+
+# Transform and interrogate
+sqrt_result is sqrt of number
+magnitude is what is sqrt_result
+print of "Square root of number:"
+print of magnitude
+
+# Use absolute value with interrogatives
+negative is 0 - 25
+abs_value is abs of negative
+result is what is abs_value
+print of "Absolute value of -25:"
+print of result
+
+print of "=== List Interrogation ==="
+
+# Lists can also be interrogated
+numbers is [1, 2, 3, 4, 5]
+list_size is what is numbers
+print of "How many elements in the list?"
+print of list_size
+
+print of "=== Predicates: Check Computation State ==="
+
+# Build some computation history
+a is 10
+b is 20
+c is a + b
+d is c * 2
+
+# Check if computation has stabilized
+if converged:
+    print of "System has converged!"
+
+# Check if system is stable (timelike trajectory)
+if stable:
+    print of "System is stable!"
+
+print of "=== Combining Math and Self-Awareness ==="
+
+# Use interrogatives to guide computation
+base is 2
+exponent is 8
+power_result is pow of [base, exponent]
+
+# Check what we computed
+final_value is what is power_result
+print of "2 to the power of 8 ="
+print of final_value
+
+# Calculate its square root and verify
+sqrt_power is sqrt of power_result
+check is what is sqrt_power
+print of "Square root of result ="
+print of check

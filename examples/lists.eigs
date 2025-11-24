@@ -1,0 +1,191 @@
+# List Operations in EigenScript
+# Demonstrates append, pop, min, max, sort, and other list features
+
+# ==============================
+# Basic List Creation
+# ==============================
+
+print of "=== Basic List Creation ==="
+numbers is [5, 2, 8, 1, 9, 3]
+print of numbers
+
+empty_list is []
+print of empty_list
+
+
+# ==============================
+# Append Operation
+# ==============================
+
+print of "=== Append Operation ==="
+my_list is [1, 2, 3]
+print of my_list
+
+append of [my_list, 4]
+print of my_list
+
+append of [my_list, 5]
+append of [my_list, 6]
+print of my_list
+
+
+# ==============================
+# Pop Operation
+# ==============================
+
+print of "=== Pop Operation ==="
+stack is [10, 20, 30, 40]
+print of stack
+
+last is pop of stack
+print of "Popped:"
+print of last
+print of "Stack now:"
+print of stack
+
+
+# ==============================
+# Min and Max
+# ==============================
+
+print of "=== Min and Max ==="
+values is [42, 7, 15, 93, 21, 4]
+print of "List:"
+print of values
+
+minimum is min of values
+print of "Minimum:"
+print of minimum
+
+maximum is max of values
+print of "Maximum:"
+print of maximum
+
+
+# ==============================
+# Sort Function
+# ==============================
+
+print of "=== Sort Function ==="
+unsorted is [9, 3, 7, 1, 5, 2, 8, 4, 6]
+print of "Original:"
+print of unsorted
+
+sorted_list is sort of unsorted
+print of "Sorted:"
+print of sorted_list
+
+print of "Original unchanged:"
+print of unsorted
+
+
+# ==============================
+# Negative Numbers
+# ==============================
+
+print of "=== Negative Numbers ==="
+mixed is [-5, 3, -2, 8, -9, 1]
+print of "List with negatives:"
+print of mixed
+
+sorted_mixed is sort of mixed
+print of "Sorted:"
+print of sorted_mixed
+
+min_val is min of mixed
+max_val is max of mixed
+print of "Min:"
+print of min_val
+print of "Max:"
+print of max_val
+
+
+# ==============================
+# Stack Operations (LIFO)
+# ==============================
+
+print of "=== Stack (LIFO) Operations ==="
+task_stack is []
+
+append of [task_stack, 1]
+append of [task_stack, 2]
+append of [task_stack, 3]
+print of "Stack after pushes:"
+print of task_stack
+
+top is pop of task_stack
+print of "Popped:"
+print of top
+
+second is pop of task_stack
+print of "Popped:"
+print of second
+
+print of "Stack remaining:"
+print of task_stack
+
+
+# ==============================
+# Finding Statistics
+# ==============================
+
+print of "=== Finding Statistics ==="
+data is [23, 45, 12, 67, 34, 89, 56, 78]
+print of "Data:"
+print of data
+
+lowest is min of data
+highest is max of data
+sorted_data is sort of data
+
+print of "Lowest value:"
+print of lowest
+
+print of "Highest value:"
+print of highest
+
+print of "Sorted data:"
+print of sorted_data
+
+
+# ==============================
+# Building a List Incrementally
+# ==============================
+
+print of "=== Building a List ==="
+result is []
+
+append of [result, 10]
+append of [result, 20]
+append of [result, 30]
+append of [result, 40]
+append of [result, 50]
+
+print of "Built list:"
+print of result
+
+sorted_result is sort of result
+print of "Sorted:"
+print of sorted_result
+
+
+# ==============================
+# Range and List Operations Combined
+# ==============================
+
+print of "=== Range and List Operations ==="
+numbers_range is range of 10
+print of "Range 0-9:"
+print of numbers_range
+
+# Extract sublist manually
+sublist is []
+append of [sublist, numbers_range[2]]
+append of [sublist, numbers_range[5]]
+append of [sublist, numbers_range[8]]
+print of "Selected elements [2, 5, 8]:"
+print of sublist
+
+maximum_in_sublist is max of sublist
+print of "Max of sublist:"
+print of maximum_in_sublist

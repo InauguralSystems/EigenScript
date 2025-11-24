@@ -1,0 +1,36 @@
+# File I/O Demonstration
+# This example shows how to work with files in EigenScript
+
+print of "=== File I/O Operations Demo ==="
+print of ""
+
+# Check if a file exists
+exists is file_exists of "README.md"
+if exists:
+    print of "README.md exists!"
+else:
+    print of "README.md not found"
+
+print of ""
+
+# List files in current directory
+print of "Files in examples directory:"
+files is list_dir of "."
+print of files
+
+print of ""
+
+# Path operations
+test_path is "/path/to/some/file.txt"
+dir is dirname of test_path
+name is basename of test_path
+
+print of "Original path:"
+print of test_path
+print of "Directory:"
+print of dir
+print of "Filename:"
+print of name
+
+print of ""
+print of "=== File I/O Demo Complete ==="

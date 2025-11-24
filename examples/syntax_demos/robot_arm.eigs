@@ -1,0 +1,62 @@
+# Robot Arm Control Simulation
+# Demonstrates the EigenScript Standard Library for robotics
+
+import control
+import geometry
+import robotics
+
+# Simulation parameters
+position is 0
+velocity is 0
+target is 100
+time is 0
+
+print of "=== Robot Arm Position Control ==="
+print of "Initial position:"
+print of position
+print of "Target position:"
+print of target
+
+# Control loop (simplified - 10 steps)
+steps is 0
+loop while steps < 10:
+    # Update velocity using servo control
+    control_signal is robotics.servo_control of [position, target]
+    velocity is velocity + control_signal
+
+    # Apply stability damping
+    velocity is control.apply_damping of velocity
+
+    # Update position
+    position is position + velocity
+
+    # Clamp position to reasonable range
+    position is geometry.clamp of [position, -200, 200]
+
+    # Print status every 2 steps
+    remainder is steps % 2
+    if remainder = 0:
+        print of "Step:"
+        print of steps
+        print of "Position:"
+        print of position
+        print of "Velocity:"
+        print of velocity
+
+    # Check convergence
+    error is target - position
+    error_abs is geometry.norm of error
+
+    if error_abs < 1:
+        print of "Target reached!"
+        break
+
+    steps is steps + 1
+
+print of "=== Final State ==="
+print of "Final position:"
+print of position
+print of "Final velocity:"
+print of velocity
+print of "Error from target:"
+print of (target - position)

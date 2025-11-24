@@ -1,0 +1,31 @@
+# Fibonacci Benchmark
+# Tests recursive function performance with memoization potential
+
+define fibonacci as:
+    if n < 1:
+        return 0
+    else:
+        if n < 2:
+            return 1
+        else:
+            n1 is n - 1
+            n2 is n - 2
+            fib1 is fibonacci of n1
+            fib2 is fibonacci of n2
+            return fib1 + fib2
+
+# Compute smaller Fibonacci numbers
+n is 10
+result1 is fibonacci of n
+print of "Fibonacci(10):"
+print of result1
+
+n is 15
+result2 is fibonacci of n
+print of "Fibonacci(15):"
+print of result2
+
+n is 20
+result3 is fibonacci of n
+print of "Fibonacci(20):"
+print of result3

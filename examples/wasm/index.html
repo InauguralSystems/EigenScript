@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EigenScript WebAssembly Playground</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-top: 0;
+        }
+        .description {
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            min-height: 200px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .status.loading {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .benchmark-results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .benchmark-results h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .metric:last-child {
+            border-bottom: none;
+        }
+        .metric-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .metric-value {
+            color: #667eea;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 EigenScript WebAssembly Playground</h1>
+        <div class="description">
+            <p>This page demonstrates EigenScript running in WebAssembly. Your EigenScript code is compiled to native WebAssembly and executed directly in the browser!</p>
+            <p><strong>Phase 3.3 - "Hello Web" Protocol:</strong> Bridging the Compiler to the Browser</p>
+        </div>
+
+        <div id="status" class="status loading">
+            Loading WebAssembly module...
+        </div>
+
+        <div class="controls">
+            <button id="runBtn" onclick="runProgram()" disabled>▶️ Run Program</button>
+            <button id="clearBtn" onclick="clearOutput()">🗑️ Clear Output</button>
+            <button id="benchmarkBtn" onclick="runBenchmark()" disabled>⚡ Run Benchmark</button>
+        </div>
+
+        <div id="output"># Output will appear here...</div>
+
+        <div id="benchmarkResults" style="display: none;">
+            <!-- Benchmark results will be populated here -->
+        </div>
+
+        <div class="description">
+            <h3>How It Works</h3>
+            <ol>
+                <li><strong>Compile:</strong> EigenScript → LLVM IR → WebAssembly (.wasm)</li>
+                <li><strong>Load:</strong> Browser fetches the .wasm file</li>
+                <li><strong>Bridge:</strong> JavaScript provides the <code>eigen_print</code> function</li>
+                <li><strong>Execute:</strong> WASM code runs at near-native speed in the browser</li>
+            </ol>
+            <h3>What's Being Tested</h3>
+            <p>We're running the <code>loop_fast.eigs</code> benchmark that sums numbers from 1 to 1,000,000. This tests:</p>
+            <ul>
+                <li>Scalar iteration performance in WASM</li>
+                <li>JavaScript ↔ WebAssembly bridge overhead</li>
+                <li>Whether the 2ms native speedup translates to the browser</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let wasmInstance = null;
+        let outputBuffer = [];
+
+        // Bridge function: WASM calls this to print
+        // The C runtime's eigen_print will be connected to this
+        function eigen_print(value) {
+            const output = `${value.toFixed(6)}`;
+            outputBuffer.push(output);
+            document.getElementById('output').textContent = outputBuffer.join('\n');
+            console.log('WASM Output:', output);
+        }
+
+        // Load and instantiate the WebAssembly module
+        async function loadWasm(wasmPath) {
+            try {
+                updateStatus('loading', `Loading ${wasmPath}...`);
+                
+                // Fetch the WASM file
+                const response = await fetch(wasmPath);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch WASM file: ${response.statusText}`);
+                }
+                
+                const wasmBytes = await response.arrayBuffer();
+                
+                updateStatus('loading', 'Instantiating WebAssembly module...');
+                
+                // Import object: Functions that WASM can call
+                const importObject = {
+                    env: {
+                        // Bridge the print function
+                        eigen_print: eigen_print,
+                        
+                        // Math functions (if needed by the runtime)
+                        exp: Math.exp,
+                        fabs: Math.abs,
+                        fmin: Math.min,
+                        
+                        // Memory allocation stubs (WASM has its own allocator)
+                        // Note: If your WASM code actually calls malloc/free, 
+                        // you need to compile with a WASM allocator or handle it differently
+                        malloc: (size) => {
+                            throw new Error('malloc called from WASM - the runtime should use internal memory management');
+                        },
+                        free: (ptr) => {
+                            throw new Error('free called from WASM - the runtime should use internal memory management');
+                        },
+                        
+                        // Error reporting
+                        fprintf: (stream, format, ...args) => {
+                            console.error('WASM Error:', format, args);
+                        }
+                    }
+                };
+                
+                // Instantiate the WASM module
+                const result = await WebAssembly.instantiate(wasmBytes, importObject);
+                wasmInstance = result.instance;
+                
+                // Check if the module exports a main function
+                if (!wasmInstance.exports.main) {
+                    throw new Error('WASM module does not export a main function');
+                }
+                
+                updateStatus('success', '✅ WebAssembly module loaded successfully!');
+                document.getElementById('runBtn').disabled = false;
+                document.getElementById('benchmarkBtn').disabled = false;
+                
+                return true;
+            } catch (error) {
+                updateStatus('error', `❌ Error: ${error.message}`);
+                console.error('WASM Loading Error:', error);
+                return false;
+            }
+        }
+
+        function updateStatus(type, message) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = `status ${type}`;
+            statusEl.textContent = message;
+        }
+
+        function clearOutput() {
+            outputBuffer = [];
+            document.getElementById('output').textContent = '# Output will appear here...';
+            document.getElementById('benchmarkResults').style.display = 'none';
+        }
+
+        function runProgram() {
+            if (!wasmInstance) {
+                updateStatus('error', 'WASM module not loaded');
+                return;
+            }
+
+            try {
+                clearOutput();
+                updateStatus('loading', '⏳ Running program...');
+                
+                const startTime = performance.now();
+                
+                // Call the main function exported by the WASM module
+                wasmInstance.exports.main();
+                
+                const endTime = performance.now();
+                const executionTime = (endTime - startTime).toFixed(3);
+                
+                updateStatus('success', `✅ Program completed in ${executionTime}ms`);
+            } catch (error) {
+                updateStatus('error', `❌ Runtime Error: ${error.message}`);
+                console.error('WASM Execution Error:', error);
+            }
+        }
+
+        async function runBenchmark() {
+            if (!wasmInstance) {
+                updateStatus('error', 'WASM module not loaded');
+                return;
+            }
+
+            try {
+                clearOutput();
+                updateStatus('loading', '⚡ Running benchmark (5 iterations)...');
+                
+                const iterations = 5;
+                const times = [];
+                
+                for (let i = 0; i < iterations; i++) {
+                    outputBuffer = []; // Clear but don't update display during benchmark
+                    
+                    const startTime = performance.now();
+                    wasmInstance.exports.main();
+                    const endTime = performance.now();
+                    
+                    times.push(endTime - startTime);
+                }
+                
+                // Calculate statistics
+                const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+                const minTime = Math.min(...times);
+                const maxTime = Math.max(...times);
+                // Use slice() to avoid mutating the original times array
+                const medianTime = times.slice().sort((a, b) => a - b)[Math.floor(times.length / 2)];
+                
+                // Display results
+                updateStatus('success', `✅ Benchmark completed!`);
+                
+                const resultsEl = document.getElementById('benchmarkResults');
+                resultsEl.style.display = 'block';
+                resultsEl.innerHTML = `
+                    <h3>📊 Benchmark Results</h3>
+                    <div class="metric">
+                        <span class="metric-label">Iterations:</span>
+                        <span class="metric-value">${iterations}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Average Time:</span>
+                        <span class="metric-value">${avgTime.toFixed(3)} ms</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Median Time:</span>
+                        <span class="metric-value">${medianTime.toFixed(3)} ms</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Min Time:</span>
+                        <span class="metric-value">${minTime.toFixed(3)} ms</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Max Time:</span>
+                        <span class="metric-value">${maxTime.toFixed(3)} ms</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Last Output:</span>
+                        <span class="metric-value">${outputBuffer[outputBuffer.length - 1] || 'N/A'}</span>
+                    </div>
+                `;
+                
+                // Show last run output
+                document.getElementById('output').textContent = outputBuffer.join('\n');
+                
+            } catch (error) {
+                updateStatus('error', `❌ Benchmark Error: ${error.message}`);
+                console.error('Benchmark Error:', error);
+            }
+        }
+
+        // Auto-load WASM on page load
+        // You can specify the path to your compiled .wasm file here
+        window.addEventListener('DOMContentLoaded', () => {
+            // Try to load program.wasm by default
+            // This can be changed to load different programs
+            const wasmPath = 'program.wasm'; // or 'loop_fast.wasm'
+            loadWasm(wasmPath);
+        });
+    </script>
+</body>
+</html>

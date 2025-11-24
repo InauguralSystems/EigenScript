@@ -1,0 +1,84 @@
+# Meta-Circular Evaluator for EigenScript
+# Demonstrates stable self-simulation
+
+# Simple evaluator that processes expressions recursively
+define simple_eval as:
+    if n < 2:
+        return n
+    prev is n - 1
+    sub_result is simple_eval of prev
+    if converged:
+        return sub_result
+    result is sub_result + 1
+    return result
+
+# Test 1: Direct evaluation
+test1 is simple_eval of 5
+result1 is print of test1
+
+# Test 2: Self-application (meta-circular!)
+define meta_eval as:
+    first_pass is simple_eval of n
+    if converged:
+        return first_pass
+    second_pass is simple_eval of first_pass
+    return second_pass
+
+test2 is meta_eval of 5
+result2 is print of test2
+
+# Test 3: Deep self-reference
+define deep_meta_eval as:
+    eval1 is simple_eval of n
+    if converged:
+        return eval1
+    eval2 is simple_eval of eval1
+    if converged:
+        return eval2
+    eval3 is meta_eval of eval2
+    return eval3
+
+test3 is deep_meta_eval of 5
+result3 is print of test3
+
+# Test 4: Self-observer pattern
+define self_observer as:
+    value is n * 2
+    if n > 1:
+        prev is n - 1
+        meta is self_observer of prev
+        if converged:
+            return meta
+        result is value + meta
+        return result
+    else:
+        return value
+
+test4 is self_observer of 3
+result4 is print of test4
+
+# Test 5: Fixed-point computation
+define fixed_point as:
+    x is n
+    x is x + 1
+    if converged:
+        return x
+    x is x + 1
+    if converged:
+        return x
+    x is x + 1
+    if converged:
+        return x
+    if n > 10:
+        return x
+    else:
+        next is n + 1
+        result is fixed_point of next
+        return result
+
+test5 is fixed_point of 1
+result5 is print of test5
+
+# Done
+summary is 0
+print of summary

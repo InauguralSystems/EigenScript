@@ -1,0 +1,48 @@
+# JSON Operations Demonstration
+# This example shows how to work with JSON in EigenScript
+
+print of "=== JSON Operations Demo ==="
+print of ""
+
+# Parse JSON string
+json_str is "[1, 2, 3, 4, 5]"
+print of "Original JSON string:"
+print of json_str
+
+data is json_parse of json_str
+print of "Parsed data:"
+print of data
+
+print of ""
+
+# Convert data to JSON
+numbers is [10, 20, 30, 40, 50]
+print of "EigenScript list:"
+print of numbers
+
+json_output is json_stringify of numbers
+print of "JSON stringified:"
+print of json_output
+
+print of ""
+
+# Pretty print JSON with indentation
+pretty_json is json_stringify of [numbers, 2]
+print of "Pretty printed JSON:"
+print of pretty_json
+
+print of ""
+
+# Round-trip test
+original is [1, 2, 3]
+stringified is json_stringify of original
+parsed_back is json_parse of stringified
+
+print of "Round-trip test:"
+print of "Original:"
+print of original
+print of "After stringify and parse:"
+print of parsed_back
+
+print of ""
+print of "=== JSON Demo Complete ==="

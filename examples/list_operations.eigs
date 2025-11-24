@@ -1,0 +1,80 @@
+# Comprehensive List Operations Examples in EigenScript
+
+# ============================================================================
+# List Literals
+# ============================================================================
+
+# Create lists with literal syntax
+numbers is [10, 20, 30, 40, 50]
+print of numbers
+
+empty is []
+print of empty
+
+single is [42]
+print of single
+
+# ============================================================================
+# List Indexing
+# ============================================================================
+
+# Access elements by index (zero-based)
+first is numbers[0]
+print of first
+
+third is numbers[2]
+print of third
+
+last is numbers[4]
+print of last
+
+# ============================================================================
+# Range Function
+# ============================================================================
+
+# Generate sequences with range
+countdown is range of 10
+print of countdown
+
+small_range is range of 3
+print of small_range
+
+# ============================================================================
+# Built-in Functions with Lists
+# ============================================================================
+
+# Get list length
+size is len of numbers
+print of size
+
+# Get list type
+list_type is type of numbers
+print of list_type
+
+# ============================================================================
+# List Iteration
+# ============================================================================
+
+# Manual iteration using index variable
+print of "Sum using iteration:"
+values is [5, 10, 15, 20]
+i is 0
+total is 0
+loop while i < 4:
+    total is total + values[i]
+    i is i + 1
+print of total
+
+# ============================================================================
+# Complex List Operations
+# ============================================================================
+
+# Using range and indexing together
+print of "First 5 squares:"
+squares is range of 5
+i is 0
+loop while i < 5:
+    num is squares[i]
+    square is num * num
+    print of square
+    i is i + 1

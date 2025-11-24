@@ -1,0 +1,95 @@
+# EigenScript Phase 2: String Power
+# Demonstrates string operations: concatenation, indexing, slicing, and built-in functions
+
+print of "=== String Concatenation ==="
+first is "Hello"
+second is " "
+third is "World"
+greeting is first + second + third
+print of greeting
+
+print of ""
+print of "=== String Indexing ==="
+text is "EigenScript"
+print of "First character:"
+print of text[0]
+print of "Last character:"
+print of text[10]
+print of "Middle character:"
+print of text[5]
+
+print of ""
+print of "=== String Slicing ==="
+phrase is "Geometric Programming"
+print of "First word (0:9):"
+print of phrase[0:9]
+print of "Second word (10:):"
+print of phrase[10:]
+print of "First 3 chars (:3):"
+print of phrase[:3]
+
+print of ""
+print of "=== String Built-in Functions ==="
+
+# Upper case
+message is "hello from eigenscript"
+loud is upper of message
+print of "Uppercase:"
+print of loud
+
+# Lower case
+shout is "I LOVE GEOMETRIC SEMANTICS"
+quiet is lower of shout
+print of "Lowercase:"
+print of quiet
+
+# Split into words
+sentence is "code that understands itself"
+words is split of sentence
+print of "Split into words:"
+print of words
+
+# Access individual words
+print of "First word:"
+print of words[0]
+print of "Second word:"
+print of words[1]
+print of "Third word:"
+print of words[2]
+
+# Join words back
+rejoined is join of words
+print of "Joined back:"
+print of rejoined
+
+print of ""
+print of "=== Complex String Operations ==="
+
+# Split, transform, rejoin
+input is "eigenscript is powerful"
+tokens is split of input
+first_word is tokens[0]
+uppercase_first is upper of first_word
+print of "First word uppercased:"
+print of uppercase_first
+
+# Slice and concatenate
+name is "EigenScript"
+prefix is name[0:5]
+suffix is name[5:]
+reconstructed is prefix + suffix
+print of "Sliced and recombined:"
+print of reconstructed
+
+# Complex pipeline
+data is "hello world from eigenscript"
+parts is split of data
+first_part is parts[0]
+last_part is parts[3]
+combined is first_part + " " + last_part
+result is upper of combined
+print of "Complex pipeline result:"
+print of result
+
+print of ""
+print of "=== String Power Complete! ==="

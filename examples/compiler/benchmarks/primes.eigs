@@ -1,0 +1,9 @@
+define factorial as:
+    if n < 2:
+        return 1
+    else:
+        prev is factorial of (n - 1)
+        return n * prev
+
+result is factorial of 10
+print of result

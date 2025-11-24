@@ -1,0 +1,12 @@
+define optimize as:
+    x is n
+    step is 10
+    
+    loop while not stable:
+        x is x - step
+        step is step * 0.9
+    
+    return x
+
+result is optimize of 100
+print of result

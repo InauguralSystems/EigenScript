@@ -1,0 +1,18 @@
+x is 100
+
+if converged:
+    print of 1
+else:
+    print of 0
+
+if diverging:
+    print of 2
+else:
+    print of 3
+
+if stable:
+    print of 4
+else:
+    print of 5
+
+print of x

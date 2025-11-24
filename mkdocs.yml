@@ -1,0 +1,122 @@
+site_name: EigenScript Documentation
+site_description: A geometric programming language modeling computation as flow in semantic spacetime
+site_author: EigenScript Contributors
+site_url: https://inauguralphysicist.github.io/EigenScript/
+
+repo_name: InauguralPhysicist/EigenScript
+repo_url: https://github.com/InauguralPhysicist/EigenScript
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    logo: material/function-variant
+    repo: fontawesome/brands/github
+
+plugins:
+  - search:
+      lang: en
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.keys
+  - pymdownx.arithmatex:
+      generic: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/InauguralPhysicist/EigenScript
+  version:
+    provider: mike
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started.md
+    - Quick Start: quickstart.md
+    - Your First Program: tutorials/first-program.md
+  - Tutorials:
+    - tutorials/index.md
+    - Your First Program: tutorials/first-program.md
+    - Recursive Functions: tutorials/recursive-functions.md
+    - List Manipulation: tutorials/list-manipulation.md
+    - File Processing: tutorials/file-processing.md
+    - Self-Aware Code: tutorials/self-aware-code.md
+  - Language Guide:
+    - Language Specification: specification.md
+    - Operators & Primitives: operator-table.md
+    - Higher-Order Functions: higher_order_functions.md
+    - List Comprehensions: list_comprehensions.md
+  - API Reference:
+    - api/index.md
+    - Core Functions: api/core-functions.md
+    - File I/O: api/file-io.md
+    - JSON Operations: api/json.md
+    - Date/Time: api/datetime.md
+    - List Operations: api/lists.md
+    - Math Functions: api/math.md
+    - Language Constructs: api/constructs.md
+    - Interrogatives: api/interrogatives.md
+    - Predicates: api/predicates.md
+  - Examples:
+    - examples/index.md
+    - Basic Examples: examples/basic.md
+    - Algorithms: examples/algorithms.md
+    - Data Processing: examples/data-processing.md
+    - Advanced: examples/advanced.md
+  - Advanced Topics:
+    - Architecture: architecture.md
+    - Mathematical Foundations: mathematical_foundations.md
+    - Meta-Circular Evaluator: meta_circular_evaluator.md
+    - Logic Calculus: logic-calculus.md
+    - Self-Hosting: self_hosting_roadmap.md
+  - Contributing:
+    - Contributing Guide: contributing.md

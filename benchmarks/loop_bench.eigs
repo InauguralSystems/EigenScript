@@ -1,0 +1,48 @@
+# Loop Benchmark
+# Tests loop and iteration performance
+
+print of "=== Simple Counter ==="
+
+counter is 0
+loop while counter < 100:
+    counter is counter + 1
+
+print of "Counter final value:"
+print of counter
+
+print of "=== Accumulator ==="
+
+sum is 0
+i is 1
+loop while i < 51:
+    sum is sum + i
+    i is i + 1
+
+print of "Sum of 1 to 50:"
+print of sum
+
+print of "=== Nested Loop ==="
+
+outer is 0
+loop while outer < 20:
+    inner is 0
+    loop while inner < 20:
+        inner is inner + 1
+    outer is outer + 1
+
+print of "Nested loop complete"
+print of "Iterations: 400"
+
+print of "=== List Building ==="
+
+result is []
+idx is 0
+loop while idx < 50:
+    append of [result, idx]
+    idx is idx + 1
+
+length is len of result
+print of "Built list of length:"
+print of length
+
+print of "=== Benchmark Complete ==="

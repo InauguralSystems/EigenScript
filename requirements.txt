@@ -1,0 +1,19 @@
+# Core dependencies for EigenScript
+
+# Scientific computing
+numpy>=1.24.0
+
+# Compiler (required for compilation features)
+llvmlite>=0.41.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Code quality
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# Typing extensions
+typing-extensions>=4.7.0

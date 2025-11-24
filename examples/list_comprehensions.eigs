@@ -1,0 +1,188 @@
+# List Comprehensions in EigenScript
+# Phase 4 - Option B: Concise list transformation and filtering
+
+print of "=== List Comprehensions Demo ==="
+print of ""
+
+# ============================================================================
+# Basic Comprehensions (Transformation)
+# ============================================================================
+
+print of "1. Basic Transformations"
+print of "-" * 30
+
+numbers is [1, 2, 3, 4, 5]
+print of "Original numbers:"
+print of numbers
+
+# Double each number
+doubled is [x * 2 for x in numbers]
+print of "Doubled [x * 2 for x in numbers]:"
+print of doubled
+
+# Square each number
+squared is [x * x for x in numbers]
+print of "Squared [x * x for x in numbers]:"
+print of squared
+
+# Add 10 to each number
+incremented is [x + 10 for x in numbers]
+print of "Incremented [x + 10 for x in numbers]:"
+print of incremented
+
+print of ""
+
+# ============================================================================
+# Comprehensions with Filters
+# ============================================================================
+
+print of "2. Filtering Elements"
+print of "-" * 30
+
+mixed is [-2, -1, 0, 1, 2, 3, 4, 5]
+print of "Mixed numbers:"
+print of mixed
+
+# Filter only positive numbers
+positives is [x for x in mixed if x > 0]
+print of "Positives [x for x in mixed if x > 0]:"
+print of positives
+
+# Filter even numbers
+evens is [x for x in numbers if x % 2 = 0]
+print of "Evens [x for x in numbers if x % 2 = 0]:"
+print of evens
+
+# Filter odd numbers
+odds is [x for x in numbers if x % 2 != 0]
+print of "Odds [x for x in numbers if x % 2 != 0]:"
+print of odds
+
+print of ""
+
+# ============================================================================
+# Combined Transformation and Filtering
+# ============================================================================
+
+print of "3. Transform AND Filter"
+print of "-" * 30
+
+# Double only the positive numbers
+positive_doubled is [x * 2 for x in mixed if x > 0]
+print of "Positives doubled [x * 2 for x in mixed if x > 0]:"
+print of positive_doubled
+
+# Square only the even numbers
+even_squared is [x * x for x in numbers if x % 2 = 0]
+print of "Evens squared [x * x for x in numbers if x % 2 = 0]:"
+print of even_squared
+
+print of ""
+
+# ============================================================================
+# Chaining Comprehensions
+# ============================================================================
+
+print of "4. Chaining Multiple Comprehensions"
+print of "-" * 30
+
+data is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+print of "Original data:"
+print of data
+
+# Step 1: Filter evens
+step1 is [x for x in data if x % 2 = 0]
+print of "Step 1 - Filter evens:"
+print of step1
+
+# Step 2: Double them
+step2 is [x * 2 for x in step1]
+print of "Step 2 - Double them:"
+print of step2
+
+# Step 3: Filter > 10
+step3 is [x for x in step2 if x > 10]
+print of "Step 3 - Keep only > 10:"
+print of step3
+
+print of ""
+
+# ============================================================================
+# Complex Expressions
+# ============================================================================
+
+print of "5. Complex Expressions"
+print of "-" * 30
+
+values is [1, 2, 3, 4, 5]
+
+# Multiple operations
+complex is [(x + 5) * 2 for x in values]
+print of "Complex [(x + 5) * 2 for x in values]:"
+print of complex
+
+# Division
+halved is [x / 2 for x in numbers]
+print of "Halved [x / 2 for x in numbers]:"
+print of halved
+
+print of ""
+
+# ============================================================================
+# Real-World Examples
+# ============================================================================
+
+print of "6. Real-World Use Cases"
+print of "-" * 30
+
+# Example: Temperature conversion (Celsius to Fahrenheit)
+celsius is [0, 10, 20, 30, 40]
+print of "Celsius temperatures:"
+print of celsius
+
+fahrenheit is [c * 9 / 5 + 32 for c in celsius]
+print of "Fahrenheit [c * 9 / 5 + 32 for c in celsius]:"
+print of fahrenheit
+
+# Example: Filter valid scores
+all_scores is [45, 78, 92, 33, 88, 105, -5, 67]
+print of "All scores (some invalid):"
+print of all_scores
+
+valid_scores is [s for s in all_scores if s >= 0 and s <= 100]
+print of "Valid scores (0-100) only:"
+print of valid_scores
+
+# Example: Calculate bonuses (10% for scores > 80)
+bonuses is [s * 0.1 for s in valid_scores if s > 80]
+print of "Bonuses for scores > 80:"
+print of bonuses
+
+print of ""
+
+# ============================================================================
+# Edge Cases
+# ============================================================================
+
+print of "7. Edge Cases"
+print of "-" * 30
+
+# Empty list
+empty is []
+result is [x * 2 for x in empty]
+print of "Empty list comprehension result:"
+print of result
+
+# Single element
+single is [42]
+result2 is [x * 3 for x in single]
+print of "Single element [x * 3 for x in [42]]:"
+print of result2
+
+# All filtered out
+nothing is [x for x in numbers if x > 100]
+print of "All filtered out [x for x in numbers if x > 100]:"
+print of nothing
+
+print of ""
+print of "=== Demo Complete! ==="
