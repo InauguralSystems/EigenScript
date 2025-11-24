@@ -26,7 +26,6 @@ from eigenscript.parser.ast_builder import (
     Interrogative,
     ListLiteral,
     Index,
-    Program,
     Import,
     MemberAccess,
 )

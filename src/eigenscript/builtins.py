@@ -1366,8 +1366,6 @@ def builtin_json_parse(json_str: LRVMVector, space: LRVMSpace, metric: Any = Non
     Example:
         data is json_parse of '{"name": "Alice", "age": 30}'
     """
-    from eigenscript.evaluator.interpreter import EigenList
-
     json_string = decode_vector(json_str, space, metric)
 
     if not isinstance(json_string, str):
