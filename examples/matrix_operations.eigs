@@ -1,0 +1,60 @@
+# Matrix Operations in EigenScript
+# Demonstrating linear algebra for AI/ML applications
+
+print of "=== Matrix Creation ==="
+
+# Create matrix from nested list
+m1 is matrix of [[1, 2], [3, 4]]
+print of "Matrix m1 created"
+
+# Create special matrices
+zeros_mat is zeros of [2, 3]
+ones_mat is ones of [3, 2]
+identity_mat is identity of 3
+
+print of "Created zeros, ones, and identity matrices"
+
+print of ""
+print of "=== Matrix Arithmetic ==="
+
+# Create two matrices for operations
+a is matrix of [[1, 2], [3, 4]]
+b is matrix of [[5, 6], [7, 8]]
+
+# Matrix multiplication
+c is matmul of [a, b]
+print of "Matrix multiplication completed"
+
+# Transpose
+at is transpose of a
+print of "Transpose completed"
+
+print of ""
+print of "=== Linear Algebra ==="
+
+# Determinant
+det_a is det of a
+print of "Determinant of [[1,2],[3,4]]:"
+print of det_a
+
+# Matrix inverse
+a_inv is inv of a
+print of "Inverse computed"
+
+# Verify: A * A^(-1) should be identity
+verify is matmul of [a, a_inv]
+print of "Verified A * A^(-1)"
+
+# Eigenvalues (for symmetric matrix)
+sym_matrix is matrix of [[2, 1], [1, 2]]
+eigs is eigenvalues of sym_matrix
+print of "Eigenvalues of [[2,1],[1,2]]:"
+print of eigs
+
+print of ""
+print of "=== AI/ML Ready! ==="
+print of "EigenScript now has matrix operations for:"
+print of "- Neural network layers"
+print of "- Linear transformations"
+print of "- Gradient computation"
+print of "- Scientific computing"
