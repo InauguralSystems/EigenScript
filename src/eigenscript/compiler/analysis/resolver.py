@@ -4,7 +4,7 @@ Locates source files for imported modules.
 """
 
 import os
-from typing import List, Optional
+from typing import List
 from pathlib import Path
 
 
@@ -83,9 +83,6 @@ class ModuleResolver:
         physics.eigs -> physics.wasm (WASM)
         """
         base = os.path.splitext(source_path)[0]
-
-        # Determine extension based on architecture (Phase 3 logic)
-        is_wasm = target_triple and "wasm" in target_triple
 
         # Modules are always compiled to Object Files (.o) first
         # They are linked into the final .exe/.wasm later

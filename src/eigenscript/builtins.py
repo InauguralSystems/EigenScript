@@ -4,7 +4,6 @@ Built-in functions for EigenScript.
 Provides standard library functions like print, input, len, etc.
 """
 
-import sys
 import math
 import os
 import json
