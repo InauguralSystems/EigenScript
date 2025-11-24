@@ -26,7 +26,6 @@ from eigenscript.parser.ast_builder import (
     Interrogative,
     ListLiteral,
     Index,
-    Program,
     Import,
     MemberAccess,
 )
@@ -35,7 +34,9 @@ from eigenscript.parser.ast_builder import (
 class CompilerError(Exception):
     """Enhanced compiler error with source location and hints."""
 
-    def __init__(self, message: str, hint: str = None, node: ASTNode = None):
+    def __init__(
+        self, message: str, hint: Optional[str] = None, node: Optional[ASTNode] = None
+    ):
         self.message = message
         self.hint = hint
         self.node = node
@@ -78,9 +79,9 @@ class LLVMCodeGenerator:
 
     def __init__(
         self,
-        observed_variables: Set[str] = None,
-        target_triple: str = None,
-        module_name: str = None,
+        observed_variables: Optional[Set[str]] = None,
+        target_triple: Optional[str] = None,
+        module_name: Optional[str] = None,
     ):
         # Initialize LLVM targets (initialization is now automatic in llvmlite)
         llvm.initialize_native_target()
