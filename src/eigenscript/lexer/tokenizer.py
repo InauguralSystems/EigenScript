@@ -513,7 +513,6 @@ class Tokenizer:
         """
         # Count spaces/tabs at the beginning of the line
         indent_level = 0
-        start_pos = self.position
 
         while self.current_char() and self.current_char() in " \t":
             if self.current_char() == " ":

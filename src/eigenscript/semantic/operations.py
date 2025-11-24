@@ -10,7 +10,6 @@ Mathematical Foundation:
     - AND(x, y) = x + y  (vector addition)
 """
 
-import numpy as np
 from typing import Tuple
 from eigenscript.semantic.lrvm import LRVMVector
 from eigenscript.semantic.metric import MetricTensor

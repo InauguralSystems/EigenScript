@@ -6,7 +6,6 @@ Run as: python -m eigenscript [file.eigs]
 
 import sys
 import argparse
-from pathlib import Path
 from eigenscript import __version__
 from eigenscript.lexer import Tokenizer
 from eigenscript.parser import Parser
@@ -58,7 +57,7 @@ def run_file(
 
         # Interpret
         interpreter = Interpreter(dimension=768)
-        result = interpreter.evaluate(ast)
+        interpreter.evaluate(ast)
 
         # Stop benchmarking
         if benchmark and bench_ctx:

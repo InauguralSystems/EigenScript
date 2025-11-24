@@ -6,9 +6,27 @@ in LRVM space.
 """
 
 import numpy as np
-from typing import Dict, Optional, Any, List, Union
+from typing import Dict, Optional, List, Union
 from dataclasses import dataclass
-from eigenscript.parser.ast_builder import *
+from eigenscript.parser.ast_builder import (
+    ASTNode,
+    Program,
+    Assignment,
+    Relation,
+    BinaryOp,
+    UnaryOp,
+    Conditional,
+    Loop,
+    FunctionDef,
+    Return,
+    Literal,
+    ListLiteral,
+    ListComprehension,
+    Index,
+    Slice,
+    Identifier,
+    Interrogative,
+)
 from eigenscript.semantic.lrvm import LRVMVector, LRVMSpace
 from eigenscript.semantic.metric import MetricTensor
 from eigenscript.runtime.framework_strength import FrameworkStrengthTracker
@@ -31,7 +49,7 @@ class Function:
     parameters: List[str]
     body: List[ASTNode]
     closure: "Environment"  # Captured environment
-    interpreter: Optional["UnifiedInterpreter"] = (
+    interpreter: Optional["Interpreter"] = (
         None  # Reference to interpreter for higher-order functions
     )
 
@@ -954,7 +972,7 @@ class Interpreter:
             return self.space.embed_string(char)
 
         else:
-            raise TypeError(f"Cannot index into non-list/non-string type")
+            raise TypeError("Cannot index into non-list/non-string type")
 
     def _eval_slice(self, node: Slice) -> Value:
         """
@@ -1019,7 +1037,7 @@ class Interpreter:
             sliced_str = string_val[start_index:end_index]
             return self.space.embed_string(sliced_str)
         else:
-            raise TypeError(f"Cannot slice non-list/non-string type")
+            raise TypeError("Cannot slice non-list/non-string type")
 
     def _eval_identifier(
         self, node: Identifier
@@ -1070,8 +1088,6 @@ class Interpreter:
             if self.fs_tracker.get_trajectory_length() >= 2:
                 recent = self.fs_tracker.trajectory[-2:]
                 # Compute radii
-                from eigenscript.runtime.eigencontrol import EigenControl
-
                 r1 = np.sqrt(np.dot(recent[0].coords, recent[0].coords))
                 r2 = np.sqrt(np.dot(recent[1].coords, recent[1].coords))
                 result = 1.0 if r2 < r1 else 0.0

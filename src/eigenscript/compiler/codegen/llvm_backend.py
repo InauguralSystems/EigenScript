@@ -6,7 +6,7 @@ Generates LLVM IR from EigenScript AST nodes.
 import os
 from llvmlite import ir
 from llvmlite import binding as llvm
-from typing import Dict, Any, Optional, Union, Set
+from typing import Dict, Optional, Union, Set
 from enum import Enum
 from dataclasses import dataclass
 
@@ -26,7 +26,6 @@ from eigenscript.parser.ast_builder import (
     Interrogative,
     ListLiteral,
     Index,
-    Slice,
     Program,
     Import,
     MemberAccess,
