@@ -408,7 +408,7 @@ class TestFileOperations:
 
     def test_file_read_write_cycle(self, interpreter, capsys):
         """Test writing and reading a file."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
             temp_path = f.name
             f.write("test content")
 
