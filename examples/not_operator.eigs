@@ -1,0 +1,110 @@
+# Comprehensive NOT Operator Examples in EigenScript
+
+# ============================================================================
+# Basic NOT Operator
+# ============================================================================
+
+# NOT with equality
+if not (5 = 10):
+    print of 100
+
+# NOT with less than
+if not (5 < 3):
+    print of 200
+
+# NOT with greater than
+if not (5 > 10):
+    print of 300
+
+# ============================================================================
+# NOT with Variables
+# ============================================================================
+
+x is 42
+y is 100
+
+# Check if x is NOT equal to 100
+if not (x = 100):
+    print of 400
+
+# Check if y is NOT less than 50
+if not (y < 50):
+    print of 500
+
+# ============================================================================
+# NOT in If-Then-Else
+# ============================================================================
+
+age is 25
+
+if not (age > 30):
+    print of 600
+else:
+    print of 700
+
+# ============================================================================
+# Double Negation (not not x = x)
+# ============================================================================
+
+if not not (5 = 5):
+    print of 800
+
+# ============================================================================
+# NOT with Lists
+# ============================================================================
+
+numbers is [10, 20, 30, 40, 50]
+
+# Check if list does NOT have 3 elements
+if not (len of numbers = 3):
+    print of 900
+
+# Check if first element is NOT 20
+if not (numbers[0] = 20):
+    print of 1000
+
+# Check if third element is NOT greater than 100
+if not (numbers[2] > 100):
+    print of 1100
+
+# ============================================================================
+# NOT in Loops
+# ============================================================================
+
+i is 0
+total is 0
+
+# Loop while i is NOT greater than 4
+loop while not (i > 4):
+    total is total + i
+    i is i + 1
+
+print of total
+
+# ============================================================================
+# Complex NOT Expressions
+# ============================================================================
+
+a is 15
+b is 20
+
+# NOT with nested comparisons
+if not (a > b):
+    print of 1200
+
+# Multiple NOT conditions
+if not (a = 100):
+    if not (b = 100):
+        print of 1300
+
+# ============================================================================
+# Summary: All NOT Features
+# ============================================================================
+# ✓ NOT with equality (not (x = y))
+# ✓ NOT with less than (not (x < y))
+# ✓ NOT with greater than (not (x > y))
+# ✓ NOT in if-then-else
+# ✓ Double negation (not not x)
+# ✓ NOT with lists and indexing
+# ✓ NOT in loops
+# ✓ NOT with variables

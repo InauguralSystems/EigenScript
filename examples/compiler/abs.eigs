@@ -1,0 +1,9 @@
+define max as:
+    if n > 10:
+        return n
+    else:
+        return 10
+
+x is 5
+result is max of x
+print of result

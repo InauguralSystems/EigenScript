@@ -1,0 +1,14 @@
+# Test truthiness with scalar countdown
+# This tests the ensure_bool() fix where a scalar is used directly as a condition
+# Before the fix, this would crash with "cbranch expects i1, got double"
+
+count is 10
+sum is 0
+
+# Using a scalar variable directly as a condition (not a comparison)
+loop while count:
+    sum is sum + count
+    count is count - 1
+
+print of sum
+# Expected: 55 (10 + 9 + 8 + ... + 1)

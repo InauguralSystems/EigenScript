@@ -1,0 +1,81 @@
+# Debug with Interrogatives Example
+#
+# This demonstrates using interrogative operators (WHO, WHAT, WHEN, WHERE, WHY, HOW)
+# and semantic predicates (converged, stable, diverging, etc.) for debugging.
+#
+# The interrogatives extract geometric information from the computation,
+# making debugging more intuitive and natural.
+
+# Example 1: Debugging a simple computation
+x is 42
+y is x + 8
+
+# Extract geometric information for debugging
+print of "Value of x:"
+print of what is x
+
+print of "Identity of y:"
+print of who is y
+
+print of "When (temporal coordinate):"
+print of when is y
+
+# Example 2: Debugging convergence with semantic predicates
+define factorial as:
+    if n < 2:
+        return 1
+    else:
+        prev is n - 1
+        sub_result is factorial of prev
+        return n * sub_result
+
+result is factorial of 5
+
+# Check convergence state
+if converged:
+    print of "Computation converged!"
+else:
+    print of "Still computing..."
+
+# Example 3: Debugging process quality
+print of "Process quality:"
+print of how is result
+
+# Example 4: Natural language debugging with predicates
+if stable:
+    print of "System is stable (timelike signature)"
+else:
+    if diverging:
+        print of "System is diverging (spacelike signature)"
+    else:
+        print of "System at equilibrium (lightlike boundary)"
+
+# Example 5: Interrogating direction of change
+counter is 0
+loop while counter < 5:
+    counter is counter + 1
+
+    # Debug the iteration
+    if not converged:
+        print of "Current value:"
+        print of what is counter
+
+        print of "Direction of change:"
+        print of why is counter
+
+# Example 6: Combining interrogatives for rich debugging
+define compute as:
+    temp is n * 2
+
+    # Debug checkpoints
+    if not stable:
+        debug_val is what is temp
+        debug_when is when is temp
+        debug_how is how is temp
+
+    return temp
+
+final is compute of 10
+
+print of "Final result:"
+print of what is final

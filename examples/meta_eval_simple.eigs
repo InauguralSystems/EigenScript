@@ -1,0 +1,46 @@
+# Simple Meta-Circular Evaluator Test
+# Testing basic function definitions
+
+print of "=== Simple Meta-Circular Evaluator ==="
+
+# Test 1: Environment creation
+define create_env as:
+    empty is []
+    return empty
+
+env is create_env of 0
+print of "Environment created"
+
+# Test 2: Bind a value
+define bind_value as:
+    name is "x"
+    value is 42
+    result is [name, value]
+    return result
+
+binding is bind_value of 0
+print of "Created binding:"
+print of binding
+
+# Test 3: Simple evaluation
+define eval_number as:
+    result is n
+    return result
+
+test_val is eval_number of 123
+print of "Evaluated number:"
+print of test_val
+
+print of "Checking stability..."
+
+if stable:
+    print of "System is STABLE"
+else:
+    print of "System is UNSTABLE"
+
+if converged:
+    print of "System has CONVERGED"
+else:
+    print of "System has NOT CONVERGED"
+
+print of "=== Test Complete ==="

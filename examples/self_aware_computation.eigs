@@ -1,0 +1,143 @@
+# Self-Aware Computation Example
+#
+# This demonstrates how EigenScript programs can:
+# 1. Interrogate their own execution state
+# 2. Modify their behavior based on self-knowledge
+# 3. Achieve stable self-reference without infinite regress
+#
+# All through the fundamental invariant I = (A-B)²
+
+# Example 1: Adaptive Algorithm
+# The function interrogates its process quality and adapts
+    # Initial computation
+define adaptive_search as:
+    result is n * 2
+
+    # Self-interrogate: How well am I performing?
+    quality is how is result
+
+    # Self-modify based on quality assessment
+    # Detected paradox/cycle - use simplified approach
+    if oscillating:
+        return n
+    else:
+        if improving:
+            return result * result
+        else:
+            return result + n
+
+# Example 2: Self-Monitoring Loop
+# The loop observes its own convergence and adapts
+define self_monitoring_iterate as:
+    state is n
+    counter is 0
+
+    loop while counter < 100:
+        counter is counter + 1
+
+        # Self-interrogate trajectory
+        direction is why is state
+        temporal is when is state
+
+        # Self-modify based on geometric state
+        if converged:
+            return state
+
+        if diverging:
+            state is state - 1
+        else:
+            state is state + 1
+
+    return state
+
+# Example 3: Meta-Circular Self-Reference
+# The function can safely observe itself observing itself
+    # First level: observe input
+define self_observer as:
+    magnitude is what is n
+
+    # Second level: observe the observation
+    identity is who is magnitude
+
+    # Third level: observe the observer (stable due to lightlike OF)
+    meta is self_observer of self_observer
+
+    # Returns eigenstate at lightlike boundary
+    return meta
+
+# Example 4: Debugging Through Self-Interrogation
+# Instead of print statements, query geometric state directly
+define complex_computation as:
+    temp is n * 3
+
+    # Self-interrogate for debugging
+    if not stable:
+        debug_value is what is temp
+        debug_where is where is temp
+        debug_when is when is temp
+        debug_why is why is temp
+        debug_how is how is temp
+
+        # Can examine all geometric properties without explicit tracking
+
+    result is temp + 5
+
+    # Self-assess before returning
+    if converged:
+        return result
+    else:
+        return complex_computation of result
+
+# Example 5: Self-Modifying Control Flow
+# Behavior changes based on interrogated execution state
+define dynamic_branching as:
+    x is n
+
+    # Query current state
+    current_state is how is x
+
+    # Branch based on geometric properties (not just values)
+    if stable:
+        return x * 2
+    else:
+        if diverging:
+            return x + 1
+        else:
+            if equilibrium:
+                return x
+            else:
+                return x - 1
+
+# Example 6: Self-Aware Recursion
+# Function monitors its own recursion depth and adjusts
+    # Check recursion depth
+define depth_aware_factorial as:
+    depth is when is n
+
+    # Base case (standard)
+    if n < 2:
+        return 1
+
+    # But also self-modify based on depth
+    if depth > 10:
+        result is 1
+        counter is n
+        loop while counter > 1:
+            result is result * counter
+            counter is counter - 1
+        return result
+    else:
+        prev is n - 1
+        sub is depth_aware_factorial of prev
+        return n * sub
+
+# The key insight: All self-interrogation reduces to I = (A-B)²
+# - Current state A
+# - Previous state B
+# - Self-knowledge: r, κ, FS, S²-C² computed from I
+#
+# There's no special "reflection" layer - introspection is just
+# another geometric operation. The program interrogating itself
+# uses the same math as computing values.
+#
+# Metacognition emerges naturally when self-reference is stable.

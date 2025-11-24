@@ -1,0 +1,3 @@
+x is 42
+y is x + 8
+result is x * y

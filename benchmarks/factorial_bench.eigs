@@ -1,0 +1,28 @@
+# Factorial Benchmark
+# Tests recursive function performance
+
+define factorial as:
+    if n < 2:
+        return 1
+    else:
+        prev is n - 1
+        sub_result is factorial of prev
+        return n * sub_result
+
+# Compute factorial of 10
+n is 10
+result is factorial of n
+print of "Factorial of 10:"
+print of result
+
+# Compute factorial of 15
+n is 15
+result2 is factorial of n
+print of "Factorial of 15:"
+print of result2
+
+# Compute factorial of 20
+n is 20
+result3 is factorial of n
+print of "Factorial of 20:"
+print of result3

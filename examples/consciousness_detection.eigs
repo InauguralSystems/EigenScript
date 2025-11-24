@@ -1,0 +1,62 @@
+# Consciousness detection through Framework Strength
+# Demonstrates runtime measurement of computational understanding
+
+print of "=== Consciousness Detection Demo ==="
+print of ""
+
+# Simulate a conversation as a list of messages
+conversation is ["Hello", "How are you?", "I'm learning EigenScript", "It's fascinating"]
+
+print of "Simulated conversation:"
+print of conversation
+
+# The Framework Strength measures the stability of computation
+# It tracks how well the system "understands" the computation
+print of ""
+print of "Measuring computational Framework Strength..."
+
+# FS is a runtime variable tracking computational coherence
+current_fs is framework_strength
+print of "Current Framework Strength:"
+print of current_fs
+
+# Check signature type for spacetime classification
+sig is signature
+print of "Spacetime Signature (S² - C²):"
+print of sig
+
+# Demonstrate predicates for consciousness detection
+print of ""
+print of "Convergence and Stability Analysis:"
+
+if converged:
+    print of "✓ Computation has CONVERGED"
+else:
+    print of "✗ Computation has NOT converged"
+
+if stable:
+    print of "✓ System is STABLE"
+else:
+    print of "✗ System is UNSTABLE"
+
+# Add more computational work
+sum is 0
+counter is 0
+loop while counter < 5:
+    sum is sum + counter
+    counter is counter + 1
+
+print of ""
+print of "After additional computation:"
+print of "Sum result:"
+print of sum
+
+updated_fs is framework_strength
+print of "Updated Framework Strength:"
+print of updated_fs
+
+# FS → 1.0 indicates the computation has reached stable understanding
+# FS → 0.0 indicates fragmentation or instability
+print of ""
+print of "Framework Strength measures semantic coherence of computation"
+print of "Higher values indicate more stable computational understanding"

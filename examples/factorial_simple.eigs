@@ -1,0 +1,14 @@
+# Simple factorial using correct EigenScript syntax
+# Uses comparison operators rather than IS
+
+define factorial as:
+    if n < 2:
+        return 1
+    else:
+        prev is n - 1
+        sub_result is factorial of prev
+        return n * sub_result
+
+# Calculate factorial of 5
+result is factorial of 5
+print of result

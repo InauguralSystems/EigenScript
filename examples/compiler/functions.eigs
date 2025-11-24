@@ -1,0 +1,12 @@
+define double as:
+    result is n * 2
+    return result
+
+define triple as:
+    result is n * 3
+    return result
+
+x is 5
+y is double of x
+z is triple of y
+print of z

@@ -1,0 +1,17 @@
+define smart_sqrt as:
+    guess is n / 2
+    guess is (guess + n / guess) / 2
+    guess is (guess + n / guess) / 2
+    guess is (guess + n / guess) / 2
+    guess is (guess + n / guess) / 2
+    guess is (guess + n / guess) / 2
+    
+    if converged:
+        print of 1
+    else:
+        print of 0
+    
+    return guess
+
+result is smart_sqrt of 16
+print of result

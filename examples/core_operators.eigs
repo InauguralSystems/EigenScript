@@ -1,0 +1,153 @@
+# Comprehensive Core Operators in EigenScript
+# Demonstrates: AND, OR, <=, >=, !=, % operators
+
+# ============================================================================
+# Logical AND Operator
+# ============================================================================
+
+# Basic AND
+if (5 > 3) and (10 > 7):
+    print of 100
+
+# AND with equality
+x is 10
+if (x > 5) and (x < 15):
+    print of 200
+
+# Multiple AND conditions
+age is 25
+if (age >= 18) and (age <= 65):
+    print of 300
+
+# ============================================================================
+# Logical OR Operator
+# ============================================================================
+
+# Basic OR
+if (5 < 3) or (10 > 7):
+    print of 400
+
+# OR for validation
+score is 95
+if (score >= 90) or (score = 100):
+    print of 500
+
+# ============================================================================
+# Less Than or Equal (<=)
+# ============================================================================
+
+# Basic <=
+if 5 <= 10:
+    print of 600
+
+# <= with equality case
+if 10 <= 10:
+    print of 700
+
+# Range checking
+value is 50
+if value <= 100:
+    print of 800
+
+# ============================================================================
+# Greater Than or Equal (>=)
+# ============================================================================
+
+# Basic >=
+if 10 >= 5:
+    print of 900
+
+# >= with equality case
+if 10 >= 10:
+    print of 1000
+
+# Age validation
+person_age is 21
+if person_age >= 18:
+    print of 1100
+
+# ============================================================================
+# Not Equal (!=)
+# ============================================================================
+
+# Basic !=
+if 5 != 10:
+    print of 1200
+
+# != for validation
+status is 1
+if status != 0:
+    print of 1300
+
+# ============================================================================
+# Modulo Operator (%)
+# ============================================================================
+
+# Basic modulo
+remainder is 10 % 3
+print of remainder
+
+# Even/odd check
+number is 10
+if number % 2 = 0:
+    print of 1500
+
+# Divisibility check
+value2 is 15
+if value2 % 5 = 0:
+    print of 1600
+
+# ============================================================================
+# Combined Examples
+# ============================================================================
+
+# AND with NOT
+if (5 > 3) and not (10 < 5):
+    print of 1700
+
+# OR with AND (precedence: AND before OR)
+if (5 < 3) or (10 > 7) and (20 > 15):
+    print of 1800
+
+# Complex validation
+user_input is 42
+if (user_input >= 1) and (user_input <= 100) and (user_input != 50):
+    print of 1900
+
+# Modulo with comparison
+n is 7
+if n % 2 != 0:
+    print of 2000
+
+# ============================================================================
+# Real-World Examples
+# ============================================================================
+
+# Temperature range check
+temp is 72
+if (temp >= 68) and (temp <= 78):
+    print of 2100
+
+# Multiple conditions
+day is 3
+hour is 14
+if (day >= 1 and day <= 5) and (hour >= 9 and hour <= 17):
+    print of 2200
+
+# Fizz check (divisible by 3)
+num is 9
+if num % 3 = 0:
+    print of 2300
+
+# ============================================================================
+# Summary of All Core Operators
+# ============================================================================
+# ✓ AND - logical conjunction (both must be true)
+# ✓ OR - logical disjunction (either must be true)
+# ✓ <= - less than or equal
+# ✓ >= - greater than or equal
+# ✓ != - not equal
+# ✓ % - modulo (remainder after division)
+# ✓ NOT - logical negation
+# ✓ =, <, > - equality and comparisons
+# ✓ +, -, *, / - arithmetic operations

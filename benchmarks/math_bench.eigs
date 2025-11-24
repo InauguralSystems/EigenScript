@@ -1,0 +1,99 @@
+# Math Functions Benchmark
+# Tests performance of mathematical operations
+
+print of "=== Basic Math ==="
+
+# Square root calculations
+x1 is sqrt of 16
+x2 is sqrt of 100
+x3 is sqrt of 1000000
+
+# Power calculations
+p1 is pow of [2, 10]
+p2 is pow of [3, 15]
+p3 is pow of [5, 8]
+
+# Absolute value
+a1 is abs of -100
+a2 is abs of -500
+a3 is abs of -1000
+
+print of "Basic math complete"
+
+print of "=== Trigonometric Functions ==="
+
+# Sine calculations
+s1 is sin of 0
+s2 is sin of 1.5708
+s3 is sin of 3.14159
+
+# Cosine calculations
+c1 is cos of 0
+c2 is cos of 1.5708
+c3 is cos of 3.14159
+
+# Tangent calculations
+t1 is tan of 0
+t2 is tan of 0.785398
+t3 is tan of 1.0472
+
+print of "Trigonometric functions complete"
+
+print of "=== Exponential and Logarithmic ==="
+
+# Logarithm calculations
+l1 is log of 2.718281828
+l2 is log of 10
+l3 is log of 100
+
+# Exponential calculations
+e1 is exp of 0
+e2 is exp of 1
+e3 is exp of 2
+
+print of "Exponential and logarithmic complete"
+
+print of "=== Rounding Functions ==="
+
+# Floor calculations
+f1 is floor of 3.7
+f2 is floor of 10.9
+f3 is floor of 99.1
+
+# Ceiling calculations
+cl1 is ceil of 3.2
+cl2 is ceil of 10.1
+cl3 is ceil of 99.8
+
+# Round calculations
+r1 is round of 3.5
+r2 is round of 10.4
+r3 is round of 99.6
+
+print of "Rounding functions complete"
+
+print of "=== Complex Calculations ==="
+
+# Pythagorean theorem
+a is 3
+b is 4
+a_sq is pow of [a, 2]
+b_sq is pow of [b, 2]
+c is sqrt of (a_sq + b_sq)
+
+# Distance calculation
+x1_coord is 10
+y1_coord is 20
+x2_coord is 30
+y2_coord is 40
+
+dx is x2_coord - x1_coord
+dy is y2_coord - y1_coord
+dx_sq is pow of [dx, 2]
+dy_sq is pow of [dy, 2]
+distance is sqrt of (dx_sq + dy_sq)
+
+print of "Distance:"
+print of distance
+
+print of "=== Benchmark Complete ==="

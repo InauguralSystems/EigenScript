@@ -1,0 +1,10 @@
+define fib as:
+    if n < 2:
+        return n
+    else:
+        a is fib of (n - 1)
+        b is fib of (n - 2)
+        return a + b
+
+result is fib of 25
+print of result

@@ -1,0 +1,75 @@
+# Smart Iteration with Self-Awareness
+# Demonstrates EigenScript's ability to query its own computation state
+
+print of "=== Self-Interrogating Counter ==="
+
+# A counter that can examine itself
+counter is 0
+
+    # Use interrogatives to examine the computation
+loop while counter < 5:
+    current_value is what is counter
+    var_name is who is counter
+    
+    print of "Counter name:"
+    print of var_name
+    print of "Counter value:"
+    print of current_value
+    
+    # Increment
+    counter is counter + 1
+
+print of "=== Done! ==="
+
+print of "=== Mathematical Self-Awareness ==="
+
+# Calculate with awareness of what's happening
+x is 16
+print of "Starting value:"
+print of x
+
+# Ask "what is x" to get its magnitude
+magnitude is what is x
+print of "Magnitude of x:"
+print of magnitude
+
+# Transform and observe
+sqrt_x is sqrt of x
+result_value is what is sqrt_x
+print of "Square root of x:"
+print of result_value
+
+# Using predicates to check computation state
+print of "=== Computation State Predicates ==="
+
+# Note: converged, stable, diverging are built-in predicates
+# They examine the geometric state of the computation
+
+# Simple computation to build some history
+a is 1
+b is 2
+c is a + b
+
+# Check if computation has converged
+if converged:
+    print of "Computation has converged!"
+
+# Check if system is stable
+if stable:
+    print of "System is stable!"
+
+print of "=== Self-Aware Math Operations ==="
+
+# Combine interrogatives with math functions
+numbers is [1, 2, 3, 4, 5]
+
+# Get the length and use it
+list_size is what is numbers
+print of "List has this many elements:"
+print of list_size
+
+# Calculate sum using list size
+sum is 15
+average is sum / list_size
+print of "Average of list:"
+print of average

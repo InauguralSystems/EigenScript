@@ -1,0 +1,73 @@
+# Enhanced List Operations Demonstration
+# This example shows new list operations in EigenScript
+
+print of "=== Enhanced List Operations Demo ==="
+print of ""
+
+# Zip - combine two lists element-wise
+print of "Zip Operation:"
+names is ["Alice", "Bob", "Charlie"]
+ages is [30, 25, 35]
+print of "Names:"
+print of names
+print of "Ages:"
+print of ages
+
+paired is zip of [names, ages]
+print of "Zipped together:"
+print of paired
+
+print of ""
+
+# Enumerate - add indices to list elements
+print of "Enumerate Operation:"
+fruits is ["apple", "banana", "cherry"]
+print of "Fruits:"
+print of fruits
+
+indexed is enumerate of fruits
+print of "With indices:"
+print of indexed
+
+print of ""
+
+# Flatten - flatten nested lists
+print of "Flatten Operation:"
+nested is [[1, 2], [3, 4], [5, 6]]
+print of "Nested list:"
+print of nested
+
+flat is flatten of nested
+print of "Flattened:"
+print of flat
+
+print of ""
+
+# Reverse - reverse list order
+print of "Reverse Operation:"
+numbers is [1, 2, 3, 4, 5]
+print of "Original:"
+print of numbers
+
+reversed is reverse of numbers
+print of "Reversed:"
+print of reversed
+
+print of ""
+
+# Combined operations
+print of "Combined Example - Zip and Flatten:"
+list1 is [1, 2, 3]
+list2 is ["a", "b", "c"]
+zipped is zip of [list1, list2]
+interleaved is flatten of zipped
+
+print of "List 1:"
+print of list1
+print of "List 2:"
+print of list2
+print of "Interleaved (zip then flatten):"
+print of interleaved
+
+print of ""
+print of "=== Enhanced Lists Demo Complete ==="

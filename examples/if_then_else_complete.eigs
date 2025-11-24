@@ -1,0 +1,133 @@
+# Complete If-Then-Else Demonstration
+# Shows all comparison operators working correctly
+
+# ============================================================================
+# Equality Comparison (=)
+# ============================================================================
+
+x is 42
+
+if x = 42:
+    print of 1000
+else:
+    print of 2000
+
+if x = 99:
+    print of 3000
+else:
+    print of 4000
+
+# ============================================================================
+# Less Than (<)
+# ============================================================================
+
+age is 25
+
+if age < 30:
+    print of 5000
+else:
+    print of 6000
+
+if age < 20:
+    print of 7000
+else:
+    print of 8000
+
+# ============================================================================
+# Greater Than (>)
+# ============================================================================
+
+temperature is 85
+
+if temperature > 80:
+    print of 9000
+else:
+    print of 10000
+
+if temperature > 90:
+    print of 11000
+else:
+    print of 12000
+
+# ============================================================================
+# Nested If-Then-Else
+# ============================================================================
+
+score is 75
+
+if score > 90:
+    print of 100
+else:
+    if score > 70:
+        print of 200
+    else:
+        if score > 50:
+            print of 300
+        else:
+            print of 400
+
+# ============================================================================
+# If-Then-Else with Lists
+# ============================================================================
+
+numbers is [10, 20, 30, 40, 50]
+length is len of numbers
+
+if length = 5:
+    print of 555
+else:
+    print of 666
+
+if numbers[0] = 10:
+    print of 777
+else:
+    print of 888
+
+if numbers[2] > 25:
+    print of 999
+else:
+    print of 111
+
+# ============================================================================
+# If-Then-Else in Loops with Lists
+# ============================================================================
+
+values is [5, 12, 8, 15, 3]
+i is 0
+greater_than_10 is 0
+
+loop while i < 5:
+    current is values[i]
+    if current > 10:
+        greater_than_10 is greater_than_10 + 1
+    i is i + 1
+
+print of greater_than_10
+
+# ============================================================================
+# Multiple Comparisons
+# ============================================================================
+
+a is 15
+b is 20
+c is 15
+
+if a = c:
+    print of 2222
+
+if a < b:
+    print of 3333
+
+if b > a:
+    print of 4444
+
+# ============================================================================
+# Summary: All Features Working
+# ============================================================================
+# ✓ Equality (=)
+# ✓ Less than (<)
+# ✓ Greater than (>)
+# ✓ Nested if-then-else
+# ✓ If-then-else with lists
+# ✓ If-then-else in loops
+# ✓ Multiple comparisons

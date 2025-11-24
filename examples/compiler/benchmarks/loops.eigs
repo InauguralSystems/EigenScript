@@ -1,0 +1,9 @@
+define sum_to as:
+    if n < 1:
+        return 0
+    else:
+        prev is sum_to of (n - 1)
+        return prev + n
+
+result is sum_to of 100
+print of result

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EigenSpace Visualizer 🌀</title>
+    <style>
+        :root { --bg: #1e1e1e; --panel: #252526; --accent: #007acc; --text: #d4d4d4; }
+        body { margin: 0; display: flex; height: 100vh; background: var(--bg); color: var(--text); font-family: 'Segoe UI', monospace; overflow: hidden; }
+        
+        /* Layout */
+        #editor-pane { width: 50%; display: flex; flex-direction: column; border-right: 1px solid #333; }
+        #vis-pane { width: 50%; display: flex; flex-direction: column; background: #000; }
+        
+        textarea { flex: 1; background: var(--panel); color: #9cdcfe; border: none; padding: 20px; font-family: 'Consolas', monospace; font-size: 14px; resize: none; outline: none; }
+        
+        #toolbar { padding: 10px; background: var(--panel); display: flex; gap: 10px; border-bottom: 1px solid #333; }
+        button { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #555; cursor: wait; }
+        
+        #canvas-container { flex: 2; position: relative; }
+        canvas { width: 100%; height: 100%; display: block; }
+        
+        #console { flex: 1; background: #111; border-top: 1px solid #333; padding: 10px; font-family: monospace; overflow-y: auto; font-size: 12px; max-height: 30%; }
+        .log-info { color: #ccc; }
+        .log-err { color: #f44; }
+        .log-sys { color: #aa5; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div id="editor-pane">
+    <div id="toolbar">
+        <button id="runBtn" onclick="compileAndRun()">▶ RUN SIMULATION</button>
+        <span>EigenScript v0.2-beta (WASM)</span>
+    </div>
+    <textarea id="code" spellcheck="false">
+# The "Inaugural Algorithm"
+# Visualizing Convergence
+
+x is 0
+target is 10
+velocity is 0
+
+# Physics Loop
+loop while x < 20:
+    # Calculate Error (Distance)
+    error is target - x
+    
+    # Proportional Control
+    velocity is velocity + (error * 0.1)
+    
+    # Damping (Friction)
+    velocity is velocity * 0.9
+    
+    # Update State
+    x is x + velocity
+    
+    # Output for Visualizer
+    # The playground plots every print call
+    print of x
+</textarea>
+</div>
+
+<div id="vis-pane">
+    <div id="canvas-container">
+        <canvas id="simCanvas"></canvas>
+    </div>
+    <div id="console"></div>
+</div>
+
+<script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const consoleDiv = document.getElementById('console');
+    const runBtn = document.getElementById('runBtn');
+    
+    let dataPoints = [];
+    
+    // Resize canvas handling
+    function resize() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+    }
+    window.onresize = resize;
+    resize();
+
+    function log(msg, type='info') {
+        const div = document.createElement('div');
+        div.textContent = `> ${msg}`;
+        div.className = `log-${type}`;
+        consoleDiv.appendChild(div);
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    function draw() {
+        // Clear screen
+        ctx.fillStyle = 'rgba(0,0,0,0.1)'; // Fade effect
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        if (dataPoints.length < 2) return;
+
+        ctx.beginPath();
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 2;
+        
+        // Auto-scale
+        const maxVal = Math.max(...dataPoints, 10);
+        const minVal = Math.min(...dataPoints, -10);
+        const range = maxVal - minVal || 1;
+        
+        const stepX = canvas.width / 100; // Show last 100 points
+        
+        // Draw the line
+        const startIndex = Math.max(0, dataPoints.length - 100);
+        
+        for (let i = startIndex; i < dataPoints.length; i++) {
+            const val = dataPoints[i];
+            
+            // Map X: Time
+            const x = (i - startIndex) * stepX;
+            
+            // Map Y: Value (Normalized to screen)
+            const normalizedY = (val - minVal) / range;
+            const y = canvas.height - (normalizedY * canvas.height * 0.8) - (canvas.height * 0.1);
+            
+            if (i === startIndex) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        
+        requestAnimationFrame(draw);
+    }
+    
+    // Start animation loop
+    requestAnimationFrame(draw);
+
+    async function compileAndRun() {
+        runBtn.disabled = true;
+        consoleDiv.innerHTML = '';
+        dataPoints = [];
+        log("Compiling...", "sys");
+        
+        const source = document.getElementById('code').value;
+        
+        try {
+            // 1. Send to Compiler Server
+            const response = await fetch('/compile', {
+                method: 'POST',
+                body: JSON.stringify({ code: source })
+            });
+            
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error);
+            }
+            
+            const wasmBytes = await response.arrayBuffer();
+            log("Compilation successful. Launching WASM...", "sys");
+            
+            // 2. Setup Environment
+            const importObject = {
+                env: {
+                    // The Bridge: WASM calls this to output data
+                    eigen_print: (val) => {
+                        dataPoints.push(val);
+                    },
+                    // Math builtins needed by runtime
+                    exp: Math.exp,
+                    fabs: Math.abs,
+                    fmin: Math.min,
+                    pow: Math.pow,
+                    sqrt: Math.sqrt,
+                    log: Math.log,
+                    sin: Math.sin,
+                    cos: Math.cos,
+                    tan: Math.tan,
+                    floor: Math.floor,
+                    ceil: Math.ceil,
+                    round: Math.round,
+                    // Memory management stubs
+                    // Note: EigenScript uses stack allocation (Phase 3 optimization)
+                    // malloc returns 0 (null) intentionally - code doesn't use heap
+                    // If these are called, it indicates unexpected heap allocation
+                    malloc: (n) => {
+                        console.warn(`malloc(${n}) called - returning null. EigenScript uses stack allocation.`);
+                        return 0; // Intentional null - stack allocation only
+                    }, 
+                    free: (p) => {
+                        if (p !== 0) {
+                            console.warn(`free(${p}) called - no-op. WASM may expect heap deallocation.`);
+                        }
+                    },
+                    __assert_fail: (condition, file, line) => {
+                        console.error(`Assert failed: ${condition} at ${file}:${line}`);
+                    }
+                }
+            };
+            
+            // 3. Execute
+            const { instance } = await WebAssembly.instantiate(wasmBytes, importObject);
+            
+            const start = performance.now();
+            instance.exports.main();
+            const end = performance.now();
+            
+            log(`Execution finished in ${(end-start).toFixed(2)}ms`, "sys");
+            
+        } catch (e) {
+            log(e.message, "err");
+        } finally {
+            runBtn.disabled = false;
+        }
+    }
+</script>
+
+</body>
+</html>

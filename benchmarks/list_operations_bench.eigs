@@ -1,0 +1,54 @@
+# List Operations Benchmark
+# Tests list creation, manipulation, and higher-order functions
+
+print of "=== List Creation ==="
+
+# Create lists
+list1 is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+list2 is [10, 20, 30, 40, 50]
+list3 is range of 20
+
+print of "Lists created"
+
+print of "=== List Operations ==="
+
+# Test append
+list4 is list1
+append of [list4, 11]
+append of [list4, 12]
+
+# Test length
+len1 is len of list1
+len2 is len of list3
+
+print of "List lengths calculated"
+
+print of "=== Higher-Order Functions ==="
+
+# Define helper functions
+define double as:
+    return n * 2
+
+define is_even as:
+    remainder is n - ((n / 2) * 2)
+    return remainder < 1
+
+define sum as:
+    a is n[0]
+    b is n[1]
+    return a + b
+
+# Test map
+doubled is map of [double, list1]
+print of "Mapped list"
+
+# Test filter
+evens is filter of [is_even, list1]
+print of "Filtered list"
+
+# Test reduce
+total is reduce of [sum, list1, 0]
+print of "Sum of list:"
+print of total
+
+print of "=== Benchmark Complete ==="

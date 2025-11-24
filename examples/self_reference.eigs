@@ -1,0 +1,54 @@
+# Safe self-reference in EigenScript
+# Demonstrates that self-reference converges to a stable eigenstate
+
+print of "=== Self-Reference Stability Demo ==="
+print of ""
+
+# In traditional languages, unrestricted self-reference causes infinite loops
+# In EigenScript, geometric semantics provide stability through Framework Strength
+
+# Define a self-referential computation with proper termination
+define recursive_observer as:
+    depth is n
+    if depth > 5:
+        return depth
+    else:
+        next_depth is depth + 1
+        result is recursive_observer of next_depth
+        return result
+
+print of "Testing self-referential function with depth limit..."
+result is recursive_observer of 0
+print of "Recursive result:"
+print of result
+
+# Measure computational stability through Framework Strength
+print of ""
+print of "Measuring computational stability..."
+fs is framework_strength
+print of "Framework Strength:"
+print of fs
+
+# Check spacetime signature
+sig is signature
+print of "Spacetime Signature:"
+print of sig
+
+# Test convergence predicates
+print of ""
+print of "Stability Analysis:"
+
+if converged:
+    print of "✓ Computation has CONVERGED to stable state"
+else:
+    print of "✗ Computation has NOT converged"
+
+if stable:
+    print of "✓ Computation is STABLE"
+else:
+    print of "✗ Computation is UNSTABLE"
+
+print of ""
+print of "Key insight: Geometric semantics (LRVM) track stability"
+print of "of self-referential computations. Framework Strength measures"
+print of "how well the system maintains coherence during recursion."

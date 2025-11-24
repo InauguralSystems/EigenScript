@@ -1,0 +1,33 @@
+# Simple Robot Control Test
+# Tests stdlib modules: control, geometry, robotics
+
+import control
+import geometry
+import robotics
+
+print of "=== Testing Control Module ==="
+
+vel is 10
+damped is control.apply_damping of vel
+print of "Original velocity:"
+print of vel
+print of "Damped velocity:"
+print of damped
+
+print of "=== Testing Geometry Module ==="
+
+x is 5
+y is 3
+dist is geometry.distance_1d of [x, y]
+print of "Distance between 5 and 3:"
+print of dist
+
+print of "=== Testing Robotics Module ==="
+
+current_pos is 0
+target_pos is 10
+control_force is robotics.compute_control_force of [current_pos, target_pos]
+print of "Control force:"
+print of control_force
+
+print of "=== Success! ==="

@@ -1,0 +1,17 @@
+define adaptive_sqrt as:
+    guess is n / 2
+    iterations is 0
+    
+    loop while not converged:
+        guess is (guess + n / guess) / 2
+        iterations is iterations + 1
+        
+        if diverging:
+            print of 999
+            return 0
+    
+    print of iterations
+    return guess
+
+result is adaptive_sqrt of 144
+print of result

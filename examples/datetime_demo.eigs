@@ -1,0 +1,51 @@
+# Date/Time Operations Demonstration
+# This example shows how to work with dates and times in EigenScript
+
+print of "=== Date/Time Operations Demo ==="
+print of ""
+
+# Get current time
+now is time_now of null
+print of "Current timestamp:"
+print of now
+
+print of ""
+
+# Format current time in various ways
+date_only is time_format of [now, "%Y-%m-%d"]
+time_only is time_format of [now, "%H:%M:%S"]
+full_datetime is time_format of [now, "%Y-%m-%d %H:%M:%S"]
+
+print of "Today's date:"
+print of date_only
+
+print of "Current time:"
+print of time_only
+
+print of "Full datetime:"
+print of full_datetime
+
+print of ""
+
+# Parse a date string
+date_string is "2025-11-19"
+timestamp is time_parse of [date_string, "%Y-%m-%d"]
+print of "Parsed date string '2025-11-19':"
+print of timestamp
+
+# Format it back
+formatted_back is time_format of [timestamp, "%Y-%m-%d"]
+print of "Formatted back:"
+print of formatted_back
+
+print of ""
+
+# Time arithmetic - add one day (86400 seconds)
+tomorrow is timestamp + 86400
+tomorrow_formatted is time_format of [tomorrow, "%Y-%m-%d"]
+
+print of "One day later:"
+print of tomorrow_formatted
+
+print of ""
+print of "=== Date/Time Demo Complete ==="

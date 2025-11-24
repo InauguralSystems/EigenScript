@@ -1,0 +1,34 @@
+# Self-Simulation Enhanced with Lists
+# Demonstrates code-as-data using list structures
+
+# Represent a simple bytecode program
+# Instruction format: each number is an opcode
+bytecode is [10, 20, 30]
+
+print of "Interpreting bytecode program..."
+
+# Execute bytecode: sum all instructions
+i is 0
+accumulator is 0
+length is len of bytecode
+
+loop while i < length:
+    instruction is bytecode[i]
+    accumulator is accumulator + instruction
+    i is i + 1
+
+print of "Result:"
+print of accumulator
+
+# Meta-level: introspect the interpreter state
+print of "Interpreter framework strength:"
+print of fs
+
+print of "Program signature:"
+print of signature
+
+# This demonstrates self-simulation because:
+# 1. Program represented as data (bytecode list)
+# 2. Interpreter executes that data (loop)
+# 3. Meta-level introspection (fs, signature)
+# 4. EigenScript interpreting EigenScript-encoded programs

@@ -1,0 +1,18 @@
+# EigenScript Module System Demo
+# This demonstrates the new import and member access syntax
+
+# Import modules
+import physics
+import math as m
+
+# Use imported module members
+x is 10
+gravity is physics.gravity
+pi_value is m.pi
+
+# Member access in expressions
+y is physics.gravity + 1
+z is m.pi * 2
+
+# Chained member access (when nested modules are supported)
+# deep_value is module.submodule.property

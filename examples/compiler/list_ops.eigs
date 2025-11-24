@@ -1,0 +1,5 @@
+numbers is [10, 20, 30, 40, 50]
+second is numbers[1]
+fourth is numbers[3]
+sum is second + fourth
+print of sum

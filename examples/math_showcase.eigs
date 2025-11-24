@@ -1,0 +1,73 @@
+# EigenScript Math Functions Showcase
+# Demonstrates the new mathematical built-in functions
+
+print of "=== Basic Math Functions ==="
+
+# Square root
+x is 16
+result is sqrt of x
+print of result
+
+# Absolute value
+y is 0 - 7
+abs_y is abs of y
+print of abs_y
+
+# Power function
+base is 2
+exponent is 10
+power is pow of [base, exponent]
+print of power
+
+print of "=== Exponential and Logarithmic ==="
+
+# Natural logarithm
+e_approx is 2.718281828
+ln_e is log of e_approx
+print of ln_e
+
+# Exponential function
+exp_1 is exp of 1
+print of exp_1
+
+print of "=== Trigonometric Functions ==="
+
+# Sine of 0
+sin_0 is sin of 0
+print of sin_0
+
+# Cosine of 0
+cos_0 is cos of 0
+print of cos_0
+
+print of "=== Rounding Functions ==="
+
+# Floor
+num1 is 3.7
+floor_num is floor of num1
+print of floor_num
+
+# Ceiling
+num2 is 3.2
+ceil_num is ceil of num2
+print of ceil_num
+
+# Round
+num3 is 3.5
+round_num is round of num3
+print of round_num
+
+print of "=== Practical Example: Pythagorean Theorem ==="
+
+# Calculate hypotenuse: c = sqrt(a^2 + b^2)
+a is 3
+b is 4
+
+a_squared is pow of [a, 2]
+b_squared is pow of [b, 2]
+sum_of_squares is a_squared + b_squared
+c is sqrt of sum_of_squares
+
+print of "For a right triangle with sides 3 and 4:"
+print of "Hypotenuse ="
+print of c
