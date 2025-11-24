@@ -403,24 +403,5 @@ print of result
         assert len(captured.out) > 0
 
 
-class TestFileOperations:
-    """Test file I/O operations."""
-
-    def test_file_read_write_cycle(self, interpreter, capsys):
-        """Test writing and reading a file."""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
-            temp_path = f.name
-            f.write("test content")
-
-        try:
-            code = f"""
-path is "{temp_path}"
-content is file_read of path
-print of content
-"""
-            run_code(code, interpreter)
-            captured = capsys.readouterr()
-            assert "test content" in captured.out
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
+# File operations are already tested in test_file_io.py
+# Removed test_file_read_write_cycle to avoid duplication
