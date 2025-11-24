@@ -53,7 +53,9 @@ class EigenControl:
         # Compute lightlike invariant: I = ||A - B||²
         diff = A.subtract(B)
         self.invariant = float(np.dot(diff.coords, diff.coords))
-        self.I = self.invariant  # noqa: E741 - Mathematical notation for Intensity metric
+        self.I = (  # noqa: E741 - Mathematical notation for Intensity metric
+            self.invariant
+        )
 
         # Derive all geometric properties from I
         self._compute_geometry()
