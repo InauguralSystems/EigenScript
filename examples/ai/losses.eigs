@@ -1,0 +1,51 @@
+# AI/ML Loss Functions Module
+
+define mse_loss as:
+    y_pred is n
+    y_true is 1.0
+    diff is y_pred - y_true
+    loss is diff * diff
+    return loss
+
+define mae_loss as:
+    y_pred is n
+    y_true is 1.0
+    diff is y_pred - y_true
+    if diff < 0:
+        abs_diff is 0 - diff
+        return abs_diff
+    return diff
+
+define huber_loss as:
+    y_pred is n
+    y_true is 1.0
+    diff is y_pred - y_true
+    if diff < 0:
+        abs_diff is 0 - diff
+    if diff >= 0:
+        abs_diff is diff
+    if abs_diff <= 1:
+        loss is 0.5 * diff * diff
+    if abs_diff > 1:
+        loss is abs_diff - 0.5
+    return loss
+
+define mse_gradient as:
+    y_pred is n
+    y_true is 1.0
+    gradient is 2 * (y_pred - y_true)
+    return gradient
+
+define l1_regularization as:
+    weight is n
+    lambda_reg is 0.01
+    if weight < 0:
+        abs_weight is 0 - weight
+        return lambda_reg * abs_weight
+    return lambda_reg * weight
+
+define l2_regularization as:
+    weight is n
+    lambda_reg is 0.01
+    reg_loss is lambda_reg * weight * weight
+    return reg_loss

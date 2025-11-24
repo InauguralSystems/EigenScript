@@ -1,0 +1,71 @@
+# AI/ML Training Example
+# Demonstrates using the AI modules to train a simple model
+
+# Import all AI modules
+import layers
+import optimizers
+import losses
+import utils
+
+# Data Preparation
+raw_input is 5
+normalized_input is utils.standardize of raw_input
+augmented_input is utils.add_gaussian_noise of normalized_input
+
+# Model Architecture - Layer 1
+layer1_output is layers.dense_forward of augmented_input
+layer1_activated is layers.relu of layer1_output
+
+# Model Architecture - Layer 2
+layer2_output is layers.dense_forward of layer1_activated
+final_output is layers.dropout of layer2_output
+
+# Loss Computation
+prediction is final_output
+loss is losses.mse_loss of prediction
+
+# Add Regularization
+weight is 0.5
+reg_loss is losses.l2_regularization of weight
+total_loss is loss + reg_loss
+
+# Optimization
+gradient is losses.mse_gradient of prediction
+clipped_gradient is optimizers.clip_gradient_norm of gradient
+updated_weight is optimizers.adam_step of weight
+
+# Learning Rate Schedule
+initial_lr is 0.001
+scheduled_lr is optimizers.lr_exponential_decay of initial_lr
+
+# Metrics
+train_accuracy is utils.accuracy of prediction
+train_precision is utils.precision of 5
+train_recall is utils.recall of 5
+f1 is utils.f1_score of train_precision
+
+# Training Loop Simulation - Epoch 1
+epoch1_loss is total_loss
+epoch1_weight is optimizers.sgd_step of updated_weight
+
+# Training Loop Simulation - Epoch 2
+epoch2_loss is losses.mae_loss of layer1_activated
+epoch2_weight is optimizers.sgd_with_momentum of epoch1_weight
+
+# Training Loop Simulation - Epoch 3
+epoch3_loss is losses.huber_loss of final_output
+epoch3_weight is optimizers.rmsprop_step of epoch2_weight
+
+# Model Evaluation
+relu_output is layers.relu of layer1_output
+leaky_relu_output is layers.leaky_relu of layer1_output
+
+# Test Different Loss Functions
+mse is losses.mse_loss of relu_output
+mae is losses.mae_loss of leaky_relu_output
+huber is losses.huber_loss of final_output
+
+# Final Results
+model_output is final_output
+model_loss is total_loss
+model_accuracy is train_accuracy
