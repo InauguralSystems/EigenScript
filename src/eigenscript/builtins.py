@@ -1757,6 +1757,240 @@ def builtin_reverse(target_list, space: LRVMSpace, metric: Any = None):
     return EigenList(reversed_elements)
 
 
+# ============================================================================
+# Matrix Operations for AI/ML
+# ============================================================================
+
+
+def builtin_matrix_create(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Create a matrix from a nested list.
+
+    Args:
+        arg: Nested EigenList to convert to matrix
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix object wrapped in LRVM vector
+
+    Example:
+        m is matrix of [[1, 2], [3, 4]]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList):
+        raise TypeError("matrix requires a list")
+
+    # Convert EigenList to nested Python list
+    def to_python_list(eigen_list):
+        result = []
+        for elem in eigen_list.elements:
+            if isinstance(elem, EigenList):
+                result.append(to_python_list(elem))
+            else:
+                # Decode LRVM vector to Python value
+                decoded = decode_vector(elem, space, metric)
+                result.append(
+                    float(decoded) if isinstance(decoded, (int, float)) else decoded
+                )
+        return result
+
+    data = to_python_list(arg)
+    matrix = Matrix(data)
+
+    # Store matrix in LRVM vector metadata
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = matrix
+    return result_vec
+
+
+def builtin_matrix_zeros(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Create a matrix of zeros.
+
+    Args:
+        arg: List of [rows, cols]
+        space: LRVM space
+        metric: Metric tensor (optional)
+
+    Returns:
+        Zero matrix
+
+    Example:
+        m is zeros of [3, 4]  # 3x4 zero matrix
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("zeros requires a list of [rows, cols]")
+
+    rows = int(decode_vector(arg.elements[0], space, metric))
+    cols = int(decode_vector(arg.elements[1], space, metric))
+
+    matrix = Matrix.zeros(rows, cols)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = matrix
+    return result_vec
+
+
+def builtin_matrix_ones(arg, space: LRVMSpace, metric: Any = None):
+    """Create a matrix of ones."""
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("ones requires a list of [rows, cols]")
+
+    rows = int(decode_vector(arg.elements[0], space, metric))
+    cols = int(decode_vector(arg.elements[1], space, metric))
+
+    matrix = Matrix.ones(rows, cols)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = matrix
+    return result_vec
+
+
+def builtin_matrix_identity(arg, space: LRVMSpace, metric: Any = None):
+    """Create an identity matrix."""
+    from eigenscript.semantic.matrix import Matrix
+
+    size = int(decode_vector(arg, space, metric))
+    matrix = Matrix.identity(size)
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = matrix
+    return result_vec
+
+
+def builtin_matrix_transpose(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Transpose a matrix.
+
+    Args:
+        arg: Matrix to transpose
+        space: LRVM space
+        metric: Metric tensor (optional)
+
+    Returns:
+        Transposed matrix
+
+    Example:
+        mt is transpose of m
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("transpose requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    transposed = matrix.transpose()
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = transposed
+    return result_vec
+
+
+def builtin_matrix_matmul(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Matrix multiplication.
+
+    Args:
+        arg: List of [matrix1, matrix2]
+        space: LRVM space
+        metric: Metric tensor (optional)
+
+    Returns:
+        Product matrix
+
+    Example:
+        c is matmul of [a, b]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("matmul requires a list of [matrix1, matrix2]")
+
+    m1_vec = arg.elements[0]
+    m2_vec = arg.elements[1]
+
+    if "matrix" not in m1_vec.metadata or "matrix" not in m2_vec.metadata:
+        raise TypeError("matmul requires two matrices")
+
+    m1 = m1_vec.metadata["matrix"]
+    m2 = m2_vec.metadata["matrix"]
+
+    result_matrix = m1.matmul(m2)
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_matrix_det(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Compute determinant of a matrix.
+
+    Args:
+        arg: Square matrix
+        space: LRVM space
+        metric: Metric tensor (optional)
+
+    Returns:
+        Determinant as scalar
+
+    Example:
+        d is det of m
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("det requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    determinant = matrix.det()
+
+    return space.embed(determinant)
+
+
+def builtin_matrix_inv(arg, space: LRVMSpace, metric: Any = None):
+    """Compute matrix inverse."""
+    if "matrix" not in arg.metadata:
+        raise TypeError("inv requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    inverse = matrix.inv()
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = inverse
+    return result_vec
+
+
+def builtin_matrix_eigenvalues(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Compute eigenvalues of a matrix.
+
+    Returns a list of eigenvalues.
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+
+    if "matrix" not in arg.metadata:
+        raise TypeError("eigenvalues requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    eigenvals, eigenvecs = matrix.eigenvalues()
+
+    # Convert eigenvalues to EigenList
+    eigen_list = []
+    for val in eigenvals:
+        # Handle complex eigenvalues
+        if isinstance(val, complex):
+            real_val = val.real
+        else:
+            real_val = float(val)
+        eigen_list.append(space.embed(real_val))
+
+    return EigenList(eigen_list)
+
+
 def get_builtins(space: LRVMSpace) -> dict:
     """
     Get all built-in functions for the EigenScript environment.
@@ -1981,6 +2215,48 @@ def get_builtins(space: LRVMSpace) -> dict:
         ),
         "reverse": BuiltinFunction(
             name="reverse", func=builtin_reverse, description="Reverse list order"
+        ),
+        # Matrix operations for AI/ML
+        "matrix": BuiltinFunction(
+            name="matrix",
+            func=builtin_matrix_create,
+            description="Create matrix from nested list",
+        ),
+        "zeros": BuiltinFunction(
+            name="zeros",
+            func=builtin_matrix_zeros,
+            description="Create matrix of zeros",
+        ),
+        "ones": BuiltinFunction(
+            name="ones", func=builtin_matrix_ones, description="Create matrix of ones"
+        ),
+        "identity": BuiltinFunction(
+            name="identity",
+            func=builtin_matrix_identity,
+            description="Create identity matrix",
+        ),
+        "transpose": BuiltinFunction(
+            name="transpose",
+            func=builtin_matrix_transpose,
+            description="Transpose a matrix",
+        ),
+        "matmul": BuiltinFunction(
+            name="matmul",
+            func=builtin_matrix_matmul,
+            description="Matrix multiplication",
+        ),
+        "det": BuiltinFunction(
+            name="det",
+            func=builtin_matrix_det,
+            description="Compute determinant",
+        ),
+        "inv": BuiltinFunction(
+            name="inv", func=builtin_matrix_inv, description="Compute matrix inverse"
+        ),
+        "eigenvalues": BuiltinFunction(
+            name="eigenvalues",
+            func=builtin_matrix_eigenvalues,
+            description="Compute eigenvalues",
         ),
     }
 
