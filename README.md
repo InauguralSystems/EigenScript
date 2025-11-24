@@ -77,7 +77,7 @@ MIT License — open, permissive, research-friendly.
 
 ## 🔷 Author
 
-**Jonathon McReynolds (@InauguralPhysicist)**  
+**Jonathon McReynolds**  
 Founder, **Inaugural Systems**  
 Army veteran · Cancer survivor · Self-taught physicist/engineer  
 
