@@ -1,0 +1,9 @@
+# Deep module in subpackage
+
+# Import from parent package using relative import
+from ..utils import triple
+from ..helpers import increment
+
+# Use imported functions
+x is triple of 5
+y is increment of x

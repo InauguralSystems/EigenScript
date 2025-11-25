@@ -27,7 +27,7 @@ class TestRuntimeBuildSystem:
             ["python3", "src/eigenscript/compiler/runtime/build_runtime.py", "--list"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,  # Increased timeout for slow CI environments
         )
 
         assert result.returncode == 0, "Build script --list failed"

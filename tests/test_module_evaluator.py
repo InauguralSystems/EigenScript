@@ -459,3 +459,150 @@ y is norm of -5
         assert "geometry" not in interp.environment.bindings
         # Both should be cached
         assert len(interp.loaded_modules) == 2
+
+    def test_relative_import_same_package(self):
+        """Test relative import from same package (from . import)."""
+        import os
+
+        # Load a module that uses relative imports
+        module_path = os.path.join(
+            os.path.dirname(__file__), "test_packages", "mypackage", "main.eigs"
+        )
+
+        with open(module_path, "r") as f:
+            source = f.read()
+
+        from eigenscript.lexer.tokenizer import Tokenizer
+        from eigenscript.parser.ast_builder import Parser
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        # Push the module path onto the stack to simulate being inside a module
+        interp.module_stack.append(module_path)
+
+        try:
+            result = interp.evaluate(ast)
+
+            # Check that relative imports worked
+            assert "double" in interp.environment.bindings
+            assert "magic_number" in interp.environment.bindings
+            assert "result" in interp.environment.bindings
+            assert "check" in interp.environment.bindings
+        finally:
+            interp.module_stack.pop()
+
+    def test_relative_import_parent_package(self):
+        """Test relative import from parent package (from .. import)."""
+        import os
+
+        # Load the deep module that imports from parent
+        module_path = os.path.join(
+            os.path.dirname(__file__),
+            "test_packages",
+            "mypackage",
+            "subpackage",
+            "deep.eigs",
+        )
+
+        with open(module_path, "r") as f:
+            source = f.read()
+
+        from eigenscript.lexer.tokenizer import Tokenizer
+        from eigenscript.parser.ast_builder import Parser
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        # Push the module path onto the stack to simulate being inside a module
+        interp.module_stack.append(module_path)
+
+        try:
+            result = interp.evaluate(ast)
+
+            # Check that relative imports from parent worked
+            assert "triple" in interp.environment.bindings
+            assert "increment" in interp.environment.bindings
+            assert "x" in interp.environment.bindings
+            assert "y" in interp.environment.bindings
+        finally:
+            interp.module_stack.pop()
+
+    def test_relative_import_without_context_fails(self):
+        """Test that relative imports fail outside module context."""
+        source = "from . import something"
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        # Don't push anything onto module_stack - no context
+
+        with pytest.raises(
+            ImportError, match="Relative import outside of package context"
+        ):
+            interp.evaluate(ast)
+
+    def test_relative_import_wildcard(self):
+        """Test relative wildcard import (from . import *)."""
+        import os
+        import tempfile
+
+        # Create a temporary module that uses relative wildcard import
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create utils module
+            utils_path = os.path.join(tmpdir, "utils.eigs")
+            with open(utils_path, "w") as f:
+                f.write(
+                    """
+define helper as:
+    return 100
+
+value is 42
+"""
+                )
+
+            # Create main module with relative wildcard import
+            main_path = os.path.join(tmpdir, "main.eigs")
+            with open(main_path, "w") as f:
+                f.write(
+                    """
+from .utils import *
+result is helper of 1
+check is value
+"""
+                )
+
+            # Read and evaluate main module
+            with open(main_path, "r") as f:
+                source = f.read()
+
+            from eigenscript.lexer.tokenizer import Tokenizer
+            from eigenscript.parser.ast_builder import Parser
+
+            tokenizer = Tokenizer(source)
+            tokens = tokenizer.tokenize()
+            parser = Parser(tokens)
+            ast = parser.parse()
+
+            interp = Interpreter()
+            interp.module_stack.append(main_path)
+
+            try:
+                result = interp.evaluate(ast)
+
+                # Check that wildcard relative import worked
+                assert "helper" in interp.environment.bindings
+                assert "value" in interp.environment.bindings
+                assert "result" in interp.environment.bindings
+                assert "check" in interp.environment.bindings
+            finally:
+                interp.module_stack.pop()

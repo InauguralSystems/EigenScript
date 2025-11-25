@@ -1,0 +1,11 @@
+# Utility functions for mypackage
+
+define double as:
+    x is n
+    return x + x
+
+define triple as:
+    x is n
+    return x + x + x
+
+magic_number is 42
