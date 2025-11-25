@@ -757,3 +757,226 @@ e_val is E
             assert "e_val" in interp.environment.bindings
         finally:
             os.chdir(original_cwd)
+
+    def test_import_hook_logging(self):
+        """Test import hook for logging imports."""
+        logged_imports = []
+
+        def logging_hook(name, path):
+            logged_imports.append((name, path))
+            return None  # Continue with normal loading
+
+        source = "import control"
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.register_import_hook(logging_hook)
+        interp.evaluate(ast)
+
+        # Hook should have been called
+        assert len(logged_imports) == 1
+        assert logged_imports[0][0] == "control"
+        assert "control.eigs" in logged_imports[0][1]
+
+    def test_import_hook_virtual_module(self):
+        """Test import hook providing a virtual module."""
+
+        def virtual_module_hook(name, path):
+            if name == "virtual":
+                # Return source for virtual module
+                return """
+magic_value is 42
+
+define double as:
+    x is n
+    return x * x
+"""
+            return None  # Fall back for other modules
+
+        source = """
+import virtual
+result is virtual.magic_value
+squared is virtual.double of 5
+"""
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.register_import_hook(virtual_module_hook)
+        interp.evaluate(ast)
+
+        # Virtual module should work
+        assert "virtual" in interp.environment.bindings
+        assert "result" in interp.environment.bindings
+        assert "squared" in interp.environment.bindings
+
+    def test_import_hook_source_transformation(self):
+        """Test import hook for transforming source code."""
+
+        def transform_hook(name, path):
+            if name == "control":
+                # Read file and add debugging
+                with open(path, "r") as f:
+                    source = f.read()
+                # Prepend a debug variable
+                return "debug_loaded is 1\n" + source
+            return None
+
+        source = """
+import control
+check is control.debug_loaded
+"""
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.register_import_hook(transform_hook)
+        interp.evaluate(ast)
+
+        # Transformed module should have debug variable
+        assert "control" in interp.environment.bindings
+        assert "check" in interp.environment.bindings
+
+    def test_import_hook_multiple_priority(self):
+        """Test that hooks are called in order and first match wins."""
+        calls = []
+
+        def hook1(name, path):
+            calls.append("hook1")
+            return None  # Pass to next hook
+
+        def hook2(name, path):
+            calls.append("hook2")
+            if name == "control":
+                return "test_value is 99"  # Provide source
+            return None
+
+        def hook3(name, path):
+            calls.append("hook3")
+            return None  # Should not be reached for control
+
+        source = "import control"
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.register_import_hook(hook1)
+        interp.register_import_hook(hook2)
+        interp.register_import_hook(hook3)
+        interp.evaluate(ast)
+
+        # Hooks 1 and 2 should be called, but not 3 (hook2 returned source)
+        assert calls == ["hook1", "hook2"]
+
+    def test_import_hook_unregister(self):
+        """Test unregistering import hooks."""
+        calls = []
+
+        def hook(name, path):
+            calls.append(name)
+            return None
+
+        source = "import control"
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.register_import_hook(hook)
+        interp.evaluate(ast)
+
+        assert len(calls) == 1
+
+        # Unregister and import another module
+        interp.unregister_import_hook(hook)
+
+        source2 = "import geometry"
+        tokenizer2 = Tokenizer(source2)
+        tokens2 = tokenizer2.tokenize()
+        parser2 = Parser(tokens2)
+        ast2 = parser2.parse()
+
+        interp.evaluate(ast2)
+
+        # Hook should not have been called again
+        assert len(calls) == 1
+
+    def test_import_hook_clear_all(self):
+        """Test clearing all import hooks."""
+        calls = []
+
+        def hook1(name, path):
+            calls.append("hook1")
+            return None
+
+        def hook2(name, path):
+            calls.append("hook2")
+            return None
+
+        interp = Interpreter()
+        interp.register_import_hook(hook1)
+        interp.register_import_hook(hook2)
+
+        source = "import control"
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp.evaluate(ast)
+        assert len(calls) == 2
+
+        # Clear all hooks
+        interp.clear_import_hooks()
+
+        source2 = "import geometry"
+        tokenizer2 = Tokenizer(source2)
+        tokens2 = tokenizer2.tokenize()
+        parser2 = Parser(tokens2)
+        ast2 = parser2.parse()
+
+        interp.evaluate(ast2)
+
+        # No new calls
+        assert len(calls) == 2
+
+    def test_import_hook_with_from_import(self):
+        """Test that import hooks work with from...import."""
+
+        def hook(name, path):
+            if name == "control":
+                return "custom_func is 123"
+            return None
+
+        source = """
+from control import custom_func
+result is custom_func
+"""
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.register_import_hook(hook)
+        interp.evaluate(ast)
+
+        # Hook-provided module should work with from...import
+        assert "custom_func" in interp.environment.bindings
+        assert "result" in interp.environment.bindings

@@ -7,7 +7,7 @@ in LRVM space.
 
 import numpy as np
 import os
-from typing import Dict, Optional, List, Union
+from typing import Dict, Optional, List, Union, Callable
 from dataclasses import dataclass
 from eigenscript.parser.ast_builder import (
     ASTNode,
@@ -250,6 +250,9 @@ class Interpreter:
         # Module loading
         self.loaded_modules: Dict[str, ModuleNamespace] = {}
         self.module_stack: List[str] = []  # Stack of module file paths being evaluated
+        self.import_hooks: List[Callable[[str, str], Optional[str]]] = (
+            []
+        )  # Import hooks for custom module loading
 
         # Convergence detection
         self.convergence_threshold = convergence_threshold
@@ -264,6 +267,46 @@ class Interpreter:
         builtins = get_builtins(self.space)
         for name, builtin_func in builtins.items():
             self.environment.bind(name, builtin_func)
+
+    def register_import_hook(self, hook: Callable[[str, str], Optional[str]]) -> None:
+        """
+        Register an import hook for custom module loading.
+
+        Import hooks are called when a module is being imported, allowing
+        custom behavior such as:
+        - Loading modules from non-standard locations
+        - Pre-processing module source before evaluation
+        - Virtual modules (modules that don't exist as files)
+        - Logging/debugging imports
+
+        Args:
+            hook: Callable that takes (module_name, module_path) and returns:
+                  - A string with module source code to use instead of file
+                  - None to fall back to default file loading
+                  - Can raise ImportError to prevent import
+
+        Example:
+            def logging_hook(name, path):
+                print(f"Loading module {name} from {path}")
+                return None  # Continue with normal loading
+
+            interp.register_import_hook(logging_hook)
+        """
+        self.import_hooks.append(hook)
+
+    def unregister_import_hook(self, hook: Callable[[str, str], Optional[str]]) -> None:
+        """
+        Unregister a previously registered import hook.
+
+        Args:
+            hook: The hook function to remove
+        """
+        if hook in self.import_hooks:
+            self.import_hooks.remove(hook)
+
+    def clear_import_hooks(self) -> None:
+        """Clear all registered import hooks."""
+        self.import_hooks.clear()
 
     def _create_of_vector(self) -> LRVMVector:
         """
@@ -1640,12 +1683,36 @@ class Interpreter:
         if module_name in self.loaded_modules:
             module_namespace = self.loaded_modules[module_name]
         else:
-            # Resolve module path
-            module_path = self._resolve_module_path(module_name)
+            # Try to resolve module path
+            module_path = None
+            try:
+                module_path = self._resolve_module_path(module_name)
+            except ImportError:
+                # Module not found on disk - try hooks with virtual path
+                module_path = f"<virtual:{module_name}>"
 
-            # Read and parse module
-            with open(module_path, "r") as f:
-                source = f.read()
+            # Invoke import hooks
+            source = None
+            for hook in self.import_hooks:
+                try:
+                    hook_result = hook(module_name, module_path)
+                    if hook_result is not None:
+                        source = hook_result
+                        break  # Use first hook that returns source
+                except Exception:
+                    # If hook raises, continue to next hook
+                    continue
+
+            # Fall back to reading from file if no hook provided source
+            if source is None:
+                # If path is virtual and no hook provided source, fail
+                if module_path.startswith("<virtual:"):
+                    raise ImportError(
+                        f"Cannot find module {module_name!r}. "
+                        f"Module does not exist and no import hook provided source."
+                    )
+                with open(module_path, "r") as f:
+                    source = f.read()
 
             from eigenscript.lexer.tokenizer import Tokenizer
             from eigenscript.parser.ast_builder import Parser
@@ -1720,12 +1787,42 @@ class Interpreter:
         if cache_key in self.loaded_modules:
             module_namespace = self.loaded_modules[cache_key]
         else:
-            # Resolve module path (with relative import support)
-            module_path = self._resolve_module_path(module_name, level)
+            # Try to resolve module path (with relative import support)
+            module_path = None
+            path_error = None
+            try:
+                module_path = self._resolve_module_path(module_name, level)
+            except ImportError as e:
+                path_error = e
+                # Check if it's a relative import context error
+                if "outside of package context" in str(e):
+                    # Re-raise immediately - this isn't a virtual module case
+                    raise
+                # Module not found on disk - try hooks with virtual path
+                module_path = f"<virtual:{cache_key}>"
 
-            # Read and parse module
-            with open(module_path, "r") as f:
-                source = f.read()
+            # Invoke import hooks
+            source = None
+            for hook in self.import_hooks:
+                try:
+                    hook_result = hook(cache_key, module_path)
+                    if hook_result is not None:
+                        source = hook_result
+                        break  # Use first hook that returns source
+                except Exception:
+                    # If hook raises, continue to next hook
+                    continue
+
+            # Fall back to reading from file if no hook provided source
+            if source is None:
+                # If path is virtual and no hook provided source, fail
+                if module_path.startswith("<virtual:"):
+                    raise ImportError(
+                        f"Cannot find module {cache_key!r}. "
+                        f"Module does not exist and no import hook provided source."
+                    )
+                with open(module_path, "r") as f:
+                    source = f.read()
 
             from eigenscript.lexer.tokenizer import Tokenizer
             from eigenscript.parser.ast_builder import Parser
