@@ -1547,7 +1547,10 @@ class Interpreter:
             current_dir = os.path.dirname(current_module_path)
 
             # Navigate up the directory tree
-            for _ in range(level):
+            # level=1 (.) means current directory (go up 0 times)
+            # level=2 (..) means parent directory (go up 1 time)
+            # level=3 (...) means grandparent directory (go up 2 times)
+            for _ in range(level - 1):
                 current_dir = os.path.dirname(current_dir)
 
             # If module_name is provided, append it

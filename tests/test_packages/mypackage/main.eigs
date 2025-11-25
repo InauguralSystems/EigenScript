@@ -1,0 +1,8 @@
+# Main module using relative imports
+
+# Import from sibling module in same directory
+from .utils import double, magic_number
+
+# Use the imported functions
+result is double of 10
+check is magic_number

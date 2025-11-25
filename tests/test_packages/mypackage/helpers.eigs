@@ -1,0 +1,9 @@
+# Helper functions
+
+define increment as:
+    x is n
+    return x + 1
+
+define decrement as:
+    x is n
+    return x - 1
