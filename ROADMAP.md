@@ -1,11 +1,11 @@
 # EigenScript Roadmap 🗺️
 
-**Version:** v0.3.0  
-**Last Updated:** 2025-11-23
+**Version:** v0.4.0
+**Last Updated:** 2025-11-25
 
 ## Overview
 
-EigenScript v0.3.0 has achieved native performance with the Scalar Fast Path compiler and now includes the EigenSpace Interactive Playground for web-based development. The roadmap ahead focuses on ecosystem growth, advanced features, and production hardening.
+EigenScript v0.4.0 expands on the foundation of v0.3.0 with a comprehensive module system, list comprehensions, and an extensive AI/ML standard library. The language now supports Python-style imports, package organization, and deep learning operations in semantic space. With 900+ passing tests and 79% code coverage, the focus ahead is on additional language features, production hardening, and ecosystem growth.
 
 ---
 
@@ -95,17 +95,38 @@ EigenScript v0.3.0 has achieved native performance with the Scalar Fast Path com
 
 ---
 
-## 📦 Phase 6: Language Features (Future)
+## 📦 Phase 6: Language Features (In Progress)
 **Goal:** Expand language expressiveness while maintaining performance.
 
-### Core Features
-* **Module System:** Namespaces, imports, and exports (`import geometry`).
+### ✅ Completed Features
+* **✅ Module System:** Full Python-style module support
+  * `import module` and `import module as alias`
+  * `from module import name1, name2` with selective imports
+  * `from module import name as alias` with aliasing
+  * `from module import *` with wildcard imports
+  * Relative imports (`.`, `..`) for package-relative imports
+  * Package support with `__init__.eigs` files
+  * Import hooks for custom module loading (virtual modules, source transformation)
+  * 37 comprehensive tests, all passing
+* **✅ List Comprehensions:** Concise list transformations
+  * `[x * 2 for x in numbers]` - basic comprehensions
+  * `[x for x in numbers if x > 5]` - filtering
+  * 19 comprehensive tests, all passing
+* **✅ AI/ML Standard Library:** Deep learning operations in semantic space
+  * **cnn.eigs** - 17 CNN operations (convolution, pooling, normalization, attention)
+  * **rnn.eigs** - 16 RNN/LSTM operations (cells, bidirectional, attention)
+  * **attention.eigs** - 23 Transformer components (multi-head, positional encodings, efficient variants)
+  * **advanced_optimizers.eigs** - 18 modern optimizers (AdamW, RAdam, LAMB, SAM, etc.)
+  * 32 comprehensive tests, all passing
+  * Examples: `ai_ml_demo.eigs`, `cnn_basics.eigs`, `transformer_basics.eigs`, `advanced_ai_integration.eigs`
+
+### 🎯 In Progress
 * **Type Annotations:** Optional static typing for stricter safety (`x: vector`).
 * **Pattern Matching:** Destructuring geometric states.
 * **Async/Await:** Non-blocking I/O operations.
 * **Operator Overloading:** Custom behavior for `+`, `-`, `of`.
 
-### Standard Library
+### Standard Library (Future)
 * **HTTP:** Built-in client/server for web services.
 * **Regex:** Pattern matching for strings.
 * **Database:** Connectors for SQL/NoSQL.
