@@ -1,0 +1,194 @@
+# Advanced Integration Example
+# Demonstrates EigenScript's module system + AI/ML capabilities
+
+# ========================================
+# Part 1: Building a Custom AI Training Loop
+# ========================================
+
+# Import AI/ML components
+from cnn import conv2d, batch_norm, relu, max_pool2d
+from rnn import lstm_cell, bidirectional_lstm
+from attention import transformer_encoder_layer, sinusoidal_position_encoding
+from advanced_optimizers import adamw, cosine_annealing, clip_by_global_norm
+
+# Import core geometry operations
+from geometry import norm, lerp, clamp
+from control import apply_damping, pid_step
+
+# Define hyperparameters
+learning_rate is 0.001
+batch_size is 32
+num_epochs is 100
+
+# ========================================
+# Part 2: CNN Feature Extractor
+# ========================================
+
+define cnn_feature_extractor as:
+    input is n
+
+    # Layer 1: Convolution + BatchNorm + ReLU
+    conv1 is conv2d of input
+    norm1 is batch_norm of conv1
+    act1 is relu of norm1
+    pool1 is max_pool2d of act1
+
+    # Layer 2: Convolution + BatchNorm + ReLU
+    conv2 is conv2d of pool1
+    norm2 is batch_norm of conv2
+    act2 is relu of norm2
+    pool2 is max_pool2d of act2
+
+    # Final features
+    return pool2
+
+
+# ========================================
+# Part 3: Sequence Processor
+# ========================================
+
+define sequence_processor as:
+    features is n
+
+    # Bidirectional LSTM for temporal context
+    bi_lstm_out is bidirectional_lstm of features
+
+    # Add positional encoding
+    positions is sinusoidal_position_encoding of bi_lstm_out
+
+    # Transformer encoder for self-attention
+    encoded is transformer_encoder_layer of positions
+
+    return encoded
+
+
+# ========================================
+# Part 4: Training Step with Optimizer
+# ========================================
+
+define training_step as:
+    model_weights is n
+    gradients is n
+    epoch is n
+
+    # Clip gradients to prevent exploding gradients
+    clipped_grads is clip_by_global_norm of gradients
+
+    # Apply AdamW optimizer
+    updated_weights is adamw of model_weights
+
+    # Get adaptive learning rate
+    current_lr is cosine_annealing of epoch
+
+    # Apply learning rate scaling
+    scaled_weights is updated_weights * current_lr
+
+    return scaled_weights
+
+
+# ========================================
+# Part 5: Full Forward Pass
+# ========================================
+
+# Sample input data
+input_data is 256
+
+# Step 1: Extract CNN features
+cnn_features is cnn_feature_extractor of input_data
+
+# Step 2: Process sequence
+seq_output is sequence_processor of cnn_features
+
+# Step 3: Training step
+model_params is seq_output
+gradient_values is 10
+current_epoch is 50
+
+updated_params is training_step of model_params
+
+
+# ========================================
+# Part 6: Control Theory Integration
+# ========================================
+
+# Use geometry module for vector operations
+feature_norm is norm of updated_params
+
+# Apply damping for stability
+damped_output is apply_damping of feature_norm
+
+# PID control for fine-tuning
+controlled_output is pid_step of damped_output
+
+# Clamp to valid range
+final_output is clamp of controlled_output
+
+
+# ========================================
+# Part 7: List Comprehensions for Batch Processing
+# ========================================
+
+# Create a batch of inputs
+batch_inputs is [32, 64, 128, 256, 512]
+
+# Process entire batch using list comprehension
+processed_batch is [cnn_feature_extractor of x for x in batch_inputs]
+
+# Filter high-activation features
+high_activations is [x for x in processed_batch if x > 100]
+
+# Apply transformation to batch
+normalized_batch is [norm of x for x in high_activations]
+
+
+# ========================================
+# Part 8: Wildcard Imports for Experimentation
+# ========================================
+
+# Import all RNN operations for quick prototyping
+from rnn import *
+
+# Try different RNN cells
+rnn_output is rnn_cell of input_data
+gru_output is gru_cell of input_data
+lstm_output is lstm_cell of input_data
+
+# Attention mechanisms
+attn_output is self_attention of lstm_output
+multi_attn is multi_head_attention of attn_output
+
+
+# ========================================
+# Part 9: Package-style Organization
+# ========================================
+
+# In a real project, you might organize as:
+# from models.vision import cnn_feature_extractor
+# from models.sequence import transformer_encoder
+# from training.optimizers import adamw
+# from utils.geometry import norm, clamp
+
+# This demonstrates how EigenScript's module system
+# enables clean, scalable project organization
+
+
+# ========================================
+# Part 10: Higher-Order Functions + Modules
+# ========================================
+
+# Define a custom training function that uses imports
+define train_with_optimizer as:
+    data is n
+    optimizer_fn is n  # Function as parameter
+
+    # Extract features
+    features is cnn_feature_extractor of data
+
+    # Apply optimizer (passed as function)
+    optimized is optimizer_fn of features
+
+    return optimized
+
+# Use it with different optimizers
+data_sample is 128
+adamw_result is train_with_optimizer of data_sample
