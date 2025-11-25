@@ -353,6 +353,24 @@ class Import(ASTNode):
 
 
 @dataclass
+class ImportFrom(ASTNode):
+    """
+    Represents a from...import statement.
+
+    Example:
+        from physics import gravity, velocity
+        from math import sqrt as square_root
+    """
+
+    module_name: str
+    names: List[str]  # Names to import
+    aliases: Optional[List[Optional[str]]] = None  # Optional aliases for each name
+
+    def __repr__(self) -> str:
+        return f"ImportFrom({self.module_name!r}, names={self.names}, aliases={self.aliases})"
+
+
+@dataclass
 class MemberAccess(ASTNode):
     """
     Represents accessing a member of a module or object.
@@ -498,6 +516,10 @@ class Parser:
             self.advance()
             return None
 
+        # FROM - from...import statement
+        if token.type == TokenType.FROM:
+            return self.parse_import_from()
+
         # IMPORT - import statement
         if token.type == TokenType.IMPORT:
             return self.parse_import()
@@ -587,6 +609,63 @@ class Parser:
             self.advance()
 
         return Import(module_name, alias)
+
+    def parse_import_from(self) -> ImportFrom:
+        """
+        Parse a from...import statement.
+
+        Grammar: FROM identifier IMPORT identifier (AS identifier)? (, identifier (AS identifier)?)*
+
+        Examples:
+            from physics import gravity
+            from math import sqrt, pow
+            from utils import norm as magnitude, clamp
+        """
+        self.expect(TokenType.FROM)
+
+        # Get module name
+        module_token = self.expect(TokenType.IDENTIFIER)
+        module_name = module_token.value
+
+        # Expect IMPORT keyword
+        self.expect(TokenType.IMPORT)
+
+        # Parse list of names to import
+        names = []
+        aliases = []
+
+        # Parse first name
+        name_token = self.expect(TokenType.IDENTIFIER)
+        names.append(name_token.value)
+
+        # Check for alias
+        if self.current_token() and self.current_token().type == TokenType.AS:
+            self.advance()  # consume AS
+            alias_token = self.expect(TokenType.IDENTIFIER)
+            aliases.append(alias_token.value)
+        else:
+            aliases.append(None)
+
+        # Parse additional names (comma-separated)
+        while self.current_token() and self.current_token().type == TokenType.COMMA:
+            self.advance()  # consume COMMA
+
+            name_token = self.expect(TokenType.IDENTIFIER)
+            names.append(name_token.value)
+
+            # Check for alias
+            if self.current_token() and self.current_token().type == TokenType.AS:
+                self.advance()  # consume AS
+                alias_token = self.expect(TokenType.IDENTIFIER)
+                aliases.append(alias_token.value)
+            else:
+                aliases.append(None)
+
+        # Consume newline if present
+        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            self.advance()
+
+        return ImportFrom(module_name, names, aliases)
 
     def parse_definition(self) -> FunctionDef:
         """

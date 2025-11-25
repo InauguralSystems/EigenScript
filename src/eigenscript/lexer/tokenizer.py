@@ -30,6 +30,7 @@ class TokenType(Enum):
     FOR = "FOR"
     IN = "IN"
     IMPORT = "IMPORT"
+    FROM = "FROM"
 
     # Interrogatives (geometric projection operators)
     WHO = "WHO"
@@ -132,6 +133,7 @@ class Tokenizer:
         "for": TokenType.FOR,
         "in": TokenType.IN,
         "import": TokenType.IMPORT,
+        "from": TokenType.FROM,
         # Interrogatives
         "who": TokenType.WHO,
         "what": TokenType.WHAT,

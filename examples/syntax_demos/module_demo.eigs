@@ -1,18 +1,60 @@
 # EigenScript Module System Demo
-# This demonstrates the new import and member access syntax
+# This demonstrates import and from...import syntax
+
+# ========================================
+# Part 1: Regular Import Syntax
+# ========================================
 
 # Import modules
-import physics
-import math as m
+import control
+import geometry as geo
 
-# Use imported module members
-x is 10
-gravity is physics.gravity
-pi_value is m.pi
+# Use imported module members with module prefix
+x is control.apply_damping of 10
+y is geo.norm of -5
 
 # Member access in expressions
-y is physics.gravity + 1
-z is m.pi * 2
+damped is control.pid_step of x
+distance is geo.distance_1d of 3
 
-# Chained member access (when nested modules are supported)
-# deep_value is module.submodule.property
+
+# ========================================
+# Part 2: From...Import Syntax
+# ========================================
+
+# Import specific names directly into namespace
+from control import apply_damping, convergence_check
+from geometry import norm
+
+# Use imported functions without module prefix
+velocity is apply_damping of 20
+is_converged is convergence_check of velocity
+
+# Functions work directly without module prefix
+magnitude is norm of -15
+
+
+# ========================================
+# Part 3: Import with Aliases
+# ========================================
+
+# Import with aliases for cleaner code
+from geometry import lerp as interpolate
+from control import pid_step as pid
+
+# Use aliased names
+control_signal is pid of 3
+base_val is interpolate of 5
+
+
+# ========================================
+# Part 4: Mixed Import Styles
+# ========================================
+
+# You can use both styles together
+import control as ctrl
+from geometry import norm
+
+# Both work in same code
+val1 is ctrl.apply_damping of 15
+val2 is norm of -7
