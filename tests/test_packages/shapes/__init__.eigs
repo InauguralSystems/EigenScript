@@ -1,0 +1,8 @@
+# Shapes package initialization
+# Import and re-export functions from submodules
+
+from .circle import area as circle_area, circumference
+from .rectangle import area as rectangle_area, perimeter
+
+# Package-level constant
+shapes_version is 2

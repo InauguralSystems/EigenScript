@@ -1555,20 +1555,31 @@ class Interpreter:
 
             # If module_name is provided, append it
             if module_name:
+                # Check for regular module file first
                 filename = f"{module_name}.eigs"
                 module_path = os.path.join(current_dir, filename)
+                if os.path.exists(module_path):
+                    return os.path.abspath(module_path)
+
+                # Check for package (module_name/__init__.eigs)
+                package_init = os.path.join(current_dir, module_name, "__init__.eigs")
+                if os.path.exists(package_init):
+                    return os.path.abspath(package_init)
+
+                raise ImportError(
+                    f"Cannot find relative module {'.' * level}{module_name}. "
+                    f"Searched at: {module_path} and {package_init}"
+                )
             else:
-                # Just the package directory itself (for "from . import")
-                # This would import __init__.eigs if it existed, but we'll handle that later
+                # Just the package directory itself (from . import X)
                 module_path = os.path.join(current_dir, "__init__.eigs")
+                if os.path.exists(module_path):
+                    return os.path.abspath(module_path)
 
-            if os.path.exists(module_path):
-                return os.path.abspath(module_path)
-
-            raise ImportError(
-                f"Cannot find relative module {'.' * level}{module_name}. "
-                f"Searched at: {module_path}"
-            )
+                raise ImportError(
+                    f"Cannot find relative module {'.' * level}. "
+                    f"Searched at: {module_path}"
+                )
 
         # Absolute import
         # Construct filename
@@ -1587,11 +1598,17 @@ class Interpreter:
         stdlib_dir = os.path.join(eigenscript_dir, "stdlib")
         search_paths.append(stdlib_dir)
 
-        # Search for module
+        # Search for module or package
         for search_dir in search_paths:
+            # First, check for regular module file (module_name.eigs)
             module_path = os.path.join(search_dir, filename)
             if os.path.exists(module_path):
                 return os.path.abspath(module_path)
+
+            # Second, check for package (module_name/__init__.eigs)
+            package_init = os.path.join(search_dir, module_name, "__init__.eigs")
+            if os.path.exists(package_init):
+                return os.path.abspath(package_init)
 
         # Module not found
         raise ImportError(
