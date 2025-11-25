@@ -28,6 +28,7 @@ from eigenscript.parser.ast_builder import (
     Identifier,
     Interrogative,
     Import,
+    ImportFrom,
     MemberAccess,
 )
 from eigenscript.semantic.lrvm import LRVMVector, LRVMSpace
@@ -359,6 +360,8 @@ class Interpreter:
             return self._eval_slice(node)
         elif isinstance(node, Import):
             return self._eval_import(node)
+        elif isinstance(node, ImportFrom):
+            return self._eval_import_from(node)
         elif isinstance(node, MemberAccess):
             return self._eval_member_access(node)
         else:
@@ -1615,6 +1618,85 @@ class Interpreter:
 
         # Bind module to alias in current environment
         self.environment.bind(alias, module_namespace)
+
+        # Return zero vector (imports are side-effecting)
+        return self.space.zero_vector()
+
+    def _eval_import_from(self, node: ImportFrom) -> LRVMVector:
+        """
+        Evaluate from...import statement.
+
+        Loads a module and binds specific names directly into current environment.
+
+        Args:
+            node: ImportFrom AST node
+
+        Returns:
+            Zero vector (imports are side-effecting)
+
+        Example:
+            from physics import gravity, velocity
+            from math import sqrt as square_root
+        """
+        module_name = node.module_name
+
+        # Load module (reuse existing logic)
+        if module_name in self.loaded_modules:
+            module_namespace = self.loaded_modules[module_name]
+        else:
+            # Resolve module path
+            module_path = self._resolve_module_path(module_name)
+
+            # Read and parse module
+            with open(module_path, "r") as f:
+                source = f.read()
+
+            from eigenscript.lexer.tokenizer import Tokenizer
+            from eigenscript.parser.ast_builder import Parser
+
+            tokenizer = Tokenizer(source)
+            tokens = tokenizer.tokenize()
+            parser = Parser(tokens)
+            module_ast = parser.parse()
+
+            # Create isolated environment for module
+            module_env = Environment()
+
+            # Load builtins into module environment
+            builtins = get_builtins(self.space)
+            for name, builtin_func in builtins.items():
+                module_env.bind(name, builtin_func)
+
+            # Save current environment and switch to module environment
+            saved_env = self.environment
+            self.environment = module_env
+
+            try:
+                # Evaluate module in its own environment
+                self.evaluate(module_ast)
+            finally:
+                # Restore original environment
+                self.environment = saved_env
+
+            # Create module namespace
+            module_namespace = ModuleNamespace(name=module_name, environment=module_env)
+
+            # Cache loaded module
+            self.loaded_modules[module_name] = module_namespace
+
+        # Import specific names from module into current environment
+        for i, name in enumerate(node.names):
+            # Look up the name in the module's environment
+            try:
+                value = module_namespace.environment.lookup(name)
+            except NameError:
+                raise ImportError(
+                    f"Cannot import name {name!r} from module {module_name!r}"
+                )
+
+            # Bind to alias if provided, otherwise use original name
+            alias = node.aliases[i] if node.aliases and node.aliases[i] else name
+            self.environment.bind(alias, value)
 
         # Return zero vector (imports are side-effecting)
         return self.space.zero_vector()
