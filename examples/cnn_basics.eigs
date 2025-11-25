@@ -1,0 +1,93 @@
+# CNN Basics - Introduction to Convolutional Neural Networks in EigenScript
+# This example demonstrates basic CNN operations
+
+# Import CNN operations
+from cnn import conv2d, max_pool2d, batch_norm, relu
+
+# ========================================
+# Simple CNN Layer
+# ========================================
+
+# Start with input features
+input is 100
+
+# Apply convolution to extract features
+features is conv2d of input
+
+# Apply max pooling for dimensionality reduction
+pooled is max_pool2d of features
+
+# Normalize the features
+normalized is batch_norm of pooled
+
+# Apply activation function
+output is relu of normalized
+
+
+# ========================================
+# Building Multiple Layers
+# ========================================
+
+# Layer 1
+layer1_input is 200
+layer1_conv is conv2d of layer1_input
+layer1_norm is batch_norm of layer1_conv
+layer1_out is relu of layer1_norm
+
+# Layer 2
+layer2_conv is conv2d of layer1_out
+layer2_pool is max_pool2d of layer2_conv
+layer2_norm is batch_norm of layer2_pool
+layer2_out is relu of layer2_norm
+
+# Layer 3
+layer3_conv is conv2d of layer2_out
+layer3_pool is max_pool2d of layer3_conv
+final_output is batch_norm of layer3_pool
+
+
+# ========================================
+# Using Different Activations
+# ========================================
+
+from cnn import leaky_relu, relu6
+
+x is 50
+
+# Standard ReLU
+relu_out is relu of x
+
+# Leaky ReLU (better gradient flow)
+leaky_out is leaky_relu of x
+
+# ReLU6 (capped activation)
+relu6_out is relu6 of x
+
+
+# ========================================
+# Attention-Enhanced CNN
+# ========================================
+
+from cnn import squeeze_excitation
+
+# Extract features
+cnn_features is conv2d of 128
+
+# Add channel attention
+attended_features is squeeze_excitation of cnn_features
+
+# Continue processing
+final_features is batch_norm of attended_features
+
+
+# ========================================
+# Residual Connection
+# ========================================
+
+from cnn import residual_block
+
+# Input
+residual_input is 64
+
+# Process through residual block (identity + transformation)
+residual_output is residual_block of residual_input

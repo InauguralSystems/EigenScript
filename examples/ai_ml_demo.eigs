@@ -1,0 +1,185 @@
+# AI/ML Standard Library Demo
+# Demonstrates CNN, RNN, Attention, and Optimizer operations
+
+# ========================================
+# Part 1: CNN Operations
+# ========================================
+
+import cnn
+
+# Basic convolution and pooling
+input_features is 128
+conv_out is cnn.conv2d of input_features
+pooled is cnn.max_pool2d of conv_out
+
+# Normalization
+normalized is cnn.batch_norm of pooled
+
+# Activation functions
+activated is cnn.relu of normalized
+
+# Attention mechanisms for CNNs
+se_features is cnn.squeeze_excitation of activated
+cbam_features is cnn.cbam_attention of se_features
+
+# Residual connections
+residual_out is cnn.residual_block of cbam_features
+
+
+# ========================================
+# Part 2: RNN/LSTM Operations
+# ========================================
+
+import rnn
+
+# Basic RNN cells
+hidden_state is 64
+rnn_out is rnn.rnn_cell of hidden_state
+gru_out is rnn.gru_cell of hidden_state
+lstm_out is rnn.lstm_cell of hidden_state
+
+# Bidirectional processing
+sequence is 50
+bi_lstm is rnn.bidirectional_lstm of sequence
+
+# Attention for sequences
+attended is rnn.self_attention of bi_lstm
+multi_head is rnn.multi_head_attention of attended
+
+# Positional encoding
+pos_encoded is rnn.positional_encoding of sequence
+
+
+# ========================================
+# Part 3: Transformer Attention
+# ========================================
+
+import attention
+
+# Core attention mechanisms
+query is 32
+key is 32
+value is 32
+attn_out is attention.scaled_dot_product_attention of query
+
+# Multi-head attention
+head1 is attention.transformer_attention_head of query
+heads_concat is attention.concat_attention_heads of head1
+
+# Transformer layers
+encoder_out is attention.transformer_encoder_layer of heads_concat
+decoder_out is attention.transformer_decoder_layer of encoder_out
+
+# Positional encodings
+sin_pos is attention.sinusoidal_position_encoding of 100
+rope is attention.rotary_position_embedding of 100
+
+# Efficient attention variants
+sparse is attention.sparse_attention of encoder_out
+linear_attn is attention.linear_attention of encoder_out
+
+
+# ========================================
+# Part 4: Advanced Optimizers
+# ========================================
+
+import advanced_optimizers
+
+# Model weights to optimize
+weights is 100
+
+# Adam variants
+adamw_updated is advanced_optimizers.adamw of weights
+radam_updated is advanced_optimizers.radam of weights
+lamb_updated is advanced_optimizers.lamb of weights
+
+# Meta-optimizers
+ranger_updated is advanced_optimizers.ranger of weights
+sam_updated is advanced_optimizers.sam_step of weights
+
+# Adaptive methods
+nadam_updated is advanced_optimizers.nadam of weights
+amsgrad_updated is advanced_optimizers.amsgrad of weights
+
+# Learning rate scheduling
+epoch is 10
+lr is advanced_optimizers.cosine_annealing of epoch
+warmup_lr is advanced_optimizers.warmup_cosine_schedule of epoch
+
+# Gradient operations
+gradient is 50
+clipped is advanced_optimizers.clip_by_global_norm of gradient
+normalized_grad is advanced_optimizers.normalize_gradients of gradient
+
+
+# ========================================
+# Part 5: Building a Complete Pipeline
+# ========================================
+
+# Selective imports for building a neural network
+from cnn import conv2d, batch_norm, relu, max_pool2d
+from rnn import lstm_cell, self_attention
+from attention import transformer_encoder_layer
+from advanced_optimizers import adamw, cosine_annealing
+
+# Input data
+input_data is 256
+
+# CNN feature extraction
+features1 is conv2d of input_data
+features2 is batch_norm of features1
+features3 is relu of features2
+features4 is max_pool2d of features3
+
+# Sequential processing with LSTM
+seq_out is lstm_cell of features4
+attended_seq is self_attention of seq_out
+
+# Transformer encoding
+encoded is transformer_encoder_layer of attended_seq
+
+# Optimization step
+optimized_weights is adamw of encoded
+
+# Learning rate for current epoch
+current_epoch is 25
+learning_rate is cosine_annealing of current_epoch
+
+
+# ========================================
+# Part 6: Using Wildcard Imports
+# ========================================
+
+# Import all CNN functions
+from cnn import *
+
+# Now all CNN functions are directly available
+x is 75
+conv_result is conv2d of x
+pool_result is max_pool2d of conv_result
+norm_result is batch_norm of pool_result
+activation is leaky_relu of norm_result
+
+
+# ========================================
+# Part 7: Advanced Patterns
+# ========================================
+
+# ResNet-style architecture simulation
+layer_input is 64
+layer1 is conv2d of layer_input
+layer2 is batch_norm of layer1
+layer3 is relu of layer2
+residual is residual_block of layer3
+
+# Attention-augmented CNN
+cnn_features is conv2d of 128
+se_attention is squeeze_excitation of cnn_features
+attended_cnn is cbam_attention of se_attention
+
+# Sequence-to-sequence with attention
+encoder_hidden is 96
+encoder_out_seq is lstm_cell of encoder_hidden
+decoder_input is encoder_out_seq
+decoder_out_seq is lstm_cell of decoder_input
+seq_attention is self_attention of decoder_out_seq

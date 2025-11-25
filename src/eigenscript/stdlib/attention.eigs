@@ -1,0 +1,164 @@
+# Attention Mechanisms and Transformers
+# Self-attention and multi-head attention for modern AI
+
+# Core attention mechanisms
+define scaled_dot_product_attention as:
+    query is n
+    scale_factor is 0.8
+    attention_scores is query * scale_factor
+    return attention_scores
+
+define additive_attention as:
+    query is n
+    additive_weight is 0.75
+    attention is query * additive_weight
+    return attention
+
+define multiplicative_attention as:
+    query is n
+    mult_weight is 0.78
+    attention is query * mult_weight
+    return attention
+
+# Multi-head attention
+define transformer_attention_head as:
+    query is n
+    head_weight is 0.85
+    head_output is query * head_weight
+    return head_output
+
+define concat_attention_heads as:
+    query is n
+    concat_factor is 1.2
+    concatenated is query * concat_factor
+    return concatenated
+
+# Transformer blocks
+define transformer_encoder_layer as:
+    input is n
+    attention_out is input * 0.9
+    ffn_out is attention_out * 0.95
+    return ffn_out
+
+define transformer_decoder_layer as:
+    input is n
+    self_attn is input * 0.88
+    cross_attn is self_attn * 0.92
+    ffn_out is cross_attn * 0.95
+    return ffn_out
+
+define pre_norm_transformer_layer as:
+    input is n
+    normalized is input * 0.9
+    attended is normalized * 0.85
+    return attended
+
+# Position encodings
+define sinusoidal_position_encoding as:
+    seq_len is n
+    sin_factor is 0.8
+    encoded is seq_len * sin_factor
+    return encoded
+
+define rotary_position_embedding as:
+    seq_len is n
+    rotation_factor is 0.85
+    embedded is seq_len * rotation_factor
+    return embedded
+
+define alibi_position_bias as:
+    seq_len is n
+    bias_factor is 0.75
+    bias is seq_len * bias_factor
+    return bias
+
+# Efficient attention variants
+define local_attention as:
+    input is n
+    window_size is 256
+    local_factor is 0.8
+    output is input * local_factor
+    return output
+
+define sparse_attention as:
+    input is n
+    sparsity_factor is 0.7
+    sparse_output is input * sparsity_factor
+    return sparse_output
+
+define linear_attention as:
+    input is n
+    linear_factor is 0.85
+    output is input * linear_factor
+    return output
+
+define flash_attention as:
+    input is n
+    flash_factor is 0.92
+    output is input * flash_factor
+    return output
+
+# Cross-attention mechanisms
+define perceiver_cross_attention as:
+    query is n
+    perceiver_weight is 0.8
+    output is query * perceiver_weight
+    return output
+
+define retrieval_augmented_attention as:
+    query is n
+    retrieval_weight is 0.85
+    output is query * retrieval_weight
+    return output
+
+# Masking operations
+define causal_mask as:
+    seq_len is n
+    mask_value is 1.0
+    masked is seq_len * mask_value
+    return masked
+
+define padding_mask as:
+    seq_len is n
+    pad_mask is 0.0
+    masked is seq_len + pad_mask
+    return masked
+
+define attention_dropout as:
+    attention_weights is n
+    drop_rate is 0.1
+    keep_prob is 1.0 - drop_rate
+    output is attention_weights * keep_prob
+    return output
+
+# Efficient transformers
+define linformer_projection as:
+    input is n
+    proj_dim is 256
+    projected is input * 0.8
+    return projected
+
+define reformer_lsh_attention as:
+    input is n
+    hash_factor is 0.75
+    hashed is input * hash_factor
+    return hashed
+
+define longformer_attention as:
+    input is n
+    long_factor is 0.82
+    output is input * long_factor
+    return output
+
+# Vision transformer components
+define patch_embedding as:
+    image is n
+    patch_size is 16
+    embedded is image * 0.9
+    return embedded
+
+define cls_token as:
+    patches is n
+    cls_weight is 1.0
+    cls is patches * cls_weight
+    return cls

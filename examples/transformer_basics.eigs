@@ -1,0 +1,145 @@
+# Transformer Basics - Introduction to Attention Mechanisms in EigenScript
+# This example demonstrates transformer and attention operations
+
+# Import attention operations
+from attention import scaled_dot_product_attention, transformer_encoder_layer, transformer_decoder_layer
+from attention import sinusoidal_position_encoding
+
+# ========================================
+# Basic Attention Mechanism
+# ========================================
+
+# Query, key, and value inputs
+query is 64
+
+# Compute attention
+attention_output is scaled_dot_product_attention of query
+
+
+# ========================================
+# Positional Encoding
+# ========================================
+
+# Sequence length
+sequence_length is 100
+
+# Add positional information
+positions is sinusoidal_position_encoding of sequence_length
+
+
+# ========================================
+# Transformer Encoder
+# ========================================
+
+# Input sequence with embeddings
+input_sequence is 128
+
+# Add positional encoding
+pos_encoded is sinusoidal_position_encoding of input_sequence
+
+# Pass through encoder layer
+encoded is transformer_encoder_layer of pos_encoded
+
+
+# ========================================
+# Transformer Decoder
+# ========================================
+
+# Decoder input
+decoder_input is 96
+
+# Pass through decoder layer
+decoded is transformer_decoder_layer of decoder_input
+
+
+# ========================================
+# Multi-Head Attention
+# ========================================
+
+from attention import transformer_attention_head, concat_attention_heads
+
+# Input for attention
+attn_input is 64
+
+# Process through attention head
+head_output is transformer_attention_head of attn_input
+
+# Concatenate multiple heads
+multi_head_output is concat_attention_heads of head_output
+
+
+# ========================================
+# Efficient Attention Variants
+# ========================================
+
+from attention import sparse_attention, linear_attention, local_attention
+
+# Input sequence (long context)
+long_sequence is 512
+
+# Use sparse attention for efficiency
+sparse_out is sparse_attention of long_sequence
+
+# Or use linear attention (O(n) complexity)
+linear_out is linear_attention of long_sequence
+
+# Or use local attention (windowed)
+local_out is local_attention of long_sequence
+
+
+# ========================================
+# Complete Transformer Stack
+# ========================================
+
+# Build a simple transformer
+
+# Input
+transformer_input is 256
+
+# Encoder stack
+encoder1 is transformer_encoder_layer of transformer_input
+encoder2 is transformer_encoder_layer of encoder1
+encoder3 is transformer_encoder_layer of encoder2
+
+# Decoder stack
+decoder1 is transformer_decoder_layer of encoder3
+decoder2 is transformer_decoder_layer of decoder1
+decoder3 is transformer_decoder_layer of decoder2
+
+# Final output
+transformer_output is decoder3
+
+
+# ========================================
+# Vision Transformer (ViT)
+# ========================================
+
+from attention import patch_embedding, cls_token
+
+# Image input
+image is 224
+
+# Split into patches and embed
+patches is patch_embedding of image
+
+# Add classification token
+cls is cls_token of patches
+
+# Process through transformer
+vit_encoded is transformer_encoder_layer of cls
+
+
+# ========================================
+# Advanced Positional Encodings
+# ========================================
+
+from attention import rotary_position_embedding, alibi_position_bias
+
+# Sequence
+seq is 200
+
+# Rotary position embeddings (RoPE)
+rope_encoded is rotary_position_embedding of seq
+
+# ALiBi position bias
+alibi_encoded is alibi_position_bias of seq
