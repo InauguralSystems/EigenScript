@@ -113,6 +113,7 @@ class ModuleNamespace:
 
     name: str
     environment: "Environment"
+    file_path: Optional[str] = None  # Absolute path to the module file
 
     def __repr__(self) -> str:
         return f"Module({self.name!r})"
@@ -248,6 +249,7 @@ class Interpreter:
 
         # Module loading
         self.loaded_modules: Dict[str, ModuleNamespace] = {}
+        self.module_stack: List[str] = []  # Stack of module file paths being evaluated
 
         # Convergence detection
         self.convergence_threshold = convergence_threshold
@@ -1506,24 +1508,66 @@ class Interpreter:
 
         return float(signature), classification
 
-    def _resolve_module_path(self, module_name: str) -> str:
+    def _resolve_module_path(self, module_name: str, level: int = 0) -> str:
         """
         Resolve a module name to a file path.
 
-        Search order:
+        Search order (for absolute imports, level=0):
         1. Current working directory
         2. EIGEN_PATH environment variable paths
         3. Standard library directory
 
+        For relative imports (level>0):
+        - Resolves relative to the current module's directory
+        - level=1: current package (.)
+        - level=2: parent package (..)
+        - etc.
+
         Args:
-            module_name: Module name (e.g., "physics", "control")
+            module_name: Module name (e.g., "physics", "control", or "" for relative-only)
+            level: Number of parent directories to go up (0 for absolute)
 
         Returns:
             Absolute path to module file
 
         Raises:
-            ImportError: If module cannot be found
+            ImportError: If module cannot be found or relative import without context
         """
+        # Handle relative imports
+        if level > 0:
+            # Relative imports require a module context
+            if not self.module_stack:
+                raise ImportError(
+                    "Relative import outside of package context. "
+                    "Relative imports can only be used within modules."
+                )
+
+            # Get current module's directory
+            current_module_path = self.module_stack[-1]
+            current_dir = os.path.dirname(current_module_path)
+
+            # Navigate up the directory tree
+            for _ in range(level):
+                current_dir = os.path.dirname(current_dir)
+
+            # If module_name is provided, append it
+            if module_name:
+                filename = f"{module_name}.eigs"
+                module_path = os.path.join(current_dir, filename)
+            else:
+                # Just the package directory itself (for "from . import")
+                # This would import __init__.eigs if it existed, but we'll handle that later
+                module_path = os.path.join(current_dir, "__init__.eigs")
+
+            if os.path.exists(module_path):
+                return os.path.abspath(module_path)
+
+            raise ImportError(
+                f"Cannot find relative module {'.' * level}{module_name}. "
+                f"Searched at: {module_path}"
+            )
+
+        # Absolute import
         # Construct filename
         filename = f"{module_name}.eigs"
 
@@ -1603,15 +1647,22 @@ class Interpreter:
             saved_env = self.environment
             self.environment = module_env
 
+            # Push module path onto stack for relative imports
+            self.module_stack.append(module_path)
+
             try:
                 # Evaluate module in its own environment
                 self.evaluate(module_ast)
             finally:
                 # Restore original environment
                 self.environment = saved_env
+                # Pop module from stack
+                self.module_stack.pop()
 
-            # Create module namespace
-            module_namespace = ModuleNamespace(name=module_name, environment=module_env)
+            # Create module namespace with file path
+            module_namespace = ModuleNamespace(
+                name=module_name, environment=module_env, file_path=module_path
+            )
 
             # Cache loaded module
             self.loaded_modules[module_name] = module_namespace
@@ -1640,13 +1691,17 @@ class Interpreter:
             from geometry import *
         """
         module_name = node.module_name
+        level = node.level
 
         # Load module (reuse existing logic)
-        if module_name in self.loaded_modules:
-            module_namespace = self.loaded_modules[module_name]
+        # For relative imports, use the module_name and level to create a cache key
+        cache_key = module_name if level == 0 else f"{'.' * level}{module_name}"
+
+        if cache_key in self.loaded_modules:
+            module_namespace = self.loaded_modules[cache_key]
         else:
-            # Resolve module path
-            module_path = self._resolve_module_path(module_name)
+            # Resolve module path (with relative import support)
+            module_path = self._resolve_module_path(module_name, level)
 
             # Read and parse module
             with open(module_path, "r") as f:
@@ -1672,18 +1727,25 @@ class Interpreter:
             saved_env = self.environment
             self.environment = module_env
 
+            # Push module path onto stack for relative imports
+            self.module_stack.append(module_path)
+
             try:
                 # Evaluate module in its own environment
                 self.evaluate(module_ast)
             finally:
                 # Restore original environment
                 self.environment = saved_env
+                # Pop module from stack
+                self.module_stack.pop()
 
-            # Create module namespace
-            module_namespace = ModuleNamespace(name=module_name, environment=module_env)
+            # Create module namespace with file path
+            module_namespace = ModuleNamespace(
+                name=cache_key, environment=module_env, file_path=module_path
+            )
 
             # Cache loaded module
-            self.loaded_modules[module_name] = module_namespace
+            self.loaded_modules[cache_key] = module_namespace
 
         # Handle wildcard import (from module import *)
         if node.wildcard:

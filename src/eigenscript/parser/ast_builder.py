@@ -361,17 +361,23 @@ class ImportFrom(ASTNode):
         from physics import gravity, velocity
         from math import sqrt as square_root
         from geometry import *
+        from . import sibling
+        from .. import parent
+        from .submodule import function
     """
 
-    module_name: str
+    module_name: str  # Module name (can be "" for relative imports like "from . import")
     names: List[str]  # Names to import (empty list if wildcard)
     aliases: Optional[List[Optional[str]]] = None  # Optional aliases for each name
     wildcard: bool = False  # True for "from module import *"
+    level: int = 0  # Relative import level (0=absolute, 1=., 2=.., etc.)
 
     def __repr__(self) -> str:
+        prefix = "." * self.level if self.level > 0 else ""
+        module = prefix + self.module_name if self.module_name else prefix
         if self.wildcard:
-            return f"ImportFrom({self.module_name!r}, wildcard=True)"
-        return f"ImportFrom({self.module_name!r}, names={self.names}, aliases={self.aliases})"
+            return f"ImportFrom({module!r}, wildcard=True)"
+        return f"ImportFrom({module!r}, names={self.names}, aliases={self.aliases})"
 
 
 @dataclass
@@ -618,19 +624,31 @@ class Parser:
         """
         Parse a from...import statement.
 
-        Grammar: FROM identifier IMPORT (MULTIPLY | identifier (AS identifier)? (, identifier (AS identifier)?)*)
+        Grammar: FROM (DOT* identifier | DOT+) IMPORT (MULTIPLY | identifier (AS identifier)? (, identifier (AS identifier)?)*)
 
         Examples:
             from physics import gravity
             from math import sqrt, pow
             from utils import norm as magnitude, clamp
             from geometry import *
+            from . import sibling
+            from .. import parent
+            from .submodule import function
         """
         self.expect(TokenType.FROM)
 
-        # Get module name
-        module_token = self.expect(TokenType.IDENTIFIER)
-        module_name = module_token.value
+        # Count leading dots for relative imports
+        level = 0
+        while self.current_token() and self.current_token().type == TokenType.DOT:
+            level += 1
+            self.advance()
+
+        # Get module name (optional for relative imports)
+        module_name = ""
+        if self.current_token() and self.current_token().type == TokenType.IDENTIFIER:
+            module_token = self.current_token()
+            module_name = module_token.value
+            self.advance()
 
         # Expect IMPORT keyword
         self.expect(TokenType.IMPORT)
@@ -643,7 +661,7 @@ class Parser:
             if self.current_token() and self.current_token().type == TokenType.NEWLINE:
                 self.advance()
 
-            return ImportFrom(module_name, [], None, wildcard=True)
+            return ImportFrom(module_name, [], None, wildcard=True, level=level)
 
         # Parse list of names to import
         names = []
@@ -680,7 +698,7 @@ class Parser:
         if self.current_token() and self.current_token().type == TokenType.NEWLINE:
             self.advance()
 
-        return ImportFrom(module_name, names, aliases)
+        return ImportFrom(module_name, names, aliases, level=level)
 
     def parse_definition(self) -> FunctionDef:
         """
