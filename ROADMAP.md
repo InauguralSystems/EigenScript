@@ -119,6 +119,13 @@ EigenScript v0.4.0 expands on the foundation of v0.3.0 with a comprehensive modu
   * **advanced_optimizers.eigs** - 18 modern optimizers (AdamW, RAdam, LAMB, SAM, etc.)
   * 32 comprehensive tests, all passing
   * Examples: `ai_ml_demo.eigs`, `cnn_basics.eigs`, `transformer_basics.eigs`, `advanced_ai_integration.eigs`
+* **✅ Statistics Standard Library:** Statistical analysis and data science
+  * **statistics.eigs** - 40+ statistical functions (mean, std, variance, correlation, normalization, outlier detection)
+  * Measures of central tendency, spread, quantiles, distribution properties
+  * Time series analysis (moving averages, exponential smoothing)
+  * Data preprocessing and normalization for ML workflows
+  * 28 comprehensive tests, all passing
+  * Example: `statistics_demo.eigs`
 
 ### 🎯 In Progress
 * **Type Annotations:** Optional static typing for stricter safety (`x: vector`).

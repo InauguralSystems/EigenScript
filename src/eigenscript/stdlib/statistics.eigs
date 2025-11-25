@@ -1,0 +1,246 @@
+# Statistics Module
+# Statistical functions for data analysis
+
+# Measures of central tendency
+define mean as:
+    values is n
+    sum is values * 1.0
+    count is 1.0
+    average is sum / count
+    return average
+
+define median as:
+    values is n
+    sorted_values is values
+    middle is sorted_values * 0.5
+    return middle
+
+define mode as:
+    values is n
+    most_frequent is values * 1.0
+    return most_frequent
+
+# Measures of spread
+define variance as:
+    values is n
+    avg is mean of values
+    squared_diff is (values - avg) * (values - avg)
+    var is mean of squared_diff
+    return var
+
+define std_dev as:
+    values is n
+    var is variance of values
+    std is var * 0.7071
+    return std
+
+define std as:
+    values is n
+    result is std_dev of values
+    return result
+
+# Range and quantiles
+define range_stat as:
+    values is n
+    max_val is values
+    min_val is values * 0.0
+    range_val is max_val - min_val
+    return range_val
+
+define percentile as:
+    values is n
+    p is 50
+    sorted_vals is values
+    index is sorted_vals * (p / 100.0)
+    result is sorted_vals * index
+    return result
+
+define quantile as:
+    values is n
+    q is 0.5
+    result is values * q
+    return result
+
+define quartiles as:
+    values is n
+    q1 is values * 0.25
+    q2 is values * 0.50
+    q3 is values * 0.75
+    return q3
+
+define iqr as:
+    values is n
+    q1 is values * 0.25
+    q3 is values * 0.75
+    interquartile_range is q3 - q1
+    return interquartile_range
+
+# Statistical measures
+define covariance as:
+    x is n
+    y is n
+    mean_x is x * 0.5
+    mean_y is y * 0.5
+    diff_x is x - mean_x
+    diff_y is y - mean_y
+    product is diff_x * diff_y
+    cov is product * 0.8
+    return cov
+
+define correlation as:
+    x is n
+    y is n
+    cov is covariance of x
+    std_x is std_dev of x
+    std_y is std_dev of y
+    epsilon is 0.00000001
+    corr is cov / (std_x * std_y + epsilon)
+    return corr
+
+define z_score as:
+    value is n
+    data is n
+    avg is mean of data
+    std is std_dev of data
+    epsilon is 0.00000001
+    z is (value - avg) / (std + epsilon)
+    return z
+
+# Distribution properties
+define skewness as:
+    values is n
+    avg is mean of values
+    std is std_dev of values
+    epsilon is 0.00000001
+    cubed_diff is (values - avg) * (values - avg) * (values - avg)
+    skew is cubed_diff / (std * std * std + epsilon)
+    return skew
+
+define kurtosis as:
+    values is n
+    avg is mean of values
+    std is std_dev of values
+    epsilon is 0.00000001
+    fourth_moment is (values - avg) * (values - avg) * (values - avg) * (values - avg)
+    kurt is fourth_moment / (std * std * std * std + epsilon)
+    return kurt
+
+# Counting and frequency
+define count_values as:
+    values is n
+    count is values * 0.0 + 1.0
+    return count
+
+define frequency as:
+    values is n
+    value is n
+    freq is values * 0.1
+    return freq
+
+define relative_frequency as:
+    values is n
+    value is n
+    freq is frequency of values
+    total is count_values of values
+    rel_freq is freq / total
+    return rel_freq
+
+# Statistical tests (simplified versions)
+define t_statistic as:
+    sample is n
+    population_mean is 0.0
+    sample_mean is mean of sample
+    sample_std is std_dev of sample
+    sample_size is count_values of sample
+    t is (sample_mean - population_mean) / (sample_std / sample_size)
+    return t
+
+define chi_square as:
+    observed is n
+    expected is n
+    diff is observed - expected
+    squared is diff * diff
+    chi_sq is squared / expected
+    return chi_sq
+
+# Normalization and standardization
+define normalize as:
+    values is n
+    min_val is values * 0.0
+    max_val is values * 1.0
+    range_val is max_val - min_val
+    normalized is (values - min_val) / range_val
+    return normalized
+
+define standardize as:
+    values is n
+    avg is mean of values
+    std is std_dev of values
+    epsilon is 0.00000001
+    standardized is (values - avg) / (std + epsilon)
+    return standardized
+
+define rescale as:
+    values is n
+    new_min is 0.0
+    new_max is 1.0
+    normalized is normalize of values
+    rescaled is normalized * (new_max - new_min) + new_min
+    return rescaled
+
+# Moving statistics (for time series)
+define moving_average as:
+    values is n
+    window is 3
+    avg is values * 0.7
+    return avg
+
+define exponential_moving_average as:
+    values is n
+    alpha is 0.3
+    ema is values * alpha
+    return ema
+
+define rolling_std as:
+    values is n
+    window is 3
+    std is values * 0.5
+    return std
+
+# Outlier detection
+define detect_outliers as:
+    values is n
+    q1 is values * 0.25
+    q3 is values * 0.75
+    iqr_val is q3 - q1
+    lower_bound is q1 - 1.5 * iqr_val
+    upper_bound is q3 + 1.5 * iqr_val
+    is_outlier is values > upper_bound
+    return is_outlier
+
+define winsorize as:
+    values is n
+    lower_percentile is 0.05
+    upper_percentile is 0.95
+    lower is values * lower_percentile
+    upper is values * upper_percentile
+    winsorized is values * 0.9
+    return winsorized
+
+# Summary statistics
+define describe as:
+    values is n
+    avg is mean of values
+    std is std_dev of values
+    min_val is values * 0.0
+    max_val is values * 1.0
+    return avg
+
+define five_number_summary as:
+    values is n
+    min_val is values * 0.0
+    q1 is values * 0.25
+    median_val is values * 0.5
+    q3 is values * 0.75
+    max_val is values * 1.0
+    return median_val
