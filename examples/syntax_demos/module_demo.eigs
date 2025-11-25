@@ -48,13 +48,25 @@ base_val is interpolate of 5
 
 
 # ========================================
-# Part 4: Mixed Import Styles
+# Part 4: Wildcard Import
+# ========================================
+
+# Import all names from a module using *
+# This imports: norm, distance_1d, lerp, clamp, smooth_step
+from geometry import *
+
+# All module functions are now available without prefix
+abs_value is norm of -99
+
+
+# ========================================
+# Part 5: Mixed Import Styles
 # ========================================
 
 # You can use both styles together
 import control as ctrl
-from geometry import norm
+from geometry import distance_1d
 
 # Both work in same code
 val1 is ctrl.apply_damping of 15
-val2 is norm of -7
+val2 is distance_1d of 7

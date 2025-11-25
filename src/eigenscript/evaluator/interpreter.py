@@ -1637,6 +1637,7 @@ class Interpreter:
         Example:
             from physics import gravity, velocity
             from math import sqrt as square_root
+            from geometry import *
         """
         module_name = node.module_name
 
@@ -1684,19 +1685,30 @@ class Interpreter:
             # Cache loaded module
             self.loaded_modules[module_name] = module_namespace
 
-        # Import specific names from module into current environment
-        for i, name in enumerate(node.names):
-            # Look up the name in the module's environment
-            try:
-                value = module_namespace.environment.lookup(name)
-            except NameError:
-                raise ImportError(
-                    f"Cannot import name {name!r} from module {module_name!r}"
-                )
+        # Handle wildcard import (from module import *)
+        if node.wildcard:
+            # Get builtins to exclude them from wildcard import
+            builtins = get_builtins(self.space)
+            builtin_names = set(builtins.keys())
 
-            # Bind to alias if provided, otherwise use original name
-            alias = node.aliases[i] if node.aliases and node.aliases[i] else name
-            self.environment.bind(alias, value)
+            # Import all names from module except builtins
+            for name, value in module_namespace.environment.bindings.items():
+                if name not in builtin_names:
+                    self.environment.bind(name, value)
+        else:
+            # Import specific names from module into current environment
+            for i, name in enumerate(node.names):
+                # Look up the name in the module's environment
+                try:
+                    value = module_namespace.environment.lookup(name)
+                except NameError:
+                    raise ImportError(
+                        f"Cannot import name {name!r} from module {module_name!r}"
+                    )
+
+                # Bind to alias if provided, otherwise use original name
+                alias = node.aliases[i] if node.aliases and node.aliases[i] else name
+                self.environment.bind(alias, value)
 
         # Return zero vector (imports are side-effecting)
         return self.space.zero_vector()

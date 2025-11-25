@@ -360,13 +360,17 @@ class ImportFrom(ASTNode):
     Example:
         from physics import gravity, velocity
         from math import sqrt as square_root
+        from geometry import *
     """
 
     module_name: str
-    names: List[str]  # Names to import
+    names: List[str]  # Names to import (empty list if wildcard)
     aliases: Optional[List[Optional[str]]] = None  # Optional aliases for each name
+    wildcard: bool = False  # True for "from module import *"
 
     def __repr__(self) -> str:
+        if self.wildcard:
+            return f"ImportFrom({self.module_name!r}, wildcard=True)"
         return f"ImportFrom({self.module_name!r}, names={self.names}, aliases={self.aliases})"
 
 
@@ -614,12 +618,13 @@ class Parser:
         """
         Parse a from...import statement.
 
-        Grammar: FROM identifier IMPORT identifier (AS identifier)? (, identifier (AS identifier)?)*
+        Grammar: FROM identifier IMPORT (MULTIPLY | identifier (AS identifier)? (, identifier (AS identifier)?)*)
 
         Examples:
             from physics import gravity
             from math import sqrt, pow
             from utils import norm as magnitude, clamp
+            from geometry import *
         """
         self.expect(TokenType.FROM)
 
@@ -629,6 +634,16 @@ class Parser:
 
         # Expect IMPORT keyword
         self.expect(TokenType.IMPORT)
+
+        # Check for wildcard import (*)
+        if self.current_token() and self.current_token().type == TokenType.MULTIPLY:
+            self.advance()  # consume *
+
+            # Consume newline if present
+            if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+                self.advance()
+
+            return ImportFrom(module_name, [], None, wildcard=True)
 
         # Parse list of names to import
         names = []

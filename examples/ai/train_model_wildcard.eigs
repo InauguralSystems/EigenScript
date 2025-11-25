@@ -1,0 +1,71 @@
+# AI/ML Training Example (Wildcard Import Version)
+# This version uses wildcard imports for maximum convenience
+
+# Import everything from AI modules
+from utils import *
+from layers import *
+from losses import *
+from optimizers import *
+
+# Data Preparation
+raw_input is 5
+normalized_input is standardize of raw_input
+augmented_input is add_gaussian_noise of normalized_input
+
+# Model Architecture - Layer 1
+layer1_output is dense_forward of augmented_input
+layer1_activated is relu of layer1_output
+
+# Model Architecture - Layer 2
+layer2_output is dense_forward of layer1_activated
+final_output is dropout of layer2_output
+
+# Loss Computation
+prediction is final_output
+loss is mse_loss of prediction
+
+# Add Regularization
+weight is 0.5
+reg_loss is l2_regularization of weight
+total_loss is loss + reg_loss
+
+# Optimization
+gradient is mse_gradient of prediction
+clipped_gradient is clip_gradient_norm of gradient
+updated_weight is adam_step of weight
+
+# Learning Rate Schedule
+initial_lr is 0.001
+scheduled_lr is lr_exponential_decay of initial_lr
+
+# Metrics
+train_accuracy is accuracy of prediction
+train_precision is precision of 5
+train_recall is recall of 5
+f1 is f1_score of train_precision
+
+# Training Loop Simulation - Epoch 1
+epoch1_loss is total_loss
+epoch1_weight is sgd_step of updated_weight
+
+# Training Loop Simulation - Epoch 2
+epoch2_loss is mae_loss of layer1_activated
+epoch2_weight is sgd_with_momentum of epoch1_weight
+
+# Training Loop Simulation - Epoch 3
+epoch3_loss is huber_loss of final_output
+epoch3_weight is rmsprop_step of epoch2_weight
+
+# Model Evaluation
+relu_output is relu of layer1_output
+leaky_relu_output is leaky_relu of layer1_output
+
+# Test Different Loss Functions
+mse is mse_loss of relu_output
+mae is mae_loss of leaky_relu_output
+huber is huber_loss of final_output
+
+# Final Results
+model_output is final_output
+model_loss is total_loss
+model_accuracy is train_accuracy

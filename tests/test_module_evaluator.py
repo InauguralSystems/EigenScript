@@ -344,3 +344,118 @@ result2 is apply_damping of 10
         assert "apply_damping" in interp.environment.bindings
         assert "result" in interp.environment.bindings
         assert "result2" in interp.environment.bindings
+
+    def test_from_import_wildcard(self):
+        """Test wildcard import (from module import *)."""
+        source = """
+from geometry import *
+result is norm of -5
+"""
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        result = interp.evaluate(ast)
+
+        # All functions from geometry should be accessible
+        assert "norm" in interp.environment.bindings
+        assert "distance_1d" in interp.environment.bindings
+        assert "lerp" in interp.environment.bindings
+        assert "clamp" in interp.environment.bindings
+        assert "smooth_step" in interp.environment.bindings
+        # Module itself should NOT be bound
+        assert "geometry" not in interp.environment.bindings
+        # Result should be computed
+        assert "result" in interp.environment.bindings
+
+    def test_from_import_wildcard_excludes_builtins(self):
+        """Test that wildcard import doesn't overwrite builtins."""
+        source = """
+from control import *
+"""
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        # Store original print builtin
+        original_print = interp.environment.bindings["print"]
+
+        interp.evaluate(ast)
+
+        # Module functions should be imported
+        assert "apply_damping" in interp.environment.bindings
+        assert "pid_step" in interp.environment.bindings
+        # Builtins should not be overwritten
+        assert interp.environment.bindings["print"] is original_print
+
+    def test_from_import_wildcard_with_usage(self):
+        """Test using wildcard imported functions."""
+        source = """
+from control import *
+x is apply_damping of 10
+y is pid_step of 5
+z is convergence_check of 1
+"""
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.evaluate(ast)
+
+        # All imported functions should work
+        assert "apply_damping" in interp.environment.bindings
+        assert "pid_step" in interp.environment.bindings
+        assert "convergence_check" in interp.environment.bindings
+        assert "x" in interp.environment.bindings
+        assert "y" in interp.environment.bindings
+        assert "z" in interp.environment.bindings
+
+    def test_from_import_wildcard_caching(self):
+        """Test that wildcard imports use module cache."""
+        source = """
+from control import *
+from control import apply_damping
+"""
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.evaluate(ast)
+
+        # Module should only be loaded once
+        assert len(interp.loaded_modules) == 1
+        assert "control" in interp.loaded_modules
+
+    def test_from_import_wildcard_mixed_with_regular_import(self):
+        """Test mixing wildcard import with regular imports."""
+        source = """
+import control
+from geometry import *
+x is control.apply_damping of 10
+y is norm of -5
+"""
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter()
+        interp.evaluate(ast)
+
+        # Regular import should bind module
+        assert "control" in interp.environment.bindings
+        # Wildcard should import all geometry functions
+        assert "norm" in interp.environment.bindings
+        assert "lerp" in interp.environment.bindings
+        # Module name should NOT be bound for wildcard
+        assert "geometry" not in interp.environment.bindings
+        # Both should be cached
+        assert len(interp.loaded_modules) == 2
