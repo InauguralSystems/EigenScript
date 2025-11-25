@@ -366,7 +366,9 @@ class ImportFrom(ASTNode):
         from .submodule import function
     """
 
-    module_name: str  # Module name (can be "" for relative imports like "from . import")
+    module_name: (
+        str  # Module name (can be "" for relative imports like "from . import")
+    )
     names: List[str]  # Names to import (empty list if wildcard)
     aliases: Optional[List[Optional[str]]] = None  # Optional aliases for each name
     wildcard: bool = False  # True for "from module import *"
