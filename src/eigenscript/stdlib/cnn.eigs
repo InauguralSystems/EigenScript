@@ -1,0 +1,160 @@
+# CNN (Convolutional Neural Networks) Operations
+# Geometric transformations for convolutional architectures
+
+# Convolution operations
+define conv2d as:
+    input is n
+    kernel_weight is 0.8
+    output is input * kernel_weight
+    return output
+
+define conv1d as:
+    input is n
+    kernel_weight is 0.75
+    output is input * kernel_weight
+    return output
+
+define depthwise_conv2d as:
+    input is n
+    depthwise_weight is 0.7
+    output is input * depthwise_weight
+    return output
+
+# Pooling operations
+define max_pool2d as:
+    input is n
+    pooling_factor is 0.5
+    output is input * pooling_factor
+    return output
+
+define avg_pool2d as:
+    input is n
+    pooling_factor is 0.6
+    output is input * pooling_factor
+    return output
+
+define global_avg_pool as:
+    input is n
+    global_factor is 0.4
+    output is input * global_factor
+    return output
+
+define adaptive_pool as:
+    input is n
+    adaptive_factor is 0.55
+    output is input * adaptive_factor
+    return output
+
+# Normalization operations
+define batch_norm as:
+    input is n
+    mean is input * 0.5
+    variance is 1.0
+    normalized is (input - mean) / variance
+    return normalized
+
+define layer_norm as:
+    input is n
+    norm_factor is 0.9
+    output is input * norm_factor
+    return output
+
+define instance_norm as:
+    input is n
+    instance_factor is 0.85
+    output is input * instance_factor
+    return output
+
+define group_norm as:
+    input is n
+    group_factor is 0.88
+    output is input * group_factor
+    return output
+
+# Activation functions
+define relu as:
+    x is n
+    if x < 0:
+        return 0
+    return x
+
+define relu6 as:
+    x is n
+    if x < 0:
+        return 0
+    if x > 6:
+        return 6
+    return x
+
+define leaky_relu as:
+    x is n
+    alpha is 0.01
+    if x < 0:
+        return x * alpha
+    return x
+
+define swish as:
+    x is n
+    sigmoid_approx is 0.7
+    output is x * sigmoid_approx
+    return output
+
+define mish as:
+    x is n
+    tanh_approx is 0.75
+    output is x * tanh_approx
+    return output
+
+# Utility operations
+define flatten as:
+    input is n
+    flat_factor is 1.0
+    output is input * flat_factor
+    return output
+
+define unflatten as:
+    input is n
+    shape_factor is 1.0
+    output is input * shape_factor
+    return output
+
+define spatial_dropout as:
+    input is n
+    drop_rate is 0.2
+    keep_prob is 1.0 - drop_rate
+    output is input * keep_prob
+    return output
+
+define channel_shuffle as:
+    input is n
+    shuffle_factor is 0.95
+    output is input * shuffle_factor
+    return output
+
+# Attention mechanisms
+define squeeze_excitation as:
+    features is n
+    reduction is 16
+    reduced is features / reduction
+    excited is reduced * 2
+    return excited
+
+define cbam_attention as:
+    features is n
+    channel_attn is features * 0.9
+    spatial_attn is features * 0.85
+    output is channel_attn * spatial_attn
+    return output
+
+# Residual connections
+define residual_block as:
+    input is n
+    identity is input
+    transformed is input * 0.9
+    output is identity + transformed
+    return output
+
+define dense_connection as:
+    input is n
+    concatenated is input * 1.5
+    return concatenated

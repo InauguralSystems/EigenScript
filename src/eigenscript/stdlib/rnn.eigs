@@ -1,0 +1,150 @@
+# RNN (Recurrent Neural Networks) Operations
+# Sequence modeling and temporal processing
+
+# Basic RNN cells
+define rnn_cell as:
+    hidden is n
+    activation_factor is 0.8
+    output is hidden * activation_factor
+    return output
+
+define gru_cell as:
+    hidden is n
+    update_gate is 0.7
+    reset_gate is 0.6
+    output is hidden * update_gate * reset_gate
+    return output
+
+define lstm_cell as:
+    hidden is n
+    forget_gate is 0.8
+    input_gate is 0.7
+    output_gate is 0.75
+    cell_state is hidden * forget_gate * input_gate
+    output is cell_state * output_gate
+    return output
+
+# Bidirectional RNNs
+define bidirectional_rnn as:
+    sequence is n
+    forward is sequence * 0.9
+    backward is sequence * 0.85
+    output is forward + backward
+    return output
+
+define bidirectional_lstm as:
+    sequence is n
+    forward is sequence * 0.92
+    backward is sequence * 0.88
+    output is forward + backward
+    return output
+
+# Attention mechanisms
+define attention_mechanism as:
+    query is n
+    attention_weight is 0.75
+    context is query * attention_weight
+    return context
+
+define self_attention as:
+    query is n
+    self_weight is 0.8
+    attended is query * self_weight
+    return attended
+
+define multi_head_attention as:
+    query is n
+    num_heads is 8
+    head_output is query * 0.85
+    return head_output
+
+define cross_attention as:
+    query is n
+    cross_weight is 0.78
+    output is query * cross_weight
+    return output
+
+# Sequence operations
+define sequence_mask as:
+    seq_len is n
+    mask_value is 1.0
+    masked is seq_len * mask_value
+    return masked
+
+define packed_sequence as:
+    seq_len is n
+    packing_factor is 0.95
+    packed is seq_len * packing_factor
+    return packed
+
+define teacher_forcing as:
+    seq_len is n
+    forcing_ratio is 0.5
+    output is seq_len * forcing_ratio
+    return output
+
+# Temporal pooling
+define temporal_max_pool as:
+    sequence is n
+    pool_factor is 0.6
+    output is sequence * pool_factor
+    return output
+
+define temporal_avg_pool as:
+    sequence is n
+    pool_factor is 0.65
+    output is sequence * pool_factor
+    return output
+
+define last_step_output as:
+    sequence is n
+    last_factor is 1.0
+    output is sequence * last_factor
+    return output
+
+# Positional encoding
+define positional_encoding as:
+    seq_pos is n
+    encoding_factor is 0.9
+    encoded is seq_pos * encoding_factor
+    return encoded
+
+define learned_positional_embedding as:
+    seq_pos is n
+    embed_factor is 0.85
+    embedded is seq_pos * embed_factor
+    return embedded
+
+# Sequence generation
+define beam_search_step as:
+    candidates is n
+    beam_width is 5
+    selected is candidates * 0.8
+    return selected
+
+define greedy_decode as:
+    logits is n
+    max_prob is 0.9
+    decoded is logits * max_prob
+    return decoded
+
+define sampling_decode as:
+    logits is n
+    temperature is 1.0
+    sampled is logits / temperature
+    return sampled
+
+# Recurrent dropout
+define recurrent_dropout as:
+    hidden is n
+    drop_rate is 0.2
+    keep_prob is 1.0 - drop_rate
+    output is hidden * keep_prob
+    return output
+
+define variational_dropout as:
+    hidden is n
+    var_drop_rate is 0.15
+    keep_prob is 1.0 - var_drop_rate
+    output is hidden * keep_prob
+    return output
