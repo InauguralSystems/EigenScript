@@ -1,0 +1,11 @@
+# Circle module
+
+define area as:
+    radius is n
+    # area = pi * r^2  (approximating pi as 3.14)
+    return 3.14 * radius * radius
+
+define circumference as:
+    radius is n
+    # circumference = 2 * pi * r
+    return 2 * 3.14 * radius

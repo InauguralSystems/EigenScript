@@ -1,0 +1,18 @@
+# Math library package initialization
+# This file runs when the package is imported
+
+# Package-level functions
+define square as:
+    x is n
+    return x * x
+
+define cube as:
+    x is n
+    return x * x * x
+
+# Package-level constants
+PI is 3.14159
+E is 2.71828
+
+# Package metadata
+version is 1

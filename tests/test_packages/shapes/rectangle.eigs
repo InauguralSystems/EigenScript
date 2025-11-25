@@ -1,0 +1,11 @@
+# Rectangle module
+
+define area as:
+    width is n
+    height is n
+    return width * height
+
+define perimeter as:
+    width is n
+    height is n
+    return 2 * (width + height)
