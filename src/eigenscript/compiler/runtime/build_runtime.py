@@ -83,7 +83,7 @@ def check_compiler(compiler):
             [compiler, "--version"],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=2,  # Reduced timeout to avoid test hangs
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
