@@ -78,8 +78,9 @@ jobs:
           pip install -e ".[compiler]"
       
       - name: Run mypy
+        continue-on-error: true
         run: |
-          mypy src/eigenscript --ignore-missing-imports || true
+          mypy src/eigenscript --ignore-missing-imports
 
   security:
     name: Security Scan
@@ -100,9 +101,11 @@ jobs:
           pip install safety bandit
       
       - name: Run safety check
+        continue-on-error: true
         run: |
-          safety check || true
+          safety check
       
       - name: Run bandit security scan
+        continue-on-error: true
         run: |
-          bandit -r src/eigenscript -ll || true
+          bandit -r src/eigenscript -ll

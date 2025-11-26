@@ -6,6 +6,7 @@ Run as: python -m eigenscript [file.eigs]
 
 import sys
 import argparse
+from contextlib import ExitStack
 from eigenscript import __version__
 from eigenscript.lexer import Tokenizer
 from eigenscript.parser import Parser
@@ -33,71 +34,68 @@ def run_file(
     Returns:
         Exit code (0 for success, 1 for error)
     """
-    bench_ctx = None
-
     try:
-        # Read source code
-        with open(file_path, "r", encoding="utf-8") as f:
-            source = f.read()
+        with ExitStack() as stack:
+            # Read source code
+            with open(file_path, "r", encoding="utf-8") as f:
+                source = f.read()
 
-        if verbose:
-            print(f"Executing: {file_path}")
-            print("=" * 60)
+            if verbose:
+                print(f"Executing: {file_path}")
+                print("=" * 60)
 
-        # Start benchmarking if requested
-        if benchmark:
-            bench_ctx = Benchmark(track_memory=True)
-            bench_ctx.__enter__()
+            # Start benchmarking if requested
+            bench_ctx = None
+            if benchmark:
+                bench_ctx = stack.enter_context(Benchmark(track_memory=True))
 
-        # Tokenize
-        tokenizer = Tokenizer(source)
-        tokens = tokenizer.tokenize()
+            # Tokenize
+            tokenizer = Tokenizer(source)
+            tokens = tokenizer.tokenize()
 
-        # Parse
-        parser = Parser(tokens)
-        ast = parser.parse()
+            # Parse
+            parser = Parser(tokens)
+            ast = parser.parse()
 
-        # Interpret
-        interpreter = Interpreter(dimension=768, explain_mode=explain)
-        interpreter.evaluate(ast)
+            # Interpret
+            interpreter = Interpreter(dimension=768, explain_mode=explain)
+            interpreter.evaluate(ast)
 
-        # Stop benchmarking
+            # Add benchmark metadata if benchmarking
+            if benchmark and bench_ctx:
+                bench_ctx.add_metadata("file", file_path)
+                bench_ctx.add_metadata("source_lines", source.count("\n") + 1)
+                bench_ctx.add_metadata("tokens", len(tokens))
+
+            if verbose:
+                print("=" * 60)
+                print(f"Execution complete")
+                print(f"Framework Strength: {interpreter.fs_tracker.compute_fs():.4f}")
+                print(f"Variables: {len(interpreter.environment.bindings)}")
+
+            # Show metrics if requested
+            if show_fs:
+                fs = interpreter.get_framework_strength()
+                signature, classification = interpreter.get_spacetime_signature()
+                converged = interpreter.has_converged()
+
+                print(f"\n=== Framework Strength Metrics ===")
+                print(f"Framework Strength: {fs:.4f}")
+                print(f"Converged: {converged}")
+                print(f"Spacetime Signature: {signature:.4f} ({classification})")
+
+        # Print benchmark results after ExitStack closes (after __exit__ is called)
         if benchmark and bench_ctx:
-            bench_ctx.add_metadata("file", file_path)
-            bench_ctx.add_metadata("source_lines", source.count("\n") + 1)
-            bench_ctx.add_metadata("tokens", len(tokens))
-            bench_ctx.__exit__(None, None, None)
             bench_result = bench_ctx.get_result()
             print(f"\n{bench_result}")
-
-        if verbose:
-            print("=" * 60)
-            print(f"Execution complete")
-            print(f"Framework Strength: {interpreter.fs_tracker.compute_fs():.4f}")
-            print(f"Variables: {len(interpreter.environment.bindings)}")
-
-        # Show metrics if requested
-        if show_fs:
-            fs = interpreter.get_framework_strength()
-            signature, classification = interpreter.get_spacetime_signature()
-            converged = interpreter.has_converged()
-
-            print(f"\n=== Framework Strength Metrics ===")
-            print(f"Framework Strength: {fs:.4f}")
-            print(f"Converged: {converged}")
-            print(f"Spacetime Signature: {signature:.4f} ({classification})")
 
         return 0
 
     except FileNotFoundError:
-        if benchmark and bench_ctx:
-            bench_ctx.__exit__(FileNotFoundError, None, None)
         print(f"Error: File not found: {file_path}", file=sys.stderr)
         print(f"Please check the file path and try again.", file=sys.stderr)
         return 1
     except SyntaxError as e:
-        if benchmark and bench_ctx:
-            bench_ctx.__exit__(SyntaxError, e, None)
         print(f"Syntax Error: {e}", file=sys.stderr)
         print(f"Please check your EigenScript syntax.", file=sys.stderr)
         if verbose:
@@ -106,14 +104,10 @@ def run_file(
             traceback.print_exc()
         return 1
     except NameError as e:
-        if benchmark and bench_ctx:
-            bench_ctx.__exit__(NameError, e, None)
         print(f"Name Error: {e}", file=sys.stderr)
         print(f"This variable or function may not be defined.", file=sys.stderr)
         return 1
     except RuntimeError as e:
-        if benchmark and bench_ctx:
-            bench_ctx.__exit__(RuntimeError, e, None)
         print(f"Runtime Error: {e}", file=sys.stderr)
         if verbose:
             import traceback
@@ -121,8 +115,6 @@ def run_file(
             traceback.print_exc()
         return 1
     except Exception as e:
-        if benchmark and bench_ctx:
-            bench_ctx.__exit__(type(e), e, None)
         print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
         if verbose:
             import traceback
