@@ -1306,8 +1306,8 @@ class Interpreter:
             improving = False
             if trajectory_length >= 2:
                 recent = self.fs_tracker.trajectory[-2:]
-                r1 = np.sqrt(np.dot(recent[0].coords, recent[0].coords))
-                r2 = np.sqrt(np.dot(recent[1].coords, recent[1].coords))
+                r1 = float(np.linalg.norm(recent[0].coords))
+                r2 = float(np.linalg.norm(recent[1].coords))
                 improving = r2 < r1
 
             # Then check if not converged
@@ -1321,18 +1321,23 @@ class Interpreter:
         elif name_lower == "chaotic":
             # CHAOTIC: "Unpredictable behavior"
             # High variance detection in the trajectory
+            # Constants for chaotic detection thresholds
+            CHAOTIC_ANALYSIS_WINDOW = 5
+            CHAOTIC_RELATIVE_VARIANCE_THRESHOLD = 0.25
+            CHAOTIC_ABSOLUTE_VARIANCE_THRESHOLD = 1e-6
+
             trajectory_length = self.fs_tracker.get_trajectory_length()
-            if trajectory_length >= 5:
-                values = [state.coords[0] for state in self.fs_tracker.trajectory[-5:]]
+            if trajectory_length >= CHAOTIC_ANALYSIS_WINDOW:
+                values = [state.coords[0] for state in self.fs_tracker.trajectory[-CHAOTIC_ANALYSIS_WINDOW:]]
                 variance = float(np.var(values))
                 # Consider chaotic if variance is high relative to the mean
                 mean_val = float(np.mean(np.abs(values)))
                 if mean_val > 1e-10:
                     relative_variance = variance / (mean_val ** 2)
-                    result = 1.0 if relative_variance > 0.25 else 0.0
+                    result = 1.0 if relative_variance > CHAOTIC_RELATIVE_VARIANCE_THRESHOLD else 0.0
                 else:
                     # Very small values, check absolute variance
-                    result = 1.0 if variance > 1e-6 else 0.0
+                    result = 1.0 if variance > CHAOTIC_ABSOLUTE_VARIANCE_THRESHOLD else 0.0
             else:
                 result = 0.0
             return self.space.embed_scalar(result)
@@ -1454,9 +1459,10 @@ class Interpreter:
                 prev_value = self.fs_tracker.trajectory[-2]
                 return prev_value
             else:
-                # No history, return current value
+                # No history - return current value for vectors, zero for lists
+                # (EigenLists are not tracked in trajectory, so returning zero
+                # indicates no trajectory history is available)
                 if isinstance(value, EigenList):
-                    # For lists, return the list itself
                     return self.space.zero_vector()
                 return value
 
