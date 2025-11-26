@@ -18,6 +18,7 @@ def run_file(
     verbose: bool = False,
     show_fs: bool = False,
     benchmark: bool = False,
+    explain: bool = False,
 ) -> int:
     """
     Execute an EigenScript file.
@@ -27,6 +28,7 @@ def run_file(
         verbose: Print execution details
         show_fs: Show Framework Strength metrics after execution
         benchmark: Measure and display performance metrics
+        explain: Enable explain mode for predicate evaluations
 
     Returns:
         Exit code (0 for success, 1 for error)
@@ -56,7 +58,7 @@ def run_file(
         ast = parser.parse()
 
         # Interpret
-        interpreter = Interpreter(dimension=768)
+        interpreter = Interpreter(dimension=768, explain_mode=explain)
         interpreter.evaluate(ast)
 
         # Stop benchmarking
@@ -250,6 +252,12 @@ def main():
         action="store_true",
         help="Measure and display performance metrics (time, memory)",
     )
+    parser.add_argument(
+        "-e",
+        "--explain",
+        action="store_true",
+        help="Enable explain mode: show human-readable explanations of predicate evaluations",
+    )
 
     args = parser.parse_args()
 
@@ -262,6 +270,7 @@ def main():
             verbose=args.verbose,
             show_fs=args.show_fs,
             benchmark=args.benchmark,
+            explain=args.explain,
         )
     else:
         parser.print_help()
