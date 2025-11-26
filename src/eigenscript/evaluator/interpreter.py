@@ -34,6 +34,7 @@ from eigenscript.parser.ast_builder import (
 from eigenscript.semantic.lrvm import LRVMVector, LRVMSpace
 from eigenscript.semantic.metric import MetricTensor
 from eigenscript.runtime.framework_strength import FrameworkStrengthTracker
+from eigenscript.runtime.explain import PredicateExplainer
 from eigenscript.builtins import BuiltinFunction, get_builtins
 
 # Type alias for values that can flow through the interpreter
@@ -227,6 +228,7 @@ class Interpreter:
         max_iterations: Optional[int] = None,
         convergence_threshold: float = 0.95,
         enable_convergence_detection: bool = True,
+        explain_mode: bool = False,
     ):
         """
         Initialize the interpreter.
@@ -237,6 +239,7 @@ class Interpreter:
             max_iterations: Maximum loop iterations (None = unbounded for Turing completeness)
             convergence_threshold: FS threshold for eigenstate detection (default: 0.95)
             enable_convergence_detection: Enable automatic convergence detection (default: True)
+            explain_mode: Enable explain mode for predicate evaluations (default: False)
         """
         # Geometric components
         self.space = LRVMSpace(dimension=dimension)
@@ -259,6 +262,9 @@ class Interpreter:
         self.enable_convergence_detection = enable_convergence_detection
         self.recursion_depth = 0
         self.max_recursion_depth = 1000  # Safety limit
+
+        # Explain mode for predicate evaluations
+        self.explainer = PredicateExplainer(enabled=explain_mode)
 
         # Special lightlike OF vector
         self._of_vector = self._create_of_vector()
@@ -1140,51 +1146,121 @@ class Interpreter:
             # Check if Framework Strength exceeds threshold
             fs = self.fs_tracker.compute_fs()
             result = 1.0 if fs >= self.convergence_threshold else 0.0
+            # Explain mode
+            self.explainer.explain_converged(
+                result=result > 0.5,
+                fs=fs,
+                threshold=self.convergence_threshold,
+            )
             return self.space.embed_scalar(result)
 
         elif name_lower == "stable":
             # Check if system is timelike (converged, stable dimensions dominate)
-            _, classification = self.get_spacetime_signature()
+            signature, classification = self.get_spacetime_signature()
             result = 1.0 if classification == "timelike" else 0.0
+            # Get dimension counts for explain mode
+            stable_dims, changing_dims = self._get_dimension_counts()
+            self.explainer.explain_stable(
+                result=result > 0.5,
+                signature=signature,
+                classification=classification,
+                stable_dims=stable_dims,
+                changing_dims=changing_dims,
+            )
             return self.space.embed_scalar(result)
 
         elif name_lower == "diverging":
             # Check if system is spacelike (exploring, unstable)
-            _, classification = self.get_spacetime_signature()
+            signature, classification = self.get_spacetime_signature()
             result = 1.0 if classification == "spacelike" else 0.0
+            # Explain mode
+            self.explainer.explain_diverging(
+                result=result > 0.5,
+                signature=signature,
+                classification=classification,
+            )
             return self.space.embed_scalar(result)
 
         elif name_lower == "equilibrium":
             # Check if at lightlike boundary
-            _, classification = self.get_spacetime_signature()
+            signature, classification = self.get_spacetime_signature()
             result = 1.0 if classification == "lightlike" else 0.0
+            # Explain mode
+            self.explainer.explain_equilibrium(
+                result=result > 0.5,
+                signature=signature,
+                classification=classification,
+            )
             return self.space.embed_scalar(result)
 
         elif name_lower == "improving":
             # Check if trajectory is contracting (radius decreasing)
-            if self.fs_tracker.get_trajectory_length() >= 2:
+            trajectory_length = self.fs_tracker.get_trajectory_length()
+            if trajectory_length >= 2:
                 recent = self.fs_tracker.trajectory[-2:]
                 # Compute radii
                 r1 = np.sqrt(np.dot(recent[0].coords, recent[0].coords))
                 r2 = np.sqrt(np.dot(recent[1].coords, recent[1].coords))
                 result = 1.0 if r2 < r1 else 0.0
+                # Explain mode
+                self.explainer.explain_improving(
+                    result=result > 0.5,
+                    previous_radius=r1,
+                    current_radius=r2,
+                    trajectory_length=trajectory_length,
+                )
             else:
                 result = 0.0
+                # Explain mode
+                self.explainer.explain_improving(
+                    result=False,
+                    previous_radius=None,
+                    current_radius=None,
+                    trajectory_length=trajectory_length,
+                )
             return self.space.embed_scalar(result)
 
         elif name_lower == "oscillating":
             # Check for oscillation pattern
-            if self.fs_tracker.get_trajectory_length() >= 5:
+            trajectory_length = self.fs_tracker.get_trajectory_length()
+            if trajectory_length >= 5:
                 values = [state.coords[0] for state in self.fs_tracker.trajectory[-5:]]
                 deltas = np.diff(values)
                 if len(deltas) > 1:
-                    sign_changes = np.sum(np.diff(np.sign(deltas)) != 0)
+                    sign_changes = int(np.sum(np.diff(np.sign(deltas)) != 0))
                     oscillation_score = sign_changes / len(deltas)
                     result = 1.0 if oscillation_score > 0.15 else 0.0
+                    # Explain mode
+                    self.explainer.explain_oscillating(
+                        result=result > 0.5,
+                        oscillation_score=oscillation_score,
+                        threshold=0.15,
+                        sign_changes=sign_changes,
+                        trajectory_length=trajectory_length,
+                        trajectory_values=values,
+                    )
                 else:
                     result = 0.0
+                    # Explain mode
+                    self.explainer.explain_oscillating(
+                        result=False,
+                        oscillation_score=0.0,
+                        threshold=0.15,
+                        sign_changes=0,
+                        trajectory_length=trajectory_length,
+                        trajectory_values=values,
+                    )
             else:
                 result = 0.0
+                # Explain mode
+                self.explainer.explain_oscillating(
+                    result=False,
+                    oscillation_score=0.0,
+                    threshold=0.15,
+                    sign_changes=0,
+                    trajectory_length=trajectory_length,
+                    trajectory_values=None,
+                )
             return self.space.embed_scalar(result)
 
         elif name_lower == "framework_strength" or name_lower == "fs":
@@ -1550,6 +1626,45 @@ class Interpreter:
             classification = "spacelike"  # Exploring, unstable
 
         return float(signature), classification
+
+    def _get_dimension_counts(self, window: int = 10, epsilon: float = 1e-6) -> tuple[int, int]:
+        """
+        Get counts of stable and changing dimensions for explain mode.
+
+        Args:
+            window: Number of recent trajectory points to analyze
+            epsilon: Variance threshold for considering dimension stable
+
+        Returns:
+            Tuple of (stable_count, changing_count)
+        """
+        trajectory_len = self.fs_tracker.get_trajectory_length()
+
+        if trajectory_len < 2:
+            # Not enough data - return dimension as all stable
+            return self.space.dimension, 0
+
+        # Get recent trajectory window
+        recent_count = min(window, trajectory_len)
+        recent_states = self.fs_tracker.trajectory[-recent_count:]
+
+        # Extract coordinate arrays (filter out any non-vectors)
+        valid_states = [
+            state for state in recent_states if isinstance(state, LRVMVector)
+        ]
+        if len(valid_states) < 2:
+            return self.space.dimension, 0
+
+        coords_array = np.array([state.coords for state in valid_states])
+
+        # Compute per-dimension variance
+        variances = np.var(coords_array, axis=0)
+
+        # Count stable vs changing dimensions
+        S = int(np.sum(variances < epsilon))  # Stable count
+        C = int(np.sum(variances >= epsilon))  # Changing count
+
+        return S, C
 
     def _resolve_module_path(self, module_name: str, level: int = 0) -> str:
         """
