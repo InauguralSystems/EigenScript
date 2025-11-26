@@ -1,7 +1,7 @@
 # EigenScript Roadmap 🗺️
 
 **Version:** v0.4.0
-**Last Updated:** 2025-11-25
+**Last Updated:** 2025-11-26
 
 ## Overview
 
@@ -221,4 +221,4 @@ For completed milestones and development history, see:
 
 ---
 
-**Questions or suggestions?** Open an [issue](https://github.com/InauguralPhysicist/EigenScript/issues) or start a [discussion](https://github.com/InauguralPhysicist/EigenScript/discussions).
+**Questions or suggestions?** Open an [issue](https://github.com/InauguralSystems/EigenScript/issues) or start a [discussion](https://github.com/InauguralSystems/EigenScript/discussions).
