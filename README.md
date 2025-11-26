@@ -246,7 +246,39 @@ if oscillating:         # "Are we stuck in a loop?"
 - `oscillating` - "Are we going in circles?"
 - `equilibrium` - "Are we at a tipping point?"
 
+**Humanized aliases (v0.3.1):**
+- `settled` - Same as `converged` - "Has the value settled down?"
+- `balanced` - Same as `equilibrium` - "Is the system in balance?"
+- `stuck` - "No progress but not done yet"
+- `chaotic` - "Unpredictable behavior detected"
+
 *Analogy*: Like saying "Are we there yet?" on a road trip instead of checking the GPS coordinates yourself.
+
+### Temporal Operators
+
+EigenScript tracks your variables over time. Access their history naturally:
+
+| Operator | Syntax | Returns |
+|:---------|:-------|:--------|
+| **was** | `was is x` | Previous value of x |
+| **change** | `change is x` | How much x changed (current - previous) |
+| **status** | `status is x` | Process quality (alias for `how`) |
+| **trend** | `trend is x` | Direction: "increasing", "decreasing", "stable", or "oscillating" |
+
+```eigenscript
+x is 100
+x is x + 10
+x is x + 5
+
+previous is was is x     # 110 (value before last change)
+delta is change is x     # 5 (most recent change)
+
+# Use in conditions
+if change is x < 2:
+    print of "Changes are getting smaller - approaching convergence"
+```
+
+*Analogy*: Like a fitness tracker showing your step count history and daily change.
 
 ### 3. Smart Code That Adapts
 

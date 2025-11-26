@@ -75,8 +75,8 @@ if 5 != 10:
     print of 1200
 
 # != for validation
-status is 1
-if status != 0:
+my_status is 1
+if my_status != 0:
     print of 1300
 
 # ============================================================================
