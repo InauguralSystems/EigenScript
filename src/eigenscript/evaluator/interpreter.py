@@ -1328,16 +1328,25 @@ class Interpreter:
 
             trajectory_length = self.fs_tracker.get_trajectory_length()
             if trajectory_length >= CHAOTIC_ANALYSIS_WINDOW:
-                values = [state.coords[0] for state in self.fs_tracker.trajectory[-CHAOTIC_ANALYSIS_WINDOW:]]
+                values = [
+                    state.coords[0]
+                    for state in self.fs_tracker.trajectory[-CHAOTIC_ANALYSIS_WINDOW:]
+                ]
                 variance = float(np.var(values))
                 # Consider chaotic if variance is high relative to the mean
                 mean_val = float(np.mean(np.abs(values)))
                 if mean_val > 1e-10:
-                    relative_variance = variance / (mean_val ** 2)
-                    result = 1.0 if relative_variance > CHAOTIC_RELATIVE_VARIANCE_THRESHOLD else 0.0
+                    relative_variance = variance / (mean_val**2)
+                    result = (
+                        1.0
+                        if relative_variance > CHAOTIC_RELATIVE_VARIANCE_THRESHOLD
+                        else 0.0
+                    )
                 else:
                     # Very small values, check absolute variance
-                    result = 1.0 if variance > CHAOTIC_ABSOLUTE_VARIANCE_THRESHOLD else 0.0
+                    result = (
+                        1.0 if variance > CHAOTIC_ABSOLUTE_VARIANCE_THRESHOLD else 0.0
+                    )
             else:
                 result = 0.0
             return self.space.embed_scalar(result)
@@ -1504,7 +1513,9 @@ class Interpreter:
                 else:
                     # Check for oscillation
                     sign_changes = sum(
-                        1 for i in range(len(deltas) - 1) if deltas[i] * deltas[i + 1] < 0
+                        1
+                        for i in range(len(deltas) - 1)
+                        if deltas[i] * deltas[i + 1] < 0
                     )
                     if sign_changes > 0:
                         trend_str = "oscillating"

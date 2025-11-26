@@ -280,4 +280,11 @@ class TestTemporalOperatorsIntegration:
 
         result = run_code(code, interpreter)
         trend = decode_vector(result, interpreter.space)
-        assert trend in ["increasing", "decreasing", "stable", "oscillating", "mixed", "unknown"]
+        assert trend in [
+            "increasing",
+            "decreasing",
+            "stable",
+            "oscillating",
+            "mixed",
+            "unknown",
+        ]
