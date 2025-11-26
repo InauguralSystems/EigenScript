@@ -1,0 +1,13 @@
+# Repository Metadata
+# Note: GitHub Topics cannot be set via configuration files.
+# This file documents the recommended topics for this repository.
+# To add these topics, go to your repository's main page and click the gear icon
+# next to "About" in the right sidebar, then add the topics listed below.
+
+recommended_topics:
+  - programming-language
+  - compiler
+  - llvm
+  - python
+  - geometric-computing
+  - eigenscript

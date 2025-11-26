@@ -6,7 +6,9 @@ EigenScript is currently in alpha development. Security updates are provided for
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.3.x   | :white_check_mark: |
+| 0.2.x   | :white_check_mark: |
+| 0.1.x   | :x:                |
 | < 0.1.0 | :x:                |
 
 ## Security Considerations
@@ -131,7 +133,7 @@ When contributing code, ensure:
 
 For security concerns: [inauguralphysicist@gmail.com](mailto:inauguralphysicist@gmail.com)
 
-For general issues: [GitHub Issues](https://github.com/InauguralPhysicist/EigenScript/issues)
+For general issues: [GitHub Issues](https://github.com/InauguralSystems/EigenScript/issues)
 
 ---
 
