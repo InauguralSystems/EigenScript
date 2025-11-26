@@ -1660,9 +1660,9 @@ class Interpreter:
         # Compute per-dimension variance
         variances = np.var(coords_array, axis=0)
 
-        # Count stable vs changing dimensions
+        # Count stable dimensions, derive changing from total
         S = int(np.sum(variances < epsilon))  # Stable count
-        C = int(np.sum(variances >= epsilon))  # Changing count
+        C = len(variances) - S  # Changing count (derived from total)
 
         return S, C
 

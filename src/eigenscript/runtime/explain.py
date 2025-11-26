@@ -182,11 +182,13 @@ class PredicateExplainer:
         print(f"`improving` → {result_str}", file=sys.stderr)
         if trajectory_length < 2:
             print(f"  └─ insufficient trajectory data (length: {trajectory_length})", file=sys.stderr)
-        else:
-            delta = current_radius - previous_radius if current_radius is not None and previous_radius is not None else 0.0
+        elif previous_radius is not None and current_radius is not None:
+            delta = current_radius - previous_radius
             direction = "decreasing (improving)" if delta < 0 else "increasing (not improving)"
             print(f"  └─ radius: {previous_radius:.4f} → {current_radius:.4f}", file=sys.stderr)
             print(f"  └─ delta: {delta:+.4f} ({direction})", file=sys.stderr)
+        else:
+            print(f"  └─ radius data unavailable", file=sys.stderr)
     
     def explain_oscillating(
         self,
