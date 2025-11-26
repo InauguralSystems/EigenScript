@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-11-26
+
+### 🎯 Release: Temporal Operators & Developer Experience
+
+This release adds powerful temporal operators for tracking variable history, humanized predicate aliases for more readable code, and significant repository improvements.
+
+### Added
+- **Temporal Operators** - Track variable history and changes over time
+  - `was is x` - Get the previous value of a variable from its trajectory
+  - `change is x` - Calculate the delta between current and previous values
+  - `status is x` - Alias for `how is x` (process quality)
+  - `trend is x` - Analyze trajectory direction ("increasing", "decreasing", "stable", "oscillating")
+- **Humanized Predicate Aliases** - More readable alternatives for semantic predicates
+  - `settled` - Alias for `converged` ("Has the value settled down?")
+  - `balanced` - Alias for `equilibrium` ("Is the system in balance?")
+  - `stuck` - No progress but not done yet
+  - `chaotic` - Unpredictable behavior detected
+- **Explain Mode** - New `--explain` / `-e` CLI flag for human-readable predicate evaluation explanations
+  - Shows detailed reasoning for why predicates evaluate to true/false
+  - Helps debug convergence, stability, and oscillation detection
+- **Statistics Standard Library** (`statistics.eigs`) - 40+ statistical functions
+  - Central tendency: mean, median, mode
+  - Spread measures: variance, std_dev, range_stat
+  - Quantiles: percentile, quartiles, IQR
+  - Correlation: covariance, correlation, z_score
+  - Distribution: skewness, kurtosis
+  - Normalization: normalize, standardize, rescale
+  - Moving statistics: moving_average, exponential_moving_average, rolling_std
+  - Outlier detection: detect_outliers, winsorize
+  - Summary: describe, five_number_summary
+
+### Changed
+- **Repository Organization** - Moved to InauguralSystems organization
+- **CI/CD Improvements**
+  - Updated GitHub Actions: actions/checkout v6, actions/setup-python v6, codecov/codecov-action v5
+  - Added Dependabot configuration for automated dependency updates
+  - Added CODEOWNERS file for code ownership
+- **Documentation Updates**
+  - Updated all repository URLs to InauguralSystems organization
+  - Added branch protection documentation
+  - Updated SECURITY.md with correct supported versions
+  - Enabled GitHub Discussions
+
+### Fixed
+- Fixed repository URLs in README.md, SECURITY.md, and pyproject.toml
+- Fixed CI workflow to properly track failures with `continue-on-error`
+
+### Testing
+- Added `test_temporal_operators.py` - Comprehensive tests for was, change, status, trend
+- Added `test_predicate_aliases.py` - Tests for settled, balanced, stuck, chaotic
+- Added `test_explain.py` - Tests for explain mode functionality
+- Added `test_statistics_stdlib.py` - 28 tests for statistics module
+- **Total test suite: 665+ tests passing**
+
 ## [0.3.0] - 2025-11-23
 
 ### 🚀 Major Release: Interactive Playground (EigenSpace)
@@ -153,7 +207,7 @@ This release represents a fundamental transformation of EigenScript from an inte
 
 ## Project Links
 
-- **Repository**: https://github.com/InauguralPhysicist/EigenScript
-- **Documentation**: https://inauguralphysicist.github.io/EigenScript/
-- **Issues**: https://github.com/InauguralPhysicist/EigenScript/issues
-- **Discussions**: https://github.com/InauguralPhysicist/EigenScript/discussions
+- **Repository**: https://github.com/InauguralSystems/EigenScript
+- **Documentation**: https://inauguralsystems.github.io/EigenScript/
+- **Issues**: https://github.com/InauguralSystems/EigenScript/issues
+- **Discussions**: https://github.com/InauguralSystems/EigenScript/discussions
