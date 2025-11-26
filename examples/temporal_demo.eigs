@@ -1,0 +1,71 @@
+# Temporal Operators Demo
+# Showing how to track changes over time
+
+print of "=== Temporal Operators Demo ==="
+print of ""
+
+# Build up a trajectory with clear changes
+print of "Building trajectory: x starts at 100, then +10, +5, +2, +1"
+x is 100
+x is x + 10
+x is x + 5
+x is x + 2
+x is x + 1
+
+print of ""
+print of "Current value (what is x):"
+print of what is x           
+
+print of ""
+print of "Previous trajectory value (was is x):"
+print of was is x            
+
+print of ""
+print of "Last change amount (change is x):"
+print of change is x         
+
+# Use change in conditions
+print of ""
+print of "Checking if change is x < 2:"
+if change is x < 2:
+    print of "YES - Changes are getting smaller"
+else:
+    print of "NO - Changes are still large"
+
+# Check trend
+print of ""
+print of "Trend analysis (trend is x):"
+print of trend is x
+
+# Status operator (alias for how)
+print of ""
+print of "Process status (status is x):"
+print of status is x
+
+# Demonstrate predicate aliases
+print of ""
+print of "=== Predicate Aliases Demo ==="
+
+# Check if settled (alias for converged)
+print of ""
+print of "settled (has the value settled down?):"
+print of settled
+
+# Check if balanced (alias for equilibrium)
+print of ""
+print of "balanced (is the system in balance?):"
+print of balanced
+
+# Check if stuck
+print of ""
+print of "stuck (no progress but not done?):"
+print of stuck
+
+# Check if chaotic
+print of ""
+print of "chaotic (unpredictable behavior?):"
+print of chaotic
+
+print of ""
+print of "=== Demo Complete ==="
+

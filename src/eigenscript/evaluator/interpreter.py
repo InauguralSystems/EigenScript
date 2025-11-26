@@ -1273,6 +1273,84 @@ class Interpreter:
             signature, _ = self.get_spacetime_signature()
             return self.space.embed_scalar(signature)
 
+        # Humanized predicate aliases (v0.3.1)
+        elif name_lower == "settled":
+            # SETTLED: Humanized alias for 'converged'
+            # "Has the value settled down?"
+            fs = self.fs_tracker.compute_fs()
+            result = 1.0 if fs >= self.convergence_threshold else 0.0
+            self.explainer.explain_converged(
+                result=result > 0.5,
+                fs=fs,
+                threshold=self.convergence_threshold,
+            )
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "balanced":
+            # BALANCED: Humanized alias for 'equilibrium'
+            # "Is the system in balance?"
+            signature, classification = self.get_spacetime_signature()
+            result = 1.0 if classification == "lightlike" else 0.0
+            self.explainer.explain_equilibrium(
+                result=result > 0.5,
+                signature=signature,
+                classification=classification,
+            )
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "stuck":
+            # STUCK: "No progress but not done"
+            # Maps to: not improving and not converged
+            # First check if not improving
+            trajectory_length = self.fs_tracker.get_trajectory_length()
+            improving = False
+            if trajectory_length >= 2:
+                recent = self.fs_tracker.trajectory[-2:]
+                r1 = float(np.linalg.norm(recent[0].coords))
+                r2 = float(np.linalg.norm(recent[1].coords))
+                improving = r2 < r1
+
+            # Then check if not converged
+            fs = self.fs_tracker.compute_fs()
+            converged = fs >= self.convergence_threshold
+
+            # Stuck = not improving AND not converged
+            result = 1.0 if (not improving and not converged) else 0.0
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "chaotic":
+            # CHAOTIC: "Unpredictable behavior"
+            # High variance detection in the trajectory
+            # Constants for chaotic detection thresholds
+            CHAOTIC_ANALYSIS_WINDOW = 5
+            CHAOTIC_RELATIVE_VARIANCE_THRESHOLD = 0.25
+            CHAOTIC_ABSOLUTE_VARIANCE_THRESHOLD = 1e-6
+
+            trajectory_length = self.fs_tracker.get_trajectory_length()
+            if trajectory_length >= CHAOTIC_ANALYSIS_WINDOW:
+                values = [
+                    state.coords[0]
+                    for state in self.fs_tracker.trajectory[-CHAOTIC_ANALYSIS_WINDOW:]
+                ]
+                variance = float(np.var(values))
+                # Consider chaotic if variance is high relative to the mean
+                mean_val = float(np.mean(np.abs(values)))
+                if mean_val > 1e-10:
+                    relative_variance = variance / (mean_val**2)
+                    result = (
+                        1.0
+                        if relative_variance > CHAOTIC_RELATIVE_VARIANCE_THRESHOLD
+                        else 0.0
+                    )
+                else:
+                    # Very small values, check absolute variance
+                    result = (
+                        1.0 if variance > CHAOTIC_ABSOLUTE_VARIANCE_THRESHOLD else 0.0
+                    )
+            else:
+                result = 0.0
+            return self.space.embed_scalar(result)
+
         # Regular variable lookup
         return self.environment.lookup(node.name)
 
@@ -1287,6 +1365,10 @@ class Interpreter:
         - WHERE: Position (spatial coordinates in semantic space)
         - WHY: Gradient/direction (normalized difference vector if trajectory exists)
         - HOW: Transformation (current Framework Strength as process quality measure)
+        - WAS: Previous value from trajectory (temporal access)
+        - CHANGE: Delta/difference between current and previous value
+        - STATUS: Alias for HOW (process quality measure)
+        - TREND: Trajectory analysis (direction of change)
 
         Args:
             node: Interrogative AST node
@@ -1349,8 +1431,9 @@ class Interpreter:
                 # No trajectory, return zero (no causal direction yet)
                 return self.space.zero_vector()
 
-        elif interrogative == "how":
-            # HOW: Process quality/transformation
+        elif interrogative == "how" or interrogative == "status":
+            # HOW/STATUS: Process quality/transformation
+            # STATUS is a humanized alias for HOW
             # Return Framework Strength as measure of "how well" the process is working
             fs = self.fs_tracker.compute_fs()
 
@@ -1374,6 +1457,86 @@ class Interpreter:
             else:
                 # Just return Framework Strength
                 return self.space.embed_scalar(fs)
+
+        elif interrogative == "was":
+            # WAS: Previous value from trajectory
+            # Returns the previous value of a variable from its trajectory
+            # Maps to trajectory[-2] if it exists, else returns current value
+            trajectory_len = self.fs_tracker.get_trajectory_length()
+            if trajectory_len >= 2:
+                # Return the second-to-last value from trajectory
+                prev_value = self.fs_tracker.trajectory[-2]
+                return prev_value
+            else:
+                # No history - return current value for vectors, zero for lists
+                # (EigenLists are not tracked in trajectory, so returning zero
+                # indicates no trajectory history is available)
+                if isinstance(value, EigenList):
+                    return self.space.zero_vector()
+                return value
+
+        elif interrogative == "change":
+            # CHANGE: Delta/difference between current and previous value
+            # This is a friendlier alias for the gradient concept
+            # Returns current - previous, or 0 if no history
+            trajectory_len = self.fs_tracker.get_trajectory_length()
+            if trajectory_len >= 2:
+                current = self.fs_tracker.trajectory[-1]
+                previous = self.fs_tracker.trajectory[-2]
+                # Compute the difference (change)
+                delta = current.subtract(previous)
+                # Return the scalar value of the change (first coordinate)
+                return self.space.embed_scalar(delta.coords[0])
+            else:
+                # No history, return 0
+                return self.space.embed_scalar(0.0)
+
+        elif interrogative == "trend":
+            # TREND: Trajectory analysis (direction of change)
+            # Returns a human-readable description of the trend
+            trajectory_len = self.fs_tracker.get_trajectory_length()
+            if trajectory_len >= 3:
+                # Analyze the last few points to determine trend
+                recent_states = self.fs_tracker.trajectory[-3:]
+                values = [state.coords[0] for state in recent_states]
+
+                # Compute deltas
+                deltas = [values[i + 1] - values[i] for i in range(len(values) - 1)]
+
+                # Analyze trend
+                if all(d > 0 for d in deltas):
+                    trend_str = "increasing"
+                elif all(d < 0 for d in deltas):
+                    trend_str = "decreasing"
+                elif all(abs(d) < 1e-6 for d in deltas):
+                    trend_str = "stable"
+                else:
+                    # Check for oscillation
+                    sign_changes = sum(
+                        1
+                        for i in range(len(deltas) - 1)
+                        if deltas[i] * deltas[i + 1] < 0
+                    )
+                    if sign_changes > 0:
+                        trend_str = "oscillating"
+                    else:
+                        trend_str = "mixed"
+
+                return self.space.embed_string(trend_str)
+            elif trajectory_len >= 2:
+                # Only two points, can determine direction but not full trend
+                current = self.fs_tracker.trajectory[-1]
+                previous = self.fs_tracker.trajectory[-2]
+                delta = current.coords[0] - previous.coords[0]
+                if delta > 1e-6:
+                    return self.space.embed_string("increasing")
+                elif delta < -1e-6:
+                    return self.space.embed_string("decreasing")
+                else:
+                    return self.space.embed_string("stable")
+            else:
+                # Not enough history
+                return self.space.embed_string("unknown")
 
         else:
             raise RuntimeError(f"Unknown interrogative: {interrogative}")

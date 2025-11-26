@@ -39,6 +39,12 @@ class TokenType(Enum):
     WHERE = "WHERE"
     WHY = "WHY"
     HOW = "HOW"
+    # Temporal operators (humanized trajectory access)
+    WAS = "WAS"
+    CHANGE = "CHANGE"
+    # Interrogative aliases
+    STATUS = "STATUS"
+    TREND = "TREND"
 
     # Literals
     NUMBER = "NUMBER"
@@ -141,6 +147,12 @@ class Tokenizer:
         "where": TokenType.WHERE,
         "why": TokenType.WHY,
         "how": TokenType.HOW,
+        # Temporal operators
+        "was": TokenType.WAS,
+        "change": TokenType.CHANGE,
+        # Interrogative aliases
+        "status": TokenType.STATUS,
+        "trend": TokenType.TREND,
     }
 
     def __init__(self, source: str):

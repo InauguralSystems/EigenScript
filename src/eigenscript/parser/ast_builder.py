@@ -823,12 +823,16 @@ class Parser:
         """
         Parse an interrogative operator.
 
-        Grammar: (WHO | WHAT | WHEN | WHERE | WHY | HOW) (IS)? primary
+        Grammar: (WHO | WHAT | WHEN | WHERE | WHY | HOW | WAS | CHANGE | STATUS | TREND) (IS)? primary
 
         Example:
             what x
             what is x  (IS is optional and ignored)
             why convergence
+            was is x    (previous value)
+            change is x (delta/difference)
+            status is x (alias for how)
+            trend is x  (trajectory analysis)
         """
         # Get interrogative type
         token = self.current_token()
@@ -839,6 +843,12 @@ class Parser:
             TokenType.WHERE: "where",
             TokenType.WHY: "why",
             TokenType.HOW: "how",
+            # Temporal operators
+            TokenType.WAS: "was",
+            TokenType.CHANGE: "change",
+            # Interrogative aliases
+            TokenType.STATUS: "status",
+            TokenType.TREND: "trend",
         }
         interrogative = interrogative_map[token.type]
         self.advance()
@@ -1203,6 +1213,12 @@ class Parser:
             TokenType.WHERE,
             TokenType.WHY,
             TokenType.HOW,
+            # Temporal operators
+            TokenType.WAS,
+            TokenType.CHANGE,
+            # Interrogative aliases
+            TokenType.STATUS,
+            TokenType.TREND,
         ):
             return self.parse_interrogative()
 
