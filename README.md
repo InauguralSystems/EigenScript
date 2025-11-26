@@ -66,7 +66,7 @@ Instead of blind execution, your programs can:
 ## 🛠️ Installation
 
 ```bash
-git clone https://github.com/InauguralPhysicist/EigenScript.git
+git clone https://github.com/InauguralSystems/EigenScript.git
 cd EigenScript
 pip install -e .[compiler]
 ```

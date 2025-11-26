@@ -1,0 +1,12 @@
+# Default owners for everything in the repo
+* @InauguralPhysicist
+
+# Core language implementation
+/src/eigenscript/ @InauguralPhysicist
+
+# Documentation
+/docs/ @InauguralPhysicist
+*.md @InauguralPhysicist
+
+# CI/CD
+/.github/workflows/ @InauguralPhysicist
