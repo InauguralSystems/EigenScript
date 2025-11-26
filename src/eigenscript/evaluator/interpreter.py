@@ -1627,7 +1627,9 @@ class Interpreter:
 
         return float(signature), classification
 
-    def _get_dimension_counts(self, window: int = 10, epsilon: float = 1e-6) -> tuple[int, int]:
+    def _get_dimension_counts(
+        self, window: int = 10, epsilon: float = 1e-6
+    ) -> tuple[int, int]:
         """
         Get counts of stable and changing dimensions for explain mode.
 

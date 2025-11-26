@@ -22,7 +22,7 @@ class TestPredicateExplainer:
         """Should not emit output when disabled."""
         explainer = PredicateExplainer(enabled=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_stable(
                 result=True,
                 signature=100.0,
@@ -36,7 +36,7 @@ class TestPredicateExplainer:
         """Should emit output when enabled."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_stable(
                 result=True,
                 signature=100.0,
@@ -54,7 +54,7 @@ class TestPredicateExplainer:
         """Should format FALSE result correctly."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_stable(
                 result=False,
                 signature=-50.0,
@@ -70,7 +70,7 @@ class TestPredicateExplainer:
         """Should explain converged predicate."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_converged(
                 result=True,
                 fs=0.98,
@@ -86,7 +86,7 @@ class TestPredicateExplainer:
         """Should explain converged=False with < comparison."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_converged(
                 result=False,
                 fs=0.42,
@@ -100,7 +100,7 @@ class TestPredicateExplainer:
         """Should explain diverging predicate."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_diverging(
                 result=True,
                 signature=-100.0,
@@ -114,7 +114,7 @@ class TestPredicateExplainer:
         """Should explain equilibrium predicate."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_equilibrium(
                 result=True,
                 signature=0.0,
@@ -128,7 +128,7 @@ class TestPredicateExplainer:
         """Should explain improving predicate with trajectory data."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_improving(
                 result=True,
                 previous_radius=10.0,
@@ -144,7 +144,7 @@ class TestPredicateExplainer:
         """Should explain improving with insufficient trajectory."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_improving(
                 result=False,
                 previous_radius=None,
@@ -159,7 +159,7 @@ class TestPredicateExplainer:
         """Should explain oscillating predicate."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
         stderr = StringIO()
-        with patch('sys.stderr', stderr):
+        with patch("sys.stderr", stderr):
             explainer.explain_oscillating(
                 result=True,
                 oscillation_score=0.25,
@@ -197,7 +197,7 @@ class TestExplainFlag:
         test_file = tmp_path / "test.eigs"
         test_file.write_text("x is 5\n")
 
-        with patch.object(sys, 'argv', ['eigenscript', str(test_file), '--explain']):
+        with patch.object(sys, "argv", ["eigenscript", str(test_file), "--explain"]):
             exit_code = main()
 
         assert exit_code == 0
@@ -207,7 +207,7 @@ class TestExplainFlag:
         test_file = tmp_path / "test.eigs"
         test_file.write_text("x is 5\n")
 
-        with patch.object(sys, 'argv', ['eigenscript', str(test_file), '-e']):
+        with patch.object(sys, "argv", ["eigenscript", str(test_file), "-e"]):
             exit_code = main()
 
         assert exit_code == 0
@@ -215,11 +215,13 @@ class TestExplainFlag:
     def test_explain_flag_emits_to_stderr(self, tmp_path, capsys):
         """Should emit explain output to stderr."""
         test_file = tmp_path / "test.eigs"
-        test_file.write_text("""
+        test_file.write_text(
+            """
 x is 10
 if stable:
     y is 1
-""")
+"""
+        )
 
         exit_code = run_file(str(test_file), explain=True)
 
@@ -233,13 +235,15 @@ if stable:
     def test_explain_combined_with_verbose(self, tmp_path, capsys):
         """Should work with --verbose flag."""
         test_file = tmp_path / "test.eigs"
-        test_file.write_text("""
+        test_file.write_text(
+            """
 x is 5
 if converged:
     print of "done"
-""")
+"""
+        )
 
-        with patch.object(sys, 'argv', ['eigenscript', str(test_file), '-e', '-v']):
+        with patch.object(sys, "argv", ["eigenscript", str(test_file), "-e", "-v"]):
             exit_code = main()
 
         captured = capsys.readouterr()
@@ -251,13 +255,15 @@ if converged:
     def test_explain_output_format(self, tmp_path, capsys):
         """Should have correct output format with indentation."""
         test_file = tmp_path / "test.eigs"
-        test_file.write_text("""
+        test_file.write_text(
+            """
 x is 100
 loop while x > 0:
     x is x - 10
 if stable:
     print of "stable"
-""")
+"""
+        )
 
         exit_code = run_file(str(test_file), explain=True)
 
@@ -269,7 +275,8 @@ if stable:
     def test_explain_all_predicates(self, tmp_path, capsys):
         """Should explain all predicates when used."""
         test_file = tmp_path / "test.eigs"
-        test_file.write_text("""
+        test_file.write_text(
+            """
 x is 100
 i is 0
 loop while i < 6:
@@ -288,7 +295,8 @@ if improving:
     y is 5
 if oscillating:
     y is 6
-""")
+"""
+        )
 
         exit_code = run_file(str(test_file), explain=True)
 
