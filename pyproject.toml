@@ -45,10 +45,10 @@ compiler = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/InauguralPhysicist/eigenscript"
-Documentation = "https://github.com/InauguralPhysicist/eigenscript/docs"
-Repository = "https://github.com/InauguralPhysicist/eigenscript"
-Issues = "https://github.com/InauguralPhysicist/eigenscript/issues"
+Homepage = "https://github.com/InauguralSystems/EigenScript"
+Documentation = "https://github.com/InauguralSystems/EigenScript/docs"
+Repository = "https://github.com/InauguralSystems/EigenScript"
+Issues = "https://github.com/InauguralSystems/EigenScript/issues"
 
 [project.scripts]
 eigenscript = "eigenscript.__main__:main"
