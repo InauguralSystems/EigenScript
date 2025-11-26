@@ -97,6 +97,8 @@ class LLVMCodeGenerator:
         self.module = ir.Module(name="eigenscript_module")
 
         # 1. Configure Target Architecture
+        # Store target_triple as instance variable for WASM-specific code paths
+        self.target_triple = target_triple
         if target_triple:
             self.module.triple = target_triple
         else:
@@ -220,10 +222,18 @@ class LLVMCodeGenerator:
     def _declare_runtime_functions(self):
         """Declare runtime functions with architecture-correct types."""
 
-        # printf for debugging
+        # printf for debugging (native targets)
         printf_type = ir.FunctionType(self.int32_type, [self.string_type], var_arg=True)
         self.printf = ir.Function(self.module, printf_type, name="printf")
         self.printf.attributes.add("nounwind")
+
+        # eigen_print_f64 for WASM (non-variadic, simpler for JS bridge)
+        # This avoids variadic calling convention issues in WebAssembly
+        eigen_print_f64_type = ir.FunctionType(self.void_type, [self.double_type])
+        self.eigen_print_f64 = ir.Function(
+            self.module, eigen_print_f64_type, name="eigen_print_f64"
+        )
+        self.eigen_print_f64.attributes.add("nounwind")
 
         # malloc - CRITICAL FIX: Use size_t_type, NOT int64_type
         # On WASM32, malloc takes i32. On x64, it takes i64.
@@ -1078,19 +1088,25 @@ class LLVMCodeGenerator:
                 arg_gen_val = self._generate(node.right)
                 # Convert to scalar for printing (handles both raw values and aliases)
                 arg_val = self.ensure_scalar(arg_gen_val)
-                # Print format string
-                fmt_str = "%f\n\0"
-                fmt_const = ir.Constant(
-                    ir.ArrayType(self.int8_type, len(fmt_str)),
-                    bytearray(fmt_str.encode("utf-8")),
-                )
-                global_fmt = ir.GlobalVariable(
-                    self.module, fmt_const.type, name=f"fmt_{id(node)}"
-                )
-                global_fmt.global_constant = True
-                global_fmt.initializer = fmt_const
-                fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
-                return self.builder.call(self.printf, [fmt_ptr, arg_val])
+
+                # Use eigen_print_f64 for WASM (avoids variadic calling convention issues)
+                # For native targets, use printf with format string
+                if self.target_triple and "wasm" in self.target_triple.lower():
+                    return self.builder.call(self.eigen_print_f64, [arg_val])
+                else:
+                    # Print format string for native
+                    fmt_str = "%f\n\0"
+                    fmt_const = ir.Constant(
+                        ir.ArrayType(self.int8_type, len(fmt_str)),
+                        bytearray(fmt_str.encode("utf-8")),
+                    )
+                    global_fmt = ir.GlobalVariable(
+                        self.module, fmt_const.type, name=f"fmt_{id(node)}"
+                    )
+                    global_fmt.global_constant = True
+                    global_fmt.initializer = fmt_const
+                    fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
+                    return self.builder.call(self.printf, [fmt_ptr, arg_val])
 
             # Handle user-defined functions
             if func_name in self.functions:

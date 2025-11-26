@@ -1,0 +1,15 @@
+# A simple harmonic oscillator (spring/orbit)
+
+x is 10
+v is 0
+dt is 0.1
+target is 0
+i is 0
+
+loop while i < 2000:
+    force is target - x
+    v is v + (force * dt)
+    v is v * 0.99
+    x is x + (v * dt)
+    print of x
+    i is i + 1

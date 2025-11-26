@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EigenSpace Visualizer - Orbit Demo 🌀</title>
+    <style>
+        :root { --bg: #1e1e1e; --accent: #007acc; --text: #d4d4d4; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Segoe UI', monospace; }
+
+        #header { padding: 15px 20px; background: #252526; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; font-size: 1.2em; }
+        #status { font-size: 0.9em; color: #888; }
+
+        #canvas-container { width: 100vw; height: calc(100vh - 150px); }
+        canvas { width: 100%; height: 100%; display: block; background: #000; }
+
+        #console { height: 80px; background: #111; border-top: 1px solid #333; padding: 10px; font-family: monospace; overflow-y: auto; font-size: 12px; }
+        .log-sys { color: #aa5; }
+        .log-info { color: #0f0; }
+        .log-err { color: #f44; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <h1>🌀 EigenSpace Visualizer - Orbit Simulation</h1>
+    <span id="status">Loading...</span>
+</div>
+
+<div id="canvas-container">
+    <canvas id="simCanvas"></canvas>
+</div>
+
+<div id="console"></div>
+
+<script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const consoleDiv = document.getElementById('console');
+    const statusEl = document.getElementById('status');
+
+    let dataPoints = [];
+
+    function resize() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+    }
+    window.onresize = resize;
+    resize();
+
+    function log(msg, type='info') {
+        const div = document.createElement('div');
+        div.textContent = `> ${msg}`;
+        div.className = `log-${type}`;
+        consoleDiv.appendChild(div);
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    function draw() {
+        // Clear screen with fade effect
+        ctx.fillStyle = 'rgba(0,0,0,0.05)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (dataPoints.length < 2) {
+            requestAnimationFrame(draw);
+            return;
+        }
+
+        ctx.beginPath();
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 2;
+
+        // Auto-scale Y axis
+        const maxVal = Math.max(...dataPoints);
+        const minVal = Math.min(...dataPoints);
+        const range = maxVal - minVal || 1;
+
+        // Show all points across the width
+        const stepX = canvas.width / dataPoints.length;
+
+        for (let i = 0; i < dataPoints.length; i++) {
+            const val = dataPoints[i];
+            const x = i * stepX;
+            const normalizedY = (val - minVal) / range;
+            const y = canvas.height - (normalizedY * canvas.height * 0.8) - (canvas.height * 0.1);
+
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Draw axis labels
+        ctx.fillStyle = '#666';
+        ctx.font = '12px monospace';
+        ctx.fillText(`Max: ${maxVal.toFixed(2)}`, 10, 20);
+        ctx.fillText(`Min: ${minVal.toFixed(2)}`, 10, canvas.height - 10);
+        ctx.fillText(`Points: ${dataPoints.length}`, canvas.width - 100, 20);
+
+        requestAnimationFrame(draw);
+    }
+
+    requestAnimationFrame(draw);
+
+    async function loadAndRun() {
+        log("Loading orbit.wasm...", "sys");
+        statusEl.textContent = "Loading WASM...";
+
+        try {
+            // Fetch the pre-compiled WASM
+            const response = await fetch('orbit.wasm');
+            if (!response.ok) {
+                throw new Error(`Failed to load orbit.wasm: ${response.status}`);
+            }
+
+            const wasmBytes = await response.arrayBuffer();
+            log(`Loaded ${wasmBytes.byteLength} bytes of WASM`, "sys");
+
+            // Setup the JavaScript Bridge (Import Object)
+            // This provides the functions that WASM code calls
+            const importObject = {
+                env: {
+                    // The Bridge: eigen_print_f64 for WASM (non-variadic)
+                    // Receives double value directly - no format string needed
+                    eigen_print_f64: (val) => {
+                        dataPoints.push(val);
+                    },
+
+                    // Memory management stubs
+                    // EigenScript uses stack allocation, so malloc returns null
+                    malloc: (n) => 0,
+                    free: (p) => {},
+
+                    // Math builtins the runtime might need
+                    exp: Math.exp,
+                    fabs: Math.abs,
+                    fmin: Math.min,
+                    pow: Math.pow,
+                    sqrt: Math.sqrt,
+                    log: Math.log,
+                    sin: Math.sin,
+                    cos: Math.cos,
+                    floor: Math.floor
+                }
+            };
+
+            // Instantiate and run
+            log("Instantiating WebAssembly module...", "sys");
+            const { instance } = await WebAssembly.instantiate(wasmBytes, importObject);
+
+            log("Executing main()...", "sys");
+            statusEl.textContent = "Running...";
+
+            const start = performance.now();
+            instance.exports.main();
+            const end = performance.now();
+
+            const elapsed = (end - start).toFixed(2);
+            log(`Execution completed in ${elapsed}ms`, "info");
+            log(`Generated ${dataPoints.length} data points`, "info");
+            statusEl.textContent = `Completed in ${elapsed}ms - ${dataPoints.length} points`;
+
+        } catch (e) {
+            log(`Error: ${e.message}`, "err");
+            statusEl.textContent = "Error!";
+            console.error(e);
+        }
+    }
+
+    // Auto-run on load
+    loadAndRun();
+</script>
+
+</body>
+</html>
