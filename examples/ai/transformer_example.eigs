@@ -1,0 +1,185 @@
+# Custom Transformer Example in EigenScript
+#
+# This example demonstrates building and running a transformer model
+# using EigenScript's native matrix operations.
+#
+# Architecture:
+# - 4-dimensional model (d_model = 4) for demonstration
+# - Single attention head
+# - 8-dimensional feed-forward hidden layer
+# - 2 encoder layers
+#
+# Run with: python -m eigenscript examples/ai/transformer_example.eigs
+
+import transformer
+
+# ============================================================================
+# Model Configuration
+# ============================================================================
+
+print of "=== EigenScript Transformer Demo ==="
+print of ""
+
+# Model hyperparameters (small for demonstration)
+d_model is 4          # Model dimension
+d_ff is 8             # Feed-forward hidden dimension
+d_k is 4              # Query/Key dimension (same as d_model for single head)
+num_heads is 1        # Number of attention heads
+num_layers is 2       # Number of encoder layers
+vocab_size is 10      # Vocabulary size
+seq_len is 3          # Sequence length
+
+# Compute attention scale: 1/sqrt(d_k)
+scale is transformer.compute_scale of d_k
+
+print of "Model Configuration:"
+print of "  d_model: 4"
+print of "  d_ff: 8"
+print of "  num_heads: 1"
+print of "  num_layers: 2"
+print of ""
+
+# ============================================================================
+# Initialize Weights
+# ============================================================================
+
+print of "Initializing weights..."
+
+# Embedding matrix: [vocab_size, d_model]
+embed_matrix is random_matrix of [vocab_size, d_model]
+
+# Layer 1 weights
+w_q1 is random_matrix of [d_model, d_k]
+w_k1 is random_matrix of [d_model, d_k]
+w_v1 is random_matrix of [d_model, d_k]
+w_ff1_1 is random_matrix of [d_model, d_ff]
+w_ff2_1 is random_matrix of [d_ff, d_model]
+
+# Layer 2 weights
+w_q2 is random_matrix of [d_model, d_k]
+w_k2 is random_matrix of [d_model, d_k]
+w_v2 is random_matrix of [d_model, d_k]
+w_ff1_2 is random_matrix of [d_model, d_ff]
+w_ff2_2 is random_matrix of [d_ff, d_model]
+
+print of "Weights initialized with Xavier initialization"
+print of ""
+
+# ============================================================================
+# Input Preparation
+# ============================================================================
+
+print of "=== Forward Pass ==="
+print of ""
+
+# Sample input: token IDs [1, 5, 3]
+token_ids is [1, 5, 3]
+print of "Input token IDs:"
+print of token_ids
+
+# Look up token embeddings
+token_embeddings is embedding_lookup of [embed_matrix, token_ids]
+print of ""
+print of "Token embeddings shape:"
+emb_shape is matrix_shape of token_embeddings
+print of emb_shape
+
+# Add positional encoding
+pos_encoding is sinusoidal_pe of [seq_len, d_model]
+embeddings is matrix_add of [token_embeddings, pos_encoding]
+print of ""
+print of "Embeddings + positional encoding created"
+
+# ============================================================================
+# Encoder Layer 1
+# ============================================================================
+
+print of ""
+print of "--- Encoder Layer 1 ---"
+
+# Layer normalization
+norm1 is layer_norm_matrix of embeddings
+
+# Self-attention: Q, K, V projections
+query1 is matmul of [norm1, w_q1]
+key1 is matmul of [norm1, w_k1]
+value1 is matmul of [norm1, w_v1]
+
+# Scaled dot-product attention
+attn_out1 is transformer.scaled_dot_product_attention of [query1, key1, value1, scale]
+
+# Residual connection
+hidden1 is matrix_add of [embeddings, attn_out1]
+
+# FFN sublayer
+norm1_2 is layer_norm_matrix of hidden1
+ffn_hidden1 is matmul of [norm1_2, w_ff1_1]
+ffn_act1 is gelu_matrix of ffn_hidden1
+ffn_out1 is matmul of [ffn_act1, w_ff2_1]
+
+# Residual connection
+layer1_output is matrix_add of [hidden1, ffn_out1]
+
+print of "Layer 1 complete"
+layer1_shape is matrix_shape of layer1_output
+print of "Output shape:"
+print of layer1_shape
+
+# ============================================================================
+# Encoder Layer 2
+# ============================================================================
+
+print of ""
+print of "--- Encoder Layer 2 ---"
+
+# Self-attention sublayer
+norm2 is layer_norm_matrix of layer1_output
+query2 is matmul of [norm2, w_q2]
+key2 is matmul of [norm2, w_k2]
+value2 is matmul of [norm2, w_v2]
+attn_out2 is transformer.scaled_dot_product_attention of [query2, key2, value2, scale]
+hidden2 is matrix_add of [layer1_output, attn_out2]
+
+# FFN sublayer
+norm2_2 is layer_norm_matrix of hidden2
+ffn_hidden2 is matmul of [norm2_2, w_ff1_2]
+ffn_act2 is gelu_matrix of ffn_hidden2
+ffn_out2 is matmul of [ffn_act2, w_ff2_2]
+layer2_output is matrix_add of [hidden2, ffn_out2]
+
+print of "Layer 2 complete"
+
+# ============================================================================
+# Final Output
+# ============================================================================
+
+print of ""
+print of "--- Final Output ---"
+
+# Final layer normalization
+final_output is layer_norm_matrix of layer2_output
+final_shape is matrix_shape of final_output
+
+print of "Final output shape:"
+print of final_shape
+
+# Convert to list to view values
+output_list is matrix_to_list of final_output
+print of ""
+print of "Contextualized representations:"
+print of output_list
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+print of ""
+print of "=== Transformer Complete ==="
+print of "Successfully processed sequence through 2-layer transformer!"
+print of ""
+print of "Key EigenScript features used:"
+print of "  - Matrix operations (matmul, transpose)"
+print of "  - Neural network primitives (softmax, layer_norm, gelu)"
+print of "  - Positional encoding (sinusoidal_pe)"
+print of "  - Embedding lookup"
+print of "  - Custom attention mechanism"
