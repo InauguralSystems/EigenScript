@@ -1,0 +1,169 @@
+# Transformer Implementation for EigenScript
+# A complete transformer architecture using EigenScript's matrix operations
+
+# Core Attention Mechanism
+# Scaled Dot-Product Attention: attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) * V
+define scaled_dot_product_attention as:
+    query is arg[0]
+    key is arg[1]
+    value is arg[2]
+    scale is arg[3]
+    key_t is transpose of key
+    scores is matmul of [query, key_t]
+    scaled_scores is matrix_scale of [scores, scale]
+    weights is softmax_matrix of scaled_scores
+    output is matmul of [weights, value]
+    return output
+
+
+# Masked Attention for decoder (causal masking)
+define masked_attention as:
+    query is arg[0]
+    key is arg[1]
+    value is arg[2]
+    scale is arg[3]
+    mask is arg[4]
+    key_t is transpose of key
+    scores is matmul of [query, key_t]
+    scaled_scores is matrix_scale of [scores, scale]
+    masked_scores is matrix_add of [scaled_scores, mask]
+    weights is softmax_matrix of masked_scores
+    output is matmul of [weights, value]
+    return output
+
+
+# Linear projection: output = input @ weights
+define linear_projection as:
+    input is arg[0]
+    weights is arg[1]
+    return matmul of [input, weights]
+
+
+# Linear with bias: output = input @ weights + bias
+define linear_with_bias as:
+    input is arg[0]
+    weights is arg[1]
+    bias is arg[2]
+    projected is matmul of [input, weights]
+    return matrix_add of [projected, bias]
+
+
+# Single attention head computation
+define single_attention_head as:
+    input is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    scale is arg[4]
+    query is matmul of [input, w_q]
+    key is matmul of [input, w_k]
+    value is matmul of [input, w_v]
+    return scaled_dot_product_attention of [query, key, value, scale]
+
+
+# Multi-head attention (simplified for current EigenScript limitations)
+define multi_head_attention as:
+    input is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    w_o is arg[4]
+    num_heads is arg[5]
+    d_k is arg[6]
+    scale is 1.0 / sqrt of d_k
+    query is matmul of [input, w_q]
+    key is matmul of [input, w_k]
+    value is matmul of [input, w_v]
+    attended is scaled_dot_product_attention of [query, key, value, scale]
+    output is matmul of [attended, w_o]
+    return output
+
+
+# Position-wise Feed-Forward Network with GELU
+define feed_forward_network as:
+    input is arg[0]
+    w1 is arg[1]
+    w2 is arg[2]
+    hidden is matmul of [input, w1]
+    activated is gelu_matrix of hidden
+    output is matmul of [activated, w2]
+    return output
+
+
+# Position-wise FFN with ReLU
+define feed_forward_relu as:
+    input is arg[0]
+    w1 is arg[1]
+    w2 is arg[2]
+    hidden is matmul of [input, w1]
+    activated is relu_matrix of hidden
+    output is matmul of [activated, w2]
+    return output
+
+
+# Simplified Encoder Layer (single-head attention)
+define encoder_layer_simple as:
+    input is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    w_ff1 is arg[4]
+    w_ff2 is arg[5]
+    scale is arg[6]
+    norm1 is layer_norm_matrix of input
+    query is matmul of [norm1, w_q]
+    key is matmul of [norm1, w_k]
+    value is matmul of [norm1, w_v]
+    attn_out is scaled_dot_product_attention of [query, key, value, scale]
+    residual1 is matrix_add of [input, attn_out]
+    norm2 is layer_norm_matrix of residual1
+    ffn_hidden is matmul of [norm2, w_ff1]
+    ffn_activated is gelu_matrix of ffn_hidden
+    ffn_out is matmul of [ffn_activated, w_ff2]
+    output is matrix_add of [residual1, ffn_out]
+    return output
+
+
+# Create token embeddings with positional encoding
+define create_embeddings as:
+    token_ids is arg[0]
+    embed_matrix is arg[1]
+    seq_len is arg[2]
+    d_model is arg[3]
+    token_emb is embedding_lookup of [embed_matrix, token_ids]
+    pos_enc is sinusoidal_pe of [seq_len, d_model]
+    return matrix_add of [token_emb, pos_enc]
+
+
+# Initialize weights for a transformer layer
+define init_transformer_weights as:
+    d_model is arg[0]
+    d_ff is arg[1]
+    d_k is arg[2]
+    w_q is random_matrix of [d_model, d_k]
+    w_k is random_matrix of [d_model, d_k]
+    w_v is random_matrix of [d_model, d_k]
+    w_o is random_matrix of [d_k, d_model]
+    w_ff1 is random_matrix of [d_model, d_ff]
+    w_ff2 is random_matrix of [d_ff, d_model]
+    return [w_q, w_k, w_v, w_o, w_ff1, w_ff2]
+
+
+# Initialize embedding matrix
+define init_embedding_matrix as:
+    vocab_size is arg[0]
+    d_model is arg[1]
+    return random_matrix of [vocab_size, d_model]
+
+
+# Compute attention scale factor: 1 / sqrt(d_k)
+define compute_scale as:
+    d_k is arg
+    return 1.0 / sqrt of d_k
+
+
+# Apply dropout during training
+define apply_dropout as:
+    matrix is arg[0]
+    rate is arg[1]
+    return dropout_matrix of [matrix, rate]

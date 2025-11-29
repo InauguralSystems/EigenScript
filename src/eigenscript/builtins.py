@@ -1991,6 +1991,710 @@ def builtin_matrix_eigenvalues(arg, space: LRVMSpace, metric: Any = None):
     return EigenList(eigen_list)
 
 
+# ============================================================================
+# Neural Network Operations for Transformers
+# ============================================================================
+
+
+def builtin_softmax_matrix(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Apply softmax along rows of a matrix.
+
+    Softmax converts each row to a probability distribution:
+    softmax(x_i) = exp(x_i) / sum(exp(x_j))
+
+    Args:
+        arg: Matrix to apply softmax to
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix with softmax applied to each row
+
+    Example:
+        scores is matmul of [query, transpose of key]
+        weights is softmax_matrix of scores
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("softmax_matrix requires a matrix")
+
+    from eigenscript.semantic.matrix import Matrix
+
+    matrix = arg.metadata["matrix"]
+    data = matrix.data
+
+    # Numerical stability: subtract max from each row
+    row_max = np.max(data, axis=1, keepdims=True)
+    exp_shifted = np.exp(data - row_max)
+    softmax_out = exp_shifted / np.sum(exp_shifted, axis=1, keepdims=True)
+
+    result_matrix = Matrix(softmax_out)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_layer_norm_matrix(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Apply layer normalization to a matrix.
+
+    Normalizes each row to have mean 0 and variance 1:
+    LN(x) = (x - mean(x)) / sqrt(var(x) + eps)
+
+    Args:
+        arg: Matrix to normalize
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Layer-normalized matrix
+
+    Example:
+        normalized is layer_norm_matrix of hidden_states
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("layer_norm_matrix requires a matrix")
+
+    from eigenscript.semantic.matrix import Matrix
+
+    matrix = arg.metadata["matrix"]
+    data = matrix.data
+    eps = 1e-5
+
+    # Compute mean and variance along each row
+    mean = np.mean(data, axis=1, keepdims=True)
+    var = np.var(data, axis=1, keepdims=True)
+
+    # Normalize
+    normalized = (data - mean) / np.sqrt(var + eps)
+
+    result_matrix = Matrix(normalized)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_random_matrix(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Create a random matrix with Xavier/Glorot initialization.
+
+    Xavier initialization helps with gradient flow in deep networks:
+    scale = sqrt(2 / (fan_in + fan_out))
+
+    Args:
+        arg: List of [rows, cols]
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Random matrix with Xavier initialization
+
+    Example:
+        weights is random_matrix of [512, 512]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("random_matrix requires a list of [rows, cols]")
+
+    rows = int(decode_vector(arg.elements[0], space, metric))
+    cols = int(decode_vector(arg.elements[1], space, metric))
+
+    # Xavier/Glorot initialization
+    scale = np.sqrt(2.0 / (rows + cols))
+    data = np.random.randn(rows, cols) * scale
+
+    result_matrix = Matrix(data)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_relu_matrix(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Apply ReLU activation to a matrix element-wise.
+
+    ReLU(x) = max(0, x)
+
+    Args:
+        arg: Matrix to apply ReLU to
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix with ReLU applied
+
+    Example:
+        activated is relu_matrix of hidden
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("relu_matrix requires a matrix")
+
+    from eigenscript.semantic.matrix import Matrix
+
+    matrix = arg.metadata["matrix"]
+    relu_data = np.maximum(0, matrix.data)
+
+    result_matrix = Matrix(relu_data)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_gelu_matrix(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Apply GELU activation to a matrix element-wise.
+
+    GELU(x) = x * Φ(x) where Φ is the CDF of standard normal.
+    Approximation: 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x^3)))
+
+    Args:
+        arg: Matrix to apply GELU to
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix with GELU applied
+
+    Example:
+        activated is gelu_matrix of hidden
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("gelu_matrix requires a matrix")
+
+    from eigenscript.semantic.matrix import Matrix
+
+    matrix = arg.metadata["matrix"]
+    x = matrix.data
+
+    # GELU approximation
+    gelu_data = 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x**3)))
+
+    result_matrix = Matrix(gelu_data)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_matrix_add(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Add two matrices element-wise.
+
+    Args:
+        arg: List of [matrix1, matrix2]
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Sum of the two matrices
+
+    Example:
+        output is matrix_add of [residual, attention_output]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("matrix_add requires a list of [matrix1, matrix2]")
+
+    m1_vec = arg.elements[0]
+    m2_vec = arg.elements[1]
+
+    if "matrix" not in m1_vec.metadata or "matrix" not in m2_vec.metadata:
+        raise TypeError("matrix_add requires two matrices")
+
+    m1 = m1_vec.metadata["matrix"]
+    m2 = m2_vec.metadata["matrix"]
+
+    result_matrix = m1 + m2
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_matrix_scale(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Scale a matrix by a scalar value.
+
+    Args:
+        arg: List of [matrix, scalar]
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Scaled matrix
+
+    Example:
+        # Scale attention scores by 1/sqrt(d_k)
+        scaled is matrix_scale of [scores, 0.125]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("matrix_scale requires a list of [matrix, scalar]")
+
+    m_vec = arg.elements[0]
+    scalar = decode_vector(arg.elements[1], space, metric)
+
+    if "matrix" not in m_vec.metadata:
+        raise TypeError("First argument to matrix_scale must be a matrix")
+
+    matrix = m_vec.metadata["matrix"]
+    scaled = matrix * float(scalar)
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = scaled
+    return result_vec
+
+
+def builtin_matrix_shape(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Get the shape of a matrix as [rows, cols].
+
+    Args:
+        arg: Matrix to get shape of
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        EigenList of [rows, cols]
+
+    Example:
+        shape is matrix_shape of weights
+        rows is shape[0]
+        cols is shape[1]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+
+    if "matrix" not in arg.metadata:
+        raise TypeError("matrix_shape requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    rows, cols = matrix.shape
+
+    return EigenList([space.embed(float(rows)), space.embed(float(cols))])
+
+
+def builtin_matrix_sum(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Sum all elements in a matrix.
+
+    Args:
+        arg: Matrix to sum
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Sum as a scalar
+
+    Example:
+        total is matrix_sum of loss_matrix
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("matrix_sum requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    total = float(np.sum(matrix.data))
+
+    return space.embed(total)
+
+
+def builtin_matrix_mean(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Compute the mean of all elements in a matrix.
+
+    Args:
+        arg: Matrix to compute mean of
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Mean as a scalar
+
+    Example:
+        avg_loss is matrix_mean of loss_matrix
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("matrix_mean requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    mean_val = float(np.mean(matrix.data))
+
+    return space.embed(mean_val)
+
+
+def builtin_matrix_sqrt(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Element-wise square root of a matrix.
+
+    Args:
+        arg: Matrix to compute sqrt of
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix with sqrt applied element-wise
+
+    Example:
+        std is matrix_sqrt of variance
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("matrix_sqrt requires a matrix")
+
+    from eigenscript.semantic.matrix import Matrix
+
+    matrix = arg.metadata["matrix"]
+    sqrt_data = np.sqrt(np.maximum(0, matrix.data))  # Clamp to avoid NaN
+
+    result_matrix = Matrix(sqrt_data)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_matrix_exp(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Element-wise exponential of a matrix.
+
+    Args:
+        arg: Matrix to compute exp of
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix with exp applied element-wise
+
+    Example:
+        exp_scores is matrix_exp of scores
+    """
+    if "matrix" not in arg.metadata:
+        raise TypeError("matrix_exp requires a matrix")
+
+    from eigenscript.semantic.matrix import Matrix
+
+    matrix = arg.metadata["matrix"]
+    # Clip to prevent overflow
+    exp_data = np.exp(np.clip(matrix.data, -500, 500))
+
+    result_matrix = Matrix(exp_data)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_sinusoidal_pe(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Generate sinusoidal positional encoding matrix.
+
+    Creates positional encodings using sin/cos functions as in
+    "Attention Is All You Need" (Vaswani et al., 2017).
+
+    Args:
+        arg: List of [seq_len, d_model]
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix of shape [seq_len, d_model] with positional encodings
+
+    Example:
+        pos_enc is sinusoidal_pe of [128, 512]
+        embedded is matrix_add of [token_emb, pos_enc]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("sinusoidal_pe requires a list of [seq_len, d_model]")
+
+    seq_len = int(decode_vector(arg.elements[0], space, metric))
+    d_model = int(decode_vector(arg.elements[1], space, metric))
+
+    # Create position and dimension indices
+    position = np.arange(seq_len)[:, np.newaxis]
+    div_term = np.exp(np.arange(0, d_model, 2) * -(np.log(10000.0) / d_model))
+
+    # Compute positional encodings
+    pe = np.zeros((seq_len, d_model))
+    pe[:, 0::2] = np.sin(position * div_term)
+    pe[:, 1::2] = np.cos(position * div_term[: d_model // 2])
+
+    result_matrix = Matrix(pe)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_embedding_lookup(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Look up embeddings from an embedding matrix.
+
+    Args:
+        arg: List of [embedding_matrix, indices]
+              embedding_matrix: Matrix of shape [vocab_size, d_model]
+              indices: List of integer indices
+
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix of shape [len(indices), d_model] with embeddings
+
+    Example:
+        # Token indices: [1, 5, 3, 8]
+        token_ids is [1, 5, 3, 8]
+        embeddings is embedding_lookup of [embed_matrix, token_ids]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("embedding_lookup requires [embedding_matrix, indices]")
+
+    embed_vec = arg.elements[0]
+    indices = arg.elements[1]
+
+    if "matrix" not in embed_vec.metadata:
+        raise TypeError("First argument must be an embedding matrix")
+
+    embed_matrix = embed_vec.metadata["matrix"]
+
+    # Convert indices to Python list
+    if isinstance(indices, EigenList):
+        idx_list = [
+            int(decode_vector(elem, space, metric)) for elem in indices.elements
+        ]
+    else:
+        raise TypeError("Second argument must be a list of indices")
+
+    # Look up embeddings
+    selected = embed_matrix.data[idx_list, :]
+
+    result_matrix = Matrix(selected)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_causal_mask(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Create a causal (lower triangular) attention mask.
+
+    Used for autoregressive decoding where position i can only
+    attend to positions <= i.
+
+    Args:
+        arg: Sequence length
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix of shape [seq_len, seq_len] with -inf above diagonal
+
+    Example:
+        mask is causal_mask of 128
+        masked_scores is matrix_add of [scores, mask]
+    """
+    from eigenscript.semantic.matrix import Matrix
+
+    seq_len = int(decode_vector(arg, space, metric))
+
+    # Create lower triangular mask
+    # 0 for positions that can attend, -inf for positions that cannot
+    mask = np.triu(np.ones((seq_len, seq_len)) * float("-inf"), k=1)
+
+    result_matrix = Matrix(mask)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_matrix_reshape(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Reshape a matrix to new dimensions.
+
+    Args:
+        arg: List of [matrix, rows, cols]
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Reshaped matrix
+
+    Example:
+        # Reshape for multi-head attention
+        reshaped is matrix_reshape of [query, 8, 64]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 3:
+        raise TypeError("matrix_reshape requires [matrix, rows, cols]")
+
+    m_vec = arg.elements[0]
+    rows = int(decode_vector(arg.elements[1], space, metric))
+    cols = int(decode_vector(arg.elements[2], space, metric))
+
+    if "matrix" not in m_vec.metadata:
+        raise TypeError("First argument must be a matrix")
+
+    matrix = m_vec.metadata["matrix"]
+    reshaped = matrix.reshape(rows, cols)
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = reshaped
+    return result_vec
+
+
+def builtin_matrix_concat(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Concatenate matrices along rows (axis 0).
+
+    Args:
+        arg: List of matrices to concatenate
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Concatenated matrix
+
+    Example:
+        # Concatenate attention heads
+        concat is matrix_concat of [head1, head2, head3, head4]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList):
+        raise TypeError("matrix_concat requires a list of matrices")
+
+    matrices = []
+    for elem in arg.elements:
+        if "matrix" not in elem.metadata:
+            raise TypeError("All elements must be matrices")
+        matrices.append(elem.metadata["matrix"].data)
+
+    concatenated = np.concatenate(matrices, axis=0)
+
+    result_matrix = Matrix(concatenated)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_matrix_slice(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Slice rows from a matrix.
+
+    Args:
+        arg: List of [matrix, start_row, end_row]
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Sliced matrix containing rows [start_row:end_row]
+
+    Example:
+        # Get first 64 rows (one attention head)
+        head1 is matrix_slice of [queries, 0, 64]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 3:
+        raise TypeError("matrix_slice requires [matrix, start_row, end_row]")
+
+    m_vec = arg.elements[0]
+    start = int(decode_vector(arg.elements[1], space, metric))
+    end = int(decode_vector(arg.elements[2], space, metric))
+
+    if "matrix" not in m_vec.metadata:
+        raise TypeError("First argument must be a matrix")
+
+    matrix = m_vec.metadata["matrix"]
+    sliced = Matrix(matrix.data[start:end, :])
+
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = sliced
+    return result_vec
+
+
+def builtin_dropout_matrix(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Apply dropout to a matrix (for training).
+
+    Randomly sets elements to 0 with probability p and scales
+    remaining elements by 1/(1-p).
+
+    Args:
+        arg: List of [matrix, dropout_rate]
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        Matrix with dropout applied
+
+    Example:
+        dropped is dropout_matrix of [hidden, 0.1]
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+    from eigenscript.semantic.matrix import Matrix
+
+    if not isinstance(arg, EigenList) or len(arg.elements) != 2:
+        raise TypeError("dropout_matrix requires [matrix, dropout_rate]")
+
+    m_vec = arg.elements[0]
+    p = float(decode_vector(arg.elements[1], space, metric))
+
+    if "matrix" not in m_vec.metadata:
+        raise TypeError("First argument must be a matrix")
+
+    matrix = m_vec.metadata["matrix"]
+
+    # Create dropout mask
+    mask = np.random.binomial(1, 1 - p, size=matrix.data.shape)
+    # Apply mask and scale
+    dropped = matrix.data * mask / (1 - p + 1e-10)
+
+    result_matrix = Matrix(dropped)
+    result_vec = space.zero_vector()
+    result_vec.metadata["matrix"] = result_matrix
+    return result_vec
+
+
+def builtin_matrix_to_list(arg, space: LRVMSpace, metric: Any = None):
+    """
+    Convert a matrix to a nested list.
+
+    Args:
+        arg: Matrix to convert
+        space: LRVM space for operations
+        metric: Metric tensor (optional)
+
+    Returns:
+        EigenList of lists representing the matrix
+
+    Example:
+        data is matrix_to_list of result
+    """
+    from eigenscript.evaluator.interpreter import EigenList
+
+    if "matrix" not in arg.metadata:
+        raise TypeError("matrix_to_list requires a matrix")
+
+    matrix = arg.metadata["matrix"]
+    rows = []
+
+    for row in matrix.data:
+        row_elems = [space.embed(float(val)) for val in row]
+        rows.append(EigenList(row_elems))
+
+    return EigenList(rows)
+
+
 def get_builtins(space: LRVMSpace) -> dict:
     """
     Get all built-in functions for the EigenScript environment.
@@ -2257,6 +2961,107 @@ def get_builtins(space: LRVMSpace) -> dict:
             name="eigenvalues",
             func=builtin_matrix_eigenvalues,
             description="Compute eigenvalues",
+        ),
+        # Neural Network operations for Transformers
+        "softmax_matrix": BuiltinFunction(
+            name="softmax_matrix",
+            func=builtin_softmax_matrix,
+            description="Apply softmax to matrix rows",
+        ),
+        "layer_norm_matrix": BuiltinFunction(
+            name="layer_norm_matrix",
+            func=builtin_layer_norm_matrix,
+            description="Apply layer normalization",
+        ),
+        "random_matrix": BuiltinFunction(
+            name="random_matrix",
+            func=builtin_random_matrix,
+            description="Create random matrix with Xavier init",
+        ),
+        "relu_matrix": BuiltinFunction(
+            name="relu_matrix",
+            func=builtin_relu_matrix,
+            description="Apply ReLU activation to matrix",
+        ),
+        "gelu_matrix": BuiltinFunction(
+            name="gelu_matrix",
+            func=builtin_gelu_matrix,
+            description="Apply GELU activation to matrix",
+        ),
+        "matrix_add": BuiltinFunction(
+            name="matrix_add",
+            func=builtin_matrix_add,
+            description="Add two matrices element-wise",
+        ),
+        "matrix_scale": BuiltinFunction(
+            name="matrix_scale",
+            func=builtin_matrix_scale,
+            description="Scale matrix by scalar",
+        ),
+        "matrix_shape": BuiltinFunction(
+            name="matrix_shape",
+            func=builtin_matrix_shape,
+            description="Get matrix dimensions",
+        ),
+        "matrix_sum": BuiltinFunction(
+            name="matrix_sum",
+            func=builtin_matrix_sum,
+            description="Sum all matrix elements",
+        ),
+        "matrix_mean": BuiltinFunction(
+            name="matrix_mean",
+            func=builtin_matrix_mean,
+            description="Mean of all matrix elements",
+        ),
+        "matrix_sqrt": BuiltinFunction(
+            name="matrix_sqrt",
+            func=builtin_matrix_sqrt,
+            description="Element-wise square root",
+        ),
+        "matrix_exp": BuiltinFunction(
+            name="matrix_exp",
+            func=builtin_matrix_exp,
+            description="Element-wise exponential",
+        ),
+        "sinusoidal_pe": BuiltinFunction(
+            name="sinusoidal_pe",
+            func=builtin_sinusoidal_pe,
+            description="Generate sinusoidal positional encodings",
+        ),
+        "embedding_lookup": BuiltinFunction(
+            name="embedding_lookup",
+            func=builtin_embedding_lookup,
+            description="Look up embeddings by indices",
+        ),
+        "causal_mask": BuiltinFunction(
+            name="causal_mask",
+            func=builtin_causal_mask,
+            description="Create causal attention mask",
+        ),
+        "matrix_reshape": BuiltinFunction(
+            name="matrix_reshape",
+            func=builtin_matrix_reshape,
+            description="Reshape matrix dimensions",
+        ),
+        "matrix_concat": BuiltinFunction(
+            name="matrix_concat",
+            func=builtin_matrix_concat,
+            description="Concatenate matrices",
+        ),
+        "matrix_slice": BuiltinFunction(
+            name="matrix_slice",
+            func=builtin_matrix_slice,
+            description="Slice rows from matrix",
+        ),
+        "dropout_matrix": BuiltinFunction(
+            name="dropout_matrix",
+            func=builtin_dropout_matrix,
+            description="Apply dropout to matrix",
+        ),
+        "matrix_to_list": BuiltinFunction(
+            name="matrix_to_list",
+            func=builtin_matrix_to_list,
+            description="Convert matrix to nested list",
         ),
     }
 
