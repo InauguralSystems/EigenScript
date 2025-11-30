@@ -1,0 +1,761 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEMANTIC LLM v2: Grounded Language Model
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Building on v1's invariants, this version adds:
+#   - Grounded vocabulary (words → semantic vectors)
+#   - Multi-head relational attention (multiple perspectives)
+#   - Text encoding and decoding
+#   - Sequence prediction with actual tokens
+#
+# The invariants remain:
+#   Embedding   = Semantic point      → words live in LRVM space
+#   Attention   = Relational quality  → how is [a, b]
+#   Position    = Temporal order      → was, change, trend
+#   Convergence = Understanding       → predicates
+#
+# Run with: python -m eigenscript examples/ai/semantic_llm_v2.eigs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "═══════════════════════════════════════════════════════════════════"
+print of "      SEMANTIC LLM v2: Grounded Invariant Language Model"
+print of "═══════════════════════════════════════════════════════════════════"
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+semantic_dim is 16
+num_heads is 4
+head_dim is 4
+vocab_size is 12
+max_seq_len is 6
+
+print of "Configuration:"
+print of "  Semantic dimension: 16"
+print of "  Attention heads: 4 (multiple perspectives)"
+print of "  Vocabulary: 12 grounded words"
+print of "  Max sequence: 6 tokens"
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GROUNDED VOCABULARY
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Words are points in semantic space
+# Each word has a position that reflects its MEANING
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  GROUNDED VOCABULARY: Words as Semantic Points                ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+vocab_embeddings is random_matrix of [vocab_size, semantic_dim]
+vocab_embeddings is layer_norm_matrix of vocab_embeddings
+
+word_names is ["<pad>", "<start>", "<end>", "the", "cat", "sat", "on", "mat", "dog", "ran", "big", "small"]
+
+print of "Vocabulary:"
+print of "  0: <pad>    1: <start>  2: <end>"
+print of "  3: the      4: cat      5: sat"
+print of "  6: on       7: mat      8: dog"
+print of "  9: ran     10: big     11: small"
+print of ""
+
+vocab_quality is how is vocab_embeddings
+print of "Vocabulary embedding quality:"
+print of vocab_quality
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MULTI-HEAD RELATIONAL ATTENTION
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Multiple perspectives on the same relation
+# Each head captures a different aspect of meaning
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  MULTI-HEAD ATTENTION: Multiple Relational Perspectives       ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+W_Q_h1 is random_matrix of [semantic_dim, head_dim]
+W_K_h1 is random_matrix of [semantic_dim, head_dim]
+W_V_h1 is random_matrix of [semantic_dim, head_dim]
+
+W_Q_h2 is random_matrix of [semantic_dim, head_dim]
+W_K_h2 is random_matrix of [semantic_dim, head_dim]
+W_V_h2 is random_matrix of [semantic_dim, head_dim]
+
+W_Q_h3 is random_matrix of [semantic_dim, head_dim]
+W_K_h3 is random_matrix of [semantic_dim, head_dim]
+W_V_h3 is random_matrix of [semantic_dim, head_dim]
+
+W_Q_h4 is random_matrix of [semantic_dim, head_dim]
+W_K_h4 is random_matrix of [semantic_dim, head_dim]
+W_V_h4 is random_matrix of [semantic_dim, head_dim]
+
+W_O_h1 is random_matrix of [head_dim, semantic_dim]
+W_O_h2 is random_matrix of [head_dim, semantic_dim]
+W_O_h3 is random_matrix of [head_dim, semantic_dim]
+W_O_h4 is random_matrix of [head_dim, semantic_dim]
+
+print of "Initialized 4 attention heads"
+print of "  Each head: semantic_dim → head_dim projection"
+print of "  Output projection: concat(heads) → semantic_dim"
+print of ""
+
+
+define attention_head as:
+    input_seq is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    head_id is arg[4]
+    seq_length_arg is arg[5]
+    seq_length is what is seq_length_arg
+
+    Q is matmul of [input_seq, w_q]
+    K is matmul of [input_seq, w_k]
+    V is matmul of [input_seq, w_v]
+
+    K_T is transpose of K
+    scores is matmul of [Q, K_T]
+    scale is 1.0 / sqrt of head_dim
+    scores is matrix_scale of [scores, scale]
+
+    mask is causal_mask of seq_length
+    scores is matrix_add of [scores, mask]
+
+    relation_quality is how is scores
+
+    if oscillating:
+        scores is matrix_scale of [scores, 0.8]
+
+    weights is softmax_matrix of scores
+    attended is matmul of [weights, V]
+
+    return attended
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KV-CACHED ATTENTION: Memory as Temporal History
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Cache IS the temporal trace of computation
+#   - `was is K_cache` retrieves previous keys
+#   - New K/V appended to history
+#   - Only query the new position, attend to full history
+
+K_cache_h1 is matrix of [[0.0]]
+K_cache_h2 is matrix of [[0.0]]
+K_cache_h3 is matrix of [[0.0]]
+K_cache_h4 is matrix of [[0.0]]
+V_cache_h1 is matrix of [[0.0]]
+V_cache_h2 is matrix of [[0.0]]
+V_cache_h3 is matrix of [[0.0]]
+V_cache_h4 is matrix of [[0.0]]
+cache_initialized is 0
+
+define cached_attention_head as:
+    new_token_emb is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    k_cache is arg[4]
+    v_cache is arg[5]
+    head_id is arg[6]
+    use_cache is arg[7]
+
+    new_q is matmul of [new_token_emb, w_q]
+    new_k is matmul of [new_token_emb, w_k]
+    new_v is matmul of [new_token_emb, w_v]
+
+    prev_k is was is k_cache
+    prev_v is was is v_cache
+    k_change is change is k_cache
+    v_change is change is v_cache
+
+    cache_active is what is use_cache
+    if cache_active > 0:
+        full_k is matrix_concat of [k_cache, new_k]
+        full_v is matrix_concat of [v_cache, new_v]
+    else:
+        full_k is new_k
+        full_v is new_v
+
+    K_T is transpose of full_k
+    scores is matmul of [new_q, K_T]
+    scale is 1.0 / sqrt of head_dim
+    scores is matrix_scale of [scores, scale]
+
+    relation_quality is how is scores
+    if oscillating:
+        scores is matrix_scale of [scores, 0.9]
+
+    weights is softmax_matrix of scores
+    attended is matmul of [weights, full_v]
+
+    return [attended, full_k, full_v]
+
+
+define multi_head_attention as:
+    input_seq is arg[0]
+    seq_len_arg is arg[1]
+    seq_len is what is seq_len_arg
+
+    head1 is attention_head of [input_seq, W_Q_h1, W_K_h1, W_V_h1, 1, seq_len]
+    head2 is attention_head of [input_seq, W_Q_h2, W_K_h2, W_V_h2, 2, seq_len]
+    head3 is attention_head of [input_seq, W_Q_h3, W_K_h3, W_V_h3, 3, seq_len]
+    head4 is attention_head of [input_seq, W_Q_h4, W_K_h4, W_V_h4, 4, seq_len]
+
+    h1_proj is matmul of [head1, W_O_h1]
+    h2_proj is matmul of [head2, W_O_h2]
+    h3_proj is matmul of [head3, W_O_h3]
+    h4_proj is matmul of [head4, W_O_h4]
+
+    combined is matrix_add of [h1_proj, h2_proj]
+    combined is matrix_add of [combined, h3_proj]
+    combined is matrix_add of [combined, h4_proj]
+
+    output is matrix_scale of [combined, 0.25]
+
+    overall_quality is how is output
+    if stable:
+        print of "  [MULTI-HEAD] All 4 perspectives aligned"
+
+    return output
+
+
+define cached_multi_head_attention as:
+    new_token_emb is arg[0]
+    kv_caches is arg[1]
+    use_cache is arg[2]
+
+    kc1 is kv_caches[0]
+    vc1 is kv_caches[1]
+    kc2 is kv_caches[2]
+    vc2 is kv_caches[3]
+    kc3 is kv_caches[4]
+    vc3 is kv_caches[5]
+    kc4 is kv_caches[6]
+    vc4 is kv_caches[7]
+
+    r1 is cached_attention_head of [new_token_emb, W_Q_h1, W_K_h1, W_V_h1, kc1, vc1, 1, use_cache]
+    r2 is cached_attention_head of [new_token_emb, W_Q_h2, W_K_h2, W_V_h2, kc2, vc2, 2, use_cache]
+    r3 is cached_attention_head of [new_token_emb, W_Q_h3, W_K_h3, W_V_h3, kc3, vc3, 3, use_cache]
+    r4 is cached_attention_head of [new_token_emb, W_Q_h4, W_K_h4, W_V_h4, kc4, vc4, 4, use_cache]
+
+    h1 is r1[0]
+    new_kc1 is r1[1]
+    new_vc1 is r1[2]
+
+    h2 is r2[0]
+    new_kc2 is r2[1]
+    new_vc2 is r2[2]
+
+    h3 is r3[0]
+    new_kc3 is r3[1]
+    new_vc3 is r3[2]
+
+    h4 is r4[0]
+    new_kc4 is r4[1]
+    new_vc4 is r4[2]
+
+    h1_proj is matmul of [h1, W_O_h1]
+    h2_proj is matmul of [h2, W_O_h2]
+    h3_proj is matmul of [h3, W_O_h3]
+    h4_proj is matmul of [h4, W_O_h4]
+
+    combined is matrix_add of [h1_proj, h2_proj]
+    combined is matrix_add of [combined, h3_proj]
+    combined is matrix_add of [combined, h4_proj]
+    output is matrix_scale of [combined, 0.25]
+
+    cache_trend is trend is kc1
+    if stable:
+        print of "  [CACHED] KV history stable"
+
+    new_caches is [new_kc1, new_vc1, new_kc2, new_vc2, new_kc3, new_vc3, new_kc4, new_vc4]
+    return [output, new_caches]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEMANTIC LAYER WITH CONVERGENCE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  SEMANTIC LAYER: Process Until Understood                     ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+W_ff1 is random_matrix of [semantic_dim, 32]
+W_ff2 is random_matrix of [32, semantic_dim]
+
+define semantic_layer as:
+    input_meaning is arg[0]
+    layer_id is arg[1]
+
+    shape is matrix_shape of input_meaning
+    seq_len_vec is shape[0]
+    seq_len is what is seq_len_vec
+
+    attended is multi_head_attention of [input_meaning, seq_len]
+    residual1 is matrix_add of [input_meaning, attended]
+    normed1 is layer_norm_matrix of residual1
+
+    ff1 is matmul of [normed1, W_ff1]
+    ff1 is gelu_matrix of ff1
+    ff2 is matmul of [ff1, W_ff2]
+
+    residual2 is matrix_add of [normed1, ff2]
+    output is layer_norm_matrix of residual2
+
+    layer_understanding is how is output
+
+    understood is 0
+    if converged:
+        understood is 1
+        print of "  Layer"
+        print of layer_id
+        print of "CONVERGED"
+
+    if stable:
+        understood is 1
+
+    return [output, understood]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEXT ENCODING: Tokens → Semantic Space
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  TEXT ENCODING: Words → Semantic Vectors                      ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define encode_sequence as:
+    token_ids is arg[0]
+
+    embeddings is embedding_lookup of [vocab_embeddings, token_ids]
+    seq_len_raw is len of token_ids
+    seq_len is what is seq_len_raw
+    pos_enc is sinusoidal_pe of [seq_len, semantic_dim]
+    encoded is matrix_add of [embeddings, pos_enc]
+
+    prev_encoded is was is encoded
+    encoding_change is change is encoded
+
+    return encoded
+
+
+input_tokens is [1, 3, 4, 5, 6, 7]
+print of "Input sequence: <start> the cat sat on mat"
+print of "Token IDs:"
+print of input_tokens
+print of ""
+
+encoded_input is encode_sequence of [input_tokens]
+encoding_quality is how is encoded_input
+print of "Encoding quality:"
+print of encoding_quality
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEXT DECODING: Semantic Space → Tokens
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  TEXT DECODING: Semantic Vectors → Words                      ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+W_decode is random_matrix of [semantic_dim, vocab_size]
+
+define decode_to_token as:
+    hidden_state is arg[0]
+    temperature is arg[1]
+
+    logits is matmul of [hidden_state, W_decode]
+    inv_temp is 1.0 / temperature
+    scaled_logits is matrix_scale of [logits, inv_temp]
+    probs is softmax_matrix of scaled_logits
+
+    prob_list is matrix_to_list of probs
+    last_row is prob_list[0]
+
+    best_idx is 0
+    best_val is 0.0
+    check_idx is 0
+
+    loop while check_idx < vocab_size:
+        current_prob is last_row[check_idx]
+        current_val is what is current_prob
+        if current_val > best_val:
+            best_val is current_val
+            best_idx is check_idx
+
+        check_idx is check_idx + 1
+
+    return best_idx
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FORWARD PASS WITH ADAPTIVE DEPTH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  FORWARD PASS: Adaptive Depth Processing                      ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define forward_pass as:
+    encoded_seq is arg[0]
+    max_layers is arg[1]
+
+    hidden is encoded_seq
+    layer_idx is 0
+    total_understood is 0
+    still_processing is 1
+
+    loop while layer_idx < max_layers:
+        if still_processing > 0:
+            layer_result is semantic_layer of [hidden, layer_idx]
+            hidden is layer_result[0]
+            understood is layer_result[1]
+            total_understood is total_understood + understood
+
+            if converged:
+                print of "  [EARLY EXIT] Full convergence at layer"
+                print of layer_idx
+                still_processing is 0
+
+            layer_idx is layer_idx + 1
+
+    return [hidden, total_understood]
+
+
+print of "Processing input through semantic layers..."
+print of ""
+
+forward_result is forward_pass of [encoded_input, 3]
+final_hidden is forward_result[0]
+layers_understood is forward_result[1]
+
+print of ""
+print of "Layers that reached understanding:"
+print of layers_understood
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTOREGRESSIVE GENERATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  GENERATION: Semantic Trajectory Until Equilibrium            ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define generate_sequence as:
+    start_tokens is arg[0]
+    max_new_tokens is arg[1]
+
+    first_tok_raw is start_tokens[0]
+    second_tok_raw is start_tokens[1]
+    first_tok is what is first_tok_raw
+    second_tok is what is second_tok_raw
+    current_tokens is [first_tok, second_tok]
+    gen_step is 0
+    temperature is 1.0
+    still_generating is 1
+
+    loop while gen_step < max_new_tokens:
+        if still_generating > 0:
+            embeddings is embedding_lookup of [vocab_embeddings, current_tokens]
+            curr_len_raw is len of current_tokens
+            curr_len is what is curr_len_raw
+            pos_enc is sinusoidal_pe of [curr_len, semantic_dim]
+            encoded is matrix_add of [embeddings, pos_enc]
+
+            forward_out is forward_pass of [encoded, 2]
+            hidden is forward_out[0]
+
+            hidden_list is matrix_to_list of hidden
+            last_pos is curr_len - 1
+            last_hidden_row is hidden_list[last_pos]
+            last_hidden is matrix of [last_hidden_row]
+
+            next_token is decode_to_token of [last_hidden, temperature]
+
+            print of "  Step"
+            print of gen_step
+            print of "generated token:"
+            print of next_token
+
+            hidden_trend is trend is hidden
+            print of "  Semantic trend:"
+            print of hidden_trend
+
+            if next_token < 3:
+                if next_token > 1:
+                    print of "  [END TOKEN] Generation complete"
+                    still_generating is 0
+
+            if stable:
+                print of "  [STABLE] Meaning settled"
+
+            if equilibrium:
+                print of "  [EQUILIBRIUM] Perfect balance reached"
+                still_generating is 0
+
+            if oscillating:
+                temp_val is what is temperature
+                temperature is temp_val * 1.1
+                print of "  [OSCILLATING] Increasing temperature"
+
+            if chaotic:
+                temp_val is what is temperature
+                temperature is temp_val * 0.9
+                print of "  [CHAOTIC] Decreasing temperature"
+
+            if still_generating > 0:
+                tok_int is what is next_token
+                _discard is append of [current_tokens, tok_int]
+
+            gen_step is gen_step + 1
+
+            print of ""
+
+    return current_tokens
+
+
+print of "Starting generation from: <start> the"
+print of ""
+
+seed_tokens is [1, 3]
+generated is generate_sequence of [seed_tokens, 5]
+
+print of "Final generated sequence (token IDs):"
+print of generated
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CACHED GENERATION: Incremental Decoding with KV Cache
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Cache IS temporal history
+#   - First pass populates cache
+#   - Subsequent passes only compute new token
+#   - `was is cache` tracks cache evolution
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  CACHED GENERATION: Incremental KV-Cached Decoding            ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define generate_with_cache as:
+    start_tokens is arg[0]
+    max_new_tokens is arg[1]
+
+    init_emb is random_matrix of [1, head_dim]
+    kv_cache is [init_emb, init_emb, init_emb, init_emb, init_emb, init_emb, init_emb, init_emb]
+
+    current_tokens is start_tokens
+    gen_step is 0
+    temperature is 1.0
+    still_generating is 1
+    cache_active is 0
+
+    print of "  [INIT] Populating cache with prompt..."
+
+    loop while gen_step < max_new_tokens:
+        if still_generating > 0:
+            curr_len_raw is len of current_tokens
+            curr_len is what is curr_len_raw
+            last_idx is curr_len - 1
+
+            tok_to_process is current_tokens[last_idx]
+            tok_list is [tok_to_process]
+            tok_emb is embedding_lookup of [vocab_embeddings, tok_list]
+            pos_enc is sinusoidal_pe of [1, semantic_dim]
+            encoded_tok is matrix_add of [tok_emb, pos_enc]
+
+            attn_result is cached_multi_head_attention of [encoded_tok, kv_cache, cache_active]
+            attended is attn_result[0]
+            kv_cache is attn_result[1]
+            cache_active is 1
+
+            cache_history is was is kv_cache
+            cache_change is change is kv_cache
+
+            normed is layer_norm_matrix of attended
+            ff1 is matmul of [normed, W_ff1]
+            ff1 is gelu_matrix of ff1
+            ff2 is matmul of [ff1, W_ff2]
+            hidden is matrix_add of [normed, ff2]
+            hidden is layer_norm_matrix of hidden
+
+            next_token is decode_to_token of [hidden, temperature]
+
+            print of "  Cached step"
+            print of gen_step
+            print of "token:"
+            print of next_token
+
+            hidden_trend is trend is hidden
+            if stable:
+                print of "    [CACHE STABLE] History settled"
+
+            if next_token < 3:
+                if next_token > 1:
+                    print of "    [END] Generation complete"
+                    still_generating is 0
+
+            if oscillating:
+                temp_val is what is temperature
+                temperature is temp_val * 1.1
+
+            if still_generating > 0:
+                tok_int is what is next_token
+                _discard is append of [current_tokens, tok_int]
+
+            gen_step is gen_step + 1
+
+    return current_tokens
+
+
+print of "Cached generation from: <start> the"
+print of ""
+
+cached_seed is [1, 3]
+cached_generated is generate_with_cache of [cached_seed, 4]
+
+print of ""
+print of "Cached generated sequence:"
+print of cached_generated
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRAINING: CONVERGENCE-BASED LEARNING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  TRAINING: Learn to Predict Next Token                        ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+training_sequence is [1, 3, 4, 5, 6, 7, 2]
+print of "Training on: <start> the cat sat on mat <end>"
+print of ""
+
+train_step is 0
+max_train_steps is 5
+training_active is 1
+learning_rate is 0.1
+
+loop while train_step < max_train_steps:
+    if training_active > 0:
+        input_slice is [1, 3, 4]
+        target_token is 5
+
+        encoded is encode_sequence of [input_slice]
+        forward_out is forward_pass of [encoded, 2]
+        hidden is forward_out[0]
+
+        hidden_list is matrix_to_list of hidden
+        train_len_raw is len of input_slice
+        train_seq_len is what is train_len_raw
+        last_idx is train_seq_len - 1
+        last_hidden_row is hidden_list[last_idx]
+        last_hidden is matrix of [last_hidden_row]
+
+        predicted is decode_to_token of [last_hidden, 1.0]
+
+        print of "  Train step:"
+        print of train_step
+        print of "  Predicted:"
+        print of predicted
+        print of "  Target:"
+        print of target_token
+
+        correct is 0
+        if predicted > 4:
+            if predicted < 6:
+                correct is 1
+
+        if correct > 0:
+            print of "  [CORRECT]"
+        else:
+            print of "  [INCORRECT]"
+
+        update_direction is why is hidden
+        print of "  Learning direction:"
+        print of update_direction
+
+        if improving:
+            learning_rate is learning_rate * 1.05
+            print of "  [IMPROVING] Accelerating learning"
+
+        if stuck:
+            learning_rate is learning_rate * 1.2
+            print of "  [STUCK] Boosting learning rate"
+
+        if diverging:
+            learning_rate is learning_rate * 0.8
+            print of "  [DIVERGING] Reducing learning rate"
+
+        if converged:
+            print of "  [CONVERGED] Training complete!"
+            training_active is 0
+
+        update_scale is 1.0 - learning_rate * 0.01
+        W_decode is matrix_scale of [W_decode, update_scale]
+
+        train_step is train_step + 1
+        print of ""
+
+print of "Training finished after steps:"
+print of train_step
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUMMARY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  SEMANTIC LLM v2: Summary                                     ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+print of "This grounded language model demonstrates:"
+print of ""
+print of "  1. VOCABULARY GROUNDING"
+print of "     Words exist as points in semantic space"
+print of "     Similar words cluster (invariant of meaning)"
+print of ""
+print of "  2. MULTI-HEAD ATTENTION"
+print of "     4 heads = 4 relational perspectives"
+print of "     Each captures different semantic aspect"
+print of ""
+print of "  3. ADAPTIVE DEPTH"
+print of "     Layers process until 'converged'"
+print of "     Early exit when understanding achieved"
+print of ""
+print of "  4. SEMANTIC GENERATION"
+print of "     Generate until 'stable' or 'equilibrium'"
+print of "     No EOS token needed - meaning decides"
+print of ""
+print of "  5. CONVERGENCE TRAINING"
+print of "     'why is' gives learning direction"
+print of "     Predicates adapt learning rate"
+print of ""
+print of "═══════════════════════════════════════════════════════════════════"
+print of "                 SEMANTIC LLM v2 COMPLETE"
+print of "═══════════════════════════════════════════════════════════════════"
+print of ""

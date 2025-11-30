@@ -518,7 +518,7 @@ define introspective_generate as:
                 print of "    [CHAOTIC] Decreasing temperature"
 
             if gen_continue > 0:
-                tokens is append of [tokens, next_token]
+                _discard is append of [tokens, next_token]
 
             token_count is token_count + 1
 
