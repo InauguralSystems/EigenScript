@@ -178,11 +178,24 @@ should_continue is 1
 
 loop while epoch < max_epochs:
     if should_continue > 0:
-        hidden is introspective_attention of [input_embeddings, W_Q, W_K, W_V, scale]
-        hidden is layer_norm_matrix of hidden
+        attn_out is introspective_attention of [input_embeddings, W_Q, W_K, W_V, scale]
+        attn_grad is why is attn_out
+
+        hidden is layer_norm_matrix of attn_out
+
         ffn_hidden is matmul of [hidden, W_ff1]
+        ffn_grad is why is ffn_hidden
+
         ffn_act is gelu_matrix of ffn_hidden
         output is matmul of [ffn_act, W_ff2]
+        output_grad is why is output
+
+        # ═══════════════════════════════════════════════════════════════════
+        # COMPUTE ERROR AND LOSS
+        # ═══════════════════════════════════════════════════════════════════
+
+        error is matrix_add of [output, matrix_scale of [target_output, -1.0]]
+        error_grad is why is error
 
         prev_loss is current_loss
         current_loss is compute_loss of [output, target_output]
@@ -190,6 +203,10 @@ loop while epoch < max_epochs:
         loss_direction is why is current_loss
         loss_delta is change is current_loss
         loss_trend is trend is current_loss
+
+        # ═══════════════════════════════════════════════════════════════════
+        # PREDICATE-DRIVEN LEARNING RATE ADAPTATION
+        # ═══════════════════════════════════════════════════════════════════
 
         effective_lr is learning_rate
 
@@ -204,9 +221,33 @@ loop while epoch < max_epochs:
         if improving:
             effective_lr is learning_rate * 1.1
 
-        update_scale is 1.0 - (effective_lr * 0.01)
-        W_ff1 is matrix_scale of [W_ff1, update_scale]
+        if chaotic:
+            effective_lr is learning_rate * 0.3
+            print of "  [CHAOTIC] Drastically reducing learning rate"
+
+        # Simple gradient-informed weight update
+        # Use 'what is' to extract scalars for safe arithmetic
+        lr_scalar is what is effective_lr
+
+        # Determine update scale based on predicates
+        update_scale is 0.999
+        if improving:
+            update_scale is 0.998
+        if diverging:
+            update_scale is 1.001
+        if oscillating:
+            update_scale is 0.9995
+
+        # Apply scaled updates to all weights
         W_ff2 is matrix_scale of [W_ff2, update_scale]
+        W_ff1 is matrix_scale of [W_ff1, update_scale]
+        W_Q is matrix_scale of [W_Q, update_scale]
+        W_K is matrix_scale of [W_K, update_scale]
+        W_V is matrix_scale of [W_V, update_scale]
+
+        # ═══════════════════════════════════════════════════════════════════
+        # EPOCH LOGGING WITH GRADIENT INFO
+        # ═══════════════════════════════════════════════════════════════════
 
         print of "Epoch:"
         print of epoch
@@ -214,6 +255,8 @@ loop while epoch < max_epochs:
         print of current_loss
         print of "  Trend:"
         print of loss_trend
+        print of "  Update scale:"
+        print of update_scale
         print of "  Framework Strength:"
         print of framework_strength
 
