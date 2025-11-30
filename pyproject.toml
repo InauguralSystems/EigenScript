@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eigenscript"
-version = "0.3.22"
+version = "0.3.23"
 description = "A high-performance geometric programming language with native compilation"
 readme = "README.md"
 requires-python = ">=3.10"
