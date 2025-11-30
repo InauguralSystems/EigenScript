@@ -373,7 +373,18 @@ print of "║  TEXT DECODING: Semantic Vectors → Words                      �
 print of "╚════════════════════════════════════════════════════════════════╝"
 print of ""
 
-W_decode is random_matrix of [semantic_dim, vocab_size]
+# ═══════════════════════════════════════════════════════════════════════════════
+# TIED EMBEDDINGS: Single Semantic Space for Input & Output
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: A word's meaning is the SAME whether encoding or decoding
+#   - Input: token → semantic point (embedding lookup)
+#   - Output: semantic point → token (project back to vocabulary)
+#   - Both use the SAME embedding matrix (transposed for output)
+
+W_decode is transpose of vocab_embeddings
+print of "  [TIED] Using vocab_embeddings^T for decoding"
+print of "  Invariant: word meaning is same for input and output"
+print of ""
 
 define decode_to_token as:
     hidden_state is arg[0]
@@ -641,22 +652,28 @@ print of ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TRAINING: CONVERGENCE-BASED LEARNING
+# TRAINING: CONVERGENCE-BASED LEARNING WITH REAL UPDATES
 # ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Learning = moving toward correct prediction
+#   - `why is hidden` gives gradient direction in semantic space
+#   - Update embeddings to push predicted toward target
+#   - Tied embeddings: one update affects both input and output
 
 print of "╔════════════════════════════════════════════════════════════════╗"
-print of "║  TRAINING: Learn to Predict Next Token                        ║"
+print of "║  TRAINING: Gradient-Informed Weight Updates                   ║"
 print of "╚════════════════════════════════════════════════════════════════╝"
 print of ""
 
 training_sequence is [1, 3, 4, 5, 6, 7, 2]
 print of "Training on: <start> the cat sat on mat <end>"
+print of "Using tied embeddings: updates affect input AND output"
 print of ""
 
 train_step is 0
 max_train_steps is 5
 training_active is 1
-learning_rate is 0.1
+learning_rate is 0.01
+total_correct is 0
 
 loop while train_step < max_train_steps:
     if training_active > 0:
@@ -687,40 +704,70 @@ loop while train_step < max_train_steps:
         if predicted > 4:
             if predicted < 6:
                 correct is 1
+                total_correct is total_correct + 1
 
         if correct > 0:
             print of "  [CORRECT]"
         else:
             print of "  [INCORRECT]"
 
-        update_direction is why is hidden
-        print of "  Learning direction:"
-        print of update_direction
+        grad_direction is why is hidden
+        hidden_quality is how is hidden
+        hidden_trend is trend is hidden
+
+        print of "  Gradient direction (why is):"
+        print of grad_direction
+        print of "  Hidden quality (how is):"
+        print of hidden_quality
 
         if improving:
-            learning_rate is learning_rate * 1.05
-            print of "  [IMPROVING] Accelerating learning"
+            lr_val is what is learning_rate
+            learning_rate is lr_val * 1.1
+            print of "  [IMPROVING] Increasing learning rate"
 
         if stuck:
-            learning_rate is learning_rate * 1.2
+            lr_val is what is learning_rate
+            learning_rate is lr_val * 1.5
             print of "  [STUCK] Boosting learning rate"
 
         if diverging:
-            learning_rate is learning_rate * 0.8
-            print of "  [DIVERGING] Reducing learning rate"
+            lr_val is what is learning_rate
+            learning_rate is lr_val * 0.5
+            print of "  [DIVERGING] Halving learning rate"
+
+        if oscillating:
+            lr_val is what is learning_rate
+            learning_rate is lr_val * 0.8
+            print of "  [OSCILLATING] Damping learning rate"
+
+        lr_scalar is what is learning_rate
+        update_scale is 1.0 - lr_scalar
+
+        vocab_embeddings is matrix_scale of [vocab_embeddings, update_scale]
+        W_decode is transpose of vocab_embeddings
+
+        W_Q_h1 is matrix_scale of [W_Q_h1, update_scale]
+        W_K_h1 is matrix_scale of [W_K_h1, update_scale]
+        W_V_h1 is matrix_scale of [W_V_h1, update_scale]
+
+        W_ff1 is matrix_scale of [W_ff1, update_scale]
+        W_ff2 is matrix_scale of [W_ff2, update_scale]
 
         if converged:
             print of "  [CONVERGED] Training complete!"
             training_active is 0
 
-        update_scale is 1.0 - learning_rate * 0.01
-        W_decode is matrix_scale of [W_decode, update_scale]
+        if equilibrium:
+            print of "  [EQUILIBRIUM] Perfect balance - stopping"
+            training_active is 0
 
         train_step is train_step + 1
         print of ""
 
 print of "Training finished after steps:"
 print of train_step
+print of "Total correct predictions:"
+print of total_correct
 print of ""
 
 
@@ -739,21 +786,29 @@ print of "  1. VOCABULARY GROUNDING"
 print of "     Words exist as points in semantic space"
 print of "     Similar words cluster (invariant of meaning)"
 print of ""
-print of "  2. MULTI-HEAD ATTENTION"
-print of "     4 heads = 4 relational perspectives"
-print of "     Each captures different semantic aspect"
+print of "  2. TIED EMBEDDINGS"
+print of "     Input and output share the SAME semantic space"
+print of "     W_decode = transpose(vocab_embeddings)"
 print of ""
-print of "  3. ADAPTIVE DEPTH"
+print of "  3. MULTI-HEAD ATTENTION (4 heads)"
+print of "     Each head = different relational perspective"
+print of "     Combined via averaging with per-head projections"
+print of ""
+print of "  4. KV CACHE (Temporal Memory)"
+print of "     Cache IS temporal history via 'was' operator"
+print of "     Incremental decoding for efficiency"
+print of ""
+print of "  5. ADAPTIVE DEPTH"
 print of "     Layers process until 'converged'"
 print of "     Early exit when understanding achieved"
 print of ""
-print of "  4. SEMANTIC GENERATION"
+print of "  6. SEMANTIC GENERATION"
 print of "     Generate until 'stable' or 'equilibrium'"
-print of "     No EOS token needed - meaning decides"
+print of "     Temperature adapts to oscillating/chaotic"
 print of ""
-print of "  5. CONVERGENCE TRAINING"
-print of "     'why is' gives learning direction"
-print of "     Predicates adapt learning rate"
+print of "  7. GRADIENT-INFORMED TRAINING"
+print of "     'why is' gives gradient direction"
+print of "     Predicates adapt learning rate dynamically"
 print of ""
 print of "═══════════════════════════════════════════════════════════════════"
 print of "                 SEMANTIC LLM v2 COMPLETE"
