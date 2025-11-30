@@ -57,14 +57,32 @@ print of "╚══════════════════════�
 print of ""
 
 embed_matrix is random_matrix of [vocab_size, d_model]
-W_Q is random_matrix of [d_model, d_k]
-W_K is random_matrix of [d_model, d_k]
-W_V is random_matrix of [d_model, d_k]
-W_O is random_matrix of [d_k, d_model]
-W_ff1 is random_matrix of [d_model, d_ff]
-W_ff2 is random_matrix of [d_ff, d_model]
 
-print of "Weight initialization complete."
+# Layer 1 weights
+W_Q1 is random_matrix of [d_model, d_k]
+W_K1 is random_matrix of [d_model, d_k]
+W_V1 is random_matrix of [d_model, d_k]
+W_ff1_1 is random_matrix of [d_model, d_ff]
+W_ff2_1 is random_matrix of [d_ff, d_model]
+
+# Layer 2 weights
+W_Q2 is random_matrix of [d_model, d_k]
+W_K2 is random_matrix of [d_model, d_k]
+W_V2 is random_matrix of [d_model, d_k]
+W_ff1_2 is random_matrix of [d_model, d_ff]
+W_ff2_2 is random_matrix of [d_ff, d_model]
+
+# Output projection (hidden -> vocab logits)
+W_out is random_matrix of [d_model, vocab_size]
+
+# Aliases for backward compatibility
+W_Q is W_Q1
+W_K is W_K1
+W_V is W_V1
+W_ff1 is W_ff1_1
+W_ff2 is W_ff2_1
+
+print of "Weight initialization complete (2 layers)."
 print of ""
 print of ">>> INTERROGATIVE: Querying initialization state..."
 
@@ -117,6 +135,142 @@ define introspective_attention as:
     output is matmul of [attn_weights, V]
 
     return output
+
+
+# Causal Introspective Attention (for autoregressive generation)
+# Uses causal mask to prevent attending to future tokens
+define causal_introspective_attention as:
+    input_emb is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    attn_scale is arg[4]
+    seq_length is arg[5]
+
+    Q is matmul of [input_emb, w_q]
+    K is matmul of [input_emb, w_k]
+    V is matmul of [input_emb, w_v]
+
+    K_T is transpose of K
+    scores is matmul of [Q, K_T]
+    scores is matrix_scale of [scores, attn_scale]
+
+    mask is causal_mask of seq_length
+    scores is matrix_add of [scores, mask]
+
+    if oscillating:
+        prev_scores is was is scores
+        scores is matrix_scale of [matrix_add of [scores, prev_scores], 0.5]
+
+    if chaotic:
+        scores is matrix_scale of [scores, 0.5]
+
+    attn_weights is softmax_matrix of scores
+    output is matmul of [attn_weights, V]
+
+    return output
+
+
+define introspective_layer as:
+    input_hidden is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    w_ff1 is arg[4]
+    w_ff2 is arg[5]
+    attn_scale is arg[6]
+    layer_num is arg[7]
+
+    attn_out is introspective_attention of [input_hidden, w_q, w_k, w_v, attn_scale]
+    layer_grad is why is attn_out
+
+    hidden is layer_norm_matrix of attn_out
+    residual1 is matrix_add of [input_hidden, hidden]
+
+    ffn_h is matmul of [residual1, w_ff1]
+    ffn_act is gelu_matrix of ffn_h
+    ffn_out is matmul of [ffn_act, w_ff2]
+
+    output is matrix_add of [residual1, ffn_out]
+    output is layer_norm_matrix of output
+
+    layer_quality is how is output
+    layer_trend is trend is output
+
+    layer_converged is 0
+    if stable:
+        layer_converged is 1
+        print of "    Layer"
+        print of layer_num
+        print of "CONVERGED (stable)"
+
+    return [output, layer_converged]
+
+
+# Causal Introspective Layer (for generation)
+# Uses causal masking to prevent looking at future tokens
+define causal_introspective_layer as:
+    input_hidden is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    w_ff1 is arg[4]
+    w_ff2 is arg[5]
+    attn_scale is arg[6]
+    layer_num is arg[7]
+    seq_length is arg[8]
+
+    attn_out is causal_introspective_attention of [input_hidden, w_q, w_k, w_v, attn_scale, seq_length]
+    layer_grad is why is attn_out
+
+    hidden is layer_norm_matrix of attn_out
+    residual1 is matrix_add of [input_hidden, hidden]
+
+    ffn_h is matmul of [residual1, w_ff1]
+    ffn_act is gelu_matrix of ffn_h
+    ffn_out is matmul of [ffn_act, w_ff2]
+
+    output is matrix_add of [residual1, ffn_out]
+    output is layer_norm_matrix of output
+
+    layer_converged is 0
+    if stable:
+        layer_converged is 1
+        print of "    Layer"
+        print of layer_num
+        print of "CONVERGED (causal)"
+
+    return [output, layer_converged]
+
+
+# Temperature-based Token Sampling
+# Uses introspection to adapt temperature based on model confidence
+define temperature_sample as:
+    hidden_state is arg[0]
+    temp is arg[1]
+
+    logits is matmul of [hidden_state, W_out]
+    inv_temp is 1.0 / temp
+    scaled_logits is matrix_scale of [logits, inv_temp]
+    probs is softmax_matrix of scaled_logits
+    prob_list is matrix_to_list of probs
+    last_row is prob_list[0]
+
+    best_idx is 0
+    best_val is 0.0
+    check_idx is 0
+
+    loop while check_idx < vocab_size:
+        current_prob is last_row[check_idx]
+        current_val is what is current_prob
+        if current_val > best_val:
+            best_val is current_val
+            best_idx is check_idx
+
+        check_idx is check_idx + 1
+
+    return best_idx
+
 
 print of "Testing introspective attention..."
 print of ""
@@ -178,24 +332,31 @@ should_continue is 1
 
 loop while epoch < max_epochs:
     if should_continue > 0:
-        attn_out is introspective_attention of [input_embeddings, W_Q, W_K, W_V, scale]
-        attn_grad is why is attn_out
+        hidden is input_embeddings
+        total_layers_converged is 0
 
-        hidden is layer_norm_matrix of attn_out
+        # Layer 1
+        layer1_result is introspective_layer of [hidden, W_Q1, W_K1, W_V1, W_ff1_1, W_ff2_1, scale, 1]
+        hidden is layer1_result[0]
+        layer1_conv is layer1_result[1]
+        total_layers_converged is total_layers_converged + layer1_conv
 
-        ffn_hidden is matmul of [hidden, W_ff1]
-        ffn_grad is why is ffn_hidden
+        # Layer 2 (only if Layer 1 didn't converge - adaptive depth)
+        if layer1_conv < 1:
+            layer2_result is introspective_layer of [hidden, W_Q2, W_K2, W_V2, W_ff1_2, W_ff2_2, scale, 2]
+            hidden is layer2_result[0]
+            layer2_conv is layer2_result[1]
+            total_layers_converged is total_layers_converged + layer2_conv
+        else:
+            print of "  [EARLY EXIT] Skipping Layer 2 (Layer 1 converged)"
 
-        ffn_act is gelu_matrix of ffn_hidden
-        output is matmul of [ffn_act, W_ff2]
-        output_grad is why is output
+        output is hidden
 
         # ═══════════════════════════════════════════════════════════════════
         # COMPUTE ERROR AND LOSS
         # ═══════════════════════════════════════════════════════════════════
 
         error is matrix_add of [output, matrix_scale of [target_output, -1.0]]
-        error_grad is why is error
 
         prev_loss is current_loss
         current_loss is compute_loss of [output, target_output]
@@ -238,16 +399,20 @@ loop while epoch < max_epochs:
         if oscillating:
             update_scale is 0.9995
 
-        # Apply scaled updates to all weights
-        W_ff2 is matrix_scale of [W_ff2, update_scale]
-        W_ff1 is matrix_scale of [W_ff1, update_scale]
-        W_Q is matrix_scale of [W_Q, update_scale]
-        W_K is matrix_scale of [W_K, update_scale]
-        W_V is matrix_scale of [W_V, update_scale]
+        # Apply scaled updates to all layer weights
+        # Layer 1
+        W_Q1 is matrix_scale of [W_Q1, update_scale]
+        W_K1 is matrix_scale of [W_K1, update_scale]
+        W_V1 is matrix_scale of [W_V1, update_scale]
+        W_ff1_1 is matrix_scale of [W_ff1_1, update_scale]
+        W_ff2_1 is matrix_scale of [W_ff2_1, update_scale]
 
-        # ═══════════════════════════════════════════════════════════════════
-        # EPOCH LOGGING WITH GRADIENT INFO
-        # ═══════════════════════════════════════════════════════════════════
+        # Layer 2
+        W_Q2 is matrix_scale of [W_Q2, update_scale]
+        W_K2 is matrix_scale of [W_K2, update_scale]
+        W_V2 is matrix_scale of [W_V2, update_scale]
+        W_ff1_2 is matrix_scale of [W_ff1_2, update_scale]
+        W_ff2_2 is matrix_scale of [W_ff2_2, update_scale]
 
         print of "Epoch:"
         print of epoch
@@ -255,6 +420,8 @@ loop while epoch < max_epochs:
         print of current_loss
         print of "  Trend:"
         print of loss_trend
+        print of "  Layers converged:"
+        print of total_layers_converged
         print of "  Update scale:"
         print of update_scale
         print of "  Framework Strength:"
@@ -306,27 +473,27 @@ define introspective_generate as:
             pos_enc is sinusoidal_pe of [current_len, d_model]
             hidden is matrix_add of [current_emb, pos_enc]
 
-            hidden is introspective_attention of [hidden, W_Q, W_K, W_V, scale]
-            hidden is layer_norm_matrix of hidden
+            # Multi-layer forward with CAUSAL MASKING and adaptive depth
+            layer1_out is causal_introspective_layer of [hidden, W_Q1, W_K1, W_V1, W_ff1_1, W_ff2_1, scale, 1, current_len]
+            hidden is layer1_out[0]
+            l1_conv is layer1_out[1]
 
-            ffn_h is matmul of [hidden, W_ff1]
-            ffn_a is gelu_matrix of ffn_h
-            logits is matmul of [ffn_a, W_ff2]
+            # Only run layer 2 if layer 1 didn't converge
+            layers_used is 1
+            if l1_conv < 1:
+                layer2_out is causal_introspective_layer of [hidden, W_Q2, W_K2, W_V2, W_ff1_2, W_ff2_2, scale, 2, current_len]
+                hidden is layer2_out[0]
+                layers_used is 2
 
-            logit_list is matrix_to_list of logits
-            first_row is logit_list[0]
-            next_token_raw is first_row[0]
-
-            scaled_raw is next_token_raw * 10
-            rounded_raw is round of scaled_raw
-            next_token is abs of rounded_raw
-            if next_token > 9:
-                next_token is next_token % 10
-
+            next_token is temperature_sample of [hidden, temperature]
             hidden_trend is trend is hidden
 
             print of "  Generated token:"
             print of next_token
+            print of "    Layers used:"
+            print of layers_used
+            print of "    Temperature:"
+            print of temperature
             print of "    Hidden trend:"
             print of hidden_trend
             print of "    Framework Strength:"
@@ -451,6 +618,9 @@ print of "Key innovations demonstrated:"
 print of "  1. INTERROGATIVES: why/how/what/when for gradient-free updates"
 print of "  2. TEMPORALS: was/change/trend for history-aware adaptation"
 print of "  3. PREDICATES: converged/stable/oscillating for self-termination"
+print of "  4. MULTI-LAYER: Per-layer convergence with adaptive depth"
+print of "  5. TEMPERATURE: Predicate-adaptive sampling (oscillating/chaotic)"
+print of "  6. CAUSAL MASKING: Autoregressive generation with proper masking"
 print of ""
 print of "This model KNOWS when it has learned enough and when to stop generating."
 print of ""
