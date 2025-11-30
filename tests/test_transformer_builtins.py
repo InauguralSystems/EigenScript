@@ -400,9 +400,7 @@ class TestNewTransformerFeatures:
 
     def test_pre_norm_block(self):
         """Test pre-norm transformer block."""
-        code = """
-import transformer
-
+        code = """import transformer
 input is matrix of [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
 w_q is random_matrix of [4, 4]
 w_k is random_matrix of [4, 4]
@@ -410,7 +408,6 @@ w_v is random_matrix of [4, 4]
 w_ff1 is random_matrix of [4, 8]
 w_ff2 is random_matrix of [8, 4]
 scale is 0.5
-
 result is transformer.pre_norm_block of [input, w_q, w_k, w_v, w_ff1, w_ff2, scale]
 shape is matrix_shape of result
 print of shape
@@ -420,9 +417,7 @@ print of shape
 
     def test_post_norm_block(self):
         """Test post-norm transformer block."""
-        code = """
-import transformer
-
+        code = """import transformer
 input is matrix of [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
 w_q is random_matrix of [4, 4]
 w_k is random_matrix of [4, 4]
@@ -430,7 +425,6 @@ w_v is random_matrix of [4, 4]
 w_ff1 is random_matrix of [4, 8]
 w_ff2 is random_matrix of [8, 4]
 scale is 0.5
-
 result is transformer.post_norm_block of [input, w_q, w_k, w_v, w_ff1, w_ff2, scale]
 shape is matrix_shape of result
 print of shape
@@ -440,9 +434,7 @@ print of shape
 
     def test_grouped_query_attention(self):
         """Test grouped query attention."""
-        code = """
-import transformer
-
+        code = """import transformer
 input is matrix of [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
 w_q is random_matrix of [4, 4]
 w_k is random_matrix of [4, 4]
@@ -451,7 +443,6 @@ w_o is random_matrix of [4, 4]
 num_heads is 4
 num_kv_heads is 2
 d_k is 4
-
 result is transformer.grouped_query_attention of [input, w_q, w_k, w_v, w_o, num_heads, num_kv_heads, d_k]
 shape is matrix_shape of result
 print of shape
@@ -461,14 +452,11 @@ print of shape
 
     def test_swiglu_ffn(self):
         """Test SwiGLU feed-forward network."""
-        code = """
-import transformer
-
+        code = """import transformer
 input is matrix of [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
 w_gate is random_matrix of [4, 8]
 w_up is random_matrix of [4, 8]
 w_down is random_matrix of [8, 4]
-
 result is transformer.swiglu_ffn of [input, w_gate, w_up, w_down]
 shape is matrix_shape of result
 print of shape
@@ -478,17 +466,13 @@ print of shape
 
     def test_lr_warmup(self):
         """Test learning rate warmup."""
-        code = """
-import transformer
-
+        code = """import transformer
 base_lr is 0.001
 step1 is 5
 step2 is 10
 warmup_steps is 10
-
 lr1 is transformer.lr_warmup of [base_lr, step1, warmup_steps]
 lr2 is transformer.lr_warmup of [base_lr, step2, warmup_steps]
-
 print of lr1
 print of lr2
 """
@@ -497,14 +481,11 @@ print of lr2
 
     def test_lr_cosine_decay(self):
         """Test cosine learning rate decay."""
-        code = """
-import transformer
-
+        code = """import transformer
 max_lr is 0.001
 min_lr is 0.0001
 current_step is 50
 total_steps is 100
-
 lr is transformer.lr_cosine_decay of [max_lr, min_lr, current_step, total_steps]
 print of lr
 """
@@ -513,19 +494,13 @@ print of lr
 
     def test_lr_warmup_cosine(self):
         """Test warmup + cosine decay schedule."""
-        code = """
-import transformer
-
+        code = """import transformer
 max_lr is 0.001
 min_lr is 0.0001
 warmup_steps is 10
 total_steps is 100
-
-# During warmup
 lr1 is transformer.lr_warmup_cosine of [max_lr, min_lr, 5, warmup_steps, total_steps]
 print of lr1
-
-# After warmup
 lr2 is transformer.lr_warmup_cosine of [max_lr, min_lr, 50, warmup_steps, total_steps]
 print of lr2
 """
@@ -534,16 +509,13 @@ print of lr2
 
     def test_sliding_window_attention(self):
         """Test sliding window attention."""
-        code = """
-import transformer
-
+        code = """import transformer
 query is matrix of [[1.0, 0.5], [0.5, 1.0], [0.0, 1.0]]
 key is matrix of [[1.0, 0.0], [0.5, 0.5], [0.0, 1.0]]
 value is matrix of [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
 scale is 0.707
 window_size is 2
 seq_len is 3
-
 result is transformer.sliding_window_attention of [query, key, value, scale, window_size, seq_len]
 shape is matrix_shape of result
 print of shape
@@ -553,13 +525,10 @@ print of shape
 
     def test_apply_rope(self):
         """Test RoPE application."""
-        code = """
-import transformer
-
+        code = """import transformer
 vectors is matrix of [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
 position is 5
 d_model is 4
-
 result is transformer.apply_rope of [vectors, position, d_model]
 shape is matrix_shape of result
 print of shape
@@ -569,12 +538,9 @@ print of shape
 
     def test_clip_grad_norm(self):
         """Test gradient clipping."""
-        code = """
-import transformer
-
+        code = """import transformer
 gradient is matrix of [[10.0, 20.0], [30.0, 40.0]]
 max_norm is 1.0
-
 clipped is transformer.clip_grad_norm of [gradient, max_norm]
 print of clipped
 """
@@ -583,13 +549,10 @@ print of clipped
 
     def test_expert_ffn(self):
         """Test expert FFN for MoE."""
-        code = """
-import transformer
-
+        code = """import transformer
 input is matrix of [[1.0, 2.0, 3.0, 4.0]]
 w1 is random_matrix of [4, 8]
 w2 is random_matrix of [8, 4]
-
 result is transformer.expert_ffn of [input, w1, w2]
 shape is matrix_shape of result
 print of shape
@@ -599,14 +562,11 @@ print of shape
 
     def test_moe_gating(self):
         """Test MoE gating mechanism."""
-        code = """
-import transformer
-
+        code = """import transformer
 input is matrix of [[1.0, 2.0, 3.0, 4.0]]
 gate_weights is random_matrix of [4, 4]
 num_experts is 4
 top_k is 2
-
 probs is transformer.moe_gating of [input, gate_weights, num_experts, top_k]
 shape is matrix_shape of probs
 print of shape
@@ -620,9 +580,7 @@ class TestSemanticLLMv3Features:
 
     def test_rms_norm_equivalent(self):
         """Test RMS normalization behavior."""
-        code = """
-# RMS norm: x / sqrt(mean(x^2))
-m is matrix of [[1.0, 2.0, 3.0, 4.0]]
+        code = """m is matrix of [[1.0, 2.0, 3.0, 4.0]]
 squared is matmul of [transpose of m, m]
 mean_sq is matrix_mean of squared
 print of mean_sq
@@ -632,22 +590,16 @@ print of mean_sq
 
     def test_multi_head_8_heads(self):
         """Test 8-head attention setup."""
-        code = """
-semantic_dim is 32
+        code = """semantic_dim is 32
 head_dim is 4
-
-# Initialize 8 heads
 W_Q_h1 is random_matrix of [semantic_dim, head_dim]
 W_K_h1 is random_matrix of [semantic_dim, head_dim]
 W_V_h1 is random_matrix of [semantic_dim, head_dim]
-
 W_Q_h8 is random_matrix of [semantic_dim, head_dim]
 W_K_h8 is random_matrix of [semantic_dim, head_dim]
 W_V_h8 is random_matrix of [semantic_dim, head_dim]
-
 shape1 is matrix_shape of W_Q_h1
 shape8 is matrix_shape of W_Q_h8
-
 print of shape1
 print of shape8
 """
@@ -656,25 +608,20 @@ print of shape8
 
     def test_nucleus_sampling_topk_extraction(self):
         """Test top-k extraction for nucleus sampling."""
-        code = """
-probs is matrix of [[0.1, 0.3, 0.05, 0.4, 0.15]]
+        code = """probs is matrix of [[0.1, 0.3, 0.05, 0.4, 0.15]]
 prob_list is matrix_to_list of probs
 last_row is prob_list[0]
-
-# Find top-3
 top1_idx is 0
 top1_val is 0.0
 top2_idx is 0
 top2_val is 0.0
 top3_idx is 0
 top3_val is 0.0
-
 check_idx is 0
 vocab_size is 5
 loop while check_idx < vocab_size:
     current_prob is last_row[check_idx]
     current_val is what is current_prob
-
     if current_val > top1_val:
         top3_val is top2_val
         top3_idx is top2_idx
@@ -692,9 +639,7 @@ loop while check_idx < vocab_size:
             if current_val > top3_val:
                 top3_val is current_val
                 top3_idx is check_idx
-
     check_idx is check_idx + 1
-
 print of top1_idx
 print of top2_idx
 print of top3_idx
@@ -704,15 +649,11 @@ print of top3_idx
 
     def test_residual_scaling(self):
         """Test residual connection with scaling."""
-        code = """
-input is matrix of [[1.0, 2.0, 3.0, 4.0]]
+        code = """input is matrix of [[1.0, 2.0, 3.0, 4.0]]
 attention_output is matrix of [[0.5, 0.5, 0.5, 0.5]]
-
-# Residual scaling factor
 residual_scale is 0.1
 scaled_attn is matrix_scale of [attention_output, residual_scale]
 residual is matrix_add of [input, scaled_attn]
-
 print of residual
 """
         interpreter = Interpreter()
@@ -720,17 +661,12 @@ print of residual
 
     def test_tied_embeddings(self):
         """Test tied embedding and output projection."""
-        code = """
-vocab_size is 10
+        code = """vocab_size is 10
 d_model is 4
-
 vocab_embeddings is random_matrix of [vocab_size, d_model]
 W_decode is transpose of vocab_embeddings
-
-# Check shapes
 emb_shape is matrix_shape of vocab_embeddings
 dec_shape is matrix_shape of W_decode
-
 print of emb_shape
 print of dec_shape
 """
