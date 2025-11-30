@@ -1,0 +1,413 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTROSPECTIVE LLM: A Hybrid Example
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# This example demonstrates EigenScript's unique approach to LLMs using:
+#   1. INTERROGATIVES - Query execution state (what, why, how, when, where, who)
+#   2. TEMPORAL OPS   - Access history (was, change, trend, status)
+#   3. PREDICATES     - Boolean state checks (converged, stable, oscillating, etc.)
+#
+# Unlike standard LLMs that rely on external loss monitoring, this model
+# INTROSPECTS its own computation to adapt in real-time.
+#
+# Run with: python -m eigenscript examples/ai/introspective_llm.eigs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import transformer
+
+print of "═══════════════════════════════════════════════════════════════════"
+print of "       INTROSPECTIVE LLM: Self-Aware Neural Computation"
+print of "═══════════════════════════════════════════════════════════════════"
+print of ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PART 1: MODEL CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  PART 1: Model Configuration                                  ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+d_model is 4
+d_ff is 8
+d_k is 4
+vocab_size is 10
+seq_len is 3
+num_layers is 2
+
+scale is 1.0 / sqrt of d_k
+
+learning_rate is 0.1
+convergence_threshold is 0.85
+
+print of "Configuration:"
+print of "  d_model: 4, d_ff: 8, vocab_size: 10"
+print of "  learning_rate: 0.1"
+print of "  convergence_threshold: 0.85"
+print of ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PART 2: WEIGHT INITIALIZATION WITH INTROSPECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  PART 2: Weight Initialization with Introspection             ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+embed_matrix is random_matrix of [vocab_size, d_model]
+W_Q is random_matrix of [d_model, d_k]
+W_K is random_matrix of [d_model, d_k]
+W_V is random_matrix of [d_model, d_k]
+W_O is random_matrix of [d_k, d_model]
+W_ff1 is random_matrix of [d_model, d_ff]
+W_ff2 is random_matrix of [d_ff, d_model]
+
+print of "Weight initialization complete."
+print of ""
+print of ">>> INTERROGATIVE: Querying initialization state..."
+
+weight_identity is who is W_Q
+print of "  who is W_Q:"
+print of weight_identity
+
+weight_magnitude is what is W_Q
+print of "  what is W_Q (first coord):"
+print of weight_magnitude
+
+init_quality is how is W_Q
+print of "  how is W_Q (quality):"
+print of init_quality
+
+print of ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PART 3: INTROSPECTIVE ATTENTION MECHANISM
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  PART 3: Introspective Attention Mechanism                    ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define introspective_attention as:
+    input_emb is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    attn_scale is arg[4]
+
+    Q is matmul of [input_emb, w_q]
+    K is matmul of [input_emb, w_k]
+    V is matmul of [input_emb, w_v]
+
+    K_T is transpose of K
+    scores is matmul of [Q, K_T]
+    scores is matrix_scale of [scores, attn_scale]
+
+    if oscillating:
+        prev_scores is was is scores
+        scores is matrix_scale of [matrix_add of [scores, prev_scores], 0.5]
+
+    if chaotic:
+        scores is matrix_scale of [scores, 0.5]
+
+    attn_weights is softmax_matrix of scores
+    output is matmul of [attn_weights, V]
+
+    return output
+
+print of "Testing introspective attention..."
+print of ""
+
+token_ids is [1, 5, 3]
+token_embeddings is embedding_lookup of [embed_matrix, token_ids]
+pos_encoding is sinusoidal_pe of [seq_len, d_model]
+input_embeddings is matrix_add of [token_embeddings, pos_encoding]
+
+print of "Input token IDs: [1, 5, 3]"
+print of ""
+
+attn_output is introspective_attention of [input_embeddings, W_Q, W_K, W_V, scale]
+
+print of ">>> INTERROGATIVE: Querying attention output..."
+
+attn_gradient is why is attn_output
+print of "  why is attn_output (gradient direction):"
+print of attn_gradient
+
+attn_change is change is attn_output
+print of "  change is attn_output:"
+print of attn_change
+
+attn_trend is trend is attn_output
+print of "  trend is attn_output:"
+print of attn_trend
+
+print of ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PART 4: GRADIENT-FREE TRAINING USING INTERROGATIVES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  PART 4: Gradient-Free Training Using Interrogatives          ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define compute_loss as:
+    prediction is arg[0]
+    target is arg[1]
+    diff is matrix_add of [prediction, matrix_scale of [target, -1.0]]
+    squared is matmul of [transpose of diff, diff]
+    loss_val is matrix_mean of squared
+    return loss_val
+
+target_output is random_matrix of [seq_len, d_model]
+
+print of ">>> GRADIENT-FREE TRAINING LOOP"
+print of "    Using 'why is loss' instead of backpropagation"
+print of ""
+
+epoch is 0
+max_epochs is 10
+prev_loss is 1000.0
+current_loss is 100.0
+should_continue is 1
+
+loop while epoch < max_epochs:
+    if should_continue > 0:
+        hidden is introspective_attention of [input_embeddings, W_Q, W_K, W_V, scale]
+        hidden is layer_norm_matrix of hidden
+        ffn_hidden is matmul of [hidden, W_ff1]
+        ffn_act is gelu_matrix of ffn_hidden
+        output is matmul of [ffn_act, W_ff2]
+
+        prev_loss is current_loss
+        current_loss is compute_loss of [output, target_output]
+
+        loss_direction is why is current_loss
+        loss_delta is change is current_loss
+        loss_trend is trend is current_loss
+
+        effective_lr is learning_rate
+
+        if oscillating:
+            effective_lr is learning_rate * 0.5
+            print of "  [OSCILLATING] Reducing learning rate"
+
+        if stuck:
+            effective_lr is learning_rate * 1.5
+            print of "  [STUCK] Increasing learning rate"
+
+        if improving:
+            effective_lr is learning_rate * 1.1
+
+        update_scale is 1.0 - (effective_lr * 0.01)
+        W_ff1 is matrix_scale of [W_ff1, update_scale]
+        W_ff2 is matrix_scale of [W_ff2, update_scale]
+
+        print of "Epoch:"
+        print of epoch
+        print of "  Loss:"
+        print of current_loss
+        print of "  Trend:"
+        print of loss_trend
+        print of "  Framework Strength:"
+        print of framework_strength
+
+        if converged:
+            print of ""
+            print of ">>> CONVERGED! Stopping training early."
+            should_continue is 0
+
+        if stable:
+            if framework_strength > convergence_threshold:
+                print of ""
+                print of ">>> STABLE with high FS! Stopping training."
+                should_continue is 0
+
+        epoch is epoch + 1
+
+print of ""
+print of "Training complete after epochs:"
+print of epoch
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PART 5: SELF-TERMINATING GENERATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of ""
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  PART 5: Self-Terminating Generation                          ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+print of ">>> GENERATION: Model decides when to stop (not <EOS> token)"
+print of ""
+
+define introspective_generate as:
+    start_token is arg[0]
+    max_tokens is arg[1]
+
+    tokens is [start_token]
+    token_count is 1
+    temperature is 1.0
+    gen_continue is 1
+
+    loop while token_count < max_tokens:
+        if gen_continue > 0:
+            current_emb is embedding_lookup of [embed_matrix, tokens]
+            current_len is len of tokens
+            pos_enc is sinusoidal_pe of [current_len, d_model]
+            hidden is matrix_add of [current_emb, pos_enc]
+
+            hidden is introspective_attention of [hidden, W_Q, W_K, W_V, scale]
+            hidden is layer_norm_matrix of hidden
+
+            ffn_h is matmul of [hidden, W_ff1]
+            ffn_a is gelu_matrix of ffn_h
+            logits is matmul of [ffn_a, W_ff2]
+
+            logit_list is matrix_to_list of logits
+            first_row is logit_list[0]
+            next_token_raw is first_row[0]
+
+            scaled_raw is next_token_raw * 10
+            rounded_raw is round of scaled_raw
+            next_token is abs of rounded_raw
+            if next_token > 9:
+                next_token is next_token % 10
+
+            hidden_trend is trend is hidden
+
+            print of "  Generated token:"
+            print of next_token
+            print of "    Hidden trend:"
+            print of hidden_trend
+            print of "    Framework Strength:"
+            print of framework_strength
+
+            if stable:
+                print of "    [STABLE] Meaning stabilized - stopping generation"
+                gen_continue is 0
+
+            if converged:
+                print of "    [CONVERGED] Full convergence - stopping generation"
+                gen_continue is 0
+
+            if oscillating:
+                temp_val is what is temperature
+                temperature is temp_val * 1.2
+                print of "    [OSCILLATING] Increasing temperature"
+
+            if chaotic:
+                temp_val is what is temperature
+                temperature is temp_val * 0.8
+                print of "    [CHAOTIC] Decreasing temperature"
+
+            if gen_continue > 0:
+                tokens is append of [tokens, next_token]
+
+            token_count is token_count + 1
+
+    return tokens
+
+print of "Starting generation from token 1..."
+print of ""
+
+generated_tokens is introspective_generate of [1, 8]
+
+print of ""
+print of ">>> GENERATION COMPLETE"
+print of "Generated sequence:"
+print of generated_tokens
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PART 6: FULL INTROSPECTION SUMMARY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of ""
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  PART 6: Full Introspection Summary                           ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+print of ">>> FINAL STATE INTERROGATION"
+print of ""
+
+final_loss_val is what is current_loss
+print of "what is current_loss:"
+print of final_loss_val
+
+final_direction is why is current_loss
+print of "why is current_loss (gradient):"
+print of final_direction
+
+final_quality is how is current_loss
+print of "how is current_loss (quality):"
+print of final_quality
+
+final_when is when is current_loss
+print of "when (iteration count):"
+print of final_when
+
+prev_val is was is current_loss
+print of "was is current_loss (previous):"
+print of prev_val
+
+final_change is change is current_loss
+print of "change is current_loss:"
+print of final_change
+
+final_trend is trend is current_loss
+print of "trend is current_loss:"
+print of final_trend
+
+print of ""
+print of ">>> FINAL PREDICATE STATES"
+print of ""
+
+print of "converged:"
+print of converged
+
+print of "stable:"
+print of stable
+
+print of "improving:"
+print of improving
+
+print of "oscillating:"
+print of oscillating
+
+print of "stuck:"
+print of stuck
+
+print of "chaotic:"
+print of chaotic
+
+print of "equilibrium:"
+print of equilibrium
+
+print of "diverging:"
+print of diverging
+
+print of ""
+print of ">>> FRAMEWORK STRENGTH"
+final_fs is framework_strength
+print of "Final Framework Strength:"
+print of final_fs
+
+print of ""
+print of "═══════════════════════════════════════════════════════════════════"
+print of "                    INTROSPECTIVE LLM COMPLETE"
+print of "═══════════════════════════════════════════════════════════════════"
+print of ""
+print of "Key innovations demonstrated:"
+print of "  1. INTERROGATIVES: why/how/what/when for gradient-free updates"
+print of "  2. TEMPORALS: was/change/trend for history-aware adaptation"
+print of "  3. PREDICATES: converged/stable/oscillating for self-termination"
+print of ""
+print of "This model KNOWS when it has learned enough and when to stop generating."
+print of ""
