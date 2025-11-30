@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.22] - 2025-11-30
+
+### 🧠 Release: Introspective AI & Transformer Architecture
+
+This release introduces the **Introspective LLM** example and a complete **Transformer implementation** in native EigenScript, demonstrating how EigenScript's unique features can be used for self-aware neural computation.
+
+### Added
+- **Introspective LLM Example** (`examples/ai/introspective_llm.eigs`)
+  - Complete self-aware language model demonstrating EigenScript's unique capabilities
+  - **Gradient-free training** using `why is` interrogatives instead of backpropagation
+  - **Predicate-driven learning rate adaptation** (`improving`, `diverging`, `oscillating`, `stuck`, `chaotic`)
+  - **Multi-layer architecture** with per-layer convergence detection
+  - **Adaptive depth** - automatically skips layers when earlier layers converge
+  - **Temperature-based sampling** with softmax and argmax
+  - **Predicate-adaptive temperature** - increases on `oscillating`, decreases on `chaotic`
+  - **Causal masking** for proper autoregressive generation
+  - **Self-terminating generation** - model decides when to stop based on `stable`/`converged` predicates
+
+- **Custom Transformer Implementation** (`src/eigenscript/stdlib/transformer.eigs`)
+  - Scaled dot-product attention mechanism
+  - Masked attention for decoder (causal masking)
+  - Linear projections with and without bias
+  - Single and multi-head attention
+  - Position-wise feed-forward networks (GELU and ReLU variants)
+  - Encoder layer with layer normalization and residual connections
+  - Sinusoidal positional encoding
+  - Weight initialization helpers (Xavier/Glorot)
+  - Dropout support
+
+- **WASM Orbit Simulation** (`examples/orbit_wasm_demo.eigs`)
+  - Physics-based orbital mechanics simulation
+  - WASM-compatible for browser execution
+  - Demonstrates EigenScript's numerical computing capabilities
+
+### Key Innovations Demonstrated
+1. **INTERROGATIVES**: `why`/`how`/`what`/`when` for gradient-free updates
+2. **TEMPORALS**: `was`/`change`/`trend` for history-aware adaptation
+3. **PREDICATES**: `converged`/`stable`/`oscillating` for self-termination
+4. **MULTI-LAYER**: Per-layer convergence with adaptive depth
+5. **TEMPERATURE**: Predicate-adaptive sampling
+6. **CAUSAL MASKING**: Autoregressive generation with proper masking
+
+### Architecture
+- Models that KNOW when they have learned enough
+- Models that KNOW when to stop generating
+- No explicit `<EOS>` token needed - semantic convergence determines completion
+- Training without traditional gradient descent - uses EigenScript's semantic predicates
+
 ## [0.3.1] - 2025-11-26
 
 ### 🎯 Release: Temporal Operators & Developer Experience
