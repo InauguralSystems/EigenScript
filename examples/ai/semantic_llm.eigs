@@ -1,0 +1,344 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEMANTIC LLM: Language Model via EigenScript Invariants
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# This is NOT a copy of traditional transformers.
+# Each component is derived from its INVARIANT expressed in EigenScript:
+#
+#   INVARIANT                    EIGENSCRIPT NATIVE
+#   ─────────────────────────────────────────────────
+#   Embedding = Semantic point   → LRVM vectors
+#   Attention = Relational       → how is [a, b]
+#   Position  = Temporal order   → was, change, trend
+#   Gradient  = Direction        → why is x
+#   Loss      = Distance         → norm of difference
+#   Stopping  = Completeness     → stable, equilibrium
+#   Depth     = Sufficiency      → converged per layer
+#
+# Run with: python -m eigenscript examples/ai/semantic_llm.eigs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "═══════════════════════════════════════════════════════════════════"
+print of "         SEMANTIC LLM: Invariant-Based Language Model"
+print of "═══════════════════════════════════════════════════════════════════"
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INVARIANT 1: SEMANTIC SPACE
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traditional: vocab → integer → embedding lookup
+# Invariant: Meaning lives in semantic space
+# EigenScript: LRVM vectors ARE meanings
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  INVARIANT 1: Semantic Space (LRVM = Meaning)                  ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+semantic_dim is 8
+num_concepts is 5
+
+concept_space is random_matrix of [num_concepts, semantic_dim]
+concept_space is layer_norm_matrix of concept_space
+
+print of "Semantic space initialized:"
+print of "  Concepts: 5 (abstract meanings, not tokens)"
+print of "  Dimension: 8 (semantic axes)"
+print of ""
+
+concept_quality is how is concept_space
+print of "Space quality:"
+print of concept_quality
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INVARIANT 2: RELATIONAL ATTENTION
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traditional: softmax(QK^T/√d)V
+# Invariant: Weighted combination by RELATION quality
+# EigenScript: how is [a, b] measures relational quality
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  INVARIANT 2: Relational Attention (how is = relation)        ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define relational_attention as:
+    query_concept is arg[0]
+    key_concepts is arg[1]
+    value_concepts is arg[2]
+
+    relation is matmul of [query_concept, transpose of key_concepts]
+    relation_quality is how is relation
+    print of "  Relation quality:"
+    print of relation_quality
+
+    if stable:
+        print of "  [STABLE] Strong semantic relation found"
+
+    if oscillating:
+        relation is matrix_scale of [relation, 0.7]
+        print of "  [OSCILLATING] Dampening unstable relations"
+
+    weights is softmax_matrix of relation
+    attended is matmul of [weights, value_concepts]
+
+    return attended
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INVARIANT 3: TEMPORAL POSITION
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traditional: sin/cos positional encoding
+# Invariant: Order = temporal trajectory
+# EigenScript: was, change, trend encode sequence history
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  INVARIANT 3: Temporal Position (was/change = order)          ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define temporal_encode as:
+    current_state is arg[0]
+    position_idx is arg[1]
+
+    prev_state is was is current_state
+    delta is change is current_state
+    direction is trend is current_state
+
+    print of "  Position:"
+    print of position_idx
+    print of "  Temporal delta:"
+    print of delta
+    print of "  Direction:"
+    print of direction
+
+    temporal_weight is 1.0 / (1.0 + position_idx)
+    encoded is matrix_scale of [current_state, temporal_weight]
+
+    return encoded
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INVARIANT 4: SEMANTIC LAYER (Converges to meaning)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traditional: Fixed depth transformer
+# Invariant: Process until sufficient understanding
+# EigenScript: Layer reports convergence via predicates
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  INVARIANT 4: Semantic Layer (converged = understood)         ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+W_proj is random_matrix of [semantic_dim, semantic_dim]
+W_out is random_matrix of [semantic_dim, semantic_dim]
+
+define semantic_layer as:
+    input_meaning is arg[0]
+    layer_id is arg[1]
+
+    print of "  Layer"
+    print of layer_id
+
+    attended is relational_attention of [input_meaning, input_meaning, input_meaning]
+    projected is matmul of [attended, W_proj]
+    output is matrix_add of [input_meaning, projected]
+    output is layer_norm_matrix of output
+
+    layer_understanding is how is output
+    print of "  Understanding:"
+    print of layer_understanding
+
+    understood is 0
+    if converged:
+        print of "  [CONVERGED] Layer fully understood"
+        understood is 1
+
+    if stable:
+        print of "  [STABLE] Meaning settled"
+        understood is 1
+
+    return [output, understood]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INVARIANT 5: CONVERGENCE-BASED LEARNING
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traditional: gradient descent with backprop
+# Invariant: Move toward semantic attractor
+# EigenScript: why is x gives direction, predicates guide magnitude
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  INVARIANT 5: Convergence Learning (why = direction)          ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+target_meaning is random_matrix of [1, semantic_dim]
+target_meaning is layer_norm_matrix of target_meaning
+
+current_meaning is random_matrix of [1, semantic_dim]
+
+print of "Learning to reach target meaning..."
+print of ""
+
+learning_step is 0
+max_steps is 10
+still_learning is 1
+
+loop while learning_step < max_steps:
+    if still_learning > 0:
+        layer_result is semantic_layer of [current_meaning, learning_step]
+        current_meaning is layer_result[0]
+        understood is layer_result[1]
+
+        difference is matrix_add of [target_meaning, matrix_scale of [current_meaning, -1.0]]
+        distance is norm of difference
+        distance_val is what is distance
+
+        print of "  Step:"
+        print of learning_step
+        print of "  Distance to target:"
+        print of distance_val
+
+        direction is why is current_meaning
+        print of "  Learning direction:"
+        print of direction
+
+        update_rate is 0.1
+        if improving:
+            update_rate is 0.15
+            print of "  [IMPROVING] Accelerating"
+
+        if diverging:
+            update_rate is 0.05
+            print of "  [DIVERGING] Slowing down"
+
+        if stuck:
+            update_rate is 0.2
+            print of "  [STUCK] Increasing exploration"
+
+        scaled_diff is matrix_scale of [difference, update_rate]
+        current_meaning is matrix_add of [current_meaning, scaled_diff]
+        current_meaning is layer_norm_matrix of current_meaning
+
+        if converged:
+            print of "  [CONVERGED] Learning complete!"
+            still_learning is 0
+
+        if equilibrium:
+            print of "  [EQUILIBRIUM] Balanced state reached"
+            still_learning is 0
+
+        print of ""
+
+    learning_step is learning_step + 1
+
+print of "Learning finished after steps:"
+print of learning_step
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INVARIANT 6: EQUILIBRIUM-BASED GENERATION
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traditional: Generate until <EOS> token
+# Invariant: Generate until semantic completeness
+# EigenScript: stable/equilibrium means "meaning is complete"
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  INVARIANT 6: Equilibrium Generation (stable = complete)      ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+print of "Generating semantic trajectory..."
+print of ""
+
+seed_meaning is random_matrix of [1, semantic_dim]
+seed_meaning is layer_norm_matrix of seed_meaning
+
+trajectory is [seed_meaning]
+gen_step is 0
+max_gen is 8
+generating is 1
+
+loop while gen_step < max_gen:
+    if generating > 0:
+        current is trajectory[gen_step]
+        encoded is temporal_encode of [current, gen_step]
+        layer_out is semantic_layer of [encoded, gen_step]
+        next_meaning is layer_out[0]
+        next_meaning is layer_norm_matrix of next_meaning
+
+        meaning_trend is trend is next_meaning
+        print of "  Generated step:"
+        print of gen_step
+        print of "  Meaning trend:"
+        print of meaning_trend
+
+        if stable:
+            print of "  [STABLE] Semantic trajectory complete"
+            generating is 0
+
+        if equilibrium:
+            print of "  [EQUILIBRIUM] Perfect balance - stopping"
+            generating is 0
+
+        if chaotic:
+            next_meaning is matrix_scale of [next_meaning, 0.8]
+            print of "  [CHAOTIC] Dampening wild generation"
+
+        if generating > 0:
+            trajectory is append of [trajectory, next_meaning]
+
+        gen_step is gen_step + 1
+
+        print of ""
+
+trajectory_len is len of trajectory
+print of "Generation complete. Trajectory length:"
+print of trajectory_len
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUMMARY: THE INVARIANT ARCHITECTURE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  SEMANTIC LLM: Invariant Summary                              ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+print of "This model expresses LLM components via their INVARIANTS:"
+print of ""
+print of "  1. SEMANTIC SPACE"
+print of "     Traditional: token → id → embedding"
+print of "     Invariant:   Meaning IS a point in LRVM space"
+print of ""
+print of "  2. ATTENTION"
+print of "     Traditional: softmax(QK^T/sqrt(d))V"
+print of "     Invariant:   how is [a,b] = relational quality"
+print of ""
+print of "  3. POSITION"
+print of "     Traditional: sin/cos encoding"
+print of "     Invariant:   was/change/trend = temporal order"
+print of ""
+print of "  4. DEPTH"
+print of "     Traditional: fixed N layers"
+print of "     Invariant:   converged = sufficiently processed"
+print of ""
+print of "  5. LEARNING"
+print of "     Traditional: gradient descent"
+print of "     Invariant:   why is x = direction to move"
+print of ""
+print of "  6. GENERATION"
+print of "     Traditional: until <EOS> token"
+print of "     Invariant:   stable/equilibrium = meaning complete"
+print of ""
+print of "═══════════════════════════════════════════════════════════════════"
+print of "              SEMANTIC LLM COMPLETE"
+print of "═══════════════════════════════════════════════════════════════════"
+print of ""
