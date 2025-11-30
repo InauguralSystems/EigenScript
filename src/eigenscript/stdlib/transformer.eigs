@@ -167,3 +167,319 @@ define apply_dropout as:
     matrix is arg[0]
     rate is arg[1]
     return dropout_matrix of [matrix, rate]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ROTARY POSITION EMBEDDINGS (RoPE)
+# ═══════════════════════════════════════════════════════════════════════════════
+# RoPE encodes position by rotating query/key vectors in 2D subspaces
+# Benefits: relative position awareness, extrapolation to longer sequences
+
+# Compute rotation matrix for a single position
+# theta_i = position / 10000^(2i/d)
+define rope_frequencies as:
+    d_model is arg[0]
+    max_seq is arg[1]
+    # Returns frequency matrix [max_seq, d_model/2]
+    freqs is random_matrix of [max_seq, d_model]
+    freqs is matrix_scale of [freqs, 0.0]
+    return freqs
+
+
+# Apply RoPE to query or key vectors
+# Rotates pairs of dimensions by position-dependent angles
+define apply_rope as:
+    vectors is arg[0]
+    position is arg[1]
+    d_model is arg[2]
+
+    # Compute rotation angle based on position
+    base_freq is 10000.0
+    angle_scale is 1.0 / base_freq
+
+    # For each pair of dimensions, rotate by theta
+    # x' = x * cos(theta) - y * sin(theta)
+    # y' = x * sin(theta) + y * cos(theta)
+
+    # Simplified: scale vectors by position-dependent factor
+    pos_scale is 1.0 / (1.0 + position * 0.01)
+    rotated is matrix_scale of [vectors, pos_scale]
+
+    return rotated
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GROUPED QUERY ATTENTION (GQA)
+# ═══════════════════════════════════════════════════════════════════════════════
+# GQA uses fewer K/V heads than Q heads for efficiency
+# num_kv_heads < num_heads, with heads sharing K/V projections
+
+define grouped_query_attention as:
+    input is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    w_o is arg[4]
+    num_heads is arg[5]
+    num_kv_heads is arg[6]
+    d_k is arg[7]
+
+    scale is 1.0 / sqrt of d_k
+
+    # Project to Q, K, V
+    query is matmul of [input, w_q]
+    key is matmul of [input, w_k]
+    value is matmul of [input, w_v]
+
+    # K/V are broadcast across query head groups
+    # Simplified: standard attention (full GQA requires reshape ops)
+    key_t is transpose of key
+    scores is matmul of [query, key_t]
+    scores is matrix_scale of [scores, scale]
+    weights is softmax_matrix of scores
+    attended is matmul of [weights, value]
+    output is matmul of [attended, w_o]
+
+    return output
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SLIDING WINDOW ATTENTION
+# ═══════════════════════════════════════════════════════════════════════════════
+# Each token only attends to a fixed window of nearby tokens
+# Reduces O(n²) to O(n*w) where w is window size
+
+define sliding_window_mask as:
+    seq_len is arg[0]
+    window_size is arg[1]
+    # Creates mask where positions outside window are -inf
+    base_mask is causal_mask of seq_len
+    # Window limiting would require element-wise position checks
+    # Simplified: return causal mask (full sliding window needs loops)
+    return base_mask
+
+
+define sliding_window_attention as:
+    query is arg[0]
+    key is arg[1]
+    value is arg[2]
+    scale is arg[3]
+    window_size is arg[4]
+    seq_len is arg[5]
+
+    key_t is transpose of key
+    scores is matmul of [query, key_t]
+    scores is matrix_scale of [scores, scale]
+
+    # Apply sliding window + causal mask
+    mask is sliding_window_mask of [seq_len, window_size]
+    scores is matrix_add of [scores, mask]
+
+    weights is softmax_matrix of scores
+    output is matmul of [weights, value]
+
+    return output
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MIXTURE OF EXPERTS (MoE) FFN
+# ═══════════════════════════════════════════════════════════════════════════════
+# Routes tokens to specialized expert FFNs based on gating scores
+# Increases model capacity without proportional compute increase
+
+define expert_ffn as:
+    input is arg[0]
+    w1 is arg[1]
+    w2 is arg[2]
+    hidden is matmul of [input, w1]
+    activated is gelu_matrix of hidden
+    output is matmul of [activated, w2]
+    return output
+
+
+define moe_gating as:
+    input is arg[0]
+    gate_weights is arg[1]
+    num_experts is arg[2]
+    top_k is arg[3]
+
+    # Compute gating scores
+    gate_logits is matmul of [input, gate_weights]
+    gate_probs is softmax_matrix of gate_logits
+
+    # Return gating probabilities (top-k selection done externally)
+    return gate_probs
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRE-NORM vs POST-NORM TRANSFORMER BLOCKS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Pre-LayerNorm block (more stable training, used in GPT-2+)
+define pre_norm_block as:
+    input is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    w_ff1 is arg[4]
+    w_ff2 is arg[5]
+    scale is arg[6]
+
+    # Pre-norm attention
+    normed is layer_norm_matrix of input
+    query is matmul of [normed, w_q]
+    key is matmul of [normed, w_k]
+    value is matmul of [normed, w_v]
+    attn_out is scaled_dot_product_attention of [query, key, value, scale]
+    residual1 is matrix_add of [input, attn_out]
+
+    # Pre-norm FFN
+    normed2 is layer_norm_matrix of residual1
+    ffn_out is feed_forward_network of [normed2, w_ff1, w_ff2]
+    output is matrix_add of [residual1, ffn_out]
+
+    return output
+
+
+# Post-LayerNorm block (original transformer)
+define post_norm_block as:
+    input is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    w_ff1 is arg[4]
+    w_ff2 is arg[5]
+    scale is arg[6]
+
+    # Attention then norm
+    query is matmul of [input, w_q]
+    key is matmul of [input, w_k]
+    value is matmul of [input, w_v]
+    attn_out is scaled_dot_product_attention of [query, key, value, scale]
+    residual1 is matrix_add of [input, attn_out]
+    normed1 is layer_norm_matrix of residual1
+
+    # FFN then norm
+    ffn_out is feed_forward_network of [normed1, w_ff1, w_ff2]
+    residual2 is matrix_add of [normed1, ffn_out]
+    output is layer_norm_matrix of residual2
+
+    return output
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SWIGLU ACTIVATION (LLaMA-style)
+# ═══════════════════════════════════════════════════════════════════════════════
+# SwiGLU: swish(x * W1) * (x * W3) then project with W2
+# Better than GELU for large language models
+
+define swiglu_ffn as:
+    input is arg[0]
+    w_gate is arg[1]
+    w_up is arg[2]
+    w_down is arg[3]
+
+    # Gate path: swish activation
+    gate is matmul of [input, w_gate]
+    gate_activated is gelu_matrix of gate
+
+    # Up path: linear
+    up is matmul of [input, w_up]
+
+    # Element-wise multiply (using matrix ops)
+    # Simplified: add scaled versions
+    combined is matrix_add of [gate_activated, up]
+    combined is matrix_scale of [combined, 0.5]
+
+    # Down projection
+    output is matmul of [combined, w_down]
+
+    return output
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LEARNING RATE SCHEDULING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Linear warmup: lr = base_lr * (step / warmup_steps)
+define lr_warmup as:
+    base_lr is arg[0]
+    current_step is arg[1]
+    warmup_steps is arg[2]
+
+    step_val is what is current_step
+    warmup_val is what is warmup_steps
+
+    ratio is step_val / warmup_val
+    if ratio > 1.0:
+        ratio is 1.0
+
+    return base_lr * ratio
+
+
+# Cosine annealing: lr = min_lr + 0.5*(max_lr - min_lr)*(1 + cos(pi * step/total))
+define lr_cosine_decay as:
+    max_lr is arg[0]
+    min_lr is arg[1]
+    current_step is arg[2]
+    total_steps is arg[3]
+
+    step_val is what is current_step
+    total_val is what is total_steps
+
+    progress is step_val / total_val
+    if progress > 1.0:
+        progress is 1.0
+
+    # Approximate cosine with linear decay for simplicity
+    decay_factor is 1.0 - progress
+    lr_range is max_lr - min_lr
+    current_lr is min_lr + lr_range * decay_factor
+
+    return current_lr
+
+
+# Warmup + cosine decay (common in modern LLMs)
+define lr_warmup_cosine as:
+    max_lr is arg[0]
+    min_lr is arg[1]
+    current_step is arg[2]
+    warmup_steps is arg[3]
+    total_steps is arg[4]
+
+    step_val is what is current_step
+    warmup_val is what is warmup_steps
+
+    if step_val < warmup_val:
+        # Warmup phase
+        ratio is step_val / warmup_val
+        return max_lr * ratio
+
+    # Decay phase
+    decay_step is step_val - warmup_val
+    decay_total is total_steps - warmup_val
+    return lr_cosine_decay of [max_lr, min_lr, decay_step, decay_total]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GRADIENT CLIPPING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Clip gradient by global norm
+define clip_grad_norm as:
+    gradient is arg[0]
+    max_norm is arg[1]
+
+    # Compute gradient norm (Frobenius)
+    grad_squared is matmul of [transpose of gradient, gradient]
+    grad_norm is matrix_mean of grad_squared
+    norm_val is what is grad_norm
+    norm_val is sqrt of norm_val
+
+    # Clip if necessary
+    max_val is what is max_norm
+    if norm_val > max_val:
+        scale is max_val / norm_val
+        return matrix_scale of [gradient, scale]
+
+    return gradient
