@@ -140,6 +140,66 @@ define attention_head as:
     return attended
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# KV-CACHED ATTENTION: Memory as Temporal History
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Cache IS the temporal trace of computation
+#   - `was is K_cache` retrieves previous keys
+#   - New K/V appended to history
+#   - Only query the new position, attend to full history
+
+K_cache_h1 is matrix of [[0.0]]
+K_cache_h2 is matrix of [[0.0]]
+K_cache_h3 is matrix of [[0.0]]
+K_cache_h4 is matrix of [[0.0]]
+V_cache_h1 is matrix of [[0.0]]
+V_cache_h2 is matrix of [[0.0]]
+V_cache_h3 is matrix of [[0.0]]
+V_cache_h4 is matrix of [[0.0]]
+cache_initialized is 0
+
+define cached_attention_head as:
+    new_token_emb is arg[0]
+    w_q is arg[1]
+    w_k is arg[2]
+    w_v is arg[3]
+    k_cache is arg[4]
+    v_cache is arg[5]
+    head_id is arg[6]
+    use_cache is arg[7]
+
+    new_q is matmul of [new_token_emb, w_q]
+    new_k is matmul of [new_token_emb, w_k]
+    new_v is matmul of [new_token_emb, w_v]
+
+    prev_k is was is k_cache
+    prev_v is was is v_cache
+    k_change is change is k_cache
+    v_change is change is v_cache
+
+    cache_active is what is use_cache
+    if cache_active > 0:
+        full_k is matrix_concat of [k_cache, new_k]
+        full_v is matrix_concat of [v_cache, new_v]
+    else:
+        full_k is new_k
+        full_v is new_v
+
+    K_T is transpose of full_k
+    scores is matmul of [new_q, K_T]
+    scale is 1.0 / sqrt of head_dim
+    scores is matrix_scale of [scores, scale]
+
+    relation_quality is how is scores
+    if oscillating:
+        scores is matrix_scale of [scores, 0.9]
+
+    weights is softmax_matrix of scores
+    attended is matmul of [weights, full_v]
+
+    return [attended, full_k, full_v]
+
+
 define multi_head_attention as:
     input_seq is arg[0]
     seq_len_arg is arg[1]
@@ -166,6 +226,59 @@ define multi_head_attention as:
         print of "  [MULTI-HEAD] All 4 perspectives aligned"
 
     return output
+
+
+define cached_multi_head_attention as:
+    new_token_emb is arg[0]
+    kv_caches is arg[1]
+    use_cache is arg[2]
+
+    kc1 is kv_caches[0]
+    vc1 is kv_caches[1]
+    kc2 is kv_caches[2]
+    vc2 is kv_caches[3]
+    kc3 is kv_caches[4]
+    vc3 is kv_caches[5]
+    kc4 is kv_caches[6]
+    vc4 is kv_caches[7]
+
+    r1 is cached_attention_head of [new_token_emb, W_Q_h1, W_K_h1, W_V_h1, kc1, vc1, 1, use_cache]
+    r2 is cached_attention_head of [new_token_emb, W_Q_h2, W_K_h2, W_V_h2, kc2, vc2, 2, use_cache]
+    r3 is cached_attention_head of [new_token_emb, W_Q_h3, W_K_h3, W_V_h3, kc3, vc3, 3, use_cache]
+    r4 is cached_attention_head of [new_token_emb, W_Q_h4, W_K_h4, W_V_h4, kc4, vc4, 4, use_cache]
+
+    h1 is r1[0]
+    new_kc1 is r1[1]
+    new_vc1 is r1[2]
+
+    h2 is r2[0]
+    new_kc2 is r2[1]
+    new_vc2 is r2[2]
+
+    h3 is r3[0]
+    new_kc3 is r3[1]
+    new_vc3 is r3[2]
+
+    h4 is r4[0]
+    new_kc4 is r4[1]
+    new_vc4 is r4[2]
+
+    h1_proj is matmul of [h1, W_O_h1]
+    h2_proj is matmul of [h2, W_O_h2]
+    h3_proj is matmul of [h3, W_O_h3]
+    h4_proj is matmul of [h4, W_O_h4]
+
+    combined is matrix_add of [h1_proj, h2_proj]
+    combined is matrix_add of [combined, h3_proj]
+    combined is matrix_add of [combined, h4_proj]
+    output is matrix_scale of [combined, 0.25]
+
+    cache_trend is trend is kc1
+    if stable:
+        print of "  [CACHED] KV history stable"
+
+    new_caches is [new_kc1, new_vc1, new_kc2, new_vc2, new_kc3, new_vc3, new_kc4, new_vc4]
+    return [output, new_caches]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -351,21 +464,28 @@ define generate_sequence as:
     start_tokens is arg[0]
     max_new_tokens is arg[1]
 
-    current_tokens is start_tokens
+    first_tok_raw is start_tokens[0]
+    second_tok_raw is start_tokens[1]
+    first_tok is what is first_tok_raw
+    second_tok is what is second_tok_raw
+    current_tokens is [first_tok, second_tok]
     gen_step is 0
     temperature is 1.0
     still_generating is 1
 
     loop while gen_step < max_new_tokens:
         if still_generating > 0:
-            encoded is encode_sequence of [current_tokens]
+            embeddings is embedding_lookup of [vocab_embeddings, current_tokens]
+            curr_len_raw is len of current_tokens
+            curr_len is what is curr_len_raw
+            pos_enc is sinusoidal_pe of [curr_len, semantic_dim]
+            encoded is matrix_add of [embeddings, pos_enc]
+
             forward_out is forward_pass of [encoded, 2]
             hidden is forward_out[0]
 
             hidden_list is matrix_to_list of hidden
-            curr_len_raw is len of current_tokens
-            last_pos is what is curr_len_raw
-            last_pos is last_pos - 1
+            last_pos is curr_len - 1
             last_hidden_row is hidden_list[last_pos]
             last_hidden is matrix of [last_hidden_row]
 
@@ -403,7 +523,8 @@ define generate_sequence as:
                 print of "  [CHAOTIC] Decreasing temperature"
 
             if still_generating > 0:
-                current_tokens is append of [current_tokens, next_token]
+                tok_int is what is next_token
+                _discard is append of [current_tokens, tok_int]
 
             gen_step is gen_step + 1
 
@@ -420,6 +541,102 @@ generated is generate_sequence of [seed_tokens, 5]
 
 print of "Final generated sequence (token IDs):"
 print of generated
+print of ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CACHED GENERATION: Incremental Decoding with KV Cache
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Cache IS temporal history
+#   - First pass populates cache
+#   - Subsequent passes only compute new token
+#   - `was is cache` tracks cache evolution
+
+print of "╔════════════════════════════════════════════════════════════════╗"
+print of "║  CACHED GENERATION: Incremental KV-Cached Decoding            ║"
+print of "╚════════════════════════════════════════════════════════════════╝"
+print of ""
+
+define generate_with_cache as:
+    start_tokens is arg[0]
+    max_new_tokens is arg[1]
+
+    init_emb is random_matrix of [1, head_dim]
+    kv_cache is [init_emb, init_emb, init_emb, init_emb, init_emb, init_emb, init_emb, init_emb]
+
+    current_tokens is start_tokens
+    gen_step is 0
+    temperature is 1.0
+    still_generating is 1
+    cache_active is 0
+
+    print of "  [INIT] Populating cache with prompt..."
+
+    loop while gen_step < max_new_tokens:
+        if still_generating > 0:
+            curr_len_raw is len of current_tokens
+            curr_len is what is curr_len_raw
+            last_idx is curr_len - 1
+
+            tok_to_process is current_tokens[last_idx]
+            tok_list is [tok_to_process]
+            tok_emb is embedding_lookup of [vocab_embeddings, tok_list]
+            pos_enc is sinusoidal_pe of [1, semantic_dim]
+            encoded_tok is matrix_add of [tok_emb, pos_enc]
+
+            attn_result is cached_multi_head_attention of [encoded_tok, kv_cache, cache_active]
+            attended is attn_result[0]
+            kv_cache is attn_result[1]
+            cache_active is 1
+
+            cache_history is was is kv_cache
+            cache_change is change is kv_cache
+
+            normed is layer_norm_matrix of attended
+            ff1 is matmul of [normed, W_ff1]
+            ff1 is gelu_matrix of ff1
+            ff2 is matmul of [ff1, W_ff2]
+            hidden is matrix_add of [normed, ff2]
+            hidden is layer_norm_matrix of hidden
+
+            next_token is decode_to_token of [hidden, temperature]
+
+            print of "  Cached step"
+            print of gen_step
+            print of "token:"
+            print of next_token
+
+            hidden_trend is trend is hidden
+            if stable:
+                print of "    [CACHE STABLE] History settled"
+
+            if next_token < 3:
+                if next_token > 1:
+                    print of "    [END] Generation complete"
+                    still_generating is 0
+
+            if oscillating:
+                temp_val is what is temperature
+                temperature is temp_val * 1.1
+
+            if still_generating > 0:
+                tok_int is what is next_token
+                _discard is append of [current_tokens, tok_int]
+
+            gen_step is gen_step + 1
+
+    return current_tokens
+
+
+print of "Cached generation from: <start> the"
+print of ""
+
+cached_seed is [1, 3]
+cached_generated is generate_with_cache of [cached_seed, 4]
+
+print of ""
+print of "Cached generated sequence:"
+print of cached_generated
 print of ""
 
 
