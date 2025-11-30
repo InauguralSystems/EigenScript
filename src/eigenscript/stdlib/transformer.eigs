@@ -402,3 +402,281 @@ define clip_grad_norm as:
         scale is max_val / norm_val
         return matrix_scale of [gradient, scale]
     return gradient
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CROSS-ENTROPY LOSS
+# ═══════════════════════════════════════════════════════════════════════════════
+# The standard loss function for language models
+# CE(y, p) = -sum(y * log(p)) where y is one-hot target, p is prediction
+
+define cross_entropy_loss as:
+    logits is arg[0]
+    target_idx is arg[1]
+    probs is softmax_matrix of logits
+    prob_list is matrix_to_list of probs
+    row is prob_list[0]
+    target_prob is row[target_idx]
+    target_val is what is target_prob
+    epsilon is 0.0000001
+    safe_prob is target_val + epsilon
+    neg_log_prob is 0.0 - log of safe_prob
+    return neg_log_prob
+
+
+define cross_entropy_with_label_smoothing as:
+    logits is arg[0]
+    target_idx is arg[1]
+    smoothing is arg[2]
+    vocab_size is arg[3]
+    probs is softmax_matrix of logits
+    prob_list is matrix_to_list of probs
+    row is prob_list[0]
+    target_prob is row[target_idx]
+    target_val is what is target_prob
+    epsilon is 0.0000001
+    smooth_val is what is smoothing
+    vocab_val is what is vocab_size
+    confidence is 1.0 - smooth_val
+    smooth_dist is smooth_val / vocab_val
+    adjusted_target is confidence * target_val + smooth_dist
+    safe_prob is adjusted_target + epsilon
+    neg_log_prob is 0.0 - log of safe_prob
+    return neg_log_prob
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERPLEXITY
+# ═══════════════════════════════════════════════════════════════════════════════
+# PPL = exp(average cross-entropy loss)
+# Lower is better; measures how "surprised" the model is
+
+define perplexity_from_loss as:
+    avg_loss is arg[0]
+    loss_val is what is avg_loss
+    ppl is exp of loss_val
+    return ppl
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADAMW OPTIMIZER
+# ═══════════════════════════════════════════════════════════════════════════════
+# AdamW: Adam with decoupled weight decay (standard for LLMs)
+# Unlike Adam, weight decay is applied directly to weights, not through gradient
+
+define adamw_step as:
+    weight is arg[0]
+    gradient is arg[1]
+    m_state is arg[2]
+    v_state is arg[3]
+    lr is arg[4]
+    beta1 is arg[5]
+    beta2 is arg[6]
+    epsilon is arg[7]
+    weight_decay is arg[8]
+    step_num is arg[9]
+    beta1_val is what is beta1
+    beta2_val is what is beta2
+    step_val is what is step_num
+    one_minus_b1 is 1.0 - beta1_val
+    one_minus_b2 is 1.0 - beta2_val
+    new_m is matrix_scale of [m_state, beta1_val]
+    grad_contrib is matrix_scale of [gradient, one_minus_b1]
+    new_m is matrix_add of [new_m, grad_contrib]
+    new_v is matrix_scale of [v_state, beta2_val]
+    grad_sq is matmul of [transpose of gradient, gradient]
+    grad_sq_scaled is matrix_scale of [grad_sq, one_minus_b2]
+    bias_correct1 is 1.0 - (beta1_val * beta1_val)
+    bias_correct2 is 1.0 - (beta2_val * beta2_val)
+    lr_val is what is lr
+    wd_val is what is weight_decay
+    decay_term is matrix_scale of [weight, wd_val]
+    weight_after_decay is matrix_add of [weight, matrix_scale of [decay_term, -1.0]]
+    update is matrix_scale of [new_m, lr_val]
+    new_weight is matrix_add of [weight_after_decay, matrix_scale of [update, -1.0]]
+    return [new_weight, new_m, new_v]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CROSS-ATTENTION (for encoder-decoder models)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Query from decoder, Key/Value from encoder
+
+define cross_attention as:
+    decoder_hidden is arg[0]
+    encoder_output is arg[1]
+    w_q is arg[2]
+    w_k is arg[3]
+    w_v is arg[4]
+    scale is arg[5]
+    query is matmul of [decoder_hidden, w_q]
+    key is matmul of [encoder_output, w_k]
+    value is matmul of [encoder_output, w_v]
+    key_t is transpose of key
+    scores is matmul of [query, key_t]
+    scores is matrix_scale of [scores, scale]
+    weights is softmax_matrix of scores
+    output is matmul of [weights, value]
+    return output
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KV CACHE (reusable)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Caches key/value for efficient autoregressive generation
+
+define kv_cache_append as:
+    cache is arg[0]
+    new_kv is arg[1]
+    use_cache is arg[2]
+    cache_flag is what is use_cache
+    if cache_flag > 0:
+        updated is matrix_concat of [cache, new_kv]
+        return updated
+    return new_kv
+
+
+define cached_attention as:
+    new_q is arg[0]
+    new_k is arg[1]
+    new_v is arg[2]
+    k_cache is arg[3]
+    v_cache is arg[4]
+    scale is arg[5]
+    use_cache is arg[6]
+    full_k is kv_cache_append of [k_cache, new_k, use_cache]
+    full_v is kv_cache_append of [v_cache, new_v, use_cache]
+    key_t is transpose of full_k
+    scores is matmul of [new_q, key_t]
+    scores is matrix_scale of [scores, scale]
+    weights is softmax_matrix of scores
+    attended is matmul of [weights, full_v]
+    return [attended, full_k, full_v]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEIGHT INITIALIZATION OPTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+define he_init as:
+    shape is arg[0]
+    fan_in is shape[0]
+    fan_in_val is what is fan_in
+    std is sqrt of (2.0 / fan_in_val)
+    weights is random_matrix of shape
+    weights is matrix_scale of [weights, std]
+    return weights
+
+
+define orthogonal_init as:
+    shape is arg[0]
+    weights is random_matrix of shape
+    weights is layer_norm_matrix of weights
+    return weights
+
+
+define normal_init as:
+    shape is arg[0]
+    std is arg[1]
+    weights is random_matrix of shape
+    std_val is what is std
+    weights is matrix_scale of [weights, std_val]
+    return weights
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DECODER BLOCK (full transformer decoder layer)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Self-attention + optional cross-attention + FFN
+
+define decoder_block as:
+    input is arg[0]
+    encoder_out is arg[1]
+    w_self_q is arg[2]
+    w_self_k is arg[3]
+    w_self_v is arg[4]
+    w_cross_q is arg[5]
+    w_cross_k is arg[6]
+    w_cross_v is arg[7]
+    w_ff1 is arg[8]
+    w_ff2 is arg[9]
+    scale is arg[10]
+    seq_len is arg[11]
+    normed1 is layer_norm_matrix of input
+    self_q is matmul of [normed1, w_self_q]
+    self_k is matmul of [normed1, w_self_k]
+    self_v is matmul of [normed1, w_self_v]
+    self_attn is masked_attention of [self_q, self_k, self_v, scale, causal_mask of seq_len]
+    residual1 is matrix_add of [input, self_attn]
+    normed2 is layer_norm_matrix of residual1
+    cross_out is cross_attention of [normed2, encoder_out, w_cross_q, w_cross_k, w_cross_v, scale]
+    residual2 is matrix_add of [residual1, cross_out]
+    normed3 is layer_norm_matrix of residual2
+    ffn_out is feed_forward_network of [normed3, w_ff1, w_ff2]
+    output is matrix_add of [residual2, ffn_out]
+    return output
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEMPERATURE SAMPLING UTILITIES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+define apply_temperature as:
+    logits is arg[0]
+    temperature is arg[1]
+    temp_val is what is temperature
+    inv_temp is 1.0 / temp_val
+    scaled is matrix_scale of [logits, inv_temp]
+    return scaled
+
+
+define apply_repetition_penalty as:
+    logits is arg[0]
+    generated_tokens is arg[1]
+    penalty is arg[2]
+    penalty_val is what is penalty
+    token_count is len of generated_tokens
+    count_val is what is token_count
+    scale_factor is 1.0 - (count_val * 0.01 * penalty_val)
+    if scale_factor < 0.5:
+        scale_factor is 0.5
+    penalized is matrix_scale of [logits, scale_factor]
+    return penalized
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEQUENCE UTILITIES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+define pad_sequence as:
+    tokens is arg[0]
+    target_len is arg[1]
+    pad_token is arg[2]
+    current_len is len of tokens
+    curr_val is what is current_len
+    target_val is what is target_len
+    padded is tokens
+    pad_idx is curr_val
+    loop while pad_idx < target_val:
+        pad_val is what is pad_token
+        _d is append of [padded, pad_val]
+        pad_idx is pad_idx + 1
+    return padded
+
+
+define truncate_sequence as:
+    tokens is arg[0]
+    max_len is arg[1]
+    current_len is len of tokens
+    curr_val is what is current_len
+    max_val is what is max_len
+    if curr_val <= max_val:
+        return tokens
+    truncated is []
+    idx is 0
+    loop while idx < max_val:
+        tok is tokens[idx]
+        tok_val is what is tok
+        _d is append of [truncated, tok_val]
+        idx is idx + 1
+    return truncated
