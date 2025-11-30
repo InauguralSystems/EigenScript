@@ -97,8 +97,10 @@ W_Q_h4 is random_matrix of [semantic_dim, head_dim]
 W_K_h4 is random_matrix of [semantic_dim, head_dim]
 W_V_h4 is random_matrix of [semantic_dim, head_dim]
 
-W_O is random_matrix of [16, semantic_dim]
-W_O_single is random_matrix of [head_dim, semantic_dim]
+W_O_h1 is random_matrix of [head_dim, semantic_dim]
+W_O_h2 is random_matrix of [head_dim, semantic_dim]
+W_O_h3 is random_matrix of [head_dim, semantic_dim]
+W_O_h4 is random_matrix of [head_dim, semantic_dim]
 
 print of "Initialized 4 attention heads"
 print of "  Each head: semantic_dim → head_dim projection"
@@ -143,12 +145,25 @@ define multi_head_attention as:
     seq_len_arg is arg[1]
     seq_len is what is seq_len_arg
 
-    output is attention_head of [input_seq, W_Q_h1, W_K_h1, W_V_h1, 1, seq_len]
-    output is matmul of [output, W_O_single]
+    head1 is attention_head of [input_seq, W_Q_h1, W_K_h1, W_V_h1, 1, seq_len]
+    head2 is attention_head of [input_seq, W_Q_h2, W_K_h2, W_V_h2, 2, seq_len]
+    head3 is attention_head of [input_seq, W_Q_h3, W_K_h3, W_V_h3, 3, seq_len]
+    head4 is attention_head of [input_seq, W_Q_h4, W_K_h4, W_V_h4, 4, seq_len]
+
+    h1_proj is matmul of [head1, W_O_h1]
+    h2_proj is matmul of [head2, W_O_h2]
+    h3_proj is matmul of [head3, W_O_h3]
+    h4_proj is matmul of [head4, W_O_h4]
+
+    combined is matrix_add of [h1_proj, h2_proj]
+    combined is matrix_add of [combined, h3_proj]
+    combined is matrix_add of [combined, h4_proj]
+
+    output is matrix_scale of [combined, 0.25]
 
     overall_quality is how is output
     if stable:
-        print of "  [ATTENTION] Perspectives aligned"
+        print of "  [MULTI-HEAD] All 4 perspectives aligned"
 
     return output
 
