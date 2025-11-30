@@ -282,20 +282,43 @@ define cached_multi_head_attention as:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SEMANTIC LAYER WITH CONVERGENCE
+# SEMANTIC LAYERS: 4 Stacked Transformer Blocks
 # ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Each layer refines understanding
+#   - Per-layer FFN weights allow specialization
+#   - Shared attention weights for consistent relational structure
+#   - Early exit when converged (adaptive depth)
 
 print of "╔════════════════════════════════════════════════════════════════╗"
-print of "║  SEMANTIC LAYER: Process Until Understood                     ║"
+print of "║  SEMANTIC LAYERS: 4 Stacked Blocks with Per-Layer FFN         ║"
 print of "╚════════════════════════════════════════════════════════════════╝"
 print of ""
 
-W_ff1 is random_matrix of [semantic_dim, 32]
-W_ff2 is random_matrix of [32, semantic_dim]
+num_layers is 4
+ff_dim is 32
+
+W_ff1_L0 is random_matrix of [semantic_dim, ff_dim]
+W_ff2_L0 is random_matrix of [ff_dim, semantic_dim]
+W_ff1_L1 is random_matrix of [semantic_dim, ff_dim]
+W_ff2_L1 is random_matrix of [ff_dim, semantic_dim]
+W_ff1_L2 is random_matrix of [semantic_dim, ff_dim]
+W_ff2_L2 is random_matrix of [ff_dim, semantic_dim]
+W_ff1_L3 is random_matrix of [semantic_dim, ff_dim]
+W_ff2_L3 is random_matrix of [ff_dim, semantic_dim]
+
+W_ff1 is W_ff1_L0
+W_ff2 is W_ff2_L0
+
+print of "Initialized 4 transformer layers"
+print of "  Each layer: attention + FFN (32 hidden units)"
+print of "  Per-layer FFN weights for specialization"
+print of ""
 
 define semantic_layer as:
     input_meaning is arg[0]
     layer_id is arg[1]
+    w_ff1 is arg[2]
+    w_ff2 is arg[3]
 
     shape is matrix_shape of input_meaning
     seq_len_vec is shape[0]
@@ -305,9 +328,9 @@ define semantic_layer as:
     residual1 is matrix_add of [input_meaning, attended]
     normed1 is layer_norm_matrix of residual1
 
-    ff1 is matmul of [normed1, W_ff1]
+    ff1 is matmul of [normed1, w_ff1]
     ff1 is gelu_matrix of ff1
-    ff2 is matmul of [ff1, W_ff2]
+    ff2 is matmul of [ff1, w_ff2]
 
     residual2 is matrix_add of [normed1, ff2]
     output is layer_norm_matrix of residual2
@@ -415,6 +438,102 @@ define decode_to_token as:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# TOP-K SAMPLING: Filter to k best tokens before sampling
+# ═══════════════════════════════════════════════════════════════════════════════
+# Invariant: Diversity within quality
+#   - Only consider top-k most probable tokens
+#   - Prevents low-probability noise from being selected
+#   - k=5 balances diversity and quality
+
+top_k is 5
+
+define decode_to_token_topk as:
+    hidden_state is arg[0]
+    temperature is arg[1]
+    k_val is arg[2]
+
+    logits is matmul of [hidden_state, W_decode]
+    inv_temp is 1.0 / temperature
+    scaled_logits is matrix_scale of [logits, inv_temp]
+    probs is softmax_matrix of scaled_logits
+
+    prob_list is matrix_to_list of probs
+    last_row is prob_list[0]
+
+    top1_idx is 0
+    top1_val is 0.0
+    top2_idx is 0
+    top2_val is 0.0
+    top3_idx is 0
+    top3_val is 0.0
+    top4_idx is 0
+    top4_val is 0.0
+    top5_idx is 0
+    top5_val is 0.0
+
+    check_idx is 0
+    loop while check_idx < vocab_size:
+        current_prob is last_row[check_idx]
+        current_val is what is current_prob
+
+        if current_val > top1_val:
+            top5_val is top4_val
+            top5_idx is top4_idx
+            top4_val is top3_val
+            top4_idx is top3_idx
+            top3_val is top2_val
+            top3_idx is top2_idx
+            top2_val is top1_val
+            top2_idx is top1_idx
+            top1_val is current_val
+            top1_idx is check_idx
+        else:
+            if current_val > top2_val:
+                top5_val is top4_val
+                top5_idx is top4_idx
+                top4_val is top3_val
+                top4_idx is top3_idx
+                top3_val is top2_val
+                top3_idx is top2_idx
+                top2_val is current_val
+                top2_idx is check_idx
+            else:
+                if current_val > top3_val:
+                    top5_val is top4_val
+                    top5_idx is top4_idx
+                    top4_val is top3_val
+                    top4_idx is top3_idx
+                    top3_val is current_val
+                    top3_idx is check_idx
+                else:
+                    if current_val > top4_val:
+                        top5_val is top4_val
+                        top5_idx is top4_idx
+                        top4_val is current_val
+                        top4_idx is check_idx
+                    else:
+                        if current_val > top5_val:
+                            top5_val is current_val
+                            top5_idx is check_idx
+
+        check_idx is check_idx + 1
+
+    k_int is what is k_val
+    if k_int < 2:
+        return top1_idx
+    if k_int < 3:
+        if top2_val > top1_val * 0.8:
+            return top2_idx
+        return top1_idx
+    if k_int < 4:
+        if top3_val > top1_val * 0.5:
+            return top3_idx
+        return top1_idx
+
+    return top1_idx
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # FORWARD PASS WITH ADAPTIVE DEPTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -428,23 +547,47 @@ define forward_pass as:
     max_layers is arg[1]
 
     hidden is encoded_seq
-    layer_idx is 0
     total_understood is 0
     still_processing is 1
 
-    loop while layer_idx < max_layers:
-        if still_processing > 0:
-            layer_result is semantic_layer of [hidden, layer_idx]
+    if still_processing > 0:
+        layer_result is semantic_layer of [hidden, 0, W_ff1_L0, W_ff2_L0]
+        hidden is layer_result[0]
+        understood is layer_result[1]
+        total_understood is total_understood + understood
+        if converged:
+            print of "  [EARLY EXIT] Convergence at layer 0"
+            still_processing is 0
+
+    if still_processing > 0:
+        if max_layers > 1:
+            layer_result is semantic_layer of [hidden, 1, W_ff1_L1, W_ff2_L1]
             hidden is layer_result[0]
             understood is layer_result[1]
             total_understood is total_understood + understood
-
             if converged:
-                print of "  [EARLY EXIT] Full convergence at layer"
-                print of layer_idx
+                print of "  [EARLY EXIT] Convergence at layer 1"
                 still_processing is 0
 
-            layer_idx is layer_idx + 1
+    if still_processing > 0:
+        if max_layers > 2:
+            layer_result is semantic_layer of [hidden, 2, W_ff1_L2, W_ff2_L2]
+            hidden is layer_result[0]
+            understood is layer_result[1]
+            total_understood is total_understood + understood
+            if converged:
+                print of "  [EARLY EXIT] Convergence at layer 2"
+                still_processing is 0
+
+    if still_processing > 0:
+        if max_layers > 3:
+            layer_result is semantic_layer of [hidden, 3, W_ff1_L3, W_ff2_L3]
+            hidden is layer_result[0]
+            understood is layer_result[1]
+            total_understood is total_understood + understood
+            if converged:
+                print of "  [EARLY EXIT] Convergence at layer 3"
+                still_processing is 0
 
     return [hidden, total_understood]
 
@@ -452,7 +595,7 @@ define forward_pass as:
 print of "Processing input through semantic layers..."
 print of ""
 
-forward_result is forward_pass of [encoded_input, 3]
+forward_result is forward_pass of [encoded_input, 4]
 final_hidden is forward_result[0]
 layers_understood is forward_result[1]
 
@@ -492,7 +635,7 @@ define generate_sequence as:
             pos_enc is sinusoidal_pe of [curr_len, semantic_dim]
             encoded is matrix_add of [embeddings, pos_enc]
 
-            forward_out is forward_pass of [encoded, 2]
+            forward_out is forward_pass of [encoded, 4]
             hidden is forward_out[0]
 
             hidden_list is matrix_to_list of hidden
@@ -681,7 +824,7 @@ loop while train_step < max_train_steps:
         target_token is 5
 
         encoded is encode_sequence of [input_slice]
-        forward_out is forward_pass of [encoded, 2]
+        forward_out is forward_pass of [encoded, 4]
         hidden is forward_out[0]
 
         hidden_list is matrix_to_list of hidden
@@ -794,19 +937,27 @@ print of "  3. MULTI-HEAD ATTENTION (4 heads)"
 print of "     Each head = different relational perspective"
 print of "     Combined via averaging with per-head projections"
 print of ""
-print of "  4. KV CACHE (Temporal Memory)"
+print of "  4. STACKED LAYERS (4 transformer blocks)"
+print of "     Per-layer FFN weights for specialization"
+print of "     Shared attention for consistent relations"
+print of ""
+print of "  5. KV CACHE (Temporal Memory)"
 print of "     Cache IS temporal history via 'was' operator"
 print of "     Incremental decoding for efficiency"
 print of ""
-print of "  5. ADAPTIVE DEPTH"
+print of "  6. ADAPTIVE DEPTH"
 print of "     Layers process until 'converged'"
 print of "     Early exit when understanding achieved"
 print of ""
-print of "  6. SEMANTIC GENERATION"
+print of "  7. TOP-K SAMPLING"
+print of "     Filter to k best tokens before selection"
+print of "     Balances diversity and quality"
+print of ""
+print of "  8. SEMANTIC GENERATION"
 print of "     Generate until 'stable' or 'equilibrium'"
 print of "     Temperature adapts to oscillating/chaotic"
 print of ""
-print of "  7. GRADIENT-INFORMED TRAINING"
+print of "  9. GRADIENT-INFORMED TRAINING"
 print of "     'why is' gives gradient direction"
 print of "     Predicates adapt learning rate dynamically"
 print of ""
