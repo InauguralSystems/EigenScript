@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.23] - 2025-11-30
+
+### 🤖 Release: Production-Grade LLM Infrastructure
+
+This release significantly expands the **Transformer standard library** with production-grade LLM components and introduces **Semantic LLM v3**, a complete language model implementation with modern architecture features.
+
+### Added
+- **Production LLM Example** (`examples/ai/semantic_llm_v3.eigs`)
+  - Complete 1012-line language model with 32 vocabulary tokens
+  - 8 attention heads with 6 transformer layers
+  - **RMS normalization** instead of LayerNorm for better stability
+  - **Nucleus (top-p) sampling** with configurable threshold
+  - **Repetition penalty** for diverse generation
+  - **Dropout regularization** during training
+  - **LR warmup + cosine decay** scheduling
+  - Temperature-based sampling with adaptive control
+
+- **Extended Transformer Stdlib** (`src/eigenscript/stdlib/transformer.eigs`) - 43 functions total
+  - **Positional Encoding**: `rope_frequencies`, `apply_rope` (Rotary Position Embeddings)
+  - **Attention Variants**: `grouped_query_attention` (GQA), `sliding_window_attention`, `cross_attention`, `cached_attention`
+  - **Feed-Forward**: `swiglu_ffn` (SwiGLU activation), `expert_ffn`, `moe_gating` (Mixture of Experts)
+  - **Training**: `cross_entropy_loss`, `cross_entropy_with_label_smoothing`, `perplexity_from_loss`
+  - **Optimization**: `adamw_step` (AdamW optimizer), `clip_grad_norm` (gradient clipping)
+  - **LR Scheduling**: `lr_warmup`, `lr_cosine_decay`, `lr_warmup_cosine`
+  - **KV Cache**: `kv_cache_append`, `cached_attention` (for efficient inference)
+  - **Weight Init**: `he_init`, `orthogonal_init`, `normal_init`
+  - **Utilities**: `decoder_block`, `apply_temperature`, `apply_repetition_penalty`, `pad_sequence`, `truncate_sequence`
+
+### Key Architecture Features
+1. **RoPE** - Rotary Position Embeddings for better length generalization
+2. **GQA** - Grouped Query Attention for memory-efficient inference
+3. **Sliding Window** - Efficient attention for long sequences
+4. **MoE** - Mixture of Experts for sparse computation
+5. **SwiGLU** - Modern activation function used in Llama/PaLM
+6. **AdamW** - Decoupled weight decay optimizer
+7. **KV Cache** - Efficient autoregressive generation
+
+### Fixed
+- Removed blank lines from function definitions in transformer.eigs (EigenScript parser constraint)
+- Fixed test code blocks to comply with EigenScript syntax requirements
+
+### Testing
+- Added `TestNewTransformerFeatures` test class for new stdlib functions
+- Added `TestSemanticLLMv3Features` test class for production LLM
+- All tests passing with proper EigenScript syntax
+
 ## [0.3.22] - 2025-11-30
 
 ### 🧠 Release: Introspective AI & Transformer Architecture
