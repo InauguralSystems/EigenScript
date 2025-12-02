@@ -65,6 +65,7 @@ class ValueKind(Enum):
     LIST_PTR = "list_ptr"  # EigenList* pointer
     STRING_PTR = "string_ptr"  # EigenString* pointer (for self-hosting)
     STRUCT_PTR = "struct_ptr"  # User-defined struct pointer (for self-hosting)
+    PACKED_I64 = "packed_i64"  # i64 that could be scalar or pointer (function params)
 
 
 @dataclass
@@ -693,6 +694,9 @@ class LLVMCodeGenerator:
             # Convert pointer to i64, then to double (for storage in lists)
             ptr_int = self.builder.ptrtoint(gen_val.value, self.int64_type)
             return self.builder.bitcast(ptr_int, self.double_type)
+        elif gen_val.kind == ValueKind.PACKED_I64:
+            # Function parameter packed as i64, bitcast to double for numeric ops
+            return self.builder.bitcast(gen_val.value, self.double_type)
         else:
             raise ValueError(f"Unknown ValueKind: {gen_val.kind}")
 
@@ -726,6 +730,17 @@ class LLVMCodeGenerator:
             return gen_val.value
         elif gen_val.kind == ValueKind.LIST_PTR:
             raise TypeError("Cannot convert list to EigenValue")
+        elif gen_val.kind == ValueKind.PACKED_I64:
+            # Function parameter - bitcast to double and wrap in EigenValue
+            scalar_val = self.builder.bitcast(gen_val.value, self.double_type)
+            eigen_ptr = self.builder.call(self.eigen_create, [scalar_val])
+            if self.current_function and self.current_function.name == "main":
+                self.allocated_eigenvalues.append(eigen_ptr)
+            return eigen_ptr
+        elif gen_val.kind == ValueKind.STRING_PTR:
+            raise TypeError("Cannot convert string to EigenValue")
+        elif gen_val.kind == ValueKind.STRUCT_PTR:
+            raise TypeError("Cannot convert struct to EigenValue")
         else:
             raise ValueError(f"Unknown ValueKind: {gen_val.kind}")
 
@@ -763,6 +778,9 @@ class LLVMCodeGenerator:
         if isinstance(val, GeneratedValue):
             if val.kind == ValueKind.STRING_PTR:
                 return val.value
+            elif val.kind == ValueKind.PACKED_I64:
+                # Function parameter that might be a string pointer
+                return self.builder.inttoptr(val.value, self.eigen_string_ptr)
             else:
                 raise CompilerError(
                     f"Expected string, got {val.kind}",
@@ -832,6 +850,9 @@ class LLVMCodeGenerator:
             ):
                 # Convert pointer to i64
                 return self.builder.ptrtoint(val.value, self.int64_type)
+            elif val.kind == ValueKind.PACKED_I64:
+                # Already i64, pass through
+                return val.value
             else:
                 raise ValueError(f"Cannot pack {val.kind} to i64")
         elif isinstance(val, ir.Value):
@@ -860,6 +881,9 @@ class LLVMCodeGenerator:
         if isinstance(val, GeneratedValue):
             if val.kind == ValueKind.LIST_PTR:
                 return val.value
+            elif val.kind == ValueKind.PACKED_I64:
+                # Function parameter that might be a list pointer
+                return self.builder.inttoptr(val.value, self.eigen_list_ptr)
             else:
                 raise CompilerError(
                     f"Expected list, got {val.kind}",
@@ -1229,14 +1253,35 @@ class LLVMCodeGenerator:
             self.current_function = entry_func
             self.entry_block = block
         else:
-            # Program mode: Create main function
-            main_type = ir.FunctionType(self.int32_type, [])
+            # Program mode: Create main function with argc/argv for CLI support
+            # int main(int argc, char** argv)
+            char_ptr_ptr = self.string_type.as_pointer()  # char**
+            main_type = ir.FunctionType(
+                self.int32_type, [self.int32_type, char_ptr_ptr]
+            )
             main_func = ir.Function(self.module, main_type, name="main")
             main_func.attributes.add("nounwind")  # No exceptions
+            main_func.args[0].name = "argc"
+            main_func.args[1].name = "argv"
             block = main_func.append_basic_block(name="entry")
             self.builder = ir.IRBuilder(block)
             self.current_function = main_func
             self.entry_block = block  # Store entry block for proper alloca placement
+
+            # Create global variables to store argc/argv for builtin access
+            self.argc_global = ir.GlobalVariable(
+                self.module, self.int32_type, name="__eigs_argc"
+            )
+            self.argc_global.initializer = ir.Constant(self.int32_type, 0)
+
+            self.argv_global = ir.GlobalVariable(
+                self.module, char_ptr_ptr, name="__eigs_argv"
+            )
+            self.argv_global.initializer = ir.Constant(char_ptr_ptr, None)
+
+            # Store argc/argv in globals at program start
+            self.builder.store(main_func.args[0], self.argc_global)
+            self.builder.store(main_func.args[1], self.argv_global)
 
             # Phase 4.4: Call module initialization functions
             # Before executing main logic, initialize all imported modules
@@ -1454,10 +1499,12 @@ class LLVMCodeGenerator:
             return self.builder.load(var_ptr)
 
         # Handle i64 parameters (universal type for function parameters)
+        # Return as PACKED_I64 to preserve potential pointer information
+        # Context-specific operations (print, string_length) can interpret as pointer
+        # Numeric operations will convert to double via ensure_scalar
         if var_ptr.type.pointee == self.int64_type:
-            # Load the i64 and bitcast to double for numeric operations
             loaded_i64 = self.builder.load(var_ptr)
-            return self.builder.bitcast(loaded_i64, self.double_type)
+            return GeneratedValue(value=loaded_i64, kind=ValueKind.PACKED_I64)
 
         # Otherwise, load the pointer and check what it points to
         loaded_ptr = self.builder.load(var_ptr)
@@ -1925,6 +1972,29 @@ class LLVMCodeGenerator:
                     fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
                     return self.builder.call(self.printf, [fmt_ptr, c_str])
 
+                # Check if it's a PACKED_I64 (function parameter) - try as string
+                if (
+                    isinstance(arg_gen_val, GeneratedValue)
+                    and arg_gen_val.kind == ValueKind.PACKED_I64
+                ):
+                    # Interpret i64 as a potential string pointer
+                    str_ptr = self.builder.inttoptr(
+                        arg_gen_val.value, self.eigen_string_ptr
+                    )
+                    c_str = self.builder.call(self.eigen_string_cstr, [str_ptr])
+                    fmt_str = "%s\n\0"
+                    fmt_const = ir.Constant(
+                        ir.ArrayType(self.int8_type, len(fmt_str)),
+                        bytearray(fmt_str.encode("utf-8")),
+                    )
+                    global_fmt = ir.GlobalVariable(
+                        self.module, fmt_const.type, name=f"fmt_str_i64_{id(node)}"
+                    )
+                    global_fmt.global_constant = True
+                    global_fmt.initializer = fmt_const
+                    fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
+                    return self.builder.call(self.printf, [fmt_ptr, c_str])
+
                 # Convert to scalar for printing (handles both raw values and aliases)
                 arg_val = self.ensure_scalar(arg_gen_val)
 
@@ -2123,6 +2193,47 @@ class LLVMCodeGenerator:
                     self.eigen_file_append, [filename_ptr, contents_ptr]
                 )
                 return self.builder.sitofp(result, self.double_type)
+
+            # ============================================================
+            # CLI Argument Builtin Functions (for self-hosting)
+            # ============================================================
+
+            # get_argc of 0 -> number of command line arguments
+            if func_name == "get_argc":
+                # Declare external argc global if not in main module
+                if not hasattr(self, "argc_global"):
+                    char_ptr_ptr = self.string_type.as_pointer()
+                    self.argc_global = ir.GlobalVariable(
+                        self.module, self.int32_type, name="__eigs_argc"
+                    )
+                    self.argc_global.linkage = "external"
+                argc_val = self.builder.load(self.argc_global)
+                return self.builder.sitofp(argc_val, self.double_type)
+
+            # get_arg of index -> EigenString* (get argument at index)
+            if func_name == "get_arg":
+                # Declare external argv global if not in main module
+                if not hasattr(self, "argv_global"):
+                    char_ptr_ptr = self.string_type.as_pointer()
+                    self.argv_global = ir.GlobalVariable(
+                        self.module, char_ptr_ptr, name="__eigs_argv"
+                    )
+                    self.argv_global.linkage = "external"
+
+                arg_gen = self._generate(node.right)
+                index = self._ensure_int64(arg_gen)
+                # Truncate to i32 for array indexing
+                index_i32 = self.builder.trunc(index, self.int32_type)
+
+                # Load argv pointer
+                argv_ptr = self.builder.load(self.argv_global)
+                # Get pointer to argv[index]
+                arg_ptr = self.builder.gep(argv_ptr, [index_i32])
+                # Load the char* at that position
+                c_str = self.builder.load(arg_ptr)
+                # Convert to EigenString*
+                result = self.builder.call(self.eigen_string_create, [c_str])
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
 
             # ============================================================
             # List Builtin Functions

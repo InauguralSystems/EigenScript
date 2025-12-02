@@ -12,6 +12,12 @@
 # 5. Generate LLVM IR (codegen.eigs)
 # 6. Output IR (link with runtime)
 
+# Import compiler modules
+import lexer
+import parser
+import semantic
+import codegen
+
 # ============================================================================
 # Token Type Constants (needed for main)
 # ============================================================================
@@ -295,32 +301,15 @@ define test_compiler as:
 
 # Initialize all modules
 define init_compiler as:
-    # Initialize lexer state
-    lex_source is ""
-    lex_pos is 0
-    lex_len is 0
-    lex_line is 1
-    lex_col is 1
-    lex_indent is 0
-    lex_at_line_start is 1
+    # Call module init functions to initialize their globals
+    # These set up lexer state, parser token arrays, AST arrays, etc.
+    # Note: Function names are mangled with module prefix (init_lexer -> lexer_init_lexer)
+    result is lexer_init_lexer of 0
+    result is parser_init_parser of 0
+    result is semantic_init_semantic of 0
+    result is codegen_init_codegen of 0
 
-    # Initialize parser state
-    parser_pos is 0
-    parser_error is 0
-    ast_node_count is 0
-    ast_children_count is 0
-
-    # Initialize semantic state
-    symbol_count is 0
-    scope_depth is 0
-    error_count is 0
-
-    # Initialize codegen state
-    reg_counter is 0
-    label_counter is 0
-    output_count is 0
-    var_count is 0
-
+    # Reset compilation error counter
     compile_errors is 0
 
     return 0
@@ -330,3 +319,14 @@ print of 555
 
 # Initialize
 result is init_compiler of 0
+
+# Check for command line arguments
+argc is get_argc of 0
+
+if argc > 1:
+    # Compile the file specified on command line
+    filename is get_arg of 1
+    result is compile_file of filename
+else:
+    # No arguments - run the test
+    result is test_compiler of 0

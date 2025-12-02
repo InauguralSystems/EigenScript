@@ -140,11 +140,11 @@ print of y"""
             source, module_name=None, imported_modules=["math"]
         )
 
-        # Find the main function in the IR
-        main_start = llvm_ir.find("define i32 @main()")
+        # Find the main function in the IR (now takes argc, argv)
+        main_start = llvm_ir.find("define i32 @main(i32")
         if main_start == -1:
-            main_start = llvm_ir.find('define i32 @"main"()')
-        assert main_start != -1
+            main_start = llvm_ir.find('define i32 @"main"(i32')
+        assert main_start != -1, "Main function not found in IR"
 
         # Find the init call
         init_call = llvm_ir.find("call void @math_init()")

@@ -676,4 +676,14 @@ define print_ir as:
         i is i + 1
     return 0
 
+# Initialize codegen state
+define init_codegen as:
+    reg_counter is 0
+    label_counter is 0
+    string_counter is 0
+    in_main is 0
+    output_lines is []
+    output_count is 0
+    return 0
+
 print of 666
