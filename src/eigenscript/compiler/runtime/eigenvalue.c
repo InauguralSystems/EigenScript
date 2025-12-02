@@ -640,3 +640,660 @@ void eigen_print_double(double value) {
 void eigen_print_newline(void) {
     printf("\n");
 }
+
+// ============================================================================
+// Self-Hosting Support Functions
+// These functions convert between encoded doubles and pointers for the
+// self-hosted compiler which uses double values for everything.
+// ============================================================================
+
+// Union for safe pointer-to-double conversion
+typedef union {
+    double d;
+    int64_t i;
+    void* p;
+} PointerDoubleUnion;
+
+// Convert EigenList* to double (encode pointer as double)
+double eigen_list_to_double(EigenList* list) {
+    PointerDoubleUnion u;
+    u.p = list;
+    return u.d;
+}
+
+// Convert double back to EigenList* (decode double to pointer)
+EigenList* eigen_double_to_list(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    return (EigenList*)u.p;
+}
+
+// Convert EigenString* to double (encode pointer as double)
+double eigen_string_to_double(EigenString* str) {
+    PointerDoubleUnion u;
+    u.p = str;
+    return u.d;
+}
+
+// Convert double back to EigenString* (decode double to pointer)
+EigenString* eigen_double_to_string(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    return (EigenString*)u.p;
+}
+
+// String length with double-encoded string
+int64_t eigen_string_length_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0;
+    return eigen_string_length(str);
+}
+
+// String equality with double-encoded strings
+double eigen_string_equals_val(double a_val, double b_val) {
+    EigenString* a = eigen_double_to_string(a_val);
+    EigenString* b = eigen_double_to_string(b_val);
+    if (!a || !b) return 0.0;
+    return eigen_string_equals(a, b) ? 1.0 : 0.0;
+}
+
+// char_at with double-encoded string and index
+double eigen_char_at_val(double str_val, double idx_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0.0;
+    int64_t idx = (int64_t)idx_val;
+    return (double)eigen_char_at(str, idx);
+}
+
+// substring with double-encoded values
+double eigen_substring_val(double str_val, double start_val, double len_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0.0;
+    int64_t start = (int64_t)start_val;
+    int64_t len = (int64_t)len_val;
+    EigenString* result = eigen_substring(str, start, len);
+    return eigen_string_to_double(result);
+}
+
+// char_is_digit with double-encoded char code
+double eigen_char_is_digit_val(double c_val) {
+    int64_t c = (int64_t)c_val;
+    return eigen_char_is_digit(c) ? 1.0 : 0.0;
+}
+
+// char_is_alpha with double-encoded char code
+double eigen_char_is_alpha_val(double c_val) {
+    int64_t c = (int64_t)c_val;
+    return eigen_char_is_alpha(c) ? 1.0 : 0.0;
+}
+
+// char_is_whitespace with double-encoded char code
+double eigen_char_is_whitespace_val(double c_val) {
+    int64_t c = (int64_t)c_val;
+    return eigen_char_is_whitespace(c) ? 1.0 : 0.0;
+}
+
+// number_to_string - returns encoded string pointer
+double eigen_number_to_string_val(double num) {
+    EigenString* result = eigen_number_to_string(num);
+    return eigen_string_to_double(result);
+}
+
+// string_to_number with double-encoded string
+double eigen_string_to_number_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0.0;
+    return eigen_string_to_number(str);
+}
+
+// string_concat for two strings (double-encoded)
+double eigen_string_concat_val(double a_val, double b_val) {
+    EigenString* a = eigen_double_to_string(a_val);
+    EigenString* b = eigen_double_to_string(b_val);
+    if (!a || !b) return 0.0;
+    EigenString* result = eigen_string_concat(a, b);
+    return eigen_string_to_double(result);
+}
+
+// list_append with double-encoded list and value
+void eigen_list_append_val(double list_val, double value) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (!list) return;
+    eigen_list_append(list, value);
+}
+
+// Print a double-encoded string
+void eigen_print_string_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (str) {
+        eigen_print_string(str);
+    }
+}
+
+// Universal print that handles both numbers and encoded strings
+// Uses heuristic: pointer values when encoded as double are very large
+// or have specific patterns that don't look like normal numbers
+void eigen_print_val(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    // Check if this looks like an encoded pointer
+    // Pointers on x86_64 are typically in ranges like 0x7f... or 0x5...
+    // When interpreted as double, these create very specific patterns
+    // A simple heuristic: if the value when viewed as i64 is in pointer range
+    // and the double representation is unusual (NaN, Inf, or very large)
+    int64_t as_int = u.i;
+
+    // Check if it might be a heap pointer (typical ranges)
+    if ((as_int > 0x100000000LL && as_int < 0x800000000000LL) ||
+        (as_int > 0x7f0000000000LL && as_int < 0x800000000000LL)) {
+        // Likely an encoded pointer - try to print as string
+        EigenString* str = (EigenString*)u.p;
+        // Basic validation: check if it looks like a valid EigenString
+        if (str && str->data && str->length >= 0 && str->length < 1000000) {
+            eigen_print_string(str);
+            return;
+        }
+    }
+
+    // Default: print as number
+    eigen_print_double(val);
+}
+
+// ============================================================================
+// Interrogative Support (for self-hosted compiler)
+// These provide simplified interrogative semantics for double-only values.
+// Full EigenValue interrogatives use eigen_get_value/gradient/stability directly.
+// ============================================================================
+
+// "what is x" - returns the value itself (identity for doubles)
+double eigen_what_is(double val) {
+    return val;
+}
+
+// "who is x" - returns an identity marker (for doubles, use address-like hash)
+// In self-hosted context, this is just a unique identifier
+double eigen_who_is(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    // Return a hash-like identifier based on the bit pattern
+    return (double)(u.i & 0xFFFFFFFF);
+}
+
+// "why is x" - returns gradient/derivative (0 for untracked doubles)
+double eigen_why_is(double val) {
+    (void)val;  // Unused - no gradient tracking for raw doubles
+    return 0.0;
+}
+
+// "how is x" - returns framework strength/stability (1.0 = fully stable)
+double eigen_how_is(double val) {
+    (void)val;  // Unused - assume stable for raw doubles
+    return 1.0;
+}
+
+// "when is x" - returns temporal coordinate/iteration (0 for untracked)
+double eigen_when_is(double val) {
+    (void)val;  // Unused - no iteration tracking for raw doubles
+    return 0.0;
+}
+
+// "where is x" - returns spatial coordinate (0 for untracked)
+double eigen_where_is(double val) {
+    (void)val;  // Unused - no spatial tracking for raw doubles
+    return 0.0;
+}
+
+// ============================================================================
+// CLI Argument Support (for self-hosting compiler)
+// ============================================================================
+
+// Global storage for argc/argv - set by main wrapper
+static int __eigs_argc = 0;
+static char** __eigs_argv = NULL;
+
+// Initialize CLI args - called at program start
+void eigen_init_args(int argc, char** argv) {
+    __eigs_argc = argc;
+    __eigs_argv = argv;
+}
+
+// Get argument count
+double eigen_get_argc(void) {
+    return (double)__eigs_argc;
+}
+
+// Get argument at index (returns string as double)
+double eigen_get_arg(double index_val) {
+    int index = (int)index_val;
+    if (index < 0 || index >= __eigs_argc || __eigs_argv == NULL) {
+        // Return empty string
+        EigenString* empty = eigen_string_create("");
+        return eigen_string_to_double(empty);
+    }
+    EigenString* arg = eigen_string_create(__eigs_argv[index]);
+    return eigen_string_to_double(arg);
+}
+
+// ============================================================================
+// File I/O Support (for self-hosting compiler)
+// ============================================================================
+
+// Read file contents (returns string as double)
+double eigen_file_read_val(double filename_val) {
+    EigenString* filename = eigen_double_to_string(filename_val);
+    if (filename == NULL) {
+        return 0.0;  // Return 0 for error
+    }
+    EigenString* contents = eigen_file_read(filename);
+    if (contents == NULL) {
+        return 0.0;  // Return 0 for error
+    }
+    return eigen_string_to_double(contents);
+}
+
+// ============================================================================
+// List Length Support (for self-hosting compiler)
+// ============================================================================
+
+// Get list length (returns length as double)
+double eigen_list_length_val(double list_val) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (list == NULL) {
+        return 0.0;
+    }
+    return (double)eigen_list_length(list);
+}
+
+// ============================================================================
+// Matrix Support (for AI/ML in self-hosting compiler)
+// ============================================================================
+
+// Matrix structure - row-major storage
+typedef struct {
+    double* data;
+    int64_t rows;
+    int64_t cols;
+    int64_t capacity;
+} EigenMatrix;
+
+// Create a matrix with given dimensions
+EigenMatrix* eigen_matrix_create(int64_t rows, int64_t cols) {
+    EigenMatrix* m = (EigenMatrix*)malloc(sizeof(EigenMatrix));
+    if (!m) return NULL;
+    m->rows = rows;
+    m->cols = cols;
+    m->capacity = rows * cols;
+    m->data = (double*)calloc(m->capacity, sizeof(double));
+    if (!m->data) {
+        free(m);
+        return NULL;
+    }
+    return m;
+}
+
+// Destroy a matrix
+void eigen_matrix_destroy(EigenMatrix* m) {
+    if (m) {
+        free(m->data);
+        free(m);
+    }
+}
+
+// Convert matrix pointer to double (encode pointer)
+double eigen_matrix_to_double(EigenMatrix* m) {
+    PointerDoubleUnion u;
+    u.p = m;
+    return u.d;
+}
+
+// Convert double to matrix pointer (decode pointer)
+EigenMatrix* eigen_double_to_matrix(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    return (EigenMatrix*)u.p;
+}
+
+// Create matrix of zeros
+double eigen_matrix_zeros_val(double rows_val, double cols_val) {
+    int64_t rows = (int64_t)rows_val;
+    int64_t cols = (int64_t)cols_val;
+    EigenMatrix* m = eigen_matrix_create(rows, cols);
+    return eigen_matrix_to_double(m);
+}
+
+// Create matrix of ones
+double eigen_matrix_ones_val(double rows_val, double cols_val) {
+    int64_t rows = (int64_t)rows_val;
+    int64_t cols = (int64_t)cols_val;
+    EigenMatrix* m = eigen_matrix_create(rows, cols);
+    if (m) {
+        for (int64_t i = 0; i < rows * cols; i++) {
+            m->data[i] = 1.0;
+        }
+    }
+    return eigen_matrix_to_double(m);
+}
+
+// Create identity matrix
+double eigen_matrix_identity_val(double size_val) {
+    int64_t size = (int64_t)size_val;
+    EigenMatrix* m = eigen_matrix_create(size, size);
+    if (m) {
+        for (int64_t i = 0; i < size; i++) {
+            m->data[i * size + i] = 1.0;
+        }
+    }
+    return eigen_matrix_to_double(m);
+}
+
+// Create random matrix (simple LCG random)
+static uint64_t _matrix_rng_state = 12345;
+double eigen_matrix_random_val(double rows_val, double cols_val) {
+    int64_t rows = (int64_t)rows_val;
+    int64_t cols = (int64_t)cols_val;
+    EigenMatrix* m = eigen_matrix_create(rows, cols);
+    if (m) {
+        for (int64_t i = 0; i < rows * cols; i++) {
+            // Simple LCG for random numbers in [-1, 1]
+            _matrix_rng_state = _matrix_rng_state * 6364136223846793005ULL + 1;
+            double r = (double)(_matrix_rng_state >> 33) / (double)(1ULL << 31) - 1.0;
+            m->data[i] = r;
+        }
+    }
+    return eigen_matrix_to_double(m);
+}
+
+// Get matrix shape as [rows, cols] list
+double eigen_matrix_shape_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    EigenList* shape = eigen_list_create(2);
+    eigen_list_set(shape, 0, (double)m->rows);
+    eigen_list_set(shape, 1, (double)m->cols);
+    return eigen_list_to_double(shape);
+}
+
+// Matrix transpose
+double eigen_matrix_transpose_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(m->cols, m->rows);
+    if (result) {
+        for (int64_t i = 0; i < m->rows; i++) {
+            for (int64_t j = 0; j < m->cols; j++) {
+                result->data[j * m->rows + i] = m->data[i * m->cols + j];
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Matrix addition
+double eigen_matrix_add_val(double a_val, double b_val) {
+    EigenMatrix* a = eigen_double_to_matrix(a_val);
+    EigenMatrix* b = eigen_double_to_matrix(b_val);
+    if (!a || !b || a->rows != b->rows || a->cols != b->cols) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(a->rows, a->cols);
+    if (result) {
+        for (int64_t i = 0; i < a->rows * a->cols; i++) {
+            result->data[i] = a->data[i] + b->data[i];
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Matrix scalar multiplication
+double eigen_matrix_scale_val(double m_val, double scalar) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(m->rows, m->cols);
+    if (result) {
+        for (int64_t i = 0; i < m->rows * m->cols; i++) {
+            result->data[i] = m->data[i] * scalar;
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Matrix multiplication (matmul)
+double eigen_matrix_matmul_val(double a_val, double b_val) {
+    EigenMatrix* a = eigen_double_to_matrix(a_val);
+    EigenMatrix* b = eigen_double_to_matrix(b_val);
+    if (!a || !b || a->cols != b->rows) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(a->rows, b->cols);
+    if (result) {
+        for (int64_t i = 0; i < a->rows; i++) {
+            for (int64_t j = 0; j < b->cols; j++) {
+                double sum = 0.0;
+                for (int64_t k = 0; k < a->cols; k++) {
+                    sum += a->data[i * a->cols + k] * b->data[k * b->cols + j];
+                }
+                result->data[i * b->cols + j] = sum;
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Matrix sum (sum of all elements)
+double eigen_matrix_sum_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    double sum = 0.0;
+    for (int64_t i = 0; i < m->rows * m->cols; i++) {
+        sum += m->data[i];
+    }
+    return sum;
+}
+
+// Matrix mean
+double eigen_matrix_mean_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m || m->rows * m->cols == 0) return 0.0;
+    return eigen_matrix_sum_val(m_val) / (double)(m->rows * m->cols);
+}
+
+// ============================================================================
+// Neural Network Activation Functions
+// ============================================================================
+
+// ReLU activation (element-wise max(0, x))
+double eigen_relu_matrix_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(m->rows, m->cols);
+    if (result) {
+        for (int64_t i = 0; i < m->rows * m->cols; i++) {
+            result->data[i] = m->data[i] > 0.0 ? m->data[i] : 0.0;
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// GELU activation (Gaussian Error Linear Unit)
+double eigen_gelu_matrix_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(m->rows, m->cols);
+    if (result) {
+        for (int64_t i = 0; i < m->rows * m->cols; i++) {
+            double x = m->data[i];
+            // GELU approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+            double inner = 0.7978845608 * (x + 0.044715 * x * x * x);
+            result->data[i] = 0.5 * x * (1.0 + tanh(inner));
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Softmax activation (row-wise)
+double eigen_softmax_matrix_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(m->rows, m->cols);
+    if (result) {
+        for (int64_t i = 0; i < m->rows; i++) {
+            // Find max for numerical stability
+            double max_val = m->data[i * m->cols];
+            for (int64_t j = 1; j < m->cols; j++) {
+                if (m->data[i * m->cols + j] > max_val) {
+                    max_val = m->data[i * m->cols + j];
+                }
+            }
+            // Compute exp and sum
+            double sum = 0.0;
+            for (int64_t j = 0; j < m->cols; j++) {
+                result->data[i * m->cols + j] = exp(m->data[i * m->cols + j] - max_val);
+                sum += result->data[i * m->cols + j];
+            }
+            // Normalize
+            for (int64_t j = 0; j < m->cols; j++) {
+                result->data[i * m->cols + j] /= sum;
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Layer normalization (row-wise)
+double eigen_layer_norm_matrix_val(double m_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    if (!m) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(m->rows, m->cols);
+    double eps = 1e-5;
+    if (result) {
+        for (int64_t i = 0; i < m->rows; i++) {
+            // Compute mean
+            double mean = 0.0;
+            for (int64_t j = 0; j < m->cols; j++) {
+                mean += m->data[i * m->cols + j];
+            }
+            mean /= (double)m->cols;
+            // Compute variance
+            double var = 0.0;
+            for (int64_t j = 0; j < m->cols; j++) {
+                double diff = m->data[i * m->cols + j] - mean;
+                var += diff * diff;
+            }
+            var /= (double)m->cols;
+            // Normalize
+            double std = sqrt(var + eps);
+            for (int64_t j = 0; j < m->cols; j++) {
+                result->data[i * m->cols + j] = (m->data[i * m->cols + j] - mean) / std;
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// ============================================================================
+// Transformer/Attention Operations
+// ============================================================================
+
+// Embedding lookup: given embedding matrix and indices list, return embedded vectors
+double eigen_embedding_lookup_val(double embed_val, double indices_val) {
+    EigenMatrix* embed = eigen_double_to_matrix(embed_val);
+    EigenList* indices = eigen_double_to_list(indices_val);
+    if (!embed || !indices) return 0.0;
+
+    int64_t seq_len = eigen_list_length(indices);
+    int64_t d_model = embed->cols;
+    EigenMatrix* result = eigen_matrix_create(seq_len, d_model);
+    if (result) {
+        for (int64_t i = 0; i < seq_len; i++) {
+            int64_t idx = (int64_t)eigen_list_get(indices, i);
+            if (idx >= 0 && idx < embed->rows) {
+                for (int64_t j = 0; j < d_model; j++) {
+                    result->data[i * d_model + j] = embed->data[idx * d_model + j];
+                }
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Sinusoidal positional encoding
+double eigen_sinusoidal_pe_val(double seq_len_val, double d_model_val) {
+    int64_t seq_len = (int64_t)seq_len_val;
+    int64_t d_model = (int64_t)d_model_val;
+    EigenMatrix* result = eigen_matrix_create(seq_len, d_model);
+    if (result) {
+        for (int64_t pos = 0; pos < seq_len; pos++) {
+            for (int64_t i = 0; i < d_model; i++) {
+                double angle = (double)pos / pow(10000.0, (double)(2 * (i / 2)) / (double)d_model);
+                if (i % 2 == 0) {
+                    result->data[pos * d_model + i] = sin(angle);
+                } else {
+                    result->data[pos * d_model + i] = cos(angle);
+                }
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Causal mask for attention (upper triangular mask with -inf)
+double eigen_causal_mask_val(double size_val) {
+    int64_t size = (int64_t)size_val;
+    EigenMatrix* result = eigen_matrix_create(size, size);
+    if (result) {
+        for (int64_t i = 0; i < size; i++) {
+            for (int64_t j = 0; j < size; j++) {
+                if (j > i) {
+                    result->data[i * size + j] = -1e9;  // Large negative for softmax
+                } else {
+                    result->data[i * size + j] = 0.0;
+                }
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Matrix reshape
+double eigen_matrix_reshape_val(double m_val, double rows_val, double cols_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    int64_t rows = (int64_t)rows_val;
+    int64_t cols = (int64_t)cols_val;
+    if (!m || m->rows * m->cols != rows * cols) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(rows, cols);
+    if (result) {
+        memcpy(result->data, m->data, rows * cols * sizeof(double));
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Matrix slice (row range)
+double eigen_matrix_slice_val(double m_val, double start_val, double end_val) {
+    EigenMatrix* m = eigen_double_to_matrix(m_val);
+    int64_t start = (int64_t)start_val;
+    int64_t end = (int64_t)end_val;
+    if (!m || start < 0 || end > m->rows || start >= end) return 0.0;
+    int64_t new_rows = end - start;
+    EigenMatrix* result = eigen_matrix_create(new_rows, m->cols);
+    if (result) {
+        memcpy(result->data, m->data + start * m->cols, new_rows * m->cols * sizeof(double));
+    }
+    return eigen_matrix_to_double(result);
+}
+
+// Matrix concatenation (horizontal - along columns)
+double eigen_matrix_concat_val(double a_val, double b_val) {
+    EigenMatrix* a = eigen_double_to_matrix(a_val);
+    EigenMatrix* b = eigen_double_to_matrix(b_val);
+    if (!a || !b || a->rows != b->rows) return 0.0;
+    EigenMatrix* result = eigen_matrix_create(a->rows, a->cols + b->cols);
+    if (result) {
+        for (int64_t i = 0; i < a->rows; i++) {
+            // Copy row from a
+            for (int64_t j = 0; j < a->cols; j++) {
+                result->data[i * result->cols + j] = a->data[i * a->cols + j];
+            }
+            // Copy row from b
+            for (int64_t j = 0; j < b->cols; j++) {
+                result->data[i * result->cols + a->cols + j] = b->data[i * b->cols + j];
+            }
+        }
+    }
+    return eigen_matrix_to_double(result);
+}
