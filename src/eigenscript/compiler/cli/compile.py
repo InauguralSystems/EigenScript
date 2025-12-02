@@ -12,7 +12,7 @@ import subprocess
 from typing import List, Set, Optional
 
 from eigenscript.lexer import Tokenizer
-from eigenscript.parser.ast_builder import Parser, Import
+from eigenscript.parser.ast_builder import Parser, Import, ImportFrom
 from eigenscript.compiler.codegen.llvm_backend import LLVMCodeGenerator
 from eigenscript.compiler.analysis.observer import ObserverAnalyzer
 from eigenscript.compiler.analysis.resolver import ModuleResolver
@@ -88,7 +88,23 @@ def scan_imports(ast) -> List[str]:
     for stmt in ast.statements:
         if isinstance(stmt, Import):
             imports.append(stmt.module_name)
+        elif isinstance(stmt, ImportFrom):
+            imports.append(stmt.module_name)
     return imports
+
+
+def extract_imported_names(ast) -> Set[str]:
+    """Extract all imported names from ImportFrom statements.
+
+    These names should be declared as external rather than defined.
+    """
+    imported_names = set()
+    for stmt in ast.statements:
+        if isinstance(stmt, ImportFrom):
+            # Add all imported names from this statement
+            for name in stmt.names:
+                imported_names.add(name)
+    return imported_names
 
 
 def compile_module(
@@ -162,8 +178,13 @@ def compile_module(
     try:
         # Filter out import statements (they're compile-time only)
         code_statements = [
-            stmt for stmt in ast.statements if not isinstance(stmt, Import)
+            stmt
+            for stmt in ast.statements
+            if not isinstance(stmt, Import) and not isinstance(stmt, ImportFrom)
         ]
+
+        # Extract imported names so code generator can declare them as external
+        imported_names = extract_imported_names(ast)
 
         # Analyze for observer effect
         analyzer = ObserverAnalyzer()
@@ -182,6 +203,7 @@ def compile_module(
             observed_variables=observed_vars,
             target_triple=target_triple,
             module_name=codegen_module_name,
+            imported_names=imported_names,
         )
         # Phase 4.4: Pass imported modules so main() can call their init functions
         imported_modules_for_codegen = imports if is_main else None
@@ -191,8 +213,10 @@ def compile_module(
         llvm_module = llvm.parse_assembly(llvm_ir)
         llvm_module.verify()
 
-        # Link runtime bitcode
-        llvm_module = codegen.link_runtime_bitcode(llvm_module, target_triple)
+        # Link runtime bitcode only for the main module
+        # Library modules just declare runtime functions as external
+        if is_main:
+            llvm_module = codegen.link_runtime_bitcode(llvm_module, target_triple)
 
         # Apply optimizations if requested
         if opt_level > 0:
@@ -241,6 +265,7 @@ def compile_file(
     link_exec: bool = False,
     opt_level: int = 0,
     target_triple: str = None,
+    is_lib: bool = False,
 ):
     """Compile an EigenScript file to LLVM IR, object code, or executable."""
 
@@ -278,13 +303,14 @@ def compile_file(
         # If linking, we need to compile modules and collect object files
         if link_exec or not emit_llvm:
             # Compile main file and all dependencies
+            # --lib flag means this is a library module, not main
             main_obj = compile_module(
                 input_file,
                 resolver,
                 compiled_objects,
                 target_triple,
                 opt_level,
-                is_main=True,
+                is_main=not is_lib,
             )
 
             if not main_obj:
@@ -366,9 +392,19 @@ def compile_file(
         ast = parser.parse()
         print(f"  ✓ Parsed: {len(ast.statements)} statements")
 
+        # Filter out import statements for analysis
+        code_statements = [
+            stmt
+            for stmt in ast.statements
+            if not isinstance(stmt, Import) and not isinstance(stmt, ImportFrom)
+        ]
+
+        # Extract imported names
+        imported_names = extract_imported_names(ast)
+
         # Analyze
         analyzer = ObserverAnalyzer()
-        observed_vars = analyzer.analyze(ast.statements)
+        observed_vars = analyzer.analyze(code_statements)
         if observed_vars:
             print(
                 f"  ✓ Analysis: {len(observed_vars)} observed variables {observed_vars}"
@@ -376,11 +412,19 @@ def compile_file(
         else:
             print(f"  ✓ Analysis: No variables need geometric tracking (pure scalars!)")
 
+        # Determine module name for library mode
+        module_name = None
+        if is_lib:
+            module_name = os.path.splitext(os.path.basename(input_file))[0]
+
         # Generate LLVM IR
         codegen = LLVMCodeGenerator(
-            observed_variables=observed_vars, target_triple=target_triple
+            observed_variables=observed_vars,
+            target_triple=target_triple,
+            module_name=module_name,
+            imported_names=imported_names,
         )
-        llvm_ir = codegen.compile(ast.statements)
+        llvm_ir = codegen.compile(code_statements)
         print(f"  ✓ Generated LLVM IR")
 
         # Verify
@@ -393,9 +437,12 @@ def compile_file(
                 print(f"  ✗ Verification failed: {verify_error}")
                 return 1
 
-        # Link runtime bitcode
-        llvm_module = codegen.link_runtime_bitcode(llvm_module, target_triple)
-        print(f"  ✓ Linked runtime bitcode (LTO enabled)")
+        # Link runtime bitcode only for main programs (not libraries)
+        if not is_lib:
+            llvm_module = codegen.link_runtime_bitcode(llvm_module, target_triple)
+            print(f"  ✓ Linked runtime bitcode (LTO enabled)")
+        else:
+            print(f"  ✓ Library mode: runtime will be linked at final link stage")
 
         # Apply optimizations
         if opt_level > 0:
@@ -494,6 +541,11 @@ Examples:
         help=f"Target triple (e.g., {DEFAULT_WASM_TARGET} for WebAssembly)",
     )
     parser.add_argument(
+        "--lib",
+        action="store_true",
+        help="Compile as library module (no main, no runtime linking)",
+    )
+    parser.add_argument(
         "--no-verify", action="store_true", help="Skip LLVM IR verification"
     )
 
@@ -511,6 +563,7 @@ Examples:
         link_exec=link_exec,
         opt_level=args.optimize,
         target_triple=args.target,
+        is_lib=args.lib,
     )
 
     sys.exit(result)
