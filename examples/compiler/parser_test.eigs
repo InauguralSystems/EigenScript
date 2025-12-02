@@ -1,0 +1,86 @@
+# Test EigenScript Self-Hosting Parser
+# This file tests various parsing constructs
+
+# Test 1: Simple assignment
+x is 42
+y is 3.14
+name is "hello"
+
+# Test 2: Binary operators with precedence
+result is 1 + 2 * 3
+result2 is (1 + 2) * 3
+
+# Test 3: Comparison operators
+test1 is x > 10
+test2 is y <= 5
+test3 is x = 42
+
+# Test 4: Logical operators
+bool1 is x > 0 and y < 10
+bool2 is test1 or test2
+bool3 is not test3
+
+# Test 5: OF operator (relational)
+value is print of x
+# nested is func of arg of inner  # commented - would fail at runtime
+
+# Test 6: List literals
+numbers is [1, 2, 3, 4, 5]
+empty is []
+mixed is [x, y, 42]
+
+# Test 7: List indexing
+first is numbers[0]
+last is numbers[4]
+
+# Test 8: Function definition
+define add as:
+    a is 1
+    b is 2
+    result is a + b
+    return result
+
+# Test 9: Conditional
+if x > 10:
+    print of "big"
+else:
+    print of "small"
+
+# Test 10: Loop
+i is 0
+loop while i < 5:
+    print of i
+    i is i + 1
+
+# Test 11: Nested structures
+define factorial as:
+    if n = 0:
+        return 1
+    else:
+        sub is n - 1
+        rec is factorial of sub
+        return n * rec
+
+# Test 12: Struct definition
+struct Token:
+    type
+    value
+    line
+    column
+
+# Test 13: Interrogatives
+val is what is x
+reason is why is x
+method is how is x
+
+# Test 14: Member access
+result is module.function
+nested is a.b.c
+
+# Test 15: Multiple expressions
+sum is 1 + 2 + 3 + 4
+product is 2 * 3 * 4
+complex is (a + b) * (c - d) / e
+
+# End of parser tests
+print of "Parser test file loaded"
