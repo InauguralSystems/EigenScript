@@ -28,6 +28,8 @@ from eigenscript.parser.ast_builder import (
     Index,
     Import,
     MemberAccess,
+    StructDef,
+    StructLiteral,
 )
 
 
@@ -60,6 +62,7 @@ class ValueKind(Enum):
     EIGEN_PTR = "eigen_ptr"  # EigenValue* pointer
     LIST_PTR = "list_ptr"  # EigenList* pointer
     STRING_PTR = "string_ptr"  # EigenString* pointer (for self-hosting)
+    STRUCT_PTR = "struct_ptr"  # User-defined struct pointer (for self-hosting)
 
 
 @dataclass
@@ -73,6 +76,7 @@ class GeneratedValue:
 
     value: ir.Value
     kind: ValueKind
+    struct_name: Optional[str] = None  # For STRUCT_PTR: name of the struct type
 
 
 class LLVMCodeGenerator:
@@ -213,6 +217,10 @@ class LLVMCodeGenerator:
         self.global_vars: Dict[str, ir.AllocaInstr] = {}
         self.local_vars: Dict[str, ir.AllocaInstr] = {}
         self.functions: Dict[str, ir.Function] = {}
+
+        # Struct type registry (for self-hosting)
+        # Maps struct name -> (LLVM type, field names)
+        self.struct_types: Dict[str, tuple[ir.Type, list[str]]] = {}
 
         # Current function and builder
         self.current_function: Optional[ir.Function] = None
@@ -936,6 +944,7 @@ class LLVMCodeGenerator:
         self.allocated_eigenvalues = []
         self.allocated_lists = []
         self.allocated_strings = []
+        self.struct_var_types = {}  # Maps variable name -> struct type name
 
         # Create entry function based on compilation mode
         if self.is_library:
@@ -1027,6 +1036,10 @@ class LLVMCodeGenerator:
             return None
         elif isinstance(node, MemberAccess):
             return self._generate_member_access(node)
+        elif isinstance(node, StructDef):
+            return self._generate_struct_def(node)
+        elif isinstance(node, StructLiteral):
+            return self._generate_struct_literal(node)
         else:
             raise CompilerError(
                 f"Code generation for '{type(node).__name__}' not implemented",
@@ -1149,6 +1162,11 @@ class LLVMCodeGenerator:
 
         # Otherwise, load the pointer and check what it points to
         loaded_ptr = self.builder.load(var_ptr)
+
+        # Check if it's a struct variable
+        if hasattr(self, 'struct_var_types') and node.name in self.struct_var_types:
+            struct_name = self.struct_var_types[node.name]
+            return GeneratedValue(value=loaded_ptr, kind=ValueKind.STRUCT_PTR, struct_name=struct_name)
 
         # Check if it's a string or list (both have 3-element struct with pointer first)
         if isinstance(loaded_ptr.type, ir.PointerType):
@@ -1318,6 +1336,19 @@ class LLVMCodeGenerator:
             self.local_vars[node.identifier] = var_ptr
             return
 
+        # Handle struct assignment (for self-hosting)
+        if gen_value.kind == ValueKind.STRUCT_PTR:
+            struct_type, _ = self.struct_types.get(gen_value.struct_name, (None, None))
+            if struct_type:
+                var_ptr = self._alloca_at_entry(struct_type.as_pointer(), name=node.identifier)
+                self.builder.store(gen_value.value, var_ptr)
+                self.local_vars[node.identifier] = var_ptr
+                # Store struct metadata for later field access
+                if not hasattr(self, 'struct_var_types'):
+                    self.struct_var_types = {}
+                self.struct_var_types[node.identifier] = gen_value.struct_name
+            return
+
         # Handle EigenValue assignment (scalar or pointer)
         if node.identifier in self.local_vars:
             # Variable exists - update or rebind
@@ -1382,6 +1413,22 @@ class LLVMCodeGenerator:
         # Check if left side is a function name
         if isinstance(node.left, Identifier):
             func_name = node.left.name
+
+            # Check if this is a struct instantiation: StructName of [values...]
+            if func_name in self.struct_types:
+                # Parse the values from the right side (must be a list)
+                if isinstance(node.right, ListLiteral):
+                    struct_literal = StructLiteral(
+                        struct_name=func_name,
+                        values=node.right.elements
+                    )
+                    return self._generate_struct_literal(struct_literal)
+                else:
+                    raise CompilerError(
+                        f"Struct instantiation requires a list of values",
+                        hint=f"Use: {func_name} of [value1, value2, ...]",
+                        node=node,
+                    )
 
             # Handle built-in functions
             if func_name == "print":
@@ -1825,16 +1872,60 @@ class LLVMCodeGenerator:
             )
 
     def _generate_member_access(self, node: MemberAccess) -> GeneratedValue:
-        """Generate code for member access (module.function).
+        """Generate code for member access (module.function or struct.field).
 
-        Converts module.function_name to mangled name module_function_name
-        for cross-module function calls.
+        Handles:
+        1. Module function access: module.function -> module_function
+        2. Struct field access: struct_instance.field -> load field value
         """
-        # For now, member access is only supported for module.function pattern
+        # First, try to evaluate the object to see if it's a struct
+        if isinstance(node.object, Identifier):
+            # Check if it's a variable that might hold a struct
+            var_name = node.object.name
+            if var_name in self.local_vars or var_name in self.global_vars:
+                # Load the variable value
+                gen_obj = self._generate_identifier(node.object)
+
+                # Check if it's a struct
+                if isinstance(gen_obj, GeneratedValue) and gen_obj.kind == ValueKind.STRUCT_PTR:
+                    struct_name = gen_obj.struct_name
+                    if struct_name and struct_name in self.struct_types:
+                        struct_type, field_names = self.struct_types[struct_name]
+
+                        # Find field index
+                        field_name = node.member
+                        if field_name not in field_names:
+                            raise CompilerError(
+                                f"Struct '{struct_name}' has no field '{field_name}'",
+                                hint=f"Available fields: {', '.join(field_names)}",
+                                node=node,
+                            )
+
+                        field_idx = field_names.index(field_name)
+
+                        # Get pointer to field
+                        struct_ptr = gen_obj.value
+                        field_ptr = self.builder.gep(
+                            struct_ptr,
+                            [ir.Constant(self.int32_type, 0), ir.Constant(self.int32_type, field_idx)],
+                            inbounds=True,
+                        )
+
+                        # Load the field value (stored as i8*)
+                        ptr_val = self.builder.load(field_ptr)
+
+                        # Convert the pointer back to double
+                        # (We stored double bits as pointer, now reverse it)
+                        int_val = self.builder.ptrtoint(ptr_val, self.int64_type)
+                        double_val = self.builder.bitcast(int_val, self.double_type)
+
+                        return double_val
+
+        # Fall back to module.function pattern
         if not isinstance(node.object, Identifier):
             raise CompilerError(
-                "Member access only supported for module.function pattern",
-                hint="Example: control.apply_damping",
+                "Member access only supported for module.function or struct.field pattern",
+                hint="Example: control.apply_damping or token.type",
                 node=node,
             )
 
@@ -1848,6 +1939,114 @@ class LLVMCodeGenerator:
         # Create a synthetic Identifier node
         synthetic_id = Identifier(name=mangled_name)
         return self._generate_identifier(synthetic_id)
+
+    def _generate_struct_def(self, node: StructDef) -> None:
+        """Generate code for struct type definition.
+
+        Creates an LLVM struct type and registers it for later use.
+        Structs are essential for self-hosting (tokens, AST nodes, etc.)
+
+        Example:
+            struct Token:
+                type      # field 0: double
+                value     # field 1: EigenString*
+                line      # field 2: double
+        """
+        # For simplicity, struct fields are generic pointers (i8*)
+        # This allows storing any type (double, string, nested struct)
+        # The actual type is determined at access time
+        field_types = []
+        for field_name in node.fields:
+            # Use i8* (generic pointer) for all fields for flexibility
+            # This is similar to how dynamic languages handle struct fields
+            field_types.append(self.string_type)  # i8* for generic storage
+
+        # Create named struct type
+        struct_type = ir.LiteralStructType(field_types)
+
+        # Register the struct type
+        self.struct_types[node.name] = (struct_type, node.fields)
+
+        # No runtime code generation needed - struct definition is compile-time only
+        return None
+
+    def _generate_struct_literal(self, node: StructLiteral) -> GeneratedValue:
+        """Generate code for struct instantiation.
+
+        Creates a struct instance with provided field values.
+
+        Example:
+            Token of [1, "hello", 10]
+        """
+        if node.struct_name not in self.struct_types:
+            raise CompilerError(
+                f"Unknown struct type '{node.struct_name}'",
+                hint=f"Define the struct first with 'struct {node.struct_name}:'",
+                node=node,
+            )
+
+        struct_type, field_names = self.struct_types[node.struct_name]
+
+        if len(node.values) != len(field_names):
+            raise CompilerError(
+                f"Struct '{node.struct_name}' has {len(field_names)} fields, "
+                f"but {len(node.values)} values provided",
+                hint=f"Expected fields: {', '.join(field_names)}",
+                node=node,
+            )
+
+        # Allocate struct on heap
+        struct_size = ir.Constant(self.int64_type, len(field_names) * 8)  # 8 bytes per pointer
+        struct_ptr = self.builder.call(self.malloc, [struct_size])
+        struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
+
+        # Initialize each field
+        for i, (value_node, field_name) in enumerate(zip(node.values, field_names)):
+            # Generate the value
+            gen_value = self._generate(value_node)
+
+            # Get pointer to field
+            field_ptr = self.builder.gep(
+                struct_ptr,
+                [ir.Constant(self.int32_type, 0), ir.Constant(self.int32_type, i)],
+                inbounds=True,
+            )
+
+            # Store value (convert to pointer if needed)
+            if isinstance(gen_value, GeneratedValue):
+                if gen_value.kind == ValueKind.STRING_PTR:
+                    # Store string pointer directly
+                    ptr_val = self.builder.bitcast(gen_value.value, self.string_type)
+                    self.builder.store(ptr_val, field_ptr)
+                elif gen_value.kind == ValueKind.STRUCT_PTR:
+                    # Store nested struct pointer
+                    ptr_val = self.builder.bitcast(gen_value.value, self.string_type)
+                    self.builder.store(ptr_val, field_ptr)
+                else:
+                    # Scalar value - box it
+                    scalar = self.ensure_scalar(gen_value)
+                    # Store as pointer (cast double bits to pointer)
+                    ptr_val = self.builder.inttoptr(
+                        self.builder.bitcast(scalar, self.int64_type),
+                        self.string_type
+                    )
+                    self.builder.store(ptr_val, field_ptr)
+            elif isinstance(gen_value, ir.Value):
+                if gen_value.type == self.double_type:
+                    # Scalar value - box it
+                    ptr_val = self.builder.inttoptr(
+                        self.builder.bitcast(gen_value, self.int64_type),
+                        self.string_type
+                    )
+                    self.builder.store(ptr_val, field_ptr)
+                elif isinstance(gen_value.type, ir.PointerType):
+                    # Pointer value - store directly
+                    ptr_val = self.builder.bitcast(gen_value, self.string_type)
+                    self.builder.store(ptr_val, field_ptr)
+                else:
+                    raise CompilerError(f"Cannot store {gen_value.type} in struct field")
+
+        return GeneratedValue(value=struct_ptr, kind=ValueKind.STRUCT_PTR, struct_name=node.struct_name)
 
     def _generate_function_def(self, node: FunctionDef) -> None:
         """Generate code for function definitions."""

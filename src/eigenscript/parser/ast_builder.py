@@ -400,6 +400,48 @@ class MemberAccess(ASTNode):
 
 
 @dataclass
+class StructDef(ASTNode):
+    """
+    Represents a struct type definition (for self-hosting).
+
+    Defines a new compound data type with named fields.
+    Structs are essential for representing tokens, AST nodes, etc.
+
+    Example:
+        struct Token:
+            type
+            value
+            line
+            column
+    """
+
+    name: str  # Struct type name (e.g., "Token")
+    fields: List[str]  # Field names in order
+
+    def __repr__(self) -> str:
+        return f"StructDef({self.name!r}, fields={self.fields})"
+
+
+@dataclass
+class StructLiteral(ASTNode):
+    """
+    Represents a struct instantiation.
+
+    Creates an instance of a struct type with field values.
+
+    Example:
+        Token of [1, "hello", 10, 5]
+        # Creates Token with type=1, value="hello", line=10, column=5
+    """
+
+    struct_name: str  # Name of the struct type
+    values: List[ASTNode]  # Values for each field (in order)
+
+    def __repr__(self) -> str:
+        return f"StructLiteral({self.struct_name!r}, {len(self.values)} values)"
+
+
+@dataclass
 class Program(ASTNode):
     """
     Represents a complete EigenScript program.
@@ -539,6 +581,10 @@ class Parser:
         # DEFINE - function definition
         if token.type == TokenType.DEFINE:
             return self.parse_definition()
+
+        # STRUCT - struct type definition (for self-hosting)
+        if token.type == TokenType.STRUCT:
+            return self.parse_struct_def()
 
         # IF - conditional
         if token.type == TokenType.IF:
@@ -734,6 +780,58 @@ class Parser:
         body = self.parse_block()
 
         return FunctionDef(name, parameters, body)
+
+    def parse_struct_def(self) -> StructDef:
+        """
+        Parse a struct type definition.
+
+        Grammar: STRUCT identifier COLON NEWLINE INDENT field+ DEDENT
+
+        Example:
+            struct Token:
+                type
+                value
+                line
+                column
+        """
+        # Consume STRUCT
+        self.expect(TokenType.STRUCT)
+
+        # Get struct name
+        name_token = self.expect(TokenType.IDENTIFIER)
+        name = name_token.value
+
+        # Expect colon
+        self.expect(TokenType.COLON)
+
+        # Consume newline
+        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            self.advance()
+
+        # Expect INDENT
+        self.expect(TokenType.INDENT)
+
+        # Parse field names
+        fields = []
+        while self.current_token() and self.current_token().type != TokenType.DEDENT:
+            # Skip newlines
+            if self.current_token().type == TokenType.NEWLINE:
+                self.advance()
+                continue
+
+            # Each field is just an identifier
+            field_token = self.expect(TokenType.IDENTIFIER)
+            fields.append(field_token.value)
+
+            # Consume optional newline
+            if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+                self.advance()
+
+        # Expect DEDENT
+        if self.current_token() and self.current_token().type == TokenType.DEDENT:
+            self.advance()
+
+        return StructDef(name, fields)
 
     def parse_conditional(self) -> Conditional:
         """
