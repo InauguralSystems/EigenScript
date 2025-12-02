@@ -1297,3 +1297,143 @@ double eigen_matrix_concat_val(double a_val, double b_val) {
     }
     return eigen_matrix_to_double(result);
 }
+
+// ============================================================================
+// String Escaping (for LLVM IR output in self-hosting compiler)
+// ============================================================================
+
+// Escape a string for LLVM IR constant format
+// Converts special chars to hex escapes: \n -> \0A, \t -> \09, etc.
+double eigen_escape_string_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return str_val;
+
+    // Calculate escaped length (worst case: all chars need escaping = 3x length)
+    int64_t src_len = str->length;
+    int64_t max_len = src_len * 3 + 1;
+    char* escaped = (char*)malloc(max_len);
+    if (!escaped) return str_val;
+
+    int64_t j = 0;
+    for (int64_t i = 0; i < src_len; i++) {
+        unsigned char c = (unsigned char)str->data[i];
+        switch (c) {
+            case '\n':
+                escaped[j++] = '\\';
+                escaped[j++] = '0';
+                escaped[j++] = 'A';
+                break;
+            case '\t':
+                escaped[j++] = '\\';
+                escaped[j++] = '0';
+                escaped[j++] = '9';
+                break;
+            case '\r':
+                escaped[j++] = '\\';
+                escaped[j++] = '0';
+                escaped[j++] = 'D';
+                break;
+            case '"':
+                escaped[j++] = '\\';
+                escaped[j++] = '2';
+                escaped[j++] = '2';
+                break;
+            case '\\':
+                escaped[j++] = '\\';
+                escaped[j++] = '5';
+                escaped[j++] = 'C';
+                break;
+            default:
+                if (c < 32 || c > 126) {
+                    // Non-printable: escape as hex
+                    escaped[j++] = '\\';
+                    escaped[j++] = "0123456789ABCDEF"[(c >> 4) & 0xF];
+                    escaped[j++] = "0123456789ABCDEF"[c & 0xF];
+                } else {
+                    escaped[j++] = c;
+                }
+                break;
+        }
+    }
+    escaped[j] = '\0';
+
+    EigenString* result = eigen_string_create(escaped);
+    free(escaped);
+    return eigen_string_to_double(result);
+}
+
+// Get the escaped length of a string (for LLVM IR array size calculation)
+// This returns the actual byte count after escaping (each \XX counts as 1 byte in LLVM)
+double eigen_escaped_length_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0.0;
+    // The original string length is what matters for LLVM array size
+    // because escapes like \0A represent single bytes
+    return (double)str->length;
+}
+
+// ============================================================================
+// Slice Operations (for list[start:end] syntax)
+// ============================================================================
+
+// Slice a list from start to end (exclusive)
+double eigen_list_slice_val(double list_val, double start_val, double end_val) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (!list) return 0.0;
+
+    int64_t len = eigen_list_length(list);
+    int64_t start = (int64_t)start_val;
+    int64_t end = (int64_t)end_val;
+
+    // Handle negative indices
+    if (start < 0) start = len + start;
+    if (end < 0) end = len + end;
+
+    // Clamp to valid range
+    if (start < 0) start = 0;
+    if (end > len) end = len;
+    if (start >= end) {
+        return eigen_list_to_double(eigen_list_create(0));
+    }
+
+    int64_t new_len = end - start;
+    EigenList* result = eigen_list_create(new_len);
+    if (result) {
+        for (int64_t i = 0; i < new_len; i++) {
+            eigen_list_set(result, i, eigen_list_get(list, start + i));
+        }
+    }
+    return eigen_list_to_double(result);
+}
+
+// Slice a string from start to end (exclusive)
+double eigen_string_slice_val(double str_val, double start_val, double end_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return str_val;
+
+    int64_t len = str->length;
+    int64_t start = (int64_t)start_val;
+    int64_t end = (int64_t)end_val;
+
+    // Handle negative indices
+    if (start < 0) start = len + start;
+    if (end < 0) end = len + end;
+
+    // Clamp to valid range
+    if (start < 0) start = 0;
+    if (end > len) end = len;
+    if (start >= end) {
+        return eigen_string_to_double(eigen_string_create(""));
+    }
+
+    int64_t new_len = end - start;
+    char* buffer = (char*)malloc(new_len + 1);
+    if (!buffer) return str_val;
+
+    memcpy(buffer, str->data + start, new_len);
+    buffer[new_len] = '\0';
+
+    EigenString* result = eigen_string_create(buffer);
+    free(buffer);
+    return eigen_string_to_double(result);
+}
