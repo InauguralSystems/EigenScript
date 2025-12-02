@@ -4,6 +4,7 @@ Generates LLVM IR from EigenScript AST nodes.
 """
 
 import os
+import re
 from llvmlite import ir
 from llvmlite import binding as llvm
 from typing import Dict, Optional, Union, Set
@@ -88,6 +89,7 @@ class LLVMCodeGenerator:
         observed_variables: Optional[Set[str]] = None,
         target_triple: Optional[str] = None,
         module_name: Optional[str] = None,
+        imported_names: Optional[Set[str]] = None,
     ):
         # Initialize LLVM targets (initialization is now automatic in llvmlite)
         llvm.initialize_native_target()
@@ -132,6 +134,9 @@ class LLVMCodeGenerator:
         # Observer Effect: Track which variables need geometric tracking
         # Unobserved variables compile to raw doubles for C-level performance
         self.observed_variables = observed_variables or set()
+
+        # Track imported names - these are declared as external, not defined
+        self.imported_names = imported_names or set()
 
         # 2. Dynamic Type Definitions
         self.double_type = ir.DoubleType()
@@ -945,7 +950,31 @@ class LLVMCodeGenerator:
 
         # Create the global variable
         global_var = ir.GlobalVariable(self.module, ty, name=global_name)
-        global_var.linkage = "internal"  # Not exported
+
+        # Determine linkage based on variable name pattern
+        # For library modules (is_library=True), only export shared data
+        # Shared data prefixes for cross-module communication
+        # Everything else (including UPPERCASE_CONSTANTS) is module-private
+        if self.is_library:
+            shared_prefixes = (
+                "lex_",  # Lexer state
+                "ast_",  # AST data
+                "parser_token_",  # Parser token arrays
+                "parser_error",  # Parser error state
+                "parser_pos",  # Parser position
+                "error_",  # Error arrays
+                "last_",  # Lexer string tracking
+                "string_pool_",  # String pool
+                "symbol_",  # Symbol table
+                "scope_",  # Scope tracking
+                "output_",  # Codegen output
+                "reg_",  # Codegen registers
+                "label_",  # Codegen labels
+                "var_",  # Codegen variables
+            )
+            is_shared = name.startswith(shared_prefixes)
+            if not is_shared:
+                global_var.linkage = "internal"  # Module-private
 
         # Initialize with default value
         if initial_value is not None:
@@ -996,15 +1025,15 @@ class LLVMCodeGenerator:
             return self.external_globals[list_key]
 
         global_name = f"__eigs_global_{name}"
-        global_var = ir.GlobalVariable(self.module, self.eigen_list_ptr, name=global_name)
+        global_var = ir.GlobalVariable(
+            self.module, self.eigen_list_ptr, name=global_name
+        )
         global_var.linkage = "external"
 
         self.external_globals[list_key] = global_var
         return global_var
 
-    def _declare_external_function(
-        self, name: str, num_params: int = 1
-    ) -> ir.Function:
+    def _declare_external_function(self, name: str, num_params: int = 1) -> ir.Function:
         """Declare an external function from another module.
 
         This creates a function declaration that will be resolved at link time.
@@ -1359,7 +1388,9 @@ class LLVMCodeGenerator:
                 self.current_function
                 and self.current_function.name != self.entry_function_name
             )
-            if in_user_func:
+            # Also check if this is an imported name (from another module)
+            is_import = node.name in self.imported_names
+            if in_user_func or is_import:
                 # Auto-declare as external global with double type (universal scalar)
                 # This enables cross-module references to be resolved at link time
                 # For lists, we use _declare_external_list in list-specific contexts
@@ -2071,6 +2102,15 @@ class LLVMCodeGenerator:
                         "append requires 'append list of value' syntax",
                         hint="Usage: append mylist of 42",
                     )
+
+            # length of list -> i64 (as double)
+            # Usage: length of mylist
+            if func_name == "length":
+                arg_gen = self._generate(node.right)
+                list_ptr = self._ensure_list_ptr(arg_gen)
+                length_val = self.builder.call(self.eigen_list_length, [list_ptr])
+                # Convert i64 to double for EigenScript consistency
+                return self.builder.sitofp(length_val, self.double_type)
 
             # Handle user-defined functions (local or external)
             func = None

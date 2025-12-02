@@ -13,6 +13,14 @@
 # 6. Output IR (link with runtime)
 
 # ============================================================================
+# Token Type Constants (needed for main)
+# ============================================================================
+TT_EOF is 99
+TT_NUMBER is 30
+TT_STRING is 31
+TT_IDENTIFIER is 33
+
+# ============================================================================
 # Compilation State
 # ============================================================================
 
@@ -40,13 +48,13 @@ define run_lexer as:
     lex_source is source_code
 
     # Initialize and run lexer
-    result is init_lexer of 0
+    result is lexer_init_lexer of 0
 
     # Tokenize - this populates parser_token_* arrays
     token_count is 0
 
     loop while 1:
-        tok is next_token of 0
+        tok is lexer_next_token of 0
         if tok = TT_EOF:
             break
 
@@ -96,7 +104,7 @@ define run_parser as:
         print of "Phase 2: Parsing"
 
     # Parse tokens to AST
-    ast_root is parse of 0
+    ast_root is parser_parse of 0
 
     if parser_error = 1:
         print of "Parse error at line:"
@@ -121,12 +129,12 @@ define run_semantic of ast_root as:
         print of "Phase 3: Semantic Analysis"
 
     # Analyze AST
-    error_count is analyze of ast_root
+    error_count is semantic_analyze of ast_root
 
     if error_count > 0:
         print of "Semantic errors:"
         print of error_count
-        result is print_errors of 0
+        result is semantic_print_errors of 0
         compile_errors is compile_errors + error_count
         return 0
 
@@ -145,14 +153,14 @@ define run_codegen of ast_root as:
         print of "Phase 4: Code Generation"
 
     # Generate LLVM IR
-    line_count is generate of ast_root
+    line_count is codegen_generate of ast_root
 
     if verbose = 1:
         print of "  IR lines generated:"
         print of line_count
 
     # Output IR
-    result is print_ir of 0
+    result is codegen_print_ir of 0
 
     return line_count
 
