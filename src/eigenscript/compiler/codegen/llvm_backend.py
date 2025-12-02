@@ -1322,18 +1322,22 @@ class LLVMCodeGenerator:
                 # Assume it's a scalar
                 gen_value = GeneratedValue(value=gen_value, kind=ValueKind.SCALAR)
 
+        # Determine which symbol table to use based on scope
+        in_func = self.current_function and self.current_function.name != "main"
+        var_table = self.local_vars if in_func else self.global_vars
+
         # Handle list assignment
         if gen_value.kind == ValueKind.LIST_PTR:
             var_ptr = self._alloca_at_entry(self.eigen_list_ptr, name=node.identifier)
             self.builder.store(gen_value.value, var_ptr)
-            self.local_vars[node.identifier] = var_ptr
+            var_table[node.identifier] = var_ptr
             return
 
         # Handle string assignment (for self-hosting)
         if gen_value.kind == ValueKind.STRING_PTR:
             var_ptr = self._alloca_at_entry(self.eigen_string_ptr, name=node.identifier)
             self.builder.store(gen_value.value, var_ptr)
-            self.local_vars[node.identifier] = var_ptr
+            var_table[node.identifier] = var_ptr
             return
 
         # Handle struct assignment (for self-hosting)
@@ -1342,7 +1346,7 @@ class LLVMCodeGenerator:
             if struct_type:
                 var_ptr = self._alloca_at_entry(struct_type.as_pointer(), name=node.identifier)
                 self.builder.store(gen_value.value, var_ptr)
-                self.local_vars[node.identifier] = var_ptr
+                var_table[node.identifier] = var_ptr
                 # Store struct metadata for later field access
                 if not hasattr(self, 'struct_var_types'):
                     self.struct_var_types = {}
@@ -1350,9 +1354,18 @@ class LLVMCodeGenerator:
             return
 
         # Handle EigenValue assignment (scalar or pointer)
+        # Check both local and global scopes for existing variable
+        var_ptr = None
+        is_global_var = False
+
         if node.identifier in self.local_vars:
-            # Variable exists - update or rebind
             var_ptr = self.local_vars[node.identifier]
+        elif node.identifier in self.global_vars:
+            var_ptr = self.global_vars[node.identifier]
+            is_global_var = True
+
+        if var_ptr is not None:
+            # Variable exists - update or rebind
 
             if gen_value.kind == ValueKind.EIGEN_PTR:
                 # Aliasing: rebind to point to the same EigenValue*
@@ -1374,7 +1387,6 @@ class LLVMCodeGenerator:
             # Create new variable
             # OBSERVER EFFECT: Check if variable needs geometric tracking
             is_observed = node.identifier in self.observed_variables
-            in_function = self.current_function and self.current_function.name != "main"
 
             if not is_observed and gen_value.kind == ValueKind.SCALAR:
                 # FAST PATH: Unobserved scalar → raw double (C-level performance!)
@@ -1383,10 +1395,10 @@ class LLVMCodeGenerator:
                 scalar_val = self.ensure_scalar(gen_value)
                 var_ptr = self._alloca_at_entry(self.double_type, name=node.identifier)
                 self.builder.store(scalar_val, var_ptr)
-                self.local_vars[node.identifier] = var_ptr
+                var_table[node.identifier] = var_ptr
                 # NOTE: This is just a double*, not EigenValue*!
 
-            elif in_function and gen_value.kind == ValueKind.SCALAR:
+            elif in_func and gen_value.kind == ValueKind.SCALAR:
                 # Observed variable in function: Stack-allocated EigenValue
                 # IMPORTANT: Stack variables are NOT added to allocated_eigenvalues
                 # They don't need cleanup - automatically freed when function returns
@@ -1396,7 +1408,7 @@ class LLVMCodeGenerator:
                     self.eigen_value_ptr, name=node.identifier
                 )
                 self.builder.store(eigen_ptr, var_ptr)
-                self.local_vars[node.identifier] = var_ptr
+                var_table[node.identifier] = var_ptr
                 # NOTE: Stack variables are NOT tracked in allocated_eigenvalues!
             else:
                 # Observed variable in main scope: Heap allocation
@@ -1406,7 +1418,7 @@ class LLVMCodeGenerator:
                     self.eigen_value_ptr, name=node.identifier
                 )
                 self.builder.store(eigen_ptr, var_ptr)
-                self.local_vars[node.identifier] = var_ptr
+                var_table[node.identifier] = var_ptr
 
     def _generate_relation(self, node: Relation) -> ir.Value:
         """Generate code for relations (function calls via 'of' operator)."""
@@ -1730,7 +1742,7 @@ class LLVMCodeGenerator:
         then_terminated = False
         for stmt in node.if_block:
             self._generate(stmt)
-            if isinstance(stmt, Return):
+            if isinstance(stmt, (Return, Break)):
                 then_terminated = True
                 break
         if not then_terminated:
@@ -1742,7 +1754,7 @@ class LLVMCodeGenerator:
             self.builder.position_at_end(else_block)
             for stmt in node.else_block:
                 self._generate(stmt)
-                if isinstance(stmt, Return):
+                if isinstance(stmt, (Return, Break)):
                     else_terminated = True
                     break
             if not else_terminated:
