@@ -55,6 +55,14 @@ OP_OR is 13
 
 UOP_NOT is 1
 
+# Interrogative token types (must match lexer.eigs)
+TT_WHO is 20
+TT_WHAT is 21
+TT_WHEN is 22
+TT_WHERE is 23
+TT_WHY is 24
+TT_HOW is 25
+
 # ============================================================================
 # Code Generator State
 # ============================================================================
@@ -268,6 +276,14 @@ define emit_runtime_decls as:
     result is emit of "; Math intrinsics"
     result is emit of "declare double @llvm.fabs.f64(double)"
     result is emit of "declare double @llvm.sqrt.f64(double)"
+    result is emit of ""
+    result is emit of "; Interrogative operations"
+    result is emit of "declare double @eigen_what_is(double)"
+    result is emit of "declare double @eigen_who_is(double)"
+    result is emit of "declare double @eigen_why_is(double)"
+    result is emit of "declare double @eigen_how_is(double)"
+    result is emit of "declare double @eigen_when_is(double)"
+    result is emit of "declare double @eigen_where_is(double)"
     result is emit of ""
     return 0
 
@@ -812,6 +828,44 @@ define gen_list_literal of node_idx as:
 
     return ret_reg
 
+# Generate interrogative: what/who/why/how/when/where is expr
+define gen_interrogative of node_idx as:
+    arr_idx is node_idx + 1
+    expr_idx is ast_left[arr_idx]
+    interrog_type is ast_num_value[arr_idx]
+
+    # Generate the target expression
+    target_reg is gen_expr of expr_idx
+    target_str is make_reg of target_reg
+
+    # Determine which runtime function to call based on interrogative type
+    func_name is ""
+    if interrog_type = TT_WHAT:
+        func_name is "eigen_what_is"
+    if interrog_type = TT_WHO:
+        func_name is "eigen_who_is"
+    if interrog_type = TT_WHY:
+        func_name is "eigen_why_is"
+    if interrog_type = TT_HOW:
+        func_name is "eigen_how_is"
+    if interrog_type = TT_WHEN:
+        func_name is "eigen_when_is"
+    if interrog_type = TT_WHERE:
+        func_name is "eigen_where_is"
+
+    # Default to what_is if unknown
+    is_empty is string_equals of [func_name, ""]
+    if is_empty = 1:
+        func_name is "eigen_what_is"
+
+    # Generate call: %result = call double @eigen_X_is(double %target)
+    reg is next_reg of 0
+    reg_str is make_reg of reg
+    line is cat7 of ["  ", reg_str, " = call double @", func_name, "(double ", target_str, ")"]
+    result is emit of line
+
+    return reg
+
 # Main expression dispatch
 define gen_expr of node_idx as:
     arr_idx is node_idx + 1
@@ -837,6 +891,9 @@ define gen_expr of node_idx as:
 
     if node_type = AST_LIST_LITERAL:
         return gen_list_literal of node_idx
+
+    if node_type = AST_INTERROGATIVE:
+        return gen_interrogative of node_idx
 
     # Default: return 0
     return 0

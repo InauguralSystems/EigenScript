@@ -798,3 +798,47 @@ void eigen_print_val(double val) {
     // Default: print as number
     eigen_print_double(val);
 }
+
+// ============================================================================
+// Interrogative Support (for self-hosted compiler)
+// These provide simplified interrogative semantics for double-only values.
+// Full EigenValue interrogatives use eigen_get_value/gradient/stability directly.
+// ============================================================================
+
+// "what is x" - returns the value itself (identity for doubles)
+double eigen_what_is(double val) {
+    return val;
+}
+
+// "who is x" - returns an identity marker (for doubles, use address-like hash)
+// In self-hosted context, this is just a unique identifier
+double eigen_who_is(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    // Return a hash-like identifier based on the bit pattern
+    return (double)(u.i & 0xFFFFFFFF);
+}
+
+// "why is x" - returns gradient/derivative (0 for untracked doubles)
+double eigen_why_is(double val) {
+    (void)val;  // Unused - no gradient tracking for raw doubles
+    return 0.0;
+}
+
+// "how is x" - returns framework strength/stability (1.0 = fully stable)
+double eigen_how_is(double val) {
+    (void)val;  // Unused - assume stable for raw doubles
+    return 1.0;
+}
+
+// "when is x" - returns temporal coordinate/iteration (0 for untracked)
+double eigen_when_is(double val) {
+    (void)val;  // Unused - no iteration tracking for raw doubles
+    return 0.0;
+}
+
+// "where is x" - returns spatial coordinate (0 for untracked)
+double eigen_where_is(double val) {
+    (void)val;  // Unused - no spatial tracking for raw doubles
+    return 0.0;
+}
