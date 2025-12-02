@@ -17,6 +17,7 @@ from eigenscript.parser.ast_builder import (
     BinaryOp,
     UnaryOp,
     Assignment,
+    IndexedAssignment,
     FunctionDef,
     Return,
     Break,
@@ -424,6 +425,15 @@ class LLVMCodeGenerator:
         )
         self.eigen_list_destroy.attributes.add("nounwind")
 
+        # eigen_list_append(list*, value) -> void
+        eigen_list_append_type = ir.FunctionType(
+            self.void_type, [self.eigen_list_ptr, self.double_type]
+        )
+        self.eigen_list_append = ir.Function(
+            self.module, eigen_list_append_type, name="eigen_list_append"
+        )
+        self.eigen_list_append.attributes.add("nounwind")
+
         # ============================================================
         # String Runtime Functions (for self-hosting)
         # ============================================================
@@ -714,6 +724,14 @@ class LLVMCodeGenerator:
             # Check if it's already an EigenString*
             if isinstance(val.type, ir.PointerType):
                 return val
+            # Handle i64 (packed pointer from function parameter)
+            elif val.type == self.int64_type:
+                return self.builder.inttoptr(val, self.eigen_string_ptr)
+            # Handle double (might be a packed pointer passed through)
+            elif val.type == self.double_type:
+                # Convert double -> i64 -> pointer
+                i64_val = self.builder.bitcast(val, self.int64_type)
+                return self.builder.inttoptr(i64_val, self.eigen_string_ptr)
             else:
                 raise CompilerError(
                     f"Expected string pointer, got {val.type}",
@@ -746,6 +764,78 @@ class LLVMCodeGenerator:
             raise CompilerError(
                 f"Cannot convert {val.type} to int64", hint="Expected a numeric value"
             )
+
+    def _pack_to_i64(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Pack a value into i64 for function parameter passing.
+
+        - doubles are bitcast to i64
+        - pointers are converted via ptrtoint
+        - i64 values are passed through
+        """
+        if isinstance(val, GeneratedValue):
+            if val.kind == ValueKind.SCALAR:
+                # Bitcast double to i64
+                return self.builder.bitcast(val.value, self.int64_type)
+            elif val.kind in (
+                ValueKind.STRING_PTR,
+                ValueKind.LIST_PTR,
+                ValueKind.EIGEN_PTR,
+                ValueKind.STRUCT_PTR,
+            ):
+                # Convert pointer to i64
+                return self.builder.ptrtoint(val.value, self.int64_type)
+            else:
+                raise ValueError(f"Cannot pack {val.kind} to i64")
+        elif isinstance(val, ir.Value):
+            if val.type == self.double_type:
+                return self.builder.bitcast(val, self.int64_type)
+            elif val.type == self.int64_type:
+                return val
+            elif isinstance(val.type, ir.PointerType):
+                return self.builder.ptrtoint(val, self.int64_type)
+            elif isinstance(val.type, ir.IntType):
+                if val.type.width < 64:
+                    return self.builder.sext(val, self.int64_type)
+                elif val.type.width > 64:
+                    return self.builder.trunc(val, self.int64_type)
+                return val
+            else:
+                raise ValueError(f"Cannot pack {val.type} to i64")
+        else:
+            raise ValueError(f"Cannot pack {type(val)} to i64")
+
+    def _ensure_list_ptr(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Extract EigenList* from a GeneratedValue or raw ir.Value.
+
+        Used by list builtin functions to get the list pointer.
+        """
+        if isinstance(val, GeneratedValue):
+            if val.kind == ValueKind.LIST_PTR:
+                return val.value
+            else:
+                raise CompilerError(
+                    f"Expected list, got {val.kind}",
+                    hint="List operations require EigenList* values",
+                )
+        elif isinstance(val, ir.Value):
+            # Check if it's already an EigenList*
+            if isinstance(val.type, ir.PointerType):
+                return val
+            # Handle i64 (packed pointer from function parameter)
+            elif val.type == self.int64_type:
+                return self.builder.inttoptr(val, self.eigen_list_ptr)
+            # Handle double (might be a packed pointer passed through)
+            elif val.type == self.double_type:
+                # Convert double -> i64 -> pointer
+                i64_val = self.builder.bitcast(val, self.int64_type)
+                return self.builder.inttoptr(i64_val, self.eigen_list_ptr)
+            else:
+                raise CompilerError(
+                    f"Expected list pointer, got {val.type}",
+                    hint="List operations require EigenList* values",
+                )
+        else:
+            raise CompilerError(f"Unexpected value type: {type(val)}")
 
     def _extract_list_args(self, node, expected_count: int) -> list:
         """Extract arguments from a list literal for multi-arg builtins.
@@ -1020,7 +1110,12 @@ class LLVMCodeGenerator:
                     # Call the init function
                     self.builder.call(init_func, [])
 
-        # Generate code for each statement
+        # FIRST PASS: Declare all functions (for forward references)
+        for node in ast_nodes:
+            if isinstance(node, FunctionDef):
+                self._declare_function(node)
+
+        # SECOND PASS: Generate code for each statement
         for node in ast_nodes:
             self._generate(node)
 
@@ -1078,6 +1173,8 @@ class LLVMCodeGenerator:
             return self._generate_struct_def(node)
         elif isinstance(node, StructLiteral):
             return self._generate_struct_literal(node)
+        elif isinstance(node, IndexedAssignment):
+            return self._generate_indexed_assignment(node)
         else:
             raise CompilerError(
                 f"Code generation for '{type(node).__name__}' not implemented",
@@ -1197,6 +1294,12 @@ class LLVMCodeGenerator:
             # FAST PATH: Raw double variable (unobserved)
             # Just load the value directly - no function call overhead!
             return self.builder.load(var_ptr)
+
+        # Handle i64 parameters (universal type for function parameters)
+        if var_ptr.type.pointee == self.int64_type:
+            # Load the i64 and bitcast to double for numeric operations
+            loaded_i64 = self.builder.load(var_ptr)
+            return self.builder.bitcast(loaded_i64, self.double_type)
 
         # Otherwise, load the pointer and check what it points to
         loaded_ptr = self.builder.load(var_ptr)
@@ -1541,6 +1644,26 @@ class LLVMCodeGenerator:
                 self.builder.store(eigen_ptr, var_ptr)
                 var_table[node.identifier] = var_ptr
 
+    def _generate_indexed_assignment(self, node: IndexedAssignment) -> None:
+        """Generate code for indexed assignment (list[index] is value).
+
+        Uses eigen_list_set to set the value at the specified index.
+        """
+        # Generate the list expression
+        list_gen = self._generate(node.list_expr)
+        list_ptr = self._ensure_list_ptr(list_gen)
+
+        # Generate the index expression
+        index_gen = self._generate(node.index_expr)
+        index_val = self._ensure_int64(index_gen)
+
+        # Generate the value expression
+        value_gen = self._generate(node.value)
+        value = self.ensure_scalar(value_gen)
+
+        # Call eigen_list_set
+        self.builder.call(self.eigen_list_set, [list_ptr, index_val, value])
+
     def _generate_relation(self, node: Relation) -> ir.Value:
         """Generate code for relations (function calls via 'of' operator)."""
         # Check if left side is a function name
@@ -1756,46 +1879,64 @@ class LLVMCodeGenerator:
                     self.allocated_strings.append(result)
                 return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
 
+            # ============================================================
+            # List Builtin Functions
+            # ============================================================
+
+            # append list of value -> void (modifies in place)
+            # Usage: append array of value (appends value to array)
+            if func_name == "append":
+                from eigenscript.parser.ast_builder import Relation
+
+                if isinstance(node.right, Relation):
+                    # node.right is Relation(list, value)
+                    list_gen = self._generate(node.right.left)
+                    value_gen = self._generate(node.right.right)
+
+                    # Ensure we have a list pointer
+                    list_ptr = self._ensure_list_ptr(list_gen)
+                    # Ensure we have a scalar value
+                    value = self.ensure_scalar(value_gen)
+
+                    self.builder.call(self.eigen_list_append, [list_ptr, value])
+                    return ir.Constant(self.double_type, 0.0)  # Void return
+                else:
+                    raise CompilerError(
+                        "append requires 'append list of value' syntax",
+                        hint="Usage: append mylist of 42",
+                    )
+
             # Handle user-defined functions
             if func_name in self.functions:
-                # Get the argument expression
-                arg = node.right
-
-                # Generate the argument value
-                gen_arg = self._generate(arg)
-
-                # Determine if we have a scalar or a pointer
-                call_arg = None
-
-                # Case 1: Argument is a GeneratedValue wrapper (from interrogative)
-                if isinstance(gen_arg, GeneratedValue):
-                    if gen_arg.kind == ValueKind.SCALAR:
-                        # JIT Promotion: Scalar -> Stack EigenValue
-                        call_arg = self._create_eigen_on_stack(gen_arg.value)
-                    elif gen_arg.kind == ValueKind.EIGEN_PTR:
-                        call_arg = gen_arg.value
-                    else:
-                        raise TypeError(
-                            "Cannot pass List to function expecting EigenValue"
-                        )
-
-                # Case 2: Argument is a raw LLVM Value
-                elif isinstance(gen_arg, ir.Value):
-                    if gen_arg.type == self.double_type:
-                        # JIT Promotion: Scalar -> Stack EigenValue
-                        # This fixes the crash! We create a temp wrapper on the stack.
-                        call_arg = self._create_eigen_on_stack(gen_arg)
-                    elif isinstance(gen_arg.type, ir.PointerType):
-                        # Assume it's an EigenValue pointer
-                        # (In a full implementation we'd check the struct type strictly)
-                        call_arg = gen_arg
-                    else:
-                        raise TypeError(f"Unexpected argument type: {gen_arg.type}")
-
-                # Call the function
                 func = self.functions[func_name]
-                result = self.builder.call(func, [call_arg])
-                return result
+
+                # Get the argument expression and collect arguments
+                call_args = []
+
+                # Check if the argument is a list literal (for multi-param functions)
+                if isinstance(node.right, ListLiteral):
+                    # Multiple arguments passed as list: func of [a, b, c]
+                    for elem in node.right.elements:
+                        gen_arg = self._generate(elem)
+                        call_args.append(self._pack_to_i64(gen_arg))
+                else:
+                    # Single argument: func of x
+                    gen_arg = self._generate(node.right)
+                    call_args.append(self._pack_to_i64(gen_arg))
+
+                # Ensure we have the right number of arguments
+                expected_args = len(func.args)
+                if len(call_args) != expected_args:
+                    # Pad with zeros if not enough args
+                    while len(call_args) < expected_args:
+                        call_args.append(ir.Constant(self.int64_type, 0))
+                    # Truncate if too many args
+                    call_args = call_args[:expected_args]
+
+                # Call the function (returns i64)
+                result_i64 = self.builder.call(func, call_args)
+                # Unpack result back to double (default interpretation)
+                return self.builder.bitcast(result_i64, self.double_type)
 
         elif isinstance(node.left, MemberAccess):
             # Handle module.function calls (cross-module function calls)
@@ -1811,33 +1952,31 @@ class LLVMCodeGenerator:
                     node=node,
                 )
 
-            # Generate the argument (same logic as user-defined functions)
-            gen_arg = self._generate(node.right)
+            func = self.functions[mangled_name]
 
-            # Determine call argument based on type
-            call_arg = None
+            # Get the argument expression and collect arguments
+            call_args = []
 
-            if isinstance(gen_arg, GeneratedValue):
-                if gen_arg.kind == ValueKind.SCALAR:
-                    # JIT Promotion: Scalar -> Stack EigenValue
-                    call_arg = self._create_eigen_on_stack(gen_arg.value)
-                elif gen_arg.kind == ValueKind.EIGEN_PTR:
-                    call_arg = gen_arg.value
-                else:
-                    raise TypeError("Cannot pass List to function expecting EigenValue")
-            elif isinstance(gen_arg, ir.Value):
-                if gen_arg.type == self.double_type:
-                    # JIT Promotion: Scalar -> Stack EigenValue
-                    call_arg = self._create_eigen_on_stack(gen_arg)
-                elif isinstance(gen_arg.type, ir.PointerType):
-                    # Assume it's an EigenValue pointer
-                    call_arg = gen_arg
-                else:
-                    raise TypeError(f"Unexpected argument type: {gen_arg.type}")
+            # Check if the argument is a list literal (for multi-param functions)
+            if isinstance(node.right, ListLiteral):
+                # Multiple arguments passed as list: func of [a, b, c]
+                for elem in node.right.elements:
+                    gen_arg = self._generate(elem)
+                    call_args.append(self.ensure_scalar(gen_arg))
+            else:
+                # Single argument: func of x
+                gen_arg = self._generate(node.right)
+                call_args.append(self.ensure_scalar(gen_arg))
+
+            # Ensure we have the right number of arguments
+            expected_args = len(func.args)
+            if len(call_args) != expected_args:
+                while len(call_args) < expected_args:
+                    call_args.append(ir.Constant(self.double_type, 0.0))
+                call_args = call_args[:expected_args]
 
             # Call the function
-            func = self.functions[mangled_name]
-            result = self.builder.call(func, [call_arg])
+            result = self.builder.call(func, call_args)
             return result
 
         raise NotImplementedError(
@@ -2200,25 +2339,38 @@ class LLVMCodeGenerator:
             value=struct_ptr, kind=ValueKind.STRUCT_PTR, struct_name=node.struct_name
         )
 
-    def _generate_function_def(self, node: FunctionDef) -> None:
-        """Generate code for function definitions."""
+    def _declare_function(self, node: FunctionDef) -> None:
+        """Declare a function without generating its body (for forward references)."""
+        # Skip if already declared
+        if node.name in self.functions:
+            return
+
         # Apply name mangling for library modules to prevent symbol collisions
-        # e.g., "add" in math module becomes "math_add"
         mangled_name = f"{self.module_prefix}{node.name}"
 
-        # Create function signature
-        # In EigenScript, functions take one EigenValue* parameter and return double
-        func_type = ir.FunctionType(
-            self.double_type, [self.eigen_value_ptr]  # Single parameter passed via "of"
-        )
+        # Create function signature based on parameter count
+        # Use i64 as the universal parameter type - can hold both:
+        # - doubles (via bitcast)
+        # - pointers (via ptrtoint)
+        param_count = len(node.parameters) if node.parameters else 1
+        if param_count == 0:
+            param_count = 1
+
+        param_types = [self.int64_type] * param_count
+        func_type = ir.FunctionType(self.int64_type, param_types)
 
         func = ir.Function(self.module, func_type, name=mangled_name)
-        # Add function attributes for optimization
-        func.attributes.add("nounwind")  # No exceptions in EigenScript
-        # Store function under original name for internal lookups
-        # The LLVM IR will use the mangled name, but within the module
-        # we reference functions by their original names
+        func.attributes.add("nounwind")
         self.functions[node.name] = func
+
+    def _generate_function_def(self, node: FunctionDef) -> None:
+        """Generate code for function definitions."""
+        # Get the already-declared function (or declare it if not done in first pass)
+        if node.name not in self.functions:
+            self._declare_function(node)
+
+        mangled_name = f"{self.module_prefix}{node.name}"
+        func = self.functions[node.name]
 
         # Create entry block
         block = func.append_basic_block(name="entry")
@@ -2235,11 +2387,18 @@ class LLVMCodeGenerator:
         self.entry_block = block  # Store entry block for proper alloca placement
         self.local_vars = {}
 
-        # The parameter is implicitly named 'n' in EigenScript functions
-        # (convention based on examples)
-        param_ptr = self._alloca_at_entry(self.eigen_value_ptr, name="n")
-        self.builder.store(func.args[0], param_ptr)
-        self.local_vars["n"] = param_ptr
+        # Register parameters with their actual names
+        # Parameters are i64 (universal type that can hold doubles or pointers)
+        if node.parameters:
+            for i, param_name in enumerate(node.parameters):
+                param_ptr = self._alloca_at_entry(self.int64_type, name=param_name)
+                self.builder.store(func.args[i], param_ptr)
+                self.local_vars[param_name] = param_ptr
+        else:
+            # Legacy behavior: single parameter named 'n'
+            param_ptr = self._alloca_at_entry(self.int64_type, name="n")
+            self.builder.store(func.args[0], param_ptr)
+            self.local_vars["n"] = param_ptr
 
         # Generate function body
         function_terminated = False
@@ -2251,9 +2410,9 @@ class LLVMCodeGenerator:
             else:
                 self._generate(stmt)
 
-        # If no explicit return, return 0.0
+        # If no explicit return, return 0 (as i64 for user functions)
         if not function_terminated:
-            self.builder.ret(ir.Constant(self.double_type, 0.0))
+            self.builder.ret(ir.Constant(self.int64_type, 0))
 
         # Restore previous context
         self.current_function = prev_function
@@ -2263,13 +2422,28 @@ class LLVMCodeGenerator:
 
     def _generate_return(self, node: Return) -> ir.Value:
         """Generate code for return statements."""
+        # Check if we're in a user-defined function (returns i64) or main (returns i32)
+        is_user_func = (
+            self.current_function
+            and self.current_function.name != "main"
+            and self.current_function.ftype.return_type == self.int64_type
+        )
+
         if node.expression:
             return_val = self._generate(node.expression)
-            # Emit the actual return instruction
-            self.builder.ret(return_val)
-            return return_val
+            if is_user_func:
+                # Pack return value as i64 for user-defined functions
+                packed = self._pack_to_i64(return_val)
+                self.builder.ret(packed)
+                return packed
+            else:
+                self.builder.ret(return_val)
+                return return_val
         else:
-            zero = ir.Constant(self.double_type, 0.0)
+            if is_user_func:
+                zero = ir.Constant(self.int64_type, 0)
+            else:
+                zero = ir.Constant(self.double_type, 0.0)
             self.builder.ret(zero)
             return zero
 

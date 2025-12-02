@@ -130,7 +130,7 @@ define cat7 of [a, b, c, d, e, f, g] as:
 # ============================================================================
 
 define emit of line as:
-    append output_lines of line
+    append of output_lines of line
     output_count is output_count + 1
     return 0
 
@@ -152,8 +152,8 @@ var_regs is [0]
 var_count is 0
 
 define add_var of [name, reg] as:
-    append var_names of name
-    append var_regs of reg
+    append of var_names of name
+    append of var_regs of reg
     var_count is var_count + 1
     return var_count - 1
 

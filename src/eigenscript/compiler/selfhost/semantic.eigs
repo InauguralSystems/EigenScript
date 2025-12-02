@@ -217,12 +217,12 @@ define add_builtin of name_str as:
     idx is symbol_count
     symbol_count is symbol_count + 1
 
-    append symbol_names of name_str
-    append symbol_kinds of SYM_BUILTIN
-    append symbol_scope_levels of 0
-    append symbol_param_counts of 0
-    append symbol_field_counts of 0
-    append symbol_def_nodes of 0
+    append of symbol_names of name_str
+    append of symbol_kinds of SYM_BUILTIN
+    append of symbol_scope_levels of 0
+    append of symbol_param_counts of 0
+    append of symbol_field_counts of 0
+    append of symbol_def_nodes of 0
 
     return idx
 
@@ -237,11 +237,11 @@ define init_semantic as:
     error_count is 0
 
     # Initialize global scope
-    append scope_types of SCOPE_GLOBAL
-    append scope_symbol_starts of 0
-    append scope_halt_states of HALT_NONE
-    append scope_in_loop of 0
-    append scope_in_function of 0
+    append of scope_types of SCOPE_GLOBAL
+    append of scope_symbol_starts of 0
+    append of scope_halt_states of HALT_NONE
+    append of scope_in_loop of 0
+    append of scope_in_function of 0
 
     # Register builtins
     result is register_builtins of 0
@@ -256,21 +256,21 @@ define enter_scope of scope_type as:
     parent_in_loop is scope_in_loop[scope_depth - 1]
     parent_in_function is scope_in_function[scope_depth - 1]
 
-    append scope_types of scope_type
-    append scope_symbol_starts of symbol_count
-    append scope_halt_states of HALT_NONE
+    append of scope_types of scope_type
+    append of scope_symbol_starts of symbol_count
+    append of scope_halt_states of HALT_NONE
 
     # Update context based on scope type
     if scope_type = SCOPE_LOOP:
-        append scope_in_loop of 1
-        append scope_in_function of parent_in_function
+        append of scope_in_loop of 1
+        append of scope_in_function of parent_in_function
     else:
         if scope_type = SCOPE_FUNCTION:
-            append scope_in_loop of 0
-            append scope_in_function of 1
+            append of scope_in_loop of 0
+            append of scope_in_function of 1
         else:
-            append scope_in_loop of parent_in_loop
-            append scope_in_function of parent_in_function
+            append of scope_in_loop of parent_in_loop
+            append of scope_in_function of parent_in_function
 
     return scope_depth
 
@@ -323,12 +323,12 @@ define define_symbol of [name_str, kind] as:
     idx is symbol_count
     symbol_count is symbol_count + 1
 
-    append symbol_names of name_str
-    append symbol_kinds of kind
-    append symbol_scope_levels of scope_depth
-    append symbol_param_counts of 0
-    append symbol_field_counts of 0
-    append symbol_def_nodes of 0
+    append of symbol_names of name_str
+    append of symbol_kinds of kind
+    append of symbol_scope_levels of scope_depth
+    append of symbol_param_counts of 0
+    append of symbol_field_counts of 0
+    append of symbol_def_nodes of 0
 
     return idx
 
@@ -375,10 +375,10 @@ define add_error of [code, line, col, sym_idx] as:
     if error_count >= MAX_ERRORS:
         return 0
 
-    append error_codes of code
-    append error_lines of line
-    append error_cols of col
-    append error_symbols of sym_idx
+    append of error_codes of code
+    append of error_lines of line
+    append of error_cols of col
+    append of error_symbols of sym_idx
 
     error_count is error_count + 1
     return error_count

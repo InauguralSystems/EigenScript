@@ -51,34 +51,34 @@ define run_lexer as:
             break
 
         # Store token in parser arrays
-        append parser_token_types of tok
-        append parser_token_lines of lex_line
-        append parser_token_cols of lex_col
+        append of parser_token_types of tok
+        append of parser_token_lines of lex_line
+        append of parser_token_cols of lex_col
 
         # Store numeric value for numbers
         if tok = TT_NUMBER:
             # The number value was parsed in read_number
-            append parser_token_num_vals of 0
+            append of parser_token_num_vals of 0
         else:
-            append parser_token_num_vals of 0
+            append of parser_token_num_vals of 0
 
         # Store string index for identifiers/strings
         if tok = TT_IDENTIFIER:
-            append parser_token_str_indices of last_identifier
+            append of parser_token_str_indices of last_identifier
         else:
             if tok = TT_STRING:
-                append parser_token_str_indices of last_string_val
+                append of parser_token_str_indices of last_string_val
             else:
-                append parser_token_str_indices of 0
+                append of parser_token_str_indices of 0
 
         token_count is token_count + 1
 
     # Add EOF token
-    append parser_token_types of TT_EOF
-    append parser_token_lines of lex_line
-    append parser_token_cols of lex_col
-    append parser_token_num_vals of 0
-    append parser_token_str_indices of 0
+    append of parser_token_types of TT_EOF
+    append of parser_token_lines of lex_line
+    append of parser_token_cols of lex_col
+    append of parser_token_num_vals of 0
+    append of parser_token_str_indices of 0
     parser_token_count is token_count + 1
 
     if verbose = 1:

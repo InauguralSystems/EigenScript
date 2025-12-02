@@ -215,6 +215,26 @@ class Assignment(ASTNode):
 
 
 @dataclass
+class IndexedAssignment(ASTNode):
+    """
+    Represents indexed assignment (list element assignment).
+
+    Semantic: list[index] is value → set list element at index to value
+
+    Example:
+        numbers[0] is 42
+        matrix[i][j] is value
+    """
+
+    list_expr: ASTNode  # The list/array being indexed (e.g., numbers, matrix[i])
+    index_expr: ASTNode  # The index expression
+    value: ASTNode  # The value to assign
+
+    def __repr__(self) -> str:
+        return f"IndexedAssignment({self.list_expr}, {self.index_expr}, {self.value})"
+
+
+@dataclass
 class Conditional(ASTNode):
     """
     Represents an IF statement (geometric conditional).
@@ -606,15 +626,23 @@ class Parser:
                 self.advance()
             return Break()
 
-        # Assignment (identifier IS expression)
+        # Assignment (identifier IS expression) or IndexedAssignment (identifier[idx] IS expression)
         if token.type == TokenType.IDENTIFIER:
-            # Look ahead for IS token
+            # Look ahead for IS token (simple assignment)
             next_token = self.peek_token()
             if next_token and next_token.type == TokenType.IS:
                 return self.parse_assignment()
 
+            # Look ahead for LBRACKET (potential indexed assignment)
+            if next_token and next_token.type == TokenType.LBRACKET:
+                return self.parse_potential_indexed_assignment()
+
         # Expression statement (e.g., function call)
         expr = self.parse_expression()
+
+        # Check if this expression is followed by IS (could be indexed assignment)
+        if self.current_token() and self.current_token().type == TokenType.IS:
+            return self.parse_indexed_assignment_from_expr(expr)
 
         # Consume optional newline after expression
         if self.current_token() and self.current_token().type == TokenType.NEWLINE:
@@ -643,6 +671,62 @@ class Parser:
             self.advance()
 
         return Assignment(identifier, expression)
+
+    def parse_potential_indexed_assignment(self) -> ASTNode:
+        """
+        Parse potential indexed assignment (identifier[idx] IS expression).
+
+        If we find IS after parsing the indexed expression, it's an indexed assignment.
+        Otherwise, it's just an expression statement.
+
+        Grammar: identifier (LBRACKET expression RBRACKET)+ IS expression
+        """
+        # Parse the left-hand side as an expression (will include indexing)
+        expr = self.parse_expression()
+
+        # Check if followed by IS
+        if self.current_token() and self.current_token().type == TokenType.IS:
+            return self.parse_indexed_assignment_from_expr(expr)
+
+        # Otherwise it's just an expression statement
+        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            self.advance()
+
+        return expr
+
+    def parse_indexed_assignment_from_expr(self, expr: ASTNode) -> "IndexedAssignment":
+        """
+        Convert an Index expression followed by IS into an IndexedAssignment.
+
+        Args:
+            expr: The left-hand side expression (must be an Index node)
+
+        Returns:
+            IndexedAssignment node
+        """
+        from eigenscript.parser.ast_builder import Index, IndexedAssignment
+
+        if not isinstance(expr, Index):
+            token = self.current_token()
+            if token:
+                raise SyntaxError(
+                    f"Line {token.line}, Column {token.column}: "
+                    f"Cannot assign to expression (expected identifier or indexed expression)"
+                )
+            else:
+                raise SyntaxError("Cannot assign to expression")
+
+        # Consume IS
+        self.expect(TokenType.IS)
+
+        # Parse the value expression
+        value = self.parse_expression()
+
+        # Consume optional newline
+        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            self.advance()
+
+        return IndexedAssignment(expr.list_expr, expr.index_expr, value)
 
     def parse_import(self) -> Import:
         """
@@ -752,7 +836,12 @@ class Parser:
         """
         Parse a function definition.
 
-        Grammar: DEFINE identifier AS COLON block
+        Grammar: DEFINE identifier (OF (identifier | LBRACKET identifier (COMMA identifier)* RBRACKET))? AS COLON block
+
+        Examples:
+            define factorial as:        # no parameters
+            define add of x as:         # single parameter
+            define add of [x, y] as:    # multiple parameters
         """
         # Consume DEFINE
         self.expect(TokenType.DEFINE)
@@ -761,9 +850,32 @@ class Parser:
         name_token = self.expect(TokenType.IDENTIFIER)
         name = name_token.value
 
-        # For now, we don't parse parameters (simplified)
-        # In full implementation: parse parameter list
+        # Parse optional parameters (OF clause)
         parameters = []
+        if self.current_token() and self.current_token().type == TokenType.OF:
+            self.advance()  # consume OF
+
+            # Check if parameters are in a list [x, y, z] or single identifier
+            if self.current_token() and self.current_token().type == TokenType.LBRACKET:
+                self.advance()  # consume LBRACKET
+
+                # Parse parameter list
+                if self.current_token() and self.current_token().type != TokenType.RBRACKET:
+                    # First parameter
+                    param_token = self.expect(TokenType.IDENTIFIER)
+                    parameters.append(param_token.value)
+
+                    # Additional parameters
+                    while self.current_token() and self.current_token().type == TokenType.COMMA:
+                        self.advance()  # consume COMMA
+                        param_token = self.expect(TokenType.IDENTIFIER)
+                        parameters.append(param_token.value)
+
+                self.expect(TokenType.RBRACKET)
+            else:
+                # Single parameter
+                param_token = self.expect(TokenType.IDENTIFIER)
+                parameters.append(param_token.value)
 
         # Expect AS (optional in some grammars, required here)
         if self.current_token() and self.current_token().type == TokenType.AS:
@@ -772,8 +884,8 @@ class Parser:
         # Expect colon
         self.expect(TokenType.COLON)
 
-        # Consume newline
-        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+        # Consume all newlines (handles comment-only lines)
+        while self.current_token() and self.current_token().type == TokenType.NEWLINE:
             self.advance()
 
         # Parse block
@@ -804,8 +916,8 @@ class Parser:
         # Expect colon
         self.expect(TokenType.COLON)
 
-        # Consume newline
-        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+        # Consume all newlines (handles comment-only lines)
+        while self.current_token() and self.current_token().type == TokenType.NEWLINE:
             self.advance()
 
         # Expect INDENT
@@ -848,8 +960,8 @@ class Parser:
         # Expect colon
         self.expect(TokenType.COLON)
 
-        # Consume newline
-        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+        # Consume all newlines (handles comment-only lines)
+        while self.current_token() and self.current_token().type == TokenType.NEWLINE:
             self.advance()
 
         # Parse if block
@@ -863,8 +975,8 @@ class Parser:
             # Expect colon
             self.expect(TokenType.COLON)
 
-            # Consume newline
-            if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            # Consume all newlines (handles comment-only lines)
+            while self.current_token() and self.current_token().type == TokenType.NEWLINE:
                 self.advance()
 
             # Parse else block
@@ -890,8 +1002,8 @@ class Parser:
         # Expect colon
         self.expect(TokenType.COLON)
 
-        # Consume newline
-        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+        # Consume all newlines (handles comment-only lines)
+        while self.current_token() and self.current_token().type == TokenType.NEWLINE:
             self.advance()
 
         # Parse loop body
