@@ -88,3 +88,6 @@ test_compiler.py
 examples/compiler/benchmarks/truthiness_test
 examples/compiler/benchmarks/loop_fast
 examples/compiler/benchmarks/fibonacci
+
+# Self-hosting compiler binary
+eigensc
