@@ -761,3 +761,40 @@ void eigen_list_append_val(double list_val, double value) {
     if (!list) return;
     eigen_list_append(list, value);
 }
+
+// Print a double-encoded string
+void eigen_print_string_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (str) {
+        eigen_print_string(str);
+    }
+}
+
+// Universal print that handles both numbers and encoded strings
+// Uses heuristic: pointer values when encoded as double are very large
+// or have specific patterns that don't look like normal numbers
+void eigen_print_val(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    // Check if this looks like an encoded pointer
+    // Pointers on x86_64 are typically in ranges like 0x7f... or 0x5...
+    // When interpreted as double, these create very specific patterns
+    // A simple heuristic: if the value when viewed as i64 is in pointer range
+    // and the double representation is unusual (NaN, Inf, or very large)
+    int64_t as_int = u.i;
+
+    // Check if it might be a heap pointer (typical ranges)
+    if ((as_int > 0x100000000LL && as_int < 0x800000000000LL) ||
+        (as_int > 0x7f0000000000LL && as_int < 0x800000000000LL)) {
+        // Likely an encoded pointer - try to print as string
+        EigenString* str = (EigenString*)u.p;
+        // Basic validation: check if it looks like a valid EigenString
+        if (str && str->data && str->length >= 0 && str->length < 1000000) {
+            eigen_print_string(str);
+            return;
+        }
+    }
+
+    // Default: print as number
+    eigen_print_double(val);
+}
