@@ -220,6 +220,8 @@ class LLVMCodeGenerator:
         self.global_vars: Dict[str, ir.AllocaInstr] = {}
         self.local_vars: Dict[str, ir.AllocaInstr] = {}
         self.functions: Dict[str, ir.Function] = {}
+        self.external_globals: Dict[str, ir.GlobalVariable] = {}  # Cross-module refs
+        self.external_functions: Dict[str, ir.Function] = {}  # Cross-module funcs
 
         # Struct type registry (for self-hosting)
         # Maps struct name -> (LLVM type, field names)
@@ -958,6 +960,77 @@ class LLVMCodeGenerator:
 
         return global_var
 
+    def _declare_external_global(self, name: str, ty: ir.Type) -> ir.GlobalVariable:
+        """Declare an external global variable from another module.
+
+        This creates a global variable declaration (no initializer) that
+        will be resolved at link time. Used for cross-module references.
+
+        Args:
+            name: The global variable name (with module prefix)
+            ty: The type of the variable
+
+        Returns:
+            The external global variable pointer
+        """
+        if name in self.external_globals:
+            return self.external_globals[name]
+
+        # Create external global - use the raw name for linking
+        global_name = f"__eigs_global_{name}"
+        global_var = ir.GlobalVariable(self.module, ty, name=global_name)
+        global_var.linkage = "external"  # Will be resolved at link time
+
+        self.external_globals[name] = global_var
+        return global_var
+
+    def _declare_external_list(self, name: str) -> ir.GlobalVariable:
+        """Declare an external list variable from another module.
+
+        This is separate from _declare_external_global because lists need
+        EigenList* type for proper list operations.
+        """
+        # Check if already declared as a list
+        list_key = f"__list__{name}"
+        if list_key in self.external_globals:
+            return self.external_globals[list_key]
+
+        global_name = f"__eigs_global_{name}"
+        global_var = ir.GlobalVariable(self.module, self.eigen_list_ptr, name=global_name)
+        global_var.linkage = "external"
+
+        self.external_globals[list_key] = global_var
+        return global_var
+
+    def _declare_external_function(
+        self, name: str, num_params: int = 1
+    ) -> ir.Function:
+        """Declare an external function from another module.
+
+        This creates a function declaration that will be resolved at link time.
+        Used for cross-module function calls.
+
+        Args:
+            name: The function name (may include module prefix)
+            num_params: Number of parameters (default 1)
+
+        Returns:
+            The external function declaration
+        """
+        if name in self.external_functions:
+            return self.external_functions[name]
+
+        # Create function type: all params are i64, returns i64
+        param_types = [self.int64_type] * num_params
+        func_type = ir.FunctionType(self.int64_type, param_types)
+
+        # Create function declaration
+        func = ir.Function(self.module, func_type, name=name)
+        func.attributes.add("nounwind")
+
+        self.external_functions[name] = func
+        return func
+
     def _create_eigen_on_stack(self, initial_value: ir.Value) -> ir.Value:
         """Create an EigenValue on the stack (fast, auto-freed).
 
@@ -1278,23 +1351,36 @@ class LLVMCodeGenerator:
             var_ptr = self.local_vars[node.name]
         elif node.name in self.global_vars:
             var_ptr = self.global_vars[node.name]
+        elif node.name in self.external_globals:
+            var_ptr = self.external_globals[node.name]
         else:
-            # Better error with suggestions
-            available_vars = list(self.local_vars.keys()) + list(
-                self.global_vars.keys()
+            # Check if we're in a user-defined function and this could be external
+            in_user_func = (
+                self.current_function
+                and self.current_function.name != self.entry_function_name
             )
-            hint = "No variables defined yet"
-            if available_vars:
-                # Find similar names (simple edit distance)
-                similar = [v for v in available_vars if v[0] == node.name[0]]
-                if similar:
-                    hint = f"Did you mean: {', '.join(similar[:3])}?"
-                else:
-                    hint = f"Available variables: {', '.join(available_vars[:5])}"
+            if in_user_func:
+                # Auto-declare as external global with double type (universal scalar)
+                # This enables cross-module references to be resolved at link time
+                # For lists, we use _declare_external_list in list-specific contexts
+                var_ptr = self._declare_external_global(node.name, self.double_type)
+            else:
+                # Better error with suggestions
+                available_vars = list(self.local_vars.keys()) + list(
+                    self.global_vars.keys()
+                )
+                hint = "No variables defined yet"
+                if available_vars:
+                    # Find similar names (simple edit distance)
+                    similar = [v for v in available_vars if v[0] == node.name[0]]
+                    if similar:
+                        hint = f"Did you mean: {', '.join(similar[:3])}?"
+                    else:
+                        hint = f"Available variables: {', '.join(available_vars[:5])}"
 
-            raise CompilerError(
-                f"Undefined variable '{node.name}'", hint=hint, node=node
-            )
+                raise CompilerError(
+                    f"Undefined variable '{node.name}'", hint=hint, node=node
+                )
 
         # OBSERVER EFFECT: Check what type of variable this is
         # Fast path variables are raw double*, slow path are EigenValue*
@@ -1365,6 +1451,8 @@ class LLVMCodeGenerator:
             return self.builder.fmul(left, right)
         elif node.operator == "/":
             return self.builder.fdiv(left, right)
+        elif node.operator == "%":
+            return self.builder.frem(left, right)
         elif node.operator == ">":
             return self.builder.fcmp_ordered(">", left, right)
         elif node.operator == "<":
@@ -1599,10 +1687,49 @@ class LLVMCodeGenerator:
                     # Fast path: raw double*, just store the new value
                     self.builder.store(scalar_val, var_ptr)
                 elif var_ptr.type.pointee == self.eigen_string_ptr:
-                    # Can't assign scalar to string variable
-                    raise TypeError(
-                        f"Cannot assign scalar to string variable '{node.identifier}'"
-                    )
+                    # The value might be an i64-packed string pointer from a function parameter
+                    # Convert it back to string pointer
+                    if isinstance(gen_value, GeneratedValue):
+                        if gen_value.kind == ValueKind.STRING_PTR:
+                            self.builder.store(gen_value.value, var_ptr)
+                        else:
+                            # Try to convert from i64/double to string pointer
+                            val = gen_value.value
+                            if val.type == self.double_type:
+                                i64_val = self.builder.bitcast(val, self.int64_type)
+                                str_ptr = self.builder.inttoptr(
+                                    i64_val, self.eigen_string_ptr
+                                )
+                                self.builder.store(str_ptr, var_ptr)
+                            elif val.type == self.int64_type:
+                                str_ptr = self.builder.inttoptr(
+                                    val, self.eigen_string_ptr
+                                )
+                                self.builder.store(str_ptr, var_ptr)
+                            else:
+                                raise TypeError(
+                                    f"Cannot assign {gen_value.kind} to string variable '{node.identifier}'"
+                                )
+                    elif isinstance(gen_value, ir.Value):
+                        if gen_value.type == self.double_type:
+                            i64_val = self.builder.bitcast(gen_value, self.int64_type)
+                            str_ptr = self.builder.inttoptr(
+                                i64_val, self.eigen_string_ptr
+                            )
+                            self.builder.store(str_ptr, var_ptr)
+                        elif gen_value.type == self.int64_type:
+                            str_ptr = self.builder.inttoptr(
+                                gen_value, self.eigen_string_ptr
+                            )
+                            self.builder.store(str_ptr, var_ptr)
+                        else:
+                            raise TypeError(
+                                f"Cannot assign to string variable '{node.identifier}'"
+                            )
+                    else:
+                        raise TypeError(
+                            f"Cannot assign scalar to string variable '{node.identifier}'"
+                        )
                 else:
                     # Geometric tracked: EigenValue*, call eigen_update
                     eigen_ptr = self.builder.load(var_ptr)
@@ -1663,9 +1790,20 @@ class LLVMCodeGenerator:
 
         Uses eigen_list_set to set the value at the specified index.
         """
-        # Generate the list expression
-        list_gen = self._generate(node.list_expr)
-        list_ptr = self._ensure_list_ptr(list_gen)
+        # Handle external list specially
+        if isinstance(node.list_expr, Identifier):
+            list_name = node.list_expr.name
+            # Check if it's a known local/global or needs external declaration
+            if list_name not in self.local_vars and list_name not in self.global_vars:
+                # Declare as external list
+                list_global = self._declare_external_list(list_name)
+                list_ptr = self.builder.load(list_global)
+            else:
+                list_gen = self._generate(node.list_expr)
+                list_ptr = self._ensure_list_ptr(list_gen)
+        else:
+            list_gen = self._generate(node.list_expr)
+            list_ptr = self._ensure_list_ptr(list_gen)
 
         # Generate the index expression
         index_gen = self._generate(node.index_expr)
@@ -1900,11 +2038,25 @@ class LLVMCodeGenerator:
             # append list of value -> void (modifies in place)
             # Usage: append array of value (appends value to array)
             if func_name == "append":
-                from eigenscript.parser.ast_builder import Relation
-
                 if isinstance(node.right, Relation):
                     # node.right is Relation(list, value)
-                    list_gen = self._generate(node.right.left)
+                    # Handle external list specially
+                    list_expr = node.right.left
+                    if isinstance(list_expr, Identifier):
+                        list_name = list_expr.name
+                        # Check if it's a known local/global or needs external declaration
+                        if (
+                            list_name not in self.local_vars
+                            and list_name not in self.global_vars
+                        ):
+                            # Declare as external list
+                            list_ptr = self._declare_external_list(list_name)
+                            list_gen = self.builder.load(list_ptr)
+                        else:
+                            list_gen = self._generate(list_expr)
+                    else:
+                        list_gen = self._generate(list_expr)
+
                     value_gen = self._generate(node.right.right)
 
                     # Ensure we have a list pointer
@@ -1920,37 +2072,48 @@ class LLVMCodeGenerator:
                         hint="Usage: append mylist of 42",
                     )
 
-            # Handle user-defined functions
+            # Handle user-defined functions (local or external)
+            func = None
             if func_name in self.functions:
                 func = self.functions[func_name]
-
-                # Get the argument expression and collect arguments
-                call_args = []
-
-                # Check if the argument is a list literal (for multi-param functions)
+            elif func_name in self.external_functions:
+                func = self.external_functions[func_name]
+            else:
+                # Auto-declare as external function for cross-module calls
+                # Count arguments to determine parameter count
                 if isinstance(node.right, ListLiteral):
-                    # Multiple arguments passed as list: func of [a, b, c]
-                    for elem in node.right.elements:
-                        gen_arg = self._generate(elem)
-                        call_args.append(self._pack_to_i64(gen_arg))
+                    num_params = len(node.right.elements)
                 else:
-                    # Single argument: func of x
-                    gen_arg = self._generate(node.right)
+                    num_params = 1
+                func = self._declare_external_function(func_name, num_params)
+
+            # Get the argument expression and collect arguments
+            call_args = []
+
+            # Check if the argument is a list literal (for multi-param functions)
+            if isinstance(node.right, ListLiteral):
+                # Multiple arguments passed as list: func of [a, b, c]
+                for elem in node.right.elements:
+                    gen_arg = self._generate(elem)
                     call_args.append(self._pack_to_i64(gen_arg))
+            else:
+                # Single argument: func of x
+                gen_arg = self._generate(node.right)
+                call_args.append(self._pack_to_i64(gen_arg))
 
-                # Ensure we have the right number of arguments
-                expected_args = len(func.args)
-                if len(call_args) != expected_args:
-                    # Pad with zeros if not enough args
-                    while len(call_args) < expected_args:
-                        call_args.append(ir.Constant(self.int64_type, 0))
-                    # Truncate if too many args
-                    call_args = call_args[:expected_args]
+            # Ensure we have the right number of arguments
+            expected_args = len(func.args)
+            if len(call_args) != expected_args:
+                # Pad with zeros if not enough args
+                while len(call_args) < expected_args:
+                    call_args.append(ir.Constant(self.int64_type, 0))
+                # Truncate if too many args
+                call_args = call_args[:expected_args]
 
-                # Call the function (returns i64)
-                result_i64 = self.builder.call(func, call_args)
-                # Unpack result back to double (default interpretation)
-                return self.builder.bitcast(result_i64, self.double_type)
+            # Call the function (returns i64)
+            result_i64 = self.builder.call(func, call_args)
+            # Unpack result back to double (default interpretation)
+            return self.builder.bitcast(result_i64, self.double_type)
 
         elif isinstance(node.left, MemberAccess):
             # Handle module.function calls (cross-module function calls)
@@ -2499,20 +2662,34 @@ class LLVMCodeGenerator:
 
     def _generate_index(self, node: Index) -> ir.Value:
         """Generate code for list indexing."""
-        # Get the list
-        list_expr = self._generate(node.list_expr)
+        # Handle external list specially
+        if isinstance(node.list_expr, Identifier):
+            list_name = node.list_expr.name
+            # Check if it's a known local/global or needs external declaration
+            if list_name not in self.local_vars and list_name not in self.global_vars:
+                # Declare as external list
+                list_global = self._declare_external_list(list_name)
+                list_ptr = self.builder.load(list_global)
+            else:
+                list_gen = self._generate(node.list_expr)
+                list_ptr = self._ensure_list_ptr(list_gen)
+        else:
+            list_gen = self._generate(node.list_expr)
+            list_ptr = self._ensure_list_ptr(list_gen)
 
         # Get the index
         index_expr = self._generate(node.index_expr)
 
         # Convert index to i64 if it's a double
+        if isinstance(index_expr, GeneratedValue):
+            index_expr = self.ensure_scalar(index_expr)
         if isinstance(index_expr.type, ir.DoubleType):
             index_val = self.builder.fptosi(index_expr, self.int64_type)
         else:
             index_val = index_expr
 
         # Call eigen_list_get
-        result = self.builder.call(self.eigen_list_get, [list_expr, index_val])
+        result = self.builder.call(self.eigen_list_get, [list_ptr, index_val])
         return result
 
     def get_llvm_ir(self) -> str:
