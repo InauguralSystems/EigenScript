@@ -139,6 +139,9 @@ class LLVMCodeGenerator:
         # Track imported names - these are declared as external, not defined
         self.imported_names = imported_names or set()
 
+        # Counter for unique string constant names (avoids collision across modules)
+        self.string_counter = 0
+
         # 2. Dynamic Type Definitions
         self.double_type = ir.DoubleType()
         self.int64_type = ir.IntType(64)  # Fixed size for data (iterations, etc)
@@ -1382,8 +1385,10 @@ class LLVMCodeGenerator:
                 ir.ArrayType(self.int8_type, len(string_val)),
                 bytearray(string_val.encode("utf-8")),
             )
+            str_name = f"{self.module_prefix}str_{self.string_counter}"
+            self.string_counter += 1
             global_str = ir.GlobalVariable(
-                self.module, string_const.type, name=f"str_{id(node)}"
+                self.module, string_const.type, name=str_name
             )
             global_str.global_constant = True
             global_str.initializer = string_const
@@ -1466,7 +1471,27 @@ class LLVMCodeGenerator:
             )
             # Also check if this is an imported name (from another module)
             is_import = node.name in self.imported_names
-            if in_user_func or is_import:
+            # Check for shared-prefix variables (cross-module globals)
+            shared_prefixes = (
+                "lex_",
+                "ast_",
+                "parser_token_",
+                "parser_error",
+                "parser_pos",
+                "error_",
+                "last_",
+                "string_pool_",
+                "symbol_",
+                "scope_",
+                "output_",
+                "reg_",
+                "label_",
+                "var_",
+            )
+            is_shared_prefix = node.name.startswith(shared_prefixes)
+            # Only treat shared-prefix as external in main module (not in library modules)
+            is_cross_module_shared = is_shared_prefix and not self.is_library
+            if in_user_func or is_import or is_cross_module_shared:
                 # Auto-declare as external global with double type (universal scalar)
                 # This enables cross-module references to be resolved at link time
                 # For lists, we use _declare_external_list in list-specific contexts
@@ -1702,6 +1727,39 @@ class LLVMCodeGenerator:
             existing_var_ptr = self.local_vars[node.identifier]
         elif node.identifier in self.global_vars:
             existing_var_ptr = self.global_vars[node.identifier]
+        elif node.identifier in self.external_globals:
+            existing_var_ptr = self.external_globals[node.identifier]
+
+        # For non-library modules, check if this is a known cross-module scalar variable
+        # These are specific variables that need to be shared across modules
+        if existing_var_ptr is None and not self.is_library:
+            cross_module_scalars = {
+                "parser_token_count",
+                "parser_error",
+                "parser_error_line",
+                "parser_error_col",
+                "parser_pos",
+                "ast_node_count",
+                "ast_children_count",
+                "lex_pos",
+                "lex_len",
+                "lex_line",
+                "lex_col",
+                "lex_indent",
+                "lex_at_line_start",
+                "symbol_count",
+                "scope_level",
+                "error_count",
+                "output_count",
+                "reg_counter",
+                "label_counter",
+                "var_count",
+                "string_counter",
+            }
+            if node.identifier in cross_module_scalars:
+                existing_var_ptr = self._declare_external_global(
+                    node.identifier, self.double_type
+                )
 
         # Handle list assignment
         if gen_value.kind == ValueKind.LIST_PTR:
@@ -1964,8 +2022,10 @@ class LLVMCodeGenerator:
                         ir.ArrayType(self.int8_type, len(fmt_str)),
                         bytearray(fmt_str.encode("utf-8")),
                     )
+                    fmt_name = f"{self.module_prefix}fmt_str_{self.string_counter}"
+                    self.string_counter += 1
                     global_fmt = ir.GlobalVariable(
-                        self.module, fmt_const.type, name=f"fmt_str_{id(node)}"
+                        self.module, fmt_const.type, name=fmt_name
                     )
                     global_fmt.global_constant = True
                     global_fmt.initializer = fmt_const
@@ -1987,8 +2047,10 @@ class LLVMCodeGenerator:
                         ir.ArrayType(self.int8_type, len(fmt_str)),
                         bytearray(fmt_str.encode("utf-8")),
                     )
+                    fmt_name = f"{self.module_prefix}fmt_str_i64_{self.string_counter}"
+                    self.string_counter += 1
                     global_fmt = ir.GlobalVariable(
-                        self.module, fmt_const.type, name=f"fmt_str_i64_{id(node)}"
+                        self.module, fmt_const.type, name=fmt_name
                     )
                     global_fmt.global_constant = True
                     global_fmt.initializer = fmt_const
@@ -2009,8 +2071,10 @@ class LLVMCodeGenerator:
                         ir.ArrayType(self.int8_type, len(fmt_str)),
                         bytearray(fmt_str.encode("utf-8")),
                     )
+                    fmt_name = f"{self.module_prefix}fmt_{self.string_counter}"
+                    self.string_counter += 1
                     global_fmt = ir.GlobalVariable(
-                        self.module, fmt_const.type, name=f"fmt_{id(node)}"
+                        self.module, fmt_const.type, name=fmt_name
                     )
                     global_fmt.global_constant = True
                     global_fmt.initializer = fmt_const

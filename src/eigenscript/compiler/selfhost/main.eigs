@@ -51,7 +51,7 @@ define run_lexer as:
         print of "Phase 1: Lexical Analysis"
 
     # Set source for lexer
-    lex_source is source_code
+    result is lexer_set_source of source_code
 
     # Initialize and run lexer
     result is lexer_init_lexer of 0
@@ -71,17 +71,18 @@ define run_lexer as:
 
         # Store numeric value for numbers
         if tok = TT_NUMBER:
-            # The number value was parsed in read_number
-            append of parser_token_num_vals of 0
+            append of parser_token_num_vals of lex_last_num_val
         else:
             append of parser_token_num_vals of 0
 
         # Store string index for identifiers/strings
         if tok = TT_IDENTIFIER:
-            append of parser_token_str_indices of last_identifier
+            str_idx is lexer_get_identifier_index of 0
+            append of parser_token_str_indices of str_idx
         else:
             if tok = TT_STRING:
-                append of parser_token_str_indices of last_string_val
+                str_idx is lexer_get_string_index of 0
+                append of parser_token_str_indices of str_idx
             else:
                 append of parser_token_str_indices of 0
 
@@ -110,7 +111,9 @@ define run_parser as:
         print of "Phase 2: Parsing"
 
     # Parse tokens to AST
+    print of 5001
     ast_root is parser_parse of 0
+    print of 5002
 
     if parser_error = 1:
         print of "Parse error at line:"
