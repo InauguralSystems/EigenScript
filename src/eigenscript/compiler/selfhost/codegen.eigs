@@ -198,6 +198,54 @@ var_names is [""]
 var_regs is [0]
 var_count is 0
 
+# Struct Storage - maps struct names to their field lists
+# struct_names[i] = string index of struct name
+# struct_field_counts[i] = number of fields in struct i
+# struct_fields[i] = starting index in struct_field_names for struct i's fields
+# struct_field_names = flat array of field name string indices
+MAX_STRUCTS is 100
+struct_names is [0]
+struct_field_counts is [0]
+struct_fields is [0]
+struct_field_names is [0]
+struct_count is 0
+struct_field_total is 0
+
+define add_struct of [name_idx, field_count] as:
+    append of struct_names of name_idx
+    append of struct_field_counts of field_count
+    append of struct_fields of struct_field_total
+    struct_count is struct_count + 1
+    return struct_count - 1
+
+define add_struct_field of field_name_idx as:
+    append of struct_field_names of field_name_idx
+    struct_field_total is struct_field_total + 1
+    return struct_field_total - 1
+
+define lookup_struct of name_idx as:
+    i is struct_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is struct_names[arr_i]
+        if stored_idx = name_idx:
+            return i
+        i is i - 1
+    return 0 - 1
+
+define lookup_struct_field of [struct_idx, field_name_idx] as:
+    arr_i is struct_idx + 1
+    field_start is struct_fields[arr_i]
+    field_count is struct_field_counts[arr_i]
+    i is 0
+    loop while i < field_count:
+        field_arr_i is field_start + i + 1
+        stored_field is struct_field_names[field_arr_i]
+        if stored_field = field_name_idx:
+            return i
+        i is i + 1
+    return 0 - 1
+
 define add_var of [name, reg] as:
     x is name
     y is reg
@@ -1453,6 +1501,38 @@ define gen_relation of node_idx as:
         result is emit of line
         return reg
 
+    # Check if this is a struct constructor
+    # Look up func_name in struct table
+    left_arr_idx is left_idx + 1
+    if left_type = AST_IDENTIFIER:
+        func_name_idx is ast_str_index[left_arr_idx]
+        struct_idx is lookup_struct of func_name_idx
+        if struct_idx >= 0:
+            # This is a struct constructor - create a list from arguments
+            count_str is number_to_string of arg_count
+            list_reg is next_reg of 0
+            list_str is make_reg of list_reg
+            line is cat5 of ["  ", list_str, " = call %EigenList* @eigen_list_create(i64 ", count_str, ")"]
+            result is emit of line
+
+            # Set each element
+            i is 1
+            loop while i <= arg_count:
+                field_reg is arg_regs[i]
+                field_str is make_reg of field_reg
+                idx is i - 1
+                idx_str is number_to_string of idx
+                line is cat7 of ["  call void @eigen_list_set(%EigenList* ", list_str, ", i64 ", idx_str, ", double ", field_str, ")"]
+                result is emit of line
+                i is i + 1
+
+            # Convert to double
+            ret_reg is next_reg of 0
+            ret_str is make_reg of ret_reg
+            line is cat6 of ["  ", ret_str, " = call double @eigen_list_to_double(%EigenList* ", list_str, ")", ""]
+            result is emit of line
+            return ret_reg
+
     # User-defined function call
     # Build argument list string
     args_str is ""
@@ -1544,6 +1624,182 @@ define gen_list_literal of node_idx as:
     result is emit of line
 
     return ret_reg
+
+# Generate list comprehension: [expr for var in iterable] or [expr for var in iterable if cond]
+# AST: left=expr, right=iterable, third=condition (0 if none), str_index=var name
+define gen_list_comp of node_idx as:
+    arr_idx is node_idx + 1
+    expr_idx is ast_left[arr_idx]
+    iterable_idx is ast_right[arr_idx]
+    cond_idx is ast_third[arr_idx]
+    var_name_idx is ast_str_index[arr_idx]
+
+    # Create empty result list
+    result_list_reg is next_reg of 0
+    result_list_str is make_reg of result_list_reg
+    line is cat4 of ["  ", result_list_str, " = call %EigenList* @eigen_list_create(i64 0)", ""]
+    result is emit of line
+
+    # Generate iterable expression
+    iter_reg is gen_expr of iterable_idx
+    iter_str is make_reg of iter_reg
+
+    # Convert to list pointer
+    iter_ptr_reg is next_reg of 0
+    iter_ptr_str is make_reg of iter_ptr_reg
+    line is cat6 of ["  ", iter_ptr_str, " = call %EigenList* @eigen_double_to_list(double ", iter_str, ")", ""]
+    result is emit of line
+
+    # Get length of iterable
+    len_reg is next_reg of 0
+    len_str is make_reg of len_reg
+    line is cat6 of ["  ", len_str, " = call i64 @eigen_list_length(%EigenList* ", iter_ptr_str, ")", ""]
+    result is emit of line
+
+    # Allocate loop index variable
+    idx_alloc_reg is next_reg of 0
+    idx_alloc_str is make_reg of idx_alloc_reg
+    line is cat4 of ["  ", idx_alloc_str, " = alloca i64", ""]
+    result is emit of line
+    line is cat4 of ["  store i64 0, i64* ", idx_alloc_str, "", ""]
+    result is emit of line
+
+    # Allocate the iteration variable for the comprehension
+    var_alloc_reg is next_reg of 0
+    var_alloc_str is make_reg of var_alloc_reg
+    line is cat4 of ["  ", var_alloc_str, " = alloca double", ""]
+    result is emit of line
+
+    # Register the loop variable
+    result is add_var of [var_name_idx, var_alloc_reg]
+
+    # Loop labels
+    cond_lbl is next_label of 0
+    body_lbl is next_label of 0
+    end_lbl is next_label of 0
+    cond_str is make_label of cond_lbl
+    body_str is make_label of body_lbl
+    end_str is make_label of end_lbl
+
+    # Jump to condition
+    line is cat3 of ["  br label %", cond_str, ""]
+    result is emit of line
+    result is emit of ""
+
+    # Condition block: check if index < length
+    line is cat3 of [cond_str, ":", ""]
+    result is emit of line
+
+    curr_idx_reg is next_reg of 0
+    curr_idx_str is make_reg of curr_idx_reg
+    line is cat6 of ["  ", curr_idx_str, " = load i64, i64* ", idx_alloc_str, "", ""]
+    result is emit of line
+
+    cmp_reg is next_reg of 0
+    cmp_str is make_reg of cmp_reg
+    line is cat7 of ["  ", cmp_str, " = icmp slt i64 ", curr_idx_str, ", ", len_str, ""]
+    result is emit of line
+
+    line is cat7 of ["  br i1 ", cmp_str, ", label %", body_str, ", label %", end_str, ""]
+    result is emit of line
+    result is emit of ""
+
+    # Body block
+    line is cat3 of [body_str, ":", ""]
+    result is emit of line
+
+    # Get current element from iterable
+    elem_reg is next_reg of 0
+    elem_str is make_reg of elem_reg
+    line is cat7 of ["  ", elem_str, " = call double @eigen_list_get(%EigenList* ", iter_ptr_str, ", i64 ", curr_idx_str, ")"]
+    result is emit of line
+
+    # Store in loop variable
+    line is cat6 of ["  store double ", elem_str, ", double* ", var_alloc_str, "", ""]
+    result is emit of line
+
+    # Check if there's a condition
+    if cond_idx > 0:
+        # Generate condition check
+        cond_result_reg is gen_expr of cond_idx
+        cond_result_str is make_reg of cond_result_reg
+
+        cond_cmp_reg is next_reg of 0
+        cond_cmp_str is make_reg of cond_cmp_reg
+        line is cat5 of ["  ", cond_cmp_str, " = fcmp one double ", cond_result_str, ", 0.0"]
+        result is emit of line
+
+        # Labels for condition branch
+        add_lbl is next_label of 0
+        skip_lbl is next_label of 0
+        add_str is make_label of add_lbl
+        skip_str is make_label of skip_lbl
+
+        line is cat7 of ["  br i1 ", cond_cmp_str, ", label %", add_str, ", label %", skip_str, ""]
+        result is emit of line
+        result is emit of ""
+
+        # Add block - generate expression and append
+        line is cat3 of [add_str, ":", ""]
+        result is emit of line
+
+        expr_reg is gen_expr of expr_idx
+        expr_str is make_reg of expr_reg
+
+        # Convert result list to double for append
+        result_double_reg is next_reg of 0
+        result_double_str is make_reg of result_double_reg
+        line is cat6 of ["  ", result_double_str, " = call double @eigen_list_to_double(%EigenList* ", result_list_str, ")", ""]
+        result is emit of line
+
+        line is cat6 of ["  call void @eigen_list_append_val(double ", result_double_str, ", double ", expr_str, ")", ""]
+        result is emit of line
+
+        line is cat3 of ["  br label %", skip_str, ""]
+        result is emit of line
+        result is emit of ""
+
+        # Skip block - increment and continue
+        line is cat3 of [skip_str, ":", ""]
+        result is emit of line
+    else:
+        # No condition - always add
+        expr_reg is gen_expr of expr_idx
+        expr_str is make_reg of expr_reg
+
+        # Convert result list to double for append
+        result_double_reg is next_reg of 0
+        result_double_str is make_reg of result_double_reg
+        line is cat6 of ["  ", result_double_str, " = call double @eigen_list_to_double(%EigenList* ", result_list_str, ")", ""]
+        result is emit of line
+
+        line is cat6 of ["  call void @eigen_list_append_val(double ", result_double_str, ", double ", expr_str, ")", ""]
+        result is emit of line
+
+    # Increment index
+    next_idx_reg is next_reg of 0
+    next_idx_str is make_reg of next_idx_reg
+    line is cat6 of ["  ", next_idx_str, " = add i64 ", curr_idx_str, ", 1", ""]
+    result is emit of line
+    line is cat6 of ["  store i64 ", next_idx_str, ", i64* ", idx_alloc_str, ""]
+    result is emit of line
+
+    # Jump back to condition
+    line is cat3 of ["  br label %", cond_str, ""]
+    result is emit of line
+    result is emit of ""
+
+    # End block
+    line is cat3 of [end_str, ":", ""]
+    result is emit of line
+
+    # Return result list as double
+    final_reg is next_reg of 0
+    final_str is make_reg of final_reg
+    line is cat6 of ["  ", final_str, " = call double @eigen_list_to_double(%EigenList* ", result_list_str, ")", ""]
+    result is emit of line
+
+    return final_reg
 
 # Generate interrogative: what/who/why/how/when/where is expr
 define gen_interrogative of node_idx as:
@@ -1670,6 +1926,13 @@ define gen_expr of node_idx as:
         return gen_member_access of node_idx
 
     if node_type = AST_LIST_LITERAL:
+        return gen_list_literal of node_idx
+
+    if node_type = AST_LIST_COMP:
+        return gen_list_comp of node_idx
+
+    if node_type = AST_STRUCT_LITERAL:
+        # Struct literal is represented as a list of field values
         return gen_list_literal of node_idx
 
     if node_type = AST_INTERROGATIVE:
@@ -1990,7 +2253,29 @@ define gen_stmt of node_idx as:
         return gen_function_def of node_idx
 
     if node_type = AST_STRUCT_DEF:
-        result is emit of "  ; struct definition"
+        # Record struct definition for field lookups
+        arr_idx is node_idx + 1
+        struct_name_idx is ast_str_index[arr_idx]
+        children_start is ast_children_start[arr_idx]
+        children_end is ast_children_end[arr_idx]
+        field_count is children_end - children_start
+
+        # Add struct to table
+        result is add_struct of [struct_name_idx, field_count]
+
+        # Add field names
+        i is children_start
+        loop while i < children_end:
+            field_arr_i is i + 1
+            field_node is ast_children[field_arr_i]
+            field_node_arr is field_node + 1
+            field_name_idx is ast_str_index[field_node_arr]
+            result is add_struct_field of field_name_idx
+            i is i + 1
+
+        struct_name is get_string of struct_name_idx
+        line is cat4 of ["  ; struct ", struct_name, " defined with fields", ""]
+        result is emit of line
         return 0
 
     if node_type = AST_IMPORT:
@@ -2050,6 +2335,9 @@ define init_codegen as:
     in_main is 0
     output_lines is []
     output_count is 0
+    var_count is 0
+    struct_count is 0
+    struct_field_total is 0
     return 0
 
 print of 666
