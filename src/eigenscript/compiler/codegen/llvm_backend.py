@@ -1025,15 +1025,15 @@ class LLVMCodeGenerator:
             return self.external_globals[list_key]
 
         global_name = f"__eigs_global_{name}"
-        global_var = ir.GlobalVariable(self.module, self.eigen_list_ptr, name=global_name)
+        global_var = ir.GlobalVariable(
+            self.module, self.eigen_list_ptr, name=global_name
+        )
         global_var.linkage = "external"
 
         self.external_globals[list_key] = global_var
         return global_var
 
-    def _declare_external_function(
-        self, name: str, num_params: int = 1
-    ) -> ir.Function:
+    def _declare_external_function(self, name: str, num_params: int = 1) -> ir.Function:
         """Declare an external function from another module.
 
         This creates a function declaration that will be resolved at link time.
