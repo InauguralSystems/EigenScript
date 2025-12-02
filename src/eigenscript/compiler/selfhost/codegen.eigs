@@ -738,4 +738,3 @@ define init_codegen as:
     output_count is 0
     return 0
 
-print of 666
