@@ -326,6 +326,10 @@ define emit_runtime_decls as:
     result is emit of "; String escaping for LLVM IR"
     result is emit of "declare double @eigen_escape_string_val(double)"
     result is emit of ""
+    result is emit of "; Slice operations"
+    result is emit of "declare double @eigen_list_slice_val(double, double, double)"
+    result is emit of "declare double @eigen_string_slice_val(double, double, double)"
+    result is emit of ""
     return 0
 
 # Emit all string constants from the string table
@@ -1235,6 +1239,63 @@ define gen_interrogative of node_idx as:
 
     return reg
 
+# Generate slice: list[start:end] or string[start:end]
+define gen_slice of node_idx as:
+    arr_idx is node_idx + 1
+    expr_idx is ast_left[arr_idx]
+    start_idx is ast_right[arr_idx]
+    end_idx is ast_third[arr_idx]
+
+    # Generate the expression being sliced
+    expr_reg is gen_expr of expr_idx
+    expr_str is make_reg of expr_reg
+
+    # Generate start and end indices
+    start_reg is gen_expr of start_idx
+    start_str is make_reg of start_reg
+    end_reg is gen_expr of end_idx
+    end_str is make_reg of end_reg
+
+    # Call list slice (works for both lists and strings via runtime detection)
+    # For now, use list slice - could add type detection later
+    reg is next_reg of 0
+    reg_str is make_reg of reg
+    line is cat5 of ["  ", reg_str, " = call double @eigen_list_slice_val(double ", expr_str, ", "]
+    line is cat5 of [line, "double ", start_str, ", double ", end_str]
+    line is string_concat of [line, ")"]
+    result is emit of line
+
+    return reg
+
+# Generate member access: object.member
+# For module access, resolve the function name at compile time
+define gen_member_access of node_idx as:
+    arr_idx is node_idx + 1
+    obj_idx is ast_left[arr_idx]
+    member_idx is ast_str_index[arr_idx]
+
+    # Get the object expression
+    obj_arr_idx is obj_idx + 1
+    obj_type is ast_types[obj_arr_idx]
+
+    # If the object is an identifier (module name), create mangled function name
+    if obj_type = AST_IDENTIFIER:
+        module_name_idx is ast_str_index[obj_arr_idx]
+        module_name is get_string of module_name_idx
+        member_name is get_string of member_idx
+        # Create mangled name: module_member
+        mangled_name is string_concat of [module_name, "_"]
+        mangled_name is string_concat of [mangled_name, member_name]
+        # For now, return a reference that can be used in calls
+        # Store the mangled name for later use
+        result is emit of "  ; member access - module function reference"
+        return 0
+
+    # Otherwise, evaluate the object and access the member (for struct access)
+    # This would need struct support - for now emit error
+    result is emit of "  ; ERROR: member access on non-identifier not supported"
+    return 0
+
 # Main expression dispatch
 define gen_expr of node_idx as:
     arr_idx is node_idx + 1
@@ -1257,6 +1318,12 @@ define gen_expr of node_idx as:
 
     if node_type = AST_INDEX:
         return gen_index of node_idx
+
+    if node_type = AST_SLICE:
+        return gen_slice of node_idx
+
+    if node_type = AST_MEMBER_ACCESS:
+        return gen_member_access of node_idx
 
     if node_type = AST_LIST_LITERAL:
         return gen_list_literal of node_idx
