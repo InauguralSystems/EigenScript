@@ -51,9 +51,7 @@ print of x"""
         llvm_ir, llvm_module = self.compile_source(source, module_name=None)
 
         # Should have main function with argc/argv (with or without quotes)
-        assert (
-            "define i32 @main(i32" in llvm_ir or 'define i32 @"main"(i32' in llvm_ir
-        )
+        assert "define i32 @main(i32" in llvm_ir or 'define i32 @"main"(i32' in llvm_ir
         assert "ret i32 0" in llvm_ir
 
         # Verify the function exists in the module
