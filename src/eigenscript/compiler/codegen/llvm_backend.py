@@ -98,6 +98,8 @@ class LLVMCodeGenerator:
         # If module_name is "physics" → Skip main(), create physics_init()
         self.is_library = module_name is not None
         self.module_prefix = f"{module_name}_" if self.is_library else ""
+        # Track entry function name for proper scoping
+        self.entry_function_name = f"{module_name}_init" if self.is_library else "main"
 
         # Create module
         self.module = ir.Module(name="eigenscript_module")
@@ -645,6 +647,14 @@ class LLVMCodeGenerator:
             return self.builder.call(self.eigen_get_value, [gen_val.value])
         elif gen_val.kind == ValueKind.LIST_PTR:
             raise TypeError("Cannot convert list to scalar")
+        elif gen_val.kind == ValueKind.STRING_PTR:
+            # Convert pointer to i64, then to double (for storage in lists)
+            ptr_int = self.builder.ptrtoint(gen_val.value, self.int64_type)
+            return self.builder.bitcast(ptr_int, self.double_type)
+        elif gen_val.kind == ValueKind.STRUCT_PTR:
+            # Convert pointer to i64, then to double (for storage in lists)
+            ptr_int = self.builder.ptrtoint(gen_val.value, self.int64_type)
+            return self.builder.bitcast(ptr_int, self.double_type)
         else:
             raise ValueError(f"Unknown ValueKind: {gen_val.kind}")
 
@@ -1482,7 +1492,11 @@ class LLVMCodeGenerator:
                 gen_value = GeneratedValue(value=gen_value, kind=ValueKind.SCALAR)
 
         # Determine which symbol table to use based on scope
-        in_func = self.current_function and self.current_function.name != "main"
+        # In entry function (main or {module}_init), variables are global
+        in_func = (
+            self.current_function
+            and self.current_function.name != self.entry_function_name
+        )
         var_table = self.local_vars if in_func else self.global_vars
 
         # Check if variable already exists (check BOTH scopes)
@@ -2476,10 +2490,12 @@ class LLVMCodeGenerator:
         # Set each element
         for i, elem in enumerate(node.elements):
             elem_val = self._generate(elem)
+            # Convert to double for list storage
+            scalar_val = self.ensure_scalar(elem_val)
             index_val = ir.Constant(self.int64_type, i)
-            self.builder.call(self.eigen_list_set, [list_ptr, index_val, elem_val])
+            self.builder.call(self.eigen_list_set, [list_ptr, index_val, scalar_val])
 
-        return list_ptr
+        return GeneratedValue(value=list_ptr, kind=ValueKind.LIST_PTR)
 
     def _generate_index(self, node: Index) -> ir.Value:
         """Generate code for list indexing."""
