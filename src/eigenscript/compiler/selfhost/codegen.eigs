@@ -296,6 +296,33 @@ define emit_runtime_decls as:
     result is emit of "; List operations (additional)"
     result is emit of "declare double @eigen_list_length_val(double)"
     result is emit of ""
+    result is emit of "; Matrix operations"
+    result is emit of "declare double @eigen_matrix_zeros_val(double, double)"
+    result is emit of "declare double @eigen_matrix_ones_val(double, double)"
+    result is emit of "declare double @eigen_matrix_identity_val(double)"
+    result is emit of "declare double @eigen_matrix_random_val(double, double)"
+    result is emit of "declare double @eigen_matrix_shape_val(double)"
+    result is emit of "declare double @eigen_matrix_transpose_val(double)"
+    result is emit of "declare double @eigen_matrix_add_val(double, double)"
+    result is emit of "declare double @eigen_matrix_scale_val(double, double)"
+    result is emit of "declare double @eigen_matrix_matmul_val(double, double)"
+    result is emit of "declare double @eigen_matrix_sum_val(double)"
+    result is emit of "declare double @eigen_matrix_mean_val(double)"
+    result is emit of "declare double @eigen_matrix_reshape_val(double, double, double)"
+    result is emit of "declare double @eigen_matrix_slice_val(double, double, double)"
+    result is emit of "declare double @eigen_matrix_concat_val(double, double)"
+    result is emit of ""
+    result is emit of "; Neural network activations"
+    result is emit of "declare double @eigen_relu_matrix_val(double)"
+    result is emit of "declare double @eigen_gelu_matrix_val(double)"
+    result is emit of "declare double @eigen_softmax_matrix_val(double)"
+    result is emit of "declare double @eigen_layer_norm_matrix_val(double)"
+    result is emit of ""
+    result is emit of "; Transformer operations"
+    result is emit of "declare double @eigen_embedding_lookup_val(double, double)"
+    result is emit of "declare double @eigen_sinusoidal_pe_val(double, double)"
+    result is emit of "declare double @eigen_causal_mask_val(double)"
+    result is emit of ""
     return 0
 
 # Emit all string constants from the string table
@@ -786,6 +813,279 @@ define gen_relation of node_idx as:
         reg is next_reg of 0
         reg_str is make_reg of reg
         line is cat6 of ["  ", reg_str, " = call double @eigen_list_length_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # ============================================================
+    # Matrix Operations
+    # ============================================================
+
+    # matrix_zeros - create matrix of zeros
+    is_mzeros is string_equals of [func_name, "matrix_zeros"]
+    if is_mzeros = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_matrix_zeros_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_ones - create matrix of ones
+    is_mones is string_equals of [func_name, "matrix_ones"]
+    if is_mones = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_matrix_ones_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_identity - create identity matrix
+    is_mident is string_equals of [func_name, "matrix_identity"]
+    if is_mident = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_matrix_identity_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # random_matrix - create random matrix
+    is_mrandom is string_equals of [func_name, "random_matrix"]
+    if is_mrandom = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_matrix_random_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_shape - get matrix shape
+    is_mshape is string_equals of [func_name, "matrix_shape"]
+    if is_mshape = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_matrix_shape_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # matrix_transpose - transpose matrix
+    is_mtrans is string_equals of [func_name, "matrix_transpose"]
+    if is_mtrans = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_matrix_transpose_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # matrix_add - add two matrices
+    is_madd is string_equals of [func_name, "matrix_add"]
+    if is_madd = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_matrix_add_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_scale - scale matrix by scalar
+    is_mscale is string_equals of [func_name, "matrix_scale"]
+    if is_mscale = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_matrix_scale_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_matmul - matrix multiplication
+    is_mmatmul is string_equals of [func_name, "matrix_matmul"]
+    if is_mmatmul = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_matrix_matmul_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_sum - sum of all elements
+    is_msum is string_equals of [func_name, "matrix_sum"]
+    if is_msum = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_matrix_sum_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # matrix_mean - mean of all elements
+    is_mmean is string_equals of [func_name, "matrix_mean"]
+    if is_mmean = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_matrix_mean_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # matrix_reshape - reshape matrix
+    is_mreshape is string_equals of [func_name, "matrix_reshape"]
+    if is_mreshape = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        third_arg is arg_regs[3]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        arg3_str is make_reg of third_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat5 of ["  ", reg_str, " = call double @eigen_matrix_reshape_val(double ", arg1_str, ", "]
+        line is cat5 of [line, "double ", arg2_str, ", double ", arg3_str]
+        line is string_concat of [line, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_slice - slice matrix rows
+    is_mslice is string_equals of [func_name, "matrix_slice"]
+    if is_mslice = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        third_arg is arg_regs[3]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        arg3_str is make_reg of third_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat5 of ["  ", reg_str, " = call double @eigen_matrix_slice_val(double ", arg1_str, ", "]
+        line is cat5 of [line, "double ", arg2_str, ", double ", arg3_str]
+        line is string_concat of [line, ")"]
+        result is emit of line
+        return reg
+
+    # matrix_concat - concatenate matrices
+    is_mconcat is string_equals of [func_name, "matrix_concat"]
+    if is_mconcat = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_matrix_concat_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # ============================================================
+    # Neural Network Activations
+    # ============================================================
+
+    # relu_matrix - ReLU activation
+    is_relu is string_equals of [func_name, "relu_matrix"]
+    if is_relu = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_relu_matrix_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # gelu_matrix - GELU activation
+    is_gelu is string_equals of [func_name, "gelu_matrix"]
+    if is_gelu = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_gelu_matrix_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # softmax_matrix - Softmax activation
+    is_softmax is string_equals of [func_name, "softmax_matrix"]
+    if is_softmax = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_softmax_matrix_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # layer_norm_matrix - Layer normalization
+    is_layernorm is string_equals of [func_name, "layer_norm_matrix"]
+    if is_layernorm = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_layer_norm_matrix_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # ============================================================
+    # Transformer Operations
+    # ============================================================
+
+    # embedding_lookup - lookup embeddings
+    is_embed is string_equals of [func_name, "embedding_lookup"]
+    if is_embed = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_embedding_lookup_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # sinusoidal_pe - sinusoidal positional encoding
+    is_sinpe is string_equals of [func_name, "sinusoidal_pe"]
+    if is_sinpe = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_sinusoidal_pe_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # causal_mask - causal attention mask
+    is_cmask is string_equals of [func_name, "causal_mask"]
+    if is_cmask = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_causal_mask_val(double ", arg_str, ")", ""]
         result is emit of line
         return reg
 
