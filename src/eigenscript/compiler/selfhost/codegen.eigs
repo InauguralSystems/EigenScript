@@ -323,6 +323,9 @@ define emit_runtime_decls as:
     result is emit of "declare double @eigen_sinusoidal_pe_val(double, double)"
     result is emit of "declare double @eigen_causal_mask_val(double)"
     result is emit of ""
+    result is emit of "; String escaping for LLVM IR"
+    result is emit of "declare double @eigen_escape_string_val(double)"
+    result is emit of ""
     return 0
 
 # Emit all string constants from the string table
@@ -332,15 +335,17 @@ define emit_string_constants as:
     loop while i <= ast_string_count:
         str is get_string of i
         str_len is string_length of str
-        # Length includes null terminator
+        # Length includes null terminator (original length, not escaped)
         total_len is str_len + 1
         len_str is number_to_string of total_len
         i_str is number_to_string of i
 
+        # Escape special characters for LLVM IR: \n -> \0A, \t -> \09, etc.
+        escaped_str is escape_string of str
+
         # Build: @.str.N = private constant [len x i8] c"content\00"
-        # For now, emit simple strings without escaping special chars
         line is cat5 of ["@.str.", i_str, " = private constant [", len_str, " x i8] c\""]
-        line is string_concat of [line, str]
+        line is string_concat of [line, escaped_str]
         line is string_concat of [line, "\\00\""]
         result is emit of line
 
@@ -1086,6 +1091,17 @@ define gen_relation of node_idx as:
         reg is next_reg of 0
         reg_str is make_reg of reg
         line is cat6 of ["  ", reg_str, " = call double @eigen_causal_mask_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # escape_string - escape string for LLVM IR output
+    is_escape is string_equals of [func_name, "escape_string"]
+    if is_escape = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_escape_string_val(double ", arg_str, ")", ""]
         result is emit of line
         return reg
 
