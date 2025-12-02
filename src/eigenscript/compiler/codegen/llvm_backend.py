@@ -820,6 +820,41 @@ class LLVMCodeGenerator:
 
         return alloca_inst
 
+    def _create_global_variable(self, ty: ir.Type, name: str, initial_value=None) -> ir.GlobalVariable:
+        """Create a module-level global variable.
+
+        This creates an actual LLVM global that can be accessed from any function.
+        Used for EigenScript variables defined in main scope that need to be
+        accessed from user-defined functions.
+
+        Args:
+            ty: The type of the variable (e.g., double_type, eigen_string_ptr)
+            name: Name for the global variable
+            initial_value: Optional initial value (must match type)
+
+        Returns:
+            The global variable (as a pointer to the value type)
+        """
+        # Create a unique name to avoid conflicts
+        global_name = f"__eigs_global_{name}"
+
+        # Create the global variable
+        global_var = ir.GlobalVariable(self.module, ty, name=global_name)
+        global_var.linkage = 'internal'  # Not exported
+
+        # Initialize with default value
+        if initial_value is not None:
+            global_var.initializer = initial_value
+        elif ty == self.double_type:
+            global_var.initializer = ir.Constant(self.double_type, 0.0)
+        elif isinstance(ty, ir.PointerType):
+            global_var.initializer = ir.Constant(ty, None)
+        else:
+            # For struct types, use zeroinitializer
+            global_var.initializer = ir.Constant(ty, None)
+
+        return global_var
+
     def _create_eigen_on_stack(self, initial_value: ir.Value) -> ir.Value:
         """Create an EigenValue on the stack (fast, auto-freed).
 
@@ -1305,8 +1340,9 @@ class LLVMCodeGenerator:
 
         # Handle backward compatibility: convert raw ir.Value to GeneratedValue
         if isinstance(gen_value, ir.Value):
-            # Detect if it's a list
+            # Detect if it's a list or string (both are 3-element structs with pointer first)
             is_list = False
+            is_string = False
             if isinstance(gen_value.type, ir.PointerType):
                 pointed_type = gen_value.type.pointee
                 if (
@@ -1314,9 +1350,18 @@ class LLVMCodeGenerator:
                     and len(pointed_type.elements) == 3
                     and isinstance(pointed_type.elements[0], ir.PointerType)
                 ):
-                    is_list = True
+                    # Check first element type to distinguish string vs list
+                    first_elem = pointed_type.elements[0]
+                    if isinstance(first_elem.pointee, ir.IntType) and first_elem.pointee.width == 8:
+                        # It's a string (char* = i8*)
+                        is_string = True
+                    else:
+                        # It's a list (double*)
+                        is_list = True
 
-            if is_list:
+            if is_string:
+                gen_value = GeneratedValue(value=gen_value, kind=ValueKind.STRING_PTR)
+            elif is_list:
                 gen_value = GeneratedValue(value=gen_value, kind=ValueKind.LIST_PTR)
             else:
                 # Assume it's a scalar
@@ -1326,43 +1371,68 @@ class LLVMCodeGenerator:
         in_func = self.current_function and self.current_function.name != "main"
         var_table = self.local_vars if in_func else self.global_vars
 
+        # Check if variable already exists (check BOTH scopes)
+        existing_var_ptr = None
+        if node.identifier in self.local_vars:
+            existing_var_ptr = self.local_vars[node.identifier]
+        elif node.identifier in self.global_vars:
+            existing_var_ptr = self.global_vars[node.identifier]
+
         # Handle list assignment
         if gen_value.kind == ValueKind.LIST_PTR:
-            var_ptr = self._alloca_at_entry(self.eigen_list_ptr, name=node.identifier)
-            self.builder.store(gen_value.value, var_ptr)
-            var_table[node.identifier] = var_ptr
+            if existing_var_ptr is not None:
+                # Update existing list variable
+                self.builder.store(gen_value.value, existing_var_ptr)
+            else:
+                # Create new list variable
+                if in_func:
+                    var_ptr = self._alloca_at_entry(self.eigen_list_ptr, name=node.identifier)
+                else:
+                    var_ptr = self._create_global_variable(self.eigen_list_ptr, node.identifier)
+                self.builder.store(gen_value.value, var_ptr)
+                var_table[node.identifier] = var_ptr
             return
 
         # Handle string assignment (for self-hosting)
         if gen_value.kind == ValueKind.STRING_PTR:
-            var_ptr = self._alloca_at_entry(self.eigen_string_ptr, name=node.identifier)
-            self.builder.store(gen_value.value, var_ptr)
-            var_table[node.identifier] = var_ptr
+            if existing_var_ptr is not None:
+                # Update existing string variable
+                self.builder.store(gen_value.value, existing_var_ptr)
+            else:
+                # Create new string variable
+                if in_func:
+                    var_ptr = self._alloca_at_entry(self.eigen_string_ptr, name=node.identifier)
+                else:
+                    var_ptr = self._create_global_variable(self.eigen_string_ptr, node.identifier)
+                self.builder.store(gen_value.value, var_ptr)
+                var_table[node.identifier] = var_ptr
             return
 
         # Handle struct assignment (for self-hosting)
         if gen_value.kind == ValueKind.STRUCT_PTR:
             struct_type, _ = self.struct_types.get(gen_value.struct_name, (None, None))
             if struct_type:
-                var_ptr = self._alloca_at_entry(struct_type.as_pointer(), name=node.identifier)
-                self.builder.store(gen_value.value, var_ptr)
-                var_table[node.identifier] = var_ptr
-                # Store struct metadata for later field access
-                if not hasattr(self, 'struct_var_types'):
-                    self.struct_var_types = {}
-                self.struct_var_types[node.identifier] = gen_value.struct_name
+                if existing_var_ptr is not None:
+                    # Update existing struct variable
+                    self.builder.store(gen_value.value, existing_var_ptr)
+                else:
+                    # Create new struct variable
+                    if in_func:
+                        var_ptr = self._alloca_at_entry(struct_type.as_pointer(), name=node.identifier)
+                    else:
+                        var_ptr = self._create_global_variable(struct_type.as_pointer(), node.identifier)
+                    self.builder.store(gen_value.value, var_ptr)
+                    var_table[node.identifier] = var_ptr
+                    # Store struct metadata for later field access
+                    if not hasattr(self, 'struct_var_types'):
+                        self.struct_var_types = {}
+                    self.struct_var_types[node.identifier] = gen_value.struct_name
             return
 
         # Handle EigenValue assignment (scalar or pointer)
-        # Check both local and global scopes for existing variable
-        var_ptr = None
-        is_global_var = False
-
-        if node.identifier in self.local_vars:
-            var_ptr = self.local_vars[node.identifier]
-        elif node.identifier in self.global_vars:
-            var_ptr = self.global_vars[node.identifier]
-            is_global_var = True
+        # Use the existing variable pointer we already looked up
+        var_ptr = existing_var_ptr
+        is_global_var = node.identifier in self.global_vars
 
         if var_ptr is not None:
             # Variable exists - update or rebind
@@ -1371,6 +1441,13 @@ class LLVMCodeGenerator:
                 # Aliasing: rebind to point to the same EigenValue*
                 # This is the key to Option 2: "value is what is x" makes value an alias
                 self.builder.store(gen_value.value, var_ptr)
+            elif gen_value.kind == ValueKind.STRING_PTR:
+                # String update: check if existing var is a string pointer
+                if var_ptr.type.pointee == self.eigen_string_ptr:
+                    # It's a string variable - just store the new string pointer
+                    self.builder.store(gen_value.value, var_ptr)
+                else:
+                    raise TypeError(f"Cannot assign string to non-string variable '{node.identifier}'")
             else:
                 # Scalar update: check if it's a raw double* or EigenValue*
                 scalar_val = self.ensure_scalar(gen_value)
@@ -1379,6 +1456,9 @@ class LLVMCodeGenerator:
                 if var_ptr.type.pointee == self.double_type:
                     # Fast path: raw double*, just store the new value
                     self.builder.store(scalar_val, var_ptr)
+                elif var_ptr.type.pointee == self.eigen_string_ptr:
+                    # Can't assign scalar to string variable
+                    raise TypeError(f"Cannot assign scalar to string variable '{node.identifier}'")
                 else:
                     # Geometric tracked: EigenValue*, call eigen_update
                     eigen_ptr = self.builder.load(var_ptr)
@@ -1390,11 +1470,15 @@ class LLVMCodeGenerator:
 
             if not is_observed and gen_value.kind == ValueKind.SCALAR:
                 # FAST PATH: Unobserved scalar → raw double (C-level performance!)
-                # This compiles to a simple alloca that LLVM's mem2reg pass
-                # will promote to a CPU register. Zero overhead.
                 scalar_val = self.ensure_scalar(gen_value)
-                var_ptr = self._alloca_at_entry(self.double_type, name=node.identifier)
-                self.builder.store(scalar_val, var_ptr)
+                if in_func:
+                    # In function: use stack alloca (can be promoted to register)
+                    var_ptr = self._alloca_at_entry(self.double_type, name=node.identifier)
+                    self.builder.store(scalar_val, var_ptr)
+                else:
+                    # In main scope: use global variable for cross-function access
+                    var_ptr = self._create_global_variable(self.double_type, node.identifier)
+                    self.builder.store(scalar_val, var_ptr)
                 var_table[node.identifier] = var_ptr
                 # NOTE: This is just a double*, not EigenValue*!
 
@@ -1414,9 +1498,15 @@ class LLVMCodeGenerator:
                 # Observed variable in main scope: Heap allocation
                 # These DO need cleanup via eigen_destroy
                 eigen_ptr = self.ensure_eigen_ptr(gen_value)
-                var_ptr = self._alloca_at_entry(
-                    self.eigen_value_ptr, name=node.identifier
-                )
+                if in_func:
+                    var_ptr = self._alloca_at_entry(
+                        self.eigen_value_ptr, name=node.identifier
+                    )
+                else:
+                    # Main scope: use global for cross-function access
+                    var_ptr = self._create_global_variable(
+                        self.eigen_value_ptr, node.identifier
+                    )
                 self.builder.store(eigen_ptr, var_ptr)
                 var_table[node.identifier] = var_ptr
 

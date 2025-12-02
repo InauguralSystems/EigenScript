@@ -310,9 +310,13 @@ def compile_file(
 
             # Link to executable
             runtime_dir = os.path.join(os.path.dirname(__file__), "../runtime")
-            runtime_o, _ = get_runtime_path(runtime_dir, target_triple)
+            runtime_o, runtime_bc = get_runtime_path(runtime_dir, target_triple)
 
-            if not runtime_o:
+            # Check if bitcode was linked inline (LTO) - if so, don't link runtime_o
+            # to avoid duplicate symbol errors
+            bitcode_linked = runtime_bc and os.path.exists(runtime_bc)
+
+            if not runtime_o and not bitcode_linked:
                 print(f"  ✗ Runtime library not available for target")
                 return 1
 
@@ -321,6 +325,7 @@ def compile_file(
                 # WebAssembly Linking
                 linker = "clang"
                 wasm_target = target_triple if target_triple else DEFAULT_WASM_TARGET
+                link_files = object_files + ([] if bitcode_linked else [runtime_o])
                 link_cmd = (
                     [
                         linker,
@@ -330,14 +335,15 @@ def compile_file(
                         "-Wl,--export-all",
                         "-Wl,--allow-undefined",
                     ]
-                    + object_files
-                    + [runtime_o, "-o", output_file]
+                    + link_files
+                    + ["-o", output_file]
                 )
             else:
                 # Standard Native Linking
                 linker = "gcc"
+                link_files = object_files + ([] if bitcode_linked else [runtime_o])
                 link_cmd = (
-                    [linker] + object_files + [runtime_o, "-o", output_file, "-lm"]
+                    [linker] + link_files + ["-o", output_file, "-lm"]
                 )
 
             print(f"\n→ Linking {len(object_files)} module(s) with {linker}...")

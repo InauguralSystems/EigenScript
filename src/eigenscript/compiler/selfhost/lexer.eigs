@@ -95,12 +95,8 @@ CHAR_GREATER is 62
 CHAR_BACKSLASH is 92
 CHAR_UNDERSCORE is 95
 
-# Token Structure
-struct Token:
-    type
-    value
-    line
-    column
+# Token data is stored in global variables (not struct - for interpreter compat)
+# token_type, token_line, token_col are set after each next_token call
 
 # Lexer State (Global Variables)
 lex_source is ""
@@ -210,7 +206,11 @@ define read_number as:
     num_val is string_to_number of num_str
     return num_val
 
-# Read a string literal
+# Global variables for function string results (functions can only return double)
+last_string_val is ""
+last_identifier is ""
+
+# Read a string literal - stores result in last_string_val
 define read_string as:
     quote_char is current_char of 0
     result is advance of 0
@@ -227,11 +227,11 @@ define read_string as:
         else:
             result is advance of 0
     str_len is lex_pos - start
-    str_val is substring of [lex_source, start, str_len]
+    last_string_val is substring of [lex_source, start, str_len]
     result is advance of 0
-    return str_val
+    return 0
 
-# Read an identifier
+# Read an identifier - stores result in last_identifier
 define read_identifier as:
     start is lex_pos
     loop while 1:
@@ -251,8 +251,8 @@ define read_identifier as:
                 else:
                     break
     id_len is lex_pos - start
-    id_str is substring of [lex_source, start, id_len]
-    return id_str
+    last_identifier is substring of [lex_source, start, id_len]
+    return 0
 
 # Global variable for keyword to match (set before calling match_keyword)
 keyword_word is ""
@@ -428,26 +428,25 @@ define next_token as:
                 print of num_val
                 return TT_NUMBER
     if char = CHAR_QUOTE_DOUBLE:
-        str_val is read_string of 0
+        result is read_string of 0
         print of TT_STRING
         return TT_STRING
     if char = CHAR_QUOTE_SINGLE:
-        str_val is read_string of 0
+        result is read_string of 0
         print of TT_STRING
         return TT_STRING
     is_alpha is char_is_alpha of char
     if is_alpha = 1:
-        id_str is read_identifier of 0
-        keyword_word is id_str
+        id_start is lex_pos
+        result is read_identifier of 0
+        keyword_word is last_identifier
         tok_type is match_keyword of 0
         print of tok_type
-        if tok_type = TT_IDENTIFIER:
-            print of keyword_word
         return tok_type
     if char = CHAR_UNDERSCORE:
-        id_str is read_identifier of 0
+        id_start is lex_pos
+        result is read_identifier of 0
         print of TT_IDENTIFIER
-        print of id_str
         return TT_IDENTIFIER
     if char = CHAR_COLON:
         result is advance of 0
@@ -533,7 +532,7 @@ define next_token as:
 # Tokenize - call after setting lex_source globally
 define tokenize as:
     result is init_lexer of 0
-    print of "Starting tokenization..."
+    print of 1000
     loop while 1:
         tok is next_token of 0
         if tok = TT_EOF:
@@ -543,10 +542,10 @@ define tokenize as:
             break
         lex_indent is lex_indent - 4
         print of TT_DEDENT
-    print of "Tokenization complete."
+    print of 1001
     return 0
 
-# Test
-print of "EigenScript Self-Hosting Lexer"
+# Test - 999 = lexer start signal
+print of 999
 lex_source is "x is 5\nprint of x"
 result is tokenize of 0
