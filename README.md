@@ -9,7 +9,7 @@
 EigenScript is a high-performance programming language where code is treated as a trajectory through semantic spacetime. It combines the **zero-cost abstractions** of a system language with the **geometric introspection** of a symbolic AI.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.3.1-blue)
+![Version](https://img.shields.io/badge/version-v0.4.0-blue)
 ![Performance](https://img.shields.io/badge/speed-native-orange)
 
 ## 🚀 Key Features

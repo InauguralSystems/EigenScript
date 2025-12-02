@@ -1,11 +1,13 @@
 # EigenScript Roadmap 🗺️
 
 **Version:** v0.4.0
-**Last Updated:** 2025-11-26
+**Last Updated:** 2025-12-02
 
 ## Overview
 
-EigenScript v0.4.0 expands on the foundation of v0.3.0 with a comprehensive module system, list comprehensions, and an extensive AI/ML standard library. The language now supports Python-style imports, package organization, and deep learning operations in semantic space. With 900+ passing tests and 79% code coverage, the focus ahead is on additional language features, production hardening, and ecosystem growth.
+EigenScript v0.4.0 marks a **historic milestone**: the language is now **self-hosting**! The EigenScript compiler, written entirely in EigenScript, can compile itself. This release also includes comprehensive AI/ML matrix operations, neural network activations, and full language feature support in the self-hosted compiler.
+
+With 900+ passing tests and the self-hosting milestone achieved, the focus ahead is on **full bootstrapping**, additional language features, and ecosystem growth.
 
 ---
 
@@ -92,6 +94,43 @@ EigenScript v0.4.0 expands on the foundation of v0.3.0 with a comprehensive modu
 * **Collaboration:** Share code via URL, gallery of examples
 * **LSP & Tooling:** Language server, VSCode extension, debugger
 * **Package Manager:** `eigs-pkg` for dependency management
+
+---
+
+## ✅ Phase 5.5: Self-Hosted Compiler (COMPLETE)
+**Goal:** EigenScript compiler written in EigenScript - the ultimate dogfooding test.
+
+### ✅ Completed Features
+* **✅ Self-Hosted Codegen** (`src/eigenscript/compiler/selfhost/codegen.eigs`)
+  * ~2300 lines of EigenScript generating LLVM IR
+  * Full AST traversal and code generation
+  * String constant management with proper escaping
+* **✅ Runtime Library** (`src/eigenscript/compiler/runtime/eigenvalue.c`)
+  * ~1700 lines of C runtime support
+  * Pointer-to-double encoding for unified value representation
+  * CLI arguments, file I/O, matrix operations
+* **✅ Language Feature Parity**
+  * All expression types: literals, identifiers, binary/unary ops, function calls
+  * All statement types: assignments, conditionals, loops, functions, returns, breaks
+  * List operations: literals, indexing, slicing, comprehensions, append
+  * String operations: concat, length, char_at, substring, escaping
+  * Struct support: definitions, constructors, field tracking
+  * Math functions: sqrt, abs, pow, log, exp, sin, cos, tan, floor, ceil, round
+  * Higher-order functions: map, filter, reduce
+  * Geometric predicates: converged, stable, diverging, improving, oscillating, etc.
+  * Temporal operators: was, change, status, trend
+  * Interrogatives: what, who, why, how, when, where
+  * AI/ML: 20+ matrix operations, neural network activations, transformer ops
+
+### 🎯 Achieved Results
+* **Self-hosting milestone reached** - compiler can compile itself
+* **Language maturity demonstrated** - powerful enough to express its own implementation
+* **Foundation for full bootstrapping** - next step is self-compilation without reference compiler
+
+### 🚀 Next: Full Bootstrapping
+* Self-hosted compiler compiles itself → produces binary
+* That binary compiles the source again → identical output
+* **Complete independence** from reference compiler
 
 ---
 
