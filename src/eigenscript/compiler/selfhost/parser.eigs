@@ -1,0 +1,1429 @@
+# EigenScript Self-Hosting Parser
+# Written in EigenScript for bootstrapping the compiler
+# Converts token stream from lexer.eigs into AST
+
+# ============================================================================
+# Token Type Constants (must match lexer.eigs)
+# ============================================================================
+
+# Keywords
+TT_OF is 1
+TT_IS is 2
+TT_IF is 3
+TT_ELSE is 4
+TT_LOOP is 5
+TT_WHILE is 6
+TT_DEFINE is 7
+TT_AS is 8
+TT_RETURN is 9
+TT_BREAK is 10
+TT_NULL is 11
+TT_NOT is 12
+TT_AND is 13
+TT_OR is 14
+TT_FOR is 15
+TT_IN is 16
+TT_IMPORT is 17
+TT_FROM is 18
+TT_STRUCT is 19
+
+# Interrogatives
+TT_WHO is 20
+TT_WHAT is 21
+TT_WHEN is 22
+TT_WHERE is 23
+TT_WHY is 24
+TT_HOW is 25
+TT_WAS is 26
+TT_CHANGE is 27
+TT_STATUS is 28
+TT_TREND is 29
+
+# Literals
+TT_NUMBER is 30
+TT_STRING is 31
+TT_IDENTIFIER is 33
+
+# Punctuation
+TT_COLON is 40
+TT_COMMA is 41
+TT_LPAREN is 42
+TT_RPAREN is 43
+TT_LBRACKET is 44
+TT_RBRACKET is 45
+TT_DOT is 46
+
+# Operators
+TT_PLUS is 50
+TT_MINUS is 51
+TT_MULTIPLY is 52
+TT_DIVIDE is 53
+TT_MODULO is 54
+TT_EQUALS is 55
+TT_NOT_EQUAL is 56
+TT_LESS_THAN is 57
+TT_LESS_EQUAL is 58
+TT_GREATER_THAN is 59
+TT_GREATER_EQUAL is 60
+
+# Whitespace
+TT_NEWLINE is 70
+TT_INDENT is 71
+TT_DEDENT is 72
+
+# Special
+TT_EOF is 99
+
+# ============================================================================
+# AST Node Type Constants
+# ============================================================================
+
+# Expressions
+AST_LITERAL is 1
+AST_IDENTIFIER is 2
+AST_BINARY_OP is 3
+AST_UNARY_OP is 4
+AST_RELATION is 5
+AST_INDEX is 6
+AST_SLICE is 7
+AST_MEMBER_ACCESS is 8
+AST_LIST_LITERAL is 9
+AST_LIST_COMP is 10
+AST_INTERROGATIVE is 11
+AST_STRUCT_LITERAL is 12
+
+# Statements
+AST_ASSIGNMENT is 20
+AST_CONDITIONAL is 21
+AST_LOOP is 22
+AST_FUNCTION_DEF is 23
+AST_RETURN is 24
+AST_BREAK is 25
+AST_IMPORT is 26
+AST_IMPORT_FROM is 27
+AST_STRUCT_DEF is 28
+
+# Program
+AST_PROGRAM is 30
+
+# Literal types
+LIT_NUMBER is 1
+LIT_STRING is 2
+LIT_NULL is 3
+LIT_VECTOR is 4
+LIT_LIST is 5
+
+# Operator codes (for BinaryOp)
+OP_PLUS is 1
+OP_MINUS is 2
+OP_MULTIPLY is 3
+OP_DIVIDE is 4
+OP_MODULO is 5
+OP_EQUALS is 6
+OP_NOT_EQUAL is 7
+OP_LESS_THAN is 8
+OP_LESS_EQUAL is 9
+OP_GREATER_THAN is 10
+OP_GREATER_EQUAL is 11
+OP_AND is 12
+OP_OR is 13
+OP_POWER is 14
+
+# Unary operator codes
+UOP_NOT is 1
+UOP_MINUS is 2
+
+# ============================================================================
+# AST Node Storage
+# Each AST node is stored across parallel arrays indexed by node_id
+# ============================================================================
+
+# Maximum nodes we can store
+MAX_NODES is 10000
+
+# Node count
+ast_node_count is 0
+
+# Node type for each node
+ast_types is [0]
+
+# For expressions with left/right children (BinaryOp, Relation, Index, etc.)
+ast_left is [0]
+ast_right is [0]
+
+# For nodes with a third child (Slice has expr, start, end; Conditional has condition, if_block, else_block)
+ast_third is [0]
+
+# For numeric values (Literal numbers, operator codes, etc.)
+ast_num_value is [0]
+
+# For string values - stored as indices into string pool
+ast_str_index is [0]
+
+# For nodes with variable-length children (block statements, list elements)
+# We use a separate children array with start/end indices
+ast_children_start is [0]
+ast_children_end is [0]
+
+# Children storage (flattened array of node indices)
+MAX_CHILDREN is 50000
+ast_children is [0]
+ast_children_count is 0
+
+# String pool for identifiers, string literals, etc.
+MAX_STRINGS is 5000
+string_pool_count is 0
+
+# ============================================================================
+# Parser State
+# ============================================================================
+
+# Token stream (copied from lexer output)
+MAX_TOKENS is 20000
+parser_token_types is [0]
+parser_token_lines is [0]
+parser_token_cols is [0]
+parser_token_num_vals is [0]
+parser_token_str_indices is [0]
+parser_token_count is 0
+
+# Current position in token stream
+parser_pos is 0
+
+# Error state
+parser_error is 0
+parser_error_line is 0
+parser_error_col is 0
+
+# ============================================================================
+# Initialization
+# ============================================================================
+
+define init_parser as:
+    ast_node_count is 0
+    ast_children_count is 0
+    string_pool_count is 0
+    parser_pos is 0
+    parser_error is 0
+    parser_error_line is 0
+    parser_error_col is 0
+    return 0
+
+# ============================================================================
+# AST Node Creation Helpers
+# ============================================================================
+
+# Create a new AST node and return its index
+define create_node of node_type as:
+    idx is ast_node_count
+    ast_node_count is ast_node_count + 1
+
+    # Initialize node fields
+    # Note: We append to arrays to grow them
+    append ast_types of node_type
+    append ast_left of 0
+    append ast_right of 0
+    append ast_third of 0
+    append ast_num_value of 0
+    append ast_str_index of 0
+    append ast_children_start of 0
+    append ast_children_end of 0
+
+    return idx
+
+# Set node's left child
+define set_left of [node_idx, child_idx] as:
+    ast_left[node_idx] is child_idx
+    return 0
+
+# Set node's right child
+define set_right of [node_idx, child_idx] as:
+    ast_right[node_idx] is child_idx
+    return 0
+
+# Set node's third child
+define set_third of [node_idx, child_idx] as:
+    ast_third[node_idx] is child_idx
+    return 0
+
+# Set node's numeric value
+define set_num_value of [node_idx, value] as:
+    ast_num_value[node_idx] is value
+    return 0
+
+# Set node's string index
+define set_str_index of [node_idx, str_idx] as:
+    ast_str_index[node_idx] is str_idx
+    return 0
+
+# Start adding children to a node
+define start_children of node_idx as:
+    ast_children_start[node_idx] is ast_children_count
+    ast_children_end[node_idx] is ast_children_count
+    return 0
+
+# Add a child to a node's children list
+define add_child of [node_idx, child_idx] as:
+    append ast_children of child_idx
+    ast_children_count is ast_children_count + 1
+    ast_children_end[node_idx] is ast_children_count
+    return 0
+
+# ============================================================================
+# Token Stream Access
+# ============================================================================
+
+# Get current token type (or TT_EOF if at end)
+define current_token_type as:
+    if parser_pos >= parser_token_count:
+        return TT_EOF
+    return parser_token_types[parser_pos]
+
+# Get current token's line number
+define current_token_line as:
+    if parser_pos >= parser_token_count:
+        return 0
+    return parser_token_lines[parser_pos]
+
+# Get current token's column number
+define current_token_col as:
+    if parser_pos >= parser_token_count:
+        return 0
+    return parser_token_cols[parser_pos]
+
+# Get current token's numeric value
+define current_token_num as:
+    if parser_pos >= parser_token_count:
+        return 0
+    return parser_token_num_vals[parser_pos]
+
+# Get current token's string index
+define current_token_str as:
+    if parser_pos >= parser_token_count:
+        return 0
+    return parser_token_str_indices[parser_pos]
+
+# Peek at token ahead
+define peek_token_type of offset as:
+    pos is parser_pos + offset
+    if pos >= parser_token_count:
+        return TT_EOF
+    return parser_token_types[pos]
+
+# Advance to next token
+define advance_token as:
+    if parser_pos < parser_token_count:
+        parser_pos is parser_pos + 1
+    return parser_pos
+
+# Expect a specific token type
+define expect_token of expected_type as:
+    tok is current_token_type of 0
+    if tok != expected_type:
+        parser_error is 1
+        parser_error_line is current_token_line of 0
+        parser_error_col is current_token_col of 0
+        return 0
+    result is advance_token of 0
+    return 1
+
+# ============================================================================
+# Expression Parsing - Operator Precedence
+# Precedence (lowest to highest):
+# 1. Logical OR (or)
+# 2. Logical AND (and)
+# 3. Comparison (=, <, >, <=, >=, !=)
+# 4. Addition/Subtraction (+, -)
+# 5. Multiplication/Division/Modulo (*, /, %)
+# 6. OF operator (relational)
+# 7. Postfix (indexing, slicing, member access)
+# 8. Unary (not, -)
+# 9. Primary (literals, identifiers, parens)
+# ============================================================================
+
+# Forward declarations via stubs
+define parse_expression as:
+    return parse_logical_or of 0
+
+# Parse logical OR: logical_and (OR logical_and)*
+define parse_logical_or as:
+    left is parse_logical_and of 0
+    if parser_error = 1:
+        return left
+
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_OR:
+            break
+
+        result is advance_token of 0
+        right is parse_logical_and of 0
+        if parser_error = 1:
+            return left
+
+        # Create BinaryOp node
+        node is create_node of AST_BINARY_OP
+        result is set_left of [node, left]
+        result is set_right of [node, right]
+        result is set_num_value of [node, OP_OR]
+        left is node
+
+    return left
+
+# Parse logical AND: comparison (AND comparison)*
+define parse_logical_and as:
+    left is parse_comparison of 0
+    if parser_error = 1:
+        return left
+
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_AND:
+            break
+
+        result is advance_token of 0
+        right is parse_comparison of 0
+        if parser_error = 1:
+            return left
+
+        # Create BinaryOp node
+        node is create_node of AST_BINARY_OP
+        result is set_left of [node, left]
+        result is set_right of [node, right]
+        result is set_num_value of [node, OP_AND]
+        left is node
+
+    return left
+
+# Parse comparison: additive ((= | != | < | <= | > | >=) additive)*
+define parse_comparison as:
+    left is parse_additive of 0
+    if parser_error = 1:
+        return left
+
+    loop while 1:
+        tok is current_token_type of 0
+        op_code is 0
+
+        if tok = TT_EQUALS:
+            op_code is OP_EQUALS
+        if tok = TT_NOT_EQUAL:
+            op_code is OP_NOT_EQUAL
+        if tok = TT_LESS_THAN:
+            op_code is OP_LESS_THAN
+        if tok = TT_LESS_EQUAL:
+            op_code is OP_LESS_EQUAL
+        if tok = TT_GREATER_THAN:
+            op_code is OP_GREATER_THAN
+        if tok = TT_GREATER_EQUAL:
+            op_code is OP_GREATER_EQUAL
+
+        if op_code = 0:
+            break
+
+        result is advance_token of 0
+        right is parse_additive of 0
+        if parser_error = 1:
+            return left
+
+        # Create BinaryOp node
+        node is create_node of AST_BINARY_OP
+        result is set_left of [node, left]
+        result is set_right of [node, right]
+        result is set_num_value of [node, op_code]
+        left is node
+
+    return left
+
+# Parse additive: multiplicative ((+ | -) multiplicative)*
+define parse_additive as:
+    left is parse_multiplicative of 0
+    if parser_error = 1:
+        return left
+
+    loop while 1:
+        tok is current_token_type of 0
+        op_code is 0
+
+        if tok = TT_PLUS:
+            op_code is OP_PLUS
+        if tok = TT_MINUS:
+            op_code is OP_MINUS
+
+        if op_code = 0:
+            break
+
+        result is advance_token of 0
+        right is parse_multiplicative of 0
+        if parser_error = 1:
+            return left
+
+        node is create_node of AST_BINARY_OP
+        result is set_left of [node, left]
+        result is set_right of [node, right]
+        result is set_num_value of [node, op_code]
+        left is node
+
+    return left
+
+# Parse multiplicative: relation ((* | / | %) relation)*
+define parse_multiplicative as:
+    left is parse_relation of 0
+    if parser_error = 1:
+        return left
+
+    loop while 1:
+        tok is current_token_type of 0
+        op_code is 0
+
+        if tok = TT_MULTIPLY:
+            op_code is OP_MULTIPLY
+        if tok = TT_DIVIDE:
+            op_code is OP_DIVIDE
+        if tok = TT_MODULO:
+            op_code is OP_MODULO
+
+        if op_code = 0:
+            break
+
+        result is advance_token of 0
+        right is parse_relation of 0
+        if parser_error = 1:
+            return left
+
+        node is create_node of AST_BINARY_OP
+        result is set_left of [node, left]
+        result is set_right of [node, right]
+        result is set_num_value of [node, op_code]
+        left is node
+
+    return left
+
+# Parse relation: postfix (OF postfix)* - right associative
+define parse_relation as:
+    left is parse_postfix of 0
+    if parser_error = 1:
+        return left
+
+    tok is current_token_type of 0
+    if tok = TT_OF:
+        result is advance_token of 0
+        # Right-recursive for right associativity
+        right is parse_relation of 0
+        if parser_error = 1:
+            return left
+
+        node is create_node of AST_RELATION
+        result is set_left of [node, left]
+        result is set_right of [node, right]
+        return node
+
+    return left
+
+# Parse postfix: unary ([index] | [start:end] | .member)*
+define parse_postfix as:
+    expr is parse_unary of 0
+    if parser_error = 1:
+        return expr
+
+    loop while 1:
+        tok is current_token_type of 0
+
+        # Member access: expr.member
+        if tok = TT_DOT:
+            result is advance_token of 0
+
+            # Expect identifier
+            tok is current_token_type of 0
+            if tok != TT_IDENTIFIER:
+                parser_error is 1
+                parser_error_line is current_token_line of 0
+                parser_error_col is current_token_col of 0
+                return expr
+
+            member_str is current_token_str of 0
+            result is advance_token of 0
+
+            node is create_node of AST_MEMBER_ACCESS
+            result is set_left of [node, expr]
+            result is set_str_index of [node, member_str]
+            expr is node
+        else:
+            # Indexing or slicing: expr[index] or expr[start:end]
+            if tok = TT_LBRACKET:
+                result is advance_token of 0
+
+                # Check for slice with no start: [:end]
+                tok is current_token_type of 0
+                start_expr is 0
+                is_slice is 0
+
+                if tok = TT_COLON:
+                    # Slice with no start
+                    is_slice is 1
+                    result is advance_token of 0
+                else:
+                    if tok != TT_RBRACKET:
+                        # Parse start expression
+                        start_expr is parse_expression of 0
+                        if parser_error = 1:
+                            return expr
+
+                        # Check for colon (slice)
+                        tok is current_token_type of 0
+                        if tok = TT_COLON:
+                            is_slice is 1
+                            result is advance_token of 0
+
+                if is_slice = 1:
+                    # Parse end expression if present
+                    end_expr is 0
+                    tok is current_token_type of 0
+                    if tok != TT_RBRACKET:
+                        end_expr is parse_expression of 0
+                        if parser_error = 1:
+                            return expr
+
+                    ok is expect_token of TT_RBRACKET
+                    if ok = 0:
+                        return expr
+
+                    node is create_node of AST_SLICE
+                    result is set_left of [node, expr]
+                    result is set_right of [node, start_expr]
+                    result is set_third of [node, end_expr]
+                    expr is node
+                else:
+                    # Regular indexing
+                    ok is expect_token of TT_RBRACKET
+                    if ok = 0:
+                        return expr
+
+                    node is create_node of AST_INDEX
+                    result is set_left of [node, expr]
+                    result is set_right of [node, start_expr]
+                    expr is node
+            else:
+                break
+
+    return expr
+
+# Parse unary: (NOT | -)* primary
+define parse_unary as:
+    tok is current_token_type of 0
+
+    # Handle NOT
+    if tok = TT_NOT:
+        result is advance_token of 0
+        operand is parse_unary of 0
+        if parser_error = 1:
+            return operand
+
+        node is create_node of AST_UNARY_OP
+        result is set_left of [node, operand]
+        result is set_num_value of [node, UOP_NOT]
+        return node
+
+    # Handle unary minus (only if followed by something that's not a number)
+    # Actually, lexer handles negative numbers, so we skip this for now
+
+    return parse_primary of 0
+
+# Parse primary: literals, identifiers, parens, interrogatives, list literals
+define parse_primary as:
+    tok is current_token_type of 0
+
+    if parser_error = 1:
+        return 0
+
+    # Check for EOF
+    if tok = TT_EOF:
+        parser_error is 1
+        parser_error_line is current_token_line of 0
+        parser_error_col is current_token_col of 0
+        return 0
+
+    # Interrogatives: what, why, how, who, when, where, was, change, status, trend
+    if tok = TT_WHAT:
+        return parse_interrogative of 0
+    if tok = TT_WHY:
+        return parse_interrogative of 0
+    if tok = TT_HOW:
+        return parse_interrogative of 0
+    if tok = TT_WHO:
+        return parse_interrogative of 0
+    if tok = TT_WHEN:
+        return parse_interrogative of 0
+    if tok = TT_WHERE:
+        return parse_interrogative of 0
+    if tok = TT_WAS:
+        return parse_interrogative of 0
+    if tok = TT_CHANGE:
+        return parse_interrogative of 0
+    if tok = TT_STATUS:
+        return parse_interrogative of 0
+    if tok = TT_TREND:
+        return parse_interrogative of 0
+
+    # Number literal
+    if tok = TT_NUMBER:
+        num_val is current_token_num of 0
+        result is advance_token of 0
+
+        node is create_node of AST_LITERAL
+        result is set_num_value of [node, num_val]
+        result is set_str_index of [node, LIT_NUMBER]
+        return node
+
+    # String literal
+    if tok = TT_STRING:
+        str_idx is current_token_str of 0
+        result is advance_token of 0
+
+        node is create_node of AST_LITERAL
+        result is set_str_index of [node, str_idx]
+        result is set_num_value of [node, LIT_STRING]
+        return node
+
+    # Null literal
+    if tok = TT_NULL:
+        result is advance_token of 0
+
+        node is create_node of AST_LITERAL
+        result is set_num_value of [node, LIT_NULL]
+        return node
+
+    # Identifier
+    if tok = TT_IDENTIFIER:
+        str_idx is current_token_str of 0
+        result is advance_token of 0
+
+        node is create_node of AST_IDENTIFIER
+        result is set_str_index of [node, str_idx]
+        return node
+
+    # List literal: [expr, expr, ...]
+    if tok = TT_LBRACKET:
+        return parse_list_literal of 0
+
+    # Parenthesized expression or tuple/vector
+    if tok = TT_LPAREN:
+        result is advance_token of 0
+
+        # Check for empty parens
+        tok is current_token_type of 0
+        if tok = TT_RPAREN:
+            result is advance_token of 0
+            # Empty vector
+            node is create_node of AST_LITERAL
+            result is set_num_value of [node, LIT_VECTOR]
+            result is start_children of node
+            return node
+
+        # Parse first expression
+        first is parse_expression of 0
+        if parser_error = 1:
+            return first
+
+        # Check for comma (tuple/vector) or closing paren (grouping)
+        tok is current_token_type of 0
+        if tok = TT_COMMA:
+            # It's a vector/tuple
+            node is create_node of AST_LITERAL
+            result is set_num_value of [node, LIT_VECTOR]
+            result is start_children of node
+            result is add_child of [node, first]
+
+            loop while 1:
+                tok is current_token_type of 0
+                if tok != TT_COMMA:
+                    break
+                result is advance_token of 0
+
+                tok is current_token_type of 0
+                if tok = TT_RPAREN:
+                    break
+
+                elem is parse_expression of 0
+                if parser_error = 1:
+                    return node
+                result is add_child of [node, elem]
+
+            ok is expect_token of TT_RPAREN
+            return node
+        else:
+            # Just a grouping parenthesis
+            ok is expect_token of TT_RPAREN
+            return first
+
+    # Unknown token
+    parser_error is 1
+    parser_error_line is current_token_line of 0
+    parser_error_col is current_token_col of 0
+    return 0
+
+# Parse interrogative: (what | why | how | ...) (is)? expr
+define parse_interrogative as:
+    tok is current_token_type of 0
+    interrog_type is tok
+    result is advance_token of 0
+
+    # Skip optional IS
+    tok is current_token_type of 0
+    if tok = TT_IS:
+        result is advance_token of 0
+
+    # Parse the expression (just identifier or literal to avoid recursion issues)
+    expr is parse_identifier_or_literal of 0
+    if parser_error = 1:
+        return expr
+
+    node is create_node of AST_INTERROGATIVE
+    result is set_left of [node, expr]
+    result is set_num_value of [node, interrog_type]
+    return node
+
+# Parse just identifier or literal (for interrogatives)
+define parse_identifier_or_literal as:
+    tok is current_token_type of 0
+
+    if tok = TT_NUMBER:
+        num_val is current_token_num of 0
+        result is advance_token of 0
+        node is create_node of AST_LITERAL
+        result is set_num_value of [node, num_val]
+        result is set_str_index of [node, LIT_NUMBER]
+        return node
+
+    if tok = TT_STRING:
+        str_idx is current_token_str of 0
+        result is advance_token of 0
+        node is create_node of AST_LITERAL
+        result is set_str_index of [node, str_idx]
+        result is set_num_value of [node, LIT_STRING]
+        return node
+
+    if tok = TT_NULL:
+        result is advance_token of 0
+        node is create_node of AST_LITERAL
+        result is set_num_value of [node, LIT_NULL]
+        return node
+
+    if tok = TT_IDENTIFIER:
+        str_idx is current_token_str of 0
+        result is advance_token of 0
+        node is create_node of AST_IDENTIFIER
+        result is set_str_index of [node, str_idx]
+        return node
+
+    if tok = TT_LPAREN:
+        result is advance_token of 0
+        expr is parse_expression of 0
+        ok is expect_token of TT_RPAREN
+        return expr
+
+    parser_error is 1
+    parser_error_line is current_token_line of 0
+    parser_error_col is current_token_col of 0
+    return 0
+
+# Parse list literal: [expr, expr, ...] or list comprehension [expr for x in list]
+define parse_list_literal as:
+    result is advance_token of 0
+
+    # Check for empty list
+    tok is current_token_type of 0
+    if tok = TT_RBRACKET:
+        result is advance_token of 0
+        node is create_node of AST_LIST_LITERAL
+        result is start_children of node
+        return node
+
+    # Parse first expression
+    first is parse_expression of 0
+    if parser_error = 1:
+        return first
+
+    # Check for list comprehension: [expr FOR var IN iterable]
+    tok is current_token_type of 0
+    if tok = TT_FOR:
+        result is advance_token of 0
+
+        # Expect variable name
+        tok is current_token_type of 0
+        if tok != TT_IDENTIFIER:
+            parser_error is 1
+            parser_error_line is current_token_line of 0
+            parser_error_col is current_token_col of 0
+            return first
+
+        var_str is current_token_str of 0
+        result is advance_token of 0
+
+        # Expect IN
+        ok is expect_token of TT_IN
+        if ok = 0:
+            return first
+
+        # Parse iterable
+        iterable is parse_expression of 0
+        if parser_error = 1:
+            return first
+
+        # Check for optional IF condition
+        condition is 0
+        tok is current_token_type of 0
+        if tok = TT_IF:
+            result is advance_token of 0
+            condition is parse_expression of 0
+            if parser_error = 1:
+                return first
+
+        ok is expect_token of TT_RBRACKET
+        if ok = 0:
+            return first
+
+        node is create_node of AST_LIST_COMP
+        result is set_left of [node, first]
+        result is set_right of [node, iterable]
+        result is set_third of [node, condition]
+        result is set_str_index of [node, var_str]
+        return node
+
+    # Regular list literal
+    node is create_node of AST_LIST_LITERAL
+    result is start_children of node
+    result is add_child of [node, first]
+
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_COMMA:
+            break
+        result is advance_token of 0
+
+        tok is current_token_type of 0
+        if tok = TT_RBRACKET:
+            break
+
+        elem is parse_expression of 0
+        if parser_error = 1:
+            return node
+        result is add_child of [node, elem]
+
+    ok is expect_token of TT_RBRACKET
+    return node
+
+# ============================================================================
+# Statement Parsing
+# ============================================================================
+
+# Parse a single statement
+define parse_statement as:
+    tok is current_token_type of 0
+
+    # Skip newlines
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+        return 0
+
+    if tok = TT_EOF:
+        return 0
+
+    # FROM - from...import statement
+    if tok = TT_FROM:
+        return parse_import_from of 0
+
+    # IMPORT - import statement
+    if tok = TT_IMPORT:
+        return parse_import of 0
+
+    # DEFINE - function definition
+    if tok = TT_DEFINE:
+        return parse_function_def of 0
+
+    # STRUCT - struct definition
+    if tok = TT_STRUCT:
+        return parse_struct_def of 0
+
+    # IF - conditional
+    if tok = TT_IF:
+        return parse_conditional of 0
+
+    # LOOP - loop statement
+    if tok = TT_LOOP:
+        return parse_loop of 0
+
+    # RETURN - return statement
+    if tok = TT_RETURN:
+        return parse_return of 0
+
+    # BREAK - break statement
+    if tok = TT_BREAK:
+        result is advance_token of 0
+        # Skip optional newline
+        tok is current_token_type of 0
+        if tok = TT_NEWLINE:
+            result is advance_token of 0
+
+        node is create_node of AST_BREAK
+        return node
+
+    # Assignment: identifier IS expression
+    if tok = TT_IDENTIFIER:
+        next_tok is peek_token_type of 1
+        if next_tok = TT_IS:
+            return parse_assignment of 0
+
+    # Expression statement
+    expr is parse_expression of 0
+
+    # Skip optional newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    return expr
+
+# Parse assignment: identifier IS expression
+define parse_assignment as:
+    # Get identifier
+    id_str is current_token_str of 0
+    result is advance_token of 0
+
+    # Expect IS
+    ok is expect_token of TT_IS
+    if ok = 0:
+        return 0
+
+    # Parse expression
+    expr is parse_expression of 0
+    if parser_error = 1:
+        return 0
+
+    # Skip optional newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    node is create_node of AST_ASSIGNMENT
+    result is set_str_index of [node, id_str]
+    result is set_left of [node, expr]
+    return node
+
+# Parse import: IMPORT identifier (AS identifier)?
+define parse_import as:
+    result is advance_token of 0
+
+    # Expect module name
+    tok is current_token_type of 0
+    if tok != TT_IDENTIFIER:
+        parser_error is 1
+        parser_error_line is current_token_line of 0
+        parser_error_col is current_token_col of 0
+        return 0
+
+    module_str is current_token_str of 0
+    result is advance_token of 0
+
+    # Check for AS alias
+    alias_str is 0
+    tok is current_token_type of 0
+    if tok = TT_AS:
+        result is advance_token of 0
+        tok is current_token_type of 0
+        if tok != TT_IDENTIFIER:
+            parser_error is 1
+            return 0
+        alias_str is current_token_str of 0
+        result is advance_token of 0
+
+    # Skip newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    node is create_node of AST_IMPORT
+    result is set_str_index of [node, module_str]
+    result is set_num_value of [node, alias_str]
+    return node
+
+# Parse from...import: FROM (.*identifier | .+) IMPORT (MULTIPLY | names)
+define parse_import_from as:
+    result is advance_token of 0
+
+    # Count leading dots for relative imports
+    level is 0
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_DOT:
+            break
+        level is level + 1
+        result is advance_token of 0
+
+    # Get module name (optional for relative imports)
+    module_str is 0
+    tok is current_token_type of 0
+    if tok = TT_IDENTIFIER:
+        module_str is current_token_str of 0
+        result is advance_token of 0
+
+    # Expect IMPORT
+    ok is expect_token of TT_IMPORT
+    if ok = 0:
+        return 0
+
+    node is create_node of AST_IMPORT_FROM
+    result is set_str_index of [node, module_str]
+    result is set_num_value of [node, level]
+    result is start_children of node
+
+    # Check for wildcard import
+    tok is current_token_type of 0
+    if tok = TT_MULTIPLY:
+        result is advance_token of 0
+        # Mark as wildcard with special value
+        result is set_third of [node, 1]
+    else:
+        # Parse name list
+        tok is current_token_type of 0
+        if tok != TT_IDENTIFIER:
+            parser_error is 1
+            return node
+
+        name_str is current_token_str of 0
+        result is advance_token of 0
+
+        # Create identifier node for name
+        name_node is create_node of AST_IDENTIFIER
+        result is set_str_index of [name_node, name_str]
+        result is add_child of [node, name_node]
+
+        # Parse additional names
+        loop while 1:
+            tok is current_token_type of 0
+            if tok != TT_COMMA:
+                break
+            result is advance_token of 0
+
+            tok is current_token_type of 0
+            if tok != TT_IDENTIFIER:
+                parser_error is 1
+                return node
+
+            name_str is current_token_str of 0
+            result is advance_token of 0
+
+            name_node is create_node of AST_IDENTIFIER
+            result is set_str_index of [name_node, name_str]
+            result is add_child of [node, name_node]
+
+    # Skip newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    return node
+
+# Parse function definition: DEFINE identifier AS: block
+define parse_function_def as:
+    result is advance_token of 0
+
+    # Expect function name
+    tok is current_token_type of 0
+    if tok != TT_IDENTIFIER:
+        parser_error is 1
+        parser_error_line is current_token_line of 0
+        parser_error_col is current_token_col of 0
+        return 0
+
+    name_str is current_token_str of 0
+    result is advance_token of 0
+
+    # Optional AS
+    tok is current_token_type of 0
+    if tok = TT_AS:
+        result is advance_token of 0
+
+    # Expect colon
+    ok is expect_token of TT_COLON
+    if ok = 0:
+        return 0
+
+    # Skip newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    # Parse block
+    block_start is ast_children_count
+    result is parse_block of 0
+    block_end is ast_children_count
+
+    node is create_node of AST_FUNCTION_DEF
+    result is set_str_index of [node, name_str]
+    ast_children_start[node] is block_start
+    ast_children_end[node] is block_end
+    return node
+
+# Parse struct definition: STRUCT identifier: field+
+define parse_struct_def as:
+    result is advance_token of 0
+
+    # Expect struct name
+    tok is current_token_type of 0
+    if tok != TT_IDENTIFIER:
+        parser_error is 1
+        parser_error_line is current_token_line of 0
+        parser_error_col is current_token_col of 0
+        return 0
+
+    name_str is current_token_str of 0
+    result is advance_token of 0
+
+    # Expect colon
+    ok is expect_token of TT_COLON
+    if ok = 0:
+        return 0
+
+    # Skip newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    # Expect INDENT
+    ok is expect_token of TT_INDENT
+    if ok = 0:
+        return 0
+
+    node is create_node of AST_STRUCT_DEF
+    result is set_str_index of [node, name_str]
+    result is start_children of node
+
+    # Parse field names
+    loop while 1:
+        tok is current_token_type of 0
+
+        if tok = TT_DEDENT:
+            break
+
+        if tok = TT_NEWLINE:
+            result is advance_token of 0
+        else:
+            if tok = TT_IDENTIFIER:
+                field_str is current_token_str of 0
+                result is advance_token of 0
+
+                field_node is create_node of AST_IDENTIFIER
+                result is set_str_index of [field_node, field_str]
+                result is add_child of [node, field_node]
+
+                # Skip newline
+                tok is current_token_type of 0
+                if tok = TT_NEWLINE:
+                    result is advance_token of 0
+            else:
+                break
+
+    # Expect DEDENT
+    tok is current_token_type of 0
+    if tok = TT_DEDENT:
+        result is advance_token of 0
+
+    return node
+
+# Parse conditional: IF expression: block (ELSE: block)?
+define parse_conditional as:
+    result is advance_token of 0
+
+    # Parse condition
+    condition is parse_expression of 0
+    if parser_error = 1:
+        return 0
+
+    # Expect colon
+    ok is expect_token of TT_COLON
+    if ok = 0:
+        return 0
+
+    # Skip newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    # Parse if block
+    if_block_start is ast_children_count
+    result is parse_block of 0
+    if_block_end is ast_children_count
+
+    # Check for ELSE
+    else_block_start is 0
+    else_block_end is 0
+    tok is current_token_type of 0
+    if tok = TT_ELSE:
+        result is advance_token of 0
+
+        # Expect colon
+        ok is expect_token of TT_COLON
+        if ok = 0:
+            return 0
+
+        # Skip newline
+        tok is current_token_type of 0
+        if tok = TT_NEWLINE:
+            result is advance_token of 0
+
+        # Parse else block
+        else_block_start is ast_children_count
+        result is parse_block of 0
+        else_block_end is ast_children_count
+
+    node is create_node of AST_CONDITIONAL
+    result is set_left of [node, condition]
+    # Store block ranges in special way
+    result is set_num_value of [node, if_block_start]
+    result is set_right of [node, if_block_end]
+    # Store else block info in third
+    result is set_third of [node, else_block_start * 100000 + else_block_end]
+    return node
+
+# Parse loop: LOOP WHILE expression: block
+define parse_loop as:
+    result is advance_token of 0
+
+    # Expect WHILE
+    ok is expect_token of TT_WHILE
+    if ok = 0:
+        return 0
+
+    # Parse condition
+    condition is parse_expression of 0
+    if parser_error = 1:
+        return 0
+
+    # Expect colon
+    ok is expect_token of TT_COLON
+    if ok = 0:
+        return 0
+
+    # Skip newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    # Parse loop body
+    body_start is ast_children_count
+    result is parse_block of 0
+    body_end is ast_children_count
+
+    node is create_node of AST_LOOP
+    result is set_left of [node, condition]
+    result is set_num_value of [node, body_start]
+    result is set_right of [node, body_end]
+    return node
+
+# Parse return: RETURN expression
+define parse_return as:
+    result is advance_token of 0
+
+    # Parse expression
+    expr is parse_expression of 0
+    if parser_error = 1:
+        return 0
+
+    # Skip newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    node is create_node of AST_RETURN
+    result is set_left of [node, expr]
+    return node
+
+# Parse a block of statements (after INDENT, until DEDENT)
+define parse_block as:
+    # Expect INDENT
+    ok is expect_token of TT_INDENT
+    if ok = 0:
+        return 0
+
+    # Parse statements until DEDENT
+    loop while 1:
+        tok is current_token_type of 0
+
+        if tok = TT_DEDENT:
+            break
+        if tok = TT_EOF:
+            break
+
+        stmt is parse_statement of 0
+        if stmt != 0:
+            append ast_children of stmt
+            ast_children_count is ast_children_count + 1
+
+        if parser_error = 1:
+            break
+
+    # Expect DEDENT
+    ok is expect_token of TT_DEDENT
+    return 0
+
+# ============================================================================
+# Top-level Program Parsing
+# ============================================================================
+
+# Parse a complete program
+define parse_program as:
+    node is create_node of AST_PROGRAM
+    result is start_children of node
+
+    loop while 1:
+        tok is current_token_type of 0
+
+        if tok = TT_EOF:
+            break
+
+        # Skip top-level newlines
+        if tok = TT_NEWLINE:
+            result is advance_token of 0
+        else:
+            stmt is parse_statement of 0
+            if stmt != 0:
+                result is add_child of [node, stmt]
+
+            if parser_error = 1:
+                break
+
+    return node
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+# Parse tokens and return AST root node index
+define parse as:
+    result is init_parser of 0
+    root is parse_program of 0
+    return root
+
+# ============================================================================
+# Debug Output
+# ============================================================================
+
+# Print AST node for debugging
+define print_ast_node of node_idx as:
+    node_type is ast_types[node_idx]
+    print of node_type
+
+    if node_type = AST_LITERAL:
+        print of ast_num_value[node_idx]
+    if node_type = AST_IDENTIFIER:
+        print of ast_str_index[node_idx]
+    if node_type = AST_BINARY_OP:
+        print of ast_num_value[node_idx]
+        result is print_ast_node of ast_left[node_idx]
+        result is print_ast_node of ast_right[node_idx]
+
+    return 0
+
+# Signal that parser module is loaded
+print of 888
