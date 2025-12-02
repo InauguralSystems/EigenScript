@@ -342,9 +342,7 @@ def compile_file(
                 # Standard Native Linking
                 linker = "gcc"
                 link_files = object_files + ([] if bitcode_linked else [runtime_o])
-                link_cmd = (
-                    [linker] + link_files + ["-o", output_file, "-lm"]
-                )
+                link_cmd = [linker] + link_files + ["-o", output_file, "-lm"]
 
             print(f"\n→ Linking {len(object_files)} module(s) with {linker}...")
             result = subprocess.run(link_cmd, capture_output=True, text=True)

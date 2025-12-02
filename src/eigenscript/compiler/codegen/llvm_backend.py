@@ -206,9 +206,9 @@ class LLVMCodeGenerator:
         # This is the native string type for self-hosting
         self.eigen_string_type = ir.LiteralStructType(
             [
-                self.string_type,   # data ptr (char*)
-                self.int64_type,    # length
-                self.int64_type,    # capacity
+                self.string_type,  # data ptr (char*)
+                self.int64_type,  # length
+                self.int64_type,  # capacity
             ]
         )
         self.eigen_string_ptr = self.eigen_string_type.as_pointer()
@@ -442,7 +442,9 @@ class LLVMCodeGenerator:
             self.eigen_string_ptr, [self.int64_type]
         )
         self.eigen_string_create_empty = ir.Function(
-            self.module, eigen_string_create_empty_type, name="eigen_string_create_empty"
+            self.module,
+            eigen_string_create_empty_type,
+            name="eigen_string_create_empty",
         )
         self.eigen_string_create_empty.attributes.add("nounwind")
 
@@ -478,7 +480,7 @@ class LLVMCodeGenerator:
         # eigen_substring(EigenString*, i64 start, i64 length) -> EigenString*
         eigen_substring_type = ir.FunctionType(
             self.eigen_string_ptr,
-            [self.eigen_string_ptr, self.int64_type, self.int64_type]
+            [self.eigen_string_ptr, self.int64_type, self.int64_type],
         )
         self.eigen_substring = ir.Function(
             self.module, eigen_substring_type, name="eigen_substring"
@@ -588,7 +590,7 @@ class LLVMCodeGenerator:
         # eigen_string_find(EigenString*, EigenString*, i64 start) -> i64
         eigen_string_find_type = ir.FunctionType(
             self.int64_type,
-            [self.eigen_string_ptr, self.eigen_string_ptr, self.int64_type]
+            [self.eigen_string_ptr, self.eigen_string_ptr, self.int64_type],
         )
         self.eigen_string_find = ir.Function(
             self.module, eigen_string_find_type, name="eigen_string_find"
@@ -706,7 +708,7 @@ class LLVMCodeGenerator:
             else:
                 raise CompilerError(
                     f"Expected string, got {val.kind}",
-                    hint="String operations require EigenString* values"
+                    hint="String operations require EigenString* values",
                 )
         elif isinstance(val, ir.Value):
             # Check if it's already an EigenString*
@@ -715,7 +717,7 @@ class LLVMCodeGenerator:
             else:
                 raise CompilerError(
                     f"Expected string pointer, got {val.type}",
-                    hint="String operations require EigenString* values"
+                    hint="String operations require EigenString* values",
                 )
         else:
             raise CompilerError(f"Unexpected value type: {type(val)}")
@@ -742,8 +744,7 @@ class LLVMCodeGenerator:
                 return val
         else:
             raise CompilerError(
-                f"Cannot convert {val.type} to int64",
-                hint="Expected a numeric value"
+                f"Cannot convert {val.type} to int64", hint="Expected a numeric value"
             )
 
     def _extract_list_args(self, node, expected_count: int) -> list:
@@ -759,7 +760,7 @@ class LLVMCodeGenerator:
             if len(node.elements) != expected_count:
                 raise CompilerError(
                     f"Expected {expected_count} arguments, got {len(node.elements)}",
-                    hint=f"This function requires exactly {expected_count} arguments in a list"
+                    hint=f"This function requires exactly {expected_count} arguments in a list",
                 )
             return [self._generate(elem) for elem in node.elements]
         else:
@@ -769,7 +770,7 @@ class LLVMCodeGenerator:
             else:
                 raise CompilerError(
                     f"Expected list with {expected_count} arguments",
-                    hint="Use [arg1, arg2, ...] syntax for multiple arguments"
+                    hint="Use [arg1, arg2, ...] syntax for multiple arguments",
                 )
 
     def _alloca_at_entry(self, ty: ir.Type, name: str = "") -> ir.AllocaInstr:
@@ -820,7 +821,9 @@ class LLVMCodeGenerator:
 
         return alloca_inst
 
-    def _create_global_variable(self, ty: ir.Type, name: str, initial_value=None) -> ir.GlobalVariable:
+    def _create_global_variable(
+        self, ty: ir.Type, name: str, initial_value=None
+    ) -> ir.GlobalVariable:
         """Create a module-level global variable.
 
         This creates an actual LLVM global that can be accessed from any function.
@@ -840,7 +843,7 @@ class LLVMCodeGenerator:
 
         # Create the global variable
         global_var = ir.GlobalVariable(self.module, ty, name=global_name)
-        global_var.linkage = 'internal'  # Not exported
+        global_var.linkage = "internal"  # Not exported
 
         # Initialize with default value
         if initial_value is not None:
@@ -1199,9 +1202,11 @@ class LLVMCodeGenerator:
         loaded_ptr = self.builder.load(var_ptr)
 
         # Check if it's a struct variable
-        if hasattr(self, 'struct_var_types') and node.name in self.struct_var_types:
+        if hasattr(self, "struct_var_types") and node.name in self.struct_var_types:
             struct_name = self.struct_var_types[node.name]
-            return GeneratedValue(value=loaded_ptr, kind=ValueKind.STRUCT_PTR, struct_name=struct_name)
+            return GeneratedValue(
+                value=loaded_ptr, kind=ValueKind.STRUCT_PTR, struct_name=struct_name
+            )
 
         # Check if it's a string or list (both have 3-element struct with pointer first)
         if isinstance(loaded_ptr.type, ir.PointerType):
@@ -1213,7 +1218,10 @@ class LLVMCodeGenerator:
             ):
                 # Check if first element is char* (string) or double* (list)
                 first_elem = pointed_type.elements[0]
-                if isinstance(first_elem.pointee, ir.IntType) and first_elem.pointee.width == 8:
+                if (
+                    isinstance(first_elem.pointee, ir.IntType)
+                    and first_elem.pointee.width == 8
+                ):
                     # It's a string (char* = i8*)
                     return GeneratedValue(value=loaded_ptr, kind=ValueKind.STRING_PTR)
                 else:
@@ -1352,7 +1360,10 @@ class LLVMCodeGenerator:
                 ):
                     # Check first element type to distinguish string vs list
                     first_elem = pointed_type.elements[0]
-                    if isinstance(first_elem.pointee, ir.IntType) and first_elem.pointee.width == 8:
+                    if (
+                        isinstance(first_elem.pointee, ir.IntType)
+                        and first_elem.pointee.width == 8
+                    ):
                         # It's a string (char* = i8*)
                         is_string = True
                     else:
@@ -1386,9 +1397,13 @@ class LLVMCodeGenerator:
             else:
                 # Create new list variable
                 if in_func:
-                    var_ptr = self._alloca_at_entry(self.eigen_list_ptr, name=node.identifier)
+                    var_ptr = self._alloca_at_entry(
+                        self.eigen_list_ptr, name=node.identifier
+                    )
                 else:
-                    var_ptr = self._create_global_variable(self.eigen_list_ptr, node.identifier)
+                    var_ptr = self._create_global_variable(
+                        self.eigen_list_ptr, node.identifier
+                    )
                 self.builder.store(gen_value.value, var_ptr)
                 var_table[node.identifier] = var_ptr
             return
@@ -1401,9 +1416,13 @@ class LLVMCodeGenerator:
             else:
                 # Create new string variable
                 if in_func:
-                    var_ptr = self._alloca_at_entry(self.eigen_string_ptr, name=node.identifier)
+                    var_ptr = self._alloca_at_entry(
+                        self.eigen_string_ptr, name=node.identifier
+                    )
                 else:
-                    var_ptr = self._create_global_variable(self.eigen_string_ptr, node.identifier)
+                    var_ptr = self._create_global_variable(
+                        self.eigen_string_ptr, node.identifier
+                    )
                 self.builder.store(gen_value.value, var_ptr)
                 var_table[node.identifier] = var_ptr
             return
@@ -1418,13 +1437,17 @@ class LLVMCodeGenerator:
                 else:
                     # Create new struct variable
                     if in_func:
-                        var_ptr = self._alloca_at_entry(struct_type.as_pointer(), name=node.identifier)
+                        var_ptr = self._alloca_at_entry(
+                            struct_type.as_pointer(), name=node.identifier
+                        )
                     else:
-                        var_ptr = self._create_global_variable(struct_type.as_pointer(), node.identifier)
+                        var_ptr = self._create_global_variable(
+                            struct_type.as_pointer(), node.identifier
+                        )
                     self.builder.store(gen_value.value, var_ptr)
                     var_table[node.identifier] = var_ptr
                     # Store struct metadata for later field access
-                    if not hasattr(self, 'struct_var_types'):
+                    if not hasattr(self, "struct_var_types"):
                         self.struct_var_types = {}
                     self.struct_var_types[node.identifier] = gen_value.struct_name
             return
@@ -1447,7 +1470,9 @@ class LLVMCodeGenerator:
                     # It's a string variable - just store the new string pointer
                     self.builder.store(gen_value.value, var_ptr)
                 else:
-                    raise TypeError(f"Cannot assign string to non-string variable '{node.identifier}'")
+                    raise TypeError(
+                        f"Cannot assign string to non-string variable '{node.identifier}'"
+                    )
             else:
                 # Scalar update: check if it's a raw double* or EigenValue*
                 scalar_val = self.ensure_scalar(gen_value)
@@ -1458,7 +1483,9 @@ class LLVMCodeGenerator:
                     self.builder.store(scalar_val, var_ptr)
                 elif var_ptr.type.pointee == self.eigen_string_ptr:
                     # Can't assign scalar to string variable
-                    raise TypeError(f"Cannot assign scalar to string variable '{node.identifier}'")
+                    raise TypeError(
+                        f"Cannot assign scalar to string variable '{node.identifier}'"
+                    )
                 else:
                     # Geometric tracked: EigenValue*, call eigen_update
                     eigen_ptr = self.builder.load(var_ptr)
@@ -1473,11 +1500,15 @@ class LLVMCodeGenerator:
                 scalar_val = self.ensure_scalar(gen_value)
                 if in_func:
                     # In function: use stack alloca (can be promoted to register)
-                    var_ptr = self._alloca_at_entry(self.double_type, name=node.identifier)
+                    var_ptr = self._alloca_at_entry(
+                        self.double_type, name=node.identifier
+                    )
                     self.builder.store(scalar_val, var_ptr)
                 else:
                     # In main scope: use global variable for cross-function access
-                    var_ptr = self._create_global_variable(self.double_type, node.identifier)
+                    var_ptr = self._create_global_variable(
+                        self.double_type, node.identifier
+                    )
                     self.builder.store(scalar_val, var_ptr)
                 var_table[node.identifier] = var_ptr
                 # NOTE: This is just a double*, not EigenValue*!
@@ -1521,8 +1552,7 @@ class LLVMCodeGenerator:
                 # Parse the values from the right side (must be a list)
                 if isinstance(node.right, ListLiteral):
                     struct_literal = StructLiteral(
-                        struct_name=func_name,
-                        values=node.right.elements
+                        struct_name=func_name, values=node.right.elements
                     )
                     return self._generate_struct_literal(struct_literal)
                 else:
@@ -1537,9 +1567,14 @@ class LLVMCodeGenerator:
                 arg_gen_val = self._generate(node.right)
 
                 # Check if it's a string - print as string
-                if isinstance(arg_gen_val, GeneratedValue) and arg_gen_val.kind == ValueKind.STRING_PTR:
+                if (
+                    isinstance(arg_gen_val, GeneratedValue)
+                    and arg_gen_val.kind == ValueKind.STRING_PTR
+                ):
                     # Get C string from EigenString and print it
-                    c_str = self.builder.call(self.eigen_string_cstr, [arg_gen_val.value])
+                    c_str = self.builder.call(
+                        self.eigen_string_cstr, [arg_gen_val.value]
+                    )
                     fmt_str = "%s\n\0"
                     fmt_const = ir.Constant(
                         ir.ArrayType(self.int8_type, len(fmt_str)),
@@ -1601,7 +1636,9 @@ class LLVMCodeGenerator:
                 str_ptr = self._ensure_string_ptr(args[0])
                 start = self._ensure_int64(args[1])
                 length = self._ensure_int64(args[2])
-                result = self.builder.call(self.eigen_substring, [str_ptr, start, length])
+                result = self.builder.call(
+                    self.eigen_substring, [str_ptr, start, length]
+                )
                 if self.current_function and self.current_function.name == "main":
                     self.allocated_strings.append(result)
                 return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
@@ -1697,7 +1734,9 @@ class LLVMCodeGenerator:
                 haystack = self._ensure_string_ptr(args[0])
                 needle = self._ensure_string_ptr(args[1])
                 start = self._ensure_int64(args[2])
-                result = self.builder.call(self.eigen_string_find, [haystack, needle, start])
+                result = self.builder.call(
+                    self.eigen_string_find, [haystack, needle, start]
+                )
                 return self.builder.sitofp(result, self.double_type)
 
             # string_append_char of [str, char_code] -> void (modifies in place)
@@ -1989,7 +2028,10 @@ class LLVMCodeGenerator:
                 gen_obj = self._generate_identifier(node.object)
 
                 # Check if it's a struct
-                if isinstance(gen_obj, GeneratedValue) and gen_obj.kind == ValueKind.STRUCT_PTR:
+                if (
+                    isinstance(gen_obj, GeneratedValue)
+                    and gen_obj.kind == ValueKind.STRUCT_PTR
+                ):
                     struct_name = gen_obj.struct_name
                     if struct_name and struct_name in self.struct_types:
                         struct_type, field_names = self.struct_types[struct_name]
@@ -2009,7 +2051,10 @@ class LLVMCodeGenerator:
                         struct_ptr = gen_obj.value
                         field_ptr = self.builder.gep(
                             struct_ptr,
-                            [ir.Constant(self.int32_type, 0), ir.Constant(self.int32_type, field_idx)],
+                            [
+                                ir.Constant(self.int32_type, 0),
+                                ir.Constant(self.int32_type, field_idx),
+                            ],
                             inbounds=True,
                         )
 
@@ -2098,7 +2143,9 @@ class LLVMCodeGenerator:
             )
 
         # Allocate struct on heap
-        struct_size = ir.Constant(self.int64_type, len(field_names) * 8)  # 8 bytes per pointer
+        struct_size = ir.Constant(
+            self.int64_type, len(field_names) * 8
+        )  # 8 bytes per pointer
         struct_ptr = self.builder.call(self.malloc, [struct_size])
         struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
 
@@ -2129,8 +2176,7 @@ class LLVMCodeGenerator:
                     scalar = self.ensure_scalar(gen_value)
                     # Store as pointer (cast double bits to pointer)
                     ptr_val = self.builder.inttoptr(
-                        self.builder.bitcast(scalar, self.int64_type),
-                        self.string_type
+                        self.builder.bitcast(scalar, self.int64_type), self.string_type
                     )
                     self.builder.store(ptr_val, field_ptr)
             elif isinstance(gen_value, ir.Value):
@@ -2138,7 +2184,7 @@ class LLVMCodeGenerator:
                     # Scalar value - box it
                     ptr_val = self.builder.inttoptr(
                         self.builder.bitcast(gen_value, self.int64_type),
-                        self.string_type
+                        self.string_type,
                     )
                     self.builder.store(ptr_val, field_ptr)
                 elif isinstance(gen_value.type, ir.PointerType):
@@ -2146,9 +2192,13 @@ class LLVMCodeGenerator:
                     ptr_val = self.builder.bitcast(gen_value, self.string_type)
                     self.builder.store(ptr_val, field_ptr)
                 else:
-                    raise CompilerError(f"Cannot store {gen_value.type} in struct field")
+                    raise CompilerError(
+                        f"Cannot store {gen_value.type} in struct field"
+                    )
 
-        return GeneratedValue(value=struct_ptr, kind=ValueKind.STRUCT_PTR, struct_name=node.struct_name)
+        return GeneratedValue(
+            value=struct_ptr, kind=ValueKind.STRUCT_PTR, struct_name=node.struct_name
+        )
 
     def _generate_function_def(self, node: FunctionDef) -> None:
         """Generate code for function definitions."""
