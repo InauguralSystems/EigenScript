@@ -1,0 +1,631 @@
+# EigenScript Self-Hosting Code Generator
+# Written in EigenScript for bootstrapping the compiler
+# Generates LLVM IR text from AST
+#
+# This outputs textual LLVM IR that can be assembled with llvm-as
+# and linked with the EigenScript runtime library.
+
+# ============================================================================
+# AST Node Type Constants (must match parser.eigs)
+# ============================================================================
+
+# Expressions
+AST_LITERAL is 1
+AST_IDENTIFIER is 2
+AST_BINARY_OP is 3
+AST_UNARY_OP is 4
+AST_RELATION is 5
+AST_INDEX is 6
+AST_SLICE is 7
+AST_MEMBER_ACCESS is 8
+AST_LIST_LITERAL is 9
+AST_LIST_COMP is 10
+AST_INTERROGATIVE is 11
+AST_STRUCT_LITERAL is 12
+
+# Statements
+AST_ASSIGNMENT is 20
+AST_CONDITIONAL is 21
+AST_LOOP is 22
+AST_FUNCTION_DEF is 23
+AST_RETURN is 24
+AST_BREAK is 25
+AST_IMPORT is 26
+AST_IMPORT_FROM is 27
+AST_STRUCT_DEF is 28
+
+# Program
+AST_PROGRAM is 30
+
+# Literal types
+LIT_NUMBER is 1
+LIT_STRING is 2
+LIT_NULL is 3
+LIT_VECTOR is 4
+LIT_LIST is 5
+
+# Operator codes
+OP_PLUS is 1
+OP_MINUS is 2
+OP_MULTIPLY is 3
+OP_DIVIDE is 4
+OP_MODULO is 5
+OP_EQUALS is 6
+OP_NOT_EQUAL is 7
+OP_LESS_THAN is 8
+OP_LESS_EQUAL is 9
+OP_GREATER_THAN is 10
+OP_GREATER_EQUAL is 11
+OP_AND is 12
+OP_OR is 13
+
+# Unary operator codes
+UOP_NOT is 1
+
+# ============================================================================
+# Code Generator State
+# ============================================================================
+
+# SSA register counter (for unique names)
+reg_counter is 0
+
+# Label counter (for basic blocks)
+label_counter is 0
+
+# String constant counter
+string_counter is 0
+
+# Current function name
+current_func_name is ""
+
+# Are we in the main function?
+in_main is 0
+
+# ============================================================================
+# Output Buffer
+# IR is built as a list of strings, then concatenated
+# ============================================================================
+
+MAX_OUTPUT_LINES is 50000
+output_lines is [""]
+output_count is 0
+
+# Add a line to output
+define emit of line as:
+    append output_lines of line
+    output_count is output_count + 1
+    return 0
+
+# Get next register name
+define next_reg as:
+    reg_counter is reg_counter + 1
+    return reg_counter
+
+# Get next label name
+define next_label as:
+    label_counter is label_counter + 1
+    return label_counter
+
+# ============================================================================
+# Variable Storage
+# Maps variable names to their SSA values/pointers
+# ============================================================================
+
+MAX_VARS is 1000
+
+# Variable names (string indices)
+var_names is [0]
+var_count is 0
+
+# Variable register numbers (the %reg that holds the alloca pointer)
+var_regs is [0]
+
+# Is variable a global?
+var_is_global is [0]
+
+# Add a variable
+define add_var of [name_str, reg_num, is_global] as:
+    idx is var_count
+    var_count is var_count + 1
+    append var_names of name_str
+    append var_regs of reg_num
+    append var_is_global of is_global
+    return idx
+
+# Look up variable, return register number or -1 if not found
+define lookup_var of name_str as:
+    i is var_count - 1
+    loop while i >= 0:
+        eq is string_equals of [var_names[i], name_str]
+        if eq = 1:
+            return var_regs[i]
+        i is i - 1
+    return 0 - 1
+
+# ============================================================================
+# LLVM IR Module Header
+# ============================================================================
+
+define emit_module_header as:
+    # Target triple (default to x86_64 Linux)
+    result is emit of "; EigenScript Compiled Module"
+    result is emit of "target triple = \"x86_64-pc-linux-gnu\""
+    result is emit of ""
+
+    # Type definitions
+    result is emit of "; EigenValue struct type"
+    result is emit of "%EigenValue = type { double, double, double, i64, [100 x double], i32, i32, double, double }"
+    result is emit of "%EigenList = type { double*, i64, i64 }"
+    result is emit of "%EigenString = type { i8*, i64, i64 }"
+    result is emit of ""
+
+    return 0
+
+# ============================================================================
+# Runtime Function Declarations
+# ============================================================================
+
+define emit_runtime_decls as:
+    # EigenValue functions
+    result is emit of "; Runtime function declarations"
+    result is emit of "declare %EigenValue* @eigen_create(double)"
+    result is emit of "declare void @eigen_init(%EigenValue*, double)"
+    result is emit of "declare void @eigen_update(%EigenValue*, double)"
+    result is emit of "declare double @eigen_get_value(%EigenValue*)"
+    result is emit of "declare double @eigen_get_gradient(%EigenValue*)"
+    result is emit of "declare double @eigen_get_stability(%EigenValue*)"
+    result is emit of "declare i64 @eigen_get_iteration(%EigenValue*)"
+    result is emit of "declare void @eigen_destroy(%EigenValue*)"
+    result is emit of ""
+
+    # Predicate functions
+    result is emit of "declare i1 @eigen_check_converged(%EigenValue*)"
+    result is emit of "declare i1 @eigen_check_diverging(%EigenValue*)"
+    result is emit of "declare i1 @eigen_check_oscillating(%EigenValue*)"
+    result is emit of "declare i1 @eigen_check_stable(%EigenValue*)"
+    result is emit of "declare i1 @eigen_check_improving(%EigenValue*)"
+    result is emit of ""
+
+    # List functions
+    result is emit of "declare %EigenList* @eigen_list_create(i64)"
+    result is emit of "declare double @eigen_list_get(%EigenList*, i64)"
+    result is emit of "declare void @eigen_list_set(%EigenList*, i64, double)"
+    result is emit of "declare i64 @eigen_list_length(%EigenList*)"
+    result is emit of "declare void @eigen_list_append(%EigenList*, double)"
+    result is emit of "declare void @eigen_list_destroy(%EigenList*)"
+    result is emit of ""
+
+    # String functions (for self-hosting)
+    result is emit of "declare %EigenString* @eigen_string_create(i8*)"
+    result is emit of "declare void @eigen_string_destroy(%EigenString*)"
+    result is emit of "declare i64 @eigen_string_length(%EigenString*)"
+    result is emit of "declare i64 @eigen_char_at(%EigenString*, i64)"
+    result is emit of "declare %EigenString* @eigen_substring(%EigenString*, i64, i64)"
+    result is emit of "declare %EigenString* @eigen_string_concat(%EigenString*, %EigenString*)"
+    result is emit of "declare i64 @eigen_string_equals(%EigenString*, %EigenString*)"
+    result is emit of "declare i64 @eigen_char_is_digit(i64)"
+    result is emit of "declare i64 @eigen_char_is_alpha(i64)"
+    result is emit of "declare i64 @eigen_char_is_whitespace(i64)"
+    result is emit of "declare double @eigen_string_to_number(%EigenString*)"
+    result is emit of "declare %EigenString* @eigen_number_to_string(double)"
+    result is emit of ""
+
+    # I/O functions
+    result is emit of "declare void @eigen_print_double(double)"
+    result is emit of "declare void @eigen_print_string(%EigenString*)"
+    result is emit of ""
+
+    # Math functions
+    result is emit of "declare double @llvm.fabs.f64(double)"
+    result is emit of "declare double @llvm.sqrt.f64(double)"
+    result is emit of "declare double @llvm.sin.f64(double)"
+    result is emit of "declare double @llvm.cos.f64(double)"
+    result is emit of "declare double @llvm.pow.f64(double, double)"
+    result is emit of "declare double @llvm.floor.f64(double)"
+    result is emit of "declare double @llvm.ceil.f64(double)"
+    result is emit of ""
+
+    return 0
+
+# ============================================================================
+# Expression Code Generation
+# Returns the register number containing the result
+# ============================================================================
+
+# Generate code for a literal
+define gen_literal of node_idx as:
+    lit_type is ast_num_value[node_idx]
+
+    if lit_type = LIT_NUMBER:
+        # Number literal - return as double constant
+        num_val is ast_num_value[node_idx]
+        reg is next_reg of 0
+        # Emit: %reg = fadd double 0.0, <num>
+        # (Using fadd with 0 as a way to load constant)
+        result is emit of "  ; load number constant"
+        # Actually we can use the constant directly in LLVM IR
+        # Store in alloca for consistency
+        return num_val
+
+    if lit_type = LIT_NULL:
+        # Null is 0.0
+        return 0
+
+    # For strings, we'd need string constant handling
+    # For now, return 0
+    return 0
+
+# Generate code for identifier (variable reference)
+define gen_identifier of node_idx as:
+    name_idx is ast_str_index[node_idx]
+    var_reg is lookup_var of name_idx
+
+    if var_reg < 0:
+        # Undefined variable - error
+        result is emit of "  ; ERROR: undefined variable"
+        return 0
+
+    # Load the value from the variable's alloca
+    reg is next_reg of 0
+    result is emit of "  ; load variable"
+    # %reg = load double, double* %var_reg
+    return reg
+
+# Generate code for binary operation
+define gen_binary_op of node_idx as:
+    op_code is ast_num_value[node_idx]
+    left_idx is ast_left[node_idx]
+    right_idx is ast_right[node_idx]
+
+    # Generate code for operands
+    left_val is gen_expr of left_idx
+    right_val is gen_expr of right_idx
+
+    reg is next_reg of 0
+
+    # Emit instruction based on operator
+    if op_code = OP_PLUS:
+        result is emit of "  ; add"
+        return reg
+
+    if op_code = OP_MINUS:
+        result is emit of "  ; sub"
+        return reg
+
+    if op_code = OP_MULTIPLY:
+        result is emit of "  ; mul"
+        return reg
+
+    if op_code = OP_DIVIDE:
+        result is emit of "  ; div"
+        return reg
+
+    if op_code = OP_MODULO:
+        result is emit of "  ; mod (frem)"
+        return reg
+
+    if op_code = OP_EQUALS:
+        result is emit of "  ; fcmp oeq"
+        return reg
+
+    if op_code = OP_NOT_EQUAL:
+        result is emit of "  ; fcmp one"
+        return reg
+
+    if op_code = OP_LESS_THAN:
+        result is emit of "  ; fcmp olt"
+        return reg
+
+    if op_code = OP_LESS_EQUAL:
+        result is emit of "  ; fcmp ole"
+        return reg
+
+    if op_code = OP_GREATER_THAN:
+        result is emit of "  ; fcmp ogt"
+        return reg
+
+    if op_code = OP_GREATER_EQUAL:
+        result is emit of "  ; fcmp oge"
+        return reg
+
+    if op_code = OP_AND:
+        result is emit of "  ; and (as multiplication)"
+        return reg
+
+    if op_code = OP_OR:
+        result is emit of "  ; or (as fmax)"
+        return reg
+
+    return reg
+
+# Generate code for unary operation
+define gen_unary_op of node_idx as:
+    op_code is ast_num_value[node_idx]
+    operand_idx is ast_left[node_idx]
+
+    operand_val is gen_expr of operand_idx
+    reg is next_reg of 0
+
+    if op_code = UOP_NOT:
+        # not x = (x == 0) ? 1 : 0
+        result is emit of "  ; not (fcmp oeq 0.0)"
+        return reg
+
+    return reg
+
+# Generate code for relation (OF operator)
+define gen_relation of node_idx as:
+    left_idx is ast_left[node_idx]
+    right_idx is ast_right[node_idx]
+
+    # Left is the function, right is the argument
+    # This is a function call
+    left_val is gen_expr of left_idx
+    right_val is gen_expr of right_idx
+
+    reg is next_reg of 0
+    result is emit of "  ; function call (of operator)"
+    return reg
+
+# Main expression dispatch
+define gen_expr of node_idx as:
+    node_type is ast_types[node_idx]
+
+    if node_type = AST_LITERAL:
+        return gen_literal of node_idx
+
+    if node_type = AST_IDENTIFIER:
+        return gen_identifier of node_idx
+
+    if node_type = AST_BINARY_OP:
+        return gen_binary_op of node_idx
+
+    if node_type = AST_UNARY_OP:
+        return gen_unary_op of node_idx
+
+    if node_type = AST_RELATION:
+        return gen_relation of node_idx
+
+    if node_type = AST_INDEX:
+        result is emit of "  ; list index access"
+        return next_reg of 0
+
+    if node_type = AST_LIST_LITERAL:
+        result is emit of "  ; list literal"
+        return next_reg of 0
+
+    if node_type = AST_INTERROGATIVE:
+        result is emit of "  ; interrogative (what/why/how)"
+        return next_reg of 0
+
+    # Unknown expression type
+    result is emit of "  ; unknown expression type"
+    return 0
+
+# ============================================================================
+# Statement Code Generation
+# ============================================================================
+
+# Generate code for assignment
+define gen_assignment of node_idx as:
+    name_idx is ast_str_index[node_idx]
+    expr_idx is ast_left[node_idx]
+
+    # Generate expression
+    expr_val is gen_expr of expr_idx
+
+    # Check if variable exists
+    var_reg is lookup_var of name_idx
+    if var_reg < 0:
+        # New variable - allocate
+        var_reg is next_reg of 0
+        result is emit of "  ; alloca for new variable"
+        result is add_var of [name_idx, var_reg, 0]
+
+    # Store value
+    result is emit of "  ; store to variable"
+    return 0
+
+# Generate code for conditional
+define gen_conditional of node_idx as:
+    cond_idx is ast_left[node_idx]
+    if_start is ast_num_value[node_idx]
+    if_end is ast_right[node_idx]
+    else_info is ast_third[node_idx]
+    else_start is else_info / 100000
+    else_end is else_info % 100000
+
+    # Generate condition
+    cond_val is gen_expr of cond_idx
+
+    # Labels
+    then_label is next_label of 0
+    else_label is next_label of 0
+    end_label is next_label of 0
+
+    # Branch
+    result is emit of "  ; conditional branch"
+    result is emit of "  br i1 %cond, label %then, label %else"
+    result is emit of ""
+
+    # Then block
+    result is emit of "then:"
+    result is gen_block of [if_start, if_end]
+    result is emit of "  br label %end"
+    result is emit of ""
+
+    # Else block
+    result is emit of "else:"
+    if else_start != else_end:
+        result is gen_block of [else_start, else_end]
+    result is emit of "  br label %end"
+    result is emit of ""
+
+    # End block
+    result is emit of "end:"
+    return 0
+
+# Generate code for loop
+define gen_loop of node_idx as:
+    cond_idx is ast_left[node_idx]
+    body_start is ast_num_value[node_idx]
+    body_end is ast_right[node_idx]
+
+    # Labels
+    loop_cond is next_label of 0
+    loop_body is next_label of 0
+    loop_end is next_label of 0
+
+    result is emit of "  br label %loop_cond"
+    result is emit of ""
+
+    # Condition block
+    result is emit of "loop_cond:"
+    cond_val is gen_expr of cond_idx
+    result is emit of "  br i1 %cond, label %loop_body, label %loop_end"
+    result is emit of ""
+
+    # Body block
+    result is emit of "loop_body:"
+    result is gen_block of [body_start, body_end]
+    result is emit of "  br label %loop_cond"
+    result is emit of ""
+
+    # End block
+    result is emit of "loop_end:"
+    return 0
+
+# Generate code for return
+define gen_return of node_idx as:
+    expr_idx is ast_left[node_idx]
+    ret_val is gen_expr of expr_idx
+    result is emit of "  ret double %ret_val"
+    return 0
+
+# Generate code for break
+define gen_break of node_idx as:
+    result is emit of "  br label %loop_end"
+    return 0
+
+# Generate code for function definition
+define gen_function_def of node_idx as:
+    name_idx is ast_str_index[node_idx]
+    body_start is ast_children_start[node_idx]
+    body_end is ast_children_end[node_idx]
+
+    # Function header
+    result is emit of ""
+    result is emit of "; Function definition"
+    result is emit of "define double @func_name() {"
+    result is emit of "entry:"
+
+    # Generate body
+    result is gen_block of [body_start, body_end]
+
+    # Default return
+    result is emit of "  ret double 0.0"
+    result is emit of "}"
+    result is emit of ""
+
+    return 0
+
+# Generate code for a block of statements
+define gen_block of [start, end] as:
+    i is start
+    loop while i < end:
+        stmt_idx is ast_children[i]
+        result is gen_stmt of stmt_idx
+        i is i + 1
+    return 0
+
+# Main statement dispatch
+define gen_stmt of node_idx as:
+    node_type is ast_types[node_idx]
+
+    if node_type = AST_ASSIGNMENT:
+        return gen_assignment of node_idx
+
+    if node_type = AST_CONDITIONAL:
+        return gen_conditional of node_idx
+
+    if node_type = AST_LOOP:
+        return gen_loop of node_idx
+
+    if node_type = AST_RETURN:
+        return gen_return of node_idx
+
+    if node_type = AST_BREAK:
+        return gen_break of node_idx
+
+    if node_type = AST_FUNCTION_DEF:
+        return gen_function_def of node_idx
+
+    if node_type = AST_STRUCT_DEF:
+        result is emit of "; struct definition (compile-time only)"
+        return 0
+
+    if node_type = AST_IMPORT:
+        result is emit of "; import statement (handled by linker)"
+        return 0
+
+    if node_type = AST_IMPORT_FROM:
+        result is emit of "; from-import statement (handled by linker)"
+        return 0
+
+    # Expression statement
+    result is gen_expr of node_idx
+    return 0
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+# Generate complete LLVM IR module from AST
+define generate of root_node as:
+    # Reset state
+    reg_counter is 0
+    label_counter is 0
+    string_counter is 0
+    output_count is 0
+    var_count is 0
+
+    # Emit module header
+    result is emit_module_header of 0
+
+    # Emit runtime declarations
+    result is emit_runtime_decls of 0
+
+    # Emit main function
+    result is emit of "; Main function"
+    result is emit of "define i32 @main() {"
+    result is emit of "entry:"
+
+    in_main is 1
+
+    # Generate code for all top-level statements
+    start is ast_children_start[root_node]
+    end is ast_children_end[root_node]
+    result is gen_block of [start, end]
+
+    # Return 0
+    result is emit of "  ret i32 0"
+    result is emit of "}"
+
+    in_main is 0
+
+    return output_count
+
+# ============================================================================
+# Output Functions
+# ============================================================================
+
+# Print all generated IR lines
+define print_ir as:
+    i is 0
+    loop while i < output_count:
+        print of output_lines[i]
+        i is i + 1
+    return 0
+
+# Signal that codegen module is loaded
+print of 666
