@@ -12,12 +12,15 @@
 # - lexer.eigs: COMPILES ✓
 # - parser.eigs: COMPILES ✓
 # - semantic.eigs: COMPILES ✓
-# - codegen.eigs: BLOCKED - type inference issue in reference compiler
-#   (string/EigenValue type mismatch in assignment)
+# - codegen.eigs: COMPILES ✓ (fixed type inference, uses lexer_get_string)
+# - main.eigs: COMPILES ✓
+# - LINKING: SUCCESS ✓ -> eigensc binary created
+# - RUNTIME: IN PROGRESS - stage 1 compiler runs but may have bugs
 #
-# Next Steps:
-# - Fix reference compiler type inference for variable reassignment
-# - OR simplify codegen.eigs type usage
+# Fixes applied:
+# - Reference compiler type inference for variable reassignment
+# - escape_string builtin handling in reference compiler
+# - Cross-module function calls via mangled names (lexer_get_string)
 
 set -e
 

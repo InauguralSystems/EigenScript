@@ -631,6 +631,16 @@ class LLVMCodeGenerator:
         self.eigen_string_cstr.attributes.add("nounwind")
         self.eigen_string_cstr.attributes.add("readonly")
 
+        # eigen_escape_string_val(double) -> double
+        # Escapes a string for LLVM IR output (converts \n to \0A, etc.)
+        eigen_escape_string_val_type = ir.FunctionType(
+            self.double_type, [self.double_type]
+        )
+        self.eigen_escape_string_val = ir.Function(
+            self.module, eigen_escape_string_val_type, name="eigen_escape_string_val"
+        )
+        self.eigen_escape_string_val.attributes.add("nounwind")
+
         # ============================================================
         # File I/O Functions (for self-hosting)
         # ============================================================
@@ -1763,8 +1773,9 @@ class LLVMCodeGenerator:
 
         # Handle list assignment
         if gen_value.kind == ValueKind.LIST_PTR:
-            if existing_var_ptr is not None:
-                # Update existing list variable
+            # Check type compatibility - shadow if types don't match
+            if existing_var_ptr is not None and existing_var_ptr.type.pointee == self.eigen_list_ptr:
+                # Update existing list variable (types match)
                 self.builder.store(gen_value.value, existing_var_ptr)
             else:
                 # Create new list variable
@@ -1782,8 +1793,9 @@ class LLVMCodeGenerator:
 
         # Handle string assignment (for self-hosting)
         if gen_value.kind == ValueKind.STRING_PTR:
-            if existing_var_ptr is not None:
-                # Update existing string variable
+            # Check type compatibility - shadow if types don't match
+            if existing_var_ptr is not None and existing_var_ptr.type.pointee == self.eigen_string_ptr:
+                # Update existing string variable (types match)
                 self.builder.store(gen_value.value, existing_var_ptr)
             else:
                 # Create new string variable
@@ -1803,8 +1815,10 @@ class LLVMCodeGenerator:
         if gen_value.kind == ValueKind.STRUCT_PTR:
             struct_type, _ = self.struct_types.get(gen_value.struct_name, (None, None))
             if struct_type:
-                if existing_var_ptr is not None:
-                    # Update existing struct variable
+                # Check type compatibility - shadow if types don't match
+                expected_ptr_type = struct_type.as_pointer()
+                if existing_var_ptr is not None and existing_var_ptr.type.pointee == expected_ptr_type:
+                    # Update existing struct variable (types match)
                     self.builder.store(gen_value.value, existing_var_ptr)
                 else:
                     # Create new struct variable
@@ -2192,6 +2206,24 @@ class LLVMCodeGenerator:
                 if self.current_function and self.current_function.name == "main":
                     self.allocated_strings.append(result)
                 return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # escape_string of string -> EigenString* (escapes for LLVM IR output)
+            if func_name == "escape_string":
+                arg_gen = self._generate(node.right)
+                str_ptr = self._ensure_string_ptr(arg_gen)
+                # Convert string pointer to double for runtime call
+                ptr_as_int = self.builder.ptrtoint(str_ptr, self.int64_type)
+                ptr_as_double = self.builder.bitcast(ptr_as_int, self.double_type)
+                # Call runtime function
+                result_double = self.builder.call(
+                    self.eigen_escape_string_val, [ptr_as_double]
+                )
+                # Convert result back to string pointer
+                result_int = self.builder.bitcast(result_double, self.int64_type)
+                result_ptr = self.builder.inttoptr(result_int, self.eigen_string_ptr)
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result_ptr)
+                return GeneratedValue(value=result_ptr, kind=ValueKind.STRING_PTR)
 
             # string_to_number of str -> double
             if func_name == "string_to_number":
