@@ -1,0 +1,752 @@
+# EigenScript Self-Hosting Semantic Analyzer
+# Written in EigenScript for bootstrapping the compiler
+#
+# Philosophy: EigenScript uses halt-based semantics rather than boolean logic
+# - "is halt" = computation converged/terminated (fixed point reached)
+# - "is not halt" = computation continues (state still evolving)
+#
+# The semantic analyzer tracks:
+# - State bindings (variables as state)
+# - Scope configurations (nested state machine contexts)
+# - Halting conditions (return, break, convergence)
+# - Symbol resolution (which state a name refers to)
+
+# ============================================================================
+# AST Node Type Constants (must match parser.eigs)
+# ============================================================================
+
+# Expressions
+AST_LITERAL is 1
+AST_IDENTIFIER is 2
+AST_BINARY_OP is 3
+AST_UNARY_OP is 4
+AST_RELATION is 5
+AST_INDEX is 6
+AST_SLICE is 7
+AST_MEMBER_ACCESS is 8
+AST_LIST_LITERAL is 9
+AST_LIST_COMP is 10
+AST_INTERROGATIVE is 11
+AST_STRUCT_LITERAL is 12
+
+# Statements
+AST_ASSIGNMENT is 20
+AST_CONDITIONAL is 21
+AST_LOOP is 22
+AST_FUNCTION_DEF is 23
+AST_RETURN is 24
+AST_BREAK is 25
+AST_IMPORT is 26
+AST_IMPORT_FROM is 27
+AST_STRUCT_DEF is 28
+
+# Program
+AST_PROGRAM is 30
+
+# ============================================================================
+# Semantic Analysis State Constants
+# ============================================================================
+
+# Symbol kinds
+SYM_VARIABLE is 1
+SYM_FUNCTION is 2
+SYM_STRUCT is 3
+SYM_PARAMETER is 4
+SYM_BUILTIN is 5
+SYM_MODULE is 6
+
+# Halting states for control flow analysis
+HALT_NONE is 0
+HALT_RETURN is 1
+HALT_BREAK is 2
+HALT_CONVERGED is 3
+
+# Scope types (state machine configurations)
+SCOPE_GLOBAL is 1
+SCOPE_FUNCTION is 2
+SCOPE_LOOP is 3
+SCOPE_CONDITIONAL is 4
+SCOPE_BLOCK is 5
+
+# Error codes
+ERR_NONE is 0
+ERR_UNDEFINED_VAR is 1
+ERR_UNDEFINED_FUNC is 2
+ERR_DUPLICATE_DEF is 3
+ERR_BREAK_OUTSIDE_LOOP is 4
+ERR_RETURN_OUTSIDE_FUNC is 5
+ERR_TYPE_MISMATCH is 6
+ERR_INVALID_ASSIGNMENT is 7
+
+# ============================================================================
+# Symbol Table Storage
+# Symbols are stored in parallel arrays, indexed by symbol_id
+# ============================================================================
+
+MAX_SYMBOLS is 5000
+
+# Number of symbols defined
+symbol_count is 0
+
+# Symbol names (indices into string pool)
+symbol_names is [0]
+
+# Symbol kinds (SYM_VARIABLE, SYM_FUNCTION, etc.)
+symbol_kinds is [0]
+
+# Scope level where symbol was defined
+symbol_scope_levels is [0]
+
+# For functions: number of parameters
+symbol_param_counts is [0]
+
+# For structs: number of fields
+symbol_field_counts is [0]
+
+# For variables: AST node where defined
+symbol_def_nodes is [0]
+
+# ============================================================================
+# Scope Stack
+# Each scope represents a state machine configuration
+# ============================================================================
+
+MAX_SCOPE_DEPTH is 100
+
+# Current scope depth (0 = global)
+scope_depth is 0
+
+# Type of each scope level
+scope_types is [0]
+
+# Symbol table start index for each scope (for cleanup on scope exit)
+scope_symbol_starts is [0]
+
+# Halting state for each scope
+scope_halt_states is [0]
+
+# Is scope inside a loop? (for break validation)
+scope_in_loop is [0]
+
+# Is scope inside a function? (for return validation)
+scope_in_function is [0]
+
+# ============================================================================
+# Error Tracking
+# ============================================================================
+
+# Number of errors found
+error_count is 0
+
+# Error codes (array)
+error_codes is [0]
+
+# Error line numbers
+error_lines is [0]
+
+# Error column numbers
+error_cols is [0]
+
+# Error symbol indices (for "undefined variable" errors, etc.)
+error_symbols is [0]
+
+MAX_ERRORS is 100
+
+# ============================================================================
+# Builtin Symbols
+# ============================================================================
+
+# Register all builtin functions and predicates
+define register_builtins as:
+    # Core I/O
+    result is add_builtin of "print"
+    result is add_builtin of "input"
+
+    # Type conversion
+    result is add_builtin of "string"
+    result is add_builtin of "number"
+
+    # Math functions
+    result is add_builtin of "abs"
+    result is add_builtin of "sqrt"
+    result is add_builtin of "sin"
+    result is add_builtin of "cos"
+    result is add_builtin of "tan"
+    result is add_builtin of "exp"
+    result is add_builtin of "log"
+    result is add_builtin of "floor"
+    result is add_builtin of "ceil"
+    result is add_builtin of "round"
+    result is add_builtin of "min"
+    result is add_builtin of "max"
+    result is add_builtin of "pow"
+
+    # List operations
+    result is add_builtin of "length"
+    result is add_builtin of "append"
+    result is add_builtin of "pop"
+    result is add_builtin of "range"
+    result is add_builtin of "sum"
+    result is add_builtin of "map"
+    result is add_builtin of "filter"
+    result is add_builtin of "reduce"
+
+    # String primitives (for self-hosting)
+    result is add_builtin of "string_length"
+    result is add_builtin of "char_at"
+    result is add_builtin of "substring"
+    result is add_builtin of "string_concat"
+    result is add_builtin of "string_equals"
+    result is add_builtin of "char_is_digit"
+    result is add_builtin of "char_is_alpha"
+    result is add_builtin of "char_is_whitespace"
+    result is add_builtin of "string_to_number"
+    result is add_builtin of "number_to_string"
+
+    # Halting/convergence predicates
+    result is add_builtin of "converged"
+    result is add_builtin of "diverging"
+    result is add_builtin of "stable"
+    result is add_builtin of "improving"
+    result is add_builtin of "oscillating"
+
+    return 0
+
+# Add a builtin symbol
+define add_builtin of name_str as:
+    idx is symbol_count
+    symbol_count is symbol_count + 1
+
+    append symbol_names of name_str
+    append symbol_kinds of SYM_BUILTIN
+    append symbol_scope_levels of 0
+    append symbol_param_counts of 0
+    append symbol_field_counts of 0
+    append symbol_def_nodes of 0
+
+    return idx
+
+# ============================================================================
+# Scope Management
+# ============================================================================
+
+# Initialize semantic analyzer
+define init_semantic as:
+    symbol_count is 0
+    scope_depth is 0
+    error_count is 0
+
+    # Initialize global scope
+    append scope_types of SCOPE_GLOBAL
+    append scope_symbol_starts of 0
+    append scope_halt_states of HALT_NONE
+    append scope_in_loop of 0
+    append scope_in_function of 0
+
+    # Register builtins
+    result is register_builtins of 0
+
+    return 0
+
+# Enter a new scope (push state machine configuration)
+define enter_scope of scope_type as:
+    scope_depth is scope_depth + 1
+
+    # Inherit loop/function context from parent
+    parent_in_loop is scope_in_loop[scope_depth - 1]
+    parent_in_function is scope_in_function[scope_depth - 1]
+
+    append scope_types of scope_type
+    append scope_symbol_starts of symbol_count
+    append scope_halt_states of HALT_NONE
+
+    # Update context based on scope type
+    if scope_type = SCOPE_LOOP:
+        append scope_in_loop of 1
+        append scope_in_function of parent_in_function
+    else:
+        if scope_type = SCOPE_FUNCTION:
+            append scope_in_loop of 0
+            append scope_in_function of 1
+        else:
+            append scope_in_loop of parent_in_loop
+            append scope_in_function of parent_in_function
+
+    return scope_depth
+
+# Exit current scope (pop state machine configuration)
+define exit_scope as:
+    if scope_depth <= 0:
+        return 0
+
+    # Get halt state before leaving
+    halt_state is scope_halt_states[scope_depth]
+
+    # Remove symbols defined in this scope
+    start_idx is scope_symbol_starts[scope_depth]
+    symbol_count is start_idx
+
+    scope_depth is scope_depth - 1
+
+    return halt_state
+
+# Set halting state for current scope
+define set_halt_state of state as:
+    scope_halt_states[scope_depth] is state
+    return 0
+
+# Check if we're inside a loop
+define is_in_loop as:
+    return scope_in_loop[scope_depth]
+
+# Check if we're inside a function
+define is_in_function as:
+    return scope_in_function[scope_depth]
+
+# ============================================================================
+# Symbol Table Operations
+# ============================================================================
+
+# Define a new symbol in current scope
+define define_symbol of [name_str, kind] as:
+    # Check for duplicate in current scope
+    i is scope_symbol_starts[scope_depth]
+    loop while i < symbol_count:
+        existing_name is symbol_names[i]
+        eq is string_equals of [existing_name, name_str]
+        if eq = 1:
+            # Duplicate definition
+            return 0 - 1
+        i is i + 1
+
+    # Add new symbol
+    idx is symbol_count
+    symbol_count is symbol_count + 1
+
+    append symbol_names of name_str
+    append symbol_kinds of kind
+    append symbol_scope_levels of scope_depth
+    append symbol_param_counts of 0
+    append symbol_field_counts of 0
+    append symbol_def_nodes of 0
+
+    return idx
+
+# Look up a symbol by name (searches from current scope up to global)
+define lookup_symbol of name_str as:
+    # Search from innermost scope outward
+    level is scope_depth
+
+    loop while level >= 0:
+        # Get range of symbols in this scope
+        start_idx is scope_symbol_starts[level]
+        if level = scope_depth:
+            end_idx is symbol_count
+        else:
+            end_idx is scope_symbol_starts[level + 1]
+
+        # Search symbols in this scope
+        i is start_idx
+        loop while i < end_idx:
+            sym_name is symbol_names[i]
+            eq is string_equals of [sym_name, name_str]
+            if eq = 1:
+                return i
+            i is i + 1
+
+        level is level - 1
+
+    # Not found
+    return 0 - 1
+
+# Check if symbol is defined (returns 1 if defined, 0 if not)
+define is_defined of name_str as:
+    idx is lookup_symbol of name_str
+    if idx < 0:
+        return 0
+    return 1
+
+# ============================================================================
+# Error Reporting
+# ============================================================================
+
+# Record an error
+define add_error of [code, line, col, sym_idx] as:
+    if error_count >= MAX_ERRORS:
+        return 0
+
+    append error_codes of code
+    append error_lines of line
+    append error_cols of col
+    append error_symbols of sym_idx
+
+    error_count is error_count + 1
+    return error_count
+
+# ============================================================================
+# AST Analysis
+# These functions walk the AST and perform semantic analysis
+# ============================================================================
+
+# Analyze an expression node
+# Returns: 1 if valid, 0 if error
+define analyze_expr of node_idx as:
+    node_type is ast_types[node_idx]
+
+    # Literal - always valid
+    if node_type = AST_LITERAL:
+        return 1
+
+    # Identifier - must be defined
+    if node_type = AST_IDENTIFIER:
+        name_idx is ast_str_index[node_idx]
+        sym_idx is lookup_symbol of name_idx
+        if sym_idx < 0:
+            result is add_error of [ERR_UNDEFINED_VAR, 0, 0, name_idx]
+            return 0
+        return 1
+
+    # Binary operation - analyze both sides
+    if node_type = AST_BINARY_OP:
+        left is ast_left[node_idx]
+        right is ast_right[node_idx]
+        left_ok is analyze_expr of left
+        right_ok is analyze_expr of right
+        if left_ok = 0:
+            return 0
+        if right_ok = 0:
+            return 0
+        return 1
+
+    # Unary operation
+    if node_type = AST_UNARY_OP:
+        operand is ast_left[node_idx]
+        return analyze_expr of operand
+
+    # Relation (OF operator)
+    if node_type = AST_RELATION:
+        left is ast_left[node_idx]
+        right is ast_right[node_idx]
+        left_ok is analyze_expr of left
+        right_ok is analyze_expr of right
+        if left_ok = 0:
+            return 0
+        if right_ok = 0:
+            return 0
+        return 1
+
+    # Index expression
+    if node_type = AST_INDEX:
+        list_expr is ast_left[node_idx]
+        index_expr is ast_right[node_idx]
+        list_ok is analyze_expr of list_expr
+        index_ok is analyze_expr of index_expr
+        if list_ok = 0:
+            return 0
+        if index_ok = 0:
+            return 0
+        return 1
+
+    # Slice expression
+    if node_type = AST_SLICE:
+        expr is ast_left[node_idx]
+        start_expr is ast_right[node_idx]
+        end_expr is ast_third[node_idx]
+        expr_ok is analyze_expr of expr
+        if expr_ok = 0:
+            return 0
+        if start_expr != 0:
+            start_ok is analyze_expr of start_expr
+            if start_ok = 0:
+                return 0
+        if end_expr != 0:
+            end_ok is analyze_expr of end_expr
+            if end_ok = 0:
+                return 0
+        return 1
+
+    # Member access
+    if node_type = AST_MEMBER_ACCESS:
+        obj is ast_left[node_idx]
+        return analyze_expr of obj
+
+    # List literal
+    if node_type = AST_LIST_LITERAL:
+        start is ast_children_start[node_idx]
+        end is ast_children_end[node_idx]
+        i is start
+        loop while i < end:
+            elem is ast_children[i]
+            elem_ok is analyze_expr of elem
+            if elem_ok = 0:
+                return 0
+            i is i + 1
+        return 1
+
+    # List comprehension
+    if node_type = AST_LIST_COMP:
+        # Enter new scope for loop variable
+        result is enter_scope of SCOPE_BLOCK
+
+        # Define loop variable
+        var_name is ast_str_index[node_idx]
+        sym_idx is define_symbol of [var_name, SYM_VARIABLE]
+
+        # Analyze iterable first (in outer scope)
+        iterable is ast_right[node_idx]
+        iter_ok is analyze_expr of iterable
+
+        # Analyze expression (in inner scope with loop var)
+        expr is ast_left[node_idx]
+        expr_ok is analyze_expr of expr
+
+        # Analyze condition if present
+        condition is ast_third[node_idx]
+        if condition != 0:
+            cond_ok is analyze_expr of condition
+
+        result is exit_scope of 0
+
+        if iter_ok = 0:
+            return 0
+        if expr_ok = 0:
+            return 0
+        return 1
+
+    # Interrogative
+    if node_type = AST_INTERROGATIVE:
+        expr is ast_left[node_idx]
+        return analyze_expr of expr
+
+    # Unknown node type - assume valid
+    return 1
+
+# Analyze a statement node
+# Returns: halt state (HALT_NONE, HALT_RETURN, HALT_BREAK)
+define analyze_stmt of node_idx as:
+    node_type is ast_types[node_idx]
+
+    # Assignment: define variable and analyze expression
+    if node_type = AST_ASSIGNMENT:
+        var_name is ast_str_index[node_idx]
+        expr is ast_left[node_idx]
+
+        # Analyze expression first
+        expr_ok is analyze_expr of expr
+        if expr_ok = 0:
+            return HALT_NONE
+
+        # Define or update variable
+        sym_idx is lookup_symbol of var_name
+        if sym_idx < 0:
+            # New variable
+            sym_idx is define_symbol of [var_name, SYM_VARIABLE]
+        return HALT_NONE
+
+    # Return statement
+    if node_type = AST_RETURN:
+        # Check we're in a function
+        in_func is is_in_function of 0
+        if in_func = 0:
+            result is add_error of [ERR_RETURN_OUTSIDE_FUNC, 0, 0, 0]
+            return HALT_NONE
+
+        # Analyze return expression
+        expr is ast_left[node_idx]
+        expr_ok is analyze_expr of expr
+
+        return HALT_RETURN
+
+    # Break statement
+    if node_type = AST_BREAK:
+        # Check we're in a loop
+        in_loop is is_in_loop of 0
+        if in_loop = 0:
+            result is add_error of [ERR_BREAK_OUTSIDE_LOOP, 0, 0, 0]
+            return HALT_NONE
+
+        return HALT_BREAK
+
+    # Conditional
+    if node_type = AST_CONDITIONAL:
+        # Analyze condition
+        condition is ast_left[node_idx]
+        cond_ok is analyze_expr of condition
+
+        # Analyze if block
+        if_start is ast_num_value[node_idx]
+        if_end is ast_right[node_idx]
+
+        result is enter_scope of SCOPE_CONDITIONAL
+        if_halt is analyze_block of [if_start, if_end]
+        result is exit_scope of 0
+
+        # Analyze else block if present
+        else_info is ast_third[node_idx]
+        else_start is else_info / 100000
+        else_end is else_info % 100000
+
+        else_halt is HALT_NONE
+        if else_start != else_end:
+            result is enter_scope of SCOPE_CONDITIONAL
+            else_halt is analyze_block of [else_start, else_end]
+            result is exit_scope of 0
+
+        # Both branches must halt for the conditional to halt
+        if if_halt = HALT_RETURN:
+            if else_halt = HALT_RETURN:
+                return HALT_RETURN
+
+        return HALT_NONE
+
+    # Loop
+    if node_type = AST_LOOP:
+        # Analyze condition
+        condition is ast_left[node_idx]
+        cond_ok is analyze_expr of condition
+
+        # Analyze body in loop scope
+        body_start is ast_num_value[node_idx]
+        body_end is ast_right[node_idx]
+
+        result is enter_scope of SCOPE_LOOP
+        body_halt is analyze_block of [body_start, body_end]
+        result is exit_scope of 0
+
+        # Loops don't propagate halt (they might not execute)
+        return HALT_NONE
+
+    # Function definition
+    if node_type = AST_FUNCTION_DEF:
+        func_name is ast_str_index[node_idx]
+
+        # Define function in current scope
+        sym_idx is define_symbol of [func_name, SYM_FUNCTION]
+        if sym_idx < 0:
+            result is add_error of [ERR_DUPLICATE_DEF, 0, 0, func_name]
+            return HALT_NONE
+
+        # Analyze body in function scope
+        body_start is ast_children_start[node_idx]
+        body_end is ast_children_end[node_idx]
+
+        result is enter_scope of SCOPE_FUNCTION
+        body_halt is analyze_block of [body_start, body_end]
+        result is exit_scope of 0
+
+        return HALT_NONE
+
+    # Struct definition
+    if node_type = AST_STRUCT_DEF:
+        struct_name is ast_str_index[node_idx]
+
+        # Define struct type
+        sym_idx is define_symbol of [struct_name, SYM_STRUCT]
+        if sym_idx < 0:
+            result is add_error of [ERR_DUPLICATE_DEF, 0, 0, struct_name]
+            return HALT_NONE
+
+        # Count fields
+        field_start is ast_children_start[node_idx]
+        field_end is ast_children_end[node_idx]
+        field_count is field_end - field_start
+        symbol_field_counts[sym_idx] is field_count
+
+        return HALT_NONE
+
+    # Import statement
+    if node_type = AST_IMPORT:
+        module_name is ast_str_index[node_idx]
+        sym_idx is define_symbol of [module_name, SYM_MODULE]
+        return HALT_NONE
+
+    # From-import statement
+    if node_type = AST_IMPORT_FROM:
+        # Import each name
+        start is ast_children_start[node_idx]
+        end is ast_children_end[node_idx]
+        i is start
+        loop while i < end:
+            name_node is ast_children[i]
+            name_str is ast_str_index[name_node]
+            sym_idx is define_symbol of [name_str, SYM_VARIABLE]
+            i is i + 1
+        return HALT_NONE
+
+    # Expression statement - analyze expression
+    expr_ok is analyze_expr of node_idx
+    return HALT_NONE
+
+# Analyze a block of statements
+# Returns: halt state of the block
+define analyze_block of [start, end] as:
+    i is start
+    halt_state is HALT_NONE
+
+    loop while i < end:
+        stmt is ast_children[i]
+        stmt_halt is analyze_stmt of stmt
+
+        # Once we halt, remaining statements are unreachable
+        if halt_state = HALT_NONE:
+            halt_state is stmt_halt
+
+        i is i + 1
+
+    return halt_state
+
+# Analyze a complete program
+define analyze_program of root_node as:
+    result is init_semantic of 0
+
+    # Analyze all top-level statements
+    start is ast_children_start[root_node]
+    end is ast_children_end[root_node]
+
+    i is start
+    loop while i < end:
+        stmt is ast_children[i]
+        result is analyze_stmt of stmt
+        i is i + 1
+
+    return error_count
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+# Perform semantic analysis on AST
+# Returns: number of errors (0 = success)
+define analyze of root_node as:
+    return analyze_program of root_node
+
+# ============================================================================
+# Debug Output
+# ============================================================================
+
+# Print symbol table for debugging
+define print_symbols as:
+    print of 777
+    i is 0
+    loop while i < symbol_count:
+        print of symbol_names[i]
+        print of symbol_kinds[i]
+        print of symbol_scope_levels[i]
+        i is i + 1
+    print of 778
+    return 0
+
+# Print errors for debugging
+define print_errors as:
+    print of 666
+    print of error_count
+    i is 0
+    loop while i < error_count:
+        print of error_codes[i]
+        print of error_lines[i]
+        i is i + 1
+    print of 667
+    return 0
+
+# Signal that semantic module is loaded
+print of 777
