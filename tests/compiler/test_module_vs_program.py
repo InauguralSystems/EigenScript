@@ -106,15 +106,9 @@ print of x"""
 
         # Function should be mangled to math_add (with or without quotes)
         # Uses i64 return type as the universal type for all values
-        assert (
-            "define i64 @math_add" in llvm_ir
-            or 'define i64 @"math_add"' in llvm_ir
-        )
+        assert "define i64 @math_add" in llvm_ir or 'define i64 @"math_add"' in llvm_ir
         # Original unmangled name should not be a top-level function
-        assert (
-            "define i64 @add(" not in llvm_ir
-            and 'define i64 @"add"(' not in llvm_ir
-        )
+        assert "define i64 @add(" not in llvm_ir and 'define i64 @"add"(' not in llvm_ir
 
         # Verify the function exists in the module with mangled name
         add_func = None
@@ -165,8 +159,7 @@ define multiply as:
         # Both functions should be mangled (with or without quotes)
         # Uses i64 return type as the universal type for all values
         assert (
-            "define i64 @utils_add" in llvm_ir
-            or 'define i64 @"utils_add"' in llvm_ir
+            "define i64 @utils_add" in llvm_ir or 'define i64 @"utils_add"' in llvm_ir
         )
         assert (
             "define i64 @utils_multiply" in llvm_ir
