@@ -627,6 +627,37 @@ class LLVMCodeGenerator:
         self.eigen_string_cstr.attributes.add("nounwind")
         self.eigen_string_cstr.attributes.add("readonly")
 
+        # ============================================================
+        # File I/O Functions (for self-hosting)
+        # ============================================================
+
+        # eigen_file_read(EigenString* filename) -> EigenString*
+        eigen_file_read_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.eigen_string_ptr]
+        )
+        self.eigen_file_read = ir.Function(
+            self.module, eigen_file_read_type, name="eigen_file_read"
+        )
+        self.eigen_file_read.attributes.add("nounwind")
+
+        # eigen_file_write(EigenString* filename, EigenString* contents) -> i64
+        eigen_file_write_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_file_write = ir.Function(
+            self.module, eigen_file_write_type, name="eigen_file_write"
+        )
+        self.eigen_file_write.attributes.add("nounwind")
+
+        # eigen_file_append(EigenString* filename, EigenString* contents) -> i64
+        eigen_file_append_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_file_append = ir.Function(
+            self.module, eigen_file_append_type, name="eigen_file_append"
+        )
+        self.eigen_file_append.attributes.add("nounwind")
+
     def ensure_scalar(self, gen_val: Union[GeneratedValue, ir.Value]) -> ir.Value:
         """Convert a GeneratedValue to a scalar double.
 
@@ -2061,6 +2092,37 @@ class LLVMCodeGenerator:
                 if self.current_function and self.current_function.name == "main":
                     self.allocated_strings.append(result)
                 return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # ============================================================
+            # File I/O Builtin Functions (for self-hosting)
+            # ============================================================
+
+            # file_read of filename -> EigenString* (read entire file)
+            if func_name == "file_read":
+                arg_gen = self._generate(node.right)
+                filename_ptr = self._ensure_string_ptr(arg_gen)
+                result = self.builder.call(self.eigen_file_read, [filename_ptr])
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # file_write of [filename, contents] -> i64 (1=success, 0=failure)
+            if func_name == "file_write":
+                args = self._extract_list_args(node.right, 2)
+                filename_ptr = self._ensure_string_ptr(args[0])
+                contents_ptr = self._ensure_string_ptr(args[1])
+                result = self.builder.call(
+                    self.eigen_file_write, [filename_ptr, contents_ptr]
+                )
+                return self.builder.sitofp(result, self.double_type)
+
+            # file_append of [filename, contents] -> i64 (1=success, 0=failure)
+            if func_name == "file_append":
+                args = self._extract_list_args(node.right, 2)
+                filename_ptr = self._ensure_string_ptr(args[0])
+                contents_ptr = self._ensure_string_ptr(args[1])
+                result = self.builder.call(
+                    self.eigen_file_append, [filename_ptr, contents_ptr]
+                )
+                return self.builder.sitofp(result, self.double_type)
 
             # ============================================================
             # List Builtin Functions

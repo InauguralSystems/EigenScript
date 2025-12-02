@@ -245,6 +245,28 @@ define parse_args of args as:
     return 0
 
 # ============================================================================
+# File-Based Entry Point
+# ============================================================================
+
+# Compile a source file
+define compile_file of filename as:
+    print of "Reading file:"
+    print of filename
+
+    source is file_read of filename
+
+    if source = 0:
+        print of "Error: Could not read file"
+        return 0
+
+    print of "File read successfully"
+    src_len is string_length of source
+    print of "Source length:"
+    print of src_len
+
+    return compile of source
+
+# ============================================================================
 # Test Entry Point
 # ============================================================================
 
