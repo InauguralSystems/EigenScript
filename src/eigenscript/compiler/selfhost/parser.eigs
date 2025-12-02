@@ -102,6 +102,7 @@ AST_BREAK is 25
 AST_IMPORT is 26
 AST_IMPORT_FROM is 27
 AST_STRUCT_DEF is 28
+AST_INDEXED_ASSIGNMENT is 29
 
 # Program
 AST_PROGRAM is 30
@@ -1060,6 +1061,7 @@ define parse_statement as:
         return node
 
     # Assignment: identifier IS expression
+    # Or indexed assignment: identifier[index] IS expression
     print of 3003
     if tok = TT_IDENTIFIER:
         print of 3004
@@ -1069,11 +1071,19 @@ define parse_statement as:
         if next_tok = TT_IS:
             print of 3006
             return parse_assignment of 0
+        if next_tok = TT_LBRACKET:
+            # Could be indexed assignment: identifier[index] IS expr
+            return parse_potential_indexed_assignment of 0
 
     # Expression statement
     print of 3010
     expr is parse_expression of 0
     print of 3011
+
+    # Check if followed by IS (could be indexed assignment from complex expr)
+    tok is current_token_type of 0
+    if tok = TT_IS:
+        return parse_indexed_assignment_from_expr of expr
 
     # Skip optional newline
     tok is current_token_type of 0
@@ -1106,6 +1116,61 @@ define parse_assignment as:
     node is create_node of AST_ASSIGNMENT
     result is set_str_index of [node, id_str]
     result is set_left of [node, expr]
+    return node
+
+# Parse potential indexed assignment: identifier[index] IS expression
+# If followed by IS, it's indexed assignment; otherwise just expression statement
+define parse_potential_indexed_assignment as:
+    # Parse the expression (which will include identifier[index])
+    expr is parse_expression of 0
+    if parser_error = 1:
+        return expr
+
+    # Check if followed by IS
+    tok is current_token_type of 0
+    if tok = TT_IS:
+        return parse_indexed_assignment_from_expr of expr
+
+    # Just an expression statement
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    return expr
+
+# Convert an Index expression followed by IS into an IndexedAssignment
+define parse_indexed_assignment_from_expr of expr as:
+    # expr should be an AST_INDEX node
+    expr_arr_idx is expr + 1
+    expr_type is ast_types[expr_arr_idx]
+
+    if expr_type != AST_INDEX:
+        parser_error is 1
+        return expr
+
+    # Get list expression and index from the Index node
+    list_expr is ast_left[expr_arr_idx]
+    index_expr is ast_right[expr_arr_idx]
+
+    # Consume IS
+    result is advance_token of 0
+
+    # Parse value expression
+    value is parse_expression of 0
+    if parser_error = 1:
+        return expr
+
+    # Skip optional newline
+    tok is current_token_type of 0
+    if tok = TT_NEWLINE:
+        result is advance_token of 0
+
+    # Create indexed assignment node
+    # Store: list_expr in left, index_expr in right, value in third
+    node is create_node of AST_INDEXED_ASSIGNMENT
+    result is set_left of [node, list_expr]
+    result is set_right of [node, index_expr]
+    result is set_third of [node, value]
     return node
 
 # Parse import: IMPORT identifier (AS identifier)?
@@ -1222,7 +1287,7 @@ define parse_import_from as:
 
     return node
 
-# Parse function definition: DEFINE identifier AS: block
+# Parse function definition: DEFINE identifier (OF (identifier | [params]))? AS: block
 define parse_function_def as:
     result is advance_token of 0
 
@@ -1236,6 +1301,64 @@ define parse_function_def as:
 
     name_str is current_token_str of 0
     result is advance_token of 0
+
+    # Parse optional parameters (OF clause)
+    param_count is 0
+    param_start is ast_children_count
+
+    tok is current_token_type of 0
+    if tok = TT_OF:
+        result is advance_token of 0
+
+        # Check if parameters are in a list [x, y, z] or single identifier
+        tok is current_token_type of 0
+        if tok = TT_LBRACKET:
+            result is advance_token of 0
+
+            # Parse parameter list
+            tok is current_token_type of 0
+            if tok != TT_RBRACKET:
+                # First parameter
+                tok is current_token_type of 0
+                if tok != TT_IDENTIFIER:
+                    parser_error is 1
+                    return 0
+                param_name is current_token_str of 0
+                result is advance_token of 0
+                append of ast_children of param_name
+                ast_children_count is ast_children_count + 1
+                param_count is param_count + 1
+
+                # Additional parameters
+                loop while 1:
+                    tok is current_token_type of 0
+                    if tok != TT_COMMA:
+                        break
+                    result is advance_token of 0
+
+                    tok is current_token_type of 0
+                    if tok != TT_IDENTIFIER:
+                        parser_error is 1
+                        return 0
+                    param_name is current_token_str of 0
+                    result is advance_token of 0
+                    append of ast_children of param_name
+                    ast_children_count is ast_children_count + 1
+                    param_count is param_count + 1
+
+            ok is expect_token of TT_RBRACKET
+            if ok = 0:
+                return 0
+        else:
+            # Single parameter
+            if tok != TT_IDENTIFIER:
+                parser_error is 1
+                return 0
+            param_name is current_token_str of 0
+            result is advance_token of 0
+            append of ast_children of param_name
+            ast_children_count is ast_children_count + 1
+            param_count is 1
 
     # Optional AS
     tok is current_token_type of 0
@@ -1252,16 +1375,22 @@ define parse_function_def as:
     if tok = TT_NEWLINE:
         result is advance_token of 0
 
-    # Parse block
+    # Parse block (body statements follow parameters in ast_children)
     block_start is ast_children_count
     result is parse_block of 0
     block_end is ast_children_count
 
     node is create_node of AST_FUNCTION_DEF
     result is set_str_index of [node, name_str]
+    # Store param_count in ast_left
+    result is set_left of [node, param_count]
     arr_idx is node + 1
-    ast_children_start[arr_idx] is block_start
+    # ast_children layout: [param_names..., body_stmts...]
+    # param_start to block_start = params, block_start to block_end = body
+    ast_children_start[arr_idx] is param_start
     ast_children_end[arr_idx] is block_end
+    # Store where body starts (param_start + param_count) in ast_right for easy access
+    result is set_right of [node, block_start]
     return node
 
 # Parse struct definition: STRUCT identifier: field+

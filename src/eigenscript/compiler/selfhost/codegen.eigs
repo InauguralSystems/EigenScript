@@ -31,6 +31,7 @@ AST_BREAK is 25
 AST_IMPORT is 26
 AST_IMPORT_FROM is 27
 AST_STRUCT_DEF is 28
+AST_INDEXED_ASSIGNMENT is 29
 
 AST_PROGRAM is 30
 
@@ -62,6 +63,10 @@ reg_counter is 0
 label_counter is 0
 string_counter is 0
 in_main is 0
+
+# Loop break label stack (for nested loops)
+# Current loop's exit label number (0 if not in loop)
+current_loop_exit_label is 0
 
 # Output buffer
 MAX_OUTPUT is 50000
@@ -228,17 +233,27 @@ define emit_runtime_decls as:
     result is emit of "declare double @eigen_get_value(%EigenValue*)"
     result is emit of "declare void @eigen_destroy(%EigenValue*)"
     result is emit of ""
+    result is emit of "; List operations"
     result is emit of "declare %EigenList* @eigen_list_create(i64)"
     result is emit of "declare double @eigen_list_get(%EigenList*, i64)"
     result is emit of "declare void @eigen_list_set(%EigenList*, i64, double)"
     result is emit of "declare i64 @eigen_list_length(%EigenList*)"
     result is emit of "declare void @eigen_list_destroy(%EigenList*)"
+    result is emit of "declare %EigenList* @eigen_double_to_list(double)"
+    result is emit of "declare double @eigen_list_to_double(%EigenList*)"
     result is emit of ""
+    result is emit of "; String operations"
     result is emit of "declare %EigenString* @eigen_string_create(i8*)"
     result is emit of "declare i64 @eigen_string_length(%EigenString*)"
+    result is emit of "declare i64 @eigen_string_length_val(double)"
+    result is emit of "declare double @eigen_string_equals_val(double, double)"
+    result is emit of "declare double @eigen_string_concat_list(...)"
+    result is emit of ""
+    result is emit of "; I/O operations"
     result is emit of "declare void @eigen_print_double(double)"
     result is emit of "declare void @eigen_print_string(%EigenString*)"
     result is emit of ""
+    result is emit of "; Math intrinsics"
     result is emit of "declare double @llvm.fabs.f64(double)"
     result is emit of "declare double @llvm.sqrt.f64(double)"
     result is emit of ""
@@ -249,19 +264,45 @@ define emit_runtime_decls as:
 # Returns register number containing result
 # ============================================================================
 
-# Generate number literal
+# Generate literal (number, string, null)
 # Note: AST arrays have dummy at index 0, so use node_idx + 1
+# For literals: ast_num_value has the value (for numbers) or type (LIT_STRING=2, LIT_NULL=3)
+#              ast_str_index has the type (for numbers) or string table index (for strings)
 define gen_literal of node_idx as:
     arr_idx is node_idx + 1
     num_val is ast_num_value[arr_idx]
+    str_idx is ast_str_index[arr_idx]
     reg is next_reg of 0
-
-    # Emit: %reg = fadd double 0.0, <val>
     reg_str is make_reg of reg
+
+    # Check literal type
+    # LIT_NUMBER=1: num_val is actual value, str_idx is 1
+    # LIT_STRING=2: num_val is 2, str_idx is string table index
+    # LIT_NULL=3: num_val is 3
+
+    if num_val = LIT_STRING:
+        # String literal - emit reference to string constant
+        # For now, we encode string as: (string_table_index * 1000000) + marker
+        # Runtime can decode this to look up the actual string
+        # Actually, simpler: just store the string index directly
+        # The runtime will handle string operations via builtin functions
+        marker is 1000000000
+        encoded is marker + str_idx
+        val_str is make_double of encoded
+        line is cat5 of ["  ", reg_str, " = fadd double 0.0, ", val_str, ""]
+        result is emit of line
+        return reg
+
+    if num_val = LIT_NULL:
+        # Null literal - return 0
+        line is cat4 of ["  ", reg_str, " = fadd double 0.0, 0.0", ""]
+        result is emit of line
+        return reg
+
+    # Default: number literal
     val_str is make_double of num_val
     line is cat5 of ["  ", reg_str, " = fadd double 0.0, ", val_str, ""]
     result is emit of line
-
     return reg
 
 # Generate identifier reference
@@ -439,19 +480,187 @@ define gen_unary_op of node_idx as:
 # Generate function call (OF operator)
 define gen_relation of node_idx as:
     arr_idx is node_idx + 1
-    # For now, handle print specially
     left_idx is ast_left[arr_idx]
     right_idx is ast_right[arr_idx]
 
-    # Generate argument
-    arg_reg is gen_expr of right_idx
-    arg_str is make_reg of arg_reg
+    # Get function name from left side (should be identifier)
+    left_arr_idx is left_idx + 1
+    left_type is ast_types[left_arr_idx]
 
-    # Call print
-    line is cat4 of ["  call void @eigen_print_double(double ", arg_str, ")", ""]
+    func_name is ""
+    if left_type = AST_IDENTIFIER:
+        name_idx is ast_str_index[left_arr_idx]
+        func_name is get_string of name_idx
+
+    # Check if right side is a list literal (multiple arguments)
+    right_arr_idx is right_idx + 1
+    right_type is ast_types[right_arr_idx]
+
+    # Collect argument registers
+    arg_regs is [0]
+    arg_count is 0
+
+    if right_type = AST_LIST_LITERAL:
+        # Multiple arguments in a list
+        arg_start is ast_children_start[right_arr_idx]
+        arg_end is ast_children_end[right_arr_idx]
+        i is arg_start
+        loop while i < arg_end:
+            arg_arr_i is i + 1
+            arg_node is ast_children[arg_arr_i]
+            arg_reg is gen_expr of arg_node
+            append of arg_regs of arg_reg
+            arg_count is arg_count + 1
+            i is i + 1
+    else:
+        # Single argument
+        arg_reg is gen_expr of right_idx
+        append of arg_regs of arg_reg
+        arg_count is 1
+
+    # Handle builtin functions
+    is_print is string_equals of [func_name, "print"]
+    if is_print = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        line is cat4 of ["  call void @eigen_print_double(double ", arg_str, ")", ""]
+        result is emit of line
+        return first_arg
+
+    # Handle append builtin (special form: append of list of value)
+    is_append is string_equals of [func_name, "append"]
+    if is_append = 1:
+        # append takes (list, value) - for now just return 0
+        return 0
+
+    # Handle string builtins
+    is_string_length is string_equals of [func_name, "string_length"]
+    if is_string_length = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call i64 @eigen_string_length_val(double ", arg_str, ")", ""]
+        result is emit of line
+        # Convert i64 to double
+        reg2 is next_reg of 0
+        reg2_str is make_reg of reg2
+        line is cat6 of ["  ", reg2_str, " = sitofp i64 ", reg_str, " to double", ""]
+        result is emit of line
+        return reg2
+
+    is_string_equals is string_equals of [func_name, "string_equals"]
+    if is_string_equals = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_string_equals_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    is_string_concat is string_equals of [func_name, "string_concat"]
+    if is_string_concat = 1:
+        # string_concat takes a list of strings - handle specially
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_string_concat_list(...)", ""]
+        result is emit of line
+        return reg
+
+    # User-defined function call
+    # Build argument list string
+    args_str is ""
+    i is 1
+    loop while i <= arg_count:
+        arg_reg is arg_regs[i]
+        arg_str is make_reg of arg_reg
+        if i = 1:
+            args_str is cat3 of ["double ", arg_str, ""]
+        else:
+            args_str is cat5 of [args_str, ", double ", arg_str, "", ""]
+        i is i + 1
+
+    # Generate call instruction
+    reg is next_reg of 0
+    reg_str is make_reg of reg
+    line is cat7 of ["  ", reg_str, " = call double @", func_name, "(", args_str, ")"]
+    result is emit of line
+    return reg
+
+# Generate list indexing: list[index]
+define gen_index of node_idx as:
+    arr_idx is node_idx + 1
+    list_idx is ast_left[arr_idx]
+    index_idx is ast_right[arr_idx]
+
+    # Generate list expression
+    list_reg is gen_expr of list_idx
+    list_str is make_reg of list_reg
+
+    # Generate index expression
+    index_reg is gen_expr of index_idx
+    index_str is make_reg of index_reg
+
+    # Convert index to i64
+    idx_i64_reg is next_reg of 0
+    idx_i64_str is make_reg of idx_i64_reg
+    line is cat6 of ["  ", idx_i64_str, " = fptosi double ", index_str, " to i64", ""]
     result is emit of line
 
-    return arg_reg
+    # Call runtime to get list element
+    # First convert list handle (double) to list pointer
+    list_ptr_reg is next_reg of 0
+    list_ptr_str is make_reg of list_ptr_reg
+    line is cat6 of ["  ", list_ptr_str, " = call %EigenList* @eigen_double_to_list(double ", list_str, ")", ""]
+    result is emit of line
+
+    # Get element from list
+    elem_reg is next_reg of 0
+    elem_str is make_reg of elem_reg
+    line is cat7 of ["  ", elem_str, " = call double @eigen_list_get(%EigenList* ", list_ptr_str, ", i64 ", idx_i64_str, ")"]
+    result is emit of line
+
+    return elem_reg
+
+# Generate list literal: [elem1, elem2, ...]
+define gen_list_literal of node_idx as:
+    arr_idx is node_idx + 1
+    start is ast_children_start[arr_idx]
+    end is ast_children_end[arr_idx]
+    count is end - start
+
+    # Create list with initial capacity
+    count_str is number_to_string of count
+    list_reg is next_reg of 0
+    list_str is make_reg of list_reg
+    line is cat5 of ["  ", list_str, " = call %EigenList* @eigen_list_create(i64 ", count_str, ")"]
+    result is emit of line
+
+    # Add each element
+    i is 0
+    loop while i < count:
+        elem_arr_idx is start + i + 1
+        elem_node is ast_children[elem_arr_idx]
+        elem_reg is gen_expr of elem_node
+        elem_str is make_reg of elem_reg
+
+        # Convert index to i64
+        idx_str is number_to_string of i
+        line is cat7 of ["  call void @eigen_list_set(%EigenList* ", list_str, ", i64 ", idx_str, ", double ", elem_str, ")"]
+        result is emit of line
+
+        i is i + 1
+
+    # Convert list pointer to double for return
+    ret_reg is next_reg of 0
+    ret_str is make_reg of ret_reg
+    line is cat6 of ["  ", ret_str, " = call double @eigen_list_to_double(%EigenList* ", list_str, ")", ""]
+    result is emit of line
+
+    return ret_reg
 
 # Main expression dispatch
 define gen_expr of node_idx as:
@@ -472,6 +681,12 @@ define gen_expr of node_idx as:
 
     if node_type = AST_RELATION:
         return gen_relation of node_idx
+
+    if node_type = AST_INDEX:
+        return gen_index of node_idx
+
+    if node_type = AST_LIST_LITERAL:
+        return gen_list_literal of node_idx
 
     # Default: return 0
     return 0
@@ -504,6 +719,43 @@ define gen_assignment of node_idx as:
 
     # Store value
     line is cat6 of ["  store double ", expr_str, ", double* ", var_str, "", ""]
+    result is emit of line
+
+    return 0
+
+# Generate indexed assignment: list[index] is value
+define gen_indexed_assignment of node_idx as:
+    arr_idx is node_idx + 1
+    list_idx is ast_left[arr_idx]
+    index_idx is ast_right[arr_idx]
+    value_idx is ast_third[arr_idx]
+
+    # Generate list expression
+    list_reg is gen_expr of list_idx
+    list_str is make_reg of list_reg
+
+    # Generate index expression
+    index_reg is gen_expr of index_idx
+    index_str is make_reg of index_reg
+
+    # Generate value expression
+    value_reg is gen_expr of value_idx
+    value_str is make_reg of value_reg
+
+    # Convert index to i64
+    idx_i64_reg is next_reg of 0
+    idx_i64_str is make_reg of idx_i64_reg
+    line is cat6 of ["  ", idx_i64_str, " = fptosi double ", index_str, " to i64", ""]
+    result is emit of line
+
+    # Convert list handle (double) to list pointer
+    list_ptr_reg is next_reg of 0
+    list_ptr_str is make_reg of list_ptr_reg
+    line is cat6 of ["  ", list_ptr_str, " = call %EigenList* @eigen_double_to_list(double ", list_str, ")", ""]
+    result is emit of line
+
+    # Set element in list
+    line is cat7 of ["  call void @eigen_list_set(%EigenList* ", list_ptr_str, ", i64 ", idx_i64_str, ", double ", value_str, ")"]
     result is emit of line
 
     return 0
@@ -590,6 +842,10 @@ define gen_loop of node_idx as:
     body_str is make_label of body_lbl
     end_str is make_label of end_lbl
 
+    # Save outer loop's exit label and set current
+    outer_exit_label is current_loop_exit_label
+    current_loop_exit_label is end_lbl
+
     # Jump to condition
     line is cat3 of ["  br label %", cond_str, ""]
     result is emit of line
@@ -623,19 +879,72 @@ define gen_loop of node_idx as:
     line is cat3 of [end_str, ":", ""]
     result is emit of line
 
+    # Restore outer loop's exit label
+    current_loop_exit_label is outer_exit_label
+
     return 0
 
 define gen_function_def of node_idx as:
     arr_idx is node_idx + 1
     name_idx is ast_str_index[arr_idx]
-    body_start is ast_children_start[arr_idx]
+    param_count is ast_left[arr_idx]
+    children_start is ast_children_start[arr_idx]
+    body_start is ast_right[arr_idx]
     body_end is ast_children_end[arr_idx]
 
+    # Get function name string
+    func_name is get_string of name_idx
+
     result is emit of ""
-    line is cat3 of ["define double @", name_idx, "() {"]
-    result is emit of line
+
+    # Build function signature with parameters
+    if param_count = 0:
+        line is cat3 of ["define double @", func_name, "() {"]
+        result is emit of line
+    else:
+        # Build complete parameter list string
+        param_str is ""
+        i is 0
+        loop while i < param_count:
+            param_arr_idx is children_start + i + 1
+            param_name_idx is ast_children[param_arr_idx]
+            param_name is get_string of param_name_idx
+
+            if i = 0:
+                param_str is cat3 of ["double %param_", param_name, ""]
+            else:
+                param_str is cat5 of [param_str, ", double %param_", param_name, "", ""]
+            i is i + 1
+
+        # Emit complete signature
+        line is cat5 of ["define double @", func_name, "(", param_str, ") {"]
+        result is emit of line
+
     result is emit of "entry:"
 
+    # Create alloca for each parameter and store incoming value
+    i is 0
+    loop while i < param_count:
+        param_arr_idx is children_start + i + 1
+        param_name_idx is ast_children[param_arr_idx]
+        param_name is get_string of param_name_idx
+
+        # Allocate stack space for parameter
+        alloc_reg is next_reg of 0
+        alloc_str is make_reg of alloc_reg
+        line is cat4 of ["  ", alloc_str, " = alloca double", ""]
+        result is emit of line
+
+        # Store incoming parameter value
+        line is cat6 of ["  store double %param_", param_name, ", double* ", alloc_str, "", ""]
+        result is emit of line
+
+        # Register the parameter variable for lookup
+        result is add_var of [param_name_idx, alloc_reg]
+
+        i is i + 1
+
+    # Generate body (statements from body_start to body_end)
     result is gen_block of [body_start, body_end]
 
     result is emit of "  ret double 0.0"
@@ -663,6 +972,9 @@ define gen_stmt of node_idx as:
     if node_type = AST_ASSIGNMENT:
         return gen_assignment of node_idx
 
+    if node_type = AST_INDEXED_ASSIGNMENT:
+        return gen_indexed_assignment of node_idx
+
     if node_type = AST_CONDITIONAL:
         return gen_conditional of node_idx
 
@@ -673,7 +985,18 @@ define gen_stmt of node_idx as:
         return gen_return of node_idx
 
     if node_type = AST_BREAK:
-        result is emit of "  ; break (jump to loop end)"
+        # Jump to current loop's exit label
+        if current_loop_exit_label > 0:
+            exit_str is make_label of current_loop_exit_label
+            line is cat3 of ["  br label %", exit_str, ""]
+            result is emit of line
+            # Need a new block after break since br is a terminator
+            after_lbl is next_label of 0
+            after_str is make_label of after_lbl
+            line is cat3 of [after_str, ":", ""]
+            result is emit of line
+        else:
+            result is emit of "  ; ERROR: break outside loop"
         return 0
 
     if node_type = AST_FUNCTION_DEF:
