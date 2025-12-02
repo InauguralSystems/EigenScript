@@ -105,14 +105,15 @@ print of x"""
         llvm_ir, llvm_module = self.compile_source(source, module_name="math")
 
         # Function should be mangled to math_add (with or without quotes)
+        # Uses i64 return type as the universal type for all values
         assert (
-            "define double @math_add" in llvm_ir
-            or 'define double @"math_add"' in llvm_ir
+            "define i64 @math_add" in llvm_ir
+            or 'define i64 @"math_add"' in llvm_ir
         )
         # Original unmangled name should not be a top-level function
         assert (
-            "define double @add(" not in llvm_ir
-            and 'define double @"add"(' not in llvm_ir
+            "define i64 @add(" not in llvm_ir
+            and 'define i64 @"add"(' not in llvm_ir
         )
 
         # Verify the function exists in the module with mangled name
@@ -126,27 +127,28 @@ print of x"""
 
     def test_program_mode_no_name_mangling(self):
         """Program mode should NOT apply name mangling to functions."""
-        source = """define double as:
+        source = """define my_double as:
     result is n * 2
     return result"""
 
         llvm_ir, llvm_module = self.compile_source(source, module_name=None)
 
         # Function should keep original name (with or without quotes)
+        # Uses i64 return type as the universal type for all values
         assert (
-            "define double @double(" in llvm_ir or 'define double @"double"(' in llvm_ir
+            "define i64 @my_double(" in llvm_ir or 'define i64 @"my_double"(' in llvm_ir
         )
-        # Should not have any prefix like _double
-        assert "define double @_double" not in llvm_ir
+        # Should not have any prefix like _my_double
+        assert "define i64 @_my_double" not in llvm_ir
 
         # Verify the function exists in the module with original name
-        double_func = None
+        my_double_func = None
         for func in llvm_module.functions:
-            if func.name == "double":
-                double_func = func
+            if func.name == "my_double":
+                my_double_func = func
                 break
 
-        assert double_func is not None
+        assert my_double_func is not None
 
     def test_multiple_functions_in_library(self):
         """Library with multiple functions should mangle all function names."""
@@ -161,13 +163,14 @@ define multiply as:
         llvm_ir, llvm_module = self.compile_source(source, module_name="utils")
 
         # Both functions should be mangled (with or without quotes)
+        # Uses i64 return type as the universal type for all values
         assert (
-            "define double @utils_add" in llvm_ir
-            or 'define double @"utils_add"' in llvm_ir
+            "define i64 @utils_add" in llvm_ir
+            or 'define i64 @"utils_add"' in llvm_ir
         )
         assert (
-            "define double @utils_multiply" in llvm_ir
-            or 'define double @"utils_multiply"' in llvm_ir
+            "define i64 @utils_multiply" in llvm_ir
+            or 'define i64 @"utils_multiply"' in llvm_ir
         )
 
         # Verify both functions exist
@@ -206,17 +209,18 @@ z is x + y"""
     return n"""
 
         # Compile as math module
+        # Uses i64 return type as the universal type for all values
         llvm_ir_math, _ = self.compile_source(source, module_name="math")
         assert (
-            "define double @math_helper" in llvm_ir_math
-            or 'define double @"math_helper"' in llvm_ir_math
+            "define i64 @math_helper" in llvm_ir_math
+            or 'define i64 @"math_helper"' in llvm_ir_math
         )
 
         # Compile as physics module
         llvm_ir_physics, _ = self.compile_source(source, module_name="physics")
         assert (
-            "define double @physics_helper" in llvm_ir_physics
-            or 'define double @"physics_helper"' in llvm_ir_physics
+            "define i64 @physics_helper" in llvm_ir_physics
+            or 'define i64 @"physics_helper"' in llvm_ir_physics
         )
 
         # Verify they have different prefixes
@@ -226,9 +230,9 @@ z is x + y"""
     def test_library_mode_verification_passes(self):
         """Library mode generated code should pass LLVM verification."""
         source = """x is 42
-define double as:
+define my_double as:
     return n * 2
-y is double of x"""
+y is my_double of x"""
 
         llvm_ir, llvm_module = self.compile_source(source, module_name="test_lib")
 
@@ -238,9 +242,9 @@ y is double of x"""
     def test_program_mode_verification_passes(self):
         """Program mode generated code should pass LLVM verification."""
         source = """x is 42
-define double as:
+define my_double as:
     return n * 2
-y is double of x
+y is my_double of x
 print of y"""
 
         llvm_ir, llvm_module = self.compile_source(source, module_name=None)
