@@ -1,0 +1,45 @@
+# Test native string primitives for self-hosting
+# These are the foundation for writing the lexer in EigenScript
+
+# Test 1: String literals and length
+source is "hello world"
+len is string_length of source
+print of len
+
+# Test 2: Character access
+first_char is char_at of [source, 0]
+print of first_char
+
+# Test 3: Character classification
+digit_test is char_is_digit of 48
+print of digit_test
+
+alpha_test is char_is_alpha of 65
+print of alpha_test
+
+space_test is char_is_whitespace of 32
+print of space_test
+
+# Test 4: Substring
+sub is substring of [source, 0, 5]
+print of sub
+
+# Test 5: String concatenation
+hello is "hello"
+world is " world!"
+combined is string_concat of [hello, world]
+print of combined
+
+# Test 6: String comparison
+equal_test is string_equals of [hello, hello]
+print of equal_test
+
+# Test 7: Number to string conversion
+num is 42
+num_str is number_to_string of num
+print of num_str
+
+# Test 8: String to number conversion
+str_num is "123.456"
+parsed is string_to_number of str_num
+print of parsed

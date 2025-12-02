@@ -99,4 +99,71 @@ void eigen_list_append(EigenList* list, double value);
 // Cleanup
 void eigen_list_destroy(EigenList* list);
 
+/**
+ * String API Functions
+ *
+ * These enable self-hosting by providing native string manipulation
+ * without Python/NumPy dependency. Essential for writing lexer/parser
+ * in EigenScript itself.
+ */
+
+// EigenString structure: length-prefixed string with capacity for growth
+typedef struct {
+    char* data;         // UTF-8 string data (null-terminated for C compat)
+    int64_t length;     // String length in bytes (not including null terminator)
+    int64_t capacity;   // Allocated capacity
+} EigenString;
+
+// Create a new EigenString from C string (copies the data)
+EigenString* eigen_string_create(const char* str);
+
+// Create an empty EigenString with given capacity
+EigenString* eigen_string_create_empty(int64_t capacity);
+
+// Destroy an EigenString and free memory
+void eigen_string_destroy(EigenString* str);
+
+// Get string length
+int64_t eigen_string_length(EigenString* str);
+
+// Get character code at index (returns -1 if out of bounds)
+int64_t eigen_char_at(EigenString* str, int64_t index);
+
+// Extract substring (returns new EigenString, caller must free)
+EigenString* eigen_substring(EigenString* str, int64_t start, int64_t length);
+
+// Concatenate two strings (returns new EigenString, caller must free)
+EigenString* eigen_string_concat(EigenString* a, EigenString* b);
+
+// Append a character to string (modifies in place, may reallocate)
+void eigen_string_append_char(EigenString* str, int64_t char_code);
+
+// Compare two strings (returns 0 if equal, <0 if a<b, >0 if a>b)
+int64_t eigen_string_compare(EigenString* a, EigenString* b);
+
+// Check if strings are equal (returns 1 if equal, 0 otherwise)
+int64_t eigen_string_equals(EigenString* a, EigenString* b);
+
+// Character classification functions (for lexer)
+int64_t eigen_char_is_digit(int64_t c);      // '0'-'9'
+int64_t eigen_char_is_alpha(int64_t c);      // 'a'-'z', 'A'-'Z'
+int64_t eigen_char_is_alnum(int64_t c);      // digit or alpha
+int64_t eigen_char_is_whitespace(int64_t c); // space, tab, newline, etc.
+int64_t eigen_char_is_newline(int64_t c);    // '\n' or '\r'
+
+// Convert character code to single-char string
+EigenString* eigen_char_to_string(int64_t char_code);
+
+// Convert number to string
+EigenString* eigen_number_to_string(double value);
+
+// Parse string to number (returns NaN on failure)
+double eigen_string_to_number(EigenString* str);
+
+// Find substring (returns index or -1 if not found)
+int64_t eigen_string_find(EigenString* haystack, EigenString* needle, int64_t start);
+
+// Get raw C string pointer (for interop - do not free!)
+const char* eigen_string_cstr(EigenString* str);
+
 #endif // EIGENVALUE_H

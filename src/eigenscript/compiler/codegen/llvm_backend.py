@@ -59,6 +59,7 @@ class ValueKind(Enum):
     SCALAR = "scalar"  # Raw double value
     EIGEN_PTR = "eigen_ptr"  # EigenValue* pointer
     LIST_PTR = "list_ptr"  # EigenList* pointer
+    STRING_PTR = "string_ptr"  # EigenString* pointer (for self-hosting)
 
 
 @dataclass
@@ -195,7 +196,18 @@ class LLVMCodeGenerator:
         # Pointer types
         self.eigen_value_ptr = self.eigen_value_type.as_pointer()
         self.eigen_list_ptr = self.eigen_list_type.as_pointer()
-        self.string_type = self.int8_type.as_pointer()
+        self.string_type = self.int8_type.as_pointer()  # C-style char*
+
+        # EigenString structure: {char* data, i64 length, i64 capacity}
+        # This is the native string type for self-hosting
+        self.eigen_string_type = ir.LiteralStructType(
+            [
+                self.string_type,   # data ptr (char*)
+                self.int64_type,    # length
+                self.int64_type,    # capacity
+            ]
+        )
+        self.eigen_string_ptr = self.eigen_string_type.as_pointer()
 
         # Symbol tables
         self.global_vars: Dict[str, ir.AllocaInstr] = {}
@@ -215,6 +227,7 @@ class LLVMCodeGenerator:
         # Cleanup tracking (for memory management)
         self.allocated_eigenvalues: list[ir.Value] = []
         self.allocated_lists: list[ir.Value] = []
+        self.allocated_strings: list[ir.Value] = []  # EigenString* for self-hosting
 
         # Initialize runtime functions
         self._declare_runtime_functions()
@@ -403,6 +416,188 @@ class LLVMCodeGenerator:
         )
         self.eigen_list_destroy.attributes.add("nounwind")
 
+        # ============================================================
+        # String Runtime Functions (for self-hosting)
+        # ============================================================
+
+        # eigen_string_create(char*) -> EigenString*
+        eigen_string_create_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.string_type]
+        )
+        self.eigen_string_create = ir.Function(
+            self.module, eigen_string_create_type, name="eigen_string_create"
+        )
+        self.eigen_string_create.attributes.add("nounwind")
+
+        # eigen_string_create_empty(i64 capacity) -> EigenString*
+        eigen_string_create_empty_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.int64_type]
+        )
+        self.eigen_string_create_empty = ir.Function(
+            self.module, eigen_string_create_empty_type, name="eigen_string_create_empty"
+        )
+        self.eigen_string_create_empty.attributes.add("nounwind")
+
+        # eigen_string_destroy(EigenString*) -> void
+        eigen_string_destroy_type = ir.FunctionType(
+            self.void_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_destroy = ir.Function(
+            self.module, eigen_string_destroy_type, name="eigen_string_destroy"
+        )
+        self.eigen_string_destroy.attributes.add("nounwind")
+
+        # eigen_string_length(EigenString*) -> i64
+        eigen_string_length_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_length = ir.Function(
+            self.module, eigen_string_length_type, name="eigen_string_length"
+        )
+        self.eigen_string_length.attributes.add("nounwind")
+        self.eigen_string_length.attributes.add("readonly")
+
+        # eigen_char_at(EigenString*, i64 index) -> i64
+        eigen_char_at_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.int64_type]
+        )
+        self.eigen_char_at = ir.Function(
+            self.module, eigen_char_at_type, name="eigen_char_at"
+        )
+        self.eigen_char_at.attributes.add("nounwind")
+        self.eigen_char_at.attributes.add("readonly")
+
+        # eigen_substring(EigenString*, i64 start, i64 length) -> EigenString*
+        eigen_substring_type = ir.FunctionType(
+            self.eigen_string_ptr,
+            [self.eigen_string_ptr, self.int64_type, self.int64_type]
+        )
+        self.eigen_substring = ir.Function(
+            self.module, eigen_substring_type, name="eigen_substring"
+        )
+        self.eigen_substring.attributes.add("nounwind")
+
+        # eigen_string_concat(EigenString*, EigenString*) -> EigenString*
+        eigen_string_concat_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_string_concat = ir.Function(
+            self.module, eigen_string_concat_type, name="eigen_string_concat"
+        )
+        self.eigen_string_concat.attributes.add("nounwind")
+
+        # eigen_string_append_char(EigenString*, i64 char_code) -> void
+        eigen_string_append_char_type = ir.FunctionType(
+            self.void_type, [self.eigen_string_ptr, self.int64_type]
+        )
+        self.eigen_string_append_char = ir.Function(
+            self.module, eigen_string_append_char_type, name="eigen_string_append_char"
+        )
+        self.eigen_string_append_char.attributes.add("nounwind")
+
+        # eigen_string_equals(EigenString*, EigenString*) -> i64
+        eigen_string_equals_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_string_equals = ir.Function(
+            self.module, eigen_string_equals_type, name="eigen_string_equals"
+        )
+        self.eigen_string_equals.attributes.add("nounwind")
+        self.eigen_string_equals.attributes.add("readonly")
+
+        # eigen_string_compare(EigenString*, EigenString*) -> i64
+        eigen_string_compare_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_string_compare = ir.Function(
+            self.module, eigen_string_compare_type, name="eigen_string_compare"
+        )
+        self.eigen_string_compare.attributes.add("nounwind")
+        self.eigen_string_compare.attributes.add("readonly")
+
+        # Character classification functions
+        # eigen_char_is_digit(i64) -> i64
+        char_class_type = ir.FunctionType(self.int64_type, [self.int64_type])
+
+        self.eigen_char_is_digit = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_digit"
+        )
+        self.eigen_char_is_digit.attributes.add("nounwind")
+        self.eigen_char_is_digit.attributes.add("readonly")
+
+        self.eigen_char_is_alpha = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_alpha"
+        )
+        self.eigen_char_is_alpha.attributes.add("nounwind")
+        self.eigen_char_is_alpha.attributes.add("readonly")
+
+        self.eigen_char_is_alnum = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_alnum"
+        )
+        self.eigen_char_is_alnum.attributes.add("nounwind")
+        self.eigen_char_is_alnum.attributes.add("readonly")
+
+        self.eigen_char_is_whitespace = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_whitespace"
+        )
+        self.eigen_char_is_whitespace.attributes.add("nounwind")
+        self.eigen_char_is_whitespace.attributes.add("readonly")
+
+        self.eigen_char_is_newline = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_newline"
+        )
+        self.eigen_char_is_newline.attributes.add("nounwind")
+        self.eigen_char_is_newline.attributes.add("readonly")
+
+        # eigen_char_to_string(i64) -> EigenString*
+        eigen_char_to_string_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.int64_type]
+        )
+        self.eigen_char_to_string = ir.Function(
+            self.module, eigen_char_to_string_type, name="eigen_char_to_string"
+        )
+        self.eigen_char_to_string.attributes.add("nounwind")
+
+        # eigen_number_to_string(double) -> EigenString*
+        eigen_number_to_string_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.double_type]
+        )
+        self.eigen_number_to_string = ir.Function(
+            self.module, eigen_number_to_string_type, name="eigen_number_to_string"
+        )
+        self.eigen_number_to_string.attributes.add("nounwind")
+
+        # eigen_string_to_number(EigenString*) -> double
+        eigen_string_to_number_type = ir.FunctionType(
+            self.double_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_to_number = ir.Function(
+            self.module, eigen_string_to_number_type, name="eigen_string_to_number"
+        )
+        self.eigen_string_to_number.attributes.add("nounwind")
+        self.eigen_string_to_number.attributes.add("readonly")
+
+        # eigen_string_find(EigenString*, EigenString*, i64 start) -> i64
+        eigen_string_find_type = ir.FunctionType(
+            self.int64_type,
+            [self.eigen_string_ptr, self.eigen_string_ptr, self.int64_type]
+        )
+        self.eigen_string_find = ir.Function(
+            self.module, eigen_string_find_type, name="eigen_string_find"
+        )
+        self.eigen_string_find.attributes.add("nounwind")
+        self.eigen_string_find.attributes.add("readonly")
+
+        # eigen_string_cstr(EigenString*) -> char*
+        eigen_string_cstr_type = ir.FunctionType(
+            self.string_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_cstr = ir.Function(
+            self.module, eigen_string_cstr_type, name="eigen_string_cstr"
+        )
+        self.eigen_string_cstr.attributes.add("nounwind")
+        self.eigen_string_cstr.attributes.add("readonly")
+
     def ensure_scalar(self, gen_val: Union[GeneratedValue, ir.Value]) -> ir.Value:
         """Convert a GeneratedValue to a scalar double.
 
@@ -492,6 +687,83 @@ class LLVMCodeGenerator:
 
         raise CompilerError(f"Cannot convert type {val.type} to boolean")
 
+    def _ensure_string_ptr(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Extract EigenString* from a GeneratedValue or raw ir.Value.
+
+        Used by string builtin functions to get the string pointer.
+        """
+        if isinstance(val, GeneratedValue):
+            if val.kind == ValueKind.STRING_PTR:
+                return val.value
+            else:
+                raise CompilerError(
+                    f"Expected string, got {val.kind}",
+                    hint="String operations require EigenString* values"
+                )
+        elif isinstance(val, ir.Value):
+            # Check if it's already an EigenString*
+            if isinstance(val.type, ir.PointerType):
+                return val
+            else:
+                raise CompilerError(
+                    f"Expected string pointer, got {val.type}",
+                    hint="String operations require EigenString* values"
+                )
+        else:
+            raise CompilerError(f"Unexpected value type: {type(val)}")
+
+    def _ensure_int64(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Convert a value to i64 for use in string operations.
+
+        EigenScript uses doubles for all numbers, so this converts double -> i64.
+        """
+        if isinstance(val, GeneratedValue):
+            val = val.value
+
+        if val.type == self.int64_type:
+            return val
+        elif val.type == self.double_type:
+            return self.builder.fptosi(val, self.int64_type)
+        elif isinstance(val.type, ir.IntType):
+            # Extend or truncate to i64
+            if val.type.width < 64:
+                return self.builder.sext(val, self.int64_type)
+            elif val.type.width > 64:
+                return self.builder.trunc(val, self.int64_type)
+            else:
+                return val
+        else:
+            raise CompilerError(
+                f"Cannot convert {val.type} to int64",
+                hint="Expected a numeric value"
+            )
+
+    def _extract_list_args(self, node, expected_count: int) -> list:
+        """Extract arguments from a list literal for multi-arg builtins.
+
+        Many string functions take multiple arguments via list syntax:
+            char_at of [str, index]
+            substring of [str, start, length]
+        """
+        from eigenscript.parser.ast_builder import ListLiteral
+
+        if isinstance(node, ListLiteral):
+            if len(node.elements) != expected_count:
+                raise CompilerError(
+                    f"Expected {expected_count} arguments, got {len(node.elements)}",
+                    hint=f"This function requires exactly {expected_count} arguments in a list"
+                )
+            return [self._generate(elem) for elem in node.elements]
+        else:
+            # Single argument - wrap in list if expecting 1
+            if expected_count == 1:
+                return [self._generate(node)]
+            else:
+                raise CompilerError(
+                    f"Expected list with {expected_count} arguments",
+                    hint="Use [arg1, arg2, ...] syntax for multiple arguments"
+                )
+
     def _alloca_at_entry(self, ty: ir.Type, name: str = "") -> ir.AllocaInstr:
         """Allocate a variable in the entry block of the current function.
 
@@ -573,7 +845,7 @@ class LLVMCodeGenerator:
         return eigen_stack
 
     def _generate_cleanup(self) -> None:
-        """Generate cleanup code to free all allocated EigenValues and lists.
+        """Generate cleanup code to free all allocated EigenValues, lists, and strings.
 
         This should be called before any return statement to prevent memory leaks.
         """
@@ -584,6 +856,10 @@ class LLVMCodeGenerator:
         # Free all tracked EigenList pointers
         for list_ptr in self.allocated_lists:
             self.builder.call(self.eigen_list_destroy, [list_ptr])
+
+        # Free all tracked EigenString pointers
+        for string_ptr in self.allocated_strings:
+            self.builder.call(self.eigen_string_destroy, [string_ptr])
 
     def link_runtime_bitcode(
         self, llvm_module: llvm.ModuleRef, target_triple: str = None
@@ -659,6 +935,7 @@ class LLVMCodeGenerator:
         # (Important: prevents stale references from previous compilations)
         self.allocated_eigenvalues = []
         self.allocated_lists = []
+        self.allocated_strings = []
 
         # Create entry function based on compilation mode
         if self.is_library:
@@ -763,7 +1040,7 @@ class LLVMCodeGenerator:
         if node.literal_type == "number":
             return ir.Constant(self.double_type, float(node.value))
         elif node.literal_type == "string":
-            # String literals - create global constant
+            # String literals - create global constant C string, then wrap in EigenString
             string_val = node.value + "\0"
             string_const = ir.Constant(
                 ir.ArrayType(self.int8_type, len(string_val)),
@@ -774,7 +1051,17 @@ class LLVMCodeGenerator:
             )
             global_str.global_constant = True
             global_str.initializer = string_const
-            return self.builder.bitcast(global_str, self.string_type)
+            c_str_ptr = self.builder.bitcast(global_str, self.string_type)
+
+            # Create EigenString* from the C string
+            # This enables native string operations in compiled code
+            eigen_str = self.builder.call(self.eigen_string_create, [c_str_ptr])
+
+            # Track for cleanup (only in main scope)
+            if self.current_function and self.current_function.name == "main":
+                self.allocated_strings.append(eigen_str)
+
+            return GeneratedValue(value=eigen_str, kind=ValueKind.STRING_PTR)
         else:
             raise NotImplementedError(
                 f"Literal type {node.literal_type} not implemented"
@@ -863,7 +1150,7 @@ class LLVMCodeGenerator:
         # Otherwise, load the pointer and check what it points to
         loaded_ptr = self.builder.load(var_ptr)
 
-        # Check if it's a list
+        # Check if it's a string or list (both have 3-element struct with pointer first)
         if isinstance(loaded_ptr.type, ir.PointerType):
             pointed_type = loaded_ptr.type.pointee
             if (
@@ -871,8 +1158,14 @@ class LLVMCodeGenerator:
                 and len(pointed_type.elements) == 3
                 and isinstance(pointed_type.elements[0], ir.PointerType)
             ):
-                # It's a list - return the pointer directly
-                return loaded_ptr
+                # Check if first element is char* (string) or double* (list)
+                first_elem = pointed_type.elements[0]
+                if isinstance(first_elem.pointee, ir.IntType) and first_elem.pointee.width == 8:
+                    # It's a string (char* = i8*)
+                    return GeneratedValue(value=loaded_ptr, kind=ValueKind.STRING_PTR)
+                else:
+                    # It's a list (double*)
+                    return loaded_ptr
 
         # It's an EigenValue - get the actual value
         return self.builder.call(self.eigen_get_value, [loaded_ptr])
@@ -1018,6 +1311,13 @@ class LLVMCodeGenerator:
             self.local_vars[node.identifier] = var_ptr
             return
 
+        # Handle string assignment (for self-hosting)
+        if gen_value.kind == ValueKind.STRING_PTR:
+            var_ptr = self._alloca_at_entry(self.eigen_string_ptr, name=node.identifier)
+            self.builder.store(gen_value.value, var_ptr)
+            self.local_vars[node.identifier] = var_ptr
+            return
+
         # Handle EigenValue assignment (scalar or pointer)
         if node.identifier in self.local_vars:
             # Variable exists - update or rebind
@@ -1086,6 +1386,24 @@ class LLVMCodeGenerator:
             # Handle built-in functions
             if func_name == "print":
                 arg_gen_val = self._generate(node.right)
+
+                # Check if it's a string - print as string
+                if isinstance(arg_gen_val, GeneratedValue) and arg_gen_val.kind == ValueKind.STRING_PTR:
+                    # Get C string from EigenString and print it
+                    c_str = self.builder.call(self.eigen_string_cstr, [arg_gen_val.value])
+                    fmt_str = "%s\n\0"
+                    fmt_const = ir.Constant(
+                        ir.ArrayType(self.int8_type, len(fmt_str)),
+                        bytearray(fmt_str.encode("utf-8")),
+                    )
+                    global_fmt = ir.GlobalVariable(
+                        self.module, fmt_const.type, name=f"fmt_str_{id(node)}"
+                    )
+                    global_fmt.global_constant = True
+                    global_fmt.initializer = fmt_const
+                    fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
+                    return self.builder.call(self.printf, [fmt_ptr, c_str])
+
                 # Convert to scalar for printing (handles both raw values and aliases)
                 arg_val = self.ensure_scalar(arg_gen_val)
 
@@ -1107,6 +1425,148 @@ class LLVMCodeGenerator:
                     global_fmt.initializer = fmt_const
                     fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
                     return self.builder.call(self.printf, [fmt_ptr, arg_val])
+
+            # ============================================================
+            # String Builtin Functions (for self-hosting)
+            # ============================================================
+
+            # string_length of str -> i64 (as double for EigenScript)
+            if func_name == "string_length":
+                arg_gen = self._generate(node.right)
+                str_ptr = self._ensure_string_ptr(arg_gen)
+                length = self.builder.call(self.eigen_string_length, [str_ptr])
+                # Convert i64 to double for EigenScript consistency
+                return self.builder.sitofp(length, self.double_type)
+
+            # char_at of [str, index] -> i64 (as double)
+            if func_name == "char_at":
+                args = self._extract_list_args(node.right, 2)
+                str_ptr = self._ensure_string_ptr(args[0])
+                index = self._ensure_int64(args[1])
+                char_code = self.builder.call(self.eigen_char_at, [str_ptr, index])
+                return self.builder.sitofp(char_code, self.double_type)
+
+            # substring of [str, start, length] -> EigenString*
+            if func_name == "substring":
+                args = self._extract_list_args(node.right, 3)
+                str_ptr = self._ensure_string_ptr(args[0])
+                start = self._ensure_int64(args[1])
+                length = self._ensure_int64(args[2])
+                result = self.builder.call(self.eigen_substring, [str_ptr, start, length])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # string_concat of [str1, str2] -> EigenString*
+            if func_name == "string_concat":
+                args = self._extract_list_args(node.right, 2)
+                str1 = self._ensure_string_ptr(args[0])
+                str2 = self._ensure_string_ptr(args[1])
+                result = self.builder.call(self.eigen_string_concat, [str1, str2])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # string_equals of [str1, str2] -> bool (as double: 0.0 or 1.0)
+            if func_name == "string_equals":
+                args = self._extract_list_args(node.right, 2)
+                str1 = self._ensure_string_ptr(args[0])
+                str2 = self._ensure_string_ptr(args[1])
+                result = self.builder.call(self.eigen_string_equals, [str1, str2])
+                return self.builder.sitofp(result, self.double_type)
+
+            # string_compare of [str1, str2] -> i64 (as double)
+            if func_name == "string_compare":
+                args = self._extract_list_args(node.right, 2)
+                str1 = self._ensure_string_ptr(args[0])
+                str2 = self._ensure_string_ptr(args[1])
+                result = self.builder.call(self.eigen_string_compare, [str1, str2])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_digit of char_code -> bool (as double)
+            if func_name == "char_is_digit":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_digit, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_alpha of char_code -> bool (as double)
+            if func_name == "char_is_alpha":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_alpha, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_alnum of char_code -> bool (as double)
+            if func_name == "char_is_alnum":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_alnum, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_whitespace of char_code -> bool (as double)
+            if func_name == "char_is_whitespace":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_whitespace, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_newline of char_code -> bool (as double)
+            if func_name == "char_is_newline":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_newline, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_to_string of char_code -> EigenString*
+            if func_name == "char_to_string":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_to_string, [char_code])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # number_to_string of number -> EigenString*
+            if func_name == "number_to_string":
+                arg_gen = self._generate(node.right)
+                num_val = self.ensure_scalar(arg_gen)
+                result = self.builder.call(self.eigen_number_to_string, [num_val])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # string_to_number of str -> double
+            if func_name == "string_to_number":
+                arg_gen = self._generate(node.right)
+                str_ptr = self._ensure_string_ptr(arg_gen)
+                return self.builder.call(self.eigen_string_to_number, [str_ptr])
+
+            # string_find of [haystack, needle, start] -> i64 (as double, -1 if not found)
+            if func_name == "string_find":
+                args = self._extract_list_args(node.right, 3)
+                haystack = self._ensure_string_ptr(args[0])
+                needle = self._ensure_string_ptr(args[1])
+                start = self._ensure_int64(args[2])
+                result = self.builder.call(self.eigen_string_find, [haystack, needle, start])
+                return self.builder.sitofp(result, self.double_type)
+
+            # string_append_char of [str, char_code] -> void (modifies in place)
+            if func_name == "string_append_char":
+                args = self._extract_list_args(node.right, 2)
+                str_ptr = self._ensure_string_ptr(args[0])
+                char_code = self._ensure_int64(args[1])
+                self.builder.call(self.eigen_string_append_char, [str_ptr, char_code])
+                return ir.Constant(self.double_type, 0.0)  # Void return
+
+            # string_new of capacity -> EigenString* (create empty string)
+            if func_name == "string_new":
+                arg_gen = self._generate(node.right)
+                capacity = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_string_create_empty, [capacity])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
 
             # Handle user-defined functions
             if func_name in self.functions:
