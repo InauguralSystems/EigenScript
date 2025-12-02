@@ -247,7 +247,17 @@ define emit_runtime_decls as:
     result is emit of "declare i64 @eigen_string_length(%EigenString*)"
     result is emit of "declare i64 @eigen_string_length_val(double)"
     result is emit of "declare double @eigen_string_equals_val(double, double)"
-    result is emit of "declare double @eigen_string_concat_list(...)"
+    result is emit of "declare double @eigen_string_concat_val(double, double)"
+    result is emit of "declare double @eigen_char_at_val(double, double)"
+    result is emit of "declare double @eigen_substring_val(double, double, double)"
+    result is emit of "declare double @eigen_number_to_string_val(double)"
+    result is emit of "declare double @eigen_string_to_number_val(double)"
+    result is emit of "declare double @eigen_char_is_digit_val(double)"
+    result is emit of "declare double @eigen_char_is_alpha_val(double)"
+    result is emit of "declare double @eigen_char_is_whitespace_val(double)"
+    result is emit of "declare double @eigen_string_to_double(%EigenString*)"
+    result is emit of "declare %EigenString* @eigen_double_to_string(double)"
+    result is emit of "declare void @eigen_list_append_val(double, double)"
     result is emit of ""
     result is emit of "; I/O operations"
     result is emit of "declare void @eigen_print_double(double)"
@@ -530,7 +540,13 @@ define gen_relation of node_idx as:
     # Handle append builtin (special form: append of list of value)
     is_append is string_equals of [func_name, "append"]
     if is_append = 1:
-        # append takes (list, value) - for now just return 0
+        # append takes (list, value) and modifies the list in place
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        line is cat6 of ["  call void @eigen_list_append_val(double ", arg1_str, ", double ", arg2_str, ")", ""]
+        result is emit of line
         return 0
 
     # Handle string builtins
@@ -563,10 +579,101 @@ define gen_relation of node_idx as:
 
     is_string_concat is string_equals of [func_name, "string_concat"]
     if is_string_concat = 1:
-        # string_concat takes a list of strings - handle specially
+        # string_concat takes a list of strings as argument [str1, str2, ...]
+        # We concatenate them pairwise using eigen_string_concat_val
+        # For now, handle 2-element list (most common case)
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
         reg is next_reg of 0
         reg_str is make_reg of reg
-        line is cat4 of ["  ", reg_str, " = call double @eigen_string_concat_list(...)", ""]
+        line is cat7 of ["  ", reg_str, " = call double @eigen_string_concat_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # number_to_string
+    is_num_to_str is string_equals of [func_name, "number_to_string"]
+    if is_num_to_str = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_number_to_string_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # string_to_number
+    is_str_to_num is string_equals of [func_name, "string_to_number"]
+    if is_str_to_num = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_string_to_number_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # char_at
+    is_char_at is string_equals of [func_name, "char_at"]
+    if is_char_at = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_char_at_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # substring
+    is_substring is string_equals of [func_name, "substring"]
+    if is_substring = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        third_arg is arg_regs[3]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        arg3_str is make_reg of third_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat5 of ["  ", reg_str, " = call double @eigen_substring_val(double ", arg1_str, ", "]
+        line is cat5 of [line, "double ", arg2_str, ", double ", arg3_str]
+        line is string_concat of [line, ")"]
+        result is emit of line
+        return reg
+
+    # char_is_digit
+    is_char_digit is string_equals of [func_name, "char_is_digit"]
+    if is_char_digit = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_char_is_digit_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # char_is_alpha
+    is_char_alpha is string_equals of [func_name, "char_is_alpha"]
+    if is_char_alpha = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_char_is_alpha_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # char_is_whitespace
+    is_char_ws is string_equals of [func_name, "char_is_whitespace"]
+    if is_char_ws = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_char_is_whitespace_val(double ", arg_str, ")", ""]
         result is emit of line
         return reg
 

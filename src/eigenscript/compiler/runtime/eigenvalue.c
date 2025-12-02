@@ -640,3 +640,124 @@ void eigen_print_double(double value) {
 void eigen_print_newline(void) {
     printf("\n");
 }
+
+// ============================================================================
+// Self-Hosting Support Functions
+// These functions convert between encoded doubles and pointers for the
+// self-hosted compiler which uses double values for everything.
+// ============================================================================
+
+// Union for safe pointer-to-double conversion
+typedef union {
+    double d;
+    int64_t i;
+    void* p;
+} PointerDoubleUnion;
+
+// Convert EigenList* to double (encode pointer as double)
+double eigen_list_to_double(EigenList* list) {
+    PointerDoubleUnion u;
+    u.p = list;
+    return u.d;
+}
+
+// Convert double back to EigenList* (decode double to pointer)
+EigenList* eigen_double_to_list(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    return (EigenList*)u.p;
+}
+
+// Convert EigenString* to double (encode pointer as double)
+double eigen_string_to_double(EigenString* str) {
+    PointerDoubleUnion u;
+    u.p = str;
+    return u.d;
+}
+
+// Convert double back to EigenString* (decode double to pointer)
+EigenString* eigen_double_to_string(double val) {
+    PointerDoubleUnion u;
+    u.d = val;
+    return (EigenString*)u.p;
+}
+
+// String length with double-encoded string
+int64_t eigen_string_length_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0;
+    return eigen_string_length(str);
+}
+
+// String equality with double-encoded strings
+double eigen_string_equals_val(double a_val, double b_val) {
+    EigenString* a = eigen_double_to_string(a_val);
+    EigenString* b = eigen_double_to_string(b_val);
+    if (!a || !b) return 0.0;
+    return eigen_string_equals(a, b) ? 1.0 : 0.0;
+}
+
+// char_at with double-encoded string and index
+double eigen_char_at_val(double str_val, double idx_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0.0;
+    int64_t idx = (int64_t)idx_val;
+    return (double)eigen_char_at(str, idx);
+}
+
+// substring with double-encoded values
+double eigen_substring_val(double str_val, double start_val, double len_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0.0;
+    int64_t start = (int64_t)start_val;
+    int64_t len = (int64_t)len_val;
+    EigenString* result = eigen_substring(str, start, len);
+    return eigen_string_to_double(result);
+}
+
+// char_is_digit with double-encoded char code
+double eigen_char_is_digit_val(double c_val) {
+    int64_t c = (int64_t)c_val;
+    return eigen_char_is_digit(c) ? 1.0 : 0.0;
+}
+
+// char_is_alpha with double-encoded char code
+double eigen_char_is_alpha_val(double c_val) {
+    int64_t c = (int64_t)c_val;
+    return eigen_char_is_alpha(c) ? 1.0 : 0.0;
+}
+
+// char_is_whitespace with double-encoded char code
+double eigen_char_is_whitespace_val(double c_val) {
+    int64_t c = (int64_t)c_val;
+    return eigen_char_is_whitespace(c) ? 1.0 : 0.0;
+}
+
+// number_to_string - returns encoded string pointer
+double eigen_number_to_string_val(double num) {
+    EigenString* result = eigen_number_to_string(num);
+    return eigen_string_to_double(result);
+}
+
+// string_to_number with double-encoded string
+double eigen_string_to_number_val(double str_val) {
+    EigenString* str = eigen_double_to_string(str_val);
+    if (!str) return 0.0;
+    return eigen_string_to_number(str);
+}
+
+// string_concat for two strings (double-encoded)
+double eigen_string_concat_val(double a_val, double b_val) {
+    EigenString* a = eigen_double_to_string(a_val);
+    EigenString* b = eigen_double_to_string(b_val);
+    if (!a || !b) return 0.0;
+    EigenString* result = eigen_string_concat(a, b);
+    return eigen_string_to_double(result);
+}
+
+// list_append with double-encoded list and value
+void eigen_list_append_val(double list_val, double value) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (!list) return;
+    eigen_list_append(list, value);
+}
