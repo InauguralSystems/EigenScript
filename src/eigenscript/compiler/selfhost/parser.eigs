@@ -1,0 +1,1071 @@
+# EigenScript Self-Hosting Parser
+# Written in EigenScript for bootstrapping the compiler
+# Uses flat arrays for AST storage (no nested list assignment needed)
+
+# Token Type Constants (must match lexer.eigs)
+TT_OF is 1
+TT_IS is 2
+TT_IF is 3
+TT_ELSE is 4
+TT_LOOP is 5
+TT_WHILE is 6
+TT_DEFINE is 7
+TT_AS is 8
+TT_RETURN is 9
+TT_BREAK is 10
+TT_NULL is 11
+TT_NOT is 12
+TT_AND is 13
+TT_OR is 14
+TT_FOR is 15
+TT_IN is 16
+TT_IMPORT is 17
+TT_FROM is 18
+TT_STRUCT is 19
+TT_WHO is 20
+TT_WHAT is 21
+TT_WHEN is 22
+TT_WHERE is 23
+TT_WHY is 24
+TT_HOW is 25
+TT_WAS is 26
+TT_CHANGE is 27
+TT_STATUS is 28
+TT_TREND is 29
+TT_NUMBER is 30
+TT_STRING is 31
+TT_IDENTIFIER is 33
+TT_COLON is 40
+TT_COMMA is 41
+TT_LPAREN is 42
+TT_RPAREN is 43
+TT_LBRACKET is 44
+TT_RBRACKET is 45
+TT_DOT is 46
+TT_PLUS is 50
+TT_MINUS is 51
+TT_MULTIPLY is 52
+TT_DIVIDE is 53
+TT_MODULO is 54
+TT_EQUALS is 55
+TT_NOT_EQUAL is 56
+TT_LESS_THAN is 57
+TT_LESS_EQUAL is 58
+TT_GREATER_THAN is 59
+TT_GREATER_EQUAL is 60
+TT_NEWLINE is 70
+TT_INDENT is 71
+TT_DEDENT is 72
+TT_EOF is 99
+
+# AST Node Type Constants
+NT_PROGRAM is 100
+NT_LITERAL is 101
+NT_IDENTIFIER is 102
+NT_BINARY_OP is 103
+NT_UNARY_OP is 104
+NT_RELATION is 105
+NT_ASSIGNMENT is 106
+NT_CONDITIONAL is 107
+NT_LOOP is 108
+NT_FUNCTION_DEF is 109
+NT_RETURN is 110
+NT_BREAK is 111
+NT_LIST_LITERAL is 112
+NT_INDEX is 113
+NT_INTERROGATIVE is 114
+NT_BLOCK is 115
+
+# Literal type constants
+LIT_NUMBER is 1
+LIT_STRING is 2
+LIT_NULL is 3
+
+# Operator constants
+OP_PLUS is 1
+OP_MINUS is 2
+OP_MULTIPLY is 3
+OP_DIVIDE is 4
+OP_MODULO is 5
+OP_EQUALS is 6
+OP_NOT_EQUAL is 7
+OP_LESS_THAN is 8
+OP_LESS_EQUAL is 9
+OP_GREATER_THAN is 10
+OP_GREATER_EQUAL is 11
+OP_AND is 12
+OP_OR is 13
+OP_NOT is 14
+
+# ============================================================================
+# Token Stream (Input)
+# ============================================================================
+tok_types is []
+tok_values is []
+tok_lines is []
+tok_cols is []
+tok_count is 0
+tok_pos is 0
+
+# Input variables for add_token (pseudo-parameters)
+tok_type_in is 0
+tok_value_in is 0
+tok_line_in is 0
+tok_col_in is 0
+
+# Input variable for expect_tok
+expected_type is 0
+
+# Input variable for peek_tt
+peek_offset is 0
+
+# ============================================================================
+# AST Node Storage (Flat Arrays)
+# Each node has: type, and up to 4 integer fields (field1-4)
+# Fields contain either values or node IDs depending on node type
+# ============================================================================
+node_types is []
+node_field1 is []
+node_field2 is []
+node_field3 is []
+node_field4 is []
+node_count is 0
+
+# String storage - uses indices into token values for now
+# node_strings[i] stores a string ID (token value index) for node i
+node_string_ids is []
+
+# Block storage (for if/loop/function bodies)
+# Uses a separate array since blocks contain lists of statement IDs
+block_stmts is []
+block_count is 0
+
+# Error state
+parse_error is 0
+parse_error_line is 0
+parse_error_col is 0
+
+# Input variables for alloc_node (pseudo-parameters)
+nt_in is 0
+f1_in is 0
+f2_in is 0
+f3_in is 0
+f4_in is 0
+str_id_in is 0
+
+# Input variables for make_* functions
+num_val is 0
+id_val is 0
+left_node is 0
+right_node is 0
+binop_type is 0
+unop_type is 0
+operand_node is 0
+rel_left is 0
+rel_right is 0
+assign_var_id is 0
+assign_expr is 0
+cond_expr is 0
+if_block is 0
+else_block is 0
+loop_cond is 0
+loop_body is 0
+func_name_id is 0
+func_body is 0
+ret_expr is 0
+list_block is 0
+idx_list is 0
+idx_expr is 0
+blk_start is 0
+blk_count is 0
+prog_block is 0
+stmt_id is 0
+
+# ============================================================================
+# Token Stream Management
+# ============================================================================
+
+define add_token as:
+    tok_types is list_append of [tok_types, tok_type_in]
+    tok_values is list_append of [tok_values, tok_value_in]
+    tok_lines is list_append of [tok_lines, tok_line_in]
+    tok_cols is list_append of [tok_cols, tok_col_in]
+    tok_count is tok_count + 1
+    return 0
+
+define current_tt as:
+    if tok_pos >= tok_count:
+        return -1
+    return tok_types[tok_pos]
+
+define current_tv as:
+    if tok_pos >= tok_count:
+        return 0
+    return tok_values[tok_pos]
+
+define peek_tt as:
+    pos is tok_pos + peek_offset
+    if pos >= tok_count:
+        return -1
+    return tok_types[pos]
+
+define advance_tok as:
+    if tok_pos >= tok_count:
+        return -1
+    tt is tok_types[tok_pos]
+    tok_pos is tok_pos + 1
+    return tt
+
+define expect_tok as:
+    tt is current_tt of 0
+    if tt != expected_type:
+        parse_error is 1
+        if tok_pos < tok_count:
+            parse_error_line is tok_lines[tok_pos]
+            parse_error_col is tok_cols[tok_pos]
+        return -1
+    result is advance_tok of 0
+    return result
+
+# ============================================================================
+# AST Node Creation
+# ============================================================================
+
+# Allocate a node with given fields
+define alloc_node as:
+    id is node_count
+    node_types is list_append of [node_types, nt_in]
+    node_field1 is list_append of [node_field1, f1_in]
+    node_field2 is list_append of [node_field2, f2_in]
+    node_field3 is list_append of [node_field3, f3_in]
+    node_field4 is list_append of [node_field4, f4_in]
+    node_string_ids is list_append of [node_string_ids, str_id_in]
+    node_count is node_count + 1
+    return id
+
+# Create a number literal
+define make_number as:
+    nt_in is NT_LITERAL
+    f1_in is LIT_NUMBER
+    f2_in is num_val
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a null literal
+define make_null as:
+    nt_in is NT_LITERAL
+    f1_in is LIT_NULL
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create an identifier
+define make_ident as:
+    nt_in is NT_IDENTIFIER
+    f1_in is 0
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is id_val
+    return alloc_node of 0
+
+# Create a binary operation
+define make_binop as:
+    nt_in is NT_BINARY_OP
+    f1_in is left_node
+    f2_in is binop_type
+    f3_in is right_node
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a unary operation
+define make_unop as:
+    nt_in is NT_UNARY_OP
+    f1_in is unop_type
+    f2_in is operand_node
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a relation (OF expression)
+define make_relation as:
+    nt_in is NT_RELATION
+    f1_in is rel_left
+    f2_in is rel_right
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create an assignment
+define make_assign as:
+    nt_in is NT_ASSIGNMENT
+    f1_in is assign_expr
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is assign_var_id
+    return alloc_node of 0
+
+# Create a conditional (if/else)
+define make_cond as:
+    nt_in is NT_CONDITIONAL
+    f1_in is cond_expr
+    f2_in is if_block
+    f3_in is else_block
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a loop
+define make_loop as:
+    nt_in is NT_LOOP
+    f1_in is loop_cond
+    f2_in is loop_body
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a function definition
+define make_funcdef as:
+    nt_in is NT_FUNCTION_DEF
+    f1_in is func_body
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is func_name_id
+    return alloc_node of 0
+
+# Create a return statement
+define make_return as:
+    nt_in is NT_RETURN
+    f1_in is ret_expr
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a break statement
+define make_break as:
+    nt_in is NT_BREAK
+    f1_in is 0
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a list literal from elements
+define make_list as:
+    nt_in is NT_LIST_LITERAL
+    f1_in is list_block
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create an index operation
+define make_index as:
+    nt_in is NT_INDEX
+    f1_in is idx_list
+    f2_in is idx_expr
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a block (list of statements)
+define make_block as:
+    nt_in is NT_BLOCK
+    f1_in is blk_start
+    f2_in is blk_count
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# Create a program (root)
+define make_program as:
+    nt_in is NT_PROGRAM
+    f1_in is prog_block
+    f2_in is 0
+    f3_in is 0
+    f4_in is 0
+    str_id_in is 0
+    return alloc_node of 0
+
+# ============================================================================
+# Block Management
+# ============================================================================
+
+# Add a statement to block storage
+define add_to_block as:
+    block_stmts is list_append of [block_stmts, stmt_id]
+    block_count is block_count + 1
+    return block_count - 1
+
+# ============================================================================
+# Expression Parsing
+# ============================================================================
+
+define parse_primary as:
+    if parse_error = 1:
+        return -1
+
+    tt is current_tt of 0
+
+    # Number literal
+    if tt = TT_NUMBER:
+        num_val is current_tv of 0
+        result is advance_tok of 0
+        return make_number of 0
+
+    # Null literal
+    if tt = TT_NULL:
+        result is advance_tok of 0
+        return make_null of 0
+
+    # Identifier
+    if tt = TT_IDENTIFIER:
+        id_val is current_tv of 0
+        result is advance_tok of 0
+        return make_ident of 0
+
+    # Parenthesized expression
+    if tt = TT_LPAREN:
+        result is advance_tok of 0
+        expr_id is parse_expression of 0
+        if parse_error = 1:
+            return -1
+        expected_type is TT_RPAREN
+        result is expect_tok of 0
+        if result < 0:
+            return -1
+        return expr_id
+
+    # List literal
+    if tt = TT_LBRACKET:
+        result is advance_tok of 0
+
+        tt is current_tt of 0
+        if tt = TT_RBRACKET:
+            result is advance_tok of 0
+            # Empty list
+            blk_start is block_count
+            blk_count is 0
+            list_block is make_block of 0
+            return make_list of 0
+
+        # Parse elements
+        blk_start is block_count
+        elem_count is 0
+
+        elem_id is parse_expression of 0
+        if parse_error = 1:
+            return -1
+        stmt_id is elem_id
+        result is add_to_block of 0
+        elem_count is elem_count + 1
+
+        loop while 1:
+            tt is current_tt of 0
+            if tt != TT_COMMA:
+                break
+            result is advance_tok of 0
+            elem_id is parse_expression of 0
+            if parse_error = 1:
+                return -1
+            stmt_id is elem_id
+            result is add_to_block of 0
+            elem_count is elem_count + 1
+
+        expected_type is TT_RBRACKET
+        result is expect_tok of 0
+        if result < 0:
+            return -1
+
+        blk_count is elem_count
+        list_block is make_block of 0
+        return make_list of 0
+
+    # Error
+    parse_error is 1
+    if tok_pos < tok_count:
+        parse_error_line is tok_lines[tok_pos]
+        parse_error_col is tok_cols[tok_pos]
+    return -1
+
+define parse_postfix as:
+    if parse_error = 1:
+        return -1
+
+    expr_id is parse_primary of 0
+    if parse_error = 1:
+        return -1
+
+    loop while 1:
+        tt is current_tt of 0
+
+        if tt = TT_LBRACKET:
+            result is advance_tok of 0
+            index_expr is parse_expression of 0
+            if parse_error = 1:
+                return -1
+            expected_type is TT_RBRACKET
+            result is expect_tok of 0
+            if result < 0:
+                return -1
+            idx_list is expr_id
+            idx_expr is index_expr
+            expr_id is make_index of 0
+        else:
+            break
+
+    return expr_id
+
+define parse_unary as:
+    if parse_error = 1:
+        return -1
+
+    tt is current_tt of 0
+
+    if tt = TT_NOT:
+        result is advance_tok of 0
+        operand_node is parse_unary of 0
+        if parse_error = 1:
+            return -1
+        unop_type is OP_NOT
+        return make_unop of 0
+
+    return parse_postfix of 0
+
+define parse_relation as:
+    if parse_error = 1:
+        return -1
+
+    rel_left is parse_unary of 0
+    if parse_error = 1:
+        return -1
+
+    tt is current_tt of 0
+    if tt = TT_OF:
+        result is advance_tok of 0
+        rel_right is parse_relation of 0
+        if parse_error = 1:
+            return -1
+        return make_relation of 0
+
+    return rel_left
+
+define parse_multiplicative as:
+    if parse_error = 1:
+        return -1
+
+    left_node is parse_relation of 0
+    if parse_error = 1:
+        return -1
+
+    loop while 1:
+        tt is current_tt of 0
+        op is 0
+
+        if tt = TT_MULTIPLY:
+            op is OP_MULTIPLY
+        if tt = TT_DIVIDE:
+            op is OP_DIVIDE
+        if tt = TT_MODULO:
+            op is OP_MODULO
+
+        if op = 0:
+            break
+
+        result is advance_tok of 0
+        right_node is parse_relation of 0
+        if parse_error = 1:
+            return -1
+        binop_type is op
+        left_node is make_binop of 0
+
+    return left_node
+
+define parse_additive as:
+    if parse_error = 1:
+        return -1
+
+    left_node is parse_multiplicative of 0
+    if parse_error = 1:
+        return -1
+
+    loop while 1:
+        tt is current_tt of 0
+        op is 0
+
+        if tt = TT_PLUS:
+            op is OP_PLUS
+        if tt = TT_MINUS:
+            op is OP_MINUS
+
+        if op = 0:
+            break
+
+        result is advance_tok of 0
+        right_node is parse_multiplicative of 0
+        if parse_error = 1:
+            return -1
+        binop_type is op
+        left_node is make_binop of 0
+
+    return left_node
+
+define parse_comparison as:
+    if parse_error = 1:
+        return -1
+
+    left_node is parse_additive of 0
+    if parse_error = 1:
+        return -1
+
+    loop while 1:
+        tt is current_tt of 0
+        op is 0
+
+        if tt = TT_EQUALS:
+            op is OP_EQUALS
+        if tt = TT_NOT_EQUAL:
+            op is OP_NOT_EQUAL
+        if tt = TT_LESS_THAN:
+            op is OP_LESS_THAN
+        if tt = TT_LESS_EQUAL:
+            op is OP_LESS_EQUAL
+        if tt = TT_GREATER_THAN:
+            op is OP_GREATER_THAN
+        if tt = TT_GREATER_EQUAL:
+            op is OP_GREATER_EQUAL
+
+        if op = 0:
+            break
+
+        result is advance_tok of 0
+        right_node is parse_additive of 0
+        if parse_error = 1:
+            return -1
+        binop_type is op
+        left_node is make_binop of 0
+
+    return left_node
+
+define parse_logical_and as:
+    if parse_error = 1:
+        return -1
+
+    left_node is parse_comparison of 0
+    if parse_error = 1:
+        return -1
+
+    loop while 1:
+        tt is current_tt of 0
+        if tt != TT_AND:
+            break
+
+        result is advance_tok of 0
+        right_node is parse_comparison of 0
+        if parse_error = 1:
+            return -1
+        binop_type is OP_AND
+        left_node is make_binop of 0
+
+    return left_node
+
+define parse_logical_or as:
+    if parse_error = 1:
+        return -1
+
+    left_node is parse_logical_and of 0
+    if parse_error = 1:
+        return -1
+
+    loop while 1:
+        tt is current_tt of 0
+        if tt != TT_OR:
+            break
+
+        result is advance_tok of 0
+        right_node is parse_logical_and of 0
+        if parse_error = 1:
+            return -1
+        binop_type is OP_OR
+        left_node is make_binop of 0
+
+    return left_node
+
+define parse_expression as:
+    return parse_logical_or of 0
+
+# ============================================================================
+# Statement Parsing
+# ============================================================================
+
+define skip_newlines as:
+    loop while 1:
+        tt is current_tt of 0
+        if tt != TT_NEWLINE:
+            break
+        result is advance_tok of 0
+    return 0
+
+define parse_block as:
+    if parse_error = 1:
+        return -1
+
+    expected_type is TT_INDENT
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    blk_start is block_count
+    stmt_count is 0
+
+    loop while 1:
+        result is skip_newlines of 0
+        tt is current_tt of 0
+
+        if tt = TT_DEDENT:
+            break
+        if tt = TT_EOF:
+            break
+        if tt < 0:
+            break
+
+        stmt_node is parse_statement of 0
+        if parse_error = 1:
+            return -1
+        if stmt_node >= 0:
+            stmt_id is stmt_node
+            result is add_to_block of 0
+            stmt_count is stmt_count + 1
+
+    expected_type is TT_DEDENT
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    blk_count is stmt_count
+    return make_block of 0
+
+define parse_assignment as:
+    if parse_error = 1:
+        return -1
+
+    tt is current_tt of 0
+    if tt != TT_IDENTIFIER:
+        parse_error is 1
+        return -1
+
+    assign_var_id is current_tv of 0
+    result is advance_tok of 0
+
+    expected_type is TT_IS
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    assign_expr is parse_expression of 0
+    if parse_error = 1:
+        return -1
+
+    tt is current_tt of 0
+    if tt = TT_NEWLINE:
+        result is advance_tok of 0
+
+    return make_assign of 0
+
+define parse_function_def as:
+    if parse_error = 1:
+        return -1
+
+    expected_type is TT_DEFINE
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    tt is current_tt of 0
+    if tt != TT_IDENTIFIER:
+        parse_error is 1
+        return -1
+
+    func_name_id is current_tv of 0
+    result is advance_tok of 0
+
+    tt is current_tt of 0
+    if tt = TT_AS:
+        result is advance_tok of 0
+
+    expected_type is TT_COLON
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    tt is current_tt of 0
+    if tt = TT_NEWLINE:
+        result is advance_tok of 0
+
+    func_body is parse_block of 0
+    if parse_error = 1:
+        return -1
+
+    return make_funcdef of 0
+
+define parse_conditional as:
+    if parse_error = 1:
+        return -1
+
+    expected_type is TT_IF
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    cond_expr is parse_expression of 0
+    if parse_error = 1:
+        return -1
+
+    expected_type is TT_COLON
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    tt is current_tt of 0
+    if tt = TT_NEWLINE:
+        result is advance_tok of 0
+
+    if_block is parse_block of 0
+    if parse_error = 1:
+        return -1
+
+    else_block is -1
+    tt is current_tt of 0
+    if tt = TT_ELSE:
+        result is advance_tok of 0
+
+        expected_type is TT_COLON
+        result is expect_tok of 0
+        if result < 0:
+            return -1
+
+        tt is current_tt of 0
+        if tt = TT_NEWLINE:
+            result is advance_tok of 0
+
+        else_block is parse_block of 0
+        if parse_error = 1:
+            return -1
+
+    return make_cond of 0
+
+define parse_loop as:
+    if parse_error = 1:
+        return -1
+
+    expected_type is TT_LOOP
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    expected_type is TT_WHILE
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    loop_cond is parse_expression of 0
+    if parse_error = 1:
+        return -1
+
+    expected_type is TT_COLON
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    tt is current_tt of 0
+    if tt = TT_NEWLINE:
+        result is advance_tok of 0
+
+    loop_body is parse_block of 0
+    if parse_error = 1:
+        return -1
+
+    return make_loop of 0
+
+define parse_return as:
+    if parse_error = 1:
+        return -1
+
+    expected_type is TT_RETURN
+    result is expect_tok of 0
+    if result < 0:
+        return -1
+
+    ret_expr is parse_expression of 0
+    if parse_error = 1:
+        return -1
+
+    tt is current_tt of 0
+    if tt = TT_NEWLINE:
+        result is advance_tok of 0
+
+    return make_return of 0
+
+define parse_statement as:
+    if parse_error = 1:
+        return -1
+
+    result is skip_newlines of 0
+    tt is current_tt of 0
+
+    if tt < 0:
+        return -1
+    if tt = TT_EOF:
+        return -1
+
+    if tt = TT_DEFINE:
+        return parse_function_def of 0
+
+    if tt = TT_IF:
+        return parse_conditional of 0
+
+    if tt = TT_LOOP:
+        return parse_loop of 0
+
+    if tt = TT_RETURN:
+        return parse_return of 0
+
+    if tt = TT_BREAK:
+        result is advance_tok of 0
+        tt is current_tt of 0
+        if tt = TT_NEWLINE:
+            result is advance_tok of 0
+        return make_break of 0
+
+    if tt = TT_IDENTIFIER:
+        peek_offset is 1
+        next_tt is peek_tt of 0
+        if next_tt = TT_IS:
+            return parse_assignment of 0
+
+    expr_id is parse_expression of 0
+    if parse_error = 1:
+        return -1
+
+    tt is current_tt of 0
+    if tt = TT_NEWLINE:
+        result is advance_tok of 0
+
+    return expr_id
+
+define parse_program as:
+    blk_start is block_count
+    stmt_count is 0
+
+    loop while 1:
+        result is skip_newlines of 0
+        tt is current_tt of 0
+
+        if tt < 0:
+            break
+        if tt = TT_EOF:
+            break
+
+        stmt_node is parse_statement of 0
+        if parse_error = 1:
+            break
+        if stmt_node >= 0:
+            stmt_id is stmt_node
+            result is add_to_block of 0
+            stmt_count is stmt_count + 1
+
+    blk_count is stmt_count
+    prog_block is make_block of 0
+    return make_program of 0
+
+# ============================================================================
+# Initialize
+# ============================================================================
+
+define init_parser as:
+    tok_types is []
+    tok_values is []
+    tok_lines is []
+    tok_cols is []
+    tok_count is 0
+    tok_pos is 0
+    node_types is []
+    node_field1 is []
+    node_field2 is []
+    node_field3 is []
+    node_field4 is []
+    node_string_ids is []
+    node_count is 0
+    block_stmts is []
+    block_count is 0
+    parse_error is 0
+    return 0
+
+# ============================================================================
+# Test
+# ============================================================================
+
+print of 888
+
+result is init_parser of 0
+
+# Add tokens for: x is 5
+tok_type_in is TT_IDENTIFIER
+tok_value_in is 1
+tok_line_in is 1
+tok_col_in is 1
+result is add_token of 0
+
+tok_type_in is TT_IS
+tok_value_in is 0
+tok_line_in is 1
+tok_col_in is 3
+result is add_token of 0
+
+tok_type_in is TT_NUMBER
+tok_value_in is 5
+tok_line_in is 1
+tok_col_in is 6
+result is add_token of 0
+
+tok_type_in is TT_EOF
+tok_value_in is 0
+tok_line_in is 1
+tok_col_in is 7
+result is add_token of 0
+
+print of 889
+
+prog_id is parse_program of 0
+
+print of 890
+
+print of prog_id
+print of node_count
+print of parse_error
+
+# Print node types
+print of 900
+i is 0
+loop while i < node_count:
+    nt is node_types[i]
+    print of nt
+    i is i + 1
+
+print of 891

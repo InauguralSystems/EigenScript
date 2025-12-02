@@ -409,6 +409,15 @@ class LLVMCodeGenerator:
         self.eigen_list_length.attributes.add("nounwind")
         self.eigen_list_length.attributes.add("readonly")
 
+        # eigen_list_append(list*, value) -> void
+        eigen_list_append_type = ir.FunctionType(
+            self.void_type, [self.eigen_list_ptr, self.double_type]
+        )
+        self.eigen_list_append = ir.Function(
+            self.module, eigen_list_append_type, name="eigen_list_append"
+        )
+        self.eigen_list_append.attributes.add("nounwind")
+
         # Cleanup functions (memory management)
         # eigen_destroy(eigen*) -> void
         eigen_destroy_type = ir.FunctionType(self.void_type, [self.eigen_value_ptr])
@@ -747,6 +756,56 @@ class LLVMCodeGenerator:
                 f"Cannot convert {val.type} to int64", hint="Expected a numeric value"
             )
 
+    def _ensure_list_ptr(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Extract EigenList* from a GeneratedValue or raw ir.Value.
+
+        Used by list builtin functions to get the list pointer.
+        """
+        if isinstance(val, GeneratedValue):
+            if val.kind == ValueKind.LIST_PTR:
+                return val.value
+            else:
+                raise CompilerError(
+                    f"Expected list, got {val.kind}",
+                    hint="List operations require EigenList* values",
+                )
+        elif isinstance(val, ir.Value):
+            # Check if it's already an EigenList*
+            if isinstance(val.type, ir.PointerType):
+                return val
+            else:
+                raise CompilerError(
+                    f"Expected list pointer, got {val.type}",
+                    hint="List operations require EigenList* values",
+                )
+        else:
+            raise CompilerError(f"Unexpected value type: {type(val)}")
+
+    def _ensure_double(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Ensure a value is a double type.
+
+        Used when we need a scalar double for list operations.
+        """
+        if isinstance(val, GeneratedValue):
+            if val.kind == ValueKind.SCALAR:
+                return val.value
+            else:
+                # Try to extract the scalar from other types
+                val = val.value
+
+        if isinstance(val, ir.Value):
+            if val.type == self.double_type:
+                return val
+            elif isinstance(val.type, ir.IntType):
+                return self.builder.sitofp(val, self.double_type)
+            else:
+                raise CompilerError(
+                    f"Cannot convert {val.type} to double",
+                    hint="Expected a numeric value",
+                )
+        else:
+            raise CompilerError(f"Unexpected value type: {type(val)}")
+
     def _extract_list_args(self, node, expected_count: int) -> list:
         """Extract arguments from a list literal for multi-arg builtins.
 
@@ -1020,7 +1079,15 @@ class LLVMCodeGenerator:
                     # Call the init function
                     self.builder.call(init_func, [])
 
-        # Generate code for each statement
+        # Two-pass compilation for mutual recursion support:
+        # Pass 1: Declare all user-defined functions first
+        from eigenscript.parser.ast_builder import FunctionDef
+
+        for node in ast_nodes:
+            if isinstance(node, FunctionDef):
+                self._declare_function(node)
+
+        # Pass 2: Generate code for each statement
         for node in ast_nodes:
             self._generate(node)
 
@@ -1756,6 +1823,25 @@ class LLVMCodeGenerator:
                     self.allocated_strings.append(result)
                 return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
 
+            # ============================================================
+            # List Builtin Functions (for self-hosting)
+            # ============================================================
+
+            # list_append of [list, value] -> list (modifies and returns list)
+            if func_name == "list_append":
+                args = self._extract_list_args(node.right, 2)
+                list_ptr = self._ensure_list_ptr(args[0])
+                value = self._ensure_double(args[1])
+                self.builder.call(self.eigen_list_append, [list_ptr, value])
+                return GeneratedValue(value=list_ptr, kind=ValueKind.LIST_PTR)
+
+            # list_length of list -> i64 (as double)
+            if func_name == "list_length":
+                arg_gen = self._generate(node.right)
+                list_ptr = self._ensure_list_ptr(arg_gen)
+                length = self.builder.call(self.eigen_list_length, [list_ptr])
+                return self.builder.sitofp(length, self.double_type)
+
             # Handle user-defined functions
             if func_name in self.functions:
                 # Get the argument expression
@@ -2200,10 +2286,17 @@ class LLVMCodeGenerator:
             value=struct_ptr, kind=ValueKind.STRUCT_PTR, struct_name=node.struct_name
         )
 
-    def _generate_function_def(self, node: FunctionDef) -> None:
-        """Generate code for function definitions."""
+    def _declare_function(self, node: FunctionDef) -> None:
+        """Declare a function signature without generating its body.
+
+        This is used in the first pass of two-pass compilation to support
+        mutual recursion between functions.
+        """
+        # Skip if already declared
+        if node.name in self.functions:
+            return
+
         # Apply name mangling for library modules to prevent symbol collisions
-        # e.g., "add" in math module becomes "math_add"
         mangled_name = f"{self.module_prefix}{node.name}"
 
         # Create function signature
@@ -2213,12 +2306,20 @@ class LLVMCodeGenerator:
         )
 
         func = ir.Function(self.module, func_type, name=mangled_name)
-        # Add function attributes for optimization
         func.attributes.add("nounwind")  # No exceptions in EigenScript
-        # Store function under original name for internal lookups
-        # The LLVM IR will use the mangled name, but within the module
-        # we reference functions by their original names
         self.functions[node.name] = func
+
+    def _generate_function_def(self, node: FunctionDef) -> None:
+        """Generate code for function definitions."""
+        # Ensure function is declared (idempotent)
+        self._declare_function(node)
+
+        # Get the function reference
+        func = self.functions[node.name]
+
+        # Skip if function body already generated (has entry block)
+        if len(func.basic_blocks) > 0:
+            return
 
         # Create entry block
         block = func.append_basic_block(name="entry")
