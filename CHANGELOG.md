@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-12-02
+
+### 🎉 Major Release: Self-Hosted Compiler
+
+This release marks a **historic milestone** for EigenScript: the compiler can now compile itself! The self-hosted compiler (`codegen.eigs`) written entirely in EigenScript achieves feature parity with the main language, enabling true bootstrapping.
+
+### Added
+
+#### Self-Hosted Compiler Infrastructure
+- **CLI Arguments & File I/O**: `get_argc`, `get_arg`, `file_read` for command-line programs
+- **List Operations**: `length` builtin for lists, `append` for dynamic lists
+- **String Escaping**: Proper LLVM IR hex escaping for special characters (`\n` → `\0A`)
+
+#### AI/ML Matrix Operations
+- **EigenMatrix Structure**: Row-major matrix storage with 20+ operations
+- **Matrix Creation**: `matrix_zeros`, `matrix_ones`, `matrix_identity`, `random_matrix`
+- **Matrix Operations**: `matrix_transpose`, `matrix_add`, `matrix_scale`, `matrix_matmul`
+- **Matrix Analysis**: `matrix_sum`, `matrix_mean`, `matrix_shape`, `matrix_reshape`
+- **Matrix Manipulation**: `matrix_slice`, `matrix_concat`
+
+#### Neural Network Activations
+- **Activations**: `relu_matrix`, `gelu_matrix`, `softmax_matrix`, `layer_norm_matrix`
+- **Transformer Ops**: `embedding_lookup`, `sinusoidal_pe`, `causal_mask`
+
+#### Math Functions (11 functions)
+- `sqrt`, `abs`, `pow`, `log`, `exp`
+- `sin`, `cos`, `tan`
+- `floor`, `ceil`, `round`
+
+#### Higher-Order Functions
+- `map` - Apply function to each list element
+- `filter` - Keep elements matching predicate
+- `reduce` - Fold list to single value
+
+#### Geometric Predicates (10 state checks)
+- **Convergence**: `converged`, `settled` - Has value stopped changing?
+- **Stability**: `stable`, `balanced`, `equilibrium` - Is system in stable state?
+- **Progress**: `improving`, `diverging` - Is system making progress?
+- **Behavior**: `oscillating`, `stuck`, `chaotic` - Behavior pattern detection
+- **Runtime Tracking**: Global state tracking for predicate evaluation
+
+#### Temporal Operators
+- `was` - Previous value of variable
+- `change` - Delta from previous value
+- `status` - Process quality
+- `trend` - Direction (increasing/decreasing/stable/oscillating)
+
+#### List Comprehensions
+- Full support for `[expr for var in iterable]`
+- Conditional filtering: `[expr for var in iterable if cond]`
+- Generates optimized loop code with append operations
+
+#### Struct Support
+- **Struct Definitions**: `struct Name:` with field declarations
+- **Struct Constructors**: `StructName of [field1, field2, ...]`
+- **Field Tracking**: Compile-time struct field lookup table
+- **Runtime**: Structs represented as lists for efficiency
+
+#### Slice Operations
+- **List Slicing**: `list[start:end]` with negative index support
+- **String Slicing**: `string[start:end]` for substring extraction
+
+#### Member Access
+- **Module Access**: `module.function` syntax for namespaced calls
+- **Mangled Names**: Compile-time resolution to `module_function`
+
+### Technical Details
+- Self-hosted compiler: `src/eigenscript/compiler/selfhost/codegen.eigs` (~2300 lines)
+- Runtime library: `src/eigenscript/compiler/runtime/eigenvalue.c` (~1700 lines)
+- Generates LLVM IR text output, assembled with `llvm-as`
+- Links with C runtime for I/O and complex operations
+
+### Bootstrapping Status
+The EigenScript compiler written in EigenScript can now:
+1. Parse EigenScript source code
+2. Build an AST
+3. Generate valid LLVM IR
+4. Compile itself (with the reference compiler)
+
+### What This Means
+- **Language Maturity**: Self-hosting is a key milestone for programming languages
+- **Dogfooding**: The language is powerful enough to express its own compiler
+- **Future**: Path to full bootstrapping where EigenScript compiles EigenScript
+
 ## [0.3.23] - 2025-11-30
 
 ### 🤖 Release: Production-Grade LLM Infrastructure
