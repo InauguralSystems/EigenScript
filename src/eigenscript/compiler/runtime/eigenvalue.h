@@ -166,4 +166,36 @@ int64_t eigen_string_find(EigenString* haystack, EigenString* needle, int64_t st
 // Get raw C string pointer (for interop - do not free!)
 const char* eigen_string_cstr(EigenString* str);
 
+/**
+ * File I/O Functions
+ *
+ * Essential for self-hosting: reading source files, writing IR output.
+ * These wrap standard C file operations with EigenString support.
+ */
+
+// Read entire file contents into EigenString (caller must free)
+// Returns NULL on error
+EigenString* eigen_file_read(EigenString* filename);
+
+// Write EigenString contents to file
+// Returns 1 on success, 0 on error
+int64_t eigen_file_write(EigenString* filename, EigenString* contents);
+
+// Append EigenString to file
+// Returns 1 on success, 0 on error
+int64_t eigen_file_append(EigenString* filename, EigenString* contents);
+
+// Check if file exists
+// Returns 1 if exists, 0 if not
+int64_t eigen_file_exists(EigenString* filename);
+
+// Print to stdout (for IR output)
+void eigen_print_string(EigenString* str);
+
+// Print double to stdout
+void eigen_print_double(double value);
+
+// Print newline
+void eigen_print_newline(void);
+
 #endif // EIGENVALUE_H

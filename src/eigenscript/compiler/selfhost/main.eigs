@@ -1,0 +1,302 @@
+# EigenScript Self-Hosting Compiler Driver
+# Orchestrates: Lexer -> Parser -> Semantic -> Codegen
+#
+# Usage: eigensc source.eigs
+# Output: LLVM IR to stdout (pipe to llvm-as)
+#
+# Compilation Pipeline:
+# 1. Read source file
+# 2. Tokenize (lexer.eigs)
+# 3. Parse to AST (parser.eigs)
+# 4. Semantic analysis (semantic.eigs)
+# 5. Generate LLVM IR (codegen.eigs)
+# 6. Output IR (link with runtime)
+
+# ============================================================================
+# Compilation State
+# ============================================================================
+
+# Source file content
+source_code is ""
+source_length is 0
+
+# Compilation flags
+verbose is 0
+parse_only is 0
+check_only is 0
+
+# Error tracking
+compile_errors is 0
+
+# ============================================================================
+# Phase 1: Lexical Analysis
+# ============================================================================
+
+define run_lexer as:
+    if verbose = 1:
+        print of "Phase 1: Lexical Analysis"
+
+    # Set source for lexer
+    lex_source is source_code
+
+    # Initialize and run lexer
+    result is init_lexer of 0
+
+    # Tokenize - this populates parser_token_* arrays
+    token_count is 0
+
+    loop while 1:
+        tok is next_token of 0
+        if tok = TT_EOF:
+            break
+
+        # Store token in parser arrays
+        append parser_token_types of tok
+        append parser_token_lines of lex_line
+        append parser_token_cols of lex_col
+
+        # Store numeric value for numbers
+        if tok = TT_NUMBER:
+            # The number value was parsed in read_number
+            append parser_token_num_vals of 0
+        else:
+            append parser_token_num_vals of 0
+
+        # Store string index for identifiers/strings
+        if tok = TT_IDENTIFIER:
+            append parser_token_str_indices of last_identifier
+        else:
+            if tok = TT_STRING:
+                append parser_token_str_indices of last_string_val
+            else:
+                append parser_token_str_indices of 0
+
+        token_count is token_count + 1
+
+    # Add EOF token
+    append parser_token_types of TT_EOF
+    append parser_token_lines of lex_line
+    append parser_token_cols of lex_col
+    append parser_token_num_vals of 0
+    append parser_token_str_indices of 0
+    parser_token_count is token_count + 1
+
+    if verbose = 1:
+        print of "  Tokens generated:"
+        print of parser_token_count
+
+    return parser_token_count
+
+# ============================================================================
+# Phase 2: Parsing
+# ============================================================================
+
+define run_parser as:
+    if verbose = 1:
+        print of "Phase 2: Parsing"
+
+    # Parse tokens to AST
+    ast_root is parse of 0
+
+    if parser_error = 1:
+        print of "Parse error at line:"
+        print of parser_error_line
+        print of "column:"
+        print of parser_error_col
+        compile_errors is compile_errors + 1
+        return 0
+
+    if verbose = 1:
+        print of "  AST nodes created:"
+        print of ast_node_count
+
+    return ast_root
+
+# ============================================================================
+# Phase 3: Semantic Analysis
+# ============================================================================
+
+define run_semantic of ast_root as:
+    if verbose = 1:
+        print of "Phase 3: Semantic Analysis"
+
+    # Analyze AST
+    error_count is analyze of ast_root
+
+    if error_count > 0:
+        print of "Semantic errors:"
+        print of error_count
+        result is print_errors of 0
+        compile_errors is compile_errors + error_count
+        return 0
+
+    if verbose = 1:
+        print of "  Symbols defined:"
+        print of symbol_count
+
+    return 1
+
+# ============================================================================
+# Phase 4: Code Generation
+# ============================================================================
+
+define run_codegen of ast_root as:
+    if verbose = 1:
+        print of "Phase 4: Code Generation"
+
+    # Generate LLVM IR
+    line_count is generate of ast_root
+
+    if verbose = 1:
+        print of "  IR lines generated:"
+        print of line_count
+
+    # Output IR
+    result is print_ir of 0
+
+    return line_count
+
+# ============================================================================
+# Main Compilation Entry Point
+# ============================================================================
+
+define compile of source as:
+    # Store source
+    source_code is source
+    source_length is string_length of source
+
+    if verbose = 1:
+        print of "EigenScript Self-Hosting Compiler"
+        print of "Source length:"
+        print of source_length
+
+    # Phase 1: Lexer
+    token_count is run_lexer of 0
+    if token_count = 0:
+        print of "Lexer failed"
+        return 0
+
+    # Phase 2: Parser
+    ast_root is run_parser of 0
+    if ast_root = 0:
+        if parser_error = 1:
+            return 0
+
+    if parse_only = 1:
+        print of "Parse successful"
+        return 1
+
+    # Phase 3: Semantic Analysis
+    sem_ok is run_semantic of ast_root
+    if sem_ok = 0:
+        return 0
+
+    if check_only = 1:
+        print of "Semantic check successful"
+        return 1
+
+    # Phase 4: Code Generation
+    ir_lines is run_codegen of ast_root
+
+    if compile_errors > 0:
+        print of "Compilation failed with errors:"
+        print of compile_errors
+        return 0
+
+    return 1
+
+# ============================================================================
+# Command Line Interface
+# ============================================================================
+
+# Parse command line arguments
+define parse_args of args as:
+    # For now, just check for flags
+    # --verbose, --parse-only, --check-only
+
+    i is 0
+    arg_count is length of args
+
+    loop while i < arg_count:
+        arg is args[i]
+
+        eq is string_equals of [arg, "--verbose"]
+        if eq = 1:
+            verbose is 1
+
+        eq is string_equals of [arg, "--parse-only"]
+        if eq = 1:
+            parse_only is 1
+
+        eq is string_equals of [arg, "--check-only"]
+        if eq = 1:
+            check_only is 1
+
+        i is i + 1
+
+    return 0
+
+# ============================================================================
+# Test Entry Point
+# ============================================================================
+
+# For testing without file I/O, compile a string directly
+define compile_string of source as:
+    return compile of source
+
+# Test the compiler with a simple program
+define test_compiler as:
+    print of "Testing self-hosting compiler..."
+
+    test_source is "x is 42\nprint of x"
+
+    result is compile of test_source
+
+    if result = 1:
+        print of "Test passed!"
+    else:
+        print of "Test failed!"
+
+    return result
+
+# ============================================================================
+# Initialization
+# ============================================================================
+
+# Initialize all modules
+define init_compiler as:
+    # Initialize lexer state
+    lex_source is ""
+    lex_pos is 0
+    lex_len is 0
+    lex_line is 1
+    lex_col is 1
+    lex_indent is 0
+    lex_at_line_start is 1
+
+    # Initialize parser state
+    parser_pos is 0
+    parser_error is 0
+    ast_node_count is 0
+    ast_children_count is 0
+
+    # Initialize semantic state
+    symbol_count is 0
+    scope_depth is 0
+    error_count is 0
+
+    # Initialize codegen state
+    reg_counter is 0
+    label_counter is 0
+    output_count is 0
+    var_count is 0
+
+    compile_errors is 0
+
+    return 0
+
+# Signal that main module is loaded
+print of 555
+
+# Initialize
+result is init_compiler of 0
