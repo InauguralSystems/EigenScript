@@ -209,11 +209,12 @@ result3 is x = y"""
         assert self.verify_llvm_ir(llvm_ir)
 
     def test_main_function_generated(self):
-        """Test that a main function is generated."""
+        """Test that a main function is generated with argc/argv."""
         source = "x is 42"
         llvm_ir = self.compile_source(source)
 
-        assert 'define i32 @"main"()' in llvm_ir
+        # Main now takes argc and argv for CLI argument support
+        assert 'define i32 @"main"(i32 %"argc", i8** %"argv")' in llvm_ir
         assert "ret i32 0" in llvm_ir
         assert self.verify_llvm_ir(llvm_ir)
 
