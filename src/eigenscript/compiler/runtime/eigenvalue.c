@@ -1437,3 +1437,283 @@ double eigen_string_slice_val(double str_val, double start_val, double end_val) 
     free(buffer);
     return eigen_string_to_double(result);
 }
+
+// ============================================================================
+// Math Functions (for self-hosting compiler)
+// ============================================================================
+
+// Square root
+double eigen_sqrt_val(double x) {
+    return sqrt(x);
+}
+
+// Absolute value
+double eigen_abs_val(double x) {
+    return fabs(x);
+}
+
+// Power function
+double eigen_pow_val(double base, double exp) {
+    return pow(base, exp);
+}
+
+// Natural logarithm
+double eigen_log_val(double x) {
+    return log(x);
+}
+
+// Exponential (e^x)
+double eigen_exp_val(double x) {
+    return exp(x);
+}
+
+// Sine
+double eigen_sin_val(double x) {
+    return sin(x);
+}
+
+// Cosine
+double eigen_cos_val(double x) {
+    return cos(x);
+}
+
+// Tangent
+double eigen_tan_val(double x) {
+    return tan(x);
+}
+
+// Floor
+double eigen_floor_val(double x) {
+    return floor(x);
+}
+
+// Ceiling
+double eigen_ceil_val(double x) {
+    return ceil(x);
+}
+
+// Round
+double eigen_round_val(double x) {
+    return round(x);
+}
+
+// ============================================================================
+// Higher-Order Functions (for self-hosting compiler)
+// ============================================================================
+
+// Map: apply function to each element of list
+// Note: func_ptr is a function pointer encoded as double
+double eigen_map_val(double func_ptr, double list_val) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (!list) return 0.0;
+
+    int64_t len = eigen_list_length(list);
+    EigenList* result = eigen_list_create(len);
+
+    // For now, map is implemented at compile time by inlining
+    // This is a placeholder for runtime-resolved function pointers
+    return eigen_list_to_double(result);
+}
+
+// Filter: keep elements where predicate returns non-zero
+double eigen_filter_val(double func_ptr, double list_val) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (!list) return 0.0;
+
+    // Placeholder - filter requires runtime function calls
+    return list_val;
+}
+
+// Reduce: fold list to single value
+double eigen_reduce_val(double func_ptr, double list_val, double init) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (!list) return init;
+
+    // Placeholder - reduce requires runtime function calls
+    return init;
+}
+
+// ============================================================================
+// Predicate Operations (Geometric State Checks)
+// ============================================================================
+
+// Global tracking variables for geometric state
+static double __eigs_last_value = 0.0;
+static double __eigs_prev_value = 0.0;
+static double __eigs_change_history[100];
+static int __eigs_history_idx = 0;
+static int __eigs_history_count = 0;
+
+// Update tracking state (called after assignments in compiled code)
+void eigen_track_value(double value) {
+    __eigs_prev_value = __eigs_last_value;
+    __eigs_last_value = value;
+
+    double change = value - __eigs_prev_value;
+    __eigs_change_history[__eigs_history_idx] = change;
+    __eigs_history_idx = (__eigs_history_idx + 1) % 100;
+    if (__eigs_history_count < 100) __eigs_history_count++;
+}
+
+// converged/settled: has value stopped changing significantly?
+double eigen_is_converged(void) {
+    if (__eigs_history_count < 3) return 0.0;
+
+    // Check if recent changes are very small
+    double threshold = 0.0001;
+    for (int i = 0; i < 3 && i < __eigs_history_count; i++) {
+        int idx = (__eigs_history_idx - 1 - i + 100) % 100;
+        if (fabs(__eigs_change_history[idx]) > threshold) return 0.0;
+    }
+    return 1.0;
+}
+
+// stable: is the system in a stable state (not oscillating or diverging)?
+double eigen_is_stable(void) {
+    if (__eigs_history_count < 3) return 1.0; // Assume stable initially
+
+    // Check for consistent sign of changes
+    int positive = 0, negative = 0;
+    for (int i = 0; i < 5 && i < __eigs_history_count; i++) {
+        int idx = (__eigs_history_idx - 1 - i + 100) % 100;
+        if (__eigs_change_history[idx] > 0.0001) positive++;
+        else if (__eigs_change_history[idx] < -0.0001) negative++;
+    }
+    // Stable if not oscillating between positive and negative
+    return (positive == 0 || negative == 0) ? 1.0 : 0.0;
+}
+
+// diverging: is the value getting further from stability?
+double eigen_is_diverging(void) {
+    if (__eigs_history_count < 3) return 0.0;
+
+    // Check if changes are increasing in magnitude
+    int idx1 = (__eigs_history_idx - 1 + 100) % 100;
+    int idx2 = (__eigs_history_idx - 2 + 100) % 100;
+    int idx3 = (__eigs_history_idx - 3 + 100) % 100;
+
+    double mag1 = fabs(__eigs_change_history[idx1]);
+    double mag2 = fabs(__eigs_change_history[idx2]);
+    double mag3 = fabs(__eigs_change_history[idx3]);
+
+    return (mag1 > mag2 && mag2 > mag3) ? 1.0 : 0.0;
+}
+
+// improving: is the system making progress toward a goal?
+double eigen_is_improving(void) {
+    if (__eigs_history_count < 2) return 0.0;
+
+    // Check if change magnitude is decreasing (converging)
+    int idx1 = (__eigs_history_idx - 1 + 100) % 100;
+    int idx2 = (__eigs_history_idx - 2 + 100) % 100;
+
+    return fabs(__eigs_change_history[idx1]) < fabs(__eigs_change_history[idx2]) ? 1.0 : 0.0;
+}
+
+// oscillating: is the value bouncing back and forth?
+double eigen_is_oscillating(void) {
+    if (__eigs_history_count < 4) return 0.0;
+
+    // Check for sign changes in consecutive changes
+    int sign_changes = 0;
+    for (int i = 0; i < 4 && i < __eigs_history_count - 1; i++) {
+        int idx1 = (__eigs_history_idx - 1 - i + 100) % 100;
+        int idx2 = (__eigs_history_idx - 2 - i + 100) % 100;
+
+        double c1 = __eigs_change_history[idx1];
+        double c2 = __eigs_change_history[idx2];
+
+        if ((c1 > 0.0001 && c2 < -0.0001) || (c1 < -0.0001 && c2 > 0.0001)) {
+            sign_changes++;
+        }
+    }
+
+    return sign_changes >= 2 ? 1.0 : 0.0;
+}
+
+// equilibrium/balanced: is the system at a balance point?
+double eigen_is_equilibrium(void) {
+    if (__eigs_history_count < 5) return 0.0;
+
+    // Check if recent changes sum to approximately zero
+    double sum = 0.0;
+    for (int i = 0; i < 5 && i < __eigs_history_count; i++) {
+        int idx = (__eigs_history_idx - 1 - i + 100) % 100;
+        sum += __eigs_change_history[idx];
+    }
+
+    return fabs(sum) < 0.001 ? 1.0 : 0.0;
+}
+
+// Aliases for humanized predicates
+double eigen_is_settled(void) { return eigen_is_converged(); }
+double eigen_is_balanced(void) { return eigen_is_equilibrium(); }
+
+// stuck: no progress but not converged
+double eigen_is_stuck(void) {
+    if (__eigs_history_count < 3) return 0.0;
+
+    // Not improving and not converged
+    double converged = eigen_is_converged();
+    double improving = eigen_is_improving();
+
+    return (converged < 0.5 && improving < 0.5) ? 1.0 : 0.0;
+}
+
+// chaotic: unpredictable behavior detected
+double eigen_is_chaotic(void) {
+    if (__eigs_history_count < 5) return 0.0;
+
+    // High variance in changes
+    double sum = 0.0, sum_sq = 0.0;
+    for (int i = 0; i < 5 && i < __eigs_history_count; i++) {
+        int idx = (__eigs_history_idx - 1 - i + 100) % 100;
+        double c = __eigs_change_history[idx];
+        sum += c;
+        sum_sq += c * c;
+    }
+
+    double mean = sum / 5.0;
+    double variance = (sum_sq / 5.0) - (mean * mean);
+
+    // Chaotic if variance is high relative to mean
+    return variance > fabs(mean) * 10.0 ? 1.0 : 0.0;
+}
+
+// ============================================================================
+// Temporal Operators
+// ============================================================================
+
+// was is x: returns previous value
+double eigen_was_is(double current_val) {
+    return __eigs_prev_value;
+}
+
+// change is x: returns how much x changed
+double eigen_change_is(double current_val) {
+    return current_val - __eigs_prev_value;
+}
+
+// status is x: returns process quality (alias for how is)
+double eigen_status_is(double current_val) {
+    return eigen_how_is(current_val);
+}
+
+// trend is x: returns direction as encoded value
+// 1.0 = increasing, -1.0 = decreasing, 0.0 = stable, 0.5 = oscillating
+double eigen_trend_is(double current_val) {
+    if (__eigs_history_count < 3) return 0.0; // Unknown
+
+    // Check recent changes
+    int increasing = 0, decreasing = 0;
+    for (int i = 0; i < 3 && i < __eigs_history_count; i++) {
+        int idx = (__eigs_history_idx - 1 - i + 100) % 100;
+        if (__eigs_change_history[idx] > 0.0001) increasing++;
+        else if (__eigs_change_history[idx] < -0.0001) decreasing++;
+    }
+
+    if (increasing >= 2 && decreasing == 0) return 1.0;  // increasing
+    if (decreasing >= 2 && increasing == 0) return -1.0; // decreasing
+    if (increasing >= 1 && decreasing >= 1) return 0.5;  // oscillating
+    return 0.0; // stable
+}

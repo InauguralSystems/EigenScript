@@ -330,6 +330,42 @@ define emit_runtime_decls as:
     result is emit of "declare double @eigen_list_slice_val(double, double, double)"
     result is emit of "declare double @eigen_string_slice_val(double, double, double)"
     result is emit of ""
+    result is emit of "; Math functions"
+    result is emit of "declare double @eigen_sqrt_val(double)"
+    result is emit of "declare double @eigen_abs_val(double)"
+    result is emit of "declare double @eigen_pow_val(double, double)"
+    result is emit of "declare double @eigen_log_val(double)"
+    result is emit of "declare double @eigen_exp_val(double)"
+    result is emit of "declare double @eigen_sin_val(double)"
+    result is emit of "declare double @eigen_cos_val(double)"
+    result is emit of "declare double @eigen_tan_val(double)"
+    result is emit of "declare double @eigen_floor_val(double)"
+    result is emit of "declare double @eigen_ceil_val(double)"
+    result is emit of "declare double @eigen_round_val(double)"
+    result is emit of ""
+    result is emit of "; Higher-order functions"
+    result is emit of "declare double @eigen_map_val(double, double)"
+    result is emit of "declare double @eigen_filter_val(double, double)"
+    result is emit of "declare double @eigen_reduce_val(double, double, double)"
+    result is emit of ""
+    result is emit of "; Predicate operations (geometric state checks)"
+    result is emit of "declare double @eigen_is_converged()"
+    result is emit of "declare double @eigen_is_stable()"
+    result is emit of "declare double @eigen_is_diverging()"
+    result is emit of "declare double @eigen_is_improving()"
+    result is emit of "declare double @eigen_is_oscillating()"
+    result is emit of "declare double @eigen_is_equilibrium()"
+    result is emit of "declare double @eigen_is_settled()"
+    result is emit of "declare double @eigen_is_balanced()"
+    result is emit of "declare double @eigen_is_stuck()"
+    result is emit of "declare double @eigen_is_chaotic()"
+    result is emit of ""
+    result is emit of "; Temporal operators"
+    result is emit of "declare double @eigen_was_is(double)"
+    result is emit of "declare double @eigen_change_is(double)"
+    result is emit of "declare double @eigen_status_is(double)"
+    result is emit of "declare double @eigen_trend_is(double)"
+    result is emit of ""
     return 0
 
 # Emit all string constants from the string table
@@ -424,6 +460,92 @@ define gen_literal of node_idx as:
 define gen_identifier of node_idx as:
     arr_idx is node_idx + 1
     name_idx is ast_str_index[arr_idx]
+
+    # Get the identifier name for predicate checking
+    ident_name is get_string of name_idx
+
+    # Check for predicate identifiers (converged, stable, etc.)
+    is_converged is string_equals of [ident_name, "converged"]
+    if is_converged = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_converged()", ""]
+        result is emit of line
+        return reg
+
+    is_stable is string_equals of [ident_name, "stable"]
+    if is_stable = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_stable()", ""]
+        result is emit of line
+        return reg
+
+    is_diverging is string_equals of [ident_name, "diverging"]
+    if is_diverging = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_diverging()", ""]
+        result is emit of line
+        return reg
+
+    is_improving is string_equals of [ident_name, "improving"]
+    if is_improving = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_improving()", ""]
+        result is emit of line
+        return reg
+
+    is_oscillating is string_equals of [ident_name, "oscillating"]
+    if is_oscillating = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_oscillating()", ""]
+        result is emit of line
+        return reg
+
+    is_equilibrium is string_equals of [ident_name, "equilibrium"]
+    if is_equilibrium = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_equilibrium()", ""]
+        result is emit of line
+        return reg
+
+    is_settled is string_equals of [ident_name, "settled"]
+    if is_settled = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_settled()", ""]
+        result is emit of line
+        return reg
+
+    is_balanced is string_equals of [ident_name, "balanced"]
+    if is_balanced = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_balanced()", ""]
+        result is emit of line
+        return reg
+
+    is_stuck is string_equals of [ident_name, "stuck"]
+    if is_stuck = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_stuck()", ""]
+        result is emit of line
+        return reg
+
+    is_chaotic is string_equals of [ident_name, "chaotic"]
+    if is_chaotic = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_is_chaotic()", ""]
+        result is emit of line
+        return reg
+
+    # Regular variable lookup
     var_reg is lookup_var of name_idx
 
     if var_reg < 0:
@@ -1106,6 +1228,228 @@ define gen_relation of node_idx as:
         reg is next_reg of 0
         reg_str is make_reg of reg
         line is cat6 of ["  ", reg_str, " = call double @eigen_escape_string_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # ============================================================
+    # Math Functions
+    # ============================================================
+
+    # sqrt - square root
+    is_sqrt is string_equals of [func_name, "sqrt"]
+    if is_sqrt = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_sqrt_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # abs - absolute value
+    is_abs is string_equals of [func_name, "abs"]
+    if is_abs = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_abs_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # pow - power function (base, exponent)
+    is_pow is string_equals of [func_name, "pow"]
+    if is_pow = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_pow_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # log - natural logarithm
+    is_log is string_equals of [func_name, "log"]
+    if is_log = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_log_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # exp - exponential function
+    is_exp is string_equals of [func_name, "exp"]
+    if is_exp = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_exp_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # sin - sine function
+    is_sin is string_equals of [func_name, "sin"]
+    if is_sin = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_sin_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # cos - cosine function
+    is_cos is string_equals of [func_name, "cos"]
+    if is_cos = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_cos_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # tan - tangent function
+    is_tan is string_equals of [func_name, "tan"]
+    if is_tan = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_tan_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # floor - round down
+    is_floor is string_equals of [func_name, "floor"]
+    if is_floor = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_floor_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # ceil - round up
+    is_ceil is string_equals of [func_name, "ceil"]
+    if is_ceil = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_ceil_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # round - round to nearest
+    is_round is string_equals of [func_name, "round"]
+    if is_round = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_round_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # ============================================================
+    # Higher-Order Functions
+    # ============================================================
+
+    # map - apply function to each element
+    is_map is string_equals of [func_name, "map"]
+    if is_map = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_map_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # filter - keep elements where predicate is true
+    is_filter is string_equals of [func_name, "filter"]
+    if is_filter = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat7 of ["  ", reg_str, " = call double @eigen_filter_val(double ", arg1_str, ", double ", arg2_str, ")"]
+        result is emit of line
+        return reg
+
+    # reduce - fold list to single value
+    is_reduce is string_equals of [func_name, "reduce"]
+    if is_reduce = 1:
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        third_arg is arg_regs[3]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        arg3_str is make_reg of third_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat5 of ["  ", reg_str, " = call double @eigen_reduce_val(double ", arg1_str, ", "]
+        line is cat5 of [line, "double ", arg2_str, ", double ", arg3_str]
+        line is string_concat of [line, ")"]
+        result is emit of line
+        return reg
+
+    # ============================================================
+    # Temporal Operators (was, change, status, trend)
+    # ============================================================
+
+    # was - previous value
+    is_was is string_equals of [func_name, "was"]
+    if is_was = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_was_is(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # change - how much value changed
+    is_change is string_equals of [func_name, "change"]
+    if is_change = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_change_is(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # status - process quality
+    is_status is string_equals of [func_name, "status"]
+    if is_status = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_status_is(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # trend - direction of change
+    is_trend is string_equals of [func_name, "trend"]
+    if is_trend = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_trend_is(double ", arg_str, ")", ""]
         result is emit of line
         return reg
 
