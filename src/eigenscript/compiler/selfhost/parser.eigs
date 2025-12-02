@@ -220,14 +220,14 @@ define create_node of node_type as:
 
     # Initialize node fields
     # Note: We append to arrays to grow them
-    append ast_types of node_type
-    append ast_left of 0
-    append ast_right of 0
-    append ast_third of 0
-    append ast_num_value of 0
-    append ast_str_index of 0
-    append ast_children_start of 0
-    append ast_children_end of 0
+    append of ast_types of node_type
+    append of ast_left of 0
+    append of ast_right of 0
+    append of ast_third of 0
+    append of ast_num_value of 0
+    append of ast_str_index of 0
+    append of ast_children_start of 0
+    append of ast_children_end of 0
 
     return idx
 
@@ -264,7 +264,7 @@ define start_children of node_idx as:
 
 # Add a child to a node's children list
 define add_child of [node_idx, child_idx] as:
-    append ast_children of child_idx
+    append of ast_children of child_idx
     ast_children_count is ast_children_count + 1
     ast_children_end[node_idx] is ast_children_count
     return 0
@@ -1357,7 +1357,7 @@ define parse_block as:
 
         stmt is parse_statement of 0
         if stmt != 0:
-            append ast_children of stmt
+            append of ast_children of stmt
             ast_children_count is ast_children_count + 1
 
         if parser_error = 1:

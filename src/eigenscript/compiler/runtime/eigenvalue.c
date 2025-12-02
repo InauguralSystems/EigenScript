@@ -544,3 +544,99 @@ int64_t eigen_string_find(EigenString* haystack, EigenString* needle, int64_t st
 const char* eigen_string_cstr(EigenString* str) {
     return str ? str->data : "";
 }
+
+/**
+ * File I/O Implementation
+ *
+ * These functions enable self-hosting by providing file operations.
+ */
+
+EigenString* eigen_file_read(EigenString* filename) {
+    if (!filename || !filename->data) return NULL;
+
+    FILE* file = fopen(filename->data, "rb");
+    if (!file) return NULL;
+
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (size < 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    // Allocate string with file contents
+    EigenString* result = eigen_string_create_empty(size + 1);
+    if (!result) {
+        fclose(file);
+        return NULL;
+    }
+
+    // Read file
+    size_t read = fread(result->data, 1, size, file);
+    fclose(file);
+
+    result->data[read] = '\0';
+    result->length = (int64_t)read;
+
+    return result;
+}
+
+int64_t eigen_file_write(EigenString* filename, EigenString* contents) {
+    if (!filename || !filename->data) return 0;
+    if (!contents) return 0;
+
+    FILE* file = fopen(filename->data, "wb");
+    if (!file) return 0;
+
+    size_t written = fwrite(contents->data, 1, contents->length, file);
+    fclose(file);
+
+    return (written == (size_t)contents->length) ? 1 : 0;
+}
+
+int64_t eigen_file_append(EigenString* filename, EigenString* contents) {
+    if (!filename || !filename->data) return 0;
+    if (!contents) return 0;
+
+    FILE* file = fopen(filename->data, "ab");
+    if (!file) return 0;
+
+    size_t written = fwrite(contents->data, 1, contents->length, file);
+    fclose(file);
+
+    return (written == (size_t)contents->length) ? 1 : 0;
+}
+
+int64_t eigen_file_exists(EigenString* filename) {
+    if (!filename || !filename->data) return 0;
+
+    FILE* file = fopen(filename->data, "r");
+    if (file) {
+        fclose(file);
+        return 1;
+    }
+    return 0;
+}
+
+void eigen_print_string(EigenString* str) {
+    if (str && str->data) {
+        printf("%s", str->data);
+    }
+}
+
+void eigen_print_double(double value) {
+    // Check if it's an integer value
+    if (value == (double)(int64_t)value &&
+        value >= -9007199254740992.0 && value <= 9007199254740992.0) {
+        printf("%lld", (long long)(int64_t)value);
+    } else {
+        printf("%g", value);
+    }
+}
+
+void eigen_print_newline(void) {
+    printf("\n");
+}
