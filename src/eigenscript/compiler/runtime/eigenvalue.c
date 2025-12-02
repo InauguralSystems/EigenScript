@@ -842,3 +842,64 @@ double eigen_where_is(double val) {
     (void)val;  // Unused - no spatial tracking for raw doubles
     return 0.0;
 }
+
+// ============================================================================
+// CLI Argument Support (for self-hosting compiler)
+// ============================================================================
+
+// Global storage for argc/argv - set by main wrapper
+static int __eigs_argc = 0;
+static char** __eigs_argv = NULL;
+
+// Initialize CLI args - called at program start
+void eigen_init_args(int argc, char** argv) {
+    __eigs_argc = argc;
+    __eigs_argv = argv;
+}
+
+// Get argument count
+double eigen_get_argc(void) {
+    return (double)__eigs_argc;
+}
+
+// Get argument at index (returns string as double)
+double eigen_get_arg(double index_val) {
+    int index = (int)index_val;
+    if (index < 0 || index >= __eigs_argc || __eigs_argv == NULL) {
+        // Return empty string
+        EigenString* empty = eigen_string_create("");
+        return eigen_string_to_double(empty);
+    }
+    EigenString* arg = eigen_string_create(__eigs_argv[index]);
+    return eigen_string_to_double(arg);
+}
+
+// ============================================================================
+// File I/O Support (for self-hosting compiler)
+// ============================================================================
+
+// Read file contents (returns string as double)
+double eigen_file_read_val(double filename_val) {
+    EigenString* filename = eigen_double_to_string(filename_val);
+    if (filename == NULL) {
+        return 0.0;  // Return 0 for error
+    }
+    EigenString* contents = eigen_file_read(filename);
+    if (contents == NULL) {
+        return 0.0;  // Return 0 for error
+    }
+    return eigen_string_to_double(contents);
+}
+
+// ============================================================================
+// List Length Support (for self-hosting compiler)
+// ============================================================================
+
+// Get list length (returns length as double)
+double eigen_list_length_val(double list_val) {
+    EigenList* list = eigen_double_to_list(list_val);
+    if (list == NULL) {
+        return 0.0;
+    }
+    return (double)eigen_list_length(list);
+}

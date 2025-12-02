@@ -285,6 +285,17 @@ define emit_runtime_decls as:
     result is emit of "declare double @eigen_when_is(double)"
     result is emit of "declare double @eigen_where_is(double)"
     result is emit of ""
+    result is emit of "; CLI argument operations"
+    result is emit of "declare void @eigen_init_args(i32, i8**)"
+    result is emit of "declare double @eigen_get_argc()"
+    result is emit of "declare double @eigen_get_arg(double)"
+    result is emit of ""
+    result is emit of "; File I/O operations"
+    result is emit of "declare double @eigen_file_read_val(double)"
+    result is emit of ""
+    result is emit of "; List operations (additional)"
+    result is emit of "declare double @eigen_list_length_val(double)"
+    result is emit of ""
     return 0
 
 # Emit all string constants from the string table
@@ -733,6 +744,48 @@ define gen_relation of node_idx as:
         reg is next_reg of 0
         reg_str is make_reg of reg
         line is cat6 of ["  ", reg_str, " = call double @eigen_char_is_whitespace_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # get_argc - returns number of command line arguments
+    is_get_argc is string_equals of [func_name, "get_argc"]
+    if is_get_argc = 1:
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat4 of ["  ", reg_str, " = call double @eigen_get_argc()", ""]
+        result is emit of line
+        return reg
+
+    # get_arg - returns command line argument at index
+    is_get_arg is string_equals of [func_name, "get_arg"]
+    if is_get_arg = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_get_arg(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # file_read - reads file contents as string
+    is_file_read is string_equals of [func_name, "file_read"]
+    if is_file_read = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_file_read_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # length - returns length of list
+    is_length is string_equals of [func_name, "length"]
+    if is_length = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_list_length_val(double ", arg_str, ")", ""]
         result is emit of line
         return reg
 
@@ -1238,8 +1291,11 @@ define generate of root_node as:
     result is emit_string_constants of 0
 
     result is emit of "; Main function"
-    result is emit of "define i32 @main() {"
+    result is emit of "define i32 @main(i32 %argc, i8** %argv) {"
     result is emit of "entry:"
+    result is emit of "  ; Initialize CLI args for get_argc/get_arg builtins"
+    result is emit of "  call void @eigen_init_args(i32 %argc, i8** %argv)"
+    result is emit of ""
 
     in_main is 1
 
