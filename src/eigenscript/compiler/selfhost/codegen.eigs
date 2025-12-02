@@ -87,42 +87,75 @@ define make_label of n as:
 
 # Build double constant
 define make_double of val as:
+    # Check if value is an integer (no fractional part)
+    truncated is val - (val % 1)
+    if truncated = val:
+        # It's an integer, append .0 for LLVM IR
+        str is number_to_string of val
+        str is string_concat of [str, ".0"]
+        return str
     return number_to_string of val
 
 # Concatenate multiple strings (helper)
+# Note: Assign list params to locals first to avoid runtime issue
 define cat3 of [a, b, c] as:
-    t is string_concat of [a, b]
-    result is string_concat of [t, c]
+    x1 is a
+    x2 is b
+    x3 is c
+    t is string_concat of [x1, x2]
+    result is string_concat of [t, x3]
     return result
 
 define cat4 of [a, b, c, d] as:
-    t1 is string_concat of [a, b]
-    t2 is string_concat of [t1, c]
-    result is string_concat of [t2, d]
+    x1 is a
+    x2 is b
+    x3 is c
+    x4 is d
+    t1 is string_concat of [x1, x2]
+    t2 is string_concat of [t1, x3]
+    result is string_concat of [t2, x4]
     return result
 
 define cat5 of [a, b, c, d, e] as:
-    t1 is string_concat of [a, b]
-    t2 is string_concat of [t1, c]
-    t3 is string_concat of [t2, d]
-    result is string_concat of [t3, e]
+    x1 is a
+    x2 is b
+    x3 is c
+    x4 is d
+    x5 is e
+    t1 is string_concat of [x1, x2]
+    t2 is string_concat of [t1, x3]
+    t3 is string_concat of [t2, x4]
+    result is string_concat of [t3, x5]
     return result
 
 define cat6 of [a, b, c, d, e, f] as:
-    t1 is string_concat of [a, b]
-    t2 is string_concat of [t1, c]
-    t3 is string_concat of [t2, d]
-    t4 is string_concat of [t3, e]
-    result is string_concat of [t4, f]
+    x1 is a
+    x2 is b
+    x3 is c
+    x4 is d
+    x5 is e
+    x6 is f
+    t1 is string_concat of [x1, x2]
+    t2 is string_concat of [t1, x3]
+    t3 is string_concat of [t2, x4]
+    t4 is string_concat of [t3, x5]
+    result is string_concat of [t4, x6]
     return result
 
 define cat7 of [a, b, c, d, e, f, g] as:
-    t1 is string_concat of [a, b]
-    t2 is string_concat of [t1, c]
-    t3 is string_concat of [t2, d]
-    t4 is string_concat of [t3, e]
-    t5 is string_concat of [t4, f]
-    result is string_concat of [t5, g]
+    x1 is a
+    x2 is b
+    x3 is c
+    x4 is d
+    x5 is e
+    x6 is f
+    x7 is g
+    t1 is string_concat of [x1, x2]
+    t2 is string_concat of [t1, x3]
+    t3 is string_concat of [t2, x4]
+    t4 is string_concat of [t3, x5]
+    t5 is string_concat of [t4, x6]
+    result is string_concat of [t5, x7]
     return result
 
 # ============================================================================
@@ -130,7 +163,8 @@ define cat7 of [a, b, c, d, e, f, g] as:
 # ============================================================================
 
 define emit of line as:
-    append of output_lines of line
+    # Print directly instead of buffering (EigenList can't store strings)
+    print of line
     output_count is output_count + 1
     return 0
 
@@ -152,17 +186,21 @@ var_regs is [0]
 var_count is 0
 
 define add_var of [name, reg] as:
-    append of var_names of name
-    append of var_regs of reg
+    x is name
+    y is reg
+    append of var_names of x
+    append of var_regs of y
     var_count is var_count + 1
     return var_count - 1
 
-define lookup_var of name as:
+define lookup_var of name_idx as:
+    # name_idx is a numeric index into the string table
     i is var_count - 1
     loop while i >= 0:
-        eq is string_equals of [var_names[i], name]
-        if eq = 1:
-            return var_regs[i]
+        arr_i is i + 1
+        stored_idx is var_names[arr_i]
+        if stored_idx = name_idx:
+            return var_regs[arr_i]
         i is i - 1
     return 0 - 1
 
@@ -212,8 +250,10 @@ define emit_runtime_decls as:
 # ============================================================================
 
 # Generate number literal
+# Note: AST arrays have dummy at index 0, so use node_idx + 1
 define gen_literal of node_idx as:
-    num_val is ast_num_value[node_idx]
+    arr_idx is node_idx + 1
+    num_val is ast_num_value[arr_idx]
     reg is next_reg of 0
 
     # Emit: %reg = fadd double 0.0, <val>
@@ -226,7 +266,8 @@ define gen_literal of node_idx as:
 
 # Generate identifier reference
 define gen_identifier of node_idx as:
-    name_idx is ast_str_index[node_idx]
+    arr_idx is node_idx + 1
+    name_idx is ast_str_index[arr_idx]
     var_reg is lookup_var of name_idx
 
     if var_reg < 0:
@@ -245,9 +286,10 @@ define gen_identifier of node_idx as:
 
 # Generate binary operation
 define gen_binary_op of node_idx as:
-    op_code is ast_num_value[node_idx]
-    left_idx is ast_left[node_idx]
-    right_idx is ast_right[node_idx]
+    arr_idx is node_idx + 1
+    op_code is ast_num_value[arr_idx]
+    left_idx is ast_left[arr_idx]
+    right_idx is ast_right[arr_idx]
 
     # Generate operands
     left_reg is gen_expr of left_idx
@@ -370,8 +412,9 @@ define gen_binary_op of node_idx as:
 
 # Generate unary operation
 define gen_unary_op of node_idx as:
-    op_code is ast_num_value[node_idx]
-    operand_idx is ast_left[node_idx]
+    arr_idx is node_idx + 1
+    op_code is ast_num_value[arr_idx]
+    operand_idx is ast_left[arr_idx]
 
     operand_reg is gen_expr of operand_idx
     operand_str is make_reg of operand_reg
@@ -395,9 +438,10 @@ define gen_unary_op of node_idx as:
 
 # Generate function call (OF operator)
 define gen_relation of node_idx as:
+    arr_idx is node_idx + 1
     # For now, handle print specially
-    left_idx is ast_left[node_idx]
-    right_idx is ast_right[node_idx]
+    left_idx is ast_left[arr_idx]
+    right_idx is ast_right[arr_idx]
 
     # Generate argument
     arg_reg is gen_expr of right_idx
@@ -411,7 +455,8 @@ define gen_relation of node_idx as:
 
 # Main expression dispatch
 define gen_expr of node_idx as:
-    node_type is ast_types[node_idx]
+    arr_idx is node_idx + 1
+    node_type is ast_types[arr_idx]
 
     if node_type = AST_LITERAL:
         return gen_literal of node_idx
@@ -436,14 +481,15 @@ define gen_expr of node_idx as:
 # ============================================================================
 
 define gen_assignment of node_idx as:
-    name_idx is ast_str_index[node_idx]
-    expr_idx is ast_left[node_idx]
+    arr_idx is node_idx + 1
+    name_idx is ast_str_index[arr_idx]
+    expr_idx is ast_left[arr_idx]
 
     # Generate expression value
     expr_reg is gen_expr of expr_idx
     expr_str is make_reg of expr_reg
 
-    # Check if variable exists
+    # Check if variable exists (using numeric index for comparison)
     var_reg is lookup_var of name_idx
 
     if var_reg < 0:
@@ -463,7 +509,8 @@ define gen_assignment of node_idx as:
     return 0
 
 define gen_return of node_idx as:
-    expr_idx is ast_left[node_idx]
+    arr_idx is node_idx + 1
+    expr_idx is ast_left[arr_idx]
     ret_reg is gen_expr of expr_idx
     ret_str is make_reg of ret_reg
 
@@ -473,10 +520,11 @@ define gen_return of node_idx as:
     return 0
 
 define gen_conditional of node_idx as:
-    cond_idx is ast_left[node_idx]
-    if_start is ast_num_value[node_idx]
-    if_end is ast_right[node_idx]
-    else_info is ast_third[node_idx]
+    arr_idx is node_idx + 1
+    cond_idx is ast_left[arr_idx]
+    if_start is ast_num_value[arr_idx]
+    if_end is ast_right[arr_idx]
+    else_info is ast_third[arr_idx]
     else_start is else_info / 100000
     else_end is else_info % 100000
 
@@ -528,9 +576,10 @@ define gen_conditional of node_idx as:
     return 0
 
 define gen_loop of node_idx as:
-    cond_idx is ast_left[node_idx]
-    body_start is ast_num_value[node_idx]
-    body_end is ast_right[node_idx]
+    arr_idx is node_idx + 1
+    cond_idx is ast_left[arr_idx]
+    body_start is ast_num_value[arr_idx]
+    body_end is ast_right[arr_idx]
 
     # Labels
     cond_lbl is next_label of 0
@@ -577,9 +626,10 @@ define gen_loop of node_idx as:
     return 0
 
 define gen_function_def of node_idx as:
-    name_idx is ast_str_index[node_idx]
-    body_start is ast_children_start[node_idx]
-    body_end is ast_children_end[node_idx]
+    arr_idx is node_idx + 1
+    name_idx is ast_str_index[arr_idx]
+    body_start is ast_children_start[arr_idx]
+    body_end is ast_children_end[arr_idx]
 
     result is emit of ""
     line is cat3 of ["define double @", name_idx, "() {"]
@@ -595,15 +645,20 @@ define gen_function_def of node_idx as:
     return 0
 
 define gen_block of [start, end] as:
-    i is start
-    loop while i < end:
-        stmt_idx is ast_children[i]
+    s is start
+    e is end
+    i is s
+    loop while i < e:
+        # ast_children also has dummy at index 0
+        arr_i is i + 1
+        stmt_idx is ast_children[arr_i]
         result is gen_stmt of stmt_idx
         i is i + 1
     return 0
 
 define gen_stmt of node_idx as:
-    node_type is ast_types[node_idx]
+    arr_idx is node_idx + 1
+    node_type is ast_types[arr_idx]
 
     if node_type = AST_ASSIGNMENT:
         return gen_assignment of node_idx
@@ -657,8 +712,9 @@ define generate of root_node as:
 
     in_main is 1
 
-    start is ast_children_start[root_node]
-    end is ast_children_end[root_node]
+    arr_idx is root_node + 1
+    start is ast_children_start[arr_idx]
+    end is ast_children_end[arr_idx]
     result is gen_block of [start, end]
 
     result is emit of "  ret i32 0"
@@ -669,12 +725,8 @@ define generate of root_node as:
     return output_count
 
 define print_ir as:
-    i is 0
-    loop while i < output_count:
-        line is output_lines[i]
-        print of line
-        i is i + 1
-    return 0
+    # IR is now printed directly in emit(), no buffering needed
+    return output_count
 
 # Initialize codegen state
 define init_codegen as:

@@ -207,6 +207,8 @@ define init_parser as:
     parser_error is 0
     parser_error_line is 0
     parser_error_col is 0
+    # Note: Arrays are initialized with [0] at module load (index 0 is dummy)
+    # Tokens are appended starting at index 1, so we use parser_pos + 1 for access
     return 0
 
 # ============================================================================
@@ -214,59 +216,98 @@ define init_parser as:
 # ============================================================================
 
 # Create a new AST node and return its index
+# Note: Arrays have dummy at index 0, nodes are appended starting at index 1
+# So we return idx which is 0-based, but use idx+1 for array access in setters
 define create_node of node_type as:
+    print of 1010
     idx is ast_node_count
+    print of 1011
+    print of idx
     ast_node_count is ast_node_count + 1
+    print of 1012
 
     # Initialize node fields
-    # Note: We append to arrays to grow them
+    # Note: We append to arrays to grow them (appends to end, so index = idx+1)
     append of ast_types of node_type
+    print of 1013
     append of ast_left of 0
+    print of 1014
     append of ast_right of 0
     append of ast_third of 0
     append of ast_num_value of 0
     append of ast_str_index of 0
     append of ast_children_start of 0
     append of ast_children_end of 0
+    print of 1015
+    print of idx
+    print of 1016
 
     return idx
 
 # Set node's left child
+# Note: Use node_idx+1 because arrays have dummy at index 0
+# Also: assign list params to locals first to avoid runtime issue
 define set_left of [node_idx, child_idx] as:
-    ast_left[node_idx] is child_idx
+    x is node_idx
+    y is child_idx
+    arr_idx is x + 1
+    ast_left[arr_idx] is y
     return 0
 
 # Set node's right child
 define set_right of [node_idx, child_idx] as:
-    ast_right[node_idx] is child_idx
+    x is node_idx
+    y is child_idx
+    arr_idx is x + 1
+    ast_right[arr_idx] is y
     return 0
 
 # Set node's third child
 define set_third of [node_idx, child_idx] as:
-    ast_third[node_idx] is child_idx
+    x is node_idx
+    y is child_idx
+    arr_idx is x + 1
+    ast_third[arr_idx] is y
     return 0
 
 # Set node's numeric value
 define set_num_value of [node_idx, value] as:
-    ast_num_value[node_idx] is value
+    print of 8001
+    x is node_idx
+    y is value
+    print of 8002
+    print of x
+    print of y
+    arr_idx is x + 1
+    print of 8003
+    print of arr_idx
+    ast_num_value[arr_idx] is y
+    print of 8004
     return 0
 
 # Set node's string index
 define set_str_index of [node_idx, str_idx] as:
-    ast_str_index[node_idx] is str_idx
+    x is node_idx
+    y is str_idx
+    arr_idx is x + 1
+    ast_str_index[arr_idx] is y
     return 0
 
 # Start adding children to a node
 define start_children of node_idx as:
-    ast_children_start[node_idx] is ast_children_count
-    ast_children_end[node_idx] is ast_children_count
+    arr_idx is node_idx + 1
+    ast_children_start[arr_idx] is ast_children_count
+    ast_children_end[arr_idx] is ast_children_count
     return 0
 
 # Add a child to a node's children list
 define add_child of [node_idx, child_idx] as:
-    append of ast_children of child_idx
+    x is node_idx
+    y is child_idx
+    append of ast_children of y
     ast_children_count is ast_children_count + 1
-    ast_children_end[node_idx] is ast_children_count
+    arr_idx is x + 1
+    ast_children_end[arr_idx] is ast_children_count
     return 0
 
 # ============================================================================
@@ -274,41 +315,55 @@ define add_child of [node_idx, child_idx] as:
 # ============================================================================
 
 # Get current token type (or TT_EOF if at end)
+# Note: Arrays have dummy at index 0, real tokens start at index 1
+# So we use parser_pos + 1 for array access
 define current_token_type as:
     if parser_pos >= parser_token_count:
         return TT_EOF
-    return parser_token_types[parser_pos]
+    idx is parser_pos + 1
+    return parser_token_types[idx]
 
 # Get current token's line number
 define current_token_line as:
     if parser_pos >= parser_token_count:
         return 0
-    return parser_token_lines[parser_pos]
+    idx is parser_pos + 1
+    return parser_token_lines[idx]
 
 # Get current token's column number
 define current_token_col as:
     if parser_pos >= parser_token_count:
         return 0
-    return parser_token_cols[parser_pos]
+    idx is parser_pos + 1
+    return parser_token_cols[idx]
 
 # Get current token's numeric value
 define current_token_num as:
     if parser_pos >= parser_token_count:
         return 0
-    return parser_token_num_vals[parser_pos]
+    idx is parser_pos + 1
+    print of 7770
+    print of parser_pos
+    print of idx
+    val is parser_token_num_vals[idx]
+    print of val
+    print of 7771
+    return val
 
 # Get current token's string index
 define current_token_str as:
     if parser_pos >= parser_token_count:
         return 0
-    return parser_token_str_indices[parser_pos]
+    idx is parser_pos + 1
+    return parser_token_str_indices[idx]
 
 # Peek at token ahead
 define peek_token_type of offset as:
     pos is parser_pos + offset
     if pos >= parser_token_count:
         return TT_EOF
-    return parser_token_types[pos]
+    idx is pos + 1
+    return parser_token_types[idx]
 
 # Advance to next token
 define advance_token as:
@@ -343,11 +398,16 @@ define expect_token of expected_type as:
 
 # Forward declarations via stubs
 define parse_expression as:
-    return parse_logical_or of 0
+    print of 2001
+    result is parse_logical_or of 0
+    print of 2002
+    return result
 
 # Parse logical OR: logical_and (OR logical_and)*
 define parse_logical_or as:
+    print of 2010
     left is parse_logical_and of 0
+    print of 2011
     if parser_error = 1:
         return left
 
@@ -501,15 +561,22 @@ define parse_multiplicative as:
 
 # Parse relation: postfix (OF postfix)* - right associative
 define parse_relation as:
+    print of 2050
     left is parse_postfix of 0
+    print of 2051
     if parser_error = 1:
         return left
 
     tok is current_token_type of 0
+    print of 2052
+    print of tok
     if tok = TT_OF:
+        print of 2053
         result is advance_token of 0
         # Right-recursive for right associativity
+        print of 2054
         right is parse_relation of 0
+        print of 2055
         if parser_error = 1:
             return left
 
@@ -522,7 +589,9 @@ define parse_relation as:
 
 # Parse postfix: unary ([index] | [start:end] | .member)*
 define parse_postfix as:
+    print of 2060
     expr is parse_unary of 0
+    print of 2061
     if parser_error = 1:
         return expr
 
@@ -610,7 +679,9 @@ define parse_postfix as:
 
 # Parse unary: (NOT | -)* primary
 define parse_unary as:
+    print of 2070
     tok is current_token_type of 0
+    print of 2071
 
     # Handle NOT
     if tok = TT_NOT:
@@ -631,7 +702,10 @@ define parse_unary as:
 
 # Parse primary: literals, identifiers, parens, interrogatives, list literals
 define parse_primary as:
+    print of 2080
     tok is current_token_type of 0
+    print of 2081
+    print of tok
 
     if parser_error = 1:
         return 0
@@ -667,11 +741,17 @@ define parse_primary as:
 
     # Number literal
     if tok = TT_NUMBER:
+        print of 2060.5
         num_val is current_token_num of 0
+        print of 2060.6
+        print of num_val
         result is advance_token of 0
 
         node is create_node of AST_LITERAL
+        print of 2060.7
+        print of node
         result is set_num_value of [node, num_val]
+        print of 2060.8
         result is set_str_index of [node, LIT_NUMBER]
         return node
 
@@ -695,12 +775,20 @@ define parse_primary as:
 
     # Identifier
     if tok = TT_IDENTIFIER:
-        str_idx is current_token_str of 0
+        print of 2090
+        id_str_idx is current_token_str of 0
+        print of 2091
         result is advance_token of 0
+        print of 2092
 
-        node is create_node of AST_IDENTIFIER
-        result is set_str_index of [node, str_idx]
-        return node
+        print of 2092.5
+        id_node is create_node of AST_IDENTIFIER
+        print of 2092.6
+        print of id_node
+        print of 2093
+        result is set_str_index of [id_node, id_str_idx]
+        print of 2094
+        return id_node
 
     # List literal: [expr, expr, ...]
     if tok = TT_LBRACKET:
@@ -919,7 +1007,10 @@ define parse_list_literal as:
 
 # Parse a single statement
 define parse_statement as:
+    print of 3001
     tok is current_token_type of 0
+    print of 3002
+    print of tok
 
     # Skip newlines
     if tok = TT_NEWLINE:
@@ -969,13 +1060,20 @@ define parse_statement as:
         return node
 
     # Assignment: identifier IS expression
+    print of 3003
     if tok = TT_IDENTIFIER:
+        print of 3004
         next_tok is peek_token_type of 1
+        print of 3005
+        print of next_tok
         if next_tok = TT_IS:
+            print of 3006
             return parse_assignment of 0
 
     # Expression statement
+    print of 3010
     expr is parse_expression of 0
+    print of 3011
 
     # Skip optional newline
     tok is current_token_type of 0
@@ -1161,8 +1259,9 @@ define parse_function_def as:
 
     node is create_node of AST_FUNCTION_DEF
     result is set_str_index of [node, name_str]
-    ast_children_start[node] is block_start
-    ast_children_end[node] is block_end
+    arr_idx is node + 1
+    ast_children_start[arr_idx] is block_start
+    ast_children_end[arr_idx] is block_end
     return node
 
 # Parse struct definition: STRUCT identifier: field+
@@ -1373,11 +1472,17 @@ define parse_block as:
 
 # Parse a complete program
 define parse_program as:
+    print of 4010
     node is create_node of AST_PROGRAM
+    print of 4011
     result is start_children of node
+    print of 4012
 
     loop while 1:
+        print of 4013
         tok is current_token_type of 0
+        print of 4014
+        print of tok
 
         if tok = TT_EOF:
             break
@@ -1386,7 +1491,9 @@ define parse_program as:
         if tok = TT_NEWLINE:
             result is advance_token of 0
         else:
+            print of 4015
             stmt is parse_statement of 0
+            print of 4016
             if stmt != 0:
                 result is add_child of [node, stmt]
 
@@ -1401,8 +1508,11 @@ define parse_program as:
 
 # Parse tokens and return AST root node index
 define parse as:
+    print of 4001
     result is init_parser of 0
+    print of 4002
     root is parse_program of 0
+    print of 4003
     return root
 
 # ============================================================================
@@ -1411,17 +1521,18 @@ define parse as:
 
 # Print AST node for debugging
 define print_ast_node of node_idx as:
-    node_type is ast_types[node_idx]
+    arr_idx is node_idx + 1
+    node_type is ast_types[arr_idx]
     print of node_type
 
     if node_type = AST_LITERAL:
-        print of ast_num_value[node_idx]
+        print of ast_num_value[arr_idx]
     if node_type = AST_IDENTIFIER:
-        print of ast_str_index[node_idx]
+        print of ast_str_index[arr_idx]
     if node_type = AST_BINARY_OP:
-        print of ast_num_value[node_idx]
-        result is print_ast_node of ast_left[node_idx]
-        result is print_ast_node of ast_right[node_idx]
+        print of ast_num_value[arr_idx]
+        result is print_ast_node of ast_left[arr_idx]
+        result is print_ast_node of ast_right[arr_idx]
 
     return 0
 

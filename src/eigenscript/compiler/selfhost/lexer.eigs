@@ -106,6 +106,12 @@ lex_line is 1
 lex_col is 1
 lex_indent is 0
 lex_at_line_start is 1
+lex_last_num_val is 0
+
+# Set lexer source - must be called before init_lexer
+define set_source of src as:
+    lex_source is src
+    return 0
 
 # State Initialization - call after setting lex_source
 define init_lexer as:
@@ -204,11 +210,46 @@ define read_number as:
     num_len is lex_pos - start
     num_str is substring of [lex_source, start, num_len]
     num_val is string_to_number of num_str
+    lex_last_num_val is num_val
     return num_val
 
 # Global variables for function string results (functions can only return double)
 last_string_val is ""
 last_identifier is ""
+
+# Shared string table for cross-module access
+ast_strings is [""]
+ast_string_count is 0
+
+# Add a string to the table and return its index (deduplicated)
+define add_string of str as:
+    # Check if string already exists in table
+    i is 1
+    loop while i <= ast_string_count:
+        existing is ast_strings[i]
+        eq is string_equals of [existing, str]
+        if eq = 1:
+            return i
+        i is i + 1
+    # Not found, add new entry
+    append of ast_strings of str
+    ast_string_count is ast_string_count + 1
+    return ast_string_count
+
+# Get the last added identifier's index in the string table
+define get_identifier_index as:
+    idx is add_string of last_identifier
+    return idx
+
+# Get the last added string literal's index in the string table
+define get_string_index as:
+    idx is add_string of last_string_val
+    return idx
+
+# Get string by index from the table
+define get_string of idx as:
+    arr_idx is idx
+    return ast_strings[arr_idx]
 
 # Read a string literal - stores result in last_string_val
 define read_string as:
@@ -545,7 +586,4 @@ define tokenize as:
     print of 1001
     return 0
 
-# Test - 999 = lexer start signal
-print of 999
-lex_source is "x is 5\nprint of x"
-result is tokenize of 0
+# Lexer module initialization complete
