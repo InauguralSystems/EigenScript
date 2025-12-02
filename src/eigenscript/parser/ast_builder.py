@@ -860,13 +860,19 @@ class Parser:
                 self.advance()  # consume LBRACKET
 
                 # Parse parameter list
-                if self.current_token() and self.current_token().type != TokenType.RBRACKET:
+                if (
+                    self.current_token()
+                    and self.current_token().type != TokenType.RBRACKET
+                ):
                     # First parameter
                     param_token = self.expect(TokenType.IDENTIFIER)
                     parameters.append(param_token.value)
 
                     # Additional parameters
-                    while self.current_token() and self.current_token().type == TokenType.COMMA:
+                    while (
+                        self.current_token()
+                        and self.current_token().type == TokenType.COMMA
+                    ):
                         self.advance()  # consume COMMA
                         param_token = self.expect(TokenType.IDENTIFIER)
                         parameters.append(param_token.value)
@@ -976,7 +982,9 @@ class Parser:
             self.expect(TokenType.COLON)
 
             # Consume all newlines (handles comment-only lines)
-            while self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            while (
+                self.current_token() and self.current_token().type == TokenType.NEWLINE
+            ):
                 self.advance()
 
             # Parse else block
