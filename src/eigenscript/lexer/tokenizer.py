@@ -31,6 +31,7 @@ class TokenType(Enum):
     IN = "IN"
     IMPORT = "IMPORT"
     FROM = "FROM"
+    STRUCT = "STRUCT"  # User-defined types for self-hosting
 
     # Interrogatives (geometric projection operators)
     WHO = "WHO"
@@ -140,6 +141,7 @@ class Tokenizer:
         "in": TokenType.IN,
         "import": TokenType.IMPORT,
         "from": TokenType.FROM,
+        "struct": TokenType.STRUCT,
         # Interrogatives
         "who": TokenType.WHO,
         "what": TokenType.WHAT,

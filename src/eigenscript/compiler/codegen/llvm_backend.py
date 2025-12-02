@@ -28,6 +28,8 @@ from eigenscript.parser.ast_builder import (
     Index,
     Import,
     MemberAccess,
+    StructDef,
+    StructLiteral,
 )
 
 
@@ -59,6 +61,8 @@ class ValueKind(Enum):
     SCALAR = "scalar"  # Raw double value
     EIGEN_PTR = "eigen_ptr"  # EigenValue* pointer
     LIST_PTR = "list_ptr"  # EigenList* pointer
+    STRING_PTR = "string_ptr"  # EigenString* pointer (for self-hosting)
+    STRUCT_PTR = "struct_ptr"  # User-defined struct pointer (for self-hosting)
 
 
 @dataclass
@@ -72,6 +76,7 @@ class GeneratedValue:
 
     value: ir.Value
     kind: ValueKind
+    struct_name: Optional[str] = None  # For STRUCT_PTR: name of the struct type
 
 
 class LLVMCodeGenerator:
@@ -195,12 +200,27 @@ class LLVMCodeGenerator:
         # Pointer types
         self.eigen_value_ptr = self.eigen_value_type.as_pointer()
         self.eigen_list_ptr = self.eigen_list_type.as_pointer()
-        self.string_type = self.int8_type.as_pointer()
+        self.string_type = self.int8_type.as_pointer()  # C-style char*
+
+        # EigenString structure: {char* data, i64 length, i64 capacity}
+        # This is the native string type for self-hosting
+        self.eigen_string_type = ir.LiteralStructType(
+            [
+                self.string_type,  # data ptr (char*)
+                self.int64_type,  # length
+                self.int64_type,  # capacity
+            ]
+        )
+        self.eigen_string_ptr = self.eigen_string_type.as_pointer()
 
         # Symbol tables
         self.global_vars: Dict[str, ir.AllocaInstr] = {}
         self.local_vars: Dict[str, ir.AllocaInstr] = {}
         self.functions: Dict[str, ir.Function] = {}
+
+        # Struct type registry (for self-hosting)
+        # Maps struct name -> (LLVM type, field names)
+        self.struct_types: Dict[str, tuple[ir.Type, list[str]]] = {}
 
         # Current function and builder
         self.current_function: Optional[ir.Function] = None
@@ -215,6 +235,7 @@ class LLVMCodeGenerator:
         # Cleanup tracking (for memory management)
         self.allocated_eigenvalues: list[ir.Value] = []
         self.allocated_lists: list[ir.Value] = []
+        self.allocated_strings: list[ir.Value] = []  # EigenString* for self-hosting
 
         # Initialize runtime functions
         self._declare_runtime_functions()
@@ -403,6 +424,190 @@ class LLVMCodeGenerator:
         )
         self.eigen_list_destroy.attributes.add("nounwind")
 
+        # ============================================================
+        # String Runtime Functions (for self-hosting)
+        # ============================================================
+
+        # eigen_string_create(char*) -> EigenString*
+        eigen_string_create_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.string_type]
+        )
+        self.eigen_string_create = ir.Function(
+            self.module, eigen_string_create_type, name="eigen_string_create"
+        )
+        self.eigen_string_create.attributes.add("nounwind")
+
+        # eigen_string_create_empty(i64 capacity) -> EigenString*
+        eigen_string_create_empty_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.int64_type]
+        )
+        self.eigen_string_create_empty = ir.Function(
+            self.module,
+            eigen_string_create_empty_type,
+            name="eigen_string_create_empty",
+        )
+        self.eigen_string_create_empty.attributes.add("nounwind")
+
+        # eigen_string_destroy(EigenString*) -> void
+        eigen_string_destroy_type = ir.FunctionType(
+            self.void_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_destroy = ir.Function(
+            self.module, eigen_string_destroy_type, name="eigen_string_destroy"
+        )
+        self.eigen_string_destroy.attributes.add("nounwind")
+
+        # eigen_string_length(EigenString*) -> i64
+        eigen_string_length_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_length = ir.Function(
+            self.module, eigen_string_length_type, name="eigen_string_length"
+        )
+        self.eigen_string_length.attributes.add("nounwind")
+        self.eigen_string_length.attributes.add("readonly")
+
+        # eigen_char_at(EigenString*, i64 index) -> i64
+        eigen_char_at_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.int64_type]
+        )
+        self.eigen_char_at = ir.Function(
+            self.module, eigen_char_at_type, name="eigen_char_at"
+        )
+        self.eigen_char_at.attributes.add("nounwind")
+        self.eigen_char_at.attributes.add("readonly")
+
+        # eigen_substring(EigenString*, i64 start, i64 length) -> EigenString*
+        eigen_substring_type = ir.FunctionType(
+            self.eigen_string_ptr,
+            [self.eigen_string_ptr, self.int64_type, self.int64_type],
+        )
+        self.eigen_substring = ir.Function(
+            self.module, eigen_substring_type, name="eigen_substring"
+        )
+        self.eigen_substring.attributes.add("nounwind")
+
+        # eigen_string_concat(EigenString*, EigenString*) -> EigenString*
+        eigen_string_concat_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_string_concat = ir.Function(
+            self.module, eigen_string_concat_type, name="eigen_string_concat"
+        )
+        self.eigen_string_concat.attributes.add("nounwind")
+
+        # eigen_string_append_char(EigenString*, i64 char_code) -> void
+        eigen_string_append_char_type = ir.FunctionType(
+            self.void_type, [self.eigen_string_ptr, self.int64_type]
+        )
+        self.eigen_string_append_char = ir.Function(
+            self.module, eigen_string_append_char_type, name="eigen_string_append_char"
+        )
+        self.eigen_string_append_char.attributes.add("nounwind")
+
+        # eigen_string_equals(EigenString*, EigenString*) -> i64
+        eigen_string_equals_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_string_equals = ir.Function(
+            self.module, eigen_string_equals_type, name="eigen_string_equals"
+        )
+        self.eigen_string_equals.attributes.add("nounwind")
+        self.eigen_string_equals.attributes.add("readonly")
+
+        # eigen_string_compare(EigenString*, EigenString*) -> i64
+        eigen_string_compare_type = ir.FunctionType(
+            self.int64_type, [self.eigen_string_ptr, self.eigen_string_ptr]
+        )
+        self.eigen_string_compare = ir.Function(
+            self.module, eigen_string_compare_type, name="eigen_string_compare"
+        )
+        self.eigen_string_compare.attributes.add("nounwind")
+        self.eigen_string_compare.attributes.add("readonly")
+
+        # Character classification functions
+        # eigen_char_is_digit(i64) -> i64
+        char_class_type = ir.FunctionType(self.int64_type, [self.int64_type])
+
+        self.eigen_char_is_digit = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_digit"
+        )
+        self.eigen_char_is_digit.attributes.add("nounwind")
+        self.eigen_char_is_digit.attributes.add("readonly")
+
+        self.eigen_char_is_alpha = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_alpha"
+        )
+        self.eigen_char_is_alpha.attributes.add("nounwind")
+        self.eigen_char_is_alpha.attributes.add("readonly")
+
+        self.eigen_char_is_alnum = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_alnum"
+        )
+        self.eigen_char_is_alnum.attributes.add("nounwind")
+        self.eigen_char_is_alnum.attributes.add("readonly")
+
+        self.eigen_char_is_whitespace = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_whitespace"
+        )
+        self.eigen_char_is_whitespace.attributes.add("nounwind")
+        self.eigen_char_is_whitespace.attributes.add("readonly")
+
+        self.eigen_char_is_newline = ir.Function(
+            self.module, char_class_type, name="eigen_char_is_newline"
+        )
+        self.eigen_char_is_newline.attributes.add("nounwind")
+        self.eigen_char_is_newline.attributes.add("readonly")
+
+        # eigen_char_to_string(i64) -> EigenString*
+        eigen_char_to_string_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.int64_type]
+        )
+        self.eigen_char_to_string = ir.Function(
+            self.module, eigen_char_to_string_type, name="eigen_char_to_string"
+        )
+        self.eigen_char_to_string.attributes.add("nounwind")
+
+        # eigen_number_to_string(double) -> EigenString*
+        eigen_number_to_string_type = ir.FunctionType(
+            self.eigen_string_ptr, [self.double_type]
+        )
+        self.eigen_number_to_string = ir.Function(
+            self.module, eigen_number_to_string_type, name="eigen_number_to_string"
+        )
+        self.eigen_number_to_string.attributes.add("nounwind")
+
+        # eigen_string_to_number(EigenString*) -> double
+        eigen_string_to_number_type = ir.FunctionType(
+            self.double_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_to_number = ir.Function(
+            self.module, eigen_string_to_number_type, name="eigen_string_to_number"
+        )
+        self.eigen_string_to_number.attributes.add("nounwind")
+        self.eigen_string_to_number.attributes.add("readonly")
+
+        # eigen_string_find(EigenString*, EigenString*, i64 start) -> i64
+        eigen_string_find_type = ir.FunctionType(
+            self.int64_type,
+            [self.eigen_string_ptr, self.eigen_string_ptr, self.int64_type],
+        )
+        self.eigen_string_find = ir.Function(
+            self.module, eigen_string_find_type, name="eigen_string_find"
+        )
+        self.eigen_string_find.attributes.add("nounwind")
+        self.eigen_string_find.attributes.add("readonly")
+
+        # eigen_string_cstr(EigenString*) -> char*
+        eigen_string_cstr_type = ir.FunctionType(
+            self.string_type, [self.eigen_string_ptr]
+        )
+        self.eigen_string_cstr = ir.Function(
+            self.module, eigen_string_cstr_type, name="eigen_string_cstr"
+        )
+        self.eigen_string_cstr.attributes.add("nounwind")
+        self.eigen_string_cstr.attributes.add("readonly")
+
     def ensure_scalar(self, gen_val: Union[GeneratedValue, ir.Value]) -> ir.Value:
         """Convert a GeneratedValue to a scalar double.
 
@@ -492,6 +697,82 @@ class LLVMCodeGenerator:
 
         raise CompilerError(f"Cannot convert type {val.type} to boolean")
 
+    def _ensure_string_ptr(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Extract EigenString* from a GeneratedValue or raw ir.Value.
+
+        Used by string builtin functions to get the string pointer.
+        """
+        if isinstance(val, GeneratedValue):
+            if val.kind == ValueKind.STRING_PTR:
+                return val.value
+            else:
+                raise CompilerError(
+                    f"Expected string, got {val.kind}",
+                    hint="String operations require EigenString* values",
+                )
+        elif isinstance(val, ir.Value):
+            # Check if it's already an EigenString*
+            if isinstance(val.type, ir.PointerType):
+                return val
+            else:
+                raise CompilerError(
+                    f"Expected string pointer, got {val.type}",
+                    hint="String operations require EigenString* values",
+                )
+        else:
+            raise CompilerError(f"Unexpected value type: {type(val)}")
+
+    def _ensure_int64(self, val: Union[GeneratedValue, ir.Value]) -> ir.Value:
+        """Convert a value to i64 for use in string operations.
+
+        EigenScript uses doubles for all numbers, so this converts double -> i64.
+        """
+        if isinstance(val, GeneratedValue):
+            val = val.value
+
+        if val.type == self.int64_type:
+            return val
+        elif val.type == self.double_type:
+            return self.builder.fptosi(val, self.int64_type)
+        elif isinstance(val.type, ir.IntType):
+            # Extend or truncate to i64
+            if val.type.width < 64:
+                return self.builder.sext(val, self.int64_type)
+            elif val.type.width > 64:
+                return self.builder.trunc(val, self.int64_type)
+            else:
+                return val
+        else:
+            raise CompilerError(
+                f"Cannot convert {val.type} to int64", hint="Expected a numeric value"
+            )
+
+    def _extract_list_args(self, node, expected_count: int) -> list:
+        """Extract arguments from a list literal for multi-arg builtins.
+
+        Many string functions take multiple arguments via list syntax:
+            char_at of [str, index]
+            substring of [str, start, length]
+        """
+        from eigenscript.parser.ast_builder import ListLiteral
+
+        if isinstance(node, ListLiteral):
+            if len(node.elements) != expected_count:
+                raise CompilerError(
+                    f"Expected {expected_count} arguments, got {len(node.elements)}",
+                    hint=f"This function requires exactly {expected_count} arguments in a list",
+                )
+            return [self._generate(elem) for elem in node.elements]
+        else:
+            # Single argument - wrap in list if expecting 1
+            if expected_count == 1:
+                return [self._generate(node)]
+            else:
+                raise CompilerError(
+                    f"Expected list with {expected_count} arguments",
+                    hint="Use [arg1, arg2, ...] syntax for multiple arguments",
+                )
+
     def _alloca_at_entry(self, ty: ir.Type, name: str = "") -> ir.AllocaInstr:
         """Allocate a variable in the entry block of the current function.
 
@@ -540,6 +821,43 @@ class LLVMCodeGenerator:
 
         return alloca_inst
 
+    def _create_global_variable(
+        self, ty: ir.Type, name: str, initial_value=None
+    ) -> ir.GlobalVariable:
+        """Create a module-level global variable.
+
+        This creates an actual LLVM global that can be accessed from any function.
+        Used for EigenScript variables defined in main scope that need to be
+        accessed from user-defined functions.
+
+        Args:
+            ty: The type of the variable (e.g., double_type, eigen_string_ptr)
+            name: Name for the global variable
+            initial_value: Optional initial value (must match type)
+
+        Returns:
+            The global variable (as a pointer to the value type)
+        """
+        # Create a unique name to avoid conflicts
+        global_name = f"__eigs_global_{name}"
+
+        # Create the global variable
+        global_var = ir.GlobalVariable(self.module, ty, name=global_name)
+        global_var.linkage = "internal"  # Not exported
+
+        # Initialize with default value
+        if initial_value is not None:
+            global_var.initializer = initial_value
+        elif ty == self.double_type:
+            global_var.initializer = ir.Constant(self.double_type, 0.0)
+        elif isinstance(ty, ir.PointerType):
+            global_var.initializer = ir.Constant(ty, None)
+        else:
+            # For struct types, use zeroinitializer
+            global_var.initializer = ir.Constant(ty, None)
+
+        return global_var
+
     def _create_eigen_on_stack(self, initial_value: ir.Value) -> ir.Value:
         """Create an EigenValue on the stack (fast, auto-freed).
 
@@ -573,7 +891,7 @@ class LLVMCodeGenerator:
         return eigen_stack
 
     def _generate_cleanup(self) -> None:
-        """Generate cleanup code to free all allocated EigenValues and lists.
+        """Generate cleanup code to free all allocated EigenValues, lists, and strings.
 
         This should be called before any return statement to prevent memory leaks.
         """
@@ -584,6 +902,10 @@ class LLVMCodeGenerator:
         # Free all tracked EigenList pointers
         for list_ptr in self.allocated_lists:
             self.builder.call(self.eigen_list_destroy, [list_ptr])
+
+        # Free all tracked EigenString pointers
+        for string_ptr in self.allocated_strings:
+            self.builder.call(self.eigen_string_destroy, [string_ptr])
 
     def link_runtime_bitcode(
         self, llvm_module: llvm.ModuleRef, target_triple: str = None
@@ -659,6 +981,8 @@ class LLVMCodeGenerator:
         # (Important: prevents stale references from previous compilations)
         self.allocated_eigenvalues = []
         self.allocated_lists = []
+        self.allocated_strings = []
+        self.struct_var_types = {}  # Maps variable name -> struct type name
 
         # Create entry function based on compilation mode
         if self.is_library:
@@ -750,6 +1074,10 @@ class LLVMCodeGenerator:
             return None
         elif isinstance(node, MemberAccess):
             return self._generate_member_access(node)
+        elif isinstance(node, StructDef):
+            return self._generate_struct_def(node)
+        elif isinstance(node, StructLiteral):
+            return self._generate_struct_literal(node)
         else:
             raise CompilerError(
                 f"Code generation for '{type(node).__name__}' not implemented",
@@ -763,7 +1091,7 @@ class LLVMCodeGenerator:
         if node.literal_type == "number":
             return ir.Constant(self.double_type, float(node.value))
         elif node.literal_type == "string":
-            # String literals - create global constant
+            # String literals - create global constant C string, then wrap in EigenString
             string_val = node.value + "\0"
             string_const = ir.Constant(
                 ir.ArrayType(self.int8_type, len(string_val)),
@@ -774,7 +1102,17 @@ class LLVMCodeGenerator:
             )
             global_str.global_constant = True
             global_str.initializer = string_const
-            return self.builder.bitcast(global_str, self.string_type)
+            c_str_ptr = self.builder.bitcast(global_str, self.string_type)
+
+            # Create EigenString* from the C string
+            # This enables native string operations in compiled code
+            eigen_str = self.builder.call(self.eigen_string_create, [c_str_ptr])
+
+            # Track for cleanup (only in main scope)
+            if self.current_function and self.current_function.name == "main":
+                self.allocated_strings.append(eigen_str)
+
+            return GeneratedValue(value=eigen_str, kind=ValueKind.STRING_PTR)
         else:
             raise NotImplementedError(
                 f"Literal type {node.literal_type} not implemented"
@@ -863,7 +1201,14 @@ class LLVMCodeGenerator:
         # Otherwise, load the pointer and check what it points to
         loaded_ptr = self.builder.load(var_ptr)
 
-        # Check if it's a list
+        # Check if it's a struct variable
+        if hasattr(self, "struct_var_types") and node.name in self.struct_var_types:
+            struct_name = self.struct_var_types[node.name]
+            return GeneratedValue(
+                value=loaded_ptr, kind=ValueKind.STRUCT_PTR, struct_name=struct_name
+            )
+
+        # Check if it's a string or list (both have 3-element struct with pointer first)
         if isinstance(loaded_ptr.type, ir.PointerType):
             pointed_type = loaded_ptr.type.pointee
             if (
@@ -871,8 +1216,17 @@ class LLVMCodeGenerator:
                 and len(pointed_type.elements) == 3
                 and isinstance(pointed_type.elements[0], ir.PointerType)
             ):
-                # It's a list - return the pointer directly
-                return loaded_ptr
+                # Check if first element is char* (string) or double* (list)
+                first_elem = pointed_type.elements[0]
+                if (
+                    isinstance(first_elem.pointee, ir.IntType)
+                    and first_elem.pointee.width == 8
+                ):
+                    # It's a string (char* = i8*)
+                    return GeneratedValue(value=loaded_ptr, kind=ValueKind.STRING_PTR)
+                else:
+                    # It's a list (double*)
+                    return loaded_ptr
 
         # It's an EigenValue - get the actual value
         return self.builder.call(self.eigen_get_value, [loaded_ptr])
@@ -994,8 +1348,9 @@ class LLVMCodeGenerator:
 
         # Handle backward compatibility: convert raw ir.Value to GeneratedValue
         if isinstance(gen_value, ir.Value):
-            # Detect if it's a list
+            # Detect if it's a list or string (both are 3-element structs with pointer first)
             is_list = False
+            is_string = False
             if isinstance(gen_value.type, ir.PointerType):
                 pointed_type = gen_value.type.pointee
                 if (
@@ -1003,30 +1358,121 @@ class LLVMCodeGenerator:
                     and len(pointed_type.elements) == 3
                     and isinstance(pointed_type.elements[0], ir.PointerType)
                 ):
-                    is_list = True
+                    # Check first element type to distinguish string vs list
+                    first_elem = pointed_type.elements[0]
+                    if (
+                        isinstance(first_elem.pointee, ir.IntType)
+                        and first_elem.pointee.width == 8
+                    ):
+                        # It's a string (char* = i8*)
+                        is_string = True
+                    else:
+                        # It's a list (double*)
+                        is_list = True
 
-            if is_list:
+            if is_string:
+                gen_value = GeneratedValue(value=gen_value, kind=ValueKind.STRING_PTR)
+            elif is_list:
                 gen_value = GeneratedValue(value=gen_value, kind=ValueKind.LIST_PTR)
             else:
                 # Assume it's a scalar
                 gen_value = GeneratedValue(value=gen_value, kind=ValueKind.SCALAR)
 
+        # Determine which symbol table to use based on scope
+        in_func = self.current_function and self.current_function.name != "main"
+        var_table = self.local_vars if in_func else self.global_vars
+
+        # Check if variable already exists (check BOTH scopes)
+        existing_var_ptr = None
+        if node.identifier in self.local_vars:
+            existing_var_ptr = self.local_vars[node.identifier]
+        elif node.identifier in self.global_vars:
+            existing_var_ptr = self.global_vars[node.identifier]
+
         # Handle list assignment
         if gen_value.kind == ValueKind.LIST_PTR:
-            var_ptr = self._alloca_at_entry(self.eigen_list_ptr, name=node.identifier)
-            self.builder.store(gen_value.value, var_ptr)
-            self.local_vars[node.identifier] = var_ptr
+            if existing_var_ptr is not None:
+                # Update existing list variable
+                self.builder.store(gen_value.value, existing_var_ptr)
+            else:
+                # Create new list variable
+                if in_func:
+                    var_ptr = self._alloca_at_entry(
+                        self.eigen_list_ptr, name=node.identifier
+                    )
+                else:
+                    var_ptr = self._create_global_variable(
+                        self.eigen_list_ptr, node.identifier
+                    )
+                self.builder.store(gen_value.value, var_ptr)
+                var_table[node.identifier] = var_ptr
+            return
+
+        # Handle string assignment (for self-hosting)
+        if gen_value.kind == ValueKind.STRING_PTR:
+            if existing_var_ptr is not None:
+                # Update existing string variable
+                self.builder.store(gen_value.value, existing_var_ptr)
+            else:
+                # Create new string variable
+                if in_func:
+                    var_ptr = self._alloca_at_entry(
+                        self.eigen_string_ptr, name=node.identifier
+                    )
+                else:
+                    var_ptr = self._create_global_variable(
+                        self.eigen_string_ptr, node.identifier
+                    )
+                self.builder.store(gen_value.value, var_ptr)
+                var_table[node.identifier] = var_ptr
+            return
+
+        # Handle struct assignment (for self-hosting)
+        if gen_value.kind == ValueKind.STRUCT_PTR:
+            struct_type, _ = self.struct_types.get(gen_value.struct_name, (None, None))
+            if struct_type:
+                if existing_var_ptr is not None:
+                    # Update existing struct variable
+                    self.builder.store(gen_value.value, existing_var_ptr)
+                else:
+                    # Create new struct variable
+                    if in_func:
+                        var_ptr = self._alloca_at_entry(
+                            struct_type.as_pointer(), name=node.identifier
+                        )
+                    else:
+                        var_ptr = self._create_global_variable(
+                            struct_type.as_pointer(), node.identifier
+                        )
+                    self.builder.store(gen_value.value, var_ptr)
+                    var_table[node.identifier] = var_ptr
+                    # Store struct metadata for later field access
+                    if not hasattr(self, "struct_var_types"):
+                        self.struct_var_types = {}
+                    self.struct_var_types[node.identifier] = gen_value.struct_name
             return
 
         # Handle EigenValue assignment (scalar or pointer)
-        if node.identifier in self.local_vars:
+        # Use the existing variable pointer we already looked up
+        var_ptr = existing_var_ptr
+        is_global_var = node.identifier in self.global_vars
+
+        if var_ptr is not None:
             # Variable exists - update or rebind
-            var_ptr = self.local_vars[node.identifier]
 
             if gen_value.kind == ValueKind.EIGEN_PTR:
                 # Aliasing: rebind to point to the same EigenValue*
                 # This is the key to Option 2: "value is what is x" makes value an alias
                 self.builder.store(gen_value.value, var_ptr)
+            elif gen_value.kind == ValueKind.STRING_PTR:
+                # String update: check if existing var is a string pointer
+                if var_ptr.type.pointee == self.eigen_string_ptr:
+                    # It's a string variable - just store the new string pointer
+                    self.builder.store(gen_value.value, var_ptr)
+                else:
+                    raise TypeError(
+                        f"Cannot assign string to non-string variable '{node.identifier}'"
+                    )
             else:
                 # Scalar update: check if it's a raw double* or EigenValue*
                 scalar_val = self.ensure_scalar(gen_value)
@@ -1035,6 +1481,11 @@ class LLVMCodeGenerator:
                 if var_ptr.type.pointee == self.double_type:
                     # Fast path: raw double*, just store the new value
                     self.builder.store(scalar_val, var_ptr)
+                elif var_ptr.type.pointee == self.eigen_string_ptr:
+                    # Can't assign scalar to string variable
+                    raise TypeError(
+                        f"Cannot assign scalar to string variable '{node.identifier}'"
+                    )
                 else:
                     # Geometric tracked: EigenValue*, call eigen_update
                     eigen_ptr = self.builder.load(var_ptr)
@@ -1043,19 +1494,26 @@ class LLVMCodeGenerator:
             # Create new variable
             # OBSERVER EFFECT: Check if variable needs geometric tracking
             is_observed = node.identifier in self.observed_variables
-            in_function = self.current_function and self.current_function.name != "main"
 
             if not is_observed and gen_value.kind == ValueKind.SCALAR:
                 # FAST PATH: Unobserved scalar → raw double (C-level performance!)
-                # This compiles to a simple alloca that LLVM's mem2reg pass
-                # will promote to a CPU register. Zero overhead.
                 scalar_val = self.ensure_scalar(gen_value)
-                var_ptr = self._alloca_at_entry(self.double_type, name=node.identifier)
-                self.builder.store(scalar_val, var_ptr)
-                self.local_vars[node.identifier] = var_ptr
+                if in_func:
+                    # In function: use stack alloca (can be promoted to register)
+                    var_ptr = self._alloca_at_entry(
+                        self.double_type, name=node.identifier
+                    )
+                    self.builder.store(scalar_val, var_ptr)
+                else:
+                    # In main scope: use global variable for cross-function access
+                    var_ptr = self._create_global_variable(
+                        self.double_type, node.identifier
+                    )
+                    self.builder.store(scalar_val, var_ptr)
+                var_table[node.identifier] = var_ptr
                 # NOTE: This is just a double*, not EigenValue*!
 
-            elif in_function and gen_value.kind == ValueKind.SCALAR:
+            elif in_func and gen_value.kind == ValueKind.SCALAR:
                 # Observed variable in function: Stack-allocated EigenValue
                 # IMPORTANT: Stack variables are NOT added to allocated_eigenvalues
                 # They don't need cleanup - automatically freed when function returns
@@ -1065,17 +1523,23 @@ class LLVMCodeGenerator:
                     self.eigen_value_ptr, name=node.identifier
                 )
                 self.builder.store(eigen_ptr, var_ptr)
-                self.local_vars[node.identifier] = var_ptr
+                var_table[node.identifier] = var_ptr
                 # NOTE: Stack variables are NOT tracked in allocated_eigenvalues!
             else:
                 # Observed variable in main scope: Heap allocation
                 # These DO need cleanup via eigen_destroy
                 eigen_ptr = self.ensure_eigen_ptr(gen_value)
-                var_ptr = self._alloca_at_entry(
-                    self.eigen_value_ptr, name=node.identifier
-                )
+                if in_func:
+                    var_ptr = self._alloca_at_entry(
+                        self.eigen_value_ptr, name=node.identifier
+                    )
+                else:
+                    # Main scope: use global for cross-function access
+                    var_ptr = self._create_global_variable(
+                        self.eigen_value_ptr, node.identifier
+                    )
                 self.builder.store(eigen_ptr, var_ptr)
-                self.local_vars[node.identifier] = var_ptr
+                var_table[node.identifier] = var_ptr
 
     def _generate_relation(self, node: Relation) -> ir.Value:
         """Generate code for relations (function calls via 'of' operator)."""
@@ -1083,9 +1547,47 @@ class LLVMCodeGenerator:
         if isinstance(node.left, Identifier):
             func_name = node.left.name
 
+            # Check if this is a struct instantiation: StructName of [values...]
+            if func_name in self.struct_types:
+                # Parse the values from the right side (must be a list)
+                if isinstance(node.right, ListLiteral):
+                    struct_literal = StructLiteral(
+                        struct_name=func_name, values=node.right.elements
+                    )
+                    return self._generate_struct_literal(struct_literal)
+                else:
+                    raise CompilerError(
+                        f"Struct instantiation requires a list of values",
+                        hint=f"Use: {func_name} of [value1, value2, ...]",
+                        node=node,
+                    )
+
             # Handle built-in functions
             if func_name == "print":
                 arg_gen_val = self._generate(node.right)
+
+                # Check if it's a string - print as string
+                if (
+                    isinstance(arg_gen_val, GeneratedValue)
+                    and arg_gen_val.kind == ValueKind.STRING_PTR
+                ):
+                    # Get C string from EigenString and print it
+                    c_str = self.builder.call(
+                        self.eigen_string_cstr, [arg_gen_val.value]
+                    )
+                    fmt_str = "%s\n\0"
+                    fmt_const = ir.Constant(
+                        ir.ArrayType(self.int8_type, len(fmt_str)),
+                        bytearray(fmt_str.encode("utf-8")),
+                    )
+                    global_fmt = ir.GlobalVariable(
+                        self.module, fmt_const.type, name=f"fmt_str_{id(node)}"
+                    )
+                    global_fmt.global_constant = True
+                    global_fmt.initializer = fmt_const
+                    fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
+                    return self.builder.call(self.printf, [fmt_ptr, c_str])
+
                 # Convert to scalar for printing (handles both raw values and aliases)
                 arg_val = self.ensure_scalar(arg_gen_val)
 
@@ -1107,6 +1609,152 @@ class LLVMCodeGenerator:
                     global_fmt.initializer = fmt_const
                     fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
                     return self.builder.call(self.printf, [fmt_ptr, arg_val])
+
+            # ============================================================
+            # String Builtin Functions (for self-hosting)
+            # ============================================================
+
+            # string_length of str -> i64 (as double for EigenScript)
+            if func_name == "string_length":
+                arg_gen = self._generate(node.right)
+                str_ptr = self._ensure_string_ptr(arg_gen)
+                length = self.builder.call(self.eigen_string_length, [str_ptr])
+                # Convert i64 to double for EigenScript consistency
+                return self.builder.sitofp(length, self.double_type)
+
+            # char_at of [str, index] -> i64 (as double)
+            if func_name == "char_at":
+                args = self._extract_list_args(node.right, 2)
+                str_ptr = self._ensure_string_ptr(args[0])
+                index = self._ensure_int64(args[1])
+                char_code = self.builder.call(self.eigen_char_at, [str_ptr, index])
+                return self.builder.sitofp(char_code, self.double_type)
+
+            # substring of [str, start, length] -> EigenString*
+            if func_name == "substring":
+                args = self._extract_list_args(node.right, 3)
+                str_ptr = self._ensure_string_ptr(args[0])
+                start = self._ensure_int64(args[1])
+                length = self._ensure_int64(args[2])
+                result = self.builder.call(
+                    self.eigen_substring, [str_ptr, start, length]
+                )
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # string_concat of [str1, str2] -> EigenString*
+            if func_name == "string_concat":
+                args = self._extract_list_args(node.right, 2)
+                str1 = self._ensure_string_ptr(args[0])
+                str2 = self._ensure_string_ptr(args[1])
+                result = self.builder.call(self.eigen_string_concat, [str1, str2])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # string_equals of [str1, str2] -> bool (as double: 0.0 or 1.0)
+            if func_name == "string_equals":
+                args = self._extract_list_args(node.right, 2)
+                str1 = self._ensure_string_ptr(args[0])
+                str2 = self._ensure_string_ptr(args[1])
+                result = self.builder.call(self.eigen_string_equals, [str1, str2])
+                return self.builder.sitofp(result, self.double_type)
+
+            # string_compare of [str1, str2] -> i64 (as double)
+            if func_name == "string_compare":
+                args = self._extract_list_args(node.right, 2)
+                str1 = self._ensure_string_ptr(args[0])
+                str2 = self._ensure_string_ptr(args[1])
+                result = self.builder.call(self.eigen_string_compare, [str1, str2])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_digit of char_code -> bool (as double)
+            if func_name == "char_is_digit":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_digit, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_alpha of char_code -> bool (as double)
+            if func_name == "char_is_alpha":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_alpha, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_alnum of char_code -> bool (as double)
+            if func_name == "char_is_alnum":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_alnum, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_whitespace of char_code -> bool (as double)
+            if func_name == "char_is_whitespace":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_whitespace, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_is_newline of char_code -> bool (as double)
+            if func_name == "char_is_newline":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_is_newline, [char_code])
+                return self.builder.sitofp(result, self.double_type)
+
+            # char_to_string of char_code -> EigenString*
+            if func_name == "char_to_string":
+                arg_gen = self._generate(node.right)
+                char_code = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_char_to_string, [char_code])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # number_to_string of number -> EigenString*
+            if func_name == "number_to_string":
+                arg_gen = self._generate(node.right)
+                num_val = self.ensure_scalar(arg_gen)
+                result = self.builder.call(self.eigen_number_to_string, [num_val])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # string_to_number of str -> double
+            if func_name == "string_to_number":
+                arg_gen = self._generate(node.right)
+                str_ptr = self._ensure_string_ptr(arg_gen)
+                return self.builder.call(self.eigen_string_to_number, [str_ptr])
+
+            # string_find of [haystack, needle, start] -> i64 (as double, -1 if not found)
+            if func_name == "string_find":
+                args = self._extract_list_args(node.right, 3)
+                haystack = self._ensure_string_ptr(args[0])
+                needle = self._ensure_string_ptr(args[1])
+                start = self._ensure_int64(args[2])
+                result = self.builder.call(
+                    self.eigen_string_find, [haystack, needle, start]
+                )
+                return self.builder.sitofp(result, self.double_type)
+
+            # string_append_char of [str, char_code] -> void (modifies in place)
+            if func_name == "string_append_char":
+                args = self._extract_list_args(node.right, 2)
+                str_ptr = self._ensure_string_ptr(args[0])
+                char_code = self._ensure_int64(args[1])
+                self.builder.call(self.eigen_string_append_char, [str_ptr, char_code])
+                return ir.Constant(self.double_type, 0.0)  # Void return
+
+            # string_new of capacity -> EigenString* (create empty string)
+            if func_name == "string_new":
+                arg_gen = self._generate(node.right)
+                capacity = self._ensure_int64(arg_gen)
+                result = self.builder.call(self.eigen_string_create_empty, [capacity])
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result)
+                return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
 
             # Handle user-defined functions
             if func_name in self.functions:
@@ -1223,7 +1871,7 @@ class LLVMCodeGenerator:
         then_terminated = False
         for stmt in node.if_block:
             self._generate(stmt)
-            if isinstance(stmt, Return):
+            if isinstance(stmt, (Return, Break)):
                 then_terminated = True
                 break
         if not then_terminated:
@@ -1235,7 +1883,7 @@ class LLVMCodeGenerator:
             self.builder.position_at_end(else_block)
             for stmt in node.else_block:
                 self._generate(stmt)
-                if isinstance(stmt, Return):
+                if isinstance(stmt, (Return, Break)):
                     else_terminated = True
                     break
             if not else_terminated:
@@ -1365,16 +2013,66 @@ class LLVMCodeGenerator:
             )
 
     def _generate_member_access(self, node: MemberAccess) -> GeneratedValue:
-        """Generate code for member access (module.function).
+        """Generate code for member access (module.function or struct.field).
 
-        Converts module.function_name to mangled name module_function_name
-        for cross-module function calls.
+        Handles:
+        1. Module function access: module.function -> module_function
+        2. Struct field access: struct_instance.field -> load field value
         """
-        # For now, member access is only supported for module.function pattern
+        # First, try to evaluate the object to see if it's a struct
+        if isinstance(node.object, Identifier):
+            # Check if it's a variable that might hold a struct
+            var_name = node.object.name
+            if var_name in self.local_vars or var_name in self.global_vars:
+                # Load the variable value
+                gen_obj = self._generate_identifier(node.object)
+
+                # Check if it's a struct
+                if (
+                    isinstance(gen_obj, GeneratedValue)
+                    and gen_obj.kind == ValueKind.STRUCT_PTR
+                ):
+                    struct_name = gen_obj.struct_name
+                    if struct_name and struct_name in self.struct_types:
+                        struct_type, field_names = self.struct_types[struct_name]
+
+                        # Find field index
+                        field_name = node.member
+                        if field_name not in field_names:
+                            raise CompilerError(
+                                f"Struct '{struct_name}' has no field '{field_name}'",
+                                hint=f"Available fields: {', '.join(field_names)}",
+                                node=node,
+                            )
+
+                        field_idx = field_names.index(field_name)
+
+                        # Get pointer to field
+                        struct_ptr = gen_obj.value
+                        field_ptr = self.builder.gep(
+                            struct_ptr,
+                            [
+                                ir.Constant(self.int32_type, 0),
+                                ir.Constant(self.int32_type, field_idx),
+                            ],
+                            inbounds=True,
+                        )
+
+                        # Load the field value (stored as i8*)
+                        ptr_val = self.builder.load(field_ptr)
+
+                        # Convert the pointer back to double
+                        # (We stored double bits as pointer, now reverse it)
+                        int_val = self.builder.ptrtoint(ptr_val, self.int64_type)
+                        double_val = self.builder.bitcast(int_val, self.double_type)
+
+                        return double_val
+
+        # Fall back to module.function pattern
         if not isinstance(node.object, Identifier):
             raise CompilerError(
-                "Member access only supported for module.function pattern",
-                hint="Example: control.apply_damping",
+                "Member access only supported for module.function or struct.field pattern",
+                hint="Example: control.apply_damping or token.type",
                 node=node,
             )
 
@@ -1388,6 +2086,119 @@ class LLVMCodeGenerator:
         # Create a synthetic Identifier node
         synthetic_id = Identifier(name=mangled_name)
         return self._generate_identifier(synthetic_id)
+
+    def _generate_struct_def(self, node: StructDef) -> None:
+        """Generate code for struct type definition.
+
+        Creates an LLVM struct type and registers it for later use.
+        Structs are essential for self-hosting (tokens, AST nodes, etc.)
+
+        Example:
+            struct Token:
+                type      # field 0: double
+                value     # field 1: EigenString*
+                line      # field 2: double
+        """
+        # For simplicity, struct fields are generic pointers (i8*)
+        # This allows storing any type (double, string, nested struct)
+        # The actual type is determined at access time
+        field_types = []
+        for field_name in node.fields:
+            # Use i8* (generic pointer) for all fields for flexibility
+            # This is similar to how dynamic languages handle struct fields
+            field_types.append(self.string_type)  # i8* for generic storage
+
+        # Create named struct type
+        struct_type = ir.LiteralStructType(field_types)
+
+        # Register the struct type
+        self.struct_types[node.name] = (struct_type, node.fields)
+
+        # No runtime code generation needed - struct definition is compile-time only
+        return None
+
+    def _generate_struct_literal(self, node: StructLiteral) -> GeneratedValue:
+        """Generate code for struct instantiation.
+
+        Creates a struct instance with provided field values.
+
+        Example:
+            Token of [1, "hello", 10]
+        """
+        if node.struct_name not in self.struct_types:
+            raise CompilerError(
+                f"Unknown struct type '{node.struct_name}'",
+                hint=f"Define the struct first with 'struct {node.struct_name}:'",
+                node=node,
+            )
+
+        struct_type, field_names = self.struct_types[node.struct_name]
+
+        if len(node.values) != len(field_names):
+            raise CompilerError(
+                f"Struct '{node.struct_name}' has {len(field_names)} fields, "
+                f"but {len(node.values)} values provided",
+                hint=f"Expected fields: {', '.join(field_names)}",
+                node=node,
+            )
+
+        # Allocate struct on heap
+        struct_size = ir.Constant(
+            self.int64_type, len(field_names) * 8
+        )  # 8 bytes per pointer
+        struct_ptr = self.builder.call(self.malloc, [struct_size])
+        struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
+
+        # Initialize each field
+        for i, (value_node, field_name) in enumerate(zip(node.values, field_names)):
+            # Generate the value
+            gen_value = self._generate(value_node)
+
+            # Get pointer to field
+            field_ptr = self.builder.gep(
+                struct_ptr,
+                [ir.Constant(self.int32_type, 0), ir.Constant(self.int32_type, i)],
+                inbounds=True,
+            )
+
+            # Store value (convert to pointer if needed)
+            if isinstance(gen_value, GeneratedValue):
+                if gen_value.kind == ValueKind.STRING_PTR:
+                    # Store string pointer directly
+                    ptr_val = self.builder.bitcast(gen_value.value, self.string_type)
+                    self.builder.store(ptr_val, field_ptr)
+                elif gen_value.kind == ValueKind.STRUCT_PTR:
+                    # Store nested struct pointer
+                    ptr_val = self.builder.bitcast(gen_value.value, self.string_type)
+                    self.builder.store(ptr_val, field_ptr)
+                else:
+                    # Scalar value - box it
+                    scalar = self.ensure_scalar(gen_value)
+                    # Store as pointer (cast double bits to pointer)
+                    ptr_val = self.builder.inttoptr(
+                        self.builder.bitcast(scalar, self.int64_type), self.string_type
+                    )
+                    self.builder.store(ptr_val, field_ptr)
+            elif isinstance(gen_value, ir.Value):
+                if gen_value.type == self.double_type:
+                    # Scalar value - box it
+                    ptr_val = self.builder.inttoptr(
+                        self.builder.bitcast(gen_value, self.int64_type),
+                        self.string_type,
+                    )
+                    self.builder.store(ptr_val, field_ptr)
+                elif isinstance(gen_value.type, ir.PointerType):
+                    # Pointer value - store directly
+                    ptr_val = self.builder.bitcast(gen_value, self.string_type)
+                    self.builder.store(ptr_val, field_ptr)
+                else:
+                    raise CompilerError(
+                        f"Cannot store {gen_value.type} in struct field"
+                    )
+
+        return GeneratedValue(
+            value=struct_ptr, kind=ValueKind.STRUCT_PTR, struct_name=node.struct_name
+        )
 
     def _generate_function_def(self, node: FunctionDef) -> None:
         """Generate code for function definitions."""

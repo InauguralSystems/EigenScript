@@ -1,0 +1,27 @@
+# Test user-defined types (structs) for self-hosting
+
+# Define a simple struct
+struct Point:
+    x
+    y
+
+# Create an instance
+p is Point of [10, 20]
+
+# Access fields
+px is p.x
+py is p.y
+print of px
+print of py
+
+# Define a more complex struct (like a token)
+struct Token:
+    type
+    value
+    line
+    column
+
+# Create a token
+tok is Token of [1, 42, 10, 5]
+print of tok.type
+print of tok.line

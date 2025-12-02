@@ -1,0 +1,551 @@
+# EigenScript Self-Hosting Lexer
+# Written in EigenScript for bootstrapping the compiler
+
+# Token Type Constants - Keywords
+TT_OF is 1
+TT_IS is 2
+TT_IF is 3
+TT_ELSE is 4
+TT_LOOP is 5
+TT_WHILE is 6
+TT_DEFINE is 7
+TT_AS is 8
+TT_RETURN is 9
+TT_BREAK is 10
+TT_NULL is 11
+TT_NOT is 12
+TT_AND is 13
+TT_OR is 14
+TT_FOR is 15
+TT_IN is 16
+TT_IMPORT is 17
+TT_FROM is 18
+TT_STRUCT is 19
+
+# Interrogatives
+TT_WHO is 20
+TT_WHAT is 21
+TT_WHEN is 22
+TT_WHERE is 23
+TT_WHY is 24
+TT_HOW is 25
+TT_WAS is 26
+TT_CHANGE is 27
+TT_STATUS is 28
+TT_TREND is 29
+
+# Literals
+TT_NUMBER is 30
+TT_STRING is 31
+TT_IDENTIFIER is 33
+
+# Punctuation
+TT_COLON is 40
+TT_COMMA is 41
+TT_LPAREN is 42
+TT_RPAREN is 43
+TT_LBRACKET is 44
+TT_RBRACKET is 45
+TT_DOT is 46
+
+# Operators
+TT_PLUS is 50
+TT_MINUS is 51
+TT_MULTIPLY is 52
+TT_DIVIDE is 53
+TT_MODULO is 54
+TT_EQUALS is 55
+TT_NOT_EQUAL is 56
+TT_LESS_THAN is 57
+TT_LESS_EQUAL is 58
+TT_GREATER_THAN is 59
+TT_GREATER_EQUAL is 60
+
+# Whitespace
+TT_NEWLINE is 70
+TT_INDENT is 71
+TT_DEDENT is 72
+
+# Special
+TT_EOF is 99
+
+# Character codes
+CHAR_SPACE is 32
+CHAR_TAB is 9
+CHAR_NEWLINE is 10
+CHAR_HASH is 35
+CHAR_QUOTE_DOUBLE is 34
+CHAR_QUOTE_SINGLE is 39
+CHAR_COLON is 58
+CHAR_COMMA is 44
+CHAR_LPAREN is 40
+CHAR_RPAREN is 41
+CHAR_LBRACKET is 91
+CHAR_RBRACKET is 93
+CHAR_DOT is 46
+CHAR_PLUS is 43
+CHAR_MINUS is 45
+CHAR_STAR is 42
+CHAR_SLASH is 47
+CHAR_PERCENT is 37
+CHAR_BANG is 33
+CHAR_EQUAL is 61
+CHAR_LESS is 60
+CHAR_GREATER is 62
+CHAR_BACKSLASH is 92
+CHAR_UNDERSCORE is 95
+
+# Token data is stored in global variables (not struct - for interpreter compat)
+# token_type, token_line, token_col are set after each next_token call
+
+# Lexer State (Global Variables)
+lex_source is ""
+lex_pos is 0
+lex_len is 0
+lex_line is 1
+lex_col is 1
+lex_indent is 0
+lex_at_line_start is 1
+
+# State Initialization - call after setting lex_source
+define init_lexer as:
+    lex_len is string_length of lex_source
+    lex_pos is 0
+    lex_line is 1
+    lex_col is 1
+    lex_indent is 0
+    lex_at_line_start is 1
+    return 0
+
+# Returns current char code or -1 if at end
+define current_char as:
+    if lex_pos >= lex_len:
+        return -1
+    result is char_at of [lex_source, lex_pos]
+    return result
+
+# Returns next char code or -1 if at end
+define peek_char as:
+    next_pos is lex_pos + 1
+    if next_pos >= lex_len:
+        return -1
+    result is char_at of [lex_source, next_pos]
+    return result
+
+# Advance position and update line/column
+define advance as:
+    if lex_pos >= lex_len:
+        return -1
+    char is char_at of [lex_source, lex_pos]
+    lex_pos is lex_pos + 1
+    if char = CHAR_NEWLINE:
+        lex_line is lex_line + 1
+        lex_col is 1
+    else:
+        lex_col is lex_col + 1
+    return char
+
+# Skip spaces and tabs
+define skip_spaces as:
+    loop while 1:
+        if lex_pos >= lex_len:
+            break
+        char is current_char of 0
+        if char = CHAR_SPACE:
+            result is advance of 0
+        else:
+            if char = CHAR_TAB:
+                result is advance of 0
+            else:
+                break
+    return 0
+
+# Skip comment to end of line
+define skip_comment as:
+    loop while 1:
+        if lex_pos >= lex_len:
+            break
+        char is current_char of 0
+        if char = CHAR_NEWLINE:
+            break
+        result is advance of 0
+    return 0
+
+# Read a number literal
+define read_number as:
+    start is lex_pos
+    char is current_char of 0
+    if char = CHAR_MINUS:
+        result is advance of 0
+    loop while 1:
+        if lex_pos >= lex_len:
+            break
+        char is current_char of 0
+        is_digit is char_is_digit of char
+        if is_digit = 0:
+            break
+        result is advance of 0
+    if lex_pos < lex_len:
+        char is current_char of 0
+        if char = CHAR_DOT:
+            next is peek_char of 0
+            if next >= 0:
+                next_digit is char_is_digit of next
+                if next_digit = 1:
+                    result is advance of 0
+                    loop while 1:
+                        if lex_pos >= lex_len:
+                            break
+                        char is current_char of 0
+                        is_digit is char_is_digit of char
+                        if is_digit = 0:
+                            break
+                        result is advance of 0
+    num_len is lex_pos - start
+    num_str is substring of [lex_source, start, num_len]
+    num_val is string_to_number of num_str
+    return num_val
+
+# Global variables for function string results (functions can only return double)
+last_string_val is ""
+last_identifier is ""
+
+# Read a string literal - stores result in last_string_val
+define read_string as:
+    quote_char is current_char of 0
+    result is advance of 0
+    start is lex_pos
+    loop while 1:
+        if lex_pos >= lex_len:
+            break
+        char is current_char of 0
+        if char = quote_char:
+            break
+        if char = CHAR_BACKSLASH:
+            result is advance of 0
+            result is advance of 0
+        else:
+            result is advance of 0
+    str_len is lex_pos - start
+    last_string_val is substring of [lex_source, start, str_len]
+    result is advance of 0
+    return 0
+
+# Read an identifier - stores result in last_identifier
+define read_identifier as:
+    start is lex_pos
+    loop while 1:
+        if lex_pos >= lex_len:
+            break
+        char is current_char of 0
+        is_alpha is char_is_alpha of char
+        is_digit is char_is_digit of char
+        if is_alpha = 1:
+            result is advance of 0
+        else:
+            if is_digit = 1:
+                result is advance of 0
+            else:
+                if char = CHAR_UNDERSCORE:
+                    result is advance of 0
+                else:
+                    break
+    id_len is lex_pos - start
+    last_identifier is substring of [lex_source, start, id_len]
+    return 0
+
+# Global variable for keyword to match (set before calling match_keyword)
+keyword_word is ""
+
+# Match identifier against keywords - set keyword_word before calling
+define match_keyword as:
+    len is string_length of keyword_word
+    if len = 2:
+        test is string_equals of [keyword_word, "of"]
+        if test = 1:
+            return TT_OF
+        test is string_equals of [keyword_word, "is"]
+        if test = 1:
+            return TT_IS
+        test is string_equals of [keyword_word, "if"]
+        if test = 1:
+            return TT_IF
+        test is string_equals of [keyword_word, "as"]
+        if test = 1:
+            return TT_AS
+        test is string_equals of [keyword_word, "or"]
+        if test = 1:
+            return TT_OR
+        test is string_equals of [keyword_word, "in"]
+        if test = 1:
+            return TT_IN
+    if len = 3:
+        test is string_equals of [keyword_word, "for"]
+        if test = 1:
+            return TT_FOR
+        test is string_equals of [keyword_word, "not"]
+        if test = 1:
+            return TT_NOT
+        test is string_equals of [keyword_word, "and"]
+        if test = 1:
+            return TT_AND
+        test is string_equals of [keyword_word, "who"]
+        if test = 1:
+            return TT_WHO
+        test is string_equals of [keyword_word, "why"]
+        if test = 1:
+            return TT_WHY
+        test is string_equals of [keyword_word, "how"]
+        if test = 1:
+            return TT_HOW
+        test is string_equals of [keyword_word, "was"]
+        if test = 1:
+            return TT_WAS
+    if len = 4:
+        test is string_equals of [keyword_word, "else"]
+        if test = 1:
+            return TT_ELSE
+        test is string_equals of [keyword_word, "loop"]
+        if test = 1:
+            return TT_LOOP
+        test is string_equals of [keyword_word, "null"]
+        if test = 1:
+            return TT_NULL
+        test is string_equals of [keyword_word, "from"]
+        if test = 1:
+            return TT_FROM
+        test is string_equals of [keyword_word, "what"]
+        if test = 1:
+            return TT_WHAT
+        test is string_equals of [keyword_word, "when"]
+        if test = 1:
+            return TT_WHEN
+    if len = 5:
+        test is string_equals of [keyword_word, "while"]
+        if test = 1:
+            return TT_WHILE
+        test is string_equals of [keyword_word, "break"]
+        if test = 1:
+            return TT_BREAK
+        test is string_equals of [keyword_word, "where"]
+        if test = 1:
+            return TT_WHERE
+        test is string_equals of [keyword_word, "trend"]
+        if test = 1:
+            return TT_TREND
+    if len = 6:
+        test is string_equals of [keyword_word, "define"]
+        if test = 1:
+            return TT_DEFINE
+        test is string_equals of [keyword_word, "return"]
+        if test = 1:
+            return TT_RETURN
+        test is string_equals of [keyword_word, "import"]
+        if test = 1:
+            return TT_IMPORT
+        test is string_equals of [keyword_word, "struct"]
+        if test = 1:
+            return TT_STRUCT
+        test is string_equals of [keyword_word, "change"]
+        if test = 1:
+            return TT_CHANGE
+        test is string_equals of [keyword_word, "status"]
+        if test = 1:
+            return TT_STATUS
+    return TT_IDENTIFIER
+
+# Count indentation at line start
+define count_indent as:
+    indent is 0
+    loop while 1:
+        if lex_pos >= lex_len:
+            break
+        char is current_char of 0
+        if char = CHAR_SPACE:
+            indent is indent + 1
+            result is advance of 0
+        else:
+            if char = CHAR_TAB:
+                indent is indent + 4
+                result is advance of 0
+            else:
+                break
+    return indent
+
+# Main token reading function
+define next_token as:
+    if lex_pos >= lex_len:
+        print of TT_EOF
+        return TT_EOF
+    if lex_at_line_start = 1:
+        new_indent is count_indent of 0
+        lex_at_line_start is 0
+        if lex_pos < lex_len:
+            char is current_char of 0
+            if char = CHAR_NEWLINE:
+                lex_at_line_start is 1
+            if char = CHAR_HASH:
+                lex_at_line_start is 0
+        if new_indent > lex_indent:
+            lex_indent is new_indent
+            print of TT_INDENT
+            return TT_INDENT
+        loop while 1:
+            if new_indent >= lex_indent:
+                break
+            lex_indent is lex_indent - 4
+            print of TT_DEDENT
+            return TT_DEDENT
+    result is skip_spaces of 0
+    if lex_pos >= lex_len:
+        print of TT_EOF
+        return TT_EOF
+    char is current_char of 0
+    if char = CHAR_HASH:
+        result is skip_comment of 0
+        if lex_pos >= lex_len:
+            print of TT_EOF
+            return TT_EOF
+        char is current_char of 0
+    if char = CHAR_NEWLINE:
+        result is advance of 0
+        lex_at_line_start is 1
+        print of TT_NEWLINE
+        return TT_NEWLINE
+    is_digit is char_is_digit of char
+    if is_digit = 1:
+        num_val is read_number of 0
+        print of TT_NUMBER
+        print of num_val
+        return TT_NUMBER
+    if char = CHAR_MINUS:
+        next is peek_char of 0
+        if next >= 0:
+            next_digit is char_is_digit of next
+            if next_digit = 1:
+                num_val is read_number of 0
+                print of TT_NUMBER
+                print of num_val
+                return TT_NUMBER
+    if char = CHAR_QUOTE_DOUBLE:
+        result is read_string of 0
+        print of TT_STRING
+        return TT_STRING
+    if char = CHAR_QUOTE_SINGLE:
+        result is read_string of 0
+        print of TT_STRING
+        return TT_STRING
+    is_alpha is char_is_alpha of char
+    if is_alpha = 1:
+        id_start is lex_pos
+        result is read_identifier of 0
+        keyword_word is last_identifier
+        tok_type is match_keyword of 0
+        print of tok_type
+        return tok_type
+    if char = CHAR_UNDERSCORE:
+        id_start is lex_pos
+        result is read_identifier of 0
+        print of TT_IDENTIFIER
+        return TT_IDENTIFIER
+    if char = CHAR_COLON:
+        result is advance of 0
+        print of TT_COLON
+        return TT_COLON
+    if char = CHAR_COMMA:
+        result is advance of 0
+        print of TT_COMMA
+        return TT_COMMA
+    if char = CHAR_LPAREN:
+        result is advance of 0
+        print of TT_LPAREN
+        return TT_LPAREN
+    if char = CHAR_RPAREN:
+        result is advance of 0
+        print of TT_RPAREN
+        return TT_RPAREN
+    if char = CHAR_LBRACKET:
+        result is advance of 0
+        print of TT_LBRACKET
+        return TT_LBRACKET
+    if char = CHAR_RBRACKET:
+        result is advance of 0
+        print of TT_RBRACKET
+        return TT_RBRACKET
+    if char = CHAR_DOT:
+        result is advance of 0
+        print of TT_DOT
+        return TT_DOT
+    if char = CHAR_PLUS:
+        result is advance of 0
+        print of TT_PLUS
+        return TT_PLUS
+    if char = CHAR_MINUS:
+        result is advance of 0
+        print of TT_MINUS
+        return TT_MINUS
+    if char = CHAR_STAR:
+        result is advance of 0
+        print of TT_MULTIPLY
+        return TT_MULTIPLY
+    if char = CHAR_SLASH:
+        result is advance of 0
+        print of TT_DIVIDE
+        return TT_DIVIDE
+    if char = CHAR_PERCENT:
+        result is advance of 0
+        print of TT_MODULO
+        return TT_MODULO
+    if char = CHAR_EQUAL:
+        result is advance of 0
+        print of TT_EQUALS
+        return TT_EQUALS
+    if char = CHAR_LESS:
+        result is advance of 0
+        next is current_char of 0
+        if next = CHAR_EQUAL:
+            result is advance of 0
+            print of TT_LESS_EQUAL
+            return TT_LESS_EQUAL
+        print of TT_LESS_THAN
+        return TT_LESS_THAN
+    if char = CHAR_GREATER:
+        result is advance of 0
+        next is current_char of 0
+        if next = CHAR_EQUAL:
+            result is advance of 0
+            print of TT_GREATER_EQUAL
+            return TT_GREATER_EQUAL
+        print of TT_GREATER_THAN
+        return TT_GREATER_THAN
+    if char = CHAR_BANG:
+        result is advance of 0
+        next is current_char of 0
+        if next = CHAR_EQUAL:
+            result is advance of 0
+            print of TT_NOT_EQUAL
+            return TT_NOT_EQUAL
+        return TT_EOF
+    result is advance of 0
+    return TT_EOF
+
+# Tokenize - call after setting lex_source globally
+define tokenize as:
+    result is init_lexer of 0
+    print of 1000
+    loop while 1:
+        tok is next_token of 0
+        if tok = TT_EOF:
+            break
+    loop while 1:
+        if lex_indent <= 0:
+            break
+        lex_indent is lex_indent - 4
+        print of TT_DEDENT
+    print of 1001
+    return 0
+
+# Test - 999 = lexer start signal
+print of 999
+lex_source is "x is 5\nprint of x"
+result is tokenize of 0

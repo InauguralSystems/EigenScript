@@ -321,3 +321,226 @@ void eigen_list_destroy(EigenList* list) {
         free(list);
     }
 }
+
+/**
+ * String Implementation
+ *
+ * Native string operations for EigenScript self-hosting.
+ * These eliminate Python dependency for string manipulation.
+ */
+
+EigenString* eigen_string_create(const char* str) {
+    if (!str) return NULL;
+
+    EigenString* es = (EigenString*)malloc(sizeof(EigenString));
+    if (!es) return NULL;
+
+    size_t len = strlen(str);
+    es->length = (int64_t)len;
+    es->capacity = (int64_t)(len + 1);  // +1 for null terminator
+    es->data = (char*)malloc(es->capacity);
+
+    if (!es->data) {
+        free(es);
+        return NULL;
+    }
+
+    memcpy(es->data, str, len + 1);  // Copy including null terminator
+    return es;
+}
+
+EigenString* eigen_string_create_empty(int64_t capacity) {
+    if (capacity < 1) capacity = 16;  // Minimum capacity
+
+    EigenString* es = (EigenString*)malloc(sizeof(EigenString));
+    if (!es) return NULL;
+
+    es->length = 0;
+    es->capacity = capacity;
+    es->data = (char*)malloc(capacity);
+
+    if (!es->data) {
+        free(es);
+        return NULL;
+    }
+
+    es->data[0] = '\0';
+    return es;
+}
+
+void eigen_string_destroy(EigenString* str) {
+    if (str) {
+        if (str->data) {
+            free(str->data);
+        }
+        free(str);
+    }
+}
+
+int64_t eigen_string_length(EigenString* str) {
+    return str ? str->length : 0;
+}
+
+int64_t eigen_char_at(EigenString* str, int64_t index) {
+    if (!str || index < 0 || index >= str->length) {
+        return -1;  // Out of bounds
+    }
+    return (int64_t)(unsigned char)str->data[index];
+}
+
+EigenString* eigen_substring(EigenString* str, int64_t start, int64_t length) {
+    if (!str || start < 0 || start >= str->length) {
+        return eigen_string_create("");
+    }
+
+    // Clamp length to remaining characters
+    if (start + length > str->length) {
+        length = str->length - start;
+    }
+
+    if (length <= 0) {
+        return eigen_string_create("");
+    }
+
+    EigenString* result = eigen_string_create_empty(length + 1);
+    if (!result) return NULL;
+
+    memcpy(result->data, str->data + start, length);
+    result->data[length] = '\0';
+    result->length = length;
+
+    return result;
+}
+
+EigenString* eigen_string_concat(EigenString* a, EigenString* b) {
+    int64_t len_a = a ? a->length : 0;
+    int64_t len_b = b ? b->length : 0;
+    int64_t total_len = len_a + len_b;
+
+    EigenString* result = eigen_string_create_empty(total_len + 1);
+    if (!result) return NULL;
+
+    if (a && a->data) {
+        memcpy(result->data, a->data, len_a);
+    }
+    if (b && b->data) {
+        memcpy(result->data + len_a, b->data, len_b);
+    }
+
+    result->data[total_len] = '\0';
+    result->length = total_len;
+
+    return result;
+}
+
+void eigen_string_append_char(EigenString* str, int64_t char_code) {
+    if (!str || char_code < 0 || char_code > 255) return;
+
+    // Check if we need to grow
+    if (str->length + 2 > str->capacity) {  // +2 for new char and null terminator
+        int64_t new_capacity = str->capacity * 2;
+        if (new_capacity < 16) new_capacity = 16;
+
+        char* new_data = (char*)realloc(str->data, new_capacity);
+        if (!new_data) return;
+
+        str->data = new_data;
+        str->capacity = new_capacity;
+    }
+
+    str->data[str->length] = (char)char_code;
+    str->length++;
+    str->data[str->length] = '\0';
+}
+
+int64_t eigen_string_compare(EigenString* a, EigenString* b) {
+    if (!a && !b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
+    return (int64_t)strcmp(a->data, b->data);
+}
+
+int64_t eigen_string_equals(EigenString* a, EigenString* b) {
+    if (!a && !b) return 1;
+    if (!a || !b) return 0;
+    if (a->length != b->length) return 0;
+    return strcmp(a->data, b->data) == 0 ? 1 : 0;
+}
+
+int64_t eigen_char_is_digit(int64_t c) {
+    return (c >= '0' && c <= '9') ? 1 : 0;
+}
+
+int64_t eigen_char_is_alpha(int64_t c) {
+    return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') ? 1 : 0;
+}
+
+int64_t eigen_char_is_alnum(int64_t c) {
+    return (eigen_char_is_digit(c) || eigen_char_is_alpha(c)) ? 1 : 0;
+}
+
+int64_t eigen_char_is_whitespace(int64_t c) {
+    return (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') ? 1 : 0;
+}
+
+int64_t eigen_char_is_newline(int64_t c) {
+    return (c == '\n' || c == '\r') ? 1 : 0;
+}
+
+EigenString* eigen_char_to_string(int64_t char_code) {
+    if (char_code < 0 || char_code > 255) {
+        return eigen_string_create("");
+    }
+
+    char buf[2] = { (char)char_code, '\0' };
+    return eigen_string_create(buf);
+}
+
+EigenString* eigen_number_to_string(double value) {
+    char buf[64];
+
+    // Check if it's an integer value
+    if (value == (double)(int64_t)value && value >= -9007199254740992.0 && value <= 9007199254740992.0) {
+        snprintf(buf, sizeof(buf), "%lld", (long long)(int64_t)value);
+    } else {
+        snprintf(buf, sizeof(buf), "%.15g", value);
+    }
+
+    return eigen_string_create(buf);
+}
+
+double eigen_string_to_number(EigenString* str) {
+    if (!str || !str->data || str->length == 0) {
+        return 0.0 / 0.0;  // NaN
+    }
+
+    char* endptr;
+    double result = strtod(str->data, &endptr);
+
+    // Check if entire string was consumed
+    if (endptr == str->data) {
+        return 0.0 / 0.0;  // NaN - no conversion performed
+    }
+
+    return result;
+}
+
+int64_t eigen_string_find(EigenString* haystack, EigenString* needle, int64_t start) {
+    if (!haystack || !needle || !haystack->data || !needle->data) {
+        return -1;
+    }
+
+    if (start < 0) start = 0;
+    if (start >= haystack->length) return -1;
+    if (needle->length == 0) return start;
+    if (needle->length > haystack->length - start) return -1;
+
+    const char* found = strstr(haystack->data + start, needle->data);
+    if (!found) return -1;
+
+    return (int64_t)(found - haystack->data);
+}
+
+const char* eigen_string_cstr(EigenString* str) {
+    return str ? str->data : "";
+}
