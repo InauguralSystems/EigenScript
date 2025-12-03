@@ -203,6 +203,231 @@ var_names is [""]
 var_regs is [0]
 var_count is 0
 
+# Global variable tracking - for top-level assignments accessible from all functions
+# global_names[i] = string index of global variable name
+# global_count = number of global variables
+MAX_GLOBALS is 500
+global_names is [0]
+global_count is 0
+
+define add_global of name_idx as:
+    # Check if already exists
+    i is global_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is global_names[arr_i]
+        if stored_idx = name_idx:
+            return i
+        i is i - 1
+    # Add new global
+    append of global_names of name_idx
+    global_count is global_count + 1
+    return global_count - 1
+
+define lookup_global of name_idx as:
+    i is global_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is global_names[arr_i]
+        if stored_idx = name_idx:
+            return i
+        i is i - 1
+    return 0 - 1
+
+define is_global of name_idx as:
+    result is lookup_global of name_idx
+    if result >= 0:
+        return 1
+    return 0
+
+# External module variable tracking
+# Variables from imported modules (parser_*, lex_*, ast_*, etc.)
+MAX_EXTERNALS is 500
+external_names is [0]
+external_count is 0
+
+define add_external of name_idx as:
+    # Check if already exists
+    i is external_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is external_names[arr_i]
+        if stored_idx = name_idx:
+            return i
+        i is i - 1
+    # Add new external
+    append of external_names of name_idx
+    external_count is external_count + 1
+    return external_count - 1
+
+define is_external of name_idx as:
+    i is external_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is external_names[arr_i]
+        if stored_idx = name_idx:
+            return 1
+        i is i - 1
+    return 0
+
+# External module function tracking
+# Functions from imported modules (lexer_*, parser_*, semantic_*, codegen_*)
+MAX_EXTERN_FUNCS is 500
+extern_func_names is [0]
+extern_func_counts is [0]
+extern_func_count is 0
+
+define add_extern_func of [name_idx, param_count] as:
+    # Check if already exists
+    i is extern_func_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is extern_func_names[arr_i]
+        if stored_idx = name_idx:
+            return i
+        i is i - 1
+    # Add new external function
+    append of extern_func_names of name_idx
+    append of extern_func_counts of param_count
+    extern_func_count is extern_func_count + 1
+    return extern_func_count - 1
+
+define is_extern_func of name_idx as:
+    i is extern_func_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is extern_func_names[arr_i]
+        if stored_idx = name_idx:
+            return 1
+        i is i - 1
+    return 0
+
+# Check if a function name looks like an external module function
+define looks_like_extern_func of func_name as:
+    is_lexer is string_starts_with of [func_name, "lexer_"]
+    if is_lexer = 1:
+        return 1
+    is_parser is string_starts_with of [func_name, "parser_"]
+    if is_parser = 1:
+        return 1
+    is_semantic is string_starts_with of [func_name, "semantic_"]
+    if is_semantic = 1:
+        return 1
+    is_codegen is string_starts_with of [func_name, "codegen_"]
+    if is_codegen = 1:
+        return 1
+    return 0
+
+# Check if string starts with prefix
+define string_starts_with of [str, prefix] as:
+    str_len is string_length of str
+    prefix_len is string_length of prefix
+
+    if str_len < prefix_len:
+        return 0
+
+    i is 0
+    loop while i < prefix_len:
+        str_char is char_at of [str, i]
+        prefix_char is char_at of [prefix, i]
+        if str_char != prefix_char:
+            return 0
+        i is i + 1
+
+    return 1
+
+# Check if a variable name looks like an external module variable
+# (starts with parser_, lex_, ast_, semantic_, codegen_)
+define looks_like_external of name_idx as:
+    var_name is lexer_get_string of name_idx
+
+    # Check for parser_ prefix
+    is_parser is string_starts_with of [var_name, "parser_"]
+    if is_parser = 1:
+        return 1
+
+    # Check for lex_ prefix (lexer module variables)
+    is_lex is string_starts_with of [var_name, "lex_"]
+    if is_lex = 1:
+        return 1
+
+    # Check for ast_ prefix
+    is_ast is string_starts_with of [var_name, "ast_"]
+    if is_ast = 1:
+        return 1
+
+    # Check for semantic_ prefix
+    is_semantic is string_starts_with of [var_name, "semantic_"]
+    if is_semantic = 1:
+        return 1
+
+    # Check for codegen_ prefix
+    is_codegen is string_starts_with of [var_name, "codegen_"]
+    if is_codegen = 1:
+        return 1
+
+    return 0
+
+# Make an external variable name (uses __eigs_global_ prefix to match reference compiler)
+define make_external_name of name_idx as:
+    var_name is lexer_get_string of name_idx
+    result is cat3 of ["@__eigs_global_", var_name, ""]
+    return result
+
+# Check if an external variable is an array type (ptr) vs scalar (double)
+# Arrays have names like parser_token_types, ast_children, etc.
+# Scalars are like lex_line, symbol_count, error_count
+define is_external_array of name_idx as:
+    var_name is lexer_get_string of name_idx
+
+    # Check for common array suffixes
+    is_types is string_ends_with of [var_name, "_types"]
+    if is_types = 1:
+        return 1
+    is_names is string_ends_with of [var_name, "_names"]
+    if is_names = 1:
+        return 1
+    is_lines is string_ends_with of [var_name, "_lines"]
+    if is_lines = 1:
+        return 1
+    is_cols is string_ends_with of [var_name, "_cols"]
+    if is_cols = 1:
+        return 1
+    is_vals is string_ends_with of [var_name, "_vals"]
+    if is_vals = 1:
+        return 1
+    is_indices is string_ends_with of [var_name, "_indices"]
+    if is_indices = 1:
+        return 1
+    is_children is string_ends_with of [var_name, "_children"]
+    if is_children = 1:
+        return 1
+    is_start is string_ends_with of [var_name, "_start"]
+    if is_start = 1:
+        return 1
+    is_end is string_ends_with of [var_name, "_end"]
+    if is_end = 1:
+        return 1
+
+    return 0
+
+# Helper: check if string ends with suffix
+define string_ends_with of [str, suffix] as:
+    str_len is string_length of str
+    suffix_len is string_length of suffix
+    if str_len < suffix_len:
+        return 0
+    start_pos is str_len - suffix_len
+    i is 0
+    loop while i < suffix_len:
+        str_idx is start_pos + i
+        str_char is char_at of [str, str_idx]
+        suffix_char is char_at of [suffix, i]
+        if str_char != suffix_char:
+            return 0
+        i is i + 1
+    return 1
+
 # Struct Storage - maps struct names to their field lists
 # struct_names[i] = string index of struct name
 # struct_field_counts[i] = number of fields in struct i
@@ -252,10 +477,12 @@ define lookup_struct_field of [struct_idx, field_name_idx] as:
     return 0 - 1
 
 define add_var of [name, reg] as:
-    x is name
-    y is reg
-    append of var_names of x
-    append of var_regs of y
+    # Use direct assignment at var_count+1 instead of append
+    # This allows var_count reset in gen_function_def to work correctly
+    # When var_count is reset to 0, we start writing at index 1 again
+    arr_idx is var_count + 1
+    var_names[arr_idx] is name
+    var_regs[arr_idx] is reg
     var_count is var_count + 1
     return var_count - 1
 
@@ -446,6 +673,79 @@ define emit_string_constants as:
     result is emit of ""
     return 0
 
+# Make a global variable name string like @global_varname
+define make_global_name of name_idx as:
+    var_name is lexer_get_string of name_idx
+    result is cat3 of ["@global_", var_name, ""]
+    return result
+
+# Emit all global variable declarations (called after first pass identifies globals)
+define emit_global_declarations as:
+    if global_count = 0:
+        return 0
+    result is emit of "; Global variables"
+    i is 0
+    loop while i < global_count:
+        arr_i is i + 1
+        name_idx is global_names[arr_i]
+        global_name is make_global_name of name_idx
+        # Emit: @global_varname = internal global double 0.0
+        line is cat3 of [global_name, " = internal global double 0.0", ""]
+        result is emit of line
+        i is i + 1
+    result is emit of ""
+    return 0
+
+# Emit external variable declarations (for imported module variables)
+define emit_external_declarations as:
+    if external_count = 0:
+        return 0
+    result is emit of "; External module variables"
+    i is 0
+    loop while i < external_count:
+        arr_i is i + 1
+        name_idx is external_names[arr_i]
+        ext_name is make_external_name of name_idx
+        # Check if array (ptr) or scalar (double)
+        is_array is is_external_array of name_idx
+        if is_array = 1:
+            line is cat3 of [ext_name, " = external global ptr", ""]
+        else:
+            line is cat3 of [ext_name, " = external global double", ""]
+        result is emit of line
+        i is i + 1
+    result is emit of ""
+    return 0
+
+# Emit external function declarations (for imported module functions)
+define emit_extern_func_declarations as:
+    if extern_func_count = 0:
+        return 0
+    result is emit of "; External module functions"
+    i is 0
+    loop while i < extern_func_count:
+        arr_i is i + 1
+        name_idx is extern_func_names[arr_i]
+        param_count is extern_func_counts[arr_i]
+        func_name is lexer_get_string of name_idx
+
+        # Build parameter list (all doubles)
+        params_str is ""
+        j is 0
+        loop while j < param_count:
+            if j = 0:
+                params_str is "double"
+            else:
+                params_str is cat3 of [params_str, ", double", ""]
+            j is j + 1
+
+        # Emit: declare double @func_name(params)
+        line is cat5 of ["declare double @", func_name, "(", params_str, ")"]
+        result is emit of line
+        i is i + 1
+    result is emit of ""
+    return 0
+
 # ============================================================================
 # Expression Code Generation
 # Returns register number containing result
@@ -617,12 +917,47 @@ define gen_identifier of node_idx as:
         result is emit of line
         return reg
 
-    # Regular variable lookup
+    # Check if it's a global variable first
+    is_glob is is_global of name_idx
+    if is_glob = 1:
+        # Load from global variable
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        global_name is make_global_name of name_idx
+        line is cat5 of ["  ", reg_str, " = load double, double* ", global_name, ""]
+        result is emit of line
+        return reg
+
+    # Regular local variable lookup
     var_reg is lookup_var of name_idx
 
     if var_reg < 0:
-        result is emit of "  ; ERROR: undefined variable"
-        return 0
+        # Not a local variable - treat as external module variable
+        # Register as external (for declaration emission later)
+        result is add_external of name_idx
+        ext_name is make_external_name of name_idx
+
+        # Check if this is an array type (ptr) or scalar (double)
+        is_array is is_external_array of name_idx
+        if is_array = 1:
+            # External array - load ptr and convert to double
+            ptr_reg is next_reg of 0
+            ptr_str is make_reg of ptr_reg
+            line is cat5 of ["  ", ptr_str, " = load ptr, ptr ", ext_name, ""]
+            result is emit of line
+
+            reg is next_reg of 0
+            reg_str is make_reg of reg
+            line is cat5 of ["  ", reg_str, " = call double @eigen_list_to_double(ptr ", ptr_str, ")"]
+            result is emit of line
+            return reg
+        else:
+            # External scalar - load double directly
+            reg is next_reg of 0
+            reg_str is make_reg of reg
+            line is cat5 of ["  ", reg_str, " = load double, double* ", ext_name, ""]
+            result is emit of line
+            return reg
 
     # Load from alloca
     reg is next_reg of 0
@@ -797,15 +1132,34 @@ define gen_relation of node_idx as:
     left_type is ast_types[left_arr_idx]
 
     func_name is ""
+    func_name_idx is 0
     if left_type = AST_IDENTIFIER:
-        name_idx is ast_str_index[left_arr_idx]
-        func_name is lexer_get_string of name_idx
+        func_name_idx is ast_str_index[left_arr_idx]
+        func_name is lexer_get_string of func_name_idx
 
     # Check if right side is a list literal (multiple arguments)
     right_arr_idx is right_idx + 1
     right_type is ast_types[right_arr_idx]
 
-    # Collect argument registers
+    # Handle append builtin BEFORE evaluating arguments
+    # (because append of list of value parses as append of (list of value),
+    # and we don't want to evaluate "list of value" as a function call)
+    is_append is string_equals of [func_name, "append"]
+    if is_append = 1:
+        # Check if right side is a relation (chained syntax: append of list of value)
+        if right_type = AST_RELATION:
+            # Right is "list of value" - extract both parts WITHOUT calling gen_expr on the relation
+            list_idx is ast_left[right_arr_idx]
+            value_idx is ast_right[right_arr_idx]
+            list_reg is gen_expr of list_idx
+            value_reg is gen_expr of value_idx
+            list_str is make_reg of list_reg
+            value_str is make_reg of value_reg
+            line is cat6 of ["  call void @eigen_list_append_val(double ", list_str, ", double ", value_str, ")", ""]
+            result is emit of line
+            return 0
+
+    # Collect argument registers (for non-special-case functions)
     arg_regs is [0]
     arg_count is 0
 
@@ -827,6 +1181,17 @@ define gen_relation of node_idx as:
         append of arg_regs of arg_reg
         arg_count is 1
 
+    # Handle append fallback (if right side wasn't a relation)
+    if is_append = 1:
+        # Fallback: assume 2 args in a list (append of [list, value])
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        line is cat6 of ["  call void @eigen_list_append_val(double ", arg1_str, ", double ", arg2_str, ")", ""]
+        result is emit of line
+        return 0
+
     # Handle builtin functions
     is_print is string_equals of [func_name, "print"]
     if is_print = 1:
@@ -836,33 +1201,6 @@ define gen_relation of node_idx as:
         line is cat4 of ["  call void @eigen_print_val(double ", arg_str, ")", ""]
         result is emit of line
         return first_arg
-
-    # Handle append builtin (special form: append of list of value)
-    # Syntax parses as: append of (list of value) - a chained relation
-    # We need to extract list and value from the nested relation
-    is_append is string_equals of [func_name, "append"]
-    if is_append = 1:
-        # Check if right side is a relation (chained syntax: append of list of value)
-        if right_type = AST_RELATION:
-            # Right is "list of value" - extract both parts
-            list_idx is ast_left[right_arr_idx]
-            value_idx is ast_right[right_arr_idx]
-            list_reg is gen_expr of list_idx
-            value_reg is gen_expr of value_idx
-            list_str is make_reg of list_reg
-            value_str is make_reg of value_reg
-            line is cat6 of ["  call void @eigen_list_append_val(double ", list_str, ", double ", value_str, ")", ""]
-            result is emit of line
-            return 0
-        else:
-            # Fallback: assume 2 args in a list (append of [list, value])
-            first_arg is arg_regs[1]
-            second_arg is arg_regs[2]
-            arg1_str is make_reg of first_arg
-            arg2_str is make_reg of second_arg
-            line is cat6 of ["  call void @eigen_list_append_val(double ", arg1_str, ", double ", arg2_str, ")", ""]
-            result is emit of line
-            return 0
 
     # Handle string builtins
     is_string_length is string_equals of [func_name, "string_length"]
@@ -1573,6 +1911,11 @@ define gen_relation of node_idx as:
             return ret_reg
 
     # User-defined function call
+    # Check if it's an external module function and register it for declaration
+    is_extern is looks_like_extern_func of func_name
+    if is_extern = 1:
+        result is add_extern_func of [func_name_idx, arg_count]
+
     # Build argument list string
     args_str is ""
     i is 1
@@ -1993,11 +2336,29 @@ define gen_assignment of node_idx as:
     expr_reg is gen_expr of expr_idx
     expr_str is make_reg of expr_reg
 
+    # Check if this is a global variable (either already registered or being created in main)
+    is_glob is is_global of name_idx
+
+    if in_main = 1:
+        # In main: top-level variables become globals
+        if is_glob = 0:
+            # New global variable - register it
+            result is add_global of name_idx
+            is_glob is 1
+
+    if is_glob = 1:
+        # Global variable - use @global_varname
+        global_name is make_global_name of name_idx
+        line is cat5 of ["  store double ", expr_str, ", double* ", global_name, ""]
+        result is emit of line
+        return 0
+
+    # Local variable handling
     # Check if variable exists (using numeric index for comparison)
     var_reg is lookup_var of name_idx
 
     if var_reg < 0:
-        # New variable - allocate
+        # New local variable - allocate
         var_reg is next_reg of 0
         var_str is make_reg of var_reg
         line is cat4 of ["  ", var_str, " = alloca double", ""]
@@ -2056,6 +2417,13 @@ define gen_return of node_idx as:
     ret_str is make_reg of ret_reg
 
     line is cat4 of ["  ret double ", ret_str, "", ""]
+    result is emit of line
+
+    # After a return, we need a new basic block for any subsequent code
+    # (which would be unreachable, but LLVM requires it for valid IR)
+    after_lbl is next_label of 0
+    after_str is make_label of after_lbl
+    line is cat3 of [after_str, ":", ""]
     result is emit of line
 
     return 0
@@ -2415,15 +2783,48 @@ define gen_stmt of node_idx as:
 # Main Entry Point
 # ============================================================================
 
+# Pre-scan program to identify global variables (top-level assignments not in functions)
+define prescan_globals of root_node as:
+    arr_idx is root_node + 1
+    start is ast_children_start[arr_idx]
+    end is ast_children_end[arr_idx]
+
+    i is start
+    loop while i < end:
+        arr_i is i + 1
+        stmt_idx is ast_children[arr_i]
+        stmt_arr_idx is stmt_idx + 1
+        stmt_type is ast_types[stmt_arr_idx]
+
+        # Only process top-level assignments (skip function bodies)
+        if stmt_type = AST_ASSIGNMENT:
+            # Check if this statement is inside a function body
+            in_func is is_in_function_body of [stmt_idx, start, end]
+            if in_func = 0:
+                # This is a global variable - register it
+                name_idx is ast_str_index[stmt_arr_idx]
+                result is add_global of name_idx
+
+        i is i + 1
+    return 0
+
 define generate of root_node as:
     reg_counter is 0
     label_counter is 0
     output_count is 0
     var_count is 0
+    global_count is 0
+    external_count is 0
+
+    # First: pre-scan to identify global variables
+    result is prescan_globals of root_node
 
     result is emit_header of 0
     result is emit_runtime_decls of 0
     result is emit_string_constants of 0
+
+    # Emit global variable declarations (now that we know which ones exist)
+    result is emit_global_declarations of 0
 
     result is emit of "; Main function"
     result is emit of "define i32 @main(i32 %argc, i8** %argv) {"
@@ -2448,6 +2849,10 @@ define generate of root_node as:
     # Second pass: generate all function definitions (after main)
     result is gen_block_functions_only of [start, end]
 
+    # Emit external declarations (discovered during code generation)
+    result is emit_external_declarations of 0
+    result is emit_extern_func_declarations of 0
+
     return output_count
 
 define print_ir as:
@@ -2463,6 +2868,19 @@ define init_codegen as:
     output_lines is []
     output_count is 0
     var_count is 0
+    global_count is 0
+    external_count is 0
+    extern_func_count is 0
     struct_count is 0
     struct_field_total is 0
+
+    # Pre-populate var_names and var_regs arrays for direct indexed assignment
+    # This is needed because add_var uses direct assignment instead of append
+    # to allow proper scope reset when entering new functions
+    i is 0
+    loop while i < MAX_VARS:
+        append of var_names of 0
+        append of var_regs of 0
+        i is i + 1
+
     return 0
