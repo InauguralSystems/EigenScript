@@ -39,6 +39,7 @@ source_length is 0
 verbose is 0
 parse_only is 0
 check_only is 0
+lib_mode is 0
 
 # Module name prefix for generated functions (e.g., "lexer_", "parser_")
 # Extracted from filename or set via command line
@@ -168,6 +169,17 @@ define run_codegen of ast_root as:
     mod_len is string_length of mod_name_prefix
     if mod_len > 0:
         result is codegen_set_module_name of mod_name_prefix
+
+    # Enable library mode for non-main modules (lib_mode flag or non-main_ prefix)
+    # Library modules generate init functions instead of main()
+    if lib_mode = 1:
+        result is codegen_set_library_mode of 1
+    else:
+        # Check if this is NOT a main module by looking at prefix
+        is_main_mod is string_equals of [mod_name_prefix, "main_"]
+        if is_main_mod = 0:
+            if mod_len > 0:
+                result is codegen_set_library_mode of 1
 
     # Generate LLVM IR
     line_count is codegen_generate of ast_root

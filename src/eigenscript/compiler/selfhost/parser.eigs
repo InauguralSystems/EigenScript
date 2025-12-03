@@ -288,12 +288,22 @@ define start_children of node_idx as:
     return 0
 
 # Add a child to a node's children list
+# IMPORTANT: On first child addition, update children_start to point to the
+# actual child position, not where it was initialized. This fixes the issue
+# where internal data from parsed statements pollutes the parent's children range.
 define add_child of [node_idx, child_idx] as:
     x is node_idx
     y is child_idx
+    arr_idx is x + 1
+    # If this is the first child (children_start == children_end from start_children),
+    # update children_start to point to where we're about to add
+    curr_start is ast_children_start[arr_idx]
+    curr_end is ast_children_end[arr_idx]
+    if curr_start = curr_end:
+        # First child - set start to current position (before append)
+        ast_children_start[arr_idx] is ast_children_count
     append of ast_children of y
     ast_children_count is ast_children_count + 1
-    arr_idx is x + 1
     ast_children_end[arr_idx] is ast_children_count
     return 0
 
