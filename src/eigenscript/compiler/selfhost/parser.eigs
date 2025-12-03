@@ -1539,14 +1539,15 @@ define parse_block as:
         # Skip blank lines (newlines within block)
         if tok = TT_NEWLINE:
             result is advance_token of 0
-        else:
-            stmt is parse_statement of 0
-            if stmt != 0:
-                append of ast_children of stmt
-                ast_children_count is ast_children_count + 1
+            continue
 
-            if parser_error = 1:
-                break
+        stmt is parse_statement of 0
+        if stmt != 0:
+            append of ast_children of stmt
+            ast_children_count is ast_children_count + 1
+
+        if parser_error = 1:
+            break
 
     # Expect DEDENT
     ok is expect_token of TT_DEDENT
