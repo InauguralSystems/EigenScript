@@ -1,0 +1,18 @@
+# Development dependencies for EigenScript
+# Install with: pip install -r requirements-dev.txt
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Code quality
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# Typing
+typing-extensions>=4.7.0
+
+# Documentation
+mkdocs>=1.5.0
+mkdocs-material>=9.0.0

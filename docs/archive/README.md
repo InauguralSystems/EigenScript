@@ -15,6 +15,14 @@ For current project status and plans, see:
 
 ## Archive Contents
 
+### Phase Completion Reports (Moved from root)
+- `PHASE3_COMPLETION_STATUS.md` - Phase 3 (Compiler Optimizations) final report
+- `PHASE3_3_COMPLETION.md` - Phase 3.3 sub-phase completion
+- `AI_DEVELOPMENT_SUMMARY.md` - AI-assisted development summary
+- `WORK_SESSION_SUMMARY.md` - Development work session notes
+- `REVIEW_SUMMARY.md` - Code review summaries
+- `IMPROVEMENT_ROADMAP.md` - Early improvement roadmap (superseded by main ROADMAP.md)
+
 ### Roadmap Documents
 - `PRODUCTION_ROADMAP.md` - Detailed production readiness plan (Week 1-4)
 - `HONEST_ROADMAP.md` - Honest assessment of development status

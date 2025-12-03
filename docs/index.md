@@ -3,7 +3,7 @@
 **A geometric programming language modeling computation as flow in semantic spacetime**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha-blue.svg)](https://github.com/InauguralPhysicist/eigenscript)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/InauguralSystems/EigenScript)
 
 ## What is EigenScript?
 

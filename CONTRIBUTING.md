@@ -28,7 +28,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git
 - Basic understanding of compilers/interpreters (helpful but not required)
 - Familiarity with geometric/vector mathematics (helpful for semantic layer)

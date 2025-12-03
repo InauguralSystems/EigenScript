@@ -5,7 +5,7 @@ as flow in semantic spacetime.
 This package contains the core interpreter and runtime for EigenScript.
 """
 
-__version__ = "0.3.23"
+__version__ = "0.4.0"
 __author__ = "J. McReynolds"
 
 from eigenscript.lexer import Tokenizer, Token, TokenType

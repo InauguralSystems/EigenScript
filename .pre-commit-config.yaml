@@ -1,0 +1,115 @@
+# Pre-commit hooks for EigenScript
+# Install with: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.10
+        args: [--line-length=88]
+        files: ^(src|tests)/.*\.py$
+
+  # Python linting
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        args: [--max-line-length=88, --extend-ignore=E203]
+        files: ^(src|tests)/.*\.py$
+
+  # Python import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=88]
+        files: ^(src|tests)/.*\.py$
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Remove trailing whitespace
+      - id: trailing-whitespace
+        exclude: ^docs/archive/
+
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+        exclude: ^docs/archive/
+
+      # Check for merge conflicts
+      - id: check-merge-conflict
+
+      # Check YAML syntax
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+
+      # Check for large files
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+        exclude: ^(logo\.png|.*\.wasm)$
+
+      # Check JSON syntax
+      - id: check-json
+
+      # Check TOML syntax
+      - id: check-toml
+
+      # Prevent committing to main
+      - id: no-commit-to-branch
+        args: [--branch=main, --branch=master]
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: [--fix]
+        exclude: ^docs/archive/
+
+  # Python security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: [-c, pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+        files: ^src/.*\.py$
+        exclude: ^tests/
+
+  # Type checking (optional - can be slow)
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.11.2
+  #   hooks:
+  #     - id: mypy
+  #       additional_dependencies: [types-all]
+  #       args: [--ignore-missing-imports]
+  #       files: ^src/.*\.py$
+
+# Configuration for specific hooks
+default_language_version:
+  python: python3.10
+
+# Files to exclude from all hooks
+exclude: |
+  (?x)^(
+    \.git/|
+    \.pytest_cache/|
+    __pycache__/|
+    htmlcov/|
+    \.coverage|
+    dist/|
+    build/|
+    .*\.egg-info/|
+    \.venv/|
+    venv/
+  )$
+
+# Fail fast - stop on first failure
+fail_fast: false
+
+# Minimum pre-commit version
+minimum_pre_commit_version: 2.20.0
