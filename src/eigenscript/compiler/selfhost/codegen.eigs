@@ -459,14 +459,12 @@ define gen_literal of node_idx as:
     arr_idx is node_idx + 1
     num_val is ast_num_value[arr_idx]
     str_idx is ast_str_index[arr_idx]
-    reg is next_reg of 0
-    reg_str is make_reg of reg
 
     # Check literal type
     # LIT_NUMBER=1: num_val is actual value, str_idx is 1
     # LIT_STRING=2: num_val is 2, str_idx is string table index
     # LIT_NULL=3: num_val is 3
-    
+
     # NOTE: Attempted workaround to avoid geometric tracking on num_val
     # by creating a copy, but this doesn't fix the underlying bug where
     # ast_num_value array contains 0.0 instead of actual numeric values.
@@ -499,12 +497,17 @@ define gen_literal of node_idx as:
 
         # Convert pointer to double for storage
         # %result = call double @eigen_string_to_double(%EigenString* %str)
+        # Allocate result register AFTER intermediate registers to maintain SSA order
+        reg is next_reg of 0
+        reg_str is make_reg of reg
         line is cat6 of ["  ", reg_str, " = call double @eigen_string_to_double(%EigenString* ", str_reg_str, ")", ""]
         result is emit of line
         return reg
 
     if lit_type = LIT_NULL:
         # Null literal - return 0
+        reg is next_reg of 0
+        reg_str is make_reg of reg
         line is cat4 of ["  ", reg_str, " = fadd double 0.0, 0.0", ""]
         result is emit of line
         return reg
@@ -512,6 +515,8 @@ define gen_literal of node_idx as:
     # Default: number literal (LIT_NUMBER=1 or any other value)
     # For numeric literals, num_val contains the actual number value
     # BUG: Currently num_val is always 0.0 due to reference compiler bug
+    reg is next_reg of 0
+    reg_str is make_reg of reg
     val_str is make_double of num_val
     line is cat5 of ["  ", reg_str, " = fadd double 0.0, ", val_str, ""]
     result is emit of line
@@ -827,16 +832,31 @@ define gen_relation of node_idx as:
         return first_arg
 
     # Handle append builtin (special form: append of list of value)
+    # Syntax parses as: append of (list of value) - a chained relation
+    # We need to extract list and value from the nested relation
     is_append is string_equals of [func_name, "append"]
     if is_append = 1:
-        # append takes (list, value) and modifies the list in place
-        first_arg is arg_regs[1]
-        second_arg is arg_regs[2]
-        arg1_str is make_reg of first_arg
-        arg2_str is make_reg of second_arg
-        line is cat6 of ["  call void @eigen_list_append_val(double ", arg1_str, ", double ", arg2_str, ")", ""]
-        result is emit of line
-        return 0
+        # Check if right side is a relation (chained syntax: append of list of value)
+        if right_type = AST_RELATION:
+            # Right is "list of value" - extract both parts
+            list_idx is ast_left[right_arr_idx]
+            value_idx is ast_right[right_arr_idx]
+            list_reg is gen_expr of list_idx
+            value_reg is gen_expr of value_idx
+            list_str is make_reg of list_reg
+            value_str is make_reg of value_reg
+            line is cat6 of ["  call void @eigen_list_append_val(double ", list_str, ", double ", value_str, ")", ""]
+            result is emit of line
+            return 0
+        else:
+            # Fallback: assume 2 args in a list (append of [list, value])
+            first_arg is arg_regs[1]
+            second_arg is arg_regs[2]
+            arg1_str is make_reg of first_arg
+            arg2_str is make_reg of second_arg
+            line is cat6 of ["  call void @eigen_list_append_val(double ", arg1_str, ", double ", arg2_str, ")", ""]
+            result is emit of line
+            return 0
 
     # Handle string builtins
     is_string_length is string_equals of [func_name, "string_length"]
@@ -2231,6 +2251,38 @@ define gen_block of [start, end] as:
         i is i + 1
     return 0
 
+# Generate block but skip function definitions (for main's global code)
+define gen_block_skip_functions of [start, end] as:
+    s is start
+    e is end
+    i is s
+    loop while i < e:
+        arr_i is i + 1
+        stmt_idx is ast_children[arr_i]
+        stmt_arr_idx is stmt_idx + 1
+        stmt_type is ast_types[stmt_arr_idx]
+        # Skip function definitions - they'll be generated after main
+        if stmt_type != AST_FUNCTION_DEF:
+            result is gen_stmt of stmt_idx
+        i is i + 1
+    return 0
+
+# Generate block but only process function definitions (after main)
+define gen_block_functions_only of [start, end] as:
+    s is start
+    e is end
+    i is s
+    loop while i < e:
+        arr_i is i + 1
+        stmt_idx is ast_children[arr_i]
+        stmt_arr_idx is stmt_idx + 1
+        stmt_type is ast_types[stmt_arr_idx]
+        # Only generate function definitions
+        if stmt_type = AST_FUNCTION_DEF:
+            result is gen_function_def of stmt_idx
+        i is i + 1
+    return 0
+
 define gen_stmt of node_idx as:
     arr_idx is node_idx + 1
     node_type is ast_types[arr_idx]
@@ -2342,15 +2394,19 @@ define generate of root_node as:
 
     in_main is 1
 
+    # First pass: generate only non-function statements (global code for main)
     arr_idx is root_node + 1
     start is ast_children_start[arr_idx]
     end is ast_children_end[arr_idx]
-    result is gen_block of [start, end]
+    result is gen_block_skip_functions of [start, end]
 
     result is emit of "  ret i32 0"
     result is emit of "}"
 
     in_main is 0
+
+    # Second pass: generate all function definitions (after main)
+    result is gen_block_functions_only of [start, end]
 
     return output_count
 

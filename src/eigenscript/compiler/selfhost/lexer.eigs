@@ -108,6 +108,7 @@ lex_col is 1
 lex_indent is 0
 lex_at_line_start is 1
 lex_last_num_val is 0
+lex_pending_dedents is 0
 
 # Set lexer source - must be called before init_lexer
 define set_source of src as:
@@ -122,6 +123,7 @@ define init_lexer as:
     lex_col is 1
     lex_indent is 0
     lex_at_line_start is 1
+    lex_pending_dedents is 0
     return 0
 
 # Returns current char code or -1 if at end
@@ -420,6 +422,11 @@ define count_indent as:
 
 # Main token reading function
 define next_token as:
+    # First check for pending DEDENTs (needed when indent decreases multiple levels)
+    if lex_pending_dedents > 0:
+        lex_pending_dedents is lex_pending_dedents - 1
+        return TT_DEDENT
+
     if lex_pos >= lex_len:
         return TT_EOF
     if lex_at_line_start = 1:
@@ -433,7 +440,7 @@ define next_token as:
                 lex_at_line_start is 0
         # Skip blank lines and comment-only lines for indentation processing
         # This prevents comments from triggering spurious INDENT/DEDENT tokens
-        # Note: This is intentionally before INDENT/DEDENT logic (lines 451-458)
+        # Note: This is intentionally before INDENT/DEDENT logic
         # to match Python lexer behavior where comments are transparent to indentation
         if lex_pos < lex_len:
             char is current_char of 0
@@ -453,10 +460,18 @@ define next_token as:
         if new_indent > lex_indent:
             lex_indent is new_indent
             return TT_INDENT
-        loop while 1:
-            if new_indent >= lex_indent:
-                break
-            lex_indent is lex_indent - 4
+        # Handle DEDENT - may need multiple DEDENTs when indent decreases multiple levels
+        if new_indent < lex_indent:
+            # Count how many DEDENTs we need
+            dedent_count is 0
+            temp_indent is lex_indent
+            loop while temp_indent > new_indent:
+                dedent_count is dedent_count + 1
+                temp_indent is temp_indent - 4
+            # Update lex_indent to the new level
+            lex_indent is new_indent
+            # Store remaining DEDENTs as pending (minus the one we return now)
+            lex_pending_dedents is dedent_count - 1
             return TT_DEDENT
     result is skip_spaces of 0
     if lex_pos >= lex_len:
