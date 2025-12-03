@@ -205,9 +205,11 @@ Standard documentation files in root:
 
 ### Version References
 
-- Use format `v0.4.0` in prose: "Version v0.4.0 introduces..."
-- Use format `0.4.0` in code: `__version__ = "0.4.0"`
-- Keep versions consistent across all files
+- Use format `0.4.0` consistently (no 'v' prefix)
+- In prose: "Version 0.4.0 introduces..."
+- In code: `__version__ = "0.4.0"`
+- In badges: `version-0.4.0-blue`
+- Keep versions synchronized across all files
 
 ---
 
