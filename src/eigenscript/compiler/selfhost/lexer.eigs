@@ -421,7 +421,6 @@ define count_indent as:
 # Main token reading function
 define next_token as:
     if lex_pos >= lex_len:
-        print of TT_EOF
         return TT_EOF
     if lex_at_line_start = 1:
         new_indent is count_indent of 0
@@ -434,35 +433,28 @@ define next_token as:
                 lex_at_line_start is 0
         if new_indent > lex_indent:
             lex_indent is new_indent
-            print of TT_INDENT
             return TT_INDENT
         loop while 1:
             if new_indent >= lex_indent:
                 break
             lex_indent is lex_indent - 4
-            print of TT_DEDENT
             return TT_DEDENT
     result is skip_spaces of 0
     if lex_pos >= lex_len:
-        print of TT_EOF
         return TT_EOF
     char is current_char of 0
     if char = CHAR_HASH:
         result is skip_comment of 0
         if lex_pos >= lex_len:
-            print of TT_EOF
             return TT_EOF
         char is current_char of 0
     if char = CHAR_NEWLINE:
         result is advance of 0
         lex_at_line_start is 1
-        print of TT_NEWLINE
         return TT_NEWLINE
     is_digit is char_is_digit of char
     if is_digit = 1:
         num_val is read_number of 0
-        print of TT_NUMBER
-        print of num_val
         return TT_NUMBER
     if char = CHAR_MINUS:
         next is peek_char of 0
@@ -470,16 +462,12 @@ define next_token as:
             next_digit is char_is_digit of next
             if next_digit = 1:
                 num_val is read_number of 0
-                print of TT_NUMBER
-                print of num_val
                 return TT_NUMBER
     if char = CHAR_QUOTE_DOUBLE:
         result is read_string of 0
-        print of TT_STRING
         return TT_STRING
     if char = CHAR_QUOTE_SINGLE:
         result is read_string of 0
-        print of TT_STRING
         return TT_STRING
     is_alpha is char_is_alpha of char
     if is_alpha = 1:
@@ -487,89 +475,69 @@ define next_token as:
         result is read_identifier of 0
         keyword_word is last_identifier
         tok_type is match_keyword of 0
-        print of tok_type
         return tok_type
     if char = CHAR_UNDERSCORE:
         id_start is lex_pos
         result is read_identifier of 0
-        print of TT_IDENTIFIER
         return TT_IDENTIFIER
     if char = CHAR_COLON:
         result is advance of 0
-        print of TT_COLON
         return TT_COLON
     if char = CHAR_COMMA:
         result is advance of 0
-        print of TT_COMMA
         return TT_COMMA
     if char = CHAR_LPAREN:
         result is advance of 0
-        print of TT_LPAREN
         return TT_LPAREN
     if char = CHAR_RPAREN:
         result is advance of 0
-        print of TT_RPAREN
         return TT_RPAREN
     if char = CHAR_LBRACKET:
         result is advance of 0
-        print of TT_LBRACKET
         return TT_LBRACKET
     if char = CHAR_RBRACKET:
         result is advance of 0
-        print of TT_RBRACKET
         return TT_RBRACKET
     if char = CHAR_DOT:
         result is advance of 0
-        print of TT_DOT
         return TT_DOT
     if char = CHAR_PLUS:
         result is advance of 0
-        print of TT_PLUS
         return TT_PLUS
     if char = CHAR_MINUS:
         result is advance of 0
-        print of TT_MINUS
         return TT_MINUS
     if char = CHAR_STAR:
         result is advance of 0
-        print of TT_MULTIPLY
         return TT_MULTIPLY
     if char = CHAR_SLASH:
         result is advance of 0
-        print of TT_DIVIDE
         return TT_DIVIDE
     if char = CHAR_PERCENT:
         result is advance of 0
-        print of TT_MODULO
         return TT_MODULO
     if char = CHAR_EQUAL:
         result is advance of 0
-        print of TT_EQUALS
         return TT_EQUALS
     if char = CHAR_LESS:
         result is advance of 0
         next is current_char of 0
         if next = CHAR_EQUAL:
             result is advance of 0
-            print of TT_LESS_EQUAL
             return TT_LESS_EQUAL
-        print of TT_LESS_THAN
         return TT_LESS_THAN
     if char = CHAR_GREATER:
         result is advance of 0
         next is current_char of 0
         if next = CHAR_EQUAL:
             result is advance of 0
-            print of TT_GREATER_EQUAL
             return TT_GREATER_EQUAL
-        print of TT_GREATER_THAN
         return TT_GREATER_THAN
     if char = CHAR_BANG:
         result is advance of 0
         next is current_char of 0
         if next = CHAR_EQUAL:
             result is advance of 0
-            print of TT_NOT_EQUAL
             return TT_NOT_EQUAL
         return TT_EOF
     result is advance of 0
@@ -578,7 +546,6 @@ define next_token as:
 # Tokenize - call after setting lex_source globally
 define tokenize as:
     result is init_lexer of 0
-    print of 1000
     loop while 1:
         tok is next_token of 0
         if tok = TT_EOF:
@@ -587,8 +554,6 @@ define tokenize as:
         if lex_indent <= 0:
             break
         lex_indent is lex_indent - 4
-        print of TT_DEDENT
-    print of 1001
     return 0
 
 # Lexer module initialization complete

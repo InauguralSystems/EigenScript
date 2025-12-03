@@ -739,27 +739,20 @@ define analyze of root_node as:
 
 # Print symbol table for debugging
 define print_symbols as:
-    print of 777
     i is 0
     loop while i < symbol_count:
         print of symbol_names[i]
         print of symbol_kinds[i]
         print of symbol_scope_levels[i]
         i is i + 1
-    print of 778
     return 0
 
 # Print errors for debugging
 define print_errors as:
-    print of 666
     print of error_count
     i is 0
     loop while i < error_count:
         print of error_codes[i]
         print of error_lines[i]
         i is i + 1
-    print of 667
     return 0
-
-# Signal that semantic module is loaded
-print of 777

@@ -2362,5 +2362,3 @@ define init_codegen as:
     struct_count is 0
     struct_field_total is 0
     return 0
-
-print of 666
