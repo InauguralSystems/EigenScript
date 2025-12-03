@@ -316,6 +316,27 @@ define is_extern_func of name_idx as:
         i is i - 1
     return 0
 
+# Imported module tracking
+# Tracks modules imported via "import module" statements
+# These need their _init() functions called at program startup
+MAX_IMPORTED_MODULES is 50
+imported_module_names is [0]
+imported_module_count is 0
+
+define add_imported_module of name_idx as:
+    # Check if already exists
+    i is imported_module_count - 1
+    loop while i >= 0:
+        arr_i is i + 1
+        stored_idx is imported_module_names[arr_i]
+        if stored_idx = name_idx:
+            return i
+        i is i - 1
+    # Add new imported module
+    append of imported_module_names of name_idx
+    imported_module_count is imported_module_count + 1
+    return imported_module_count - 1
+
 # Check if a function name looks like an external module function
 define looks_like_extern_func of func_name as:
     is_lexer is string_starts_with of [func_name, "lexer_"]
@@ -734,6 +755,7 @@ define emit_external_declarations as:
     return 0
 
 # Emit external function declarations (for imported module functions)
+# NOTE: External module functions use i64 ABI (matches reference compiler)
 define emit_extern_func_declarations as:
     if extern_func_count = 0:
         return 0
@@ -745,18 +767,35 @@ define emit_extern_func_declarations as:
         param_count is extern_func_counts[arr_i]
         func_name is lexer_get_string of name_idx
 
-        # Build parameter list (all doubles)
+        # Build parameter list (all i64 - matches reference compiler ABI)
         params_str is ""
         j is 0
         loop while j < param_count:
             if j = 0:
-                params_str is "double"
+                params_str is "i64"
             else:
-                params_str is cat3 of [params_str, ", double", ""]
+                params_str is cat3 of [params_str, ", i64", ""]
             j is j + 1
 
-        # Emit: declare double @func_name(params)
-        line is cat5 of ["declare double @", func_name, "(", params_str, ")"]
+        # Emit: declare i64 @func_name(params)
+        line is cat5 of ["declare i64 @", func_name, "(", params_str, ")"]
+        result is emit of line
+        i is i + 1
+    result is emit of ""
+    return 0
+
+# Emit declarations for imported module init functions
+define emit_imported_module_init_declarations as:
+    if imported_module_count = 0:
+        return 0
+    result is emit of "; Imported module init functions"
+    i is 0
+    loop while i < imported_module_count:
+        arr_i is i + 1
+        name_idx is imported_module_names[arr_i]
+        mod_name is lexer_get_string of name_idx
+        # Emit: declare void @module_init()
+        line is cat3 of ["declare void @", mod_name, "_init()"]
         result is emit of line
         i is i + 1
     result is emit of ""
@@ -933,7 +972,18 @@ define gen_identifier of node_idx as:
         result is emit of line
         return reg
 
-    # Check if it's a global variable first
+    # Check LOCAL variables FIRST - function parameters should shadow globals
+    var_reg is lookup_var of name_idx
+    if var_reg >= 0:
+        # Found local variable - load from alloca
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        var_str is make_reg of var_reg
+        line is cat5 of ["  ", reg_str, " = load double, double* ", var_str, ""]
+        result is emit of line
+        return reg
+
+    # Check if it's a global variable (only if not found as local)
     is_glob is is_global of name_idx
     if is_glob = 1:
         # Load from global variable
@@ -944,43 +994,30 @@ define gen_identifier of node_idx as:
         result is emit of line
         return reg
 
-    # Regular local variable lookup
-    var_reg is lookup_var of name_idx
+    # Not a local or global variable - treat as external module variable
+    # Register as external (for declaration emission later)
+    result is add_external of name_idx
+    ext_name is make_external_name of name_idx
 
-    if var_reg < 0:
-        # Not a local variable - treat as external module variable
-        # Register as external (for declaration emission later)
-        result is add_external of name_idx
-        ext_name is make_external_name of name_idx
+    # Check if this is an array type (ptr) or scalar (double)
+    is_array is is_external_array of name_idx
+    if is_array = 1:
+        # External array - load ptr and convert to double
+        ptr_reg is next_reg of 0
+        ptr_str is make_reg of ptr_reg
+        line is cat5 of ["  ", ptr_str, " = load ptr, ptr ", ext_name, ""]
+        result is emit of line
 
-        # Check if this is an array type (ptr) or scalar (double)
-        is_array is is_external_array of name_idx
-        if is_array = 1:
-            # External array - load ptr and convert to double
-            ptr_reg is next_reg of 0
-            ptr_str is make_reg of ptr_reg
-            line is cat5 of ["  ", ptr_str, " = load ptr, ptr ", ext_name, ""]
-            result is emit of line
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat5 of ["  ", reg_str, " = call double @eigen_list_to_double(ptr ", ptr_str, ")"]
+        result is emit of line
+        return reg
 
-            reg is next_reg of 0
-            reg_str is make_reg of reg
-            line is cat5 of ["  ", reg_str, " = call double @eigen_list_to_double(ptr ", ptr_str, ")"]
-            result is emit of line
-            return reg
-        else:
-            # External scalar - load double directly
-            reg is next_reg of 0
-            reg_str is make_reg of reg
-            line is cat5 of ["  ", reg_str, " = load double, double* ", ext_name, ""]
-            result is emit of line
-            return reg
-
-    # Load from alloca
+    # External scalar - load double directly
     reg is next_reg of 0
     reg_str is make_reg of reg
-    var_str is make_reg of var_reg
-
-    line is cat5 of ["  ", reg_str, " = load double, double* ", var_str, ""]
+    line is cat5 of ["  ", reg_str, " = load double, double* ", ext_name, ""]
     result is emit of line
 
     return reg
@@ -1961,6 +1998,37 @@ define gen_relation of node_idx as:
         if mod_len > 0:
             func_name is string_concat of [module_name, func_name]
 
+    # External functions use i64 ABI (reference compiler convention)
+    if is_extern = 1:
+        # Convert all double arguments to i64 via bitcast
+        args_str is ""
+        i is 1
+        loop while i <= arg_count:
+            arg_reg is arg_regs[i]
+            arg_str is make_reg of arg_reg
+            # Bitcast double to i64
+            i64_reg is next_reg of 0
+            i64_str is make_reg of i64_reg
+            line is cat6 of ["  ", i64_str, " = bitcast double ", arg_str, " to i64", ""]
+            result is emit of line
+            if i = 1:
+                args_str is cat3 of ["i64 ", i64_str, ""]
+            else:
+                args_str is cat5 of [args_str, ", i64 ", i64_str, "", ""]
+            i is i + 1
+        # Generate call with i64 return type
+        i64_ret_reg is next_reg of 0
+        i64_ret_str is make_reg of i64_ret_reg
+        line is cat7 of ["  ", i64_ret_str, " = call i64 @", func_name, "(", args_str, ")"]
+        result is emit of line
+        # Bitcast i64 result back to double
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = bitcast i64 ", i64_ret_str, " to double", ""]
+        result is emit of line
+        return reg
+
+    # Local function - use double ABI
     # Build argument list string
     args_str is ""
     i is 1
@@ -2480,8 +2548,11 @@ define gen_conditional of node_idx as:
     if_start is ast_num_value[arr_idx]
     if_end is ast_right[arr_idx]
     else_info is ast_third[arr_idx]
-    else_start is else_info / 100000
+    # Calculate else_end first (modulo works correctly)
     else_end is else_info % 100000
+    # Then derive else_start: (else_info - else_end) / 100000
+    # This avoids the floor intrinsic issue
+    else_start is (else_info - else_end) / 100000
 
     # Generate condition
     cond_reg is gen_expr of cond_idx
@@ -2662,12 +2733,68 @@ define gen_function_def of node_idx as:
 
         i is i + 1
 
+    # Pre-scan body to find all local variables and create allocas for them
+    # This ensures allocas are in the entry block, not inside conditionals
+    result is prescan_local_vars of [body_start, body_end]
+
     # Generate body (statements from body_start to body_end)
     result is gen_block of [body_start, body_end]
 
     result is emit of "  ret double 0.0"
     result is emit of "}"
     result is emit of ""
+
+    return 0
+
+# Pre-scan a block range to find all local variable assignments and create allocas
+# This is called before generating body code to ensure allocas are in entry block
+define prescan_local_vars of [start, end] as:
+    prescan_i is start
+    loop while prescan_i < end:
+        prescan_arr_i is prescan_i + 1
+        prescan_stmt_idx is ast_children[prescan_arr_i]
+        result is prescan_stmt_for_vars of prescan_stmt_idx
+        prescan_i is prescan_i + 1
+    return 0
+
+# Recursively scan a statement for variable assignments
+define prescan_stmt_for_vars of stmt_idx as:
+    stmt_arr_idx is stmt_idx + 1
+    stmt_type is ast_types[stmt_arr_idx]
+
+    # Handle assignment - create alloca if not already exists
+    if stmt_type = AST_ASSIGNMENT:
+        var_name_idx is ast_str_index[stmt_arr_idx]
+        # Check if this is a new local variable (not global, not parameter)
+        is_glob is is_global of var_name_idx
+        if is_glob = 0:
+            var_reg is lookup_var of var_name_idx
+            if var_reg < 0:
+                # New local variable - create alloca
+                alloc_reg is next_reg of 0
+                alloc_str is make_reg of alloc_reg
+                var_name is lexer_get_string of var_name_idx
+                line is cat6 of ["  ", alloc_str, " = alloca double ; var ", var_name, "", ""]
+                result is emit of line
+                result is add_var of [var_name_idx, alloc_reg]
+
+    # Recurse into conditional bodies
+    if stmt_type = AST_CONDITIONAL:
+        if_start is ast_num_value[stmt_arr_idx]
+        if_end is ast_right[stmt_arr_idx]
+        result is prescan_local_vars of [if_start, if_end]
+        # Also scan else body
+        else_info is ast_third[stmt_arr_idx]
+        else_end is else_info % 100000
+        else_start is (else_info - else_end) / 100000
+        if else_start != else_end:
+            result is prescan_local_vars of [else_start, else_end]
+
+    # Recurse into loop bodies
+    if stmt_type = AST_LOOP:
+        loop_body_start is ast_num_value[stmt_arr_idx]
+        loop_body_end is ast_right[stmt_arr_idx]
+        result is prescan_local_vars of [loop_body_start, loop_body_end]
 
     return 0
 
@@ -2684,7 +2811,51 @@ define gen_block of [start, end] as:
         # ast_children also has dummy at index 0
         blk_arr_i is blk_i + 1
         stmt_idx is ast_children[blk_arr_i]
-        result is gen_stmt of stmt_idx
+        stmt_arr_idx is stmt_idx + 1
+        stmt_type is ast_types[stmt_arr_idx]
+
+        # Check if this child is an IF/LOOP - if so, we need to skip its body children
+        # because they will be generated by gen_conditional/gen_loop, not here.
+        # The body children appear BEFORE the IF/LOOP node in ast_children.
+        should_skip is 0
+
+        # Check if blk_i falls within the body range of any IF/LOOP that comes later
+        check_j is blk_i + 1
+        loop while check_j < blk_end:
+            check_arr_j is check_j + 1
+            check_idx is ast_children[check_arr_j]
+            check_stmt_arr is check_idx + 1
+            check_type is ast_types[check_stmt_arr]
+
+            if check_type = AST_CONDITIONAL:
+                # Get if-body range
+                if_body_start is ast_num_value[check_stmt_arr]
+                if_body_end is ast_right[check_stmt_arr]
+                # Check if blk_i is in if-body range
+                if blk_i >= if_body_start:
+                    if blk_i < if_body_end:
+                        should_skip is 1
+                # Check else-body range
+                else_info is ast_third[check_stmt_arr]
+                else_body_end is else_info % 100000
+                else_body_start is (else_info - else_body_end) / 100000
+                if blk_i >= else_body_start:
+                    if blk_i < else_body_end:
+                        should_skip is 1
+
+            if check_type = AST_LOOP:
+                # Get loop-body range
+                loop_body_start is ast_num_value[check_stmt_arr]
+                loop_body_end is ast_right[check_stmt_arr]
+                if blk_i >= loop_body_start:
+                    if blk_i < loop_body_end:
+                        should_skip is 1
+
+            check_j is check_j + 1
+
+        if should_skip = 0:
+            result is gen_stmt of stmt_idx
+
         blk_i is blk_i + 1
 
     # Pop blk_i from stack
@@ -2692,9 +2863,10 @@ define gen_block of [start, end] as:
     blk_i_sp is blk_i_sp - 1
     return 0
 
-# Check if a statement index is within a function body (child of AST_FUNCTION_DEF)
-# Returns 1 if it's inside a function body, 0 otherwise
-define is_in_function_body of [stmt_idx, prog_start, prog_end] as:
+# Check if a position in ast_children falls within a function body range
+# Takes the position (not node index) and checks against all function body ranges
+# Returns 1 if the position is inside some function body, 0 otherwise
+define is_in_function_body of [child_pos, prog_start, prog_end] as:
     # Iterate through program statements looking for function definitions
     j is prog_start
     loop while j < prog_end:
@@ -2703,17 +2875,14 @@ define is_in_function_body of [stmt_idx, prog_start, prog_end] as:
         other_arr_idx is other_idx + 1
         other_type is ast_types[other_arr_idx]
         if other_type = AST_FUNCTION_DEF:
-            # Check if stmt_idx is in this function's body range
-            func_children_start is ast_children_start[other_arr_idx]
-            func_children_end is ast_children_end[other_arr_idx]
-            # Check if stmt_idx is in ast_children[func_children_start..func_children_end)
-            k is func_children_start
-            loop while k < func_children_end:
-                arr_k is k + 1
-                child_idx is ast_children[arr_k]
-                if child_idx = stmt_idx:
+            # Check if child_pos falls within this function's body range
+            # Note: body_start is in ast_right, body_end is in ast_children_end
+            func_body_start is ast_right[other_arr_idx]
+            func_body_end is ast_children_end[other_arr_idx]
+            # Check if child_pos is in [func_body_start, func_body_end)
+            if child_pos >= func_body_start:
+                if child_pos < func_body_end:
                     return 1
-                k is k + 1
         j is j + 1
     return 0
 
@@ -2731,10 +2900,50 @@ define gen_block_skip_functions of [start, end] as:
         if stmt_type != AST_FUNCTION_DEF:
             # Also skip statements that are children of function definitions
             # (they get added to ast_children but belong to the function, not program)
-            in_func is is_in_function_body of [stmt_idx, skip_start, skip_end]
+            # Pass the position (skip_i), not the node index
+            in_func is is_in_function_body of [skip_i, skip_start, skip_end]
             if in_func = 0:
-                result is gen_stmt of stmt_idx
+                # Also skip statements that are inside IF/LOOP bodies
+                # (they appear before the IF/LOOP node in ast_children but should be
+                # generated by gen_conditional/gen_loop, not at the top level)
+                in_nested is is_in_nested_body of [skip_i, skip_start, skip_end]
+                if in_nested = 0:
+                    result is gen_stmt of stmt_idx
         skip_i is skip_i + 1
+    return 0
+
+# Check if a child index falls within a nested IF/LOOP body range
+# Returns 1 if the index is inside some IF/LOOP body, 0 otherwise
+define is_in_nested_body of [child_idx, blk_start, blk_end] as:
+    # Scan forward to find any IF/LOOP nodes whose body contains child_idx
+    check_j is child_idx + 1
+    loop while check_j < blk_end:
+        check_arr_j is check_j + 1
+        check_stmt_idx is ast_children[check_arr_j]
+        check_stmt_arr is check_stmt_idx + 1
+        check_type is ast_types[check_stmt_arr]
+        if check_type = AST_CONDITIONAL:
+            # Get if-body range
+            if_body_start is ast_num_value[check_stmt_arr]
+            if_body_end is ast_right[check_stmt_arr]
+            if child_idx >= if_body_start:
+                if child_idx < if_body_end:
+                    return 1
+            # Check else-body range
+            else_info is ast_third[check_stmt_arr]
+            else_body_end is else_info % 100000
+            else_body_start is (else_info - else_body_end) / 100000
+            if child_idx >= else_body_start:
+                if child_idx < else_body_end:
+                    return 1
+        if check_type = AST_LOOP:
+            # Get loop-body range
+            loop_body_start is ast_num_value[check_stmt_arr]
+            loop_body_end is ast_right[check_stmt_arr]
+            if child_idx >= loop_body_start:
+                if child_idx < loop_body_end:
+                    return 1
+        check_j is check_j + 1
     return 0
 
 # Generate block but only process function definitions (after main)
@@ -2870,7 +3079,7 @@ define gen_stmt of node_idx as:
 # Main Entry Point
 # ============================================================================
 
-# Pre-scan program to identify global variables (top-level assignments not in functions)
+# Pre-scan program to identify global variables and imported modules
 define prescan_globals of root_node as:
     arr_idx is root_node + 1
     start is ast_children_start[arr_idx]
@@ -2883,10 +3092,17 @@ define prescan_globals of root_node as:
         stmt_arr_idx is stmt_idx + 1
         stmt_type is ast_types[stmt_arr_idx]
 
+        # Collect imported modules (for calling their init functions)
+        if stmt_type = AST_IMPORT:
+            # The module name is stored in str_index
+            module_name_idx is ast_str_index[stmt_arr_idx]
+            result is add_imported_module of module_name_idx
+
         # Only process top-level assignments (skip function bodies)
         if stmt_type = AST_ASSIGNMENT:
             # Check if this statement is inside a function body
-            in_func is is_in_function_body of [stmt_idx, start, end]
+            # Pass position i (not node index stmt_idx) for correct range checking
+            in_func is is_in_function_body of [i, start, end]
             if in_func = 0:
                 # This is a global variable - register it
                 name_idx is ast_str_index[stmt_arr_idx]
@@ -2930,6 +3146,19 @@ define generate of root_node as:
         result is emit of "  ; Initialize CLI args for get_argc/get_arg builtins"
         result is emit of "  call void @eigen_init_args(i32 %argc, i8** %argv)"
         result is emit of ""
+        # Call init functions for all imported modules
+        # This initializes their global variables (especially lists) before we use them
+        if imported_module_count > 0:
+            result is emit of "  ; Initialize imported modules"
+            mod_i is 0
+            loop while mod_i < imported_module_count:
+                mod_arr_i is mod_i + 1
+                mod_name_idx is imported_module_names[mod_arr_i]
+                mod_name is lexer_get_string of mod_name_idx
+                init_call is cat3 of ["  call void @", mod_name, "_init()"]
+                result is emit of init_call
+                mod_i is mod_i + 1
+            result is emit of ""
 
     in_main is 1
 
@@ -2955,6 +3184,7 @@ define generate of root_node as:
     # Emit external declarations (discovered during code generation)
     result is emit_external_declarations of 0
     result is emit_extern_func_declarations of 0
+    result is emit_imported_module_init_declarations of 0
 
     return output_count
 
@@ -2974,6 +3204,7 @@ define init_codegen as:
     global_count is 0
     external_count is 0
     extern_func_count is 0
+    imported_module_count is 0
     struct_count is 0
     struct_field_total is 0
     module_name is ""
