@@ -1320,9 +1320,11 @@ define parse_function_def as:
     if ok = 0:
         return 0
 
-    # Skip newline
-    tok is current_token_type of 0
-    if tok = TT_NEWLINE:
+    # Skip newlines (including comment-only lines which produce extra newlines)
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_NEWLINE:
+            break
         result is advance_token of 0
 
     # Parse block (body statements follow parameters in ast_children)
@@ -1363,9 +1365,11 @@ define parse_struct_def as:
     if ok = 0:
         return 0
 
-    # Skip newline
-    tok is current_token_type of 0
-    if tok = TT_NEWLINE:
+    # Skip newlines (including comment-only lines)
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_NEWLINE:
+            break
         result is advance_token of 0
 
     # Expect INDENT
@@ -1423,9 +1427,11 @@ define parse_conditional as:
     if ok = 0:
         return 0
 
-    # Skip newline
-    tok is current_token_type of 0
-    if tok = TT_NEWLINE:
+    # Skip newlines (including comment-only lines)
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_NEWLINE:
+            break
         result is advance_token of 0
 
     # Parse if block
@@ -1445,9 +1451,11 @@ define parse_conditional as:
         if ok = 0:
             return 0
 
-        # Skip newline
-        tok is current_token_type of 0
-        if tok = TT_NEWLINE:
+        # Skip newlines (including comment-only lines)
+        loop while 1:
+            tok is current_token_type of 0
+            if tok != TT_NEWLINE:
+                break
             result is advance_token of 0
 
         # Parse else block
@@ -1483,9 +1491,11 @@ define parse_loop as:
     if ok = 0:
         return 0
 
-    # Skip newline
-    tok is current_token_type of 0
-    if tok = TT_NEWLINE:
+    # Skip newlines (including comment-only lines)
+    loop while 1:
+        tok is current_token_type of 0
+        if tok != TT_NEWLINE:
+            break
         result is advance_token of 0
 
     # Parse loop body
@@ -1529,6 +1539,8 @@ define parse_block as:
         tok is current_token_type of 0
 
         if tok = TT_DEDENT:
+            # Consume the DEDENT and exit
+            result is advance_token of 0
             break
         if tok = TT_EOF:
             break
@@ -1546,8 +1558,6 @@ define parse_block as:
         if parser_error = 1:
             break
 
-    # Expect DEDENT
-    ok is expect_token of TT_DEDENT
     return 0
 
 # ============================================================================
