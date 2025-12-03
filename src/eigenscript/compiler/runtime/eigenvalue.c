@@ -267,7 +267,7 @@ EigenList* eigen_list_create(int64_t length) {
 
 double eigen_list_get(EigenList* list, int64_t index) {
     if (!list || index < 0 || index >= list->length) {
-        fprintf(stderr, "List index out of bounds: %lld (length: %lld)\n", 
+        fprintf(stderr, "List index out of bounds: %lld (length: %lld)\n",
                 (long long)index, (long long)list->length);
         return 0.0;
     }

@@ -20,10 +20,11 @@ import codegen
 
 # ============================================================================
 # Token Type Constants (needed for main)
+# These MUST match the values in lexer.eigs exactly!
 # ============================================================================
 TT_EOF is 99
-TT_NUMBER is 30
-TT_STRING is 31
+TT_NUMBER is 31
+TT_STRING is 32
 TT_IDENTIFIER is 33
 
 # ============================================================================
