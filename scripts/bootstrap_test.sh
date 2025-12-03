@@ -15,12 +15,17 @@
 # - codegen.eigs: COMPILES ✓ (fixed type inference, uses lexer_get_string)
 # - main.eigs: COMPILES ✓
 # - LINKING: SUCCESS ✓ -> eigensc binary created
-# - RUNTIME: IN PROGRESS - stage 1 compiler runs but may have bugs
+# - RUNTIME: PARTIAL ✓ - stage 1 compiler generates LLVM IR header/decls
+#   - Module init calls now working (parser/lexer globals initialized)
+#   - String printing now works (STRING_PTR handling added)
+#   - Crashes during emit_runtime_decls (memory/stack issue to investigate)
 #
 # Fixes applied:
 # - Reference compiler type inference for variable reassignment
 # - escape_string builtin handling in reference compiler
 # - Cross-module function calls via mangled names (lexer_get_string)
+# - Module init calls in emit_llvm path (compile.py)
+# - STRING_PTR print handling in reference compiler (llvm_backend.py)
 
 set -e
 

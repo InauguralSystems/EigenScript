@@ -2046,6 +2046,28 @@ class LLVMCodeGenerator:
                     fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
                     return self.builder.call(self.printf, [fmt_ptr, c_str])
 
+                # Check if it's a STRING_PTR (local string variable)
+                if (
+                    isinstance(arg_gen_val, GeneratedValue)
+                    and arg_gen_val.kind == ValueKind.STRING_PTR
+                ):
+                    # Direct string pointer - print as string
+                    c_str = self.builder.call(self.eigen_string_cstr, [arg_gen_val.value])
+                    fmt_str = "%s\n\0"
+                    fmt_const = ir.Constant(
+                        ir.ArrayType(self.int8_type, len(fmt_str)),
+                        bytearray(fmt_str.encode("utf-8")),
+                    )
+                    fmt_name = f"{self.module_prefix}fmt_str_ptr_{self.string_counter}"
+                    self.string_counter += 1
+                    global_fmt = ir.GlobalVariable(
+                        self.module, fmt_const.type, name=fmt_name
+                    )
+                    global_fmt.global_constant = True
+                    global_fmt.initializer = fmt_const
+                    fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
+                    return self.builder.call(self.printf, [fmt_ptr, c_str])
+
                 # Check if it's a PACKED_I64 (function parameter) - try as string
                 if (
                     isinstance(arg_gen_val, GeneratedValue)
