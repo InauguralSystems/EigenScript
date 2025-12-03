@@ -1796,7 +1796,10 @@ class LLVMCodeGenerator:
         # Handle list assignment
         if gen_value.kind == ValueKind.LIST_PTR:
             # Check type compatibility - shadow if types don't match
-            if existing_var_ptr is not None and existing_var_ptr.type.pointee == self.eigen_list_ptr:
+            if (
+                existing_var_ptr is not None
+                and existing_var_ptr.type.pointee == self.eigen_list_ptr
+            ):
                 # Update existing list variable (types match)
                 self.builder.store(gen_value.value, existing_var_ptr)
             else:
@@ -1816,7 +1819,10 @@ class LLVMCodeGenerator:
         # Handle string assignment (for self-hosting)
         if gen_value.kind == ValueKind.STRING_PTR:
             # Check type compatibility - shadow if types don't match
-            if existing_var_ptr is not None and existing_var_ptr.type.pointee == self.eigen_string_ptr:
+            if (
+                existing_var_ptr is not None
+                and existing_var_ptr.type.pointee == self.eigen_string_ptr
+            ):
                 # Update existing string variable (types match)
                 self.builder.store(gen_value.value, existing_var_ptr)
             else:
@@ -1839,7 +1845,10 @@ class LLVMCodeGenerator:
             if struct_type:
                 # Check type compatibility - shadow if types don't match
                 expected_ptr_type = struct_type.as_pointer()
-                if existing_var_ptr is not None and existing_var_ptr.type.pointee == expected_ptr_type:
+                if (
+                    existing_var_ptr is not None
+                    and existing_var_ptr.type.pointee == expected_ptr_type
+                ):
                     # Update existing struct variable (types match)
                     self.builder.store(gen_value.value, existing_var_ptr)
                 else:
@@ -2100,7 +2109,9 @@ class LLVMCodeGenerator:
                     and arg_gen_val.kind == ValueKind.STRING_PTR
                 ):
                     # Direct string pointer - print as string
-                    c_str = self.builder.call(self.eigen_string_cstr, [arg_gen_val.value])
+                    c_str = self.builder.call(
+                        self.eigen_string_cstr, [arg_gen_val.value]
+                    )
                     fmt_str = "%s\n\0"
                     fmt_const = ir.Constant(
                         ir.ArrayType(self.int8_type, len(fmt_str)),
