@@ -274,6 +274,49 @@ y is 10"""
         ]
         assert len(indent_dedent) == 0
 
+    def test_comments_inside_functions(self):
+        """Comments inside function bodies should not affect indentation."""
+        source = """define test:
+    x is 10
+    # Comment inside function
+    y is x + 5
+    # Another comment
+    return y"""
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+
+        # Should have exactly 1 INDENT (for function body) and 1 DEDENT (at end)
+        indent_count = sum(1 for t in tokens if t.type == TokenType.INDENT)
+        dedent_count = sum(1 for t in tokens if t.type == TokenType.DEDENT)
+        assert indent_count == 1
+        assert dedent_count == 1
+
+        # Comments should be ignored - check we have the right tokens
+        identifiers = [t.value for t in tokens if t.type == TokenType.IDENTIFIER]
+        assert "test" in identifiers
+        assert "x" in identifiers
+        assert "y" in identifiers
+
+    def test_comments_with_nested_indentation(self):
+        """Comments in nested blocks should not affect indentation tracking."""
+        source = """define func:
+    x is 1
+    if x > 0:
+        # Comment in nested block
+        y is 2
+        # Another comment
+        z is y + x
+        return z
+    return 0"""
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+
+        # Should have 2 INDENTs (func body, if body) and 2 DEDENTs
+        indent_count = sum(1 for t in tokens if t.type == TokenType.INDENT)
+        dedent_count = sum(1 for t in tokens if t.type == TokenType.DEDENT)
+        assert indent_count == 2
+        assert dedent_count == 2
+
     def test_equilibrium_expression(self):
         """Equilibrium expression (core EigenScript concept) should tokenize."""
         source = "equilibrium is x of y"
