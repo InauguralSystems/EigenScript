@@ -17,6 +17,7 @@ from eigenscript.parser import (
     FunctionDef,
     Return,
     Break,
+    Continue,
 )
 
 
@@ -260,6 +261,20 @@ class TestParser:
         assert len(program.statements) == 1
         stmt = program.statements[0]
         assert isinstance(stmt, Break)
+
+    def test_parse_continue_statement(self):
+        """Should parse CONTINUE statement."""
+        tokens = [
+            Token(TokenType.CONTINUE),
+            Token(TokenType.EOF),
+        ]
+
+        parser = Parser(tokens)
+        program = parser.parse()
+
+        assert len(program.statements) == 1
+        stmt = program.statements[0]
+        assert isinstance(stmt, Continue)
 
     def test_parse_right_associative_of(self):
         """OF operator should be right-associative."""
