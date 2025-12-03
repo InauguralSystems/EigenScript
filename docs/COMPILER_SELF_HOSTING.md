@@ -45,13 +45,15 @@ EigenScript has achieved two different types of self-hosting:
 
 ### ⚠️ Known Limitations
 
-- **Runtime Bugs**: Stage 1 compiler has issues with print output (produces 0 instead of correct values)
+- **Numeric Literal Bug** (Critical): Stage 1 compiler generates all numeric literals as zero. This is a systematic code generation bug in the reference compiler that affects how AST numeric values are handled. See "Troubleshooting" section for details.
 - **Parser Limitation**: The parser cannot handle blank lines inside function bodies, which prevents the compiler from compiling itself (full bootstrap)
-- **No Full Bootstrap**: Stage 1 cannot yet compile itself to produce Stage 2
+- **No Full Bootstrap**: Stage 1 cannot yet compile itself to produce Stage 2 due to the above limitations
 
 ### 🎯 Future Goals
 
-- Fix print/runtime issues in Stage 1
+- **Fix Numeric Literal Bug**: Debug and fix the reference compiler's code generation for numeric literals in selfhost modules
+  - Root cause is in how list access patterns are compiled when variables are observed
+  - May require refactoring of the geometric tracking logic in `llvm_backend.py`
 - Enhance parser to handle blank lines in function bodies
 - Achieve full bootstrap (Stage 1 compiling itself)
 - Verify Stage 1 and Stage 2 produce identical output
@@ -386,7 +388,22 @@ brew install llvm
 
 ### Stage 1 Produces Wrong Output
 
-This is a known issue. The Stage 1 compiler has runtime bugs that cause incorrect output values. This is being investigated.
+**Status**: Known Issue - Under Investigation
+
+The Stage 1 compiler has a systematic runtime bug that causes all numeric literals to be generated as zero. When Stage 1 compiles a program like `x is 42`, it generates `fadd double 0.0, 0.0` instead of `fadd double 0.0, 42.0`.
+
+**Root Cause**: The bug originates in the reference compiler's code generation when compiling the self-hosted compiler modules. Numeric literal values from the AST are read as 0.0 instead of their actual values during code generation.
+
+**Investigation Summary**:
+- The data flow path (lexer → main → parser → codegen) has been traced and verified
+- LLVM IR generation and runtime function implementations are correct
+- AST array sharing between modules is properly configured
+- The issue appears to be in how the reference compiler handles observed variables and list operations when compiling selfhost modules
+- Workarounds attempted but the bug persists, indicating a deeper issue in reference compiler internals
+
+**Workaround**: Until this is fixed, Stage 1 cannot be used to compile programs with numeric literals. The reference compiler (eigenscript-compile) should be used instead.
+
+**Future Work**: Fixing this requires modifications to the reference compiler's code generation logic in `llvm_backend.py`, particularly around how it handles list access patterns in library modules.
 
 ### "Parse error at line X"
 
@@ -469,11 +486,84 @@ To achieve full bootstrap (Stage 1 compiling itself), the following issues need 
 - `scripts/bootstrap_test.sh` - Automated bootstrap testing
 - `tests/test_meta_evaluator.py` - Python tests for meta-evaluation
 
+## How To: Debug Runtime Issues
+
+If you're investigating runtime bugs in the Stage 1 compiler, here's a systematic approach:
+
+### 1. Verify the Bug
+
+Create a minimal test case:
+```bash
+cd build/bootstrap
+cat > test.eigs << 'EOF'
+x is 42
+print of x
+EOF
+
+./eigensc test.eigs > test.ll
+grep "fadd double" test.ll
+```
+
+Expected (correct): `fadd double 0.0, 42.0`
+Actual (buggy): `fadd double 0.0, 0.0`
+
+### 2. Check Data Flow
+
+The compilation pipeline is:
+1. **Lexer** (`lexer_next_token`) scans source and sets `lex_last_num_val`
+2. **Main** (`run_lexer`) reads `lex_last_num_val` and appends to `parser_token_num_vals`
+3. **Parser** (`current_token_num`) reads from `parser_token_num_vals` and stores in `ast_num_value`
+4. **Codegen** (`gen_literal`) reads from `ast_num_value` and generates LLVM IR
+
+### 3. Examine LLVM IR
+
+Check the generated LLVM IR for each module:
+```bash
+# Check if globals are properly shared
+grep "@__eigs_global_ast_num_value" parser.ll codegen.ll
+
+# Parser should have: @__eigs_global_ast_num_value = global ptr null
+# Codegen should have: @__eigs_global_ast_num_value = external global ptr
+```
+
+### 4. Trace Variable Access
+
+In `codegen.ll`, find the `codegen_gen_literal` function and check:
+- How `ast_num_value[arr_idx]` is accessed
+- Whether `eigen_list_get` is called correctly
+- If the value is wrapped in EigenValue (look for `eigen_init`)
+- How the value is extracted (look for `eigen_get_value`)
+
+### 5. Check Reference Compiler
+
+The bug likely originates in how the reference compiler generates code for selfhost modules. Key areas to investigate:
+
+- `src/eigenscript/compiler/codegen/llvm_backend.py`:
+  - `_compile_expression` - How list access is compiled
+  - `_compile_binary_op` - How comparisons trigger geometric tracking
+  - Line ~1050-1070: Shared global variable linkage logic
+
+### 6. Add Debugging
+
+To add debug output to the Stage 1 compiler, modify the source and recompile:
+```eigenscript
+# In codegen.eigs, gen_literal function:
+define gen_literal of node_idx as:
+    arr_idx is node_idx + 1
+    num_val is ast_num_value[arr_idx]
+    
+    # Add debug - but note this may affect compilation
+    # since print has side effects
+    print of num_val
+    
+    # ... rest of function
+```
+
 ## Contributing
 
 If you'd like to help improve the self-hosted compiler:
 
-1. **Fix Runtime Bugs**: Debug why Stage 1 produces incorrect output
+1. **Fix Numeric Literal Bug**: Debug the reference compiler's code generation for observed variables and list operations
 2. **Enhance Parser**: Add support for blank lines in function bodies
 3. **Add Tests**: Create more test cases for the self-hosted compiler
 4. **Documentation**: Improve this guide with your findings
