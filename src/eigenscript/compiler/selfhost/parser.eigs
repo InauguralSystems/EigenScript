@@ -223,7 +223,6 @@ define init_parser as:
 # So we return idx which is 0-based, but use idx+1 for array access in setters
 define create_node of node_type as:
     idx is ast_node_count
-    print of idx
     ast_node_count is ast_node_count + 1
 
     # Initialize node fields
@@ -236,7 +235,6 @@ define create_node of node_type as:
     append of ast_str_index of 0
     append of ast_children_start of 0
     append of ast_children_end of 0
-    print of idx
 
     return idx
 
@@ -270,10 +268,7 @@ define set_third of [node_idx, child_idx] as:
 define set_num_value of [node_idx, value] as:
     x is node_idx
     y is value
-    print of x
-    print of y
     arr_idx is x + 1
-    print of arr_idx
     ast_num_value[arr_idx] is y
     return 0
 
@@ -334,10 +329,7 @@ define current_token_num as:
     if parser_pos >= parser_token_count:
         return 0
     idx is parser_pos + 1
-    print of parser_pos
-    print of idx
     val is parser_token_num_vals[idx]
-    print of val
     return val
 
 # Get current token's string index
@@ -552,7 +544,6 @@ define parse_relation as:
         return left
 
     tok is current_token_type of 0
-    print of tok
     if tok = TT_OF:
         result is advance_token of 0
         # Right-recursive for right associativity
@@ -679,7 +670,6 @@ define parse_unary as:
 # Parse primary: literals, identifiers, parens, interrogatives, list literals
 define parse_primary as:
     tok is current_token_type of 0
-    print of tok
 
     if parser_error = 1:
         return 0
@@ -1609,7 +1599,6 @@ define parse as:
 define print_ast_node of node_idx as:
     arr_idx is node_idx + 1
     node_type is ast_types[arr_idx]
-    print of node_type
 
     if node_type = AST_LITERAL:
         print of ast_num_value[arr_idx]
