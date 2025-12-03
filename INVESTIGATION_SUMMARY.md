@@ -147,14 +147,46 @@ After the initial numeric literal bug fix, several additional issues were discov
 
 ### What Works ✅
 - Simple programs compile and execute correctly
-- Stage 1 can compile lexer.eigs with correct `lexer_` prefixes
-- Stage 1 can compile parser.eigs with correct `parser_` prefixes
-- Stage 1 can compile semantic.eigs with correct `semantic_` prefixes
-- All three modules assemble with `llvm-as` successfully
+- Stage 1 can compile ALL self-hosted compiler modules:
+  - lexer.eigs with `lexer_` prefix
+  - parser.eigs with `parser_` prefix
+  - semantic.eigs with `semantic_` prefix
+  - codegen.eigs with `codegen_` prefix
+  - **main.eigs with `main_` prefix** ✅
+- All modules assemble with `llvm-as` successfully
+- **Stage 2 LLVM IR is VALID** ✅
 
-### Remaining Issues
-- **codegen.eigs**: Produces duplicate function definitions (3 functions: make_reg, make_label, make_external_name). Possibly a bug in handling larger files.
-- **main.eigs**: Causes Bus error during compilation. Likely memory issue with complex imports.
+### Remaining Work
+- Link Stage 2 compiler with all module object files
+- Test Stage 2 compiler execution
+- Verify bootstrap equivalence (Stage 1 output == Stage 2 output)
+
+## Additional Fixes (Session 3 - December 3, 2025)
+
+### 6. Stack-based Loop Variable for gen_block ✅
+**Problem:** Recursive calls to `gen_block` (via gen_conditional, gen_loop) corrupted the loop variable `blk_i`.
+**Fix:** Added stack-based save/restore for `blk_i`:
+- Added `blk_i_stack` array (pre-populated in init_codegen)
+- Push `blk_i` on entry, pop on exit from `gen_block`
+
+### 7. Variable Name Collision in get_module_prefix ✅
+**Problem:** Loop variable `i` in `get_module_prefix` could collide with other global uses.
+**Fix:** Renamed to `gmp_i` (get_module_prefix_i).
+
+### 8. Module Prefix Collision in gen_member_access ✅
+**Problem:** Local variable `module_name` in `gen_member_access` overwrote the global `module_name` used for function prefixing.
+**Fix:** Renamed to `access_mod_name`.
+
+### 9. Empty Module Name Crash ✅
+**Problem:** When `module_name` was empty (for main.eigs), compilation crashed with Bus error during string concatenation.
+**Fix:** Changed `get_module_prefix` to ALWAYS return a prefix (including `main_` for main.eigs). This ensures consistent behavior across all modules.
+
+### 10. Missing char_to_string Builtin ✅
+**Problem:** `char_to_string` was treated as a user function and got module prefix, causing undefined symbol.
+**Fix:** Added builtin handler for `char_to_string` that:
+- Converts double argument to i64
+- Calls `eigen_char_to_string` runtime function
+- Converts EigenString* result back to double
 
 ## Files Modified
 
@@ -165,24 +197,30 @@ After the initial numeric literal bug fix, several additional issues were discov
    - External function declarations
    - Append builtin handling
    - Module name prefixing for function definitions and calls
+   - Stack-based gen_block loop variable management
+   - char_to_string builtin handler
 
 ## Commits
 
 1. `3e7b3aa` - Fix major codegen bugs enabling valid Stage 2 LLVM IR
 2. `6d2570c` - Fix append builtin to not pre-evaluate nested relation
 3. `8eb8b40` - Add module name prefixing to self-hosted compiler
+4. `e3659e0` - Update investigation summary with bootstrap progress
+5. `8873b0c` - Fix bootstrap: Stack-based loop vars, module prefix, char_to_string
 
 ## Conclusion
 
-✅ **Significant progress on bootstrap.** The core infrastructure for multi-module compilation is now in place:
-- Module name prefixing works for function definitions
-- Module name prefixing works for internal function calls
-- External function detection and declaration works
-- 3 of 4 compiler modules compile successfully to valid LLVM IR
+✅ **MAJOR MILESTONE: Stage 2 LLVM IR is valid!**
 
-The remaining issues appear to be related to handling larger/more complex source files. Further investigation needed for the duplicate function bug and memory corruption with large files.
+The self-hosted compiler can now:
+- Compile all 5 of its own modules to valid LLVM IR
+- Generate correct function prefixes for each module
+- Handle recursive code generation without corruption
+- Properly handle all builtins including char_to_string
+
+Next step is to link the Stage 2 compiler and verify it produces identical output to Stage 1 (bootstrap equivalence).
 
 ---
 
-**Status:** ✅ Significant Progress
-**Next steps:** Debug duplicate function generation in codegen.eigs, investigate bus error in main.eigs
+**Status:** ✅ Stage 2 LLVM IR Valid
+**Next steps:** Link Stage 2 compiler, verify bootstrap equivalence
