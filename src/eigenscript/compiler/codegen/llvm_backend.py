@@ -996,6 +996,28 @@ class LLVMCodeGenerator:
 
         return alloca_inst
 
+    def _alloca_ptr_null_at_entry(self, ty: ir.Type, name: str = "") -> ir.AllocaInstr:
+        """Allocate a pointer variable and initialize it to NULL at function entry.
+
+        This is used for EigenValue* and other pointer types that may be assigned
+        in conditional branches. Initializing to NULL allows runtime checks to
+        detect if the variable was actually assigned.
+        """
+        alloca_inst = self._alloca_at_entry(ty, name=name)
+
+        # Save current position
+        current_block = self.builder.block
+
+        # Position right after the alloca to add the null initialization
+        self.builder.position_after(alloca_inst)
+        null_val = ir.Constant(ty, None)
+        self.builder.store(null_val, alloca_inst)
+
+        # Restore position
+        self.builder.position_at_end(current_block)
+
+        return alloca_inst
+
     def _create_global_variable(
         self, ty: ir.Type, name: str, initial_value=None
     ) -> ir.GlobalVariable:
@@ -1913,8 +1935,33 @@ class LLVMCodeGenerator:
                         )
                 else:
                     # Geometric tracked: EigenValue*, call eigen_update
+                    # BUT: Handle case where pointer is uninitialized (conditional branches)
                     eigen_ptr = self.builder.load(var_ptr)
+
+                    # Check if the pointer is null (uninitialized in this branch)
+                    null_ptr = ir.Constant(self.eigen_value_ptr, None)
+                    is_null = self.builder.icmp_unsigned("==", eigen_ptr, null_ptr)
+
+                    # Create blocks for the null check
+                    then_bb = self.builder.append_basic_block("eigen.init")
+                    else_bb = self.builder.append_basic_block("eigen.update")
+                    merge_bb = self.builder.append_basic_block("eigen.merge")
+
+                    self.builder.cbranch(is_null, then_bb, else_bb)
+
+                    # If null: create new EigenValue on stack
+                    self.builder.position_at_start(then_bb)
+                    new_eigen_ptr = self._create_eigen_on_stack(scalar_val)
+                    self.builder.store(new_eigen_ptr, var_ptr)
+                    self.builder.branch(merge_bb)
+
+                    # If not null: update existing EigenValue
+                    self.builder.position_at_start(else_bb)
                     self.builder.call(self.eigen_update, [eigen_ptr, scalar_val])
+                    self.builder.branch(merge_bb)
+
+                    # Continue at merge block
+                    self.builder.position_at_start(merge_bb)
         else:
             # Create new variable
             # OBSERVER EFFECT: Check if variable needs geometric tracking
@@ -1942,9 +1989,10 @@ class LLVMCodeGenerator:
                 # Observed variable in function: Stack-allocated EigenValue
                 # IMPORTANT: Stack variables are NOT added to allocated_eigenvalues
                 # They don't need cleanup - automatically freed when function returns
+                # Use null-initialized alloca to handle conditional assignments correctly
                 scalar_val = self.ensure_scalar(gen_value)
                 eigen_ptr = self._create_eigen_on_stack(scalar_val)
-                var_ptr = self._alloca_at_entry(
+                var_ptr = self._alloca_ptr_null_at_entry(
                     self.eigen_value_ptr, name=node.identifier
                 )
                 self.builder.store(eigen_ptr, var_ptr)
@@ -1955,7 +2003,7 @@ class LLVMCodeGenerator:
                 # These DO need cleanup via eigen_destroy
                 eigen_ptr = self.ensure_eigen_ptr(gen_value)
                 if in_func:
-                    var_ptr = self._alloca_at_entry(
+                    var_ptr = self._alloca_ptr_null_at_entry(
                         self.eigen_value_ptr, name=node.identifier
                     )
                 else:
