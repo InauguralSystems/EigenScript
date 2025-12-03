@@ -714,8 +714,13 @@ class Interpreter:
                 # One is list, one is vector - not equal
                 return self.space.embed_scalar(1.0)
             else:
-                # Both are vectors
-                is_equal = self.space.is_operator(left, right, self.metric.g)
+                # Both are vectors - compare scalar values (first coordinate)
+                # For scalar comparison, we only compare the actual numeric value,
+                # not the full geometric embedding which includes computation history
+                left_val = left.coords[0]
+                right_val = right.coords[0]
+                # Use small epsilon for floating point comparison
+                is_equal = abs(left_val - right_val) < 1e-10
                 return self.space.embed_scalar(0.0 if is_equal else 1.0)
 
         elif node.operator == "%":
