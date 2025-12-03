@@ -12,31 +12,32 @@ TT_DEFINE is 7
 TT_AS is 8
 TT_RETURN is 9
 TT_BREAK is 10
-TT_NULL is 11
-TT_NOT is 12
-TT_AND is 13
-TT_OR is 14
-TT_FOR is 15
-TT_IN is 16
-TT_IMPORT is 17
-TT_FROM is 18
-TT_STRUCT is 19
+TT_CONTINUE is 11
+TT_NULL is 12
+TT_NOT is 13
+TT_AND is 14
+TT_OR is 15
+TT_FOR is 16
+TT_IN is 17
+TT_IMPORT is 18
+TT_FROM is 19
+TT_STRUCT is 20
 
 # Interrogatives
-TT_WHO is 20
-TT_WHAT is 21
-TT_WHEN is 22
-TT_WHERE is 23
-TT_WHY is 24
-TT_HOW is 25
-TT_WAS is 26
-TT_CHANGE is 27
-TT_STATUS is 28
-TT_TREND is 29
+TT_WHO is 21
+TT_WHAT is 22
+TT_WHEN is 23
+TT_WHERE is 24
+TT_WHY is 25
+TT_HOW is 26
+TT_WAS is 27
+TT_CHANGE is 28
+TT_STATUS is 29
+TT_TREND is 30
 
 # Literals
-TT_NUMBER is 30
-TT_STRING is 31
+TT_NUMBER is 31
+TT_STRING is 32
 TT_IDENTIFIER is 33
 
 # Punctuation
@@ -393,6 +394,10 @@ define match_keyword as:
         test is string_equals of [keyword_word, "status"]
         if test = 1:
             return TT_STATUS
+    if len = 8:
+        test is string_equals of [keyword_word, "continue"]
+        if test = 1:
+            return TT_CONTINUE
     return TT_IDENTIFIER
 
 # Count indentation at line start

@@ -30,12 +30,13 @@ AST_LOOP is 22
 AST_FUNCTION_DEF is 23
 AST_RETURN is 24
 AST_BREAK is 25
-AST_IMPORT is 26
-AST_IMPORT_FROM is 27
-AST_STRUCT_DEF is 28
-AST_INDEXED_ASSIGNMENT is 29
+AST_CONTINUE is 26
+AST_IMPORT is 27
+AST_IMPORT_FROM is 28
+AST_STRUCT_DEF is 29
+AST_INDEXED_ASSIGNMENT is 30
 
-AST_PROGRAM is 30
+AST_PROGRAM is 31
 
 LIT_NUMBER is 1
 LIT_STRING is 2
@@ -74,9 +75,11 @@ label_counter is 0
 string_counter is 0
 in_main is 0
 
-# Loop break label stack (for nested loops)
+# Loop break/continue label stack (for nested loops)
 # Current loop's exit label number (0 if not in loop)
 current_loop_exit_label is 0
+# Current loop's condition label number (0 if not in loop)
+current_loop_cond_label is 0
 
 # Output buffer
 MAX_OUTPUT is 50000
@@ -2094,9 +2097,11 @@ define gen_loop of node_idx as:
     body_str is make_label of body_lbl
     end_str is make_label of end_lbl
 
-    # Save outer loop's exit label and set current
+    # Save outer loop's labels and set current
     outer_exit_label is current_loop_exit_label
+    outer_cond_label is current_loop_cond_label
     current_loop_exit_label is end_lbl
+    current_loop_cond_label is cond_lbl
 
     # Jump to condition
     line is cat3 of ["  br label %", cond_str, ""]
@@ -2131,8 +2136,9 @@ define gen_loop of node_idx as:
     line is cat3 of [end_str, ":", ""]
     result is emit of line
 
-    # Restore outer loop's exit label
+    # Restore outer loop's labels
     current_loop_exit_label is outer_exit_label
+    current_loop_cond_label is outer_cond_label
 
     return 0
 
@@ -2249,6 +2255,21 @@ define gen_stmt of node_idx as:
             result is emit of line
         else:
             result is emit of "  ; ERROR: break outside loop"
+        return 0
+
+    if node_type = AST_CONTINUE:
+        # Jump to current loop's condition label
+        if current_loop_cond_label > 0:
+            cond_str is make_label of current_loop_cond_label
+            line is cat3 of ["  br label %", cond_str, ""]
+            result is emit of line
+            # Need a new block after continue since br is a terminator
+            after_lbl is next_label of 0
+            after_str is make_label of after_lbl
+            line is cat3 of [after_str, ":", ""]
+            result is emit of line
+        else:
+            result is emit of "  ; ERROR: continue outside loop"
         return 0
 
     if node_type = AST_FUNCTION_DEF:

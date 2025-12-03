@@ -17,31 +17,32 @@ TT_DEFINE is 7
 TT_AS is 8
 TT_RETURN is 9
 TT_BREAK is 10
-TT_NULL is 11
-TT_NOT is 12
-TT_AND is 13
-TT_OR is 14
-TT_FOR is 15
-TT_IN is 16
-TT_IMPORT is 17
-TT_FROM is 18
-TT_STRUCT is 19
+TT_CONTINUE is 11
+TT_NULL is 12
+TT_NOT is 13
+TT_AND is 14
+TT_OR is 15
+TT_FOR is 16
+TT_IN is 17
+TT_IMPORT is 18
+TT_FROM is 19
+TT_STRUCT is 20
 
 # Interrogatives
-TT_WHO is 20
-TT_WHAT is 21
-TT_WHEN is 22
-TT_WHERE is 23
-TT_WHY is 24
-TT_HOW is 25
-TT_WAS is 26
-TT_CHANGE is 27
-TT_STATUS is 28
-TT_TREND is 29
+TT_WHO is 21
+TT_WHAT is 22
+TT_WHEN is 23
+TT_WHERE is 24
+TT_WHY is 25
+TT_HOW is 26
+TT_WAS is 27
+TT_CHANGE is 28
+TT_STATUS is 29
+TT_TREND is 30
 
 # Literals
-TT_NUMBER is 30
-TT_STRING is 31
+TT_NUMBER is 31
+TT_STRING is 32
 TT_IDENTIFIER is 33
 
 # Punctuation
@@ -99,13 +100,14 @@ AST_LOOP is 22
 AST_FUNCTION_DEF is 23
 AST_RETURN is 24
 AST_BREAK is 25
-AST_IMPORT is 26
-AST_IMPORT_FROM is 27
-AST_STRUCT_DEF is 28
-AST_INDEXED_ASSIGNMENT is 29
+AST_CONTINUE is 26
+AST_IMPORT is 27
+AST_IMPORT_FROM is 28
+AST_STRUCT_DEF is 29
+AST_INDEXED_ASSIGNMENT is 30
 
 # Program
-AST_PROGRAM is 30
+AST_PROGRAM is 31
 
 # Literal types
 LIT_NUMBER is 1
@@ -1055,6 +1057,17 @@ define parse_statement as:
             result is advance_token of 0
 
         node is create_node of AST_BREAK
+        return node
+
+    # CONTINUE - continue statement
+    if tok = TT_CONTINUE:
+        result is advance_token of 0
+        # Skip optional newline
+        tok is current_token_type of 0
+        if tok = TT_NEWLINE:
+            result is advance_token of 0
+
+        node is create_node of AST_CONTINUE
         return node
 
     # Assignment: identifier IS expression

@@ -36,12 +36,13 @@ AST_LOOP is 22
 AST_FUNCTION_DEF is 23
 AST_RETURN is 24
 AST_BREAK is 25
-AST_IMPORT is 26
-AST_IMPORT_FROM is 27
-AST_STRUCT_DEF is 28
+AST_CONTINUE is 26
+AST_IMPORT is 27
+AST_IMPORT_FROM is 28
+AST_STRUCT_DEF is 29
 
 # Program
-AST_PROGRAM is 30
+AST_PROGRAM is 31
 
 # ============================================================================
 # Semantic Analysis State Constants
@@ -59,7 +60,8 @@ SYM_MODULE is 6
 HALT_NONE is 0
 HALT_RETURN is 1
 HALT_BREAK is 2
-HALT_CONVERGED is 3
+HALT_CONTINUE is 3
+HALT_CONVERGED is 4
 
 # Scope types (state machine configurations)
 SCOPE_GLOBAL is 1
@@ -74,9 +76,10 @@ ERR_UNDEFINED_VAR is 1
 ERR_UNDEFINED_FUNC is 2
 ERR_DUPLICATE_DEF is 3
 ERR_BREAK_OUTSIDE_LOOP is 4
-ERR_RETURN_OUTSIDE_FUNC is 5
-ERR_TYPE_MISMATCH is 6
-ERR_INVALID_ASSIGNMENT is 7
+ERR_CONTINUE_OUTSIDE_LOOP is 5
+ERR_RETURN_OUTSIDE_FUNC is 6
+ERR_TYPE_MISMATCH is 7
+ERR_INVALID_ASSIGNMENT is 8
 
 # ============================================================================
 # Symbol Table Storage
@@ -566,6 +569,16 @@ define analyze_stmt of node_idx as:
             return HALT_NONE
 
         return HALT_BREAK
+
+    # Continue statement
+    if node_type = AST_CONTINUE:
+        # Check we're in a loop
+        in_loop is is_in_loop of 0
+        if in_loop = 0:
+            result is add_error of [ERR_CONTINUE_OUTSIDE_LOOP, 0, 0, 0]
+            return HALT_NONE
+
+        return HALT_CONTINUE
 
     # Conditional
     if node_type = AST_CONDITIONAL:
