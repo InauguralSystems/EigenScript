@@ -706,11 +706,9 @@ define parse_primary as:
     # Number literal
     if tok = TT_NUMBER:
         num_val is current_token_num of 0
-        print of num_val
         result is advance_token of 0
 
         node is create_node of AST_LITERAL
-        print of node
         result is set_num_value of [node, num_val]
         result is set_str_index of [node, LIT_NUMBER]
         return node
@@ -739,7 +737,6 @@ define parse_primary as:
         result is advance_token of 0
 
         id_node is create_node of AST_IDENTIFIER
-        print of id_node
         result is set_str_index of [id_node, id_str_idx]
         return id_node
 
