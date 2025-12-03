@@ -1008,10 +1008,7 @@ define parse_list_literal as:
 
 # Parse a single statement
 define parse_statement as:
-    print of 3001
     tok is current_token_type of 0
-    print of 3002
-    print of tok
 
     # Skip newlines
     if tok = TT_NEWLINE:
@@ -1062,23 +1059,16 @@ define parse_statement as:
 
     # Assignment: identifier IS expression
     # Or indexed assignment: identifier[index] IS expression
-    print of 3003
     if tok = TT_IDENTIFIER:
-        print of 3004
         next_tok is peek_token_type of 1
-        print of 3005
-        print of next_tok
         if next_tok = TT_IS:
-            print of 3006
             return parse_assignment of 0
         if next_tok = TT_LBRACKET:
             # Could be indexed assignment: identifier[index] IS expr
             return parse_potential_indexed_assignment of 0
 
     # Expression statement
-    print of 3010
     expr is parse_expression of 0
-    print of 3011
 
     # Check if followed by IS (could be indexed assignment from complex expr)
     tok is current_token_type of 0
@@ -1583,13 +1573,17 @@ define parse_block as:
         if tok = TT_EOF:
             break
 
-        stmt is parse_statement of 0
-        if stmt != 0:
-            append of ast_children of stmt
-            ast_children_count is ast_children_count + 1
+        # Skip blank lines (newlines within block)
+        if tok = TT_NEWLINE:
+            result is advance_token of 0
+        else:
+            stmt is parse_statement of 0
+            if stmt != 0:
+                append of ast_children of stmt
+                ast_children_count is ast_children_count + 1
 
-        if parser_error = 1:
-            break
+            if parser_error = 1:
+                break
 
     # Expect DEDENT
     ok is expect_token of TT_DEDENT
