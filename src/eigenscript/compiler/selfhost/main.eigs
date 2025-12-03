@@ -40,6 +40,10 @@ verbose is 0
 parse_only is 0
 check_only is 0
 
+# Module name prefix for generated functions (e.g., "lexer_", "parser_")
+# Extracted from filename or set via command line
+mod_name_prefix is ""
+
 # Error tracking
 compile_errors is 0
 
@@ -160,6 +164,11 @@ define run_codegen of ast_root as:
     if verbose = 1:
         print of "Phase 4: Code Generation"
 
+    # Set module name prefix if specified
+    mod_len is string_length of mod_name_prefix
+    if mod_len > 0:
+        result is codegen_set_module_name of mod_name_prefix
+
     # Generate LLVM IR
     line_count is codegen_generate of ast_root
 
@@ -256,6 +265,40 @@ define parse_args of args as:
 # File-Based Entry Point
 # ============================================================================
 
+# Extract base name from filename (e.g., "lexer" from "/path/to/lexer.eigs")
+# Returns the module prefix (e.g., "lexer_") for non-main files
+# Builds the name character by character to avoid string_substring
+define get_module_prefix of filename as:
+    # Find the last slash
+    flen is string_length of filename
+    last_slash is 0 - 1
+    i is 0
+    loop while i < flen:
+        ch is char_at of [filename, i]
+        if ch = 47:
+            last_slash is i
+        i is i + 1
+    # Build basename character by character (after last slash, before .eigs)
+    start is last_slash + 1
+    end_pos is flen - 5
+    if end_pos < start:
+        return ""
+    # Build the name string
+    result is ""
+    i is start
+    loop while i < end_pos:
+        ch is char_at of [filename, i]
+        ch_str is char_to_string of ch
+        result is string_concat of [result, ch_str]
+        i is i + 1
+    # Don't prefix main module
+    is_main is string_equals of [result, "main"]
+    if is_main = 1:
+        return ""
+    # Add underscore suffix
+    prefix is string_concat of [result, "_"]
+    return prefix
+
 # Compile a source file
 define compile_file of filename as:
     source is file_read of filename
@@ -263,6 +306,9 @@ define compile_file of filename as:
     if source = 0:
         print of "Error: Could not read file"
         return 0
+
+    # Extract module name from filename
+    mod_name_prefix is get_module_prefix of filename
 
     return compile of source
 
