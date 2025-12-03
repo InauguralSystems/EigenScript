@@ -14,7 +14,7 @@ Welcome to EigenScript! This guide will help you understand the basics of the la
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - pip (Python package manager)
 
 ### Install EigenScript
