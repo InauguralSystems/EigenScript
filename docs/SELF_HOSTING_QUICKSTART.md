@@ -300,8 +300,8 @@ scripts/
 └── bootstrap_test.sh # Automated testing script
 
 docs/
-├── COMPILER_SELF_HOSTING.md      # Complete guide (you are here)
-└── SELF_HOSTING_QUICKSTART.md    # This document
+├── COMPILER_SELF_HOSTING.md      # Complete guide
+└── SELF_HOSTING_QUICKSTART.md    # This document (you are here)
 ```
 
 ## FAQ
