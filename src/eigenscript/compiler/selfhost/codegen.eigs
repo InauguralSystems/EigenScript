@@ -79,6 +79,10 @@ in_main is 0
 # When set, all function definitions (except main) will have this prefix
 module_name is ""
 
+# Library mode: when 1, don't generate main() entry point
+# Instead, generate a module init function
+library_mode is 0
+
 # Loop break/continue label stack (for nested loops)
 # Current loop's exit label number (0 if not in loop)
 current_loop_exit_label is 0
@@ -2733,6 +2737,26 @@ define gen_block_skip_functions of [start, end] as:
     return 0
 
 # Generate block but only process function definitions (after main)
+# Track generated function node indices to avoid duplicates
+# (can occur when string indices happen to match node indices in ast_children)
+MAX_GENERATED_FUNCS is 500
+generated_func_nodes is [0]
+generated_func_count is 0
+
+define is_func_generated of node_idx as:
+    gfn_i is 0
+    loop while gfn_i < generated_func_count:
+        gfn_arr_i is gfn_i + 1
+        if generated_func_nodes[gfn_arr_i] = node_idx:
+            return 1
+        gfn_i is gfn_i + 1
+    return 0
+
+define mark_func_generated of node_idx as:
+    append of generated_func_nodes of node_idx
+    generated_func_count is generated_func_count + 1
+    return 0
+
 define gen_block_functions_only of [start, end] as:
     fdef_start is start
     fdef_end is end
@@ -2742,9 +2766,12 @@ define gen_block_functions_only of [start, end] as:
         stmt_idx is ast_children[fdef_arr_i]
         stmt_arr_idx is stmt_idx + 1
         stmt_type is ast_types[stmt_arr_idx]
-        # Only generate function definitions
+        # Only generate function definitions that haven't been generated yet
         if stmt_type = AST_FUNCTION_DEF:
-            result is gen_function_def of stmt_idx
+            already_done is is_func_generated of stmt_idx
+            if already_done = 0:
+                result is mark_func_generated of stmt_idx
+                result is gen_function_def of stmt_idx
         fdef_i is fdef_i + 1
     return 0
 
@@ -2797,8 +2824,10 @@ define gen_stmt of node_idx as:
             result is emit of "  ; ERROR: continue outside loop"
         return 0
 
-    # Note: AST_FUNCTION_DEF is handled separately by gen_block_functions_only
-    # to ensure functions are generated after main's code (hoisting)
+    # Skip function definitions - they're handled by gen_block_functions_only
+    # after main's code to ensure proper hoisting
+    if node_type = AST_FUNCTION_DEF:
+        return 0
 
     if node_type = AST_STRUCT_DEF:
         # Record struct definition for field lookups
@@ -2883,27 +2912,43 @@ define generate of root_node as:
     # Emit global variable declarations (now that we know which ones exist)
     result is emit_global_declarations of 0
 
-    result is emit of "; Main function"
-    result is emit of "define i32 @main(i32 %argc, i8** %argv) {"
-    result is emit of "entry:"
-    result is emit of "  ; Initialize CLI args for get_argc/get_arg builtins"
-    result is emit of "  call void @eigen_init_args(i32 %argc, i8** %argv)"
-    result is emit of ""
+    # Generate entry point: main for executables, init for libraries
+    if library_mode = 1:
+        # Library mode: generate init function instead of main
+        init_name is string_concat of [module_name, "init"]
+        result is emit of ""
+        result is emit of "; Module initialization function"
+        line is cat3 of ["define i64 @", init_name, "(i64 %unused) {"]
+        result is emit of line
+        result is emit of "entry:"
+    else:
+        # Executable mode: generate main function
+        result is emit of "; Main function"
+        result is emit of "define i32 @main(i32 %argc, i8** %argv) {"
+        result is emit of "entry:"
+        result is emit of "  ; Initialize CLI args for get_argc/get_arg builtins"
+        result is emit of "  call void @eigen_init_args(i32 %argc, i8** %argv)"
+        result is emit of ""
 
     in_main is 1
 
-    # First pass: generate only non-function statements (global code for main)
+    # First pass: generate only non-function statements (global code)
     arr_idx is root_node + 1
     start is ast_children_start[arr_idx]
     end is ast_children_end[arr_idx]
     result is gen_block_skip_functions of [start, end]
 
-    result is emit of "  ret i32 0"
-    result is emit of "}"
+    # Close entry point function
+    if library_mode = 1:
+        result is emit of "  ret i64 0"
+        result is emit of "}"
+    else:
+        result is emit of "  ret i32 0"
+        result is emit of "}"
 
     in_main is 0
 
-    # Second pass: generate all function definitions (after main)
+    # Second pass: generate all function definitions (after init/main)
     result is gen_block_functions_only of [start, end]
 
     # Emit external declarations (discovered during code generation)
@@ -2931,6 +2976,7 @@ define init_codegen as:
     struct_count is 0
     struct_field_total is 0
     module_name is ""
+    library_mode is 0
 
     # Pre-populate var_names and var_regs arrays for direct indexed assignment
     # This is needed because add_var uses direct assignment instead of append
@@ -2949,6 +2995,10 @@ define init_codegen as:
     blk_i_sp is 0
     blk_i is 0
 
+    # Reset generated function tracking
+    generated_func_nodes is [0]
+    generated_func_count is 0
+
     return 0
 
 # Set module name prefix for function definitions
@@ -2956,4 +3006,10 @@ define init_codegen as:
 # Note: Named set_module_name so it becomes codegen_set_module_name after prefixing
 define set_module_name of name as:
     module_name is name
+    return 0
+
+# Enable library mode (suppress main entry point generation)
+# Note: Named set_library_mode so it becomes codegen_set_library_mode after prefixing
+define set_library_mode of mode as:
+    library_mode is mode
     return 0
