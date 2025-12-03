@@ -192,6 +192,7 @@ done"""
             "as": TokenType.AS,
             "return": TokenType.RETURN,
             "break": TokenType.BREAK,
+            "continue": TokenType.CONTINUE,
             "null": TokenType.NULL,
         }
 

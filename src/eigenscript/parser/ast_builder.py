@@ -330,6 +330,19 @@ class Break(ASTNode):
 
 
 @dataclass
+class Continue(ASTNode):
+    """
+    Represents a CONTINUE statement (skip to next loop iteration).
+
+    Example:
+        continue
+    """
+
+    def __repr__(self) -> str:
+        return "Continue()"
+
+
+@dataclass
 class Interrogative(ASTNode):
     """
     Represents an interrogative operator (WHO, WHAT, WHEN, WHERE, WHY, HOW).
@@ -625,6 +638,14 @@ class Parser:
             if self.current_token() and self.current_token().type == TokenType.NEWLINE:
                 self.advance()
             return Break()
+
+        # CONTINUE - continue statement
+        if token.type == TokenType.CONTINUE:
+            self.advance()
+            # Consume optional newline
+            if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+                self.advance()
+            return Continue()
 
         # Assignment (identifier IS expression) or IndexedAssignment (identifier[idx] IS expression)
         if token.type == TokenType.IDENTIFIER:

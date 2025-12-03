@@ -20,6 +20,8 @@ from eigenscript.parser.ast_builder import (
     Loop,
     FunctionDef,
     Return,
+    Break,
+    Continue,
     Literal,
     ListLiteral,
     ListComprehension,
@@ -130,6 +132,26 @@ class ReturnValue(Exception):
     def __init__(self, value: Union[LRVMVector, "EigenList"]):
         self.value = value
         super().__init__()
+
+
+class BreakException(Exception):
+    """
+    Exception used to implement break statements.
+
+    Raised when a BREAK statement is executed to exit a loop.
+    """
+
+    pass
+
+
+class ContinueException(Exception):
+    """
+    Exception used to implement continue statements.
+
+    Raised when a CONTINUE statement is executed to skip to next iteration.
+    """
+
+    pass
 
 
 class Environment:
@@ -395,6 +417,10 @@ class Interpreter:
             return self._eval_function_def(node)
         elif isinstance(node, Return):
             return self._eval_return(node)
+        elif isinstance(node, Break):
+            raise BreakException()
+        elif isinstance(node, Continue):
+            raise ContinueException()
         elif isinstance(node, Literal):
             return self._eval_literal(node)
         elif isinstance(node, Identifier):
@@ -610,8 +636,13 @@ class Interpreter:
                 # One is list, one is vector - not equal
                 return self.space.embed_scalar(0.0)
             else:
-                # Both are vectors
-                is_equal = self.space.is_operator(left, right, self.metric.g)
+                # Both are vectors - compare scalar values (first coordinate)
+                # For scalar comparison, we only compare the actual numeric value,
+                # not the full geometric embedding which includes computation history
+                left_val = left.coords[0]
+                right_val = right.coords[0]
+                # Use small epsilon for floating point comparison
+                is_equal = abs(left_val - right_val) < 1e-10
                 return self.space.embed_scalar(1.0 if is_equal else 0.0)
 
         elif node.operator == "<":
@@ -844,7 +875,12 @@ class Interpreter:
                 break
 
             # Execute loop body
-            result = self._eval_block(node.body)
+            try:
+                result = self._eval_block(node.body)
+            except BreakException:
+                break
+            except ContinueException:
+                continue
 
             # Check for convergence (only for vector results)
             if isinstance(result, LRVMVector) and previous is not None:

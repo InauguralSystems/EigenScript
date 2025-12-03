@@ -357,3 +357,81 @@ z is x of y"""
         assert "z" in interp2.environment.bindings
 
         # MVP ACHIEVED! 🎉
+
+    def test_continue_statement(self):
+        """Should skip to next iteration with continue."""
+        # Test: Sum numbers from 1 to 10, but skip 5
+        source = """i is 0
+sum is 0
+loop while i < 10:
+    i is i + 1
+    if i = 5:
+        continue
+    sum is sum + i"""
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter(dimension=10)
+        interp.evaluate(ast)
+
+        # sum should be 1+2+3+4+6+7+8+9+10 = 50 (skipping 5)
+        sum_val = interp.environment.lookup("sum")
+        assert isinstance(sum_val, LRVMVector)
+        # The sum should be approximately 50
+        assert abs(sum_val.coords[0] - 50.0) < 0.01
+
+    def test_continue_in_nested_loop(self):
+        """Continue should only affect innermost loop."""
+        # Test nested loops with continue in inner loop
+        source = """count is 0
+x is 0
+loop while x < 3:
+    y is 0
+    loop while y < 3:
+        y is y + 1
+        if y = 2:
+            continue
+        count is count + 1
+    x is x + 1"""
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter(dimension=10)
+        interp.evaluate(ast)
+
+        # count should be 6 (3 outer * 2 inner, skipping y=2 each time)
+        count_val = interp.environment.lookup("count")
+        assert isinstance(count_val, LRVMVector)
+        assert abs(count_val.coords[0] - 6.0) < 0.01
+
+    def test_break_and_continue_together(self):
+        """Break and continue should work together."""
+        # Test break and continue in same loop
+        source = """i is 0
+sum is 0
+loop while i < 100:
+    i is i + 1
+    if i > 10:
+        break
+    if i = 5:
+        continue
+    sum is sum + i"""
+
+        tokenizer = Tokenizer(source)
+        tokens = tokenizer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        interp = Interpreter(dimension=10)
+        interp.evaluate(ast)
+
+        # sum should be 1+2+3+4+6+7+8+9+10 = 50 (skip 5, break at 11)
+        sum_val = interp.environment.lookup("sum")
+        assert isinstance(sum_val, LRVMVector)
+        assert abs(sum_val.coords[0] - 50.0) < 0.01

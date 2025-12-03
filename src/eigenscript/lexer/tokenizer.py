@@ -23,6 +23,7 @@ class TokenType(Enum):
     AS = "AS"
     RETURN = "RETURN"
     BREAK = "BREAK"
+    CONTINUE = "CONTINUE"
     NULL = "NULL"
     NOT = "NOT"
     AND = "AND"
@@ -133,6 +134,7 @@ class Tokenizer:
         "as": TokenType.AS,
         "return": TokenType.RETURN,
         "break": TokenType.BREAK,
+        "continue": TokenType.CONTINUE,
         "null": TokenType.NULL,
         "not": TokenType.NOT,
         "and": TokenType.AND,
