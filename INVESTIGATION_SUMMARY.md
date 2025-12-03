@@ -115,28 +115,74 @@ $ ./test_simple
    - The comparison logic was correct
    - Only the constant VALUES were wrong
 
-## Remaining Work
+## Additional Fixes (Session 2 - December 3, 2025)
 
-The Stage 1 compiler can now compile simple programs correctly. However, bootstrapping (Stage 1 compiling itself) still has issues:
+After the initial numeric literal bug fix, several additional issues were discovered and fixed:
 
-```
-Parse error at line: 181.000000
-```
+### 1. Local Variable Scope Bug ✅
+**Problem:** Variables in functions weren't found when `var_count` was reset for new functions.
+**Fix:** Changed `add_var` to use direct array assignment at `var_count+1` instead of append, plus pre-populate arrays in `init_codegen`.
 
-This is a separate issue related to the parser, not the numeric literal bug that was fixed.
+### 2. External Variable Type Handling ✅
+**Problem:** External variables like `symbol_count` were all declared as `ptr`, but scalars need `double`.
+**Fix:** Added `is_external_array` function to detect type by suffix patterns (_types, _names, etc.).
+
+### 3. External Function Declarations ✅
+**Problem:** Functions from imported modules weren't declared.
+**Fix:** Added `extern_func_names`, `extern_func_counts` tracking and `emit_extern_func_declarations` function.
+
+### 4. Append Special Case Bug ✅
+**Problem:** `append of ast_strings of str` was treating nested relation as function call.
+**Fix:** Check for append BEFORE evaluating arguments, extract parts directly from AST.
+
+### 5. Module Name Prefixing ✅
+**Problem:** Self-hosted compiler didn't add module prefixes (e.g., `set_source` should be `lexer_set_source`).
+**Fix:** Added:
+- `module_name` variable in codegen state
+- `set_module_name` function to set prefix
+- `get_module_prefix` in main.eigs to extract from filename
+- Prefix function definitions and local function calls
+
+## Current Bootstrap Status
+
+### What Works ✅
+- Simple programs compile and execute correctly
+- Stage 1 can compile lexer.eigs with correct `lexer_` prefixes
+- Stage 1 can compile parser.eigs with correct `parser_` prefixes
+- Stage 1 can compile semantic.eigs with correct `semantic_` prefixes
+- All three modules assemble with `llvm-as` successfully
+
+### Remaining Issues
+- **codegen.eigs**: Produces duplicate function definitions (3 functions: make_reg, make_label, make_external_name). Possibly a bug in handling larger files.
+- **main.eigs**: Causes Bus error during compilation. Likely memory issue with complex imports.
 
 ## Files Modified
 
-1. `src/eigenscript/compiler/selfhost/main.eigs` - Fixed token type constants
+1. `src/eigenscript/compiler/selfhost/main.eigs` - Fixed token constants, added module prefix extraction
+2. `src/eigenscript/compiler/selfhost/codegen.eigs` - Fixed multiple codegen issues:
+   - Local variable scope handling
+   - External variable type detection
+   - External function declarations
+   - Append builtin handling
+   - Module name prefixing for function definitions and calls
+
+## Commits
+
+1. `3e7b3aa` - Fix major codegen bugs enabling valid Stage 2 LLVM IR
+2. `6d2570c` - Fix append builtin to not pre-evaluate nested relation
+3. `8eb8b40` - Add module name prefixing to self-hosted compiler
 
 ## Conclusion
 
-✅ **The numeric literal bug has been fixed.** Stage 1 compiler now correctly generates numeric literals in LLVM IR output.
+✅ **Significant progress on bootstrap.** The core infrastructure for multi-module compilation is now in place:
+- Module name prefixing works for function definitions
+- Module name prefixing works for internal function calls
+- External function detection and declaration works
+- 3 of 4 compiler modules compile successfully to valid LLVM IR
 
-The fix was a simple one-line change to synchronize token type constant values between modules. The investigation methodology (static analysis → runtime debugging → root cause identification) was effective in finding this subtle bug.
+The remaining issues appear to be related to handling larger/more complex source files. Further investigation needed for the duplicate function bug and memory corruption with large files.
 
 ---
 
-**Status:** ✅ Complete - Bug Fixed
-**Fix verified:** Yes
-**Next steps:** Investigate parser error for self-hosting bootstrap
+**Status:** ✅ Significant Progress
+**Next steps:** Debug duplicate function generation in codegen.eigs, investigate bus error in main.eigs

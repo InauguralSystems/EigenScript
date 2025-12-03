@@ -75,6 +75,10 @@ label_counter is 0
 string_counter is 0
 in_main is 0
 
+# Module name prefix for linkable modules (e.g., "lexer_", "parser_")
+# When set, all function definitions (except main) will have this prefix
+module_name is ""
+
 # Loop break/continue label stack (for nested loops)
 # Current loop's exit label number (0 if not in loop)
 current_loop_exit_label is 0
@@ -1916,6 +1920,13 @@ define gen_relation of node_idx as:
     if is_extern = 1:
         result is add_extern_func of [func_name_idx, arg_count]
 
+    # Apply module name prefix to local function calls if module_name is set
+    # (external functions already have their prefix in the name)
+    if is_extern = 0:
+        mod_len is string_length of module_name
+        if mod_len > 0:
+            func_name is string_concat of [module_name, func_name]
+
     # Build argument list string
     args_str is ""
     i is 1
@@ -2560,6 +2571,13 @@ define gen_function_def of node_idx as:
     # Get function name string
     func_name is lexer_get_string of name_idx
 
+    # Apply module name prefix if set (except for main function)
+    mod_len is string_length of module_name
+    if mod_len > 0:
+        is_main is string_equals of [func_name, "main"]
+        if is_main = 0:
+            func_name is string_concat of [module_name, func_name]
+
     result is emit of ""
 
     # Build function signature with parameters
@@ -2740,8 +2758,8 @@ define gen_stmt of node_idx as:
             result is emit of "  ; ERROR: continue outside loop"
         return 0
 
-    if node_type = AST_FUNCTION_DEF:
-        return gen_function_def of node_idx
+    # Note: AST_FUNCTION_DEF is handled separately by gen_block_functions_only
+    # to ensure functions are generated after main's code (hoisting)
 
     if node_type = AST_STRUCT_DEF:
         # Record struct definition for field lookups
@@ -2873,6 +2891,7 @@ define init_codegen as:
     extern_func_count is 0
     struct_count is 0
     struct_field_total is 0
+    module_name is ""
 
     # Pre-populate var_names and var_regs arrays for direct indexed assignment
     # This is needed because add_var uses direct assignment instead of append
@@ -2883,4 +2902,11 @@ define init_codegen as:
         append of var_regs of 0
         i is i + 1
 
+    return 0
+
+# Set module name prefix for function definitions
+# Call this before generate_code to add prefixes like "lexer_", "parser_", etc.
+# Note: Named set_module_name so it becomes codegen_set_module_name after prefixing
+define set_module_name of name as:
+    module_name is name
     return 0
