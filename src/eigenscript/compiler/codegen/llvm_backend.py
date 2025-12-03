@@ -22,6 +22,7 @@ from eigenscript.parser.ast_builder import (
     FunctionDef,
     Return,
     Break,
+    Continue,
     Conditional,
     Loop,
     Relation,
@@ -245,6 +246,7 @@ class LLVMCodeGenerator:
 
         # Loop context (for break/continue statements)
         self.loop_end_stack: list[ir.Block] = []  # Stack of loop end blocks
+        self.loop_cond_stack: list[ir.Block] = []  # Stack of loop condition blocks
 
         # Cleanup tracking (for memory management)
         self.allocated_eigenvalues: list[ir.Value] = []
@@ -1382,6 +1384,8 @@ class LLVMCodeGenerator:
             return self._generate_return(node)
         elif isinstance(node, Break):
             return self._generate_break(node)
+        elif isinstance(node, Continue):
+            return self._generate_continue(node)
         elif isinstance(node, ListLiteral):
             return self._generate_list_literal(node)
         elif isinstance(node, Index):
@@ -2577,7 +2581,7 @@ class LLVMCodeGenerator:
         then_terminated = False
         for stmt in node.if_block:
             self._generate(stmt)
-            if isinstance(stmt, (Return, Break)):
+            if isinstance(stmt, (Return, Break, Continue)):
                 then_terminated = True
                 break
         if not then_terminated:
@@ -2589,7 +2593,7 @@ class LLVMCodeGenerator:
             self.builder.position_at_end(else_block)
             for stmt in node.else_block:
                 self._generate(stmt)
-                if isinstance(stmt, (Return, Break)):
+                if isinstance(stmt, (Return, Break, Continue)):
                     else_terminated = True
                     break
             if not else_terminated:
@@ -2599,14 +2603,15 @@ class LLVMCodeGenerator:
         self.builder.position_at_end(merge_block)
 
     def _generate_loop(self, node: Loop) -> None:
-        """Generate code for loops with break support."""
+        """Generate code for loops with break and continue support."""
         # Create basic blocks
         loop_cond = self.current_function.append_basic_block(name="loop.cond")
         loop_body = self.current_function.append_basic_block(name="loop.body")
         loop_end = self.current_function.append_basic_block(name="loop.end")
 
-        # Push loop_end onto stack for break statements
+        # Push loop context onto stacks for break and continue statements
         self.loop_end_stack.append(loop_end)
+        self.loop_cond_stack.append(loop_cond)
 
         # Jump to condition check
         self.builder.branch(loop_cond)
@@ -2625,8 +2630,8 @@ class LLVMCodeGenerator:
         body_terminated = False
         for stmt in node.body:
             self._generate(stmt)
-            # Check if body is already terminated (return or break)
-            if isinstance(stmt, (Return, Break)):
+            # Check if body is already terminated (return, break, or continue)
+            if isinstance(stmt, (Return, Break, Continue)):
                 body_terminated = True
                 break
         if not body_terminated:
@@ -2634,6 +2639,7 @@ class LLVMCodeGenerator:
 
         # Pop loop context
         self.loop_end_stack.pop()
+        self.loop_cond_stack.pop()
 
         # Continue after loop
         self.builder.position_at_end(loop_end)
@@ -3029,6 +3035,22 @@ class LLVMCodeGenerator:
         # Jump to the end of the current loop
         loop_end = self.loop_end_stack[-1]
         self.builder.branch(loop_end)
+
+    def _generate_continue(self, node: Continue) -> None:
+        """Generate code for continue statements.
+
+        Continue jumps to the loop condition check (start of next iteration).
+        """
+        if not self.loop_cond_stack:
+            raise CompilerError(
+                "'continue' statement outside loop",
+                hint="'continue' can only be used inside a 'loop while' body",
+                node=node,
+            )
+
+        # Jump to the condition check of the current loop
+        loop_cond = self.loop_cond_stack[-1]
+        self.builder.branch(loop_cond)
 
     def _generate_list_literal(self, node: ListLiteral) -> ir.Value:
         """Generate code for list literals."""
