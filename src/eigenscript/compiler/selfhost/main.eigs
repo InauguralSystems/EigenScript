@@ -111,9 +111,7 @@ define run_parser as:
         print of "Phase 2: Parsing"
 
     # Parse tokens to AST
-    print of 5001
     ast_root is parser_parse of 0
-    print of 5002
 
     if parser_error = 1:
         print of "Parse error at line:"
@@ -259,19 +257,11 @@ define parse_args of args as:
 
 # Compile a source file
 define compile_file of filename as:
-    print of "Reading file:"
-    print of filename
-
     source is file_read of filename
 
     if source = 0:
         print of "Error: Could not read file"
         return 0
-
-    print of "File read successfully"
-    src_len is string_length of source
-    print of "Source length:"
-    print of src_len
 
     return compile of source
 
@@ -316,9 +306,6 @@ define init_compiler as:
     compile_errors is 0
 
     return 0
-
-# Signal that main module is loaded
-print of 555
 
 # Initialize
 result is init_compiler of 0

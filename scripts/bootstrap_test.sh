@@ -155,7 +155,20 @@ echo "----------------------------------------------------"
 
 # This is the key test - can the self-hosted compiler compile itself?
 echo "  Running: ./eigensc $SELFHOST_DIR/main.eigs"
-./eigensc "$SELFHOST_DIR/main.eigs" > main_stage2.ll 2>&1 || true
+./eigensc "$SELFHOST_DIR/main.eigs" > main_stage2_raw.ll 2>&1 || true
+
+# Filter out initial debug numbers (first ~10 lines before "; EigenScript Compiled Module")
+if [ -s main_stage2_raw.ll ]; then
+    # Find the line number where actual LLVM IR starts
+    ir_start=$(grep -n "; EigenScript Compiled Module" main_stage2_raw.ll | head -1 | cut -d: -f1)
+    if [ -n "$ir_start" ]; then
+        tail -n +$ir_start main_stage2_raw.ll > main_stage2.ll
+        echo "  Filtered $((ir_start-1)) debug lines from output"
+    else
+        # No marker found, use raw output
+        cp main_stage2_raw.ll main_stage2.ll
+    fi
+fi
 
 if [ -s main_stage2.ll ]; then
     echo "  Generated main_stage2.ll"
