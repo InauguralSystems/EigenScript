@@ -361,6 +361,13 @@ The math comes from a simple idea: measure the "distance" between where computat
 - Example Gallery (29+ programs)
 - Tutorials & Guides
 
+### Self-Hosting Guides
+
+EigenScript can compile and interpret itself! Learn more:
+- **[Compiler Self-Hosting Quick Start](docs/SELF_HOSTING_QUICKSTART.md)** - 5-minute guide to bootstrap
+- **[Compiler Self-Hosting Guide](docs/COMPILER_SELF_HOSTING.md)** - Complete compiler bootstrap documentation
+- **[Meta-Circular Evaluator](docs/meta_circular_evaluator.md)** - Interpreter self-hosting guide
+
 ### 🗺️ Roadmap
 
 **Current Status:** Phase 5 (Interactive Playground) ✅ Complete
