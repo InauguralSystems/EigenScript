@@ -431,6 +431,23 @@ define next_token as:
                 lex_at_line_start is 1
             if char = CHAR_HASH:
                 lex_at_line_start is 0
+        # Skip blank lines and comment-only lines for indentation processing
+        # This prevents comments from triggering spurious INDENT/DEDENT tokens
+        if lex_pos < lex_len:
+            char is current_char of 0
+            if char = CHAR_NEWLINE:
+                result is advance of 0
+                lex_at_line_start is 1
+                return TT_NEWLINE
+            if char = CHAR_HASH:
+                result is skip_comment of 0
+                if lex_pos >= lex_len:
+                    return TT_EOF
+                char is current_char of 0
+                if char = CHAR_NEWLINE:
+                    result is advance of 0
+                    lex_at_line_start is 1
+                    return TT_NEWLINE
         if new_indent > lex_indent:
             lex_indent is new_indent
             return TT_INDENT
