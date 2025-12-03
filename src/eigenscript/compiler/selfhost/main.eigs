@@ -272,12 +272,12 @@ define get_module_prefix of filename as:
     # Find the last slash
     flen is string_length of filename
     last_slash is 0 - 1
-    i is 0
-    loop while i < flen:
-        ch is char_at of [filename, i]
+    gmp_i is 0
+    loop while gmp_i < flen:
+        ch is char_at of [filename, gmp_i]
         if ch = 47:
-            last_slash is i
-        i is i + 1
+            last_slash is gmp_i
+        gmp_i is gmp_i + 1
     # Build basename character by character (after last slash, before .eigs)
     start is last_slash + 1
     end_pos is flen - 5
@@ -285,17 +285,14 @@ define get_module_prefix of filename as:
         return ""
     # Build the name string
     result is ""
-    i is start
-    loop while i < end_pos:
-        ch is char_at of [filename, i]
+    gmp_i is start
+    loop while gmp_i < end_pos:
+        ch is char_at of [filename, gmp_i]
         ch_str is char_to_string of ch
         result is string_concat of [result, ch_str]
-        i is i + 1
-    # Don't prefix main module
-    is_main is string_equals of [result, "main"]
-    if is_main = 1:
-        return ""
-    # Add underscore suffix
+        gmp_i is gmp_i + 1
+    # Add underscore suffix (including for main module)
+    # This ensures all modules use prefixed function names
     prefix is string_concat of [result, "_"]
     return prefix
 

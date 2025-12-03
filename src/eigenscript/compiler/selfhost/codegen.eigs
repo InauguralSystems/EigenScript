@@ -85,6 +85,12 @@ current_loop_exit_label is 0
 # Current loop's condition label number (0 if not in loop)
 current_loop_cond_label is 0
 
+# Stack for gen_block loop variable (to handle recursive calls)
+MAX_BLOCK_DEPTH is 100
+blk_i_stack is [0]
+blk_i_sp is 0
+blk_i is 0
+
 # Output buffer
 MAX_OUTPUT is 50000
 output_lines is [""]
@@ -547,6 +553,7 @@ define emit_runtime_decls as:
     result is emit of "declare double @eigen_char_is_digit_val(double)"
     result is emit of "declare double @eigen_char_is_alpha_val(double)"
     result is emit of "declare double @eigen_char_is_whitespace_val(double)"
+    result is emit of "declare %EigenString* @eigen_char_to_string(i64)"
     result is emit of "declare double @eigen_string_to_double(%EigenString*)"
     result is emit of "declare %EigenString* @eigen_double_to_string(double)"
     result is emit of "declare void @eigen_list_append_val(double, double)"
@@ -1331,6 +1338,28 @@ define gen_relation of node_idx as:
         reg is next_reg of 0
         reg_str is make_reg of reg
         line is cat6 of ["  ", reg_str, " = call double @eigen_char_is_whitespace_val(double ", arg_str, ")", ""]
+        result is emit of line
+        return reg
+
+    # char_to_string - convert character code to single-char string
+    is_char_to_str is string_equals of [func_name, "char_to_string"]
+    if is_char_to_str = 1:
+        first_arg is arg_regs[1]
+        arg_str is make_reg of first_arg
+        # Convert double to i64 for the runtime call
+        i64_reg is next_reg of 0
+        i64_str is make_reg of i64_reg
+        line is cat6 of ["  ", i64_str, " = fptosi double ", arg_str, " to i64", ""]
+        result is emit of line
+        # Call eigen_char_to_string which returns EigenString*
+        ptr_reg is next_reg of 0
+        ptr_str is make_reg of ptr_reg
+        line is cat6 of ["  ", ptr_str, " = call %EigenString* @eigen_char_to_string(i64 ", i64_str, ")", ""]
+        result is emit of line
+        # Convert pointer to double for return
+        reg is next_reg of 0
+        reg_str is make_reg of reg
+        line is cat6 of ["  ", reg_str, " = call double @eigen_string_to_double(%EigenString* ", ptr_str, ")", ""]
         result is emit of line
         return reg
 
@@ -2274,10 +2303,11 @@ define gen_member_access of node_idx as:
     # If the object is an identifier (module name), create mangled function name
     if obj_type = AST_IDENTIFIER:
         module_name_idx is ast_str_index[obj_arr_idx]
-        module_name is lexer_get_string of module_name_idx
+        # Use access_mod_name to avoid collision with global module_name variable
+        access_mod_name is lexer_get_string of module_name_idx
         member_name is lexer_get_string of member_idx
         # Create mangled name: module_member
-        mangled_name is string_concat of [module_name, "_"]
+        mangled_name is string_concat of [access_mod_name, "_"]
         mangled_name is string_concat of [mangled_name, member_name]
         # For now, return a reference that can be used in calls
         # Store the mangled name for later use
@@ -2637,15 +2667,24 @@ define gen_function_def of node_idx as:
     return 0
 
 define gen_block of [start, end] as:
-    s is start
-    e is end
-    i is s
-    loop while i < e:
+    # Push blk_i onto stack (to handle recursive calls for nested loops/conditionals)
+    blk_i_sp is blk_i_sp + 1
+    stack_idx is blk_i_sp
+    blk_i_stack[stack_idx] is blk_i
+
+    blk_start is start
+    blk_end is end
+    blk_i is blk_start
+    loop while blk_i < blk_end:
         # ast_children also has dummy at index 0
-        arr_i is i + 1
-        stmt_idx is ast_children[arr_i]
+        blk_arr_i is blk_i + 1
+        stmt_idx is ast_children[blk_arr_i]
         result is gen_stmt of stmt_idx
-        i is i + 1
+        blk_i is blk_i + 1
+
+    # Pop blk_i from stack
+    blk_i is blk_i_stack[stack_idx]
+    blk_i_sp is blk_i_sp - 1
     return 0
 
 # Check if a statement index is within a function body (child of AST_FUNCTION_DEF)
@@ -2675,38 +2714,38 @@ define is_in_function_body of [stmt_idx, prog_start, prog_end] as:
 
 # Generate block but skip function definitions (for main's global code)
 define gen_block_skip_functions of [start, end] as:
-    s is start
-    e is end
-    i is s
-    loop while i < e:
-        arr_i is i + 1
-        stmt_idx is ast_children[arr_i]
+    skip_start is start
+    skip_end is end
+    skip_i is skip_start
+    loop while skip_i < skip_end:
+        skip_arr_i is skip_i + 1
+        stmt_idx is ast_children[skip_arr_i]
         stmt_arr_idx is stmt_idx + 1
         stmt_type is ast_types[stmt_arr_idx]
         # Skip function definitions - they'll be generated after main
         if stmt_type != AST_FUNCTION_DEF:
             # Also skip statements that are children of function definitions
             # (they get added to ast_children but belong to the function, not program)
-            in_func is is_in_function_body of [stmt_idx, s, e]
+            in_func is is_in_function_body of [stmt_idx, skip_start, skip_end]
             if in_func = 0:
                 result is gen_stmt of stmt_idx
-        i is i + 1
+        skip_i is skip_i + 1
     return 0
 
 # Generate block but only process function definitions (after main)
 define gen_block_functions_only of [start, end] as:
-    s is start
-    e is end
-    i is s
-    loop while i < e:
-        arr_i is i + 1
-        stmt_idx is ast_children[arr_i]
+    fdef_start is start
+    fdef_end is end
+    fdef_i is fdef_start
+    loop while fdef_i < fdef_end:
+        fdef_arr_i is fdef_i + 1
+        stmt_idx is ast_children[fdef_arr_i]
         stmt_arr_idx is stmt_idx + 1
         stmt_type is ast_types[stmt_arr_idx]
         # Only generate function definitions
         if stmt_type = AST_FUNCTION_DEF:
             result is gen_function_def of stmt_idx
-        i is i + 1
+        fdef_i is fdef_i + 1
     return 0
 
 define gen_stmt of node_idx as:
@@ -2901,6 +2940,14 @@ define init_codegen as:
         append of var_names of 0
         append of var_regs of 0
         i is i + 1
+
+    # Pre-populate blk_i_stack for recursive gen_block calls
+    i is 0
+    loop while i < MAX_BLOCK_DEPTH:
+        append of blk_i_stack of 0
+        i is i + 1
+    blk_i_sp is 0
+    blk_i is 0
 
     return 0
 
