@@ -688,10 +688,11 @@ define emit_string_constants as:
     result is emit of ""
     return 0
 
-# Make a global variable name string like @global_varname
+# Make a global variable name string like @__eigs_global_varname
+# Uses __eigs_global_ prefix to match reference compiler and cross-module linking
 define make_global_name of name_idx as:
     var_name is lexer_get_string of name_idx
-    result is cat3 of ["@global_", var_name, ""]
+    result is cat3 of ["@__eigs_global_", var_name, ""]
     return result
 
 # Emit all global variable declarations (called after first pass identifies globals)
@@ -704,7 +705,7 @@ define emit_global_declarations as:
         arr_i is i + 1
         name_idx is global_names[arr_i]
         global_name is make_global_name of name_idx
-        # Emit: @global_varname = internal global double 0.0
+        # Emit: @__eigs_global_varname = internal global double 0.0
         line is cat3 of [global_name, " = internal global double 0.0", ""]
         result is emit of line
         i is i + 1

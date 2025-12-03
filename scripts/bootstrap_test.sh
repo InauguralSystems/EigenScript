@@ -192,7 +192,8 @@ if [ -s main_stage2.ll ]; then
             if [ -f main_stage2.s ]; then
                 gcc -c main_stage2.s -o main_stage2.o 2>/dev/null || true
                 if [ -f main_stage2.o ]; then
-                    gcc main_stage2.o eigenvalue.o -o eigensc2 -lm 2>/dev/null || true
+                    # Link with all modules (stage 2 main needs lexer, parser, semantic, codegen)
+                    gcc -no-pie lexer.o parser.o semantic.o codegen.o main_stage2.o eigenvalue.o -o eigensc2 -lm 2>/dev/null || true
                     if [ -f eigensc2 ]; then
                         echo "  SUCCESS: Stage 2 compiler created (eigensc2)!"
                         echo ""
