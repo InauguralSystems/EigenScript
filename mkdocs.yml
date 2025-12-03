@@ -3,8 +3,8 @@ site_description: A geometric programming language modeling computation as flow 
 site_author: EigenScript Contributors
 site_url: https://inauguralphysicist.github.io/EigenScript/
 
-repo_name: InauguralPhysicist/EigenScript
-repo_url: https://github.com/InauguralPhysicist/EigenScript
+repo_name: InauguralSystems/EigenScript
+repo_url: https://github.com/InauguralSystems/EigenScript
 edit_uri: edit/main/docs/
 
 theme:
@@ -73,7 +73,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/InauguralPhysicist/EigenScript
+      link: https://github.com/InauguralSystems/EigenScript
   version:
     provider: mike
 

@@ -3,7 +3,7 @@
 **Generated:** November 23, 2025  
 **Python Version:** 3.12.3  
 **Test Framework:** pytest 9.0.1  
-**Repository:** InauguralPhysicist/EigenScript
+**Repository:** InauguralSystems/EigenScript
 
 ---
 
