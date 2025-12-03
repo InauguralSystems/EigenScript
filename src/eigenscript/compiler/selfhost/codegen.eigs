@@ -1141,7 +1141,25 @@ define gen_relation of node_idx as:
     right_arr_idx is right_idx + 1
     right_type is ast_types[right_arr_idx]
 
-    # Collect argument registers
+    # Handle append builtin BEFORE evaluating arguments
+    # (because append of list of value parses as append of (list of value),
+    # and we don't want to evaluate "list of value" as a function call)
+    is_append is string_equals of [func_name, "append"]
+    if is_append = 1:
+        # Check if right side is a relation (chained syntax: append of list of value)
+        if right_type = AST_RELATION:
+            # Right is "list of value" - extract both parts WITHOUT calling gen_expr on the relation
+            list_idx is ast_left[right_arr_idx]
+            value_idx is ast_right[right_arr_idx]
+            list_reg is gen_expr of list_idx
+            value_reg is gen_expr of value_idx
+            list_str is make_reg of list_reg
+            value_str is make_reg of value_reg
+            line is cat6 of ["  call void @eigen_list_append_val(double ", list_str, ", double ", value_str, ")", ""]
+            result is emit of line
+            return 0
+
+    # Collect argument registers (for non-special-case functions)
     arg_regs is [0]
     arg_count is 0
 
@@ -1163,6 +1181,17 @@ define gen_relation of node_idx as:
         append of arg_regs of arg_reg
         arg_count is 1
 
+    # Handle append fallback (if right side wasn't a relation)
+    if is_append = 1:
+        # Fallback: assume 2 args in a list (append of [list, value])
+        first_arg is arg_regs[1]
+        second_arg is arg_regs[2]
+        arg1_str is make_reg of first_arg
+        arg2_str is make_reg of second_arg
+        line is cat6 of ["  call void @eigen_list_append_val(double ", arg1_str, ", double ", arg2_str, ")", ""]
+        result is emit of line
+        return 0
+
     # Handle builtin functions
     is_print is string_equals of [func_name, "print"]
     if is_print = 1:
@@ -1172,33 +1201,6 @@ define gen_relation of node_idx as:
         line is cat4 of ["  call void @eigen_print_val(double ", arg_str, ")", ""]
         result is emit of line
         return first_arg
-
-    # Handle append builtin (special form: append of list of value)
-    # Syntax parses as: append of (list of value) - a chained relation
-    # We need to extract list and value from the nested relation
-    is_append is string_equals of [func_name, "append"]
-    if is_append = 1:
-        # Check if right side is a relation (chained syntax: append of list of value)
-        if right_type = AST_RELATION:
-            # Right is "list of value" - extract both parts
-            list_idx is ast_left[right_arr_idx]
-            value_idx is ast_right[right_arr_idx]
-            list_reg is gen_expr of list_idx
-            value_reg is gen_expr of value_idx
-            list_str is make_reg of list_reg
-            value_str is make_reg of value_reg
-            line is cat6 of ["  call void @eigen_list_append_val(double ", list_str, ", double ", value_str, ")", ""]
-            result is emit of line
-            return 0
-        else:
-            # Fallback: assume 2 args in a list (append of [list, value])
-            first_arg is arg_regs[1]
-            second_arg is arg_regs[2]
-            arg1_str is make_reg of first_arg
-            arg2_str is make_reg of second_arg
-            line is cat6 of ["  call void @eigen_list_append_val(double ", arg1_str, ", double ", arg2_str, ")", ""]
-            result is emit of line
-            return 0
 
     # Handle string builtins
     is_string_length is string_equals of [func_name, "string_length"]
