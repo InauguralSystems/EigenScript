@@ -402,6 +402,11 @@ def compile_file(
         # Extract imported names
         imported_names = extract_imported_names(ast)
 
+        # Phase 4.4: Extract imported module names for init calls
+        imports = scan_imports(ast)
+        if imports and not is_lib:
+            print(f"  → Found imports: {imports}")
+
         # Analyze
         analyzer = ObserverAnalyzer()
         observed_vars = analyzer.analyze(code_statements)
@@ -424,7 +429,9 @@ def compile_file(
             module_name=module_name,
             imported_names=imported_names,
         )
-        llvm_ir = codegen.compile(code_statements)
+        # Phase 4.4: Pass imported modules so main() can call their init functions
+        imported_modules_for_codegen = imports if not is_lib else None
+        llvm_ir = codegen.compile(code_statements, imported_modules_for_codegen)
         print(f"  ✓ Generated LLVM IR")
 
         # Verify

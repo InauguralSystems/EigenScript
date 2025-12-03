@@ -5,6 +5,8 @@
 # This outputs textual LLVM IR that can be assembled with llvm-as
 # and linked with the EigenScript runtime library.
 
+# Note: Uses lexer_get_string directly (mangled name) for cross-module call
+
 # ============================================================================
 # AST Node Type Constants (must match parser.eigs)
 # ============================================================================
@@ -421,7 +423,7 @@ define emit_string_constants as:
     result is emit of "; String constants"
     i is 1
     loop while i <= ast_string_count:
-        str is get_string of i
+        str is lexer_get_string of i
         str_len is string_length of str
         # Length includes null terminator (original length, not escaped)
         total_len is str_len + 1
@@ -465,7 +467,7 @@ define gen_literal of node_idx as:
     if num_val = LIT_STRING:
         # String literal - reference the pre-emitted global string constant
         # and create an EigenString* from it
-        str_content is get_string of str_idx
+        str_content is lexer_get_string of str_idx
         str_len is string_length of str_content
         total_len is str_len + 1
         len_str is number_to_string of total_len
@@ -510,7 +512,7 @@ define gen_identifier of node_idx as:
     name_idx is ast_str_index[arr_idx]
 
     # Get the identifier name for predicate checking
-    ident_name is get_string of name_idx
+    ident_name is lexer_get_string of name_idx
 
     # Check for predicate identifiers (converged, stable, etc.)
     is_converged is string_equals of [ident_name, "converged"]
@@ -775,7 +777,7 @@ define gen_relation of node_idx as:
     func_name is ""
     if left_type = AST_IDENTIFIER:
         name_idx is ast_str_index[left_arr_idx]
-        func_name is get_string of name_idx
+        func_name is lexer_get_string of name_idx
 
     # Check if right side is a list literal (multiple arguments)
     right_arr_idx is right_idx + 1
@@ -1881,8 +1883,8 @@ define gen_member_access of node_idx as:
     # If the object is an identifier (module name), create mangled function name
     if obj_type = AST_IDENTIFIER:
         module_name_idx is ast_str_index[obj_arr_idx]
-        module_name is get_string of module_name_idx
-        member_name is get_string of member_idx
+        module_name is lexer_get_string of module_name_idx
+        member_name is lexer_get_string of member_idx
         # Create mangled name: module_member
         mangled_name is string_concat of [module_name, "_"]
         mangled_name is string_concat of [mangled_name, member_name]
@@ -2143,7 +2145,7 @@ define gen_function_def of node_idx as:
     body_end is ast_children_end[arr_idx]
 
     # Get function name string
-    func_name is get_string of name_idx
+    func_name is lexer_get_string of name_idx
 
     result is emit of ""
 
@@ -2158,7 +2160,7 @@ define gen_function_def of node_idx as:
         loop while i < param_count:
             param_arr_idx is children_start + i + 1
             param_name_idx is ast_children[param_arr_idx]
-            param_name is get_string of param_name_idx
+            param_name is lexer_get_string of param_name_idx
 
             if i = 0:
                 param_str is cat3 of ["double %param_", param_name, ""]
@@ -2177,7 +2179,7 @@ define gen_function_def of node_idx as:
     loop while i < param_count:
         param_arr_idx is children_start + i + 1
         param_name_idx is ast_children[param_arr_idx]
-        param_name is get_string of param_name_idx
+        param_name is lexer_get_string of param_name_idx
 
         # Allocate stack space for parameter
         alloc_reg is next_reg of 0
@@ -2273,7 +2275,7 @@ define gen_stmt of node_idx as:
             result is add_struct_field of field_name_idx
             i is i + 1
 
-        struct_name is get_string of struct_name_idx
+        struct_name is lexer_get_string of struct_name_idx
         line is cat4 of ["  ; struct ", struct_name, " defined with fields", ""]
         result is emit of line
         return 0

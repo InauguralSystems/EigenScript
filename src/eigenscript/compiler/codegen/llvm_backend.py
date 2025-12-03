@@ -631,6 +631,16 @@ class LLVMCodeGenerator:
         self.eigen_string_cstr.attributes.add("nounwind")
         self.eigen_string_cstr.attributes.add("readonly")
 
+        # eigen_escape_string_val(double) -> double
+        # Escapes a string for LLVM IR output (converts \n to \0A, etc.)
+        eigen_escape_string_val_type = ir.FunctionType(
+            self.double_type, [self.double_type]
+        )
+        self.eigen_escape_string_val = ir.Function(
+            self.module, eigen_escape_string_val_type, name="eigen_escape_string_val"
+        )
+        self.eigen_escape_string_val.attributes.add("nounwind")
+
         # ============================================================
         # File I/O Functions (for self-hosting)
         # ============================================================
@@ -980,6 +990,28 @@ class LLVMCodeGenerator:
 
         # Do the allocation
         alloca_inst = self.builder.alloca(ty, name=name)
+
+        # Restore position
+        self.builder.position_at_end(current_block)
+
+        return alloca_inst
+
+    def _alloca_ptr_null_at_entry(self, ty: ir.Type, name: str = "") -> ir.AllocaInstr:
+        """Allocate a pointer variable and initialize it to NULL at function entry.
+
+        This is used for EigenValue* and other pointer types that may be assigned
+        in conditional branches. Initializing to NULL allows runtime checks to
+        detect if the variable was actually assigned.
+        """
+        alloca_inst = self._alloca_at_entry(ty, name=name)
+
+        # Save current position
+        current_block = self.builder.block
+
+        # Position right after the alloca to add the null initialization
+        self.builder.position_after(alloca_inst)
+        null_val = ir.Constant(ty, None)
+        self.builder.store(null_val, alloca_inst)
 
         # Restore position
         self.builder.position_at_end(current_block)
@@ -1763,8 +1795,12 @@ class LLVMCodeGenerator:
 
         # Handle list assignment
         if gen_value.kind == ValueKind.LIST_PTR:
-            if existing_var_ptr is not None:
-                # Update existing list variable
+            # Check type compatibility - shadow if types don't match
+            if (
+                existing_var_ptr is not None
+                and existing_var_ptr.type.pointee == self.eigen_list_ptr
+            ):
+                # Update existing list variable (types match)
                 self.builder.store(gen_value.value, existing_var_ptr)
             else:
                 # Create new list variable
@@ -1782,8 +1818,12 @@ class LLVMCodeGenerator:
 
         # Handle string assignment (for self-hosting)
         if gen_value.kind == ValueKind.STRING_PTR:
-            if existing_var_ptr is not None:
-                # Update existing string variable
+            # Check type compatibility - shadow if types don't match
+            if (
+                existing_var_ptr is not None
+                and existing_var_ptr.type.pointee == self.eigen_string_ptr
+            ):
+                # Update existing string variable (types match)
                 self.builder.store(gen_value.value, existing_var_ptr)
             else:
                 # Create new string variable
@@ -1803,8 +1843,13 @@ class LLVMCodeGenerator:
         if gen_value.kind == ValueKind.STRUCT_PTR:
             struct_type, _ = self.struct_types.get(gen_value.struct_name, (None, None))
             if struct_type:
-                if existing_var_ptr is not None:
-                    # Update existing struct variable
+                # Check type compatibility - shadow if types don't match
+                expected_ptr_type = struct_type.as_pointer()
+                if (
+                    existing_var_ptr is not None
+                    and existing_var_ptr.type.pointee == expected_ptr_type
+                ):
+                    # Update existing struct variable (types match)
                     self.builder.store(gen_value.value, existing_var_ptr)
                 else:
                     # Create new struct variable
@@ -1899,8 +1944,33 @@ class LLVMCodeGenerator:
                         )
                 else:
                     # Geometric tracked: EigenValue*, call eigen_update
+                    # BUT: Handle case where pointer is uninitialized (conditional branches)
                     eigen_ptr = self.builder.load(var_ptr)
+
+                    # Check if the pointer is null (uninitialized in this branch)
+                    null_ptr = ir.Constant(self.eigen_value_ptr, None)
+                    is_null = self.builder.icmp_unsigned("==", eigen_ptr, null_ptr)
+
+                    # Create blocks for the null check
+                    then_bb = self.builder.append_basic_block("eigen.init")
+                    else_bb = self.builder.append_basic_block("eigen.update")
+                    merge_bb = self.builder.append_basic_block("eigen.merge")
+
+                    self.builder.cbranch(is_null, then_bb, else_bb)
+
+                    # If null: create new EigenValue on stack
+                    self.builder.position_at_start(then_bb)
+                    new_eigen_ptr = self._create_eigen_on_stack(scalar_val)
+                    self.builder.store(new_eigen_ptr, var_ptr)
+                    self.builder.branch(merge_bb)
+
+                    # If not null: update existing EigenValue
+                    self.builder.position_at_start(else_bb)
                     self.builder.call(self.eigen_update, [eigen_ptr, scalar_val])
+                    self.builder.branch(merge_bb)
+
+                    # Continue at merge block
+                    self.builder.position_at_start(merge_bb)
         else:
             # Create new variable
             # OBSERVER EFFECT: Check if variable needs geometric tracking
@@ -1928,9 +1998,10 @@ class LLVMCodeGenerator:
                 # Observed variable in function: Stack-allocated EigenValue
                 # IMPORTANT: Stack variables are NOT added to allocated_eigenvalues
                 # They don't need cleanup - automatically freed when function returns
+                # Use null-initialized alloca to handle conditional assignments correctly
                 scalar_val = self.ensure_scalar(gen_value)
                 eigen_ptr = self._create_eigen_on_stack(scalar_val)
-                var_ptr = self._alloca_at_entry(
+                var_ptr = self._alloca_ptr_null_at_entry(
                     self.eigen_value_ptr, name=node.identifier
                 )
                 self.builder.store(eigen_ptr, var_ptr)
@@ -1941,7 +2012,7 @@ class LLVMCodeGenerator:
                 # These DO need cleanup via eigen_destroy
                 eigen_ptr = self.ensure_eigen_ptr(gen_value)
                 if in_func:
-                    var_ptr = self._alloca_at_entry(
+                    var_ptr = self._alloca_ptr_null_at_entry(
                         self.eigen_value_ptr, name=node.identifier
                     )
                 else:
@@ -2023,6 +2094,30 @@ class LLVMCodeGenerator:
                         bytearray(fmt_str.encode("utf-8")),
                     )
                     fmt_name = f"{self.module_prefix}fmt_str_{self.string_counter}"
+                    self.string_counter += 1
+                    global_fmt = ir.GlobalVariable(
+                        self.module, fmt_const.type, name=fmt_name
+                    )
+                    global_fmt.global_constant = True
+                    global_fmt.initializer = fmt_const
+                    fmt_ptr = self.builder.bitcast(global_fmt, self.string_type)
+                    return self.builder.call(self.printf, [fmt_ptr, c_str])
+
+                # Check if it's a STRING_PTR (local string variable)
+                if (
+                    isinstance(arg_gen_val, GeneratedValue)
+                    and arg_gen_val.kind == ValueKind.STRING_PTR
+                ):
+                    # Direct string pointer - print as string
+                    c_str = self.builder.call(
+                        self.eigen_string_cstr, [arg_gen_val.value]
+                    )
+                    fmt_str = "%s\n\0"
+                    fmt_const = ir.Constant(
+                        ir.ArrayType(self.int8_type, len(fmt_str)),
+                        bytearray(fmt_str.encode("utf-8")),
+                    )
+                    fmt_name = f"{self.module_prefix}fmt_str_ptr_{self.string_counter}"
                     self.string_counter += 1
                     global_fmt = ir.GlobalVariable(
                         self.module, fmt_const.type, name=fmt_name
@@ -2192,6 +2287,24 @@ class LLVMCodeGenerator:
                 if self.current_function and self.current_function.name == "main":
                     self.allocated_strings.append(result)
                 return GeneratedValue(value=result, kind=ValueKind.STRING_PTR)
+
+            # escape_string of string -> EigenString* (escapes for LLVM IR output)
+            if func_name == "escape_string":
+                arg_gen = self._generate(node.right)
+                str_ptr = self._ensure_string_ptr(arg_gen)
+                # Convert string pointer to double for runtime call
+                ptr_as_int = self.builder.ptrtoint(str_ptr, self.int64_type)
+                ptr_as_double = self.builder.bitcast(ptr_as_int, self.double_type)
+                # Call runtime function
+                result_double = self.builder.call(
+                    self.eigen_escape_string_val, [ptr_as_double]
+                )
+                # Convert result back to string pointer
+                result_int = self.builder.bitcast(result_double, self.int64_type)
+                result_ptr = self.builder.inttoptr(result_int, self.eigen_string_ptr)
+                if self.current_function and self.current_function.name == "main":
+                    self.allocated_strings.append(result_ptr)
+                return GeneratedValue(value=result_ptr, kind=ValueKind.STRING_PTR)
 
             # string_to_number of str -> double
             if func_name == "string_to_number":

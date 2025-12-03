@@ -12,12 +12,25 @@
 # - lexer.eigs: COMPILES ✓
 # - parser.eigs: COMPILES ✓
 # - semantic.eigs: COMPILES ✓
-# - codegen.eigs: BLOCKED - type inference issue in reference compiler
-#   (string/EigenValue type mismatch in assignment)
+# - codegen.eigs: COMPILES ✓ (fixed type inference, uses lexer_get_string)
+# - main.eigs: COMPILES ✓
+# - LINKING: SUCCESS ✓ -> eigensc binary created
+# - RUNTIME: WORKING ✓ - stage 1 compiler generates valid, executable LLVM IR
+#   - Module init calls now working (parser/lexer globals initialized)
+#   - String printing now works (STRING_PTR handling added)
+#   - EigenValue pointer initialization fix (conditional branch handling)
+#   - Simple programs compile and run correctly!
+# - BOOTSTRAP: PARTIAL - stage 1 can compile simple programs
+#   - Parser limitation: blank lines inside function bodies not supported
+#   - main.eigs cannot be parsed yet due to blank line issue in parser.eigs
 #
-# Next Steps:
-# - Fix reference compiler type inference for variable reassignment
-# - OR simplify codegen.eigs type usage
+# Fixes applied:
+# - Reference compiler type inference for variable reassignment
+# - escape_string builtin handling in reference compiler
+# - Cross-module function calls via mangled names (lexer_get_string)
+# - Module init calls in emit_llvm path (compile.py)
+# - STRING_PTR print handling in reference compiler (llvm_backend.py)
+# - EigenValue pointer null initialization for conditional branches (llvm_backend.py)
 
 set -e
 
