@@ -771,21 +771,22 @@ void eigen_print_string_val(double str_val) {
 }
 
 // Universal print that handles both numbers and encoded strings
-// Uses heuristic: pointer values when encoded as double are very large
-// or have specific patterns that don't look like normal numbers
+// Uses heuristic: pointer values when encoded as double create specific bit patterns
+// that differ from typical numeric values
 void eigen_print_val(double val) {
     PointerDoubleUnion u;
     u.d = val;
-    // Check if this looks like an encoded pointer
-    // Pointers on x86_64 are typically in ranges like 0x7f... or 0x5...
-    // When interpreted as double, these create very specific patterns
-    // A simple heuristic: if the value when viewed as i64 is in pointer range
-    // and the double representation is unusual (NaN, Inf, or very large)
     int64_t as_int = u.i;
 
-    // Check if it might be a heap pointer (typical ranges)
-    if ((as_int > 0x100000000LL && as_int < 0x800000000000LL) ||
-        (as_int > 0x7f0000000000LL && as_int < 0x800000000000LL)) {
+    // Check if it might be an encoded pointer
+    // Valid pointers on x86_64 (with or without PIE):
+    // - Low addresses: 0x10000 to 0x100000000 (typical for -no-pie)
+    // - High addresses: 0x100000000 to 0x800000000000 (typical heap with PIE)
+    // - Very high: 0x7f0000000000+ (typical shared libraries)
+    // Exclude values < 0x10000 (64KB) as they're too low to be valid pointers
+    // and often represent small integers or special values
+    if ((as_int >= 0x10000LL && as_int < 0x800000000000LL) ||
+        (as_int >= 0x7f0000000000LL && as_int < 0x800000000000LL)) {
         // Likely an encoded pointer - try to print as string
         EigenString* str = (EigenString*)u.p;
         // Basic validation: check if it looks like a valid EigenString
