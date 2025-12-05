@@ -2875,13 +2875,14 @@ define is_in_function_body of [child_pos, prog_start, prog_end] as:
         other_arr_idx is other_idx + 1
         other_type is ast_types[other_arr_idx]
         if other_type = AST_FUNCTION_DEF:
-            # Check if child_pos falls within this function's body range
-            # Note: body_start is in ast_right, body_end is in ast_children_end
-            func_body_start is ast_right[other_arr_idx]
-            func_body_end is ast_children_end[other_arr_idx]
-            # Check if child_pos is in [func_body_start, func_body_end)
-            if child_pos >= func_body_start:
-                if child_pos < func_body_end:
+            # Check if child_pos falls within this function's FULL children range
+            # This includes parameters AND body statements
+            # ast_children_start = param_start, ast_children_end = block_end
+            func_children_start is ast_children_start[other_arr_idx]
+            func_children_end is ast_children_end[other_arr_idx]
+            # Check if child_pos is in [func_children_start, func_children_end)
+            if child_pos >= func_children_start:
+                if child_pos < func_children_end:
                     return 1
         j is j + 1
     return 0
