@@ -1,7 +1,7 @@
 # EigenScript Issue Report
 
-**Generated:** 2025-11-24  
-**Version:** 0.3.0  
+**Generated:** 2025-12-05
+**Version:** 0.4.1
 **Reporter:** GitHub Copilot Code Review Agent
 
 ---
