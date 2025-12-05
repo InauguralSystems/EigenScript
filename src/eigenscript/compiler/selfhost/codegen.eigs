@@ -412,8 +412,31 @@ define make_external_name of name_idx as:
 # Check if an external variable is an array type (ptr) vs scalar (double)
 # Arrays have names like parser_token_types, ast_children, etc.
 # Scalars are like lex_line, symbol_count, error_count
+# IMPORTANT: Must have both module prefix AND array suffix to be considered an external array
 define is_external_array of name_idx as:
     var_name is lexer_get_string of name_idx
+
+    # First check if it has a known module prefix
+    has_prefix is 0
+    is_parser is string_starts_with of [var_name, "parser_"]
+    if is_parser = 1:
+        has_prefix is 1
+    is_ast is string_starts_with of [var_name, "ast_"]
+    if is_ast = 1:
+        has_prefix is 1
+    is_lex is string_starts_with of [var_name, "lex_"]
+    if is_lex = 1:
+        has_prefix is 1
+    is_semantic is string_starts_with of [var_name, "semantic_"]
+    if is_semantic = 1:
+        has_prefix is 1
+    is_codegen is string_starts_with of [var_name, "codegen_"]
+    if is_codegen = 1:
+        has_prefix is 1
+
+    # If no module prefix, it's not an external array
+    if has_prefix = 0:
+        return 0
 
     # Check for common array suffixes
     is_types is string_ends_with of [var_name, "_types"]
@@ -443,6 +466,56 @@ define is_external_array of name_idx as:
     is_end is string_ends_with of [var_name, "_end"]
     if is_end = 1:
         return 1
+
+    return 0
+
+# Check if a variable name is a known external scalar (non-array)
+# These are specific variables defined in imported modules
+define is_known_external_scalar of name_idx as:
+    var_name is lexer_get_string of name_idx
+
+    # Parser module scalars
+    is_match is string_equals of [var_name, "parser_pos"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "parser_error"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "parser_error_line"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "parser_error_col"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "parser_token_count"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "ast_node_count"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "ast_children_count"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "string_pool_count"]
+    if is_match = 1:
+        return 1
+
+    # Lexer module scalars
+    is_match is string_equals of [var_name, "lex_pos"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "lex_line"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "lex_col"]
+    if is_match = 1:
+        return 1
+    is_match is string_equals of [var_name, "lex_last_num_val"]
+    if is_match = 1:
+        return 1
+
+    # Note: We intentionally omit common names like error_count, symbol_count
+    # since they may also be used as local variables in other modules
 
     return 0
 
@@ -2467,6 +2540,40 @@ define gen_assignment of node_idx as:
         result is emit of line
         return 0
 
+    # Check if this is an external module variable
+    # Either already registered (from a previous read) or a known external scalar/array
+    is_ext is is_external of name_idx
+    if is_ext = 0:
+        # Not yet registered - check if it's a known external
+        is_known_scalar is is_known_external_scalar of name_idx
+        is_known_array is is_external_array of name_idx
+        if is_known_scalar = 1:
+            is_ext is 1
+            result is add_external of name_idx
+        else:
+            if is_known_array = 1:
+                is_ext is 1
+                result is add_external of name_idx
+    if is_ext = 1:
+        ext_name is make_external_name of name_idx
+
+        # Check if this is an array type (ptr) or scalar (double)
+        is_array is is_external_array of name_idx
+        if is_array = 1:
+            # External array - need to convert double to ptr and store
+            # First, convert the double value to a list pointer
+            ptr_reg is next_reg of 0
+            ptr_str is make_reg of ptr_reg
+            line is cat5 of ["  ", ptr_str, " = call %EigenList* @eigen_double_to_list(double ", expr_str, ")"]
+            result is emit of line
+            line is cat5 of ["  store ptr ", ptr_str, ", ptr ", ext_name, ""]
+            result is emit of line
+        else:
+            # External scalar - store double directly
+            line is cat5 of ["  store double ", expr_str, ", double* ", ext_name, ""]
+            result is emit of line
+        return 0
+
     # Local variable handling
     # Check if variable exists (using numeric index for comparison)
     var_reg is lookup_var of name_idx
@@ -2875,13 +2982,14 @@ define is_in_function_body of [child_pos, prog_start, prog_end] as:
         other_arr_idx is other_idx + 1
         other_type is ast_types[other_arr_idx]
         if other_type = AST_FUNCTION_DEF:
-            # Check if child_pos falls within this function's body range
-            # Note: body_start is in ast_right, body_end is in ast_children_end
-            func_body_start is ast_right[other_arr_idx]
-            func_body_end is ast_children_end[other_arr_idx]
-            # Check if child_pos is in [func_body_start, func_body_end)
-            if child_pos >= func_body_start:
-                if child_pos < func_body_end:
+            # Check if child_pos falls within this function's FULL children range
+            # This includes parameters AND body statements
+            # ast_children_start = param_start, ast_children_end = block_end
+            func_children_start is ast_children_start[other_arr_idx]
+            func_children_end is ast_children_end[other_arr_idx]
+            # Check if child_pos is in [func_children_start, func_children_end)
+            if child_pos >= func_children_start:
+                if child_pos < func_children_end:
                     return 1
         j is j + 1
     return 0
