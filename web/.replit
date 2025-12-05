@@ -1,0 +1,13 @@
+run = "pip install -e .. && python app.py"
+entrypoint = "app.py"
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "pip install -e .. && gunicorn app:app --bind 0.0.0.0:5000"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 5000
+externalPort = 80

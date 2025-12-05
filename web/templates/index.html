@@ -9,8 +9,9 @@
             --bg-dark: #1a1a2e;
             --bg-panel: #16213e;
             --bg-editor: #0f0f23;
-            --accent: #e94560;
-            --accent-hover: #ff6b6b;
+            --accent: #00d9ff;
+            --accent-hover: #00fff7;
+            --accent-secondary: #e94560;
             --text: #eee;
             --text-dim: #888;
             --success: #4ade80;
@@ -49,15 +50,16 @@
         }
 
         .logo-icon {
-            width: 32px;
-            height: 32px;
-            background: linear-gradient(135deg, var(--accent), #ff9a56);
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
             border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            font-size: 18px;
+            font-size: 20px;
+            color: #fff;
         }
 
         .logo h1 {
@@ -65,16 +67,27 @@
             font-weight: 600;
         }
 
-        .logo span {
+        .logo h1 span {
             color: var(--accent);
         }
 
-        .version {
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .version-badge {
             font-size: 0.75rem;
             color: var(--text-dim);
             background: var(--bg-dark);
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .version-badge strong {
+            color: var(--success);
         }
 
         .status {
@@ -93,6 +106,11 @@
             animation: pulse 2s infinite;
         }
 
+        .status-dot.running {
+            background: var(--accent);
+            animation: pulse 0.5s infinite;
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
@@ -100,15 +118,16 @@
 
         main {
             flex: 1;
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             overflow: hidden;
         }
 
         .panel {
-            flex: 1;
             display: flex;
             flex-direction: column;
             border-right: 1px solid var(--border);
+            overflow: hidden;
         }
 
         .panel:last-child {
@@ -122,6 +141,7 @@
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
         }
 
         .panel-title {
@@ -135,6 +155,7 @@
         .toolbar {
             display: flex;
             gap: 0.5rem;
+            flex-wrap: wrap;
         }
 
         select, button {
@@ -152,14 +173,21 @@
             border-color: var(--accent);
         }
 
+        select:focus, button:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(0, 217, 255, 0.2);
+        }
+
         button.primary {
-            background: var(--accent);
+            background: linear-gradient(135deg, var(--accent), #0099cc);
             border-color: var(--accent);
             font-weight: 600;
+            color: #000;
         }
 
         button.primary:hover {
-            background: var(--accent-hover);
+            background: linear-gradient(135deg, var(--accent-hover), var(--accent));
         }
 
         button:disabled {
@@ -170,6 +198,7 @@
         .editor-container {
             flex: 1;
             position: relative;
+            overflow: hidden;
         }
 
         #code {
@@ -184,6 +213,7 @@
             line-height: 1.6;
             resize: none;
             outline: none;
+            tab-size: 4;
         }
 
         #code::placeholder {
@@ -202,6 +232,7 @@
             font-size: 14px;
             line-height: 1.6;
             white-space: pre-wrap;
+            word-wrap: break-word;
             min-height: 100%;
         }
 
@@ -227,6 +258,7 @@
             border-top: 1px solid var(--border);
             font-size: 0.75rem;
             color: var(--text-dim);
+            flex-shrink: 0;
         }
 
         .stats {
@@ -247,23 +279,36 @@
             color: var(--text);
         }
 
-        a {
+        .links a {
             color: var(--accent);
             text-decoration: none;
+            margin-left: 1rem;
         }
 
-        a:hover {
+        .links a:hover {
             text-decoration: underline;
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 900px) {
             main {
-                flex-direction: column;
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
             }
 
             .panel {
                 border-right: none;
                 border-bottom: 1px solid var(--border);
+            }
+
+            header {
+                padding: 0.75rem 1rem;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+
+            .toolbar {
+                width: 100%;
+                justify-content: flex-start;
             }
         }
     </style>
@@ -272,12 +317,14 @@
     <header>
         <div class="logo">
             <div class="logo-icon">E</div>
-            <h1>Eigen<span>Script</span> Playground</h1>
-            <span class="version">v0.4.1</span>
+            <h1>Eigen<span>Script</span></h1>
         </div>
-        <div class="status">
-            <div class="status-dot"></div>
-            Ready
+        <div class="header-right">
+            <span class="version-badge">v0.4.1 &mdash; <strong>Fixpoint Bootstrap</strong></span>
+            <div class="status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Ready</span>
+            </div>
         </div>
     </header>
 
@@ -291,10 +338,13 @@
                         <option value="hello">Hello World</option>
                         <option value="convergence">Convergence</option>
                         <option value="factorial">Factorial</option>
-                        <option value="xor">XOR Demo</option>
+                        <option value="xor">XOR Neural Net</option>
                         <option value="matrix">Matrix Operations</option>
+                        <option value="attention">Attention Mechanism</option>
                         <option value="higher_order">Higher-Order Functions</option>
                         <option value="geometric">Geometric Introspection</option>
+                        <option value="interrogatives">Interrogatives</option>
+                        <option value="meta_eval">Meta-Circular Eval</option>
                     </select>
                     <button class="primary" id="runBtn" onclick="runCode()">&#9654; Run</button>
                     <button onclick="clearEditor()">Clear</button>
@@ -319,7 +369,9 @@ print of x + y</textarea>
                 <button onclick="clearOutput()">Clear</button>
             </div>
             <div class="output-container">
-                <div id="output"><span class="output-placeholder">Output will appear here...</span></div>
+                <div id="output"><span class="output-placeholder">Output will appear here...
+
+Press Ctrl+Enter or click Run to execute your code.</span></div>
             </div>
         </div>
     </main>
@@ -335,10 +387,9 @@ print of x + y</textarea>
                 <span class="stat-value" id="execTime">-</span>
             </div>
         </div>
-        <div>
+        <div class="links">
             <a href="https://github.com/InauguralSystems/EigenScript" target="_blank">GitHub</a>
-            &nbsp;|&nbsp;
-            <a href="https://inauguralsystems.github.io/EigenScript/" target="_blank">Docs</a>
+            <a href="https://inauguralsystems.github.io/EigenScript/" target="_blank">Documentation</a>
         </div>
     </footer>
 
@@ -348,6 +399,8 @@ print of x + y</textarea>
         const runBtn = document.getElementById('runBtn');
         const lineCount = document.getElementById('lineCount');
         const execTime = document.getElementById('execTime');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
 
         // Update line count on input
         codeEditor.addEventListener('input', updateLineCount);
@@ -356,6 +409,16 @@ print of x + y</textarea>
         function updateLineCount() {
             const lines = codeEditor.value.split('\n').length;
             lineCount.textContent = lines;
+        }
+
+        function setStatus(status) {
+            if (status === 'running') {
+                statusDot.classList.add('running');
+                statusText.textContent = 'Running...';
+            } else {
+                statusDot.classList.remove('running');
+                statusText.textContent = 'Ready';
+            }
         }
 
         async function runCode() {
@@ -367,6 +430,7 @@ print of x + y</textarea>
 
             runBtn.disabled = true;
             runBtn.textContent = 'Running...';
+            setStatus('running');
             outputDiv.className = '';
             outputDiv.textContent = 'Executing...';
 
@@ -381,7 +445,7 @@ print of x + y</textarea>
 
                 const result = await response.json();
                 const elapsed = performance.now() - startTime;
-                execTime.textContent = `${elapsed.toFixed(0)}ms`;
+                execTime.textContent = `${(elapsed / 1000).toFixed(2)}s`;
 
                 if (result.error) {
                     showOutput(result.error + (result.output ? '\n\n' + result.output : ''), true);
@@ -393,6 +457,7 @@ print of x + y</textarea>
             } finally {
                 runBtn.disabled = false;
                 runBtn.innerHTML = '&#9654; Run';
+                setStatus('ready');
             }
         }
 
@@ -410,6 +475,7 @@ print of x + y</textarea>
                 if (result.code) {
                     codeEditor.value = result.code;
                     updateLineCount();
+                    clearOutput();
                 }
             } catch (err) {
                 console.error('Failed to load example:', err);
@@ -424,7 +490,7 @@ print of x + y</textarea>
         }
 
         function clearOutput() {
-            outputDiv.innerHTML = '<span class="output-placeholder">Output will appear here...</span>';
+            outputDiv.innerHTML = '<span class="output-placeholder">Output will appear here...\n\nPress Ctrl+Enter or click Run to execute your code.</span>';
             outputDiv.className = '';
             execTime.textContent = '-';
         }
@@ -434,6 +500,14 @@ print of x + y</textarea>
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
                 runCode();
+            }
+            // Tab handling for indentation
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = codeEditor.selectionStart;
+                const end = codeEditor.selectionEnd;
+                codeEditor.value = codeEditor.value.substring(0, start) + '    ' + codeEditor.value.substring(end);
+                codeEditor.selectionStart = codeEditor.selectionEnd = start + 4;
             }
         });
     </script>
