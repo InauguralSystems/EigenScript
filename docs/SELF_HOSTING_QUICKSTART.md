@@ -26,19 +26,23 @@ bash scripts/bootstrap_test.sh
 
 ### What This Does
 
-The script performs a 3-stage test:
+The script performs a 4-stage test:
 
-1. **Stage 0 → Stage 1**: 
+1. **Stage 0 → Stage 1**:
    - Uses the Python reference compiler to compile the self-hosted compiler
    - Creates `eigensc` executable (Stage 1 compiler)
-   
+
 2. **Stage 1 Test**:
    - Uses Stage 1 to compile a simple program
    - Verifies it produces valid LLVM IR
-   
-3. **Bootstrap Attempt**:
-   - Tries to have Stage 1 compile itself
-   - Currently fails due to parser limitations (but shows progress!)
+
+3. **Stage 1 → Stage 2 (Bootstrap)**:
+   - Stage 1 compiles itself to create Stage 2 compiler (`eigensc2`)
+   - Validates the generated LLVM IR
+
+4. **Bootstrap Verification**:
+   - Compares Stage 1 and Stage 2 output on a test program
+   - Confirms they produce identical results
 
 ### Expected Output
 
@@ -50,10 +54,10 @@ EigenScript Bootstrap Test
 Step 1: Compile self-hosted compiler with reference compiler
 ------------------------------------------------------------
   Compiling lexer.eigs...
-  ✓ Compilation successful!
   Compiling parser.eigs...
-  ✓ Compilation successful!
-  ... (more modules) ...
+  Compiling semantic.eigs...
+  Compiling codegen.eigs...
+  Compiling main.eigs...
   SUCCESS: Stage 1 compiler created (eigensc)
 
 Step 2: Test stage 1 compiler with simple program
@@ -62,8 +66,18 @@ Step 2: Test stage 1 compiler with simple program
 
 Step 3: Stage 1 compiler compiles itself (bootstrap)
 ----------------------------------------------------
-  Parse error at line: 180
-  (Known limitation: blank lines in function bodies)
+  SUCCESS: Stage 1 compiler produced LLVM IR for itself!
+  Functions defined: 12
+  SUCCESS: Stage 2 LLVM IR is valid!
+  SUCCESS: Stage 2 compiler created (eigensc2)!
+
+Step 4: Compare stage 1 and stage 2 output
+-----------------------------------------
+  BOOTSTRAP SUCCESS: Stage 1 and Stage 2 produce identical output!
+
+========================================
+Bootstrap Test Complete
+========================================
 ```
 
 ## Manual Step-by-Step
@@ -138,23 +152,26 @@ target triple = "x86_64-pc-linux-gnu"
 
 ## What You've Accomplished
 
-🎉 Congratulations! You've just:
+🎉 Congratulations! You've just witnessed **full bootstrap** - one of the most significant milestones in programming language development:
 
-1. **Compiled a compiler** written in EigenScript
-2. **Used that compiler** to compile another program
-3. **Demonstrated self-hosting** - the language compiling its own tools
+1. **Compiled a compiler** written in EigenScript using the Python reference compiler
+2. **Used that compiler (Stage 1)** to compile itself, creating Stage 2
+3. **Verified identical output** - Stage 1 and Stage 2 produce the same results
+4. **Achieved true self-hosting** - the language can fully compile its own compiler
 
-## Current Limitations
+## Current Status
 
-⚠️ **Known Issues**:
-- Stage 1 compiler has runtime bugs (produces incorrect output values)
-- Parser cannot handle blank lines inside function bodies
-- Stage 1 cannot yet compile itself (full bootstrap not achieved)
+✅ **Bootstrap Achieved**:
+- Stage 1 compiler successfully compiles itself to create Stage 2
+- Stage 1 and Stage 2 produce **identical output**
+- All 5 compiler modules (~5700 lines) compile, link, and run correctly
+- Full LLVM IR generation pipeline works
 
 ✅ **What Works**:
-- All modules compile successfully
-- Stage 1 generates valid LLVM IR
-- All 4 compiler modules (5700+ lines) compile and link
+- Lexer, parser, semantic analysis, and code generation
+- Cross-module function calls and external variable access
+- List operations, string handling, and control flow
+- Runtime library integration
 
 ## Next Steps
 
@@ -187,12 +204,12 @@ head -50 test.ll
 
 ### Help Improve It
 
-The self-hosted compiler needs work to achieve full bootstrap. You can help by:
+With bootstrap achieved, there's still room for improvement:
 
-1. **Debugging Runtime Issues**: Why does print output incorrect values?
-2. **Enhancing the Parser**: Add support for blank lines in function bodies
-3. **Testing**: Try compiling more complex programs
-4. **Documentation**: Share your findings and experiences
+1. **Testing**: Try compiling more complex programs and report any issues
+2. **Optimization**: Help improve compilation speed or generated code quality
+3. **Features**: Add support for additional EigenScript language features
+4. **Documentation**: Share your experiences and help improve these guides
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
 
@@ -234,28 +251,12 @@ This is normal! Compiling 5700+ lines of EigenScript takes time. The reference c
 
 ### "Parse error" When Running Stage 1
 
-The Stage 1 compiler's parser has a limitation with blank lines inside function bodies. The reference compiler handles this fine, but Stage 1 doesn't yet.
+If you encounter a parse error, ensure your source file follows EigenScript syntax:
+- Proper indentation (4 spaces recommended)
+- No trailing whitespace issues
+- Correct keyword usage
 
-**Workaround**: Remove blank lines from your source file:
-
-```bash
-# Original (won't work with Stage 1)
-cat > test.eigs << 'EOF'
-define foo as:
-    x is 10
-    
-    y is 20
-    return x + y
-EOF
-
-# Fixed version (works with Stage 1)
-cat > test.eigs << 'EOF'
-define foo as:
-    x is 10
-    y is 20
-    return x + y
-EOF
-```
+For complex programs, compare with examples in `examples/` directory.
 
 ## Understanding the Bootstrap Process
 
@@ -269,22 +270,22 @@ EOF
 ┌─────────────────────────────────────────────┐
 │ Stage 1: Self-Hosted Compiler (eigensc)     │
 │ (EigenScript compiler written in EigenScript)│
-│ ✅ Can compile simple programs               │
-│ ⚠️  Has some runtime bugs                    │
-│ ❌ Cannot yet compile itself                 │
+│ ✅ Compiles simple and complex programs      │
+│ ✅ Generates valid LLVM IR                   │
+│ ✅ Can compile itself                        │
 └──────────────┬──────────────────────────────┘
-               │ should compile (future)
+               │ compiles itself
                ▼
 ┌─────────────────────────────────────────────┐
 │ Stage 2: Second-Generation Compiler         │
-│ (Full Bootstrap Achievement)                 │
-│ 🎯 Future goal                               │
-│ Stage 1 and Stage 2 should produce          │
-│ identical output                             │
+│ (eigensc2 - Full Bootstrap Achieved!)        │
+│ ✅ Created by Stage 1 compiling itself       │
+│ ✅ Produces identical output to Stage 1      │
+│ ✅ Bootstrap verification passed             │
 └─────────────────────────────────────────────┘
 ```
 
-**Current Status**: We're at Stage 1 - the self-hosted compiler exists and works for simple programs, but full bootstrap (Stage 2) is not yet achieved.
+**Current Status**: Full bootstrap achieved! Stage 1 successfully compiles itself to create Stage 2, and both produce identical output.
 
 ## Key Files
 
@@ -334,7 +335,7 @@ The Python compiler remains the primary, production-ready compiler.
 
 ### Can I use the self-hosted compiler for real projects?
 
-Not yet! It's currently a proof-of-concept with known bugs. Use the Python reference compiler (`eigenscript-compile`) for real work.
+The self-hosted compiler is now functional and passes bootstrap verification. However, for production use, the Python reference compiler (`eigenscript-compile`) is still recommended as it has more thorough testing and error handling. The self-hosted compiler is excellent for learning and experimentation.
 
 ### How big is the self-hosted compiler?
 
@@ -350,9 +351,9 @@ For comparison:
 
 ## Success!
 
-If you got this far and saw the self-hosted compiler in action, you've witnessed something special: **a programming language mature enough to implement its own compiler**.
+If you got this far and saw the bootstrap succeed, you've witnessed something remarkable: **a programming language that can fully compile its own compiler, with Stage 1 and Stage 2 producing identical output**.
 
-This is a significant milestone in language design. Many experimental languages never achieve this!
+This is one of the most significant milestones in programming language development. Many languages never achieve full bootstrap - EigenScript has!
 
 🚀 **Next**: Try reading through the [complete guide](./COMPILER_SELF_HOSTING.md) to understand how it all works internally.
 
