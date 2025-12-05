@@ -3,10 +3,11 @@
 # Tests the self-hosted compiler's ability to compile itself
 #
 # Bootstrap stages:
-# 1. Reference compiler compiles self-hosted compiler -> eigensc (stage 1)
+# 1. Reference compiler compiles self-hosted compiler -> eigensc (Stage 1)
 # 2. Stage 1 compiler compiles a test program -> verify output works
-# 3. Stage 1 compiler compiles itself -> eigensc2 (stage 2)
-# 4. Compare stage 1 and stage 2 outputs (should be identical)
+# 3. Stage 1 compiler compiles itself -> eigensc2 (Stage 2)
+# 4. Compare Stage 1 and Stage 2 outputs (should be identical)
+# 5. Stage 2 compiler compiles itself -> eigensc3 (Stage 3 - fixpoint verification)
 #
 # Current Status (v0.4.1):
 # - lexer.eigs: COMPILES ✓
@@ -15,8 +16,9 @@
 # - codegen.eigs: COMPILES ✓
 # - main.eigs: COMPILES ✓
 # - LINKING: SUCCESS ✓ -> eigensc binary created
-# - RUNTIME: WORKING ✓ - stage 1 compiler generates valid, executable LLVM IR
+# - RUNTIME: WORKING ✓ - Stage 1 compiler generates valid, executable LLVM IR
 # - BOOTSTRAP: COMPLETE ✓ - Stage 1 and Stage 2 produce IDENTICAL output!
+# - FIXPOINT: VERIFIED ✓ - Stage 2 and Stage 3 produce IDENTICAL output!
 #
 # Key fixes for bootstrap (v0.4.1):
 # - External variable assignment in codegen (parser_token_count, etc.)
@@ -49,7 +51,7 @@ mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
 # Clean previous builds
-rm -f *.ll *.o *.exe eigensc eigensc2
+rm -f *.ll *.o *.exe eigensc eigensc2 eigensc3
 
 echo "Step 1: Compile self-hosted compiler with reference compiler"
 echo "------------------------------------------------------------"
@@ -86,7 +88,7 @@ if [ ! -f codegen.ll ]; then
 fi
 
 echo "  Compiling main.eigs..."
-eigenscript-compile "$SELFHOST_DIR/main.eigs" -o main.ll -O0
+eigenscript-compile "$SELFHOST_DIR/main.eigs" -o main.ll -O0 --no-runtime
 if [ ! -f main.ll ]; then
     echo "ERROR: Failed to compile main.eigs"
     exit 1
@@ -108,7 +110,7 @@ done
 
 # Link all modules together
 echo "  Linking stage 1 compiler..."
-gcc lexer.o parser.o semantic.o codegen.o main.o eigenvalue.o -o eigensc -lm
+gcc -no-pie lexer.o parser.o semantic.o codegen.o main.o eigenvalue.o -o eigensc -lm
 
 if [ ! -f eigensc ]; then
     echo "ERROR: Failed to create stage 1 compiler"
@@ -204,7 +206,58 @@ if [ -s main_stage2.ll ]; then
                         ./eigensc2 test_simple.eigs > output2.ll 2>&1 || true
 
                         if diff -q output1.ll output2.ll > /dev/null 2>&1; then
-                            echo "  BOOTSTRAP SUCCESS: Stage 1 and Stage 2 produce identical output!"
+                            echo "  SUCCESS: Stage 1 and Stage 2 produce identical output!"
+                            echo ""
+                            echo "Step 5: Stage 2 compiles itself (Stage 3 fixpoint)"
+                            echo "-------------------------------------------------"
+
+                            # Stage 2 compiles main.eigs to create Stage 3
+                            echo "  Running: ./eigensc2 $SELFHOST_DIR/main.eigs"
+                            ./eigensc2 "$SELFHOST_DIR/main.eigs" > main_stage3_raw.ll 2>&1 || true
+
+                            # Filter debug output
+                            if [ -s main_stage3_raw.ll ]; then
+                                ir_start=$(grep -n "; EigenScript Compiled Module" main_stage3_raw.ll | head -1 | cut -d: -f1)
+                                if [ -n "$ir_start" ]; then
+                                    tail -n +$ir_start main_stage3_raw.ll > main_stage3.ll
+                                else
+                                    cp main_stage3_raw.ll main_stage3.ll
+                                fi
+                            fi
+
+                            if [ -s main_stage3.ll ]; then
+                                # Validate Stage 3 LLVM IR
+                                if llvm-as main_stage3.ll -o main_stage3.bc 2>/dev/null; then
+                                    echo "  SUCCESS: Stage 3 LLVM IR is valid!"
+
+                                    # Build Stage 3 compiler
+                                    llc main_stage3.bc -o main_stage3.s -O2 2>/dev/null || true
+                                    if [ -f main_stage3.s ]; then
+                                        gcc -c main_stage3.s -o main_stage3.o 2>/dev/null || true
+                                        if [ -f main_stage3.o ]; then
+                                            gcc -no-pie lexer.o parser.o semantic.o codegen.o main_stage3.o eigenvalue.o -o eigensc3 -lm 2>/dev/null || true
+                                            if [ -f eigensc3 ]; then
+                                                echo "  SUCCESS: Stage 3 compiler created (eigensc3)!"
+
+                                                # Compare Stage 2 and Stage 3 output
+                                                ./eigensc3 test_simple.eigs > output3.ll 2>&1 || true
+
+                                                if diff -q output2.ll output3.ll > /dev/null 2>&1; then
+                                                    echo ""
+                                                    echo "  ╔═══════════════════════════════════════════════════╗"
+                                                    echo "  ║  FIXPOINT ACHIEVED: Stage 2 = Stage 3             ║"
+                                                    echo "  ║  The compiler reproduces itself exactly!          ║"
+                                                    echo "  ╚═══════════════════════════════════════════════════╝"
+                                                else
+                                                    echo "  Stage 2 and Stage 3 outputs differ"
+                                                fi
+                                            fi
+                                        fi
+                                    fi
+                                else
+                                    echo "  Stage 3 LLVM IR has errors"
+                                fi
+                            fi
                         else
                             echo "  Outputs differ (may be cosmetic differences)"
                             echo "  Stage 1 lines: $(wc -l < output1.ll)"

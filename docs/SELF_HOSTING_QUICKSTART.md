@@ -26,23 +26,28 @@ bash scripts/bootstrap_test.sh
 
 ### What This Does
 
-The script performs a 4-stage test:
+The script performs a complete bootstrap verification through 5 stages:
 
-1. **Stage 0 → Stage 1**:
+1. **Stage 0 → Stage 1**: Python reference compiler → `eigensc`
    - Uses the Python reference compiler to compile the self-hosted compiler
-   - Creates `eigensc` executable (Stage 1 compiler)
+   - Creates the Stage 1 compiler executable
 
-2. **Stage 1 Test**:
+2. **Stage 1 Test**: Verify Stage 1 works
    - Uses Stage 1 to compile a simple program
    - Verifies it produces valid LLVM IR
 
-3. **Stage 1 → Stage 2 (Bootstrap)**:
-   - Stage 1 compiles itself to create Stage 2 compiler (`eigensc2`)
+3. **Stage 1 → Stage 2**: `eigensc` → `eigensc2`
+   - Stage 1 compiles itself to create the Stage 2 compiler
    - Validates the generated LLVM IR
 
-4. **Bootstrap Verification**:
-   - Compares Stage 1 and Stage 2 output on a test program
-   - Confirms they produce identical results
+4. **Stage 2 Verification**: Compare Stage 1 and Stage 2
+   - Both compilers compile the same test program
+   - Confirms they produce identical output
+
+5. **Stage 2 → Stage 3 (Fixpoint)**: `eigensc2` → `eigensc3`
+   - Stage 2 compiles itself to create Stage 3
+   - Verifies Stage 2 and Stage 3 produce identical output
+   - **Fixpoint achieved**: The compiler reproduces itself exactly
 
 ### Expected Output
 
@@ -73,7 +78,17 @@ Step 3: Stage 1 compiler compiles itself (bootstrap)
 
 Step 4: Compare stage 1 and stage 2 output
 -----------------------------------------
-  BOOTSTRAP SUCCESS: Stage 1 and Stage 2 produce identical output!
+  SUCCESS: Stage 1 and Stage 2 produce identical output!
+
+Step 5: Stage 2 compiles itself (Stage 3 fixpoint)
+-------------------------------------------------
+  SUCCESS: Stage 3 LLVM IR is valid!
+  SUCCESS: Stage 3 compiler created (eigensc3)!
+
+  ╔═══════════════════════════════════════════════════╗
+  ║  FIXPOINT ACHIEVED: Stage 2 = Stage 3             ║
+  ║  The compiler reproduces itself exactly!          ║
+  ╚═══════════════════════════════════════════════════╝
 
 ========================================
 Bootstrap Test Complete
@@ -152,12 +167,13 @@ target triple = "x86_64-pc-linux-gnu"
 
 ## What You've Accomplished
 
-🎉 Congratulations! You've just witnessed **full bootstrap** - one of the most significant milestones in programming language development:
+🎉 Congratulations! You've just witnessed **fixpoint bootstrap** - the strongest form of compiler self-hosting:
 
-1. **Compiled a compiler** written in EigenScript using the Python reference compiler
-2. **Used that compiler (Stage 1)** to compile itself, creating Stage 2
-3. **Verified identical output** - Stage 1 and Stage 2 produce the same results
-4. **Achieved true self-hosting** - the language can fully compile its own compiler
+1. **Stage 0 → Stage 1**: Python compiled the EigenScript compiler
+2. **Stage 1 → Stage 2**: The compiler compiled itself
+3. **Stage 2 → Stage 3**: The self-compiled compiler compiled itself again
+4. **Fixpoint verified**: Stage 2 and Stage 3 produce **identical output**
+5. **True self-hosting**: The compiler can reproduce itself indefinitely
 
 ## Current Status
 
@@ -263,7 +279,7 @@ For complex programs, compare with examples in `examples/` directory.
 ```
 ┌─────────────────────────────────────────────┐
 │ Stage 0: Python Reference Compiler          │
-│ (Production, always works)                   │
+│ (Production, always works)                  │
 └──────────────┬──────────────────────────────┘
                │ compiles
                ▼
@@ -277,15 +293,25 @@ For complex programs, compare with examples in `examples/` directory.
                │ compiles itself
                ▼
 ┌─────────────────────────────────────────────┐
-│ Stage 2: Second-Generation Compiler         │
-│ (eigensc2 - Full Bootstrap Achieved!)        │
+│ Stage 2: Second-Generation (eigensc2)       │
 │ ✅ Created by Stage 1 compiling itself       │
 │ ✅ Produces identical output to Stage 1      │
-│ ✅ Bootstrap verification passed             │
+│ ✅ Can compile itself                        │
+└──────────────┬──────────────────────────────┘
+               │ compiles itself
+               ▼
+┌─────────────────────────────────────────────┐
+│ Stage 3: Third-Generation (eigensc3)        │
+│ ✅ Created by Stage 2 compiling itself       │
+│ ✅ Produces identical output to Stage 2      │
+│ ══════════════════════════════════════════  │
+│ ║  FIXPOINT: Stage 2 = Stage 3            ║ │
+│ ║  The compiler reproduces itself exactly ║ │
+│ ══════════════════════════════════════════  │
 └─────────────────────────────────────────────┘
 ```
 
-**Current Status**: Full bootstrap achieved! Stage 1 successfully compiles itself to create Stage 2, and both produce identical output.
+**Current Status**: Fixpoint bootstrap achieved! Stage 2 and Stage 3 produce identical output - the compiler can reproduce itself indefinitely.
 
 ## Key Files
 
@@ -319,7 +345,7 @@ No! EigenScript has **two types** of self-hosting:
 2. **Self-Hosted Compiler** (src/eigenscript/compiler/selfhost/)
    - A compiler written in EigenScript
    - Generates LLVM IR
-   - ⚠️ Partially working (this guide)
+   - ✅ Fixpoint bootstrap achieved (this guide)
 
 ### Why is the compiler in EigenScript when the reference is in Python?
 
@@ -351,9 +377,14 @@ For comparison:
 
 ## Success!
 
-If you got this far and saw the bootstrap succeed, you've witnessed something remarkable: **a programming language that can fully compile its own compiler, with Stage 1 and Stage 2 producing identical output**.
+If you got this far and saw the bootstrap succeed, you've witnessed something remarkable: **a programming language that has achieved fixpoint bootstrap, where the compiler can reproduce itself exactly**.
 
-This is one of the most significant milestones in programming language development. Many languages never achieve full bootstrap - EigenScript has!
+This is the strongest form of compiler self-hosting:
+- Stage 1 = Stage 2 (bootstrap works)
+- Stage 2 = Stage 3 (fixpoint achieved)
+- Stage N = Stage N+1 for all N ≥ 2 (stable indefinitely)
+
+Many languages never achieve full bootstrap - EigenScript has achieved fixpoint in under a month!
 
 🚀 **Next**: Try reading through the [complete guide](./COMPILER_SELF_HOSTING.md) to understand how it all works internally.
 

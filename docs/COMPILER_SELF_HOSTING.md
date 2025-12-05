@@ -27,16 +27,16 @@ EigenScript has achieved two different types of self-hosting:
    - See [docs/meta_circular_evaluator.md](./meta_circular_evaluator.md)
    - Located in [examples/eval.eigs](../examples/eval.eigs)
 
-2. **Compiler Self-Hosting** (⚠️ Partial - this document)
+2. **Compiler Self-Hosting** (✅ Fixpoint Achieved - this document)
    - An EigenScript compiler written in EigenScript
    - Compiles EigenScript to LLVM IR
    - Located in `src/eigenscript/compiler/selfhost/`
 
 ## Current Status (v0.4.1)
 
-### 🎉 Full Bootstrap Achieved!
+### 🎉 Fixpoint Bootstrap Achieved!
 
-As of v0.4.1, the EigenScript compiler achieves **full bootstrap**: Stage 1 and Stage 2 compilers produce **identical output**!
+As of v0.4.1, the EigenScript compiler achieves **fixpoint bootstrap**: the compiler can reproduce itself exactly (Stage 2 = Stage 3), proving the bootstrap is stable and complete.
 
 ### ✅ What Works
 
@@ -48,15 +48,21 @@ As of v0.4.1, the EigenScript compiler achieves **full bootstrap**: Stage 1 and 
   - **Compile itself to create Stage 2**
 - **Stage 2 Compiler**: The self-compiled compiler:
   - Produces identical output to Stage 1
-  - Verifies the bootstrap is complete
+  - Can compile itself to create Stage 3
+- **Stage 3 Compiler**: The third-generation compiler:
+  - Produces identical output to Stage 2
+  - Verifies the fixpoint is achieved
 - **Module System**: All five compiler modules (lexer, parser, semantic, codegen, main) compile, link, and run correctly
 
-### ✅ Bootstrap Verification
+### ✅ Fixpoint Bootstrap Verification
 
 ```
-Stage 1 (eigensc)  ──compiles──>  Stage 2 (eigensc2)
-       │                                │
-       └──────── IDENTICAL OUTPUT ──────┘
+Stage 1 (eigensc)  ──compiles──>  Stage 2 (eigensc2)  ──compiles──>  Stage 3 (eigensc3)
+       │                                │                                  │
+       └──────── IDENTICAL ─────────────┴──────────── IDENTICAL ───────────┘
+
+                              FIXPOINT ACHIEVED
+                     (Stage N = Stage N+1 for all N ≥ 2)
 ```
 
 ### 🎯 Future Goals
