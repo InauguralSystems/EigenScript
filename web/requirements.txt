@@ -1,0 +1,5 @@
+flask>=2.0.0
+gunicorn>=21.0.0
+numpy>=1.24.0
+llvmlite>=0.41.0
+eigenscript[compiler]>=0.4.1
