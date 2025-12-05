@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-12-05
+
+### 🎉 Full Bootstrap Achieved!
+
+This release completes the bootstrap process - **Stage 1 and Stage 2 compilers now produce identical output**! The self-hosted compiler can fully compile itself.
+
+### Fixed
+
+#### Bootstrap Completion
+- **External Variable Assignment**: Fixed codegen to properly handle assignment to external module variables (e.g., `parser_token_count`)
+- **Runtime Pointer Detection**: Fixed `eigen_print_val` to handle low memory addresses in non-PIE executables
+- **External Array Detection**: Modified `is_external_array` to require both module prefix AND array suffix, preventing false matches on local variables
+
+### Added
+
+- `is_known_external_scalar()` function to identify known external scalar variables from imported modules
+- Improved documentation reflecting bootstrap success
+
+### Changed
+
+- Updated `SELF_HOSTING_QUICKSTART.md` to reflect successful bootstrap verification
+- Bootstrap test script now shows Stage 1 and Stage 2 producing identical output
+
 ## [0.4.0] - 2025-12-02
 
 ### 🎉 Major Release: Self-Hosted Compiler

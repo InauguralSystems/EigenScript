@@ -32,31 +32,38 @@ EigenScript has achieved two different types of self-hosting:
    - Compiles EigenScript to LLVM IR
    - Located in `src/eigenscript/compiler/selfhost/`
 
-## Current Status (v0.4.0)
+## Current Status (v0.4.1)
+
+### 🎉 Full Bootstrap Achieved!
+
+As of v0.4.1, the EigenScript compiler achieves **full bootstrap**: Stage 1 and Stage 2 compilers produce **identical output**!
 
 ### ✅ What Works
 
-- **Reference Compiler Stage**: The Python-based reference compiler can successfully compile the self-hosted compiler
+- **Reference Compiler Stage**: The Python-based reference compiler successfully compiles the self-hosted compiler
 - **Stage 1 Compiler**: The compiled self-hosted compiler can:
-  - Parse simple EigenScript programs
+  - Parse and compile complex EigenScript programs
   - Generate valid LLVM IR output
   - Link with the EigenScript runtime library
-- **Module System**: All four compiler modules (lexer, parser, semantic, codegen) compile and link correctly
+  - **Compile itself to create Stage 2**
+- **Stage 2 Compiler**: The self-compiled compiler:
+  - Produces identical output to Stage 1
+  - Verifies the bootstrap is complete
+- **Module System**: All five compiler modules (lexer, parser, semantic, codegen, main) compile, link, and run correctly
 
-### ⚠️ Known Limitations
+### ✅ Bootstrap Verification
 
-- **Numeric Literal Bug** (Critical): Stage 1 compiler generates all numeric literals as zero. This is a systematic code generation bug in the reference compiler that affects how AST numeric values are handled. See "Troubleshooting" section for details.
-- **Parser Limitation**: The parser cannot handle blank lines inside function bodies, which prevents the compiler from compiling itself (full bootstrap)
-- **No Full Bootstrap**: Stage 1 cannot yet compile itself to produce Stage 2 due to the above limitations
+```
+Stage 1 (eigensc)  ──compiles──>  Stage 2 (eigensc2)
+       │                                │
+       └──────── IDENTICAL OUTPUT ──────┘
+```
 
 ### 🎯 Future Goals
 
-- **Fix Numeric Literal Bug**: Debug and fix the reference compiler's code generation for numeric literals in selfhost modules
-  - Root cause is in how list access patterns are compiled when variables are observed
-  - May require refactoring of the geometric tracking logic in `llvm_backend.py`
-- Enhance parser to handle blank lines in function bodies
-- Achieve full bootstrap (Stage 1 compiling itself)
-- Verify Stage 1 and Stage 2 produce identical output
+- Performance optimization of generated code
+- Additional language feature support
+- Improved error messages and diagnostics
 
 ## Architecture
 
@@ -473,7 +480,7 @@ To achieve full bootstrap (Stage 1 compiling itself), the following issues need 
 ### Related Documentation
 
 - [Meta-Circular Evaluator Guide](./meta_circular_evaluator.md) - Interpreter self-hosting
-- [CHANGELOG.md](../CHANGELOG.md) - Release history with v0.4.0 details
+- [CHANGELOG.md](../CHANGELOG.md) - Release history with v0.4.1 details
 - [Self-Hosting Roadmap](./self_hosting_roadmap.md) - Future plans
 
 ### Example Code
@@ -572,17 +579,17 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
 
 ## Conclusion
 
-The EigenScript self-hosted compiler is a significant achievement demonstrating the language's maturity and capability. While full bootstrap is not yet achieved, the foundation is solid:
+The EigenScript self-hosted compiler is a **landmark achievement** demonstrating the language's maturity and capability. **Full bootstrap has been achieved**:
 
 - ✅ All compiler modules compile successfully
 - ✅ Stage 1 compiler runs and generates valid LLVM IR
-- ⚠️ Some runtime bugs need fixing
-- 🎯 Full bootstrap is within reach
+- ✅ Stage 1 compiles itself to create Stage 2
+- ✅ Stage 1 and Stage 2 produce **identical output**
 
-This work represents ~5700 lines of EigenScript code implementing a complete compilation pipeline from source code to LLVM IR. It proves that EigenScript is a practical, powerful language capable of implementing complex systems.
+This work represents ~5700 lines of EigenScript code implementing a complete compilation pipeline from source code to LLVM IR. EigenScript joins the ranks of languages capable of compiling themselves - a rare and significant milestone in programming language development.
 
 ---
 
-**Version**: 0.4.0  
-**Last Updated**: December 2025  
-**Status**: Partial Bootstrap Achieved
+**Version**: 0.4.1
+**Last Updated**: December 2025
+**Status**: Full Bootstrap Achieved
