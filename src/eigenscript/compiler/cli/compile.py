@@ -266,6 +266,7 @@ def compile_file(
     opt_level: int = 0,
     target_triple: str = None,
     is_lib: bool = False,
+    no_runtime: bool = False,
 ):
     """Compile an EigenScript file to LLVM IR, object code, or executable."""
 
@@ -444,10 +445,12 @@ def compile_file(
                 print(f"  ✗ Verification failed: {verify_error}")
                 return 1
 
-        # Link runtime bitcode only for main programs (not libraries)
-        if not is_lib:
+        # Link runtime bitcode only for main programs (not libraries or when --no-runtime)
+        if not is_lib and not no_runtime:
             llvm_module = codegen.link_runtime_bitcode(llvm_module, target_triple)
             print(f"  ✓ Linked runtime bitcode (LTO enabled)")
+        elif no_runtime:
+            print(f"  ✓ Skipping runtime linking (--no-runtime)")
         else:
             print(f"  ✓ Library mode: runtime will be linked at final link stage")
 
@@ -555,6 +558,11 @@ Examples:
     parser.add_argument(
         "--no-verify", action="store_true", help="Skip LLVM IR verification"
     )
+    parser.add_argument(
+        "--no-runtime",
+        action="store_true",
+        help="Skip runtime bitcode linking (for separate linking with eigenvalue.o)",
+    )
 
     args = parser.parse_args()
 
@@ -571,6 +579,7 @@ Examples:
         opt_level=args.optimize,
         target_triple=args.target,
         is_lib=args.lib,
+        no_runtime=args.no_runtime,
     )
 
     sys.exit(result)

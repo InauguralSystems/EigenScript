@@ -88,7 +88,7 @@ if [ ! -f codegen.ll ]; then
 fi
 
 echo "  Compiling main.eigs..."
-eigenscript-compile "$SELFHOST_DIR/main.eigs" -o main.ll -O0
+eigenscript-compile "$SELFHOST_DIR/main.eigs" -o main.ll -O0 --no-runtime
 if [ ! -f main.ll ]; then
     echo "ERROR: Failed to compile main.eigs"
     exit 1
@@ -110,7 +110,7 @@ done
 
 # Link all modules together
 echo "  Linking stage 1 compiler..."
-gcc lexer.o parser.o semantic.o codegen.o main.o eigenvalue.o -o eigensc -lm
+gcc -no-pie lexer.o parser.o semantic.o codegen.o main.o eigenvalue.o -o eigensc -lm
 
 if [ ! -f eigensc ]; then
     echo "ERROR: Failed to create stage 1 compiler"
