@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EigenScript Playground</title>
+    <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-panel: #16213e;
+            --bg-editor: #0f0f23;
+            --accent: #e94560;
+            --accent-hover: #ff6b6b;
+            --text: #eee;
+            --text-dim: #888;
+            --success: #4ade80;
+            --error: #f87171;
+            --border: #333;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: var(--bg-panel);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent), #ff9a56);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        .version {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            background: var(--bg-dark);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--success);
+            font-size: 0.875rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+        }
+
+        .panel:last-child {
+            border-right: none;
+        }
+
+        .panel-header {
+            background: var(--bg-panel);
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-title {
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        select, button {
+            background: var(--bg-dark);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+
+        select:hover, button:hover {
+            border-color: var(--accent);
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+
+        button.primary:hover {
+            background: var(--accent-hover);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .editor-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #code {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-editor);
+            color: #9cdcfe;
+            border: none;
+            padding: 1rem;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+            outline: none;
+        }
+
+        #code::placeholder {
+            color: var(--text-dim);
+        }
+
+        .output-container {
+            flex: 1;
+            background: var(--bg-editor);
+            overflow: auto;
+        }
+
+        #output {
+            padding: 1rem;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            min-height: 100%;
+        }
+
+        #output.error {
+            color: var(--error);
+        }
+
+        #output.success {
+            color: var(--success);
+        }
+
+        .output-placeholder {
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        footer {
+            background: var(--bg-panel);
+            padding: 0.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .stats {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .stat {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+        }
+
+        .stat-value {
+            color: var(--text);
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            main {
+                flex-direction: column;
+            }
+
+            .panel {
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">E</div>
+            <h1>Eigen<span>Script</span> Playground</h1>
+            <span class="version">v0.4.1</span>
+        </div>
+        <div class="status">
+            <div class="status-dot"></div>
+            Ready
+        </div>
+    </header>
+
+    <main>
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title">Editor</span>
+                <div class="toolbar">
+                    <select id="examples" onchange="loadExample(this.value)">
+                        <option value="">Load Example...</option>
+                        <option value="hello">Hello World</option>
+                        <option value="convergence">Convergence</option>
+                        <option value="factorial">Factorial</option>
+                        <option value="xor">XOR Demo</option>
+                        <option value="matrix">Matrix Operations</option>
+                        <option value="higher_order">Higher-Order Functions</option>
+                        <option value="geometric">Geometric Introspection</option>
+                    </select>
+                    <button class="primary" id="runBtn" onclick="runCode()">&#9654; Run</button>
+                    <button onclick="clearEditor()">Clear</button>
+                </div>
+            </div>
+            <div class="editor-container">
+                <textarea id="code" placeholder="# Write your EigenScript code here...
+x is 42
+print of x" spellcheck="false"># Hello World
+print of "Hello from EigenScript!"
+
+x is 5
+y is 3
+print of "Sum:"
+print of x + y</textarea>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title">Output</span>
+                <button onclick="clearOutput()">Clear</button>
+            </div>
+            <div class="output-container">
+                <div id="output"><span class="output-placeholder">Output will appear here...</span></div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-label">Lines:</span>
+                <span class="stat-value" id="lineCount">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Execution:</span>
+                <span class="stat-value" id="execTime">-</span>
+            </div>
+        </div>
+        <div>
+            <a href="https://github.com/InauguralSystems/EigenScript" target="_blank">GitHub</a>
+            &nbsp;|&nbsp;
+            <a href="https://inauguralsystems.github.io/EigenScript/" target="_blank">Docs</a>
+        </div>
+    </footer>
+
+    <script>
+        const codeEditor = document.getElementById('code');
+        const outputDiv = document.getElementById('output');
+        const runBtn = document.getElementById('runBtn');
+        const lineCount = document.getElementById('lineCount');
+        const execTime = document.getElementById('execTime');
+
+        // Update line count on input
+        codeEditor.addEventListener('input', updateLineCount);
+        updateLineCount();
+
+        function updateLineCount() {
+            const lines = codeEditor.value.split('\n').length;
+            lineCount.textContent = lines;
+        }
+
+        async function runCode() {
+            const code = codeEditor.value;
+            if (!code.trim()) {
+                showOutput('No code to run', true);
+                return;
+            }
+
+            runBtn.disabled = true;
+            runBtn.textContent = 'Running...';
+            outputDiv.className = '';
+            outputDiv.textContent = 'Executing...';
+
+            const startTime = performance.now();
+
+            try {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+
+                const result = await response.json();
+                const elapsed = performance.now() - startTime;
+                execTime.textContent = `${elapsed.toFixed(0)}ms`;
+
+                if (result.error) {
+                    showOutput(result.error + (result.output ? '\n\n' + result.output : ''), true);
+                } else {
+                    showOutput(result.output || 'No output', false);
+                }
+            } catch (err) {
+                showOutput('Network error: ' + err.message, true);
+            } finally {
+                runBtn.disabled = false;
+                runBtn.innerHTML = '&#9654; Run';
+            }
+        }
+
+        function showOutput(text, isError) {
+            outputDiv.textContent = text;
+            outputDiv.className = isError ? 'error' : 'success';
+        }
+
+        async function loadExample(name) {
+            if (!name) return;
+
+            try {
+                const response = await fetch(`/examples/${name}`);
+                const result = await response.json();
+                if (result.code) {
+                    codeEditor.value = result.code;
+                    updateLineCount();
+                }
+            } catch (err) {
+                console.error('Failed to load example:', err);
+            }
+
+            document.getElementById('examples').value = '';
+        }
+
+        function clearEditor() {
+            codeEditor.value = '';
+            updateLineCount();
+        }
+
+        function clearOutput() {
+            outputDiv.innerHTML = '<span class="output-placeholder">Output will appear here...</span>';
+            outputDiv.className = '';
+            execTime.textContent = '-';
+        }
+
+        // Keyboard shortcut: Ctrl/Cmd + Enter to run
+        codeEditor.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                runCode();
+            }
+        });
+    </script>
+</body>
+</html>
