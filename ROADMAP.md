@@ -1,13 +1,13 @@
 # EigenScript Roadmap 🗺️
 
-**Version:** v0.4.0
-**Last Updated:** 2025-12-02
+**Version:** v0.4.1
+**Last Updated:** 2025-12-05
 
 ## Overview
 
-EigenScript v0.4.0 marks a **historic milestone**: the language is now **self-hosting**! The EigenScript compiler, written entirely in EigenScript, can compile itself. This release also includes comprehensive AI/ML matrix operations, neural network activations, and full language feature support in the self-hosted compiler.
+EigenScript v0.4.1 achieves **full bootstrap**: Stage 1 and Stage 2 compilers produce **identical output**! The self-hosted compiler can now fully compile itself, completing the bootstrapping process. This release also includes comprehensive AI/ML matrix operations, neural network activations, and full language feature support.
 
-With 900+ passing tests and the self-hosting milestone achieved, the focus ahead is on **full bootstrapping**, additional language features, and ecosystem growth.
+With 900+ passing tests and full bootstrap achieved, the focus ahead is on additional language features, optimization, and ecosystem growth.
 
 ---
 

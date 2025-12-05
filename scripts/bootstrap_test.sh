@@ -8,23 +8,22 @@
 # 3. Stage 1 compiler compiles itself -> eigensc2 (stage 2)
 # 4. Compare stage 1 and stage 2 outputs (should be identical)
 #
-# Current Status (v0.4.0):
+# Current Status (v0.4.1):
 # - lexer.eigs: COMPILES ✓
 # - parser.eigs: COMPILES ✓
 # - semantic.eigs: COMPILES ✓
-# - codegen.eigs: COMPILES ✓ (fixed type inference, uses lexer_get_string)
+# - codegen.eigs: COMPILES ✓
 # - main.eigs: COMPILES ✓
 # - LINKING: SUCCESS ✓ -> eigensc binary created
 # - RUNTIME: WORKING ✓ - stage 1 compiler generates valid, executable LLVM IR
-#   - Module init calls now working (parser/lexer globals initialized)
-#   - String printing now works (STRING_PTR handling added)
-#   - EigenValue pointer initialization fix (conditional branch handling)
-#   - Simple programs compile and run correctly!
-# - BOOTSTRAP: PARTIAL - stage 1 can compile simple programs
-#   - Parser limitation: blank lines inside function bodies not supported
-#   - main.eigs cannot be parsed yet due to blank line issue in parser.eigs
+# - BOOTSTRAP: COMPLETE ✓ - Stage 1 and Stage 2 produce IDENTICAL output!
 #
-# Fixes applied:
+# Key fixes for bootstrap (v0.4.1):
+# - External variable assignment in codegen (parser_token_count, etc.)
+# - Runtime pointer detection for low memory addresses (non-PIE)
+# - External array detection with proper prefix/suffix matching
+#
+# Historical fixes applied:
 # - Reference compiler type inference for variable reassignment
 # - escape_string builtin handling in reference compiler
 # - Cross-module function calls via mangled names (lexer_get_string)
