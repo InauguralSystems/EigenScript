@@ -475,6 +475,30 @@ class StructLiteral(ASTNode):
 
 
 @dataclass
+class GPUBlock(ASTNode):
+    """
+    Represents a GPU compute block.
+
+    Groups operations that should be executed on the GPU,
+    enabling batch processing and minimizing host↔device transfers.
+
+    Semantic: GPU blocks use "GPU-lite" EigenValues that only track
+    value + gradient on device. Full geometric tracking (stability,
+    history) is synced to host on observation.
+
+    Example:
+        gpu:
+            result is matmul of [A, B]
+            normalized is result / norm of result
+    """
+
+    body: List[ASTNode]
+
+    def __repr__(self) -> str:
+        return f"GPUBlock(body={len(self.body)})"
+
+
+@dataclass
 class Program(ASTNode):
     """
     Represents a complete EigenScript program.
@@ -618,6 +642,10 @@ class Parser:
         # STRUCT - struct type definition (for self-hosting)
         if token.type == TokenType.STRUCT:
             return self.parse_struct_def()
+
+        # GPU - GPU compute block
+        if token.type == TokenType.GPU:
+            return self.parse_gpu_block()
 
         # IF - conditional
         if token.type == TokenType.IF:
@@ -971,6 +999,32 @@ class Parser:
             self.advance()
 
         return StructDef(name, fields)
+
+    def parse_gpu_block(self) -> GPUBlock:
+        """
+        Parse a GPU compute block.
+
+        Grammar: GPU COLON NEWLINE INDENT statement+ DEDENT
+
+        Example:
+            gpu:
+                result is matmul of [A, B]
+                normalized is result / norm of result
+        """
+        # Consume GPU
+        self.expect(TokenType.GPU)
+
+        # Expect colon
+        self.expect(TokenType.COLON)
+
+        # Consume all newlines (handles comment-only lines)
+        while self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            self.advance()
+
+        # Parse block
+        body = self.parse_block()
+
+        return GPUBlock(body)
 
     def parse_conditional(self) -> Conditional:
         """

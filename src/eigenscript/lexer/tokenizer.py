@@ -33,6 +33,7 @@ class TokenType(Enum):
     IMPORT = "IMPORT"
     FROM = "FROM"
     STRUCT = "STRUCT"  # User-defined types for self-hosting
+    GPU = "GPU"  # GPU compute block keyword
 
     # Interrogatives (geometric projection operators)
     WHO = "WHO"
@@ -144,6 +145,7 @@ class Tokenizer:
         "import": TokenType.IMPORT,
         "from": TokenType.FROM,
         "struct": TokenType.STRUCT,
+        "gpu": TokenType.GPU,
         # Interrogatives
         "who": TokenType.WHO,
         "what": TokenType.WHAT,
