@@ -40,6 +40,7 @@ from eigenscript.parser.ast_builder import (
 
 class WGSLType(Enum):
     """WGSL data types."""
+
     F32 = "f32"
     I32 = "i32"
     U32 = "u32"
@@ -54,6 +55,7 @@ class WGSLType(Enum):
 @dataclass
 class WGSLBuffer:
     """Represents a WebGPU buffer binding."""
+
     name: str
     binding: int
     group: int
@@ -65,6 +67,7 @@ class WGSLBuffer:
 @dataclass
 class WGSLKernel:
     """Represents a generated WGSL compute kernel."""
+
     name: str
     source: str
     workgroup_size: Tuple[int, int, int]
@@ -133,11 +136,7 @@ struct EigenLite {
 """
 
     def generate_matmul_kernel(
-        self,
-        m: int,
-        n: int,
-        k: int,
-        tile_size: int = 16
+        self, m: int, n: int, k: int, tile_size: int = 16
     ) -> WGSLKernel:
         """
         Generate a tiled matrix multiplication kernel.
@@ -161,10 +160,23 @@ struct EigenLite {
         self._reset_bindings()
 
         buffers = [
-            WGSLBuffer("matrix_a", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", m * k),
-            WGSLBuffer("matrix_b", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", k * n),
-            WGSLBuffer("matrix_c", self._next_binding(), 0, WGSLType.ARRAY_F32, "read_write", m * n),
-            WGSLBuffer("dimensions", self._next_binding(), 0, WGSLType.VEC3F, "read"),  # M, N, K
+            WGSLBuffer(
+                "matrix_a", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", m * k
+            ),
+            WGSLBuffer(
+                "matrix_b", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", k * n
+            ),
+            WGSLBuffer(
+                "matrix_c",
+                self._next_binding(),
+                0,
+                WGSLType.ARRAY_F32,
+                "read_write",
+                m * n,
+            ),
+            WGSLBuffer(
+                "dimensions", self._next_binding(), 0, WGSLType.VEC3F, "read"
+            ),  # M, N, K
         ]
 
         source = f"""
@@ -245,7 +257,7 @@ fn main(
             source=source,
             workgroup_size=(tile_size, tile_size, 1),
             buffers=buffers,
-            entry_point="main"
+            entry_point="main",
         )
 
     def generate_dot_kernel(self, n: int) -> WGSLKernel:
@@ -267,8 +279,12 @@ fn main(
         workgroup_size = 256
 
         buffers = [
-            WGSLBuffer("vector_a", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n),
-            WGSLBuffer("vector_b", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n),
+            WGSLBuffer(
+                "vector_a", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n
+            ),
+            WGSLBuffer(
+                "vector_b", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n
+            ),
             WGSLBuffer("result", self._next_binding(), 0, WGSLType.F32, "read_write"),
             WGSLBuffer("length", self._next_binding(), 0, WGSLType.U32, "read"),
         ]
@@ -324,7 +340,7 @@ fn main(
             source=source,
             workgroup_size=(workgroup_size, 1, 1),
             buffers=buffers,
-            entry_point="main"
+            entry_point="main",
         )
 
     def generate_norm_kernel(self, n: int) -> WGSLKernel:
@@ -344,7 +360,9 @@ fn main(
         workgroup_size = 256
 
         buffers = [
-            WGSLBuffer("vector", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n),
+            WGSLBuffer(
+                "vector", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n
+            ),
             WGSLBuffer("result", self._next_binding(), 0, WGSLType.F32, "read_write"),
             WGSLBuffer("length", self._next_binding(), 0, WGSLType.U32, "read"),
         ]
@@ -404,14 +422,10 @@ fn finalize() {{
             source=source,
             workgroup_size=(workgroup_size, 1, 1),
             buffers=buffers,
-            entry_point="main"
+            entry_point="main",
         )
 
-    def generate_elementwise_kernel(
-        self,
-        operation: str,
-        n: int
-    ) -> WGSLKernel:
+    def generate_elementwise_kernel(self, operation: str, n: int) -> WGSLKernel:
         """
         Generate an element-wise operation kernel.
 
@@ -431,9 +445,18 @@ fn finalize() {{
         # Determine operation and buffers
         if operation == "scale":
             buffers = [
-                WGSLBuffer("input", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n),
+                WGSLBuffer(
+                    "input", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n
+                ),
                 WGSLBuffer("scalar", self._next_binding(), 0, WGSLType.F32, "read"),
-                WGSLBuffer("output", self._next_binding(), 0, WGSLType.ARRAY_F32, "read_write", n),
+                WGSLBuffer(
+                    "output",
+                    self._next_binding(),
+                    0,
+                    WGSLType.ARRAY_F32,
+                    "read_write",
+                    n,
+                ),
                 WGSLBuffer("length", self._next_binding(), 0, WGSLType.U32, "read"),
             ]
             op_code = "input[gid] * scalar"
@@ -445,9 +468,20 @@ fn finalize() {{
 """
         else:
             buffers = [
-                WGSLBuffer("input_a", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n),
-                WGSLBuffer("input_b", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n),
-                WGSLBuffer("output", self._next_binding(), 0, WGSLType.ARRAY_F32, "read_write", n),
+                WGSLBuffer(
+                    "input_a", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n
+                ),
+                WGSLBuffer(
+                    "input_b", self._next_binding(), 0, WGSLType.ARRAY_F32, "read", n
+                ),
+                WGSLBuffer(
+                    "output",
+                    self._next_binding(),
+                    0,
+                    WGSLType.ARRAY_F32,
+                    "read_write",
+                    n,
+                ),
                 WGSLBuffer("length", self._next_binding(), 0, WGSLType.U32, "read"),
             ]
 
@@ -485,7 +519,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {{
             source=source,
             workgroup_size=(workgroup_size, 1, 1),
             buffers=buffers,
-            entry_point="main"
+            entry_point="main",
         )
 
     def generate_from_gpu_block(self, node: GPUBlock) -> List[WGSLKernel]:
@@ -590,7 +624,7 @@ def generate_webgpu_runtime() -> str:
     - Host↔Device transfers
     - GPU-lite EigenValue synchronization
     """
-    return '''
+    return """
 /**
  * EigenScript WebGPU Runtime
  *
@@ -798,4 +832,4 @@ class EigenGPU {
 if (typeof module !== "undefined") {
     module.exports = { EigenGPU };
 }
-'''
+"""
