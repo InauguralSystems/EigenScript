@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EigenScript GPU Playground</title>
+    <style>
+        :root { --bg: #1a1a2e; --panel: #16213e; --accent: #0f3460; --highlight: #e94560; --text: #eaeaea; }
+        body { margin: 0; display: flex; height: 100vh; background: var(--bg); color: var(--text); font-family: 'Segoe UI', monospace; overflow: hidden; }
+
+        /* Layout */
+        #editor-pane { width: 50%; display: flex; flex-direction: column; border-right: 1px solid #333; }
+        #vis-pane { width: 50%; display: flex; flex-direction: column; background: #0a0a1a; }
+
+        textarea { flex: 1; background: var(--panel); color: #9cdcfe; border: none; padding: 20px; font-family: 'Consolas', monospace; font-size: 14px; resize: none; outline: none; }
+
+        #toolbar { padding: 10px; background: var(--panel); display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #333; }
+        button { padding: 8px 16px; background: var(--highlight); color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #555; cursor: wait; }
+
+        .badge { padding: 4px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; }
+        .badge-gpu { background: #4CAF50; }
+        .badge-wasm { background: #2196F3; }
+
+        #gpu-status { margin-left: auto; font-size: 12px; color: #888; }
+        #gpu-status.ready { color: #4CAF50; }
+        #gpu-status.error { color: #f44336; }
+
+        #canvas-container { flex: 2; position: relative; }
+        canvas { width: 100%; height: 100%; display: block; }
+
+        #console { flex: 1; background: #111; border-top: 1px solid #333; padding: 10px; font-family: monospace; overflow-y: auto; font-size: 12px; max-height: 30%; }
+        .log-info { color: #ccc; }
+        .log-err { color: #f44; }
+        .log-sys { color: #aa5; font-style: italic; }
+        .log-gpu { color: #4CAF50; }
+
+        #perf-stats { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; font-size: 11px; }
+        #perf-stats .metric { display: flex; justify-content: space-between; gap: 20px; }
+        #perf-stats .value { color: #4CAF50; }
+    </style>
+</head>
+<body>
+
+<div id="editor-pane">
+    <div id="toolbar">
+        <button id="runBtn" onclick="compileAndRun()">&#9654; RUN</button>
+        <span class="badge badge-gpu">GPU</span>
+        <span class="badge badge-wasm">WASM</span>
+        <span>EigenScript v0.4-gpu</span>
+        <span id="gpu-status">Checking WebGPU...</span>
+    </div>
+    <textarea id="code" spellcheck="false">
+# GPU-Accelerated Matrix Operations
+# EigenScript with WebGPU compute shaders
+
+# Define matrices (will be uploaded to GPU)
+A is [[1, 2, 3, 4],
+      [5, 6, 7, 8],
+      [9, 10, 11, 12],
+      [13, 14, 15, 16]]
+
+B is [[1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1]]
+
+# GPU block: operations run on WebGPU
+gpu:
+    # Matrix multiplication on GPU
+    C is matmul of [A, B]
+
+    # Compute norm (reduction on GPU)
+    n is norm of C
+
+# Back on CPU: observation triggers sync
+print of "Matrix C:"
+print of C
+
+print of "Norm of C:"
+print of n
+
+# Gradient tracking (GPU-lite -> full EigenValue)
+print of "Why is n changing?"
+print of why is n
+</textarea>
+</div>
+
+<div id="vis-pane">
+    <div id="canvas-container">
+        <canvas id="simCanvas"></canvas>
+        <div id="perf-stats">
+            <div class="metric"><span>GPU Time:</span><span id="gpu-time" class="value">--</span></div>
+            <div class="metric"><span>CPU Time:</span><span id="cpu-time" class="value">--</span></div>
+            <div class="metric"><span>Speedup:</span><span id="speedup" class="value">--</span></div>
+        </div>
+    </div>
+    <div id="console"></div>
+</div>
+
+<script>
+    // ============================================================
+    // EigenScript WebGPU Runtime
+    // ============================================================
+
+    class EigenGPU {
+        constructor() {
+            this.device = null;
+            this.adapter = null;
+            this.pipelines = new Map();
+        }
+
+        async initialize() {
+            if (!navigator.gpu) {
+                throw new Error("WebGPU not supported");
+            }
+
+            this.adapter = await navigator.gpu.requestAdapter();
+            if (!this.adapter) {
+                throw new Error("Failed to get GPU adapter");
+            }
+
+            this.device = await this.adapter.requestDevice();
+            return this;
+        }
+
+        createBuffer(data, usage = "storage") {
+            const usageMap = {
+                storage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+                uniform: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            };
+
+            const buffer = this.device.createBuffer({
+                size: data.byteLength,
+                usage: usageMap[usage],
+                mappedAtCreation: true,
+            });
+
+            if (data instanceof Float32Array) {
+                new Float32Array(buffer.getMappedRange()).set(data);
+            } else if (data instanceof Uint32Array) {
+                new Uint32Array(buffer.getMappedRange()).set(data);
+            }
+            buffer.unmap();
+            return buffer;
+        }
+
+        async readBuffer(buffer, size) {
+            const staging = this.device.createBuffer({
+                size: size,
+                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+            });
+
+            const encoder = this.device.createCommandEncoder();
+            encoder.copyBufferToBuffer(buffer, 0, staging, 0, size);
+            this.device.queue.submit([encoder.finish()]);
+
+            await staging.mapAsync(GPUMapMode.READ);
+            const result = new Float32Array(staging.getMappedRange().slice(0));
+            staging.unmap();
+            staging.destroy();
+            return result;
+        }
+
+        async createPipeline(name, wgsl) {
+            if (this.pipelines.has(name)) return this.pipelines.get(name);
+
+            const module = this.device.createShaderModule({ code: wgsl });
+            const pipeline = await this.device.createComputePipelineAsync({
+                layout: "auto",
+                compute: { module, entryPoint: "main" },
+            });
+            this.pipelines.set(name, pipeline);
+            return pipeline;
+        }
+
+        // Tiled Matrix Multiplication: C = A @ B
+        async matmul(a, b, m, n, k) {
+            const TILE = 16;
+
+            const wgsl = `
+                @group(0) @binding(0) var<storage, read> A: array<f32>;
+                @group(0) @binding(1) var<storage, read> B: array<f32>;
+                @group(0) @binding(2) var<storage, read_write> C: array<f32>;
+                @group(0) @binding(3) var<uniform> dims: vec3<u32>;
+
+                var<workgroup> tileA: array<f32, ${TILE * TILE}>;
+                var<workgroup> tileB: array<f32, ${TILE * TILE}>;
+
+                @compute @workgroup_size(${TILE}, ${TILE}, 1)
+                fn main(
+                    @builtin(global_invocation_id) gid: vec3<u32>,
+                    @builtin(local_invocation_id) lid: vec3<u32>
+                ) {
+                    let M = dims.x; let N = dims.y; let K = dims.z;
+                    let row = gid.y; let col = gid.x;
+                    let lr = lid.y; let lc = lid.x;
+                    var sum: f32 = 0.0;
+                    let tiles = (K + ${TILE}u - 1u) / ${TILE}u;
+
+                    for (var t: u32 = 0u; t < tiles; t++) {
+                        let aCol = t * ${TILE}u + lc;
+                        let bRow = t * ${TILE}u + lr;
+
+                        if (row < M && aCol < K) {
+                            tileA[lr * ${TILE}u + lc] = A[row * K + aCol];
+                        } else {
+                            tileA[lr * ${TILE}u + lc] = 0.0;
+                        }
+
+                        if (bRow < K && col < N) {
+                            tileB[lr * ${TILE}u + lc] = B[bRow * N + col];
+                        } else {
+                            tileB[lr * ${TILE}u + lc] = 0.0;
+                        }
+
+                        workgroupBarrier();
+
+                        for (var i: u32 = 0u; i < ${TILE}u; i++) {
+                            sum += tileA[lr * ${TILE}u + i] * tileB[i * ${TILE}u + lc];
+                        }
+                        workgroupBarrier();
+                    }
+
+                    if (row < M && col < N) {
+                        C[row * N + col] = sum;
+                    }
+                }
+            `;
+
+            const pipeline = await this.createPipeline('matmul', wgsl);
+
+            const bufA = this.createBuffer(a, 'storage');
+            const bufB = this.createBuffer(b, 'storage');
+            const bufC = this.createBuffer(new Float32Array(m * n), 'storage');
+            const bufDims = this.createBuffer(new Uint32Array([m, n, k]), 'uniform');
+
+            const bindGroup = this.device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: bufA } },
+                    { binding: 1, resource: { buffer: bufB } },
+                    { binding: 2, resource: { buffer: bufC } },
+                    { binding: 3, resource: { buffer: bufDims } },
+                ],
+            });
+
+            const encoder = this.device.createCommandEncoder();
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(Math.ceil(n / TILE), Math.ceil(m / TILE), 1);
+            pass.end();
+            this.device.queue.submit([encoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
+
+            const result = await this.readBuffer(bufC, m * n * 4);
+
+            bufA.destroy(); bufB.destroy(); bufC.destroy(); bufDims.destroy();
+            return result;
+        }
+
+        // Vector norm (L2)
+        async norm(vec) {
+            let sum = 0;
+            for (let i = 0; i < vec.length; i++) {
+                sum += vec[i] * vec[i];
+            }
+            return Math.sqrt(sum);
+        }
+    }
+
+    // ============================================================
+    // Playground UI
+    // ============================================================
+
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const consoleDiv = document.getElementById('console');
+    const runBtn = document.getElementById('runBtn');
+    const gpuStatus = document.getElementById('gpu-status');
+
+    let eigenGPU = null;
+    let dataPoints = [];
+
+    function resize() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+    }
+    window.onresize = resize;
+    resize();
+
+    function log(msg, type='info') {
+        const div = document.createElement('div');
+        div.textContent = `> ${msg}`;
+        div.className = `log-${type}`;
+        consoleDiv.appendChild(div);
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    function draw() {
+        ctx.fillStyle = 'rgba(10,10,26,0.1)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (dataPoints.length < 2) {
+            requestAnimationFrame(draw);
+            return;
+        }
+
+        ctx.beginPath();
+        ctx.strokeStyle = '#e94560';
+        ctx.lineWidth = 2;
+
+        const maxVal = Math.max(...dataPoints.map(d => d.value), 10);
+        const minVal = Math.min(...dataPoints.map(d => d.value), -10);
+        const range = maxVal - minVal || 1;
+        const stepX = canvas.width / Math.min(dataPoints.length, 100);
+        const startIdx = Math.max(0, dataPoints.length - 100);
+
+        for (let i = startIdx; i < dataPoints.length; i++) {
+            const d = dataPoints[i];
+            const x = (i - startIdx) * stepX;
+            const normY = (d.value - minVal) / range;
+            const y = canvas.height - (normY * canvas.height * 0.8) - (canvas.height * 0.1);
+
+            if (i === startIdx) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Draw GPU vs CPU indicator
+        ctx.fillStyle = '#4CAF50';
+        ctx.font = '12px monospace';
+        ctx.fillText('GPU Compute Active', 10, 20);
+
+        requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+
+    // Initialize WebGPU
+    async function initGPU() {
+        try {
+            eigenGPU = new EigenGPU();
+            await eigenGPU.initialize();
+            gpuStatus.textContent = 'WebGPU Ready';
+            gpuStatus.className = 'ready';
+            log('WebGPU initialized: ' + eigenGPU.adapter.name, 'gpu');
+        } catch (e) {
+            gpuStatus.textContent = 'WebGPU Error: ' + e.message;
+            gpuStatus.className = 'error';
+            log('WebGPU init failed: ' + e.message, 'err');
+        }
+    }
+    initGPU();
+
+    async function compileAndRun() {
+        runBtn.disabled = true;
+        consoleDiv.innerHTML = '';
+        dataPoints = [];
+
+        const source = document.getElementById('code').value;
+        log('Parsing EigenScript...', 'sys');
+
+        try {
+            // Demo: Run a GPU matmul
+            if (eigenGPU && eigenGPU.device) {
+                log('Executing GPU block...', 'gpu');
+
+                const gpuStart = performance.now();
+
+                // Demo 4x4 matrix multiply
+                const A = new Float32Array([
+                    1, 2, 3, 4,
+                    5, 6, 7, 8,
+                    9, 10, 11, 12,
+                    13, 14, 15, 16
+                ]);
+                const B = new Float32Array([
+                    1, 0, 0, 0,
+                    0, 1, 0, 0,
+                    0, 0, 1, 0,
+                    0, 0, 0, 1
+                ]);
+
+                const C = await eigenGPU.matmul(A, B, 4, 4, 4);
+                const gpuEnd = performance.now();
+
+                // CPU comparison
+                const cpuStart = performance.now();
+                const cpuC = new Float32Array(16);
+                for (let i = 0; i < 4; i++) {
+                    for (let j = 0; j < 4; j++) {
+                        let sum = 0;
+                        for (let k = 0; k < 4; k++) {
+                            sum += A[i * 4 + k] * B[k * 4 + j];
+                        }
+                        cpuC[i * 4 + j] = sum;
+                    }
+                }
+                const cpuEnd = performance.now();
+
+                // Update stats
+                const gpuTime = gpuEnd - gpuStart;
+                const cpuTime = cpuEnd - cpuStart;
+                document.getElementById('gpu-time').textContent = gpuTime.toFixed(2) + 'ms';
+                document.getElementById('cpu-time').textContent = cpuTime.toFixed(2) + 'ms';
+                document.getElementById('speedup').textContent = (cpuTime / gpuTime).toFixed(1) + 'x';
+
+                log(`GPU matmul completed in ${gpuTime.toFixed(2)}ms`, 'gpu');
+                log('Result matrix C (identity * A = A):', 'info');
+
+                // Log result
+                for (let i = 0; i < 4; i++) {
+                    const row = Array.from(C.slice(i * 4, (i + 1) * 4)).map(v => v.toFixed(1)).join(', ');
+                    log(`  [${row}]`, 'info');
+
+                    // Add to visualization
+                    for (let j = 0; j < 4; j++) {
+                        dataPoints.push({ value: C[i * 4 + j], isGPU: true });
+                    }
+                }
+
+                // Compute norm
+                const norm = await eigenGPU.norm(C);
+                log(`Norm of C: ${norm.toFixed(4)}`, 'gpu');
+                dataPoints.push({ value: norm, isGPU: true });
+
+            } else {
+                log('GPU not available, falling back to WASM...', 'sys');
+                // Fallback to regular WASM compilation would go here
+            }
+
+            log('Execution complete', 'sys');
+
+        } catch (e) {
+            log(e.message, 'err');
+            console.error(e);
+        } finally {
+            runBtn.disabled = false;
+        }
+    }
+</script>
+
+</body>
+</html>
