@@ -157,7 +157,9 @@ class ClarityTracker:
             clarity_type=clarity_type,
             assumptions=assumptions or [],
             hypothesis=hypothesis,
-            verified_at=self.iteration if clarity_type == ClarityType.CLARIFIED else None,
+            verified_at=(
+                self.iteration if clarity_type == ClarityType.CLARIFIED else None
+            ),
         )
 
         self.bindings[name] = state
@@ -263,11 +265,7 @@ class ClarityTracker:
         Returns:
             List of binding names that need clarification
         """
-        return [
-            name
-            for name, state in self.bindings.items()
-            if not state.is_clear()
-        ]
+        return [name for name, state in self.bindings.items() if not state.is_clear()]
 
     def compute_clarity_score(self) -> float:
         """
@@ -439,7 +437,10 @@ class ClarityExplainer:
             if state.assumptions:
                 print(f"  └─ detected assumptions:", file=sys.stderr)
                 for assumption in state.assumptions[:3]:
-                    print(f"     • {assumption.name}: {assumption.context}", file=sys.stderr)
+                    print(
+                        f"     • {assumption.name}: {assumption.context}",
+                        file=sys.stderr,
+                    )
 
         if interpretations:
             print(f"  └─ possible interpretations:", file=sys.stderr)
@@ -511,7 +512,7 @@ class ClarityExplainer:
         print(f"  └─ binding: {self._color(binding, 'cyan')}", file=sys.stderr)
 
         if hypothesis:
-            print(f"  └─ hypothesis: \"{hypothesis}\"", file=sys.stderr)
+            print(f'  └─ hypothesis: "{hypothesis}"', file=sys.stderr)
             print(
                 f"  └─ {self._color('awaiting verification', 'yellow')}",
                 file=sys.stderr,
@@ -876,7 +877,10 @@ class ActiveListener:
 
         if self.interactive:
             # Print the clarification request
-            print(f"\n{self._color('⚡ Clarification needed:', 'yellow')}", file=sys.stderr)
+            print(
+                f"\n{self._color('⚡ Clarification needed:', 'yellow')}",
+                file=sys.stderr,
+            )
             print(f"   {message}", file=sys.stderr)
             print(file=sys.stderr)
 
@@ -888,15 +892,23 @@ class ActiveListener:
             # Get user input
             while True:
                 try:
-                    choice = input(f"   {self._color('Which approach?', 'bold')} [1-{len(options)}]: ")
+                    choice = input(
+                        f"   {self._color('Which approach?', 'bold')} [1-{len(options)}]: "
+                    )
                     choice_idx = int(choice) - 1
                     if 0 <= choice_idx < len(options):
                         chosen_key = options[choice_idx][0]
                         self._log_clarification(ambiguity, chosen_key)
                         return chosen_key
-                    print(f"   Please enter a number between 1 and {len(options)}", file=sys.stderr)
+                    print(
+                        f"   Please enter a number between 1 and {len(options)}",
+                        file=sys.stderr,
+                    )
                 except ValueError:
-                    print(f"   Please enter a number between 1 and {len(options)}", file=sys.stderr)
+                    print(
+                        f"   Please enter a number between 1 and {len(options)}",
+                        file=sys.stderr,
+                    )
                 except EOFError:
                     # Non-interactive fallback
                     return options[0][0]
@@ -911,12 +923,14 @@ class ActiveListener:
         choice: str,
     ) -> None:
         """Log a clarification for future reference."""
-        self.clarification_log.append({
-            "ambiguity_type": ambiguity["type"],
-            "message": ambiguity["message"],
-            "choice": choice,
-            "context": ambiguity.get("context", {}),
-        })
+        self.clarification_log.append(
+            {
+                "ambiguity_type": ambiguity["type"],
+                "message": ambiguity["message"],
+                "choice": choice,
+                "context": ambiguity.get("context", {}),
+            }
+        )
 
     def get_pending_clarifications(self) -> List[Dict[str, Any]]:
         """Get list of pending clarifications that weren't resolved interactively."""
@@ -1027,15 +1041,23 @@ class DialogueManager:
 
         while True:
             try:
-                choice = input(f"  {self._color('Your choice', 'bold')} [1-{len(options)}]: ")
+                choice = input(
+                    f"  {self._color('Your choice', 'bold')} [1-{len(options)}]: "
+                )
                 choice_idx = int(choice) - 1
                 if 0 <= choice_idx < len(options):
                     chosen_key = options[choice_idx][0]
                     self._log_dialogue("intent_request", what, chosen_key)
                     return chosen_key
-                print(f"  Please enter a number between 1 and {len(options)}", file=sys.stderr)
+                print(
+                    f"  Please enter a number between 1 and {len(options)}",
+                    file=sys.stderr,
+                )
             except ValueError:
-                print(f"  Please enter a number between 1 and {len(options)}", file=sys.stderr)
+                print(
+                    f"  Please enter a number between 1 and {len(options)}",
+                    file=sys.stderr,
+                )
             except EOFError:
                 return options[0][0]
 
@@ -1084,13 +1106,19 @@ class DialogueManager:
         Returns:
             True if understanding confirmed, False otherwise
         """
-        print(f"\n{self._color('?', 'yellow')} Confirming understanding:", file=sys.stderr)
+        print(
+            f"\n{self._color('?', 'yellow')} Confirming understanding:", file=sys.stderr
+        )
         print(f"  You said: {self._color(statement, 'cyan')}", file=sys.stderr)
         print(f"  I understood: {self._color(understood_as, 'green')}", file=sys.stderr)
         print(file=sys.stderr)
 
         try:
-            response = input(f"  {self._color('Is this correct?', 'bold')} [Y/n]: ").strip().lower()
+            response = (
+                input(f"  {self._color('Is this correct?', 'bold')} [Y/n]: ")
+                .strip()
+                .lower()
+            )
             confirmed = response in ("", "y", "yes")
             self._log_dialogue("confirmation", statement, confirmed)
             return confirmed
@@ -1149,11 +1177,13 @@ class DialogueManager:
         response: Any,
     ) -> None:
         """Log a dialogue exchange."""
-        self.dialogue_history.append({
-            "type": dialogue_type,
-            "subject": subject,
-            "response": response,
-        })
+        self.dialogue_history.append(
+            {
+                "type": dialogue_type,
+                "subject": subject,
+                "response": response,
+            }
+        )
 
     def get_dialogue_history(self) -> List[Dict[str, Any]]:
         """Get the full dialogue history."""
@@ -1239,7 +1269,11 @@ class InteractiveClarifier:
                     self.dialogue.acknowledge_clarification(name, custom)
                     return {"meaning": custom, "confidence": 1.0, "clarified": True}
                 except EOFError:
-                    return {"meaning": str(value), "confidence": 0.5, "clarified": False}
+                    return {
+                        "meaning": str(value),
+                        "confidence": 0.5,
+                        "clarified": False,
+                    }
 
             idx = int(chosen[1:])
             meaning = possible_meanings[idx]

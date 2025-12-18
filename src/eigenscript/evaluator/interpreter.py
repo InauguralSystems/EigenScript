@@ -313,14 +313,22 @@ class Interpreter:
         # Interactive clarification mode (Active Listener/Speaker)
         self.interactive_mode = interactive_mode
         self.active_listening = active_listening
-        self.interactive_clarifier = InteractiveClarifier(
-            interactive=interactive_mode,
-            verbose=explain_mode,
-        ) if interactive_mode or active_listening else None
-        self.active_listener = ActiveListener(
-            interactive=interactive_mode,
-            strict=False,
-        ) if active_listening else None
+        self.interactive_clarifier = (
+            InteractiveClarifier(
+                interactive=interactive_mode,
+                verbose=explain_mode,
+            )
+            if interactive_mode or active_listening
+            else None
+        )
+        self.active_listener = (
+            ActiveListener(
+                interactive=interactive_mode,
+                strict=False,
+            )
+            if active_listening
+            else None
+        )
 
         # Special lightlike OF vector
         self._of_vector = self._create_of_vector()
@@ -579,7 +587,8 @@ class Interpreter:
                                 )
                                 if result.get("clarified"):
                                     self.interactive_clarifier.dialogue.acknowledge_clarification(
-                                        binding_name, result.get("meaning", str(current_value))
+                                        binding_name,
+                                        result.get("meaning", str(current_value)),
                                     )
                         else:
                             # No hypothesis - just acknowledge
@@ -1825,9 +1834,7 @@ class Interpreter:
 
                 if assumptions:
                     # Return a list of assumption descriptions
-                    assumption_strs = [
-                        f"{a.name}: {a.context}" for a in assumptions
-                    ]
+                    assumption_strs = [f"{a.name}: {a.context}" for a in assumptions]
                     # Join as a multi-line string for readable output
                     result_str = "\n".join(assumption_strs)
                     return self.space.embed_string(result_str)

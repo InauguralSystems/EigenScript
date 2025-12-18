@@ -63,7 +63,9 @@ class TestClarityTracker:
     def test_initial_state(self, clarity_tracker):
         """Test tracker starts with no bindings."""
         assert len(clarity_tracker.bindings) == 0
-        assert clarity_tracker.compute_clarity_score() == 1.0  # No bindings = trivially clear
+        assert (
+            clarity_tracker.compute_clarity_score() == 1.0
+        )  # No bindings = trivially clear
 
     def test_register_clarified_binding(self, clarity_tracker):
         """Test registering a clarified binding."""
