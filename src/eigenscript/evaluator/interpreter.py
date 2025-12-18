@@ -7,7 +7,7 @@ in LRVM space.
 
 import numpy as np
 import os
-from typing import Dict, Optional, List, Union, Callable
+from typing import Dict, Optional, List, Union, Callable, Any
 from dataclasses import dataclass
 from eigenscript.parser.ast_builder import (
     ASTNode,
@@ -44,6 +44,9 @@ from eigenscript.runtime.clarity import (
     ClarityType,
     Assumption,
     detect_assumptions,
+    ActiveListener,
+    DialogueManager,
+    InteractiveClarifier,
 )
 from eigenscript.builtins import BuiltinFunction, get_builtins
 
@@ -260,6 +263,8 @@ class Interpreter:
         enable_convergence_detection: bool = True,
         explain_mode: bool = False,
         clarity_threshold: float = 0.95,
+        interactive_mode: bool = False,
+        active_listening: bool = False,
     ):
         """
         Initialize the interpreter.
@@ -272,6 +277,8 @@ class Interpreter:
             enable_convergence_detection: Enable automatic convergence detection (default: True)
             explain_mode: Enable explain mode for predicate evaluations (default: False)
             clarity_threshold: Clarity score threshold for the `clarified` predicate (default: 0.95)
+            interactive_mode: Enable interactive clarification prompts (default: False)
+            active_listening: Enable automatic ambiguity detection in operations (default: False)
         """
         # Geometric components
         self.space = LRVMSpace(dimension=dimension)
@@ -302,6 +309,18 @@ class Interpreter:
         self.clarity_tracker = ClarityTracker()
         self.clarity_explainer = ClarityExplainer(enabled=explain_mode)
         self.clarity_threshold = clarity_threshold
+
+        # Interactive clarification mode (Active Listener/Speaker)
+        self.interactive_mode = interactive_mode
+        self.active_listening = active_listening
+        self.interactive_clarifier = InteractiveClarifier(
+            interactive=interactive_mode,
+            verbose=explain_mode,
+        ) if interactive_mode or active_listening else None
+        self.active_listener = ActiveListener(
+            interactive=interactive_mode,
+            strict=False,
+        ) if active_listening else None
 
         # Special lightlike OF vector
         self._of_vector = self._create_of_vector()
@@ -532,6 +551,45 @@ class Interpreter:
         if isinstance(node.left, Identifier) and node.left.name.lower() == "clarify":
             if isinstance(node.right, Identifier):
                 binding_name = node.right.name
+
+                # Interactive clarification mode
+                if self.interactive_mode and self.interactive_clarifier:
+                    # Get the current value for display
+                    try:
+                        current_value = self.environment.lookup(binding_name)
+                        # Get clarity state if available
+                        clarity_state = self.clarity_tracker.get_clarity(binding_name)
+
+                        if clarity_state and clarity_state.hypothesis:
+                            # Show the hypothesis and ask for confirmation
+                            confirmed = self.interactive_clarifier.dialogue.confirm_understanding(
+                                statement=f"{binding_name} might is {current_value}",
+                                understood_as=clarity_state.hypothesis,
+                            )
+                            if not confirmed:
+                                # User didn't confirm - ask what they meant
+                                result = self.interactive_clarifier.clarify_binding(
+                                    name=binding_name,
+                                    value=current_value,
+                                    possible_meanings=[
+                                        f"Keep as '{current_value}'",
+                                        "Change the value",
+                                        "Remove this binding",
+                                    ],
+                                )
+                                if result.get("clarified"):
+                                    self.interactive_clarifier.dialogue.acknowledge_clarification(
+                                        binding_name, result.get("meaning", str(current_value))
+                                    )
+                        else:
+                            # No hypothesis - just acknowledge
+                            self.interactive_clarifier.dialogue.acknowledge_clarification(
+                                binding_name, f"value = {current_value}"
+                            )
+                    except NameError:
+                        # Binding doesn't exist yet - that's ok
+                        pass
+
                 success = self.clarity_tracker.clarify(binding_name)
                 return self.space.embed_scalar(1.0 if success else 0.0)
             else:
@@ -665,6 +723,34 @@ class Interpreter:
             # Project through inverse scaling
             assert isinstance(left, LRVMVector) and isinstance(right, LRVMVector)
             scalar = right.coords[0]
+
+            # Active listening: detect potential division by zero
+            if self.active_listener and abs(scalar) < 1e-10:
+                # Ambiguity detected - seek clarification
+                divisor_name = (
+                    node.right.name if isinstance(node.right, Identifier) else "divisor"
+                )
+                result = self.interactive_clarifier.clarify_operation(
+                    "division",
+                    {
+                        "divisor": scalar,
+                        "divisor_name": divisor_name,
+                        "proven_non_zero": False,
+                    },
+                )
+                strategy = result.get("strategy", "proceed")
+
+                if strategy == "default":
+                    # Return a default value (zero) instead of erroring
+                    return self.space.zero_vector()
+                elif strategy == "check":
+                    # User wants explicit check - raise but with helpful message
+                    raise RuntimeError(
+                        f"Division by zero: '{divisor_name}' is zero.\n"
+                        f"Consider adding: if {divisor_name} != 0: ..."
+                    )
+                # strategy == "proceed" falls through to normal error
+
             if abs(scalar) < 1e-10:
                 raise RuntimeError("Division by zero (equilibrium singularity)")
             return left.scale(1.0 / scalar)
@@ -1132,6 +1218,46 @@ class Interpreter:
         if isinstance(indexed_value, EigenList):
             # Check bounds
             if index < 0 or index >= len(indexed_value.elements):
+                # Active listening: detect out-of-bounds access
+                if self.active_listener:
+                    index_name = (
+                        node.index_expr.name
+                        if isinstance(node.index_expr, Identifier)
+                        else str(index)
+                    )
+                    list_name = (
+                        node.list_expr.name
+                        if isinstance(node.list_expr, Identifier)
+                        else "list"
+                    )
+                    result = self.interactive_clarifier.clarify_operation(
+                        "index",
+                        {
+                            "index": index,
+                            "index_name": index_name,
+                            "list_name": list_name,
+                            "list_length": len(indexed_value.elements),
+                            "proven_in_bounds": False,
+                        },
+                    )
+                    strategy = result.get("strategy", "proceed")
+
+                    if strategy == "clamp":
+                        # Clamp to valid range
+                        clamped = max(0, min(index, len(indexed_value.elements) - 1))
+                        return indexed_value.elements[clamped]
+                    elif strategy == "wrap":
+                        # Wrap around using modulo
+                        wrapped = index % len(indexed_value.elements)
+                        return indexed_value.elements[wrapped]
+                    elif strategy == "check":
+                        # User wants explicit check - raise with helpful message
+                        raise IndexError(
+                            f"List index {index} out of range (list has {len(indexed_value.elements)} elements).\n"
+                            f"Consider adding: if {index_name} < len of {list_name}: ..."
+                        )
+                    # strategy == "proceed" falls through to normal error
+
                 raise IndexError(
                     f"List index {index} out of range (list has {len(indexed_value.elements)} elements)"
                 )
@@ -1883,6 +2009,100 @@ class Interpreter:
         Check if a vector is the special OF vector.
         """
         return self.metric.is_lightlike(vector)
+
+    def _check_type_coercion(
+        self,
+        left: LRVMVector,
+        right: LRVMVector,
+        operation: str,
+    ) -> Optional[str]:
+        """
+        Check if type coercion is needed and handle via active listening.
+
+        Returns the coercion strategy or None if no coercion needed.
+
+        Args:
+            left: Left operand
+            right: Right operand
+            operation: The operation being performed
+
+        Returns:
+            Strategy string or None
+        """
+        if not self.active_listener:
+            return None
+
+        # Detect type mismatch by checking metadata
+        left_type = "string" if left.metadata.get("string_value") else "numeric"
+        right_type = "string" if right.metadata.get("string_value") else "numeric"
+
+        if left_type != right_type:
+            result = self.interactive_clarifier.clarify_operation(
+                "coercion",
+                {
+                    "from_type": right_type,
+                    "to_type": left_type,
+                    "operation": operation,
+                },
+            )
+            return result.get("strategy", "lenient")
+
+        return None
+
+    def _format_agency_error(
+        self,
+        error_type: str,
+        context: Dict[str, Any],
+    ) -> str:
+        """
+        Format an error message that preserves user agency.
+
+        Instead of dictating what went wrong, presents the situation
+        and possible interpretations.
+
+        Args:
+            error_type: Type of error
+            context: Context about the error
+
+        Returns:
+            Formatted error message
+        """
+        if error_type == "undefined_variable":
+            name = context.get("name", "unknown")
+            suggestions = context.get("suggestions", [])
+            msg = f"Variable '{name}' not found in scope.\n"
+            if suggestions:
+                msg += "Possible intentions:\n"
+                for s in suggestions[:3]:
+                    msg += f"  • Did you mean '{s}'?\n"
+            msg += "  • Define it first with: {name} is <value>\n"
+            msg += "  • Or use 'might is' for tentative binding"
+            return msg
+
+        elif error_type == "type_mismatch":
+            expected = context.get("expected", "unknown")
+            got = context.get("got", "unknown")
+            operation = context.get("operation", "operation")
+            msg = f"Type question for {operation}:\n"
+            msg += f"  Got: {got}\n"
+            msg += f"  Expected: {expected}\n"
+            msg += "Possible approaches:\n"
+            msg += f"  • Convert {got} to {expected}\n"
+            msg += f"  • Use a different operation for {got}\n"
+            msg += "  • Check if this is the intended value"
+            return msg
+
+        elif error_type == "function_not_found":
+            name = context.get("name", "unknown")
+            msg = f"Function '{name}' not found.\n"
+            msg += "Possible intentions:\n"
+            msg += f"  • Define it first with: define {name} as: ...\n"
+            msg += "  • Import from a module: from <module> import {name}\n"
+            msg += "  • Check spelling"
+            return msg
+
+        else:
+            return f"Error: {error_type} - {context}"
 
     def get_framework_strength(self) -> float:
         """

@@ -688,3 +688,636 @@ def detect_assumptions(
             )
 
     return assumptions
+
+
+class ActiveListener:
+    """
+    Makes EigenScript an active listener that detects ambiguity and seeks clarification.
+
+    The ActiveListener embodies the communication framework principle:
+    "You treat inferred intent as a hypothesis, not a fact."
+
+    Instead of silently proceeding on assumptions, the ActiveListener:
+    1. Detects when multiple interpretations are possible
+    2. Pauses execution to seek clarification
+    3. Presents options without deciding for the speaker
+    4. Records the clarified intent for future reference
+
+    Example:
+        listener = ActiveListener(interactive=True)
+
+        # When division is attempted:
+        # > Clarification needed for division operation:
+        # >   The divisor 'x' could be zero.
+        # >   1. Proceed (assuming x ≠ 0)
+        # >   2. Add explicit check
+        # >   3. Provide default value
+        # > Which approach? _
+    """
+
+    def __init__(
+        self,
+        interactive: bool = False,
+        strict: bool = False,
+        use_color: bool = True,
+    ):
+        """
+        Initialize the ActiveListener.
+
+        Args:
+            interactive: If True, prompt user for clarification
+            strict: If True, refuse to proceed on any ambiguity
+            use_color: Whether to use ANSI color codes
+        """
+        self.interactive = interactive
+        self.strict = strict
+        self.use_color = use_color and self._supports_color()
+        self.clarification_log: List[Dict[str, Any]] = []
+        self.pending_clarifications: List[Dict[str, Any]] = []
+
+    def _supports_color(self) -> bool:
+        """Check if the terminal supports color output."""
+        import os
+
+        if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+            return False
+        if os.environ.get("NO_COLOR"):
+            return False
+        return True
+
+    def _color(self, text: str, color: str) -> str:
+        """Apply ANSI color to text if colors are enabled."""
+        if not self.use_color:
+            return text
+
+        colors = {
+            "green": "\033[32m",
+            "red": "\033[31m",
+            "yellow": "\033[33m",
+            "cyan": "\033[36m",
+            "magenta": "\033[35m",
+            "bold": "\033[1m",
+            "dim": "\033[2m",
+            "reset": "\033[0m",
+        }
+
+        return f"{colors.get(color, '')}{text}{colors['reset']}"
+
+    def detect_ambiguity(
+        self,
+        operation: str,
+        context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect if an operation has ambiguous intent.
+
+        Args:
+            operation: Type of operation (e.g., "division", "index", "coercion")
+            context: Context about the operation
+
+        Returns:
+            Ambiguity info dict if ambiguous, None otherwise
+        """
+        ambiguity = None
+
+        if operation == "division":
+            divisor = context.get("divisor")
+            divisor_name = context.get("divisor_name", "divisor")
+            # Can't statically prove non-zero
+            if not context.get("proven_non_zero"):
+                ambiguity = {
+                    "type": "division_safety",
+                    "message": f"The divisor '{divisor_name}' might be zero.",
+                    "options": [
+                        ("proceed", f"Proceed (assuming {divisor_name} ≠ 0)"),
+                        ("check", "Add explicit zero check"),
+                        ("default", "Return default value if zero"),
+                    ],
+                    "context": context,
+                }
+
+        elif operation == "index":
+            index_name = context.get("index_name", "index")
+            list_name = context.get("list_name", "list")
+            if not context.get("proven_in_bounds"):
+                ambiguity = {
+                    "type": "index_safety",
+                    "message": f"The index '{index_name}' might be out of bounds for '{list_name}'.",
+                    "options": [
+                        ("proceed", "Proceed (assuming valid index)"),
+                        ("check", "Add bounds check"),
+                        ("clamp", "Clamp to valid range"),
+                        ("wrap", "Wrap around (modulo length)"),
+                    ],
+                    "context": context,
+                }
+
+        elif operation == "coercion":
+            from_type = context.get("from_type", "unknown")
+            to_type = context.get("to_type", "unknown")
+            ambiguity = {
+                "type": "type_coercion",
+                "message": f"Converting {from_type} to {to_type} - intent unclear.",
+                "options": [
+                    ("strict", f"Strict conversion (fail if not exactly {to_type})"),
+                    ("lenient", "Lenient conversion (best effort)"),
+                    ("explicit", "Require explicit conversion"),
+                ],
+                "context": context,
+            }
+
+        elif operation == "null_access":
+            name = context.get("name", "value")
+            ambiguity = {
+                "type": "null_safety",
+                "message": f"'{name}' might be null/undefined.",
+                "options": [
+                    ("proceed", f"Proceed (assuming {name} is defined)"),
+                    ("check", "Add null check"),
+                    ("default", "Use default value if null"),
+                    ("optional", "Return null (optional chaining)"),
+                ],
+                "context": context,
+            }
+
+        elif operation == "intent":
+            name = context.get("name", "value")
+            possible_meanings = context.get("meanings", [])
+            if possible_meanings:
+                options = [(f"meaning_{i}", m) for i, m in enumerate(possible_meanings)]
+                options.append(("other", "Something else (please specify)"))
+                ambiguity = {
+                    "type": "semantic_ambiguity",
+                    "message": f"Multiple interpretations possible for '{name}'.",
+                    "options": options,
+                    "context": context,
+                }
+
+        return ambiguity
+
+    def request_clarification(
+        self,
+        ambiguity: Dict[str, Any],
+    ) -> str:
+        """
+        Request clarification from the user.
+
+        In interactive mode, prompts and waits for input.
+        In non-interactive mode, logs and returns default.
+
+        Args:
+            ambiguity: Ambiguity info dict from detect_ambiguity
+
+        Returns:
+            The chosen option key
+        """
+        message = ambiguity["message"]
+        options = ambiguity["options"]
+
+        if self.interactive:
+            # Print the clarification request
+            print(f"\n{self._color('⚡ Clarification needed:', 'yellow')}", file=sys.stderr)
+            print(f"   {message}", file=sys.stderr)
+            print(file=sys.stderr)
+
+            for i, (key, desc) in enumerate(options, 1):
+                print(f"   {self._color(str(i), 'cyan')}. {desc}", file=sys.stderr)
+
+            print(file=sys.stderr)
+
+            # Get user input
+            while True:
+                try:
+                    choice = input(f"   {self._color('Which approach?', 'bold')} [1-{len(options)}]: ")
+                    choice_idx = int(choice) - 1
+                    if 0 <= choice_idx < len(options):
+                        chosen_key = options[choice_idx][0]
+                        self._log_clarification(ambiguity, chosen_key)
+                        return chosen_key
+                    print(f"   Please enter a number between 1 and {len(options)}", file=sys.stderr)
+                except ValueError:
+                    print(f"   Please enter a number between 1 and {len(options)}", file=sys.stderr)
+                except EOFError:
+                    # Non-interactive fallback
+                    return options[0][0]
+        else:
+            # Non-interactive: log and return first option (default)
+            self.pending_clarifications.append(ambiguity)
+            return options[0][0]
+
+    def _log_clarification(
+        self,
+        ambiguity: Dict[str, Any],
+        choice: str,
+    ) -> None:
+        """Log a clarification for future reference."""
+        self.clarification_log.append({
+            "ambiguity_type": ambiguity["type"],
+            "message": ambiguity["message"],
+            "choice": choice,
+            "context": ambiguity.get("context", {}),
+        })
+
+    def get_pending_clarifications(self) -> List[Dict[str, Any]]:
+        """Get list of pending clarifications that weren't resolved interactively."""
+        return self.pending_clarifications.copy()
+
+    def clear_pending(self) -> None:
+        """Clear pending clarifications."""
+        self.pending_clarifications.clear()
+
+
+class DialogueManager:
+    """
+    Manages the dialogue between EigenScript and the user.
+
+    Implements the "active speaker" pattern where EigenScript:
+    1. Explains its reasoning when asked
+    2. Presents options clearly
+    3. Preserves user agency
+    4. Never assumes understanding
+
+    From the communication framework:
+    "Control remains with the speaker - you do not decide intent for them."
+
+    Example:
+        dm = DialogueManager()
+
+        # When explaining a decision:
+        dm.explain_reasoning(
+            decision="Using strict mode for parsing",
+            because="The 'mode' binding was clarified as 'strict'",
+            alternatives=["lenient", "auto-detect"]
+        )
+        # Output:
+        # I'm using strict mode for parsing.
+        # Reason: The 'mode' binding was clarified as 'strict'.
+        # Alternatives considered: lenient, auto-detect
+    """
+
+    def __init__(self, use_color: bool = True, verbose: bool = False):
+        """
+        Initialize the DialogueManager.
+
+        Args:
+            use_color: Whether to use ANSI color codes
+            verbose: Whether to provide detailed explanations
+        """
+        self.use_color = use_color and self._supports_color()
+        self.verbose = verbose
+        self.dialogue_history: List[Dict[str, Any]] = []
+
+    def _supports_color(self) -> bool:
+        """Check if the terminal supports color output."""
+        import os
+
+        if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+            return False
+        if os.environ.get("NO_COLOR"):
+            return False
+        return True
+
+    def _color(self, text: str, color: str) -> str:
+        """Apply ANSI color to text if colors are enabled."""
+        if not self.use_color:
+            return text
+
+        colors = {
+            "green": "\033[32m",
+            "red": "\033[31m",
+            "yellow": "\033[33m",
+            "cyan": "\033[36m",
+            "magenta": "\033[35m",
+            "bold": "\033[1m",
+            "dim": "\033[2m",
+            "reset": "\033[0m",
+        }
+
+        return f"{colors.get(color, '')}{text}{colors['reset']}"
+
+    def ask_for_intent(
+        self,
+        what: str,
+        options: List[Tuple[str, str]],
+        context: Optional[str] = None,
+    ) -> str:
+        """
+        Ask the user to clarify their intent.
+
+        Agency-preserving: presents options without judgment.
+
+        Args:
+            what: What needs clarification
+            options: List of (key, description) tuples
+            context: Optional context explaining why clarification is needed
+
+        Returns:
+            The chosen option key
+        """
+        print(f"\n{self._color('?', 'cyan')} {what}", file=sys.stderr)
+
+        if context:
+            print(f"  {self._color('Context:', 'dim')} {context}", file=sys.stderr)
+
+        print(file=sys.stderr)
+        for i, (key, desc) in enumerate(options, 1):
+            print(f"  {self._color(str(i), 'cyan')}. {desc}", file=sys.stderr)
+
+        print(file=sys.stderr)
+
+        while True:
+            try:
+                choice = input(f"  {self._color('Your choice', 'bold')} [1-{len(options)}]: ")
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(options):
+                    chosen_key = options[choice_idx][0]
+                    self._log_dialogue("intent_request", what, chosen_key)
+                    return chosen_key
+                print(f"  Please enter a number between 1 and {len(options)}", file=sys.stderr)
+            except ValueError:
+                print(f"  Please enter a number between 1 and {len(options)}", file=sys.stderr)
+            except EOFError:
+                return options[0][0]
+
+    def explain_reasoning(
+        self,
+        decision: str,
+        because: str,
+        alternatives: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Explain the reasoning behind a decision.
+
+        Makes the interpreter's "thinking" visible.
+
+        Args:
+            decision: What was decided
+            because: Why it was decided
+            alternatives: Other options that were considered
+        """
+        if not self.verbose:
+            return
+
+        print(f"\n{self._color('→', 'green')} {decision}", file=sys.stderr)
+        print(f"  {self._color('Because:', 'dim')} {because}", file=sys.stderr)
+
+        if alternatives:
+            alts = ", ".join(alternatives)
+            print(f"  {self._color('Alternatives:', 'dim')} {alts}", file=sys.stderr)
+
+        self._log_dialogue("explanation", decision, because)
+
+    def confirm_understanding(
+        self,
+        statement: str,
+        understood_as: str,
+    ) -> bool:
+        """
+        Confirm understanding of a statement.
+
+        From the framework: "You test [inferred intent] by offering explicit options."
+
+        Args:
+            statement: The original statement
+            understood_as: How it was interpreted
+
+        Returns:
+            True if understanding confirmed, False otherwise
+        """
+        print(f"\n{self._color('?', 'yellow')} Confirming understanding:", file=sys.stderr)
+        print(f"  You said: {self._color(statement, 'cyan')}", file=sys.stderr)
+        print(f"  I understood: {self._color(understood_as, 'green')}", file=sys.stderr)
+        print(file=sys.stderr)
+
+        try:
+            response = input(f"  {self._color('Is this correct?', 'bold')} [Y/n]: ").strip().lower()
+            confirmed = response in ("", "y", "yes")
+            self._log_dialogue("confirmation", statement, confirmed)
+            return confirmed
+        except EOFError:
+            return True
+
+    def present_options(
+        self,
+        situation: str,
+        options: List[Tuple[str, str, str]],  # (key, short_desc, long_desc)
+    ) -> None:
+        """
+        Present options without asking for a choice (informational).
+
+        Preserves agency by showing possibilities without forcing a decision.
+
+        Args:
+            situation: The current situation
+            options: List of (key, short_desc, long_desc) tuples
+        """
+        print(f"\n{self._color('ℹ', 'cyan')} {situation}", file=sys.stderr)
+        print(f"  Possible approaches:", file=sys.stderr)
+        print(file=sys.stderr)
+
+        for key, short_desc, long_desc in options:
+            print(f"  • {self._color(short_desc, 'bold')}", file=sys.stderr)
+            if self.verbose and long_desc:
+                print(f"    {self._color(long_desc, 'dim')}", file=sys.stderr)
+
+        self._log_dialogue("options_presented", situation, [o[0] for o in options])
+
+    def acknowledge_clarification(
+        self,
+        what: str,
+        clarified_as: str,
+    ) -> None:
+        """
+        Acknowledge a clarification from the user.
+
+        Shows the user their clarification was received.
+
+        Args:
+            what: What was clarified
+            clarified_as: The clarified value/intent
+        """
+        print(
+            f"{self._color('✓', 'green')} Understood: {what} → {self._color(clarified_as, 'cyan')}",
+            file=sys.stderr,
+        )
+        self._log_dialogue("acknowledgment", what, clarified_as)
+
+    def _log_dialogue(
+        self,
+        dialogue_type: str,
+        subject: str,
+        response: Any,
+    ) -> None:
+        """Log a dialogue exchange."""
+        self.dialogue_history.append({
+            "type": dialogue_type,
+            "subject": subject,
+            "response": response,
+        })
+
+    def get_dialogue_history(self) -> List[Dict[str, Any]]:
+        """Get the full dialogue history."""
+        return self.dialogue_history.copy()
+
+
+class InteractiveClarifier:
+    """
+    Combines ActiveListener and DialogueManager for interactive clarification.
+
+    This is the main interface for making EigenScript an active participant
+    in the communication process.
+
+    Example:
+        clarifier = InteractiveClarifier(interactive=True)
+
+        # During execution, when ambiguity is detected:
+        result = clarifier.clarify_binding(
+            name="mode",
+            value="strict",
+            possible_meanings=[
+                "Strict type checking",
+                "Strict parsing rules",
+                "Strict security settings",
+            ]
+        )
+        # Prompts user and returns clarified meaning
+    """
+
+    def __init__(
+        self,
+        interactive: bool = False,
+        verbose: bool = False,
+        use_color: bool = True,
+    ):
+        """
+        Initialize the InteractiveClarifier.
+
+        Args:
+            interactive: If True, prompt user for clarification
+            verbose: If True, explain reasoning
+            use_color: Whether to use ANSI color codes
+        """
+        self.interactive = interactive
+        self.listener = ActiveListener(interactive=interactive, use_color=use_color)
+        self.dialogue = DialogueManager(use_color=use_color, verbose=verbose)
+
+    def clarify_binding(
+        self,
+        name: str,
+        value: Any,
+        possible_meanings: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Clarify the meaning/intent of a binding.
+
+        Args:
+            name: Binding name
+            value: Current value
+            possible_meanings: List of possible interpretations
+
+        Returns:
+            Dict with clarified meaning and confidence
+        """
+        if not possible_meanings:
+            # No ambiguity if no alternatives
+            return {"meaning": str(value), "confidence": 1.0, "clarified": True}
+
+        if self.interactive:
+            options = [(f"m{i}", m) for i, m in enumerate(possible_meanings)]
+            options.append(("other", "None of these / something else"))
+
+            chosen = self.dialogue.ask_for_intent(
+                what=f"What does '{name}' = {value} mean?",
+                options=options,
+                context="Multiple interpretations are possible",
+            )
+
+            if chosen == "other":
+                # Ask for custom meaning
+                try:
+                    custom = input("  Please specify: ")
+                    self.dialogue.acknowledge_clarification(name, custom)
+                    return {"meaning": custom, "confidence": 1.0, "clarified": True}
+                except EOFError:
+                    return {"meaning": str(value), "confidence": 0.5, "clarified": False}
+
+            idx = int(chosen[1:])
+            meaning = possible_meanings[idx]
+            self.dialogue.acknowledge_clarification(name, meaning)
+            return {"meaning": meaning, "confidence": 1.0, "clarified": True}
+
+        else:
+            # Non-interactive: return first meaning with low confidence
+            return {
+                "meaning": possible_meanings[0] if possible_meanings else str(value),
+                "confidence": 0.5,
+                "clarified": False,
+                "pending_options": possible_meanings,
+            }
+
+    def clarify_operation(
+        self,
+        operation: str,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Clarify how to handle an operation with potential issues.
+
+        Args:
+            operation: Operation type (division, index, etc.)
+            context: Context about the operation
+
+        Returns:
+            Dict with handling strategy
+        """
+        ambiguity = self.listener.detect_ambiguity(operation, context)
+
+        if not ambiguity:
+            return {"strategy": "proceed", "clarified": True}
+
+        choice = self.listener.request_clarification(ambiguity)
+
+        if self.interactive:
+            self.dialogue.acknowledge_clarification(
+                ambiguity["type"],
+                dict(ambiguity["options"]).get(choice, choice),
+            )
+
+        return {
+            "strategy": choice,
+            "clarified": self.interactive,
+            "ambiguity_type": ambiguity["type"],
+        }
+
+    def should_pause(self, clarity_score: float, threshold: float = 0.95) -> bool:
+        """
+        Determine if execution should pause for clarification.
+
+        Args:
+            clarity_score: Current clarity score
+            threshold: Minimum acceptable clarity
+
+        Returns:
+            True if should pause, False otherwise
+        """
+        if not self.interactive:
+            return False
+
+        return clarity_score < threshold
+
+    def summarize_pending(self) -> str:
+        """
+        Summarize pending clarifications.
+
+        Returns:
+            Human-readable summary of what needs clarification
+        """
+        pending = self.listener.get_pending_clarifications()
+        if not pending:
+            return "No pending clarifications."
+
+        lines = [f"Pending clarifications ({len(pending)}):"]
+        for p in pending:
+            lines.append(f"  • {p['message']}")
+
+        return "\n".join(lines)

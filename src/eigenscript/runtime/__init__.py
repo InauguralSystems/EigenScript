@@ -17,6 +17,9 @@ from eigenscript.runtime.clarity import (
     AmbiguityResolver,
     Assumption,
     detect_assumptions,
+    ActiveListener,
+    DialogueManager,
+    InteractiveClarifier,
 )
 
 __all__ = [
@@ -28,4 +31,7 @@ __all__ = [
     "AmbiguityResolver",
     "Assumption",
     "detect_assumptions",
+    "ActiveListener",
+    "DialogueManager",
+    "InteractiveClarifier",
 ]

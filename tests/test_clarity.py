@@ -29,6 +29,9 @@ from eigenscript.runtime.clarity import (
     ClarityExplainer,
     Assumption,
     detect_assumptions,
+    ActiveListener,
+    DialogueManager,
+    InteractiveClarifier,
 )
 
 
@@ -586,3 +589,334 @@ class TestClarityState:
         )
         state = ClarityState(assumptions=[assumption])
         assert state.has_assumptions()
+
+
+class TestActiveListener:
+    """Tests for the ActiveListener class."""
+
+    def test_active_listener_creation(self):
+        """Test creating an ActiveListener."""
+        listener = ActiveListener(interactive=False)
+        assert not listener.interactive
+        assert len(listener.clarification_log) == 0
+        assert len(listener.pending_clarifications) == 0
+
+    def test_detect_division_ambiguity(self):
+        """Test detecting division by zero ambiguity."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "division",
+            {"divisor": 0, "divisor_name": "x", "proven_non_zero": False},
+        )
+        assert ambiguity is not None
+        assert ambiguity["type"] == "division_safety"
+        assert "x" in ambiguity["message"]
+
+    def test_detect_index_ambiguity(self):
+        """Test detecting index bounds ambiguity."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "index",
+            {
+                "index": 10,
+                "index_name": "i",
+                "list_name": "items",
+                "proven_in_bounds": False,
+            },
+        )
+        assert ambiguity is not None
+        assert ambiguity["type"] == "index_safety"
+        assert "i" in ambiguity["message"]
+        assert "items" in ambiguity["message"]
+
+    def test_detect_coercion_ambiguity(self):
+        """Test detecting type coercion ambiguity."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "coercion",
+            {"from_type": "string", "to_type": "number"},
+        )
+        assert ambiguity is not None
+        assert ambiguity["type"] == "type_coercion"
+
+    def test_detect_null_access_ambiguity(self):
+        """Test detecting null access ambiguity."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "null_access",
+            {"name": "user"},
+        )
+        assert ambiguity is not None
+        assert ambiguity["type"] == "null_safety"
+
+    def test_detect_intent_ambiguity(self):
+        """Test detecting semantic ambiguity."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "intent",
+            {
+                "name": "mode",
+                "meanings": ["strict parsing", "strict security", "strict types"],
+            },
+        )
+        assert ambiguity is not None
+        assert ambiguity["type"] == "semantic_ambiguity"
+
+    def test_no_ambiguity_when_proven(self):
+        """Test no ambiguity detected when precondition is proven."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "division",
+            {"divisor": 5, "divisor_name": "x", "proven_non_zero": True},
+        )
+        assert ambiguity is None
+
+    def test_non_interactive_returns_default(self):
+        """Test non-interactive mode returns first option."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "division",
+            {"divisor": 0, "divisor_name": "x", "proven_non_zero": False},
+        )
+        choice = listener.request_clarification(ambiguity)
+        # In non-interactive mode, should return first option
+        assert choice == "proceed"
+
+    def test_pending_clarifications(self):
+        """Test pending clarifications are recorded."""
+        listener = ActiveListener(interactive=False)
+        ambiguity = listener.detect_ambiguity(
+            "division",
+            {"divisor": 0, "divisor_name": "x", "proven_non_zero": False},
+        )
+        listener.request_clarification(ambiguity)
+        pending = listener.get_pending_clarifications()
+        assert len(pending) == 1
+
+
+class TestDialogueManager:
+    """Tests for the DialogueManager class."""
+
+    def test_dialogue_manager_creation(self):
+        """Test creating a DialogueManager."""
+        dm = DialogueManager(use_color=False, verbose=False)
+        assert not dm.verbose
+        assert len(dm.dialogue_history) == 0
+
+    def test_dialogue_history_logging(self):
+        """Test dialogue history is logged."""
+        dm = DialogueManager(use_color=False, verbose=True)
+        dm.explain_reasoning(
+            decision="Using strict mode",
+            because="User specified strict",
+            alternatives=["lenient", "auto"],
+        )
+        history = dm.get_dialogue_history()
+        assert len(history) == 1
+        assert history[0]["type"] == "explanation"
+
+    def test_verbose_mode_outputs(self, capsys):
+        """Test verbose mode produces output."""
+        dm = DialogueManager(use_color=False, verbose=True)
+        dm.explain_reasoning(
+            decision="Testing output",
+            because="This is a test",
+        )
+        captured = capsys.readouterr()
+        assert "Testing output" in captured.err
+        assert "This is a test" in captured.err
+
+    def test_non_verbose_no_output(self, capsys):
+        """Test non-verbose mode produces no output for explanations."""
+        dm = DialogueManager(use_color=False, verbose=False)
+        dm.explain_reasoning(
+            decision="Testing output",
+            because="This is a test",
+        )
+        captured = capsys.readouterr()
+        assert "Testing output" not in captured.err
+
+
+class TestInteractiveClarifier:
+    """Tests for the InteractiveClarifier class."""
+
+    def test_interactive_clarifier_creation(self):
+        """Test creating an InteractiveClarifier."""
+        clarifier = InteractiveClarifier(interactive=False, verbose=False)
+        assert not clarifier.interactive
+        assert clarifier.listener is not None
+        assert clarifier.dialogue is not None
+
+    def test_clarify_binding_no_options(self):
+        """Test clarifying binding with no ambiguity."""
+        clarifier = InteractiveClarifier(interactive=False)
+        result = clarifier.clarify_binding(
+            name="x",
+            value=10,
+            possible_meanings=None,
+        )
+        assert result["clarified"] is True
+        assert result["confidence"] == 1.0
+
+    def test_clarify_binding_with_options_non_interactive(self):
+        """Test clarifying binding with options in non-interactive mode."""
+        clarifier = InteractiveClarifier(interactive=False)
+        result = clarifier.clarify_binding(
+            name="mode",
+            value="strict",
+            possible_meanings=["strict types", "strict parsing", "strict security"],
+        )
+        # Non-interactive: returns first option with low confidence
+        assert result["clarified"] is False
+        assert result["confidence"] == 0.5
+        assert "pending_options" in result
+
+    def test_clarify_operation_no_ambiguity(self):
+        """Test clarifying operation with no ambiguity."""
+        clarifier = InteractiveClarifier(interactive=False)
+        result = clarifier.clarify_operation(
+            "unknown_operation",
+            {},
+        )
+        assert result["strategy"] == "proceed"
+        assert result["clarified"] is True
+
+    def test_clarify_operation_with_ambiguity(self):
+        """Test clarifying operation with ambiguity."""
+        clarifier = InteractiveClarifier(interactive=False)
+        result = clarifier.clarify_operation(
+            "division",
+            {"divisor": 0, "divisor_name": "x", "proven_non_zero": False},
+        )
+        assert result["strategy"] == "proceed"  # Default in non-interactive
+        assert result["clarified"] is False
+        assert result["ambiguity_type"] == "division_safety"
+
+    def test_should_pause_non_interactive(self):
+        """Test should_pause returns False in non-interactive mode."""
+        clarifier = InteractiveClarifier(interactive=False)
+        assert not clarifier.should_pause(0.5)
+
+    def test_summarize_pending_empty(self):
+        """Test summarizing when no pending clarifications."""
+        clarifier = InteractiveClarifier(interactive=False)
+        summary = clarifier.summarize_pending()
+        assert "No pending" in summary
+
+    def test_summarize_pending_with_items(self):
+        """Test summarizing pending clarifications."""
+        clarifier = InteractiveClarifier(interactive=False)
+        # Generate some pending clarifications
+        clarifier.clarify_operation(
+            "division",
+            {"divisor": 0, "divisor_name": "x", "proven_non_zero": False},
+        )
+        summary = clarifier.summarize_pending()
+        assert "Pending" in summary
+        assert "1" in summary
+
+
+class TestInterpreterActiveListening:
+    """Tests for interpreter with active listening mode."""
+
+    def test_interpreter_with_active_listening(self):
+        """Test creating interpreter with active listening enabled."""
+        interp = Interpreter(active_listening=True)
+        assert interp.active_listening is True
+        assert interp.active_listener is not None
+        assert interp.interactive_clarifier is not None
+
+    def test_interpreter_without_active_listening(self):
+        """Test interpreter without active listening."""
+        interp = Interpreter(active_listening=False)
+        assert interp.active_listening is False
+        assert interp.active_listener is None
+
+    def test_interpreter_with_interactive_mode(self):
+        """Test creating interpreter with interactive mode."""
+        interp = Interpreter(interactive_mode=True)
+        assert interp.interactive_mode is True
+        assert interp.interactive_clarifier is not None
+
+    def test_division_with_active_listening_non_zero(self):
+        """Test division with active listening when divisor is non-zero."""
+        interp = Interpreter(active_listening=True)
+        code = """
+        x is 10
+        y is 2
+        x / y
+        """
+        result = run_code(code, interp)
+        value = decode_vector(result, interp.space)
+        assert value == 5.0  # Normal division works
+
+    def test_format_agency_error_undefined(self):
+        """Test agency-preserving error format for undefined variable."""
+        interp = Interpreter(active_listening=True)
+        msg = interp._format_agency_error(
+            "undefined_variable",
+            {"name": "foo", "suggestions": ["food", "foot"]},
+        )
+        assert "foo" in msg
+        assert "Possible intentions" in msg
+        assert "food" in msg
+
+    def test_format_agency_error_type_mismatch(self):
+        """Test agency-preserving error format for type mismatch."""
+        interp = Interpreter(active_listening=True)
+        msg = interp._format_agency_error(
+            "type_mismatch",
+            {"expected": "number", "got": "string", "operation": "addition"},
+        )
+        assert "Type question" in msg
+        assert "number" in msg
+        assert "string" in msg
+
+    def test_format_agency_error_function_not_found(self):
+        """Test agency-preserving error format for function not found."""
+        interp = Interpreter(active_listening=True)
+        msg = interp._format_agency_error(
+            "function_not_found",
+            {"name": "calculate"},
+        )
+        assert "calculate" in msg
+        assert "Possible intentions" in msg
+
+
+class TestClarityWithActiveListening:
+    """Tests combining clarity framework with active listening."""
+
+    def test_clarify_with_active_listening(self):
+        """Test clarify of works with active listening."""
+        interp = Interpreter(active_listening=True)
+        code = """
+        x might is 10
+        clarify of x
+        clarified
+        """
+        result = run_code(code, interp)
+        value = decode_vector(result, interp.space)
+        assert value == 1.0
+
+    def test_ambiguous_with_active_listening(self):
+        """Test ambiguous predicate with active listening."""
+        interp = Interpreter(active_listening=True)
+        code = """
+        x might is 10
+        ambiguous
+        """
+        result = run_code(code, interp)
+        value = decode_vector(result, interp.space)
+        assert value == 1.0
+
+    def test_clarity_score_with_active_listening(self):
+        """Test clarity score with active listening."""
+        interp = Interpreter(active_listening=True)
+        code = """
+        x is 10
+        y might is 20
+        clarity
+        """
+        result = run_code(code, interp)
+        value = decode_vector(result, interp.space)
+        assert value == 0.5  # 1 out of 2 clarified

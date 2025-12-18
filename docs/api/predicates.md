@@ -794,6 +794,99 @@ These enable self-debugging code that refuses to execute on unverified assumptio
 
 ---
 
+## Active Listener Mode
+
+EigenScript can act as an **active listener** that detects ambiguity and seeks clarification before proceeding. This implements the communication framework principle: "You treat inferred intent as a hypothesis, not a fact."
+
+### Enabling Active Listening
+
+```python
+from eigenscript.evaluator import Interpreter
+
+# Enable active listening mode
+interp = Interpreter(
+    active_listening=True,   # Detect ambiguity in operations
+    interactive_mode=True,   # Prompt for clarification
+)
+```
+
+### What Active Listening Detects
+
+| Operation | Detected Ambiguity | Options Presented |
+|-----------|-------------------|-------------------|
+| Division | Potential divide by zero | Proceed, Add check, Return default |
+| Indexing | Potential out of bounds | Proceed, Add check, Clamp, Wrap |
+| Type coercion | Type mismatch | Strict, Lenient, Explicit |
+| Null access | Potential null value | Proceed, Add check, Return default, Optional chain |
+
+### Example: Interactive Division
+
+```eigenscript
+x is 10
+y is get_input of "Enter divisor: "  # User enters 0
+
+result is x / y
+# In interactive mode:
+# > Clarification needed:
+# >   The divisor 'y' might be zero.
+# >   1. Proceed (assuming y ≠ 0)
+# >   2. Add explicit check
+# >   3. Return default value if zero
+# > Which approach? _
+```
+
+### Example: Interactive Index Access
+
+```eigenscript
+items is [1, 2, 3]
+i is get_input of "Enter index: "  # User enters 5
+
+value is items[i]
+# In interactive mode:
+# > Clarification needed:
+# >   The index 'i' might be out of bounds for 'items'.
+# >   1. Proceed (assuming valid index)
+# >   2. Add bounds check
+# >   3. Clamp to valid range
+# >   4. Wrap around (modulo length)
+# > Which approach? _
+```
+
+### Non-Interactive Mode
+
+When `interactive_mode=False` but `active_listening=True`, ambiguities are detected and logged but the default option (proceed) is chosen. Use `summarize_pending()` to see what clarifications were needed:
+
+```python
+interp = Interpreter(active_listening=True, interactive_mode=False)
+result = interp.run(code)
+
+# Check what clarifications were pending
+summary = interp.interactive_clarifier.summarize_pending()
+print(summary)
+# Pending clarifications (2):
+#   • The divisor 'x' might be zero.
+#   • The index 'i' might be out of bounds for 'items'.
+```
+
+---
+
+## Agency-Preserving Errors
+
+When errors occur, EigenScript presents options rather than dictating what went wrong:
+
+```
+Variable 'foo' not found in scope.
+Possible intentions:
+  • Did you mean 'food'?
+  • Did you mean 'foot'?
+  • Define it first with: foo is <value>
+  • Or use 'might is' for tentative binding
+```
+
+This preserves the programmer's agency by presenting possibilities rather than assuming intent.
+
+---
+
 **Congratulations!** You've explored the complete EigenScript API.
 
 **Return to:** [API Index](index.md)
