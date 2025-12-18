@@ -10,7 +10,7 @@ echo "╚═══════════════════════�
 echo ""
 
 # Change to repository root
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 echo "📦 Step 1: List Available Build Targets"
 echo "═════════════════════════════════════════"
