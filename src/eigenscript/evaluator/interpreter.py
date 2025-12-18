@@ -41,11 +41,7 @@ from eigenscript.runtime.explain import PredicateExplainer
 from eigenscript.runtime.clarity import (
     ClarityTracker,
     ClarityExplainer,
-    ClarityType,
-    Assumption,
-    detect_assumptions,
     ActiveListener,
-    DialogueManager,
     InteractiveClarifier,
 )
 from eigenscript.builtins import BuiltinFunction, get_builtins
