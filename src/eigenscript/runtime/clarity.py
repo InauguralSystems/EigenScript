@@ -26,8 +26,7 @@ Clarity Types (parallel to geometric signatures):
 """
 
 import sys
-import numpy as np
-from typing import List, Dict, Optional, Set, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -782,7 +781,6 @@ class ActiveListener:
         ambiguity = None
 
         if operation == "division":
-            divisor = context.get("divisor")
             divisor_name = context.get("divisor_name", "divisor")
             # Can't statically prove non-zero
             if not context.get("proven_non_zero"):

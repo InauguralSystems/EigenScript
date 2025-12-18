@@ -137,7 +137,7 @@ class TestClarityTracker:
 
     def test_global_assumptions(self, clarity_tracker):
         """Test global assumptions not tied to a binding."""
-        assumption = clarity_tracker.register_assumption(
+        clarity_tracker.register_assumption(
             name="environment",
             source="runtime",
             context="Assuming production environment",
