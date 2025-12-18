@@ -13,6 +13,7 @@ from eigenscript.parser.ast_builder import (
     ASTNode,
     Program,
     Assignment,
+    TentativeAssignment,
     Relation,
     BinaryOp,
     UnaryOp,
@@ -37,6 +38,13 @@ from eigenscript.semantic.lrvm import LRVMVector, LRVMSpace
 from eigenscript.semantic.metric import MetricTensor
 from eigenscript.runtime.framework_strength import FrameworkStrengthTracker
 from eigenscript.runtime.explain import PredicateExplainer
+from eigenscript.runtime.clarity import (
+    ClarityTracker,
+    ClarityExplainer,
+    ClarityType,
+    Assumption,
+    detect_assumptions,
+)
 from eigenscript.builtins import BuiltinFunction, get_builtins
 
 # Type alias for values that can flow through the interpreter
@@ -251,6 +259,7 @@ class Interpreter:
         convergence_threshold: float = 0.95,
         enable_convergence_detection: bool = True,
         explain_mode: bool = False,
+        clarity_threshold: float = 0.95,
     ):
         """
         Initialize the interpreter.
@@ -262,6 +271,7 @@ class Interpreter:
             convergence_threshold: FS threshold for eigenstate detection (default: 0.95)
             enable_convergence_detection: Enable automatic convergence detection (default: True)
             explain_mode: Enable explain mode for predicate evaluations (default: False)
+            clarity_threshold: Clarity score threshold for the `clarified` predicate (default: 0.95)
         """
         # Geometric components
         self.space = LRVMSpace(dimension=dimension)
@@ -287,6 +297,11 @@ class Interpreter:
 
         # Explain mode for predicate evaluations
         self.explainer = PredicateExplainer(enabled=explain_mode)
+
+        # Communication Clarity Framework
+        self.clarity_tracker = ClarityTracker()
+        self.clarity_explainer = ClarityExplainer(enabled=explain_mode)
+        self.clarity_threshold = clarity_threshold
 
         # Special lightlike OF vector
         self._of_vector = self._create_of_vector()
@@ -403,6 +418,8 @@ class Interpreter:
             return self._eval_program(node)
         elif isinstance(node, Assignment):
             return self._eval_assignment(node)
+        elif isinstance(node, TentativeAssignment):
+            return self._eval_tentative_assignment(node)
         elif isinstance(node, Relation):
             return self._eval_relation(node)
         elif isinstance(node, BinaryOp):
@@ -468,6 +485,39 @@ class Interpreter:
         # Bind in environment (handles both vectors and lists)
         self.environment.bind(node.identifier, value)
 
+        # Register as clarified binding in clarity tracker
+        self.clarity_tracker.register_binding(node.identifier, tentative=False)
+
+        # Return the value as-is (may be EigenList or LRVMVector)
+        return value
+
+    def _eval_tentative_assignment(self, node: TentativeAssignment) -> LRVMVector:
+        """
+        Evaluate MIGHT IS operator: x might is y
+
+        Semantic: Tentative binding (hypothesis) in LRVM space.
+
+        From the Communication Clarity Framework:
+        - Treats the binding as a hypothesis, not a fact
+        - Forces intent to be externalized before execution
+        - Prevents reinforcing the false belief that implication was sufficient
+
+        The binding is created but marked as TENTATIVE in the clarity tracker.
+        The `clarified` predicate will return False until clarify() is called.
+        """
+        # Evaluate right-hand side
+        value = self.evaluate(node.expression)
+
+        # Bind in environment (handles both vectors and lists)
+        self.environment.bind(node.identifier, value)
+
+        # Register as tentative binding in clarity tracker
+        self.clarity_tracker.register_binding(
+            node.identifier,
+            tentative=True,
+            hypothesis=node.hypothesis,
+        )
+
         # Return the value as-is (may be EigenList or LRVMVector)
         return value
 
@@ -477,6 +527,17 @@ class Interpreter:
 
         Semantic: Metric contraction x^T g y OR function application
         """
+        # Special handling for clarity framework: clarify of x
+        # This clarifies a tentative binding, changing it from TENTATIVE to CLARIFIED
+        if isinstance(node.left, Identifier) and node.left.name.lower() == "clarify":
+            if isinstance(node.right, Identifier):
+                binding_name = node.right.name
+                success = self.clarity_tracker.clarify(binding_name)
+                return self.space.embed_scalar(1.0 if success else 0.0)
+            else:
+                # Can only clarify identifiers
+                raise RuntimeError("clarify requires an identifier (clarify of x)")
+
         # Special handling for function calls:
         # If left side is an identifier, check if it's a function before evaluating
         if isinstance(node.left, Identifier):
@@ -1392,6 +1453,52 @@ class Interpreter:
                 result = 0.0
             return self.space.embed_scalar(result)
 
+        # Communication Clarity Framework predicates
+        elif name_lower == "clarified":
+            # CLARIFIED: Check if all bindings have verified intent
+            # From the framework: "clarity is required before execution"
+            clarity_score = self.clarity_tracker.compute_clarity_score()
+            result = 1.0 if clarity_score >= self.clarity_threshold else 0.0
+            unresolved = self.clarity_tracker.get_unresolved_bindings()
+            self.clarity_explainer.explain_clarified(
+                result=result > 0.5,
+                clarity_score=clarity_score,
+                threshold=self.clarity_threshold,
+                unresolved=unresolved,
+            )
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "ambiguous":
+            # AMBIGUOUS: Check if there are any ambiguous bindings
+            # From the framework: "implication is not universal"
+            unresolved = self.clarity_tracker.get_unresolved_bindings()
+            result = 1.0 if len(unresolved) > 0 else 0.0
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "assumed":
+            # ASSUMED: Check if there are any unverified assumptions
+            # From the framework: "hidden variables cause failure"
+            assumptions = self.clarity_tracker.get_assumptions()
+            result = 1.0 if len(assumptions) > 0 else 0.0
+            self.clarity_explainer.explain_assumed(
+                result=result > 0.5,
+                assumptions=assumptions,
+            )
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "explicit":
+            # EXPLICIT: Opposite of ambiguous - all intents are clarified
+            # From the framework: "making hidden variables visible"
+            clarity_score = self.clarity_tracker.compute_clarity_score()
+            result = 1.0 if clarity_score >= 1.0 else 0.0
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "clarity" or name_lower == "cs":
+            # CLARITY / CS: Return current clarity score as numeric value
+            # Analogous to framework_strength / fs
+            clarity_score = self.clarity_tracker.compute_clarity_score()
+            return self.space.embed_scalar(clarity_score)
+
         # Regular variable lookup
         return self.environment.lookup(node.name)
 
@@ -1578,6 +1685,39 @@ class Interpreter:
             else:
                 # Not enough history
                 return self.space.embed_string("unknown")
+
+        elif interrogative == "assumes":
+            # ASSUMES: Query hidden variables/assumptions for a binding
+            # From the Communication Clarity Framework:
+            # "Hidden variables cause failure, not misunderstanding"
+            #
+            # Returns a list of assumptions that have been detected for the binding,
+            # or an empty list if the binding is fully clarified.
+            if isinstance(node.expression, Identifier):
+                binding_name = node.expression.name
+                assumptions = self.clarity_tracker.get_assumptions(binding_name)
+
+                if assumptions:
+                    # Return a list of assumption descriptions
+                    assumption_strs = [
+                        f"{a.name}: {a.context}" for a in assumptions
+                    ]
+                    # Join as a multi-line string for readable output
+                    result_str = "\n".join(assumption_strs)
+                    return self.space.embed_string(result_str)
+                else:
+                    # No assumptions - binding is clear
+                    return self.space.embed_string("")
+            else:
+                # Query global assumptions if not a specific binding
+                global_assumptions = self.clarity_tracker.get_assumptions()
+                if global_assumptions:
+                    assumption_strs = [
+                        f"{a.name}: {a.context}" for a in global_assumptions
+                    ]
+                    return self.space.embed_string("\n".join(assumption_strs))
+                else:
+                    return self.space.embed_string("")
 
         else:
             raise RuntimeError(f"Unknown interrogative: {interrogative}")

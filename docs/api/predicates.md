@@ -428,6 +428,341 @@ loop while improving:
 
 ---
 
+---
+
+# Communication Clarity Predicates
+
+The Communication Clarity Framework extends EigenScript with predicates that check the *clarity of intent*, not just computational state. These predicates implement hypothesis-driven communication semantics where code debugs itself by refusing to execute on unverified assumptions.
+
+---
+
+## clarified
+
+Check if all bindings have verified intent.
+
+**Syntax:**
+```eigenscript
+if clarified:
+    # All intents verified, safe to proceed
+```
+
+**Returns:** `true` if clarity score meets threshold, `false` otherwise
+
+**Example:**
+```eigenscript
+config might is "production"  # Tentative: hypothesis
+database might is "postgres"  # Tentative: hypothesis
+
+# Won't proceed until intent is clarified
+if not clarified:
+    print of "Please clarify intent before proceeding"
+    clarify of config
+    clarify of database
+
+if clarified:
+    # Safe to execute critical operations
+    initialize_system of config
+```
+
+**Semantics:** Measures the ratio of clarified bindings to total bindings. Returns true when clarity score >= threshold (default 0.95).
+
+---
+
+## ambiguous
+
+Check if there are any unresolved bindings.
+
+**Syntax:**
+```eigenscript
+if ambiguous:
+    # Some bindings need clarification
+```
+
+**Returns:** `true` if any bindings are tentative/unresolved, `false` otherwise
+
+**Example:**
+```eigenscript
+user_input might is value
+
+if ambiguous:
+    print of "Warning: ambiguous state detected"
+    # Force disambiguation
+    clarify of user_input
+```
+
+**Semantics:** Returns true if any bindings have not been clarified.
+
+---
+
+## explicit
+
+Check if all intents are fully explicit (opposite of ambiguous).
+
+**Syntax:**
+```eigenscript
+if explicit:
+    # All intents are explicit
+```
+
+**Returns:** `true` if clarity score is 100%, `false` otherwise
+
+**Example:**
+```eigenscript
+x is 10      # Clarified (normal assignment)
+y is 20      # Clarified (normal assignment)
+
+if explicit:
+    print of "All intents are explicit"
+```
+
+**Semantics:** Returns true only when clarity score is exactly 1.0.
+
+---
+
+## clarity / cs
+
+Get the current clarity score as a numeric value.
+
+**Syntax:**
+```eigenscript
+score is clarity
+# or
+score is cs
+```
+
+**Returns:** Float between 0.0 (fully ambiguous) and 1.0 (fully clarified)
+
+**Example:**
+```eigenscript
+a might is 1  # Tentative
+b is 2        # Clarified
+c might is 3  # Tentative
+
+score is clarity
+print of score  # Prints 0.333... (1/3 clarified)
+
+clarify of a
+clarify of c
+print of clarity  # Prints 1.0 (all clarified)
+```
+
+**Semantics:** Computes ratio of clarified bindings to total bindings.
+
+---
+
+## assumed
+
+Check if there are any unverified assumptions (hidden variables).
+
+**Syntax:**
+```eigenscript
+if assumed:
+    # Hidden variables detected
+```
+
+**Returns:** `true` if any assumptions exist, `false` otherwise
+
+**Example:**
+```eigenscript
+# The clarity tracker can detect implicit assumptions
+if assumed:
+    print of "Warning: hidden variables detected"
+```
+
+**Semantics:** Returns true if any assumptions have been registered.
+
+---
+
+# Clarity Operators
+
+## might is
+
+Create a tentative (hypothesis) binding.
+
+**Syntax:**
+```eigenscript
+identifier might is expression
+```
+
+**Example:**
+```eigenscript
+mode might is "strict"     # Hypothesis: we want strict mode
+count might is 0           # Hypothesis: count starts at zero
+
+# The bindings exist but are marked as tentative
+print of mode              # Prints "strict"
+print of clarified         # Prints 0.0 (not clarified)
+```
+
+**Semantics:** Creates a binding marked as TENTATIVE. The `clarified` predicate returns false until all tentative bindings are clarified.
+
+---
+
+## clarify of
+
+Clarify a tentative binding, changing it from TENTATIVE to CLARIFIED.
+
+**Syntax:**
+```eigenscript
+clarify of identifier
+```
+
+**Returns:** `1.0` on success, `0.0` on failure
+
+**Example:**
+```eigenscript
+mode might is "strict"
+print of clarified         # Prints 0.0
+
+clarify of mode
+print of clarified         # Prints 1.0
+```
+
+**Semantics:** Marks the binding as clarified in the clarity tracker.
+
+---
+
+## assumes is
+
+Query hidden variables/assumptions for a binding.
+
+**Syntax:**
+```eigenscript
+assumptions is assumes is identifier
+```
+
+**Returns:** String listing assumptions, or empty string if none
+
+**Example:**
+```eigenscript
+x is 10
+assumptions is assumes is x
+print of assumptions       # Prints "" (no assumptions)
+```
+
+**Semantics:** Returns any assumptions detected for the binding.
+
+---
+
+# Complete Examples
+
+### Self-Debugging Configuration
+
+```eigenscript
+# Configuration with hypothesis-driven clarity
+db_host might is "localhost"
+db_port might is 5432
+db_name might is "production"
+
+# The program refuses to proceed until intent is clear
+if not clarified:
+    print of "Configuration requires clarification:"
+    print of clarity
+
+# Explicit verification of each hypothesis
+clarify of db_host
+clarify of db_port
+clarify of db_name
+
+if clarified:
+    print of "Configuration verified. Proceeding..."
+    connect_database of db_host
+```
+
+### Clarity-Driven Loop
+
+```eigenscript
+define safe_process as:
+    config might is input
+
+    # Loop until all ambiguity resolved
+    loop while not clarified:
+        print of "Please confirm configuration"
+        clarify of config
+
+    # Now safe to proceed
+    return execute of config
+
+result is safe_process of user_config
+```
+
+### Combining Clarity and Convergence
+
+```eigenscript
+# Hybrid predicates: both semantic AND communicative clarity
+define robust_algorithm as:
+    params might is initial
+    x is start
+
+    # Verify intent before heavy computation
+    if not clarified:
+        clarify of params
+
+    loop while not converged:
+        if diverging:
+            print of "Warning: diverging"
+            break
+        x is iterate of x
+
+    return x
+
+result is robust_algorithm of problem
+```
+
+### Agency-Preserving Design
+
+```eigenscript
+# The framework presents options without deciding for the user
+mode might is unknown
+
+# Instead of guessing, the program asks for clarification
+if ambiguous:
+    print of "Possible modes:"
+    print of "1. strict - Full validation"
+    print of "2. relaxed - Permissive parsing"
+    print of "3. auto - Detect from input"
+    print of "Which mode is intended?"
+
+    # User must clarify before proceeding
+    mode is input of "Enter mode: "
+    clarify of mode
+
+if clarified:
+    process_with_mode of mode
+```
+
+---
+
+## Geometric Interpretation
+
+Clarity predicates measure communication properties:
+
+| Predicate | Communication Property |
+|-----------|----------------------|
+| `clarified` | All intents verified |
+| `ambiguous` | Hidden variables exist |
+| `explicit` | 100% clarity score |
+| `clarity`/`cs` | Ratio of clarified bindings |
+| `assumed` | Unverified assumptions present |
+
+The `might is` operator creates a hypothesis binding (lightlike).
+The `clarify of` operator transforms it to clarified (timelike).
+
+---
+
+## The Framework Principles
+
+The clarity predicates implement these principles:
+
+1. **Questions and statements both assign objectives** - Creating a binding assigns intent-verification work
+2. **Implication is not universal** - `might is` makes hidden variables visible
+3. **Clarification is hypothesis testing** - Bindings start as hypotheses, become facts
+4. **Withhold inference intentionally** - Don't collapse ambiguity silently
+5. **Control remains with the speaker** - Present options, don't decide for user
+6. **Speakers discover their own intent** - `might is` forces intent externalization
+
+---
+
 ## Summary
 
 Semantic predicates:
@@ -439,9 +774,23 @@ Semantic predicates:
 - `oscillating` - Periodic behavior
 - `equilibrium` - At balance point
 
-**Total: 6 predicates**
+Communication clarity predicates:
 
-These enable automatic convergence detection and adaptive algorithms.
+- `clarified` - All intents verified
+- `ambiguous` - Unresolved bindings exist
+- `explicit` - 100% clarity
+- `clarity`/`cs` - Clarity score (0.0-1.0)
+- `assumed` - Hidden variables detected
+
+Clarity operators:
+
+- `might is` - Tentative (hypothesis) binding
+- `clarify of` - Verify intent
+- `assumes is` - Query hidden variables
+
+**Total: 11 predicates + 3 operators**
+
+These enable self-debugging code that refuses to execute on unverified assumptions.
 
 ---
 
