@@ -46,7 +46,7 @@ compiler = [
 
 [project.urls]
 Homepage = "https://github.com/InauguralSystems/EigenScript"
-Documentation = "https://github.com/InauguralSystems/EigenScript/docs"
+Documentation = "https://inauguralphysicist.github.io/EigenScript/"
 Repository = "https://github.com/InauguralSystems/EigenScript"
 Issues = "https://github.com/InauguralSystems/EigenScript/issues"
 
