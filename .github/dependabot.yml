@@ -8,14 +8,14 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "python"
+      - "automated"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "github-actions"
+      - "automated"

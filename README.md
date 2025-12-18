@@ -11,6 +11,7 @@ EigenScript is a high-performance programming language where code is treated as 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![Version](https://img.shields.io/badge/version-0.4.1-blue)
 ![Performance](https://img.shields.io/badge/speed-native-orange)
+![Coverage](https://codecov.io/gh/InauguralSystems/EigenScript/branch/main/graph/badge.svg)
 
 ## 🚀 Key Features
 
