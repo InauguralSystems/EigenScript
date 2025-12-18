@@ -7,12 +7,13 @@ in LRVM space.
 
 import numpy as np
 import os
-from typing import Dict, Optional, List, Union, Callable
+from typing import Dict, Optional, List, Union, Callable, Any
 from dataclasses import dataclass
 from eigenscript.parser.ast_builder import (
     ASTNode,
     Program,
     Assignment,
+    TentativeAssignment,
     Relation,
     BinaryOp,
     UnaryOp,
@@ -37,6 +38,16 @@ from eigenscript.semantic.lrvm import LRVMVector, LRVMSpace
 from eigenscript.semantic.metric import MetricTensor
 from eigenscript.runtime.framework_strength import FrameworkStrengthTracker
 from eigenscript.runtime.explain import PredicateExplainer
+from eigenscript.runtime.clarity import (
+    ClarityTracker,
+    ClarityExplainer,
+    ClarityType,
+    Assumption,
+    detect_assumptions,
+    ActiveListener,
+    DialogueManager,
+    InteractiveClarifier,
+)
 from eigenscript.builtins import BuiltinFunction, get_builtins
 
 # Type alias for values that can flow through the interpreter
@@ -251,6 +262,9 @@ class Interpreter:
         convergence_threshold: float = 0.95,
         enable_convergence_detection: bool = True,
         explain_mode: bool = False,
+        clarity_threshold: float = 0.95,
+        interactive_mode: bool = False,
+        active_listening: bool = False,
     ):
         """
         Initialize the interpreter.
@@ -262,6 +276,9 @@ class Interpreter:
             convergence_threshold: FS threshold for eigenstate detection (default: 0.95)
             enable_convergence_detection: Enable automatic convergence detection (default: True)
             explain_mode: Enable explain mode for predicate evaluations (default: False)
+            clarity_threshold: Clarity score threshold for the `clarified` predicate (default: 0.95)
+            interactive_mode: Enable interactive clarification prompts (default: False)
+            active_listening: Enable automatic ambiguity detection in operations (default: False)
         """
         # Geometric components
         self.space = LRVMSpace(dimension=dimension)
@@ -287,6 +304,31 @@ class Interpreter:
 
         # Explain mode for predicate evaluations
         self.explainer = PredicateExplainer(enabled=explain_mode)
+
+        # Communication Clarity Framework
+        self.clarity_tracker = ClarityTracker()
+        self.clarity_explainer = ClarityExplainer(enabled=explain_mode)
+        self.clarity_threshold = clarity_threshold
+
+        # Interactive clarification mode (Active Listener/Speaker)
+        self.interactive_mode = interactive_mode
+        self.active_listening = active_listening
+        self.interactive_clarifier = (
+            InteractiveClarifier(
+                interactive=interactive_mode,
+                verbose=explain_mode,
+            )
+            if interactive_mode or active_listening
+            else None
+        )
+        self.active_listener = (
+            ActiveListener(
+                interactive=interactive_mode,
+                strict=False,
+            )
+            if active_listening
+            else None
+        )
 
         # Special lightlike OF vector
         self._of_vector = self._create_of_vector()
@@ -403,6 +445,8 @@ class Interpreter:
             return self._eval_program(node)
         elif isinstance(node, Assignment):
             return self._eval_assignment(node)
+        elif isinstance(node, TentativeAssignment):
+            return self._eval_tentative_assignment(node)
         elif isinstance(node, Relation):
             return self._eval_relation(node)
         elif isinstance(node, BinaryOp):
@@ -468,6 +512,39 @@ class Interpreter:
         # Bind in environment (handles both vectors and lists)
         self.environment.bind(node.identifier, value)
 
+        # Register as clarified binding in clarity tracker
+        self.clarity_tracker.register_binding(node.identifier, tentative=False)
+
+        # Return the value as-is (may be EigenList or LRVMVector)
+        return value
+
+    def _eval_tentative_assignment(self, node: TentativeAssignment) -> LRVMVector:
+        """
+        Evaluate MIGHT IS operator: x might is y
+
+        Semantic: Tentative binding (hypothesis) in LRVM space.
+
+        From the Communication Clarity Framework:
+        - Treats the binding as a hypothesis, not a fact
+        - Forces intent to be externalized before execution
+        - Prevents reinforcing the false belief that implication was sufficient
+
+        The binding is created but marked as TENTATIVE in the clarity tracker.
+        The `clarified` predicate will return False until clarify() is called.
+        """
+        # Evaluate right-hand side
+        value = self.evaluate(node.expression)
+
+        # Bind in environment (handles both vectors and lists)
+        self.environment.bind(node.identifier, value)
+
+        # Register as tentative binding in clarity tracker
+        self.clarity_tracker.register_binding(
+            node.identifier,
+            tentative=True,
+            hypothesis=node.hypothesis,
+        )
+
         # Return the value as-is (may be EigenList or LRVMVector)
         return value
 
@@ -477,6 +554,57 @@ class Interpreter:
 
         Semantic: Metric contraction x^T g y OR function application
         """
+        # Special handling for clarity framework: clarify of x
+        # This clarifies a tentative binding, changing it from TENTATIVE to CLARIFIED
+        if isinstance(node.left, Identifier) and node.left.name.lower() == "clarify":
+            if isinstance(node.right, Identifier):
+                binding_name = node.right.name
+
+                # Interactive clarification mode
+                if self.interactive_mode and self.interactive_clarifier:
+                    # Get the current value for display
+                    try:
+                        current_value = self.environment.lookup(binding_name)
+                        # Get clarity state if available
+                        clarity_state = self.clarity_tracker.get_clarity(binding_name)
+
+                        if clarity_state and clarity_state.hypothesis:
+                            # Show the hypothesis and ask for confirmation
+                            confirmed = self.interactive_clarifier.dialogue.confirm_understanding(
+                                statement=f"{binding_name} might is {current_value}",
+                                understood_as=clarity_state.hypothesis,
+                            )
+                            if not confirmed:
+                                # User didn't confirm - ask what they meant
+                                result = self.interactive_clarifier.clarify_binding(
+                                    name=binding_name,
+                                    value=current_value,
+                                    possible_meanings=[
+                                        f"Keep as '{current_value}'",
+                                        "Change the value",
+                                        "Remove this binding",
+                                    ],
+                                )
+                                if result.get("clarified"):
+                                    self.interactive_clarifier.dialogue.acknowledge_clarification(
+                                        binding_name,
+                                        result.get("meaning", str(current_value)),
+                                    )
+                        else:
+                            # No hypothesis - just acknowledge
+                            self.interactive_clarifier.dialogue.acknowledge_clarification(
+                                binding_name, f"value = {current_value}"
+                            )
+                    except NameError:
+                        # Binding doesn't exist yet - that's ok
+                        pass
+
+                success = self.clarity_tracker.clarify(binding_name)
+                return self.space.embed_scalar(1.0 if success else 0.0)
+            else:
+                # Can only clarify identifiers
+                raise RuntimeError("clarify requires an identifier (clarify of x)")
+
         # Special handling for function calls:
         # If left side is an identifier, check if it's a function before evaluating
         if isinstance(node.left, Identifier):
@@ -604,6 +732,34 @@ class Interpreter:
             # Project through inverse scaling
             assert isinstance(left, LRVMVector) and isinstance(right, LRVMVector)
             scalar = right.coords[0]
+
+            # Active listening: detect potential division by zero
+            if self.active_listener and abs(scalar) < 1e-10:
+                # Ambiguity detected - seek clarification
+                divisor_name = (
+                    node.right.name if isinstance(node.right, Identifier) else "divisor"
+                )
+                result = self.interactive_clarifier.clarify_operation(
+                    "division",
+                    {
+                        "divisor": scalar,
+                        "divisor_name": divisor_name,
+                        "proven_non_zero": False,
+                    },
+                )
+                strategy = result.get("strategy", "proceed")
+
+                if strategy == "default":
+                    # Return a default value (zero) instead of erroring
+                    return self.space.zero_vector()
+                elif strategy == "check":
+                    # User wants explicit check - raise but with helpful message
+                    raise RuntimeError(
+                        f"Division by zero: '{divisor_name}' is zero.\n"
+                        f"Consider adding: if {divisor_name} != 0: ..."
+                    )
+                # strategy == "proceed" falls through to normal error
+
             if abs(scalar) < 1e-10:
                 raise RuntimeError("Division by zero (equilibrium singularity)")
             return left.scale(1.0 / scalar)
@@ -1071,6 +1227,46 @@ class Interpreter:
         if isinstance(indexed_value, EigenList):
             # Check bounds
             if index < 0 or index >= len(indexed_value.elements):
+                # Active listening: detect out-of-bounds access
+                if self.active_listener:
+                    index_name = (
+                        node.index_expr.name
+                        if isinstance(node.index_expr, Identifier)
+                        else str(index)
+                    )
+                    list_name = (
+                        node.list_expr.name
+                        if isinstance(node.list_expr, Identifier)
+                        else "list"
+                    )
+                    result = self.interactive_clarifier.clarify_operation(
+                        "index",
+                        {
+                            "index": index,
+                            "index_name": index_name,
+                            "list_name": list_name,
+                            "list_length": len(indexed_value.elements),
+                            "proven_in_bounds": False,
+                        },
+                    )
+                    strategy = result.get("strategy", "proceed")
+
+                    if strategy == "clamp":
+                        # Clamp to valid range
+                        clamped = max(0, min(index, len(indexed_value.elements) - 1))
+                        return indexed_value.elements[clamped]
+                    elif strategy == "wrap":
+                        # Wrap around using modulo
+                        wrapped = index % len(indexed_value.elements)
+                        return indexed_value.elements[wrapped]
+                    elif strategy == "check":
+                        # User wants explicit check - raise with helpful message
+                        raise IndexError(
+                            f"List index {index} out of range (list has {len(indexed_value.elements)} elements).\n"
+                            f"Consider adding: if {index_name} < len of {list_name}: ..."
+                        )
+                    # strategy == "proceed" falls through to normal error
+
                 raise IndexError(
                     f"List index {index} out of range (list has {len(indexed_value.elements)} elements)"
                 )
@@ -1392,6 +1588,52 @@ class Interpreter:
                 result = 0.0
             return self.space.embed_scalar(result)
 
+        # Communication Clarity Framework predicates
+        elif name_lower == "clarified":
+            # CLARIFIED: Check if all bindings have verified intent
+            # From the framework: "clarity is required before execution"
+            clarity_score = self.clarity_tracker.compute_clarity_score()
+            result = 1.0 if clarity_score >= self.clarity_threshold else 0.0
+            unresolved = self.clarity_tracker.get_unresolved_bindings()
+            self.clarity_explainer.explain_clarified(
+                result=result > 0.5,
+                clarity_score=clarity_score,
+                threshold=self.clarity_threshold,
+                unresolved=unresolved,
+            )
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "ambiguous":
+            # AMBIGUOUS: Check if there are any ambiguous bindings
+            # From the framework: "implication is not universal"
+            unresolved = self.clarity_tracker.get_unresolved_bindings()
+            result = 1.0 if len(unresolved) > 0 else 0.0
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "assumed":
+            # ASSUMED: Check if there are any unverified assumptions
+            # From the framework: "hidden variables cause failure"
+            assumptions = self.clarity_tracker.get_assumptions()
+            result = 1.0 if len(assumptions) > 0 else 0.0
+            self.clarity_explainer.explain_assumed(
+                result=result > 0.5,
+                assumptions=assumptions,
+            )
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "explicit":
+            # EXPLICIT: Opposite of ambiguous - all intents are clarified
+            # From the framework: "making hidden variables visible"
+            clarity_score = self.clarity_tracker.compute_clarity_score()
+            result = 1.0 if clarity_score >= 1.0 else 0.0
+            return self.space.embed_scalar(result)
+
+        elif name_lower == "clarity" or name_lower == "cs":
+            # CLARITY / CS: Return current clarity score as numeric value
+            # Analogous to framework_strength / fs
+            clarity_score = self.clarity_tracker.compute_clarity_score()
+            return self.space.embed_scalar(clarity_score)
+
         # Regular variable lookup
         return self.environment.lookup(node.name)
 
@@ -1579,6 +1821,37 @@ class Interpreter:
                 # Not enough history
                 return self.space.embed_string("unknown")
 
+        elif interrogative == "assumes":
+            # ASSUMES: Query hidden variables/assumptions for a binding
+            # From the Communication Clarity Framework:
+            # "Hidden variables cause failure, not misunderstanding"
+            #
+            # Returns a list of assumptions that have been detected for the binding,
+            # or an empty list if the binding is fully clarified.
+            if isinstance(node.expression, Identifier):
+                binding_name = node.expression.name
+                assumptions = self.clarity_tracker.get_assumptions(binding_name)
+
+                if assumptions:
+                    # Return a list of assumption descriptions
+                    assumption_strs = [f"{a.name}: {a.context}" for a in assumptions]
+                    # Join as a multi-line string for readable output
+                    result_str = "\n".join(assumption_strs)
+                    return self.space.embed_string(result_str)
+                else:
+                    # No assumptions - binding is clear
+                    return self.space.embed_string("")
+            else:
+                # Query global assumptions if not a specific binding
+                global_assumptions = self.clarity_tracker.get_assumptions()
+                if global_assumptions:
+                    assumption_strs = [
+                        f"{a.name}: {a.context}" for a in global_assumptions
+                    ]
+                    return self.space.embed_string("\n".join(assumption_strs))
+                else:
+                    return self.space.embed_string("")
+
         else:
             raise RuntimeError(f"Unknown interrogative: {interrogative}")
 
@@ -1743,6 +2016,100 @@ class Interpreter:
         Check if a vector is the special OF vector.
         """
         return self.metric.is_lightlike(vector)
+
+    def _check_type_coercion(
+        self,
+        left: LRVMVector,
+        right: LRVMVector,
+        operation: str,
+    ) -> Optional[str]:
+        """
+        Check if type coercion is needed and handle via active listening.
+
+        Returns the coercion strategy or None if no coercion needed.
+
+        Args:
+            left: Left operand
+            right: Right operand
+            operation: The operation being performed
+
+        Returns:
+            Strategy string or None
+        """
+        if not self.active_listener:
+            return None
+
+        # Detect type mismatch by checking metadata
+        left_type = "string" if left.metadata.get("string_value") else "numeric"
+        right_type = "string" if right.metadata.get("string_value") else "numeric"
+
+        if left_type != right_type:
+            result = self.interactive_clarifier.clarify_operation(
+                "coercion",
+                {
+                    "from_type": right_type,
+                    "to_type": left_type,
+                    "operation": operation,
+                },
+            )
+            return result.get("strategy", "lenient")
+
+        return None
+
+    def _format_agency_error(
+        self,
+        error_type: str,
+        context: Dict[str, Any],
+    ) -> str:
+        """
+        Format an error message that preserves user agency.
+
+        Instead of dictating what went wrong, presents the situation
+        and possible interpretations.
+
+        Args:
+            error_type: Type of error
+            context: Context about the error
+
+        Returns:
+            Formatted error message
+        """
+        if error_type == "undefined_variable":
+            name = context.get("name", "unknown")
+            suggestions = context.get("suggestions", [])
+            msg = f"Variable '{name}' not found in scope.\n"
+            if suggestions:
+                msg += "Possible intentions:\n"
+                for s in suggestions[:3]:
+                    msg += f"  • Did you mean '{s}'?\n"
+            msg += "  • Define it first with: {name} is <value>\n"
+            msg += "  • Or use 'might is' for tentative binding"
+            return msg
+
+        elif error_type == "type_mismatch":
+            expected = context.get("expected", "unknown")
+            got = context.get("got", "unknown")
+            operation = context.get("operation", "operation")
+            msg = f"Type question for {operation}:\n"
+            msg += f"  Got: {got}\n"
+            msg += f"  Expected: {expected}\n"
+            msg += "Possible approaches:\n"
+            msg += f"  • Convert {got} to {expected}\n"
+            msg += f"  • Use a different operation for {got}\n"
+            msg += "  • Check if this is the intended value"
+            return msg
+
+        elif error_type == "function_not_found":
+            name = context.get("name", "unknown")
+            msg = f"Function '{name}' not found.\n"
+            msg += "Possible intentions:\n"
+            msg += f"  • Define it first with: define {name} as: ...\n"
+            msg += "  • Import from a module: from <module> import {name}\n"
+            msg += "  • Check spelling"
+            return msg
+
+        else:
+            return f"Error: {error_type} - {context}"
 
     def get_framework_strength(self) -> float:
         """

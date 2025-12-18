@@ -215,6 +215,35 @@ class Assignment(ASTNode):
 
 
 @dataclass
+class TentativeAssignment(ASTNode):
+    """
+    Represents the MIGHT IS operator (tentative/hypothesis binding).
+
+    Semantic: x might is y → v_x ← v_y with clarity_type=TENTATIVE
+
+    This creates a binding that is explicitly marked as a hypothesis,
+    not yet verified. The program can check for tentative bindings and
+    refuse to execute certain operations until intent is clarified.
+
+    From the Communication Clarity Framework:
+    - Treats the binding as a hypothesis, not a fact
+    - Forces intent to be externalized before execution
+    - Prevents reinforcing the false belief that implication was sufficient
+
+    Example:
+        count might is 0        # Hypothesis: count starts at zero
+        mode might is "strict"  # Hypothesis: we want strict mode
+    """
+
+    identifier: str
+    expression: ASTNode
+    hypothesis: Optional[str] = None  # Optional description of the hypothesis
+
+    def __repr__(self) -> str:
+        return f"TentativeAssignment({self.identifier!r}, {self.expression}, hypothesis={self.hypothesis!r})"
+
+
+@dataclass
 class IndexedAssignment(ASTNode):
     """
     Represents indexed assignment (list element assignment).
@@ -354,14 +383,16 @@ class Interrogative(ASTNode):
     - WHERE: Spatial position in semantic space
     - WHY: Causal direction (gradient)
     - HOW: Transformation/process
+    - ASSUMES: Hidden variables/assumptions (clarity framework)
 
     Example:
         what is x
         why is change
         how is convergence
+        assumes is x
     """
 
-    interrogative: str  # "who", "what", "when", "where", "why", "how"
+    interrogative: str  # "who", "what", "when", "where", "why", "how", "assumes"
     expression: ASTNode
 
     def __repr__(self) -> str:
@@ -676,11 +707,16 @@ class Parser:
             return Continue()
 
         # Assignment (identifier IS expression) or IndexedAssignment (identifier[idx] IS expression)
+        # or TentativeAssignment (identifier MIGHT IS expression)
         if token.type == TokenType.IDENTIFIER:
             # Look ahead for IS token (simple assignment)
             next_token = self.peek_token()
             if next_token and next_token.type == TokenType.IS:
                 return self.parse_assignment()
+
+            # Look ahead for MIGHT IS (tentative assignment)
+            if next_token and next_token.type == TokenType.MIGHT:
+                return self.parse_tentative_assignment()
 
             # Look ahead for LBRACKET (potential indexed assignment)
             if next_token and next_token.type == TokenType.LBRACKET:
@@ -720,6 +756,37 @@ class Parser:
             self.advance()
 
         return Assignment(identifier, expression)
+
+    def parse_tentative_assignment(self) -> "TentativeAssignment":
+        """
+        Parse a tentative assignment statement.
+
+        Grammar: identifier MIGHT IS expression
+
+        This creates a hypothesis binding that must be clarified before
+        certain operations can proceed. From the Communication Clarity Framework:
+        - Treats the binding as a hypothesis, not a fact
+        - Forces intent to be externalized
+        - Prevents silent execution on unverified assumptions
+        """
+        # Get identifier
+        id_token = self.expect(TokenType.IDENTIFIER)
+        identifier = id_token.value
+
+        # Expect MIGHT token
+        self.expect(TokenType.MIGHT)
+
+        # Expect IS token
+        self.expect(TokenType.IS)
+
+        # Parse expression
+        expression = self.parse_expression()
+
+        # Consume optional newline
+        if self.current_token() and self.current_token().type == TokenType.NEWLINE:
+            self.advance()
+
+        return TentativeAssignment(identifier, expression)
 
     def parse_potential_indexed_assignment(self) -> ASTNode:
         """
@@ -1116,7 +1183,7 @@ class Parser:
         """
         Parse an interrogative operator.
 
-        Grammar: (WHO | WHAT | WHEN | WHERE | WHY | HOW | WAS | CHANGE | STATUS | TREND) (IS)? primary
+        Grammar: (WHO | WHAT | WHEN | WHERE | WHY | HOW | WAS | CHANGE | STATUS | TREND | ASSUMES) (IS)? primary
 
         Example:
             what x
@@ -1126,6 +1193,7 @@ class Parser:
             change is x (delta/difference)
             status is x (alias for how)
             trend is x  (trajectory analysis)
+            assumes is x (hidden variables - clarity framework)
         """
         # Get interrogative type
         token = self.current_token()
@@ -1142,6 +1210,8 @@ class Parser:
             # Interrogative aliases
             TokenType.STATUS: "status",
             TokenType.TREND: "trend",
+            # Clarity operators
+            TokenType.ASSUMES: "assumes",
         }
         interrogative = interrogative_map[token.type]
         self.advance()
@@ -1512,6 +1582,8 @@ class Parser:
             # Interrogative aliases
             TokenType.STATUS,
             TokenType.TREND,
+            # Clarity operators
+            TokenType.ASSUMES,
         ):
             return self.parse_interrogative()
 

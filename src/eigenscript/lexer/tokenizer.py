@@ -48,6 +48,9 @@ class TokenType(Enum):
     # Interrogative aliases
     STATUS = "STATUS"
     TREND = "TREND"
+    # Clarity operators (communication clarity framework)
+    MIGHT = "MIGHT"  # Tentative binding: x might is 5
+    ASSUMES = "ASSUMES"  # Assumption query: assumes is x
 
     # Literals
     NUMBER = "NUMBER"
@@ -159,6 +162,9 @@ class Tokenizer:
         # Interrogative aliases
         "status": TokenType.STATUS,
         "trend": TokenType.TREND,
+        # Clarity operators
+        "might": TokenType.MIGHT,
+        "assumes": TokenType.ASSUMES,
     }
 
     def __init__(self, source: str):
