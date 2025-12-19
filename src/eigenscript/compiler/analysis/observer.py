@@ -107,7 +107,7 @@ class ObserverAnalyzer:
             self.current_function = prev_function
 
         elif isinstance(node, (Assignment, TentativeAssignment)):
-            # Assignment.identifier is a string name of the target
+            # Assignment/TentativeAssignment identifier is a string name of the target
             self.last_assigned = node.identifier
             self._visit(node.expression)
 
@@ -167,13 +167,6 @@ class ObserverAnalyzer:
         elif isinstance(node, Index):
             self._visit(node.list_expr)
             self._visit(node.index_expr)
-
-        elif isinstance(node, Identifier):
-            # Check if this identifier is a predicate
-            if node.name in self.PREDICATE_NAMES:
-                # Predicates require the last variable to be observed
-                # This is a simplified heuristic - ideally we'd track scope
-                pass
 
     def _check_for_predicates(self, node: ASTNode):
         """Check if condition uses predicates (converged, diverging, etc.)."""
