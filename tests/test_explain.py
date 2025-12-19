@@ -140,6 +140,21 @@ class TestPredicateExplainer:
         assert "radius: 10.0000 → 8.0000" in output
         assert "decreasing (improving)" in output
 
+    def test_explain_improving_flat(self):
+        """Should explain improving predicate when radius is unchanged."""
+        explainer = PredicateExplainer(enabled=True, use_color=False)
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            explainer.explain_improving(
+                result=False,
+                previous_radius=5.0,
+                current_radius=5.0,
+                trajectory_length=3,
+            )
+        output = stderr.getvalue()
+        assert "`improving` → FALSE" in output
+        assert "unchanged (not improving)" in output
+
     def test_explain_improving_insufficient_data(self):
         """Should explain improving with insufficient trajectory."""
         explainer = PredicateExplainer(enabled=True, use_color=False)
