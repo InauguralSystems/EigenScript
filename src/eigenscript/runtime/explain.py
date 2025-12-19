@@ -204,9 +204,12 @@ class PredicateExplainer:
             )
         elif previous_radius is not None and current_radius is not None:
             delta = current_radius - previous_radius
-            direction = (
-                "decreasing (improving)" if delta < 0 else "increasing (not improving)"
-            )
+            if delta < 0:
+                direction = "decreasing (improving)"
+            elif delta > 0:
+                direction = "increasing (not improving)"
+            else:
+                direction = "unchanged (not improving)"
             print(
                 f"  └─ radius: {previous_radius:.4f} → {current_radius:.4f}",
                 file=sys.stderr,
