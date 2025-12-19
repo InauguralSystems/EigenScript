@@ -41,6 +41,14 @@ class ObserverAnalyzer:
     Unobserved variables can be compiled to raw doubles for maximum performance.
     """
 
+    PREDICATE_NAMES = {
+        "converged",
+        "diverging",
+        "oscillating",
+        "stable",
+        "improving",
+    }
+
     def __init__(self):
         self.observed: Set[str] = set()
         self.user_functions: Set[str] = set()
@@ -99,6 +107,7 @@ class ObserverAnalyzer:
             self.current_function = prev_function
 
         elif isinstance(node, (Assignment, TentativeAssignment)):
+            # Assignment.identifier is a string name of the target
             self.last_assigned = node.identifier
             self._visit(node.expression)
 
@@ -161,13 +170,7 @@ class ObserverAnalyzer:
 
         elif isinstance(node, Identifier):
             # Check if this identifier is a predicate
-            if node.name in [
-                "converged",
-                "diverging",
-                "oscillating",
-                "stable",
-                "improving",
-            ]:
+            if node.name in self.PREDICATE_NAMES:
                 # Predicates require the last variable to be observed
                 # This is a simplified heuristic - ideally we'd track scope
                 pass
@@ -177,16 +180,8 @@ class ObserverAnalyzer:
         if node is None:
             return
 
-        predicate_names = {
-            "converged",
-            "diverging",
-            "oscillating",
-            "stable",
-            "improving",
-        }
-
         if isinstance(node, Identifier):
-            if node.name in predicate_names and self.last_assigned:
+            if node.name in self.PREDICATE_NAMES and self.last_assigned:
                 self.observed.add(self.last_assigned)
         elif isinstance(node, UnaryOp):
             self._check_for_predicates(node.operand)
