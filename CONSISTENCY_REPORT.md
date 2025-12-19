@@ -155,6 +155,10 @@ Complete analysis and remediation plans are available in the `/docs/analysis/` d
 3. Implement automated consistency checks in CI/CD
 4. Document file organization conventions
 
+### Fresh Observations (December 19, 2025)
+- Pytest emits target-data warnings in `compiler/codegen/llvm_backend.py` for wasm32, aarch64, arm32, and riscv64; add lightweight target detection or skip logic so default test runs stay warning-free.
+- Coverage hotspots from the latest run: `compiler/cli/compile.py` (~44%), `compiler/codegen/llvm_backend.py` (~50%), `runtime/targets.py` (~14%), and `runtime/clarity.py` (~59%). Add smoke tests around CLI entrypoints, target resolution, and clarity normalization to raise confidence without altering semantics.
+
 ---
 
 ## Impact Assessment
