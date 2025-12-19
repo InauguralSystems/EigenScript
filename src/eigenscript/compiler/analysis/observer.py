@@ -10,7 +10,7 @@ interrogate it. Otherwise, it can be compiled to a raw double for C-level speed.
 This implements zero-cost abstraction: pay for geometric semantics only when used.
 """
 
-from typing import Set
+from typing import Optional, Set
 from eigenscript.parser.ast_builder import (
     ASTNode,
     Identifier,
@@ -45,7 +45,7 @@ class ObserverAnalyzer:
         self.observed: Set[str] = set()
         self.user_functions: Set[str] = set()
         self.current_function: str = None
-        self.last_assigned: str | None = None
+        self.last_assigned: Optional[str] = None
 
     def analyze(self, ast_nodes: list[ASTNode]) -> Set[str]:
         """Analyze AST and return set of variable names that need EigenValue tracking.
@@ -98,11 +98,7 @@ class ObserverAnalyzer:
             self.last_assigned = prev_last_assigned
             self.current_function = prev_function
 
-        elif isinstance(node, Assignment):
-            self.last_assigned = node.identifier
-            self._visit(node.expression)
-
-        elif isinstance(node, TentativeAssignment):
+        elif isinstance(node, (Assignment, TentativeAssignment)):
             self.last_assigned = node.identifier
             self._visit(node.expression)
 
