@@ -1,0 +1,429 @@
+# iLambdaAi RNN Example
+# Demonstrates building and training Recurrent Neural Networks
+# using EigenScript's temporal operators for hidden state tracking
+#
+# This example shows:
+# - Building LSTM and GRU models
+# - Sequence classification
+# - Using EigenScript's temporal operators (was, change, trend)
+# - Hidden state evolution tracking
+
+from model import Model
+from layers import Linear, ReLU, Dropout, Sequential
+from rnn import LSTM, GRU, Embedding, LSTMCell
+from optimizers import Adam
+from loss import cross_entropy_loss, mse_loss
+from loader import ArrayDataset, DataLoader
+
+# ============================================================================
+# Example 1: Sequence Classification with LSTM
+# ============================================================================
+
+print of "=== iLambdaAi RNN Example ==="
+print of ""
+print of "Example 1: Sequence Classification with LSTM"
+print of ""
+
+# Sequence classification model
+define LSTMClassifier as:
+    # extends Model
+    embedding is Embedding
+    lstm is LSTM
+    fc is Linear
+    dropout is Dropout
+
+    vocab_size is 0
+    embed_dim is 0
+    hidden_size is 0
+    num_classes is 0
+
+    define init as:
+
+        vocab is arg[0]
+
+        embed is arg[1]
+
+        hidden is arg[2]
+
+        classes is arg[3]
+
+        num_layers is arg[4]
+        vocab_size is vocab
+        embed_dim is embed
+        hidden_size is hidden
+        num_classes is classes
+
+        # Embedding layer
+        embedding is Embedding
+        init of [embedding, vocab_size, embed_dim, none]
+
+        # LSTM layer
+        lstm is LSTM
+        init of [lstm, embed_dim, hidden_size, num_layers, true, true, 0.0, false]
+
+        # Dropout
+        dropout is Dropout
+        init of [dropout, 0.5]
+
+        # Output layer
+        fc is Linear
+        init of [fc, hidden_size, num_classes, true]
+
+        register_module of embedding
+        register_module of lstm
+        register_module of dropout
+        register_module of fc
+
+        _name is "LSTMClassifier"
+
+    define forward as:
+
+        x is arg
+        # x: (batch, seq_len) - token indices
+
+        # Embed tokens
+        embedded is forward of [embedding, x]
+        # embedded: (batch, seq_len, embed_dim)
+
+        # Process with LSTM
+        output, (h_n, c_n) is forward of [lstm, embedded, none]
+        # output: (batch, seq_len, hidden_size)
+        # h_n: (num_layers, batch, hidden_size)
+
+        # Use last hidden state for classification
+        last_hidden is h_n[-1]  # (batch, hidden_size)
+
+        # === EigenScript Temporal Features ===
+        # Track hidden state evolution
+        previous_hidden is was of last_hidden
+        hidden_change is change of last_hidden
+        hidden_trend is trend of last_hidden
+
+        if hidden_trend == "increasing":
+            print of "Hidden state magnitude increasing"
+
+        # Apply dropout and classify
+        dropped is forward of [dropout, last_hidden]
+        logits is forward of [fc, dropped]
+
+        return logits
+
+    define describe as:
+        return format of ["LSTMClassifier(vocab={}, hidden={})", vocab_size, hidden_size]
+
+
+# Create model
+print of "Creating LSTM classifier..."
+
+vocab_size is 1000
+embed_dim is 64
+hidden_size is 128
+num_classes is 5
+num_layers is 2
+
+lstm_model is LSTMClassifier
+init of [lstm_model, vocab_size, embed_dim, hidden_size, num_classes, num_layers]
+
+print of describe of lstm_model
+print of "Parameters:"
+print of num_parameters of lstm_model
+print of ""
+
+# ============================================================================
+# Create Synthetic Sequence Data
+# ============================================================================
+
+print of "Creating synthetic sequence data..."
+
+num_samples is 100
+seq_length is 20
+
+# Random token sequences
+X_seq is random_integers of [0, vocab_size, [num_samples, seq_length]]
+
+# Random labels
+Y_seq is random_integers of [0, num_classes, num_samples]
+
+print of "Sequence data shape:"
+print of shape of X_seq
+print of "Labels shape:"
+print of shape of Y_seq
+print of ""
+
+# ============================================================================
+# Train LSTM Classifier
+# ============================================================================
+
+print of "Training LSTM classifier..."
+print of ""
+
+optimizer is Adam
+init of [optimizer, (parameters of lstm_model), 0.001, 0.9, 0.999, 1e-8, 0, false]
+
+train of lstm_model
+
+for epoch in range of 5:
+    zero_grad of lstm_model
+
+    # Forward pass
+    logits is forward of [lstm_model, X_seq]
+
+    # Compute loss
+    loss is cross_entropy_loss of [logits, Y_seq]
+
+    # Backward pass
+    backward of loss
+
+    # Update
+    step of optimizer
+
+    # === EigenScript Geometric Features ===
+    fs is framework_strength
+
+    print of [format of "Epoch {}: Loss = {:.4f}, FS = {:.4f}"]
+    print of epoch
+    print of what is loss
+    print of fs
+
+    if converged:
+        print of "Converged!"
+        break
+
+print of ""
+
+# ============================================================================
+# Example 2: Sequence-to-Sequence with GRU
+# ============================================================================
+
+print of "Example 2: Sequence Prediction with GRU"
+print of ""
+
+# Sequence prediction model (predict next value)
+define GRUPredictor as:
+    # extends Model
+    gru is GRU
+    fc is Linear
+
+    define init as:
+
+        input_size is arg[0]
+
+        hidden_size is arg[1]
+
+        output_size is arg[2]
+
+        num_layers is arg[3]
+        gru is GRU
+        init of [gru, input_size, hidden_size, num_layers, true, true, 0, false]
+
+        fc is Linear
+        init of [fc, hidden_size, output_size, true]
+
+        register_module of gru
+        register_module of fc
+
+        _name is "GRUPredictor"
+
+    define forward as:
+
+        x is arg[0]
+
+        h is arg[1]
+        # x: (batch, seq_len, input_size)
+
+        output, h_n is forward of [gru, x, h]
+        # output: (batch, seq_len, hidden_size)
+
+        # Predict at each timestep
+        predictions is forward of [fc, output]
+        # predictions: (batch, seq_len, output_size)
+
+        # === EigenScript Temporal Features ===
+        # Track the trend of predictions
+        pred_trend is trend of predictions
+
+        return (predictions, h_n)
+
+    define describe as:
+        return "GRUPredictor"
+
+
+# Create GRU model
+print of "Creating GRU predictor..."
+
+input_size is 1
+hidden_size is 32
+output_size is 1
+
+gru_model is GRUPredictor
+init of [gru_model, input_size, hidden_size, output_size, 1]
+
+print of describe of gru_model
+print of "Parameters:"
+print of num_parameters of gru_model
+print of ""
+
+# Generate sine wave data for prediction
+print of "Generating sine wave sequence data..."
+
+num_samples is 50
+seq_length is 30
+
+# Create sine wave sequences
+t is linspace of [0, (4 * pi), (seq_length + 1)]
+X_sine is []
+Y_sine is []
+
+for i in range of num_samples:
+    phase is random of [0, (2 * pi)]
+    sequence is sin of [(add of t, phase)]
+    x_seq is sequence[:-1]  # Input: all but last
+    y_seq is sequence[1:]   # Target: all but first (shifted by 1)
+
+    X_sine is append of [X_sine, reshape of x_seq, [seq_length, 1]]
+    Y_sine is append of [Y_sine, reshape of y_seq, [seq_length, 1]]
+
+X_sine is stack of [X_sine, 0]
+Y_sine is stack of [Y_sine, 0]
+
+print of "Sine wave X shape:"
+print of shape of X_sine
+print of "Sine wave Y shape:"
+print of shape of Y_sine
+print of ""
+
+# Train GRU predictor
+print of "Training GRU on sine wave prediction..."
+print of ""
+
+optimizer2 is Adam
+init of [optimizer2, (parameters of gru_model), 0.01, 0.9, 0.999, 1e-8, 0, false]
+
+train of gru_model
+
+for epoch in range of 20:
+    zero_grad of gru_model
+
+    predictions, _ is forward of [gru_model, X_sine, none]
+
+    loss is mse_loss of [predictions, Y_sine]
+
+    backward of loss
+
+    step of optimizer2
+
+    if epoch % 5 == 0:
+        fs is framework_strength
+        print of [format of "Epoch {}: MSE = {:.6f}, FS = {:.4f}"]
+        print of epoch
+        print of what is loss
+        print of fs
+
+    # === EigenScript Geometric Features ===
+    if converged:
+        print of "Converged at epoch"
+        print of epoch
+        break
+
+    if oscillating and epoch > 5:
+        print of ["Oscillation detected, may need to reduce learning rate"]
+
+print of ""
+
+# ============================================================================
+# Example 3: Character-level Language Model with LSTMCell
+# ============================================================================
+
+print of "Example 3: Step-by-step LSTM with LSTMCell"
+print of ""
+
+# Demonstrate using LSTMCell directly for more control
+print of "Using LSTMCell for manual sequence processing..."
+
+cell is LSTMCell
+init of [cell, 10, 20, true]
+
+# Process a sequence step by step
+batch_size is 4
+seq_length is 5
+input_size is 10
+
+# Random input sequence
+input_seq is random_tensor of [batch_size, seq_length, input_size]
+
+# Initialize hidden state
+h is zeros of [batch_size, 20]
+c is zeros of [batch_size, 20]
+
+print of "Processing sequence step by step..."
+print of ""
+
+for t in range of seq_length:
+    x_t is input_seq[:, t, :]
+
+    # Process one timestep
+    h, c is forward of [cell, x_t, (h, c)]
+
+    # === EigenScript Temporal Features ===
+    h_prev is was of h
+    h_delta is change of h
+    h_trend is trend of h
+
+    print of format of "  Step {}: h_norm = {:.4f}, change = {:.4f}, trend = {}",
+        t, norm of [h, h_delta, h_trend]
+
+print of ""
+print of "Final hidden state shape:"
+print of shape of h
+print of "Final cell state shape:"
+print of shape of c
+
+# ============================================================================
+# Geometric Introspection
+# ============================================================================
+
+print of ""
+print of "=== Geometric Introspection ==="
+
+print of ""
+print of "LSTM Classifier:"
+report1 is introspect of lstm_model
+print of "  Converged:"
+print of report1["converged"]
+print of "  Stable:"
+print of report1["stable"]
+print of "  Framework Strength:"
+print of report1["framework_strength"]
+
+print of ""
+print of "GRU Predictor:"
+report2 is introspect of gru_model
+print of "  Converged:"
+print of report2["converged"]
+print of "  Stable:"
+print of report2["stable"]
+print of "  Framework Strength:"
+print of report2["framework_strength"]
+
+# ============================================================================
+# Summary of Temporal Operators
+# ============================================================================
+
+print of ""
+print of "=== EigenScript Temporal Operators Summary ==="
+print of ""
+print of "RNNs especially benefit from EigenScript's temporal operators:"
+print of ""
+print of "1. WAS - Access previous hidden state"
+print of "   previous_h is was of hidden_state"
+print of ""
+print of "2. CHANGE - Track hidden state magnitude changes"
+print of "   delta is change of hidden_state"
+print of ""
+print of "3. TREND - Detect hidden state evolution direction"
+print of "   direction is trend of hidden_state"
+print of ["   # Returns: 'increasing', 'decreasing', or 'stable'"]
+print of ""
+print of "These enable self-aware sequence processing!"
+print of ""
+print of "=== RNN Example Complete ==="

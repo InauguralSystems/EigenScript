@@ -1,0 +1,474 @@
+# iLambdaAi - Loss Functions
+# Common loss functions for neural network training
+#
+# All loss functions leverage EigenScript's geometric introspection
+# to provide automatic convergence and stability detection
+
+# ============================================================================
+# Mean Squared Error Loss
+# ============================================================================
+
+# MSE Loss: (1/n) * sum((predictions - targets)^2)
+# Used for regression tasks
+
+define mse_loss as:
+
+    predictions is arg[0]
+
+    targets is arg[1]
+    # Compute difference
+    diff is subtract of [predictions, targets]
+
+    # Square the differences
+    squared is multiply of [diff, diff]
+
+    # Mean over all elements
+    loss is mean of squared
+
+    # === EigenScript Geometric Feature ===
+    # The loss tensor automatically tracks convergence
+    return loss
+
+
+# MSE Loss with reduction options
+define MSELoss as:
+    reduction is "mean"  # "mean", "sum", or "none"
+
+    define init as:
+
+        reduce_mode is arg
+        reduction is reduce_mode
+
+    define forward as:
+
+        predictions is arg[0]
+
+        targets is arg[1]
+        diff is subtract of [predictions, targets]
+        squared is multiply of [diff, diff]
+
+        if reduction == "mean":
+            return mean of squared
+        else if reduction == "sum":
+            return sum of squared
+        else:
+            return squared
+
+    # === EigenScript Geometric Feature ===
+    # Check if loss has converged
+    define is_converged as:
+        return converged
+
+    define is_improving as:
+        return improving
+
+
+# ============================================================================
+# Cross Entropy Loss
+# ============================================================================
+
+# Cross Entropy: -sum(targets * log(predictions))
+# Used for multi-class classification
+
+define cross_entropy_loss as:
+
+    logits is arg[0]
+
+    targets is arg[1]
+    # Apply log-softmax for numerical stability
+    log_probs is log_softmax of [logits, -1]
+
+    # Gather the log probabilities at target indices
+    # targets should be class indices
+    selected_log_probs is gather of [log_probs, targets, -1]
+
+    # Negative mean of selected log probabilities
+    loss is negative of mean of selected_log_probs
+
+    return loss
+
+
+# Cross Entropy with soft targets (label smoothing)
+define cross_entropy_loss_soft as:
+    logits is arg[0]
+    targets is arg[1]
+    # targets are probability distributions
+    log_probs is log_softmax of [logits, -1]
+
+    # Element-wise multiplication and sum
+    loss is negative of [sum of multiply of targets, log_probs]
+
+    return mean of loss
+
+
+define CrossEntropyLoss as:
+    reduction is "mean"
+    label_smoothing is 0.0
+
+    define init as:
+
+        reduce_mode is arg[0]
+
+        smoothing is arg[1]
+        reduction is reduce_mode
+        label_smoothing is smoothing
+
+    define forward as:
+
+        logits is arg[0]
+
+        targets is arg[1]
+        if label_smoothing > 0:
+            # Apply label smoothing
+            num_classes is shape of [logits, -1]
+            smooth_targets is smooth_labels of [targets, num_classes, label_smoothing]
+            return cross_entropy_loss_soft of [logits, smooth_targets]
+        else:
+            return cross_entropy_loss of [logits, targets]
+
+
+# Helper: Create smoothed labels
+define smooth_labels as:
+    targets is arg[0]
+    num_classes is arg[1]
+    smoothing is arg[2]
+    # One-hot encode targets
+    one_hot is one_hot_encode of [targets, num_classes]
+
+    # Apply smoothing: (1 - smoothing) * one_hot + smoothing / num_classes
+    smooth_value is smoothing / num_classes
+    smoothed is multiply of [(1 - smoothing), one_hot]
+    smoothed is add of [smoothed, smooth_value]
+
+    return smoothed
+
+
+# ============================================================================
+# Binary Cross Entropy Loss
+# ============================================================================
+
+# BCE: -[y * log(p) + (1-y) * log(1-p)]
+# Used for binary classification
+
+define binary_cross_entropy_loss as:
+
+    predictions is arg[0]
+
+    targets is arg[1]
+    # Numerical stability: clip predictions
+    eps is 1e-7
+    predictions is clip of [predictions, eps, (1 - eps)]
+
+    # BCE formula
+    term1 is multiply of [targets, log of predictions]
+    term2 is multiply of [(subtract of 1, targets), log of (subtract of 1, predictions)]
+
+    loss is negative of [mean of add of term1, term2]
+
+    return loss
+
+
+# BCE with logits (numerically stable)
+define binary_cross_entropy_with_logits as:
+    logits is arg[0]
+    targets is arg[1]
+    # BCE with logits: max(0, logits) - logits * targets + log(1 + exp(-|logits|))
+
+    # max(0, logits)
+    relu_logits is relu of logits
+
+    # logits * targets
+    logits_targets is multiply of [logits, targets]
+
+    # |logits|
+    abs_logits is abs of logits
+
+    # log(1 + exp(-|logits|))
+    log_term is log of [add of 1, exp of negative of abs_logits]
+
+    # Combine
+    loss is add of [relu_logits, subtract of log_term, logits_targets]
+
+    return mean of loss
+
+
+define BCELoss as:
+    reduction is "mean"
+
+    define init as:
+
+        reduce_mode is arg
+        reduction is reduce_mode
+
+    define forward as:
+
+        predictions is arg[0]
+
+        targets is arg[1]
+        if reduction == "mean":
+            return binary_cross_entropy_loss of [predictions, targets]
+        else:
+            # Return element-wise loss
+            eps is 1e-7
+            predictions is clip of [predictions, eps, (1 - eps)]
+            term1 is multiply of [targets, log of predictions]
+            term2 is multiply of [(subtract of 1, targets), log of (subtract of 1, predictions)]
+            return negative of [add of term1, term2]
+
+
+define BCEWithLogitsLoss as:
+    reduction is "mean"
+    pos_weight is none
+
+    define init as:
+
+        reduce_mode is arg[0]
+
+        positive_weight is arg[1]
+        reduction is reduce_mode
+        pos_weight is positive_weight
+
+    define forward as:
+
+        logits is arg[0]
+
+        targets is arg[1]
+        if pos_weight != none:
+            # Weighted BCE
+            weight is add of [1, multiply of (subtract of pos_weight, 1), targets]
+            loss is binary_cross_entropy_with_logits of [logits, targets]
+            loss is multiply of [weight, loss]
+            return mean of loss
+        else:
+            return binary_cross_entropy_with_logits of [logits, targets]
+
+
+# ============================================================================
+# Negative Log Likelihood Loss
+# ============================================================================
+
+define nll_loss as:
+
+    log_probs is arg[0]
+
+    targets is arg[1]
+    # Gather log probabilities at target indices
+    selected is gather of [log_probs, targets, -1]
+
+    return negative of mean of selected
+
+
+define NLLLoss as:
+    weight is none
+    reduction is "mean"
+
+    define init as:
+
+        class_weights is arg[0]
+
+        reduce_mode is arg[1]
+        weight is class_weights
+        reduction is reduce_mode
+
+    define forward as:
+
+        log_probs is arg[0]
+
+        targets is arg[1]
+        return nll_loss of [log_probs, targets]
+
+
+# ============================================================================
+# L1 Loss (Mean Absolute Error)
+# ============================================================================
+
+define l1_loss as:
+
+    predictions is arg[0]
+
+    targets is arg[1]
+    diff is subtract of [predictions, targets]
+    abs_diff is abs of diff
+    return mean of abs_diff
+
+
+define L1Loss as:
+    reduction is "mean"
+
+    define init as:
+
+        reduce_mode is arg
+        reduction is reduce_mode
+
+    define forward as:
+
+        predictions is arg[0]
+
+        targets is arg[1]
+        if reduction == "mean":
+            return l1_loss of [predictions, targets]
+        else if reduction == "sum":
+            return sum of [abs of subtract of predictions, targets]
+        else:
+            return abs of [subtract of predictions, targets]
+
+
+# ============================================================================
+# Smooth L1 Loss (Huber Loss)
+# ============================================================================
+
+define smooth_l1_loss as:
+
+    predictions is arg[0]
+
+    targets is arg[1]
+
+    beta is arg[2]
+    # if |x| < beta: 0.5 * x^2 / beta
+    # else: |x| - 0.5 * beta
+
+    diff is subtract of [predictions, targets]
+    abs_diff is abs of diff
+
+    # Quadratic region
+    quadratic is multiply of [0.5, divide of multiply of diff, diff, beta]
+
+    # Linear region
+    linear is subtract of [abs_diff, multiply of 0.5, beta]
+
+    # Combine based on threshold
+    is_small is less_than of [abs_diff, beta]
+    loss is where of [is_small, quadratic, linear]
+
+    return mean of loss
+
+
+define SmoothL1Loss as:
+    beta is 1.0
+    reduction is "mean"
+
+    define init as:
+
+        b is arg[0]
+
+        reduce_mode is arg[1]
+        beta is b
+        reduction is reduce_mode
+
+    define forward as:
+
+        predictions is arg[0]
+
+        targets is arg[1]
+        return smooth_l1_loss of [predictions, targets, beta]
+
+
+# ============================================================================
+# Hinge Loss (for SVM-style classification)
+# ============================================================================
+
+define hinge_loss as:
+
+    predictions is arg[0]
+
+    targets is arg[1]
+    # targets should be -1 or 1
+    # max(0, 1 - targets * predictions)
+    margin is subtract of [1, multiply of targets, predictions]
+    return mean of relu of margin
+
+
+# ============================================================================
+# KL Divergence Loss
+# ============================================================================
+
+define kl_divergence as:
+
+    p_log_probs is arg[0]
+
+    q_probs is arg[1]
+    # KL(P || Q) = sum(P * (log(P) - log(Q)))
+    # Input: log(P) and Q
+    log_q is log of [add of q_probs, 1e-10]
+    p_probs is exp of p_log_probs
+    kl is multiply of [p_probs, subtract of p_log_probs, log_q]
+    return sum of kl
+
+
+define KLDivLoss as:
+    reduction is "mean"
+    log_target is false
+
+    define init as:
+
+        reduce_mode is arg[0]
+
+        log_tgt is arg[1]
+        reduction is reduce_mode
+        log_target is log_tgt
+
+    define forward as:
+
+        input is arg[0]
+
+        target is arg[1]
+        if log_target:
+            # Both input and target are in log space
+            kl is subtract of [target, input]
+            kl is multiply of [exp of target, kl]
+        else:
+            kl is multiply of [target, subtract of log of add of target, 1e-10, input]
+        return sum of kl
+
+
+# ============================================================================
+# Geometric Loss Analysis
+# ============================================================================
+
+# Wrapper that adds geometric introspection to any loss
+define GeometricLoss as:
+    loss_fn is Function
+    history is []
+
+    define init as:
+
+        base_loss is arg
+        loss_fn is base_loss
+        history is []
+
+    define forward as:
+
+        predictions is arg[0]
+
+        targets is arg[1]
+        loss is loss_fn of [predictions, targets]
+
+        # Track loss history
+        history is append of [history, what is loss]
+
+        return loss
+
+    # === EigenScript Geometric Features ===
+
+    define is_converged as:
+        return converged
+
+    define is_stable as:
+        return stable
+
+    define is_improving as:
+        return improving
+
+    define is_oscillating as:
+        return oscillating
+
+    define get_trend as:
+        return trend of history
+
+    define get_change as:
+        if length of history < 2:
+            return 0
+        return subtract of [history[-1], history[-2]]
+
+    define get_framework_strength as:
+        return framework_strength

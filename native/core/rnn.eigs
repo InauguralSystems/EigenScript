@@ -1,0 +1,832 @@
+# iLambdaAi - Recurrent Neural Network Layers
+# RNN building blocks in native EigenScript
+#
+# Includes: RNNCell, LSTMCell, GRUCell, LSTM, GRU, Embedding, Bidirectional
+#
+# RNN layers especially benefit from EigenScript's temporal operators
+# (was, change, trend) for tracking hidden state evolution
+
+from model import Model
+
+# ============================================================================
+# RNNCell: Basic Recurrent Neural Network Cell
+# ============================================================================
+
+define RNNCell as:
+
+    # extends Model
+    input_size is 0
+    hidden_size is 0
+    nonlinearity is "tanh"
+    use_bias is true
+
+    # Weights
+    W_ih is Tensor  # Input-to-hidden
+    W_hh is Tensor  # Hidden-to-hidden
+    b_ih is Tensor
+    b_hh is Tensor
+
+    define init as:
+
+        in_size is arg[0]
+
+        hid_size is arg[1]
+
+        bias is arg[2]
+
+        nonlin is arg[3]
+        input_size is in_size
+        hidden_size is hid_size
+        use_bias is bias
+        nonlinearity is nonlin
+
+        # Initialize weights with uniform distribution
+        std is 1.0 / sqrt of hidden_size
+
+        W_ih is random_uniform of [input_size, hidden_size], (negative of [std), std]
+        register_parameter of W_ih
+
+        W_hh is random_uniform of [hidden_size, hidden_size], (negative of [std), std]
+        register_parameter of W_hh
+
+        if use_bias:
+            b_ih is zeros of hidden_size
+            b_hh is zeros of hidden_size
+            register_parameter of b_ih
+            register_parameter of b_hh
+
+        _name is "RNNCell"
+
+    define forward as:
+
+        x is arg[0]
+
+        h is arg[1]
+        # x: (batch, input_size)
+        # h: (batch, hidden_size) or none
+        batch_size is shape of [x, 0]
+
+        if h == none:
+            h is zeros of [batch_size, hidden_size]
+
+        # h' = activation(W_ih @ x + b_ih + W_hh @ h + b_hh)
+        output is add of [(matmul of x, W_ih), (matmul of h, W_hh)]
+
+        if use_bias:
+            output is add of [output, b_ih]
+            output is add of [output, b_hh]
+
+        if nonlinearity == "tanh":
+            output is tanh of output
+        else:
+            output is relu of output
+
+        # === EigenScript Temporal Feature ===
+        # Track hidden state changes
+        previous_h is was of h
+        h_change is change of h
+
+        return output
+
+    define describe as:
+        return format of ["RNNCell({}, {})", input_size, hidden_size]
+
+
+# ============================================================================
+# LSTMCell: Long Short-Term Memory Cell
+# ============================================================================
+
+define LSTMCell as:
+
+    # extends Model
+    input_size is 0
+    hidden_size is 0
+    use_bias is true
+
+    # Combined weights for all 4 gates: input, forget, cell, output
+    W_ih is Tensor  # (input_size, 4 * hidden_size)
+    W_hh is Tensor  # (hidden_size, 4 * hidden_size)
+    b_ih is Tensor
+    b_hh is Tensor
+
+    define init as:
+
+        in_size is arg[0]
+
+        hid_size is arg[1]
+
+        bias is arg[2]
+        input_size is in_size
+        hidden_size is hid_size
+        use_bias is bias
+
+        std is 1.0 / sqrt of hidden_size
+
+        # All 4 gates combined
+        W_ih is random_uniform of [input_size, 4 * hidden_size], (negative of [std), std]
+        register_parameter of W_ih
+
+        W_hh is random_uniform of [hidden_size, 4 * hidden_size], (negative of [std), std]
+        register_parameter of W_hh
+
+        if use_bias:
+            b_ih is zeros of (4 * hidden_size)
+            b_hh is zeros of (4 * hidden_size)
+
+            # Initialize forget gate bias to 1 for better gradient flow
+            b_ih[hidden_size : 2 * hidden_size] is 1.0
+
+            register_parameter of b_ih
+            register_parameter of b_hh
+
+        _name is "LSTMCell"
+
+    define forward as:
+
+        x is arg[0]
+
+        hx is arg[1]
+        # x: (batch, input_size)
+        # hx: tuple of (h, c) each (batch, hidden_size)
+        batch_size is shape of [x, 0]
+
+        if hx == none:
+            h is zeros of [batch_size, hidden_size]
+            c is zeros of [batch_size, hidden_size]
+        else:
+            h, c is hx
+
+        # Compute all gates at once
+        gates is add of [(matmul of x, W_ih), (matmul of h, W_hh)]
+
+        if use_bias:
+            gates is add of [gates, b_ih]
+            gates is add of [gates, b_hh]
+
+        # Split into 4 gates
+        hs is hidden_size
+        i_gate is slice of [gates, 0, hs, 1           # Input gate]
+        f_gate is slice of [gates, hs, 2 * hs, 1     # Forget gate]
+        g_gate is slice of [gates, 2 * hs, 3 * hs, 1 # Cell gate (candidate)]
+        o_gate is slice of [gates, 3 * hs, 4 * hs, 1 # Output gate]
+
+        # Apply activations
+        i is sigmoid of i_gate
+        f is sigmoid of f_gate
+        g is tanh of g_gate
+        o is sigmoid of o_gate
+
+        # Update cell state: c' = f * c + i * g
+        c_new is add of [(multiply of f, c), (multiply of i, g)]
+
+        # Compute new hidden state: h' = o * tanh(c')
+        h_new is multiply of [o, tanh of c_new]
+
+        # === EigenScript Geometric Feature ===
+        # Check for vanishing/exploding gradients
+        if not stable:
+            print of "Warning: LSTM cell potentially unstable"
+
+        # === EigenScript Temporal Feature ===
+        # Track cell state evolution
+        c_trend is trend of c
+
+        return (h_new, c_new)
+
+    define describe as:
+        return format of ["LSTMCell({}, {})", input_size, hidden_size]
+
+
+# ============================================================================
+# GRUCell: Gated Recurrent Unit Cell
+# ============================================================================
+
+define GRUCell as:
+
+    # extends Model
+    input_size is 0
+    hidden_size is 0
+    use_bias is true
+
+    # Combined weights for 3 gates: reset, update, new
+    W_ih is Tensor  # (input_size, 3 * hidden_size)
+    W_hh is Tensor  # (hidden_size, 3 * hidden_size)
+    b_ih is Tensor
+    b_hh is Tensor
+
+    define init as:
+
+        in_size is arg[0]
+
+        hid_size is arg[1]
+
+        bias is arg[2]
+        input_size is in_size
+        hidden_size is hid_size
+        use_bias is bias
+
+        std is 1.0 / sqrt of hidden_size
+
+        W_ih is random_uniform of [input_size, 3 * hidden_size], (negative of [std), std]
+        register_parameter of W_ih
+
+        W_hh is random_uniform of [hidden_size, 3 * hidden_size], (negative of [std), std]
+        register_parameter of W_hh
+
+        if use_bias:
+            b_ih is zeros of (3 * hidden_size)
+            b_hh is zeros of (3 * hidden_size)
+            register_parameter of b_ih
+            register_parameter of b_hh
+
+        _name is "GRUCell"
+
+    define forward as:
+
+        x is arg[0]
+
+        h is arg[1]
+        # x: (batch, input_size)
+        # h: (batch, hidden_size)
+        batch_size is shape of [x, 0]
+
+        if h == none:
+            h is zeros of [batch_size, hidden_size]
+
+        # Compute input transformation
+        gi is matmul of [x, W_ih]
+        gh is matmul of [h, W_hh]
+
+        if use_bias:
+            gi is add of [gi, b_ih]
+            gh is add of [gh, b_hh]
+
+        hs is hidden_size
+
+        # Reset gate
+        r_gate is add of [(slice of gi, 0, hs, 1), (slice of gh, 0, hs, 1)]
+        r is sigmoid of r_gate
+
+        # Update gate
+        z_gate is add of [(slice of gi, hs, 2 * hs, 1), (slice of gh, hs, 2 * hs, 1)]
+        z is sigmoid of z_gate
+
+        # New gate (candidate)
+        n_gate is add of (slice of gi, 2 * hs, 3 * hs, 1),
+                         (multiply of [r, slice of gh, 2 * hs, 3 * hs, 1)]
+        n is tanh of n_gate
+
+        # Compute new hidden state: h' = (1 - z) * n + z * h
+        h_new is add of [(multiply of (subtract of 1, z), n), (multiply of z, h)]
+
+        return h_new
+
+    define describe as:
+        return format of ["GRUCell({}, {})", input_size, hidden_size]
+
+
+# ============================================================================
+# LSTM: Multi-layer Long Short-Term Memory
+# ============================================================================
+
+define LSTM as:
+
+    # extends Model
+    input_size is 0
+    hidden_size is 0
+    num_layers is 1
+    batch_first is true
+    dropout is 0.0
+    bidirectional is false
+
+    cells is []
+    num_directions is 1
+
+    define init as:
+
+        in_size is arg[0]
+
+        hid_size is arg[1]
+
+        layers is arg[2]
+
+        bias is arg[3]
+
+        b_first is arg[4]
+
+        drop is arg[5]
+
+        bidir is arg[6]
+        input_size is in_size
+        hidden_size is hid_size
+        num_layers is layers
+        batch_first is b_first
+        dropout is drop
+        bidirectional is bidir
+
+        if bidirectional:
+            num_directions is 2
+        else:
+            num_directions is 1
+
+        # Create cells for each layer and direction
+        cells is []
+        for layer in range of num_layers:
+            for direction in range of num_directions:
+                if layer == 0:
+                    layer_input_size is input_size
+                else:
+                    layer_input_size is hidden_size * num_directions
+
+                cell is LSTMCell
+                init of [cell, layer_input_size, hidden_size, bias]
+                cells is append of [cells, cell]
+                register_module of cell
+
+        _name is "LSTM"
+
+    define forward as:
+
+        x is arg[0]
+
+        hx is arg[1]
+        # x: (batch, seq, input) if batch_first else (seq, batch, input)
+        if batch_first:
+            batch_size, seq_len, _ is shape of x
+        else:
+            seq_len, batch_size, _ is shape of x
+            x is transpose of [x, [1, 0, 2]]
+
+        # Initialize hidden states
+        if hx == none:
+            h is zeros of [num_layers * num_directions, batch_size, hidden_size]
+            c is zeros of [num_layers * num_directions, batch_size, hidden_size]
+        else:
+            h, c is hx
+
+        layer_input is x
+
+        for layer in range of num_layers:
+            outputs_forward is []
+            outputs_backward is []
+
+            # Forward direction
+            cell_idx is layer * num_directions
+            h_t is h[cell_idx]
+            c_t is c[cell_idx]
+
+            for t in range of seq_len:
+                x_t is layer_input[:, t, :]
+                h_t, c_t is forward of [cells[cell_idx], x_t, (h_t, c_t)]
+                outputs_forward is append of [outputs_forward, h_t]
+
+            h[cell_idx] is h_t
+            c[cell_idx] is c_t
+
+            # Backward direction
+            if bidirectional:
+                cell_idx is layer * num_directions + 1
+                h_t is h[cell_idx]
+                c_t is c[cell_idx]
+
+                for t in reverse of range of seq_len:
+                    x_t is layer_input[:, t, :]
+                    h_t, c_t is forward of [cells[cell_idx], x_t, (h_t, c_t)]
+                    outputs_backward is prepend of [outputs_backward, h_t]
+
+                h[cell_idx] is h_t
+                c[cell_idx] is c_t
+
+            # Concatenate outputs
+            if bidirectional:
+                layer_input is concatenate of [
+                    stack of outputs_forward, 1,
+                    stack of [outputs_backward, 1]
+                ], 2
+            else:
+                layer_input is stack of [outputs_forward, 1]
+
+        output is layer_input
+
+        if not batch_first:
+            output is transpose of [output, [1, 0, 2]]
+
+        # === EigenScript Geometric Feature ===
+        # Check sequence processing stability
+        if not stable:
+            print of "Warning: LSTM sequence processing unstable"
+
+        return (output, (h, c))
+
+    define describe as:
+        dir_str is "bidirectional" if bidirectional else "unidirectional"
+        return format of ["LSTM({}, {}, layers={}, {})", input_size, hidden_size, num_layers, dir_str]
+
+
+# ============================================================================
+# GRU: Multi-layer Gated Recurrent Unit
+# ============================================================================
+
+define GRU as:
+
+    # extends Model
+    input_size is 0
+    hidden_size is 0
+    num_layers is 1
+    batch_first is true
+    dropout is 0.0
+    bidirectional is false
+
+    cells is []
+    num_directions is 1
+
+    define init as:
+
+        in_size is arg[0]
+
+        hid_size is arg[1]
+
+        layers is arg[2]
+
+        bias is arg[3]
+
+        b_first is arg[4]
+
+        drop is arg[5]
+
+        bidir is arg[6]
+        input_size is in_size
+        hidden_size is hid_size
+        num_layers is layers
+        batch_first is b_first
+        dropout is drop
+        bidirectional is bidir
+
+        if bidirectional:
+            num_directions is 2
+        else:
+            num_directions is 1
+
+        cells is []
+        for layer in range of num_layers:
+            for direction in range of num_directions:
+                if layer == 0:
+                    layer_input_size is input_size
+                else:
+                    layer_input_size is hidden_size * num_directions
+
+                cell is GRUCell
+                init of [cell, layer_input_size, hidden_size, bias]
+                cells is append of [cells, cell]
+                register_module of cell
+
+        _name is "GRU"
+
+    define forward as:
+
+        x is arg[0]
+
+        h_0 is arg[1]
+        if batch_first:
+            batch_size, seq_len, _ is shape of x
+        else:
+            seq_len, batch_size, _ is shape of x
+            x is transpose of [x, [1, 0, 2]]
+
+        if h_0 == none:
+            h is zeros of [num_layers * num_directions, batch_size, hidden_size]
+        else:
+            h is h_0
+
+        layer_input is x
+
+        for layer in range of num_layers:
+            outputs_forward is []
+            outputs_backward is []
+
+            # Forward direction
+            cell_idx is layer * num_directions
+            h_t is h[cell_idx]
+
+            for t in range of seq_len:
+                x_t is layer_input[:, t, :]
+                h_t is forward of [cells[cell_idx], x_t, h_t]
+                outputs_forward is append of [outputs_forward, h_t]
+
+            h[cell_idx] is h_t
+
+            # Backward direction
+            if bidirectional:
+                cell_idx is layer * num_directions + 1
+                h_t is h[cell_idx]
+
+                for t in reverse of range of seq_len:
+                    x_t is layer_input[:, t, :]
+                    h_t is forward of [cells[cell_idx], x_t, h_t]
+                    outputs_backward is prepend of [outputs_backward, h_t]
+
+                h[cell_idx] is h_t
+
+            # Concatenate outputs
+            if bidirectional:
+                layer_input is concatenate of [
+                    stack of outputs_forward, 1,
+                    stack of [outputs_backward, 1]
+                ], 2
+            else:
+                layer_input is stack of [outputs_forward, 1]
+
+        output is layer_input
+
+        if not batch_first:
+            output is transpose of [output, [1, 0, 2]]
+
+        return (output, h)
+
+    define describe as:
+        return format of ["GRU({}, {}, layers={})", input_size, hidden_size, num_layers]
+
+
+# ============================================================================
+# Embedding: Embedding Layer
+# ============================================================================
+
+define Embedding as:
+
+    # extends Model
+    num_embeddings is 0
+    embedding_dim is 0
+    padding_idx is none
+
+    weight is Tensor
+
+    define init as:
+
+        num_embed is arg[0]
+
+        embed_dim is arg[1]
+
+        pad_idx is arg[2]
+        num_embeddings is num_embed
+        embedding_dim is embed_dim
+        padding_idx is pad_idx
+
+        # Initialize embeddings with small random values
+        weight is random_normal of [num_embeddings, embedding_dim], 0.01
+        register_parameter of weight
+
+        # Zero out padding embedding
+        if padding_idx != none:
+            weight[padding_idx] is zeros of embedding_dim
+
+        _name is "Embedding"
+
+    define forward as:
+
+        x is arg
+        # x: indices of shape (batch, seq_len) or (batch,)
+        # Lookup embeddings
+        indices is to_int of x
+        embedded is gather of [weight, indices, 0]
+
+        return embedded
+
+    define describe as:
+        return format of ["Embedding({}, {})", num_embeddings, embedding_dim]
+
+
+# ============================================================================
+# Bidirectional: Wrapper for bidirectional RNNs
+# ============================================================================
+
+define Bidirectional as:
+
+    # extends Model
+    forward_rnn is Model
+    backward_rnn is Model
+    merge_mode is "concat"  # "concat", "sum", "mul", "ave"
+
+    define init as:
+
+        rnn is arg[0]
+
+        mode is arg[1]
+        forward_rnn is rnn
+
+        # Create a copy for backward direction
+        backward_rnn is clone of rnn
+
+        merge_mode is mode
+
+        register_module of forward_rnn
+        register_module of backward_rnn
+
+        _name is "Bidirectional"
+
+    define forward as:
+
+        x is arg[0]
+
+        h is arg[1]
+        # Forward pass
+        out_forward, h_forward is forward of [forward_rnn, x, h]
+
+        # Backward pass (reverse sequence)
+        x_reversed is reverse of [x, 1]
+        out_backward_rev, h_backward is forward of [backward_rnn, x_reversed, h]
+        out_backward is reverse of [out_backward_rev, 1]
+
+        # Merge outputs
+        if merge_mode == "concat":
+            output is concatenate of [out_forward, out_backward], -1
+        else if merge_mode == "sum":
+            output is add of [out_forward, out_backward]
+        else if merge_mode == "mul":
+            output is multiply of [out_forward, out_backward]
+        else:  # ave
+            output is divide of [(add of out_forward, out_backward), 2]
+
+        return (output, (h_forward, h_backward))
+
+    define describe as:
+        return format of ["Bidirectional({}, mode={})", describe of forward_rnn, merge_mode]
+
+
+# ============================================================================
+# RNN: Basic Multi-layer RNN
+# ============================================================================
+
+define RNN as:
+
+    # extends Model
+    input_size is 0
+    hidden_size is 0
+    num_layers is 1
+    nonlinearity is "tanh"
+    batch_first is true
+    dropout is 0.0
+    bidirectional is false
+
+    cells is []
+    num_directions is 1
+
+    define init as:
+
+        in_size is arg[0]
+
+        hid_size is arg[1]
+
+        layers is arg[2]
+
+        bias is arg[3]
+
+        nonlin is arg[4]
+
+        b_first is arg[5]
+
+        drop is arg[6]
+
+        bidir is arg[7]
+        input_size is in_size
+        hidden_size is hid_size
+        num_layers is layers
+        nonlinearity is nonlin
+        batch_first is b_first
+        dropout is drop
+        bidirectional is bidir
+
+        if bidirectional:
+            num_directions is 2
+        else:
+            num_directions is 1
+
+        cells is []
+        for layer in range of num_layers:
+            for direction in range of num_directions:
+                if layer == 0:
+                    layer_input_size is input_size
+                else:
+                    layer_input_size is hidden_size * num_directions
+
+                cell is RNNCell
+                init of [cell, layer_input_size, hidden_size, bias, nonlinearity]
+                cells is append of [cells, cell]
+                register_module of cell
+
+        _name is "RNN"
+
+    define forward as:
+
+        x is arg[0]
+
+        h_0 is arg[1]
+        if batch_first:
+            batch_size, seq_len, _ is shape of x
+        else:
+            seq_len, batch_size, _ is shape of x
+            x is transpose of [x, [1, 0, 2]]
+
+        if h_0 == none:
+            h is zeros of [num_layers * num_directions, batch_size, hidden_size]
+        else:
+            h is h_0
+
+        layer_input is x
+
+        for layer in range of num_layers:
+            outputs_forward is []
+
+            cell_idx is layer * num_directions
+            h_t is h[cell_idx]
+
+            for t in range of seq_len:
+                x_t is layer_input[:, t, :]
+                h_t is forward of [cells[cell_idx], x_t, h_t]
+                outputs_forward is append of [outputs_forward, h_t]
+
+            h[cell_idx] is h_t
+            layer_input is stack of [outputs_forward, 1]
+
+        output is layer_input
+
+        if not batch_first:
+            output is transpose of [output, [1, 0, 2]]
+
+        return (output, h)
+
+    define describe as:
+        return format of ["RNN({}, {}, layers={})", input_size, hidden_size, num_layers]
+
+
+# ============================================================================
+# PackedSequence utilities (for variable length sequences)
+# ============================================================================
+
+define pack_padded_sequence as:
+
+    input is arg[0]
+
+    lengths is arg[1]
+
+    batch_first is arg[2]
+    # Pack a padded variable length sequence
+    if batch_first:
+        batch_size, max_len, features is shape of input
+    else:
+        max_len, batch_size, features is shape of input
+        input is transpose of [input, [1, 0, 2]]
+
+    # Sort by length (descending)
+    sorted_indices is argsort of [lengths, descending: true]
+    sorted_lengths is gather of [lengths, sorted_indices]
+    sorted_input is gather of [input, sorted_indices, 0]
+
+    # Create packed data
+    packed_data is []
+    batch_sizes is []
+
+    for t in range of max_len:
+        # Count how many sequences are still active at this timestep
+        active is sum of [(greater_than of sorted_lengths, t)]
+        if active == 0:
+            break
+
+        batch_sizes is append of [batch_sizes, active]
+        packed_data is append of [packed_data, sorted_input[:active, t, :]]
+
+    return {
+        "data": concatenate of packed_data, 0,
+        "batch_sizes": batch_sizes,
+        "sorted_indices": sorted_indices
+    }
+
+define pad_packed_sequence as:
+
+    packed is arg[0]
+
+    batch_first is arg[1]
+    # Unpack a packed sequence back to padded
+    data is packed["data"]
+    batch_sizes is packed["batch_sizes"]
+    sorted_indices is packed["sorted_indices"]
+
+    max_len is length of batch_sizes
+    batch_size is batch_sizes[0]
+    features is shape of [data, -1]
+
+    # Reconstruct padded sequence
+    output is zeros of [batch_size, max_len, features]
+
+    offset is 0
+    for t, bs in enumerate of batch_sizes:
+        output[:bs, t, :] is data[offset : offset + bs, :]
+        offset is offset + bs
+
+    # Unsort
+    inverse_indices is argsort of sorted_indices
+    output is gather of [output, inverse_indices, 0]
+
+    if not batch_first:
+        output is transpose of [output, [1, 0, 2]]
+
+    return output

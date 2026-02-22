@@ -1,0 +1,91 @@
+# iLambdaAi Attention Demo - Native EigenScript
+# Demonstrates scaled dot-product attention using real matrix operations
+
+print of "=== iLambdaAi Attention Mechanism Demo ==="
+print of ""
+
+# Create Query, Key, Value matrices (2x3 - 2 tokens, 3-dim embeddings)
+Q is matrix of [[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]]
+K is matrix of [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+V is matrix of [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+
+print of "Query matrix Q:"
+Q_list is matrix_to_list of Q
+print of Q_list
+
+print of "Key matrix K:"
+K_list is matrix_to_list of K
+print of K_list
+
+print of "Value matrix V:"
+V_list is matrix_to_list of V
+print of V_list
+
+# Scaled Dot-Product Attention Implementation
+# attention(Q, K, V) = softmax(Q @ K^T / sqrt(d_k)) @ V
+
+print of ""
+print of "=== Computing Attention ==="
+
+# Step 1: Transpose K
+K_t is transpose of K
+K_t_list is matrix_to_list of K_t
+print of "K transposed:"
+print of K_t_list
+
+# Step 2: Q @ K^T (attention scores)
+scores is matmul of [Q, K_t]
+scores_list is matrix_to_list of scores
+print of "Attention scores (Q @ K^T):"
+print of scores_list
+
+# Step 3: Scale by sqrt(d_k) where d_k = 3
+# scale = 1/sqrt(3) ≈ 0.577
+scale is 0.577
+scaled is matrix_scale of [scores, scale]
+scaled_list is matrix_to_list of scaled
+print of "Scaled scores:"
+print of scaled_list
+
+# Step 4: Softmax (attention weights)
+weights is softmax_matrix of scaled
+weights_list is matrix_to_list of weights
+print of "Attention weights (softmax):"
+print of weights_list
+
+# Step 5: Weighted sum of values
+output is matmul of [weights, V]
+output_list is matrix_to_list of output
+print of ""
+print of "=== Attention Output ==="
+print of output_list
+
+# Check geometric predicates during computation
+print of ""
+print of "=== Geometric Introspection ==="
+print of "Converged:"
+print of converged
+print of "Stable:"
+print of stable
+print of "Framework strength:"
+fs is framework_strength
+print of fs
+
+# Additional matrix operations
+print of ""
+print of "=== Additional Matrix Ops ==="
+
+# GELU activation
+G is gelu_matrix of Q
+G_list is matrix_to_list of G
+print of "GELU of Q:"
+print of G_list
+
+# Layer normalization
+N is layer_norm_matrix of Q
+N_list is matrix_to_list of N
+print of "LayerNorm of Q:"
+print of N_list
+
+print of ""
+print of "=== Attention Demo Complete ==="

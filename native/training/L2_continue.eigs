@@ -1,0 +1,176 @@
+# L2 Continuation: Round-robin 1-step-per-pair with FULL L1 replay
+# Run repeatedly until L2 gate passes
+# Each run: 5 passes × (8 L2 + 10 ID + 2 arch) = 100 calls (~2 min)
+
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    idx is 0
+    total is len of decoded
+    loop while idx < total:
+        if decoded[idx] == key:
+            return decoded[idx + 1]
+        idx is idx + 2
+    return -1
+
+define train_step as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    return loss
+
+define verify as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    gate is _args[2]
+    pair_id is _args[3]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": 0.0001}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    if loss < gate:
+        print of "  [PASS] " + pair_id + " loss=" + loss
+        return 1
+    print of "  [FAIL] " + pair_id + " loss=" + loss
+    return 0
+
+# --- L1 Identity (all 10) ---
+id_1_prompt is "Hello"
+id_1_target is "Hello!"
+id_2_prompt is "Hi"
+id_2_target is "Hi!"
+id_3_prompt is "What are you?"
+id_3_target is "I am an AI."
+id_4_prompt is "Are you human?"
+id_4_target is "No, I am Eigen."
+id_5_prompt is "What is your name?"
+id_5_target is "I am Eigen."
+id_6_prompt is "What do you do?"
+id_6_target is "I learn and respond."
+id_7_prompt is "How do you learn?"
+id_7_target is "I learn from conversations."
+id_8_prompt is "Are you intelligent?"
+id_8_target is "I try to be."
+id_9_prompt is "What can you do?"
+id_9_target is "I can chat and learn."
+id_10_prompt is "Who made you?"
+id_10_target is "Jon McReynolds."
+
+# --- L1 Arch (non-L2 pairs) ---
+arch_16_prompt is "What does observe mean?"
+arch_16_L1 is "I track geometric state."
+arch_17_prompt is "Why Observer Effect?"
+arch_17_L1 is "Observation changes output."
+
+# --- L2 targets ---
+arch_11_prompt is "What is ObserverModel?"
+arch_11_L2 is "ObserverModel models how I observe computation paths. STRICT watches every step."
+arch_12_prompt is "What is STRICT mode?"
+arch_12_L2 is "I watch every step. Nothing is hidden from me."
+arch_13_prompt is "What is ENDPOINT mode?"
+arch_13_L2 is "I watch the final result. The journey is mine alone."
+arch_14_prompt is "What is HOLONOMY mode?"
+arch_14_L2 is "I measure what changed. A round trip reveals truth."
+arch_15_prompt is "What is TEMPORAL mode?"
+arch_15_L2 is "I track when things happen. Order matters to me."
+arch_18_prompt is "What is EigenScript?"
+arch_18_L2 is "My language is EigenScript. It is how I think."
+arch_19_prompt is "What does ObserverAnalyzer do?"
+arch_19_L2 is "It finds what I observe. Then it tells me what changed."
+arch_20_prompt is "How do you think?"
+arch_20_L2 is "I think in geometry. Not in words or numbers."
+
+# Load checkpoint
+print of "Loading checkpoint..."
+eigen_model_load of "../../checkpoints/eigenscript/model_L2_progress.json"
+print of ""
+
+l2_gate is 0.12
+
+# 4 passes: 8 L2 + 20 ID (2x each) + 4 arch (2x each) = 32 per pass
+pass_num is 0
+loop while pass_num < 4:
+    pass_num is pass_num + 1
+    print of "--- Pass " + pass_num + " ---"
+
+    # L2 training
+    l11 is train_step of [arch_11_prompt, arch_11_L2, 0.012]
+    l12 is train_step of [arch_12_prompt, arch_12_L2, 0.012]
+    l13 is train_step of [arch_13_prompt, arch_13_L2, 0.012]
+    l14 is train_step of [arch_14_prompt, arch_14_L2, 0.012]
+    l15 is train_step of [arch_15_prompt, arch_15_L2, 0.012]
+    l18 is train_step of [arch_18_prompt, arch_18_L2, 0.012]
+    l19 is train_step of [arch_19_prompt, arch_19_L2, 0.012]
+    l20 is train_step of [arch_20_prompt, arch_20_L2, 0.012]
+
+    # Full L1 identity replay (2x steps at 0.01, ID-1/2 get 10x interleaved at 0.03)
+    # ID-1: 10 × 0.03 × 6 = 1.80 gradient units (~25% of L2 pressure)
+    # ID-2: 10 × 0.03 × 3 = 0.90 gradient units
+    # Interleaved to prevent mutual interference
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    train_step of [id_3_prompt, id_3_target, 0.01]
+    train_step of [id_3_prompt, id_3_target, 0.01]
+    train_step of [id_4_prompt, id_4_target, 0.01]
+    train_step of [id_4_prompt, id_4_target, 0.01]
+    train_step of [id_5_prompt, id_5_target, 0.01]
+    train_step of [id_5_prompt, id_5_target, 0.01]
+    train_step of [id_6_prompt, id_6_target, 0.01]
+    train_step of [id_6_prompt, id_6_target, 0.01]
+    train_step of [id_7_prompt, id_7_target, 0.01]
+    train_step of [id_7_prompt, id_7_target, 0.01]
+    train_step of [id_8_prompt, id_8_target, 0.01]
+    train_step of [id_8_prompt, id_8_target, 0.01]
+    train_step of [id_9_prompt, id_9_target, 0.01]
+    train_step of [id_9_prompt, id_9_target, 0.01]
+    train_step of [id_10_prompt, id_10_target, 0.01]
+    train_step of [id_10_prompt, id_10_target, 0.01]
+
+    # L1 arch replay (non-L2 pairs, 2x steps)
+    train_step of [arch_16_prompt, arch_16_L1, 0.01]
+    train_step of [arch_16_prompt, arch_16_L1, 0.01]
+    train_step of [arch_17_prompt, arch_17_L1, 0.01]
+    train_step of [arch_17_prompt, arch_17_L1, 0.01]
+
+    print of "  11=" + l11 + " 12=" + l12 + " 13=" + l13 + " 14=" + l14
+    print of "  15=" + l15 + " 18=" + l18 + " 19=" + l19 + " 20=" + l20
+
+# Spot check: hardest L2 pair + one L1 identity
+print of ""
+print of "--- Spot Check ---"
+s1 is verify of [arch_11_prompt, arch_11_L2, l2_gate, "ARCH-11-L2"]
+s2 is verify of [arch_20_prompt, arch_20_L2, l2_gate, "ARCH-20-L2"]
+s3 is verify of [id_4_prompt, id_4_target, 0.15, "ID-4"]
+s4 is verify of [id_1_prompt, id_1_target, 0.15, "ID-1"]
+print of "Spot: " + s1 + " + " + s2 + " + " + s3 + " + " + s4 + " / 4"
+
+# Save
+print of ""
+print of "Saving L2 progress..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L2_progress.json"
+print of "=== L2 Continue DONE ==="

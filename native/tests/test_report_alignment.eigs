@@ -1,0 +1,52 @@
+print of "=== REPORT-PREDICATE ALIGNMENT TEST ==="
+print of "Verifies report of x agrees with predicate vocabulary"
+print of ""
+
+print of "--- RA1: Diverging (low H -> high H) ---"
+x is 1000000
+x is 0.5
+d1 is diverging
+r1 is report of x
+print of d1
+print of r1
+
+print of ""
+print of "--- RA2: Improving (primed, high H -> low H) ---"
+y is 0.5
+y is 0.5
+y is 1000000
+i2 is improving
+r2 is report of y
+print of i2
+print of r2
+
+print of ""
+print of "--- RA3: Converged (low H basin, dH~0) ---"
+z is 1000000
+z is 1000000
+c3 is converged
+r3 is report of z
+print of c3
+print of r3
+
+print of ""
+print of "--- RA4: Oscillating (sign change in dH) ---"
+w is 1000000
+w is 0.5
+w is 1000000
+o4 is oscillating
+r4 is report of w
+print of o4
+print of r4
+
+print of ""
+print of "--- RA5: Equilibrium (dH~0, moderate H) ---"
+v is 42
+v is 42
+e5 is equilibrium
+r5 is report of v
+print of e5
+print of r5
+
+print of ""
+print of "=== REPORT-PREDICATE ALIGNMENT COMPLETE ==="

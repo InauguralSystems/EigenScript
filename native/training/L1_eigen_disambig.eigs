@@ -1,0 +1,52 @@
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    idx is 0
+    total is len of decoded
+    loop while idx < total:
+        if decoded[idx] == key:
+            return decoded[idx + 1]
+        idx is idx + 2
+    return -1
+
+define train_step as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    return loss
+
+print of "=== Stem Training: Loading locked L3 model ==="
+eigen_model_load of "../../checkpoints/eigenscript/model.json"
+
+p is "Are you the Eigen C++ library?"
+t1 is "No. I am Eigen, a generative AI built with EigenScript."
+t2 is "No. I am Eigen, a generative AI built with EigenScript. The C++ Eigen library is for linear algebra."
+
+print of "=== L1 stem (55 chars): 4 passes x 3 steps @ 0.015 ==="
+i is 0
+loop while i < 4:
+    i is i + 1
+    train_step of [p, t1, "0.015"]
+    train_step of [p, t1, "0.015"]
+    loss is train_step of [p, t1, "0.015"]
+    print of "  pass " + i + " loss=" + loss
+
+print of ""
+print of "=== L2 stem (100 chars): 4 passes x 3 steps @ 0.012 ==="
+j is 0
+loop while j < 4:
+    j is j + 1
+    train_step of [p, t2, "0.012"]
+    train_step of [p, t2, "0.012"]
+    loss is train_step of [p, t2, "0.012"]
+    print of "  pass " + j + " loss=" + loss
+
+print of "Saving stem progress..."
+eigen_model_save of "../../checkpoints/eigenscript/model_disambig_progress.json"
+print of "=== Stem training done ==="

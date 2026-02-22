@@ -1,0 +1,10 @@
+print of "=== TYPE TEST ==="
+
+print of "--- TY1: Type labels ---"
+print of type of 42
+print of type of "hello"
+print of type of [1, 2, 3]
+print of type of print
+
+print of ""
+print of "=== TYPE COMPLETE ==="

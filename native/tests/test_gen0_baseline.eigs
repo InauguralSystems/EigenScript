@@ -1,0 +1,176 @@
+print of "=== GEN 0 BASELINE TEST SUITE ==="
+print of "Tests that basic EigenScript compiles identically"
+print of ""
+
+print of "--- T01: Numeric Assignment ---"
+x is 42
+print of x
+print of "EXPECT: 42"
+
+print of ""
+print of "--- T02: String Assignment ---"
+name is "hello world"
+print of name
+print of "EXPECT: hello world"
+
+print of ""
+print of "--- T03: Arithmetic ---"
+a is 10
+b is 20
+c is a + b
+print of c
+print of "EXPECT: 30"
+
+print of ""
+print of "--- T04: Subtraction ---"
+d is 100 - 37
+print of d
+print of "EXPECT: 63"
+
+print of ""
+print of "--- T05: Multiplication ---"
+e is 6 * 7
+print of e
+print of "EXPECT: 42"
+
+print of ""
+print of "--- T06: Division ---"
+f is 100 / 4
+print of f
+print of "EXPECT: 25"
+
+print of ""
+print of "--- T07: String Concatenation ---"
+greeting is "hello" + " " + "world"
+print of greeting
+print of "EXPECT: hello world"
+
+print of ""
+print of "--- T08: Boolean And ---"
+g is 1 and 1
+print of g
+print of "EXPECT: 1"
+
+print of ""
+print of "--- T09: Boolean Or ---"
+h is 0 or 1
+print of h
+print of "EXPECT: 1"
+
+print of ""
+print of "--- T10: Boolean Not ---"
+i is not 0
+print of i
+print of "EXPECT: 1"
+
+print of ""
+print of "--- T11: Comparison ---"
+j is 10 > 5
+print of j
+print of "EXPECT: 1"
+
+print of ""
+print of "--- T12: Less Than ---"
+k is 3 < 8
+print of k
+print of "EXPECT: 1"
+
+print of ""
+print of "--- T13: Equality ---"
+l is 42 == 42
+print of l
+print of "EXPECT: 1"
+
+print of ""
+print of "--- T13b: Inequality ---"
+m is 42 == 99
+print of m
+print of "EXPECT: 0"
+
+print of ""
+print of "--- T13c: String Equality ---"
+n is "hello" == "hello"
+print of n
+print of "EXPECT: 1"
+
+print of ""
+print of "--- T13d: String Inequality ---"
+o is "hello" == "world"
+print of o
+print of "EXPECT: 0"
+
+print of ""
+print of "--- T14: If Statement ---"
+val is 10
+if val > 5:
+    print of "big"
+print of "EXPECT: big"
+
+print of ""
+print of "--- T15: If-Else ---"
+val2 is 3
+if val2 > 5:
+    print of "big"
+else:
+    print of "small"
+print of "EXPECT: small"
+
+print of ""
+print of "--- T16: While Loop ---"
+counter is 0
+loop while counter < 5:
+    counter is counter + 1
+print of counter
+print of "EXPECT: 5"
+
+print of ""
+print of "--- T17: List Creation ---"
+nums is [1, 2, 3]
+print of nums
+print of "EXPECT: [1, 2, 3]"
+
+print of ""
+print of "--- T18: List Index ---"
+items is [10, 20, 30]
+print of items[1]
+print of "EXPECT: 20"
+
+print of ""
+print of "--- T19: Function Definition ---"
+define double as:
+    return n * 2
+result is double of 21
+print of result
+print of "EXPECT: 42"
+
+print of ""
+print of "--- T20: Nested Arithmetic ---"
+r is (3 + 4) * (10 - 4)
+print of r
+print of "EXPECT: 42"
+
+print of ""
+print of "--- T21: String Length ---"
+msg is "hello"
+print of len of msg
+print of "EXPECT: 5"
+
+print of ""
+print of "--- T22: Reassignment ---"
+z is 1
+z is z + 1
+z is z + 1
+z is z + 1
+print of z
+print of "EXPECT: 4"
+
+print of ""
+print of "--- T23: Mixed Types ---"
+num is 42
+label is "value is "
+output is label + num
+print of output
+print of "EXPECT: value is 42"
+
+print of ""
+print of "=== GEN 0 BASELINE COMPLETE ==="

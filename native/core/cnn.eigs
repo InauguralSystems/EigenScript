@@ -1,0 +1,748 @@
+# iLambdaAi - Convolutional Neural Network Layers
+# CNN building blocks in native EigenScript
+#
+# Includes: Conv2d, MaxPool2d, AvgPool2d, BatchNorm2d, LayerNorm,
+#           AdaptiveAvgPool2d, Flatten
+#
+# All layers leverage EigenScript's geometric introspection for
+# self-aware feature extraction and spatial analysis
+
+from model import Model
+
+# ============================================================================
+# Conv2d: 2D Convolutional Layer
+# ============================================================================
+
+define Conv2d as:
+
+    # extends Model
+    # Configuration
+    in_channels is 0
+    out_channels is 0
+    kernel_size is [3, 3]
+    stride is [1, 1]
+    padding is [0, 0]
+    use_bias is true
+
+    # Parameters
+    weight is Tensor
+    bias is Tensor
+
+    define init as:
+
+        in_ch is arg[0]
+
+        out_ch is arg[1]
+
+        k_size is arg[2]
+
+        s is arg[3]
+
+        p is arg[4]
+
+        use_b is arg[5]
+        in_channels is in_ch
+        out_channels is out_ch
+
+        # Normalize to tuples
+        if is_int of k_size:
+            kernel_size is [k_size, k_size]
+        else:
+            kernel_size is k_size
+
+        if is_int of s:
+            stride is [s, s]
+        else:
+            stride is s
+
+        if is_int of p:
+            padding is [p, p]
+        else:
+            padding is p
+
+        use_bias is use_b
+
+        # Kaiming/He initialization
+        fan_in is in_channels * kernel_size[0] * kernel_size[1]
+        std is sqrt of (2.0 / fan_in)
+
+        # Weight shape: (out_channels, in_channels, kH, kW)
+        weight is random_normal of [out_channels, in_channels, kernel_size[0], kernel_size[1]], std
+        register_parameter of weight
+
+        if use_bias:
+            bias is zeros of out_channels
+            register_parameter of bias
+        else:
+            bias is none
+
+        _name is "Conv2d"
+
+    define forward as:
+
+        x is arg
+        # Input shape: (N, C_in, H, W)
+        # Output shape: (N, C_out, H_out, W_out)
+
+        # Use native conv2d if available
+        result is conv2d of [x, weight, bias, stride, padding]
+
+        # === EigenScript Geometric Feature ===
+        # Track feature map stability
+        if not stable:
+            print of "Warning: Conv2d output unstable"
+
+        return result
+
+    define output_size as:
+
+        input_size is arg
+        # Calculate output spatial dimensions
+        # H_out = (H + 2*padding - kernel_size) / stride + 1
+        h_in, w_in is input_size
+        h_out is floor of ((h_in + 2 * padding[0] - kernel_size[0]) / stride[0]) + 1
+        w_out is floor of ((w_in + 2 * padding[1] - kernel_size[1]) / stride[1]) + 1
+        return [h_out, w_out]
+
+    define describe as:
+        return format of "Conv2d({}, {}, kernel={}, stride={}, padding={})",
+            in_channels, out_channels, kernel_size, stride, padding
+
+
+# ============================================================================
+# MaxPool2d: 2D Max Pooling Layer
+# ============================================================================
+
+define MaxPool2d as:
+
+    # extends Model
+    kernel_size is [2, 2]
+    stride is [2, 2]
+    padding is [0, 0]
+
+    define init as:
+
+        k_size is arg[0]
+
+        s is arg[1]
+
+        p is arg[2]
+        if is_int of k_size:
+            kernel_size is [k_size, k_size]
+        else:
+            kernel_size is k_size
+
+        # Default stride = kernel_size
+        if s == none:
+            stride is kernel_size
+        else if is_int of s:
+            stride is [s, s]
+        else:
+            stride is s
+
+        if is_int of p:
+            padding is [p, p]
+        else:
+            padding is p
+
+        _name is "MaxPool2d"
+
+    define forward as:
+
+        x is arg
+        # Apply 2D max pooling
+        result is max_pool2d of [x, kernel_size, stride, padding]
+        return result
+
+    define describe as:
+        return format of ["MaxPool2d(kernel={}, stride={})", kernel_size, stride]
+
+
+# ============================================================================
+# AvgPool2d: 2D Average Pooling Layer
+# ============================================================================
+
+define AvgPool2d as:
+
+    # extends Model
+    kernel_size is [2, 2]
+    stride is [2, 2]
+    padding is [0, 0]
+
+    define init as:
+
+        k_size is arg[0]
+
+        s is arg[1]
+
+        p is arg[2]
+        if is_int of k_size:
+            kernel_size is [k_size, k_size]
+        else:
+            kernel_size is k_size
+
+        if s == none:
+            stride is kernel_size
+        else if is_int of s:
+            stride is [s, s]
+        else:
+            stride is s
+
+        if is_int of p:
+            padding is [p, p]
+        else:
+            padding is p
+
+        _name is "AvgPool2d"
+
+    define forward as:
+
+        x is arg
+        result is avg_pool2d of [x, kernel_size, stride, padding]
+        return result
+
+    define describe as:
+        return format of ["AvgPool2d(kernel={}, stride={})", kernel_size, stride]
+
+
+# ============================================================================
+# AdaptiveAvgPool2d: Adaptive Average Pooling
+# ============================================================================
+
+define AdaptiveAvgPool2d as:
+
+    # extends Model
+    output_size is [1, 1]
+
+    define init as:
+
+        out_size is arg
+        if is_int of out_size:
+            output_size is [out_size, out_size]
+        else:
+            output_size is out_size
+
+        _name is "AdaptiveAvgPool2d"
+
+    define forward as:
+
+        x is arg
+        # Produces fixed output size regardless of input
+        result is adaptive_avg_pool2d of [x, output_size]
+        return result
+
+    define describe as:
+        return format of ["AdaptiveAvgPool2d(output_size={})", output_size]
+
+
+# ============================================================================
+# BatchNorm2d: Batch Normalization for 2D inputs
+# ============================================================================
+
+define BatchNorm2d as:
+
+    # extends Model
+    num_features is 0
+    eps is 1e-5
+    momentum is 0.1
+    affine is true
+    track_running_stats is true
+
+    # Learnable parameters
+    gamma is Tensor
+    beta is Tensor
+
+    # Running statistics
+    running_mean is Tensor
+    running_var is Tensor
+
+    define init as:
+
+        features is arg[0]
+
+        epsilon is arg[1]
+
+        mom is arg[2]
+
+        aff is arg[3]
+
+        track is arg[4]
+        num_features is features
+        eps is epsilon
+        momentum is mom
+        affine is aff
+        track_running_stats is track
+
+        if affine:
+            gamma is ones of num_features
+            beta is zeros of num_features
+            register_parameter of gamma
+            register_parameter of beta
+        else:
+            gamma is none
+            beta is none
+
+        if track_running_stats:
+            running_mean is zeros of num_features
+            running_var is ones of num_features
+
+        _name is "BatchNorm2d"
+
+    define forward as:
+
+        x is arg
+        # Input shape: (N, C, H, W)
+
+        if _training:
+            # Compute batch statistics
+            mean is mean of [x, [0, 2, 3], keepdims: true]
+            var is var of [x, [0, 2, 3], keepdims: true]
+
+            # Update running statistics
+            if track_running_stats:
+                running_mean is add of (
+                    multiply of [(1 - momentum), running_mean]
+                ), (
+                    multiply of [momentum, squeeze of mean]
+                )
+                running_var is add of (
+                    multiply of [(1 - momentum), running_var]
+                ), (
+                    multiply of [momentum, squeeze of var]
+                )
+        else:
+            # Use running statistics
+            mean is reshape of [running_mean, [1, -1, 1, 1]]
+            var is reshape of [running_var, [1, -1, 1, 1]]
+
+        # Normalize: (x - mean) / sqrt(var + eps)
+        x_norm is divide of [(subtract of x, mean), sqrt of (add of var, eps)]
+
+        # Scale and shift
+        if affine:
+            gamma_reshaped is reshape of [gamma, [1, -1, 1, 1]]
+            beta_reshaped is reshape of [beta, [1, -1, 1, 1]]
+            output is add of [(multiply of gamma_reshaped, x_norm), beta_reshaped]
+        else:
+            output is x_norm
+
+        # === EigenScript Geometric Feature ===
+        # Check normalization stability
+        if not stable:
+            print of ["Warning: BatchNorm output unstable, check running stats"]
+
+        return output
+
+    define describe as:
+        return format of ["BatchNorm2d({})", num_features]
+
+
+# ============================================================================
+# LayerNorm: Layer Normalization
+# ============================================================================
+
+define LayerNorm as:
+
+    # extends Model
+    normalized_shape is []
+    eps is 1e-5
+    elementwise_affine is true
+
+    gamma is Tensor
+    beta is Tensor
+
+    define init as:
+
+        shape is arg[0]
+
+        epsilon is arg[1]
+
+        affine is arg[2]
+        if is_int of shape:
+            normalized_shape is [shape]
+        else:
+            normalized_shape is shape
+
+        eps is epsilon
+        elementwise_affine is affine
+
+        if elementwise_affine:
+            gamma is ones of normalized_shape
+            beta is zeros of normalized_shape
+            register_parameter of gamma
+            register_parameter of beta
+        else:
+            gamma is none
+            beta is none
+
+        _name is "LayerNorm"
+
+    define forward as:
+
+        x is arg
+        # Normalize over last len(normalized_shape) dimensions
+        num_dims is length of normalized_shape
+        axes is range of [(negative of num_dims), 0]
+
+        mean is mean of [x, axes, keepdims: true]
+        var is var of [x, axes, keepdims: true]
+
+        x_norm is divide of [(subtract of x, mean), sqrt of (add of var, eps)]
+
+        if elementwise_affine:
+            output is add of [(multiply of gamma, x_norm), beta]
+        else:
+            output is x_norm
+
+        return output
+
+    define describe as:
+        return format of ["LayerNorm({})", normalized_shape]
+
+
+# ============================================================================
+# GroupNorm: Group Normalization
+# ============================================================================
+
+define GroupNorm as:
+
+    # extends Model
+    num_groups is 32
+    num_channels is 0
+    eps is 1e-5
+    affine is true
+
+    gamma is Tensor
+    beta is Tensor
+
+    define init as:
+
+        groups is arg[0]
+
+        channels is arg[1]
+
+        epsilon is arg[2]
+
+        aff is arg[3]
+        num_groups is groups
+        num_channels is channels
+        eps is epsilon
+        affine is aff
+
+        if affine:
+            gamma is ones of num_channels
+            beta is zeros of num_channels
+            register_parameter of gamma
+            register_parameter of beta
+
+        _name is "GroupNorm"
+
+    define forward as:
+
+        x is arg
+        # Input: (N, C, H, W)
+        N, C, H, W is shape of x
+
+        # Reshape to (N, G, C//G, H, W)
+        G is num_groups
+        x_grouped is reshape of [x, [N, G, C / G, H, W]]
+
+        # Normalize over (C//G, H, W) within each group
+        mean is mean of [x_grouped, [2, 3, 4], keepdims: true]
+        var is var of [x_grouped, [2, 3, 4], keepdims: true]
+
+        x_norm is divide of [(subtract of x_grouped, mean), sqrt of (add of var, eps)]
+
+        # Reshape back to (N, C, H, W)
+        x_norm is reshape of [x_norm, [N, C, H, W]]
+
+        if affine:
+            gamma_reshaped is reshape of [gamma, [1, -1, 1, 1]]
+            beta_reshaped is reshape of [beta, [1, -1, 1, 1]]
+            output is add of [(multiply of gamma_reshaped, x_norm), beta_reshaped]
+        else:
+            output is x_norm
+
+        return output
+
+    define describe as:
+        return format of ["GroupNorm({}, {})", num_groups, num_channels]
+
+
+# ============================================================================
+# InstanceNorm2d: Instance Normalization
+# ============================================================================
+
+define InstanceNorm2d as:
+
+    # extends Model
+    num_features is 0
+    eps is 1e-5
+    affine is false
+
+    gamma is Tensor
+    beta is Tensor
+
+    define init as:
+
+        features is arg[0]
+
+        epsilon is arg[1]
+
+        aff is arg[2]
+        num_features is features
+        eps is epsilon
+        affine is aff
+
+        if affine:
+            gamma is ones of num_features
+            beta is zeros of num_features
+            register_parameter of gamma
+            register_parameter of beta
+
+        _name is "InstanceNorm2d"
+
+    define forward as:
+
+        x is arg
+        # Normalize over (H, W) for each (N, C)
+        mean is mean of [x, [2, 3], keepdims: true]
+        var is var of [x, [2, 3], keepdims: true]
+
+        x_norm is divide of [(subtract of x, mean), sqrt of (add of var, eps)]
+
+        if affine:
+            gamma_reshaped is reshape of [gamma, [1, -1, 1, 1]]
+            beta_reshaped is reshape of [beta, [1, -1, 1, 1]]
+            output is add of [(multiply of gamma_reshaped, x_norm), beta_reshaped]
+        else:
+            output is x_norm
+
+        return output
+
+    define describe as:
+        return format of ["InstanceNorm2d({})", num_features]
+
+
+# ============================================================================
+# Flatten: Flatten spatial dimensions
+# ============================================================================
+
+define Flatten as:
+
+    # extends Model
+    start_dim is 1
+    end_dim is -1
+
+    define init as:
+
+        start is arg[0]
+
+        end is arg[1]
+        start_dim is start
+        end_dim is end
+        _name is "Flatten"
+
+    define forward as:
+
+        x is arg
+        return flatten of [x, start_dim, end_dim]
+
+    define describe as:
+        return format of ["Flatten(start={}, end={})", start_dim, end_dim]
+
+
+# ============================================================================
+# Upsample: Upsampling layer
+# ============================================================================
+
+define Upsample as:
+
+    # extends Model
+    scale_factor is 2
+    mode is "nearest"  # "nearest", "bilinear", "bicubic"
+
+    define init as:
+
+        scale is arg[0]
+
+        m is arg[1]
+        scale_factor is scale
+        mode is m
+        _name is "Upsample"
+
+    define forward as:
+
+        x is arg
+        return upsample of [x, scale_factor, mode]
+
+    define describe as:
+        return format of ["Upsample(scale={}, mode={})", scale_factor, mode]
+
+
+# ============================================================================
+# ConvTranspose2d: Transposed Convolution (Deconvolution)
+# ============================================================================
+
+define ConvTranspose2d as:
+
+    # extends Model
+    in_channels is 0
+    out_channels is 0
+    kernel_size is [3, 3]
+    stride is [1, 1]
+    padding is [0, 0]
+    output_padding is [0, 0]
+    use_bias is true
+
+    weight is Tensor
+    bias is Tensor
+
+    define init as:
+
+        in_ch is arg[0]
+
+        out_ch is arg[1]
+
+        k_size is arg[2]
+
+        s is arg[3]
+
+        p is arg[4]
+
+        out_p is arg[5]
+
+        use_b is arg[6]
+        in_channels is in_ch
+        out_channels is out_ch
+
+        if is_int of k_size:
+            kernel_size is [k_size, k_size]
+        else:
+            kernel_size is k_size
+
+        if is_int of s:
+            stride is [s, s]
+        else:
+            stride is s
+
+        if is_int of p:
+            padding is [p, p]
+        else:
+            padding is p
+
+        if is_int of out_p:
+            output_padding is [out_p, out_p]
+        else:
+            output_padding is out_p
+
+        use_bias is use_b
+
+        # Initialize weights
+        fan_in is in_channels * kernel_size[0] * kernel_size[1]
+        std is sqrt of (2.0 / fan_in)
+
+        weight is random_normal of [in_channels, out_channels, kernel_size[0], kernel_size[1]], std
+        register_parameter of weight
+
+        if use_bias:
+            bias is zeros of out_channels
+            register_parameter of bias
+
+        _name is "ConvTranspose2d"
+
+    define forward as:
+
+        x is arg
+        result is conv_transpose2d of [x, weight, bias, stride, padding, output_padding]
+        return result
+
+    define describe as:
+        return format of ["ConvTranspose2d({}, {}, kernel={})", in_channels, out_channels, kernel_size]
+
+
+# ============================================================================
+# Residual Block (Helper for ResNet-style architectures)
+# ============================================================================
+
+define ResidualBlock as:
+
+    # extends Model
+    conv1 is Conv2d
+    bn1 is BatchNorm2d
+    conv2 is Conv2d
+    bn2 is BatchNorm2d
+    downsample is Model
+
+    define init as:
+
+        in_channels is arg[0]
+
+        out_channels is arg[1]
+
+        stride is arg[2]
+        # First conv
+        conv1 is Conv2d
+        init of [conv1, in_channels, out_channels, 3, stride, 1, true]
+
+        bn1 is BatchNorm2d
+        init of [bn1, out_channels, 1e-5, 0.1, true, true]
+
+        # Second conv
+        conv2 is Conv2d
+        init of [conv2, out_channels, out_channels, 3, 1, 1, true]
+
+        bn2 is BatchNorm2d
+        init of [bn2, out_channels, 1e-5, 0.1, true, true]
+
+        # Downsample if needed
+        if stride != 1 or in_channels != out_channels:
+            downsample_conv is Conv2d
+            init of [downsample_conv, in_channels, out_channels, 1, stride, 0, false]
+
+            downsample_bn is BatchNorm2d
+            init of [downsample_bn, out_channels, 1e-5, 0.1, true, true]
+
+            downsample is Sequential of [downsample_conv, downsample_bn]
+        else:
+            downsample is none
+
+        register_module of conv1
+        register_module of bn1
+        register_module of conv2
+        register_module of bn2
+        if downsample != none:
+            register_module of downsample
+
+        _name is "ResidualBlock"
+
+    define forward as:
+
+        x is arg
+        identity is x
+
+        # First conv block
+        out is forward of [conv1, x]
+        out is forward of [bn1, out]
+        out is relu of out
+
+        # Second conv block
+        out is forward of [conv2, out]
+        out is forward of [bn2, out]
+
+        # Add residual connection
+        if downsample != none:
+            identity is forward of [downsample, x]
+
+        out is add of [out, identity]
+        out is relu of out
+
+        # === EigenScript Geometric Feature ===
+        # Residual connections should improve stability
+        if not stable:
+            print of "Warning: Residual block output unstable"
+
+        return out
+
+    define describe as:
+        return "ResidualBlock"

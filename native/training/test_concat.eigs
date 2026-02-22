@@ -1,0 +1,34 @@
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    i is 0
+    total is len of decoded
+    loop while i < total:
+        if decoded[i] == key:
+            return decoded[i + 1]
+        i is i + 2
+    return -1
+
+print of "Loading model..."
+model_status is eigen_model_load of "../../checkpoints/eigenscript/model_pre_harness.json"
+
+define outer as:
+    x is n
+    prompt is x[0]
+    target is x[1]
+    gate is x[2]
+    pid is x[3]
+    step is 0
+    print of "BEFORE pid=" + pid
+    loop while step < 2:
+        step is step + 1
+        train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": 0.01}"
+        raw is eigen_train of train_json
+        decoded is json_decode of raw
+        loss is get_field of [decoded, "loss"]
+        print of "step=" + step + " pid=" + pid + " loss=" + loss
+    print of "DONE pid=" + pid
+    return 0
+
+outer of ["Hello", "Hello!", 0.15, "ID-1"]

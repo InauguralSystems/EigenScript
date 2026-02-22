@@ -1,0 +1,333 @@
+# iLambdaAi Geometric Features Showcase
+# Demonstrates all EigenScript geometric introspection capabilities
+#
+# This example shows how iLambdaAi leverages EigenScript's unique features:
+# - Native predicates: converged, stable, improving, oscillating, equilibrium
+# - Interrogatives: what, who, when, where, why, how
+# - Temporal operators: was, change, trend
+# - Framework metrics: framework_strength, signature
+
+from layers import Linear, ReLU, Sigmoid, Sequential
+from optimizers import Adam, GeometricOptimizer
+from loss import mse_loss, GeometricLoss
+from trainer import Trainer
+
+# ============================================================================
+# Setup
+# ============================================================================
+
+print of "=== iLambdaAi EigenScript Geometric Features Showcase ==="
+print of ""
+
+# Create a simple model
+model is Sequential of [
+    Linear of 4, 8, true,
+    ReLU,
+    Linear of 8, 4, true,
+    ReLU,
+    Linear of 4, 2, true,
+    Sigmoid
+]
+
+print of "Model created with"
+print of num_parameters of model
+print of "parameters"
+
+# ============================================================================
+# 1. Native Predicates
+# ============================================================================
+
+print of ""
+print of "=== 1. Native Predicates ==="
+print of ""
+print of "EigenScript provides built-in predicates that automatically track"
+print of "computational dynamics without manual implementation."
+print of ""
+
+# Simulate some training to demonstrate predicates
+optimizer is Adam of [(parameters of model), 0.01, 0.9, 0.999, 1e-8, 0, false]
+X is random_tensor of [10, 4]
+Y is random_tensor of [10, 2]
+
+for i in range of 50:
+    zero_grad of model
+    pred is forward of [model, X]
+    loss is mse_loss of [pred, Y]
+    backward of loss
+    step of optimizer
+
+    if i % 10 == 0:
+        print of format of "Step {}: Loss = {:.4f}"
+        print of i
+        print of what is loss
+
+# Check all predicates
+print of ""
+print of "Predicate Status After Training:"
+print of "  converged:"
+print of converged
+print of "  stable:"
+print of stable
+print of "  improving:"
+print of improving
+print of "  oscillating:"
+print of oscillating
+print of "  equilibrium:"
+print of equilibrium
+
+# Using predicates in control flow
+print of ""
+print of "Using predicates in control flow:"
+
+if converged:
+    print of "  -> Training has converged!"
+else:
+    print of "  -> Training has not yet converged"
+
+if stable and not oscillating:
+    print of "  -> Training is proceeding smoothly"
+
+if improving:
+    print of "  -> Loss is still decreasing"
+else:
+    print of "  -> Loss has plateaued"
+
+# ============================================================================
+# 2. Interrogatives
+# ============================================================================
+
+print of ""
+print of "=== 2. Interrogatives ==="
+print of ""
+print of "The six interrogatives let you query the computational state:"
+print of ""
+
+# WHAT - magnitude/value
+magnitude is what is loss
+print of "WHAT is loss?"
+print of magnitude
+print of "  -> Returns the scalar magnitude of the loss value"
+print of ""
+
+# WHO - identity
+identity is who is model
+print of "WHO is model?"
+print of identity
+print of "  -> Returns the identity/type of the computational object"
+print of ""
+
+# WHEN - temporal step
+step_num is when
+print of "WHEN (current step)?"
+print of step_num
+print of "  -> Returns the current iteration/step number"
+print of ""
+
+# WHERE - location in computation
+location is where
+print of "WHERE (in computation)?"
+print of location
+print of "  -> Returns the location in the computation graph"
+print of ""
+
+# WHY - gradient direction
+direction is why is loss
+print of "WHY is loss changing?"
+print of direction
+print of "  -> Returns the gradient direction (why things are changing)"
+print of ""
+
+# HOW - quality assessment
+quality is how is loss
+print of "HOW is the loss (quality)?"
+print of quality
+print of "  -> Returns a quality metric (0-1 scale)"
+print of ""
+
+# ============================================================================
+# 3. Temporal Operators
+# ============================================================================
+
+print of "=== 3. Temporal Operators ==="
+print of ""
+print of "Temporal operators track history automatically:"
+print of ""
+
+# Run a few more steps to build history
+for i in range of 10:
+    zero_grad of model
+    pred is forward of [model, X]
+    loss is mse_loss of [pred, Y]
+    backward of loss
+    step of optimizer
+
+# WAS - previous value
+previous is was of loss
+print of "WAS (previous loss):"
+print of previous
+print of "  -> Returns the value from the previous step"
+print of ""
+
+# CHANGE - delta from last step
+delta is change of loss
+print of "CHANGE (loss delta):"
+print of delta
+print of "  -> Returns the magnitude of change"
+print of ""
+
+# TREND - directional trend
+direction is trend of loss
+print of "TREND (direction):"
+print of direction
+print of ["  -> Returns 'increasing', 'decreasing', or 'stable'"]
+print of ""
+
+# Using temporal operators for adaptive training
+print of "Adaptive training using temporal operators:"
+if change of loss < 0.001:
+    print of ["  -> Loss change is small, consider early stopping"]
+
+if trend of loss == "increasing":
+    print of ["  -> Loss is increasing, reduce learning rate"]
+
+# ============================================================================
+# 4. Framework Strength
+# ============================================================================
+
+print of ""
+print of "=== 4. Framework Strength ==="
+print of ""
+
+fs is framework_strength
+print of "Current Framework Strength:"
+print of fs
+print of ""
+print of "Framework Strength measures computational coherence:"
+print of ["  > 0.8: Very stable, well-behaved training"]
+print of "  0.5-0.8: Normal training dynamics"
+print of ["  < 0.5: May need attention (unstable, diverging)"]
+print of ""
+
+if fs > 0.8:
+    print of "  -> Training is very stable!"
+else if fs > 0.5:
+    print of "  -> Training is proceeding normally"
+else:
+    print of "  -> Warning: Training may be unstable"
+
+# ============================================================================
+# 5. Spacetime Signature
+# ============================================================================
+
+print of ""
+print of "=== 5. Spacetime Signature ==="
+print of ""
+
+sig is signature
+print of "Current Signature:"
+print of sig
+print of ""
+print of "Signature describes the geometric character:"
+print of ["  - Timelike: Stable, convergent evolution"]
+print of ["  - Spacelike: Parallel, exploring"]
+print of "  - Lightlike: Boundary conditions"
+print of ""
+
+# ============================================================================
+# 6. GeometricOptimizer
+# ============================================================================
+
+print of ""
+print of "=== 6. Self-Aware Optimizer ==="
+print of ""
+
+# Create a new model for demonstration
+model2 is Sequential of [
+    Linear of 4, 8, true,
+    ReLU,
+    Linear of 8, 2, true,
+    Sigmoid
+]
+
+# Use the GeometricOptimizer that auto-adapts
+geo_opt is GeometricOptimizer of [(parameters of model2), 0.01, true]
+
+print of "GeometricOptimizer automatically:"
+print of "  - Detects oscillation and reduces learning rate"
+print of "  - Reports when convergence is detected"
+print of "  - Tracks framework strength internally"
+print of ""
+
+# Train with geometric optimizer
+for i in range of 100:
+    zero_grad of model2
+    pred is forward of [model2, X]
+    loss is mse_loss of [pred, Y]
+    backward of loss
+    step of geo_opt
+
+    if converged:
+        print of "GeometricOptimizer: Converged at step"
+        print of i
+        break
+
+# ============================================================================
+# 7. Full Introspection Report
+# ============================================================================
+
+print of ""
+print of "=== 7. Full Introspection Report ==="
+print of ""
+
+report is introspect of model
+
+print of "Model Introspection:"
+print of "  Predicates:"
+print of "    converged:"
+print of report["converged"]
+print of "    stable:"
+print of report["stable"]
+print of "    improving:"
+print of report["improving"]
+print of "    oscillating:"
+print of report["oscillating"]
+print of "    equilibrium:"
+print of report["equilibrium"]
+print of ""
+print of "  Framework Metrics:"
+print of "    strength:"
+print of report["framework_strength"]
+print of "    parameters:"
+print of report["parameter_count"]
+print of ""
+print of "  Interrogatives:"
+print of "    what:"
+print of report["what"]
+print of "    how:"
+print of report["how"]
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+print of ""
+print of "=== Summary ==="
+print of ""
+print of "iLambdaAi in EigenScript provides native access to:"
+print of ""
+print of "1. PREDICATES - Built-in training state detection"
+print of ["   converged, stable, improving, oscillating, equilibrium"]
+print of ""
+print of "2. INTERROGATIVES - Query computational state"
+print of ["   what, who, when, where, why, how"]
+print of ""
+print of "3. TEMPORAL OPERATORS - Automatic history tracking"
+print of ["   was, change, trend"]
+print of ""
+print of "4. FRAMEWORK METRICS - Computational coherence"
+print of ["   framework_strength, signature"]
+print of ""
+print of "These features enable SELF-AWARE neural networks that understand"
+print of "and can respond to their own training dynamics!"
+print of ""
+print of "=== Showcase Complete ==="

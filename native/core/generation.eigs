@@ -1,0 +1,1259 @@
+# iLambdaAi - Text Generation Utilities
+# EigenScript-native text generation with geometric introspection
+#
+# Includes: TextGenerator, Tokenizers (Character, BPE)
+# Sampling strategies: greedy, temperature, top-k, top-p, beam search
+#
+# Provides complete text generation pipeline for LLMs
+
+from model import Model
+
+# ============================================================================
+# Text Generator
+# ============================================================================
+
+define TextGenerator as:
+    # Text generation utilities for autoregressive language models
+    #
+    # Sampling strategies:
+    # - Greedy: Always pick most likely token
+    # - Temperature: Control randomness
+    # - Top-k: Sample from k most likely tokens
+    # - Top-p (Nucleus): Sample from smallest set summing to probability p
+    # - Beam search: Maintain multiple hypotheses
+
+    define sample as:
+
+        logits is arg[0]
+
+        temperature is arg[1]
+
+        top_k is arg[2]
+
+        top_p is arg[3]
+        # Sample next token from logits
+        # logits: (vocab_size,) or (batch, vocab_size)
+
+        # Handle batched input
+        if ndim of logits > 1:
+            logits is logits[-1]  # Take last position
+
+        # Apply temperature
+        if temperature != 1.0 and temperature > 0:
+            logits is divide of [logits, temperature]
+
+        # Greedy decoding
+        if temperature == 0:
+            return argmax of logits
+
+        # Apply top-k filtering
+        if top_k != none and top_k > 0:
+            vocab_size is length of logits
+            top_k is min of [top_k, vocab_size]
+
+            # Get indices of top-k logits
+            top_k_values, top_k_indices is topk of [logits, top_k]
+
+            # Create mask for non-top-k tokens
+            mask is full_like of [logits, negative_infinity]
+            for i in range of top_k:
+                mask[top_k_indices[i]] is logits[top_k_indices[i]]
+            logits is mask
+
+        # Convert to probabilities
+        logits_max is max of logits
+        exp_logits is exp of [(subtract of logits, logits_max)]
+        probs is divide of [exp_logits, sum of exp_logits]
+
+        # Apply top-p (nucleus) filtering
+        if top_p != none and top_p > 0 and top_p < 1.0:
+            # Sort probabilities descending
+            sorted_indices is argsort of [probs, descending]
+            sorted_probs is probs[sorted_indices]
+
+            # Cumulative sum
+            cumsum is cumulative_sum of sorted_probs
+
+            # Find cutoff index
+            cutoff_idx is 0
+            for i in range of (length of cumsum):
+                if cumsum[i] > top_p:
+                    cutoff_idx is i + 1
+                    break
+
+            cutoff_idx is max of [1, cutoff_idx]
+
+            # Zero out tokens below threshold
+            for i in range of [cutoff_idx, (length of sorted_indices):]
+                probs[sorted_indices[i]] is 0
+
+            # Renormalize
+            probs is divide of [probs, sum of probs]
+
+        # Sample from distribution
+        return random_choice of [(length of probs), 1, probs, false]
+
+    define generate as:
+
+        model is arg[0]
+
+        input_ids is arg[1]
+
+        max_new_tokens is arg[2]
+
+        temperature is arg[3]
+
+        top_k is arg[4]
+
+        top_p is arg[5]
+
+        eos_token_id is arg[6]
+
+        kv_cache_manager is arg[7]
+        # Generate tokens autoregressively
+        #
+        # Args:
+        #   model: Language model
+        #   input_ids: Input token IDs (seq_len,) or (batch, seq_len)
+        #   max_new_tokens: Maximum new tokens to generate
+        #   temperature: Sampling temperature (default: 1.0)
+        #   top_k: Top-k filtering (default: none)
+        #   top_p: Nucleus sampling threshold (default: none)
+        #   eos_token_id: End of sequence token (default: none)
+        #   kv_cache_manager: Optional KV cache (default: none)
+        #
+        # Returns:
+        #   Generated token IDs including input
+
+        # Ensure 2D input
+        if ndim of input_ids == 1:
+            input_ids is reshape of [input_ids, [1, -1]]
+
+        batch_size, seq_len is shape of input_ids
+
+        generated is copy of input_ids
+
+        # Reset KV cache if provided
+        if kv_cache_manager != none:
+            reset of kv_cache_manager
+
+        # Process prompt
+        x is Tensor of input_ids
+        if kv_cache_manager != none:
+            logits is forward of [model, x, 0]
+        else:
+            logits is forward of [model, x]
+
+        # Generate tokens
+        for i in range of max_new_tokens:
+            # Get logits for last position
+            last_logits is logits[:, -1, :]
+
+            # Sample next tokens for each batch
+            next_tokens is []
+            all_eos is true
+
+            for b in range of batch_size:
+                next_token is sample of [last_logits[b], temperature, top_k, top_p]
+                next_tokens is append of [next_tokens, next_token]
+
+                # Check for EOS
+                if eos_token_id == none or next_token != eos_token_id:
+                    all_eos is false
+
+            next_tokens_arr is reshape of [(Tensor of next_tokens), [batch_size, 1]]
+            generated is concatenate of [generated, next_tokens_arr], 1
+
+            # Early stopping if all batches hit EOS
+            if all_eos:
+                break
+
+            # === EigenScript Geometric Feature ===
+            # Check generation stability
+            if not stable:
+                print of "Warning: Generation becoming unstable at token"
+                print of i
+
+            # Prepare next input
+            x is next_tokens_arr
+            start_pos is shape of [generated, 1 - 1]
+
+            if kv_cache_manager != none:
+                logits is forward of [model, x, start_pos]
+            else:
+                # Without cache, need full sequence
+                x is Tensor of generated
+                logits is forward of [model, x]
+
+        if batch_size == 1:
+            return squeeze of generated
+        return generated
+
+    define beam_search as:
+
+        model is arg[0]
+
+        input_ids is arg[1]
+
+        max_new_tokens is arg[2]
+
+        num_beams is arg[3]
+
+        length_penalty is arg[4]
+
+        eos_token_id is arg[5]
+        # Generate tokens using beam search
+        #
+        # Args:
+        #   model: Language model
+        #   input_ids: Input token IDs (seq_len,)
+        #   max_new_tokens: Maximum new tokens
+        #   num_beams: Number of beams (default: 4)
+        #   length_penalty: Length penalty (>1 favors longer, <1 favors shorter)
+        #   eos_token_id: End of sequence token
+        #
+        # Returns:
+        #   Best generated sequence
+
+        if ndim of input_ids == 1:
+            input_ids is reshape of [input_ids, [1, -1]]
+
+        # Initialize beams: [(sequence, log_prob, finished), ...]
+        beams is [(input_ids[0], 0.0, false)]
+
+        for step in range of max_new_tokens:
+            all_candidates is []
+
+            for beam in beams:
+                seq, score, finished is beam
+
+                if finished:
+                    all_candidates is append of [all_candidates, beam]
+                    continue
+
+                # Get logits
+                x is Tensor of [(reshape of seq, [1, -1])]
+                logits is forward of [model, x]
+
+                last_logits is logits[0, -1, :]
+
+                # Get log probabilities
+                log_probs is log_softmax of last_logits
+
+                # Get top-k tokens
+                top_values, top_indices is topk of [log_probs, num_beams]
+
+                for k in range of num_beams:
+                    token_idx is top_indices[k]
+                    token_log_prob is top_values[k]
+
+                    new_seq is concatenate of [seq, [token_idx]]
+                    new_score is score + token_log_prob
+
+                    # Apply length penalty
+                    seq_length is length of new_seq
+                    penalized_score is new_score / (pow of [seq_length, length_penalty)]
+
+                    is_finished is false
+                    if eos_token_id != none and token_idx == eos_token_id:
+                        is_finished is true
+
+                    all_candidates is append of [all_candidates, (new_seq, penalized_score, is_finished)]
+
+            # Select top beams
+            all_candidates is sort of [all_candidates, key: (fn x: negative of x[1])]
+            beams is all_candidates[:num_beams]
+
+            # === EigenScript Geometric Feature ===
+            # Check beam diversity
+            if not stable:
+                print of "Warning: Beam search becoming unstable at step"
+                print of step
+
+            # Early stopping if all beams finished
+            all_finished is true
+            for beam in beams:
+                if not beam[2]:
+                    all_finished is false
+                    break
+
+            if all_finished:
+                break
+
+        # Return best sequence
+        best_beam is beams[0]
+        return best_beam[0]
+
+    define generate_with_constraints as:
+
+        model is arg[0]
+
+        input_ids is arg[1]
+
+        max_new_tokens is arg[2]
+
+        constraints is arg[3]
+
+        temperature is arg[4]
+        # Generate with custom constraints
+        #
+        # constraints: function that modifies logits before sampling
+        # Example: force certain tokens, ban certain tokens
+
+        if ndim of input_ids == 1:
+            input_ids is reshape of [input_ids, [1, -1]]
+
+        generated is copy of input_ids
+
+        logits is forward of [model, (Tensor of input_ids)]
+
+        for i in range of max_new_tokens:
+            last_logits is logits[0, -1, :]
+
+            # Apply constraints
+            constrained_logits is constraints of [last_logits, generated, i]
+
+            # Sample
+            next_token is sample of [constrained_logits, temperature, none, none]
+            generated is concatenate of [generated, [[next_token]]], 1
+
+            logits is forward of [model, (Tensor of generated)]
+
+        return squeeze of generated
+
+
+# ============================================================================
+# Tokenizer Base Class
+# ============================================================================
+
+define Tokenizer as:
+    # Abstract base class for tokenizers
+
+    vocab_size is 0
+    pad_token_id is none
+    bos_token_id is none
+    eos_token_id is none
+    unk_token_id is none
+
+    define init as:
+
+        v_size is arg[0]
+
+        pad_id is arg[1]
+
+        bos_id is arg[2]
+
+        eos_id is arg[3]
+
+        unk_id is arg[4]
+        vocab_size is v_size
+        pad_token_id is pad_id
+        bos_token_id is bos_id
+        eos_token_id is eos_id
+        unk_token_id is unk_id
+
+    define encode as:
+
+        text is arg[0]
+
+        add_special_tokens is arg[1]
+        # Encode text to token IDs
+        # Override in subclass
+        error of "Tokenizer.encode() must be implemented"
+
+    define decode as:
+
+        token_ids is arg[0]
+
+        skip_special_tokens is arg[1]
+        # Decode token IDs to text
+        # Override in subclass
+        error of "Tokenizer.decode() must be implemented"
+
+    define batch_encode as:
+
+        texts is arg[0]
+
+        add_special_tokens is arg[1]
+
+        padding is arg[2]
+
+        max_length is arg[3]
+        # Encode multiple texts
+
+        encoded is []
+        for text in texts:
+            ids is encode of [text, add_special_tokens]
+            encoded is append of [encoded, ids]
+
+        # Truncate if needed
+        if max_length != none:
+            for i in range of (length of encoded):
+                encoded[i] is encoded[i][:max_length]
+
+        if not padding:
+            return {"input_ids": encoded}
+
+        # Pad to max length
+        max_len is 0
+        for ids in encoded:
+            if length of ids > max_len:
+                max_len is length of ids
+
+        if max_length != none:
+            max_len is min of [max_len, max_length]
+
+        padded is []
+        attention_mask is []
+
+        pad_id is 0
+        if pad_token_id != none:
+            pad_id is pad_token_id
+
+        for ids in encoded:
+            pad_len is max_len - length of ids
+            padded_ids is concatenate of [ids, (repeat of [pad_id], pad_len)]
+            mask is concatenate of [(ones of [(length of ids)), (zeros of pad_len)]]
+
+            padded is append of [padded, padded_ids]
+            attention_mask is append of [attention_mask, mask]
+
+        return {
+            "input_ids": Tensor of padded,
+            "attention_mask": Tensor of attention_mask
+        }
+
+    define batch_decode as:
+
+        token_ids_batch is arg[0]
+
+        skip_special_tokens is arg[1]
+        # Decode batch of token IDs
+
+        decoded is []
+        for ids in token_ids_batch:
+            text is decode of [ids, skip_special_tokens]
+            decoded is append of [decoded, text]
+
+        return decoded
+
+
+# ============================================================================
+# Character Tokenizer
+# ============================================================================
+
+define CharacterTokenizer as:
+
+    # extends Tokenizer
+    # Simple character-level tokenizer
+
+    char_to_id is {}
+    id_to_char is {}
+
+    pad_token is "<PAD>"
+    bos_token is "<BOS>"
+    eos_token is "<EOS>"
+    unk_token is "<UNK>"
+
+    define init as:
+
+        vocab is arg[0]
+
+        p_token is arg[1]
+
+        b_token is arg[2]
+
+        e_token is arg[3]
+
+        u_token is arg[4]
+        # Build vocabulary
+
+        if p_token != none:
+            pad_token is p_token
+        if b_token != none:
+            bos_token is b_token
+        if e_token != none:
+            eos_token is e_token
+        if u_token != none:
+            unk_token is u_token
+
+        special_tokens is [pad_token, bos_token, eos_token, unk_token]
+
+        char_to_id is {}
+        id_to_char is {}
+
+        # Add special tokens first
+        for i, token in enumerate of special_tokens:
+            char_to_id[token] is i
+            id_to_char[i] is token
+
+        # Add vocabulary characters
+        offset is length of special_tokens
+
+        if vocab == none:
+            # ASCII printable characters
+            vocab is ""
+            for i in range of [32, 127:]
+                vocab is vocab + chr of i
+
+        for i, char in enumerate of vocab:
+            if char not in char_to_id:
+                idx is offset + i
+                char_to_id[char] is idx
+                id_to_char[idx] is char
+
+        # Call parent init
+        v_size is length of char_to_id
+        pad_id is char_to_id[pad_token]
+        bos_id is char_to_id[bos_token]
+        eos_id is char_to_id[eos_token]
+        unk_id is char_to_id[unk_token]
+
+        init of [super, v_size, pad_id, bos_id, eos_id, unk_id]
+
+    define encode as:
+
+        text is arg[0]
+
+        add_special_tokens is arg[1]
+        # Encode text to character token IDs
+
+        ids is []
+        for char in text:
+            if char in char_to_id:
+                ids is append of [ids, char_to_id[char]]
+            else if unk_token_id != none:
+                ids is append of [ids, unk_token_id]
+            # Skip characters not in vocab and no unk_token
+
+        if add_special_tokens:
+            if bos_token_id != none:
+                ids is prepend of [ids, bos_token_id]
+            if eos_token_id != none:
+                ids is append of [ids, eos_token_id]
+
+        return ids
+
+    define decode as:
+
+        token_ids is arg[0]
+
+        skip_special_tokens is arg[1]
+        # Decode token IDs to text
+
+        special_ids is [pad_token_id, bos_token_id, eos_token_id]
+
+        chars is []
+        for token_id in token_ids:
+            if skip_special_tokens and token_id in special_ids:
+                continue
+
+            if token_id in id_to_char:
+                char is id_to_char[token_id]
+                if not skip_special_tokens or char not in [pad_token, bos_token, eos_token]:
+                    chars is append of [chars, char]
+
+        return join of [chars, ""]
+
+
+# ============================================================================
+# BPE Tokenizer
+# ============================================================================
+
+define BPETokenizer as:
+
+    # extends Tokenizer
+    # Byte Pair Encoding tokenizer
+    # Used in GPT-2, GPT-3, and many modern LLMs
+
+    token_to_id is {}
+    id_to_token is {}
+    merges is []
+    merge_ranks is {}
+
+    pad_token is "<PAD>"
+    bos_token is "<BOS>"
+    eos_token is "<EOS>"
+    unk_token is "<UNK>"
+
+    define init as:
+
+        vocab is arg[0]
+
+        merge_list is arg[1]
+
+        p_token is arg[2]
+
+        b_token is arg[3]
+
+        e_token is arg[4]
+
+        u_token is arg[5]
+        token_to_id is copy of vocab
+        id_to_token is {}
+        for token, idx in items of vocab:
+            id_to_token[idx] is token
+
+        merges is merge_list
+        merge_ranks is {}
+        for i, merge in enumerate of merges:
+            merge_ranks[merge] is i
+
+        if p_token != none:
+            pad_token is p_token
+        if b_token != none:
+            bos_token is b_token
+        if e_token != none:
+            eos_token is e_token
+        if u_token != none:
+            unk_token is u_token
+
+        # Call parent init
+        v_size is length of vocab
+        pad_id is get of [vocab, pad_token, none]
+        bos_id is get of [vocab, bos_token, none]
+        eos_id is get of [vocab, eos_token, none]
+        unk_id is get of [vocab, unk_token, none]
+
+        init of [super, v_size, pad_id, bos_id, eos_id, unk_id]
+
+    define _get_pairs as:
+
+        word is arg
+        # Get all adjacent pairs in a word
+        pairs is []
+        for i in range of (length of word - 1):
+            pair is (word[i], word[i + 1])
+            if pair not in pairs:
+                pairs is append of [pairs, pair]
+        return pairs
+
+    define _bpe as:
+
+        token is arg
+        # Apply BPE to a single token
+        word is list of token
+
+        if length of word == 1:
+            return word
+
+        loop while true:
+            pairs is _get_pairs of word
+            if length of pairs == 0:
+                break
+
+            # Find pair with lowest rank (highest priority)
+            min_pair is none
+            min_rank is infinity
+
+            for pair in pairs:
+                rank is get of [merge_ranks, pair, infinity]
+                if rank < min_rank:
+                    min_rank is rank
+                    min_pair is pair
+
+            if min_pair == none or min_rank == infinity:
+                break
+
+            # Merge the pair
+            first, second is min_pair
+            new_word is []
+            i is 0
+
+            loop while i < length of word:
+                if i < (length of word - 1) and word[i] == first and word[i + 1] == second:
+                    new_word is append of [new_word, (first + second)]
+                    i is i + 2
+                else:
+                    new_word is append of [new_word, word[i]]
+                    i is i + 1
+
+            word is new_word
+
+            if length of word == 1:
+                break
+
+        return word
+
+    define encode as:
+
+        text is arg[0]
+
+        add_special_tokens is arg[1]
+        # Encode text using BPE
+
+        # Simple whitespace pre-tokenization
+        words is split of [text, " "]
+        tokens is []
+
+        for i, word in enumerate of words:
+            # Add space prefix for non-first words (GPT-2 style)
+            if i > 0:
+                word is " " + word
+
+            bpe_tokens is _bpe of word
+            tokens is extend of [tokens, bpe_tokens]
+
+        # Convert to IDs
+        ids is []
+        for token in tokens:
+            if token in token_to_id:
+                ids is append of [ids, token_to_id[token]]
+            else if unk_token_id != none:
+                ids is append of [ids, unk_token_id]
+
+        if add_special_tokens:
+            if bos_token_id != none:
+                ids is prepend of [ids, bos_token_id]
+            if eos_token_id != none:
+                ids is append of [ids, eos_token_id]
+
+        return ids
+
+    define decode as:
+
+        token_ids is arg[0]
+
+        skip_special_tokens is arg[1]
+        # Decode token IDs to text
+
+        special_ids is [pad_token_id, bos_token_id, eos_token_id]
+
+        tokens is []
+        for token_id in token_ids:
+            if skip_special_tokens and token_id in special_ids:
+                continue
+
+            if token_id in id_to_token:
+                tokens is append of [tokens, id_to_token[token_id]]
+
+        return join of [tokens, ""]
+
+    define save as:
+
+        path is arg
+        # Save tokenizer to file
+        data is {
+            "vocab": token_to_id,
+            "merges": merges,
+            "special_tokens": {
+                "pad": pad_token,
+                "bos": bos_token,
+                "eos": eos_token,
+                "unk": unk_token
+            }
+        }
+        write_json of [path, data]
+
+    define load as:
+
+        path is arg
+        # Load tokenizer from file
+        data is read_json of path
+
+        return BPETokenizer of (
+            data["vocab"],
+            data["merges"],
+            data["special_tokens"]["pad"],
+            data["special_tokens"]["bos"],
+            data["special_tokens"]["eos"],
+            data["special_tokens"]["unk"]
+        )
+
+
+# Train BPE tokenizer on corpus
+define train_bpe as:
+    texts is arg[0]
+    vocab_size is arg[1]
+    min_frequency is arg[2]
+    pad_token is arg[3]
+    bos_token is arg[4]
+    eos_token is arg[5]
+    unk_token is arg[6]
+    # Train a BPE tokenizer on a corpus
+    #
+    # Args:
+    #   texts: List of training texts
+    #   vocab_size: Target vocabulary size
+    #   min_frequency: Minimum pair frequency to merge
+    #
+    # Returns:
+    #   Trained BPETokenizer instance
+
+    # Count word frequencies
+    word_freqs is {}
+    for text in texts:
+        words is split of [text, " "]
+        for word in words:
+            if word in word_freqs:
+                word_freqs[word] is word_freqs[word] + 1
+            else:
+                word_freqs[word] is 1
+
+    # Get character vocabulary
+    char_vocab is []
+    for word in keys of word_freqs:
+        for char in word:
+            if char not in char_vocab:
+                char_vocab is append of [char_vocab, char]
+        # Space-prefixed first char
+        space_char is " " + word[0]
+        if space_char not in char_vocab:
+            char_vocab is append of [char_vocab, space_char]
+
+    # Build initial vocab with special tokens
+    vocab is {}
+    special_tokens is [pad_token, bos_token, eos_token, unk_token]
+
+    for i, token in enumerate of special_tokens:
+        vocab[token] is i
+
+    for char in sort of char_vocab:
+        if char not in vocab:
+            vocab[char] is length of vocab
+
+    # Convert words to character lists
+    splits is {}
+    for word in keys of word_freqs:
+        splits[word] is list of word
+
+    merges is []
+
+    loop while length of vocab < vocab_size:
+        # Count pair frequencies
+        pair_freqs is {}
+        for word, split in items of splits:
+            freq is word_freqs[word]
+            for i in range of (length of split - 1):
+                pair is (split[i], split[i + 1])
+                if pair in pair_freqs:
+                    pair_freqs[pair] is pair_freqs[pair] + freq
+                else:
+                    pair_freqs[pair] is freq
+
+        if length of pair_freqs == 0:
+            break
+
+        # Find most frequent pair
+        best_pair is none
+        best_freq is 0
+        for pair, freq in items of pair_freqs:
+            if freq > best_freq:
+                best_freq is freq
+                best_pair is pair
+
+        if best_freq < min_frequency:
+            break
+
+        merges is append of [merges, best_pair]
+
+        # Add merged token to vocab
+        new_token is best_pair[0] + best_pair[1]
+        if new_token not in vocab:
+            vocab[new_token] is length of vocab
+
+        # Update splits
+        for word in keys of splits:
+            split is splits[word]
+            new_split is []
+            i is 0
+
+            loop while i < length of split:
+                if i < (length of split - 1) and split[i] == best_pair[0] and split[i + 1] == best_pair[1]:
+                    new_split is append of [new_split, new_token]
+                    i is i + 2
+                else:
+                    new_split is append of [new_split, split[i]]
+                    i is i + 1
+
+            splits[word] is new_split
+
+    # Create and return tokenizer
+    tokenizer is BPETokenizer
+    init of [tokenizer, vocab, merges, pad_token, bos_token, eos_token, unk_token]
+    return tokenizer
+
+
+# ============================================================================
+# Repetition Penalty
+# ============================================================================
+
+define apply_repetition_penalty as:
+
+    logits is arg[0]
+
+    generated_ids is arg[1]
+
+    penalty is arg[2]
+    # Apply repetition penalty to logits
+    # penalty > 1.0 penalizes repetition
+    # penalty < 1.0 encourages repetition
+
+    for token_id in generated_ids:
+        if logits[token_id] > 0:
+            logits[token_id] is logits[token_id] / penalty
+        else:
+            logits[token_id] is logits[token_id] * penalty
+
+    return logits
+
+
+define apply_frequency_penalty as:
+
+
+    logits is arg[0]
+
+
+    token_counts is arg[1]
+
+
+    penalty is arg[2]
+    # Apply frequency-based penalty
+    # Penalizes tokens based on how often they've appeared
+
+    for token_id, count in items of token_counts:
+        logits[token_id] is logits[token_id] - (penalty * count)
+
+    return logits
+
+
+define apply_presence_penalty as:
+
+
+    logits is arg[0]
+
+
+    seen_tokens is arg[1]
+
+
+    penalty is arg[2]
+    # Apply presence penalty
+    # Penalizes tokens that have appeared at all
+
+    for token_id in seen_tokens:
+        logits[token_id] is logits[token_id] - penalty
+
+    return logits
+
+
+# ============================================================================
+# Stopping Criteria
+# ============================================================================
+
+define StoppingCriteria as:
+    # Base class for stopping criteria
+
+    define should_stop as:
+
+        generated_ids is arg[0]
+
+        scores is arg[1]
+        # Return true if generation should stop
+        return false
+
+
+define MaxLengthCriteria as:
+
+
+    # extends StoppingCriteria
+    max_length is 100
+
+    define init as:
+
+        max_len is arg
+        max_length is max_len
+
+    define should_stop as:
+
+        generated_ids is arg[0]
+
+        scores is arg[1]
+        return length of generated_ids >= max_length
+
+
+define EosTokenCriteria as:
+
+
+    # extends StoppingCriteria
+    eos_token_id is 0
+
+    define init as:
+
+        eos_id is arg
+        eos_token_id is eos_id
+
+    define should_stop as:
+
+        generated_ids is arg[0]
+
+        scores is arg[1]
+        if length of generated_ids == 0:
+            return false
+        return generated_ids[-1] == eos_token_id
+
+
+define StopStringCriteria as:
+
+
+    # extends StoppingCriteria
+    stop_strings is []
+    tokenizer is none
+
+    define init as:
+
+        strings is arg[0]
+
+        tok is arg[1]
+        stop_strings is strings
+        tokenizer is tok
+
+    define should_stop as:
+
+        generated_ids is arg[0]
+
+        scores is arg[1]
+        if tokenizer == none:
+            return false
+
+        text is decode of [tokenizer, generated_ids, true]
+
+        for stop_string in stop_strings:
+            if stop_string in text:
+                return true
+
+        return false
+
+
+define CombinedStoppingCriteria as:
+    criteria is []
+
+    define init as:
+
+        *criteria_list is arg
+        criteria is list of criteria_list
+
+    define should_stop as:
+
+        generated_ids is arg[0]
+
+        scores is arg[1]
+        for criterion in criteria:
+            if should_stop of [criterion, generated_ids, scores:]
+                return true
+        return false
+
+
+# ============================================================================
+# Logits Processor
+# ============================================================================
+
+define LogitsProcessor as:
+    # Base class for logits processors
+
+    define process as:
+
+        logits is arg[0]
+
+        generated_ids is arg[1]
+        # Process logits before sampling
+        return logits
+
+
+define TemperatureProcessor as:
+
+
+    # extends LogitsProcessor
+    temperature is 1.0
+
+    define init as:
+
+        temp is arg
+        temperature is temp
+
+    define process as:
+
+        logits is arg[0]
+
+        generated_ids is arg[1]
+        if temperature != 1.0 and temperature > 0:
+            return divide of [logits, temperature]
+        return logits
+
+
+define TopKProcessor as:
+
+
+    # extends LogitsProcessor
+    top_k is 50
+
+    define init as:
+
+        k is arg
+        top_k is k
+
+    define process as:
+
+        logits is arg[0]
+
+        generated_ids is arg[1]
+        if top_k <= 0:
+            return logits
+
+        k is min of [top_k, length of logits]
+        top_values, top_indices is topk of [logits, k]
+
+        # Set non-top-k to -inf
+        result is full_like of [logits, negative_infinity]
+        for i in range of k:
+            result[top_indices[i]] is logits[top_indices[i]]
+
+        return result
+
+
+define TopPProcessor as:
+
+
+    # extends LogitsProcessor
+    top_p is 0.9
+
+    define init as:
+
+        p is arg
+        top_p is p
+
+    define process as:
+
+        logits is arg[0]
+
+        generated_ids is arg[1]
+        if top_p >= 1.0:
+            return logits
+
+        probs is softmax of logits
+        sorted_indices is argsort of [probs, descending]
+        sorted_probs is probs[sorted_indices]
+        cumsum is cumulative_sum of sorted_probs
+
+        # Find cutoff
+        cutoff_idx is 0
+        for i in range of (length of cumsum):
+            if cumsum[i] > top_p:
+                cutoff_idx is i + 1
+                break
+
+        cutoff_idx is max of [1, cutoff_idx]
+
+        # Set tokens below threshold to -inf
+        for i in range of [cutoff_idx, (length of sorted_indices):]
+            logits[sorted_indices[i]] is negative_infinity
+
+        return logits
+
+
+define RepetitionPenaltyProcessor as:
+
+
+    # extends LogitsProcessor
+    penalty is 1.2
+
+    define init as:
+
+        p is arg
+        penalty is p
+
+    define process as:
+
+        logits is arg[0]
+
+        generated_ids is arg[1]
+        return apply_repetition_penalty of [logits, generated_ids, penalty]
+
+
+define LogitsProcessorList as:
+    processors is []
+
+    define init as:
+
+        *processor_list is arg
+        processors is list of processor_list
+
+    define process as:
+
+        logits is arg[0]
+
+        generated_ids is arg[1]
+        for processor in processors:
+            logits is process of [processor, logits, generated_ids]
+        return logits
+
+
+# ============================================================================
+# Streaming Generation
+# ============================================================================
+
+define StreamingGenerator as:
+    # Generator that yields tokens one at a time
+    # Useful for interactive applications
+
+    model is none
+    tokenizer is none
+    generator is none
+
+    define init as:
+
+        mdl is arg[0]
+
+        tok is arg[1]
+        model is mdl
+        tokenizer is tok
+        generator is TextGenerator
+
+    define stream as:
+
+        prompt is arg[0]
+
+        max_new_tokens is arg[1]
+
+        temperature is arg[2]
+
+        top_k is arg[3]
+
+        top_p is arg[4]
+
+        eos_token_id is arg[5]
+        # Yields (token_id, token_text) pairs as they are generated
+
+        # Encode prompt
+        input_ids is encode of [tokenizer, prompt, true]
+
+        if ndim of input_ids == 1:
+            input_ids is reshape of [input_ids, [1, -1]]
+
+        generated is copy of input_ids
+
+        # Process prompt
+        logits is forward of [model, (Tensor of input_ids)]
+
+        for i in range of max_new_tokens:
+            last_logits is logits[0, -1, :]
+
+            # Sample
+            next_token is sample of [generator, last_logits, temperature, top_k, top_p]
+
+            # Check for EOS
+            if eos_token_id != none and next_token == eos_token_id:
+                break
+
+            # Decode single token
+            token_text is decode of [tokenizer, [next_token], true]
+
+            # === EigenScript Geometric Feature ===
+            # Yield with geometric stability info
+            yield (next_token, token_text, stable)
+
+            # Update generated
+            generated is concatenate of [generated, [[next_token]]], 1
+
+            # Get next logits
+            logits is forward of [model, (Tensor of generated)]
+

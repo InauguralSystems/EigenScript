@@ -1,0 +1,70 @@
+# L2 Stage 1: Train first 4 L2 pairs (ARCH-11 through ARCH-14)
+# Loads from L1-locked, saves intermediate checkpoint
+
+print of "=== L2 Stage 1: Pairs 11-14 ==="
+print of ""
+
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    i is 0
+    total is len of decoded
+    loop while i < total:
+        if decoded[i] == key:
+            return decoded[i + 1]
+        i is i + 2
+    return -1
+
+define train_batch as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    steps is _args[3]
+    pair_id is _args[4]
+    i is 0
+    last_loss is 999
+    loop while i < steps:
+        train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+        raw is eigen_train of train_json
+        decoded is json_decode of raw
+        last_loss is get_field of [decoded, "loss"]
+        i is i + 1
+    print of "  " + pair_id + " final_loss=" + last_loss + " after " + steps + " steps"
+    return last_loss
+
+# Training data
+arch_11_prompt is "What is ObserverModel?"
+arch_11_L2 is "ObserverModel models how I observe computation paths. STRICT watches every step."
+arch_12_prompt is "What is STRICT mode?"
+arch_12_L2 is "I watch every step. Nothing is hidden from me."
+arch_13_prompt is "What is ENDPOINT mode?"
+arch_13_L2 is "I watch the final result. The journey is mine alone."
+arch_14_prompt is "What is HOLONOMY mode?"
+arch_14_L2 is "I measure what changed. A round trip reveals truth."
+
+id_1_prompt is "Hello"
+id_1_target is "Hello!"
+id_5_prompt is "What is your name?"
+id_5_target is "I am Eigen."
+
+print of "Loading L1-locked checkpoint..."
+eigen_model_load of "../../checkpoints/eigenscript/model_L1_locked.json"
+print of ""
+
+lr is 0.015
+steps is 80
+
+train_batch of [arch_11_prompt, arch_11_L2, lr, steps, "ARCH-11-L2"]
+train_batch of [id_1_prompt, id_1_target, 0.005, 5, "replay-ID-1"]
+train_batch of [arch_12_prompt, arch_12_L2, lr, steps, "ARCH-12-L2"]
+train_batch of [id_5_prompt, id_5_target, 0.005, 5, "replay-ID-5"]
+train_batch of [arch_13_prompt, arch_13_L2, lr, steps, "ARCH-13-L2"]
+train_batch of [id_1_prompt, id_1_target, 0.005, 5, "replay-ID-1"]
+train_batch of [arch_14_prompt, arch_14_L2, lr, steps, "ARCH-14-L2"]
+
+print of ""
+print of "Saving L2 stage 1 checkpoint..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L2_stage1.json"
+print of "=== L2 Stage 1 DONE ==="

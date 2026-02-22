@@ -1,0 +1,712 @@
+# iLambdaAi - Checkpoint Utilities
+# EigenScript-native model serialization with geometric state preservation
+#
+# Includes: save_checkpoint, load_checkpoint, ModelSaver, CheckpointManager
+# Preserves geometric state (converged, stable, framework_strength) across saves
+#
+# Uses EigenScript's native serialization for optimal performance
+
+from model import Model
+
+# ============================================================================
+# Basic Checkpoint Functions
+# ============================================================================
+
+define save_checkpoint as:
+
+    filepath is arg[0]
+
+    model is arg[1]
+
+    optimizer is arg[2]
+
+    epoch is arg[3]
+
+    loss is arg[4]
+
+    metadata is arg[5]
+    # Save a training checkpoint
+    #
+    # Args:
+    #   filepath: Path to save the checkpoint file
+    #   model: Model to save
+    #   optimizer: Optional optimizer to save state for
+    #   epoch: Optional current epoch number
+    #   loss: Optional current loss value
+    #   metadata: Optional dictionary of additional metadata
+    #
+    # Example:
+    #   save_checkpoint of "checkpoint.ckpt", model, optimizer, 50, 0.001, {"best_acc": 0.98}
+
+    checkpoint is {
+        "model_params": _serialize_parameters of model,
+        "epoch": epoch,
+        "loss": loss,
+        "metadata": metadata if metadata != none else {}
+    }
+
+    # Save optimizer state if provided
+    if optimizer != none:
+        checkpoint["optimizer_state"] is _serialize_optimizer of optimizer
+
+    # === EigenScript Geometric Feature ===
+    # Preserve geometric state
+    checkpoint["geometric_state"] is {
+        "converged": converged,
+        "stable": stable,
+        "improving": improving,
+        "oscillating": oscillating,
+        "framework_strength": framework_strength
+    }
+
+    # Ensure directory exists
+    directory is dirname of filepath
+    if directory != "":
+        makedirs of [directory, true]
+
+    # Write checkpoint
+    write_pickle of [filepath, checkpoint]
+
+    print of [format of "Checkpoint saved to {} (epoch={}, loss={:.6f})"]
+    print of filepath
+    print of epoch
+    print of loss
+
+
+define load_checkpoint as:
+
+
+    filepath is arg[0]
+
+
+    model is arg[1]
+
+
+    optimizer is arg[2]
+    # Load a training checkpoint
+    #
+    # Args:
+    #   filepath: Path to the checkpoint file
+    #   model: Model to load parameters into
+    #   optimizer: Optional optimizer to restore state for
+    #
+    # Returns:
+    #   Dictionary containing checkpoint info (epoch, loss, metadata)
+    #
+    # Example:
+    #   info is load_checkpoint of "checkpoint.ckpt", model, optimizer
+    #   print of "Resuming from epoch", info["epoch"]
+
+    if not exists of filepath:
+        error of [format of "Checkpoint file not found: {}", filepath]
+
+    checkpoint is read_pickle of filepath
+
+    # Restore model parameters
+    _deserialize_parameters of [model, checkpoint["model_params"]]
+
+    # Restore optimizer state if available
+    if optimizer != none and "optimizer_state" in checkpoint:
+        _deserialize_optimizer of [optimizer, checkpoint["optimizer_state"]]
+
+    # === EigenScript Geometric Feature ===
+    # Restore geometric state if available
+    if "geometric_state" in checkpoint:
+        gs is checkpoint["geometric_state"]
+        print of format of "Restored geometric state: FS={:.4f}"
+        print of gs["framework_strength"]
+
+    print of format of "Checkpoint loaded from {}"
+    print of filepath
+
+    return {
+        "epoch": get of checkpoint, "epoch", none,
+        "loss": get of checkpoint, "loss", none,
+        "metadata": get of checkpoint, "metadata", {},
+        "geometric_state": get of [checkpoint, "geometric_state", none]
+    }
+
+
+# ============================================================================
+# Serialization Helpers
+# ============================================================================
+
+define _serialize_parameters as:
+
+    model is arg
+    # Serialize model parameters to list
+    params is []
+    for param in parameters of model:
+        params is append of [params, copy of (data of param)]
+    return params
+
+
+define _deserialize_parameters as:
+
+
+    model is arg[0]
+
+
+    param_data is arg[1]
+    # Restore model parameters from serialized data
+    model_params is parameters of model
+    for i in range of (length of param_data):
+        model_params[i].data is copy of param_data[i]
+
+
+define _serialize_optimizer as:
+
+
+    optimizer is arg
+    # Serialize optimizer state
+    state is {
+        "lr": optimizer.lr
+    }
+
+    # Handle SGD-specific state
+    if has_attr of [optimizer, "velocities":]
+        velocities is []
+        for v in optimizer.velocities:
+            if v != none:
+                velocities is append of [velocities, copy of v]
+            else:
+                velocities is append of [velocities, none]
+        state["velocities"] is velocities
+
+    # Handle Adam-specific state
+    if has_attr of [optimizer, "m":]
+        m_list is []
+        v_list is []
+        for m in optimizer.m:
+            if m != none:
+                m_list is append of [m_list, copy of m]
+            else:
+                m_list is append of [m_list, none]
+        for v in optimizer.v:
+            if v != none:
+                v_list is append of [v_list, copy of v]
+            else:
+                v_list is append of [v_list, none]
+        state["m"] is m_list
+        state["v"] is v_list
+        state["t"] is optimizer.t
+
+    return state
+
+
+define _deserialize_optimizer as:
+
+
+    optimizer is arg[0]
+
+
+    state is arg[1]
+    # Restore optimizer state from serialized data
+    optimizer.lr is get of [state, "lr", optimizer.lr]
+
+    # Handle SGD-specific state
+    if has_attr of [optimizer, "velocities" and "velocities" in state:]
+        velocities is []
+        for v in state["velocities"]:
+            if v != none:
+                velocities is append of [velocities, copy of v]
+            else:
+                velocities is append of [velocities, none]
+        optimizer.velocities is velocities
+
+    # Handle Adam-specific state
+    if has_attr of [optimizer, "m" and "m" in state:]
+        m_list is []
+        v_list is []
+        for m in state["m"]:
+            if m != none:
+                m_list is append of [m_list, copy of m]
+            else:
+                m_list is append of [m_list, none]
+        for v in state["v"]:
+            if v != none:
+                v_list is append of [v_list, copy of v]
+            else:
+                v_list is append of [v_list, none]
+        optimizer.m is m_list
+        optimizer.v is v_list
+        optimizer.t is get of [state, "t", 0]
+
+
+# ============================================================================
+# Model Saver (Callback-style)
+# ============================================================================
+
+define ModelSaver as:
+    # Saves model checkpoints during training
+    # Can be used as a callback
+
+    filepath is "model_{epoch}.ckpt"
+    save_best_only is false
+    monitor is "loss"
+    mode is "min"
+
+    best_value is none
+    best_epoch is 0
+
+    define init as:
+
+        path is arg[0]
+
+        best_only is arg[1]
+
+        mon is arg[2]
+
+        md is arg[3]
+        filepath is path
+        save_best_only is best_only
+        monitor is mon
+        mode is md
+
+        if mode == "min":
+            best_value is infinity
+        else:
+            best_value is negative_infinity
+
+    define on_epoch_end as:
+
+        epoch is arg[0]
+
+        model is arg[1]
+
+        optimizer is arg[2]
+
+        metrics is arg[3]
+        # Called at end of each epoch
+
+        current_value is get of [metrics, monitor, none]
+
+        if current_value == none:
+            print of format of "Warning: {} not found in metrics"
+            print of monitor
+            return
+
+        # Check if this is the best
+        is_best is false
+        if mode == "min":
+            if current_value < best_value:
+                is_best is true
+                best_value is current_value
+                best_epoch is epoch
+        else:
+            if current_value > best_value:
+                is_best is true
+                best_value is current_value
+                best_epoch is epoch
+
+        # Save checkpoint
+        if not save_best_only or is_best:
+            path is format of [filepath, epoch]
+            loss is get of [metrics, "loss", 0.0]
+
+            save_checkpoint of [path, model, optimizer, epoch, loss, {]
+                "best_value": best_value,
+                "best_epoch": best_epoch,
+                "is_best": is_best
+            }
+
+            if is_best:
+                # Also save as "best" checkpoint
+                best_path is replace of [filepath, "{epoch}", "best"]
+                save_checkpoint of [best_path, model, optimizer, epoch, loss, {]
+                    "best_value": best_value,
+                    "best_epoch": best_epoch
+                }
+                print of format of "New best model! {} = {:.6f}"
+                print of monitor
+                print of current_value
+
+    define get_best as:
+        return {
+            "value": best_value,
+            "epoch": best_epoch
+        }
+
+
+# ============================================================================
+# Checkpoint Manager
+# ============================================================================
+
+define CheckpointManager as:
+    # Manages multiple checkpoints with rotation
+    # Keeps only the N most recent checkpoints
+
+    directory is "checkpoints"
+    max_to_keep is 5
+    checkpoint_prefix is "ckpt"
+
+    checkpoints is []  # List of [(epoch, filepath) tuples]
+
+    define init as:
+
+        dir is arg[0]
+
+        max_keep is arg[1]
+
+        prefix is arg[2]
+        directory is dir
+        max_to_keep is max_keep
+        checkpoint_prefix is prefix
+        checkpoints is []
+
+        # Ensure directory exists
+        makedirs of [directory, true]
+
+    define save as:
+
+        model is arg[0]
+
+        optimizer is arg[1]
+
+        epoch is arg[2]
+
+        loss is arg[3]
+
+        metadata is arg[4]
+        # Save checkpoint and manage rotation
+
+        filename is format of ["{}_{:04d}.ckpt", checkpoint_prefix, epoch]
+        filepath is join_path of [directory, filename]
+
+        # Save the checkpoint
+        save_checkpoint of [filepath, model, optimizer, epoch, loss, metadata]
+
+        # Add to tracking list
+        checkpoints is append of [checkpoints, (epoch, filepath)]
+
+        # Remove old checkpoints if exceeding max_to_keep
+        loop while length of checkpoints > max_to_keep:
+            old_epoch, old_path is checkpoints[0]
+            checkpoints is checkpoints[1:]
+
+            if exists of old_path:
+                delete_file of old_path
+                print of format of "Removed old checkpoint: {}"
+                print of old_path
+
+        return filepath
+
+    define load_latest as:
+
+        model is arg[0]
+
+        optimizer is arg[1]
+        # Load the most recent checkpoint
+
+        if length of checkpoints == 0:
+            # Scan directory for existing checkpoints
+            _scan_checkpoints
+
+        if length of checkpoints == 0:
+            print of "No checkpoints found"
+            return none
+
+        # Get most recent
+        latest_epoch, latest_path is checkpoints[-1]
+        return load_checkpoint of [latest_path, model, optimizer]
+
+    define _scan_checkpoints as:
+        # Scan directory for existing checkpoints
+        pattern is format of ["{}*.ckpt", checkpoint_prefix]
+        files is glob of [(join_path of directory, pattern)]
+
+        checkpoints is []
+        for f in files:
+            # Extract epoch from filename
+            basename is get_basename of f
+            parts is split of [basename, "_"]
+            if length of parts >= 2:
+                epoch_str is replace of [parts[-1], ".ckpt", ""]
+                epoch is int of epoch_str
+                checkpoints is append of [checkpoints, (epoch, f)]
+
+        # Sort by epoch
+        checkpoints is sort of [checkpoints, key: (fn x: x[0])]
+
+    define get_all_checkpoints as:
+        return copy of checkpoints
+
+    define get_latest_epoch as:
+        if length of checkpoints == 0:
+            return none
+        return checkpoints[-1][0]
+
+
+# ============================================================================
+# State Dict Functions (PyTorch-style API)
+# ============================================================================
+
+define state_dict as:
+
+    model is arg
+    # Get model state dictionary
+    # Similar to PyTorch's model.state_dict()
+
+    state is {}
+    for name, param in named_parameters of model:
+        state[name] is copy of (data of param)
+
+    return state
+
+
+define load_state_dict as:
+
+
+    model is arg[0]
+
+
+    state is arg[1]
+    # Load state dictionary into model
+    # Similar to PyTorch's model.load_state_dict()
+
+    for name, param in named_parameters of model:
+        if name in state:
+            param.data is copy of state[name]
+        else:
+            print of format of "Warning: {} not found in state dict"
+            print of name
+
+
+define save_state_dict as:
+
+
+    filepath is arg[0]
+
+
+    state is arg[1]
+    # Save state dictionary to file
+    write_pickle of [filepath, state]
+
+
+define load_state_dict_file as:
+
+
+    filepath is arg
+    # Load state dictionary from file
+    return read_pickle of filepath
+
+
+# ============================================================================
+# Weight Averaging
+# ============================================================================
+
+define average_checkpoints as:
+
+    filepaths is arg[0]
+
+    model is arg[1]
+    # Average weights from multiple checkpoints
+    # Useful for model ensembling / stochastic weight averaging
+
+    if length of filepaths == 0:
+        error of "No checkpoint files provided"
+
+    # Load first checkpoint to get structure
+    first_info is load_checkpoint of [filepaths[0], model, none]
+    avg_params is state_dict of model
+
+    # Initialize with first checkpoint
+    for key in keys of avg_params:
+        avg_params[key] is multiply of [avg_params[key], 0  # Zero out]
+
+    # Accumulate all checkpoints
+    num_checkpoints is length of filepaths
+    for filepath in filepaths:
+        load_checkpoint of [filepath, model, none]
+        current_state is state_dict of model
+
+        for key in keys of avg_params:
+            avg_params[key] is add of [avg_params[key], current_state[key]]
+
+    # Average
+    for key in keys of avg_params:
+        avg_params[key] is divide of [avg_params[key], num_checkpoints]
+
+    # Load averaged weights back
+    load_state_dict of [model, avg_params]
+
+    print of format of "Averaged {} checkpoints"
+    print of num_checkpoints
+    return avg_params
+
+
+# ============================================================================
+# Exponential Moving Average (EMA)
+# ============================================================================
+
+define EMAModel as:
+    # Maintains exponential moving average of model weights
+    # Useful for training stability and better generalization
+
+    model is none
+    ema_params is {}
+    decay is 0.999
+    num_updates is 0
+
+    define init as:
+
+        mdl is arg[0]
+
+        d is arg[1]
+        model is mdl
+        decay is d
+        num_updates is 0
+
+        # Initialize EMA params with current model params
+        ema_params is {}
+        for name, param in named_parameters of model:
+            ema_params[name] is copy of (data of param)
+
+    define update as:
+        # Update EMA parameters
+        num_updates is num_updates + 1
+
+        # Adjust decay based on number of updates (warmup)
+        effective_decay is min of [decay, (1 + num_updates) / (10 + num_updates)]
+
+        for name, param in named_parameters of model:
+            if name in ema_params:
+                # EMA update: ema = decay * ema + (1 - decay) * param
+                ema_params[name] is add of (
+                    multiply of ema_params[name], effective_decay,
+                    multiply of [(data of param), (1 - effective_decay)]
+                )
+
+    define apply as:
+        # Apply EMA parameters to model (for evaluation)
+        # Returns backup of original parameters
+        backup is {}
+        for name, param in named_parameters of model:
+            backup[name] is copy of (data of param)
+            if name in ema_params:
+                param.data is copy of ema_params[name]
+        return backup
+
+    define restore as:
+
+        backup is arg
+        # Restore original parameters after evaluation
+        for name, param in named_parameters of model:
+            if name in backup:
+                param.data is copy of backup[name]
+
+    define state_dict as:
+        return {
+            "ema_params": copy of ema_params,
+            "decay": decay,
+            "num_updates": num_updates
+        }
+
+    define load_state_dict as:
+
+        state is arg
+        ema_params is copy of state["ema_params"]
+        decay is state["decay"]
+        num_updates is state["num_updates"]
+
+
+# ============================================================================
+# Safe Checkpoint Save (Atomic)
+# ============================================================================
+
+define save_checkpoint_atomic as:
+
+    filepath is arg[0]
+
+    model is arg[1]
+
+    optimizer is arg[2]
+
+    epoch is arg[3]
+
+    loss is arg[4]
+
+    metadata is arg[5]
+    # Atomic checkpoint save with backup
+    # Prevents corruption from interrupted saves
+
+    temp_path is filepath + ".tmp"
+    backup_path is filepath + ".bak"
+
+    # Save to temporary file first
+    save_checkpoint of [temp_path, model, optimizer, epoch, loss, metadata]
+
+    # Backup existing checkpoint if it exists
+    if exists of filepath:
+        if exists of backup_path:
+            delete_file of backup_path
+        rename_file of [filepath, backup_path]
+
+    # Move temp to final path
+    rename_file of [temp_path, filepath]
+
+    # Remove backup on success
+    if exists of backup_path:
+        delete_file of backup_path
+
+
+# ============================================================================
+# Auto-Resume
+# ============================================================================
+
+define auto_resume as:
+
+    checkpoint_dir is arg[0]
+
+    model is arg[1]
+
+    optimizer is arg[2]
+    # Automatically resume from latest checkpoint if available
+    #
+    # Returns:
+    #   Dictionary with resume info, or None if no checkpoint found
+
+    manager is CheckpointManager
+    init of [manager, checkpoint_dir, 10, "ckpt"]
+
+    info is load_latest of [manager, model, optimizer]
+
+    if info != none:
+        print of format of "Auto-resumed from epoch {}"
+        print of info["epoch"]
+        return info
+    else:
+        print of "Starting fresh (no checkpoint found)"
+        return none
+
+
+# ============================================================================
+# Geometric State Preservation
+# ============================================================================
+
+define save_geometric_state as:
+
+    filepath is arg
+    # Save current geometric state to file
+    state is {
+        "converged": converged,
+        "stable": stable,
+        "improving": improving,
+        "oscillating": oscillating,
+        "equilibrium": equilibrium,
+        "framework_strength": framework_strength,
+        "signature": signature
+    }
+    write_json of [filepath, state]
+    return state
+
+
+define load_geometric_state as:
+
+
+    filepath is arg
+    # Load geometric state from file
+    if not exists of filepath:
+        return none
+    return read_json of filepath
+

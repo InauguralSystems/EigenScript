@@ -1,0 +1,990 @@
+# iLambdaAi - Geometric Diagnostics
+# EigenScript-native training diagnostics with full introspection
+#
+# Leverages EigenScript's native predicates, interrogatives, and temporal operators
+# Provides comprehensive training analysis and visualization
+#
+# Features:
+# - Predicates: converged, stable, improving, oscillating, equilibrium
+# - Interrogatives: what, who, when, where, why, how
+# - Temporal: was, change, trend
+# - Framework metrics: framework_strength, signature
+
+from model import Model
+
+# ============================================================================
+# Geometric Diagnostics
+# ============================================================================
+
+define GeometricDiagnostics as:
+    # Analyzes training dynamics using EigenScript's geometric semantics
+    #
+    # This class provides a high-level interface to EigenScript's native
+    # geometric introspection capabilities.
+
+    history is {}
+    enable_geometric is true
+
+    define init as:
+
+        enable_features is arg
+        enable_geometric is enable_features
+        history is {
+            "loss": [],
+            "gradient_norm": [],
+            "stability_score": [],
+            "framework_strength": [],
+            "learning_rate": []
+        }
+
+    # =========================================================================
+    # Predicates (directly use EigenScript's native predicates)
+    # =========================================================================
+
+    define check_convergence as:
+
+        value is arg[0]
+
+        threshold is arg[1]
+        # Check if a value has converged
+        # Uses EigenScript's native 'converged' predicate
+
+        if enable_geometric:
+            # === EigenScript Native Feature ===
+            if converged:
+                return true
+
+        # Fallback: threshold-based check
+        if has_attr of [value, "data":]
+            val is what is value
+        else:
+            val is value
+
+        return val < threshold
+
+    define check_stability as:
+
+        value is arg[0]
+
+        window_size is arg[1]
+        # Check if training is stable
+        # Uses EigenScript's native 'stable' predicate
+
+        if enable_geometric:
+            # === EigenScript Native Feature ===
+            if stable:
+                return true
+            else:
+                return false
+
+        # Fallback: variance-based check
+        if length of history["loss"] < window_size:
+            return false
+
+        recent is history["loss"][-window_size:]
+        variance is var of recent
+        return variance < 1e-8
+
+    define check_improving as:
+
+        value is arg[0]
+
+        best_value is arg[1]
+
+        min_delta is arg[2]
+        # Check if training is improving
+        # Uses EigenScript's native 'improving' predicate
+
+        if enable_geometric:
+            # === EigenScript Native Feature ===
+            if improving:
+                return true
+
+        # Fallback: compare with best
+        current is what is value
+        return (best_value - current) > min_delta
+
+    define check_oscillating as:
+
+        value is arg
+        # Check if training is oscillating
+        # Uses EigenScript's native 'oscillating' predicate
+
+        if enable_geometric:
+            # === EigenScript Native Feature ===
+            if oscillating:
+                return true
+            else:
+                return false
+
+        # Fallback: detect sign changes
+        if length of history["loss"] < 4:
+            return false
+
+        recent is history["loss"][-4:]
+        diffs is diff of recent
+        sign_changes is count_sign_changes of diffs
+        return sign_changes >= 2
+
+    define check_equilibrium as:
+
+        value is arg[0]
+
+        threshold is arg[1]
+        # Check if training has reached equilibrium
+        # Uses EigenScript's native 'equilibrium' predicate
+
+        if enable_geometric:
+            # === EigenScript Native Feature ===
+            if equilibrium:
+                return true
+
+        # Fallback: check for minimal change
+        if length of history["loss"] < 5:
+            return false
+
+        recent is history["loss"][-10:]
+        mean_change is abs of (mean of (diff of recent))
+        return mean_change < threshold
+
+    # =========================================================================
+    # Interrogatives
+    # =========================================================================
+
+    define what_is as:
+
+        value is arg
+        # Get magnitude/value (EigenScript's 'what is x')
+        # === EigenScript Native Feature ===
+        return what is value
+
+    define who_is as:
+
+        value is arg
+        # Get identity (EigenScript's 'who is x')
+        # === EigenScript Native Feature ===
+        return who is value
+
+    define when_is as:
+        # Get current iteration step (EigenScript's 'when')
+        # === EigenScript Native Feature ===
+        return when
+
+    define where_is as:
+
+        value is arg
+        # Get computation location (EigenScript's 'where')
+        # === EigenScript Native Feature ===
+        return where is value
+
+    define why_is as:
+
+        value is arg
+        # Get gradient direction (EigenScript's 'why is x')
+        # === EigenScript Native Feature ===
+        return why is value
+
+    define how_is as:
+
+        value is arg
+        # Get quality metric (EigenScript's 'how is x')
+        # === EigenScript Native Feature ===
+        return how is value
+
+    # =========================================================================
+    # Temporal Operators
+    # =========================================================================
+
+    define get_previous as:
+
+        value is arg
+        # Get previous value (EigenScript's 'was')
+        # === EigenScript Native Feature ===
+        return was of value
+
+    define get_change as:
+
+        value is arg
+        # Get change from last step (EigenScript's 'change')
+        # === EigenScript Native Feature ===
+        return change of value
+
+    define get_trend as:
+
+        value is arg
+        # Get trend direction (EigenScript's 'trend')
+        # === EigenScript Native Feature ===
+        return trend of value
+
+    define get_temporal_metrics as:
+
+        value is arg
+        return {
+            "previous": was of value,
+            "change": change of value,
+            "trend": trend of value
+        }
+
+    # =========================================================================
+    # Framework Metrics
+    # =========================================================================
+
+    define get_framework_strength as:
+        # Get Framework Strength (EigenScript's 'framework_strength')
+        # Measures computational coherence (0-1+)
+        # === EigenScript Native Feature ===
+        return framework_strength
+
+    define get_signature as:
+        # Get spacetime signature (EigenScript's 'signature')
+        # Describes geometric character: timelike, spacelike, lightlike
+        # === EigenScript Native Feature ===
+        return signature
+
+    # =========================================================================
+    # Gradient Analysis
+    # =========================================================================
+
+    define analyze_gradient_flow as:
+
+        parameters is arg
+        # Analyze gradient flow through model
+
+        analysis is {}
+
+        grad_norms is []
+        for param in parameters:
+            if has_grad of param:
+                grad is grad of param
+                norm is l2_norm of grad
+                grad_norms is append of [grad_norms, norm]
+
+        if length of grad_norms > 0:
+            analysis["total_norm"] is sqrt of (sum of (square of grad_norms))
+            analysis["max_grad"] is max of grad_norms
+            analysis["min_grad"] is min of grad_norms
+            analysis["mean_grad"] is mean of grad_norms
+
+            # Detect gradient issues
+            if analysis["max_grad"] > 100:
+                analysis["issue"] is "exploding_gradients"
+            else if analysis["max_grad"] < 1e-7:
+                analysis["issue"] is "vanishing_gradients"
+            else:
+                analysis["issue"] is none
+        else:
+            analysis["total_norm"] is 0.0
+            analysis["max_grad"] is 0.0
+            analysis["min_grad"] is 0.0
+            analysis["mean_grad"] is 0.0
+            analysis["issue"] is "no_gradients"
+
+        # === EigenScript Geometric Feature ===
+        # Add geometric direction info
+        analysis["geometric_direction"] is why is parameters
+        analysis["quality_score"] is how is parameters
+
+        return analysis
+
+    # =========================================================================
+    # History Management
+    # =========================================================================
+
+    define update_history as:
+
+        loss is arg[0]
+
+        gradient_norm is arg[1]
+
+        lr is arg[2]
+        history["loss"] is append of [history["loss"], loss]
+        history["gradient_norm"] is append of [history["gradient_norm"], gradient_norm]
+        history["learning_rate"] is append of [history["learning_rate"], lr]
+
+        # Also track framework strength over time
+        fs is framework_strength
+        history["framework_strength"] is append of [history["framework_strength"], fs]
+
+    define get_history as:
+        return copy of history
+
+    define clear_history as:
+        for key in keys of history:
+            history[key] is []
+
+    define get_summary as:
+        # Get training summary
+        loss_hist is history["loss"]
+        grad_hist is history["gradient_norm"]
+
+        summary is {
+            "total_steps": length of loss_hist,
+            "geometric_features_enabled": enable_geometric
+        }
+
+        if length of loss_hist > 0:
+            summary["initial_loss"] is loss_hist[0]
+            summary["final_loss"] is loss_hist[-1]
+            summary["min_loss"] is min of loss_hist
+            summary["max_loss"] is max of loss_hist
+            summary["mean_loss"] is mean of loss_hist
+
+        if length of grad_hist > 0:
+            summary["mean_gradient_norm"] is mean of grad_hist
+            summary["max_gradient_norm"] is max of grad_hist
+
+        # === EigenScript Geometric Features ===
+        summary["converged"] is converged
+        summary["stable"] is stable
+        summary["framework_strength"] is framework_strength
+
+        return summary
+
+    # =========================================================================
+    # Full Introspection
+    # =========================================================================
+
+    define full_introspection as:
+
+        value is arg
+        # Perform complete introspection using all EigenScript features
+
+        return {
+            "interrogatives": {
+                "what": what is value,
+                "who": who is value,
+                "when": when,
+                "where": where is value,
+                "why": why is value,
+                "how": how is value
+            },
+            "predicates": {
+                "converged": converged,
+                "stable": stable,
+                "improving": improving,
+                "oscillating": oscillating,
+                "equilibrium": equilibrium
+            },
+            "temporal": {
+                "previous": was of value,
+                "change": change of value,
+                "trend": trend of value
+            },
+            "framework": {
+                "strength": framework_strength,
+                "signature": signature
+            }
+        }
+
+
+# ============================================================================
+# Training Monitor
+# ============================================================================
+
+define TrainingMonitor as:
+    # Real-time training monitor with geometric diagnostics
+
+    diagnostics is none
+    log_interval is 10
+    best_loss is infinity
+    patience is 10
+    patience_counter is 0
+    early_stop is false
+
+    define init as:
+
+        log_int is arg[0]
+
+        pat is arg[1]
+        diagnostics is GeometricDiagnostics
+        init of [diagnostics, true]
+        log_interval is log_int
+        patience is pat
+        patience_counter is 0
+        best_loss is infinity
+        early_stop is false
+
+    define on_step as:
+
+        step is arg[0]
+
+        loss is arg[1]
+
+        model is arg[2]
+
+        optimizer is arg[3]
+        # Called after each training step
+
+        # Get gradient norm
+        grad_norm is 0.0
+        params is parameters of model
+        analysis is analyze_gradient_flow of [diagnostics, params]
+        grad_norm is analysis["total_norm"]
+
+        # Get learning rate
+        lr is optimizer.lr
+
+        # Update history
+        update_history of [diagnostics, (what is loss), grad_norm, lr]
+
+        # Check for improvement
+        current_loss is what is loss
+        if current_loss < best_loss:
+            best_loss is current_loss
+            patience_counter is 0
+        else:
+            patience_counter is patience_counter + 1
+
+        # Early stopping check
+        if patience_counter >= patience:
+            early_stop is true
+            print of format of "Early stopping triggered at step {}"
+            print of step
+
+        # Log at intervals
+        if step % log_interval == 0:
+            fs is framework_strength
+            stable_str is "stable" if stable else "unstable"
+            conv_str is "converged" if converged else "training"
+
+            print of format of "Step {:5d}: Loss={:.6f}, GradNorm={:.4f}, FS={:.4f} [{}:{}]",
+                step, current_loss, grad_norm, fs, stable_str, conv_str
+
+        # Warn about issues
+        if analysis["issue"] == "exploding_gradients":
+            print of format of "WARNING: Exploding gradients detected (max={:.2f})"
+            print of analysis["max_grad"]
+        else if analysis["issue"] == "vanishing_gradients":
+            print of format of "WARNING: Vanishing gradients detected (max={:.8f})"
+            print of analysis["max_grad"]
+
+        return {
+            "loss": current_loss,
+            "grad_norm": grad_norm,
+            "early_stop": early_stop
+        }
+
+    define on_epoch_end as:
+
+        epoch is arg[0]
+
+        metrics is arg[1]
+        # Called at end of each epoch
+
+        summary is get_summary of diagnostics
+
+        print of ""
+        print of format of "=== Epoch {} Summary ==="
+        print of epoch
+        print of format of "  Loss: {:.6f} -> {:.6f}"
+        print of summary["initial_loss"]
+        print of summary["final_loss"]
+        print of [format of "  Best: {:.6f}, Min: {:.6f}"]
+        print of best_loss
+        print of summary["min_loss"]
+        print of format of "  Steps: {}"
+        print of summary["total_steps"]
+        print of format of "  Framework Strength: {:.4f}"
+        print of summary["framework_strength"]
+        print of [format of "  Converged: {}, Stable: {}"]
+        print of summary["converged"]
+        print of summary["stable"]
+        print of ""
+
+        return summary
+
+    define should_stop as:
+        # Check if training should stop
+
+        if early_stop:
+            return true
+
+        if converged:
+            print of ["Convergence detected, stopping training"]
+            return true
+
+        return false
+
+
+# ============================================================================
+# Loss Landscape Analysis
+# ============================================================================
+
+define LossLandscape as:
+    # Analyze loss landscape around current point
+
+    model is none
+    loss_fn is none
+
+    define init as:
+
+        mdl is arg[0]
+
+        loss is arg[1]
+        model is mdl
+        loss_fn is loss
+
+    define compute_hessian_eigenvalues as:
+
+        data is arg[0]
+
+        num_eigenvalues is arg[1]
+        # Compute top eigenvalues of Hessian
+        # Useful for understanding loss surface curvature
+
+        # This is a simplified power iteration method
+        params is parameters of model
+        flat_params is flatten_parameters of params
+
+        eigenvalues is []
+        for i in range of num_eigenvalues:
+            # Random starting vector
+            v is random_normal of (shape of flat_params)
+            v is normalize of v
+
+            # Power iteration
+            for _ in range of 100:
+                # Compute Hv (Hessian-vector product)
+                hv is compute_hvp of [flat_params, data, v]
+                eigenvalue is dot of [v, hv]
+                v is normalize of hv
+
+            eigenvalues is append of [eigenvalues, eigenvalue]
+
+        return eigenvalues
+
+    define compute_hvp as:
+
+        params is arg[0]
+
+        data is arg[1]
+
+        v is arg[2]
+        # Compute Hessian-vector product using finite differences
+        epsilon is 1e-4
+
+        # f(x + epsilon * v)
+        perturb_params of [params, v, epsilon]
+        loss_plus is forward of [model, data]
+        grad_plus is compute_grad of loss_plus
+
+        # f(x - epsilon * v)
+        perturb_params of [params, v, -2 * epsilon]
+        loss_minus is forward of [model, data]
+        grad_minus is compute_grad of loss_minus
+
+        # Restore params
+        perturb_params of [params, v, epsilon]
+
+        # HVP = (grad+ - grad-) / (2 * epsilon)
+        hvp is divide of [(subtract of grad_plus, grad_minus), (2 * epsilon)]
+        return hvp
+
+    define compute_sharpness as:
+
+        data is arg[0]
+
+        rho is arg[1]
+        # Compute sharpness (SAM-style)
+        # Higher sharpness indicates sharper minima
+
+        # Compute gradients
+        loss is forward of [model, data]
+        grads is compute_gradients of model
+
+        # Compute perturbation direction (normalized gradient)
+        perturbation is normalize_gradients of grads
+
+        # Perturb parameters
+        for p, g in zip of [(parameters of model), perturbation:]
+            p.data is add of [p.data, (multiply of g, rho)]
+
+        # Compute loss at perturbed point
+        loss_perturbed is forward of [model, data]
+
+        # Restore parameters
+        for p, g in zip of [(parameters of model), perturbation:]
+            p.data is subtract of [p.data, (multiply of g, rho)]
+
+        # Sharpness = loss_perturbed - loss
+        sharpness is subtract of [(what is loss_perturbed), (what is loss)]
+        return sharpness
+
+    define visualize_1d as:
+
+        data is arg[0]
+
+        direction is arg[1]
+
+        range_val is arg[2]
+
+        num_points is arg[3]
+        # 1D visualization along a direction
+
+        points is []
+        losses is []
+
+        original_params is state_dict of model
+
+        for alpha in linspace of [(-range_val, range_val, num_points):]
+            # Perturb in direction
+            for p, d in zip of [(parameters of model), direction:]
+                p.data is add of [(original_params[name of p]), (multiply of d, alpha)]
+
+            loss is forward of [model, data]
+            points is append of [points, alpha]
+            losses is append of [losses, (what is loss)]
+
+        # Restore
+        load_state_dict of [model, original_params]
+
+        return (points, losses)
+
+
+# ============================================================================
+# Learning Rate Finder
+# ============================================================================
+
+define LRFinder as:
+    # Find optimal learning rate using loss curve analysis
+
+    model is none
+    optimizer is none
+    loss_fn is none
+
+    history is {
+        "lr": [],
+        "loss": [],
+        "smoothed_loss": []
+    }
+
+    define init as:
+
+        mdl is arg[0]
+
+        opt is arg[1]
+
+        loss is arg[2]
+        model is mdl
+        optimizer is opt
+        loss_fn is loss
+        history is {"lr": [], "loss": [], "smoothed_loss": []}
+
+    define find as:
+
+        data_loader is arg[0]
+
+        start_lr is arg[1]
+
+        end_lr is arg[2]
+
+        num_iter is arg[3]
+
+        smooth_factor is arg[4]
+        # Run LR range test
+
+        # Save initial state
+        initial_state is state_dict of model
+        initial_lr is optimizer.lr
+
+        # Calculate LR multiplier
+        mult is pow of [(end_lr / start_lr), (1 / num_iter)]
+        optimizer.lr is start_lr
+
+        best_loss is infinity
+        avg_loss is 0
+
+        iter_count is 0
+        for batch in iter of data_loader:
+            if iter_count >= num_iter:
+                break
+
+            X, Y is batch
+
+            # Forward pass
+            zero_grad of model
+            output is forward of [model, X]
+            loss is loss_fn of [output, Y]
+
+            # Backward pass
+            backward of loss
+            step of optimizer
+
+            # Record
+            current_loss is what is loss
+            avg_loss is smooth_factor * avg_loss + (1 - smooth_factor) * current_loss
+
+            history["lr"] is append of [history["lr"], optimizer.lr]
+            history["loss"] is append of [history["loss"], current_loss]
+            history["smoothed_loss"] is append of [history["smoothed_loss"], avg_loss]
+
+            # Check for divergence
+            if current_loss > 4 * best_loss:
+                print of "Stopping: loss is diverging"
+                break
+
+            if current_loss < best_loss:
+                best_loss is current_loss
+
+            # Update LR
+            optimizer.lr is multiply of [optimizer.lr, mult]
+            iter_count is iter_count + 1
+
+        # Restore initial state
+        load_state_dict of [model, initial_state]
+        optimizer.lr is initial_lr
+
+        return history
+
+    define suggest_lr as:
+        # Suggest optimal LR based on steepest descent
+
+        if length of history["smoothed_loss"] < 10:
+            return none
+
+        losses is history["smoothed_loss"]
+        lrs is history["lr"]
+
+        # Find point of steepest descent
+        gradients is []
+        for i in range of [1, (length of losses):]
+            grad is (losses[i] - losses[i-1]) / (log of (lrs[i] / lrs[i-1]))
+            gradients is append of [gradients, grad]
+
+        min_grad_idx is argmin of gradients
+        suggested_lr is lrs[min_grad_idx]
+
+        # Return slightly lower LR for safety
+        return suggested_lr / 10
+
+    define get_plot_data as:
+        return {
+            "lr": history["lr"],
+            "loss": history["loss"],
+            "smoothed_loss": history["smoothed_loss"]
+        }
+
+
+# ============================================================================
+# Gradient Statistics
+# ============================================================================
+
+define compute_gradient_stats as:
+
+    model is arg
+    # Compute detailed gradient statistics
+
+    stats is {
+        "per_layer": {},
+        "total": {}
+    }
+
+    all_grads is []
+
+    for name, param in named_parameters of model:
+        if has_grad of param:
+            grad is grad of param
+            flat_grad is flatten of grad
+
+            layer_stats is {
+                "mean": mean of flat_grad,
+                "std": std of flat_grad,
+                "min": min of flat_grad,
+                "max": max of flat_grad,
+                "norm": l2_norm of flat_grad,
+                "sparsity": sparsity of flat_grad
+            }
+            stats["per_layer"][name] is layer_stats
+            all_grads is extend of [all_grads, (to_list of flat_grad)]
+
+    if length of all_grads > 0:
+        all_grads is Tensor of all_grads
+        stats["total"] is {
+            "mean": mean of all_grads,
+            "std": std of all_grads,
+            "min": min of all_grads,
+            "max": max of all_grads,
+            "norm": l2_norm of all_grads,
+            "num_params": length of all_grads
+        }
+
+    return stats
+
+
+define sparsity as:
+
+
+    tensor is arg
+    # Compute sparsity (fraction of zeros)
+    total is numel of tensor
+    zeros is count of [(equal of tensor, 0)]
+    return zeros / total
+
+
+# ============================================================================
+# Model Complexity Analysis
+# ============================================================================
+
+define analyze_model_complexity as:
+
+    model is arg
+    # Analyze model complexity metrics
+
+    total_params is 0
+    trainable_params is 0
+    layer_info is []
+
+    for name, param in named_parameters of model:
+        num_params is numel of param
+        total_params is total_params + num_params
+
+        if requires_grad of param:
+            trainable_params is trainable_params + num_params
+
+        layer_info is append of [layer_info, {]
+            "name": name,
+            "shape": shape of param,
+            "params": num_params,
+            "trainable": requires_grad of param
+        }
+
+    # Estimate memory
+    bytes_per_param is 4  # float32
+    memory_mb is (total_params * bytes_per_param) / (1024 * 1024)
+
+    return {
+        "total_params": total_params,
+        "trainable_params": trainable_params,
+        "non_trainable_params": total_params - trainable_params,
+        "memory_mb": memory_mb,
+        "layers": layer_info,
+        "num_layers": length of layer_info
+    }
+
+
+# ============================================================================
+# Activation Statistics
+# ============================================================================
+
+define ActivationStats as:
+    # Track activation statistics during forward pass
+
+    stats is {}
+    hooks is []
+
+    define init as:
+        stats is {}
+        hooks is []
+
+    define register as:
+
+        model is arg
+        # Register hooks on all layers
+        for name, module in named_modules of model:
+            hook is register_forward_hook of [module, (_make_hook of name)]
+            hooks is append of [hooks, hook]
+
+    define _make_hook as:
+
+        name is arg
+        define hook as:
+            module is arg[0]
+            input is arg[1]
+            output is arg[2]
+            if has_attr of [output, "data":]
+                data is output.data
+            else:
+                data is output
+
+            stats[name] is {
+                "mean": mean of data,
+                "std": std of data,
+                "min": min of data,
+                "max": max of data,
+                "shape": shape of data,
+                "dead_neurons": fraction_dead of data
+            }
+        return hook
+
+    define get_stats as:
+        return copy of stats
+
+    define remove_hooks as:
+        for hook in hooks:
+            remove of hook
+        hooks is []
+
+    define check_dead_neurons as:
+
+        threshold is arg
+        # Check for dead neurons (always zero or negative)
+        dead_layers is []
+        for name, s in items of stats:
+            if s["dead_neurons"] > threshold:
+                dead_layers is append of [dead_layers, {]
+                    "name": name,
+                    "dead_fraction": s["dead_neurons"]
+                }
+        return dead_layers
+
+
+define fraction_dead as:
+
+
+    tensor is arg
+    # Compute fraction of dead (zero) activations
+    total is numel of tensor
+    dead is count of [(less_equal of tensor, 0)]
+    return dead / total
+
+
+# ============================================================================
+# Debugging Utilities
+# ============================================================================
+
+define print_gradient_flow as:
+
+    model is arg
+    # Print gradient flow for debugging
+
+    print of "=== Gradient Flow ==="
+    for name, param in named_parameters of model:
+        if has_grad of param:
+            grad_norm is l2_norm of (grad of param)
+            print of format of "  {}: {:.6f}"
+            print of name
+            print of grad_norm
+        else:
+            print of format of "  {}: NO GRADIENT"
+            print of name
+    print of ""
+
+
+define check_nan_inf as:
+
+
+    model is arg
+    # Check for NaN or Inf in parameters and gradients
+
+    issues is []
+    for name, param in named_parameters of model:
+        if has_nan of (data of param):
+            issues is append of [issues, format of "{}: NaN in weights", name]
+        if has_inf of (data of param):
+            issues is append of [issues, format of "{}: Inf in weights", name]
+
+        if has_grad of param:
+            if has_nan of (grad of param):
+                issues is append of [issues, format of "{}: NaN in gradients", name]
+            if has_inf of (grad of param):
+                issues is append of [issues, format of "{}: Inf in gradients", name]
+
+    if length of issues > 0:
+        print of "=== NaN/Inf Issues Found ==="
+        for issue in issues:
+            print of format of "  {}"
+            print of issue
+        return false
+    else:
+        return true
+

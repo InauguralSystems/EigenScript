@@ -1,0 +1,72 @@
+# iLambdaAi Feed-Forward Network Demo - Native EigenScript
+# Demonstrates a transformer-style FFN using real matrix operations
+
+print of "=== iLambdaAi Feed-Forward Network Demo ==="
+print of ""
+
+# Input: 2 tokens, 4-dim embeddings
+input is matrix of [[1.0, 0.5, -0.5, 1.0], [0.5, 1.0, 0.0, -0.5]]
+
+print of "Input (2 tokens x 4 dims):"
+input_list is matrix_to_list of input
+print of input_list
+
+# FFN weights: input_dim=4, hidden_dim=8, output_dim=4
+# W1: 4x8, W2: 8x4
+
+# Initialize W1 (4x8) - expansion layer
+W1 is matrix of [[0.1, 0.2, -0.1, 0.3, 0.1, -0.2, 0.2, 0.1], [0.2, -0.1, 0.3, 0.1, -0.1, 0.2, 0.1, 0.3], [-0.1, 0.3, 0.1, -0.2, 0.2, 0.1, 0.3, -0.1], [0.3, 0.1, -0.2, 0.2, 0.1, 0.3, -0.1, 0.2]]
+
+# Initialize W2 (8x4) - projection layer
+W2 is matrix of [[0.1, 0.2, -0.1, 0.3], [0.2, -0.1, 0.3, 0.1], [-0.1, 0.3, 0.1, -0.2], [0.3, 0.1, -0.2, 0.2], [0.1, -0.2, 0.2, 0.1], [-0.2, 0.2, 0.1, 0.3], [0.2, 0.1, 0.3, -0.1], [0.1, 0.3, -0.1, 0.2]]
+
+print of ""
+print of "=== Forward Pass ==="
+
+# Step 1: Linear projection to hidden dim
+hidden is matmul of [input, W1]
+hidden_list is matrix_to_list of hidden
+print of "After W1 (hidden):"
+print of hidden_list
+
+# Step 2: GELU activation
+activated is gelu_matrix of hidden
+activated_list is matrix_to_list of activated
+print of "After GELU:"
+print of activated_list
+
+# Step 3: Project back to model dim
+output is matmul of [activated, W2]
+output_list is matrix_to_list of output
+print of "FFN Output:"
+print of output_list
+
+# Residual connection: output + input
+residual is matrix_add of [output, input]
+residual_list is matrix_to_list of residual
+print of ""
+print of "After residual connection:"
+print of residual_list
+
+# Layer normalization
+normed is layer_norm_matrix of residual
+normed_list is matrix_to_list of normed
+print of "After LayerNorm:"
+print of normed_list
+
+# Geometric introspection
+print of ""
+print of "=== Geometric Metrics ==="
+print of "Stable:"
+print of stable
+print of "Converged:"
+print of converged
+print of "Framework strength:"
+fs is framework_strength
+print of fs
+print of "Signature:"
+sig is signature
+print of sig
+
+print of ""
+print of "=== FFN Demo Complete ==="

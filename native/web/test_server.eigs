@@ -1,0 +1,9 @@
+# Test EigenScript HTTP Server on port 8080
+print of "=== Eigen Test Server ==="
+
+# Status endpoint  
+status_response is "{\"status\": \"online\", \"framework\": \"EigenScript\"}"
+http_route of ["GET", "/status", status_response]
+
+print of "Starting test server on http://0.0.0.0:8080"
+http_serve of 8080

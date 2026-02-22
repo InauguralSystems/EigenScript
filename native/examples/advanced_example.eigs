@@ -1,0 +1,573 @@
+# iLambdaAi Advanced Architectures Example
+# Demonstrates VAE, GAN, and Diffusion models
+# with EigenScript's geometric introspection capabilities
+#
+# This example shows:
+# - Variational Autoencoder training and sampling
+# - GAN training with mode collapse detection
+# - Diffusion model denoising
+# - Checkpoint saving and loading
+# - Geometric diagnostics during training
+
+from model import Model
+from advanced import (
+    VAE,
+    VAEEncoder,
+    VAEDecoder,
+    GAN,
+    Generator,
+    Discriminator,
+    WGAN,
+    DDPM,
+    DiffusionSchedule,
+    ConditionalVAE,
+    ConditionalGAN,
+    Autoencoder,
+    DenoisingAutoencoder,
+    SparseAutoencoder
+)
+from layers import Linear, ReLU
+from optimizers import Adam, AdamW
+from loss import mse_loss, binary_cross_entropy_loss
+from loader import ArrayDataset, DataLoader
+from checkpoint import (
+    save_checkpoint,
+    load_checkpoint,
+    CheckpointManager,
+    EMAModel
+)
+from diagnostics import (
+    GeometricDiagnostics,
+    TrainingMonitor,
+    LRFinder,
+    compute_gradient_stats,
+    analyze_model_complexity
+)
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+print of "=== iLambdaAi Advanced Architectures Example ==="
+print of ""
+
+# Data dimensions (simulating MNIST-like data)
+input_dim is 784  # 28x28 flattened
+latent_dim is 32
+hidden_dims is [256, 128]
+num_samples is 500
+batch_size is 32
+
+print of "Configuration:"
+print of "  Input dimension:"
+print of input_dim
+print of "  Latent dimension:"
+print of latent_dim
+print of "  Hidden dimensions:"
+print of hidden_dims
+print of ""
+
+# ============================================================================
+# Create Synthetic Data
+# ============================================================================
+
+print of "Creating synthetic training data..."
+
+# Generate synthetic data (mixture of Gaussians to simulate digit clusters)
+X_train is []
+for i in range of num_samples:
+    # Create a simple pattern
+    pattern is random_normal of [input_dim], 0.5
+    pattern is clip of [pattern, 0, 1]
+    X_train is append of [X_train, pattern]
+
+X_train is Tensor of X_train
+
+print of "Training data shape:"
+print of shape of X_train
+print of ""
+
+# DataLoader
+dataset is ArrayDataset
+init of [dataset, X_train, X_train  # For autoencoders, input=target]
+
+loader is DataLoader
+init of [loader, dataset, batch_size, true, false]
+
+# ============================================================================
+# Part 1: Variational Autoencoder (VAE)
+# ============================================================================
+
+print of "=== Part 1: Variational Autoencoder (VAE) ==="
+print of ""
+
+# Create VAE
+vae is VAE
+init of [vae, input_dim, hidden_dims, latent_dim]
+
+print of describe of vae
+complexity is analyze_model_complexity of vae
+print of "Total parameters:"
+print of complexity["total_params"]
+print of ""
+
+# Training setup
+vae_optimizer is Adam
+init of [vae_optimizer, (parameters of vae), 0.001, 0.9, 0.999, 1e-8, 0.0, false]
+
+# Initialize diagnostics
+diagnostics is GeometricDiagnostics
+init of [diagnostics, true]
+
+# Training loop
+print of "Training VAE..."
+epochs is 10
+beta is 1.0  # KL weight (beta-VAE if > 1)
+
+for epoch in range of epochs:
+    train of vae
+    epoch_loss is 0
+    epoch_recon is 0
+    epoch_kl is 0
+    num_batches is 0
+
+    for batch in iter of loader:
+        X_batch, _ is batch
+
+        zero_grad of vae
+
+        # Forward pass
+        reconstruction, mu, logvar is forward of [vae, X_batch]
+
+        # Compute loss
+        losses is loss of [vae, X_batch, reconstruction, mu, logvar, beta]
+
+        # Backward pass
+        backward of losses["total"]
+        step of vae_optimizer
+
+        epoch_loss is add of [epoch_loss, (what is losses["total"])]
+        epoch_recon is add of [epoch_recon, (what is losses["reconstruction"])]
+        epoch_kl is add of [epoch_kl, (what is losses["kl_divergence"])]
+        num_batches is num_batches + 1
+
+    avg_loss is divide of [epoch_loss, num_batches]
+    avg_recon is divide of [epoch_recon, num_batches]
+    avg_kl is divide of [epoch_kl, num_batches]
+
+    # Update diagnostics
+    grad_stats is compute_gradient_stats of vae
+    update_history of [diagnostics, avg_loss, grad_stats["total"]["norm"], vae_optimizer.lr]
+
+    # === EigenScript Geometric Features ===
+    fs is framework_strength
+
+    print of format of "Epoch {:2d}: Loss={:.4f} (Recon={:.4f}, KL={:.4f}), FS={:.4f}",
+        epoch, avg_loss, avg_recon, avg_kl, fs
+
+    # Check for convergence
+    if converged:
+        print of "VAE converged!"
+        break
+
+print of ""
+
+# Generate samples
+print of "Generating samples from VAE..."
+eval of vae
+samples is sample of [vae, 5]
+print of "Generated"
+print of shape of samples
+print of 0
+print of "samples"
+print of ""
+
+# ============================================================================
+# Part 2: Generative Adversarial Network (GAN)
+# ============================================================================
+
+print of "=== Part 2: Generative Adversarial Network (GAN) ==="
+print of ""
+
+# Create GAN
+gan_latent is 64
+gan is GAN
+init of [gan, gan_latent, [256, 128], [128, 64], input_dim]
+
+print of describe of gan
+print of "Generator:"
+print of describe of gan.generator
+print of "Discriminator:"
+print of describe of gan.discriminator
+print of ""
+
+# Separate optimizers for G and D
+g_optimizer is Adam
+init of [g_optimizer, (parameters of gan.generator), 0.0002, 0.5, 0.999, 1e-8, 0.0, false]
+
+d_optimizer is Adam
+init of [d_optimizer, (parameters of gan.discriminator), 0.0002, 0.5, 0.999, 1e-8, 0.0, false]
+
+# Training loop
+print of "Training GAN..."
+epochs is 15
+
+for epoch in range of epochs:
+    train of gan
+    epoch_g_loss is 0
+    epoch_d_loss is 0
+    num_batches is 0
+
+    for batch in iter of loader:
+        X_batch, _ is batch
+
+        # Train step
+        metrics is train_step of [gan, X_batch, g_optimizer, d_optimizer]
+
+        epoch_g_loss is add of [epoch_g_loss, metrics["g_loss"]]
+        epoch_d_loss is add of [epoch_d_loss, metrics["d_loss"]]
+        num_batches is num_batches + 1
+
+    avg_g_loss is divide of [epoch_g_loss, num_batches]
+    avg_d_loss is divide of [epoch_d_loss, num_batches]
+
+    # === EigenScript Geometric Features ===
+    fs is framework_strength
+
+    print of format of "Epoch {:2d}: G_Loss={:.4f}, D_Loss={:.4f}, FS={:.4f}",
+        epoch, avg_g_loss, avg_d_loss, fs
+
+    # Check for mode collapse
+    if oscillating:
+        print of "  Warning: Oscillating - possible mode collapse"
+
+    # Check stability
+    if not stable:
+        print of "  Warning: Training unstable"
+
+print of ""
+
+# Generate samples
+print of "Generating samples from GAN..."
+eval of gan
+fake_samples is generate of [gan, 5]
+print of "Generated"
+print of shape of fake_samples
+print of 0
+print of "samples"
+print of ""
+
+# ============================================================================
+# Part 3: Checkpoint Management
+# ============================================================================
+
+print of "=== Part 3: Checkpoint Management ==="
+print of ""
+
+# Save VAE checkpoint
+print of "Saving VAE checkpoint..."
+save_checkpoint of ["checkpoints/vae_final.ckpt", vae, vae_optimizer, epochs, avg_loss, {]
+    "beta": beta,
+    "latent_dim": latent_dim
+}
+
+# Create checkpoint manager for GAN
+print of "Setting up checkpoint manager..."
+ckpt_manager is CheckpointManager
+init of [ckpt_manager, "checkpoints/gan", 3, "gan"]
+
+# Save GAN checkpoint
+path is save of [ckpt_manager, gan, none, epochs, avg_g_loss, {]
+    "g_loss": avg_g_loss,
+    "d_loss": avg_d_loss
+}
+print of "GAN checkpoint saved to:"
+print of path
+
+# Test loading
+print of ""
+print of "Testing checkpoint loading..."
+vae_loaded is VAE
+init of [vae_loaded, input_dim, hidden_dims, latent_dim]
+info is load_checkpoint of ["checkpoints/vae_final.ckpt", vae_loaded, none]
+print of "Loaded VAE from epoch"
+print of info["epoch"]
+print of "with loss"
+print of info["loss"]
+print of ""
+
+# ============================================================================
+# Part 4: EMA Model
+# ============================================================================
+
+print of "=== Part 4: Exponential Moving Average ==="
+print of ""
+
+# Create EMA for VAE
+ema is EMAModel
+init of [ema, vae, 0.999]
+
+print of "EMA initialized with decay=0.999"
+
+# Simulate training updates
+for i in range of 10:
+    update of ema
+
+print of "Applied 10 EMA updates"
+
+# Use EMA weights for evaluation
+backup is apply of ema
+print of "Applied EMA weights for evaluation"
+
+# Generate with EMA weights
+ema_samples is sample of [vae, 3]
+print of "Generated samples with EMA weights"
+
+# Restore original weights
+restore of [ema, backup]
+print of "Restored original weights"
+print of ""
+
+# ============================================================================
+# Part 5: Training Monitor
+# ============================================================================
+
+print of "=== Part 5: Training Monitor ==="
+print of ""
+
+# Create training monitor
+monitor is TrainingMonitor
+init of [monitor, 5, 10  # Log every 5 steps, patience=10]
+
+# Create a simple autoencoder for monitoring demo
+ae is Autoencoder
+init of [ae, input_dim, hidden_dims, latent_dim]
+
+ae_optimizer is Adam
+init of [ae_optimizer, (parameters of ae), 0.001, 0.9, 0.999, 1e-8, 0.0, false]
+
+print of "Training Autoencoder with monitoring..."
+step is 0
+
+for epoch in range of 5:
+    train of ae
+    for batch in iter of loader:
+        X_batch, _ is batch
+
+        zero_grad of ae
+        reconstruction is forward of [ae, X_batch]
+        loss is mse_loss of [reconstruction, X_batch]
+        backward of loss
+        step of ae_optimizer
+
+        # Monitor step
+        metrics is on_step of [monitor, step, loss, ae, ae_optimizer]
+        step is step + 1
+
+        if should_stop of monitor:
+            print of "Monitor triggered stop"
+            break
+
+    if should_stop of monitor:
+        break
+
+# Epoch summary
+summary is on_epoch_end of [monitor, epoch, {"loss": what is loss}]
+print of ""
+
+# ============================================================================
+# Part 6: Learning Rate Finder
+# ============================================================================
+
+print of "=== Part 6: Learning Rate Finder ==="
+print of ""
+
+# Create fresh model and optimizer
+ae_fresh is Autoencoder
+init of [ae_fresh, input_dim, hidden_dims, latent_dim]
+
+ae_opt_fresh is Adam
+init of [ae_opt_fresh, (parameters of ae_fresh), 0.001, 0.9, 0.999, 1e-8, 0.0, false]
+
+# Create LR finder
+finder is LRFinder
+init of [finder, ae_fresh, ae_opt_fresh, mse_loss]
+
+print of "Running LR range test..."
+lr_history is find of [finder, loader, 1e-7, 1e-1, 100, 0.9]
+
+suggested is suggest_lr of finder
+print of "Suggested learning rate:"
+print of suggested
+print of ""
+
+# ============================================================================
+# Part 7: Geometric Introspection Demo
+# ============================================================================
+
+print of "=== Part 7: Geometric Introspection ==="
+print of ""
+
+# Get full introspection on VAE
+print of "Full introspection on VAE:"
+report is full_introspection of [diagnostics, vae]
+
+print of ""
+print of "Interrogatives:"
+print of "  What:"
+print of report["interrogatives"]["what"]
+print of "  Who:"
+print of report["interrogatives"]["who"]
+print of "  When:"
+print of report["interrogatives"]["when"]
+print of "  How:"
+print of report["interrogatives"]["how"]
+
+print of ""
+print of "Predicates:"
+print of "  Converged:"
+print of report["predicates"]["converged"]
+print of "  Stable:"
+print of report["predicates"]["stable"]
+print of "  Improving:"
+print of report["predicates"]["improving"]
+print of "  Oscillating:"
+print of report["predicates"]["oscillating"]
+print of "  Equilibrium:"
+print of report["predicates"]["equilibrium"]
+
+print of ""
+print of "Framework Metrics:"
+print of "  Strength:"
+print of report["framework"]["strength"]
+print of "  Signature:"
+print of report["framework"]["signature"]["type"]
+
+# === Direct EigenScript Features ===
+print of ""
+print of "Direct EigenScript Access:"
+print of "  framework_strength:"
+print of framework_strength
+print of "  signature:"
+print of signature
+print of "  converged:"
+print of converged
+print of "  stable:"
+print of stable
+print of ""
+
+# ============================================================================
+# Part 8: Other Autoencoder Variants
+# ============================================================================
+
+print of "=== Part 8: Autoencoder Variants ==="
+print of ""
+
+# Denoising Autoencoder
+print of "Creating Denoising Autoencoder..."
+dae is DenoisingAutoencoder
+init of [dae, input_dim, hidden_dims, latent_dim, 0.3]
+print of "  Noise factor: 0.3"
+
+# Sparse Autoencoder
+print of "Creating Sparse Autoencoder..."
+sae is SparseAutoencoder
+init of [sae, input_dim, hidden_dims, latent_dim, 0.01]
+print of "  Sparsity weight: 0.01"
+
+# Quick training for denoising AE
+dae_optimizer is Adam
+init of [dae_optimizer, (parameters of dae), 0.001, 0.9, 0.999, 1e-8, 0.0, false]
+
+print of ""
+print of "Quick training of Denoising AE..."
+for epoch in range of 3:
+    train of dae
+    total_loss is 0
+    count is 0
+    for batch in iter of loader:
+        X_batch, _ is batch
+        zero_grad of dae
+        reconstruction is forward of [dae, X_batch]
+        loss is mse_loss of [reconstruction, X_batch]
+        backward of loss
+        step of dae_optimizer
+        total_loss is add of [total_loss, (what is loss)]
+        count is count + 1
+    print of format of "  Epoch {}: Loss={:.4f}"
+    print of epoch
+    print of [(divide of total_loss, count)]
+
+print of ""
+
+# ============================================================================
+# Part 9: Conditional Models
+# ============================================================================
+
+print of "=== Part 9: Conditional Models ==="
+print of ""
+
+num_classes is 10
+
+# Conditional VAE
+print of "Creating Conditional VAE..."
+cvae is ConditionalVAE
+init of [cvae, input_dim, hidden_dims, latent_dim, num_classes]
+print of describe of cvae
+
+# Generate samples conditioned on class
+print of "Generating class-conditioned samples..."
+eval of cvae
+class_labels is Tensor of [0, 1, 2, 3, 4]
+cond_samples is sample of [cvae, 5, class_labels]
+print of "Generated samples for classes 0-4"
+
+# Conditional GAN
+print of ""
+print of "Creating Conditional GAN..."
+cgan is ConditionalGAN
+init of [cgan, gan_latent, [256, 128], [128, 64], input_dim, num_classes]
+print of describe of cgan
+print of ""
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+print of "=== Summary ==="
+print of ""
+
+# Get training summary from diagnostics
+summary is get_summary of diagnostics
+
+print of "Training Statistics:"
+print of "  Total steps:"
+print of summary["total_steps"]
+print of "  Initial loss:"
+print of summary["initial_loss"]
+print of "  Final loss:"
+print of summary["final_loss"]
+print of "  Min loss:"
+print of summary["min_loss"]
+print of "  Mean gradient norm:"
+print of summary["mean_gradient_norm"]
+print of ""
+
+print of "Geometric Status:"
+print of "  Converged:"
+print of summary["converged"]
+print of "  Stable:"
+print of summary["stable"]
+print of "  Framework Strength:"
+print of summary["framework_strength"]
+print of ""
+
+print of "Models Created:"
+print of ["  - VAE (input={}, latent={})".format of input_dim]
+print of latent_dim
+print of "  - GAN (latent={})".format of gan_latent
+print of ["  - Autoencoder, Denoising AE, Sparse AE"]
+print of ["  - Conditional VAE, Conditional GAN"]
+print of ""
+
+print of "=== Advanced Architectures Example Complete ==="

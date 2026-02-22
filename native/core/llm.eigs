@@ -1,0 +1,1162 @@
+# iLambdaAi - Large Language Model Components
+# EigenScript-native LLM architecture with geometric introspection
+#
+# Includes: RMSNorm, SwiGLU, KVCache, GQA, CausalLM
+# Uses native predicates for self-aware generation
+#
+# Modern LLM architecture inspired by LLaMA, Mistral, GPT
+
+from model import Model
+from layers import Linear, Dropout
+from positional import RoPE
+
+# ============================================================================
+# RMS Normalization
+# ============================================================================
+
+define RMSNorm as:
+
+    # extends Model
+    # Root Mean Square Layer Normalization
+    # Faster than LayerNorm (no mean computation)
+    # RMSNorm(x) = x / sqrt(mean(x^2) + eps) * gamma
+
+    dim is 0
+    eps is 1e-6
+    weight is Tensor
+
+    define init as:
+
+        d is arg[0]
+
+        epsilon is arg[1]
+        dim is d
+        eps is epsilon
+
+        # Learnable scale parameter
+        weight is ones of dim
+        register_parameter of weight
+
+        _name is "RMSNorm"
+
+    define forward as:
+
+        x is arg
+        # x: (..., dim)
+
+        # Compute RMS: sqrt(mean(x^2))
+        squared is multiply of [x, x]
+        mean_sq is mean of [squared, -1, true  # keepdim=true]
+        rms is sqrt of [(add of mean_sq, eps)]
+
+        # Normalize and scale
+        x_norm is divide of [x, rms]
+        return multiply of [x_norm, weight]
+
+    define describe as:
+        return format of ["RMSNorm(dim={}, eps={})", dim, eps]
+
+
+# ============================================================================
+# SwiGLU Activation (Gated Linear Unit with Swish)
+# ============================================================================
+
+define SwiGLU as:
+
+    # extends Model
+    # SwiGLU(x) = Swish(W_gate(x)) * W_up(x)
+    # Used in LLaMA, PaLM, and modern LLMs
+
+    dim is 0
+    hidden_dim is 0
+
+    w_gate is Model
+    w_up is Model
+
+    define init as:
+
+        d is arg[0]
+
+        h_dim is arg[1]
+
+        use_bias is arg[2]
+        dim is d
+        hidden_dim is h_dim
+
+        # Gate projection (for Swish activation)
+        w_gate is Linear
+        init of [w_gate, dim, hidden_dim, use_bias]
+
+        # Up projection
+        w_up is Linear
+        init of [w_up, dim, hidden_dim, use_bias]
+
+        register_module of w_gate
+        register_module of w_up
+
+        _name is "SwiGLU"
+
+    define forward as:
+
+        x is arg
+        # Gate path with Swish: x * sigmoid(x)
+        gate is forward of [w_gate, x]
+        gate_activated is swish of gate
+
+        # Up path
+        up is forward of [w_up, x]
+
+        # Element-wise product
+        return multiply of [gate_activated, up]
+
+    define describe as:
+        return format of ["SwiGLU(dim={}, hidden={})", dim, hidden_dim]
+
+
+# Swish activation function
+define swish as:
+    x is arg
+    # Swish(x) = x * sigmoid(x) = x / (1 + exp(-x))
+    return multiply of [x, sigmoid of x]
+
+
+# ============================================================================
+# Feed-Forward Network with SwiGLU
+# ============================================================================
+
+define FFNSwiGLU as:
+
+    # extends Model
+    # FFN(x) = W_down(SwiGLU(x))
+    # LLaMA-style feed-forward network
+
+    dim is 0
+    hidden_dim is 0
+
+    swiglu is Model
+    w_down is Model
+
+    define init as:
+
+        d is arg[0]
+
+        h_dim is arg[1]
+
+        use_bias is arg[2]
+        dim is d
+
+        # LLaMA-style hidden dim: 4 * dim * 2/3, rounded to multiple of 256
+        if h_dim == none:
+            h_dim is floor of (4 * dim * 2 / 3)
+            h_dim is multiply of [(floor of ((h_dim + 255) / 256)), 256]
+
+        hidden_dim is h_dim
+
+        swiglu is SwiGLU
+        init of [swiglu, dim, hidden_dim, use_bias]
+
+        w_down is Linear
+        init of [w_down, hidden_dim, dim, use_bias]
+
+        register_module of swiglu
+        register_module of w_down
+
+        _name is "FFNSwiGLU"
+
+    define forward as:
+
+        x is arg
+        hidden is forward of [swiglu, x]
+        return forward of [w_down, hidden]
+
+    define describe as:
+        return format of ["FFNSwiGLU(dim={}, hidden={})", dim, hidden_dim]
+
+
+# ============================================================================
+# KV Cache for Efficient Generation
+# ============================================================================
+
+define KVCache as:
+    # Key-Value cache for autoregressive generation
+    # Stores computed K, V to avoid recomputation
+
+    max_batch_size is 1
+    max_seq_len is 4096
+    num_heads is 8
+    head_dim is 64
+
+    k_cache is Tensor
+    v_cache is Tensor
+    seq_len is 0
+
+    define init as:
+
+        batch_size is arg[0]
+
+        max_len is arg[1]
+
+        n_heads is arg[2]
+
+        h_dim is arg[3]
+        max_batch_size is batch_size
+        max_seq_len is max_len
+        num_heads is n_heads
+        head_dim is h_dim
+
+        # Initialize cache tensors
+        # Shape: (batch, num_heads, max_seq_len, head_dim)
+        shape is [max_batch_size, num_heads, max_seq_len, head_dim]
+        k_cache is zeros of shape
+        v_cache is zeros of shape
+        seq_len is 0
+
+    define update as:
+
+        k is arg[0]
+
+        v is arg[1]
+
+        start_pos is arg[2]
+        # Update cache with new K, V and return full cached sequence
+        # k, v: (batch, num_heads, seq_len, head_dim)
+
+        batch_size is shape of [k, 0]
+        new_seq_len is shape of [k, 2]
+        end_pos is start_pos + new_seq_len
+
+        # Update cache slices
+        k_cache[:batch_size, :, start_pos:end_pos, :] is k
+        v_cache[:batch_size, :, start_pos:end_pos, :] is v
+        seq_len is end_pos
+
+        # Return full cached K, V up to current position
+        cached_k is k_cache[:batch_size, :, :end_pos, :]
+        cached_v is v_cache[:batch_size, :, :end_pos, :]
+
+        return (cached_k, cached_v)
+
+    define reset as:
+        k_cache is zeros of shape of k_cache
+        v_cache is zeros of shape of v_cache
+        seq_len is 0
+
+    define get_seq_len as:
+        return seq_len
+
+
+define KVCacheManager as:
+    # Manages KV caches for all layers
+
+    num_layers is 0
+    caches is []
+
+    define init as:
+
+        n_layers is arg[0]
+
+        batch_size is arg[1]
+
+        max_len is arg[2]
+
+        n_heads is arg[3]
+
+        h_dim is arg[4]
+        num_layers is n_layers
+        caches is []
+
+        for i in range of num_layers:
+            cache is KVCache
+            init of [cache, batch_size, max_len, n_heads, h_dim]
+            caches is append of [caches, cache]
+
+    define update as:
+
+        layer_idx is arg[0]
+
+        k is arg[1]
+
+        v is arg[2]
+
+        start_pos is arg[3]
+        return update of [caches[layer_idx], k, v, start_pos]
+
+    define reset as:
+        for cache in caches:
+            reset of cache
+
+    define get_seq_len as:
+        if length of caches > 0:
+            return get_seq_len of caches[0]
+        return 0
+
+
+# ============================================================================
+# Grouped Query Attention (GQA)
+# ============================================================================
+
+define GroupedQueryAttention as:
+
+    # extends Model
+    # GQA: Uses fewer KV heads than query heads
+    # num_kv_heads = num_heads: Standard MHA
+    # num_kv_heads = 1: Multi-Query Attention (MQA)
+    # 1 < num_kv_heads < num_heads: GQA
+
+    dim is 0
+    num_heads is 32
+    num_kv_heads is 8
+    num_groups is 4
+    head_dim is 64
+    scale is 0.125
+    dropout_p is 0.0
+
+    wq is Model
+    wk is Model
+    wv is Model
+    wo is Model
+    rope is Model
+
+    define init as:
+
+        d is arg[0]
+
+        n_heads is arg[1]
+
+        n_kv_heads is arg[2]
+
+        max_len is arg[3]
+
+        dropout is arg[4]
+
+        use_bias is arg[5]
+        dim is d
+        num_heads is n_heads
+
+        if n_kv_heads == none:
+            num_kv_heads is n_heads
+        else:
+            num_kv_heads is n_kv_heads
+
+        num_groups is num_heads // num_kv_heads
+        head_dim is dim // num_heads
+        scale is 1.0 / sqrt of head_dim
+        dropout_p is dropout
+
+        # Query projection (full heads)
+        wq is Linear
+        init of [wq, dim, num_heads * head_dim, use_bias]
+
+        # Key-Value projections (reduced heads for GQA)
+        wk is Linear
+        init of [wk, dim, num_kv_heads * head_dim, use_bias]
+
+        wv is Linear
+        init of [wv, dim, num_kv_heads * head_dim, use_bias]
+
+        # Output projection
+        wo is Linear
+        init of [wo, num_heads * head_dim, dim, use_bias]
+
+        # Rotary position embeddings
+        rope is RoPE
+        init of [rope, head_dim, max_len, 10000]
+
+        register_module of wq
+        register_module of wk
+        register_module of wv
+        register_module of wo
+
+        _name is "GQA"
+
+    define forward as:
+
+        x is arg[0]
+
+        start_pos is arg[1]
+
+        kv_cache is arg[2]
+        # x: (batch, seq_len, dim)
+        batch_size is shape of [x, 0]
+        seq_len is shape of [x, 1]
+
+        # Compute projections
+        q is forward of [wq, x  # (batch, seq, num_heads * head_dim)]
+        k is forward of [wk, x  # (batch, seq, num_kv_heads * head_dim)]
+        v is forward of [wv, x]
+
+        # Reshape: (batch, seq, heads, head_dim) -> (batch, heads, seq, head_dim)
+        q is reshape of [q, [batch_size, seq_len, num_heads, head_dim]]
+        q is transpose of [q, 1, 2]
+
+        k is reshape of [k, [batch_size, seq_len, num_kv_heads, head_dim]]
+        k is transpose of [k, 1, 2]
+
+        v is reshape of [v, [batch_size, seq_len, num_kv_heads, head_dim]]
+        v is transpose of [v, 1, 2]
+
+        # Apply RoPE
+        q, k is forward of [rope, q, k, seq_len, start_pos]
+
+        # Handle KV cache
+        if kv_cache != none:
+            k, v is update of [kv_cache, k, v, start_pos]
+
+        # Expand KV heads to match query heads (repeat for each group)
+        k_expanded is repeat of [k, num_groups, 1]
+        v_expanded is repeat of [v, num_groups, 1]
+
+        # Compute attention scores
+        # Q @ K^T: (batch, heads, seq_q, head_dim) @ (batch, heads, head_dim, seq_k)
+        attn_scores is matmul of [q, (transpose of k_expanded, -2, -1)]
+        attn_scores is multiply of [attn_scores, scale]
+
+        # Apply causal mask
+        total_len is shape of [k_expanded, 2]
+        causal_mask is triu of [(ones of [seq_len, total_len]), (start_pos + 1)]
+        attn_scores is where of [(equal of causal_mask, 1), negative_infinity, attn_scores]
+
+        # Softmax
+        attn_weights is softmax of [attn_scores, -1]
+
+        # === EigenScript Geometric Feature ===
+        # Check attention stability
+        if not stable:
+            print of "Warning: Attention weights unstable"
+
+        # Apply dropout during training
+        if dropout_p > 0:
+            attn_weights is dropout of [attn_weights, dropout_p]
+
+        # Compute output
+        output is matmul of [attn_weights, v_expanded]
+
+        # Reshape: (batch, heads, seq, head_dim) -> (batch, seq, dim)
+        output is transpose of [output, 1, 2]
+        output is reshape of [output, [batch_size, seq_len, -1]]
+
+        return forward of [wo, output]
+
+    define describe as:
+        return format of ["GQA(dim={}, heads={}, kv_heads={})", dim, num_heads, num_kv_heads]
+
+
+# ============================================================================
+# Transformer Block for LLM
+# ============================================================================
+
+define TransformerBlock as:
+
+    # extends Model
+    # Single transformer block: Attention + FFN with RMSNorm
+    #
+    # Architecture:
+    # x -> RMSNorm -> Attention -> + -> RMSNorm -> FFN -> +
+    #      |________________________|    |_______________|
+
+    config is none
+    layer_idx is 0
+
+    attention_norm is Model
+    attention is Model
+    ffn_norm is Model
+    feed_forward is Model
+
+    define init as:
+
+        cfg is arg[0]
+
+        idx is arg[1]
+        config is cfg
+        layer_idx is idx
+
+        hidden_size is config["hidden_size"]
+        num_heads is config["num_heads"]
+        num_kv_heads is config["num_kv_heads"]
+        intermediate_size is config["intermediate_size"]
+        max_seq_len is config["max_seq_len"]
+        dropout is config["dropout"]
+        use_bias is config["use_bias"]
+        rms_eps is config["rms_norm_eps"]
+
+        # Pre-attention normalization
+        attention_norm is RMSNorm
+        init of [attention_norm, hidden_size, rms_eps]
+
+        # Self-attention (GQA)
+        attention is GroupedQueryAttention
+        init of [attention, hidden_size, num_heads, num_kv_heads, max_seq_len, dropout, use_bias]
+
+        # Pre-FFN normalization
+        ffn_norm is RMSNorm
+        init of [ffn_norm, hidden_size, rms_eps]
+
+        # Feed-forward network
+        feed_forward is FFNSwiGLU
+        init of [feed_forward, hidden_size, intermediate_size, use_bias]
+
+        register_module of attention_norm
+        register_module of attention
+        register_module of ffn_norm
+        register_module of feed_forward
+
+        _name is format of ["TransformerBlock_{}", layer_idx]
+
+    define forward as:
+
+        x is arg[0]
+
+        start_pos is arg[1]
+
+        kv_cache is arg[2]
+        # Attention with residual
+        normed is forward of [attention_norm, x]
+        attn_out is forward of [attention, normed, start_pos, kv_cache]
+        h is add of [x, attn_out]
+
+        # FFN with residual
+        normed is forward of [ffn_norm, h]
+        ffn_out is forward of [feed_forward, normed]
+        out is add of [h, ffn_out]
+
+        return out
+
+    define describe as:
+        return format of ["TransformerBlock(layer={})", layer_idx]
+
+
+# ============================================================================
+# LLM Configuration
+# ============================================================================
+
+define LLMConfig as:
+    # Configuration for LLM models
+
+    vocab_size is 32000
+    hidden_size is 4096
+    num_layers is 32
+    num_heads is 32
+    num_kv_heads is 32
+    intermediate_size is 11008
+    max_seq_len is 4096
+    dropout is 0.0
+    attention_dropout is 0.0
+    use_bias is false
+    rope_theta is 10000.0
+    rms_norm_eps is 1e-6
+    tie_word_embeddings is false
+
+    define init as:
+
+        config_dict is arg
+        if "vocab_size" in config_dict:
+            vocab_size is config_dict["vocab_size"]
+        if "hidden_size" in config_dict:
+            hidden_size is config_dict["hidden_size"]
+        if "num_layers" in config_dict:
+            num_layers is config_dict["num_layers"]
+        if "num_heads" in config_dict:
+            num_heads is config_dict["num_heads"]
+        if "num_kv_heads" in config_dict:
+            num_kv_heads is config_dict["num_kv_heads"]
+        if "intermediate_size" in config_dict:
+            intermediate_size is config_dict["intermediate_size"]
+        if "max_seq_len" in config_dict:
+            max_seq_len is config_dict["max_seq_len"]
+        if "dropout" in config_dict:
+            dropout is config_dict["dropout"]
+        if "use_bias" in config_dict:
+            use_bias is config_dict["use_bias"]
+        if "rms_norm_eps" in config_dict:
+            rms_norm_eps is config_dict["rms_norm_eps"]
+        if "tie_word_embeddings" in config_dict:
+            tie_word_embeddings is config_dict["tie_word_embeddings"]
+
+        # Default intermediate size if not specified
+        if intermediate_size == none:
+            intermediate_size is floor of (4 * hidden_size * 2 / 3)
+            intermediate_size is multiply of [(floor of ((intermediate_size + 255) / 256)), 256]
+
+        # Default KV heads if not specified
+        if num_kv_heads == none:
+            num_kv_heads is num_heads
+
+    define to_dict as:
+        return {
+            "vocab_size": vocab_size,
+            "hidden_size": hidden_size,
+            "num_layers": num_layers,
+            "num_heads": num_heads,
+            "num_kv_heads": num_kv_heads,
+            "intermediate_size": intermediate_size,
+            "max_seq_len": max_seq_len,
+            "dropout": dropout,
+            "use_bias": use_bias,
+            "rms_norm_eps": rms_norm_eps,
+            "tie_word_embeddings": tie_word_embeddings
+        }
+
+
+# Preset configurations
+define get_config as:
+    name is arg
+    presets is {
+        "gpt2": {
+            "vocab_size": 50257,
+            "hidden_size": 768,
+            "num_layers": 12,
+            "num_heads": 12,
+            "num_kv_heads": 12,
+            "intermediate_size": 3072,
+            "max_seq_len": 1024,
+            "use_bias": true
+        },
+        "gpt2-medium": {
+            "vocab_size": 50257,
+            "hidden_size": 1024,
+            "num_layers": 24,
+            "num_heads": 16,
+            "num_kv_heads": 16,
+            "intermediate_size": 4096,
+            "max_seq_len": 1024,
+            "use_bias": true
+        },
+        "llama-7b": {
+            "vocab_size": 32000,
+            "hidden_size": 4096,
+            "num_layers": 32,
+            "num_heads": 32,
+            "num_kv_heads": 32,
+            "intermediate_size": 11008,
+            "max_seq_len": 4096,
+            "use_bias": false
+        },
+        "llama2-7b": {
+            "vocab_size": 32000,
+            "hidden_size": 4096,
+            "num_layers": 32,
+            "num_heads": 32,
+            "num_kv_heads": 32,
+            "intermediate_size": 11008,
+            "max_seq_len": 4096,
+            "use_bias": false
+        },
+        "llama2-70b": {
+            "vocab_size": 32000,
+            "hidden_size": 8192,
+            "num_layers": 80,
+            "num_heads": 64,
+            "num_kv_heads": 8,
+            "intermediate_size": 28672,
+            "max_seq_len": 4096,
+            "use_bias": false
+        },
+        "mistral-7b": {
+            "vocab_size": 32000,
+            "hidden_size": 4096,
+            "num_layers": 32,
+            "num_heads": 32,
+            "num_kv_heads": 8,
+            "intermediate_size": 14336,
+            "max_seq_len": 32768,
+            "use_bias": false
+        },
+        "tiny": {
+            "vocab_size": 1000,
+            "hidden_size": 128,
+            "num_layers": 4,
+            "num_heads": 4,
+            "num_kv_heads": 4,
+            "intermediate_size": 512,
+            "max_seq_len": 512,
+            "use_bias": false
+        }
+    }
+
+    if name in presets:
+        config is LLMConfig
+        init of [config, presets[name]]
+        return config
+    else:
+        error of [format of "Unknown config: {}. Available: gpt2, llama-7b, llama2-7b, mistral-7b, tiny", name]
+
+
+# ============================================================================
+# Causal Language Model
+# ============================================================================
+
+define CausalLM as:
+
+    # extends Model
+    # Decoder-only transformer for autoregressive language modeling
+    # Supports: RoPE, RMSNorm, SwiGLU, GQA, KV caching
+
+    config is none
+    embed_tokens is Tensor
+    layers is []
+    norm is Model
+    lm_head is Tensor
+    kv_cache is none
+
+    define init as:
+
+        cfg is arg
+        config is to_dict of cfg
+
+        vocab_size is config["vocab_size"]
+        hidden_size is config["hidden_size"]
+        num_layers is config["num_layers"]
+        rms_eps is config["rms_norm_eps"]
+        tie_embeddings is config["tie_word_embeddings"]
+
+        # Token embeddings
+        embed_tokens is random_normal of [vocab_size, hidden_size], 0.02
+        register_parameter of embed_tokens
+
+        # Transformer blocks
+        layers is []
+        for i in range of num_layers:
+            block is TransformerBlock
+            init of [block, config, i]
+            layers is append of [layers, block]
+            register_module of block
+
+        # Final normalization
+        norm is RMSNorm
+        init of [norm, hidden_size, rms_eps]
+        register_module of norm
+
+        # Output projection (language model head)
+        if tie_embeddings:
+            lm_head is none  # Will use embed_tokens.T
+        else:
+            lm_head is random_normal of [hidden_size, vocab_size], 0.02
+            register_parameter of lm_head
+
+        kv_cache is none
+
+        _name is "CausalLM"
+
+    define forward as:
+
+        input_ids is arg[0]
+
+        start_pos is arg[1]
+
+        use_cache is arg[2]
+        # input_ids: (batch, seq_len) token indices
+
+        batch_size is shape of [input_ids, 0]
+        seq_len is shape of [input_ids, 1]
+
+        # Initialize KV cache if needed
+        if use_cache and kv_cache == none:
+            kv_cache is _init_kv_cache of batch_size
+
+        # Token embeddings via lookup
+        h is gather of [embed_tokens, input_ids, 0]
+
+        # === EigenScript Geometric Feature ===
+        # Track embedding stability
+        if not stable:
+            print of "Warning: Embedding lookup unstable"
+
+        # Apply transformer blocks
+        for i, layer in enumerate of layers:
+            layer_cache is none
+            if use_cache and kv_cache != none:
+                layer_cache is caches of [kv_cache, i]
+            h is forward of [layer, h, start_pos, layer_cache]
+
+        # Final normalization
+        h is forward of [norm, h]
+
+        # Compute logits
+        if lm_head != none:
+            logits is matmul of [h, lm_head]
+        else:
+            # Tied embeddings
+            logits is matmul of [h, (transpose of embed_tokens)]
+
+        return logits
+
+    define _init_kv_cache as:
+
+        batch_size is arg
+        hidden_size is config["hidden_size"]
+        num_heads is config["num_heads"]
+        num_kv_heads is config["num_kv_heads"]
+        num_layers is config["num_layers"]
+        max_seq_len is config["max_seq_len"]
+        head_dim is hidden_size // num_heads
+
+        cache is KVCacheManager
+        init of [cache, num_layers, batch_size, max_seq_len, num_kv_heads, head_dim]
+        return cache
+
+    define reset_cache as:
+        if kv_cache != none:
+            reset of kv_cache
+        kv_cache is none
+
+    define generate as:
+
+        input_ids is arg[0]
+
+        max_new_tokens is arg[1]
+
+        temperature is arg[2]
+
+        top_k is arg[3]
+
+        top_p is arg[4]
+
+        eos_token_id is arg[5]
+        # Generate tokens autoregressively
+        # Returns: generated token IDs including input
+
+        reset_cache
+
+        # Ensure 2D input
+        if ndim of input_ids == 1:
+            input_ids is reshape of [input_ids, [1, -1]]
+
+        batch_size is shape of [input_ids, 0]
+        generated is copy of input_ids
+
+        # Process prompt
+        logits is forward of [self, input_ids, 0, true]
+
+        # Generate tokens
+        for i in range of max_new_tokens:
+            # Get logits for last position
+            last_logits is logits[:, -1, :]
+
+            # Sample next token
+            next_tokens is []
+            for b in range of batch_size:
+                next_token is sample of [last_logits[b], temperature, top_k, top_p]
+                next_tokens is append of [next_tokens, next_token]
+
+                # Check for EOS
+                if eos_token_id != none and next_token == eos_token_id:
+                    break
+
+            next_tokens_arr is reshape of [(Tensor of next_tokens), [batch_size, 1]]
+            generated is concatenate of [generated, next_tokens_arr], 1
+
+            # Check if all sequences hit EOS
+            if eos_token_id != none:
+                all_eos is true
+                for t in next_tokens:
+                    if t != eos_token_id:
+                        all_eos is false
+                        break
+                if all_eos:
+                    break
+
+            # === EigenScript Geometric Feature ===
+            # Check generation stability
+            if not stable:
+                print of "Warning: Generation unstable at token"
+                print of i
+
+            # Prepare next input
+            start_pos is shape of [generated, 1 - 1]
+            logits is forward of [self, next_tokens_arr, start_pos, true]
+
+        if batch_size == 1:
+            return squeeze of generated
+        return generated
+
+    define introspect as:
+        # === EigenScript Interrogatives ===
+        return {
+            "what": what is self,
+            "converged": converged,
+            "stable": stable,
+            "framework_strength": framework_strength,
+            "num_parameters": num_parameters of self,
+            "config": config
+        }
+
+    define describe as:
+        vocab_size is config["vocab_size"]
+        hidden_size is config["hidden_size"]
+        num_layers is config["num_layers"]
+        return format of ["CausalLM(vocab={}, hidden={}, layers={})", vocab_size, hidden_size, num_layers]
+
+
+# ============================================================================
+# Sampling Function
+# ============================================================================
+
+define sample as:
+
+    logits is arg[0]
+
+    temperature is arg[1]
+
+    top_k is arg[2]
+
+    top_p is arg[3]
+    # Sample next token from logits
+
+    # Handle batched input
+    if ndim of logits > 1:
+        logits is logits[-1]
+
+    # Apply temperature
+    if temperature != 1.0 and temperature > 0:
+        logits is divide of [logits, temperature]
+
+    # Greedy decoding
+    if temperature == 0:
+        return argmax of logits
+
+    # Apply top-k filtering
+    if top_k != none and top_k > 0:
+        vocab_size is length of logits
+        top_k is min of [top_k, vocab_size]
+
+        # Get top-k indices
+        top_k_indices is topk_indices of [logits, top_k]
+        mask is ones_like of logits
+        mask[top_k_indices] is 0
+        logits is where of [(equal of mask, 1), negative_infinity, logits]
+
+    # Convert to probabilities
+    probs is softmax of logits
+
+    # Apply top-p (nucleus) filtering
+    if top_p != none and top_p > 0 and top_p < 1.0:
+        sorted_indices is argsort of [probs, descending]
+        sorted_probs is probs[sorted_indices]
+        cumsum is cumulative_sum of sorted_probs
+
+        # Find cutoff
+        cutoff_mask is greater_than of [cumsum, top_p]
+        cutoff_idx is argmax of cutoff_mask + 1
+
+        # Zero out tokens below threshold
+        probs[sorted_indices[cutoff_idx:]] is 0
+        probs is divide of [probs, sum of probs  # Renormalize]
+
+    # Sample from distribution
+    return random_choice of [(length of probs), 1, probs, false]
+
+
+# ============================================================================
+# Weight Initialization
+# ============================================================================
+
+define init_weights_normal as:
+
+    tensor is arg[0]
+
+    mean is arg[1]
+
+    std is arg[2]
+    tensor is random_normal of [(shape of tensor), std]
+    if mean != 0:
+        tensor is add of [tensor, mean]
+
+define init_weights_xavier as:
+
+    tensor is arg[0]
+
+    gain is arg[1]
+    if ndim of tensor < 2:
+        return init_weights_normal of [tensor, 0, 0.02]
+
+    fan_in is shape of [tensor, 0]
+    fan_out is shape of [tensor, 1]
+    std is multiply of [gain, sqrt of (2.0 / (fan_in + fan_out))]
+    tensor is random_normal of [(shape of tensor), std]
+
+define init_weights_kaiming as:
+
+    tensor is arg[0]
+
+    mode is arg[1]
+
+    nonlinearity is arg[2]
+    if ndim of tensor < 2:
+        return init_weights_normal of [tensor, 0, 0.02]
+
+    fan_in is shape of [tensor, 0]
+    fan_out is shape of [tensor, 1]
+
+    if mode == "fan_in":
+        fan is fan_in
+    else:
+        fan is fan_out
+
+    # Gain for different activations
+    gains is {
+        "linear": 1.0,
+        "relu": sqrt of 2.0,
+        "leaky_relu": sqrt of (2.0 / 1.01),
+        "tanh": 5.0 / 3,
+        "silu": sqrt of 2.0,
+        "gelu": sqrt of 2.0
+    }
+
+    gain is gains[nonlinearity]
+    std is gain / sqrt of fan
+    tensor is random_normal of [(shape of tensor), std]
+
+define init_model_weights as:
+
+    model is arg[0]
+
+    init_std is arg[1]
+    # Standard LLM initialization
+    for name, param in named_parameters of model:
+        if "norm" in lower of name and "weight" in lower of name:
+            param is ones_like of param
+        else if "norm" in lower of name and "bias" in lower of name:
+            param is zeros_like of param
+        else:
+            param is random_normal of [(shape of param), init_std]
+
+
+# ============================================================================
+# Gradient Checkpointing
+# ============================================================================
+
+define checkpoint as:
+
+    fn is arg[0]
+
+    *args is arg[1]
+    # Apply gradient checkpointing to reduce memory
+    # Trade compute for memory by recomputing during backward
+
+    # Forward pass without storing intermediates
+    with no_grad:
+        output is fn of *args
+
+    # Mark for recomputation during backward
+    output._checkpoint_fn is fn
+    output._checkpoint_args is args
+
+    return output
+
+define checkpoint_sequential as:
+
+    functions is arg[0]
+
+    x is arg[1]
+
+    segments is arg[2]
+    # Apply checkpointing to sequential functions
+    if segments <= 0:
+        error of "segments must be positive"
+
+    segment_size is ceil of ((length of functions) / segments)
+
+    for i in range of [0, (length of functions), segment_size:]
+        segment_fns is functions[i : i + segment_size]
+
+        define segment_forward as:
+
+            inp is arg
+            for fn in segment_fns:
+                inp is fn of inp
+            return inp
+
+        x is checkpoint of [segment_forward, x]
+
+    return x
+
+
+# ============================================================================
+# Mixed Precision Training
+# ============================================================================
+
+define GradScaler as:
+    # Gradient scaler for mixed precision training
+
+    enabled is false
+    scale is 65536.0
+    growth_factor is 2.0
+    backoff_factor is 0.5
+    growth_interval is 2000
+    growth_tracker is 0
+    found_inf is false
+
+    define init as:
+
+        enable is arg[0]
+
+        initial_scale is arg[1]
+        enabled is enable
+        scale is initial_scale
+        growth_tracker is 0
+        found_inf is false
+
+    define scale_loss as:
+
+        loss is arg
+        if not enabled:
+            return loss
+        return multiply of [loss, scale]
+
+    define unscale as:
+
+        optimizer is arg
+        if not enabled:
+            return
+
+        found_inf is false
+        inv_scale is 1.0 / scale
+
+        for param in parameters of optimizer:
+            if has_grad of param:
+                grad is grad of param
+                grad is multiply of [grad, inv_scale]
+
+                # Check for inf/nan
+                if has_inf of grad or has_nan of grad:
+                    found_inf is true
+                    return
+
+    define step as:
+
+        optimizer is arg
+        if not enabled:
+            return true
+
+        if found_inf:
+            return false
+
+        return true
+
+    define update as:
+        if not enabled:
+            return
+
+        if found_inf:
+            # Reduce scale on overflow
+            scale is multiply of [scale, backoff_factor]
+            growth_tracker is 0
+        else:
+            # Potentially increase scale
+            growth_tracker is growth_tracker + 1
+            if growth_tracker >= growth_interval:
+                scale is multiply of [scale, growth_factor]
+                growth_tracker is 0
+
+    define state_dict as:
+        return {
+            "scale": scale,
+            "growth_tracker": growth_tracker
+        }
+
+    define load_state_dict as:
+
+        state is arg
+        scale is state["scale"]
+        growth_tracker is state["growth_tracker"]
+

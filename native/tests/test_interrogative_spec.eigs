@@ -1,0 +1,102 @@
+print of "=== INTERROGATIVE SPEC COMPLIANCE TEST ==="
+print of "Verifies each interrogative matches LLVM IR semantics"
+print of ""
+
+print of "--- WHAT: eigen_get_value() ---"
+x is 42
+v is what is x
+print of v
+print of "EXPECT: 42"
+
+print of ""
+print of "--- WHAT: list length ---"
+nums is [1, 2, 3, 4, 5]
+v2 is what is nums
+print of v2
+print of "EXPECT: 5"
+
+print of ""
+print of "--- WHAT: string length ---"
+msg is "hello"
+v3 is what is msg
+print of v3
+print of "EXPECT: 5"
+
+print of ""
+print of "--- WHAT: computed value ---"
+computed is 10 + 32
+v4 is what is computed
+print of v4
+print of "EXPECT: 42"
+
+print of ""
+print of "--- WHO: variable name ---"
+myvar is 100
+identity is who is myvar
+print of identity
+print of "EXPECT: myvar"
+
+print of ""
+print of "--- WHO: different variable ---"
+counter is 0
+id2 is who is counter
+print of id2
+print of "EXPECT: counter"
+
+print of ""
+print of "--- WHEN: temporal step ---"
+aa is 10
+step is when is aa
+print of step
+print of "EXPECT: 1"
+
+print of ""
+print of "--- WHEN: after multiple assignments ---"
+bb is 1
+bb is bb + 1
+bb is bb + 1
+step2 is when is bb
+print of step2
+print of "EXPECT: 3"
+
+print of ""
+print of "--- WHERE: entropy (spatial) ---"
+p is 100
+entropy is where is p
+print of "WHERE returns entropy (number >= 0):"
+print of entropy
+
+print of ""
+print of "--- WHY: gradient (dH/dt) ---"
+q is 50
+grad is why is q
+print of "WHY returns gradient (number):"
+print of grad
+
+print of ""
+print of "--- HOW: stability (0-1) ---"
+rr is 75
+quality is how is rr
+print of "HOW returns stability (0-1 range):"
+print of quality
+
+print of ""
+print of "--- ARITHMETIC COMPOSITION ---"
+y is 100
+w1 is what is y
+g1 is why is y
+s1 is how is y
+t1 is when is y
+sum is w1 + g1 + s1 + t1
+print of "Arithmetic on interrogatives works:"
+print of sum
+
+print of ""
+print of "--- ASSIGNMENT THEN INTERROGATIVE ---"
+data is 256
+val is what is data
+print of val
+print of "EXPECT: 256"
+
+print of ""
+print of "=== INTERROGATIVE SPEC COMPLETE ==="

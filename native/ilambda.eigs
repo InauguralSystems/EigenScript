@@ -1,0 +1,410 @@
+# iLambdaAi - Main Module
+# EigenScript-native AI framework with geometric introspection
+#
+# Version: 0.4.0-eigenscript
+#
+# This module provides the complete iLambdaAi API in native EigenScript,
+# leveraging the language's geometric introspection capabilities for
+# self-aware neural network training.
+
+# ============================================================================
+# Core Layers
+# ============================================================================
+
+from model import Model, ParameterList, ModuleList
+
+from layers import (
+    Linear,
+    ReLU,
+    Sigmoid,
+    Tanh,
+    LeakyReLU,
+    GELU,
+    ReLU6,
+    Softmax,
+    LogSoftmax,
+    Dropout,
+    Sequential,
+    Identity,
+    Flatten
+)
+
+# ============================================================================
+# CNN Layers
+# ============================================================================
+
+from cnn import (
+    Conv2d,
+    MaxPool2d,
+    AvgPool2d,
+    AdaptiveAvgPool2d,
+    BatchNorm2d,
+    LayerNorm,
+    GroupNorm,
+    InstanceNorm2d,
+    ConvTranspose2d,
+    Upsample,
+    ResidualBlock
+)
+
+# ============================================================================
+# RNN Layers
+# ============================================================================
+
+from rnn import (
+    RNNCell,
+    LSTMCell,
+    GRUCell,
+    RNN,
+    LSTM,
+    GRU,
+    Embedding,
+    Bidirectional,
+    pack_padded_sequence,
+    pad_packed_sequence
+)
+
+# ============================================================================
+# Attention Mechanisms
+# ============================================================================
+
+from attention import (
+    scaled_dot_product_attention,
+    ScaledDotProductAttention,
+    MultiHeadAttention,
+    PositionalEncoding,
+    RoPEAttention,
+    ALiBiAttention,
+    TransformerEncoderLayer,
+    TransformerDecoderLayer,
+    TransformerEncoder,
+    TransformerDecoder,
+    Transformer,
+    generate_square_subsequent_mask,
+    generate_src_mask
+)
+
+# ============================================================================
+# Positional Encodings
+# ============================================================================
+
+from positional import (
+    SinusoidalPositionalEncoding,
+    RoPE,
+    ALiBi,
+    LearnedPositionalEmbedding,
+    RelativePositionalEncoding,
+    AxialPositionalEncoding,
+    ConditionalPositionalEncoding,
+    CombinedPositionalEncoding,
+    apply_rotary_emb,
+    create_position_ids,
+    interpolate_pos_encoding
+)
+
+# ============================================================================
+# LLM Components
+# ============================================================================
+
+from llm import (
+    RMSNorm,
+    SwiGLU,
+    FFNSwiGLU,
+    KVCache,
+    KVCacheManager,
+    GroupedQueryAttention,
+    TransformerBlock,
+    LLMConfig,
+    get_config,
+    CausalLM,
+    GradScaler,
+    sample,
+    init_weights_normal,
+    init_weights_xavier,
+    init_weights_kaiming,
+    init_model_weights,
+    checkpoint,
+    checkpoint_sequential
+)
+
+# ============================================================================
+# Text Generation
+# ============================================================================
+
+from generation import (
+    TextGenerator,
+    Tokenizer,
+    CharacterTokenizer,
+    BPETokenizer,
+    train_bpe,
+    apply_repetition_penalty,
+    apply_frequency_penalty,
+    apply_presence_penalty,
+    StoppingCriteria,
+    MaxLengthCriteria,
+    EosTokenCriteria,
+    StopStringCriteria,
+    CombinedStoppingCriteria,
+    LogitsProcessor,
+    TemperatureProcessor,
+    TopKProcessor,
+    TopPProcessor,
+    RepetitionPenaltyProcessor,
+    LogitsProcessorList,
+    StreamingGenerator
+)
+
+# ============================================================================
+# Data Loading
+# ============================================================================
+
+from loader import (
+    Dataset,
+    ArrayDataset,
+    TensorDataset,
+    DataLoader,
+    SequentialSampler,
+    RandomSampler,
+    WeightedRandomSampler,
+    SubsetRandomSampler,
+    BatchSampler,
+    Compose,
+    Normalize,
+    ToTensor,
+    RandomCrop,
+    RandomHorizontalFlip,
+    RandomVerticalFlip,
+    GeometricDataLoader,
+    InfiniteDataLoader,
+    default_collate,
+    train_val_split,
+    kfold_split
+)
+
+# ============================================================================
+# Loss Functions
+# ============================================================================
+
+from loss import (
+    mse_loss,
+    cross_entropy_loss,
+    binary_cross_entropy_loss,
+    binary_cross_entropy_with_logits,
+    nll_loss,
+    l1_loss,
+    smooth_l1_loss,
+    hinge_loss,
+    kl_divergence,
+    MSELoss,
+    CrossEntropyLoss,
+    BCELoss,
+    BCEWithLogitsLoss,
+    NLLLoss,
+    L1Loss,
+    SmoothL1Loss,
+    KLDivLoss,
+    GeometricLoss
+)
+
+# ============================================================================
+# Optimizers
+# ============================================================================
+
+from optimizers import (
+    Optimizer,
+    SGD,
+    Adam,
+    AdamW,
+    RAdam,
+    GeometricOptimizer
+)
+
+# ============================================================================
+# Learning Rate Schedulers
+# ============================================================================
+
+from optimizers import (
+    LRScheduler,
+    StepLR,
+    ExponentialLR,
+    CosineAnnealingLR,
+    ReduceLROnPlateau,
+    WarmupLR,
+    CosineAnnealingWarmRestarts
+)
+
+# ============================================================================
+# Training
+# ============================================================================
+
+from trainer import (
+    Trainer,
+    SimpleTrainer,
+    train_steps,
+    evaluate,
+    Callback,
+    ModelCheckpoint,
+    EarlyStoppingCallback,
+    GeometricMonitor
+)
+
+# ============================================================================
+# Advanced Architectures
+# ============================================================================
+
+from advanced import (
+    VAE,
+    VAEEncoder,
+    VAEDecoder,
+    GAN,
+    Generator,
+    Discriminator,
+    WGAN,
+    DDPM,
+    DiffusionSchedule,
+    UNet,
+    ConditionalVAE,
+    ConditionalGAN,
+    Autoencoder,
+    DenoisingAutoencoder,
+    SparseAutoencoder,
+    NormalizingFlow,
+    PlanarFlow
+)
+
+# ============================================================================
+# Checkpoint Utilities
+# ============================================================================
+
+from checkpoint import (
+    save_checkpoint,
+    load_checkpoint,
+    ModelSaver,
+    CheckpointManager,
+    state_dict,
+    load_state_dict,
+    save_state_dict,
+    load_state_dict_file,
+    average_checkpoints,
+    EMAModel,
+    save_checkpoint_atomic,
+    auto_resume,
+    save_geometric_state,
+    load_geometric_state
+)
+
+# ============================================================================
+# Diagnostics
+# ============================================================================
+
+from diagnostics import (
+    GeometricDiagnostics,
+    TrainingMonitor,
+    LossLandscape,
+    LRFinder,
+    ActivationStats,
+    compute_gradient_stats,
+    analyze_model_complexity,
+    print_gradient_flow,
+    check_nan_inf
+)
+
+# ============================================================================
+# Version Info
+# ============================================================================
+
+__version__ is "0.7.0-eigenscript"
+__author__ is "iLambdaAi Team"
+__description__ is "EigenScript-native AI framework with geometric introspection"
+
+# ============================================================================
+# Quick Start
+# ============================================================================
+
+# Example 1 - Simple MLP:
+#
+#   from ilambda import Sequential, Linear, ReLU, Sigmoid
+#   from ilambda import Adam, mse_loss, SimpleTrainer
+#
+#   model is Sequential of [
+#       Linear of 2, 4, true,
+#       ReLU,
+#       Linear of 4, 1, true,
+#       Sigmoid
+#   ]
+#
+#   optimizer is Adam of (parameters of model), 0.01
+#   trainer is SimpleTrainer
+#   init of trainer, model, optimizer, mse_loss
+#
+#   for epoch in range of 1000:
+#       loss is train_step of trainer, X, Y
+#       if converged:   # Native EigenScript predicate!
+#           break
+#
+# Example 2 - Transformer:
+#
+#   from ilambda import Transformer, MultiHeadAttention
+#   from ilambda import SinusoidalPositionalEncoding, RoPE, ALiBi
+#
+#   # Full encoder-decoder transformer
+#   transformer is Transformer
+#   init of transformer, 512, 8, 6, 6, 2048, 0.1
+#
+#   # Or use specific positional encodings
+#   pos_enc is RoPE
+#   init of pos_enc, 64, 4096, 10000  # For long sequences
+#
+#   # ALiBi for best length extrapolation
+#   alibi is ALiBi
+#   init of alibi, 8  # 8 attention heads
+#
+# Example 3 - Causal LLM (GPT/LLaMA style):
+#
+#   from ilambda import CausalLM, get_config, TextGenerator
+#   from ilambda import CharacterTokenizer, train_bpe
+#
+#   # Load preset config (gpt2, llama-7b, mistral-7b, tiny)
+#   config is get_config of "tiny"
+#   model is CausalLM
+#   init of model, config
+#
+#   # Text generation with various sampling strategies
+#   generator is TextGenerator
+#   generated is generate of generator, model, input_ids, 50, 0.8, 10, 0.9, eos_id, none
+#
+#   # Train BPE tokenizer on corpus
+#   tokenizer is train_bpe of texts, 1000, 2, "<PAD>", "<BOS>", "<EOS>", "<UNK>"
+
+# ============================================================================
+# EigenScript Geometric Features Available
+# ============================================================================
+
+# PREDICATES (use directly in conditionals):
+#   converged    - Has computation settled?
+#   stable       - Is training stable?
+#   improving    - Is loss decreasing?
+#   oscillating  - Is training oscillating?
+#   equilibrium  - Has training reached balance?
+#
+# INTERROGATIVES:
+#   what is x    - Get magnitude/value
+#   who is x     - Get identity
+#   when         - Get current step
+#   where        - Get computation location
+#   why is x     - Get gradient direction
+#   how is x     - Get quality metric
+#
+# TEMPORAL OPERATORS:
+#   was of x     - Get previous value
+#   change of x  - Get delta from last step
+#   trend of x   - Get direction (increasing/decreasing/stable)
+#
+# FRAMEWORK METRICS:
+#   framework_strength  - Computational coherence (0-1+)
+#   signature          - Spacetime signature
+
+print of "iLambdaAi"
+print of __version__
+print of "loaded"
+print of "EigenScript geometric features: ENABLED"

@@ -1,0 +1,916 @@
+# iLambdaAi - Attention and Transformer Layers
+# Transformer building blocks in native EigenScript
+#
+# Includes: ScaledDotProductAttention, MultiHeadAttention,
+#           PositionalEncoding, TransformerEncoder, TransformerDecoder
+#
+# Attention mechanisms benefit from EigenScript's interrogatives
+# for understanding what patterns the model is learning
+
+from model import Model
+from layers import Linear, Dropout, Sequential
+from cnn import LayerNorm
+
+# ============================================================================
+# Scaled Dot-Product Attention
+# ============================================================================
+
+define ScaledDotProductAttention as:
+
+    # extends Model
+    dropout is Dropout
+
+    define init as:
+
+        drop_prob is arg
+        if drop_prob > 0:
+            dropout is Dropout
+            init of [dropout, drop_prob]
+            register_module of dropout
+        else:
+            dropout is none
+
+        _name is "ScaledDotProductAttention"
+
+    define forward as:
+
+        query is arg[0]
+
+        key is arg[1]
+
+        value is arg[2]
+
+        mask is arg[3]
+        # query: (batch, seq_q, d_k)
+        # key: (batch, seq_k, d_k)
+        # value: (batch, seq_k, d_v)
+        # Returns: (output, attention_weights)
+
+        d_k is shape of [query, -1]
+        scale is 1.0 / sqrt of d_k
+
+        # Compute attention scores: QK^T / sqrt(d_k)
+        # (batch, seq_q, d_k) @ (batch, d_k, seq_k) -> (batch, seq_q, seq_k)
+        key_T is transpose of [key, -1, -2]
+        scores is multiply of [(matmul of query, key_T), scale]
+
+        # Apply mask if provided (mask out future tokens)
+        if mask != none:
+            scores is where of [mask, scores, -1e9]
+
+        # Softmax over keys dimension
+        attn_weights is softmax of [scores, -1]
+
+        # === EigenScript Geometric Feature ===
+        # Analyze attention distribution quality
+        attn_quality is how is attn_weights
+        if attn_quality < 0.3:
+            print of "Warning: Attention distribution may be too uniform or peaked"
+
+        # Apply dropout to attention weights
+        if dropout != none:
+            attn_weights is forward of [dropout, attn_weights]
+
+        # Compute output: attention_weights @ V
+        output is matmul of [attn_weights, value]
+
+        return (output, attn_weights)
+
+    define describe as:
+        return "ScaledDotProductAttention"
+
+
+# ============================================================================
+# Multi-Head Attention
+# ============================================================================
+
+define MultiHeadAttention as:
+
+    # extends Model
+    embed_dim is 0
+    num_heads is 0
+    head_dim is 0
+
+    # Projection layers
+    W_q is Linear
+    W_k is Linear
+    W_v is Linear
+    W_o is Linear
+
+    attention is ScaledDotProductAttention
+
+    define init as:
+
+        d_model is arg[0]
+
+        n_heads is arg[1]
+
+        drop_prob is arg[2]
+
+        use_bias is arg[3]
+        embed_dim is d_model
+        num_heads is n_heads
+        head_dim is d_model / n_heads
+
+        # Validate
+        if d_model % n_heads != 0:
+            error of "embed_dim must be divisible by num_heads"
+
+        # Query, Key, Value projections
+        W_q is Linear
+        init of [W_q, embed_dim, embed_dim, use_bias]
+
+        W_k is Linear
+        init of [W_k, embed_dim, embed_dim, use_bias]
+
+        W_v is Linear
+        init of [W_v, embed_dim, embed_dim, use_bias]
+
+        # Output projection
+        W_o is Linear
+        init of [W_o, embed_dim, embed_dim, use_bias]
+
+        register_module of W_q
+        register_module of W_k
+        register_module of W_v
+        register_module of W_o
+
+        # Attention mechanism
+        attention is ScaledDotProductAttention
+        init of [attention, drop_prob]
+        register_module of attention
+
+        _name is "MultiHeadAttention"
+
+    define forward as:
+
+        query is arg[0]
+
+        key is arg[1]
+
+        value is arg[2]
+
+        mask is arg[3]
+        batch_size is shape of [query, 0]
+        seq_q is shape of [query, 1]
+        seq_k is shape of [key, 1]
+
+        # Linear projections
+        Q is forward of [W_q, query]
+        K is forward of [W_k, key]
+        V is forward of [W_v, value]
+
+        # Reshape for multi-head: (batch, seq, embed) -> (batch, heads, seq, head_dim)
+        Q is reshape of [Q, [batch_size, seq_q, num_heads, head_dim]]
+        Q is transpose of [Q, 1, 2  # (batch, heads, seq_q, head_dim)]
+
+        K is reshape of [K, [batch_size, seq_k, num_heads, head_dim]]
+        K is transpose of [K, 1, 2  # (batch, heads, seq_k, head_dim)]
+
+        V is reshape of [V, [batch_size, seq_k, num_heads, head_dim]]
+        V is transpose of [V, 1, 2  # (batch, heads, seq_k, head_dim)]
+
+        # Reshape for batched attention: (batch * heads, seq, head_dim)
+        Q is reshape of [Q, [batch_size * num_heads, seq_q, head_dim]]
+        K is reshape of [K, [batch_size * num_heads, seq_k, head_dim]]
+        V is reshape of [V, [batch_size * num_heads, seq_k, head_dim]]
+
+        # Compute attention
+        attn_output, attn_weights is forward of [attention, Q, K, V, mask]
+
+        # Reshape back: (batch * heads, seq, head_dim) -> (batch, seq, embed)
+        attn_output is reshape of [attn_output, [batch_size, num_heads, seq_q, head_dim]]
+        attn_output is transpose of [attn_output, 1, 2  # (batch, seq_q, heads, head_dim)]
+        attn_output is reshape of [attn_output, [batch_size, seq_q, embed_dim]]
+
+        # Final linear projection
+        output is forward of [W_o, attn_output]
+
+        # === EigenScript Geometric Feature ===
+        # Track attention pattern stability
+        if not stable:
+            print of "Warning: Multi-head attention output unstable"
+
+        return (output, attn_weights)
+
+    define describe as:
+        return format of ["MultiHeadAttention(d_model={}, heads={})", embed_dim, num_heads]
+
+
+# ============================================================================
+# Positional Encoding (Sinusoidal)
+# ============================================================================
+
+define PositionalEncoding as:
+
+    # extends Model
+    d_model is 0
+    max_len is 5000
+    dropout is Dropout
+    pe is Tensor  # Precomputed positional encodings
+
+    define init as:
+
+        dim is arg[0]
+
+        max_length is arg[1]
+
+        drop_prob is arg[2]
+        d_model is dim
+        max_len is max_length
+
+        if drop_prob > 0:
+            dropout is Dropout
+            init of [dropout, drop_prob]
+            register_module of dropout
+        else:
+            dropout is none
+
+        # Precompute positional encodings
+        pe is zeros of [max_len, d_model]
+
+        # position: (max_len, 1)
+        position is reshape of [(arange of max_len), [max_len, 1]]
+
+        # div_term: exp(arange(0, d_model, 2) * -log(10000) / d_model)
+        div_term is exp of [(multiply of (arange of 0, d_model, 2), (negative of log of 10000.0 / d_model))]
+
+        # pe[:, 0::2] = sin(position * div_term)
+        # pe[:, 1::2] = cos(position * div_term)
+        pe[:, 0::2] is sin of [(matmul of position, reshape of div_term, [1, -1])]
+        pe[:, 1::2] is cos of [(matmul of position, reshape of div_term, [1, -1])]
+
+        _name is "PositionalEncoding"
+
+    define forward as:
+
+        x is arg
+        # x: (batch, seq_len, d_model)
+        seq_len is shape of [x, 1]
+
+        # Add positional encoding (broadcast over batch)
+        output is add of [x, pe[:seq_len, :]]
+
+        if dropout != none:
+            output is forward of [dropout, output]
+
+        return output
+
+    define describe as:
+        return format of ["PositionalEncoding(d_model={}, max_len={})", d_model, max_len]
+
+
+# ============================================================================
+# Rotary Position Embedding (RoPE)
+# ============================================================================
+
+define RotaryPositionEmbedding as:
+
+    # extends Model
+    dim is 0
+    max_seq_len is 2048
+    base is 10000
+
+    # Precomputed sin/cos
+    sin_cache is Tensor
+    cos_cache is Tensor
+
+    define init as:
+
+        d is arg[0]
+
+        max_len is arg[1]
+
+        b is arg[2]
+        dim is d
+        max_seq_len is max_len
+        base is b
+
+        # Precompute rotation matrices
+        inv_freq is divide of [1.0, pow of base, (divide of (arange of 0, dim, 2), dim)]
+
+        t is arange of max_seq_len
+        freqs is outer_product of [t, inv_freq]
+
+        sin_cache is sin of freqs
+        cos_cache is cos of freqs
+
+        _name is "RoPE"
+
+    define forward as:
+
+        x is arg[0]
+
+        seq_len is arg[1]
+        # Apply rotary embeddings to queries and keys
+        # x: (batch, seq, heads, head_dim)
+
+        # Get sin/cos for this sequence length
+        sin is sin_cache[:seq_len]
+        cos is cos_cache[:seq_len]
+
+        # Split x into pairs for rotation
+        x1 is x[..., 0::2]
+        x2 is x[..., 1::2]
+
+        # Apply rotation: (x1 * cos - x2 * sin, x1 * sin + x2 * cos)
+        rotated_x1 is subtract of [(multiply of x1, cos), (multiply of x2, sin)]
+        rotated_x2 is add of [(multiply of x1, sin), (multiply of x2, cos)]
+
+        # Interleave back
+        output is interleave of [rotated_x1, rotated_x2, -1]
+
+        return output
+
+    define describe as:
+        return format of ["RoPE(dim={}, base={})", dim, base]
+
+
+# ============================================================================
+# ALiBi Position Bias
+# ============================================================================
+
+define ALiBiPositionBias as:
+
+    # extends Model
+    num_heads is 0
+    slopes is Tensor
+
+    define init as:
+
+        n_heads is arg
+        num_heads is n_heads
+
+        # Compute slopes for each head
+        # slope_i = 2^(-8 * i / num_heads)
+        slopes is pow of [2, (negative of (multiply of 8, divide of (arange of 1, num_heads + 1), num_heads))]
+
+        _name is "ALiBi"
+
+    define forward as:
+
+        attention_scores is arg[0]
+
+        seq_len is arg[1]
+        # attention_scores: (batch, heads, seq_q, seq_k)
+
+        # Create position bias matrix
+        # bias[i, j] = -|i - j| * slope
+        positions_q is arange of seq_len
+        positions_k is arange of seq_len
+        distance is abs of [(subtract of (reshape of positions_q, [-1, 1]), positions_k)]
+
+        # Apply slopes per head
+        bias is negative of [(multiply of (reshape of slopes, [1, num_heads, 1, 1]), distance)]
+
+        # Add bias to attention scores
+        return add of [attention_scores, bias]
+
+    define describe as:
+        return format of ["ALiBi(heads={})", num_heads]
+
+
+# ============================================================================
+# Transformer Encoder Layer
+# ============================================================================
+
+define TransformerEncoderLayer as:
+
+    # extends Model
+    d_model is 0
+    nhead is 0
+    dim_feedforward is 2048
+
+    self_attn is MultiHeadAttention
+    linear1 is Linear
+    linear2 is Linear
+    norm1 is LayerNorm
+    norm2 is LayerNorm
+    dropout is Dropout
+    dropout1 is Dropout
+    dropout2 is Dropout
+
+    define init as:
+
+        d_mod is arg[0]
+
+        n_head is arg[1]
+
+        dim_ff is arg[2]
+
+        drop_prob is arg[3]
+        d_model is d_mod
+        nhead is n_head
+        dim_feedforward is dim_ff
+
+        # Multi-head self-attention
+        self_attn is MultiHeadAttention
+        init of [self_attn, d_model, nhead, drop_prob, true]
+        register_module of self_attn
+
+        # Feed-forward network
+        linear1 is Linear
+        init of [linear1, d_model, dim_feedforward, true]
+        register_module of linear1
+
+        linear2 is Linear
+        init of [linear2, dim_feedforward, d_model, true]
+        register_module of linear2
+
+        # Layer normalization
+        norm1 is LayerNorm
+        init of [norm1, d_model, 1e-5, true]
+        register_module of norm1
+
+        norm2 is LayerNorm
+        init of [norm2, d_model, 1e-5, true]
+        register_module of norm2
+
+        # Dropout
+        if drop_prob > 0:
+            dropout1 is Dropout
+            init of [dropout1, drop_prob]
+            dropout2 is Dropout
+            init of [dropout2, drop_prob]
+            register_module of dropout1
+            register_module of dropout2
+        else:
+            dropout1 is none
+            dropout2 is none
+
+        _name is "TransformerEncoderLayer"
+
+    define forward as:
+
+        src is arg[0]
+
+        src_mask is arg[1]
+        # Self-attention with residual connection
+        attn_output, _ is forward of [self_attn, src, src, src, src_mask]
+
+        if dropout1 != none:
+            attn_output is forward of [dropout1, attn_output]
+
+        src is add of [src, attn_output]
+        src is forward of [norm1, src]
+
+        # Feed-forward with residual connection
+        ff_output is forward of [linear1, src]
+        ff_output is relu of ff_output
+        ff_output is forward of [linear2, ff_output]
+
+        if dropout2 != none:
+            ff_output is forward of [dropout2, ff_output]
+
+        src is add of [src, ff_output]
+        src is forward of [norm2, src]
+
+        # === EigenScript Geometric Feature ===
+        if not stable:
+            print of "Warning: Encoder layer output unstable"
+
+        return src
+
+    define describe as:
+        return format of ["TransformerEncoderLayer(d_model={}, nhead={})", d_model, nhead]
+
+
+# ============================================================================
+# Transformer Decoder Layer
+# ============================================================================
+
+define TransformerDecoderLayer as:
+
+    # extends Model
+    d_model is 0
+    nhead is 0
+    dim_feedforward is 2048
+
+    self_attn is MultiHeadAttention
+    cross_attn is MultiHeadAttention
+    linear1 is Linear
+    linear2 is Linear
+    norm1 is LayerNorm
+    norm2 is LayerNorm
+    norm3 is LayerNorm
+    dropout1 is Dropout
+    dropout2 is Dropout
+    dropout3 is Dropout
+
+    define init as:
+
+        d_mod is arg[0]
+
+        n_head is arg[1]
+
+        dim_ff is arg[2]
+
+        drop_prob is arg[3]
+        d_model is d_mod
+        nhead is n_head
+        dim_feedforward is dim_ff
+
+        # Masked self-attention
+        self_attn is MultiHeadAttention
+        init of [self_attn, d_model, nhead, drop_prob, true]
+        register_module of self_attn
+
+        # Cross-attention
+        cross_attn is MultiHeadAttention
+        init of [cross_attn, d_model, nhead, drop_prob, true]
+        register_module of cross_attn
+
+        # Feed-forward
+        linear1 is Linear
+        init of [linear1, d_model, dim_feedforward, true]
+        linear2 is Linear
+        init of [linear2, dim_feedforward, d_model, true]
+        register_module of linear1
+        register_module of linear2
+
+        # Layer normalization
+        norm1 is LayerNorm
+        init of [norm1, d_model, 1e-5, true]
+        norm2 is LayerNorm
+        init of [norm2, d_model, 1e-5, true]
+        norm3 is LayerNorm
+        init of [norm3, d_model, 1e-5, true]
+        register_module of norm1
+        register_module of norm2
+        register_module of norm3
+
+        # Dropout
+        if drop_prob > 0:
+            dropout1 is Dropout
+            init of [dropout1, drop_prob]
+            dropout2 is Dropout
+            init of [dropout2, drop_prob]
+            dropout3 is Dropout
+            init of [dropout3, drop_prob]
+            register_module of dropout1
+            register_module of dropout2
+            register_module of dropout3
+        else:
+            dropout1 is none
+            dropout2 is none
+            dropout3 is none
+
+        _name is "TransformerDecoderLayer"
+
+    define forward as:
+
+        tgt is arg[0]
+
+        memory is arg[1]
+
+        tgt_mask is arg[2]
+
+        memory_mask is arg[3]
+        # Masked self-attention
+        attn_output, _ is forward of [self_attn, tgt, tgt, tgt, tgt_mask]
+        if dropout1 != none:
+            attn_output is forward of [dropout1, attn_output]
+        tgt is add of [tgt, attn_output]
+        tgt is forward of [norm1, tgt]
+
+        # Cross-attention (attend to encoder output)
+        attn_output, _ is forward of [cross_attn, tgt, memory, memory, memory_mask]
+        if dropout2 != none:
+            attn_output is forward of [dropout2, attn_output]
+        tgt is add of [tgt, attn_output]
+        tgt is forward of [norm2, tgt]
+
+        # Feed-forward
+        ff_output is forward of [linear1, tgt]
+        ff_output is relu of ff_output
+        ff_output is forward of [linear2, ff_output]
+        if dropout3 != none:
+            ff_output is forward of [dropout3, ff_output]
+        tgt is add of [tgt, ff_output]
+        tgt is forward of [norm3, tgt]
+
+        return tgt
+
+    define describe as:
+        return format of ["TransformerDecoderLayer(d_model={}, nhead={})", d_model, nhead]
+
+
+# ============================================================================
+# Transformer Encoder (Stack of Layers)
+# ============================================================================
+
+define TransformerEncoder as:
+
+    # extends Model
+    layers is []
+    num_layers is 0
+
+    define init as:
+
+        encoder_layer is arg[0]
+
+        n_layers is arg[1]
+        num_layers is n_layers
+        layers is []
+
+        # Get configuration from template layer
+        d_model is d_model of encoder_layer
+        nhead is nhead of encoder_layer
+        dim_ff is dim_feedforward of encoder_layer
+        drop_prob is 0.1  # Default
+
+        for i in range of num_layers:
+            layer is TransformerEncoderLayer
+            init of [layer, d_model, nhead, dim_ff, drop_prob]
+            layers is append of [layers, layer]
+            register_module of layer
+
+        _name is "TransformerEncoder"
+
+    define forward as:
+
+        src is arg[0]
+
+        mask is arg[1]
+        output is src
+
+        for layer in layers:
+            output is forward of [layer, output, mask]
+
+            # === EigenScript Geometric Feature ===
+            # Track information flow through layers
+            if not stable:
+                print of "Warning: Encoder output unstable at layer"
+
+        return output
+
+    define describe as:
+        return format of ["TransformerEncoder(layers={})", num_layers]
+
+
+# ============================================================================
+# Transformer Decoder (Stack of Layers)
+# ============================================================================
+
+define TransformerDecoder as:
+
+    # extends Model
+    layers is []
+    num_layers is 0
+
+    define init as:
+
+        decoder_layer is arg[0]
+
+        n_layers is arg[1]
+        num_layers is n_layers
+        layers is []
+
+        d_model is d_model of decoder_layer
+        nhead is nhead of decoder_layer
+        dim_ff is dim_feedforward of decoder_layer
+        drop_prob is 0.1
+
+        for i in range of num_layers:
+            layer is TransformerDecoderLayer
+            init of [layer, d_model, nhead, dim_ff, drop_prob]
+            layers is append of [layers, layer]
+            register_module of layer
+
+        _name is "TransformerDecoder"
+
+    define forward as:
+
+        tgt is arg[0]
+
+        memory is arg[1]
+
+        tgt_mask is arg[2]
+
+        memory_mask is arg[3]
+        output is tgt
+
+        for layer in layers:
+            output is forward of [layer, output, memory, tgt_mask, memory_mask]
+
+        return output
+
+    define describe as:
+        return format of ["TransformerDecoder(layers={})", num_layers]
+
+
+# ============================================================================
+# Full Transformer Model
+# ============================================================================
+
+define Transformer as:
+
+    # extends Model
+    d_model is 512
+    nhead is 8
+    num_encoder_layers is 6
+    num_decoder_layers is 6
+    dim_feedforward is 2048
+    dropout is 0.1
+
+    encoder is TransformerEncoder
+    decoder is TransformerDecoder
+
+    define init as:
+
+        d_mod is arg[0]
+
+        n_head is arg[1]
+
+        n_enc is arg[2]
+
+        n_dec is arg[3]
+
+        dim_ff is arg[4]
+
+        drop is arg[5]
+        d_model is d_mod
+        nhead is n_head
+        num_encoder_layers is n_enc
+        num_decoder_layers is n_dec
+        dim_feedforward is dim_ff
+        dropout is drop
+
+        # Create encoder
+        enc_layer is TransformerEncoderLayer
+        init of [enc_layer, d_model, nhead, dim_feedforward, dropout]
+        encoder is TransformerEncoder
+        init of [encoder, enc_layer, num_encoder_layers]
+        register_module of encoder
+
+        # Create decoder
+        dec_layer is TransformerDecoderLayer
+        init of [dec_layer, d_model, nhead, dim_feedforward, dropout]
+        decoder is TransformerDecoder
+        init of [decoder, dec_layer, num_decoder_layers]
+        register_module of decoder
+
+        _name is "Transformer"
+
+    define forward as:
+
+        src is arg[0]
+
+        tgt is arg[1]
+
+        src_mask is arg[2]
+
+        tgt_mask is arg[3]
+
+        memory_mask is arg[4]
+        # Encode source
+        memory is forward of [encoder, src, src_mask]
+
+        # Decode target
+        output is forward of [decoder, tgt, memory, tgt_mask, memory_mask]
+
+        return output
+
+    define encode as:
+
+        src is arg[0]
+
+        src_mask is arg[1]
+        return forward of [encoder, src, src_mask]
+
+    define decode as:
+
+        tgt is arg[0]
+
+        memory is arg[1]
+
+        tgt_mask is arg[2]
+
+        memory_mask is arg[3]
+        return forward of [decoder, tgt, memory, tgt_mask, memory_mask]
+
+    define describe as:
+        return format of "Transformer(d_model={}, heads={}, enc={}, dec={})",
+            d_model, nhead, num_encoder_layers, num_decoder_layers
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+# Generate causal mask for autoregressive decoding
+define generate_square_subsequent_mask as:
+    size is arg
+    # Returns lower triangular mask: True for allowed positions
+    mask is tril of [ones of [size, size]]
+    return mask
+
+# Generate padding mask from sequence lengths
+define generate_padding_mask as:
+    lengths is arg[0]
+    max_len is arg[1]
+    # Returns mask where True = valid position
+    batch_size is length of lengths
+    mask is zeros of [batch_size, max_len]
+
+    for i, length in enumerate of lengths:
+        mask[i, :length] is 1
+
+    return mask
+
+# Combine multiple masks
+define combine_masks as:
+    *masks is arg
+    result is masks[0]
+    for mask in masks[1:]:
+        result is logical_and of [result, mask]
+    return result
+
+
+# ============================================================================
+# Pre-LN Transformer Variants (Better for deep models)
+# ============================================================================
+
+define PreLNTransformerEncoderLayer as:
+
+    # extends Model
+    # Pre-Layer Normalization variant (more stable training)
+    d_model is 0
+    nhead is 0
+
+    self_attn is MultiHeadAttention
+    linear1 is Linear
+    linear2 is Linear
+    norm1 is LayerNorm
+    norm2 is LayerNorm
+    dropout1 is Dropout
+    dropout2 is Dropout
+
+    define init as:
+
+        d_mod is arg[0]
+
+        n_head is arg[1]
+
+        dim_ff is arg[2]
+
+        drop_prob is arg[3]
+        d_model is d_mod
+        nhead is n_head
+
+        self_attn is MultiHeadAttention
+        init of [self_attn, d_model, nhead, drop_prob, true]
+
+        linear1 is Linear
+        init of [linear1, d_model, dim_ff, true]
+        linear2 is Linear
+        init of [linear2, dim_ff, d_model, true]
+
+        norm1 is LayerNorm
+        init of [norm1, d_model, 1e-5, true]
+        norm2 is LayerNorm
+        init of [norm2, d_model, 1e-5, true]
+
+        if drop_prob > 0:
+            dropout1 is Dropout
+            init of [dropout1, drop_prob]
+            dropout2 is Dropout
+            init of [dropout2, drop_prob]
+
+        register_module of self_attn
+        register_module of linear1
+        register_module of linear2
+        register_module of norm1
+        register_module of norm2
+
+        _name is "PreLNTransformerEncoderLayer"
+
+    define forward as:
+
+        src is arg[0]
+
+        src_mask is arg[1]
+        # Pre-LN: Normalize BEFORE attention/FFN
+
+        # Self-attention block
+        residual is src
+        src is forward of [norm1, src]
+        attn_output, _ is forward of [self_attn, src, src, src, src_mask]
+        if dropout1 != none:
+            attn_output is forward of [dropout1, attn_output]
+        src is add of [residual, attn_output]
+
+        # Feed-forward block
+        residual is src
+        src is forward of [norm2, src]
+        ff_output is forward of [linear1, src]
+        ff_output is gelu of ff_output  # Use GELU for modern transformers
+        ff_output is forward of [linear2, ff_output]
+        if dropout2 != none:
+            ff_output is forward of [dropout2, ff_output]
+        src is add of [residual, ff_output]
+
+        return src
+
+    define describe as:
+        return format of ["PreLNTransformerEncoderLayer(d_model={})", d_model]

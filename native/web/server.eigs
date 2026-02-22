@@ -1,0 +1,40 @@
+# Eigen Web Server - Pure EigenScript HTTP Server
+# This demonstrates running a web server entirely in EigenScript
+
+print of "=== Eigen Web Server ==="
+print of "Starting pure EigenScript HTTP server..."
+
+# Connect to database
+print of "Connecting to database..."
+db_status is db_connect of null
+print of db_status
+
+# Define route handlers using the http_route builtin
+# Format: http_route of ["METHOD", "/path", response_string]
+
+# Status endpoint
+status_response is "{\"status\": \"online\", \"framework\": \"EigenScript\", \"mode\": \"pure_eigenscript\"}"
+http_route of ["GET", "/status", status_response]
+
+# Health check
+health_response is "{\"healthy\": true}"
+http_route of ["GET", "/health", health_response]
+
+# Introspect endpoint
+introspect_response is "{\"converged\": false, \"stable\": true, \"eigenscript\": true}"
+http_route of ["GET", "/introspect", introspect_response]
+
+# Root endpoint
+root_response is "{\"name\": \"Eigen\", \"description\": \"Pure EigenScript AI Server\"}"
+http_route of ["GET", "/", root_response]
+
+print of "Routes registered:"
+print of "  GET /"
+print of "  GET /status"
+print of "  GET /health"
+print of "  GET /introspect"
+print of ""
+
+# Start the server on port 5000
+print of "Starting server on http://0.0.0.0:5000"
+http_serve of 5000

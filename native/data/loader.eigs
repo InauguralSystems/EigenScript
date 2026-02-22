@@ -1,0 +1,603 @@
+# iLambdaAi - Data Loading Utilities
+# Dataset and DataLoader classes for efficient data handling
+#
+# Provides iteration over datasets with batching, shuffling,
+# and geometric-aware sampling capabilities
+
+# ============================================================================
+# Dataset: Abstract base class for all datasets
+# ============================================================================
+
+define Dataset as:
+    # Abstract methods to be implemented by subclasses
+
+    define len as:
+        # Return number of samples
+        error of "Dataset.len() must be implemented by subclass"
+
+    define get as:
+
+        idx is arg
+        # Return (input, target) for given index
+        error of "Dataset.get() must be implemented by subclass"
+
+    define getitem as:
+
+        idx is arg
+        return get of idx
+
+
+# ============================================================================
+# ArrayDataset: Dataset wrapping arrays
+# ============================================================================
+
+define ArrayDataset as:
+
+    # extends Dataset
+    X is Tensor
+    Y is Tensor
+    _length is 0
+
+    define init as:
+
+        inputs is arg[0]
+
+        targets is arg[1]
+        X is inputs
+        Y is targets
+        _length is shape of [X, 0]
+
+        # Validate lengths match
+        if shape of [X, 0 != shape of Y, 0:]
+            error of "X and Y must have same length"
+
+    define len as:
+        return _length
+
+    define get as:
+
+        idx is arg
+        x is X[idx]
+        y is Y[idx]
+        return (x, y)
+
+
+# ============================================================================
+# TensorDataset: Dataset from multiple tensors
+# ============================================================================
+
+define TensorDataset as:
+
+    # extends Dataset
+    tensors is []
+    _length is 0
+
+    define init as:
+
+        *tensor_list is arg
+        tensors is list of tensor_list
+        _length is shape of [tensors[0], 0]
+
+        # Validate all tensors have same first dimension
+        for t in tensors:
+            if shape of [t, 0 != _length:]
+                error of "All tensors must have same first dimension"
+
+    define len as:
+        return _length
+
+    define get as:
+
+        idx is arg
+        result is []
+        for t in tensors:
+            result is append of [result, t[idx]]
+        return tuple of result
+
+
+# ============================================================================
+# DataLoader: Batched iteration over datasets
+# ============================================================================
+
+define DataLoader as:
+    dataset is Dataset
+    batch_size is 1
+    shuffle is false
+    drop_last is false
+
+    # Internal state
+    _indices is []
+    _current is 0
+
+    define init as:
+
+        ds is arg[0]
+
+        bs is arg[1]
+
+        shuf is arg[2]
+
+        drop is arg[3]
+        dataset is ds
+        batch_size is bs
+        shuffle is shuf
+        drop_last is drop
+
+    define len as:
+        n_samples is len of dataset
+        if drop_last:
+            return floor of (n_samples / batch_size)
+        else:
+            return ceil of (n_samples / batch_size)
+
+    define iter as:
+        # Reset iterator
+        n_samples is len of dataset
+        _indices is range of n_samples
+
+        if shuffle:
+            _indices is random_permutation of n_samples
+
+        _current is 0
+        return self
+
+    define next as:
+        n_samples is len of dataset
+
+        if _current >= n_samples:
+            return none
+
+        # Get batch indices
+        start_idx is _current
+        end_idx is min of [(_current + batch_size), n_samples]
+
+        # Check if we should drop this partial batch
+        if drop_last and (end_idx - start_idx) < batch_size:
+            return none
+
+        batch_indices is _indices[start_idx : end_idx]
+        _current is end_idx
+
+        # Collect batch samples
+        batch_X is []
+        batch_Y is []
+
+        for idx in batch_indices:
+            x, y is get of [dataset, idx]
+            batch_X is append of [batch_X, x]
+            batch_Y is append of [batch_Y, y]
+
+        # Stack into tensors
+        X_tensor is stack of [batch_X, 0]
+        Y_tensor is stack of [batch_Y, 0]
+
+        return (X_tensor, Y_tensor)
+
+    # Enable for-loop iteration
+    define __iter__ as:
+        return iter
+
+    define __next__ as:
+        return next
+
+
+# ============================================================================
+# Samplers
+# ============================================================================
+
+# Sequential Sampler
+define SequentialSampler as:
+    data_source is Dataset
+    _length is 0
+
+    define init as:
+
+        source is arg
+        data_source is source
+        _length is len of source
+
+    define iter as:
+        return range of _length
+
+    define len as:
+        return _length
+
+
+# Random Sampler
+define RandomSampler as:
+    data_source is Dataset
+    replacement is false
+    num_samples is none
+    _length is 0
+
+    define init as:
+
+        source is arg[0]
+
+        replace is arg[1]
+
+        n_samples is arg[2]
+        data_source is source
+        replacement is replace
+        _length is len of source
+
+        if n_samples == none:
+            num_samples is _length
+        else:
+            num_samples is n_samples
+
+    define iter as:
+        if replacement:
+            return random_integers of [0, _length, num_samples]
+        else:
+            return random_permutation of _length
+
+    define len as:
+        return num_samples
+
+
+# Weighted Random Sampler
+define WeightedRandomSampler as:
+    weights is []
+    num_samples is 0
+    replacement is true
+
+    define init as:
+
+        w is arg[0]
+
+        n_samples is arg[1]
+
+        replace is arg[2]
+        weights is w
+        num_samples is n_samples
+        replacement is replace
+
+    define iter as:
+        # Normalize weights
+        total is sum of weights
+        probs is divide of [weights, total]
+
+        # Sample according to weights
+        return random_choice of [(length of weights), num_samples, probs, replacement]
+
+    define len as:
+        return num_samples
+
+
+# Subset Random Sampler
+define SubsetRandomSampler as:
+    indices is []
+
+    define init as:
+
+        idx is arg
+        indices is idx
+
+    define iter as:
+        return random_permutation of indices
+
+    define len as:
+        return length of indices
+
+
+# ============================================================================
+# Batch Samplers
+# ============================================================================
+
+define BatchSampler as:
+    sampler is Sampler
+    batch_size is 1
+    drop_last is false
+
+    define init as:
+
+        samp is arg[0]
+
+        bs is arg[1]
+
+        drop is arg[2]
+        sampler is samp
+        batch_size is bs
+        drop_last is drop
+
+    define iter as:
+        batch is []
+
+        for idx in iter of sampler:
+            batch is append of [batch, idx]
+
+            if length of batch == batch_size:
+                yield batch
+                batch is []
+
+        if length of batch > 0 and not drop_last:
+            yield batch
+
+    define len as:
+        n is len of sampler
+        if drop_last:
+            return floor of (n / batch_size)
+        else:
+            return ceil of (n / batch_size)
+
+
+# ============================================================================
+# Data Transformations
+# ============================================================================
+
+define Compose as:
+    transforms is []
+
+    define init as:
+
+        *transform_list is arg
+        transforms is list of transform_list
+
+    define call as:
+
+        x is arg
+        for t in transforms:
+            x is call of [t, x]
+        return x
+
+
+define Normalize as:
+    mean is 0.0
+    std is 1.0
+
+    define init as:
+
+        m is arg[0]
+
+        s is arg[1]
+        mean is m
+        std is s
+
+    define call as:
+
+        x is arg
+        return divide of [(subtract of x, mean), std]
+
+
+define ToTensor as:
+    define call as:
+        x is arg
+        return Tensor of x
+
+
+define RandomCrop as:
+    size is [32, 32]
+
+    define init as:
+
+        s is arg
+        if is_int of s:
+            size is [s, s]
+        else:
+            size is s
+
+    define call as:
+
+        x is arg
+        h, w is shape of [x, -2, -1]
+        new_h, new_w is size
+
+        top is random_int of [0, (h - new_h)]
+        left is random_int of [0, (w - new_w)]
+
+        return x[..., top : top + new_h, left : left + new_w]
+
+
+define RandomHorizontalFlip as:
+    p is 0.5
+
+    define init as:
+
+        prob is arg
+        p is prob
+
+    define call as:
+
+        x is arg
+        if random of [0, 1 < p:]
+            return flip of [x, -1]
+        return x
+
+
+define RandomVerticalFlip as:
+    p is 0.5
+
+    define init as:
+
+        prob is arg
+        p is prob
+
+    define call as:
+
+        x is arg
+        if random of [0, 1 < p:]
+            return flip of [x, -2]
+        return x
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+# Collate function for custom batching
+define default_collate as:
+    batch is arg
+    # batch is list of (x, y) tuples
+    xs is []
+    ys is []
+
+    for x, y in batch:
+        xs is append of [xs, x]
+        ys is append of [ys, y]
+
+    return (stack of [xs, 0), (stack of ys, 0)]
+
+
+# Create train/validation split
+define train_val_split as:
+    dataset is arg[0]
+    val_ratio is arg[1]
+    shuffle is arg[2]
+    n_samples is len of dataset
+    n_val is floor of (n_samples * val_ratio)
+    n_train is n_samples - n_val
+
+    if shuffle:
+        indices is random_permutation of n_samples
+    else:
+        indices is range of n_samples
+
+    train_indices is indices[:n_train]
+    val_indices is indices[n_train:]
+
+    return (train_indices, val_indices)
+
+
+# Create k-fold cross-validation splits
+define kfold_split as:
+    dataset is arg[0]
+    k is arg[1]
+    shuffle is arg[2]
+    n_samples is len of dataset
+
+    if shuffle:
+        indices is random_permutation of n_samples
+    else:
+        indices is range of n_samples
+
+    fold_size is floor of (n_samples / k)
+    folds is []
+
+    for i in range of k:
+        start is i * fold_size
+        if i == k - 1:
+            end is n_samples
+        else:
+            end is start + fold_size
+
+        val_indices is indices[start : end]
+
+        train_indices is concatenate of [
+            indices[:start],
+            indices[end:]
+        ]
+
+        folds is append of [folds, (train_indices, val_indices)]
+
+    return folds
+
+
+# ============================================================================
+# Geometric-Aware DataLoader
+# ============================================================================
+
+# DataLoader that uses EigenScript's geometric features for adaptive batching
+define GeometricDataLoader as:
+    # extends DataLoader
+    adaptive_batch_size is false
+    min_batch_size is 1
+    max_batch_size is 128
+
+    define init as:
+
+        ds is arg[0]
+
+        bs is arg[1]
+
+        shuf is arg[2]
+
+        drop is arg[3]
+
+        adaptive is arg[4]
+        dataset is ds
+        batch_size is bs
+        shuffle is shuf
+        drop_last is drop
+        adaptive_batch_size is adaptive
+        min_batch_size is max of [1, floor of (bs / 4)]
+        max_batch_size is bs * 2
+
+    define next as:
+        # === EigenScript Geometric Feature ===
+        # Adaptively adjust batch size based on training dynamics
+        if adaptive_batch_size:
+            if stable and improving:
+                # Training is going well, can use larger batches
+                batch_size is min of [(batch_size + 1), max_batch_size]
+            else if oscillating:
+                # Training is unstable, use smaller batches
+                batch_size is max of [(batch_size - 1), min_batch_size]
+
+        # Use parent's next implementation
+        return super next
+
+
+# ============================================================================
+# Infinite DataLoader (for step-based training)
+# ============================================================================
+
+define InfiniteDataLoader as:
+    dataset is Dataset
+    batch_size is 1
+    shuffle is true
+
+    _indices is []
+    _current is 0
+
+    define init as:
+
+        ds is arg[0]
+
+        bs is arg[1]
+
+        shuf is arg[2]
+        dataset is ds
+        batch_size is bs
+        shuffle is shuf
+        _reset_indices
+
+    define _reset_indices as:
+        n_samples is len of dataset
+        if shuffle:
+            _indices is random_permutation of n_samples
+        else:
+            _indices is range of n_samples
+        _current is 0
+
+    define next as:
+        n_samples is len of dataset
+
+        # Reset if we've gone through all data
+        if _current >= n_samples:
+            _reset_indices
+
+        # Get batch
+        start_idx is _current
+        end_idx is min of [(_current + batch_size), n_samples]
+        batch_indices is _indices[start_idx : end_idx]
+        _current is end_idx
+
+        # If batch is smaller than requested (end of epoch), get more
+        loop while length of batch_indices < batch_size:
+            _reset_indices
+            needed is batch_size - length of batch_indices
+            additional is _indices[:needed]
+            batch_indices is concatenate of [batch_indices, additional]
+            _current is needed
+
+        # Collect batch
+        batch_X is []
+        batch_Y is []
+
+        for idx in batch_indices:
+            x, y is get of [dataset, idx]
+            batch_X is append of [batch_X, x]
+            batch_Y is append of [batch_Y, y]
+
+        return (stack of [batch_X, 0), (stack of batch_Y, 0)]

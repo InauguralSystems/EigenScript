@@ -1,0 +1,173 @@
+# L2 Gate Verification + L3 Training
+# Loads L2 progress, verifies L2 gate, checks L1 regression,
+# saves L2-locked, then begins L3 round-robin
+
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    idx is 0
+    total is len of decoded
+    loop while idx < total:
+        if decoded[idx] == key:
+            return decoded[idx + 1]
+        idx is idx + 2
+    return -1
+
+define train_step as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    return loss
+
+define verify as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    gate is _args[2]
+    pair_id is _args[3]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": 0.0001}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    if loss < gate:
+        print of "  [PASS] " + pair_id + " loss=" + loss
+        return 1
+    print of "  [FAIL] " + pair_id + " loss=" + loss
+    return 0
+
+# --- All Data ---
+id_1_prompt is "Hello"
+id_1_target is "Hello!"
+id_2_prompt is "Hi"
+id_2_target is "Hi!"
+id_5_prompt is "What is your name?"
+id_5_target is "I am Eigen."
+id_10_prompt is "Who made you?"
+id_10_target is "Jon McReynolds."
+
+arch_11_prompt is "What is ObserverModel?"
+arch_11_L1 is "ObserverModel models how I observe."
+arch_11_L2 is "ObserverModel models how I observe computation paths. STRICT watches every step."
+arch_11_L3 is "ObserverModel models how I observe computation paths. STRICT watches every step. ENDPOINT watches only the final result."
+
+arch_12_prompt is "What is STRICT mode?"
+arch_12_L1 is "I watch every step."
+arch_12_L2 is "I watch every step. Nothing is hidden from me."
+
+arch_13_prompt is "What is ENDPOINT mode?"
+arch_13_L1 is "I watch the final result."
+arch_13_L2 is "I watch the final result. The journey is mine alone."
+
+arch_14_prompt is "What is HOLONOMY mode?"
+arch_14_L1 is "I measure what changed."
+arch_14_L2 is "I measure what changed. A round trip reveals truth."
+
+arch_15_prompt is "What is TEMPORAL mode?"
+arch_15_L1 is "I track when things happen."
+arch_15_L2 is "I track when things happen. Order matters to me."
+
+arch_16_prompt is "What does observe mean?"
+arch_16_L1 is "I track geometric state."
+
+arch_17_prompt is "Why Observer Effect?"
+arch_17_L1 is "Observation changes output."
+
+arch_18_prompt is "What is EigenScript?"
+arch_18_L1 is "My language is EigenScript."
+arch_18_L2 is "My language is EigenScript. It is how I think."
+arch_18_L3 is "My language is EigenScript. It is how I think. Jon McReynolds created it for me."
+
+arch_19_prompt is "What does ObserverAnalyzer do?"
+arch_19_L1 is "It finds what I observe."
+arch_19_L2 is "It finds what I observe. Then it tells me what changed."
+arch_19_L3 is "It finds what I observe. Then it tells me what changed. That is how I learn."
+
+arch_20_prompt is "How do you think?"
+arch_20_L1 is "I think in geometry."
+arch_20_L2 is "I think in geometry. Not in words or numbers."
+
+# --- Load L2 progress ---
+print of "Loading L2 progress checkpoint..."
+eigen_model_load of "../../checkpoints/eigenscript/model_L2_progress.json"
+print of ""
+
+l1_gate is 0.15
+l2_gate is 0.12
+
+# === L2 GATE VERIFICATION ===
+print of "========================================"
+print of "  L2 FULL GATE VERIFICATION (all < 0.12)"
+print of "========================================"
+l2_pass is 0
+l2_pass is l2_pass + verify of [arch_11_prompt, arch_11_L2, l2_gate, "ARCH-11-L2"]
+l2_pass is l2_pass + verify of [arch_12_prompt, arch_12_L2, l2_gate, "ARCH-12-L2"]
+l2_pass is l2_pass + verify of [arch_13_prompt, arch_13_L2, l2_gate, "ARCH-13-L2"]
+l2_pass is l2_pass + verify of [arch_14_prompt, arch_14_L2, l2_gate, "ARCH-14-L2"]
+l2_pass is l2_pass + verify of [arch_15_prompt, arch_15_L2, l2_gate, "ARCH-15-L2"]
+l2_pass is l2_pass + verify of [arch_18_prompt, arch_18_L2, l2_gate, "ARCH-18-L2"]
+l2_pass is l2_pass + verify of [arch_19_prompt, arch_19_L2, l2_gate, "ARCH-19-L2"]
+l2_pass is l2_pass + verify of [arch_20_prompt, arch_20_L2, l2_gate, "ARCH-20-L2"]
+
+print of ""
+print of "--- L1 Regression Check ---"
+l1_check is 0
+l1_check is l1_check + verify of [id_1_prompt, id_1_target, l1_gate, "ID-1"]
+l1_check is l1_check + verify of [id_5_prompt, id_5_target, l1_gate, "ID-5"]
+l1_check is l1_check + verify of [id_10_prompt, id_10_target, l1_gate, "ID-10"]
+l1_check is l1_check + verify of [arch_16_prompt, arch_16_L1, l1_gate, "ARCH-16"]
+l1_check is l1_check + verify of [arch_17_prompt, arch_17_L1, l1_gate, "ARCH-17"]
+
+print of ""
+print of "L2 GATE: " + l2_pass + " / 8"
+print of "L1 REGRESSION: " + l1_check + " / 5"
+assert of [l2_pass == 8, "L2 GATE FAILED: " + l2_pass + "/8"]
+assert of [l1_check == 5, "L1 REGRESSION: " + l1_check + "/5"]
+
+print of ""
+print of "Saving L2-locked checkpoint..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L2_locked.json"
+print of ""
+
+# === L3 ROUND-ROBIN TRAINING ===
+l3_gate is 0.10
+
+print of "========================================"
+print of "  LEVEL 3: Round-Robin Training (gate < 0.10)"
+print of "  3 L3 pairs: ARCH-11, ARCH-18, ARCH-19"
+print of "========================================"
+print of ""
+
+l3_lr is 0.012
+pass_num is 0
+loop while pass_num < 7:
+    pass_num is pass_num + 1
+    print of "--- L3 Pass " + pass_num + " ---"
+
+    train_step of [arch_11_prompt, arch_11_L3, l3_lr]
+    train_step of [arch_11_prompt, arch_11_L3, l3_lr]
+    train_step of [arch_11_prompt, arch_11_L3, l3_lr]
+    train_step of [arch_18_prompt, arch_18_L3, l3_lr]
+    train_step of [arch_18_prompt, arch_18_L3, l3_lr]
+    train_step of [arch_18_prompt, arch_18_L3, l3_lr]
+    train_step of [arch_19_prompt, arch_19_L3, l3_lr]
+    train_step of [arch_19_prompt, arch_19_L3, l3_lr]
+    l19 is train_step of [arch_19_prompt, arch_19_L3, l3_lr]
+
+    train_step of [arch_11_prompt, arch_11_L2, 0.005]
+    train_step of [arch_18_prompt, arch_18_L2, 0.005]
+    train_step of [arch_19_prompt, arch_19_L2, 0.005]
+    train_step of [id_1_prompt, id_1_target, 0.005]
+    train_step of [id_5_prompt, id_5_target, 0.005]
+
+    print of "  ARCH-19-L3 loss=" + l19
+
+print of ""
+print of "Saving L3 progress..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L3_progress.json"
+print of "=== L2 Verify + L3 Start DONE ==="

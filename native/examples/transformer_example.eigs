@@ -1,0 +1,683 @@
+# iLambdaAi Transformer Example
+# Demonstrates building and training Transformer models
+# using EigenScript's geometric introspection capabilities
+#
+# This example shows:
+# - Building a Transformer encoder-decoder
+# - Various positional encoding methods
+# - Sequence-to-sequence training
+# - Geometric self-awareness during training
+
+from model import Model
+from layers import Linear, ReLU, Dropout, Sequential
+from attention import (
+    MultiHeadAttention,
+    TransformerEncoderLayer,
+    TransformerDecoderLayer,
+    TransformerEncoder,
+    TransformerDecoder,
+    Transformer,
+    scaled_dot_product_attention
+)
+from positional import (
+    SinusoidalPositionalEncoding,
+    RoPE,
+    ALiBi,
+    LearnedPositionalEmbedding
+)
+from optimizers import Adam
+from loss import cross_entropy_loss
+from loader import ArrayDataset, DataLoader
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+print of "=== iLambdaAi Transformer Example ==="
+print of ""
+
+# Model hyperparameters
+d_model is 256        # Model dimension
+n_heads is 8          # Number of attention heads
+d_ff is 1024          # Feed-forward dimension
+n_enc_layers is 4     # Encoder layers
+n_dec_layers is 4     # Decoder layers
+max_seq_len is 512    # Maximum sequence length
+vocab_size is 1000    # Vocabulary size
+dropout_rate is 0.1   # Dropout rate
+
+print of "Configuration:"
+print of "  d_model:"
+print of d_model
+print of "  n_heads:"
+print of n_heads
+print of "  d_ff:"
+print of d_ff
+print of "  encoder_layers:"
+print of n_enc_layers
+print of "  decoder_layers:"
+print of n_dec_layers
+print of ""
+
+# ============================================================================
+# Define Seq2Seq Transformer Model
+# ============================================================================
+
+define Seq2SeqTransformer as:
+
+    # extends Model
+    # Full sequence-to-sequence Transformer with embeddings
+
+    src_embed is Model
+    tgt_embed is Model
+    pos_encoder is Model
+    transformer is Model
+    output_proj is Model
+
+    define init as:
+
+        src_vocab is arg[0]
+
+        tgt_vocab is arg[1]
+
+        d_model is arg[2]
+
+        n_heads is arg[3]
+
+        d_ff is arg[4]
+
+        n_enc is arg[5]
+
+        n_dec is arg[6]
+
+        dropout is arg[7]
+
+        max_len is arg[8]
+        # Source embedding
+        src_embed is Linear
+        init of [src_embed, src_vocab, d_model, false]
+
+        # Target embedding
+        tgt_embed is Linear
+        init of [tgt_embed, tgt_vocab, d_model, false]
+
+        # Positional encoding (using sinusoidal)
+        pos_encoder is SinusoidalPositionalEncoding
+        init of [pos_encoder, d_model, max_len]
+
+        # Transformer
+        transformer is Transformer
+        init of [transformer, d_model, n_heads, n_enc, n_dec, d_ff, dropout]
+
+        # Output projection
+        output_proj is Linear
+        init of [output_proj, d_model, tgt_vocab, true]
+
+        register_module of src_embed
+        register_module of tgt_embed
+        register_module of pos_encoder
+        register_module of transformer
+        register_module of output_proj
+
+        _name is "Seq2SeqTransformer"
+
+    define forward as:
+
+        src is arg[0]
+
+        tgt is arg[1]
+
+        src_mask is arg[2]
+
+        tgt_mask is arg[3]
+
+        memory_mask is arg[4]
+        # Embed source: (batch, src_len) -> (batch, src_len, d_model)
+        src_emb is forward of [src_embed, one_hot of src, vocab_size]
+        src_emb is multiply of [src_emb, sqrt of d_model  # Scale embeddings]
+
+        # Add positional encoding to source
+        src_emb is forward of [pos_encoder, src_emb]
+
+        # Embed target
+        tgt_emb is forward of [tgt_embed, one_hot of tgt, vocab_size]
+        tgt_emb is multiply of [tgt_emb, sqrt of d_model]
+
+        # Add positional encoding to target
+        tgt_emb is forward of [pos_encoder, tgt_emb]
+
+        # Pass through transformer
+        output is forward of [transformer, src_emb, tgt_emb, src_mask, tgt_mask, memory_mask]
+
+        # Project to vocabulary
+        logits is forward of [output_proj, output]
+
+        return logits
+
+    define encode as:
+
+        src is arg[0]
+
+        src_mask is arg[1]
+        # Encode source sequence
+        src_emb is forward of [src_embed, one_hot of src, vocab_size]
+        src_emb is multiply of [src_emb, sqrt of d_model]
+        src_emb is forward of [pos_encoder, src_emb]
+        return encode of [transformer, src_emb, src_mask]
+
+    define decode as:
+
+        tgt is arg[0]
+
+        memory is arg[1]
+
+        src_mask is arg[2]
+
+        tgt_mask is arg[3]
+        # Decode given encoder output
+        tgt_emb is forward of [tgt_embed, one_hot of tgt, vocab_size]
+        tgt_emb is multiply of [tgt_emb, sqrt of d_model]
+        tgt_emb is forward of [pos_encoder, tgt_emb]
+        output is decode of [transformer, tgt_emb, memory, src_mask, tgt_mask]
+        return forward of [output_proj, output]
+
+    define describe as:
+        return format of ["Seq2SeqTransformer(src={}, tgt={}, d={})", src_vocab, tgt_vocab, d_model]
+
+
+# ============================================================================
+# Alternative: Transformer with RoPE
+# ============================================================================
+
+define RoPETransformer as:
+
+    # extends Model
+    # Transformer using Rotary Position Embeddings (like LLaMA)
+
+    embed is Model
+    rope is Model
+    layers is []
+    norm is Model
+    output_proj is Model
+
+    define init as:
+
+        vocab is arg[0]
+
+        d_model is arg[1]
+
+        n_heads is arg[2]
+
+        n_layers is arg[3]
+
+        d_ff is arg[4]
+
+        dropout is arg[5]
+
+        max_len is arg[6]
+        # Token embedding only (RoPE handles positions)
+        embed is Linear
+        init of [embed, vocab, d_model, false]
+
+        # Rotary embeddings
+        head_dim is d_model // n_heads
+        rope is RoPE
+        init of [rope, head_dim, max_len, 10000]
+
+        # Transformer layers
+        layers is []
+        for i in range of n_layers:
+            layer is TransformerEncoderLayer
+            init of [layer, d_model, n_heads, d_ff, dropout]
+            layers is append of [layers, layer]
+            register_module of layer
+
+        # Final layer norm
+        from cnn import LayerNorm
+        norm is LayerNorm
+        init of [norm, [d_model], 1e-5, true, true]
+
+        # Output projection
+        output_proj is Linear
+        init of [output_proj, d_model, vocab, false]
+
+        register_module of embed
+        register_module of rope
+        register_module of norm
+        register_module of output_proj
+
+        _name is "RoPETransformer"
+
+    define forward as:
+
+        x is arg[0]
+
+        mask is arg[1]
+        # x: (batch, seq_len) token indices
+
+        # Embed tokens
+        h is forward of [embed, one_hot of x, vocab]
+        h is multiply of [h, sqrt of d_model]
+
+        # Apply RoPE positional encoding to queries and keys
+        # (This is simplified; in practice RoPE is applied inside attention)
+        h is forward of [rope, h, none]
+
+        # Pass through layers
+        for layer in layers:
+            h is forward of [layer, h, mask]
+
+        # Final norm
+        h is forward of [norm, h]
+
+        # Project to vocabulary
+        logits is forward of [output_proj, h]
+
+        return logits
+
+    define describe as:
+        return format of ["RoPETransformer(vocab={}, d={})", vocab, d_model]
+
+
+# ============================================================================
+# Alternative: Transformer with ALiBi
+# ============================================================================
+
+define ALiBiTransformer as:
+
+    # extends Model
+    # Transformer using ALiBi (Attention with Linear Biases)
+    # No positional embeddings needed!
+
+    embed is Model
+    alibi is Model
+    layers is []
+    norm is Model
+    output_proj is Model
+
+    define init as:
+
+        vocab is arg[0]
+
+        d_model is arg[1]
+
+        n_heads is arg[2]
+
+        n_layers is arg[3]
+
+        d_ff is arg[4]
+
+        dropout is arg[5]
+        embed is Linear
+        init of [embed, vocab, d_model, false]
+
+        # ALiBi for position-aware attention
+        alibi is ALiBi
+        init of [alibi, n_heads]
+
+        layers is []
+        for i in range of n_layers:
+            layer is TransformerEncoderLayer
+            init of [layer, d_model, n_heads, d_ff, dropout]
+            layers is append of [layers, layer]
+            register_module of layer
+
+        from cnn import LayerNorm
+        norm is LayerNorm
+        init of [norm, [d_model], 1e-5, true, true]
+
+        output_proj is Linear
+        init of [output_proj, d_model, vocab, false]
+
+        register_module of embed
+        register_module of alibi
+        register_module of norm
+        register_module of output_proj
+
+        _name is "ALiBiTransformer"
+
+    define forward as:
+
+        x is arg[0]
+
+        mask is arg[1]
+        h is forward of [embed, one_hot of x, vocab]
+        h is multiply of [h, sqrt of d_model]
+
+        seq_len is shape of [x, 1]
+
+        # Get ALiBi bias (to be added to attention scores)
+        alibi_bias is get_bias of [alibi, seq_len, seq_len]
+
+        for layer in layers:
+            # ALiBi bias would be passed to attention
+            # Simplified: apply to layer
+            h is forward of [layer, h, mask]
+
+        h is forward of [norm, h]
+        return forward of [output_proj, h]
+
+    define describe as:
+        return format of ["ALiBiTransformer(vocab={}, d={})", vocab, d_model]
+
+
+# ============================================================================
+# Create Model
+# ============================================================================
+
+print of "Creating Seq2Seq Transformer model..."
+print of ""
+
+model is Seq2SeqTransformer
+init of [model, vocab_size, vocab_size, d_model, n_heads, d_ff, n_enc_layers, n_dec_layers, dropout_rate, max_seq_len]
+
+print of describe of model
+print of "Total parameters:"
+print of num_parameters of model
+print of ""
+
+# ============================================================================
+# Create Synthetic Data
+# ============================================================================
+
+print of "Creating synthetic sequence data..."
+
+# Synthetic seq2seq task: copy with noise
+num_samples is 100
+seq_length is 32
+
+# Source sequences: random tokens
+src_sequences is random_integers of [1, vocab_size, [num_samples, seq_length]]
+
+# Target sequences: copy of source (simple copy task)
+tgt_sequences is copy of src_sequences
+
+print of "Source shape:"
+print of shape of src_sequences
+print of "Target shape:"
+print of shape of tgt_sequences
+print of ""
+
+# Create DataLoader
+dataset is ArrayDataset
+init of [dataset, src_sequences, tgt_sequences]
+
+loader is DataLoader
+init of [loader, dataset, 16, true, false]
+
+print of "DataLoader created with batch_size=16"
+print of ""
+
+# ============================================================================
+# Create Masks
+# ============================================================================
+
+define create_padding_mask as:
+
+    seq is arg[0]
+
+    pad_token is arg[1]
+    # Returns mask where pad tokens are True (to be masked)
+    return equal of [seq, pad_token]
+
+define create_causal_mask as:
+
+    size is arg
+    # Returns upper triangular mask for causal attention
+    mask is ones of [size, size]
+    mask is triu of [mask, 1]
+    return to_bool of mask
+
+define create_decoder_mask as:
+
+    tgt_seq is arg[0]
+
+    pad_token is arg[1]
+    # Combines padding mask and causal mask
+    seq_len is shape of [tgt_seq, 1]
+
+    # Padding mask: (batch, seq)
+    pad_mask is create_padding_mask of [tgt_seq, pad_token]
+
+    # Causal mask: (seq, seq)
+    causal_mask is create_causal_mask of seq_len
+
+    # Combine: broadcast to (batch, 1, seq, seq) for attention
+    return causal_mask
+
+# ============================================================================
+# Training Loop
+# ============================================================================
+
+print of "=== Training ==="
+print of ""
+
+optimizer is Adam
+init of [optimizer, (parameters of model), 0.0001, 0.9, 0.98, 1e-9, 0.0, false]
+
+epochs is 20
+pad_token is 0
+
+for epoch in range of epochs:
+    train of model
+    epoch_loss is 0
+    num_batches is 0
+
+    for batch in iter of loader:
+        src_batch, tgt_batch is batch
+
+        # Create masks
+        src_mask is create_padding_mask of [src_batch, pad_token]
+        tgt_mask is create_decoder_mask of [tgt_batch, pad_token]
+
+        # Shift target for teacher forcing
+        # Input: [BOS, t1, t2, ..., tn-1]
+        # Output: [t1, t2, ..., tn]
+        tgt_input is tgt_batch[:, :-1]
+        tgt_output is tgt_batch[:, 1:]
+
+        # Recreate mask for shifted target
+        tgt_mask is create_decoder_mask of [tgt_input, pad_token]
+
+        # Forward pass
+        zero_grad of model
+        logits is forward of [model, src_batch, tgt_input, src_mask, tgt_mask, none]
+
+        # Compute loss
+        # Flatten for cross entropy: (batch * seq, vocab) vs (batch * seq,)
+        batch_size is shape of [logits, 0]
+        seq_len is shape of [logits, 1]
+
+        logits_flat is reshape of [logits, [-1, vocab_size]]
+        targets_flat is reshape of [tgt_output, [-1]]
+
+        loss is cross_entropy_loss of [logits_flat, targets_flat]
+
+        # Backward pass
+        backward of loss
+
+        # Gradient clipping for transformer stability
+        clip_grad_norm of [model, 1.0]
+
+        # Update weights
+        step of optimizer
+
+        epoch_loss is add of [epoch_loss, what is loss]
+        num_batches is num_batches + 1
+
+    avg_loss is divide of [epoch_loss, num_batches]
+
+    # === EigenScript Geometric Features ===
+    fs is framework_strength
+
+    print of [format of "Epoch {:2d}: Loss = {:.4f}, FS = {:.4f}"]
+    print of epoch
+    print of avg_loss
+    print of fs
+
+    # Check for convergence using native predicates
+    if converged:
+        print of "*** Model converged at epoch"
+        print of epoch
+        print of "***"
+        break
+
+    # Stability check
+    if not stable and epoch > 5:
+        print of "Warning: Training unstable"
+
+        # === Temporal Feature: Check trend ===
+        loss_trend is trend of loss
+        if loss_trend > 0:
+            print of ["Loss trending up, reducing learning rate"]
+            # Reduce learning rate
+            for param_group in param_groups of optimizer:
+                param_group["lr"] is param_group["lr"] * 0.5
+
+    # Oscillation detection
+    if oscillating:
+        print of ["Oscillation detected, consider warmup or lower learning rate"]
+
+print of ""
+
+# ============================================================================
+# Inference: Greedy Decoding
+# ============================================================================
+
+print of "=== Inference (Greedy Decoding) ==="
+print of ""
+
+eval of model
+
+# Test on a few samples
+test_src is src_sequences[:3]
+print of "Input sequences:"
+for i in range of 3:
+    print of "  Sample"
+    print of i
+    print of ":"
+    print of [test_src[i, :8]]
+    print of "..."
+
+# Greedy decode
+max_decode_len is seq_length
+bos_token is 1
+
+define greedy_decode as:
+
+    model is arg[0]
+
+    src is arg[1]
+
+    max_len is arg[2]
+
+    bos_token is arg[3]
+    # Encode source
+    src_mask is create_padding_mask of [src, pad_token]
+    memory is encode of [model, src, src_mask]
+
+    # Start with BOS token
+    batch_size is shape of [src, 0]
+    ys is full of [batch_size, 1], bos_token
+
+    for i in range of max_len:
+        # Decode
+        tgt_mask is create_causal_mask of [(shape of ys, 1)]
+        out is decode of [model, ys, memory, src_mask, tgt_mask]
+
+        # Get next token (greedy: argmax of last position)
+        next_token is argmax of [out[:, -1, :], -1]
+        next_token is reshape of [next_token, [batch_size, 1]]
+
+        # Append to sequence
+        ys is concatenate of [ys, next_token], 1
+
+    return ys
+
+decoded is greedy_decode of [model, test_src, 10, bos_token]
+
+print of ""
+print of "Decoded sequences (first 10 tokens):"
+for i in range of 3:
+    print of "  Sample"
+    print of i
+    print of ":"
+    print of [decoded[i, :10]]
+
+# ============================================================================
+# Compare Positional Encoding Methods
+# ============================================================================
+
+print of ""
+print of "=== Positional Encoding Comparison ==="
+print of ""
+
+# Sinusoidal
+sin_pe is SinusoidalPositionalEncoding
+init of [sin_pe, d_model, max_seq_len]
+print of describe of sin_pe
+
+# RoPE
+rope_pe is RoPE
+init of [rope_pe, d_model // n_heads, max_seq_len, 10000]
+print of describe of rope_pe
+
+# ALiBi
+alibi_pe is ALiBi
+init of [alibi_pe, n_heads]
+print of describe of alibi_pe
+
+# Learned
+learned_pe is LearnedPositionalEmbedding
+init of [learned_pe, max_seq_len, d_model]
+print of describe of learned_pe
+
+print of ""
+print of "Positional encoding properties:"
+print of ["  Sinusoidal: Fixed, extrapolates well, O(seq_len * d) memory"]
+print of ["  RoPE: Relative, rotation-based, good for long sequences"]
+print of ["  ALiBi: No embeddings, linear bias, best extrapolation"]
+print of ["  Learned: Most flexible, may overfit, no extrapolation"]
+
+# ============================================================================
+# Geometric Introspection
+# ============================================================================
+
+print of ""
+print of "=== Geometric Introspection ==="
+print of ""
+
+report is introspect of model
+
+print of "Model Status:"
+print of "  Converged:"
+print of report["converged"]
+print of "  Stable:"
+print of report["stable"]
+print of "  Improving:"
+print of report["improving"]
+print of "  Oscillating:"
+print of report["oscillating"]
+print of "  Framework Strength:"
+print of report["framework_strength"]
+
+# === EigenScript Interrogatives ===
+print of ""
+print of "Interrogative Analysis:"
+print of "  What is the model?"
+print of what is model
+print of "  Where is computation?"
+print of where is model
+print of "  How does it work?"
+print of how is model
+
+# Check attention patterns
+print of ""
+print of "Attention Analysis:"
+if stable:
+    print of "  Attention patterns are stable"
+else:
+    print of "  Attention patterns may need regularization"
+
+print of ""
+print of "=== Transformer Example Complete ==="

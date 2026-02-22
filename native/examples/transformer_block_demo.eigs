@@ -1,0 +1,124 @@
+# iLambdaAi Transformer Decoder Block - Native EigenScript
+# Complete transformer block: Self-Attention + FFN with residuals and LayerNorm
+
+print of "=== iLambdaAi Transformer Block Demo ==="
+print of ""
+
+# Configuration
+d_model is 4
+d_ff is 8
+num_tokens is 2
+
+# Input: 2 tokens, 4-dim embeddings
+input is matrix of [[0.5, 1.0, -0.5, 0.2], [-0.3, 0.8, 0.4, -0.6]]
+print of "Input embeddings:"
+input_list is matrix_to_list of input
+print of input_list
+
+# === Self-Attention Weights ===
+# Query, Key, Value projections (4x4 each)
+W_q is matrix of [[0.1, 0.2, 0.1, -0.1], [0.2, 0.1, -0.1, 0.2], [-0.1, 0.1, 0.2, 0.1], [0.1, -0.1, 0.1, 0.2]]
+W_k is matrix of [[0.2, 0.1, -0.1, 0.1], [0.1, 0.2, 0.1, -0.1], [0.1, -0.1, 0.2, 0.1], [-0.1, 0.1, 0.1, 0.2]]
+W_v is matrix of [[0.1, -0.1, 0.2, 0.1], [0.2, 0.1, 0.1, -0.1], [-0.1, 0.2, 0.1, 0.1], [0.1, 0.1, -0.1, 0.2]]
+W_o is matrix of [[0.2, 0.1, 0.1, -0.1], [0.1, 0.2, -0.1, 0.1], [0.1, -0.1, 0.2, 0.1], [-0.1, 0.1, 0.1, 0.2]]
+
+# === FFN Weights ===
+# W1: 4x8 (expansion), W2: 8x4 (projection)
+W1 is matrix of [[0.1, 0.2, -0.1, 0.1, 0.2, -0.1, 0.1, 0.2], [0.2, -0.1, 0.1, 0.2, -0.1, 0.1, 0.2, -0.1], [-0.1, 0.1, 0.2, -0.1, 0.1, 0.2, -0.1, 0.1], [0.1, 0.2, -0.1, 0.1, 0.2, -0.1, 0.1, 0.2]]
+W2 is matrix of [[0.1, 0.2, -0.1, 0.1], [0.2, -0.1, 0.1, 0.2], [-0.1, 0.1, 0.2, -0.1], [0.1, 0.2, -0.1, 0.1], [0.2, -0.1, 0.1, 0.2], [-0.1, 0.1, 0.2, -0.1], [0.1, 0.2, -0.1, 0.1], [0.2, -0.1, 0.1, 0.2]]
+
+print of ""
+print of "=== Self-Attention Sub-layer ==="
+
+# Step 1: Compute Q, K, V
+Q is matmul of [input, W_q]
+K is matmul of [input, W_k]
+V is matmul of [input, W_v]
+
+print of "Query:"
+Q_list is matrix_to_list of Q
+print of Q_list
+
+# Step 2: Attention scores = Q @ K^T
+K_t is transpose of K
+scores is matmul of [Q, K_t]
+print of "Attention scores:"
+scores_list is matrix_to_list of scores
+print of scores_list
+
+# Step 3: Scale by 1/sqrt(d_k) where d_k=4, so scale=0.5
+scaled is matrix_scale of [scores, 0.5]
+
+# Step 4: Softmax
+attn_weights is softmax_matrix of scaled
+print of "Attention weights:"
+weights_list is matrix_to_list of attn_weights
+print of weights_list
+
+# Step 5: Weighted sum of values
+attn_out is matmul of [attn_weights, V]
+
+# Step 6: Output projection
+attn_projected is matmul of [attn_out, W_o]
+print of "Attention output:"
+attn_out_list is matrix_to_list of attn_projected
+print of attn_out_list
+
+# Step 7: Residual connection
+attn_residual is matrix_add of [input, attn_projected]
+
+# Step 8: Layer normalization
+attn_normed is layer_norm_matrix of attn_residual
+print of "After residual + LayerNorm:"
+attn_normed_list is matrix_to_list of attn_normed
+print of attn_normed_list
+
+print of ""
+print of "=== Feed-Forward Sub-layer ==="
+
+# Step 1: Expand to hidden dim
+hidden is matmul of [attn_normed, W1]
+print of "Hidden (expanded):"
+hidden_list is matrix_to_list of hidden
+print of hidden_list
+
+# Step 2: GELU activation
+activated is gelu_matrix of hidden
+print of "After GELU:"
+act_list is matrix_to_list of activated
+print of act_list
+
+# Step 3: Project back
+ffn_out is matmul of [activated, W2]
+print of "FFN output:"
+ffn_list is matrix_to_list of ffn_out
+print of ffn_list
+
+# Step 4: Residual connection
+ffn_residual is matrix_add of [attn_normed, ffn_out]
+
+# Step 5: Final LayerNorm
+output is layer_norm_matrix of ffn_residual
+print of ""
+print of "=== Final Block Output ==="
+output_list is matrix_to_list of output
+print of output_list
+
+# === Geometric Introspection ===
+print of ""
+print of "=== Geometric Metrics ==="
+print of "Converged:"
+print of converged
+print of "Stable:"
+print of stable
+print of "Improving:"
+print of improving
+print of "Framework strength:"
+fs is framework_strength
+print of fs
+print of "Signature:"
+sig is signature
+print of sig
+
+print of ""
+print of "=== Transformer Block Complete ==="

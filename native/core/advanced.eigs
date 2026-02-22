@@ -1,0 +1,1361 @@
+# iLambdaAi - Advanced Architectures
+# EigenScript-native generative models with geometric introspection
+#
+# Includes: VAE, GAN, Diffusion Models
+# Uses native predicates for self-aware generation
+#
+# All models leverage EigenScript's geometric features for
+# monitoring training stability and convergence
+
+from model import Model
+from layers import Linear, ReLU, LeakyReLU, Sigmoid, Tanh, Sequential, Dropout
+from cnn import Conv2d, ConvTranspose2d, BatchNorm2d
+
+# ============================================================================
+# Variational Autoencoder (VAE)
+# ============================================================================
+
+define VAEEncoder as:
+
+    # extends Model
+    # VAE Encoder: maps input to latent distribution (mean, log_var)
+
+    hidden_dims is []
+    latent_dim is 0
+
+    layers is Model
+    fc_mu is Model
+    fc_logvar is Model
+
+    define init as:
+
+        input_dim is arg[0]
+
+        hidden is arg[1]
+
+        z_dim is arg[2]
+        hidden_dims is hidden
+        latent_dim is z_dim
+
+        # Build encoder layers
+        layer_list is []
+        in_dim is input_dim
+
+        for h_dim in hidden_dims:
+            layer_list is append of [layer_list, (Linear of in_dim, h_dim, true)]
+            layer_list is append of [layer_list, (ReLU)]
+            in_dim is h_dim
+
+        layers is Sequential of layer_list
+
+        # Latent space projections
+        fc_mu is Linear
+        init of [fc_mu, in_dim, latent_dim, true]
+
+        fc_logvar is Linear
+        init of [fc_logvar, in_dim, latent_dim, true]
+
+        register_module of layers
+        register_module of fc_mu
+        register_module of fc_logvar
+
+        _name is "VAEEncoder"
+
+    define forward as:
+
+        x is arg
+        h is forward of [layers, x]
+        mu is forward of [fc_mu, h]
+        logvar is forward of [fc_logvar, h]
+        return (mu, logvar)
+
+    define describe as:
+        return format of ["VAEEncoder(hidden={}, latent={})", hidden_dims, latent_dim]
+
+
+define VAEDecoder as:
+
+
+    # extends Model
+    # VAE Decoder: maps latent code to reconstruction
+
+    hidden_dims is []
+    output_dim is 0
+
+    layers is Model
+
+    define init as:
+
+        z_dim is arg[0]
+
+        hidden is arg[1]
+
+        out_dim is arg[2]
+        hidden_dims is hidden
+        output_dim is out_dim
+
+        # Build decoder layers (reverse of encoder)
+        layer_list is []
+        in_dim is z_dim
+
+        for h_dim in hidden_dims:
+            layer_list is append of [layer_list, (Linear of in_dim, h_dim, true)]
+            layer_list is append of [layer_list, (ReLU)]
+            in_dim is h_dim
+
+        # Final output layer
+        layer_list is append of [layer_list, (Linear of in_dim, output_dim, true)]
+        layer_list is append of [layer_list, (Sigmoid)]
+
+        layers is Sequential of layer_list
+        register_module of layers
+
+        _name is "VAEDecoder"
+
+    define forward as:
+
+        z is arg
+        return forward of [layers, z]
+
+    define describe as:
+        return format of ["VAEDecoder(hidden={}, output={})", hidden_dims, output_dim]
+
+
+define VAE as:
+
+
+    # extends Model
+    # Variational Autoencoder with geometric introspection
+    #
+    # Uses reparameterization trick for differentiable sampling
+    # Tracks latent space stability using EigenScript predicates
+
+    encoder is Model
+    decoder is Model
+    latent_dim is 0
+
+    define init as:
+
+        input_dim is arg[0]
+
+        hidden_dims is arg[1]
+
+        z_dim is arg[2]
+        latent_dim is z_dim
+
+        encoder is VAEEncoder
+        init of [encoder, input_dim, hidden_dims, z_dim]
+
+        # Reverse hidden dims for decoder
+        decoder_hidden is reverse of hidden_dims
+        decoder is VAEDecoder
+        init of [decoder, z_dim, decoder_hidden, input_dim]
+
+        register_module of encoder
+        register_module of decoder
+
+        _name is "VAE"
+
+    define reparameterize as:
+
+        mu is arg[0]
+
+        logvar is arg[1]
+        # Reparameterization trick: z = mu + std * epsilon
+        std is exp of [(multiply of logvar, 0.5)]
+        epsilon is random_normal of (shape of std)
+        return add of [mu, (multiply of std, epsilon)]
+
+    define forward as:
+
+        x is arg
+        # Encode
+        mu, logvar is forward of [encoder, x]
+
+        # === EigenScript Geometric Feature ===
+        # Check latent space stability
+        if not stable:
+            print of "Warning: Latent space becoming unstable"
+
+        # Sample from latent distribution
+        z is reparameterize of [mu, logvar]
+
+        # Decode
+        reconstruction is forward of [decoder, z]
+
+        return (reconstruction, mu, logvar)
+
+    define encode as:
+
+        x is arg
+        mu, logvar is forward of [encoder, x]
+        return reparameterize of [mu, logvar]
+
+    define decode as:
+
+        z is arg
+        return forward of [decoder, z]
+
+    define sample as:
+
+        num_samples is arg
+        # Generate samples from prior
+        z is random_normal of [num_samples, latent_dim]
+
+        # === EigenScript Geometric Feature ===
+        # Track generation quality
+        fs is framework_strength
+
+        return forward of [decoder, z]
+
+    define loss as:
+
+        x is arg[0]
+
+        reconstruction is arg[1]
+
+        mu is arg[2]
+
+        logvar is arg[3]
+
+        beta is arg[4]
+        # VAE loss: reconstruction + KL divergence
+        # beta-VAE uses beta > 1 for better disentanglement
+
+        # Reconstruction loss (binary cross entropy)
+        recon_loss is binary_cross_entropy of [reconstruction, x]
+
+        # KL divergence: -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        kl_loss is multiply of [-0.5, sum of (]
+            add of [1, (subtract of logvar, (add of (square of mu), (exp of logvar)))]
+        )
+
+        total_loss is add of [recon_loss, (multiply of beta, kl_loss)]
+
+        return {
+            "total": total_loss,
+            "reconstruction": recon_loss,
+            "kl_divergence": kl_loss
+        }
+
+    define describe as:
+        return format of ["VAE(latent_dim={})", latent_dim]
+
+
+# ============================================================================
+# Generative Adversarial Network (GAN)
+# ============================================================================
+
+define Generator as:
+
+    # extends Model
+    # GAN Generator network
+
+    latent_dim is 100
+    output_dim is 784
+
+    layers is Model
+
+    define init as:
+
+        z_dim is arg[0]
+
+        hidden_dims is arg[1]
+
+        out_dim is arg[2]
+        latent_dim is z_dim
+        output_dim is out_dim
+
+        layer_list is []
+        in_dim is z_dim
+
+        for h_dim in hidden_dims:
+            layer_list is append of [layer_list, (Linear of in_dim, h_dim, true)]
+            layer_list is append of [layer_list, (ReLU)]
+            in_dim is h_dim
+
+        layer_list is append of [layer_list, (Linear of in_dim, output_dim, true)]
+        layer_list is append of [layer_list, (Tanh)]
+
+        layers is Sequential of layer_list
+        register_module of layers
+
+        _name is "Generator"
+
+    define forward as:
+
+        z is arg
+        return forward of [layers, z]
+
+    define describe as:
+        return format of ["Generator(z={}, out={})", latent_dim, output_dim]
+
+
+define Discriminator as:
+
+
+    # extends Model
+    # GAN Discriminator network
+
+    input_dim is 784
+
+    layers is Model
+
+    define init as:
+
+        in_dim is arg[0]
+
+        hidden_dims is arg[1]
+        input_dim is in_dim
+
+        layer_list is []
+        curr_dim is in_dim
+
+        for h_dim in hidden_dims:
+            layer_list is append of [layer_list, (Linear of curr_dim, h_dim, true)]
+            layer_list is append of [layer_list, (LeakyReLU of 0.2)]
+            layer_list is append of [layer_list, (Dropout of 0.3)]
+            curr_dim is h_dim
+
+        layer_list is append of [layer_list, (Linear of curr_dim, 1, true)]
+        layer_list is append of [layer_list, (Sigmoid)]
+
+        layers is Sequential of layer_list
+        register_module of layers
+
+        _name is "Discriminator"
+
+    define forward as:
+
+        x is arg
+        return forward of [layers, x]
+
+    define describe as:
+        return format of ["Discriminator(in={})", input_dim]
+
+
+define GAN as:
+
+
+    # extends Model
+    # Generative Adversarial Network with geometric introspection
+    #
+    # Uses EigenScript's oscillating predicate to detect mode collapse
+    # Framework strength indicates training stability
+
+    generator is Model
+    discriminator is Model
+    latent_dim is 100
+
+    define init as:
+
+        z_dim is arg[0]
+
+        g_hidden is arg[1]
+
+        d_hidden is arg[2]
+
+        data_dim is arg[3]
+        latent_dim is z_dim
+
+        generator is Generator
+        init of [generator, z_dim, g_hidden, data_dim]
+
+        discriminator is Discriminator
+        init of [discriminator, data_dim, d_hidden]
+
+        register_module of generator
+        register_module of discriminator
+
+        _name is "GAN"
+
+    define generate as:
+
+        num_samples is arg
+        # Generate fake samples
+        z is random_normal of [num_samples, latent_dim]
+        return forward of [generator, z]
+
+    define discriminate as:
+
+        x is arg
+        # Classify real/fake
+        return forward of [discriminator, x]
+
+    define generator_loss as:
+
+        fake_output is arg
+        # Generator wants discriminator to think fakes are real
+        # -log(D(G(z)))
+        return binary_cross_entropy of [fake_output, (ones_like of fake_output)]
+
+    define discriminator_loss as:
+
+        real_output is arg[0]
+
+        fake_output is arg[1]
+        # Discriminator wants to correctly classify both
+        # -log(D(x)) - log(1 - D(G(z)))
+        real_loss is binary_cross_entropy of [real_output, (ones_like of real_output)]
+        fake_loss is binary_cross_entropy of [fake_output, (zeros_like of fake_output)]
+        return divide of [(add of real_loss, fake_loss), 2]
+
+    define train_step as:
+
+        real_data is arg[0]
+
+        g_optimizer is arg[1]
+
+        d_optimizer is arg[2]
+        # Single GAN training step
+        batch_size is shape of [real_data, 0]
+
+        # ---- Train Discriminator ----
+        zero_grad of discriminator
+
+        # Real data
+        real_output is forward of [discriminator, real_data]
+        d_real_loss is binary_cross_entropy of [real_output, (ones of [batch_size, 1])]
+
+        # Fake data
+        z is random_normal of [batch_size, latent_dim]
+        fake_data is forward of [generator, z]
+        fake_output is forward of [discriminator, (detach of fake_data)]
+        d_fake_loss is binary_cross_entropy of [fake_output, (zeros of [batch_size, 1])]
+
+        d_loss is divide of [(add of d_real_loss, d_fake_loss), 2]
+        backward of d_loss
+        step of d_optimizer
+
+        # ---- Train Generator ----
+        zero_grad of generator
+
+        fake_output is forward of [discriminator, fake_data]
+        g_loss is binary_cross_entropy of [fake_output, (ones of [batch_size, 1])]
+        backward of g_loss
+        step of g_optimizer
+
+        # === EigenScript Geometric Feature ===
+        # Check for mode collapse (oscillating gradients)
+        if oscillating:
+            print of "Warning: Possible mode collapse detected"
+
+        return {
+            "g_loss": what is g_loss,
+            "d_loss": what is d_loss,
+            "d_real": mean of real_output,
+            "d_fake": mean of fake_output,
+            "stable": stable
+        }
+
+    define describe as:
+        return format of ["GAN(z={})", latent_dim]
+
+
+# ============================================================================
+# Wasserstein GAN (WGAN)
+# ============================================================================
+
+define WGAN as:
+
+    # extends Model
+    # Wasserstein GAN with gradient penalty
+
+    generator is Model
+    critic is Model  # Called "critic" not "discriminator" in WGAN
+    latent_dim is 100
+
+    define init as:
+
+        z_dim is arg[0]
+
+        g_hidden is arg[1]
+
+        c_hidden is arg[2]
+
+        data_dim is arg[3]
+        latent_dim is z_dim
+
+        generator is Generator
+        init of [generator, z_dim, g_hidden, data_dim]
+
+        # Critic doesn't use sigmoid (outputs unbounded score)
+        critic is _build_critic of [data_dim, c_hidden]
+
+        register_module of generator
+        register_module of critic
+
+        _name is "WGAN"
+
+    define _build_critic as:
+
+        in_dim is arg[0]
+
+        hidden_dims is arg[1]
+        layer_list is []
+        curr_dim is in_dim
+
+        for h_dim in hidden_dims:
+            layer_list is append of [layer_list, (Linear of curr_dim, h_dim, true)]
+            layer_list is append of [layer_list, (LeakyReLU of 0.2)]
+            curr_dim is h_dim
+
+        layer_list is append of [layer_list, (Linear of curr_dim, 1, true)]
+        # No sigmoid - unbounded output
+
+        crit is Sequential of layer_list
+        register_module of crit
+        return crit
+
+    define generate as:
+
+        num_samples is arg
+        z is random_normal of [num_samples, latent_dim]
+        return forward of [generator, z]
+
+    define wasserstein_loss as:
+
+        real_scores is arg[0]
+
+        fake_scores is arg[1]
+        # W-loss = E[D(fake)] - E[D(real)]
+        return subtract of [(mean of fake_scores), (mean of real_scores)]
+
+    define gradient_penalty as:
+
+        real_data is arg[0]
+
+        fake_data is arg[1]
+
+        lambda_gp is arg[2]
+        # Compute gradient penalty for WGAN-GP
+        batch_size is shape of [real_data, 0]
+
+        # Random interpolation
+        alpha is random_uniform of [batch_size, 1], 0, 1
+        interpolated is add of (
+            multiply of alpha, real_data,
+            multiply of [(subtract of 1, alpha), fake_data]
+        )
+
+        # Compute critic output for interpolated
+        interpolated.requires_grad is true
+        critic_output is forward of [critic, interpolated]
+
+        # Compute gradients
+        gradients is compute_grad of [critic_output, interpolated]
+
+        # Gradient norm
+        grad_norm is l2_norm of [gradients, 1]
+        penalty is multiply of [lambda_gp, (mean of (square of (subtract of grad_norm, 1)))]
+
+        return penalty
+
+    define train_step as:
+
+        real_data is arg[0]
+
+        g_optimizer is arg[1]
+
+        c_optimizer is arg[2]
+
+        n_critic is arg[3]
+
+        lambda_gp is arg[4]
+        batch_size is shape of [real_data, 0]
+
+        # Train critic multiple times
+        for _ in range of n_critic:
+            zero_grad of critic
+
+            # Real scores
+            real_scores is forward of [critic, real_data]
+
+            # Fake scores
+            z is random_normal of [batch_size, latent_dim]
+            fake_data is forward of [generator, z]
+            fake_scores is forward of [critic, (detach of fake_data)]
+
+            # Wasserstein loss
+            w_loss is wasserstein_loss of [real_scores, fake_scores]
+
+            # Gradient penalty
+            gp is gradient_penalty of [real_data, fake_data, lambda_gp]
+
+            c_loss is add of [w_loss, gp]
+            backward of c_loss
+            step of c_optimizer
+
+        # Train generator
+        zero_grad of generator
+        z is random_normal of [batch_size, latent_dim]
+        fake_data is forward of [generator, z]
+        fake_scores is forward of [critic, fake_data]
+
+        g_loss is negative of (mean of fake_scores)
+        backward of g_loss
+        step of g_optimizer
+
+        return {
+            "g_loss": what is g_loss,
+            "c_loss": what is c_loss,
+            "w_distance": negative of (what is w_loss)
+        }
+
+
+# ============================================================================
+# Denoising Diffusion Probabilistic Model (DDPM)
+# ============================================================================
+
+define DiffusionSchedule as:
+    # Noise schedule for diffusion models
+
+    num_timesteps is 1000
+    beta_start is 1e-4
+    beta_end is 0.02
+
+    betas is Tensor
+    alphas is Tensor
+    alphas_cumprod is Tensor
+    sqrt_alphas_cumprod is Tensor
+    sqrt_one_minus_alphas_cumprod is Tensor
+
+    define init as:
+
+        T is arg[0]
+
+        b_start is arg[1]
+
+        b_end is arg[2]
+        num_timesteps is T
+        beta_start is b_start
+        beta_end is b_end
+
+        # Linear schedule
+        betas is linspace of [b_start, b_end, T]
+
+        # Derived quantities
+        alphas is subtract of [1, betas]
+        alphas_cumprod is cumprod of alphas
+
+        sqrt_alphas_cumprod is sqrt of alphas_cumprod
+        sqrt_one_minus_alphas_cumprod is sqrt of [(subtract of 1, alphas_cumprod)]
+
+    define get_index as:
+
+        t is arg
+        # Get schedule values at timestep t
+        return {
+            "beta": betas[t],
+            "alpha": alphas[t],
+            "alpha_cumprod": alphas_cumprod[t],
+            "sqrt_alpha_cumprod": sqrt_alphas_cumprod[t],
+            "sqrt_one_minus_alpha_cumprod": sqrt_one_minus_alphas_cumprod[t]
+        }
+
+
+define UNet as:
+
+
+    # extends Model
+    # Simple U-Net for noise prediction
+    # Used as the denoising network in DDPM
+
+    in_channels is 1
+    out_channels is 1
+    time_emb_dim is 128
+
+    time_embed is Model
+    down1 is Model
+    down2 is Model
+    mid is Model
+    up1 is Model
+    up2 is Model
+    out is Model
+
+    define init as:
+
+        in_ch is arg[0]
+
+        out_ch is arg[1]
+
+        base_ch is arg[2]
+
+        t_emb_dim is arg[3]
+        in_channels is in_ch
+        out_channels is out_ch
+        time_emb_dim is t_emb_dim
+
+        # Time embedding MLP
+        time_embed is Sequential of [
+            Linear of t_emb_dim, t_emb_dim * 4, true,
+            ReLU,
+            Linear of [t_emb_dim * 4, t_emb_dim * 4, true]
+        ]
+        register_module of time_embed
+
+        # Downsampling path
+        down1 is _conv_block of [in_ch, base_ch]
+        down2 is _conv_block of [base_ch, base_ch * 2]
+
+        # Middle
+        mid is _conv_block of [base_ch * 2, base_ch * 2]
+
+        # Upsampling path
+        up1 is _conv_block of [base_ch * 4, base_ch  # Concat with skip]
+        up2 is _conv_block of [base_ch * 2, base_ch]
+
+        # Output
+        out is Conv2d
+        init of [out, base_ch, out_ch, 1, 1, 0, true]
+
+        register_module of down1
+        register_module of down2
+        register_module of mid
+        register_module of up1
+        register_module of up2
+        register_module of out
+
+        _name is "UNet"
+
+    define _conv_block as:
+
+        in_ch is arg[0]
+
+        out_ch is arg[1]
+        block is Sequential of [
+            Conv2d of in_ch, out_ch, 3, 1, 1, true,
+            BatchNorm2d of out_ch,
+            ReLU,
+            Conv2d of out_ch, out_ch, 3, 1, 1, true,
+            BatchNorm2d of out_ch,
+            ReLU
+        ]
+        return block
+
+    define forward as:
+
+        x is arg[0]
+
+        t is arg[1]
+        # t: timestep embedding
+
+        # Time embedding
+        t_emb is forward of [time_embed, t]
+
+        # Downsample
+        h1 is forward of [down1, x        # Skip connection]
+        h2 is forward of [down2, h1]
+
+        # Middle
+        h is forward of [mid, h2]
+
+        # Upsample with skip connections
+        h is forward of [up1, (concatenate of [h, h2], 1)]
+        h is forward of [up2, (concatenate of [h, h1], 1)]
+
+        return forward of [out, h]
+
+    define describe as:
+        return format of ["UNet(in={}, out={})", in_channels, out_channels]
+
+
+define DDPM as:
+
+
+    # extends Model
+    # Denoising Diffusion Probabilistic Model
+    #
+    # Uses EigenScript's geometric features to monitor:
+    # - Denoising quality (framework_strength)
+    # - Training stability (stable predicate)
+    # - Convergence (converged predicate)
+
+    denoise_net is Model
+    schedule is DiffusionSchedule
+    num_timesteps is 1000
+
+    define init as:
+
+        data_shape is arg[0]
+
+        base_channels is arg[1]
+
+        T is arg[2]
+        num_timesteps is T
+
+        # Initialize schedule
+        schedule is DiffusionSchedule
+        init of [schedule, T, 1e-4, 0.02]
+
+        # Initialize denoising network
+        in_ch is data_shape[0] if length of data_shape > 2 else 1
+        denoise_net is UNet
+        init of [denoise_net, in_ch, in_ch, base_channels, 128]
+
+        register_module of denoise_net
+
+        _name is "DDPM"
+
+    define q_sample as:
+
+        x0 is arg[0]
+
+        t is arg[1]
+
+        noise is arg[2]
+        # Forward diffusion: add noise to x0
+        # q(x_t | x0) = N(sqrt(alpha_cumprod) * x0, (1 - alpha_cumprod) * I)
+
+        if noise == none:
+            noise is random_normal of (shape of x0)
+
+        sched is get_index of [schedule, t]
+
+        x_t is add of (
+            multiply of sched["sqrt_alpha_cumprod"], x0,
+            multiply of [sched["sqrt_one_minus_alpha_cumprod"], noise]
+        )
+
+        return x_t
+
+    define predict_noise as:
+
+        x_t is arg[0]
+
+        t is arg[1]
+        # Predict the noise in x_t
+        return forward of [denoise_net, x_t, (timestep_embedding of t)]
+
+    define timestep_embedding as:
+
+        t is arg
+        # Sinusoidal timestep embedding
+        half_dim is 64
+        emb_scale is log of 10000 / half_dim
+
+        emb is multiply of [t, (exp of (multiply of (negative of (arange of 0, half_dim)), emb_scale))]
+        emb is concatenate of [sin of [emb, cos of emb], -1]
+
+        return emb
+
+    define loss as:
+
+        x0 is arg
+        # Training loss: predict noise added at random timestep
+        batch_size is shape of [x0, 0]
+
+        # Random timesteps
+        t is random_integers of [0, num_timesteps, [batch_size]]
+
+        # Add noise
+        noise is random_normal of (shape of x0)
+        x_t is q_sample of [x0, t, noise]
+
+        # Predict noise
+        predicted_noise is predict_noise of [x_t, t]
+
+        # MSE loss
+        loss is mse of [predicted_noise, noise]
+
+        # === EigenScript Geometric Feature ===
+        # Track denoising quality
+        if not stable:
+            print of "Warning: Denoising becoming unstable"
+
+        return loss
+
+    define p_sample as:
+
+        x_t is arg[0]
+
+        t is arg[1]
+        # Reverse diffusion step: denoise x_t to get x_{t-1}
+
+        sched is get_index of [schedule, t]
+
+        # Predict noise
+        predicted_noise is predict_noise of [x_t, t]
+
+        # Compute mean
+        coef1 is divide of [1, sqrt of sched["alpha"]]
+        coef2 is divide of [sched["beta"], sched["sqrt_one_minus_alpha_cumprod"]]
+
+        mean is multiply of [coef1, (subtract of x_t, (multiply of coef2, predicted_noise))]
+
+        # Add noise (except at t=0)
+        if t > 0:
+            noise is random_normal of (shape of x_t)
+            std is sqrt of sched["beta"]
+            return add of [mean, (multiply of std, noise)]
+        else:
+            return mean
+
+    define sample as:
+
+        shape is arg[0]
+
+        num_samples is arg[1]
+        # Generate samples by reverse diffusion
+
+        # Start from pure noise
+        x is random_normal of [num_samples, *shape]
+
+        # === EigenScript Geometric Feature ===
+        # Track sampling stability
+        print of "Sampling with"
+        print of num_timesteps
+        print of "steps..."
+
+        for t in reverse of (range of num_timesteps):
+            x is p_sample of [x, t]
+
+            if t % 100 == 0:
+                fs is framework_strength
+                print of format of "  Step {}: FS={:.4f}"
+                print of t
+                print of fs
+
+        return x
+
+    define sample_ddim as:
+
+        shape is arg[0]
+
+        num_samples is arg[1]
+
+        num_steps is arg[2]
+
+        eta is arg[3]
+        # DDIM sampling (faster, deterministic option)
+
+        # Subset of timesteps
+        step_size is num_timesteps // num_steps
+        timesteps is range of [(num_timesteps - 1), 0, -step_size]
+
+        x is random_normal of [num_samples, *shape]
+
+        for i, t in enumerate of timesteps:
+            t_prev is t - step_size if t > step_size else 0
+
+            # Get schedule values
+            at is schedule.alphas_cumprod[t]
+            at_prev is schedule.alphas_cumprod[t_prev]
+
+            # Predict noise
+            noise_pred is predict_noise of [x, t]
+
+            # Predict x0
+            x0_pred is divide of [(subtract of x, (multiply of (sqrt of (1 - at)), noise_pred)), (sqrt of at)]
+
+            # Direction pointing to x_t
+            dir_xt is multiply of [(sqrt of (1 - at_prev - eta * eta * (1 - at_prev) / (1 - at))), noise_pred]
+
+            # Random noise (eta=0 for deterministic)
+            if eta > 0:
+                noise is random_normal of (shape of x)
+                sigma is eta * sqrt of ((1 - at_prev) / (1 - at) * (1 - at / at_prev))
+            else:
+                noise is 0
+                sigma is 0
+
+            x is add of [(multiply of (sqrt of at_prev), x0_pred), dir_xt, (multiply of sigma, noise)]
+
+        return x
+
+    define describe as:
+        return format of ["DDPM(T={})", num_timesteps]
+
+
+# ============================================================================
+# Conditional Models
+# ============================================================================
+
+define ConditionalVAE as:
+
+    # extends VAE
+    # Conditional VAE (CVAE)
+    # Generates samples conditioned on class labels
+
+    num_classes is 10
+    class_embed is Model
+
+    define init as:
+
+        input_dim is arg[0]
+
+        hidden_dims is arg[1]
+
+        z_dim is arg[2]
+
+        n_classes is arg[3]
+        num_classes is n_classes
+
+        # Class embedding
+        class_embed is Linear
+        init of [class_embed, n_classes, z_dim, true]
+
+        # Call parent init with adjusted dimensions
+        init of [super, input_dim + z_dim, hidden_dims, z_dim]
+
+        register_module of class_embed
+
+        _name is "CVAE"
+
+    define forward as:
+
+        x is arg[0]
+
+        labels is arg[1]
+        # Embed class labels
+        c is one_hot of [labels, num_classes]
+        c_emb is forward of [class_embed, c]
+
+        # Concatenate with input
+        x_cond is concatenate of [x, c_emb], -1
+
+        # Forward through VAE
+        reconstruction, mu, logvar is forward of [super, x_cond]
+
+        return (reconstruction, mu, logvar)
+
+    define sample as:
+
+        num_samples is arg[0]
+
+        labels is arg[1]
+        # Generate conditioned on labels
+        c is one_hot of [labels, num_classes]
+        c_emb is forward of [class_embed, c]
+
+        z is random_normal of [num_samples, latent_dim]
+        z_cond is concatenate of [z, c_emb], -1
+
+        return forward of [decoder, z_cond]
+
+
+define ConditionalGAN as:
+
+
+    # extends GAN
+    # Conditional GAN (cGAN)
+    # Generates samples conditioned on class labels
+
+    num_classes is 10
+    label_embed_g is Model
+    label_embed_d is Model
+
+    define init as:
+
+        z_dim is arg[0]
+
+        g_hidden is arg[1]
+
+        d_hidden is arg[2]
+
+        data_dim is arg[3]
+
+        n_classes is arg[4]
+        num_classes is n_classes
+
+        # Label embeddings for G and D
+        label_embed_g is Linear
+        init of [label_embed_g, n_classes, z_dim, true]
+
+        label_embed_d is Linear
+        init of [label_embed_d, n_classes, data_dim, true]
+
+        # Parent init
+        init of [super, z_dim + z_dim, g_hidden, data_dim + data_dim, data_dim]
+
+        register_module of label_embed_g
+        register_module of label_embed_d
+
+        _name is "cGAN"
+
+    define generate as:
+
+        num_samples is arg[0]
+
+        labels is arg[1]
+        z is random_normal of [num_samples, latent_dim // 2]
+
+        c is one_hot of [labels, num_classes]
+        c_emb is forward of [label_embed_g, c]
+
+        z_cond is concatenate of [z, c_emb], -1
+        return forward of [generator, z_cond]
+
+    define train_step as:
+
+        real_data is arg[0]
+
+        labels is arg[1]
+
+        g_optimizer is arg[2]
+
+        d_optimizer is arg[3]
+        batch_size is shape of [real_data, 0]
+        c is one_hot of [labels, num_classes]
+
+        # Condition discriminator input
+        c_emb_d is forward of [label_embed_d, c]
+        real_cond is concatenate of [real_data, c_emb_d], -1
+
+        # Train discriminator
+        zero_grad of discriminator
+
+        real_output is forward of [discriminator, real_cond]
+
+        fake_data is generate of [batch_size, labels]
+        fake_cond is concatenate of [fake_data, c_emb_d], -1
+        fake_output is forward of [discriminator, (detach of fake_cond)]
+
+        d_loss is discriminator_loss of [real_output, fake_output]
+        backward of d_loss
+        step of d_optimizer
+
+        # Train generator
+        zero_grad of generator
+
+        fake_output is forward of [discriminator, fake_cond]
+        g_loss is generator_loss of fake_output
+        backward of g_loss
+        step of g_optimizer
+
+        return {
+            "g_loss": what is g_loss,
+            "d_loss": what is d_loss
+        }
+
+
+# ============================================================================
+# Autoencoder Variants
+# ============================================================================
+
+define Autoencoder as:
+
+    # extends Model
+    # Basic autoencoder
+
+    encoder is Model
+    decoder is Model
+
+    define init as:
+
+        input_dim is arg[0]
+
+        hidden_dims is arg[1]
+
+        latent_dim is arg[2]
+        # Encoder
+        enc_layers is []
+        in_dim is input_dim
+        for h_dim in hidden_dims:
+            enc_layers is append of [enc_layers, (Linear of in_dim, h_dim, true)]
+            enc_layers is append of [enc_layers, (ReLU)]
+            in_dim is h_dim
+        enc_layers is append of [enc_layers, (Linear of in_dim, latent_dim, true)]
+        encoder is Sequential of enc_layers
+
+        # Decoder
+        dec_layers is []
+        in_dim is latent_dim
+        for h_dim in (reverse of hidden_dims):
+            dec_layers is append of [dec_layers, (Linear of in_dim, h_dim, true)]
+            dec_layers is append of [dec_layers, (ReLU)]
+            in_dim is h_dim
+        dec_layers is append of [dec_layers, (Linear of in_dim, input_dim, true)]
+        dec_layers is append of [dec_layers, (Sigmoid)]
+        decoder is Sequential of dec_layers
+
+        register_module of encoder
+        register_module of decoder
+
+        _name is "Autoencoder"
+
+    define forward as:
+
+        x is arg
+        z is forward of [encoder, x]
+        return forward of [decoder, z]
+
+    define encode as:
+
+        x is arg
+        return forward of [encoder, x]
+
+    define decode as:
+
+        z is arg
+        return forward of [decoder, z]
+
+
+define DenoisingAutoencoder as:
+
+
+    # extends Autoencoder
+    # Denoising autoencoder
+    # Trained to reconstruct clean input from noisy input
+
+    noise_factor is 0.3
+
+    define init as:
+
+        input_dim is arg[0]
+
+        hidden_dims is arg[1]
+
+        latent_dim is arg[2]
+
+        noise is arg[3]
+        noise_factor is noise
+        init of [super, input_dim, hidden_dims, latent_dim]
+        _name is "DenoisingAutoencoder"
+
+    define add_noise as:
+
+        x is arg
+        noise is random_normal of (shape of x)
+        noisy is add of [x, (multiply of noise_factor, noise)]
+        return clip of [noisy, 0, 1]
+
+    define forward as:
+
+        x is arg
+        noisy_x is add_noise of x
+        z is forward of [encoder, noisy_x]
+        return forward of [decoder, z]
+
+
+define SparseAutoencoder as:
+
+
+    # extends Autoencoder
+    # Sparse autoencoder with L1 penalty on latent activations
+
+    sparsity_weight is 0.01
+
+    define init as:
+
+        input_dim is arg[0]
+
+        hidden_dims is arg[1]
+
+        latent_dim is arg[2]
+
+        sparsity is arg[3]
+        sparsity_weight is sparsity
+        init of [super, input_dim, hidden_dims, latent_dim]
+        _name is "SparseAutoencoder"
+
+    define loss as:
+
+        x is arg[0]
+
+        reconstruction is arg[1]
+
+        z is arg[2]
+        # Reconstruction loss + sparsity penalty
+        recon_loss is mse of [reconstruction, x]
+        sparsity_loss is multiply of [sparsity_weight, (mean of (abs of z))]
+        return add of [recon_loss, sparsity_loss]
+
+
+# ============================================================================
+# Flow Models
+# ============================================================================
+
+define NormalizingFlow as:
+
+    # extends Model
+    # Normalizing flow base class
+
+    flows is []
+
+    define forward as:
+
+        x is arg
+        log_det_jacobian is 0
+        for flow in flows:
+            x, ldj is forward of [flow, x]
+            log_det_jacobian is add of [log_det_jacobian, ldj]
+        return (x, log_det_jacobian)
+
+    define inverse as:
+
+        z is arg
+        for flow in (reverse of flows):
+            z is inverse of [flow, z]
+        return z
+
+    define sample as:
+
+        num_samples is arg[0]
+
+        dim is arg[1]
+        z is random_normal of [num_samples, dim]
+        return inverse of z
+
+    define log_prob as:
+
+        x is arg
+        z, log_det_j is forward of x
+        log_pz is normal_log_prob of z
+        return add of [log_pz, log_det_j]
+
+
+define PlanarFlow as:
+
+
+    # extends Model
+    # Planar flow transformation
+    # f(z) = z + u * tanh(w^T z + b)
+
+    w is Tensor
+    u is Tensor
+    b is Tensor
+
+    define init as:
+
+        dim is arg
+        w is random_normal of [dim], 0.01
+        u is random_normal of [dim], 0.01
+        b is zeros of 1
+
+        register_parameter of w
+        register_parameter of u
+        register_parameter of b
+
+        _name is "PlanarFlow"
+
+    define forward as:
+
+        z is arg
+        # f(z) = z + u * tanh(w^T z + b)
+        linear is add of [(dot of z, w), b]
+        h is tanh of linear
+
+        output is add of [z, (multiply of u, h)]
+
+        # Log determinant of Jacobian
+        # |1 + u^T * dh/dlinear * w|
+        psi is multiply of [(subtract of 1, (square of h)), w]
+        log_det is log of [(abs of (add of 1, (dot of u, psi)))]
+
+        return (output, log_det)
+
+    define inverse as:
+
+        z is arg
+        # Planar flow is not analytically invertible
+        # Use numerical inversion (fixed point iteration)
+        for _ in range of 100:
+            linear is add of [(dot of z, w), b]
+            h is tanh of linear
+            z_new is subtract of [z, (multiply of u, h)]
+            if l2_norm of [(subtract of z_new, z) < 1e-6:]
+                break
+            z is z_new
+        return z
+

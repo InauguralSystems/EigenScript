@@ -1,0 +1,553 @@
+# iLambdaAi - Trainer
+# Self-aware training loop leveraging EigenScript's geometric introspection
+#
+# The Trainer uses native EigenScript predicates (converged, stable, improving,
+# oscillating) to automatically detect training dynamics and adapt accordingly.
+
+from model import Model
+from optimizers import Optimizer
+from loss import mse_loss
+
+# ============================================================================
+# Trainer: Main training orchestration
+# ============================================================================
+
+define Trainer as:
+    # Core components
+    model is Model
+    optimizer is Optimizer
+    loss_fn is Function
+
+    # Training configuration
+    epochs is 100
+    verbose is true
+
+    # Early stopping
+    early_stopping is true
+    patience is 10
+    min_delta is 1e-4
+
+    # Geometric features
+    use_geometric_features is true
+    auto_reduce_lr_on_oscillation is true
+    lr_reduction_factor is 0.5
+
+    # Training state
+    current_epoch is 0
+    best_loss is infinity
+    patience_counter is 0
+    history is {}
+
+    define init as:
+
+        mdl is arg[0]
+
+        opt is arg[1]
+
+        loss is arg[2]
+
+        num_epochs is arg[3]
+
+        verb is arg[4]
+        model is mdl
+        optimizer is opt
+        loss_fn is loss
+        epochs is num_epochs
+        verbose is verb
+
+        # Initialize history
+        history is {
+            "train_loss": [],
+            "val_loss": [],
+            "learning_rate": [],
+            "framework_strength": [],
+            "converged_at": none,
+            "stopped_early": false
+        }
+
+    # ========================================================================
+    # Main Training Loop
+    # ========================================================================
+
+    define fit as:
+
+        train_data is arg[0]
+
+        val_data is arg[1]
+        best_loss is infinity
+        patience_counter is 0
+
+        if verbose:
+            print of "Starting training for"
+            print of epochs
+            print of "epochs"
+            print of "Using geometric features:"
+            print of use_geometric_features
+
+        for epoch in range of epochs:
+            current_epoch is epoch
+
+            # === Training Phase ===
+            train of model
+            train_loss is train_epoch of train_data
+
+            # === Validation Phase ===
+            eval of model
+            val_loss is 0
+            if val_data != none:
+                val_loss is validate of val_data
+
+            # Record history
+            history["train_loss"] is append of [history["train_loss"], train_loss]
+            history["val_loss"] is append of [history["val_loss"], val_loss]
+            history["learning_rate"] is append of [history["learning_rate"], get_lr of optimizer]
+
+            # === EigenScript Geometric Features ===
+            if use_geometric_features:
+                # Record framework strength
+                fs is framework_strength
+                history["framework_strength"] is append of [history["framework_strength"], fs]
+
+                # === Native Convergence Detection ===
+                if converged:
+                    if verbose:
+                        print of "Converged at epoch"
+                        print of epoch
+                    history["converged_at"] is epoch
+                    break
+
+                # === Native Stability Check ===
+                if not stable:
+                    if verbose:
+                        print of "Warning: Training unstable at epoch"
+                        print of epoch
+
+                # === Native Oscillation Detection ===
+                if oscillating:
+                    if auto_reduce_lr_on_oscillation:
+                        current_lr is get_lr of optimizer
+                        new_lr is multiply of [current_lr, lr_reduction_factor]
+                        set_lr of [optimizer, new_lr]
+                        if verbose:
+                            print of ["Oscillation detected, reducing LR to"]
+                            print of new_lr
+
+                # === Native Improvement Check ===
+                if improving:
+                    best_loss is val_loss
+                    patience_counter is 0
+                else:
+                    patience_counter is patience_counter + 1
+            else:
+                # Fallback: manual improvement check
+                if val_loss < (best_loss - min_delta):
+                    best_loss is val_loss
+                    patience_counter is 0
+                else:
+                    patience_counter is patience_counter + 1
+
+            # === Early Stopping ===
+            if early_stopping and patience_counter >= patience:
+                if verbose:
+                    print of "Early stopping at epoch"
+                    print of epoch
+                history["stopped_early"] is true
+                break
+
+            # === Logging ===
+            if verbose:
+                if use_geometric_features:
+                    print of format of "Epoch {}: train_loss={:.6f}, val_loss={:.6f}, lr={:.6f}, FS={:.4f}",
+                        epoch, train_loss, val_loss, get_lr of [optimizer, fs]
+                else:
+                    print of format of "Epoch {}: train_loss={:.6f}, val_loss={:.6f}, lr={:.6f}",
+                        epoch, train_loss, val_loss, get_lr of optimizer
+
+        if verbose:
+            print of "Training complete"
+            print of "Final train loss:"
+            print of history["train_loss"][-1]
+            if length of history["val_loss"] > 0:
+                print of "Final val loss:"
+                print of history["val_loss"][-1]
+
+        return history
+
+    # ========================================================================
+    # Single Epoch Training
+    # ========================================================================
+
+    define train_epoch as:
+
+        data is arg
+        total_loss is 0
+        num_batches is 0
+
+        for batch in data:
+            x, y is batch
+
+            # Forward pass
+            zero_grad of model
+            predictions is forward of [model, x]
+
+            # Compute loss
+            loss is loss_fn of [predictions, y]
+
+            # Backward pass
+            backward of loss
+
+            # Optimizer step
+            step of optimizer
+
+            # Accumulate loss
+            total_loss is add of [total_loss, what is loss]
+            num_batches is num_batches + 1
+
+        return divide of [total_loss, num_batches]
+
+    # ========================================================================
+    # Validation
+    # ========================================================================
+
+    define validate as:
+
+        data is arg
+        total_loss is 0
+        num_batches is 0
+
+        for batch in data:
+            x, y is batch
+
+            # Forward pass (no gradients)
+            predictions is forward of [model, x]
+
+            # Compute loss
+            loss is loss_fn of [predictions, y]
+
+            total_loss is add of [total_loss, what is loss]
+            num_batches is num_batches + 1
+
+        return divide of [total_loss, num_batches]
+
+    # ========================================================================
+    # Single Training Step
+    # ========================================================================
+
+    define train_step as:
+
+        x is arg[0]
+
+        y is arg[1]
+        zero_grad of model
+        predictions is forward of [model, x]
+        loss is loss_fn of [predictions, y]
+        backward of loss
+        step of optimizer
+        return loss
+
+    # ========================================================================
+    # Geometric Introspection
+    # ========================================================================
+
+    define is_converged as:
+        return converged
+
+    define is_stable as:
+        return stable
+
+    define is_improving as:
+        return improving
+
+    define get_framework_strength as:
+        return framework_strength
+
+    define get_training_report as:
+        report is {}
+
+        report["epochs_completed"] is current_epoch
+        report["final_train_loss"] is history["train_loss"][-1]
+        report["best_loss"] is best_loss
+        report["stopped_early"] is history["stopped_early"]
+        report["converged_at"] is history["converged_at"]
+
+        if use_geometric_features:
+            report["final_framework_strength"] is history["framework_strength"][-1]
+            report["is_converged"] is converged
+            report["is_stable"] is stable
+
+        return report
+
+
+# ============================================================================
+# SimpleTrainer: Minimal training loop
+# ============================================================================
+
+define SimpleTrainer as:
+    model is Model
+    optimizer is Optimizer
+    loss_fn is Function
+
+    define init as:
+
+        mdl is arg[0]
+
+        opt is arg[1]
+
+        loss is arg[2]
+        model is mdl
+        optimizer is opt
+        loss_fn is loss
+
+    define fit as:
+
+        X is arg[0]
+
+        Y is arg[1]
+
+        epochs is arg[2]
+        for epoch in range of epochs:
+            # Zero gradients
+            zero_grad of model
+
+            # Forward
+            predictions is forward of [model, X]
+
+            # Loss
+            loss is loss_fn of [predictions, Y]
+
+            # Backward
+            backward of loss
+
+            # Update
+            step of optimizer
+
+            # === EigenScript: Check convergence ===
+            if converged:
+                print of "Converged at epoch"
+                print of epoch
+                break
+
+            if epoch % 100 == 0:
+                print of "Epoch"
+                print of epoch
+                print of "Loss:"
+                print of what is loss
+
+        return what is loss
+
+
+# ============================================================================
+# Training Utilities
+# ============================================================================
+
+# Train for a fixed number of steps
+define train_steps as:
+    model is arg[0]
+    optimizer is arg[1]
+    loss_fn is arg[2]
+    data is arg[3]
+    steps is arg[4]
+    step_count is 0
+    data_iter is iter of data
+
+    loop while step_count < steps:
+        # Get next batch (with cycling)
+        batch is next of data_iter
+        if batch == none:
+            data_iter is iter of data
+            batch is next of data_iter
+
+        x, y is batch
+
+        # Training step
+        zero_grad of model
+        predictions is forward of [model, x]
+        loss is loss_fn of [predictions, y]
+        backward of loss
+        step of optimizer
+
+        step_count is step_count + 1
+
+        # === EigenScript: Early convergence ===
+        if converged:
+            print of "Converged at step"
+            print of step_count
+            break
+
+    return loss
+
+
+# Evaluate model on dataset
+define evaluate as:
+    model is arg[0]
+    loss_fn is arg[1]
+    data is arg[2]
+    eval of model
+    total_loss is 0
+    total_correct is 0
+    total_samples is 0
+
+    for batch in data:
+        x, y is batch
+
+        predictions is forward of [model, x]
+        loss is loss_fn of [predictions, y]
+
+        total_loss is add of [total_loss, what is loss]
+        total_samples is total_samples + (length of x)
+
+        # Compute accuracy for classification
+        pred_classes is argmax of [predictions, -1]
+        correct is sum of [equal of pred_classes, y]
+        total_correct is total_correct + correct
+
+    avg_loss is divide of [total_loss, total_samples]
+    accuracy is divide of [total_correct, total_samples]
+
+    return {
+        "loss": avg_loss,
+        "accuracy": accuracy
+    }
+
+
+# ============================================================================
+# Callbacks (for extensibility)
+# ============================================================================
+
+define Callback as:
+    define on_epoch_begin as:
+        trainer is arg[0]
+        epoch is arg[1]
+        pass
+
+    define on_epoch_end as:
+
+        trainer is arg[0]
+
+        epoch is arg[1]
+
+        logs is arg[2]
+        pass
+
+    define on_batch_begin as:
+
+        trainer is arg[0]
+
+        batch is arg[1]
+        pass
+
+    define on_batch_end as:
+
+        trainer is arg[0]
+
+        batch is arg[1]
+
+        logs is arg[2]
+        pass
+
+    define on_train_begin as:
+
+        trainer is arg
+        pass
+
+    define on_train_end as:
+
+        trainer is arg[0]
+
+        logs is arg[1]
+        pass
+
+
+# ModelCheckpoint callback
+define ModelCheckpoint as:
+    # extends Callback
+    filepath is "checkpoint.eigs"
+    save_best_only is true
+    best_loss is infinity
+
+    define init as:
+
+        path is arg[0]
+
+        best_only is arg[1]
+        filepath is path
+        save_best_only is best_only
+        best_loss is infinity
+
+    define on_epoch_end as:
+
+        trainer is arg[0]
+
+        epoch is arg[1]
+
+        logs is arg[2]
+        val_loss is logs["val_loss"]
+
+        if save_best_only:
+            if val_loss < best_loss:
+                best_loss is val_loss
+                save_model of [model of trainer, filepath]
+                print of "Saved best model to"
+                print of filepath
+        else:
+            save_model of [model of trainer, filepath]
+
+
+# EarlyStopping callback (alternative to built-in)
+define EarlyStoppingCallback as:
+    # extends Callback
+    patience is 10
+    min_delta is 1e-4
+    best_loss is infinity
+    wait is 0
+
+    define init as:
+
+        pat is arg[0]
+
+        delta is arg[1]
+        patience is pat
+        min_delta is delta
+        best_loss is infinity
+        wait is 0
+
+    define on_epoch_end as:
+
+        trainer is arg[0]
+
+        epoch is arg[1]
+
+        logs is arg[2]
+        val_loss is logs["val_loss"]
+
+        # === EigenScript: Use native improving check ===
+        if improving:
+            best_loss is val_loss
+            wait is 0
+        else:
+            wait is wait + 1
+
+        if wait >= patience:
+            print of "Early stopping triggered"
+            stop_training of trainer
+
+
+# GeometricMonitor callback - logs geometric features
+define GeometricMonitor as:
+    # extends Callback
+    define on_epoch_end as:
+        trainer is arg[0]
+        epoch is arg[1]
+        logs is arg[2]
+        print of "=== Geometric Status ==="
+        print of "  Converged:"
+        print of converged
+        print of "  Stable:"
+        print of stable
+        print of "  Improving:"
+        print of improving
+        print of "  Oscillating:"
+        print of oscillating
+        print of "  Framework Strength:"
+        print of framework_strength
+        print of "========================"

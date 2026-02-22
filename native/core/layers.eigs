@@ -1,0 +1,400 @@
+# iLambdaAi - Neural Network Layers
+# Core layers for building neural networks in EigenScript
+#
+# Includes: Linear, Activation functions, Dropout, Sequential
+# All layers leverage EigenScript's geometric introspection
+
+from model import Model
+
+# ============================================================================
+# Linear (Fully Connected) Layer
+# ============================================================================
+
+define Linear as:
+
+    # extends Model
+    # Layer configuration
+    in_features is 0
+    out_features is 0
+    use_bias is true
+
+    # Learnable parameters
+    weight is Tensor
+    bias is Tensor
+
+    # Initialize layer with Xavier initialization
+    define init as:
+        input_dim is arg[0]
+        output_dim is arg[1]
+        bias_enabled is arg[2]
+        in_features is input_dim
+        out_features is output_dim
+        use_bias is bias_enabled
+
+        # Xavier/Glorot initialization for weights
+        # scale = sqrt(2 / (fan_in + fan_out))
+        scale is sqrt of (2.0 / (in_features + out_features))
+        weight is random_normal of [in_features, out_features, scale]
+        register_parameter of weight
+
+        # Initialize bias to zeros
+        if use_bias:
+            bias is zeros of out_features
+            register_parameter of bias
+        else:
+            bias is none
+
+        _name is "Linear"
+
+    # Forward pass: y = xW + b
+    define forward as:
+        x is arg
+        output is matmul of [x, weight]
+
+        if bias != none:
+            output is add of [output, bias]
+
+        return output
+
+    # String representation
+    define describe as:
+        return format of ["Linear({} -> {})", in_features, out_features]
+
+
+# ============================================================================
+# Activation Functions
+# ============================================================================
+
+# ReLU: Rectified Linear Unit
+# ReLU(x) = max(0, x)
+define ReLU as:
+    # extends Model
+    define init as:
+        _name is "ReLU"
+
+    define forward as:
+
+        x is arg
+        return relu of x
+
+    define describe as:
+        return "ReLU()"
+
+
+# Sigmoid: Logistic function
+# Sigmoid(x) = 1 / (1 + exp(-x))
+define Sigmoid as:
+    # extends Model
+    define init as:
+        _name is "Sigmoid"
+
+    define forward as:
+
+        x is arg
+        return sigmoid of x
+
+    define describe as:
+        return "Sigmoid()"
+
+
+# Tanh: Hyperbolic Tangent
+# Tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))
+define Tanh as:
+    # extends Model
+    define init as:
+        _name is "Tanh"
+
+    define forward as:
+
+        x is arg
+        return tanh of x
+
+    define describe as:
+        return "Tanh()"
+
+
+# LeakyReLU: Leaky Rectified Linear Unit
+# LeakyReLU(x) = max(0, x) + negative_slope * min(0, x)
+define LeakyReLU as:
+    # extends Model
+    negative_slope is 0.01
+
+    define init as:
+
+        slope is arg
+        negative_slope is slope
+        _name is "LeakyReLU"
+
+    define forward as:
+
+        x is arg
+        # Positive part
+        positive is relu of x
+
+        # Negative part: slope * min(0, x)
+        negative_mask is less_than of [x, 0]
+        negative is multiply of [x, negative_mask]
+        negative is multiply of [negative, negative_slope]
+
+        return add of [positive, negative]
+
+    define describe as:
+        return format of ["LeakyReLU(slope={})", negative_slope]
+
+
+# GELU: Gaussian Error Linear Unit
+# GELU(x) = x * Phi(x) where Phi is the CDF of standard normal
+# Approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+define GELU as:
+    # extends Model
+    define init as:
+        _name is "GELU"
+
+    define forward as:
+
+        x is arg
+        # Constants
+        sqrt_2_over_pi is 0.7978845608  # sqrt(2/pi)
+        coeff is 0.044715
+
+        # x^3
+        x_cubed is multiply of [x, multiply of x, x]
+
+        # inner = sqrt(2/pi) * (x + 0.044715 * x^3)
+        inner is add of [x, multiply of coeff, x_cubed]
+        inner is multiply of [sqrt_2_over_pi, inner]
+
+        # 0.5 * x * (1 + tanh(inner))
+        tanh_inner is tanh of inner
+        one_plus_tanh is add of [1.0, tanh_inner]
+        result is multiply of [0.5, multiply of x, one_plus_tanh]
+
+        return result
+
+    define describe as:
+        return "GELU()"
+
+
+# ReLU6: Capped ReLU for mobile/quantized networks
+# ReLU6(x) = min(max(0, x), 6)
+define ReLU6 as:
+    # extends Model
+    define init as:
+        _name is "ReLU6"
+
+    define forward as:
+
+        x is arg
+        # First apply ReLU
+        relu_out is relu of x
+
+        # Then cap at 6
+        return clip of [relu_out, 0, 6]
+
+    define describe as:
+        return "ReLU6()"
+
+
+# Softmax: Normalized exponential
+# Softmax(x_i) = exp(x_i) / sum(exp(x_j))
+define Softmax as:
+    # extends Model
+    dim is -1
+
+    define init as:
+
+        axis is arg
+        dim is axis
+        _name is "Softmax"
+
+    define forward as:
+
+        x is arg
+        # Numerical stability: subtract max
+        x_max is max of [x, dim]
+        x_shifted is subtract of [x, x_max]
+
+        # exp(x - max)
+        exp_x is exp of x_shifted
+
+        # sum(exp(x - max))
+        sum_exp is sum of [exp_x, dim]
+
+        # Normalize
+        return divide of [exp_x, sum_exp]
+
+    define describe as:
+        return format of ["Softmax(dim={})", dim]
+
+
+# LogSoftmax: Log of Softmax (numerically stable)
+define LogSoftmax as:
+    # extends Model
+    dim is -1
+
+    define init as:
+
+        axis is arg
+        dim is axis
+        _name is "LogSoftmax"
+
+    define forward as:
+
+        x is arg
+        # log_softmax(x) = x - log(sum(exp(x)))
+        # For stability: x - max - log(sum(exp(x - max)))
+        x_max is max of [x, dim]
+        x_shifted is subtract of [x, x_max]
+
+        exp_x is exp of x_shifted
+        sum_exp is sum of [exp_x, dim]
+        log_sum_exp is log of sum_exp
+
+        return subtract of [x_shifted, log_sum_exp]
+
+    define describe as:
+        return format of ["LogSoftmax(dim={})", dim]
+
+
+# ============================================================================
+# Dropout: Regularization Layer
+# ============================================================================
+
+define Dropout as:
+
+    # extends Model
+    p is 0.5  # Dropout probability
+
+    define init as:
+
+        probability is arg
+        if probability < 0 or probability >= 1:
+            error of ["Dropout probability must be in [0, 1)"]
+        p is probability
+        _name is "Dropout"
+
+    define forward as:
+
+        x is arg
+        # Only apply dropout during training
+        if not _training:
+            return x
+
+        if p == 0:
+            return x
+
+        # Generate dropout mask (1 with prob 1-p, 0 with prob p)
+        mask is random_binomial of [shape of x, (1 - p)]
+
+        # Inverted dropout: scale by 1/(1-p) to maintain expected value
+        scale is 1.0 / (1.0 - p)
+
+        # Apply mask and scale
+        return multiply of [x, multiply of mask, scale]
+
+    define describe as:
+        return format of ["Dropout(p={})", p]
+
+
+# ============================================================================
+# Sequential: Container for stacking layers
+# ============================================================================
+
+define Sequential as:
+
+    # extends Model
+    layers is []
+
+    # Initialize with variable number of layers
+    define init as:
+        *layer_list is arg
+        layers is []
+        for layer in layer_list:
+            layers is append of [layers, layer]
+            register_module of layer
+        _name is "Sequential"
+
+    # Forward pass through all layers
+    define forward as:
+        x is arg
+        for layer in layers:
+            x is forward of [layer, x]
+
+            # === EigenScript Geometric Feature ===
+            # Check layer stability during forward pass
+            if not stable:
+                # Log warning for unstable layer
+                print of "Warning: Unstable output at layer"
+                print of _name of layer
+
+        return x
+
+    # Add a layer to the end
+    define add as:
+        layer is arg
+        layers is append of [layers, layer]
+        register_module of layer
+        return self
+
+    # Get number of layers
+    define num_layers as:
+        return length of layers
+
+    # Get layer by index
+    define get_layer as:
+        index is arg
+        return layers[index]
+
+    define describe as:
+        desc is "Sequential(\n"
+        for i, layer in enumerate of layers:
+            desc is concat of [desc, format of "  ({}) {}\n", i, describe of layer]
+        desc is concat of [desc, ")"]
+        return desc
+
+
+# ============================================================================
+# Identity: Pass-through layer (useful for skip connections)
+# ============================================================================
+
+define Identity as:
+
+    # extends Model
+    define init as:
+        _name is "Identity"
+
+    define forward as:
+
+        x is arg
+        return x
+
+    define describe as:
+        return "Identity()"
+
+
+# ============================================================================
+# Flatten: Reshape tensor to 2D (batch_size, -1)
+# ============================================================================
+
+define Flatten as:
+
+    # extends Model
+    start_dim is 1
+    end_dim is -1
+
+    define init as:
+
+        start is arg[0]
+
+        end is arg[1]
+        start_dim is start
+        end_dim is end
+        _name is "Flatten"
+
+    define forward as:
+
+        x is arg
+        return flatten of [x, start_dim, end_dim]
+
+    define describe as:
+        return format of ["Flatten(start={}, end={})", start_dim, end_dim]

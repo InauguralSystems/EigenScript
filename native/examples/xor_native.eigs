@@ -1,0 +1,136 @@
+# iLambdaAi XOR Demo - Native EigenScript
+# Demonstrates geometric introspection for neural network training
+
+print of "=== iLambdaAi XOR Demo ==="
+print of ""
+
+# XOR Dataset: [0,0]->0, [0,1]->1, [1,0]->1, [1,1]->0
+X0 is [0, 0]
+X1 is [0, 1]
+X2 is [1, 0]
+X3 is [1, 1]
+Y is [0, 1, 1, 0]
+
+print of "XOR Dataset loaded"
+
+# Helper: check if two integers are equal (diff is 0)
+define int_equal as:
+    a is arg[0]
+    b is arg[1]
+    diff is a - b
+    if diff < 1:
+        if diff > -1:
+            return 1
+    return 0
+
+# Simple threshold activation
+define threshold as:
+    x is arg
+    if x > 0:
+        return 1
+    return 0
+
+# XOR can be computed as: (a OR b) AND NOT(a AND b)
+# Using threshold units with specific weights
+define compute_xor as:
+    a is arg[0]
+    b is arg[1]
+    # OR gate: threshold(a + b - 0.5)
+    or_val is threshold of (a + b - 0.5)
+    # AND gate: threshold(a + b - 1.5)
+    and_val is threshold of (a + b - 1.5)
+    # NAND: 1 - AND
+    nand_val is 1 - and_val
+    # XOR = OR AND NAND
+    result is threshold of (or_val + nand_val - 1.5)
+    return result
+
+# Training simulation with geometric introspection
+print of ""
+print of "=== Simulated Training with Geometric Introspection ==="
+
+epoch is 0
+max_epochs is 50
+
+loop while epoch < max_epochs:
+    epoch is epoch + 1
+
+    # Simulate learning (adjust imaginary loss)
+    loss is 100 - epoch * 2
+
+    # Check EigenScript's native predicates
+    if converged:
+        print of "*** CONVERGED at epoch:"
+        print of epoch
+        break
+
+    if oscillating:
+        print of "Oscillation detected"
+
+    # Log every 10 epochs using subtraction trick for modulo
+    tens is epoch / 10
+    tens_floor is tens - 0.5
+    if tens_floor > 0:
+        remainder is epoch - (tens * 10)
+        if remainder < 1:
+            if remainder > -1:
+                fs is framework_strength
+                print of "Epoch:"
+                print of epoch
+                print of "Simulated loss:"
+                print of loss
+                print of "Framework strength:"
+                print of fs
+                print of "---"
+
+# Test the XOR function
+print of ""
+print of "=== XOR Evaluation ==="
+
+# Test case 0: [0,0] -> 0
+pred0 is compute_xor of [0, 0]
+print of "Input [0,0], Expected 0, Got:"
+print of pred0
+
+# Test case 1: [0,1] -> 1
+pred1 is compute_xor of [0, 1]
+print of "Input [0,1], Expected 1, Got:"
+print of pred1
+
+# Test case 2: [1,0] -> 1
+pred2 is compute_xor of [1, 0]
+print of "Input [1,0], Expected 1, Got:"
+print of pred2
+
+# Test case 3: [1,1] -> 0
+pred3 is compute_xor of [1, 1]
+print of "Input [1,1], Expected 0, Got:"
+print of pred3
+
+# Count correct
+correct is 0
+eq0 is int_equal of [pred0, 0]
+eq1 is int_equal of [pred1, 1]
+eq2 is int_equal of [pred2, 1]
+eq3 is int_equal of [pred3, 0]
+correct is eq0 + eq1 + eq2 + eq3
+
+print of ""
+print of "Correct predictions:"
+print of correct
+print of "out of 4"
+
+# Final metrics
+print of ""
+print of "=== Final Geometric Metrics ==="
+print of "Framework strength:"
+fs is framework_strength
+print of fs
+print of "Stable:"
+print of stable
+print of "Signature:"
+sig is signature
+print of sig
+
+print of ""
+print of "=== Demo Complete ==="

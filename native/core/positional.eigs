@@ -1,0 +1,579 @@
+# iLambdaAi - Positional Encoding Methods
+# Various positional encoding strategies for Transformers
+#
+# Includes: Sinusoidal, Rotary (RoPE), ALiBi, Learned, Relative
+#
+# Positional encodings inject sequence order information into
+# attention mechanisms that are otherwise position-agnostic
+
+from model import Model
+
+# ============================================================================
+# Sinusoidal Positional Encoding (Original Transformer)
+# ============================================================================
+
+define SinusoidalPositionalEncoding as:
+
+    # extends Model
+    # PE(pos, 2i) = sin(pos / 10000^(2i/d_model))
+    # PE(pos, 2i+1) = cos(pos / 10000^(2i/d_model))
+
+    d_model is 0
+    max_len is 5000
+    pe is Tensor
+
+    define init as:
+
+        dim is arg[0]
+
+        max_length is arg[1]
+        d_model is dim
+        max_len is max_length
+
+        # Precompute positional encoding table
+        pe is zeros of [max_len, d_model]
+
+        position is reshape of [(arange of max_len), [max_len, 1]]
+        div_term is exp of [(multiply of (arange of 0, d_model, 2), (negative of (log of 10000.0) / d_model))]
+
+        # Even indices: sin
+        pe[:, 0::2] is sin of [(multiply of position, div_term)]
+
+        # Odd indices: cos
+        pe[:, 1::2] is cos of [(multiply of position, div_term)]
+
+        _name is "SinusoidalPE"
+
+    define forward as:
+
+        x is arg
+        # x: (batch, seq_len, d_model)
+        seq_len is shape of [x, 1]
+        return add of [x, pe[:seq_len]]
+
+    define get_encoding as:
+
+        seq_len is arg
+        return pe[:seq_len]
+
+    define describe as:
+        return format of ["SinusoidalPE(d_model={}, max_len={})", d_model, max_len]
+
+
+# ============================================================================
+# Rotary Position Embedding (RoPE)
+# ============================================================================
+
+define RoPE as:
+
+    # extends Model
+    # Rotary embeddings for relative position encoding
+    # Used in LLaMA, GPT-NeoX, PaLM
+
+    dim is 0
+    max_seq_len is 2048
+    base is 10000
+
+    sin_cached is Tensor
+    cos_cached is Tensor
+
+    define init as:
+
+        d is arg[0]
+
+        max_len is arg[1]
+
+        b is arg[2]
+        dim is d
+        max_seq_len is max_len
+        base is b
+
+        # Compute inverse frequencies
+        # inv_freq = 1 / (base^(2i/dim)) for i in [0, dim/2)
+        inv_freq is divide of [1.0, (pow of base, (divide of (arange of 0, dim, 2), dim))]
+
+        # Precompute for all positions
+        t is arange of max_seq_len
+        freqs is outer_product of [t, inv_freq  # (max_len, dim/2)]
+
+        # Cache sin and cos
+        sin_cached is sin of freqs
+        cos_cached is cos of freqs
+
+        _name is "RoPE"
+
+    define forward as:
+
+        x is arg[0]
+
+        position_ids is arg[1]
+        # x: (batch, seq, heads, head_dim)
+        # position_ids: (batch, seq) or none
+
+        if position_ids == none:
+            seq_len is shape of [x, 1]
+            position_ids is arange of seq_len
+
+        # Get sin/cos for positions
+        sin is gather of [sin_cached, position_ids, 0]
+        cos is gather of [cos_cached, position_ids, 0]
+
+        # Reshape for broadcasting
+        sin is reshape of [sin, [1, -1, 1, shape of sin, -1]]
+        cos is reshape of [cos, [1, -1, 1, shape of cos, -1]]
+
+        # Apply rotation
+        return apply_rotary_emb of [x, sin, cos]
+
+    define describe as:
+        return format of ["RoPE(dim={}, base={})", dim, base]
+
+
+# Helper function for RoPE
+define apply_rotary_emb as:
+    x is arg[0]
+    sin is arg[1]
+    cos is arg[2]
+    # x: (..., head_dim)
+    # Rotate pairs of dimensions
+
+    # Split into pairs
+    x1 is x[..., 0::2]  # Even indices
+    x2 is x[..., 1::2]  # Odd indices
+
+    # Apply rotation matrix:
+    # [cos -sin] [x1]   [x1*cos - x2*sin]
+    # [sin  cos] [x2] = [x1*sin + x2*cos]
+
+    rotated_x1 is subtract of [(multiply of x1, cos), (multiply of x2, sin)]
+    rotated_x2 is add of [(multiply of x1, sin), (multiply of x2, cos)]
+
+    # Interleave back
+    return interleave of [rotated_x1, rotated_x2, -1]
+
+
+# ============================================================================
+# ALiBi (Attention with Linear Biases)
+# ============================================================================
+
+define ALiBi as:
+
+    # extends Model
+    # Adds linear bias based on distance to attention scores
+    # No learned parameters, very efficient
+
+    num_heads is 0
+    slopes is Tensor
+
+    define init as:
+
+        n_heads is arg
+        num_heads is n_heads
+
+        # Compute slopes: 2^(-8/n * i) for i in 1..n
+        # Geometric sequence from 2^(-8/n) to 2^(-8)
+        ratio is pow of [2, (negative of (8.0 / num_heads))]
+        slopes is []
+        current is ratio
+
+        for i in range of num_heads:
+            slopes is append of [slopes, current]
+            current is multiply of [current, ratio]
+
+        slopes is Tensor of slopes
+
+        _name is "ALiBi"
+
+    define forward as:
+
+        attention_scores is arg[0]
+
+        query_length is arg[1]
+
+        key_length is arg[2]
+        # attention_scores: (batch, heads, q_len, k_len)
+
+        # Create distance matrix
+        q_pos is arange of query_length
+        k_pos is arange of key_length
+
+        # distance[i,j] = |i - j|
+        distance is abs of [(subtract of (reshape of q_pos, [-1, 1]), k_pos)]
+
+        # Bias = -distance * slope (broadcast over batch and heads)
+        # slopes: (heads,) -> (1, heads, 1, 1)
+        slopes_reshaped is reshape of [slopes, [1, num_heads, 1, 1]]
+
+        bias is negative of [(multiply of slopes_reshaped, distance)]
+
+        return add of [attention_scores, bias]
+
+    define get_bias as:
+
+        query_length is arg[0]
+
+        key_length is arg[1]
+        q_pos is arange of query_length
+        k_pos is arange of key_length
+        distance is abs of [(subtract of (reshape of q_pos, [-1, 1]), k_pos)]
+        slopes_reshaped is reshape of [slopes, [num_heads, 1, 1]]
+        return negative of [(multiply of slopes_reshaped, distance)]
+
+    define describe as:
+        return format of ["ALiBi(heads={})", num_heads]
+
+
+# ============================================================================
+# Learned Positional Embedding
+# ============================================================================
+
+define LearnedPositionalEmbedding as:
+
+    # extends Model
+    num_embeddings is 0
+    embedding_dim is 0
+    weight is Tensor
+
+    define init as:
+
+        max_len is arg[0]
+
+        d_model is arg[1]
+        num_embeddings is max_len
+        embedding_dim is d_model
+
+        # Initialize with small random values
+        weight is random_normal of [num_embeddings, embedding_dim], 0.02
+        register_parameter of weight
+
+        _name is "LearnedPE"
+
+    define forward as:
+
+        x is arg[0]
+
+        position_ids is arg[1]
+        # x: (batch, seq, d_model)
+        # position_ids: (batch, seq) or none
+
+        if position_ids == none:
+            seq_len is shape of [x, 1]
+            position_ids is arange of seq_len
+
+        # Lookup position embeddings
+        pos_emb is gather of [weight, position_ids, 0]
+
+        return add of [x, pos_emb]
+
+    define describe as:
+        return format of ["LearnedPE(max_len={}, dim={})", num_embeddings, embedding_dim]
+
+
+# ============================================================================
+# Relative Position Encoding
+# ============================================================================
+
+define RelativePositionalEncoding as:
+
+    # extends Model
+    # Adds relative position bias to attention scores
+    # Used in T5, DeBERTa
+
+    max_distance is 128
+    num_heads is 8
+    bidirectional is true
+
+    relative_attention_bias is Tensor
+
+    define init as:
+
+        max_dist is arg[0]
+
+        n_heads is arg[1]
+
+        bidir is arg[2]
+        max_distance is max_dist
+        num_heads is n_heads
+        bidirectional is bidir
+
+        # Number of unique relative positions
+        if bidirectional:
+            num_buckets is 2 * max_distance
+        else:
+            num_buckets is max_distance
+
+        # Learned bias for each (head, relative_position) pair
+        relative_attention_bias is random_normal of [num_heads, num_buckets], 0.02
+        register_parameter of relative_attention_bias
+
+        _name is "RelativePE"
+
+    define forward as:
+
+        query_length is arg[0]
+
+        key_length is arg[1]
+        # Compute relative position matrix
+        q_pos is arange of query_length
+        k_pos is arange of key_length
+
+        # relative_position[i,j] = j - i
+        relative_position is subtract of [k_pos, (reshape of q_pos, [-1, 1])]
+
+        # Bucket the relative positions
+        relative_buckets is compute_buckets of relative_position
+
+        # Look up bias values
+        bias is gather of [relative_attention_bias, relative_buckets, 1]
+
+        return transpose of [bias, 0, 1  # (heads, q_len, k_len)]
+
+    define compute_buckets as:
+
+        relative_position is arg
+        # Map relative positions to bucket indices
+        if bidirectional:
+            # Positive and negative get different buckets
+            is_negative is less_than of [relative_position, 0]
+            relative_position is abs of relative_position
+
+            # Bucket index
+            buckets is where of is_negative,
+                (add of max_distance, (clip of relative_position, 0, max_distance - 1)),
+                (clip of [relative_position, 0, max_distance - 1)]
+        else:
+            # Only past positions (for causal attention)
+            relative_position is negative of [(clip of relative_position, none, 0)]
+            buckets is clip of [relative_position, 0, max_distance - 1]
+
+        return buckets
+
+    define describe as:
+        return format of ["RelativePE(max_dist={}, heads={})", max_distance, num_heads]
+
+
+# ============================================================================
+# Axial Position Encoding (for 2D inputs like images)
+# ============================================================================
+
+define AxialPositionalEncoding as:
+
+    # extends Model
+    # For Vision Transformers and similar
+    height is 0
+    width is 0
+    d_model is 0
+
+    height_emb is Tensor
+    width_emb is Tensor
+
+    define init as:
+
+        h is arg[0]
+
+        w is arg[1]
+
+        dim is arg[2]
+        height is h
+        width is w
+        d_model is dim
+
+        # Separate embeddings for height and width
+        height_emb is random_normal of [height, d_model // 2], 0.02
+        width_emb is random_normal of [width, d_model // 2], 0.02
+
+        register_parameter of height_emb
+        register_parameter of width_emb
+
+        _name is "AxialPE"
+
+    define forward as:
+
+        x is arg
+        # x: (batch, height * width, d_model)
+        batch_size is shape of [x, 0]
+
+        # Create 2D position grid
+        h_pos is arange of height
+        w_pos is arange of width
+
+        # Get embeddings
+        h_emb is gather of [height_emb, h_pos, 0  # (height, d_model/2)]
+        w_emb is gather of [width_emb, w_pos, 0   # (width, d_model/2)]
+
+        # Create full position encoding
+        # For each (h, w) position, concatenate h_emb[h] and w_emb[w]
+        h_emb_expanded is reshape of [h_emb, [height, 1, d_model // 2]]
+        w_emb_expanded is reshape of [w_emb, [1, width, d_model // 2]]
+
+        # Broadcast and concatenate
+        pos_emb is concatenate of [
+            tile of h_emb_expanded, [1, width, 1],
+            tile of [w_emb_expanded, [height, 1, 1]]
+        ], -1
+
+        # Flatten to (height * width, d_model)
+        pos_emb is reshape of [pos_emb, [height * width, d_model]]
+
+        return add of [x, pos_emb]
+
+    define describe as:
+        return format of ["AxialPE({}x{}, dim={})", height, width, d_model]
+
+
+# ============================================================================
+# Conditional Position Encoding
+# ============================================================================
+
+define ConditionalPositionalEncoding as:
+
+    # extends Model
+    # Position encoding conditioned on input content
+    # Useful for variable-length sequences
+
+    d_model is 0
+    kernel_size is 3
+
+    conv is Model  # Depthwise conv for local context
+
+    define init as:
+
+        dim is arg[0]
+
+        k_size is arg[1]
+        d_model is dim
+        kernel_size is k_size
+
+        # Depthwise separable convolution
+        from cnn import Conv2d
+        conv is Conv2d
+        init of [conv, d_model, d_model, kernel_size, 1, (kernel_size // 2), true]
+
+        register_module of conv
+
+        _name is "ConditionalPE"
+
+    define forward as:
+
+        x is arg
+        # x: (batch, seq, d_model)
+
+        # Reshape for 1D conv: (batch, d_model, seq)
+        x_t is transpose of [x, 1, 2]
+        x_t is reshape of [x_t, [shape of x, 0, d_model, shape of x, 1, 1]]
+
+        # Apply conv
+        pos_emb is forward of [conv, x_t]
+
+        # Reshape back
+        pos_emb is reshape of [pos_emb, [shape of x, 0, d_model, -1]]
+        pos_emb is transpose of [pos_emb, 1, 2]
+
+        return add of [x, pos_emb]
+
+    define describe as:
+        return format of ["ConditionalPE(dim={}, kernel={})", d_model, kernel_size]
+
+
+# ============================================================================
+# Combined Position Encoding (mix multiple methods)
+# ============================================================================
+
+define CombinedPositionalEncoding as:
+
+    # extends Model
+    encodings is []
+    weights is Tensor
+
+    define init as:
+
+        *encoding_list is arg
+        encodings is list of encoding_list
+
+        for enc in encodings:
+            register_module of enc
+
+        # Learned weights for combining
+        weights is ones of (length of encodings)
+        register_parameter of weights
+
+        _name is "CombinedPE"
+
+    define forward as:
+
+        x is arg
+        result is x
+
+        for i, enc in enumerate of encodings:
+            w is weights[i]
+            pos_emb is forward of [enc, x]
+
+            # Weighted addition
+            if i == 0:
+                result is multiply of [w, pos_emb]
+            else:
+                result is add of [result, multiply of w, pos_emb]
+
+        return result
+
+    define describe as:
+        return format of ["CombinedPE({} encodings)", length of encodings]
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+# Create position IDs from attention mask
+define create_position_ids as:
+    attention_mask is arg
+    # attention_mask: (batch, seq) with 1 for valid, 0 for padding
+    # Returns position IDs that restart at 0 for each sequence
+
+    # Cumulative sum gives positions
+    position_ids is cumsum of [attention_mask, 1]
+
+    # Subtract 1 to start from 0
+    position_ids is subtract of [position_ids, 1]
+
+    # Mask invalid positions
+    position_ids is multiply of [position_ids, attention_mask]
+
+    return to_int of position_ids
+
+
+# Interpolate position embeddings for different sequence lengths
+define interpolate_pos_encoding as:
+    pos_emb is arg[0]
+    target_len is arg[1]
+    # pos_emb: (max_len, d_model)
+    # Interpolate to target_len using linear interpolation
+
+    current_len is shape of [pos_emb, 0]
+
+    if current_len == target_len:
+        return pos_emb
+
+    # Use linear interpolation
+    scale is current_len / target_len
+    target_positions is multiply of [(arange of target_len), scale]
+
+    # Floor and ceil for interpolation
+    floor_pos is floor of target_positions
+    ceil_pos is ceil of target_positions
+
+    # Weights
+    weight_ceil is subtract of [target_positions, floor_pos]
+    weight_floor is subtract of [1.0, weight_ceil]
+
+    # Interpolate
+    floor_emb is gather of [pos_emb, (to_int of floor_pos), 0]
+    ceil_emb is gather of [pos_emb, (clip of (to_int of ceil_pos), 0, current_len - 1), 0]
+
+    interpolated is add of (
+        multiply of [(reshape of weight_floor, [-1, 1]), floor_emb]
+    ), (
+        multiply of [(reshape of weight_ceil, [-1, 1]), ceil_emb]
+    )
+
+    return interpolated

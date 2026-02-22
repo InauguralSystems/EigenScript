@@ -1,0 +1,268 @@
+# iLambdaAi - Base Model Module
+# Provides the foundational Model class for all neural network components
+#
+# This module leverages EigenScript's geometric introspection to create
+# self-aware neural networks that understand their own training dynamics.
+
+# ============================================================================
+# Model: Base class for all neural network layers and models
+# ============================================================================
+
+define Model as:
+    # Internal state
+    _parameters is []
+    _modules is []
+    _training is true
+    _name is "Model"
+
+    # ========================================================================
+    # Parameter Management
+    # ========================================================================
+
+    # Register a tensor as a trainable parameter
+    define register_parameter as:
+        param is arg
+        _parameters is append of [_parameters, param]
+
+    # Register a submodule
+    define register_module as:
+        module is arg
+        _modules is append of [_modules, module]
+
+    # Iterate over all parameters (including submodules)
+    define parameters as:
+        result is []
+        for param in _parameters:
+            result is append of [result, param]
+        for module in _modules:
+            subparams is parameters of module
+            for param in subparams:
+                result is append of [result, param]
+        return result
+
+    # Get parameter count
+    define num_parameters as:
+        count is 0
+        for param in parameters:
+            count is count + (size of param)
+        return count
+
+    # ========================================================================
+    # Gradient Management
+    # ========================================================================
+
+    # Zero all gradients before backward pass
+    define zero_grad as:
+        for param in parameters:
+            zero_grad of param
+
+    # ========================================================================
+    # Training Mode
+    # ========================================================================
+
+    # Set model to training mode
+    define train as:
+        _training is true
+        for module in _modules:
+            train of module
+        return self
+
+    # Set model to evaluation mode
+    define eval as:
+        _training is false
+        for module in _modules:
+            eval of module
+        return self
+
+    # Check if in training mode
+    define is_training as:
+        return _training
+
+    # ========================================================================
+    # Forward Pass (to be overridden)
+    # ========================================================================
+
+    define forward as:
+
+        x is arg
+        # Subclasses must implement this
+        return x
+
+    # Make module callable
+    define call as:
+        x is arg
+        return forward of x
+
+    # ========================================================================
+    # EigenScript Geometric Introspection (Native!)
+    # ========================================================================
+
+    # Check if model has converged during training
+    # Uses EigenScript's native convergence detection
+    define is_converged as:
+        return converged
+
+    # Check if model training is stable
+    # Uses EigenScript's native stability predicate
+    define is_stable as:
+        return stable
+
+    # Check if model is improving
+    # Uses EigenScript's native improvement detection
+    define is_improving as:
+        return improving
+
+    # Check if model is oscillating (unstable training)
+    define is_oscillating as:
+        return oscillating
+
+    # Check if model has reached equilibrium
+    define is_equilibrium as:
+        return equilibrium
+
+    # ========================================================================
+    # EigenScript Interrogatives
+    # ========================================================================
+
+    # What is the current state magnitude?
+    define query_what as:
+        return what is self
+
+    # Who is this model? (identity)
+    define query_who as:
+        return who is self
+
+    # When was this state computed? (iteration step)
+    define query_when as:
+        return when
+
+    # Where is this in the computation? (location)
+    define query_where as:
+        return where
+
+    # Why is this changing? (gradient direction)
+    define query_why as:
+        return why is self
+
+    # How well is this performing? (quality metric)
+    define query_how as:
+        return how is self
+
+    # ========================================================================
+    # EigenScript Temporal Operators
+    # ========================================================================
+
+    # Get previous state
+    define previous_state as:
+        return was of self
+
+    # Get change magnitude
+    define state_change as:
+        return change of self
+
+    # Get trend direction
+    define state_trend as:
+        return trend of self
+
+    # ========================================================================
+    # Framework Metrics
+    # ========================================================================
+
+    # Get Framework Strength (computational coherence)
+    define get_framework_strength as:
+        return framework_strength
+
+    # Get spacetime signature
+    define get_signature as:
+        return signature
+
+    # ========================================================================
+    # Full Introspection Report
+    # ========================================================================
+
+    define introspect as:
+        report is {}
+
+        # Predicates
+        report["converged"] is converged
+        report["stable"] is stable
+        report["improving"] is improving
+        report["oscillating"] is oscillating
+        report["equilibrium"] is equilibrium
+
+        # Metrics
+        report["framework_strength"] is framework_strength
+        report["parameter_count"] is num_parameters
+
+        # Interrogatives
+        report["what"] is what is self
+        report["how"] is how is self
+
+        return report
+
+
+# ============================================================================
+# ParameterList: Container for a list of parameters
+# ============================================================================
+
+define ParameterList as:
+    _params is []
+
+    define init as:
+
+        params is arg
+        for p in params:
+            _params is append of [_params, p]
+
+    define append as:
+
+        param is arg
+        _params is append of [_params, param]
+
+    define parameters as:
+        return _params
+
+    define get as:
+
+        index is arg
+        return _params[index]
+
+    define len as:
+        return length of _params
+
+
+# ============================================================================
+# ModuleList: Container for a list of modules
+# ============================================================================
+
+define ModuleList as:
+    _modules is []
+
+    define init as:
+
+        modules is arg
+        for m in modules:
+            _modules is append of [_modules, m]
+
+    define append as:
+
+        module is arg
+        _modules is append of [_modules, module]
+
+    define modules as:
+        return _modules
+
+    define get as:
+
+        index is arg
+        return _modules[index]
+
+    define len as:
+        return length of _modules
+
+    define parameters as:
+        result is []
+        for module in _modules:
+            for param in parameters of module:
+                result is append of [result, param]
+        return result

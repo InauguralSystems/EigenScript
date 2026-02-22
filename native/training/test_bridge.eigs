@@ -1,0 +1,36 @@
+print of "=== Bridge Test ==="
+
+define get_field as:
+    decoded is n[0]
+    key is n[1]
+    i is 0
+    total is len of decoded
+    loop while i < total:
+        if decoded[i] == key:
+            return decoded[i + 1]
+        i is i + 2
+    return -1
+
+print of "Loading model..."
+model_status is eigen_model_load of "../../checkpoints/eigenscript/model.json"
+print of model_status
+print of ""
+
+print of "Training one pair..."
+train_json is "{\"input\": \"Hello\", \"output\": \"Hello!\", \"learning_rate\": 0.01}"
+raw is eigen_train of train_json
+print of "Raw result:"
+print of raw
+print of ""
+
+decoded is json_decode of raw
+loss is get_field of [decoded, "loss"]
+print of "Extracted loss:"
+print of loss
+
+status is get_field of [decoded, "status"]
+print of "Extracted status:"
+print of status
+
+print of ""
+print of "=== Bridge Test Complete ==="

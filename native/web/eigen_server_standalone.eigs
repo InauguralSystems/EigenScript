@@ -1,0 +1,177 @@
+# Eigen Chatbot Server - Standalone Pure EigenScript
+# Runs on port 8080 independently from Flask
+# Uses eigen_hybrid_chat for TRUE hybrid inference:
+#   - Native transformer first
+#   - OpenAI fallback if confidence < 40%
+
+print of "==================================="
+print of "   Eigen AI - Standalone Server"
+print of "       Port 8080 (Pure .eigs)"
+print of "   Mode: HYBRID (Native + OpenAI)"
+print of "==================================="
+print of ""
+
+# Connect to PostgreSQL database
+print of "Connecting to database..."
+db_status is db_connect of null
+print of db_status
+print of ""
+
+# Load the native transformer model
+print of "Loading native transformer model..."
+model_status is eigen_model_load of "../../checkpoints/eigenscript/model.json"
+print of model_status
+print of ""
+
+# Register static file directory
+print of "Registering static files..."
+http_static of ["/static", "./static"]
+print of ""
+
+# --- Static Routes ---
+
+# Serve chat UI at root
+http_route of ["GET", "/", "file", "./static/chat.html"]
+
+# JSON API home
+home_response is "{\"name\": \"Eigen\", \"version\": \"2.0\", \"framework\": \"EigenScript\", \"server\": \"standalone\", \"port\": 8080, \"mode\": \"hybrid\", \"builtins\": 120}"
+http_route of ["GET", "/api", home_response]
+
+health_response is "{\"healthy\": true, \"database\": \"connected\", \"server\": \"pure_eigenscript\", \"mode\": \"hybrid\", \"model\": \"loaded\"}"
+http_route of ["GET", "/health", health_response]
+
+status_response is "{\"status\": \"online\", \"mode\": \"hybrid_inference\", \"features\": [\"native_transformer\", \"openai_fallback\", \"geometric_confidence\", \"session_memory\"]}"
+http_route of ["GET", "/api/v1/status", status_response]
+
+about_response is "{\"product\": \"Eigen\", \"powered_by\": \"iLambdaAi + EigenScript\", \"inference\": \"hybrid\", \"description\": \"Native transformer with OpenAI fallback based on geometric confidence\"}"
+http_route of ["GET", "/about", about_response]
+
+# --- Dynamic Routes ---
+
+# Echo endpoint for testing
+http_route of ["POST", "/echo", "code", "http_request_body of null"]
+
+# Session ID endpoint (demonstrates cookie handling)
+http_route of ["GET", "/session", "code", "http_session_id of null"]
+
+# Model status endpoint
+http_route of ["GET", "/model/status", "code", "eigen_model_load of \"../../checkpoints/eigenscript/model.json\""]
+
+# Native inference only (for testing transformer)
+http_route of ["POST", "/infer", "code", "eigen_native_infer of (http_request_body of null)"]
+
+# HYBRID Chat endpoint - tries native transformer first, falls back to OpenAI
+# This is the main chat endpoint for Eigen
+http_route of ["POST", "/chat", "code", "eigen_hybrid_chat of (http_request_body of null)"]
+
+# Clear session
+http_route of ["POST", "/chat/clear", "code", "eigen_native_clear of (http_session_id of null)"]
+
+# API v1 chat endpoint (same hybrid behavior)
+http_route of ["POST", "/api/v1/chat", "code", "eigen_hybrid_chat of (http_request_body of null)"]
+
+# OpenAI-only endpoint (for comparison)
+http_route of ["POST", "/chat/openai", "code", "eigen_native_chat of (http_request_body of null)"]
+
+# --- Training Endpoints ---
+
+# Train on a single input/output pair
+http_route of ["POST", "/train", "code", "eigen_train of (http_request_body of null)"]
+
+# Add training data to buffer (for batch training)
+http_route of ["POST", "/train/add", "code", "eigen_add_training_data of (http_request_body of null)"]
+
+# Batch train with replay buffer mixing
+http_route of ["POST", "/train/batch", "code", "eigen_batch_train of (http_request_body of null)"]
+
+# Save model checkpoint
+http_route of ["POST", "/model/save", "code", "eigen_model_save of \"../../checkpoints/eigenscript/model.json\""]
+
+# --- Feedback & Auto-Training Endpoints ---
+
+# Process user feedback (thumbs up/down)
+http_route of ["POST", "/feedback", "code", "eigen_feedback of (http_request_body of null)"]
+
+# Check and trigger auto-training if threshold met
+http_route of ["POST", "/auto-train", "code", "eigen_auto_train_check of (http_request_body of null)"]
+
+# Get training buffer status
+buffer_status is "{\"endpoint\": \"/auto-train\", \"method\": \"POST\", \"description\": \"Triggers batch training when feedback threshold is met\"}"
+http_route of ["GET", "/train/status", buffer_status]
+
+# --- Learning Endpoints ---
+
+# Read article from URL and optionally add to training
+http_route of ["POST", "/learn/article", "code", "eigen_read_article of (http_request_body of null)"]
+
+# --- API Key Management ---
+
+# Create new API key
+http_route of ["POST", "/api/keys/create", "code", "eigen_api_key_create of (http_request_body of null)"]
+
+# Validate API key
+http_route of ["POST", "/api/keys/validate", "code", "eigen_api_key_validate of (http_request_body of null)"]
+
+# List API keys
+http_route of ["GET", "/api/keys", "code", "eigen_api_key_list of null"]
+
+# --- Analytics ---
+
+# Get visitor analytics
+http_route of ["GET", "/analytics", "code", "eigen_get_analytics of null"]
+
+# --- Training Stats & Sessions ---
+
+# Get training stats
+http_route of ["GET", "/train/stats", "code", "eigen_training_stats of null"]
+
+# Save session to database
+http_route of ["POST", "/session/save", "code", "eigen_session_save of (http_request_body of null)"]
+
+# Load session from database
+http_route of ["POST", "/session/load", "code", "eigen_session_load of (http_request_body of null)"]
+
+print of "Routes registered:"
+print of "  GET  /                - Chat UI (HTML)"
+print of "  GET  /api             - API Home (JSON)"
+print of "  GET  /health          - Health check"
+print of "  GET  /api/v1/status   - API status"
+print of "  GET  /about           - About Eigen"
+print of "  POST /echo            - Echo body"
+print of "  GET  /session         - Get session ID"
+print of "  GET  /model/status    - Model status"
+print of "  POST /infer           - Native inference only"
+print of "  POST /chat            - HYBRID chat (native + OpenAI)"
+print of "  POST /chat/clear      - Clear session"
+print of "  POST /api/v1/chat     - API chat (hybrid)"
+print of "  POST /chat/openai     - OpenAI-only chat"
+print of "  POST /train           - Train on input/output pair"
+print of "  POST /train/add       - Add to training buffer"
+print of "  POST /train/batch     - Batch train with replay"
+print of "  POST /model/save      - Save model checkpoint"
+print of "  POST /feedback        - Submit feedback (thumbs up/down)"
+print of "  POST /auto-train      - Trigger auto-training check"
+print of "  GET  /train/status    - Training buffer status"
+print of "  POST /learn/article   - Read article from URL for training"
+print of "  POST /api/keys/create - Create API key"
+print of "  POST /api/keys/validate - Validate API key"
+print of "  GET  /api/keys        - List API keys"
+print of "  GET  /analytics       - Visitor analytics"
+print of "  GET  /train/stats     - Training statistics"
+print of "  POST /session/save    - Save session to DB"
+print of "  POST /session/load    - Load session from DB"
+print of ""
+print of "Static files: /static/* -> ./static/"
+print of ""
+print of "Inference Mode:"
+print of "  1. Try native transformer first"
+print of "  2. Compute geometric confidence (Minkowski metric)"
+print of "  3. If confidence >= 40%: use native response"
+print of "  4. If confidence < 40%: fall back to OpenAI"
+print of ""
+
+# Start server on port 8080
+print of "Starting standalone server on http://0.0.0.0:8080"
+print of "Press Ctrl+C to stop"
+print of ""
+http_serve of 8080

@@ -1,0 +1,574 @@
+# iLambdaAi LLM Example
+# Demonstrates building and using Causal Language Models
+# with EigenScript's geometric introspection capabilities
+#
+# This example shows:
+# - Building a CausalLM (GPT/LLaMA-style decoder)
+# - Text generation with various sampling strategies
+# - Character and BPE tokenization
+# - Geometric self-awareness during generation
+
+from model import Model
+from llm import (
+    CausalLM,
+    LLMConfig,
+    get_config,
+    RMSNorm,
+    SwiGLU,
+    FFNSwiGLU,
+    GradScaler,
+    KVCache,
+    KVCacheManager,
+    GroupedQueryAttention,
+    TransformerBlock,
+    sample,
+    init_model_weights
+)
+from generation import (
+    TextGenerator,
+    CharacterTokenizer,
+    BPETokenizer,
+    train_bpe,
+    apply_repetition_penalty,
+    TemperatureProcessor,
+    TopKProcessor,
+    TopPProcessor,
+    RepetitionPenaltyProcessor,
+    LogitsProcessorList,
+    MaxLengthCriteria,
+    EosTokenCriteria,
+    CombinedStoppingCriteria,
+    StreamingGenerator
+)
+from optimizers import AdamW
+from loss import cross_entropy_loss
+from loader import ArrayDataset, DataLoader
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+print of "=== iLambdaAi LLM Example ==="
+print of ""
+
+# Use tiny config for demonstration
+print of "Loading 'tiny' configuration..."
+config is get_config of "tiny"
+
+print of "Configuration:"
+print of "  vocab_size:"
+print of config.vocab_size
+print of "  hidden_size:"
+print of config.hidden_size
+print of "  num_layers:"
+print of config.num_layers
+print of "  num_heads:"
+print of config.num_heads
+print of "  num_kv_heads:"
+print of config.num_kv_heads
+print of "  intermediate_size:"
+print of config.intermediate_size
+print of "  max_seq_len:"
+print of config.max_seq_len
+print of ""
+
+# ============================================================================
+# Build Character Tokenizer
+# ============================================================================
+
+print of "Building character tokenizer..."
+
+# Create character tokenizer with lowercase letters, digits, and punctuation
+vocab is "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'\"-:;()[]{}@#$%^&*+=<>/\\"
+
+tokenizer is CharacterTokenizer
+init of [tokenizer, vocab, "<PAD>", "<BOS>", "<EOS>", "<UNK>"]
+
+print of "Vocabulary size:"
+print of tokenizer.vocab_size
+print of ""
+
+# Test tokenizer
+test_text is "hello world!"
+encoded is encode of [tokenizer, test_text, true]
+decoded is decode of [tokenizer, encoded, true]
+
+print of "Tokenizer test:"
+print of "  Input:"
+print of test_text
+print of "  Encoded:"
+print of encoded
+print of "  Decoded:"
+print of decoded
+print of ""
+
+# ============================================================================
+# Create Training Data
+# ============================================================================
+
+print of "Creating training data..."
+
+# Sample text corpus for training
+corpus is [
+    "the quick brown fox jumps over the lazy dog",
+    "hello world this is a test",
+    "machine learning is fascinating",
+    "neural networks learn patterns from data",
+    "transformers revolutionized natural language processing",
+    "attention is all you need",
+    "language models predict next tokens",
+    "deep learning enables many applications",
+    "artificial intelligence is advancing rapidly",
+    "computers can now understand language"
+]
+
+# Encode corpus
+encoded_corpus is []
+max_len is 64
+
+for text in corpus:
+    ids is encode of [tokenizer, text, true]
+    # Pad or truncate to max_len
+    if length of ids > max_len:
+        ids is ids[:max_len]
+    else:
+        pad_len is max_len - length of ids
+        ids is concatenate of [ids, (repeat of [tokenizer.pad_token_id], pad_len)]
+    encoded_corpus is append of [encoded_corpus, ids]
+
+# Create input-target pairs (next token prediction)
+X is []
+Y is []
+
+for seq in encoded_corpus:
+    X is append of [X, seq[:-1]  # Input: all but last]
+    Y is append of [Y, seq[1:]   # Target: all but first]
+
+X is Tensor of X
+Y is Tensor of Y
+
+print of "Training data:"
+print of "  X shape:"
+print of shape of X
+print of "  Y shape:"
+print of shape of Y
+print of ""
+
+# Create DataLoader
+dataset is ArrayDataset
+init of [dataset, X, Y]
+
+loader is DataLoader
+init of [loader, dataset, 4, true, false]
+
+print of "DataLoader created with batch_size=4"
+print of ""
+
+# ============================================================================
+# Create Model
+# ============================================================================
+
+print of "Creating CausalLM model..."
+
+# Update config to match tokenizer
+config.vocab_size is tokenizer.vocab_size
+
+model is CausalLM
+init of [model, config]
+
+# Initialize weights
+init_model_weights of [model, 0.02]
+
+print of describe of model
+print of "Total parameters:"
+print of num_parameters of model
+print of ""
+
+# ============================================================================
+# Training Loop
+# ============================================================================
+
+print of "=== Training ==="
+print of ""
+
+# Optimizer with weight decay
+optimizer is AdamW
+init of [optimizer, (parameters of model), 0.001, 0.9, 0.999, 1e-8, 0.01, false]
+
+# Optional: gradient scaler for mixed precision
+scaler is GradScaler
+init of [scaler, false, 65536.0]
+
+epochs is 20
+
+for epoch in range of epochs:
+    train of model
+    epoch_loss is 0
+    num_batches is 0
+
+    for batch in iter of loader:
+        X_batch, Y_batch is batch
+
+        # Forward pass
+        zero_grad of model
+        logits is forward of [model, X_batch, 0, false]
+
+        # Flatten for loss computation
+        batch_size is shape of [logits, 0]
+        seq_len is shape of [logits, 1]
+        vocab_size is shape of [logits, 2]
+
+        logits_flat is reshape of [logits, [-1, vocab_size]]
+        targets_flat is reshape of [Y_batch, [-1]]
+
+        # Compute loss
+        loss is cross_entropy_loss of [logits_flat, targets_flat]
+
+        # Scale loss for mixed precision (if enabled)
+        scaled_loss is scale_loss of [scaler, loss]
+
+        # Backward pass
+        backward of scaled_loss
+
+        # Unscale gradients
+        unscale of [scaler, optimizer]
+
+        # Gradient clipping for stability
+        clip_grad_norm of [model, 1.0]
+
+        # Update weights (if gradients are valid)
+        if step of [scaler, optimizer:]
+            step of optimizer
+
+        update of scaler
+
+        epoch_loss is add of [epoch_loss, what is loss]
+        num_batches is num_batches + 1
+
+    avg_loss is divide of [epoch_loss, num_batches]
+
+    # === EigenScript Geometric Features ===
+    fs is framework_strength
+
+    print of [format of "Epoch {:2d}: Loss = {:.4f}, FS = {:.4f}"]
+    print of epoch
+    print of avg_loss
+    print of fs
+
+    # Check convergence
+    if converged:
+        print of "*** Model converged at epoch"
+        print of epoch
+        print of "***"
+        break
+
+    # Check stability
+    if not stable and epoch > 5:
+        print of ["Warning: Training unstable, reducing learning rate"]
+        for param_group in param_groups of optimizer:
+            param_group["lr"] is param_group["lr"] * 0.5
+
+    # Check for oscillation
+    if oscillating:
+        print of "Oscillation detected"
+
+print of ""
+
+# ============================================================================
+# Text Generation
+# ============================================================================
+
+print of "=== Text Generation ==="
+print of ""
+
+eval of model
+
+# Test prompts
+prompts is [
+    "the",
+    "hello",
+    "neural"
+]
+
+generator is TextGenerator
+
+for prompt in prompts:
+    print of "Prompt:"
+    print of prompt
+    print of ""
+
+    # Encode prompt
+    input_ids is encode of [tokenizer, prompt, true]
+    input_ids is Tensor of [(reshape of input_ids, [1, -1])]
+
+    # === Greedy Generation ===
+    print of "  Greedy (temperature=0):"
+    generated is generate of [generator, model, input_ids, 20, 0, none, none, tokenizer.eos_token_id, none]
+    text is decode of [tokenizer, (to_list of generated), true]
+    print of "   "
+    print of text
+
+    # === Temperature Sampling ===
+    print of "  Temperature=0.7:"
+    generated is generate of [generator, model, input_ids, 20, 0.7, none, none, tokenizer.eos_token_id, none]
+    text is decode of [tokenizer, (to_list of generated), true]
+    print of "   "
+    print of text
+
+    # === Top-k Sampling ===
+    print of "  Top-k (k=10):"
+    generated is generate of [generator, model, input_ids, 20, 1.0, 10, none, tokenizer.eos_token_id, none]
+    text is decode of [tokenizer, (to_list of generated), true]
+    print of "   "
+    print of text
+
+    # === Top-p (Nucleus) Sampling ===
+    print of "  Top-p (p=0.9):"
+    generated is generate of [generator, model, input_ids, 20, 1.0, none, 0.9, tokenizer.eos_token_id, none]
+    text is decode of [tokenizer, (to_list of generated), true]
+    print of "   "
+    print of text
+
+    # === Combined (temperature + top-p) ===
+    print of "  Temperature=0.8 + Top-p=0.95:"
+    generated is generate of [generator, model, input_ids, 20, 0.8, none, 0.95, tokenizer.eos_token_id, none]
+    text is decode of [tokenizer, (to_list of generated), true]
+    print of "   "
+    print of text
+
+    print of ""
+
+# ============================================================================
+# Beam Search
+# ============================================================================
+
+print of "=== Beam Search Generation ==="
+print of ""
+
+prompt is "the"
+input_ids is encode of [tokenizer, prompt, true]
+input_ids is Tensor of input_ids
+
+print of "Prompt:"
+print of prompt
+print of ""
+
+for num_beams in [2, 4, 8]:
+    generated is beam_search of [generator, model, input_ids, 20, num_beams, 1.0, tokenizer.eos_token_id]
+    text is decode of [tokenizer, (to_list of generated), true]
+    print of format of "  {} beams: {}"
+    print of num_beams
+    print of text
+
+print of ""
+
+# ============================================================================
+# Using Logits Processors
+# ============================================================================
+
+print of "=== Logits Processors ==="
+print of ""
+
+# Create processor pipeline
+processors is LogitsProcessorList
+init of processors,
+    (TemperatureProcessor of 0.8),
+    (TopPProcessor of 0.9),
+    (RepetitionPenaltyProcessor of 1.2)
+
+print of "Processors: Temperature(0.8) + TopP(0.9) + RepetitionPenalty(1.2)"
+
+prompt is "neural"
+input_ids is encode of [tokenizer, prompt, true]
+
+# Generate with processors
+generated is copy of input_ids
+logits is forward of [model, (reshape of (Tensor of input_ids), [1, -1]), 0, false]
+
+for i in range of 20:
+    last_logits is logits[0, -1, :]
+
+    # Apply processors
+    processed_logits is process of [processors, last_logits, generated]
+
+    # Sample
+    next_token is sample of [processed_logits, 1.0, none, none]
+
+    if next_token == tokenizer.eos_token_id:
+        break
+
+    generated is append of [generated, next_token]
+    logits is forward of [model, (reshape of (Tensor of generated), [1, -1]), 0, false]
+
+text is decode of [tokenizer, generated, true]
+print of "Generated:"
+print of text
+print of ""
+
+# ============================================================================
+# Using Stopping Criteria
+# ============================================================================
+
+print of "=== Stopping Criteria ==="
+print of ""
+
+# Create combined stopping criteria
+stopping_criteria is CombinedStoppingCriteria
+init of stopping_criteria,
+    (MaxLengthCriteria of 50),
+    (EosTokenCriteria of tokenizer.eos_token_id)
+
+print of "Criteria: MaxLength(50) + EosToken"
+
+prompt is "hello"
+input_ids is encode of [tokenizer, prompt, true]
+generated is copy of input_ids
+
+logits is forward of [model, (reshape of (Tensor of input_ids), [1, -1]), 0, false]
+
+loop while not (should_stop of [stopping_criteria, generated, none):]
+    last_logits is logits[0, -1, :]
+    next_token is sample of [last_logits, 0.8, 10, none]
+
+    generated is append of [generated, next_token]
+    logits is forward of [model, (reshape of (Tensor of generated), [1, -1]), 0, false]
+
+text is decode of [tokenizer, generated, true]
+print of "Generated:"
+print of text
+print of "Length:"
+print of length of generated
+print of ""
+
+# ============================================================================
+# Model Introspection
+# ============================================================================
+
+print of "=== Geometric Introspection ==="
+print of ""
+
+report is introspect of model
+
+print of "Model Status:"
+print of "  Converged:"
+print of report["converged"]
+print of "  Stable:"
+print of report["stable"]
+print of "  Framework Strength:"
+print of report["framework_strength"]
+print of "  Parameters:"
+print of report["num_parameters"]
+
+# === EigenScript Interrogatives ===
+print of ""
+print of "Interrogative Analysis:"
+print of "  What is the model?"
+print of what is model
+print of "  Where is computation?"
+print of where is model
+print of "  How does it work?"
+print of how is model
+
+# Check individual components
+print of ""
+print of "Component Analysis:"
+for i, layer in enumerate of model.layers:
+    layer_stable is stable of layer
+    print of format of "  Layer {}: stable={}"
+    print of i
+    print of layer_stable
+
+# ============================================================================
+# Training a BPE Tokenizer
+# ============================================================================
+
+print of ""
+print of "=== BPE Tokenizer Training ==="
+print of ""
+
+# Train BPE on corpus
+print of "Training BPE tokenizer on corpus (vocab_size=100)..."
+
+bpe_tokenizer is train_bpe of [corpus, 100, 2, "<PAD>", "<BOS>", "<EOS>", "<UNK>"]
+
+print of "BPE vocab size:"
+print of bpe_tokenizer.vocab_size
+print of "Number of merges:"
+print of length of bpe_tokenizer.merges
+print of ""
+
+# Test BPE tokenizer
+test_text is "neural networks learn patterns"
+encoded is encode of [bpe_tokenizer, test_text, true]
+decoded is decode of [bpe_tokenizer, encoded, true]
+
+print of "BPE Tokenizer test:"
+print of "  Input:"
+print of test_text
+print of "  Encoded:"
+print of encoded
+print of "  Decoded:"
+print of decoded
+print of ""
+
+# ============================================================================
+# KV Cache Demo
+# ============================================================================
+
+print of "=== KV Cache for Efficient Generation ==="
+print of ""
+
+# Create KV cache manager
+batch_size is 1
+max_seq_len is 64
+num_layers is config.num_layers
+num_kv_heads is config.num_kv_heads
+head_dim is config.hidden_size // config.num_heads
+
+kv_cache is KVCacheManager
+init of [kv_cache, num_layers, batch_size, max_seq_len, num_kv_heads, head_dim]
+
+print of "KV Cache initialized:"
+print of "  Layers:"
+print of num_layers
+print of "  Max sequence length:"
+print of max_seq_len
+print of "  KV heads:"
+print of num_kv_heads
+print of "  Head dimension:"
+print of head_dim
+
+# Generate with KV cache
+prompt is "the"
+input_ids is encode of [tokenizer, prompt, true]
+
+# Reset cache
+reset of kv_cache
+
+# Process prompt with cache
+generated_cached is copy of input_ids
+logits is forward of [model, (reshape of (Tensor of input_ids), [1, -1]), 0, true]
+
+for i in range of 10:
+    last_logits is logits[0, -1, :]
+    next_token is sample of [last_logits, 0.7, none, 0.9]
+
+    if next_token == tokenizer.eos_token_id:
+        break
+
+    generated_cached is append of [generated_cached, next_token]
+
+    # Only pass new token (KV cache has previous context)
+    start_pos is length of generated_cached - 1
+    logits is forward of [model, (reshape of (Tensor of [next_token]), [1, 1]), start_pos, true]
+
+print of ""
+print of "Generated with KV cache:"
+print of decode of tokenizer
+print of generated_cached
+print of true
+print of "Cache sequence length:"
+print of get_seq_len of kv_cache
+
+print of ""
+print of "=== LLM Example Complete ==="

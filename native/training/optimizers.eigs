@@ -1,0 +1,762 @@
+# iLambdaAi - Optimizers
+# Gradient-based optimization algorithms for neural network training
+#
+# Includes: SGD, Adam, AdamW, RAdam
+# Plus Learning Rate Schedulers
+#
+# All optimizers leverage EigenScript's geometric introspection for
+# self-aware optimization that can detect and respond to training dynamics
+
+# ============================================================================
+# Base Optimizer
+# ============================================================================
+
+define Optimizer as:
+    parameters is []
+    lr is 0.001
+    _step_count is 0
+
+    define init as:
+
+        params is arg[0]
+
+        learning_rate is arg[1]
+        parameters is list of params
+        lr is learning_rate
+        _step_count is 0
+
+    # Perform one optimization step
+    define step as:
+        _step_count is _step_count + 1
+        # Override in subclasses
+
+    # Zero all gradients
+    define zero_grad as:
+        for param in parameters:
+            zero_grad of param
+
+    # Get current learning rate
+    define get_lr as:
+        return lr
+
+    # Set learning rate
+    define set_lr as:
+        new_lr is arg
+        lr is new_lr
+
+    # Get step count
+    define get_step_count as:
+        return _step_count
+
+    # === EigenScript Geometric Features ===
+    # Optimizers can introspect their own behavior
+
+    define is_improving as:
+        return improving
+
+    define is_oscillating as:
+        return oscillating
+
+    define get_framework_strength as:
+        return framework_strength
+
+
+# ============================================================================
+# SGD: Stochastic Gradient Descent
+# ============================================================================
+
+define SGD as:
+
+    # extends Optimizer
+    momentum is 0.0
+    dampening is 0.0
+    weight_decay is 0.0
+    nesterov is false
+    velocities is []
+
+    define init as:
+
+        params is arg[0]
+
+        learning_rate is arg[1]
+
+        mom is arg[2]
+
+        damp is arg[3]
+
+        wd is arg[4]
+
+        nest is arg[5]
+        parameters is list of params
+        lr is learning_rate
+        momentum is mom
+        dampening is damp
+        weight_decay is wd
+        nesterov is nest
+        _step_count is 0
+
+        # Initialize velocity buffers
+        velocities is []
+        for param in parameters:
+            velocities is append of [velocities, zeros_like of param]
+
+    define step as:
+        _step_count is _step_count + 1
+
+        for i, param in enumerate of parameters:
+            grad is grad of param
+
+            if grad == none:
+                continue
+
+            # Weight decay (L2 regularization)
+            if weight_decay != 0:
+                grad is add of [grad, multiply of weight_decay, param]
+
+            # Momentum
+            if momentum != 0:
+                v is velocities[i]
+
+                if _step_count > 1:
+                    v is add of [multiply of momentum, v, multiply of (1 - dampening), grad]
+                else:
+                    v is grad
+
+                velocities[i] is v
+
+                if nesterov:
+                    grad is add of [grad, multiply of momentum, v]
+                else:
+                    grad is v
+
+            # Parameter update: param = param - lr * grad
+            param is subtract of [param, multiply of lr, grad]
+
+
+# ============================================================================
+# Adam: Adaptive Moment Estimation
+# ============================================================================
+
+define Adam as:
+
+    # extends Optimizer
+    beta1 is 0.9
+    beta2 is 0.999
+    epsilon is 1e-8
+    weight_decay is 0.0
+    amsgrad is false
+
+    # Moment buffers
+    m is []  # First moment (mean)
+    v is []  # Second moment (variance)
+    v_max is []  # For AMSGrad
+
+    define init as:
+
+        params is arg[0]
+
+        learning_rate is arg[1]
+
+        b1 is arg[2]
+
+        b2 is arg[3]
+
+        eps is arg[4]
+
+        wd is arg[5]
+
+        use_amsgrad is arg[6]
+        parameters is list of params
+        lr is learning_rate
+        beta1 is b1
+        beta2 is b2
+        epsilon is eps
+        weight_decay is wd
+        amsgrad is use_amsgrad
+        _step_count is 0
+
+        # Initialize moment buffers
+        m is []
+        v is []
+        v_max is []
+        for param in parameters:
+            m is append of [m, zeros_like of param]
+            v is append of [v, zeros_like of param]
+            if amsgrad:
+                v_max is append of [v_max, zeros_like of param]
+
+    define step as:
+        _step_count is _step_count + 1
+        t is _step_count
+
+        for i, param in enumerate of parameters:
+            grad is grad of param
+
+            if grad == none:
+                continue
+
+            # Add weight decay (L2 regularization, not decoupled)
+            if weight_decay != 0:
+                grad is add of [grad, multiply of weight_decay, param]
+
+            # Update biased first moment estimate
+            # m = beta1 * m + (1 - beta1) * grad
+            m[i] is add of [multiply of beta1, m[i], multiply of (1 - beta1), grad]
+
+            # Update biased second moment estimate
+            # v = beta2 * v + (1 - beta2) * grad^2
+            grad_sq is multiply of [grad, grad]
+            v[i] is add of [multiply of beta2, v[i], multiply of (1 - beta2), grad_sq]
+
+            # Bias correction
+            m_hat is divide of [m[i], (1 - pow of beta1, t)]
+            v_hat is divide of [v[i], (1 - pow of beta2, t)]
+
+            # AMSGrad: use max of past squared gradients
+            if amsgrad:
+                v_max[i] is maximum of [v_max[i], v_hat]
+                v_hat is v_max[i]
+
+            # Parameter update: param = param - lr * m_hat / (sqrt(v_hat) + eps)
+            denom is add of [sqrt of v_hat, epsilon]
+            update is divide of [multiply of lr, m_hat, denom]
+            param is subtract of [param, update]
+
+
+# ============================================================================
+# AdamW: Adam with Decoupled Weight Decay
+# ============================================================================
+
+define AdamW as:
+
+    # extends Optimizer
+    beta1 is 0.9
+    beta2 is 0.999
+    epsilon is 1e-8
+    weight_decay is 0.01
+    amsgrad is false
+
+    m is []
+    v is []
+    v_max is []
+
+    define init as:
+
+        params is arg[0]
+
+        learning_rate is arg[1]
+
+        b1 is arg[2]
+
+        b2 is arg[3]
+
+        eps is arg[4]
+
+        wd is arg[5]
+
+        use_amsgrad is arg[6]
+        parameters is list of params
+        lr is learning_rate
+        beta1 is b1
+        beta2 is b2
+        epsilon is eps
+        weight_decay is wd
+        amsgrad is use_amsgrad
+        _step_count is 0
+
+        m is []
+        v is []
+        v_max is []
+        for param in parameters:
+            m is append of [m, zeros_like of param]
+            v is append of [v, zeros_like of param]
+            if amsgrad:
+                v_max is append of [v_max, zeros_like of param]
+
+    define step as:
+        _step_count is _step_count + 1
+        t is _step_count
+
+        for i, param in enumerate of parameters:
+            grad is grad of param
+
+            if grad == none:
+                continue
+
+            # === DECOUPLED WEIGHT DECAY ===
+            # Apply weight decay directly to parameters (not to gradients)
+            if weight_decay != 0:
+                param is multiply of [param, (1 - lr * weight_decay)]
+
+            # Update first moment
+            m[i] is add of [multiply of beta1, m[i], multiply of (1 - beta1), grad]
+
+            # Update second moment
+            grad_sq is multiply of [grad, grad]
+            v[i] is add of [multiply of beta2, v[i], multiply of (1 - beta2), grad_sq]
+
+            # Bias correction
+            m_hat is divide of [m[i], (1 - pow of beta1, t)]
+            v_hat is divide of [v[i], (1 - pow of beta2, t)]
+
+            if amsgrad:
+                v_max[i] is maximum of [v_max[i], v_hat]
+                v_hat is v_max[i]
+
+            # Update
+            denom is add of [sqrt of v_hat, epsilon]
+            update is divide of [multiply of lr, m_hat, denom]
+            param is subtract of [param, update]
+
+
+# ============================================================================
+# RAdam: Rectified Adam
+# ============================================================================
+
+define RAdam as:
+
+    # extends Optimizer
+    beta1 is 0.9
+    beta2 is 0.999
+    epsilon is 1e-8
+    weight_decay is 0.0
+
+    m is []
+    v is []
+
+    # Maximum length of approximated SMA
+    rho_inf is 0.0
+
+    define init as:
+
+        params is arg[0]
+
+        learning_rate is arg[1]
+
+        b1 is arg[2]
+
+        b2 is arg[3]
+
+        eps is arg[4]
+
+        wd is arg[5]
+        parameters is list of params
+        lr is learning_rate
+        beta1 is b1
+        beta2 is b2
+        epsilon is eps
+        weight_decay is wd
+        _step_count is 0
+
+        # rho_infinity = 2 / (1 - beta2) - 1
+        rho_inf is subtract of [divide of 2, (1 - beta2), 1]
+
+        m is []
+        v is []
+        for param in parameters:
+            m is append of [m, zeros_like of param]
+            v is append of [v, zeros_like of param]
+
+    define step as:
+        _step_count is _step_count + 1
+        t is _step_count
+
+        for i, param in enumerate of parameters:
+            grad is grad of param
+
+            if grad == none:
+                continue
+
+            if weight_decay != 0:
+                grad is add of [grad, multiply of weight_decay, param]
+
+            # Update moments
+            m[i] is add of [multiply of beta1, m[i], multiply of (1 - beta1), grad]
+            grad_sq is multiply of [grad, grad]
+            v[i] is add of [multiply of beta2, v[i], multiply of (1 - beta2), grad_sq]
+
+            # Bias corrected first moment
+            m_hat is divide of [m[i], (1 - pow of beta1, t)]
+
+            # Compute rho_t = rho_inf - 2 * t * beta2^t / (1 - beta2^t)
+            beta2_t is pow of [beta2, t]
+            rho_t is subtract of [rho_inf, divide of (2 * t * beta2_t), (1 - beta2_t)]
+
+            # Variance is tractable if rho_t > 5
+            if rho_t > 5:
+                # Compute variance rectification term
+                v_hat is divide of [v[i], (1 - beta2_t)]
+
+                # Compute rectification term r_t
+                numerator is multiply of [(rho_t - 4), multiply of (rho_t - 2), rho_inf]
+                denominator is multiply of [(rho_inf - 4), multiply of (rho_inf - 2), rho_t]
+                r_t is sqrt of [divide of numerator, denominator]
+
+                # Update with rectified variance
+                denom is add of [sqrt of v_hat, epsilon]
+                update is multiply of [lr, multiply of r_t, divide of m_hat, denom]
+                param is subtract of [param, update]
+            else:
+                # Variance is not tractable, use unadapted update
+                update is multiply of [lr, m_hat]
+                param is subtract of [param, update]
+
+
+# ============================================================================
+# Learning Rate Schedulers
+# ============================================================================
+
+define LRScheduler as:
+    optimizer is Optimizer
+    base_lr is 0.0
+    last_epoch is -1
+
+    define init as:
+
+        opt is arg
+        optimizer is opt
+        base_lr is get_lr of optimizer
+        last_epoch is -1
+
+    define step as:
+        last_epoch is last_epoch + 1
+        # Override in subclasses to update optimizer.lr
+
+    define get_lr as:
+        return get_lr of optimizer
+
+    define get_last_lr as:
+        return get_lr of optimizer
+
+
+# StepLR: Decay LR by gamma every step_size epochs
+define StepLR as:
+    # extends LRScheduler
+    step_size is 10
+    gamma is 0.1
+
+    define init as:
+
+        opt is arg[0]
+
+        step_sz is arg[1]
+
+        g is arg[2]
+        optimizer is opt
+        base_lr is get_lr of optimizer
+        step_size is step_sz
+        gamma is g
+        last_epoch is -1
+
+    define step as:
+        last_epoch is last_epoch + 1
+
+        if last_epoch > 0 and (last_epoch % step_size) == 0:
+            current_lr is get_lr of optimizer
+            new_lr is multiply of [current_lr, gamma]
+            set_lr of [optimizer, new_lr]
+            print of "StepLR: Reduced LR to"
+            print of new_lr
+
+
+# ExponentialLR: Decay LR by gamma every epoch
+define ExponentialLR as:
+    # extends LRScheduler
+    gamma is 0.95
+
+    define init as:
+
+        opt is arg[0]
+
+        g is arg[1]
+        optimizer is opt
+        base_lr is get_lr of optimizer
+        gamma is g
+        last_epoch is -1
+
+    define step as:
+        last_epoch is last_epoch + 1
+
+        # new_lr = base_lr * gamma^epoch
+        new_lr is multiply of [base_lr, pow of gamma, last_epoch]
+        set_lr of [optimizer, new_lr]
+
+
+# CosineAnnealingLR: Cosine annealing schedule
+define CosineAnnealingLR as:
+    # extends LRScheduler
+    T_max is 100
+    eta_min is 0.0
+
+    define init as:
+
+        opt is arg[0]
+
+        t_max is arg[1]
+
+        min_lr is arg[2]
+        optimizer is opt
+        base_lr is get_lr of optimizer
+        T_max is t_max
+        eta_min is min_lr
+        last_epoch is -1
+
+    define step as:
+        last_epoch is last_epoch + 1
+
+        # lr = eta_min + (base_lr - eta_min) * (1 + cos(pi * t / T_max)) / 2
+        t is last_epoch
+        cos_term is cos of (pi * t / T_max)
+        lr_range is subtract of [base_lr, eta_min]
+        new_lr is add of [eta_min, multiply of lr_range, divide of (1 + cos_term), 2]
+
+        set_lr of [optimizer, new_lr]
+
+
+# ReduceLROnPlateau: Reduce LR when metric stops improving
+define ReduceLROnPlateau as:
+    # extends LRScheduler
+    mode is "min"  # "min" or "max"
+    factor is 0.1
+    patience is 10
+    threshold is 1e-4
+    cooldown is 0
+    min_lr is 0.0
+
+    best is infinity
+    num_bad_epochs is 0
+    cooldown_counter is 0
+
+    define init as:
+
+        opt is arg[0]
+
+        md is arg[1]
+
+        fact is arg[2]
+
+        pat is arg[3]
+
+        thresh is arg[4]
+
+        cool is arg[5]
+
+        min is arg[6]
+        optimizer is opt
+        base_lr is get_lr of optimizer
+        mode is md
+        factor is fact
+        patience is pat
+        threshold is thresh
+        cooldown is cool
+        min_lr is min
+
+        if mode == "min":
+            best is infinity
+        else:
+            best is negative of infinity
+
+        num_bad_epochs is 0
+        cooldown_counter is 0
+        last_epoch is -1
+
+    define step as:
+
+        metric is arg
+        last_epoch is last_epoch + 1
+
+        # === EigenScript Geometric Feature ===
+        # Use native improving check when available
+        is_better is false
+
+        if mode == "min":
+            if metric < (best - threshold):
+                is_better is true
+        else:
+            if metric > (best + threshold):
+                is_better is true
+
+        # Alternative: use EigenScript's native improving predicate
+        # is_better is improving
+
+        if is_better:
+            best is metric
+            num_bad_epochs is 0
+        else:
+            num_bad_epochs is num_bad_epochs + 1
+
+        # Handle cooldown
+        if cooldown_counter > 0:
+            cooldown_counter is cooldown_counter - 1
+            num_bad_epochs is 0
+
+        # Reduce LR if patience exceeded
+        if num_bad_epochs >= patience:
+            current_lr is get_lr of optimizer
+            new_lr is multiply of [current_lr, factor]
+
+            if new_lr >= min_lr:
+                set_lr of [optimizer, new_lr]
+                print of "ReduceLROnPlateau: Reduced LR to"
+                print of new_lr
+
+                # Reset counters
+                cooldown_counter is cooldown
+                num_bad_epochs is 0
+
+
+# WarmupLR: Linear warmup then constant
+define WarmupLR as:
+    # extends LRScheduler
+    warmup_steps is 1000
+    target_lr is 0.001
+
+    define init as:
+
+        opt is arg[0]
+
+        steps is arg[1]
+
+        target is arg[2]
+        optimizer is opt
+        warmup_steps is steps
+        target_lr is target
+        base_lr is 0.0
+        last_epoch is -1
+
+        # Start with zero LR
+        set_lr of [optimizer, 0.0]
+
+    define step as:
+        last_epoch is last_epoch + 1
+
+        if last_epoch < warmup_steps:
+            # Linear warmup
+            new_lr is multiply of [target_lr, divide of last_epoch, warmup_steps]
+            set_lr of [optimizer, new_lr]
+        else:
+            # Constant after warmup
+            set_lr of [optimizer, target_lr]
+
+
+# CosineAnnealingWarmRestarts: Cosine annealing with warm restarts
+define CosineAnnealingWarmRestarts as:
+    # extends LRScheduler
+    T_0 is 10
+    T_mult is 2
+    eta_min is 0.0
+
+    T_i is 10
+    T_cur is 0
+
+    define init as:
+
+        opt is arg[0]
+
+        t0 is arg[1]
+
+        t_mult is arg[2]
+
+        min_lr is arg[3]
+        optimizer is opt
+        base_lr is get_lr of optimizer
+        T_0 is t0
+        T_mult is t_mult
+        eta_min is min_lr
+        T_i is t0
+        T_cur is 0
+        last_epoch is -1
+
+    define step as:
+        last_epoch is last_epoch + 1
+        T_cur is T_cur + 1
+
+        # Check for restart
+        if T_cur >= T_i:
+            T_cur is 0
+            T_i is multiply of [T_i, T_mult]
+
+        # Cosine annealing within current period
+        cos_term is cos of (pi * T_cur / T_i)
+        lr_range is subtract of [base_lr, eta_min]
+        new_lr is add of [eta_min, multiply of lr_range, divide of (1 + cos_term), 2]
+
+        set_lr of [optimizer, new_lr]
+
+
+# ============================================================================
+# Geometric Optimizer: Self-aware optimization
+# ============================================================================
+
+# An optimizer that uses EigenScript's geometric features to adapt
+define GeometricOptimizer as:
+    # extends AdamW
+    oscillation_threshold is 3
+    oscillation_count is 0
+    auto_reduce_lr is true
+
+    define init as:
+
+        params is arg[0]
+
+        learning_rate is arg[1]
+
+        auto_reduce is arg[2]
+        # Initialize as AdamW
+        parameters is list of params
+        lr is learning_rate
+        beta1 is 0.9
+        beta2 is 0.999
+        epsilon is 1e-8
+        weight_decay is 0.01
+        amsgrad is false
+        auto_reduce_lr is auto_reduce
+        _step_count is 0
+
+        m is []
+        v is []
+        for param in parameters:
+            m is append of [m, zeros_like of param]
+            v is append of [v, zeros_like of param]
+
+    define step as:
+        # === EigenScript Geometric Features ===
+
+        # Detect oscillation and auto-reduce LR
+        if auto_reduce_lr:
+            if oscillating:
+                oscillation_count is oscillation_count + 1
+                if oscillation_count >= oscillation_threshold:
+                    lr is lr * 0.5
+                    print of ["GeometricOptimizer: Detected oscillation, reducing LR to"]
+                    print of lr
+                    oscillation_count is 0
+            else:
+                oscillation_count is 0
+
+            # If converged, we could early stop (left to trainer)
+            if converged:
+                print of "GeometricOptimizer: Convergence detected"
+
+        # Perform standard AdamW step
+        _step_count is _step_count + 1
+        t is _step_count
+
+        for i, param in enumerate of parameters:
+            grad is grad of param
+            if grad == none:
+                continue
+
+            if weight_decay != 0:
+                param is multiply of [param, (1 - lr * weight_decay)]
+
+            m[i] is add of [multiply of beta1, m[i], multiply of (1 - beta1), grad]
+            grad_sq is multiply of [grad, grad]
+            v[i] is add of [multiply of beta2, v[i], multiply of (1 - beta2), grad_sq]
+
+            m_hat is divide of [m[i], (1 - pow of beta1, t)]
+            v_hat is divide of [v[i], (1 - pow of beta2, t)]
+
+            denom is add of [sqrt of v_hat, epsilon]
+            update is divide of [multiply of lr, m_hat, denom]
+            param is subtract of [param, update]

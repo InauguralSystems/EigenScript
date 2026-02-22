@@ -1,0 +1,68 @@
+# Focused ID-1/2 repair: interleaved training, zero replay
+# Alternating steps prevent mutual interference
+
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    idx is 0
+    total is len of decoded
+    loop while idx < total:
+        if decoded[idx] == key:
+            return decoded[idx + 1]
+        idx is idx + 2
+    return -1
+
+define train_step as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    return loss
+
+define verify as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    gate is _args[2]
+    pair_id is _args[3]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": 0.0001}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    if loss < gate:
+        print of "  [PASS] " + pair_id + " loss=" + loss
+        return 1
+    print of "  [FAIL] " + pair_id + " loss=" + loss
+    return 0
+
+print of "Loading checkpoint..."
+eigen_model_load of "../../checkpoints/eigenscript/model_L2_progress.json"
+
+id_1_prompt is "Hello"
+id_1_target is "Hello!"
+id_2_prompt is "Hi"
+id_2_target is "Hi!"
+
+# 40 interleaved steps: ID-1, ID-2, ID-1, ID-2, ...
+print of "--- Interleaved ID-1/2 repair (40 pairs at 0.03) ---"
+step is 0
+loop while step < 40:
+    train_step of [id_1_prompt, id_1_target, 0.03]
+    train_step of [id_2_prompt, id_2_target, 0.03]
+    step is step + 1
+
+# Verify both
+print of ""
+print of "--- Verify ---"
+verify of [id_1_prompt, id_1_target, 0.15, "ID-1"]
+verify of [id_2_prompt, id_2_target, 0.15, "ID-2"]
+
+print of ""
+print of "Saving repaired model..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L2_progress.json"
+print of "=== ID-1/2 Interleaved Repair DONE ==="

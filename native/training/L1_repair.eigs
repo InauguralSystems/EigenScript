@@ -1,0 +1,126 @@
+# L1 Repair: Fix regressed L1 pairs after L2 training
+# Loads L2 progress, trains regressed L1 pairs back under gate,
+# re-verifies L2 hasn't regressed, saves repaired checkpoint
+
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    idx is 0
+    total is len of decoded
+    loop while idx < total:
+        if decoded[idx] == key:
+            return decoded[idx + 1]
+        idx is idx + 2
+    return -1
+
+define train_step as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    return loss
+
+define verify as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    gate is _args[2]
+    pair_id is _args[3]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": 0.0001}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    if loss < gate:
+        print of "  [PASS] " + pair_id + " loss=" + loss
+        return 1
+    print of "  [FAIL] " + pair_id + " loss=" + loss
+    return 0
+
+# --- Data ---
+id_1_prompt is "Hello"
+id_1_target is "Hello!"
+id_2_prompt is "Hi"
+id_2_target is "Hi!"
+id_3_prompt is "What are you?"
+id_3_target is "I am an AI."
+id_5_prompt is "What is your name?"
+id_5_target is "I am Eigen."
+id_10_prompt is "Who made you?"
+id_10_target is "Jon McReynolds."
+
+arch_16_prompt is "What does observe mean?"
+arch_16_L1 is "I track geometric state."
+arch_17_prompt is "Why Observer Effect?"
+arch_17_L1 is "Observation changes output."
+
+arch_11_prompt is "What is ObserverModel?"
+arch_11_L2 is "ObserverModel models how I observe computation paths. STRICT watches every step."
+arch_18_prompt is "What is EigenScript?"
+arch_18_L2 is "My language is EigenScript. It is how I think."
+arch_20_prompt is "How do you think?"
+arch_20_L2 is "I think in geometry. Not in words or numbers."
+
+print of "=== L1 Repair Pass ==="
+print of ""
+print of "Loading L2 progress checkpoint..."
+eigen_model_load of "../../checkpoints/eigenscript/model_L2_progress.json"
+print of ""
+
+l1_gate is 0.15
+lr is 0.01
+
+# Round-robin repair: regressed pairs + L2 replay
+pass_num is 0
+loop while pass_num < 7:
+    pass_num is pass_num + 1
+    print of "--- Repair Pass " + pass_num + " ---"
+
+    l10 is train_step of [id_10_prompt, id_10_target, lr]
+    train_step of [id_10_prompt, id_10_target, lr]
+    train_step of [id_10_prompt, id_10_target, lr]
+    l16 is train_step of [arch_16_prompt, arch_16_L1, lr]
+    train_step of [arch_16_prompt, arch_16_L1, lr]
+    train_step of [arch_16_prompt, arch_16_L1, lr]
+    l17 is train_step of [arch_17_prompt, arch_17_L1, lr]
+    train_step of [arch_17_prompt, arch_17_L1, lr]
+    train_step of [arch_17_prompt, arch_17_L1, lr]
+
+    train_step of [id_1_prompt, id_1_target, lr]
+    train_step of [id_2_prompt, id_2_target, lr]
+    train_step of [id_3_prompt, id_3_target, lr]
+    train_step of [id_5_prompt, id_5_target, lr]
+
+    train_step of [arch_11_prompt, arch_11_L2, 0.005]
+    train_step of [arch_18_prompt, arch_18_L2, 0.005]
+    train_step of [arch_20_prompt, arch_20_L2, 0.005]
+
+    print of "  ID-10=" + l10 + " A16=" + l16 + " A17=" + l17
+
+print of ""
+print of "--- Repair Verification ---"
+v1 is verify of [id_10_prompt, id_10_target, l1_gate, "ID-10"]
+v2 is verify of [arch_16_prompt, arch_16_L1, l1_gate, "ARCH-16"]
+v3 is verify of [arch_17_prompt, arch_17_L1, l1_gate, "ARCH-17"]
+v4 is verify of [id_1_prompt, id_1_target, l1_gate, "ID-1"]
+v5 is verify of [id_5_prompt, id_5_target, l1_gate, "ID-5"]
+
+print of ""
+print of "--- L2 Regression Check ---"
+w1 is verify of [arch_11_prompt, arch_11_L2, 0.12, "ARCH-11-L2"]
+w2 is verify of [arch_18_prompt, arch_18_L2, 0.12, "ARCH-18-L2"]
+w3 is verify of [arch_20_prompt, arch_20_L2, 0.12, "ARCH-20-L2"]
+
+total is v1 + v2 + v3 + v4 + v5
+print of ""
+print of "L1 repair: " + total + " / 5"
+print of "L2 spot: " + w1 + " + " + w2 + " + " + w3
+
+print of ""
+print of "Saving repaired checkpoint..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L2_progress.json"
+print of "=== L1 Repair DONE ==="

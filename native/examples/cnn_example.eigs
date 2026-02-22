@@ -1,0 +1,277 @@
+# iLambdaAi CNN Example
+# Demonstrates building and training a Convolutional Neural Network
+# using EigenScript's geometric introspection capabilities
+#
+# This example shows:
+# - Building a CNN with Conv2d, MaxPool2d, BatchNorm2d
+# - Image classification architecture
+# - Geometric feature tracking during training
+
+from model import Model
+from layers import Linear, ReLU, Dropout, Sequential
+from cnn import Conv2d, MaxPool2d, BatchNorm2d, AdaptiveAvgPool2d, Flatten
+from optimizers import Adam
+from loss import cross_entropy_loss
+from loader import ArrayDataset, DataLoader
+
+# ============================================================================
+# Define CNN Architecture
+# ============================================================================
+
+print of "=== iLambdaAi CNN Example ==="
+print of ""
+print of "Building a simple CNN for image classification..."
+print of ""
+
+# Simple CNN: Similar to a small VGG-style network
+define SimpleCNN as:
+    # extends Model
+    # Feature extractor
+    features is Sequential
+    # Classifier
+    classifier is Sequential
+
+    define init as:
+
+        num_classes is arg
+        # === Convolutional Feature Extractor ===
+        # Block 1: 3 -> 32 channels
+        conv1 is Conv2d
+        init of [conv1, 3, 32, 3, 1, 1, true]
+        bn1 is BatchNorm2d
+        init of [bn1, 32, 1e-5, 0.1, true, true]
+        pool1 is MaxPool2d
+        init of [pool1, 2, 2, 0]
+
+        # Block 2: 32 -> 64 channels
+        conv2 is Conv2d
+        init of [conv2, 32, 64, 3, 1, 1, true]
+        bn2 is BatchNorm2d
+        init of [bn2, 64, 1e-5, 0.1, true, true]
+        pool2 is MaxPool2d
+        init of [pool2, 2, 2, 0]
+
+        # Block 3: 64 -> 128 channels
+        conv3 is Conv2d
+        init of [conv3, 64, 128, 3, 1, 1, true]
+        bn3 is BatchNorm2d
+        init of [bn3, 128, 1e-5, 0.1, true, true]
+
+        features is Sequential of [
+            conv1, bn1, ReLU, pool1,
+            conv2, bn2, ReLU, pool2,
+            conv3, bn3, ReLU
+        ]
+
+        # === Classifier Head ===
+        gap is AdaptiveAvgPool2d
+        init of [gap, 1]
+
+        flat is Flatten
+        init of [flat, 1, -1]
+
+        fc1 is Linear
+        init of [fc1, 128, 64, true]
+
+        drop is Dropout
+        init of [drop, 0.5]
+
+        fc2 is Linear
+        init of [fc2, 64, num_classes, true]
+
+        classifier is Sequential of [
+            gap, flat,
+            fc1, ReLU, drop,
+            fc2
+        ]
+
+        register_module of features
+        register_module of classifier
+
+        _name is "SimpleCNN"
+
+    define forward as:
+
+        x is arg
+        # x: (N, 3, H, W)
+
+        # Extract features
+        feat is forward of [features, x]
+
+        # === EigenScript Geometric Feature ===
+        # Check feature stability
+        if not stable:
+            print of "Warning: Feature extraction unstable"
+
+        # Classify
+        out is forward of [classifier, feat]
+
+        return out
+
+    define describe as:
+        return "SimpleCNN(features -> classifier)"
+
+
+# ============================================================================
+# Create Model
+# ============================================================================
+
+print of "Creating SimpleCNN with 10 classes..."
+
+model is SimpleCNN
+init of [model, 10]
+
+print of describe of model
+print of "Total parameters:"
+print of num_parameters of model
+print of ""
+
+# ============================================================================
+# Create Synthetic Data
+# ============================================================================
+
+print of "Creating synthetic image data..."
+
+# Synthetic dataset: random images and labels
+# In practice, you'd load real images here
+num_samples is 100
+num_classes is 10
+img_height is 32
+img_width is 32
+channels is 3
+
+# Random images: (N, C, H, W)
+X is random_tensor of [num_samples, channels, img_height, img_width]
+
+# Random labels: (N,)
+Y is random_integers of [0, num_classes, num_samples]
+
+print of "Dataset shape:"
+print of shape of X
+print of "Labels shape:"
+print of shape of Y
+print of ""
+
+# Create DataLoader
+dataset is ArrayDataset
+init of [dataset, X, Y]
+
+loader is DataLoader
+init of [loader, dataset, 16, true, false]
+
+print of "DataLoader created with batch_size=16"
+print of ""
+
+# ============================================================================
+# Training Loop
+# ============================================================================
+
+print of "=== Training ==="
+print of ""
+
+optimizer is Adam
+init of [optimizer, (parameters of model), 0.001, 0.9, 0.999, 1e-8, 0.0001, false]
+
+epochs is 10
+
+for epoch in range of epochs:
+    train of model
+    epoch_loss is 0
+    num_batches is 0
+
+    for batch in iter of loader:
+        X_batch, Y_batch is batch
+
+        # Forward pass
+        zero_grad of model
+        logits is forward of [model, X_batch]
+
+        # Compute loss
+        loss is cross_entropy_loss of [logits, Y_batch]
+
+        # Backward pass
+        backward of loss
+
+        # Update weights
+        step of optimizer
+
+        epoch_loss is add of [epoch_loss, what is loss]
+        num_batches is num_batches + 1
+
+    avg_loss is divide of [epoch_loss, num_batches]
+
+    # === EigenScript Geometric Features ===
+    fs is framework_strength
+
+    print of [format of "Epoch {}: Loss = {:.4f}, FS = {:.4f}"]
+    print of epoch
+    print of avg_loss
+    print of fs
+
+    # Check for convergence
+    if converged:
+        print of "*** Converged at epoch"
+        print of epoch
+        print of "***"
+        break
+
+    # Check stability
+    if not stable and epoch > 3:
+        print of ["Warning: Training unstable, consider reducing learning rate"]
+
+    # Check oscillation
+    if oscillating:
+        print of "Oscillation detected"
+
+print of ""
+
+# ============================================================================
+# Evaluation
+# ============================================================================
+
+print of "=== Evaluation ==="
+
+eval of model
+
+# Run on a few samples
+test_X is X[:5]
+test_Y is Y[:5]
+
+logits is forward of [model, test_X]
+predictions is argmax of [logits, -1]
+
+print of ""
+print of "Sample predictions:"
+for i in range of 5:
+    print of [format of "  Sample {}: Predicted={}, Actual={}"]
+    print of i
+    print of predictions[i]
+    print of test_Y[i]
+
+# Compute accuracy
+correct is sum of [equal of predictions, test_Y]
+accuracy is divide of [correct, 5]
+
+print of ""
+print of "Accuracy on 5 samples:"
+print of accuracy
+
+# ============================================================================
+# Geometric Introspection
+# ============================================================================
+
+print of ""
+print of "=== Geometric Introspection ==="
+
+report is introspect of model
+
+print of "Model Status:"
+print of "  Converged:"
+print of report["converged"]
+print of "  Stable:"
+print of report["stable"]
+print of "  Framework Strength:"
+print of report["framework_strength"]
+
+print of ""
+print of "=== CNN Example Complete ==="

@@ -1,0 +1,279 @@
+# Eigen Chatbot Server - Full Application Server
+# Runs on port 5000 as the main Eigen application
+# Replaces Flask with pure EigenScript HTTP serving
+# Uses eigen_hybrid_chat for TRUE hybrid inference:
+#   - Native transformer first
+#   - OpenAI fallback if confidence < 40%
+
+# Bind port immediately so health check passes while we initialize
+http_early_bind of 5000
+
+print of "============================================"
+print of "   Eigen AI - Full Application Server"
+print of "       Port 5000 (Pure EigenScript)"
+print of "   Mode: HYBRID (Native + OpenAI)"
+print of "   Framework: EigenScript Native HTTP"
+print of "============================================"
+print of ""
+
+# Connect to PostgreSQL database
+print of "Connecting to database..."
+db_status is db_connect of null
+print of db_status
+print of ""
+
+# Load the native transformer model
+print of "Loading native transformer model..."
+model_status is eigen_model_load of "../../checkpoints/eigenscript/model.json"
+print of model_status
+print of ""
+
+# Register static file directory
+print of "Registering static files..."
+http_static of ["/static", "./static"]
+print of ""
+
+# ============================================================
+# PAGE ROUTES - Serve HTML files
+# ============================================================
+
+http_route of ["GET", "/", "file", "./static/chat.html"]
+http_route of ["GET", "/eigen", "file", "./static/chat.html"]
+http_route of ["GET", "/login", "file", "./static/login.html"]
+http_route of ["GET", "/admin", "file", "./static/admin.html"]
+http_route of ["GET", "/eigenscript", "file", "./static/eigenscript.html"]
+http_route of ["GET", "/playground", "file", "./static/playground.html"]
+http_route of ["GET", "/notebook", "file", "./static/notebook.html"]
+http_route of ["GET", "/dashboard", "file", "./static/dashboard.html"]
+http_route of ["GET", "/inaugural", "file", "./static/inaugural.html"]
+
+# ============================================================
+# API HEALTH / STATUS ROUTES
+# ============================================================
+
+api_home is "{\"name\": \"Eigen\", \"version\": \"2.0\", \"framework\": \"EigenScript\", \"server\": \"standalone\"}"
+http_route of ["GET", "/api", api_home]
+
+health_response is "{\"healthy\": true, \"server\": \"eigenscript\"}"
+http_route of ["GET", "/health", health_response]
+
+status_response is "{\"status\": \"online\", \"mode\": \"hybrid_inference\", \"features\": [\"native_transformer\", \"openai_fallback\", \"geometric_confidence\", \"session_memory\", \"corpus_management\", \"api_keys\", \"analytics\"]}"
+http_route of ["GET", "/api/v1/status", status_response]
+
+# ============================================================
+# CHAT ROUTES
+# ============================================================
+
+http_route of ["POST", "/chat", "code", "eigen_hybrid_chat of (http_request_body of null)"]
+http_route of ["POST", "/chat/clear", "code", "eigen_native_clear of (http_session_id of null)"]
+http_route of ["POST", "/api/v1/chat", "code", "eigen_hybrid_chat of (http_request_body of null)"]
+http_route of ["POST", "/chat/openai", "code", "eigen_native_chat of (http_request_body of null)"]
+
+# ============================================================
+# AUTH ROUTES
+# ============================================================
+
+http_route of ["POST", "/api/auth/login", "code", "eigen_auth_login of (http_request_body of null)"]
+http_route of ["GET", "/api/auth/check", "code", "eigen_auth_check of null"]
+http_route of ["POST", "/api/auth/logout", "code", "eigen_auth_logout of null"]
+http_route of ["GET", "/logout", "code", "eigen_auth_logout of null"]
+
+# ============================================================
+# ADMIN TRAINING ROUTES
+# ============================================================
+
+http_route of ["POST", "/admin/train-on-learned", "code", "eigen_reinforce_train of (http_request_body of null)"]
+http_route of ["GET", "/admin/learned-training-status", "code", "eigen_reinforce_status of null"]
+http_route of ["POST", "/admin/generate-sample", "code", "eigen_generate_sample of (http_request_body of null)"]
+http_route of ["POST", "/train", "code", "eigen_train of (http_request_body of null)"]
+http_route of ["POST", "/train/batch", "code", "eigen_batch_train of (http_request_body of null)"]
+http_route of ["POST", "/model/save", "code", "eigen_model_save of \"../../checkpoints/eigenscript/model.json\""]
+
+# ============================================================
+# ADMIN CORPUS ROUTES
+# ============================================================
+
+http_route of ["POST", "/admin/add-training-text", "code", "eigen_corpus_add of (http_request_body of null)"]
+http_route of ["GET", "/admin/corpus", "code", "eigen_corpus_list of null"]
+http_route of ["GET", "/admin/corpus-count", "code", "eigen_corpus_count of null"]
+
+# ============================================================
+# FEEDBACK & TRAINING FEATURES
+# ============================================================
+
+http_route of ["POST", "/feedback", "code", "eigen_feedback of (http_request_body of null)"]
+http_route of ["POST", "/auto-train", "code", "eigen_auto_train_check of (http_request_body of null)"]
+http_route of ["GET", "/train/stats", "code", "eigen_training_stats of null"]
+
+# ============================================================
+# LEARNING ROUTES
+# ============================================================
+
+http_route of ["POST", "/read-article", "code", "eigen_read_article of (http_request_body of null)"]
+
+# ============================================================
+# API KEY ROUTES
+# ============================================================
+
+http_route of ["GET", "/admin/api-keys", "code", "eigen_api_key_list of null"]
+http_route of ["POST", "/admin/api-keys/create", "code", "eigen_api_key_create of (http_request_body of null)"]
+http_route of ["POST", "/api/keys/validate", "code", "eigen_api_key_validate of (http_request_body of null)"]
+
+# ============================================================
+# ANALYTICS & STATS
+# ============================================================
+
+http_route of ["GET", "/admin/analytics", "code", "eigen_get_analytics of null"]
+http_route of ["GET", "/admin/learning-stats", "code", "eigen_training_stats of null"]
+
+# ============================================================
+# SESSION ROUTES
+# ============================================================
+
+http_route of ["POST", "/session/save", "code", "eigen_session_save of (http_request_body of null)"]
+http_route of ["POST", "/session/load", "code", "eigen_session_load of (http_request_body of null)"]
+http_route of ["GET", "/session", "code", "http_session_id of null"]
+
+# ============================================================
+# NATIVE INFERENCE
+# ============================================================
+
+http_route of ["POST", "/infer", "code", "eigen_native_infer of (http_request_body of null)"]
+
+# ============================================================
+# MIGRATED ADMIN ROUTES
+# ============================================================
+
+http_route of ["GET", "/admin/automation/status", "code", "eigen_automation_status of null"]
+http_route of ["GET", "/admin/feedback-stats", "code", "eigen_feedback_stats of null"]
+http_route of ["GET", "/admin/training-progress", "code", "eigen_training_progress of null"]
+http_route of ["POST", "/admin/train-from-conversation", "code", "eigen_train_from_conversation of (http_request_body of null)"]
+http_route of ["POST", "/admin/delete-conversation", "code", "eigen_delete_conversation of (http_request_body of null)"]
+http_route of ["GET", "/admin/export-corpus", "code", "eigen_export_corpus of null"]
+http_route of ["POST", "/admin/mark-conversation-trained", "code", "eigen_mark_conversation_trained of (http_request_body of null)"]
+http_route of ["GET", "/eval-history", "code", "eigen_eval_history of null"]
+http_route of ["POST", "/run-eval", "code", "eigen_run_eval of null"]
+http_route of ["POST", "/load-gutenberg", "code", "eigen_load_gutenberg of (http_request_body of null)"]
+http_route of ["POST", "/admin/train-generative", "code", "eigen_batch_train of (http_request_body of null)"]
+http_route of ["GET", "/admin/gen-training-status", "code", "eigen_reinforce_status of null"]
+
+# ============================================================
+# RACING & GEOMETRIC TRAINING ROUTES
+# ============================================================
+
+http_route of ["POST", "/admin/race-train", "code", "eigen_race_train of (http_request_body of null)"]
+http_route of ["GET", "/admin/race-training-status", "code", "eigen_race_training_status of null"]
+http_route of ["POST", "/admin/geometric-train", "code", "eigen_geometric_train of (http_request_body of null)"]
+http_route of ["GET", "/admin/geometric-training-status", "code", "eigen_geometric_training_status of null"]
+http_route of ["POST", "/admin/geometric-training-params", "code", "eigen_set_geometric_params of (http_request_body of null)"]
+http_route of ["GET", "/admin/geometric-training-params", "code", "eigen_get_geometric_params of null"]
+http_route of ["GET", "/admin/racing-inference", "code", "eigen_racing_inference of null"]
+http_route of ["POST", "/admin/racing-inference", "code", "eigen_racing_inference of (http_request_body of null)"]
+
+# ============================================================
+# ROUTE LISTING
+# ============================================================
+
+print of "Routes registered:"
+print of ""
+print of "  Page Routes:"
+print of "  GET  /                - Chat UI (HTML)"
+print of "  GET  /eigen           - Chat UI (HTML)"
+print of "  GET  /login           - Login page"
+print of "  GET  /admin           - Admin panel"
+print of "  GET  /eigenscript     - EigenScript page"
+print of "  GET  /playground      - Playground"
+print of "  GET  /notebook        - Notebook"
+print of "  GET  /dashboard       - Dashboard"
+print of "  GET  /inaugural       - Inaugural page"
+print of ""
+print of "  API Routes:"
+print of "  GET  /api             - API Home (JSON)"
+print of "  GET  /health          - Health check"
+print of "  GET  /api/v1/status   - API status"
+print of ""
+print of "  Chat Routes:"
+print of "  POST /chat            - HYBRID chat (native + OpenAI)"
+print of "  POST /chat/clear      - Clear session"
+print of "  POST /api/v1/chat     - API chat (hybrid)"
+print of "  POST /chat/openai     - OpenAI-only chat"
+print of ""
+print of "  Auth Routes:"
+print of "  POST /api/auth/login  - Login"
+print of "  GET  /api/auth/check  - Check auth"
+print of ""
+print of "  Training Routes:"
+print of "  POST /admin/train-on-learned      - Reinforce train"
+print of "  GET  /admin/learned-training-status - Training status"
+print of "  POST /admin/generate-sample       - Generate sample"
+print of "  POST /train           - Train on input/output pair"
+print of "  POST /train/batch     - Batch train with replay"
+print of "  POST /model/save      - Save model checkpoint"
+print of ""
+print of "  Corpus Routes:"
+print of "  POST /admin/add-training-text - Add training text"
+print of "  GET  /admin/corpus           - List corpus"
+print of "  GET  /admin/corpus-count     - Corpus count"
+print of ""
+print of "  Feedback & Training:"
+print of "  POST /feedback        - Submit feedback"
+print of "  POST /auto-train      - Trigger auto-training"
+print of "  GET  /train/stats     - Training statistics"
+print of ""
+print of "  Learning:"
+print of "  POST /read-article    - Read article for training"
+print of ""
+print of "  API Keys:"
+print of "  GET  /admin/api-keys         - List API keys"
+print of "  POST /admin/api-keys/create  - Create API key"
+print of "  POST /api/keys/validate      - Validate API key"
+print of ""
+print of "  Analytics & Stats:"
+print of "  GET  /admin/analytics        - Visitor analytics"
+print of "  GET  /admin/learning-stats   - Learning statistics"
+print of ""
+print of "  Sessions:"
+print of "  POST /session/save    - Save session to DB"
+print of "  POST /session/load    - Load session from DB"
+print of "  GET  /session         - Get session ID"
+print of ""
+print of "  Inference:"
+print of "  POST /infer           - Native inference"
+print of ""
+print of "  Migrated Admin Routes:"
+print of "  GET  /admin/automation/status       - Automation status"
+print of "  GET  /admin/feedback-stats          - Feedback statistics"
+print of "  GET  /admin/training-progress       - Training progress"
+print of "  POST /admin/train-from-conversation - Train from conversation"
+print of "  POST /admin/delete-conversation     - Delete conversation"
+print of "  POST /admin/export-corpus           - Export corpus"
+print of "  POST /admin/mark-conversation-trained - Mark trained"
+print of "  GET  /eval-history                  - Evaluation history"
+print of "  POST /run-eval                      - Run evaluation"
+print of "  POST /load-gutenberg                - Load Gutenberg book"
+print of "  POST /admin/train-generative        - Batch train"
+print of "  GET  /admin/gen-training-status     - Training status"
+print of ""
+print of "  Racing & Geometric Training:"
+print of "  POST /admin/race-train                - Race training"
+print of "  POST /admin/geometric-train           - Geometric training"
+print of "  GET  /admin/geometric-training-status  - Geometric training status"
+print of "  POST /admin/geometric-training-params  - Set geometric training params (live tuning)"
+print of "  GET  /admin/geometric-training-params  - Get geometric training params"
+print of "  GET  /admin/racing-inference           - Racing inference status"
+print of "  POST /admin/racing-inference           - Toggle racing inference"
+print of ""
+print of "Static files: /static/* -> ./static/"
+print of ""
+print of "Inference Mode:"
+print of "  1. Try native transformer first"
+print of "  2. Compute geometric confidence (Minkowski metric)"
+print of "  3. If confidence >= 40%: use native response"
+print of "  4. If confidence < 40%: fall back to OpenAI"
+print of ""
+
+# Start server on port 5000
+print of "Starting Eigen server on http://0.0.0.0:5000"
+print of "Press Ctrl+C to stop"
+print of ""
+http_serve of 5000

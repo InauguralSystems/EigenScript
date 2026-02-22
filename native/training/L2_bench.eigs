@@ -1,0 +1,31 @@
+# Benchmark: how many L2 train steps fit in ~30 seconds?
+
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    i is 0
+    total is len of decoded
+    loop while i < total:
+        if decoded[i] == key:
+            return decoded[i + 1]
+        i is i + 2
+    return -1
+
+print of "Loading L1-locked checkpoint..."
+eigen_model_load of "../../checkpoints/eigenscript/model_L1_locked.json"
+print of ""
+
+arch_11_prompt is "What is ObserverModel?"
+arch_11_L2 is "ObserverModel models how I observe computation paths. STRICT watches every step."
+
+lr is 0.015
+i is 0
+loop while i < 20:
+    i is i + 1
+    train_json is "{\"input\": \"" + arch_11_prompt + "\", \"output\": \"" + arch_11_L2 + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    print of "step " + i + " loss=" + loss
+print of "DONE"

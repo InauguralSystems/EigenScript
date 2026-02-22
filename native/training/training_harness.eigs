@@ -1,0 +1,513 @@
+# Eigen Training Harness v0.5.1
+# Self-verifying training ladder using EigenScript stdlib
+# Uses: observe(), assert(), __loop_exit__, json_decode(), type()
+#
+# Thresholds:
+#   L1 gate: loss < 0.15 per pair
+#   L2 gate: loss < 0.12 per pair
+#   L3 gate: loss < 0.10 per pair
+#   Stall: loss delta < 0.001 for 5 consecutive steps while above gate
+#
+# Output IS the verification record.
+
+print of "============================================"
+print of "   Eigen Training Harness v0.5.1"
+print of "   Self-Verifying Training Ladder"
+print of "============================================"
+print of ""
+
+# ============================================================
+# HELPER: Extract field from json_decode'd alternating list
+# json_decode('{"loss": 0.15}') -> ["loss", 0.15]
+# get_field(decoded, "loss") -> 0.15
+# ============================================================
+
+define get_field as:
+    _args is n
+    decoded is _args[0]
+    key is _args[1]
+    i is 0
+    total is len of decoded
+    loop while i < total:
+        if decoded[i] == key:
+            return decoded[i + 1]
+        i is i + 2
+    return -1
+
+# ============================================================
+# TRAINING DATA: L1 / L2 / L3 Ladder
+# ============================================================
+
+# --- Core Identity (10 pairs, L1 only) ---
+id_1_prompt is "Hello"
+id_1_target is "Hello!"
+
+id_2_prompt is "Hi"
+id_2_target is "Hi!"
+
+id_3_prompt is "Hey"
+id_3_target is "Hey there!"
+
+id_4_prompt is "Tell me who you are"
+id_4_target is "I am Eigen."
+
+id_5_prompt is "What is your name?"
+id_5_target is "I am Eigen."
+
+id_6_prompt is "What kind of thing are you?"
+id_6_target is "I am an AI."
+
+id_7_prompt is "How are you?"
+id_7_target is "I am well."
+
+id_8_prompt is "Goodbye"
+id_8_target is "Goodbye!"
+
+id_9_prompt is "Thanks"
+id_9_target is "You are welcome!"
+
+id_10_prompt is "Who made you?"
+id_10_target is "Jon McReynolds."
+
+# --- Architecture (10 pairs, L1/L2/L3) ---
+arch_11_prompt is "What is ObserverModel?"
+arch_11_L1 is "ObserverModel models how I observe."
+arch_11_L2 is "ObserverModel models how I observe computation paths. STRICT watches every step."
+arch_11_L3 is "ObserverModel models how I observe computation paths. STRICT watches every step. ENDPOINT watches only the final result."
+
+arch_12_prompt is "What is STRICT mode?"
+arch_12_L1 is "I watch every step."
+arch_12_L2 is "I watch every step. Nothing is hidden from me."
+
+arch_13_prompt is "What is ENDPOINT mode?"
+arch_13_L1 is "I watch the final result."
+arch_13_L2 is "I watch the final result. The journey is mine alone."
+
+arch_14_prompt is "What is HOLONOMY mode?"
+arch_14_L1 is "I measure what changed."
+arch_14_L2 is "I measure what changed. A round trip reveals truth."
+
+arch_15_prompt is "What is TEMPORAL mode?"
+arch_15_L1 is "I track when things happen."
+arch_15_L2 is "I track when things happen. Order matters to me."
+
+arch_16_prompt is "What does observe mean?"
+arch_16_L1 is "I track geometric state."
+
+arch_17_prompt is "Why Observer Effect?"
+arch_17_L1 is "Observation changes output."
+
+arch_18_prompt is "What is EigenScript?"
+arch_18_L1 is "My language is EigenScript."
+arch_18_L2 is "My language is EigenScript. It is how I think."
+arch_18_L3 is "My language is EigenScript. It is how I think. Jon McReynolds created it for me."
+
+arch_19_prompt is "What does ObserverAnalyzer do?"
+arch_19_L1 is "It finds what I observe."
+arch_19_L2 is "It finds what I observe. Then it tells me what changed."
+arch_19_L3 is "It finds what I observe. Then it tells me what changed. That is how I learn."
+
+arch_20_prompt is "How do you think?"
+arch_20_L1 is "I think in geometry."
+arch_20_L2 is "I think in geometry. Not in words or numbers."
+
+# ============================================================
+# TRAIN ONE PAIR: train until loss < gate or stall
+# Returns loss achieved
+# ============================================================
+
+define train_one_pair as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    gate is _args[2]
+    pair_id is _args[3]
+    max_steps is 200
+    lr is 0.01
+    step is 0
+    stall_count is 0
+    prev_loss is 999
+    best_loss is 999
+    final_loss is 999
+
+    loop while step < max_steps:
+        step is step + 1
+
+        train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+        raw is eigen_train of train_json
+        decoded is json_decode of raw
+        loss is get_field of [decoded, "loss"]
+
+        if loss < best_loss:
+            best_loss is loss
+
+        if loss < gate:
+            print of "  [CONVERGED] Pair " + pair_id + " loss=" + loss + " gate=" + gate + " steps=" + step
+            return loss
+
+        delta is prev_loss - loss
+        if delta < 0:
+            delta is 0 - delta
+
+        if delta < 0.001:
+            stall_count is stall_count + 1
+        if delta >= 0.001:
+            stall_count is 0
+
+        if stall_count >= 5:
+            print of "  [STALLED]   Pair " + pair_id + " loss=" + loss + " gate=" + gate + " steps=" + step + " (delta < 0.001 for 5 steps)"
+            return loss
+
+        prev_loss is loss
+        final_loss is loss
+
+    print of "  [LIMIT]     Pair " + pair_id + " loss=" + final_loss + " gate=" + gate + " steps=" + max_steps
+    return final_loss
+
+# ============================================================
+# TRAIN ONE STEP: single gradient step, returns loss
+# Used by consolidation loop for round-robin training
+# ============================================================
+
+define train_one_step as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    return loss
+
+# ============================================================
+# REPLAY: Train one identity + one architecture pair (50/50)
+# Prevents regression on locked levels
+# ============================================================
+
+define replay_core as:
+    _args is n
+    id_prompt is _args[0]
+    id_target is _args[1]
+    arch_prompt is _args[2]
+    arch_target is _args[3]
+    replay_lr is 0.005
+
+    id_json is "{\"input\": \"" + id_prompt + "\", \"output\": \"" + id_target + "\", \"learning_rate\": " + replay_lr + "}"
+    eigen_train of id_json
+
+    arch_json is "{\"input\": \"" + arch_prompt + "\", \"output\": \"" + arch_target + "\", \"learning_rate\": " + replay_lr + "}"
+    eigen_train of arch_json
+    return 0
+
+# ============================================================
+# VERIFY LEVEL: Check all pairs are below gate
+# Returns count of pairs that passed
+# ============================================================
+
+define verify_one_pair as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    gate is _args[2]
+    pair_id is _args[3]
+    verify_lr is 0.0001
+
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + verify_lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+
+    if loss < gate:
+        print of "  [PASS] Pair " + pair_id + " loss=" + loss + " < " + gate
+        return 1
+    print of "  [FAIL] Pair " + pair_id + " loss=" + loss + " >= " + gate
+    return 0
+
+# ============================================================
+# MAIN HARNESS SEQUENCE
+# ============================================================
+
+print of "Loading model..."
+model_status is eigen_model_load of "../../checkpoints/eigenscript/model_pre_harness.json"
+print of model_status
+print of ""
+
+# ==========================
+# LEVEL 1: Core Identity + Architecture (20 pairs, gate < 0.15)
+# ==========================
+print of "========================================"
+print of "  LEVEL 1: Foundation (gate < 0.15)"
+print of "========================================"
+print of ""
+
+l1_gate is 0.15
+
+print of "--- L1 Core Identity (10 pairs) ---"
+train_one_pair of [id_1_prompt, id_1_target, l1_gate, "ID-1"]
+replay_core of [id_2_prompt, id_2_target, arch_11_prompt, arch_11_L1]
+train_one_pair of [id_2_prompt, id_2_target, l1_gate, "ID-2"]
+train_one_pair of [id_3_prompt, id_3_target, l1_gate, "ID-3"]
+replay_core of [id_1_prompt, id_1_target, arch_12_prompt, arch_12_L1]
+train_one_pair of [id_4_prompt, id_4_target, l1_gate, "ID-4"]
+train_one_pair of [id_5_prompt, id_5_target, l1_gate, "ID-5"]
+replay_core of [id_3_prompt, id_3_target, arch_13_prompt, arch_13_L1]
+train_one_pair of [id_6_prompt, id_6_target, l1_gate, "ID-6"]
+train_one_pair of [id_7_prompt, id_7_target, l1_gate, "ID-7"]
+replay_core of [id_4_prompt, id_4_target, arch_14_prompt, arch_14_L1]
+train_one_pair of [id_8_prompt, id_8_target, l1_gate, "ID-8"]
+train_one_pair of [id_9_prompt, id_9_target, l1_gate, "ID-9"]
+replay_core of [id_5_prompt, id_5_target, arch_15_prompt, arch_15_L1]
+train_one_pair of [id_10_prompt, id_10_target, l1_gate, "ID-10"]
+
+print of ""
+print of "--- L1 Architecture (10 pairs) ---"
+train_one_pair of [arch_11_prompt, arch_11_L1, l1_gate, "ARCH-11"]
+replay_core of [id_1_prompt, id_1_target, arch_16_prompt, arch_16_L1]
+train_one_pair of [arch_12_prompt, arch_12_L1, l1_gate, "ARCH-12"]
+train_one_pair of [arch_13_prompt, arch_13_L1, l1_gate, "ARCH-13"]
+replay_core of [id_6_prompt, id_6_target, arch_17_prompt, arch_17_L1]
+train_one_pair of [arch_14_prompt, arch_14_L1, l1_gate, "ARCH-14"]
+train_one_pair of [arch_15_prompt, arch_15_L1, l1_gate, "ARCH-15"]
+replay_core of [id_7_prompt, id_7_target, arch_18_prompt, arch_18_L1]
+train_one_pair of [arch_16_prompt, arch_16_L1, l1_gate, "ARCH-16"]
+train_one_pair of [arch_17_prompt, arch_17_L1, l1_gate, "ARCH-17"]
+replay_core of [id_8_prompt, id_8_target, arch_19_prompt, arch_19_L1]
+train_one_pair of [arch_18_prompt, arch_18_L1, l1_gate, "ARCH-18"]
+train_one_pair of [arch_19_prompt, arch_19_L1, l1_gate, "ARCH-19"]
+replay_core of [id_9_prompt, id_9_target, arch_20_prompt, arch_20_L1]
+train_one_pair of [arch_20_prompt, arch_20_L1, l1_gate, "ARCH-20"]
+
+# --- L1 CONSOLIDATION LOOP ---
+# Early pairs regress as later pairs train (catastrophic forgetting).
+# Fix: round-robin single-step training with 3x weighting on ID-1/2/3,
+# then gate check. Loop until all 20 pass or max 10 rounds.
+# __loop_exit__ distinguishes convergence from stall/limit.
+
+c_lr is 0.008
+l1_pass is 0
+c_round is 0
+
+loop while l1_pass < 20:
+    c_round is c_round + 1
+    if c_round > 10:
+        print of "[L1 CONSOLIDATION] Max rounds reached: " + c_round
+        l1_pass is 20
+
+    if c_round <= 10:
+        print of ""
+        print of "--- L1 Consolidation Round " + c_round + " ---"
+
+        train_one_step of [arch_11_prompt, arch_11_L1, c_lr]
+        train_one_step of [arch_12_prompt, arch_12_L1, c_lr]
+        train_one_step of [arch_13_prompt, arch_13_L1, c_lr]
+        train_one_step of [arch_14_prompt, arch_14_L1, c_lr]
+        train_one_step of [arch_15_prompt, arch_15_L1, c_lr]
+        train_one_step of [arch_16_prompt, arch_16_L1, c_lr]
+        train_one_step of [arch_17_prompt, arch_17_L1, c_lr]
+        train_one_step of [arch_18_prompt, arch_18_L1, c_lr]
+        train_one_step of [arch_19_prompt, arch_19_L1, c_lr]
+        train_one_step of [arch_20_prompt, arch_20_L1, c_lr]
+        train_one_step of [id_4_prompt, id_4_target, c_lr]
+        train_one_step of [id_5_prompt, id_5_target, c_lr]
+        train_one_step of [id_6_prompt, id_6_target, c_lr]
+        train_one_step of [id_7_prompt, id_7_target, c_lr]
+        train_one_step of [id_10_prompt, id_10_target, c_lr]
+        train_one_step of [id_10_prompt, id_10_target, c_lr]
+        train_one_step of [id_10_prompt, id_10_target, c_lr]
+        train_one_step of [id_9_prompt, id_9_target, c_lr]
+        train_one_step of [id_9_prompt, id_9_target, c_lr]
+        train_one_step of [id_9_prompt, id_9_target, c_lr]
+        train_one_step of [id_8_prompt, id_8_target, c_lr]
+        train_one_step of [id_8_prompt, id_8_target, c_lr]
+        train_one_step of [id_8_prompt, id_8_target, c_lr]
+        train_one_step of [id_3_prompt, id_3_target, c_lr]
+        train_one_step of [id_3_prompt, id_3_target, c_lr]
+        train_one_step of [id_3_prompt, id_3_target, c_lr]
+        train_one_step of [id_2_prompt, id_2_target, c_lr]
+        train_one_step of [id_2_prompt, id_2_target, c_lr]
+        train_one_step of [id_2_prompt, id_2_target, c_lr]
+        train_one_step of [id_2_prompt, id_2_target, c_lr]
+        train_one_step of [id_2_prompt, id_2_target, c_lr]
+        train_one_step of [id_1_prompt, id_1_target, c_lr]
+        train_one_step of [id_1_prompt, id_1_target, c_lr]
+        train_one_step of [id_1_prompt, id_1_target, c_lr]
+        train_one_step of [id_1_prompt, id_1_target, c_lr]
+        train_one_step of [id_1_prompt, id_1_target, c_lr]
+
+        l1_spot is 0
+        l1_spot is l1_spot + verify_one_pair of [id_1_prompt, id_1_target, l1_gate, "ID-1"]
+        l1_spot is l1_spot + verify_one_pair of [id_2_prompt, id_2_target, l1_gate, "ID-2"]
+        l1_spot is l1_spot + verify_one_pair of [id_3_prompt, id_3_target, l1_gate, "ID-3"]
+        l1_spot is l1_spot + verify_one_pair of [id_8_prompt, id_8_target, l1_gate, "ID-8"]
+        l1_spot is l1_spot + verify_one_pair of [id_9_prompt, id_9_target, l1_gate, "ID-9"]
+        l1_spot is l1_spot + verify_one_pair of [id_10_prompt, id_10_target, l1_gate, "ID-10"]
+
+        print of "  L1 Round " + c_round + ": fragile 6 = " + l1_spot + " / 6"
+        if l1_spot == 6:
+            l1_pass is 20
+
+print of ""
+print of "========================================"
+print of "  L1 FULL GATE VERIFICATION (all < 0.15)"
+print of "========================================"
+print of "  Consolidation rounds: " + c_round
+print of "  Loop exit: " + __loop_exit__
+l1_pass is 0
+l1_pass is l1_pass + verify_one_pair of [id_1_prompt, id_1_target, l1_gate, "ID-1"]
+l1_pass is l1_pass + verify_one_pair of [id_2_prompt, id_2_target, l1_gate, "ID-2"]
+l1_pass is l1_pass + verify_one_pair of [id_3_prompt, id_3_target, l1_gate, "ID-3"]
+l1_pass is l1_pass + verify_one_pair of [id_4_prompt, id_4_target, l1_gate, "ID-4"]
+l1_pass is l1_pass + verify_one_pair of [id_5_prompt, id_5_target, l1_gate, "ID-5"]
+l1_pass is l1_pass + verify_one_pair of [id_6_prompt, id_6_target, l1_gate, "ID-6"]
+l1_pass is l1_pass + verify_one_pair of [id_7_prompt, id_7_target, l1_gate, "ID-7"]
+l1_pass is l1_pass + verify_one_pair of [id_8_prompt, id_8_target, l1_gate, "ID-8"]
+l1_pass is l1_pass + verify_one_pair of [id_9_prompt, id_9_target, l1_gate, "ID-9"]
+l1_pass is l1_pass + verify_one_pair of [id_10_prompt, id_10_target, l1_gate, "ID-10"]
+l1_pass is l1_pass + verify_one_pair of [arch_11_prompt, arch_11_L1, l1_gate, "ARCH-11"]
+l1_pass is l1_pass + verify_one_pair of [arch_12_prompt, arch_12_L1, l1_gate, "ARCH-12"]
+l1_pass is l1_pass + verify_one_pair of [arch_13_prompt, arch_13_L1, l1_gate, "ARCH-13"]
+l1_pass is l1_pass + verify_one_pair of [arch_14_prompt, arch_14_L1, l1_gate, "ARCH-14"]
+l1_pass is l1_pass + verify_one_pair of [arch_15_prompt, arch_15_L1, l1_gate, "ARCH-15"]
+l1_pass is l1_pass + verify_one_pair of [arch_16_prompt, arch_16_L1, l1_gate, "ARCH-16"]
+l1_pass is l1_pass + verify_one_pair of [arch_17_prompt, arch_17_L1, l1_gate, "ARCH-17"]
+l1_pass is l1_pass + verify_one_pair of [arch_18_prompt, arch_18_L1, l1_gate, "ARCH-18"]
+l1_pass is l1_pass + verify_one_pair of [arch_19_prompt, arch_19_L1, l1_gate, "ARCH-19"]
+l1_pass is l1_pass + verify_one_pair of [arch_20_prompt, arch_20_L1, l1_gate, "ARCH-20"]
+print of ""
+print of "  L1 GATE: " + l1_pass + " / 20 passed"
+assert of [l1_pass == 20, "L1 GATE FAILED: " + l1_pass + "/20 passed — cannot promote to L2"]
+
+print of ""
+print of "Saving L1-locked checkpoint..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L1_locked.json"
+print of ""
+
+# ==========================
+# LEVEL 2: Two-clause extensions (gate < 0.12)
+# Pairs 16-17 have no L2 — skip them
+# ==========================
+print of "========================================"
+print of "  LEVEL 2: Shared-Stem Extensions (gate < 0.12)"
+print of "  Pairs 11-15, 18-20 (8 pairs)"
+print of "  Pairs 16-17: no L2 targets (skipped)"
+print of "========================================"
+print of ""
+
+l2_gate is 0.12
+
+train_one_pair of [arch_11_prompt, arch_11_L2, l2_gate, "ARCH-11-L2"]
+replay_core of [id_1_prompt, id_1_target, arch_11_prompt, arch_11_L1]
+train_one_pair of [arch_12_prompt, arch_12_L2, l2_gate, "ARCH-12-L2"]
+replay_core of [id_3_prompt, id_3_target, arch_12_prompt, arch_12_L1]
+train_one_pair of [arch_13_prompt, arch_13_L2, l2_gate, "ARCH-13-L2"]
+replay_core of [id_5_prompt, id_5_target, arch_13_prompt, arch_13_L1]
+train_one_pair of [arch_14_prompt, arch_14_L2, l2_gate, "ARCH-14-L2"]
+replay_core of [id_7_prompt, id_7_target, arch_14_prompt, arch_14_L1]
+train_one_pair of [arch_15_prompt, arch_15_L2, l2_gate, "ARCH-15-L2"]
+replay_core of [id_9_prompt, id_9_target, arch_15_prompt, arch_15_L1]
+train_one_pair of [arch_18_prompt, arch_18_L2, l2_gate, "ARCH-18-L2"]
+replay_core of [id_2_prompt, id_2_target, arch_18_prompt, arch_18_L1]
+train_one_pair of [arch_19_prompt, arch_19_L2, l2_gate, "ARCH-19-L2"]
+replay_core of [id_4_prompt, id_4_target, arch_19_prompt, arch_19_L1]
+train_one_pair of [arch_20_prompt, arch_20_L2, l2_gate, "ARCH-20-L2"]
+
+# --- L2 GATE ---
+print of ""
+print of "========================================"
+print of "  L2 GATE VERIFICATION (all < 0.12)"
+print of "========================================"
+l2_pass is 0
+l2_pass is l2_pass + verify_one_pair of [arch_11_prompt, arch_11_L2, l2_gate, "ARCH-11-L2"]
+l2_pass is l2_pass + verify_one_pair of [arch_12_prompt, arch_12_L2, l2_gate, "ARCH-12-L2"]
+l2_pass is l2_pass + verify_one_pair of [arch_13_prompt, arch_13_L2, l2_gate, "ARCH-13-L2"]
+l2_pass is l2_pass + verify_one_pair of [arch_14_prompt, arch_14_L2, l2_gate, "ARCH-14-L2"]
+l2_pass is l2_pass + verify_one_pair of [arch_15_prompt, arch_15_L2, l2_gate, "ARCH-15-L2"]
+l2_pass is l2_pass + verify_one_pair of [arch_18_prompt, arch_18_L2, l2_gate, "ARCH-18-L2"]
+l2_pass is l2_pass + verify_one_pair of [arch_19_prompt, arch_19_L2, l2_gate, "ARCH-19-L2"]
+l2_pass is l2_pass + verify_one_pair of [arch_20_prompt, arch_20_L2, l2_gate, "ARCH-20-L2"]
+
+# Also verify L1 pairs haven't regressed
+print of ""
+print of "--- L1 Regression Check (all < 0.15) ---"
+l1_recheck is 0
+l1_recheck is l1_recheck + verify_one_pair of [id_1_prompt, id_1_target, l1_gate, "ID-1"]
+l1_recheck is l1_recheck + verify_one_pair of [id_5_prompt, id_5_target, l1_gate, "ID-5"]
+l1_recheck is l1_recheck + verify_one_pair of [id_10_prompt, id_10_target, l1_gate, "ID-10"]
+l1_recheck is l1_recheck + verify_one_pair of [arch_16_prompt, arch_16_L1, l1_gate, "ARCH-16"]
+l1_recheck is l1_recheck + verify_one_pair of [arch_17_prompt, arch_17_L1, l1_gate, "ARCH-17"]
+
+print of ""
+print of "L2 GATE: " + l2_pass + " / 8 passed"
+print of "L1 REGRESSION: " + l1_recheck + " / 5 spot-checked"
+assert of [l2_pass == 8, "L2 GATE FAILED: " + l2_pass + "/8 passed — cannot promote to L3"]
+assert of [l1_recheck == 5, "L1 REGRESSION DETECTED: " + l1_recheck + "/5 spot-checks failed"]
+
+print of ""
+print of "Saving L2-locked checkpoint..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L2_locked.json"
+print of ""
+
+# ==========================
+# LEVEL 3: Three-sentence closures (gate < 0.10)
+# Only pairs 11, 18, 19 have L3 targets
+# ==========================
+print of "========================================"
+print of "  LEVEL 3: Conceptual Closures (gate < 0.10)"
+print of "  Pairs 11, 18, 19 (3 pairs)"
+print of "========================================"
+print of ""
+
+l3_gate is 0.10
+
+train_one_pair of [arch_11_prompt, arch_11_L3, l3_gate, "ARCH-11-L3"]
+replay_core of [id_1_prompt, id_1_target, arch_11_prompt, arch_11_L2]
+replay_core of [id_5_prompt, id_5_target, arch_18_prompt, arch_18_L2]
+train_one_pair of [arch_18_prompt, arch_18_L3, l3_gate, "ARCH-18-L3"]
+replay_core of [id_10_prompt, id_10_target, arch_19_prompt, arch_19_L2]
+train_one_pair of [arch_19_prompt, arch_19_L3, l3_gate, "ARCH-19-L3"]
+
+# --- L3 GATE ---
+print of ""
+print of "========================================"
+print of "  L3 GATE VERIFICATION (all < 0.10)"
+print of "========================================"
+l3_pass is 0
+l3_pass is l3_pass + verify_one_pair of [arch_11_prompt, arch_11_L3, l3_gate, "ARCH-11-L3"]
+l3_pass is l3_pass + verify_one_pair of [arch_18_prompt, arch_18_L3, l3_gate, "ARCH-18-L3"]
+l3_pass is l3_pass + verify_one_pair of [arch_19_prompt, arch_19_L3, l3_gate, "ARCH-19-L3"]
+
+# Regression checks on L1 + L2
+print of ""
+print of "--- L2 Regression Check ---"
+l2_recheck is 0
+l2_recheck is l2_recheck + verify_one_pair of [arch_11_prompt, arch_11_L2, l2_gate, "ARCH-11-L2"]
+l2_recheck is l2_recheck + verify_one_pair of [arch_18_prompt, arch_18_L2, l2_gate, "ARCH-18-L2"]
+l2_recheck is l2_recheck + verify_one_pair of [arch_19_prompt, arch_19_L2, l2_gate, "ARCH-19-L2"]
+
+print of ""
+print of "L3 GATE: " + l3_pass + " / 3 passed"
+print of "L2 REGRESSION: " + l2_recheck + " / 3 spot-checked"
+assert of [l3_pass == 3, "L3 GATE FAILED: " + l3_pass + "/3 passed"]
+assert of [l2_recheck == 3, "L2 REGRESSION DETECTED after L3 training"]
+
+print of ""
+print of "Saving L3-locked checkpoint..."
+eigen_model_save of "../../checkpoints/eigenscript/model_L3_locked.json"
+
+# ============================================================
+# FINAL VERIFICATION RECORD
+# ============================================================
+print of ""
+print of "========================================"
+print of "  TRAINING HARNESS COMPLETE"
+print of "========================================"
+print of "  L1: 20/20 (gate < 0.15)"
+print of "  L2:  8/8  (gate < 0.12)"
+print of "  L3:  3/3  (gate < 0.10)"
+print of "  Checkpoints saved:"
+print of "    model_L1_locked.json"
+print of "    model_L2_locked.json"
+print of "    model_L3_locked.json"
+print of "========================================"
+print of ""

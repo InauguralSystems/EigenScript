@@ -1,0 +1,196 @@
+# iLambdaAi XOR Example
+# Demonstrates training a neural network to solve the XOR problem
+# using EigenScript's native geometric introspection
+#
+# This example showcases:
+# - Building a Sequential model
+# - Using native convergence detection
+# - Geometric introspection during training
+# - Self-aware training loop
+
+from layers import Linear, ReLU, Sigmoid, Sequential
+from optimizers import Adam
+from loss import binary_cross_entropy_loss
+from trainer import SimpleTrainer
+
+# ============================================================================
+# XOR Dataset
+# ============================================================================
+
+# XOR truth table
+# Input: [0,0] -> 0, [0,1] -> 1, [1,0] -> 1, [1,1] -> 0
+
+X is [[0, 0], [0, 1], [1, 0], [1, 1]]
+Y is [[0], [1], [1], [0]]
+
+# ============================================================================
+# Build Model
+# ============================================================================
+
+print of "Building XOR model..."
+
+# Create a simple MLP: 2 -> 4 -> 1
+layer1 is Linear of [2, 4, true]
+layer2 is Linear of [4, 1, true]
+model is Sequential of [layer1, ReLU, layer2, Sigmoid]
+
+print of describe of model
+print of "Total parameters:"
+print of num_parameters of model
+
+# ============================================================================
+# Setup Training
+# ============================================================================
+
+# Create optimizer
+optimizer is Adam of [(parameters of model), 0.1, 0.9, 0.999, 1e-8, 0, false]
+
+# Create trainer
+trainer is SimpleTrainer
+init of [trainer, model, optimizer, binary_cross_entropy_loss]
+
+# ============================================================================
+# Training with Geometric Introspection
+# ============================================================================
+
+print of ""
+print of "=== Training with EigenScript Geometric Features ==="
+print of ""
+
+# Training loop with geometric introspection
+epochs is 1000
+for epoch in range of epochs:
+    # Zero gradients
+    zero_grad of model
+
+    # Forward pass
+    predictions is forward of [model, X]
+
+    # Compute loss
+    loss is binary_cross_entropy_loss of [predictions, Y]
+
+    # Backward pass
+    backward of loss
+
+    # Optimizer step
+    step of optimizer
+
+    # === EigenScript Geometric Features ===
+
+    # Check for convergence using native predicate
+    if converged:
+        print of ""
+        print of "*** CONVERGED at epoch"
+        print of epoch
+        print of "***"
+        print of "Final loss:"
+        print of what is loss
+        break
+
+    # Check stability
+    if not stable and epoch > 100:
+        print of "Warning: Training becoming unstable at epoch"
+        print of epoch
+
+    # Check for oscillation
+    if oscillating:
+        print of "Detected oscillation at epoch"
+        print of epoch
+
+    # Log progress every 100 epochs
+    if epoch % 100 == 0:
+        fs is framework_strength
+
+        print of format of "Epoch {}: Loss = {:.6f}, FS = {:.4f}",
+            epoch, what is loss, fs
+
+        # Additional geometric diagnostics
+        if epoch > 0:
+            quality is how is loss
+            print of "  Quality:"
+            print of quality
+            print of "  Stable:"
+            print of stable
+            print of "  Improving:"
+            print of improving
+
+# ============================================================================
+# Evaluate Results
+# ============================================================================
+
+print of ""
+print of "=== Evaluation ==="
+
+# Set model to eval mode
+eval of model
+
+# Get predictions
+final_predictions is forward of [model, X]
+
+print of ""
+print of "XOR Predictions:"
+print of ["  [0, 0] ->"]
+print of final_predictions[0]
+print of "(expected: 0)"
+print of ["  [0, 1] ->"]
+print of final_predictions[1]
+print of "(expected: 1)"
+print of ["  [1, 0] ->"]
+print of final_predictions[2]
+print of "(expected: 1)"
+print of ["  [1, 1] ->"]
+print of final_predictions[3]
+print of "(expected: 0)"
+
+# Round to get binary predictions
+rounded is round of final_predictions
+print of ""
+print of "Rounded predictions:"
+print of rounded
+
+# Check accuracy
+correct is sum of [equal of rounded, Y]
+accuracy is divide of [correct, 4]
+print of "Accuracy:"
+print of accuracy
+
+# ============================================================================
+# Final Geometric Report
+# ============================================================================
+
+print of ""
+print of "=== Final Geometric Report ==="
+
+report is introspect of model
+
+print of "Converged:"
+print of report["converged"]
+print of "Stable:"
+print of report["stable"]
+print of "Framework Strength:"
+print of report["framework_strength"]
+print of "Parameter Count:"
+print of report["parameter_count"]
+
+# Temporal analysis
+print of ""
+print of "=== Temporal Analysis ==="
+print of "Previous loss:"
+print of was of loss
+print of "Loss change:"
+print of change of loss
+print of "Trend:"
+print of trend of loss
+
+# Interrogatives
+print of ""
+print of "=== Interrogatives ==="
+print of "What is the loss?"
+print of what is loss
+print of "How is training?"
+print of how is loss
+print of "When (step)?"
+print of when
+
+print of ""
+print of "=== XOR Training Complete ==="

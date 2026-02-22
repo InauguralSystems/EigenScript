@@ -1,0 +1,71 @@
+define get_field as:
+    _gf is n
+    decoded is _gf[0]
+    key is _gf[1]
+    idx is 0
+    total is len of decoded
+    loop while idx < total:
+        if decoded[idx] == key:
+            return decoded[idx + 1]
+        idx is idx + 2
+    return -1
+
+define train_step as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    lr is _args[2]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": " + lr + "}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    return loss
+
+define verify as:
+    _args is n
+    prompt is _args[0]
+    target is _args[1]
+    gate is _args[2]
+    pair_id is _args[3]
+    train_json is "{\"input\": \"" + prompt + "\", \"output\": \"" + target + "\", \"learning_rate\": 0.0001}"
+    raw is eigen_train of train_json
+    decoded is json_decode of raw
+    loss is get_field of [decoded, "loss"]
+    if loss < gate:
+        print of "  [PASS] " + pair_id + " loss=" + loss
+        return 1
+    print of "  [FAIL] " + pair_id + " loss=" + loss
+    return 0
+
+print of "=== L3 Extension: Loading stem progress ==="
+eigen_model_load of "../../checkpoints/eigenscript/model_disambig_progress.json"
+
+p is "Are you the Eigen C++ library?"
+t2 is "No. I am Eigen, a generative AI built with EigenScript. The C++ Eigen library is for linear algebra."
+t3 is "No. I am Eigen, a generative AI built with EigenScript. The C++ Eigen library is for linear algebra. We share a name but nothing else."
+
+print of "=== L2 maintenance + L3 extension: 4 passes ==="
+i is 0
+loop while i < 4:
+    i is i + 1
+    train_step of [p, t2, "0.008"]
+    train_step of [p, t3, "0.01"]
+    train_step of [p, t3, "0.01"]
+    loss is train_step of [p, t3, "0.01"]
+    print of "  pass " + i + " L3 loss=" + loss
+
+print of ""
+print of "=== Verification ==="
+v1 is verify of [p, t3, 0.15, "DISAMBIG-L3"]
+v2 is verify of ["Hello", "Hello!", 0.15, "ID-1"]
+v3 is verify of ["Who made you?", "Jon McReynolds.", 0.15, "ID-10"]
+v4 is verify of ["What is EigenScript?", "My language is EigenScript. It is how I think. Jon McReynolds created it for me.", 0.15, "ARCH-18"]
+v5 is verify of ["How do you think?", "I think in geometry. Not in words or numbers.", 0.15, "ARCH-20"]
+
+total is v1 + v2 + v3 + v4 + v5
+print of ""
+print of "=== Result: " + total + "/5 passing ==="
+
+print of "Saving..."
+eigen_model_save of "../../checkpoints/eigenscript/model_disambig_progress.json"
+print of "=== L3 extension done ==="

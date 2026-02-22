@@ -1,0 +1,26 @@
+# Test Dynamic Route Handlers in EigenScript
+print of "=== Dynamic Route Handler Test ==="
+
+# Static route (existing functionality)
+static_response is "{\"type\": \"static\", \"message\": \"Hello from static handler\"}"
+http_route of ["GET", "/static", static_response]
+
+# Dynamic route - executes EigenScript code per request
+# This will run "http_request_body of null" for each request
+http_route of ["POST", "/echo", "code", "http_request_body of null"]
+
+# Dynamic route that builds a response
+http_route of ["GET", "/dynamic", "code", "\"{\\\"type\\\": \\\"dynamic\\\", \\\"path\\\": \\\"\" + (http_request_path of null) + \"\\\"}\""]
+
+# Status endpoint with request info
+http_route of ["GET", "/info", "code", "\"{\\\"method\\\": \\\"\" + (http_request_method of null) + \"\\\", \\\"path\\\": \\\"\" + (http_request_path of null) + \"\\\"}\""]
+
+print of "Routes registered:"
+print of "  GET  /static  - static response"
+print of "  POST /echo    - echoes request body"
+print of "  GET  /dynamic - dynamic response with path"
+print of "  GET  /info    - returns method and path"
+print of ""
+
+print of "Starting test server on http://0.0.0.0:8080"
+http_serve of 8080
