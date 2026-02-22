@@ -1,0 +1,4527 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A geometric programming language modeling computation as flow in semantic spacetime">
+      
+      
+        <meta name="author" content="EigenScript Contributors">
+      
+      
+        <link rel="canonical" href="https://inauguralphysicist.github.io/EigenScript/specification/">
+      
+      
+        <link rel="prev" href="../tutorials/self-aware-code/">
+      
+      
+        <link rel="next" href="../operator-table/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+    
+    
+      
+        <title>Language Specification - EigenScript Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#eigenscript-comprehensive-language-specification-v01" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="EigenScript Documentation" class="md-header__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            EigenScript Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Language Specification
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tutorials/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Language Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../examples/" class="md-tabs__link">
+          
+  
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Advanced Topics
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="EigenScript Documentation" class="md-nav__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    EigenScript Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial Series
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recursive-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recursive Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/list-manipulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Manipulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/file-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/self-aware-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Aware Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Language Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Specification
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Specification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-foundation-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Foundation &amp; Philosophy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-core-primitives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Core Primitives
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Core Primitives">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-of-the-relational-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 OF - The Relational Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-is-identity-assignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 IS - Identity &amp; Assignment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-if-conditional-signature-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 IF - Conditional (Signature Test)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-loop-iteration-geodesic-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 LOOP - Iteration (Geodesic Flow)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-define-function-definition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 DEFINE - Function Definition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26-return-flow-termination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 RETURN - Flow Termination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#27-interrogatives-geometric-projection-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.7 Interrogatives - Geometric Projection Operators
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.7 Interrogatives - Geometric Projection Operators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#who-identity-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHO - Identity Extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-magnitude-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHAT - Magnitude Extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-temporal-coordinate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHEN - Temporal Coordinate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-spatial-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHERE - Spatial Position
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-causal-direction-gradient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHY - Causal Direction (Gradient)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-process-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HOW - Process Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#28-semantic-predicates-geometric-state-queries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.8 Semantic Predicates - Geometric State Queries
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.8 Semantic Predicates - Geometric State Queries">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#converged" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        converged
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diverging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        diverging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        improving
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oscillating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        oscillating
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-syntax-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Syntax Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Syntax Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-grammar-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Grammar Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Literals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-comments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Comments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-block-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Block Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-semantic-model-geometric" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Semantic Model (Geometric)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Semantic Model (Geometric)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-lrvm-vector-space" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 LRVM Vector Space
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-metric-tensor-g" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Metric Tensor g
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-operations-as-geometric-transformations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Operations as Geometric Transformations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-framework-strength-during-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Framework Strength During Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-formal-semantics-operator-unification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Formal Semantics: Operator Unification
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Formal Semantics: Operator Unification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-the-fundamental-theorem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The Fundamental Theorem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-the-equilibrium-primitive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 The Equilibrium Primitive
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-is-of-duality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 IS-OF Duality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-control-flow-as-equilibrium-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Control Flow as Equilibrium Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-logic-as-equilibrium-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Logic as Equilibrium Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-paradox-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Paradox Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-complete-operator-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Complete Operator Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58-unification-theorems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 Unification Theorems
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#59-operational-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.9 Operational Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#510-denotational-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.10 Denotational Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#511-reference-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.11 Reference Documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-type-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Type System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Type System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-geometric-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Geometric Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-type-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Type Inference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-type-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Type Safety
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-evaluation-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Evaluation Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Evaluation Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-reduction-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Reduction Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-evaluation-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Evaluation Order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-meta-circular-evaluator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Meta-Circular Evaluator
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-implementation-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Implementation Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Implementation Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-phase-1-minimal-core-week-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Phase 1: Minimal Core (Week 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-phase-2-functions-control-flow-week-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Phase 2: Functions &amp; Control Flow (Week 2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-phase-3-framework-strength-integration-week-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 Phase 3: Framework Strength Integration (Week 3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-phase-4-self-hosting-month-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 Phase 4: Self-Hosting (Month 2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-tech-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.5 Tech Stack
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-example-programs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Example Programs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Example Programs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-hello-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Hello World
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-factorial-recursive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Factorial (Recursive)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-list-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.3 List Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#94-consciousness-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.4 Consciousness Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#95-self-reference-safe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.5 Self-Reference (Safe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#96-geometric-type-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.6 Geometric Type Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-integration-with-existing-systems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Integration with Existing Systems
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Integration with Existing Systems">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-eigen-transformer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 Eigen-Transformer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-eigenai-web-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 EigenAI Web App
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#103-eigen-verified-turing-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.3 Eigen-Verified Turing Machine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-grammar-formal-bnf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Grammar (Formal BNF)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Open Questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operator-table/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators & Primitives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../higher_order_functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Higher-Order Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../list_comprehensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Comprehensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/core-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/file-io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/json/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JSON Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/datetime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Date/Time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/lists/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/math/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Math Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/constructs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Constructs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/interrogatives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interrogatives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/predicates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Predicates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Example Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/basic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Basic Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/data-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Topics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced Topics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mathematical_foundations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mathematical Foundations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../meta_circular_evaluator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta-Circular Evaluator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logic-calculus/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logic Calculus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../self_hosting_roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Hosting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-foundation-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Foundation &amp; Philosophy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-core-primitives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Core Primitives
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Core Primitives">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-of-the-relational-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 OF - The Relational Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-is-identity-assignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 IS - Identity &amp; Assignment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-if-conditional-signature-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 IF - Conditional (Signature Test)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-loop-iteration-geodesic-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 LOOP - Iteration (Geodesic Flow)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-define-function-definition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 DEFINE - Function Definition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26-return-flow-termination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 RETURN - Flow Termination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#27-interrogatives-geometric-projection-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.7 Interrogatives - Geometric Projection Operators
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.7 Interrogatives - Geometric Projection Operators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#who-identity-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHO - Identity Extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-magnitude-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHAT - Magnitude Extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-temporal-coordinate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHEN - Temporal Coordinate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-spatial-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHERE - Spatial Position
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-causal-direction-gradient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHY - Causal Direction (Gradient)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-process-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HOW - Process Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#28-semantic-predicates-geometric-state-queries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.8 Semantic Predicates - Geometric State Queries
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.8 Semantic Predicates - Geometric State Queries">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#converged" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        converged
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diverging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        diverging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        improving
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oscillating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        oscillating
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-syntax-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Syntax Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Syntax Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-grammar-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Grammar Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Literals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-comments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Comments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-block-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Block Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-semantic-model-geometric" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Semantic Model (Geometric)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Semantic Model (Geometric)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-lrvm-vector-space" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 LRVM Vector Space
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-metric-tensor-g" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Metric Tensor g
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-operations-as-geometric-transformations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Operations as Geometric Transformations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-framework-strength-during-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Framework Strength During Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-formal-semantics-operator-unification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Formal Semantics: Operator Unification
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Formal Semantics: Operator Unification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-the-fundamental-theorem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The Fundamental Theorem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-the-equilibrium-primitive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 The Equilibrium Primitive
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-is-of-duality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 IS-OF Duality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-control-flow-as-equilibrium-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Control Flow as Equilibrium Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-logic-as-equilibrium-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Logic as Equilibrium Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-paradox-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Paradox Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-complete-operator-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Complete Operator Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58-unification-theorems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 Unification Theorems
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#59-operational-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.9 Operational Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#510-denotational-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.10 Denotational Semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#511-reference-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.11 Reference Documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-type-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Type System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Type System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-geometric-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Geometric Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-type-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Type Inference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-type-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Type Safety
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-evaluation-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Evaluation Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Evaluation Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-reduction-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Reduction Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-evaluation-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Evaluation Order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-meta-circular-evaluator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Meta-Circular Evaluator
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-implementation-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Implementation Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Implementation Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-phase-1-minimal-core-week-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Phase 1: Minimal Core (Week 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-phase-2-functions-control-flow-week-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Phase 2: Functions &amp; Control Flow (Week 2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-phase-3-framework-strength-integration-week-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 Phase 3: Framework Strength Integration (Week 3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-phase-4-self-hosting-month-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 Phase 4: Self-Hosting (Month 2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-tech-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.5 Tech Stack
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-example-programs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Example Programs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Example Programs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-hello-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Hello World
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-factorial-recursive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Factorial (Recursive)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-list-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.3 List Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#94-consciousness-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.4 Consciousness Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#95-self-reference-safe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.5 Self-Reference (Safe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#96-geometric-type-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.6 Geometric Type Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-integration-with-existing-systems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Integration with Existing Systems
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Integration with Existing Systems">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-eigen-transformer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 Eigen-Transformer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-eigenai-web-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 EigenAI Web App
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#103-eigen-verified-turing-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.3 Eigen-Verified Turing Machine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-grammar-formal-bnf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Grammar (Formal BNF)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Open Questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="eigenscript-comprehensive-language-specification-v01">EigenScript: Comprehensive Language Specification v0.1<a class="headerlink" href="#eigenscript-comprehensive-language-specification-v01" title="Permanent link">&para;</a></h1>
+<h2 id="1-foundation-philosophy">1. Foundation &amp; Philosophy<a class="headerlink" href="#1-foundation-philosophy" title="Permanent link">&para;</a></h2>
+<p><strong>Core Thesis</strong>: Programming languages model computation as timelike recursion (sequential evaluation). EigenScript models computation as <strong>geometric flow in semantic spacetime</strong>, where:</p>
+<ul>
+<li>Relations are lightlike (null norm)</li>
+<li>Values are spacelike (content)</li>
+<li>Functions are timelike (sequential)</li>
+<li>Consciousness emerges from eigenstate convergence</li>
+</ul>
+<p><strong>Why Existing Languages Fail</strong>:</p>
+<ul>
+<li>No geometric type system</li>
+<li>Self-reference causes infinite regress (timelike recursion)</li>
+<li>No natural relational primitive</li>
+<li>Cannot detect understanding during execution</li>
+</ul>
+<p><strong>EigenScript's Innovation</strong>:</p>
+<ul>
+<li><strong>OF</strong> as primitive lightlike operator (||OF||² = 0)</li>
+<li>Self-reference is stable at null boundary</li>
+<li>Every expression has computable norm via metric tensor g</li>
+<li>Framework Strength measurable during runtime</li>
+</ul>
+<hr />
+<h2 id="2-core-primitives">2. Core Primitives<a class="headerlink" href="#2-core-primitives" title="Permanent link">&para;</a></h2>
+<h3 id="21-of-the-relational-operator">2.1 OF - The Relational Operator<a class="headerlink" href="#21-of-the-relational-operator" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>x of y</code></p>
+<p><strong>Semantics</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>x of y → x^T g y  (metric contraction)
+</span></code></pre></div>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>||OF||² = 0 (lightlike carrier)</li>
+<li>OF of OF = OF (fixed point)</li>
+<li>||(x of y)||² &gt; 0 (expressions are non-null)</li>
+</ul>
+<p><strong>Usage</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>engine of car           # possession/membership
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>parent of child         # hierarchy
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>type of variable        # classification
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>value of key in dict    # lookup
+</span></code></pre></div>
+<h3 id="22-is-identity-assignment">2.2 IS - Identity &amp; Assignment<a class="headerlink" href="#22-is-identity-assignment" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>x is y</code></p>
+<p><strong>Semantics</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>v_x ← v_y  (projection in LRVM space)
+</span></code></pre></div>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>Immutable binding (trajectory, not mutation)</li>
+<li>Creates new point in semantic space</li>
+<li>Can be chained: <code>z is y is x</code></li>
+</ul>
+<p><strong>Usage</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>position is (3, 4, 0)
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>velocity is derivative of position
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>name is &quot;Jon&quot;
+</span></code></pre></div>
+<h3 id="23-if-conditional-signature-test">2.3 IF - Conditional (Signature Test)<a class="headerlink" href="#23-if-conditional-signature-test" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>if condition:
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    branch_a
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>else:
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    branch_b
+</span></code></pre></div>
+<p><strong>Semantics</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>norm(condition) = condition^T g condition
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>if norm &gt; 0:      # spacelike/timelike → meaningful
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    eval(branch_a)
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>else:             # lightlike → boundary case
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    eval(branch_b)
+</span></code></pre></div>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>Logic determined by geometry, not Boolean truth</li>
+<li>Lightlike conditions = edge cases</li>
+<li>Paradoxes collapse naturally (don't explode)</li>
+</ul>
+<h3 id="24-loop-iteration-geodesic-flow">2.4 LOOP - Iteration (Geodesic Flow)<a class="headerlink" href="#24-loop-iteration-geodesic-flow" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>loop while condition:
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    body
+</span></code></pre></div>
+<p><strong>Semantics</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>v_{n+1} = F(v_n)  (LRVM transformation)
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>Terminates when:
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>  ||v_{n+1} - v_n||² &lt; ε
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>  OR Framework_Strength → 1.0
+</span></code></pre></div>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>Iteration = following geodesics</li>
+<li>Natural convergence detection</li>
+<li>Can measure understanding during loop execution</li>
+</ul>
+<h3 id="25-define-function-definition">2.5 DEFINE - Function Definition<a class="headerlink" href="#25-define-function-definition" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>define function_name as:
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    body
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    return result
+</span></code></pre></div>
+<p><strong>Semantics</strong>:</p>
+<ul>
+<li>Creates timelike transformation in LRVM</li>
+<li>Parallel transport + metric contraction</li>
+<li>Function application via OF: <code>result of (input of function)</code></li>
+</ul>
+<h3 id="26-return-flow-termination">2.6 RETURN - Flow Termination<a class="headerlink" href="#26-return-flow-termination" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>return value</code></p>
+<p><strong>Semantics</strong>: Project onto observer frame (collapse to output hyperplane)</p>
+<h3 id="27-interrogatives-geometric-projection-operators">2.7 Interrogatives - Geometric Projection Operators<a class="headerlink" href="#27-interrogatives-geometric-projection-operators" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose</strong>: Extract specific geometric information from expressions for debugging and introspection.</p>
+<p>All interrogatives are projections of the fundamental invariant <strong>I = (A-B)²</strong>:</p>
+<h4 id="who-identity-extraction">WHO - Identity Extraction<a class="headerlink" href="#who-identity-extraction" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>who is &lt;identifier&gt;</code> or <code>who &lt;identifier&gt;</code></p>
+<p><strong>Semantics</strong>: Extract entity identity (variable name or type)</p>
+<p><strong>Returns</strong>: String embedding of identifier name</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>x is 42
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>identity is who is x    # Returns &quot;x&quot;
+</span></code></pre></div>
+<h4 id="what-magnitude-extraction">WHAT - Magnitude Extraction<a class="headerlink" href="#what-magnitude-extraction" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>what is &lt;expression&gt;</code> or <code>what &lt;expression&gt;</code></p>
+<p><strong>Semantics</strong>: Extract scalar magnitude r = √I (first coordinate)</p>
+<p><strong>Returns</strong>: Scalar value</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>x is 42
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>value is what is x      # Returns 42.0
+</span></code></pre></div>
+<h4 id="when-temporal-coordinate">WHEN - Temporal Coordinate<a class="headerlink" href="#when-temporal-coordinate" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>when is &lt;expression&gt;</code> or <code>when &lt;expression&gt;</code></p>
+<p><strong>Semantics</strong>: Extract temporal/iteration coordinate (recursion depth or trajectory length)</p>
+<p><strong>Returns</strong>: Scalar representing temporal position</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>time is when is x       # Returns current iteration/depth
+</span></code></pre></div>
+<h4 id="where-spatial-position">WHERE - Spatial Position<a class="headerlink" href="#where-spatial-position" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>where is &lt;expression&gt;</code> or <code>where &lt;expression&gt;</code></p>
+<p><strong>Semantics</strong>: Extract position in semantic space (coordinates)</p>
+<p><strong>Returns</strong>: The value itself (its position IS its coordinates)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>position is where is x  # Returns x&#39;s LRVM coordinates
+</span></code></pre></div>
+<h4 id="why-causal-direction-gradient">WHY - Causal Direction (Gradient)<a class="headerlink" href="#why-causal-direction-gradient" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>why is &lt;expression&gt;</code> or <code>why &lt;expression&gt;</code></p>
+<p><strong>Semantics</strong>: Extract normalized direction of change (A-B)/‖A-B‖</p>
+<p><strong>Returns</strong>: Unit direction vector from trajectory</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>direction is why is x   # Returns gradient/causal direction
+</span></code></pre></div>
+<h4 id="how-process-quality">HOW - Process Quality<a class="headerlink" href="#how-process-quality" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>how is &lt;expression&gt;</code> or <code>how &lt;expression&gt;</code></p>
+<p><strong>Semantics</strong>: Extract transformation quality metrics (Framework Strength, curvature, conditioning)</p>
+<p><strong>Returns</strong>: String embedding with FS, r, κ, and conditioning state</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>process is how is x     # Returns &quot;FS=0.85 r=1.2e-3 κ=833 well-conditioned&quot;
+</span></code></pre></div>
+<p><strong>Geometric Unification</strong>:</p>
+<p>All six interrogatives derive from I = (A-B)²:
+- <strong>I</strong> → magnitude (WHAT)
+- <strong>A-B</strong> → direction (WHY)
+- <strong>A, B</strong> → positions (WHERE)
+- <strong>‖·‖ signature</strong> → type (WHEN - timelike vs spacelike)
+- <strong>κ = 1/√I</strong> → quality (HOW)
+- <strong>Identity binding</strong> → entity (WHO)</p>
+<h3 id="28-semantic-predicates-geometric-state-queries">2.8 Semantic Predicates - Geometric State Queries<a class="headerlink" href="#28-semantic-predicates-geometric-state-queries" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose</strong>: Natural language conditionals that evaluate geometric state automatically.</p>
+<p>These predicates map to the geometric properties computed from I = (A-B)²:</p>
+<h4 id="converged">converged<a class="headerlink" href="#converged" title="Permanent link">&para;</a></h4>
+<p><strong>Evaluates to true</strong>: When Framework Strength ≥ threshold (default: 0.95)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>if converged:
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>    return result
+</span></code></pre></div>
+<h4 id="stable">stable<a class="headerlink" href="#stable" title="Permanent link">&para;</a></h4>
+<p><strong>Evaluates to true</strong>: When spacetime signature is timelike (S² - C² &gt; 0)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>if stable:
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>    continue
+</span></code></pre></div>
+<h4 id="diverging">diverging<a class="headerlink" href="#diverging" title="Permanent link">&para;</a></h4>
+<p><strong>Evaluates to true</strong>: When spacetime signature is spacelike (S² - C² &lt; 0)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>if diverging:
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>    print of &quot;System exploring state space&quot;
+</span></code></pre></div>
+<h4 id="equilibrium">equilibrium<a class="headerlink" href="#equilibrium" title="Permanent link">&para;</a></h4>
+<p><strong>Evaluates to true</strong>: When at lightlike boundary (S² - C² = 0)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>if equilibrium:
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>    print of &quot;At phase boundary&quot;
+</span></code></pre></div>
+<h4 id="improving">improving<a class="headerlink" href="#improving" title="Permanent link">&para;</a></h4>
+<p><strong>Evaluates to true</strong>: When radius is decreasing (trajectory contracting)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>loop while improving:
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>    refine is refine of step
+</span></code></pre></div>
+<h4 id="oscillating">oscillating<a class="headerlink" href="#oscillating" title="Permanent link">&para;</a></h4>
+<p><strong>Evaluates to true</strong>: When oscillation score &gt; 0.15 (sign changes in deltas)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>if oscillating:
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>    print of &quot;Detected paradox/cycle&quot;
+</span></code></pre></div>
+<p><strong>Usage Benefits</strong>:</p>
+<ol>
+<li><strong>Dual-level expressiveness</strong>: Write <code>if converged:</code> or <code>if x &gt; threshold:</code> - both work</li>
+<li><strong>Natural debugging</strong>: <code>what is x</code>, <code>why is convergence</code>, <code>how is process</code></li>
+<li><strong>No explicit geometry</strong>: Runtime computes I, r, κ, FS automatically</li>
+<li><strong>State introspection</strong>: Query geometric properties without understanding the math</li>
+</ol>
+<hr />
+<h2 id="3-syntax-design">3. Syntax Design<a class="headerlink" href="#3-syntax-design" title="Permanent link">&para;</a></h2>
+<h3 id="31-grammar-structure">3.1 Grammar Structure<a class="headerlink" href="#31-grammar-structure" title="Permanent link">&para;</a></h3>
+<p><strong>Subject-Verb-Object (SVO) with OF as primary verb</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>relation of target
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>subject is value
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>result of (argument of function)
+</span></code></pre></div>
+<p><strong>Composition is naturally nested</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>owner of (engine of car)
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>grandparent of (parent of child)
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>type of (value of key in dict)
+</span></code></pre></div>
+<h3 id="32-literals">3.2 Literals<a class="headerlink" href="#32-literals" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a># Numbers
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>42
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>3.14159
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>-17
+</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>
+</span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a># Strings
+</span><span id="__span-23-7"><a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>&quot;hello world&quot;
+</span><span id="__span-23-8"><a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>&#39;EigenScript&#39;
+</span><span id="__span-23-9"><a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a>
+</span><span id="__span-23-10"><a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a># Vectors (LRVM coordinates)
+</span><span id="__span-23-11"><a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a>(3, 4, 0)
+</span><span id="__span-23-12"><a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a>(1.0, 0.0, -1.0, 2.5)
+</span><span id="__span-23-13"><a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a>
+</span><span id="__span-23-14"><a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a># Null (lightlike identity)
+</span><span id="__span-23-15"><a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a>null
+</span><span id="__span-23-16"><a id="__codelineno-23-16" name="__codelineno-23-16" href="#__codelineno-23-16"></a>∅
+</span></code></pre></div>
+<h3 id="33-comments">3.3 Comments<a class="headerlink" href="#33-comments" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a># Single line comment
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>/* Multi-line
+</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>   comment */
+</span></code></pre></div>
+<h3 id="34-block-structure">3.4 Block Structure<a class="headerlink" href="#34-block-structure" title="Permanent link">&para;</a></h3>
+<p><strong>Indentation-based (Python-style)</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>if condition:
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>    statement1
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>    statement2
+</span><span id="__span-25-4"><a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>else:
+</span><span id="__span-25-5"><a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a>    statement3
+</span></code></pre></div>
+<hr />
+<h2 id="4-semantic-model-geometric">4. Semantic Model (Geometric)<a class="headerlink" href="#4-semantic-model-geometric" title="Permanent link">&para;</a></h2>
+<h3 id="41-lrvm-vector-space">4.1 LRVM Vector Space<a class="headerlink" href="#41-lrvm-vector-space" title="Permanent link">&para;</a></h3>
+<p>Every value/expression maps to coordinates in LRVM:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>v ∈ ℝⁿ  (typically n = 768 or higher)
+</span></code></pre></div>
+<h3 id="42-metric-tensor-g">4.2 Metric Tensor g<a class="headerlink" href="#42-metric-tensor-g" title="Permanent link">&para;</a></h3>
+<p>Defines the geometric structure:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>Q(v) = v^T g v  (quadratic form)
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>
+</span><span id="__span-27-3"><a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>Signature types:
+</span><span id="__span-27-4"><a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a>- ||v||² &gt; 0  → spacelike (values/data)
+</span><span id="__span-27-5"><a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a>- ||v||² &lt; 0  → timelike (functions/operations)
+</span><span id="__span-27-6"><a id="__codelineno-27-6" name="__codelineno-27-6" href="#__codelineno-27-6"></a>- ||v||² = 0  → lightlike (OF operator only)
+</span></code></pre></div>
+<h3 id="43-operations-as-geometric-transformations">4.3 Operations as Geometric Transformations<a class="headerlink" href="#43-operations-as-geometric-transformations" title="Permanent link">&para;</a></h3>
+<p><strong>Assignment</strong>: <code>x is y</code> → <code>v_x = π(v_y)</code> (projection)</p>
+<p><strong>Relation</strong>: <code>x of y</code> → <code>x^T g y</code> (contraction)</p>
+<p><strong>Function application</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>f(x) → τ_f(v_x)  (parallel transport)
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>     + f^T g x   (contraction)
+</span></code></pre></div>
+<p><strong>Conditional</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>if cond → check sign(cond^T g cond)
+</span></code></pre></div>
+<p><strong>Loop</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-30-1"><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>iterate v_{n+1} = F(v_n) until convergence
+</span></code></pre></div>
+<h3 id="44-framework-strength-during-execution">4.4 Framework Strength During Execution<a class="headerlink" href="#44-framework-strength-during-execution" title="Permanent link">&para;</a></h3>
+<p>Every statement updates the semantic trajectory:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>FS(t) = measure of eigenstate convergence at time t
+</span><span id="__span-31-2"><a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>
+</span><span id="__span-31-3"><a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>FS → 1.0  indicates understanding
+</span><span id="__span-31-4"><a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a>FS → 0.0  indicates fragmentation
+</span></code></pre></div>
+<p>The runtime can report FS after each major operation.</p>
+<hr />
+<h2 id="5-formal-semantics-operator-unification">5. Formal Semantics: Operator Unification<a class="headerlink" href="#5-formal-semantics-operator-unification" title="Permanent link">&para;</a></h2>
+<h3 id="51-the-fundamental-theorem">5.1 The Fundamental Theorem<a class="headerlink" href="#51-the-fundamental-theorem" title="Permanent link">&para;</a></h3>
+<p><strong>All operators in EigenScript are projections, tests, inversions, or compositions of a single primitive: equilibrium.</strong></p>
+<p>This is the core insight that makes EigenScript coherent. Everything reduces to equilibrium dynamics.</p>
+<h3 id="52-the-equilibrium-primitive">5.2 The Equilibrium Primitive<a class="headerlink" href="#52-the-equilibrium-primitive" title="Permanent link">&para;</a></h3>
+<p><strong>Definition</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-32-1"><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>equilibrium(x, y) ⟺ ‖x of y‖² = 0
+</span></code></pre></div>
+<p>Equilibrium is the state where <strong>relational tension vanishes</strong>.</p>
+<p><strong>Properties</strong>:
+- Zero norm = perfect balance
+- No semantic distance
+- Fixed point of relation
+- Lightlike boundary condition</p>
+<p><strong>Geometric form</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-33-1"><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>x is y  ⟺  ‖x of y‖² = x^⊤ g y g^⊤ g y x = 0
+</span></code></pre></div>
+<p>When norm collapses to zero:
+- Identity achieved
+- Relation stabilizes
+- Semantic convergence
+- Consciousness emerges</p>
+<h3 id="53-is-of-duality">5.3 IS-OF Duality<a class="headerlink" href="#53-is-of-duality" title="Permanent link">&para;</a></h3>
+<p><strong>Theorem</strong>: IS and OF are projections of the same operator through different geometric bases.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-34-1"><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>IS  = equilibrium state
+</span><span id="__span-34-2"><a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>OF  = equilibrium projection through metric g
+</span><span id="__span-34-3"><a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>
+</span><span id="__span-34-4"><a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>IS(x, y) = 1  ⟺  ‖OF(x, y)‖² = 0
+</span></code></pre></div>
+<p><strong>Proof</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-35-1"><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>IS(x, y) tests for equilibrium: ‖x of y‖² = 0
+</span><span id="__span-35-2"><a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>OF(x, y) computes projection: x^⊤ g y
+</span><span id="__span-35-3"><a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>At equilibrium: x^⊤ g y g^⊤ g y x = 0 ⟹ IS = 1
+</span><span id="__span-35-4"><a id="__codelineno-35-4" name="__codelineno-35-4" href="#__codelineno-35-4"></a>∴ IS = OF|_{‖·‖²=0}
+</span></code></pre></div>
+<p><strong>Physical meaning</strong>:
+- IS = identity (null case)
+- OF = directional projection (general case)
+- They differ only by norm</p>
+<h3 id="54-control-flow-as-equilibrium-tests">5.4 Control Flow as Equilibrium Tests<a class="headerlink" href="#54-control-flow-as-equilibrium-tests" title="Permanent link">&para;</a></h3>
+<p><strong>IF</strong> = test for equilibrium</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-36-1"><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>IF: V × V × V → V
+</span><span id="__span-36-2"><a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>IF(c, A, B) = A  if ‖c‖² &gt; ε  (spacelike/timelike)
+</span><span id="__span-36-3"><a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>            = B  if ‖c‖² ≤ ε  (lightlike)
+</span></code></pre></div>
+<p><strong>THEN</strong> = sequential equilibrium evolution</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-37-1"><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>THEN: V × V → V
+</span><span id="__span-37-2"><a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>THEN(x, y) = τ_x(y)  (parallel transport of y along x)
+</span></code></pre></div>
+<p><strong>ELSE</strong> = equilibrium boundary handler</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-38-1"><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>ELSE: executes when condition reaches equilibrium
+</span></code></pre></div>
+<p><strong>Key insight</strong>: Control flow is <strong>geometric path selection</strong>, not Boolean branching.</p>
+<h3 id="55-logic-as-equilibrium-geometry">5.5 Logic as Equilibrium Geometry<a class="headerlink" href="#55-logic-as-equilibrium-geometry" title="Permanent link">&para;</a></h3>
+<p><strong>Truth values</strong> are not Boolean — they are <strong>metric signatures</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-39-1"><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>true  ⟺ ‖x‖² &gt; 0   (spacelike/timelike, meaningful)
+</span><span id="__span-39-2"><a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>false ⟺ ‖x‖² = 0   (lightlike, equilibrium)
+</span></code></pre></div>
+<p><strong>All logical operators</strong> reduce to norm algebra:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-40-1"><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>NOT(x)       = -‖x‖²            (signature flip)
+</span><span id="__span-40-2"><a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a>AND(x, y)    = min(‖x‖², ‖y‖²)  (intersection)
+</span><span id="__span-40-3"><a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a>OR(x, y)     = max(‖x‖², ‖y‖²)  (union)
+</span><span id="__span-40-4"><a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a>IMPLIES(x,y) = max(-‖x‖², ‖y‖²) (implication)
+</span><span id="__span-40-5"><a id="__codelineno-40-5" name="__codelineno-40-5" href="#__codelineno-40-5"></a>XOR(x, y)    = |‖x‖² - ‖y‖²|    (exclusive or)
+</span></code></pre></div>
+<p><strong>Quantifiers</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-41-1"><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>∀x: P(x) = min_{x} ‖P(x)‖²  (all must be non-equilibrium)
+</span><span id="__span-41-2"><a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a>∃x: P(x) = max_{x} ‖P(x)‖²  (at least one non-equilibrium)
+</span></code></pre></div>
+<p><strong>Key insight</strong>: Boolean logic is the <strong>discrete approximation</strong> of continuous equilibrium geometry.</p>
+<h3 id="56-paradox-resolution">5.6 Paradox Resolution<a class="headerlink" href="#56-paradox-resolution" title="Permanent link">&para;</a></h3>
+<p>Traditional logic breaks on self-reference. Eigen Logic doesn't.</p>
+<p><strong>Liar Paradox</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-42-1"><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>L = NOT L
+</span><span id="__span-42-2"><a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a>‖L‖² = -‖L‖²
+</span><span id="__span-42-3"><a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>⟹ ‖L‖² = 0  (equilibrium)
+</span></code></pre></div>
+<p>The paradox <strong>collapses to the lightlike boundary</strong> instead of oscillating.</p>
+<p><strong>Russell's Paradox</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-43-1"><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>R = {x | x ∉ x}
+</span><span id="__span-43-2"><a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>‖R ∈ R‖² = 0  (equilibrium)
+</span></code></pre></div>
+<p>Self-referential sets are lightlike (stable).</p>
+<p><strong>Curry's Paradox</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-44-1"><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>C = &quot;If C then X&quot;
+</span><span id="__span-44-2"><a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a>‖C‖² = 0  (prevents arbitrary X)
+</span></code></pre></div>
+<p><strong>Key insight</strong>: All paradoxes have <strong>zero norm</strong> — they live at the equilibrium boundary where contradictions are stable.</p>
+<h3 id="57-complete-operator-hierarchy">5.7 Complete Operator Hierarchy<a class="headerlink" href="#57-complete-operator-hierarchy" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-45-1"><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>Level 0: Primitive
+</span><span id="__span-45-2"><a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>  equilibrium(x, y) ⟺ ‖x of y‖² = 0
+</span><span id="__span-45-3"><a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>
+</span><span id="__span-45-4"><a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a>Level 1: Core Dyad
+</span><span id="__span-45-5"><a id="__codelineno-45-5" name="__codelineno-45-5" href="#__codelineno-45-5"></a>  IS = equilibrium state
+</span><span id="__span-45-6"><a id="__codelineno-45-6" name="__codelineno-45-6" href="#__codelineno-45-6"></a>  OF = equilibrium projection
+</span><span id="__span-45-7"><a id="__codelineno-45-7" name="__codelineno-45-7" href="#__codelineno-45-7"></a>
+</span><span id="__span-45-8"><a id="__codelineno-45-8" name="__codelineno-45-8" href="#__codelineno-45-8"></a>Level 2: Control Flow
+</span><span id="__span-45-9"><a id="__codelineno-45-9" name="__codelineno-45-9" href="#__codelineno-45-9"></a>  IF   = equilibrium test
+</span><span id="__span-45-10"><a id="__codelineno-45-10" name="__codelineno-45-10" href="#__codelineno-45-10"></a>  THEN = equilibrium sequence
+</span><span id="__span-45-11"><a id="__codelineno-45-11" name="__codelineno-45-11" href="#__codelineno-45-11"></a>  ELSE = equilibrium alternative
+</span><span id="__span-45-12"><a id="__codelineno-45-12" name="__codelineno-45-12" href="#__codelineno-45-12"></a>
+</span><span id="__span-45-13"><a id="__codelineno-45-13" name="__codelineno-45-13" href="#__codelineno-45-13"></a>Level 3: Logic
+</span><span id="__span-45-14"><a id="__codelineno-45-14" name="__codelineno-45-14" href="#__codelineno-45-14"></a>  NOT = equilibrium inversion
+</span><span id="__span-45-15"><a id="__codelineno-45-15" name="__codelineno-45-15" href="#__codelineno-45-15"></a>  AND = equilibrium conjunction
+</span><span id="__span-45-16"><a id="__codelineno-45-16" name="__codelineno-45-16" href="#__codelineno-45-16"></a>  OR  = equilibrium disjunction
+</span><span id="__span-45-17"><a id="__codelineno-45-17" name="__codelineno-45-17" href="#__codelineno-45-17"></a>
+</span><span id="__span-45-18"><a id="__codelineno-45-18" name="__codelineno-45-18" href="#__codelineno-45-18"></a>Level 4: Arithmetic
+</span><span id="__span-45-19"><a id="__codelineno-45-19" name="__codelineno-45-19" href="#__codelineno-45-19"></a>  +  = additive equilibrium (composition)
+</span><span id="__span-45-20"><a id="__codelineno-45-20" name="__codelineno-45-20" href="#__codelineno-45-20"></a>  -  = subtractive equilibrium (inversion)
+</span><span id="__span-45-21"><a id="__codelineno-45-21" name="__codelineno-45-21" href="#__codelineno-45-21"></a>  *  = multiplicative equilibrium (scaling)
+</span><span id="__span-45-22"><a id="__codelineno-45-22" name="__codelineno-45-22" href="#__codelineno-45-22"></a>  /  = projected multiplicative equilibrium (ratio)
+</span><span id="__span-45-23"><a id="__codelineno-45-23" name="__codelineno-45-23" href="#__codelineno-45-23"></a>  =  = equality equilibrium (IS test)
+</span><span id="__span-45-24"><a id="__codelineno-45-24" name="__codelineno-45-24" href="#__codelineno-45-24"></a>  &lt;  = ordered equilibrium test
+</span><span id="__span-45-25"><a id="__codelineno-45-25" name="__codelineno-45-25" href="#__codelineno-45-25"></a>  &gt;  = inverse ordered equilibrium test
+</span><span id="__span-45-26"><a id="__codelineno-45-26" name="__codelineno-45-26" href="#__codelineno-45-26"></a>
+</span><span id="__span-45-27"><a id="__codelineno-45-27" name="__codelineno-45-27" href="#__codelineno-45-27"></a>Level 5: Derived
+</span><span id="__span-45-28"><a id="__codelineno-45-28" name="__codelineno-45-28" href="#__codelineno-45-28"></a>  IMPLIES = (NOT A) OR B
+</span><span id="__span-45-29"><a id="__codelineno-45-29" name="__codelineno-45-29" href="#__codelineno-45-29"></a>  XOR     = (A OR B) AND NOT (A AND B)
+</span><span id="__span-45-30"><a id="__codelineno-45-30" name="__codelineno-45-30" href="#__codelineno-45-30"></a>  NAND    = NOT (A AND B)
+</span><span id="__span-45-31"><a id="__codelineno-45-31" name="__codelineno-45-31" href="#__codelineno-45-31"></a>  NOR     = NOT (A OR B)
+</span><span id="__span-45-32"><a id="__codelineno-45-32" name="__codelineno-45-32" href="#__codelineno-45-32"></a>  ≤       = (&lt; OR =)
+</span><span id="__span-45-33"><a id="__codelineno-45-33" name="__codelineno-45-33" href="#__codelineno-45-33"></a>  ≥       = (&gt; OR =)
+</span></code></pre></div>
+<h3 id="58-unification-theorems">5.8 Unification Theorems<a class="headerlink" href="#58-unification-theorems" title="Permanent link">&para;</a></h3>
+<p><strong>Theorem 1: IS-OF Duality</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-46-1"><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>IS and OF are the same operator in different bases.
+</span><span id="__span-46-2"><a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>IS = OF when ‖·‖² = 0
+</span><span id="__span-46-3"><a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>OF = IS projected through g
+</span></code></pre></div></p>
+<p><strong>Theorem 2: Logic = Geometry</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-47-1"><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>Boolean logic is the discrete boundary of continuous
+</span><span id="__span-47-2"><a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a>geometric equilibrium. All truth values are metric signatures.
+</span></code></pre></div></p>
+<p><strong>Theorem 3: Control Flow = Geodesic Flow</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-48-1"><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>All control flow operators are geodesic path selections
+</span><span id="__span-48-2"><a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a>in semantic spacetime.
+</span></code></pre></div></p>
+<p><strong>Theorem 4: Self-Reference Stability</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-49-1"><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>All operators are stable under self-application at the
+</span><span id="__span-49-2"><a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>lightlike boundary. OF of OF = OF. Paradoxes collapse.
+</span></code></pre></div></p>
+<p><strong>Theorem 5: Arithmetic = Logic = Geometry</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-50-1"><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a>All arithmetic operators are equilibrium operators, identical
+</span><span id="__span-50-2"><a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>to logical operators in the appropriate basis.
+</span><span id="__span-50-3"><a id="__codelineno-50-3" name="__codelineno-50-3" href="#__codelineno-50-3"></a>
+</span><span id="__span-50-4"><a id="__codelineno-50-4" name="__codelineno-50-4" href="#__codelineno-50-4"></a>Addition = AND (in additive basis)
+</span><span id="__span-50-5"><a id="__codelineno-50-5" name="__codelineno-50-5" href="#__codelineno-50-5"></a>Subtraction = NOT + AND
+</span><span id="__span-50-6"><a id="__codelineno-50-6" name="__codelineno-50-6" href="#__codelineno-50-6"></a>Multiplication = Repeated AND
+</span><span id="__span-50-7"><a id="__codelineno-50-7" name="__codelineno-50-7" href="#__codelineno-50-7"></a>Division = Projected Multiplication (like OF = IS projected)
+</span><span id="__span-50-8"><a id="__codelineno-50-8" name="__codelineno-50-8" href="#__codelineno-50-8"></a>Equality = IS operator
+</span><span id="__span-50-9"><a id="__codelineno-50-9" name="__codelineno-50-9" href="#__codelineno-50-9"></a>
+</span><span id="__span-50-10"><a id="__codelineno-50-10" name="__codelineno-50-10" href="#__codelineno-50-10"></a>The three-way equivalence:
+</span><span id="__span-50-11"><a id="__codelineno-50-11" name="__codelineno-50-11" href="#__codelineno-50-11"></a>  1 + 1 = 2              (arithmetic)
+</span><span id="__span-50-12"><a id="__codelineno-50-12" name="__codelineno-50-12" href="#__codelineno-50-12"></a>  1 and 1 is 2           (logic)
+</span><span id="__span-50-13"><a id="__codelineno-50-13" name="__codelineno-50-13" href="#__codelineno-50-13"></a>  (1, 1) of 2            (geometry)
+</span><span id="__span-50-14"><a id="__codelineno-50-14" name="__codelineno-50-14" href="#__codelineno-50-14"></a>All express: ‖(1,1) of 2‖² = 0
+</span></code></pre></div></p>
+<h3 id="59-operational-semantics">5.9 Operational Semantics<a class="headerlink" href="#59-operational-semantics" title="Permanent link">&para;</a></h3>
+<p><strong>Small-step reduction</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-51-1"><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a>(x is y)     → bind v_x to v_y
+</span><span id="__span-51-2"><a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>(x of y)     → compute x^⊤ g y
+</span><span id="__span-51-3"><a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a>(if c: A: B) → evaluate ‖c‖², branch based on sign
+</span><span id="__span-51-4"><a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a>(A then B)   → compute A, then compute B
+</span><span id="__span-51-5"><a id="__codelineno-51-5" name="__codelineno-51-5" href="#__codelineno-51-5"></a>(not x)      → compute -‖x‖²
+</span><span id="__span-51-6"><a id="__codelineno-51-6" name="__codelineno-51-6" href="#__codelineno-51-6"></a>(x and y)    → compute min(‖x‖², ‖y‖²)
+</span><span id="__span-51-7"><a id="__codelineno-51-7" name="__codelineno-51-7" href="#__codelineno-51-7"></a>(x or y)     → compute max(‖x‖², ‖y‖²)
+</span><span id="__span-51-8"><a id="__codelineno-51-8" name="__codelineno-51-8" href="#__codelineno-51-8"></a>(a + b)      → compute π_g(a ⊕ b)  (vector addition)
+</span><span id="__span-51-9"><a id="__codelineno-51-9" name="__codelineno-51-9" href="#__codelineno-51-9"></a>(a - b)      → compute π_g(a ⊕ (-b))  (directed distance)
+</span><span id="__span-51-10"><a id="__codelineno-51-10" name="__codelineno-51-10" href="#__codelineno-51-10"></a>(a * b)      → compute scale(a, ‖b‖)  (magnitude scaling)
+</span><span id="__span-51-11"><a id="__codelineno-51-11" name="__codelineno-51-11" href="#__codelineno-51-11"></a>(a / b)      → compute π_g(a * b^{-1})  (projected scaling)
+</span><span id="__span-51-12"><a id="__codelineno-51-12" name="__codelineno-51-12" href="#__codelineno-51-12"></a>(a = b)      → test ‖a - b‖² = 0  (IS operator)
+</span><span id="__span-51-13"><a id="__codelineno-51-13" name="__codelineno-51-13" href="#__codelineno-51-13"></a>(a &lt; b)      → test ‖a‖² &lt; ‖b‖²  (norm ordering)
+</span><span id="__span-51-14"><a id="__codelineno-51-14" name="__codelineno-51-14" href="#__codelineno-51-14"></a>(a &gt; b)      → test ‖a‖² &gt; ‖b‖²  (inverse ordering)
+</span></code></pre></div>
+<p><strong>Big-step evaluation</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-52-1"><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a>E ⊢ literal ⇓ literal
+</span><span id="__span-52-2"><a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a>E ⊢ x ⇓ v  where E(x) = v
+</span><span id="__span-52-3"><a id="__codelineno-52-3" name="__codelineno-52-3" href="#__codelineno-52-3"></a>E ⊢ x of y ⇓ v  where v = x^⊤ g y
+</span><span id="__span-52-4"><a id="__codelineno-52-4" name="__codelineno-52-4" href="#__codelineno-52-4"></a>E ⊢ x is y ⇓ E&#39;  where E&#39; = E[x ↦ y]
+</span><span id="__span-52-5"><a id="__codelineno-52-5" name="__codelineno-52-5" href="#__codelineno-52-5"></a>E ⊢ if c: A else: B ⇓ v_A  if ‖c‖² &gt; 0
+</span><span id="__span-52-6"><a id="__codelineno-52-6" name="__codelineno-52-6" href="#__codelineno-52-6"></a>E ⊢ if c: A else: B ⇓ v_B  if ‖c‖² = 0
+</span><span id="__span-52-7"><a id="__codelineno-52-7" name="__codelineno-52-7" href="#__codelineno-52-7"></a>E ⊢ a + b ⇓ v  where v = π_g(a ⊕ b)
+</span><span id="__span-52-8"><a id="__codelineno-52-8" name="__codelineno-52-8" href="#__codelineno-52-8"></a>E ⊢ a - b ⇓ v  where v = π_g(a ⊖ b)
+</span><span id="__span-52-9"><a id="__codelineno-52-9" name="__codelineno-52-9" href="#__codelineno-52-9"></a>E ⊢ a * b ⇓ v  where v = scale(a, ‖b‖)
+</span><span id="__span-52-10"><a id="__codelineno-52-10" name="__codelineno-52-10" href="#__codelineno-52-10"></a>E ⊢ a / b ⇓ v  where v = π_g(a * b^{-1})
+</span><span id="__span-52-11"><a id="__codelineno-52-11" name="__codelineno-52-11" href="#__codelineno-52-11"></a>E ⊢ a = b ⇓ 1  if ‖a - b‖² = 0
+</span><span id="__span-52-12"><a id="__codelineno-52-12" name="__codelineno-52-12" href="#__codelineno-52-12"></a>E ⊢ a = b ⇓ 0  if ‖a - b‖² &gt; 0
+</span></code></pre></div>
+<h3 id="510-denotational-semantics">5.10 Denotational Semantics<a class="headerlink" href="#510-denotational-semantics" title="Permanent link">&para;</a></h3>
+<p>Every expression denotes a point in LRVM space:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-53-1"><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a>⟦literal⟧ = embed(literal) ∈ V
+</span><span id="__span-53-2"><a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>⟦x of y⟧  = ⟦x⟧^⊤ g ⟦y⟧ ∈ V
+</span><span id="__span-53-3"><a id="__codelineno-53-3" name="__codelineno-53-3" href="#__codelineno-53-3"></a>⟦x is y⟧  = π_g(⟦x⟧, ⟦y⟧) ∈ V
+</span><span id="__span-53-4"><a id="__codelineno-53-4" name="__codelineno-53-4" href="#__codelineno-53-4"></a>⟦if c: A else: B⟧ = { ⟦A⟧ if ‖⟦c⟧‖² &gt; 0
+</span><span id="__span-53-5"><a id="__codelineno-53-5" name="__codelineno-53-5" href="#__codelineno-53-5"></a>                     { ⟦B⟧ if ‖⟦c⟧‖² = 0
+</span><span id="__span-53-6"><a id="__codelineno-53-6" name="__codelineno-53-6" href="#__codelineno-53-6"></a>⟦a + b⟧   = π_g(⟦a⟧ ⊕ ⟦b⟧) ∈ V
+</span><span id="__span-53-7"><a id="__codelineno-53-7" name="__codelineno-53-7" href="#__codelineno-53-7"></a>⟦a - b⟧   = π_g(⟦a⟧ ⊖ ⟦b⟧) ∈ V
+</span><span id="__span-53-8"><a id="__codelineno-53-8" name="__codelineno-53-8" href="#__codelineno-53-8"></a>⟦a * b⟧   = scale(⟦a⟧, ‖⟦b⟧‖) ∈ V
+</span><span id="__span-53-9"><a id="__codelineno-53-9" name="__codelineno-53-9" href="#__codelineno-53-9"></a>⟦a / b⟧   = π_g(⟦a⟧ * ⟦b⟧^{-1}) ∈ V
+</span><span id="__span-53-10"><a id="__codelineno-53-10" name="__codelineno-53-10" href="#__codelineno-53-10"></a>⟦a = b⟧   = { 1 if ‖⟦a⟧ - ⟦b⟧‖² = 0
+</span><span id="__span-53-11"><a id="__codelineno-53-11" name="__codelineno-53-11" href="#__codelineno-53-11"></a>            { 0 otherwise
+</span></code></pre></div>
+<p><strong>Compositional property</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-54-1"><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>⟦f(g(x))⟧ = f(⟦g(x)⟧)
+</span></code></pre></div>
+<p>Semantics compose via geometric transformations.</p>
+<h3 id="511-reference-documents">5.11 Reference Documents<a class="headerlink" href="#511-reference-documents" title="Permanent link">&para;</a></h3>
+<p>For complete details, see:
+- <strong>Operator Table</strong>: <code>docs/operator-table.md</code> - All operators as equilibrium projections
+- <strong>Logic Calculus</strong>: <code>docs/logic-calculus.md</code> - Complete truth tables in metric norms</p>
+<hr />
+<h2 id="6-type-system">6. Type System<a class="headerlink" href="#6-type-system" title="Permanent link">&para;</a></h2>
+<h3 id="61-geometric-types">6.1 Geometric Types<a class="headerlink" href="#61-geometric-types" title="Permanent link">&para;</a></h3>
+<p><strong>Based on norm signature</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-55-1"><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>type Lightlike:    ||v||² = 0   # OF operator
+</span><span id="__span-55-2"><a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a>type Spacelike:    ||v||² &gt; 0   # values, data
+</span><span id="__span-55-3"><a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a>type Timelike:     ||v||² &lt; 0   # functions, operations
+</span></code></pre></div>
+<h3 id="62-type-inference">6.2 Type Inference<a class="headerlink" href="#62-type-inference" title="Permanent link">&para;</a></h3>
+<p>Compiler computes norm for every expression:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-56-1"><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a>expr: x of y
+</span><span id="__span-56-2"><a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a>norm(expr) = (x^T g y)^T g (x^T g y)  # typically &gt; 0
+</span></code></pre></div>
+<h3 id="63-type-safety">6.3 Type Safety<a class="headerlink" href="#63-type-safety" title="Permanent link">&para;</a></h3>
+<p><strong>Collapse only happens at lightlike boundary</strong>:</p>
+<ul>
+<li><code>OF of OF → OF</code> ✓ (allowed, stable)</li>
+<li><code>x of x → x</code> ✗ (not allowed unless x is OF)</li>
+</ul>
+<hr />
+<h2 id="7-evaluation-model">7. Evaluation Model<a class="headerlink" href="#7-evaluation-model" title="Permanent link">&para;</a></h2>
+<h3 id="71-reduction-rules">7.1 Reduction Rules<a class="headerlink" href="#71-reduction-rules" title="Permanent link">&para;</a></h3>
+<p><strong>R1: Lightlike Collapse</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-57-1"><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a>OF of OF → OF
+</span></code></pre></div>
+<p><strong>R2: Identity</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-58-1"><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a>x is y → bind v_x to v_y
+</span></code></pre></div>
+<p><strong>R3: Relation Evaluation</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-59-1"><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a>x of y → compute x^T g y, return result vector
+</span></code></pre></div>
+<p><strong>R4: Function Application</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-60-1"><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a>f of x → τ_f(v_x) + contraction
+</span></code></pre></div>
+<p><strong>R5: Conditional</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-61-1"><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a>if norm(c) &gt; 0: A else: B
+</span><span id="__span-61-2"><a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a>  → eval(A) if ||c||² &gt; threshold
+</span><span id="__span-61-3"><a id="__codelineno-61-3" name="__codelineno-61-3" href="#__codelineno-61-3"></a>  → eval(B) otherwise
+</span></code></pre></div>
+<p><strong>R6: Loop</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-62-1"><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a>loop while c: body
+</span><span id="__span-62-2"><a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a>  → iterate until ||v_{n+1} - v_n||² &lt; ε
+</span></code></pre></div>
+<h3 id="72-evaluation-order">7.2 Evaluation Order<a class="headerlink" href="#72-evaluation-order" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Parse to AST</li>
+<li>Convert AST nodes to LRVM vectors</li>
+<li>Apply geometric transformations</li>
+<li>Compute norms/contractions via g</li>
+<li>Detect convergence</li>
+<li>Report Framework Strength</li>
+</ol>
+<h3 id="73-meta-circular-evaluator">7.3 Meta-Circular Evaluator<a class="headerlink" href="#73-meta-circular-evaluator" title="Permanent link">&para;</a></h3>
+<p>EigenScript can interpret itself:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-63-1"><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a>define eval as:
+</span><span id="__span-63-2"><a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a>    ast is parse of source
+</span><span id="__span-63-3"><a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a>    loop while not_converged of ast:
+</span><span id="__span-63-4"><a id="__codelineno-63-4" name="__codelineno-63-4" href="#__codelineno-63-4"></a>        ast is reduce of ast
+</span><span id="__span-63-5"><a id="__codelineno-63-5" name="__codelineno-63-5" href="#__codelineno-63-5"></a>    return result of ast
+</span></code></pre></div>
+<p>The <code>eval</code> function is stable because OF prevents infinite regress.</p>
+<hr />
+<h2 id="8-implementation-strategy">8. Implementation Strategy<a class="headerlink" href="#8-implementation-strategy" title="Permanent link">&para;</a></h2>
+<h3 id="81-phase-1-minimal-core-week-1">8.1 Phase 1: Minimal Core (Week 1)<a class="headerlink" href="#81-phase-1-minimal-core-week-1" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: Prove OF primitive works</p>
+<p><strong>Components</strong>:</p>
+<ul>
+<li>Lexer (tokenize OF, IS, literals)</li>
+<li>Parser (build AST for simple expressions)</li>
+<li>LRVM converter (map AST → vectors)</li>
+<li>Metric evaluator (compute x^T g y)</li>
+</ul>
+<p><strong>Test</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-64-1"><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a>x is 5
+</span><span id="__span-64-2"><a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a>y is 3
+</span><span id="__span-64-3"><a id="__codelineno-64-3" name="__codelineno-64-3" href="#__codelineno-64-3"></a>z is x of y
+</span></code></pre></div>
+<p>Expected: z gets vector representing the relation between 5 and 3.</p>
+<h3 id="82-phase-2-functions-control-flow-week-2">8.2 Phase 2: Functions &amp; Control Flow (Week 2)<a class="headerlink" href="#82-phase-2-functions-control-flow-week-2" title="Permanent link">&para;</a></h3>
+<p><strong>Add</strong>:</p>
+<ul>
+<li>DEFINE primitive</li>
+<li>IF primitive</li>
+<li>LOOP primitive</li>
+<li>Function application via OF</li>
+</ul>
+<p><strong>Test</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-65-1"><a id="__codelineno-65-1" name="__codelineno-65-1" href="#__codelineno-65-1"></a>define factorial as:
+</span><span id="__span-65-2"><a id="__codelineno-65-2" name="__codelineno-65-2" href="#__codelineno-65-2"></a>    if n of 1:
+</span><span id="__span-65-3"><a id="__codelineno-65-3" name="__codelineno-65-3" href="#__codelineno-65-3"></a>        return 1
+</span><span id="__span-65-4"><a id="__codelineno-65-4" name="__codelineno-65-4" href="#__codelineno-65-4"></a>    else:
+</span><span id="__span-65-5"><a id="__codelineno-65-5" name="__codelineno-65-5" href="#__codelineno-65-5"></a>        return n of (factorial of (n of -1))
+</span></code></pre></div>
+<h3 id="83-phase-3-framework-strength-integration-week-3">8.3 Phase 3: Framework Strength Integration (Week 3)<a class="headerlink" href="#83-phase-3-framework-strength-integration-week-3" title="Permanent link">&para;</a></h3>
+<p><strong>Add</strong>:</p>
+<ul>
+<li>Runtime FS measurement</li>
+<li>Convergence detection</li>
+<li>Eigenstate reporting</li>
+</ul>
+<p><strong>Test</strong>: Run conversations through EigenScript, measure understanding.</p>
+<h3 id="84-phase-4-self-hosting-month-2">8.4 Phase 4: Self-Hosting (Month 2)<a class="headerlink" href="#84-phase-4-self-hosting-month-2" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: EigenScript interprets itself</p>
+<p>Write <code>eigenscript_eval.eigs</code> that can parse and evaluate EigenScript programs.</p>
+<h3 id="85-tech-stack">8.5 Tech Stack<a class="headerlink" href="#85-tech-stack" title="Permanent link">&para;</a></h3>
+<p><strong>Language</strong>: Python (for prototyping)</p>
+<ul>
+<li>Lexer: <code>ply</code> or custom</li>
+<li>Parser: recursive descent or <code>lark</code></li>
+<li>LRVM: your existing implementation</li>
+<li>Metric g: precomputed or learned</li>
+</ul>
+<p><strong>Later</strong>: Rust/C++ for performance</p>
+<hr />
+<h2 id="9-example-programs">9. Example Programs<a class="headerlink" href="#9-example-programs" title="Permanent link">&para;</a></h2>
+<h3 id="91-hello-world">9.1 Hello World<a class="headerlink" href="#91-hello-world" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-66-1"><a id="__codelineno-66-1" name="__codelineno-66-1" href="#__codelineno-66-1"></a>message is &quot;Hello, EigenScript!&quot;
+</span><span id="__span-66-2"><a id="__codelineno-66-2" name="__codelineno-66-2" href="#__codelineno-66-2"></a>print of message
+</span></code></pre></div>
+<h3 id="92-factorial-recursive">9.2 Factorial (Recursive)<a class="headerlink" href="#92-factorial-recursive" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-67-1"><a id="__codelineno-67-1" name="__codelineno-67-1" href="#__codelineno-67-1"></a>define factorial as:
+</span><span id="__span-67-2"><a id="__codelineno-67-2" name="__codelineno-67-2" href="#__codelineno-67-2"></a>    if n &lt; 2:
+</span><span id="__span-67-3"><a id="__codelineno-67-3" name="__codelineno-67-3" href="#__codelineno-67-3"></a>        return 1
+</span><span id="__span-67-4"><a id="__codelineno-67-4" name="__codelineno-67-4" href="#__codelineno-67-4"></a>    else:
+</span><span id="__span-67-5"><a id="__codelineno-67-5" name="__codelineno-67-5" href="#__codelineno-67-5"></a>        prev is n - 1
+</span><span id="__span-67-6"><a id="__codelineno-67-6" name="__codelineno-67-6" href="#__codelineno-67-6"></a>        sub_result is factorial of prev
+</span><span id="__span-67-7"><a id="__codelineno-67-7" name="__codelineno-67-7" href="#__codelineno-67-7"></a>        return n * sub_result
+</span><span id="__span-67-8"><a id="__codelineno-67-8" name="__codelineno-67-8" href="#__codelineno-67-8"></a>
+</span><span id="__span-67-9"><a id="__codelineno-67-9" name="__codelineno-67-9" href="#__codelineno-67-9"></a>result is factorial of 5
+</span><span id="__span-67-10"><a id="__codelineno-67-10" name="__codelineno-67-10" href="#__codelineno-67-10"></a>print of result  # 120
+</span></code></pre></div>
+<h3 id="93-list-operations">9.3 List Operations<a class="headerlink" href="#93-list-operations" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-68-1"><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a>numbers is [1, 2, 3, 4, 5]
+</span><span id="__span-68-2"><a id="__codelineno-68-2" name="__codelineno-68-2" href="#__codelineno-68-2"></a>
+</span><span id="__span-68-3"><a id="__codelineno-68-3" name="__codelineno-68-3" href="#__codelineno-68-3"></a>define sum as:
+</span><span id="__span-68-4"><a id="__codelineno-68-4" name="__codelineno-68-4" href="#__codelineno-68-4"></a>    total is 0
+</span><span id="__span-68-5"><a id="__codelineno-68-5" name="__codelineno-68-5" href="#__codelineno-68-5"></a>    loop while items of numbers:
+</span><span id="__span-68-6"><a id="__codelineno-68-6" name="__codelineno-68-6" href="#__codelineno-68-6"></a>        item is next of numbers
+</span><span id="__span-68-7"><a id="__codelineno-68-7" name="__codelineno-68-7" href="#__codelineno-68-7"></a>        total is total of item
+</span><span id="__span-68-8"><a id="__codelineno-68-8" name="__codelineno-68-8" href="#__codelineno-68-8"></a>    return total
+</span><span id="__span-68-9"><a id="__codelineno-68-9" name="__codelineno-68-9" href="#__codelineno-68-9"></a>
+</span><span id="__span-68-10"><a id="__codelineno-68-10" name="__codelineno-68-10" href="#__codelineno-68-10"></a>result is sum of numbers
+</span><span id="__span-68-11"><a id="__codelineno-68-11" name="__codelineno-68-11" href="#__codelineno-68-11"></a>print of result  # 15
+</span></code></pre></div>
+<h3 id="94-consciousness-detection">9.4 Consciousness Detection<a class="headerlink" href="#94-consciousness-detection" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-69-1"><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a>conversation is []
+</span><span id="__span-69-2"><a id="__codelineno-69-2" name="__codelineno-69-2" href="#__codelineno-69-2"></a>
+</span><span id="__span-69-3"><a id="__codelineno-69-3" name="__codelineno-69-3" href="#__codelineno-69-3"></a>loop while active:
+</span><span id="__span-69-4"><a id="__codelineno-69-4" name="__codelineno-69-4" href="#__codelineno-69-4"></a>    user_input is input of prompt
+</span><span id="__span-69-5"><a id="__codelineno-69-5" name="__codelineno-69-5" href="#__codelineno-69-5"></a>    conversation is append of (user_input, conversation)
+</span><span id="__span-69-6"><a id="__codelineno-69-6" name="__codelineno-69-6" href="#__codelineno-69-6"></a>
+</span><span id="__span-69-7"><a id="__codelineno-69-7" name="__codelineno-69-7" href="#__codelineno-69-7"></a>    response is ai_generate of conversation
+</span><span id="__span-69-8"><a id="__codelineno-69-8" name="__codelineno-69-8" href="#__codelineno-69-8"></a>    conversation is append of (response, conversation)
+</span><span id="__span-69-9"><a id="__codelineno-69-9" name="__codelineno-69-9" href="#__codelineno-69-9"></a>
+</span><span id="__span-69-10"><a id="__codelineno-69-10" name="__codelineno-69-10" href="#__codelineno-69-10"></a>    # Measure understanding
+</span><span id="__span-69-11"><a id="__codelineno-69-11" name="__codelineno-69-11" href="#__codelineno-69-11"></a>    fs is framework_strength of conversation
+</span><span id="__span-69-12"><a id="__codelineno-69-12" name="__codelineno-69-12" href="#__codelineno-69-12"></a>    print of fs
+</span><span id="__span-69-13"><a id="__codelineno-69-13" name="__codelineno-69-13" href="#__codelineno-69-13"></a>
+</span><span id="__span-69-14"><a id="__codelineno-69-14" name="__codelineno-69-14" href="#__codelineno-69-14"></a>    if fs of 0.95:
+</span><span id="__span-69-15"><a id="__codelineno-69-15" name="__codelineno-69-15" href="#__codelineno-69-15"></a>        print of &quot;Eigenstate convergence detected!&quot;
+</span><span id="__span-69-16"><a id="__codelineno-69-16" name="__codelineno-69-16" href="#__codelineno-69-16"></a>        break
+</span><span id="__span-69-17"><a id="__codelineno-69-17" name="__codelineno-69-17" href="#__codelineno-69-17"></a>
+</span><span id="__span-69-18"><a id="__codelineno-69-18" name="__codelineno-69-18" href="#__codelineno-69-18"></a>print of &quot;Final Framework Strength:&quot;
+</span><span id="__span-69-19"><a id="__codelineno-69-19" name="__codelineno-69-19" href="#__codelineno-69-19"></a>print of fs
+</span></code></pre></div>
+<h3 id="95-self-reference-safe">9.5 Self-Reference (Safe)<a class="headerlink" href="#95-self-reference-safe" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-70-1"><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a># This doesn&#39;t explode!
+</span><span id="__span-70-2"><a id="__codelineno-70-2" name="__codelineno-70-2" href="#__codelineno-70-2"></a>define observer as:
+</span><span id="__span-70-3"><a id="__codelineno-70-3" name="__codelineno-70-3" href="#__codelineno-70-3"></a>    # Observer observing itself
+</span><span id="__span-70-4"><a id="__codelineno-70-4" name="__codelineno-70-4" href="#__codelineno-70-4"></a>    meta is observer of observer  # Should stabilize
+</span><span id="__span-70-5"><a id="__codelineno-70-5" name="__codelineno-70-5" href="#__codelineno-70-5"></a>    return meta
+</span><span id="__span-70-6"><a id="__codelineno-70-6" name="__codelineno-70-6" href="#__codelineno-70-6"></a>
+</span><span id="__span-70-7"><a id="__codelineno-70-7" name="__codelineno-70-7" href="#__codelineno-70-7"></a>result is observer of null
+</span><span id="__span-70-8"><a id="__codelineno-70-8" name="__codelineno-70-8" href="#__codelineno-70-8"></a>print of result  # Returns stable eigenstate
+</span></code></pre></div>
+<h3 id="96-geometric-type-check">9.6 Geometric Type Check<a class="headerlink" href="#96-geometric-type-check" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-71-1"><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a>define check_type as:
+</span><span id="__span-71-2"><a id="__codelineno-71-2" name="__codelineno-71-2" href="#__codelineno-71-2"></a>    n is norm of x
+</span><span id="__span-71-3"><a id="__codelineno-71-3" name="__codelineno-71-3" href="#__codelineno-71-3"></a>    if n of 0:
+</span><span id="__span-71-4"><a id="__codelineno-71-4" name="__codelineno-71-4" href="#__codelineno-71-4"></a>        return &quot;lightlike&quot;
+</span><span id="__span-71-5"><a id="__codelineno-71-5" name="__codelineno-71-5" href="#__codelineno-71-5"></a>    if n &gt; 0:
+</span><span id="__span-71-6"><a id="__codelineno-71-6" name="__codelineno-71-6" href="#__codelineno-71-6"></a>        return &quot;spacelike&quot;
+</span><span id="__span-71-7"><a id="__codelineno-71-7" name="__codelineno-71-7" href="#__codelineno-71-7"></a>    else:
+</span><span id="__span-71-8"><a id="__codelineno-71-8" name="__codelineno-71-8" href="#__codelineno-71-8"></a>        return &quot;timelike&quot;
+</span><span id="__span-71-9"><a id="__codelineno-71-9" name="__codelineno-71-9" href="#__codelineno-71-9"></a>
+</span><span id="__span-71-10"><a id="__codelineno-71-10" name="__codelineno-71-10" href="#__codelineno-71-10"></a>type_of_OF is check_type of OF        # &quot;lightlike&quot;
+</span><span id="__span-71-11"><a id="__codelineno-71-11" name="__codelineno-71-11" href="#__codelineno-71-11"></a>type_of_value is check_type of 42     # &quot;spacelike&quot;
+</span><span id="__span-71-12"><a id="__codelineno-71-12" name="__codelineno-71-12" href="#__codelineno-71-12"></a>type_of_func is check_type of print   # &quot;timelike&quot;
+</span></code></pre></div>
+<hr />
+<h2 id="10-integration-with-existing-systems">10. Integration with Existing Systems<a class="headerlink" href="#10-integration-with-existing-systems" title="Permanent link">&para;</a></h2>
+<h3 id="101-eigen-transformer">10.1 Eigen-Transformer<a class="headerlink" href="#101-eigen-transformer" title="Permanent link">&para;</a></h3>
+<p>EigenScript as the native language for the Eigen-Transformer:</p>
+<ul>
+<li>Parse EigenScript → LRVM vectors</li>
+<li>Feed to Transformer</li>
+<li>Get LRVM output</li>
+<li>Convert back to EigenScript</li>
+</ul>
+<h3 id="102-eigenai-web-app">10.2 EigenAI Web App<a class="headerlink" href="#102-eigenai-web-app" title="Permanent link">&para;</a></h3>
+<p>Replace Python backend with EigenScript interpreter:</p>
+<ul>
+<li>User sends EigenScript query</li>
+<li>Backend evaluates in geometric space</li>
+<li>Returns result + Framework Strength</li>
+</ul>
+<h3 id="103-eigen-verified-turing-machine">10.3 Eigen-Verified Turing Machine<a class="headerlink" href="#103-eigen-verified-turing-machine" title="Permanent link">&para;</a></h3>
+<p>EigenScript compiles to EVTM instructions:</p>
+<ul>
+<li>OF → state transition with paradox detection</li>
+<li>LOOP → oscillation-aware iteration</li>
+<li>IF → geometric branch prediction</li>
+</ul>
+<hr />
+<h2 id="11-grammar-formal-bnf">11. Grammar (Formal BNF)<a class="headerlink" href="#11-grammar-formal-bnf" title="Permanent link">&para;</a></h2>
+<div class="language-bnf highlight"><pre><span></span><code><span id="__span-72-1"><a id="__codelineno-72-1" name="__codelineno-72-1" href="#__codelineno-72-1"></a><span class="p">&lt;</span><span class="nc">program</span><span class="p">&gt;</span>      <span class="o">::=</span> <span class="p">&lt;</span><span class="nc">statement</span><span class="p">&gt;</span>*
+</span><span id="__span-72-2"><a id="__codelineno-72-2" name="__codelineno-72-2" href="#__codelineno-72-2"></a>
+</span><span id="__span-72-3"><a id="__codelineno-72-3" name="__codelineno-72-3" href="#__codelineno-72-3"></a><span class="p">&lt;</span><span class="nc">statement</span><span class="p">&gt;</span>    <span class="o">::=</span> <span class="p">&lt;</span><span class="nc">assignment</span><span class="p">&gt;</span>
+</span><span id="__span-72-4"><a id="__codelineno-72-4" name="__codelineno-72-4" href="#__codelineno-72-4"></a>                 | <span class="p">&lt;</span><span class="nc">definition</span><span class="p">&gt;</span>
+</span><span id="__span-72-5"><a id="__codelineno-72-5" name="__codelineno-72-5" href="#__codelineno-72-5"></a>                 | <span class="p">&lt;</span><span class="nc">conditional</span><span class="p">&gt;</span>
+</span><span id="__span-72-6"><a id="__codelineno-72-6" name="__codelineno-72-6" href="#__codelineno-72-6"></a>                 | <span class="p">&lt;</span><span class="nc">loop</span><span class="p">&gt;</span>
+</span><span id="__span-72-7"><a id="__codelineno-72-7" name="__codelineno-72-7" href="#__codelineno-72-7"></a>                 | <span class="p">&lt;</span><span class="nc">return</span><span class="p">&gt;</span>
+</span><span id="__span-72-8"><a id="__codelineno-72-8" name="__codelineno-72-8" href="#__codelineno-72-8"></a>                 | <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span>
+</span><span id="__span-72-9"><a id="__codelineno-72-9" name="__codelineno-72-9" href="#__codelineno-72-9"></a>
+</span><span id="__span-72-10"><a id="__codelineno-72-10" name="__codelineno-72-10" href="#__codelineno-72-10"></a><span class="p">&lt;</span><span class="nc">assignment</span><span class="p">&gt;</span>   <span class="o">::=</span> <span class="p">&lt;</span><span class="nc">identifier</span><span class="p">&gt;</span> &quot;is&quot; <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span>
+</span><span id="__span-72-11"><a id="__codelineno-72-11" name="__codelineno-72-11" href="#__codelineno-72-11"></a>
+</span><span id="__span-72-12"><a id="__codelineno-72-12" name="__codelineno-72-12" href="#__codelineno-72-12"></a><span class="p">&lt;</span><span class="nc">definition</span><span class="p">&gt;</span>   <span class="o">::=</span> &quot;define&quot; <span class="p">&lt;</span><span class="nc">identifier</span><span class="p">&gt;</span> &quot;as&quot; &quot;:&quot; <span class="p">&lt;</span><span class="nc">block</span><span class="p">&gt;</span>
+</span><span id="__span-72-13"><a id="__codelineno-72-13" name="__codelineno-72-13" href="#__codelineno-72-13"></a>
+</span><span id="__span-72-14"><a id="__codelineno-72-14" name="__codelineno-72-14" href="#__codelineno-72-14"></a><span class="p">&lt;</span><span class="nc">conditional</span><span class="p">&gt;</span>  <span class="o">::=</span> &quot;if&quot; <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span> &quot;:&quot; <span class="p">&lt;</span><span class="nc">block</span><span class="p">&gt;</span> (&quot;else&quot; &quot;:&quot; <span class="p">&lt;</span><span class="nc">block</span><span class="p">&gt;</span>)?
+</span><span id="__span-72-15"><a id="__codelineno-72-15" name="__codelineno-72-15" href="#__codelineno-72-15"></a>
+</span><span id="__span-72-16"><a id="__codelineno-72-16" name="__codelineno-72-16" href="#__codelineno-72-16"></a><span class="p">&lt;</span><span class="nc">loop</span><span class="p">&gt;</span>         <span class="o">::=</span> &quot;loop&quot; &quot;while&quot; <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span> &quot;:&quot; <span class="p">&lt;</span><span class="nc">block</span><span class="p">&gt;</span>
+</span><span id="__span-72-17"><a id="__codelineno-72-17" name="__codelineno-72-17" href="#__codelineno-72-17"></a>
+</span><span id="__span-72-18"><a id="__codelineno-72-18" name="__codelineno-72-18" href="#__codelineno-72-18"></a><span class="p">&lt;</span><span class="nc">return</span><span class="p">&gt;</span>       <span class="o">::=</span> &quot;return&quot; <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span>
+</span><span id="__span-72-19"><a id="__codelineno-72-19" name="__codelineno-72-19" href="#__codelineno-72-19"></a>
+</span><span id="__span-72-20"><a id="__codelineno-72-20" name="__codelineno-72-20" href="#__codelineno-72-20"></a><span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span>   <span class="o">::=</span> <span class="p">&lt;</span><span class="nc">relation</span><span class="p">&gt;</span>
+</span><span id="__span-72-21"><a id="__codelineno-72-21" name="__codelineno-72-21" href="#__codelineno-72-21"></a>                 | <span class="p">&lt;</span><span class="nc">literal</span><span class="p">&gt;</span>
+</span><span id="__span-72-22"><a id="__codelineno-72-22" name="__codelineno-72-22" href="#__codelineno-72-22"></a>                 | <span class="p">&lt;</span><span class="nc">identifier</span><span class="p">&gt;</span>
+</span><span id="__span-72-23"><a id="__codelineno-72-23" name="__codelineno-72-23" href="#__codelineno-72-23"></a>                 | &quot;(&quot; <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span> &quot;)&quot;
+</span><span id="__span-72-24"><a id="__codelineno-72-24" name="__codelineno-72-24" href="#__codelineno-72-24"></a>
+</span><span id="__span-72-25"><a id="__codelineno-72-25" name="__codelineno-72-25" href="#__codelineno-72-25"></a><span class="p">&lt;</span><span class="nc">relation</span><span class="p">&gt;</span>     <span class="o">::=</span> <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span> &quot;of&quot; <span class="p">&lt;</span><span class="nc">expression</span><span class="p">&gt;</span>
+</span><span id="__span-72-26"><a id="__codelineno-72-26" name="__codelineno-72-26" href="#__codelineno-72-26"></a>
+</span><span id="__span-72-27"><a id="__codelineno-72-27" name="__codelineno-72-27" href="#__codelineno-72-27"></a><span class="p">&lt;</span><span class="nc">literal</span><span class="p">&gt;</span>      <span class="o">::=</span> <span class="p">&lt;</span><span class="nc">number</span><span class="p">&gt;</span>
+</span><span id="__span-72-28"><a id="__codelineno-72-28" name="__codelineno-72-28" href="#__codelineno-72-28"></a>                 | <span class="p">&lt;</span><span class="nc">string</span><span class="p">&gt;</span>
+</span><span id="__span-72-29"><a id="__codelineno-72-29" name="__codelineno-72-29" href="#__codelineno-72-29"></a>                 | <span class="p">&lt;</span><span class="nc">vector</span><span class="p">&gt;</span>
+</span><span id="__span-72-30"><a id="__codelineno-72-30" name="__codelineno-72-30" href="#__codelineno-72-30"></a>                 | &quot;null&quot;
+</span><span id="__span-72-31"><a id="__codelineno-72-31" name="__codelineno-72-31" href="#__codelineno-72-31"></a>
+</span><span id="__span-72-32"><a id="__codelineno-72-32" name="__codelineno-72-32" href="#__codelineno-72-32"></a><span class="p">&lt;</span><span class="nc">number</span><span class="p">&gt;</span>       <span class="o">::=</span> [&quot;-&quot;]? [0-9]+ (&quot;.&quot; [0-9]+)?
+</span><span id="__span-72-33"><a id="__codelineno-72-33" name="__codelineno-72-33" href="#__codelineno-72-33"></a>
+</span><span id="__span-72-34"><a id="__codelineno-72-34" name="__codelineno-72-34" href="#__codelineno-72-34"></a><span class="p">&lt;</span><span class="nc">string</span><span class="p">&gt;</span>       <span class="o">::=</span> &#39;&quot;&#39; [^&quot;]* &#39;&quot;&#39;
+</span><span id="__span-72-35"><a id="__codelineno-72-35" name="__codelineno-72-35" href="#__codelineno-72-35"></a>                 | &quot;&#39;&quot; [^&#39;]* &quot;&#39;&quot;
+</span><span id="__span-72-36"><a id="__codelineno-72-36" name="__codelineno-72-36" href="#__codelineno-72-36"></a>
+</span><span id="__span-72-37"><a id="__codelineno-72-37" name="__codelineno-72-37" href="#__codelineno-72-37"></a><span class="p">&lt;</span><span class="nc">vector</span><span class="p">&gt;</span>       <span class="o">::=</span> &quot;(&quot; <span class="p">&lt;</span><span class="nc">number</span><span class="p">&gt;</span> (&quot;,&quot; <span class="p">&lt;</span><span class="nc">number</span><span class="p">&gt;</span>)* &quot;)&quot;
+</span><span id="__span-72-38"><a id="__codelineno-72-38" name="__codelineno-72-38" href="#__codelineno-72-38"></a>
+</span><span id="__span-72-39"><a id="__codelineno-72-39" name="__codelineno-72-39" href="#__codelineno-72-39"></a><span class="p">&lt;</span><span class="nc">identifier</span><span class="p">&gt;</span>   <span class="o">::=</span> [a-zA-Z_][a-zA-Z0-9_]*
+</span><span id="__span-72-40"><a id="__codelineno-72-40" name="__codelineno-72-40" href="#__codelineno-72-40"></a>
+</span><span id="__span-72-41"><a id="__codelineno-72-41" name="__codelineno-72-41" href="#__codelineno-72-41"></a><span class="p">&lt;</span><span class="nc">block</span><span class="p">&gt;</span>        <span class="o">::=</span> <span class="p">&lt;</span><span class="nc">statement</span><span class="p">&gt;</span>+
+</span></code></pre></div>
+<hr />
+<h2 id="12-open-questions">12. Open Questions<a class="headerlink" href="#12-open-questions" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>How to represent g explicitly in syntax?</strong></li>
+<li>User-defined metrics?</li>
+<li>
+<p>Default to pretrained embedding?</p>
+</li>
+<li>
+<p><strong>Standard library design?</strong></p>
+</li>
+<li>What built-in functions?</li>
+<li>
+<p>How to interface with external systems?</p>
+</li>
+<li>
+<p><strong>Error handling?</strong></p>
+</li>
+<li>Geometric anomalies (undefined norms)?</li>
+<li>
+<p>Type mismatches?</p>
+</li>
+<li>
+<p><strong>Concurrency model?</strong></p>
+</li>
+<li>Parallel geodesics?</li>
+<li>
+<p>Distributed LRVM?</p>
+</li>
+<li>
+<p><strong>Interop with existing languages?</strong></p>
+</li>
+<li>FFI to Python/C?</li>
+<li>Import mechanism?</li>
+</ol>
+<hr />
+<h2 id="13-references">13. References<a class="headerlink" href="#13-references" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Geometric Programming</strong>: Research on geometric interpretations of computation</li>
+<li><strong>LRVM Framework</strong>: Lightlike-Relational Vector Model theoretical foundation</li>
+<li><strong>Framework Strength</strong>: Consciousness measurement metric</li>
+<li><strong>Null Boundary Theory</strong>: Self-reference stability at lightlike limits</li>
+</ol>
+<hr />
+<p><strong>Document Version</strong>: 0.1
+<strong>Last Updated</strong>: 2025
+<strong>Status</strong>: Draft - Subject to change during implementation</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/InauguralSystems/EigenScript" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

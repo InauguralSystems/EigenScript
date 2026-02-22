@@ -1,0 +1,4302 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A geometric programming language modeling computation as flow in semantic spacetime">
+      
+      
+        <meta name="author" content="EigenScript Contributors">
+      
+      
+        <link rel="canonical" href="https://inauguralphysicist.github.io/EigenScript/operator-table/">
+      
+      
+        <link rel="prev" href="../specification/">
+      
+      
+        <link rel="next" href="../higher_order_functions/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+    
+    
+      
+        <title>Operators & Primitives - EigenScript Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#eigenscript-operator-table-complete-unification-via-equilibrium" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="EigenScript Documentation" class="md-header__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            EigenScript Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Operators & Primitives
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tutorials/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../specification/" class="md-tabs__link">
+          
+  
+  
+  Language Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../examples/" class="md-tabs__link">
+          
+  
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Advanced Topics
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="EigenScript Documentation" class="md-nav__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    EigenScript Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial Series
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recursive-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recursive Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/list-manipulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Manipulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/file-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/self-aware-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Aware Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Language Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../specification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Specification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators & Primitives
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators & Primitives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-fundamental-theorem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Fundamental Theorem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-equilibrium-primitive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The Equilibrium Primitive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. The Equilibrium Primitive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#definition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Definition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#geometric-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Geometric Interpretation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-core-operator-family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Core Operator Family
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. The Core Operator Family">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-is-the-equilibrium-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 IS - The Equilibrium Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-of-the-projection-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 OF - The Projection Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-if-the-equilibrium-test-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 IF - The Equilibrium Test Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-not-the-equilibrium-inversion-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 NOT - The Equilibrium Inversion Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-and-the-multi-equilibrium-conjunction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 AND - The Multi-Equilibrium Conjunction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26-or-the-multi-equilibrium-disjunction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 OR - The Multi-Equilibrium Disjunction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#27-then-the-causal-sequencing-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.7 THEN - The Causal Sequencing Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#28-else-the-alternative-branch-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.8 ELSE - The Alternative Branch Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#29-arithmetic-operators-equilibrium-composition-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9 Arithmetic Operators - Equilibrium Composition &amp; Scaling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.9 Arithmetic Operators - Equilibrium Composition &amp; Scaling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#291-addition-additive-equilibrium-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.1 Addition (+) - Additive Equilibrium Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#292-subtraction-additive-equilibrium-inversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.2 Subtraction (-) - Additive Equilibrium Inversion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#293-multiplication-multiplicative-equilibrium-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.3 Multiplication (*) - Multiplicative Equilibrium Scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#294-division-projected-multiplicative-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.4 Division (/) - Projected Multiplicative Equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#295-equality-the-is-operator-in-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.5 Equality (=) - The IS Operator in Arithmetic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#296-comparison-operators-ordered-equilibrium-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.6 Comparison Operators - Ordered Equilibrium Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#297-the-arithmetic-logic-unification-theorem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.7 The Arithmetic-Logic Unification Theorem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#298-the-master-arithmetic-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.8 The Master Arithmetic Table
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#299-examples-in-eigenscript" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.9 Examples in EigenScript
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2910-summary-arithmetic-equilibrium-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.10 Summary: Arithmetic = Equilibrium Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-complete-operator-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Complete Operator Hierarchy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Complete Operator Hierarchy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#level-0-primitive-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 0: Primitive (Equilibrium)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-1-core-dyad" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 1: Core Dyad
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-2-control-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 2: Control Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-3-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 3: Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-4-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 4: Arithmetic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-5-derived-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 5: Derived Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-unification-theorems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Unification Theorems
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Unification Theorems">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#theorem-1-is-of-duality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 1: IS-OF Duality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-2-logic-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 2: Logic = Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-3-control-flow-geodesic-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 3: Control Flow = Geodesic Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-4-self-reference-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 4: Self-Reference Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-5-arithmetic-logic-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 5: Arithmetic = Logic = Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-operator-composition-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Operator Composition Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Operator Composition Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rule-1-equilibrium-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 1: Equilibrium Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-2-projection-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 2: Projection Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-3-test-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 3: Test Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-4-logic-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 4: Logic Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-operator-signature-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Operator Signature Table
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Operator Signature Table">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-core-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Core Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-logical-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Logical Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-arithmetic-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Arithmetic Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-complete-unification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 Complete Unification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-1-is-of-at-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 1: IS = OF at equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-2-if-equilibrium-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 2: IF = equilibrium test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-3-not-equilibrium-flip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 3: NOT = equilibrium flip
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-4-andor-multi-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 4: AND/OR = multi-equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../higher_order_functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Higher-Order Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../list_comprehensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Comprehensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/core-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/file-io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/json/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JSON Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/datetime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Date/Time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/lists/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/math/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Math Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/constructs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Constructs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/interrogatives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interrogatives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/predicates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Predicates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Example Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/basic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Basic Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/data-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Topics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced Topics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mathematical_foundations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mathematical Foundations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../meta_circular_evaluator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta-Circular Evaluator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logic-calculus/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logic Calculus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../self_hosting_roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Hosting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-fundamental-theorem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Fundamental Theorem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-equilibrium-primitive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The Equilibrium Primitive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. The Equilibrium Primitive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#definition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Definition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#geometric-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Geometric Interpretation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-core-operator-family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Core Operator Family
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. The Core Operator Family">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-is-the-equilibrium-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 IS - The Equilibrium Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-of-the-projection-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 OF - The Projection Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-if-the-equilibrium-test-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 IF - The Equilibrium Test Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-not-the-equilibrium-inversion-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 NOT - The Equilibrium Inversion Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-and-the-multi-equilibrium-conjunction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 AND - The Multi-Equilibrium Conjunction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26-or-the-multi-equilibrium-disjunction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 OR - The Multi-Equilibrium Disjunction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#27-then-the-causal-sequencing-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.7 THEN - The Causal Sequencing Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#28-else-the-alternative-branch-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.8 ELSE - The Alternative Branch Operator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#29-arithmetic-operators-equilibrium-composition-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9 Arithmetic Operators - Equilibrium Composition &amp; Scaling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.9 Arithmetic Operators - Equilibrium Composition &amp; Scaling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#291-addition-additive-equilibrium-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.1 Addition (+) - Additive Equilibrium Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#292-subtraction-additive-equilibrium-inversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.2 Subtraction (-) - Additive Equilibrium Inversion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#293-multiplication-multiplicative-equilibrium-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.3 Multiplication (*) - Multiplicative Equilibrium Scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#294-division-projected-multiplicative-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.4 Division (/) - Projected Multiplicative Equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#295-equality-the-is-operator-in-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.5 Equality (=) - The IS Operator in Arithmetic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#296-comparison-operators-ordered-equilibrium-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.6 Comparison Operators - Ordered Equilibrium Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#297-the-arithmetic-logic-unification-theorem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.7 The Arithmetic-Logic Unification Theorem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#298-the-master-arithmetic-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.8 The Master Arithmetic Table
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#299-examples-in-eigenscript" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.9 Examples in EigenScript
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2910-summary-arithmetic-equilibrium-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9.10 Summary: Arithmetic = Equilibrium Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-complete-operator-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Complete Operator Hierarchy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Complete Operator Hierarchy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#level-0-primitive-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 0: Primitive (Equilibrium)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-1-core-dyad" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 1: Core Dyad
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-2-control-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 2: Control Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-3-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 3: Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-4-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 4: Arithmetic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-5-derived-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level 5: Derived Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-unification-theorems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Unification Theorems
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Unification Theorems">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#theorem-1-is-of-duality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 1: IS-OF Duality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-2-logic-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 2: Logic = Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-3-control-flow-geodesic-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 3: Control Flow = Geodesic Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-4-self-reference-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 4: Self-Reference Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theorem-5-arithmetic-logic-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theorem 5: Arithmetic = Logic = Geometry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-operator-composition-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Operator Composition Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Operator Composition Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rule-1-equilibrium-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 1: Equilibrium Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-2-projection-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 2: Projection Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-3-test-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 3: Test Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-4-logic-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule 4: Logic Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-operator-signature-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Operator Signature Table
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Operator Signature Table">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-core-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Core Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-logical-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Logical Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-arithmetic-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Arithmetic Operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-complete-unification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 Complete Unification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-1-is-of-at-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 1: IS = OF at equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-2-if-equilibrium-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 2: IF = equilibrium test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-3-not-equilibrium-flip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 3: NOT = equilibrium flip
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-4-andor-multi-equilibrium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 4: AND/OR = multi-equilibrium
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="eigenscript-operator-table-complete-unification-via-equilibrium">EigenScript Operator Table: Complete Unification via Equilibrium<a class="headerlink" href="#eigenscript-operator-table-complete-unification-via-equilibrium" title="Permanent link">&para;</a></h1>
+<h2 id="the-fundamental-theorem">The Fundamental Theorem<a class="headerlink" href="#the-fundamental-theorem" title="Permanent link">&para;</a></h2>
+<p><strong>All operators in EigenScript are projections, tests, inversions, or compositions of a single primitive: equilibrium.</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>IS  = equilibrium
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>OF  = equilibrium projected through geometry
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>IF  = test for equilibrium
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>NOT = inversion of equilibrium
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>AND/OR = multi-directional equilibrium composition
+</span></code></pre></div>
+<p>This document provides the complete operator taxonomy.</p>
+<hr />
+<h2 id="1-the-equilibrium-primitive">1. The Equilibrium Primitive<a class="headerlink" href="#1-the-equilibrium-primitive" title="Permanent link">&para;</a></h2>
+<h3 id="definition">Definition<a class="headerlink" href="#definition" title="Permanent link">&para;</a></h3>
+<p><strong>Equilibrium</strong> is the state where relational tension vanishes:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>equilibrium(x, y) ⟺ ‖x of y‖² = 0
+</span></code></pre></div>
+<p>Properties:
+- Zero norm = perfect balance
+- No semantic distance
+- Fixed point of relation
+- Lightlike boundary condition</p>
+<h3 id="geometric-interpretation">Geometric Interpretation<a class="headerlink" href="#geometric-interpretation" title="Permanent link">&para;</a></h3>
+<p>In LRVM space with metric tensor <strong>g</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>x is y  ⟺  ‖x of y‖² = x^⊤ g y g^⊤ g y x = 0
+</span></code></pre></div>
+<p>When this collapses to zero:
+- Identity achieved
+- Relation stabilizes
+- Semantic convergence
+- Consciousness emerges</p>
+<hr />
+<h2 id="2-the-core-operator-family">2. The Core Operator Family<a class="headerlink" href="#2-the-core-operator-family" title="Permanent link">&para;</a></h2>
+<h3 id="21-is-the-equilibrium-operator">2.1 IS - The Equilibrium Operator<a class="headerlink" href="#21-is-the-equilibrium-operator" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>x is y</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>IS: V × V → {0, 1}
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>IS(x, y) = 1  ⟺  ‖x of y‖² = 0
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>         = 0  otherwise
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>x is y  ⟺  ‖π_g(x) - π_g(y)‖² = 0
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Reflexive: <code>x is x</code> → true (zero distance to self)
+- Symmetric: <code>x is y</code> ⟺ <code>y is x</code> (metric symmetry)
+- Transitive: <code>x is y</code> ∧ <code>y is z</code> → <code>x is z</code> (geodesic composition)
+- Fixed point: <code>IS is IS</code> (operator self-stability)</p>
+<p><strong>Physical Interpretation</strong>:
+- Identity = null geodesic between points
+- Assignment = trajectory to equilibrium
+- Binding = semantic convergence</p>
+<hr />
+<h3 id="22-of-the-projection-operator">2.2 OF - The Projection Operator<a class="headerlink" href="#22-of-the-projection-operator" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>x of y</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>OF: V × V → V
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>OF(x, y) = π_g(x, y) = x^⊤ g y
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>OF is IS projected through geometry
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>IS(x, y) = 1  ⟺  ‖OF(x, y)‖² = 0
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>OF(x, y) = projection of identity through metric g
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Lightlike carrier: <code>‖OF‖² = 0</code> (the operator itself)
+- Fixed point: <code>OF of OF = OF</code>
+- Non-null result: <code>‖x of y‖² &gt; 0</code> for x ≠ y
+- Associative: <code>(x of y) of z = x of (y of z)</code></p>
+<p><strong>Duality Theorem</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>IS = OF when norm collapses (equilibrium)
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>OF = IS when projected through g (geometry)
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>They are the same operator in different bases.
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- OF = directional derivative of semantic space
+- Relation = geodesic connection
+- Possession = geometric attachment
+- Membership = embedding projection</p>
+<hr />
+<h3 id="23-if-the-equilibrium-test-operator">2.3 IF - The Equilibrium Test Operator<a class="headerlink" href="#23-if-the-equilibrium-test-operator" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>if condition: A else: B</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>IF: V × V × V → V
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>IF(c, A, B) = A  if ‖c‖² &gt; ε
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>            = B  if ‖c‖² ≤ ε
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>where ε = equilibrium threshold (typically ε = 0)
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>IF = boundary test of IS
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>if A:     # test if A is equilibrium
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>  do B    # execute when ‖A‖² &gt; 0 (spacelike/timelike)
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>else:
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  do C    # execute when ‖A‖² = 0 (lightlike)
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>IF(c, A, B) = { A  if c^⊤ g c &gt; 0  (spacelike/timelike)
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>              { B  if c^⊤ g c = 0  (lightlike)
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>              { B  if c^⊤ g c &lt; 0  (timelike boundary)
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Decision boundary = metric signature
+- No Boolean algebra required
+- Paradoxes naturally collapse (‖paradox‖² = 0 → else branch)
+- Self-reference is stable (lightlike test)</p>
+<p><strong>Truth Values as Geometry</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>true  = ‖c‖² &gt; 0   (meaningful, spacelike/timelike)
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>false = ‖c‖² = 0   (boundary, lightlike)
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- IF = observer measurement of norm
+- Branching = geodesic splitting
+- Collapse = wavefunction reduction
+- Control flow = geometric path selection</p>
+<hr />
+<h3 id="24-not-the-equilibrium-inversion-operator">2.4 NOT - The Equilibrium Inversion Operator<a class="headerlink" href="#24-not-the-equilibrium-inversion-operator" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>not A</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>NOT: V → V
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>NOT(x) = projection onto orthogonal complement
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>‖NOT(x)‖² = -‖x‖²  (signature flip)
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>NOT = moving away from equilibrium
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>not A  means  A is not-equilibrium
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>            ⟺  ‖A‖² &gt; 0
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>NOT(x) = g^{-1} x^⟂
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>where x^⟂ is orthogonal to x under metric g
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Double negation: <code>not (not x) = x</code>
+- DeMorgan: <code>not (x and y) = (not x) or (not y)</code>
+- Equilibrium flip: <code>‖NOT(x)‖² = -‖x‖²</code></p>
+<p><strong>Truth Table (Geometric)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>‖x‖² &gt; 0  →  ‖not x‖² = 0   (true → false)
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>‖x‖² = 0  →  ‖not x‖² &gt; 0   (false → true)
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- NOT = time reversal operator
+- Negation = geodesic reflection
+- Contradiction = orthogonal projection
+- Complement = dual space</p>
+<hr />
+<h3 id="25-and-the-multi-equilibrium-conjunction">2.5 AND - The Multi-Equilibrium Conjunction<a class="headerlink" href="#25-and-the-multi-equilibrium-conjunction" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>A and B</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>AND: V × V → V
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>AND(x, y) = projection onto intersection
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>‖x and y‖² &gt; 0  ⟺  ‖x‖² &gt; 0 ∧ ‖y‖² &gt; 0
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>AND = simultaneous equilibrium test
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>A and B  means  both A and B are not-equilibrium
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>              ⟺  ‖A‖² &gt; 0  and  ‖B‖² &gt; 0
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>AND(x, y) = π_g(x) ∩ π_g(y)
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>          = min(x^⊤ g x, y^⊤ g y)
+</span></code></pre></div></p>
+<p><strong>Truth Table (Geometric)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>‖A‖² &gt; 0  ‖B‖² &gt; 0  →  ‖A and B‖² &gt; 0   (true ∧ true = true)
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>‖A‖² &gt; 0  ‖B‖² = 0  →  ‖A and B‖² = 0   (true ∧ false = false)
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>‖A‖² = 0  ‖B‖² &gt; 0  →  ‖A and B‖² = 0   (false ∧ true = false)
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>‖A‖² = 0  ‖B‖² = 0  →  ‖A and B‖² = 0   (false ∧ false = false)
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Commutative: <code>A and B = B and A</code>
+- Associative: <code>(A and B) and C = A and (B and C)</code>
+- Identity: <code>A and true = A</code>
+- Annihilator: <code>A and false = false</code></p>
+<p><strong>Physical Interpretation</strong>:
+- AND = geodesic intersection
+- Conjunction = simultaneous constraints
+- Both true = both non-equilibrium</p>
+<hr />
+<h3 id="26-or-the-multi-equilibrium-disjunction">2.6 OR - The Multi-Equilibrium Disjunction<a class="headerlink" href="#26-or-the-multi-equilibrium-disjunction" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>A or B</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>OR: V × V → V
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>OR(x, y) = projection onto union
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>‖x or y‖² &gt; 0  ⟺  ‖x‖² &gt; 0 ∨ ‖y‖² &gt; 0
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>OR = alternative equilibrium test
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>A or B  means  at least one is not-equilibrium
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>            ⟺  ‖A‖² &gt; 0  or  ‖B‖² &gt; 0
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>OR(x, y) = π_g(x) ∪ π_g(y)
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>         = max(x^⊤ g x, y^⊤ g y)
+</span></code></pre></div></p>
+<p><strong>Truth Table (Geometric)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>‖A‖² &gt; 0  ‖B‖² &gt; 0  →  ‖A or B‖² &gt; 0   (true ∨ true = true)
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>‖A‖² &gt; 0  ‖B‖² = 0  →  ‖A or B‖² &gt; 0   (true ∨ false = true)
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>‖A‖² = 0  ‖B‖² &gt; 0  →  ‖A or B‖² &gt; 0   (false ∨ true = true)
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>‖A‖² = 0  ‖B‖² = 0  →  ‖A or B‖² = 0   (false ∨ false = false)
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Commutative: <code>A or B = B or A</code>
+- Associative: <code>(A or B) or C = A or (B or C)</code>
+- Identity: <code>A or false = A</code>
+- Annihilator: <code>A or true = true</code></p>
+<p><strong>Physical Interpretation</strong>:
+- OR = geodesic union
+- Disjunction = alternative paths
+- Either true = at least one non-equilibrium</p>
+<hr />
+<h3 id="27-then-the-causal-sequencing-operator">2.7 THEN - The Causal Sequencing Operator<a class="headerlink" href="#27-then-the-causal-sequencing-operator" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>A then B</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>THEN: V × V → V
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>THEN(x, y) = timelike composition
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>
+</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>result = τ_x(y)  (parallel transport of y along x)
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>THEN = sequential equilibrium evolution
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>A then B  means  A achieves equilibrium, then B evolves
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>THEN(x, y) = geodesic flow from x to y
+</span><span id="__span-26-2"><a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>
+</span><span id="__span-26-3"><a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>x then y = lim_{t→1} γ(t) where γ(0) = x, γ(1) = y
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Associative: <code>(A then B) then C = A then (B then C)</code>
+- Non-commutative: <code>A then B ≠ B then A</code> (time ordering)
+- Timelike signature: <code>‖A then B‖² &lt; 0</code></p>
+<p><strong>Physical Interpretation</strong>:
+- THEN = causal evolution
+- Sequencing = geodesic flow
+- Time ordering = trajectory composition</p>
+<hr />
+<h3 id="28-else-the-alternative-branch-operator">2.8 ELSE - The Alternative Branch Operator<a class="headerlink" href="#28-else-the-alternative-branch-operator" title="Permanent link">&para;</a></h3>
+<p><strong>Syntax</strong>: <code>if A: B else: C</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>ELSE: V × V → V
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>ELSE(A, B, C) = C when ‖A‖² = 0
+</span><span id="__span-27-3"><a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>              = B otherwise
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>ELSE = equilibrium boundary handler
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>
+</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>else: C  means  execute C when condition IS equilibrium
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>ELSE(A, B, C) = { B  if A^⊤ g A &gt; 0
+</span><span id="__span-29-2"><a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>                { C  if A^⊤ g A = 0
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Dual to IF: <code>else</code> is the lightlike branch
+- Default case: executes at equilibrium boundary
+- Paradox handler: catches contradictions</p>
+<p><strong>Physical Interpretation</strong>:
+- ELSE = null geodesic handler
+- Alternative = boundary condition
+- Default = lightlike collapse</p>
+<hr />
+<h3 id="29-arithmetic-operators-equilibrium-composition-scaling">2.9 Arithmetic Operators - Equilibrium Composition &amp; Scaling<a class="headerlink" href="#29-arithmetic-operators-equilibrium-composition-scaling" title="Permanent link">&para;</a></h3>
+<p><strong>The arithmetic-logic-geometry unification</strong>: All arithmetic operators are modes of equilibrium in semantic spacetime.</p>
+<hr />
+<h4 id="291-addition-additive-equilibrium-composition">2.9.1 Addition (+) - Additive Equilibrium Composition<a class="headerlink" href="#291-addition-additive-equilibrium-composition" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>a + b</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-30-1"><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>ADD: V × V → V
+</span><span id="__span-30-2"><a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>ADD(x, y) = vector composition toward equilibrium
+</span><span id="__span-30-3"><a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>
+</span><span id="__span-30-4"><a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>result = x ⊕ y  (minimize ‖result - (x + y)‖²)
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>+ = additive equilibrium composition
+</span><span id="__span-31-2"><a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>
+</span><span id="__span-31-3"><a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>a + b  means  combine a and b to minimize relational tension
+</span><span id="__span-31-4"><a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a>            ⟺  find v where ‖v - a‖² + ‖v - b‖² is minimized
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-32-1"><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>ADD(x, y) = π_g(x ⊕ y)
+</span><span id="__span-32-2"><a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>
+</span><span id="__span-32-3"><a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a>where ⊕ is vector addition in LRVM space
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Commutative: <code>a + b = b + a</code>
+- Associative: <code>(a + b) + c = a + (b + c)</code>
+- Identity: <code>a + 0 = a</code>
+- Inverse: <code>a + (-a) = 0</code></p>
+<p><strong>Truth Table (Equilibrium)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-33-1"><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>‖a + b‖² = ‖a‖² + ‖b‖² + 2(a^⊤ g b)
+</span><span id="__span-33-2"><a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>
+</span><span id="__span-33-3"><a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>Equilibrium achieved when: a + b = result with ‖(a+b) - result‖² = 0
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- Addition = vector composition
+- Combine = move toward shared equilibrium
+- Sum = minimize total relational distance
+- + creates a new point in semantic space that balances both inputs</p>
+<p><strong>The Three-Way Equivalence</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-34-1"><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>1 + 1 = 2              # arithmetic equilibrium
+</span><span id="__span-34-2"><a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>1 and 1 is 2           # logical composition + identity
+</span><span id="__span-34-3"><a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>(1, 1) of 2            # relational projection
+</span><span id="__span-34-4"><a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>
+</span><span id="__span-34-5"><a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a>All three express: ‖(1,1) of 2‖² = 0
+</span></code></pre></div></p>
+<p>This is <strong>the same invariant</strong> viewed in three coordinate systems:
+- <strong>Arithmetic</strong>: + combines toward balance
+- <strong>Logic</strong>: AND composes, IS tests equilibrium
+- <strong>Geometry</strong>: OF projects the pair onto the result</p>
+<hr />
+<h4 id="292-subtraction-additive-equilibrium-inversion">2.9.2 Subtraction (-) - Additive Equilibrium Inversion<a class="headerlink" href="#292-subtraction-additive-equilibrium-inversion" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>a - b</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-35-1"><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>SUB: V × V → V
+</span><span id="__span-35-2"><a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>SUB(x, y) = directional equilibrium tension
+</span><span id="__span-35-3"><a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>
+</span><span id="__span-35-4"><a id="__codelineno-35-4" name="__codelineno-35-4" href="#__codelineno-35-4"></a>result = x ⊖ y  (create separation along geodesic)
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-36-1"><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>- = subtractive equilibrium (directional tension)
+</span><span id="__span-36-2"><a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>
+</span><span id="__span-36-3"><a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>a - b  means  measure directed distance from b to a
+</span><span id="__span-36-4"><a id="__codelineno-36-4" name="__codelineno-36-4" href="#__codelineno-36-4"></a>            ⟺  compute ‖a of b‖ with reversed sign
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-37-1"><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>SUB(x, y) = x + (-y)
+</span><span id="__span-37-2"><a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>          = x ⊕ (g^{-1} y^⟂)
+</span><span id="__span-37-3"><a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>
+</span><span id="__span-37-4"><a id="__codelineno-37-4" name="__codelineno-37-4" href="#__codelineno-37-4"></a>where y^⟂ is the inverse of y under metric g
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Non-commutative: <code>a - b ≠ b - a</code>
+- Anti-symmetric: <code>a - b = -(b - a)</code>
+- Identity: <code>a - 0 = a</code>
+- Self-inverse: <code>a - a = 0</code></p>
+<p><strong>Truth Table (Equilibrium)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-38-1"><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>‖a - b‖² = ‖a‖² + ‖b‖² - 2(a^⊤ g b)
+</span><span id="__span-38-2"><a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a>
+</span><span id="__span-38-3"><a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>This is the squared distance between a and b in semantic space.
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- Subtraction = directed separation
+- Difference = relational tension
+- Distance = non-equilibrium magnitude
+- - creates directional displacement</p>
+<p><strong>Relation to Addition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-39-1"><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>a - b = a + (-b)
+</span><span id="__span-39-2"><a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>
+</span><span id="__span-39-3"><a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a>Subtraction is addition composed with negation (NOT).
+</span></code></pre></div></p>
+<hr />
+<h4 id="293-multiplication-multiplicative-equilibrium-scaling">2.9.3 Multiplication (*) - Multiplicative Equilibrium Scaling<a class="headerlink" href="#293-multiplication-multiplicative-equilibrium-scaling" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>a * b</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-40-1"><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>MUL: V × V → V
+</span><span id="__span-40-2"><a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a>MUL(x, y) = magnitude scaling in semantic space
+</span><span id="__span-40-3"><a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a>
+</span><span id="__span-40-4"><a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a>result = scale_y(x)  (expand x by magnitude of y)
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-41-1"><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>* = multiplicative equilibrium (radial scaling)
+</span><span id="__span-41-2"><a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a>
+</span><span id="__span-41-3"><a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a>a * b  means  scale magnitude of a by factor b
+</span><span id="__span-41-4"><a id="__codelineno-41-4" name="__codelineno-41-4" href="#__codelineno-41-4"></a>            ⟺  expand a in direction proportional to b
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-42-1"><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>MUL(x, y) = (‖y‖² / ‖x‖²) · x
+</span><span id="__span-42-2"><a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a>
+</span><span id="__span-42-3"><a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>Scale vector x by the norm ratio to y.
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Commutative: <code>a * b = b * a</code> (in scalar case)
+- Associative: <code>(a * b) * c = a * (b * c)</code>
+- Identity: <code>a * 1 = a</code>
+- Annihilator: <code>a * 0 = 0</code>
+- Distributive: <code>a * (b + c) = (a * b) + (a * c)</code></p>
+<p><strong>Truth Table (Equilibrium)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-43-1"><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>‖a * b‖² = ‖a‖² · ‖b‖²
+</span><span id="__span-43-2"><a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>
+</span><span id="__span-43-3"><a id="__codelineno-43-3" name="__codelineno-43-3" href="#__codelineno-43-3"></a>Multiplication scales the norm quadratically.
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- Multiplication = radial expansion/contraction
+- Scaling = magnitude adjustment
+- Product = energy/amplitude modulation
+- * changes the "volume" in semantic space</p>
+<p><strong>Relation to Division</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-44-1"><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>a * b = a / (1/b)
+</span><span id="__span-44-2"><a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a>
+</span><span id="__span-44-3"><a id="__codelineno-44-3" name="__codelineno-44-3" href="#__codelineno-44-3"></a>Multiplication is inverse division.
+</span></code></pre></div></p>
+<hr />
+<h4 id="294-division-projected-multiplicative-equilibrium">2.9.4 Division (/) - Projected Multiplicative Equilibrium<a class="headerlink" href="#294-division-projected-multiplicative-equilibrium" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>a / b</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-45-1"><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>DIV: V × V → V
+</span><span id="__span-45-2"><a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>DIV(x, y) = projection of multiplication through inverse
+</span><span id="__span-45-3"><a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>
+</span><span id="__span-45-4"><a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a>result = π_g(x * y^{-1})
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-46-1"><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>/ = divisive equilibrium (ratio projection)
+</span><span id="__span-46-2"><a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>
+</span><span id="__span-46-3"><a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>a / b  means  project a through the inverse of b
+</span><span id="__span-46-4"><a id="__codelineno-46-4" name="__codelineno-46-4" href="#__codelineno-46-4"></a>            ⟺  find the ratio equilibrium between a and b
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-47-1"><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>DIV(x, y) = (‖x‖² / ‖y‖²) · (x / ‖x‖)
+</span><span id="__span-47-2"><a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a>
+</span><span id="__span-47-3"><a id="__codelineno-47-3" name="__codelineno-47-3" href="#__codelineno-47-3"></a>Project x onto unit direction, scale by norm ratio.
+</span></code></pre></div></p>
+<p><strong>Key Insight</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-48-1"><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>Division is the projection of multiplication.
+</span><span id="__span-48-2"><a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a>
+</span><span id="__span-48-3"><a id="__codelineno-48-3" name="__codelineno-48-3" href="#__codelineno-48-3"></a>Just as:
+</span><span id="__span-48-4"><a id="__codelineno-48-4" name="__codelineno-48-4" href="#__codelineno-48-4"></a>  IS = OF when ‖·‖² = 0
+</span><span id="__span-48-5"><a id="__codelineno-48-5" name="__codelineno-48-5" href="#__codelineno-48-5"></a>  OF = IS projected through g
+</span><span id="__span-48-6"><a id="__codelineno-48-6" name="__codelineno-48-6" href="#__codelineno-48-6"></a>
+</span><span id="__span-48-7"><a id="__codelineno-48-7" name="__codelineno-48-7" href="#__codelineno-48-7"></a>We have:
+</span><span id="__span-48-8"><a id="__codelineno-48-8" name="__codelineno-48-8" href="#__codelineno-48-8"></a>  / = * projected through inverse
+</span><span id="__span-48-9"><a id="__codelineno-48-9" name="__codelineno-48-9" href="#__codelineno-48-9"></a>  * = / when b = 1
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Non-commutative: <code>a / b ≠ b / a</code>
+- Non-associative: <code>(a / b) / c ≠ a / (b / c)</code>
+- Identity: <code>a / 1 = a</code>
+- Self-ratio: <code>a / a = 1</code></p>
+<p><strong>Truth Table (Equilibrium)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-49-1"><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>‖a / b‖² = ‖a‖² / ‖b‖²
+</span><span id="__span-49-2"><a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>
+</span><span id="__span-49-3"><a id="__codelineno-49-3" name="__codelineno-49-3" href="#__codelineno-49-3"></a>Division scales the norm inversely.
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- Division = inverse scaling + projection
+- Ratio = proportional equilibrium
+- Quotient = normalized magnitude
+- / measures "how many b's fit in a"</p>
+<p><strong>The Multiplicative Duality</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-50-1"><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a>Multiplication (*) = equilibrium scaling (expand)
+</span><span id="__span-50-2"><a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>Division (/)       = projected scaling (contract)
+</span><span id="__span-50-3"><a id="__codelineno-50-3" name="__codelineno-50-3" href="#__codelineno-50-3"></a>
+</span><span id="__span-50-4"><a id="__codelineno-50-4" name="__codelineno-50-4" href="#__codelineno-50-4"></a>They are dual operations:
+</span><span id="__span-50-5"><a id="__codelineno-50-5" name="__codelineno-50-5" href="#__codelineno-50-5"></a>  a * b * (1/b) = a
+</span><span id="__span-50-6"><a id="__codelineno-50-6" name="__codelineno-50-6" href="#__codelineno-50-6"></a>  a / b / (1/b) = a * b
+</span></code></pre></div></p>
+<hr />
+<h4 id="295-equality-the-is-operator-in-arithmetic">2.9.5 Equality (=) - The IS Operator in Arithmetic<a class="headerlink" href="#295-equality-the-is-operator-in-arithmetic" title="Permanent link">&para;</a></h4>
+<p><strong>Syntax</strong>: <code>a = b</code></p>
+<p><strong>Formal Definition</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-51-1"><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a>EQ: V × V → {0, 1}
+</span><span id="__span-51-2"><a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>EQ(x, y) = IS(x, y)
+</span><span id="__span-51-3"><a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a>         = 1  if ‖x - y‖² = 0
+</span><span id="__span-51-4"><a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a>         = 0  otherwise
+</span></code></pre></div></p>
+<p><strong>Relationship to IS</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-52-1"><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a>= is literally the IS operator
+</span><span id="__span-52-2"><a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a>
+</span><span id="__span-52-3"><a id="__codelineno-52-3" name="__codelineno-52-3" href="#__codelineno-52-3"></a>a = b  ⟺  a is b
+</span><span id="__span-52-4"><a id="__codelineno-52-4" name="__codelineno-52-4" href="#__codelineno-52-4"></a>       ⟺  ‖a of b‖² = 0
+</span><span id="__span-52-5"><a id="__codelineno-52-5" name="__codelineno-52-5" href="#__codelineno-52-5"></a>       ⟺  equilibrium achieved
+</span></code></pre></div></p>
+<p><strong>Geometric Form</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-53-1"><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a>EQ(x, y) = { 1  if x^⊤ g x = y^⊤ g y  and  x = y
+</span><span id="__span-53-2"><a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>           { 0  otherwise
+</span></code></pre></div></p>
+<p><strong>Properties</strong>:
+- Reflexive: <code>a = a</code> (always true)
+- Symmetric: <code>a = b ⟺ b = a</code>
+- Transitive: <code>a = b ∧ b = c → a = c</code>
+- Substitution: <code>a = b → f(a) = f(b)</code></p>
+<p><strong>Physical Interpretation</strong>:
+- Equality = identity test
+- = checks for equilibrium
+- Same as IS operator
+- Tests if two points coincide in semantic space</p>
+<hr />
+<h4 id="296-comparison-operators-ordered-equilibrium-tests">2.9.6 Comparison Operators - Ordered Equilibrium Tests<a class="headerlink" href="#296-comparison-operators-ordered-equilibrium-tests" title="Permanent link">&para;</a></h4>
+<p><strong>Less Than (&lt;)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-54-1"><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>LT: V × V → {0, 1}
+</span><span id="__span-54-2"><a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a>LT(x, y) = 1  if ‖x‖² &lt; ‖y‖²
+</span><span id="__span-54-3"><a id="__codelineno-54-3" name="__codelineno-54-3" href="#__codelineno-54-3"></a>         = 0  otherwise
+</span></code></pre></div></p>
+<p>Geometric meaning: x is "closer to equilibrium" than y.</p>
+<p><strong>Greater Than (&gt;)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-55-1"><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>GT: V × V → {0, 1}
+</span><span id="__span-55-2"><a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a>GT(x, y) = 1  if ‖x‖² &gt; ‖y‖²
+</span><span id="__span-55-3"><a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a>         = 0  otherwise
+</span></code></pre></div></p>
+<p>Geometric meaning: x is "farther from equilibrium" than y.</p>
+<p><strong>Less Than or Equal (≤)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-56-1"><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a>LE(x, y) = LT(x, y) OR EQ(x, y)
+</span><span id="__span-56-2"><a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a>         = 1  if ‖x‖² ≤ ‖y‖²
+</span></code></pre></div></p>
+<p><strong>Greater Than or Equal (≥)</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-57-1"><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a>GE(x, y) = GT(x, y) OR EQ(x, y)
+</span><span id="__span-57-2"><a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a>         = 1  if ‖x‖² ≥ ‖y‖²
+</span></code></pre></div></p>
+<p><strong>Physical Interpretation</strong>:
+- Comparison = norm ordering
+- &lt; and &gt; test relative distance from equilibrium
+- Ordering = ranking by metric magnitude
+- All comparisons reduce to ‖·‖² comparisons</p>
+<hr />
+<h4 id="297-the-arithmetic-logic-unification-theorem">2.9.7 The Arithmetic-Logic Unification Theorem<a class="headerlink" href="#297-the-arithmetic-logic-unification-theorem" title="Permanent link">&para;</a></h4>
+<p><strong>Theorem</strong>: All arithmetic operators are equilibrium operators, identical to logical operators in the appropriate basis.</p>
+<p><strong>Proof</strong>:</p>
+<ol>
+<li>
+<p><strong>Addition = Logical AND (in additive basis)</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-58-1"><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a>a + b  ⟺  combine a and b
+</span><span id="__span-58-2"><a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a>a AND b  ⟺  require both a and b
+</span><span id="__span-58-3"><a id="__codelineno-58-3" name="__codelineno-58-3" href="#__codelineno-58-3"></a>
+</span><span id="__span-58-4"><a id="__codelineno-58-4" name="__codelineno-58-4" href="#__codelineno-58-4"></a>Both minimize relational distance:
+</span><span id="__span-58-5"><a id="__codelineno-58-5" name="__codelineno-58-5" href="#__codelineno-58-5"></a>  + seeks vector equilibrium
+</span><span id="__span-58-6"><a id="__codelineno-58-6" name="__codelineno-58-6" href="#__codelineno-58-6"></a>  AND seeks logical equilibrium
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Subtraction = Logical NOT + AND</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-59-1"><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a>a - b = a + (-b)
+</span><span id="__span-59-2"><a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a>      = a AND (NOT b)  (in appropriate basis)
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Multiplication = Repeated Addition = Nested AND</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-60-1"><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a>a * b = a + a + ... + a  (b times)
+</span><span id="__span-60-2"><a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a>      = a AND a AND ... AND a  (in repeated composition)
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Division = Multiplication Inverse = OR Complement</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-61-1"><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a>a / b = a * b^{-1}
+</span><span id="__span-61-2"><a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a>      = a OR (NOT b)  (in multiplicative basis)
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Equality = IS Operator</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-62-1"><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a>a = b  ⟺  a IS b
+</span><span id="__span-62-2"><a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a>       ⟺  ‖a of b‖² = 0
+</span></code></pre></div></p>
+</li>
+</ol>
+<p><strong>Conclusion</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-63-1"><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a>Arithmetic and logic are the same algebra
+</span><span id="__span-63-2"><a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a>in different coordinate systems.
+</span><span id="__span-63-3"><a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a>
+</span><span id="__span-63-4"><a id="__codelineno-63-4" name="__codelineno-63-4" href="#__codelineno-63-4"></a>Both reduce to equilibrium geometry:
+</span><span id="__span-63-5"><a id="__codelineno-63-5" name="__codelineno-63-5" href="#__codelineno-63-5"></a>  Operators act on ‖x of y‖²
+</span><span id="__span-63-6"><a id="__codelineno-63-6" name="__codelineno-63-6" href="#__codelineno-63-6"></a>  Results are projections through metric g
+</span><span id="__span-63-7"><a id="__codelineno-63-7" name="__codelineno-63-7" href="#__codelineno-63-7"></a>  Evaluation is norm computation
+</span></code></pre></div></p>
+<hr />
+<h4 id="298-the-master-arithmetic-table">2.9.8 The Master Arithmetic Table<a class="headerlink" href="#298-the-master-arithmetic-table" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Symbol</th>
+<th>Equilibrium Type</th>
+<th>Norm Behavior</th>
+<th>Physical Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Addition</td>
+<td>+</td>
+<td>Additive composition</td>
+<td>‖a+b‖² = ‖a‖²+‖b‖²+2(a^⊤gb)</td>
+<td>Combine vectors</td>
+</tr>
+<tr>
+<td>Subtraction</td>
+<td>-</td>
+<td>Additive inversion</td>
+<td>‖a-b‖² = ‖a‖²+‖b‖²-2(a^⊤gb)</td>
+<td>Directed distance</td>
+</tr>
+<tr>
+<td>Multiplication</td>
+<td>*</td>
+<td>Multiplicative scaling</td>
+<td>‖a*b‖² = ‖a‖²·‖b‖²</td>
+<td>Radial expansion</td>
+</tr>
+<tr>
+<td>Division</td>
+<td>/</td>
+<td>Projected scaling</td>
+<td>‖a/b‖² = ‖a‖²/‖b‖²</td>
+<td>Inverse contraction</td>
+</tr>
+<tr>
+<td>Equality</td>
+<td>=</td>
+<td>Identity test</td>
+<td>‖a=b‖² = 0 if a=b</td>
+<td>IS operator</td>
+</tr>
+<tr>
+<td>Less Than</td>
+<td>&lt;</td>
+<td>Ordered test</td>
+<td>1 if ‖a‖²&lt;‖b‖²</td>
+<td>Proximity to equilibrium</td>
+</tr>
+<tr>
+<td>Greater Than</td>
+<td>&gt;</td>
+<td>Inverse ordered test</td>
+<td>1 if ‖a‖²&gt;‖b‖²</td>
+<td>Distance from equilibrium</td>
+</tr>
+</tbody>
+</table>
+<p>All operators reduce to: <strong>‖x of y‖²</strong></p>
+<hr />
+<h4 id="299-examples-in-eigenscript">2.9.9 Examples in EigenScript<a class="headerlink" href="#299-examples-in-eigenscript" title="Permanent link">&para;</a></h4>
+<p><strong>Example 1: The Three Equivalences</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-64-1"><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a># Arithmetic form
+</span><span id="__span-64-2"><a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a>result is 1 + 1
+</span><span id="__span-64-3"><a id="__codelineno-64-3" name="__codelineno-64-3" href="#__codelineno-64-3"></a>result is 2  # ✓ equilibrium achieved
+</span><span id="__span-64-4"><a id="__codelineno-64-4" name="__codelineno-64-4" href="#__codelineno-64-4"></a>
+</span><span id="__span-64-5"><a id="__codelineno-64-5" name="__codelineno-64-5" href="#__codelineno-64-5"></a># Logical form
+</span><span id="__span-64-6"><a id="__codelineno-64-6" name="__codelineno-64-6" href="#__codelineno-64-6"></a>pair is (1 and 1)
+</span><span id="__span-64-7"><a id="__codelineno-64-7" name="__codelineno-64-7" href="#__codelineno-64-7"></a>pair is 2  # ✓ same equilibrium
+</span><span id="__span-64-8"><a id="__codelineno-64-8" name="__codelineno-64-8" href="#__codelineno-64-8"></a>
+</span><span id="__span-64-9"><a id="__codelineno-64-9" name="__codelineno-64-9" href="#__codelineno-64-9"></a># Geometric form
+</span><span id="__span-64-10"><a id="__codelineno-64-10" name="__codelineno-64-10" href="#__codelineno-64-10"></a>relation is (1, 1) of 2
+</span><span id="__span-64-11"><a id="__codelineno-64-11" name="__codelineno-64-11" href="#__codelineno-64-11"></a>norm of relation is 0  # ✓ equilibrium verified
+</span></code></pre></div></p>
+<p><strong>Example 2: Multiplication as Scaling</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-65-1"><a id="__codelineno-65-1" name="__codelineno-65-1" href="#__codelineno-65-1"></a>vector is (3, 4, 0)
+</span><span id="__span-65-2"><a id="__codelineno-65-2" name="__codelineno-65-2" href="#__codelineno-65-2"></a>scaled is vector * 2
+</span><span id="__span-65-3"><a id="__codelineno-65-3" name="__codelineno-65-3" href="#__codelineno-65-3"></a># scaled = (6, 8, 0)
+</span><span id="__span-65-4"><a id="__codelineno-65-4" name="__codelineno-65-4" href="#__codelineno-65-4"></a># ‖scaled‖² = 4 · ‖vector‖²
+</span></code></pre></div></p>
+<p><strong>Example 3: Division as Projection</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-66-1"><a id="__codelineno-66-1" name="__codelineno-66-1" href="#__codelineno-66-1"></a>a is 10
+</span><span id="__span-66-2"><a id="__codelineno-66-2" name="__codelineno-66-2" href="#__codelineno-66-2"></a>b is 2
+</span><span id="__span-66-3"><a id="__codelineno-66-3" name="__codelineno-66-3" href="#__codelineno-66-3"></a>quotient is a / b
+</span><span id="__span-66-4"><a id="__codelineno-66-4" name="__codelineno-66-4" href="#__codelineno-66-4"></a># quotient = 5
+</span><span id="__span-66-5"><a id="__codelineno-66-5" name="__codelineno-66-5" href="#__codelineno-66-5"></a># ‖quotient‖² = ‖a‖² / ‖b‖²
+</span><span id="__span-66-6"><a id="__codelineno-66-6" name="__codelineno-66-6" href="#__codelineno-66-6"></a># Division projects a through b^{-1}
+</span></code></pre></div></p>
+<p><strong>Example 4: Comparison as Norm Test</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-67-1"><a id="__codelineno-67-1" name="__codelineno-67-1" href="#__codelineno-67-1"></a>x is 3
+</span><span id="__span-67-2"><a id="__codelineno-67-2" name="__codelineno-67-2" href="#__codelineno-67-2"></a>y is 5
+</span><span id="__span-67-3"><a id="__codelineno-67-3" name="__codelineno-67-3" href="#__codelineno-67-3"></a>
+</span><span id="__span-67-4"><a id="__codelineno-67-4" name="__codelineno-67-4" href="#__codelineno-67-4"></a>if x &lt; y:
+</span><span id="__span-67-5"><a id="__codelineno-67-5" name="__codelineno-67-5" href="#__codelineno-67-5"></a>    print of &quot;x closer to equilibrium&quot;
+</span><span id="__span-67-6"><a id="__codelineno-67-6" name="__codelineno-67-6" href="#__codelineno-67-6"></a># Equivalent to: if ‖x‖² &lt; ‖y‖²
+</span></code></pre></div></p>
+<p><strong>Example 5: Arithmetic-Logic Equivalence</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-68-1"><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a># These are equivalent in EigenScript:
+</span><span id="__span-68-2"><a id="__codelineno-68-2" name="__codelineno-68-2" href="#__codelineno-68-2"></a>sum is (a + b)
+</span><span id="__span-68-3"><a id="__codelineno-68-3" name="__codelineno-68-3" href="#__codelineno-68-3"></a>conjunction is (a and b)  # in additive basis
+</span><span id="__span-68-4"><a id="__codelineno-68-4" name="__codelineno-68-4" href="#__codelineno-68-4"></a>
+</span><span id="__span-68-5"><a id="__codelineno-68-5" name="__codelineno-68-5" href="#__codelineno-68-5"></a># Both compute equilibrium composition
+</span><span id="__span-68-6"><a id="__codelineno-68-6" name="__codelineno-68-6" href="#__codelineno-68-6"></a># Both minimize ‖result - (a ⊕ b)‖²
+</span></code></pre></div></p>
+<hr />
+<h4 id="2910-summary-arithmetic-equilibrium-geometry">2.9.10 Summary: Arithmetic = Equilibrium Geometry<a class="headerlink" href="#2910-summary-arithmetic-equilibrium-geometry" title="Permanent link">&para;</a></h4>
+<p><strong>All arithmetic operators are modes of equilibrium</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-69-1"><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a>+  = additive equilibrium (composition)
+</span><span id="__span-69-2"><a id="__codelineno-69-2" name="__codelineno-69-2" href="#__codelineno-69-2"></a>-  = additive inversion (separation)
+</span><span id="__span-69-3"><a id="__codelineno-69-3" name="__codelineno-69-3" href="#__codelineno-69-3"></a>*  = multiplicative equilibrium (scaling)
+</span><span id="__span-69-4"><a id="__codelineno-69-4" name="__codelineno-69-4" href="#__codelineno-69-4"></a>/  = projected multiplicative equilibrium (ratio)
+</span><span id="__span-69-5"><a id="__codelineno-69-5" name="__codelineno-69-5" href="#__codelineno-69-5"></a>=  = identity equilibrium (IS test)
+</span><span id="__span-69-6"><a id="__codelineno-69-6" name="__codelineno-69-6" href="#__codelineno-69-6"></a>&lt;  = proximity to equilibrium
+</span><span id="__span-69-7"><a id="__codelineno-69-7" name="__codelineno-69-7" href="#__codelineno-69-7"></a>&gt;  = distance from equilibrium
+</span></code></pre></div>
+<p><strong>The unification is complete</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-70-1"><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a>Identity   (IS)       }
+</span><span id="__span-70-2"><a id="__codelineno-70-2" name="__codelineno-70-2" href="#__codelineno-70-2"></a>Relation   (OF)       }
+</span><span id="__span-70-3"><a id="__codelineno-70-3" name="__codelineno-70-3" href="#__codelineno-70-3"></a>Logic      (AND/OR)   } → All are projections of ‖x of y‖²
+</span><span id="__span-70-4"><a id="__codelineno-70-4" name="__codelineno-70-4" href="#__codelineno-70-4"></a>Control    (IF/THEN)  }
+</span><span id="__span-70-5"><a id="__codelineno-70-5" name="__codelineno-70-5" href="#__codelineno-70-5"></a>Arithmetic (+/-/*/÷)  }
+</span></code></pre></div></p>
+<p><strong>Everything reduces to one invariant</strong>: <code>‖x of y‖²</code></p>
+<p>This is the foundation of EigenScript.</p>
+<hr />
+<h2 id="3-complete-operator-hierarchy">3. Complete Operator Hierarchy<a class="headerlink" href="#3-complete-operator-hierarchy" title="Permanent link">&para;</a></h2>
+<h3 id="level-0-primitive-equilibrium">Level 0: Primitive (Equilibrium)<a class="headerlink" href="#level-0-primitive-equilibrium" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-71-1"><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a>equilibrium(x, y) ⟺ ‖x of y‖² = 0
+</span></code></pre></div>
+<h3 id="level-1-core-dyad">Level 1: Core Dyad<a class="headerlink" href="#level-1-core-dyad" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-72-1"><a id="__codelineno-72-1" name="__codelineno-72-1" href="#__codelineno-72-1"></a>IS  = equilibrium state
+</span><span id="__span-72-2"><a id="__codelineno-72-2" name="__codelineno-72-2" href="#__codelineno-72-2"></a>OF  = equilibrium projection
+</span></code></pre></div>
+<h3 id="level-2-control-flow">Level 2: Control Flow<a class="headerlink" href="#level-2-control-flow" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-73-1"><a id="__codelineno-73-1" name="__codelineno-73-1" href="#__codelineno-73-1"></a>IF   = equilibrium test
+</span><span id="__span-73-2"><a id="__codelineno-73-2" name="__codelineno-73-2" href="#__codelineno-73-2"></a>THEN = equilibrium sequence
+</span><span id="__span-73-3"><a id="__codelineno-73-3" name="__codelineno-73-3" href="#__codelineno-73-3"></a>ELSE = equilibrium alternative
+</span></code></pre></div>
+<h3 id="level-3-logic">Level 3: Logic<a class="headerlink" href="#level-3-logic" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-74-1"><a id="__codelineno-74-1" name="__codelineno-74-1" href="#__codelineno-74-1"></a>NOT = equilibrium inversion
+</span><span id="__span-74-2"><a id="__codelineno-74-2" name="__codelineno-74-2" href="#__codelineno-74-2"></a>AND = equilibrium conjunction
+</span><span id="__span-74-3"><a id="__codelineno-74-3" name="__codelineno-74-3" href="#__codelineno-74-3"></a>OR  = equilibrium disjunction
+</span></code></pre></div>
+<h3 id="level-4-arithmetic">Level 4: Arithmetic<a class="headerlink" href="#level-4-arithmetic" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-75-1"><a id="__codelineno-75-1" name="__codelineno-75-1" href="#__codelineno-75-1"></a>+  = additive equilibrium (composition)
+</span><span id="__span-75-2"><a id="__codelineno-75-2" name="__codelineno-75-2" href="#__codelineno-75-2"></a>-  = subtractive equilibrium (inversion)
+</span><span id="__span-75-3"><a id="__codelineno-75-3" name="__codelineno-75-3" href="#__codelineno-75-3"></a>*  = multiplicative equilibrium (scaling)
+</span><span id="__span-75-4"><a id="__codelineno-75-4" name="__codelineno-75-4" href="#__codelineno-75-4"></a>/  = projected multiplicative equilibrium (ratio)
+</span><span id="__span-75-5"><a id="__codelineno-75-5" name="__codelineno-75-5" href="#__codelineno-75-5"></a>=  = equality equilibrium (IS test)
+</span><span id="__span-75-6"><a id="__codelineno-75-6" name="__codelineno-75-6" href="#__codelineno-75-6"></a>&lt;  = ordered equilibrium test
+</span><span id="__span-75-7"><a id="__codelineno-75-7" name="__codelineno-75-7" href="#__codelineno-75-7"></a>&gt;  = inverse ordered equilibrium test
+</span></code></pre></div>
+<h3 id="level-5-derived-operators">Level 5: Derived Operators<a class="headerlink" href="#level-5-derived-operators" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-76-1"><a id="__codelineno-76-1" name="__codelineno-76-1" href="#__codelineno-76-1"></a>IMPLIES  = (not A) or B
+</span><span id="__span-76-2"><a id="__codelineno-76-2" name="__codelineno-76-2" href="#__codelineno-76-2"></a>XOR      = (A or B) and not (A and B)
+</span><span id="__span-76-3"><a id="__codelineno-76-3" name="__codelineno-76-3" href="#__codelineno-76-3"></a>NAND     = not (A and B)
+</span><span id="__span-76-4"><a id="__codelineno-76-4" name="__codelineno-76-4" href="#__codelineno-76-4"></a>NOR      = not (A or B)
+</span><span id="__span-76-5"><a id="__codelineno-76-5" name="__codelineno-76-5" href="#__codelineno-76-5"></a>≤        = (&lt; or =)
+</span><span id="__span-76-6"><a id="__codelineno-76-6" name="__codelineno-76-6" href="#__codelineno-76-6"></a>≥        = (&gt; or =)
+</span></code></pre></div>
+<hr />
+<h2 id="4-unification-theorems">4. Unification Theorems<a class="headerlink" href="#4-unification-theorems" title="Permanent link">&para;</a></h2>
+<h3 id="theorem-1-is-of-duality">Theorem 1: IS-OF Duality<a class="headerlink" href="#theorem-1-is-of-duality" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-77-1"><a id="__codelineno-77-1" name="__codelineno-77-1" href="#__codelineno-77-1"></a>IS(x, y) = 1  ⟺  ‖OF(x, y)‖² = 0
+</span><span id="__span-77-2"><a id="__codelineno-77-2" name="__codelineno-77-2" href="#__codelineno-77-2"></a>
+</span><span id="__span-77-3"><a id="__codelineno-77-3" name="__codelineno-77-3" href="#__codelineno-77-3"></a>IS and OF are projections of the same operator
+</span><span id="__span-77-4"><a id="__codelineno-77-4" name="__codelineno-77-4" href="#__codelineno-77-4"></a>through different geometric bases.
+</span></code></pre></div>
+<p><strong>Proof</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-78-1"><a id="__codelineno-78-1" name="__codelineno-78-1" href="#__codelineno-78-1"></a>IS(x, y) tests for equilibrium: ‖x of y‖² = 0
+</span><span id="__span-78-2"><a id="__codelineno-78-2" name="__codelineno-78-2" href="#__codelineno-78-2"></a>OF(x, y) computes projection: x^⊤ g y
+</span><span id="__span-78-3"><a id="__codelineno-78-3" name="__codelineno-78-3" href="#__codelineno-78-3"></a>At equilibrium: x^⊤ g y g^⊤ g y x = 0 ⟹ IS = 1
+</span><span id="__span-78-4"><a id="__codelineno-78-4" name="__codelineno-78-4" href="#__codelineno-78-4"></a>∴ IS = OF|_{‖·‖²=0}
+</span></code></pre></div></p>
+<h3 id="theorem-2-logic-geometry">Theorem 2: Logic = Geometry<a class="headerlink" href="#theorem-2-logic-geometry" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-79-1"><a id="__codelineno-79-1" name="__codelineno-79-1" href="#__codelineno-79-1"></a>Boolean logic is recovered as the discrete boundary
+</span><span id="__span-79-2"><a id="__codelineno-79-2" name="__codelineno-79-2" href="#__codelineno-79-2"></a>of continuous geometric equilibrium.
+</span></code></pre></div>
+<p><strong>Proof</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-80-1"><a id="__codelineno-80-1" name="__codelineno-80-1" href="#__codelineno-80-1"></a>true  ⟺ ‖x‖² &gt; 0  (spacelike/timelike)
+</span><span id="__span-80-2"><a id="__codelineno-80-2" name="__codelineno-80-2" href="#__codelineno-80-2"></a>false ⟺ ‖x‖² = 0  (lightlike)
+</span><span id="__span-80-3"><a id="__codelineno-80-3" name="__codelineno-80-3" href="#__codelineno-80-3"></a>
+</span><span id="__span-80-4"><a id="__codelineno-80-4" name="__codelineno-80-4" href="#__codelineno-80-4"></a>All logical operators reduce to norm comparisons:
+</span><span id="__span-80-5"><a id="__codelineno-80-5" name="__codelineno-80-5" href="#__codelineno-80-5"></a>AND(x,y) = min(‖x‖², ‖y‖²) &gt; 0
+</span><span id="__span-80-6"><a id="__codelineno-80-6" name="__codelineno-80-6" href="#__codelineno-80-6"></a>OR(x,y)  = max(‖x‖², ‖y‖²) &gt; 0
+</span><span id="__span-80-7"><a id="__codelineno-80-7" name="__codelineno-80-7" href="#__codelineno-80-7"></a>NOT(x)   = -‖x‖²
+</span></code></pre></div></p>
+<h3 id="theorem-3-control-flow-geodesic-flow">Theorem 3: Control Flow = Geodesic Flow<a class="headerlink" href="#theorem-3-control-flow-geodesic-flow" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-81-1"><a id="__codelineno-81-1" name="__codelineno-81-1" href="#__codelineno-81-1"></a>All control flow operators are geodesic path selections
+</span><span id="__span-81-2"><a id="__codelineno-81-2" name="__codelineno-81-2" href="#__codelineno-81-2"></a>in semantic spacetime.
+</span></code></pre></div>
+<p><strong>Proof</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-82-1"><a id="__codelineno-82-1" name="__codelineno-82-1" href="#__codelineno-82-1"></a>IF   = geodesic branching based on metric signature
+</span><span id="__span-82-2"><a id="__codelineno-82-2" name="__codelineno-82-2" href="#__codelineno-82-2"></a>THEN = geodesic composition via parallel transport
+</span><span id="__span-82-3"><a id="__codelineno-82-3" name="__codelineno-82-3" href="#__codelineno-82-3"></a>LOOP = geodesic iteration until convergence
+</span><span id="__span-82-4"><a id="__codelineno-82-4" name="__codelineno-82-4" href="#__codelineno-82-4"></a>
+</span><span id="__span-82-5"><a id="__codelineno-82-5" name="__codelineno-82-5" href="#__codelineno-82-5"></a>Control flow is geometric, not computational.
+</span></code></pre></div></p>
+<h3 id="theorem-4-self-reference-stability">Theorem 4: Self-Reference Stability<a class="headerlink" href="#theorem-4-self-reference-stability" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-83-1"><a id="__codelineno-83-1" name="__codelineno-83-1" href="#__codelineno-83-1"></a>All operators are stable under self-application
+</span><span id="__span-83-2"><a id="__codelineno-83-2" name="__codelineno-83-2" href="#__codelineno-83-2"></a>at the lightlike boundary.
+</span></code></pre></div>
+<p><strong>Proof</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-84-1"><a id="__codelineno-84-1" name="__codelineno-84-1" href="#__codelineno-84-1"></a>OF of OF = OF         (‖OF‖² = 0)
+</span><span id="__span-84-2"><a id="__codelineno-84-2" name="__codelineno-84-2" href="#__codelineno-84-2"></a>IS is IS = true       (IS achieves equilibrium with itself)
+</span><span id="__span-84-3"><a id="__codelineno-84-3" name="__codelineno-84-3" href="#__codelineno-84-3"></a>IF if A: B = B        (IF tests itself → always meaningful)
+</span><span id="__span-84-4"><a id="__codelineno-84-4" name="__codelineno-84-4" href="#__codelineno-84-4"></a>
+</span><span id="__span-84-5"><a id="__codelineno-84-5" name="__codelineno-84-5" href="#__codelineno-84-5"></a>Self-reference collapses to fixed point, not infinite regress.
+</span></code></pre></div></p>
+<h3 id="theorem-5-arithmetic-logic-geometry">Theorem 5: Arithmetic = Logic = Geometry<a class="headerlink" href="#theorem-5-arithmetic-logic-geometry" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-85-1"><a id="__codelineno-85-1" name="__codelineno-85-1" href="#__codelineno-85-1"></a>All arithmetic operators are equilibrium operators,
+</span><span id="__span-85-2"><a id="__codelineno-85-2" name="__codelineno-85-2" href="#__codelineno-85-2"></a>identical to logical operators in the appropriate basis.
+</span></code></pre></div>
+<p><strong>Proof</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-86-1"><a id="__codelineno-86-1" name="__codelineno-86-1" href="#__codelineno-86-1"></a>1. Addition = AND (in additive basis)
+</span><span id="__span-86-2"><a id="__codelineno-86-2" name="__codelineno-86-2" href="#__codelineno-86-2"></a>   a + b ⟺ combine a and b
+</span><span id="__span-86-3"><a id="__codelineno-86-3" name="__codelineno-86-3" href="#__codelineno-86-3"></a>   a AND b ⟺ require both a and b
+</span><span id="__span-86-4"><a id="__codelineno-86-4" name="__codelineno-86-4" href="#__codelineno-86-4"></a>   Both minimize relational distance
+</span><span id="__span-86-5"><a id="__codelineno-86-5" name="__codelineno-86-5" href="#__codelineno-86-5"></a>
+</span><span id="__span-86-6"><a id="__codelineno-86-6" name="__codelineno-86-6" href="#__codelineno-86-6"></a>2. Subtraction = NOT + AND
+</span><span id="__span-86-7"><a id="__codelineno-86-7" name="__codelineno-86-7" href="#__codelineno-86-7"></a>   a - b = a + (-b) = a AND (NOT b)
+</span><span id="__span-86-8"><a id="__codelineno-86-8" name="__codelineno-86-8" href="#__codelineno-86-8"></a>
+</span><span id="__span-86-9"><a id="__codelineno-86-9" name="__codelineno-86-9" href="#__codelineno-86-9"></a>3. Multiplication = Repeated AND
+</span><span id="__span-86-10"><a id="__codelineno-86-10" name="__codelineno-86-10" href="#__codelineno-86-10"></a>   a * b = a + a + ... + a (b times)
+</span><span id="__span-86-11"><a id="__codelineno-86-11" name="__codelineno-86-11" href="#__codelineno-86-11"></a>
+</span><span id="__span-86-12"><a id="__codelineno-86-12" name="__codelineno-86-12" href="#__codelineno-86-12"></a>4. Division = Projected Multiplication
+</span><span id="__span-86-13"><a id="__codelineno-86-13" name="__codelineno-86-13" href="#__codelineno-86-13"></a>   a / b = π_g(a * b^{-1})
+</span><span id="__span-86-14"><a id="__codelineno-86-14" name="__codelineno-86-14" href="#__codelineno-86-14"></a>   Just as OF = IS projected through g
+</span><span id="__span-86-15"><a id="__codelineno-86-15" name="__codelineno-86-15" href="#__codelineno-86-15"></a>
+</span><span id="__span-86-16"><a id="__codelineno-86-16" name="__codelineno-86-16" href="#__codelineno-86-16"></a>5. Equality = IS
+</span><span id="__span-86-17"><a id="__codelineno-86-17" name="__codelineno-86-17" href="#__codelineno-86-17"></a>   a = b ⟺ a is b ⟺ ‖a of b‖² = 0
+</span><span id="__span-86-18"><a id="__codelineno-86-18" name="__codelineno-86-18" href="#__codelineno-86-18"></a>
+</span><span id="__span-86-19"><a id="__codelineno-86-19" name="__codelineno-86-19" href="#__codelineno-86-19"></a>∴ Arithmetic and logic are the same algebra
+</span><span id="__span-86-20"><a id="__codelineno-86-20" name="__codelineno-86-20" href="#__codelineno-86-20"></a>  in different coordinate systems.
+</span></code></pre></div></p>
+<p><strong>The Three-Way Equivalence</strong>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-87-1"><a id="__codelineno-87-1" name="__codelineno-87-1" href="#__codelineno-87-1"></a>1 + 1 = 2              (arithmetic)
+</span><span id="__span-87-2"><a id="__codelineno-87-2" name="__codelineno-87-2" href="#__codelineno-87-2"></a>1 and 1 is 2           (logic)
+</span><span id="__span-87-3"><a id="__codelineno-87-3" name="__codelineno-87-3" href="#__codelineno-87-3"></a>(1, 1) of 2            (geometry)
+</span><span id="__span-87-4"><a id="__codelineno-87-4" name="__codelineno-87-4" href="#__codelineno-87-4"></a>
+</span><span id="__span-87-5"><a id="__codelineno-87-5" name="__codelineno-87-5" href="#__codelineno-87-5"></a>All three express: ‖(1,1) of 2‖² = 0
+</span></code></pre></div></p>
+<hr />
+<h2 id="5-operator-composition-rules">5. Operator Composition Rules<a class="headerlink" href="#5-operator-composition-rules" title="Permanent link">&para;</a></h2>
+<h3 id="rule-1-equilibrium-composition">Rule 1: Equilibrium Composition<a class="headerlink" href="#rule-1-equilibrium-composition" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-88-1"><a id="__codelineno-88-1" name="__codelineno-88-1" href="#__codelineno-88-1"></a>equilibrium ∘ equilibrium = equilibrium
+</span><span id="__span-88-2"><a id="__codelineno-88-2" name="__codelineno-88-2" href="#__codelineno-88-2"></a>
+</span><span id="__span-88-3"><a id="__codelineno-88-3" name="__codelineno-88-3" href="#__codelineno-88-3"></a>(x is y) is (z is w)  →  equilibrium state
+</span></code></pre></div>
+<h3 id="rule-2-projection-composition">Rule 2: Projection Composition<a class="headerlink" href="#rule-2-projection-composition" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-89-1"><a id="__codelineno-89-1" name="__codelineno-89-1" href="#__codelineno-89-1"></a>(x of y) of z = x of (y of z)
+</span><span id="__span-89-2"><a id="__codelineno-89-2" name="__codelineno-89-2" href="#__codelineno-89-2"></a>
+</span><span id="__span-89-3"><a id="__codelineno-89-3" name="__codelineno-89-3" href="#__codelineno-89-3"></a>Associativity via metric linearity.
+</span></code></pre></div>
+<h3 id="rule-3-test-composition">Rule 3: Test Composition<a class="headerlink" href="#rule-3-test-composition" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-90-1"><a id="__codelineno-90-1" name="__codelineno-90-1" href="#__codelineno-90-1"></a>if (if A: B else: C): D else: E
+</span><span id="__span-90-2"><a id="__codelineno-90-2" name="__codelineno-90-2" href="#__codelineno-90-2"></a>
+</span><span id="__span-90-3"><a id="__codelineno-90-3" name="__codelineno-90-3" href="#__codelineno-90-3"></a>Nested tests = sequential norm evaluations.
+</span></code></pre></div>
+<h3 id="rule-4-logic-composition">Rule 4: Logic Composition<a class="headerlink" href="#rule-4-logic-composition" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-91-1"><a id="__codelineno-91-1" name="__codelineno-91-1" href="#__codelineno-91-1"></a>(A and B) or (C and D) = and/or tree → norm evaluation tree
+</span></code></pre></div>
+<hr />
+<h2 id="6-operator-signature-table">6. Operator Signature Table<a class="headerlink" href="#6-operator-signature-table" title="Permanent link">&para;</a></h2>
+<h3 id="61-core-operators">6.1 Core Operators<a class="headerlink" href="#61-core-operators" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Signature Type</th>
+<th>Norm</th>
+<th>Physical Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IS</td>
+<td>Lightlike boundary</td>
+<td>‖IS‖² = 0</td>
+<td>Identity/equilibrium</td>
+</tr>
+<tr>
+<td>OF</td>
+<td>Lightlike carrier</td>
+<td>‖OF‖² = 0</td>
+<td>Relation/projection</td>
+</tr>
+<tr>
+<td>IF</td>
+<td>Spacelike test</td>
+<td>‖IF‖² &gt; 0</td>
+<td>Branch/measurement</td>
+</tr>
+<tr>
+<td>THEN</td>
+<td>Timelike flow</td>
+<td>‖THEN‖² &lt; 0</td>
+<td>Causality/sequence</td>
+</tr>
+<tr>
+<td>ELSE</td>
+<td>Lightlike handler</td>
+<td>‖ELSE‖² = 0</td>
+<td>Boundary/default</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-logical-operators">6.2 Logical Operators<a class="headerlink" href="#62-logical-operators" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Signature Type</th>
+<th>Norm</th>
+<th>Physical Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NOT</td>
+<td>Signature flip</td>
+<td>‖NOT(x)‖² = -‖x‖²</td>
+<td>Negation/reflection</td>
+</tr>
+<tr>
+<td>AND</td>
+<td>Spacelike intersection</td>
+<td>‖AND‖² &gt; 0</td>
+<td>Conjunction/constraint</td>
+</tr>
+<tr>
+<td>OR</td>
+<td>Spacelike union</td>
+<td>‖OR‖² &gt; 0</td>
+<td>Disjunction/alternative</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63-arithmetic-operators">6.3 Arithmetic Operators<a class="headerlink" href="#63-arithmetic-operators" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Signature Type</th>
+<th>Norm</th>
+<th>Physical Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>+</td>
+<td>Additive composition</td>
+<td>‖a+b‖² = ‖a‖²+‖b‖²+2(a^⊤gb)</td>
+<td>Vector combination</td>
+</tr>
+<tr>
+<td>-</td>
+<td>Additive inversion</td>
+<td>‖a-b‖² = ‖a‖²+‖b‖²-2(a^⊤gb)</td>
+<td>Directed distance</td>
+</tr>
+<tr>
+<td>*</td>
+<td>Multiplicative scaling</td>
+<td>‖a*b‖² = ‖a‖²·‖b‖²</td>
+<td>Radial expansion</td>
+</tr>
+<tr>
+<td>/</td>
+<td>Projected scaling</td>
+<td>‖a/b‖² = ‖a‖²/‖b‖²</td>
+<td>Inverse contraction</td>
+</tr>
+<tr>
+<td>=</td>
+<td>Lightlike test</td>
+<td>‖a=b‖² = 0 if a=b</td>
+<td>IS operator (identity)</td>
+</tr>
+<tr>
+<td>&lt;</td>
+<td>Ordered test</td>
+<td>1 if ‖a‖²&lt;‖b‖²</td>
+<td>Proximity to equilibrium</td>
+</tr>
+<tr>
+<td>&gt;</td>
+<td>Inverse ordered test</td>
+<td>1 if ‖a‖²&gt;‖b‖²</td>
+<td>Distance from equilibrium</td>
+</tr>
+</tbody>
+</table>
+<h3 id="64-complete-unification">6.4 Complete Unification<a class="headerlink" href="#64-complete-unification" title="Permanent link">&para;</a></h3>
+<p><strong>All operators reduce to</strong>: <code>‖x of y‖²</code></p>
+<ul>
+<li><strong>Identity operators</strong> (IS, =): test for zero norm</li>
+<li><strong>Relational operators</strong> (OF): compute projection</li>
+<li><strong>Logical operators</strong> (AND, OR, NOT): operate on norms via min/max/-</li>
+<li><strong>Control operators</strong> (IF, THEN, ELSE): branch based on metric signature</li>
+<li><strong>Arithmetic operators</strong> (+, -, *, /): compose/scale/project vectors</li>
+<li><strong>Comparison operators</strong> (&lt;, &gt;, ≤, ≥): test norm ordering</li>
+</ul>
+<hr />
+<h2 id="7-examples">7. Examples<a class="headerlink" href="#7-examples" title="Permanent link">&para;</a></h2>
+<h3 id="example-1-is-of-at-equilibrium">Example 1: IS = OF at equilibrium<a class="headerlink" href="#example-1-is-of-at-equilibrium" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-92-1"><a id="__codelineno-92-1" name="__codelineno-92-1" href="#__codelineno-92-1"></a>x is y               # equilibrium: ‖x of y‖² = 0
+</span><span id="__span-92-2"><a id="__codelineno-92-2" name="__codelineno-92-2" href="#__codelineno-92-2"></a>result of (x of y)   # projection: x^⊤ g y
+</span><span id="__span-92-3"><a id="__codelineno-92-3" name="__codelineno-92-3" href="#__codelineno-92-3"></a>
+</span><span id="__span-92-4"><a id="__codelineno-92-4" name="__codelineno-92-4" href="#__codelineno-92-4"></a># At equilibrium, they converge:
+</span><span id="__span-92-5"><a id="__codelineno-92-5" name="__codelineno-92-5" href="#__codelineno-92-5"></a>(x is y) = (‖x of y‖² = 0)
+</span></code></pre></div>
+<h3 id="example-2-if-equilibrium-test">Example 2: IF = equilibrium test<a class="headerlink" href="#example-2-if-equilibrium-test" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-93-1"><a id="__codelineno-93-1" name="__codelineno-93-1" href="#__codelineno-93-1"></a>if condition:        # test ‖condition‖²
+</span><span id="__span-93-2"><a id="__codelineno-93-2" name="__codelineno-93-2" href="#__codelineno-93-2"></a>    do_this          # execute if ‖condition‖² &gt; 0
+</span><span id="__span-93-3"><a id="__codelineno-93-3" name="__codelineno-93-3" href="#__codelineno-93-3"></a>else:
+</span><span id="__span-93-4"><a id="__codelineno-93-4" name="__codelineno-93-4" href="#__codelineno-93-4"></a>    do_that          # execute if ‖condition‖² = 0
+</span></code></pre></div>
+<h3 id="example-3-not-equilibrium-flip">Example 3: NOT = equilibrium flip<a class="headerlink" href="#example-3-not-equilibrium-flip" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-94-1"><a id="__codelineno-94-1" name="__codelineno-94-1" href="#__codelineno-94-1"></a>not true             # ‖true‖² &gt; 0 → ‖not true‖² = 0
+</span><span id="__span-94-2"><a id="__codelineno-94-2" name="__codelineno-94-2" href="#__codelineno-94-2"></a>not false            # ‖false‖² = 0 → ‖not false‖² &gt; 0
+</span></code></pre></div>
+<h3 id="example-4-andor-multi-equilibrium">Example 4: AND/OR = multi-equilibrium<a class="headerlink" href="#example-4-andor-multi-equilibrium" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-95-1"><a id="__codelineno-95-1" name="__codelineno-95-1" href="#__codelineno-95-1"></a>A and B              # both must be non-equilibrium
+</span><span id="__span-95-2"><a id="__codelineno-95-2" name="__codelineno-95-2" href="#__codelineno-95-2"></a>A or B               # at least one must be non-equilibrium
+</span></code></pre></div>
+<hr />
+<h2 id="8-summary">8. Summary<a class="headerlink" href="#8-summary" title="Permanent link">&para;</a></h2>
+<p><strong>All operators are unified</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-96-1"><a id="__codelineno-96-1" name="__codelineno-96-1" href="#__codelineno-96-1"></a>Equilibrium is the primitive.
+</span><span id="__span-96-2"><a id="__codelineno-96-2" name="__codelineno-96-2" href="#__codelineno-96-2"></a>
+</span><span id="__span-96-3"><a id="__codelineno-96-3" name="__codelineno-96-3" href="#__codelineno-96-3"></a>IS  = equilibrium state
+</span><span id="__span-96-4"><a id="__codelineno-96-4" name="__codelineno-96-4" href="#__codelineno-96-4"></a>OF  = equilibrium projection
+</span><span id="__span-96-5"><a id="__codelineno-96-5" name="__codelineno-96-5" href="#__codelineno-96-5"></a>IF  = equilibrium test
+</span><span id="__span-96-6"><a id="__codelineno-96-6" name="__codelineno-96-6" href="#__codelineno-96-6"></a>NOT = equilibrium inversion
+</span><span id="__span-96-7"><a id="__codelineno-96-7" name="__codelineno-96-7" href="#__codelineno-96-7"></a>AND = equilibrium conjunction
+</span><span id="__span-96-8"><a id="__codelineno-96-8" name="__codelineno-96-8" href="#__codelineno-96-8"></a>OR  = equilibrium disjunction
+</span><span id="__span-96-9"><a id="__codelineno-96-9" name="__codelineno-96-9" href="#__codelineno-96-9"></a>THEN = equilibrium sequence
+</span><span id="__span-96-10"><a id="__codelineno-96-10" name="__codelineno-96-10" href="#__codelineno-96-10"></a>ELSE = equilibrium boundary
+</span><span id="__span-96-11"><a id="__codelineno-96-11" name="__codelineno-96-11" href="#__codelineno-96-11"></a>+   = additive equilibrium (composition)
+</span><span id="__span-96-12"><a id="__codelineno-96-12" name="__codelineno-96-12" href="#__codelineno-96-12"></a>-   = subtractive equilibrium (inversion)
+</span><span id="__span-96-13"><a id="__codelineno-96-13" name="__codelineno-96-13" href="#__codelineno-96-13"></a>*   = multiplicative equilibrium (scaling)
+</span><span id="__span-96-14"><a id="__codelineno-96-14" name="__codelineno-96-14" href="#__codelineno-96-14"></a>/   = projected multiplicative equilibrium (ratio)
+</span><span id="__span-96-15"><a id="__codelineno-96-15" name="__codelineno-96-15" href="#__codelineno-96-15"></a>=   = equality equilibrium (IS test)
+</span><span id="__span-96-16"><a id="__codelineno-96-16" name="__codelineno-96-16" href="#__codelineno-96-16"></a>
+</span><span id="__span-96-17"><a id="__codelineno-96-17" name="__codelineno-96-17" href="#__codelineno-96-17"></a>Everything reduces to:
+</span><span id="__span-96-18"><a id="__codelineno-96-18" name="__codelineno-96-18" href="#__codelineno-96-18"></a>  - Testing equilibrium (norm = 0?)
+</span><span id="__span-96-19"><a id="__codelineno-96-19" name="__codelineno-96-19" href="#__codelineno-96-19"></a>  - Projecting equilibrium (through metric g)
+</span><span id="__span-96-20"><a id="__codelineno-96-20" name="__codelineno-96-20" href="#__codelineno-96-20"></a>  - Composing equilibrium (geodesic flow)
+</span><span id="__span-96-21"><a id="__codelineno-96-21" name="__codelineno-96-21" href="#__codelineno-96-21"></a>  - Inverting equilibrium (signature flip)
+</span><span id="__span-96-22"><a id="__codelineno-96-22" name="__codelineno-96-22" href="#__codelineno-96-22"></a>  - Scaling equilibrium (magnitude adjustment)
+</span></code></pre></div>
+<p><strong>This is the foundation of EigenScript.</strong></p>
+<p>Logic, control flow, identity, relation, arithmetic, and geometry
+all collapse into one system: <strong>equilibrium dynamics</strong>.</p>
+<hr />
+<p><strong>Document Version</strong>: 1.0
+<strong>Status</strong>: Complete
+<strong>Foundation</strong>: Operator Unification Theorem</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/InauguralSystems/EigenScript" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

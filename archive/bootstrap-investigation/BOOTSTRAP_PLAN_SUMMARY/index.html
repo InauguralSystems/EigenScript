@@ -1,0 +1,3021 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A geometric programming language modeling computation as flow in semantic spacetime">
+      
+      
+        <meta name="author" content="EigenScript Contributors">
+      
+      
+        <link rel="canonical" href="https://inauguralphysicist.github.io/EigenScript/archive/bootstrap-investigation/BOOTSTRAP_PLAN_SUMMARY/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+    
+    
+      
+        <title>Bootstrap Investigation Plan - Summary - EigenScript Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#bootstrap-investigation-plan-summary" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="EigenScript Documentation" class="md-header__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            EigenScript Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Bootstrap Investigation Plan - Summary
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tutorials/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../specification/" class="md-tabs__link">
+          
+  
+  
+  Language Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../examples/" class="md-tabs__link">
+          
+  
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Advanced Topics
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="EigenScript Documentation" class="md-nav__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    EigenScript Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial Series
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/recursive-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recursive Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/list-manipulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Manipulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/file-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/self-aware-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Aware Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Language Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../specification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Specification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../operator-table/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators & Primitives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../higher_order_functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Higher-Order Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../list_comprehensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Comprehensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/core-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/file-io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/json/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JSON Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/datetime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Date/Time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/lists/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/math/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Math Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/constructs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Constructs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/interrogatives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interrogatives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/predicates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Predicates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Example Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/basic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Basic Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/data-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Topics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced Topics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../mathematical_foundations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mathematical Foundations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../meta_circular_evaluator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta-Circular Evaluator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../logic-calculus/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logic Calculus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../self_hosting_roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Hosting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-was-created" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Was Created
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Documents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The Documents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#documentation-structure-60-pages-total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📋 Documentation Structure (60+ pages total)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-problem-recap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Problem (Recap)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The Problem (Recap)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current State
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-bug" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Bug
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#root-cause-hypothesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Root Cause (Hypothesis)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#investigation-strategy-5-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investigation Strategy (5 Phases)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timeline-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timeline Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-hypotheses-to-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5 Hypotheses to Test
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5 Hypotheses to Test">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hypothesis-1-eigenvalue-wrapping-bug" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hypothesis 1: EigenValue Wrapping Bug
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hypothesis-2-type-mismatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hypothesis 2: Type Mismatch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hypothesis-3-global-not-shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hypothesis 3: Global Not Shared
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hypothesis-4-comparison-corrupts-value" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hypothesis 4: Comparison Corrupts Value
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hypothesis-5-parser-stores-incorrectly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hypothesis 5: Parser Stores Incorrectly
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-areas-to-investigate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Areas to Investigate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Areas to Investigate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#in-reference-compiler-llvm_backendpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In Reference Compiler (llvm_backend.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagnostic-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostic Steps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Diagnostic Steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-create-minimal-test-case" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create Minimal Test Case
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-examine-stage-1-ir" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Examine Stage 1 IR
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-add-debug-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Add Debug Logging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-compare-working-vs-broken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Compare Working vs Broken
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-runtime-debugging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Runtime Debugging
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#success-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Success Criteria
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Success Criteria">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#milestones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestones
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#for-investigators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Investigators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#first-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-makes-this-plan-comprehensive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Makes This Plan Comprehensive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Makes This Plan Comprehensive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#complete-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Complete Coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#actionable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Actionable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#realistic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Realistic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#well-organized" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Well-Organized
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-insights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Insights
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Insights">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-documentation-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From Documentation Review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#from-code-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From Code Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Next Steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#immediate-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Immediate (Today)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#this-week" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        This Week
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#next-week" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Week
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#week-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Week 3+
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Contributing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-you-can-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How You Can Help
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#communication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Communication
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#primary-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Primary Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#supporting-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supporting Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conclusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conclusion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files Changed
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="bootstrap-investigation-plan-summary">Bootstrap Investigation Plan - Summary<a class="headerlink" href="#bootstrap-investigation-plan-summary" title="Permanent link">&para;</a></h1>
+<p><strong>Created:</strong> 2025-12-03<br />
+<strong>Status:</strong> Documentation Complete ✅<br />
+<strong>Next:</strong> Begin Investigation</p>
+<hr />
+<h2 id="what-was-created">What Was Created<a class="headerlink" href="#what-was-created" title="Permanent link">&para;</a></h2>
+<p>I've created a comprehensive plan for investigating and fixing the EigenScript self-hosted compiler bootstrapping issues. This includes <strong>5 detailed documents</strong> totaling <strong>2,648 lines</strong> of actionable guidance.</p>
+<hr />
+<h2 id="the-documents">The Documents<a class="headerlink" href="#the-documents" title="Permanent link">&para;</a></h2>
+<h3 id="documentation-structure-60-pages-total">📋 Documentation Structure (60+ pages total)<a class="headerlink" href="#documentation-structure-60-pages-total" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong><a href="docs/BOOTSTRAP_INDEX.md">BOOTSTRAP_INDEX.md</a></strong> (298 lines)</li>
+<li>Central hub for all bootstrap documentation</li>
+<li>Navigation guide</li>
+<li>
+<p>Quick reference for where to start</p>
+</li>
+<li>
+<p><strong><a href="docs/BOOTSTRAP_ROADMAP.md">BOOTSTRAP_ROADMAP.md</a></strong> (442 lines)</p>
+</li>
+<li>High-level overview and timeline</li>
+<li>The three stages of bootstrap</li>
+<li>Risk assessment and milestones</li>
+<li>
+<p>4-16 week timeline (optimistic to conservative)</p>
+</li>
+<li>
+<p><strong><a href="docs/BOOTSTRAP_FIX_PLAN.md">BOOTSTRAP_FIX_PLAN.md</a></strong> (1,028 lines - 28 pages!)</p>
+</li>
+<li>Comprehensive technical investigation plan</li>
+<li>Detailed problem analysis</li>
+<li>5 specific hypotheses to test</li>
+<li>Investigation strategy in 5 phases</li>
+<li>Exact diagnostic steps with commands</li>
+<li>Fix implementation plan</li>
+<li>
+<p>Validation strategy</p>
+</li>
+<li>
+<p><strong><a href="docs/BOOTSTRAP_INVESTIGATION_CHECKLIST.md">BOOTSTRAP_INVESTIGATION_CHECKLIST.md</a></strong> (643 lines)</p>
+</li>
+<li>Actionable day-to-day checklist</li>
+<li>Phase-by-phase tasks</li>
+<li>Test case templates</li>
+<li>Progress tracking tables</li>
+<li>
+<p>Emergency rollback procedures</p>
+</li>
+<li>
+<p><strong><a href="docs/BOOTSTRAP_DEBUG_QUICKREF.md">BOOTSTRAP_DEBUG_QUICKREF.md</a></strong> (237 lines)</p>
+</li>
+<li>One-page quick reference</li>
+<li>Common debugging commands</li>
+<li>Test case examples</li>
+<li>Validation checklist</li>
+</ol>
+<hr />
+<h2 id="the-problem-recap">The Problem (Recap)<a class="headerlink" href="#the-problem-recap" title="Permanent link">&para;</a></h2>
+<h3 id="current-state">Current State<a class="headerlink" href="#current-state" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Stage 0 (Python)  →  Stage 1 (EigenScript)  →  Stage 2 (Goal)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>     ✅                     ⚠️                      🎯
+</span></code></pre></div>
+<ul>
+<li><strong>Stage 0:</strong> Python reference compiler (works perfectly)</li>
+<li><strong>Stage 1:</strong> Self-hosted compiler compiled by Stage 0 (runs but has bug)</li>
+<li><strong>Stage 2:</strong> Self-hosted compiler compiled by Stage 1 (blocked by bug)</li>
+</ul>
+<h3 id="the-bug">The Bug<a class="headerlink" href="#the-bug" title="Permanent link">&para;</a></h3>
+<p>When Stage 1 compiles <code>x is 42</code>, it generates:
+<div class="language-llvm highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="err">❌</span><span class="w"> </span><span class="k">fadd</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="m">0.0</span><span class="p">,</span><span class="w"> </span><span class="m">0.0</span>
+</span></code></pre></div></p>
+<p>Instead of:
+<div class="language-llvm highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="err">✅</span><span class="w"> </span><span class="k">fadd</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="m">0.0</span><span class="p">,</span><span class="w"> </span><span class="m">42.0</span>
+</span></code></pre></div></p>
+<p><strong>Impact:</strong> Stage 1 cannot compile any program with numeric literals.</p>
+<h3 id="root-cause-hypothesis">Root Cause (Hypothesis)<a class="headerlink" href="#root-cause-hypothesis" title="Permanent link">&para;</a></h3>
+<p>The bug originates in the <strong>Python reference compiler</strong> (<code>llvm_backend.py</code>) when it compiles the self-hosted compiler modules. The generated code for list access (<code>ast_num_value[arr_idx]</code>) always returns 0.0 instead of the actual stored value.</p>
+<hr />
+<h2 id="the-plan">The Plan<a class="headerlink" href="#the-plan" title="Permanent link">&para;</a></h2>
+<h3 id="investigation-strategy-5-phases">Investigation Strategy (5 Phases)<a class="headerlink" href="#investigation-strategy-5-phases" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Phase 1: Reproduce and Isolate</strong> (1-2 days)</li>
+<li>Create minimal test case</li>
+<li>Verify bug manifestation</li>
+<li>
+<p>Document symptoms</p>
+</li>
+<li>
+<p><strong>Phase 2: LLVM IR Analysis</strong> (2-3 days)</p>
+</li>
+<li>Examine generated IR</li>
+<li>Trace data flow</li>
+<li>
+<p>Identify incorrect instruction</p>
+</li>
+<li>
+<p><strong>Phase 3: Reference Compiler Debugging</strong> (3-5 days)</p>
+</li>
+<li>Add debug logging</li>
+<li>Step through compilation</li>
+<li>
+<p>Pinpoint buggy code</p>
+</li>
+<li>
+<p><strong>Phase 4: Fix Implementation</strong> (2-3 days)</p>
+</li>
+<li>Code the fix</li>
+<li>Test with Stage 1</li>
+<li>
+<p>Validate edge cases</p>
+</li>
+<li>
+<p><strong>Phase 5: Validation</strong> (1-2 days)</p>
+</li>
+<li>Run full test suite</li>
+<li>Attempt bootstrap</li>
+<li>Update documentation</li>
+</ol>
+<h3 id="timeline-options">Timeline Options<a class="headerlink" href="#timeline-options" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Optimistic:</strong> 4-6 weeks</li>
+<li><strong>Realistic:</strong> 8-10 weeks</li>
+<li><strong>Conservative:</strong> 12-16 weeks</li>
+</ul>
+<hr />
+<h2 id="5-hypotheses-to-test">5 Hypotheses to Test<a class="headerlink" href="#5-hypotheses-to-test" title="Permanent link">&para;</a></h2>
+<h3 id="hypothesis-1-eigenvalue-wrapping-bug">Hypothesis 1: EigenValue Wrapping Bug<a class="headerlink" href="#hypothesis-1-eigenvalue-wrapping-bug" title="Permanent link">&para;</a></h3>
+<p><strong>Theory:</strong> Observed variables trigger incorrect EigenValue wrapping in list access<br />
+<strong>Test:</strong> Remove <code>ast_num_value</code> from observed set and recompile</p>
+<h3 id="hypothesis-2-type-mismatch">Hypothesis 2: Type Mismatch<a class="headerlink" href="#hypothesis-2-type-mismatch" title="Permanent link">&para;</a></h3>
+<p><strong>Theory:</strong> <code>eigen_list_get</code> returns wrong type, causing incorrect value extraction<br />
+<strong>Test:</strong> Verify function signature and caller expectations</p>
+<h3 id="hypothesis-3-global-not-shared">Hypothesis 3: Global Not Shared<a class="headerlink" href="#hypothesis-3-global-not-shared" title="Permanent link">&para;</a></h3>
+<p><strong>Theory:</strong> <code>ast_num_value</code> isn't properly shared between modules<br />
+<strong>Test:</strong> Check symbol visibility with <code>nm</code> command</p>
+<h3 id="hypothesis-4-comparison-corrupts-value">Hypothesis 4: Comparison Corrupts Value<a class="headerlink" href="#hypothesis-4-comparison-corrupts-value" title="Permanent link">&para;</a></h3>
+<p><strong>Theory:</strong> Comparison operation wraps value and loses original<br />
+<strong>Test:</strong> Copy value before comparison in <code>gen_literal</code></p>
+<h3 id="hypothesis-5-parser-stores-incorrectly">Hypothesis 5: Parser Stores Incorrectly<a class="headerlink" href="#hypothesis-5-parser-stores-incorrectly" title="Permanent link">&para;</a></h3>
+<p><strong>Theory:</strong> Values are corrupted when stored in AST array<br />
+<strong>Test:</strong> Add debug output in parser to verify values</p>
+<hr />
+<h2 id="key-areas-to-investigate">Key Areas to Investigate<a class="headerlink" href="#key-areas-to-investigate" title="Permanent link">&para;</a></h2>
+<h3 id="in-reference-compiler-llvm_backendpy">In Reference Compiler (<code>llvm_backend.py</code>)<a class="headerlink" href="#in-reference-compiler-llvm_backendpy" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>List Access Compilation</strong> (line ~3103)</li>
+<li>How is <code>eigen_list_get</code> called?</li>
+<li>Is result properly extracted?</li>
+<li>
+<p>Are observed variables handled differently?</p>
+</li>
+<li>
+<p><strong>Observed Variable Tracking</strong></p>
+</li>
+<li>Is <code>ast_num_value</code> marked as observed?</li>
+<li>Does observation affect list access?</li>
+<li>
+<p>Could EigenValue wrapping cause 0.0?</p>
+</li>
+<li>
+<p><strong>Global Variable Linkage</strong> (line ~1040-1080)</p>
+</li>
+<li>How are shared globals initialized?</li>
+<li>Is linkage correct for cross-module access?</li>
+<li>
+<p>Could initialization to 0.0 be the problem?</p>
+</li>
+<li>
+<p><strong>Binary Operations with Literals</strong></p>
+</li>
+<li>How does comparison trigger tracking?</li>
+<li>Does tracking corrupt the original value?</li>
+<li>Is the value still accessible after comparison?</li>
+</ol>
+<hr />
+<h2 id="diagnostic-steps">Diagnostic Steps<a class="headerlink" href="#diagnostic-steps" title="Permanent link">&para;</a></h2>
+<h3 id="step-1-create-minimal-test-case">Step 1: Create Minimal Test Case<a class="headerlink" href="#step-1-create-minimal-test-case" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>global_nums is [42, 99, 123]
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>define get_num of idx as:
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    val is global_nums[idx]
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    return val
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>result is get_num of 0
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>print of result
+</span></code></pre></div>
+<h3 id="step-2-examine-stage-1-ir">Step 2: Examine Stage 1 IR<a class="headerlink" href="#step-2-examine-stage-1-ir" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">cd</span><span class="w"> </span>build/bootstrap
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">100</span><span class="w"> </span><span class="s2">&quot;define.*codegen_gen_literal&quot;</span><span class="w"> </span>codegen.ll<span class="w"> </span>&gt;<span class="w"> </span>gen_literal_ir.txt
+</span></code></pre></div>
+<h3 id="step-3-add-debug-logging">Step 3: Add Debug Logging<a class="headerlink" href="#step-3-add-debug-logging" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># In llvm_backend.py _compile_index</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[DEBUG] List access: </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Is observed: </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="bp">self</span><span class="o">.</span><span class="n">observed_variables</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span></code></pre></div>
+<h3 id="step-4-compare-working-vs-broken">Step 4: Compare Working vs Broken<a class="headerlink" href="#step-4-compare-working-vs-broken" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>eigenscript-compile<span class="w"> </span>working.eigs<span class="w"> </span>-o<span class="w"> </span>working.ll<span class="w"> </span>-O0
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>eigenscript-compile<span class="w"> </span>broken.eigs<span class="w"> </span>-o<span class="w"> </span>broken.ll<span class="w"> </span>-O0
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>diff<span class="w"> </span>working.ll<span class="w"> </span>broken.ll
+</span></code></pre></div>
+<h3 id="step-5-runtime-debugging">Step 5: Runtime Debugging<a class="headerlink" href="#step-5-runtime-debugging" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>gdb<span class="w"> </span>./eigensc_debug
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="o">(</span>gdb<span class="o">)</span><span class="w"> </span><span class="k">break</span><span class="w"> </span>eigen_list_get
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="o">(</span>gdb<span class="o">)</span><span class="w"> </span>run<span class="w"> </span>test.eigs
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="o">(</span>gdb<span class="o">)</span><span class="w"> </span>print<span class="w"> </span>list-&gt;elements<span class="o">[</span>index<span class="o">]</span>.value
+</span></code></pre></div>
+<hr />
+<h2 id="success-criteria">Success Criteria<a class="headerlink" href="#success-criteria" title="Permanent link">&para;</a></h2>
+<h3 id="milestones">Milestones<a class="headerlink" href="#milestones" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[ ] <strong>Milestone 1:</strong> Root cause identified and documented</li>
+<li>[ ] <strong>Milestone 2:</strong> Fix implemented and tested</li>
+<li>[ ] <strong>Milestone 3:</strong> Stage 1 compiles programs with correct numeric values</li>
+<li>[ ] <strong>Milestone 4:</strong> Stage 1 compiles itself (Stage 2 created)</li>
+<li>[ ] <strong>Milestone 5:</strong> Stage 1 and Stage 2 produce identical output</li>
+<li>[ ] <strong>Milestone 6:</strong> Full self-hosting achieved</li>
+</ul>
+<h3 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[ ] <code>x is 42</code> generates <code>fadd double 0.0, 42.0</code></li>
+<li>[ ] All 665 existing tests pass</li>
+<li>[ ] Stage 1 compiles multiple real programs</li>
+<li>[ ] Bootstrap script succeeds end-to-end</li>
+<li>[ ] Performance is stable or improved</li>
+</ul>
+<hr />
+<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
+<h3 id="for-investigators">For Investigators<a class="headerlink" href="#for-investigators" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Start here:</strong> Read <a href="docs/BOOTSTRAP_INDEX.md">docs/BOOTSTRAP_INDEX.md</a></li>
+<li><strong>Understand the plan:</strong> Read <a href="docs/BOOTSTRAP_ROADMAP.md">docs/BOOTSTRAP_ROADMAP.md</a></li>
+<li><strong>Begin investigation:</strong> Follow <a href="docs/BOOTSTRAP_INVESTIGATION_CHECKLIST.md">docs/BOOTSTRAP_INVESTIGATION_CHECKLIST.md</a></li>
+<li><strong>Reference commands:</strong> Use <a href="docs/BOOTSTRAP_DEBUG_QUICKREF.md">docs/BOOTSTRAP_DEBUG_QUICKREF.md</a></li>
+<li><strong>Deep dive:</strong> Study <a href="docs/BOOTSTRAP_FIX_PLAN.md">docs/BOOTSTRAP_FIX_PLAN.md</a></li>
+</ol>
+<h3 id="first-commands">First Commands<a class="headerlink" href="#first-commands" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Setup</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>debug/bootstrap_investigation
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nb">cd</span><span class="w"> </span>debug/bootstrap_investigation
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="c1"># Build Stage 1</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>bash<span class="w"> </span>../../scripts/bootstrap_test.sh
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="c1"># Test the bug</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="nb">cd</span><span class="w"> </span>../../build/bootstrap
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>cat<span class="w"> </span>&gt;<span class="w"> </span>test.eigs<span class="w"> </span><span class="o">&lt;&lt;&lt;</span><span class="w"> </span><span class="s1">&#39;x is 42\nprint of x&#39;</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>./eigensc<span class="w"> </span>test.eigs<span class="w"> </span>&gt;<span class="w"> </span>test.ll
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>grep<span class="w"> </span><span class="s2">&quot;fadd double&quot;</span><span class="w"> </span>test.ll
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="c1"># Should show: 0.0, 0.0 (buggy)</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="c1"># Want:        0.0, 42.0 (fixed)</span>
+</span></code></pre></div>
+<hr />
+<h2 id="what-makes-this-plan-comprehensive">What Makes This Plan Comprehensive<a class="headerlink" href="#what-makes-this-plan-comprehensive" title="Permanent link">&para;</a></h2>
+<h3 id="complete-coverage">✅ Complete Coverage<a class="headerlink" href="#complete-coverage" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Problem Analysis:</strong> Deep understanding of the bug and its impact</li>
+<li><strong>Investigation Strategy:</strong> Systematic 5-phase approach</li>
+<li><strong>Hypotheses:</strong> 5 specific theories to test</li>
+<li><strong>Diagnostic Steps:</strong> Exact commands to run</li>
+<li><strong>Test Cases:</strong> Multiple scenarios covered</li>
+<li><strong>Validation:</strong> Clear success criteria</li>
+<li><strong>Documentation:</strong> Everything well-documented</li>
+</ul>
+<h3 id="actionable">✅ Actionable<a class="headerlink" href="#actionable" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Checklists for each phase</li>
+<li>Copy-paste commands</li>
+<li>Progress tracking tables</li>
+<li>Emergency rollback procedures</li>
+<li>Quick reference cards</li>
+</ul>
+<h3 id="realistic">✅ Realistic<a class="headerlink" href="#realistic" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Multiple timeline scenarios (optimistic to conservative)</li>
+<li>Risk assessment with mitigation strategies</li>
+<li>Contingency plans</li>
+<li>No unrealistic promises</li>
+</ul>
+<h3 id="well-organized">✅ Well-Organized<a class="headerlink" href="#well-organized" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Clear document hierarchy</li>
+<li>Navigation between documents</li>
+<li>Quick reference sections</li>
+<li>Logical progression</li>
+<li>Easy to find information</li>
+</ul>
+<hr />
+<h2 id="key-insights">Key Insights<a class="headerlink" href="#key-insights" title="Permanent link">&para;</a></h2>
+<h3 id="from-documentation-review">From Documentation Review<a class="headerlink" href="#from-documentation-review" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Bug is well-documented:</strong> The COMPILER_SELF_HOSTING.md already describes the issue in detail</li>
+<li><strong>Data flow is understood:</strong> The path from lexer → main → parser → codegen is traced</li>
+<li><strong>Previous investigation:</strong> AST array sharing and module init have been verified</li>
+<li><strong>Root cause location:</strong> Likely in <code>llvm_backend.py</code> around list operations and observed variables</li>
+</ol>
+<h3 id="from-code-structure">From Code Structure<a class="headerlink" href="#from-code-structure" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Large codebase:</strong> Reference compiler is 3,126 lines - investigation will take time</li>
+<li><strong>Complex interaction:</strong> Geometric tracking + list access + cross-module globals</li>
+<li><strong>Working alternatives:</strong> Reference compiler itself works fine, just Stage 1 has issues</li>
+<li><strong>Isolated bug:</strong> Other features work, only numeric literal access is broken</li>
+</ol>
+<hr />
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<h3 id="immediate-today">Immediate (Today)<a class="headerlink" href="#immediate-today" title="Permanent link">&para;</a></h3>
+<ol>
+<li>✅ Documentation complete</li>
+<li>Push documentation to repository</li>
+<li>Share with team/community</li>
+<li>Get feedback on approach</li>
+</ol>
+<h3 id="this-week">This Week<a class="headerlink" href="#this-week" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Set up debug environment</li>
+<li>Create minimal test cases</li>
+<li>Begin Phase 1 investigation</li>
+<li>Test first hypothesis</li>
+</ol>
+<h3 id="next-week">Next Week<a class="headerlink" href="#next-week" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Continue investigation (Phases 2-3)</li>
+<li>Add comprehensive logging</li>
+<li>Analyze LLVM IR patterns</li>
+<li>Narrow down root cause</li>
+</ol>
+<h3 id="week-3">Week 3+<a class="headerlink" href="#week-3" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement fix</li>
+<li>Test and validate</li>
+<li>Attempt bootstrap</li>
+<li>Document findings</li>
+</ol>
+<hr />
+<h2 id="contributing">Contributing<a class="headerlink" href="#contributing" title="Permanent link">&para;</a></h2>
+<h3 id="how-you-can-help">How You Can Help<a class="headerlink" href="#how-you-can-help" title="Permanent link">&para;</a></h3>
+<p><strong>Investigation:</strong>
+- Test the hypotheses
+- Analyze LLVM IR
+- Document findings
+- Share insights</p>
+<p><strong>Testing:</strong>
+- Create test cases
+- Run validation scripts
+- Report results
+- Identify edge cases</p>
+<p><strong>Documentation:</strong>
+- Improve clarity
+- Add examples
+- Fix errors
+- Update progress</p>
+<h3 id="communication">Communication<a class="headerlink" href="#communication" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Open GitHub issues with tag <code>bootstrap</code></li>
+<li>Reference specific documents and sections</li>
+<li>Share discoveries and blockers</li>
+<li>Update checklists with findings</li>
+</ul>
+<hr />
+<h2 id="resources">Resources<a class="headerlink" href="#resources" title="Permanent link">&para;</a></h2>
+<h3 id="primary-documentation">Primary Documentation<a class="headerlink" href="#primary-documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><a href="docs/BOOTSTRAP_INDEX.md">BOOTSTRAP_INDEX.md</a> - Start here</li>
+<li><a href="docs/BOOTSTRAP_ROADMAP.md">BOOTSTRAP_ROADMAP.md</a> - Overview</li>
+<li><a href="docs/BOOTSTRAP_FIX_PLAN.md">BOOTSTRAP_FIX_PLAN.md</a> - Detailed plan</li>
+<li><a href="docs/BOOTSTRAP_INVESTIGATION_CHECKLIST.md">BOOTSTRAP_INVESTIGATION_CHECKLIST.md</a> - Checklists</li>
+<li><a href="docs/BOOTSTRAP_DEBUG_QUICKREF.md">BOOTSTRAP_DEBUG_QUICKREF.md</a> - Quick reference</li>
+</ul>
+<h3 id="supporting-documentation">Supporting Documentation<a class="headerlink" href="#supporting-documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><a href="docs/COMPILER_SELF_HOSTING.md">docs/COMPILER_SELF_HOSTING.md</a> - User guide</li>
+<li><a href="docs/SELF_HOSTING_QUICKSTART.md">docs/SELF_HOSTING_QUICKSTART.md</a> - Quick start</li>
+<li><a href="docs/KNOWN_ISSUES.md">docs/KNOWN_ISSUES.md</a> - Known issues</li>
+</ul>
+<h3 id="code-files">Code Files<a class="headerlink" href="#code-files" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>src/eigenscript/compiler/codegen/llvm_backend.py</code> - Reference compiler (bug location)</li>
+<li><code>src/eigenscript/compiler/selfhost/*.eigs</code> - Self-hosted compiler source</li>
+<li><code>src/eigenscript/compiler/runtime/eigenvalue.c</code> - Runtime library</li>
+<li><code>scripts/bootstrap_test.sh</code> - Bootstrap test script</li>
+</ul>
+<hr />
+<h2 id="conclusion">Conclusion<a class="headerlink" href="#conclusion" title="Permanent link">&para;</a></h2>
+<p>This plan provides <strong>everything needed</strong> to investigate and fix the numeric literal bug:</p>
+<p>✅ <strong>Clear understanding</strong> of the problem<br />
+✅ <strong>Systematic approach</strong> with 5 phases<br />
+✅ <strong>Specific hypotheses</strong> to test<br />
+✅ <strong>Exact commands</strong> to run<br />
+✅ <strong>Success criteria</strong> to validate<br />
+✅ <strong>Timeline estimates</strong> (realistic and honest)<br />
+✅ <strong>Risk mitigation</strong> strategies<br />
+✅ <strong>Documentation</strong> for every step  </p>
+<p>The investigation can begin immediately with all the guidance needed to succeed.</p>
+<hr />
+<h2 id="files-changed">Files Changed<a class="headerlink" href="#files-changed" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>Created:
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>  docs/BOOTSTRAP_INDEX.md                   (298 lines)
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>  docs/BOOTSTRAP_ROADMAP.md                 (442 lines)
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>  docs/BOOTSTRAP_FIX_PLAN.md                (1,028 lines)
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>  docs/BOOTSTRAP_INVESTIGATION_CHECKLIST.md (643 lines)
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  docs/BOOTSTRAP_DEBUG_QUICKREF.md          (237 lines)
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>Total: 2,648 lines of documentation
+</span></code></pre></div>
+<hr />
+<p><strong>Status:</strong> SUCCEEDED ✅</p>
+<p><strong>Deliverables:</strong>
+- ✅ Comprehensive plan created
+- ✅ 5 detailed documents written
+- ✅ Investigation framework established
+- ✅ Clear path to full self-hosting defined</p>
+<p><strong>Ready for:</strong> Investigation Phase 1</p>
+<hr />
+<p><strong>Created by:</strong> GitHub Copilot<br />
+<strong>Date:</strong> 2025-12-03<br />
+<strong>Next Review:</strong> After Phase 1 completion</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/InauguralSystems/EigenScript" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

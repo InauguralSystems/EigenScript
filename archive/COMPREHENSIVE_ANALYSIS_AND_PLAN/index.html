@@ -1,0 +1,3860 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A geometric programming language modeling computation as flow in semantic spacetime">
+      
+      
+        <meta name="author" content="EigenScript Contributors">
+      
+      
+        <link rel="canonical" href="https://inauguralphysicist.github.io/EigenScript/archive/COMPREHENSIVE_ANALYSIS_AND_PLAN/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+    
+    
+      
+        <title>EigenScript - Comprehensive Analysis and Improvement Plan - EigenScript Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#eigenscript-comprehensive-analysis-and-improvement-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="EigenScript Documentation" class="md-header__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            EigenScript Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              EigenScript - Comprehensive Analysis and Improvement Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../specification/" class="md-tabs__link">
+          
+  
+  
+  Language Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../examples/" class="md-tabs__link">
+          
+  
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Advanced Topics
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="EigenScript Documentation" class="md-nav__button md-logo" aria-label="EigenScript Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.42 5.29c-1.1-.1-2.07.71-2.17 1.82L10 10h2.82v2h-3l-.44 5.07A4.001 4.001 0 0 1 2 18.83l1.5-1.5c.33 1.05 1.46 1.64 2.5 1.3.78-.24 1.33-.93 1.4-1.74L7.82 12h-3v-2H8l.27-3.07a4.01 4.01 0 0 1 4.33-3.65c1.26.11 2.4.81 3.06 1.89l-1.5 1.5c-.25-.77-.93-1.31-1.74-1.38M22 13.65l-1.41-1.41-2.83 2.83-2.83-2.83-1.43 1.41 2.85 2.85-2.85 2.81 1.43 1.41 2.83-2.83 2.83 2.83L22 19.31l-2.83-2.81z"/></svg>
+
+    </a>
+    EigenScript Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/InauguralSystems/EigenScript" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    InauguralSystems/EigenScript
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial Series
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/first-program/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/recursive-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recursive Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/list-manipulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Manipulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/file-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/self-aware-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Aware Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Language Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../specification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Specification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operator-table/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators & Primitives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../higher_order_functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Higher-Order Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../list_comprehensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Comprehensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/core-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/file-io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/json/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JSON Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/datetime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Date/Time
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/lists/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    List Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/math/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Math Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/constructs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Constructs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/interrogatives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interrogatives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/predicates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Predicates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Example Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/basic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Basic Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/data-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Topics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced Topics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mathematical_foundations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mathematical Foundations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../meta_circular_evaluator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta-Circular Evaluator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../logic-calculus/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logic Calculus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../self_hosting_roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Hosting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#executive-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executive Summary
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executive Summary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overall-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overall Assessment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#detailed-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detailed Analysis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Detailed Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-code-quality-and-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Code Quality and Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Code Quality and Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 Architecture Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-code-quality-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Code Quality Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-type-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Type Safety
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-documentation-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Documentation Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Documentation Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-documentation-redundancy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Documentation Redundancy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-documentation-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Documentation Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Test Coverage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Test Coverage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-overall-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Overall Coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-test-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Test Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-security-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Security Analysis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Security Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-dependency-vulnerabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Dependency Vulnerabilities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-code-security-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Code Security Issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-sensitive-data-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Sensitive Data Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-configuration-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Configuration Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Configuration Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-build-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Build Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-missing-configuration-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Missing Configuration Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-gitignore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 .gitignore
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Dependencies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Dependencies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-dependency-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Dependency Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-cicd-and-build-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. CI/CD and Build Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. CI/CD and Build Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-missing-cicd-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Missing CI/CD Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-package-installation-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Package Installation Issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-dead-code-and-unused-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Dead Code and Unused Files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Dead Code and Unused Files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-unused-imports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Unused Imports
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-unused-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Unused Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-build-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 Build Artifacts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Performance Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Performance Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-benchmarking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Benchmarking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-known-performance-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Known Performance Limitations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-additional-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Additional Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Additional Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-missing-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 Missing Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-version-information" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 Version Information
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#103-documentation-website" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.3 Documentation Website
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#priority-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority Matrix
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Priority Matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#critical-must-fix-before-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔴 CRITICAL (Must Fix Before Release)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#major-should-fix-soon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🟠 MAJOR (Should Fix Soon)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#minor-nice-to-have" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🟡 MINOR (Nice to Have)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comprehensive-improvement-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comprehensive Improvement Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Comprehensive Improvement Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-critical-fixes-1-2-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Critical Fixes (1-2 days)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Critical Fixes (1-2 days)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#day-1-security-and-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 1: Security and CI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#day-2-type-safety-and-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 2: Type Safety and Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-quality-improvements-3-4-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Quality Improvements (3-4 days)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Quality Improvements (3-4 days)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#days-3-4-code-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Days 3-4: Code Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#days-5-6-documentation-cleanup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Days 5-6: Documentation Cleanup
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-infrastructure-2-3-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Infrastructure (2-3 days)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Infrastructure (2-3 days)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#day-7-development-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 7: Development Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#day-8-package-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 8: Package Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#day-9-code-organization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 9: Code Organization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-testing-and-performance-3-4-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Testing and Performance (3-4 days)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: Testing and Performance (3-4 days)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#days-10-11-test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Days 10-11: Test Coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#days-12-13-performance-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Days 12-13: Performance Testing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-security-hardening-1-day" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Security Hardening (1 day)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Security Hardening (1 day)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#day-14-security-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 14: Security Review
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-6-polish-1-2-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: Polish (1-2 days)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 6: Polish (1-2 days)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#day-15-16-final-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 15-16: Final Tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#success-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Success Criteria
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Success Criteria">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#code-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Infrastructure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#developer-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#time-estimate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Time Estimate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#risk-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risk Assessment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Risk Assessment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#low-risk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Low Risk ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#medium-risk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Medium Risk ⚠️
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-risk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High Risk 🔴
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conclusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conclusion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-quick-wins-1-2-hours-each" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix: Quick Wins (1-2 hours each)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="eigenscript-comprehensive-analysis-and-improvement-plan">EigenScript - Comprehensive Analysis and Improvement Plan<a class="headerlink" href="#eigenscript-comprehensive-analysis-and-improvement-plan" title="Permanent link">&para;</a></h1>
+<p><strong>Analysis Date</strong>: 2025-11-19<br />
+<strong>Repository</strong>: EigenScript (https://github.com/InauguralPhysicist/EigenScript)<br />
+<strong>Development Timeline</strong>: Built in 2 days of rapid development<br />
+<strong>Current Version</strong>: 0.1.0-alpha  </p>
+<hr />
+<h2 id="executive-summary">Executive Summary<a class="headerlink" href="#executive-summary" title="Permanent link">&para;</a></h2>
+<p>EigenScript is a geometric programming language developed rapidly over 2 days. The analysis reveals a <strong>solid technical foundation</strong> with 538 passing tests (100% pass rate) and 82% code coverage. However, the rapid development has left several areas needing attention before it can be considered production-ready.</p>
+<h3 id="overall-assessment">Overall Assessment<a class="headerlink" href="#overall-assessment" title="Permanent link">&para;</a></h3>
+<p><strong>Strengths:</strong>
+- ✅ Strong core architecture (lexer, parser, interpreter, LRVM)
+- ✅ Excellent test coverage (82% overall, 538 tests passing)
+- ✅ All 29 example programs now execute successfully (100% success rate)
+- ✅ Comprehensive documentation (31 MD files + full docs site)
+- ✅ No security vulnerabilities in dependencies
+- ✅ Solid mathematical foundations</p>
+<p><strong>Areas Needing Attention:</strong>
+- ⚠️ Missing CI/CD pipeline for automated testing
+- ⚠️ Low test coverage in some modules (eigencontrol.py: 42%)
+- ⚠️ Type safety issues (mypy reports 48+ errors)
+- ⚠️ Code quality issues (474 flake8 warnings)
+- ⚠️ Excessive documentation redundancy (31 roadmap/status files)
+- ⚠️ Missing critical development infrastructure</p>
+<hr />
+<h2 id="detailed-analysis">Detailed Analysis<a class="headerlink" href="#detailed-analysis" title="Permanent link">&para;</a></h2>
+<h3 id="1-code-quality-and-architecture">1. Code Quality and Architecture<a class="headerlink" href="#1-code-quality-and-architecture" title="Permanent link">&para;</a></h3>
+<h4 id="11-architecture-overview">1.1 Architecture Overview<a class="headerlink" href="#11-architecture-overview" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>STRONG</strong></p>
+<p>The codebase is well-structured with clear separation of concerns:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>src/eigenscript/
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── lexer/           # Tokenization (251 statements, 96% coverage)
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── parser/          # AST construction (401 statements, 86% coverage)
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── semantic/        # LRVM &amp; geometric operations (216 statements, 89% avg)
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── evaluator/       # Interpreter (582 statements, 81% coverage)
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── runtime/         # Framework Strength &amp; EigenControl (155 statements, 66% avg)
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>└── builtins.py      # Standard library (602 statements, 76% coverage)
+</span></code></pre></div></p>
+<p><strong>Strengths:</strong>
+- Clean module separation
+- Proper package structure with <code>__init__.py</code> files
+- Clear responsibility boundaries
+- Good use of type hints (though not enforced)</p>
+<p><strong>Issues Found:</strong></p>
+<ol>
+<li><strong>ISSUE-ARCH-001: eigencontrol.py has low test coverage (42%)</strong></li>
+<li><strong>Severity</strong>: MAJOR</li>
+<li><strong>Impact</strong>: Core geometric algorithm isn't fully tested</li>
+<li><strong>Location</strong>: <code>src/eigenscript/runtime/eigencontrol.py</code></li>
+<li><strong>Missing coverage</strong>: Convergence detection, curvature calculations</li>
+<li>
+<p><strong>Recommendation</strong>: Add comprehensive tests for all EigenControl methods</p>
+</li>
+<li>
+<p><strong>ISSUE-ARCH-002: builtins.py is too large (1,980 lines)</strong></p>
+</li>
+<li><strong>Severity</strong>: MINOR</li>
+<li><strong>Impact</strong>: Difficult to maintain, test, and understand</li>
+<li><strong>Location</strong>: <code>src/eigenscript/builtins.py</code></li>
+<li>
+<p><strong>Recommendation</strong>: Split into smaller modules:</p>
+<ul>
+<li><code>builtins/core.py</code> (print, input, len, type)</li>
+<li><code>builtins/math.py</code> (mathematical functions)</li>
+<li><code>builtins/file_io.py</code> (file operations)</li>
+<li><code>builtins/collections.py</code> (list operations)</li>
+<li><code>builtins/datetime.py</code> (time functions)</li>
+<li><code>builtins/json.py</code> (JSON functions)</li>
+</ul>
+</li>
+<li>
+<p><strong>ISSUE-ARCH-003: Undefined name 'EigenList' in type hint</strong></p>
+</li>
+<li><strong>Severity</strong>: MINOR (doesn't affect runtime)</li>
+<li><strong>Impact</strong>: Flake8 error, confusing for maintainers</li>
+<li><strong>Location</strong>: <code>src/eigenscript/builtins.py:20</code></li>
+<li><strong>Code</strong>: <code>Value = Union[LRVMVector, "EigenList"]</code></li>
+<li><strong>Recommendation</strong>: Import EigenList properly or use TYPE_CHECKING</li>
+</ol>
+<h4 id="12-code-quality-metrics">1.2 Code Quality Metrics<a class="headerlink" href="#12-code-quality-metrics" title="Permanent link">&para;</a></h4>
+<p><strong>Flake8 Analysis</strong>: ⚠️ 474 issues found
+- 396 blank lines with whitespace (W293) - cosmetic
+- 39 F405 warnings - undefined from star imports
+- 13 F541 - f-strings missing placeholders
+- 6 F401 - unused imports
+- 2 E722 - bare except clauses (dangerous!)
+- 1 F821 - undefined name 'EigenList'</p>
+<p><strong>Critical Issues:</strong>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># ISSUE-CODE-001: Bare except clauses (2 instances)</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># Location: Need to identify exact locations</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">risky_operation</span><span class="p">()</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">except</span><span class="p">:</span>  <span class="c1"># ❌ Catches ALL exceptions including KeyboardInterrupt!</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="k">pass</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1"># Should be:</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">risky_operation</span><span class="p">()</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>  <span class="c1"># ✅ Catches only runtime errors</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Operation failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span></code></pre></div></p>
+<p><strong>Recommendations:</strong>
+1. Run <code>black</code> formatter to fix whitespace issues (eliminates 400+ warnings)
+2. Fix bare except clauses immediately (security/correctness issue)
+3. Remove unused imports
+4. Fix f-strings without placeholders</p>
+<h4 id="13-type-safety">1.3 Type Safety<a class="headerlink" href="#13-type-safety" title="Permanent link">&para;</a></h4>
+<p><strong>MyPy Analysis</strong>: ⚠️ 48+ type errors</p>
+<p><strong>Categories:</strong>
+1. <strong>Optional[str] handling</strong> (20+ errors in tokenizer.py)
+   - Issue: Not checking for None before calling <code>.isdigit()</code>, <code>.isalnum()</code>
+   - Risk: Potential runtime errors</p>
+<ol>
+<li><strong>Union type syntax</strong> (2 errors in parser)</li>
+<li>Issue: Using Python 3.10+ <code>X | Y</code> syntax while targeting Python 3.9</li>
+<li>
+<p>Fix: Use <code>Union[X, Y]</code> or update minimum Python version</p>
+</li>
+<li>
+<p><strong>Incompatible types</strong> (5+ errors)</p>
+</li>
+<li>Assignment type mismatches</li>
+<li>Return type mismatches</li>
+</ol>
+<p><strong>ISSUE-TYPE-001: Python version inconsistency</strong>
+- <strong>Severity</strong>: MAJOR
+- <strong>pyproject.toml says</strong>: <code>requires-python = "&gt;=3.9"</code>
+- <strong>mypy config says</strong>: <code>python_version = "3.9"</code>
+- <strong>Code uses</strong>: Python 3.10+ features (<code>X | Y</code> union syntax)
+- <strong>Recommendation</strong>: Either:
+  - Upgrade minimum to Python 3.10 (recommended)
+  - OR use <code>Union[X, Y]</code> syntax throughout</p>
+<h3 id="2-documentation-issues">2. Documentation Issues<a class="headerlink" href="#2-documentation-issues" title="Permanent link">&para;</a></h3>
+<h4 id="21-documentation-redundancy">2.1 Documentation Redundancy<a class="headerlink" href="#21-documentation-redundancy" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ⚠️ <strong>NEEDS CLEANUP</strong></p>
+<p><strong>Problem</strong>: 31 markdown files in root directory, many overlapping:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>HONEST_ROADMAP.md
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>PRODUCTION_ROADMAP.md
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>CONSOLIDATED_ROADMAP.md
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>ROADMAP_SUMMARY.md
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>ROADMAP_UPDATE_SUMMARY.md
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>ROADMAP_RECONCILIATION_REPORT.md
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>ROADMAP_AT_A_GLANCE.md
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>ROADMAP_QUICKREF.md
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>WEEK1_COMPLETION_SUMMARY.md
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>WEEK2_COMPLETION_REPORT.md
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>WEEK2_PLAN.md
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>WEEK2_PROGRESS.md
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>WEEK2_TASKS_COMPLETE.md
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>WEEK3_COMPLETION_REPORT.md
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>WEEK3_IMPLEMENTATION_PLAN.md
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>WEEK3_SUMMARY.md
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>WEEK4_COMPLETION_REPORT.md
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>WEEK4_IMPLEMENTATION_PLAN.md
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>WEEK4_SUMMARY.md
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>PLANNING_INDEX.md
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>PROJECT_STATUS_SUMMARY.md
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>COMPLETION_PLAN.md
+</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>ERROR_MESSAGE_ASSESSMENT.md
+</span><span id="__span-2-24"><a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>QUICK_FIX_GUIDE.md
+</span><span id="__span-2-25"><a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>WHATS_LEFT_TODO.md
+</span><span id="__span-2-26"><a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>... (31 total)
+</span></code></pre></div></p>
+<p><strong>ISSUE-DOC-001: Excessive documentation files</strong>
+- <strong>Severity</strong>: MINOR (confusing but not blocking)
+- <strong>Impact</strong>: 
+  - Confusing for new contributors
+  - Hard to find current information
+  - Maintenance burden
+  - Looks unprofessional</p>
+<p><strong>Recommendation</strong>: Consolidate into:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docs/
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>├── ROADMAP.md          # Single source of truth for roadmap
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>├── CHANGELOG.md        # Version history
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>├── CONTRIBUTING.md     # Already exists, keep it
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>├── ARCHITECTURE.md     # Technical architecture
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>└── archive/            # Move old planning docs here
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    ├── week1_summary.md
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    ├── week2_summary.md
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    etc.
+</span></code></pre></div></p>
+<p>Delete from root or move to <code>docs/archive/</code>:
+- All WEEK<em> files
+- All ROADMAP</em> variants (keep one canonical version)
+- Planning/status files (consolidate into ROADMAP.md)</p>
+<h4 id="22-documentation-quality">2.2 Documentation Quality<a class="headerlink" href="#22-documentation-quality" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>EXCELLENT</strong></p>
+<p><strong>Strengths:</strong>
+- Comprehensive README.md (523 lines, well-structured)
+- Full documentation website (MkDocs + Material theme)
+- API reference for all 48 built-in functions
+- 5 tutorials
+- 29 working example programs
+- Clear getting started guide</p>
+<p><strong>Issues:</strong>
+- KNOWN_ISSUES.md claims 76% example success but actual is 100% ✅
+- Some docs reference issues that are now fixed
+- Update needed to reflect current state</p>
+<h3 id="3-test-coverage">3. Test Coverage<a class="headerlink" href="#3-test-coverage" title="Permanent link">&para;</a></h3>
+<h4 id="31-overall-coverage">3.1 Overall Coverage<a class="headerlink" href="#31-overall-coverage" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>GOOD</strong> (82% overall)</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Module Coverage Report:
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>Module                          Stmts   Miss   Cover
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>lexer/tokenizer.py               251      9    96% ✅
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>parser/ast_builder.py            401     57    86% ✅
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>semantic/lrvm.py                 129     19    85% ✅
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>semantic/metric.py                48      2    96% ✅
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>semantic/operations.py            39      2    95% ✅
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>evaluator/interpreter.py         582    109    81% ✅
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>runtime/framework_strength.py     67      7    90% ✅
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>builtins.py                      602    145    76% ⚠️
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>runtime/eigencontrol.py           88     51    42% ❌
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>__main__.py                      155     33    79% ⚠️
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>benchmark.py                     109      4    96% ✅
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>TOTAL                          2,488    438    82%
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</span></code></pre></div>
+<p><strong>ISSUE-TEST-001: Low coverage in eigencontrol.py (42%)</strong>
+- <strong>Severity</strong>: MAJOR
+- <strong>Module</strong>: <code>runtime/eigencontrol.py</code> (88 statements, 51 missing)
+- <strong>Missing</strong>: Convergence detection, curvature calculations, volume metrics
+- <strong>Impact</strong>: Core geometric algorithm not fully validated
+- <strong>Recommendation</strong>: Add tests for:
+  - Convergence detection at various thresholds
+  - Edge cases (A = B, very large values, very small values)
+  - All geometric properties (radius, curvature, volume, surface area)</p>
+<p><strong>ISSUE-TEST-002: Medium coverage in builtins.py (76%)</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Module</strong>: <code>builtins.py</code> (602 statements, 145 missing)
+- <strong>Missing</strong>: Some file I/O error paths, edge cases in string operations
+- <strong>Recommendation</strong>: Add tests for:
+  - File operations with invalid paths
+  - JSON parsing errors
+  - Date/time parsing errors
+  - Edge cases in list operations</p>
+<p><strong>ISSUE-TEST-003: CLI coverage could be better (79%)</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Module</strong>: <code>__main__.py</code> (155 statements, 33 missing)
+- <strong>Missing</strong>: Some error handling paths, help text display
+- <strong>Recommendation</strong>: Add integration tests for CLI flags</p>
+<h4 id="32-test-quality">3.2 Test Quality<a class="headerlink" href="#32-test-quality" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>EXCELLENT</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Test Suite Statistics:
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>Total Tests:        538
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>Passing:           538 (100%)
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>Failing:             0
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>Skipped:             0
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>Execution Time:    7.84s
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</span></code></pre></div>
+<p><strong>Strengths:</strong>
+- 100% test pass rate
+- Zero flaky tests
+- Good test organization (26 test files)
+- Tests for all major features
+- End-to-end example tests (test_examples.py)
+- Performance tests included</p>
+<h3 id="4-security-analysis">4. Security Analysis<a class="headerlink" href="#4-security-analysis" title="Permanent link">&para;</a></h3>
+<h4 id="41-dependency-vulnerabilities">4.1 Dependency Vulnerabilities<a class="headerlink" href="#41-dependency-vulnerabilities" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>SECURE</strong></p>
+<p>All dependencies checked against GitHub Advisory Database:
+- numpy 2.3.5 ✅
+- pytest 9.0.1 ✅
+- pytest-cov 7.0.0 ✅
+- black 25.11.0 ✅
+- flake8 7.3.0 ✅
+- mypy 1.18.2 ✅</p>
+<p><strong>No known vulnerabilities found.</strong></p>
+<h4 id="42-code-security-issues">4.2 Code Security Issues<a class="headerlink" href="#42-code-security-issues" title="Permanent link">&para;</a></h4>
+<p><strong>ISSUE-SEC-001: Bare except clauses (2 instances)</strong>
+- <strong>Severity</strong>: HIGH
+- <strong>Risk</strong>: Can catch system exceptions (KeyboardInterrupt, SystemExit)
+- <strong>Impact</strong>: Makes program hard to interrupt, can hide bugs
+- <strong>Location</strong>: Need to scan for <code>except:</code> without exception type
+- <strong>Fix</strong>: Replace with <code>except Exception as e:</code></p>
+<p><strong>ISSUE-SEC-002: No input validation in file operations</strong>
+- <strong>Severity</strong>: MEDIUM
+- <strong>Location</strong>: <code>builtins.py</code> file I/O functions
+- <strong>Risk</strong>: Path traversal attacks if used with user input
+- <strong>Example</strong>:
+  <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Current code (if it exists):</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">file_open</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="k">return</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span>  <span class="c1"># ❌ No validation</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Better:</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">file_open</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="c1"># Resolve to absolute path and check it&#39;s within allowed dirs</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">abs_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="c1"># Add validation logic</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="k">return</span> <span class="nb">open</span><span class="p">(</span><span class="n">abs_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span>
+</span></code></pre></div></p>
+<p><strong>Recommendation</strong>: Add path validation for file operations</p>
+<h4 id="43-sensitive-data-check">4.3 Sensitive Data Check<a class="headerlink" href="#43-sensitive-data-check" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>CLEAN</strong></p>
+<p>No hardcoded credentials, API keys, passwords, or tokens found in codebase.</p>
+<h3 id="5-configuration-issues">5. Configuration Issues<a class="headerlink" href="#5-configuration-issues" title="Permanent link">&para;</a></h3>
+<h4 id="51-build-configuration">5.1 Build Configuration<a class="headerlink" href="#51-build-configuration" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>GOOD</strong></p>
+<p><strong>pyproject.toml</strong>:
+- ✅ Proper build system (setuptools)
+- ✅ Correct metadata
+- ✅ Dependencies listed
+- ✅ Entry point defined (<code>eigenscript</code> command)
+- ⚠️ Python version mismatch (claims 3.8+, uses 3.10+ features)</p>
+<p><strong>ISSUE-CONFIG-001: Python version inconsistency</strong>
+- <strong>File</strong>: <code>pyproject.toml</code>
+- <strong>Claims</strong>: <code>requires-python = "&gt;=3.9"</code>
+- <strong>Reality</strong>: Code uses Python 3.10+ features
+- <strong>Fix</strong>: Update to <code>requires-python = "&gt;=3.10"</code></p>
+<h4 id="52-missing-configuration-files">5.2 Missing Configuration Files<a class="headerlink" href="#52-missing-configuration-files" title="Permanent link">&para;</a></h4>
+<p><strong>ISSUE-CONFIG-002: Missing .editorconfig</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Impact</strong>: Inconsistent formatting across editors
+- <strong>Recommendation</strong>: Add <code>.editorconfig</code>:
+  <div class="language-ini highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="na">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">[*]</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="na">charset</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">utf-8</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="na">end_of_line</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">lf</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="na">insert_final_newline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="na">trim_trailing_whitespace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="k">[*.py]</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="na">indent_style</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">space</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="na">indent_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">4</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="na">max_line_length</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">88</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="k">[*.{yml,yaml,json}]</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="na">indent_style</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">space</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="na">indent_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">2</span>
+</span></code></pre></div></p>
+<p><strong>ISSUE-CONFIG-003: Missing requirements-dev.txt</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Impact</strong>: Dev dependencies listed in requirements.txt (should be separate)
+- <strong>Current</strong>: All deps in <code>requirements.txt</code>
+- <strong>Better</strong>: Split into:
+  - <code>requirements.txt</code> (runtime deps: numpy only)
+  - <code>requirements-dev.txt</code> (pytest, black, flake8, mypy, etc.)</p>
+<h4 id="53-gitignore">5.3 .gitignore<a class="headerlink" href="#53-gitignore" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>COMPREHENSIVE</strong></p>
+<p>Properly ignores:
+- Python artifacts (<code>__pycache__</code>, <code>*.pyc</code>)
+- Virtual environments
+- Test artifacts (<code>.pytest_cache</code>, <code>htmlcov</code>)
+- Build artifacts (<code>dist/</code>, <code>*.egg-info</code>)
+- IDE files</p>
+<p>No issues found.</p>
+<h3 id="6-dependencies">6. Dependencies<a class="headerlink" href="#6-dependencies" title="Permanent link">&para;</a></h3>
+<h4 id="61-dependency-analysis">6.1 Dependency Analysis<a class="headerlink" href="#61-dependency-analysis" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>MINIMAL AND APPROPRIATE</strong></p>
+<p><strong>Runtime Dependencies</strong> (1):
+- numpy &gt;= 1.24.0 ✅ (for LRVM vector operations)</p>
+<p><strong>Development Dependencies</strong> (6):
+- pytest &gt;= 7.4.0 ✅
+- pytest-cov &gt;= 4.1.0 ✅
+- black &gt;= 23.0.0 ✅
+- flake8 &gt;= 6.0.0 ✅
+- mypy &gt;= 1.5.0 ✅
+- typing-extensions &gt;= 4.7.0 ✅</p>
+<p><strong>Strengths:</strong>
+- Minimal dependencies (good!)
+- No unnecessary heavy frameworks
+- All deps are standard, well-maintained packages
+- No security vulnerabilities</p>
+<p><strong>Issues</strong>:
+- ⚠️ requirements.txt mixes runtime and dev deps
+- ⚠️ Duplicate entries in requirements.txt (black, flake8, mypy, numpy, pytest, pytest-cov, typing-extensions listed twice)</p>
+<p><strong>ISSUE-DEP-001: Duplicate dependencies in requirements.txt</strong>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a># Current requirements.txt has:
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>numpy&gt;=1.24.0
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>pytest&gt;=7.4.0
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>...
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>black      # ❌ Duplicate, no version
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>flake8     # ❌ Duplicate, no version
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>...
+</span></code></pre></div></p>
+<p><strong>Recommendation</strong>: Clean up requirements.txt and split into two files.</p>
+<h3 id="7-cicd-and-build-issues">7. CI/CD and Build Issues<a class="headerlink" href="#7-cicd-and-build-issues" title="Permanent link">&para;</a></h3>
+<h4 id="71-missing-cicd-pipeline">7.1 Missing CI/CD Pipeline<a class="headerlink" href="#71-missing-cicd-pipeline" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ❌ <strong>CRITICAL ISSUE</strong></p>
+<p><strong>ISSUE-CI-001: No automated testing pipeline</strong>
+- <strong>Severity</strong>: CRITICAL
+- <strong>Current State</strong>: Only has docs deployment workflow
+- <strong>Missing</strong>: 
+  - Automated test runs on PR
+  - Code quality checks
+  - Coverage reporting
+  - Multi-Python version testing</p>
+<p><strong>Recommendation</strong>: Add <code>.github/workflows/ci.yml</code>:
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CI</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">on</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">main</span><span class="w"> </span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">main</span><span class="w"> </span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="nt">jobs</span><span class="p">:</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">  </span><span class="nt">test</span><span class="p">:</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">    </span><span class="nt">strategy</span><span class="p">:</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">      </span><span class="nt">matrix</span><span class="p">:</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&#39;3.10&#39;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&#39;3.11&#39;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&#39;3.12&#39;</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">      </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">      </span><span class="nt">with</span><span class="p">:</span>
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
+</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>
+</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
+</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="w">      </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="w">        </span><span class="no">pip install -r requirements.txt</span>
+</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a>
+</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests</span>
+</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="w">      </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a><span class="w">        </span><span class="no">PYTHONPATH=src pytest tests/ -v --cov=eigenscript --cov-report=xml</span>
+</span><span id="__span-9-31"><a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a>
+</span><span id="__span-9-32"><a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload coverage</span>
+</span><span id="__span-9-33"><a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a><span class="w">      </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">codecov/codecov-action@v3</span>
+</span><span id="__span-9-34"><a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a><span class="w">      </span><span class="nt">with</span><span class="p">:</span>
+</span><span id="__span-9-35"><a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a><span class="w">        </span><span class="nt">file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./coverage.xml</span>
+</span><span id="__span-9-36"><a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a>
+</span><span id="__span-9-37"><a id="__codelineno-9-37" name="__codelineno-9-37" href="#__codelineno-9-37"></a><span class="w">  </span><span class="nt">lint</span><span class="p">:</span>
+</span><span id="__span-9-38"><a id="__codelineno-9-38" name="__codelineno-9-38" href="#__codelineno-9-38"></a><span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+</span><span id="__span-9-39"><a id="__codelineno-9-39" name="__codelineno-9-39" href="#__codelineno-9-39"></a><span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+</span><span id="__span-9-40"><a id="__codelineno-9-40" name="__codelineno-9-40" href="#__codelineno-9-40"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+</span><span id="__span-9-41"><a id="__codelineno-9-41" name="__codelineno-9-41" href="#__codelineno-9-41"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+</span><span id="__span-9-42"><a id="__codelineno-9-42" name="__codelineno-9-42" href="#__codelineno-9-42"></a><span class="w">      </span><span class="nt">with</span><span class="p">:</span>
+</span><span id="__span-9-43"><a id="__codelineno-9-43" name="__codelineno-9-43" href="#__codelineno-9-43"></a><span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;3.11&#39;</span>
+</span><span id="__span-9-44"><a id="__codelineno-9-44" name="__codelineno-9-44" href="#__codelineno-9-44"></a>
+</span><span id="__span-9-45"><a id="__codelineno-9-45" name="__codelineno-9-45" href="#__codelineno-9-45"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install linters</span>
+</span><span id="__span-9-46"><a id="__codelineno-9-46" name="__codelineno-9-46" href="#__codelineno-9-46"></a><span class="w">      </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install black flake8 mypy</span>
+</span><span id="__span-9-47"><a id="__codelineno-9-47" name="__codelineno-9-47" href="#__codelineno-9-47"></a>
+</span><span id="__span-9-48"><a id="__codelineno-9-48" name="__codelineno-9-48" href="#__codelineno-9-48"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check formatting</span>
+</span><span id="__span-9-49"><a id="__codelineno-9-49" name="__codelineno-9-49" href="#__codelineno-9-49"></a><span class="w">      </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">black --check src/</span>
+</span><span id="__span-9-50"><a id="__codelineno-9-50" name="__codelineno-9-50" href="#__codelineno-9-50"></a>
+</span><span id="__span-9-51"><a id="__codelineno-9-51" name="__codelineno-9-51" href="#__codelineno-9-51"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run flake8</span>
+</span><span id="__span-9-52"><a id="__codelineno-9-52" name="__codelineno-9-52" href="#__codelineno-9-52"></a><span class="w">      </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">flake8 src/ --max-line-length=120</span>
+</span><span id="__span-9-53"><a id="__codelineno-9-53" name="__codelineno-9-53" href="#__codelineno-9-53"></a>
+</span><span id="__span-9-54"><a id="__codelineno-9-54" name="__codelineno-9-54" href="#__codelineno-9-54"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run mypy</span>
+</span><span id="__span-9-55"><a id="__codelineno-9-55" name="__codelineno-9-55" href="#__codelineno-9-55"></a><span class="w">      </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mypy src/eigenscript --ignore-missing-imports</span>
+</span></code></pre></div></p>
+<p><strong>ISSUE-CI-002: No pre-commit hooks</strong>
+- <strong>Severity</strong>: MEDIUM
+- <strong>Impact</strong>: Code quality issues not caught before commit
+- <strong>Recommendation</strong>: Add <code>.pre-commit-config.yaml</code>:
+  <div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">repos</span><span class="p">:</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/psf/black</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">rev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">23.12.1</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span><span class="nt">hooks</span><span class="p">:</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">black</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">        </span><span class="nt">language_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python3.11</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/pycqa/flake8</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">    </span><span class="nt">rev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7.0.0</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">    </span><span class="nt">hooks</span><span class="p">:</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">flake8</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">        </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">--max-line-length=120</span><span class="p p-Indicator">]</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/pre-commit/pre-commit-hooks</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">    </span><span class="nt">rev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v4.5.0</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">    </span><span class="nt">hooks</span><span class="p">:</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">trailing-whitespace</span>
+</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">end-of-file-fixer</span>
+</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">check-yaml</span>
+</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">check-added-large-files</span>
+</span></code></pre></div></p>
+<h4 id="72-package-installation-issues">7.2 Package Installation Issues<a class="headerlink" href="#72-package-installation-issues" title="Permanent link">&para;</a></h4>
+<p><strong>ISSUE-BUILD-001: Package not installable from source</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Issue</strong>: Tests fail with <code>ModuleNotFoundError</code> unless <code>PYTHONPATH=src</code> is set
+- <strong>Root Cause</strong>: Package structure is correct, but tests don't use installed package
+- <strong>Impact</strong>: Contributors need to know magic incantation
+- <strong>Fix Options</strong>:
+  1. Update test README with <code>PYTHONPATH=src pytest</code>
+  2. Add <code>pytest.ini</code> with pythonpath setting
+  3. Install in editable mode: <code>pip install -e .</code></p>
+<p><strong>Recommendation</strong>: Add to README:
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Development setup</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">  </span><span class="c1"># Install in editable mode</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>pytest<span class="w">            </span><span class="c1"># Now tests work without PYTHONPATH</span>
+</span></code></pre></div></p>
+<h3 id="8-dead-code-and-unused-files">8. Dead Code and Unused Files<a class="headerlink" href="#8-dead-code-and-unused-files" title="Permanent link">&para;</a></h3>
+<h4 id="81-unused-imports">8.1 Unused Imports<a class="headerlink" href="#81-unused-imports" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ⚠️ <strong>MINOR ISSUES</strong></p>
+<p>Found 6 unused imports (F401 warnings):
+- <code>pathlib.Path</code> imported but unused (6 instances)
+- <code>numpy as np</code> in operations.py</p>
+<p><strong>ISSUE-DEAD-001: Unused imports</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Impact</strong>: Code bloat, confusion
+- <strong>Recommendation</strong>: Run <code>autoflake --remove-all-unused-imports</code> or remove manually</p>
+<h4 id="82-unused-variables">8.2 Unused Variables<a class="headerlink" href="#82-unused-variables" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ⚠️ <strong>MINOR ISSUES</strong></p>
+<p>Found 2 instances of assigned but unused variables:
+- Variable <code>result</code> assigned but never used (F841)</p>
+<p><strong>ISSUE-DEAD-002: Unused variables</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Impact</strong>: Could indicate logic error
+- <strong>Recommendation</strong>: Review and either use or remove</p>
+<h4 id="83-build-artifacts">8.3 Build Artifacts<a class="headerlink" href="#83-build-artifacts" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ⚠️ <strong>PRESENT</strong></p>
+<p>Found 43 build artifacts that should be in .gitignore:
+- <code>__pycache__</code> directories
+- <code>.pytest_cache</code>
+- <code>htmlcov/</code>
+- <code>*.egg-info/</code></p>
+<p><strong>Note</strong>: These ARE in .gitignore, but weren't cleaned up.</p>
+<p><strong>Recommendation</strong>: 
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Clean up</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>find<span class="w"> </span>.<span class="w"> </span>-type<span class="w"> </span>d<span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;__pycache__&quot;</span><span class="w"> </span>-exec<span class="w"> </span>rm<span class="w"> </span>-rf<span class="w"> </span><span class="o">{}</span><span class="w"> </span>+
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>find<span class="w"> </span>.<span class="w"> </span>-type<span class="w"> </span>d<span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;*.egg-info&quot;</span><span class="w"> </span>-exec<span class="w"> </span>rm<span class="w"> </span>-rf<span class="w"> </span><span class="o">{}</span><span class="w"> </span>+
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>rm<span class="w"> </span>-rf<span class="w"> </span>.pytest_cache<span class="w"> </span>htmlcov
+</span></code></pre></div></p>
+<h3 id="9-performance-issues">9. Performance Issues<a class="headerlink" href="#9-performance-issues" title="Permanent link">&para;</a></h3>
+<h4 id="91-benchmarking">9.1 Benchmarking<a class="headerlink" href="#91-benchmarking" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>IMPLEMENTED</strong></p>
+<p>Benchmarks exist and work:
+- factorial_bench.eigs - 62.99 ms
+- fibonacci_bench.eigs - 758.11 ms
+- list_operations_bench.eigs - 26.15 ms
+- math_bench.eigs - 31.20 ms
+- loop_bench.eigs - 153.83 ms</p>
+<p><strong>Strengths:</strong>
+- Built-in benchmarking support (<code>--benchmark</code> flag)
+- Measures execution time and memory
+- Results documented</p>
+<p><strong>Issues:</strong></p>
+<p><strong>ISSUE-PERF-001: Limited performance testing</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Current</strong>: Small inputs only (factorial(20), fibonacci(20))
+- <strong>Missing</strong>: Large-scale tests
+  - factorial(100), factorial(1000)
+  - fibonacci(40) - exponential slowdown test
+  - Lists with 10k, 100k elements
+  - Deep recursion (100+ levels)
+- <strong>Recommendation</strong>: Add stress tests to understand limits</p>
+<p><strong>ISSUE-PERF-002: No performance regression tracking</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Impact</strong>: Can't detect performance degradation
+- <strong>Recommendation</strong>: 
+  - Store benchmark results in git
+  - Add CI job to compare against baseline
+  - Fail if performance regresses &gt;20%</p>
+<h4 id="92-known-performance-limitations">9.2 Known Performance Limitations<a class="headerlink" href="#92-known-performance-limitations" title="Permanent link">&para;</a></h4>
+<p>From README.md:
+- Tree-walking interpreter (inherently slower than compiled)
+- Recursive functions work best with shallow depths (≤5 levels)
+- No optimization passes
+- No JIT compilation</p>
+<p><strong>This is acceptable for alpha software.</strong> Document limits clearly.</p>
+<h3 id="10-additional-issues">10. Additional Issues<a class="headerlink" href="#10-additional-issues" title="Permanent link">&para;</a></h3>
+<h4 id="101-missing-files">10.1 Missing Files<a class="headerlink" href="#101-missing-files" title="Permanent link">&para;</a></h4>
+<p><strong>ISSUE-MISSING-001: No CHANGELOG.md</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Impact</strong>: Users can't track changes between versions
+- <strong>Recommendation</strong>: Add CHANGELOG.md following Keep a Changelog format</p>
+<p><strong>ISSUE-MISSING-002: No CODE_OF_CONDUCT.md</strong>
+- <strong>Severity</strong>: MINOR (for small projects)
+- <strong>Impact</strong>: No community guidelines
+- <strong>Recommendation</strong>: Add Contributor Covenant</p>
+<p><strong>ISSUE-MISSING-003: No SECURITY.md</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Impact</strong>: No clear way to report security issues
+- <strong>Recommendation</strong>: Add SECURITY.md with contact info</p>
+<h4 id="102-version-information">10.2 Version Information<a class="headerlink" href="#102-version-information" title="Permanent link">&para;</a></h4>
+<p><strong>ISSUE-VERSION-001: No --version flag in CLI</strong>
+- <strong>Severity</strong>: MINOR
+- <strong>Current</strong>: <code>python -m eigenscript --version</code> doesn't work
+- <strong>Impact</strong>: Users can't check version
+- <strong>Fix</strong>: Add to <code>__main__.py</code>:
+  <div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="s1">&#39;--version&#39;</span><span class="p">,</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="n">action</span><span class="o">=</span><span class="s1">&#39;version&#39;</span><span class="p">,</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="n">version</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;EigenScript </span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s1">&#39;</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="p">)</span>
+</span></code></pre></div></p>
+<h4 id="103-documentation-website">10.3 Documentation Website<a class="headerlink" href="#103-documentation-website" title="Permanent link">&para;</a></h4>
+<p><strong>Status</strong>: ✅ <strong>EXCELLENT</strong></p>
+<ul>
+<li>MkDocs + Material theme ✅</li>
+<li>Comprehensive API reference ✅</li>
+<li>Tutorials ✅</li>
+<li>Examples ✅</li>
+<li>Auto-deployment to GitHub Pages ✅</li>
+</ul>
+<p>No issues found in docs site.</p>
+<hr />
+<h2 id="priority-matrix">Priority Matrix<a class="headerlink" href="#priority-matrix" title="Permanent link">&para;</a></h2>
+<p>Issues categorized by severity and impact:</p>
+<h3 id="critical-must-fix-before-release">🔴 CRITICAL (Must Fix Before Release)<a class="headerlink" href="#critical-must-fix-before-release" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>ISSUE-CI-001</strong>: No CI/CD pipeline</li>
+<li><strong>ISSUE-SEC-001</strong>: Bare except clauses</li>
+</ol>
+<h3 id="major-should-fix-soon">🟠 MAJOR (Should Fix Soon)<a class="headerlink" href="#major-should-fix-soon" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>ISSUE-ARCH-001</strong>: Low test coverage in eigencontrol.py (42%)</li>
+<li><strong>ISSUE-TYPE-001</strong>: Python version inconsistency</li>
+<li><strong>ISSUE-TEST-001</strong>: Same as ARCH-001</li>
+</ol>
+<h3 id="minor-nice-to-have">🟡 MINOR (Nice to Have)<a class="headerlink" href="#minor-nice-to-have" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>ISSUE-DOC-001</strong>: Excessive documentation files</li>
+<li><strong>ISSUE-ARCH-002</strong>: builtins.py too large</li>
+<li><strong>ISSUE-ARCH-003</strong>: Undefined EigenList type</li>
+<li><strong>ISSUE-CODE-001</strong>: 474 flake8 warnings</li>
+<li><strong>ISSUE-TEST-002</strong>: Medium coverage in builtins.py</li>
+<li><strong>ISSUE-TEST-003</strong>: CLI coverage could be better</li>
+<li><strong>ISSUE-SEC-002</strong>: No input validation in file operations</li>
+<li><strong>ISSUE-CONFIG-001</strong>: Python version mismatch</li>
+<li><strong>ISSUE-CONFIG-002</strong>: Missing .editorconfig</li>
+<li><strong>ISSUE-CONFIG-003</strong>: Missing requirements-dev.txt</li>
+<li><strong>ISSUE-DEP-001</strong>: Duplicate dependencies</li>
+<li><strong>ISSUE-CI-002</strong>: No pre-commit hooks</li>
+<li><strong>ISSUE-BUILD-001</strong>: Package installation confusing</li>
+<li><strong>ISSUE-DEAD-001</strong>: Unused imports</li>
+<li><strong>ISSUE-DEAD-002</strong>: Unused variables</li>
+<li><strong>ISSUE-PERF-001</strong>: Limited performance testing</li>
+<li><strong>ISSUE-PERF-002</strong>: No performance regression tracking</li>
+<li><strong>ISSUE-MISSING-001</strong>: No CHANGELOG.md</li>
+<li><strong>ISSUE-MISSING-002</strong>: No CODE_OF_CONDUCT.md</li>
+<li><strong>ISSUE-MISSING-003</strong>: No SECURITY.md</li>
+<li><strong>ISSUE-VERSION-001</strong>: No --version flag</li>
+</ol>
+<hr />
+<h2 id="comprehensive-improvement-plan">Comprehensive Improvement Plan<a class="headerlink" href="#comprehensive-improvement-plan" title="Permanent link">&para;</a></h2>
+<h3 id="phase-1-critical-fixes-1-2-days">Phase 1: Critical Fixes (1-2 days)<a class="headerlink" href="#phase-1-critical-fixes-1-2-days" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: Fix blocking issues for any release</p>
+<h4 id="day-1-security-and-ci">Day 1: Security and CI<a class="headerlink" href="#day-1-security-and-ci" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-SEC-001</strong>: Replace bare except clauses</li>
+<li>Search for <code>except:</code> patterns</li>
+<li>Replace with <code>except Exception as e:</code></li>
+<li>Add logging for caught exceptions</li>
+<li>
+<p>Test error handling paths</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-CI-001</strong>: Add CI/CD pipeline</p>
+</li>
+<li>Create <code>.github/workflows/ci.yml</code></li>
+<li>Configure test matrix (Python 3.10, 3.11, 3.12)</li>
+<li>Add linting job (black, flake8, mypy)</li>
+<li>Add coverage upload to Codecov</li>
+<li>Test CI pipeline works</li>
+</ul>
+<h4 id="day-2-type-safety-and-configuration">Day 2: Type Safety and Configuration<a class="headerlink" href="#day-2-type-safety-and-configuration" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-TYPE-001</strong>: Resolve Python version</li>
+<li>Update <code>pyproject.toml</code> to require Python 3.10+</li>
+<li>OR replace <code>X | Y</code> with <code>Union[X, Y]</code> throughout</li>
+<li>Update documentation</li>
+<li>
+<p>Test on Python 3.10+</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-ARCH-003</strong>: Fix EigenList type hint</p>
+</li>
+<li>Import EigenList properly</li>
+<li>Or use TYPE_CHECKING block</li>
+<li>Verify flake8 clean</li>
+</ul>
+<h3 id="phase-2-quality-improvements-3-4-days">Phase 2: Quality Improvements (3-4 days)<a class="headerlink" href="#phase-2-quality-improvements-3-4-days" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: Improve code quality and test coverage</p>
+<h4 id="days-3-4-code-quality">Days 3-4: Code Quality<a class="headerlink" href="#days-3-4-code-quality" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-CODE-001</strong>: Clean up flake8 warnings</li>
+<li>Run <code>black .</code> to fix formatting (eliminates 400+ warnings)</li>
+<li>Remove unused imports</li>
+<li>Fix f-strings without placeholders</li>
+<li>Fix trailing whitespace</li>
+<li>
+<p>Aim for &lt;10 flake8 warnings</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-ARCH-001 / ISSUE-TEST-001</strong>: Improve eigencontrol.py coverage</p>
+</li>
+<li>Write tests for convergence detection</li>
+<li>Test edge cases (A=B, very large/small values)</li>
+<li>Test all geometric properties</li>
+<li>Target: &gt;80% coverage</li>
+</ul>
+<h4 id="days-5-6-documentation-cleanup">Days 5-6: Documentation Cleanup<a class="headerlink" href="#days-5-6-documentation-cleanup" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-DOC-001</strong>: Consolidate documentation</li>
+<li>Create <code>docs/archive/</code> directory</li>
+<li>Move old planning docs to archive</li>
+<li>Keep only:<ul>
+<li>README.md</li>
+<li>CONTRIBUTING.md</li>
+<li>LICENSE</li>
+<li>docs/ directory</li>
+</ul>
+</li>
+<li>Create canonical ROADMAP.md</li>
+<li>
+<p>Update KNOWN_ISSUES.md with current status</p>
+</li>
+<li>
+<p>[ ] <strong>Add missing documentation</strong></p>
+</li>
+<li>CHANGELOG.md</li>
+<li>CODE_OF_CONDUCT.md</li>
+<li>SECURITY.md</li>
+<li>Update README with correct example success rate</li>
+</ul>
+<h3 id="phase-3-infrastructure-2-3-days">Phase 3: Infrastructure (2-3 days)<a class="headerlink" href="#phase-3-infrastructure-2-3-days" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: Improve development experience</p>
+<h4 id="day-7-development-setup">Day 7: Development Setup<a class="headerlink" href="#day-7-development-setup" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-CONFIG-003</strong>: Split requirements files</li>
+<li>Create <code>requirements.txt</code> (runtime only)</li>
+<li>Create <code>requirements-dev.txt</code> (dev deps)</li>
+<li>
+<p>Update README and CONTRIBUTING.md</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-CONFIG-002</strong>: Add .editorconfig</p>
+</li>
+<li>Create <code>.editorconfig</code> with proper settings</li>
+<li>
+<p>Test in multiple editors</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-CI-002</strong>: Add pre-commit hooks</p>
+</li>
+<li>Create <code>.pre-commit-config.yaml</code></li>
+<li>Add black, flake8, trailing whitespace checks</li>
+<li>Update CONTRIBUTING.md with setup instructions</li>
+</ul>
+<h4 id="day-8-package-improvements">Day 8: Package Improvements<a class="headerlink" href="#day-8-package-improvements" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-BUILD-001</strong>: Simplify package installation</li>
+<li>Add <code>pytest.ini</code> with pythonpath</li>
+<li>Update README with clear setup instructions</li>
+<li>
+<p>Test clean installation process</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-VERSION-001</strong>: Add --version flag</p>
+</li>
+<li>Update <code>__main__.py</code></li>
+<li>Test <code>python -m eigenscript --version</code></li>
+</ul>
+<h4 id="day-9-code-organization">Day 9: Code Organization<a class="headerlink" href="#day-9-code-organization" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-ARCH-002</strong>: Refactor builtins.py (optional)</li>
+<li>Split into smaller modules</li>
+<li>Update imports</li>
+<li>Verify all tests pass</li>
+<li>Update documentation</li>
+</ul>
+<h3 id="phase-4-testing-and-performance-3-4-days">Phase 4: Testing and Performance (3-4 days)<a class="headerlink" href="#phase-4-testing-and-performance-3-4-days" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: Comprehensive testing and performance validation</p>
+<h4 id="days-10-11-test-coverage">Days 10-11: Test Coverage<a class="headerlink" href="#days-10-11-test-coverage" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-TEST-002</strong>: Improve builtins.py coverage</li>
+<li>Add tests for error paths</li>
+<li>Test file I/O with invalid paths</li>
+<li>Test JSON parsing errors</li>
+<li>Test edge cases</li>
+<li>
+<p>Target: &gt;85% coverage</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-TEST-003</strong>: Improve CLI coverage</p>
+</li>
+<li>Add integration tests for all CLI flags</li>
+<li>Test error conditions</li>
+<li>Test help text</li>
+<li>Target: &gt;85% coverage</li>
+</ul>
+<h4 id="days-12-13-performance-testing">Days 12-13: Performance Testing<a class="headerlink" href="#days-12-13-performance-testing" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-PERF-001</strong>: Add stress tests</li>
+<li>factorial(100), factorial(1000)</li>
+<li>fibonacci(40)</li>
+<li>Lists with 10k, 100k elements</li>
+<li>Deep recursion tests</li>
+<li>
+<p>Document performance limits</p>
+</li>
+<li>
+<p>[ ] <strong>Fix ISSUE-PERF-002</strong>: Add performance tracking</p>
+</li>
+<li>Store benchmark results</li>
+<li>Add CI job for benchmarks</li>
+<li>Set up regression detection</li>
+</ul>
+<h3 id="phase-5-security-hardening-1-day">Phase 5: Security Hardening (1 day)<a class="headerlink" href="#phase-5-security-hardening-1-day" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: Ensure security best practices</p>
+<h4 id="day-14-security-review">Day 14: Security Review<a class="headerlink" href="#day-14-security-review" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix ISSUE-SEC-002</strong>: Add input validation</li>
+<li>Validate file paths</li>
+<li>Add path traversal protection</li>
+<li>Test with malicious inputs</li>
+<li>
+<p>Document security considerations</p>
+</li>
+<li>
+<p>[ ] Run security scanners</p>
+</li>
+<li>bandit (Python security linter)</li>
+<li>safety (dependency vulnerability checker)</li>
+<li>Address any findings</li>
+</ul>
+<h3 id="phase-6-polish-1-2-days">Phase 6: Polish (1-2 days)<a class="headerlink" href="#phase-6-polish-1-2-days" title="Permanent link">&para;</a></h3>
+<p><strong>Goal</strong>: Final cleanup and documentation</p>
+<h4 id="day-15-16-final-tasks">Day 15-16: Final Tasks<a class="headerlink" href="#day-15-16-final-tasks" title="Permanent link">&para;</a></h4>
+<ul>
+<li>[ ] <strong>Fix remaining minor issues</strong></li>
+<li>ISSUE-DEAD-001: Remove unused imports</li>
+<li>ISSUE-DEAD-002: Remove unused variables</li>
+<li>
+<p>ISSUE-DEP-001: Clean up dependencies</p>
+</li>
+<li>
+<p>[ ] Clean up repository</p>
+</li>
+<li>Remove build artifacts</li>
+<li>Verify .gitignore comprehensive</li>
+<li>
+<p>Clean commit history if needed</p>
+</li>
+<li>
+<p>[ ] Final documentation pass</p>
+</li>
+<li>Verify all docs accurate</li>
+<li>Update examples</li>
+<li>Spell check</li>
+<li>Link check</li>
+</ul>
+<hr />
+<h2 id="success-criteria">Success Criteria<a class="headerlink" href="#success-criteria" title="Permanent link">&para;</a></h2>
+<p>After completing this plan, EigenScript should have:</p>
+<h3 id="code-quality">Code Quality<a class="headerlink" href="#code-quality" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ Zero critical security issues</li>
+<li>✅ &lt;10 flake8 warnings (down from 474)</li>
+<li>✅ Zero mypy errors in strict mode</li>
+<li>✅ &gt;85% test coverage (up from 82%)</li>
+<li>✅ All tests passing (maintain 100%)</li>
+</ul>
+<h3 id="infrastructure">Infrastructure<a class="headerlink" href="#infrastructure" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ Automated CI/CD pipeline</li>
+<li>✅ Pre-commit hooks configured</li>
+<li>✅ Clean package installation</li>
+<li>✅ Version information accessible</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ Consolidated, clear documentation</li>
+<li>✅ CHANGELOG tracking changes</li>
+<li>✅ Security policy documented</li>
+<li>✅ Code of conduct in place</li>
+<li>✅ Contributing guide updated</li>
+</ul>
+<h3 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ Comprehensive test suite</li>
+<li>✅ Performance benchmarks</li>
+<li>✅ Edge case coverage</li>
+<li>✅ Integration tests</li>
+</ul>
+<h3 id="developer-experience">Developer Experience<a class="headerlink" href="#developer-experience" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ Clear setup instructions</li>
+<li>✅ Easy to install and run</li>
+<li>✅ Well-organized codebase</li>
+<li>✅ Good error messages</li>
+</ul>
+<hr />
+<h2 id="time-estimate">Time Estimate<a class="headerlink" href="#time-estimate" title="Permanent link">&para;</a></h2>
+<p><strong>Minimum</strong>: 14 days (2 weeks, 1 person full-time)
+<strong>Realistic</strong>: 18-21 days (3 weeks, accounting for testing and review)
+<strong>With help</strong>: 10-12 days (2 people working in parallel)</p>
+<p><strong>Breakdown</strong>:
+- Phase 1 (Critical): 2 days
+- Phase 2 (Quality): 4 days
+- Phase 3 (Infrastructure): 3 days
+- Phase 4 (Testing): 4 days
+- Phase 5 (Security): 1 day
+- Phase 6 (Polish): 2 days
+- <strong>Buffer</strong>: +4 days for unexpected issues</p>
+<hr />
+<h2 id="risk-assessment">Risk Assessment<a class="headerlink" href="#risk-assessment" title="Permanent link">&para;</a></h2>
+<h3 id="low-risk">Low Risk ✅<a class="headerlink" href="#low-risk" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Core functionality works well</li>
+<li>Test suite is solid</li>
+<li>No major architectural flaws</li>
+<li>Dependencies are stable</li>
+</ul>
+<h3 id="medium-risk">Medium Risk ⚠️<a class="headerlink" href="#medium-risk" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Time commitment (3 weeks of work)</li>
+<li>Requires discipline to complete all phases</li>
+<li>May discover new issues during work</li>
+</ul>
+<h3 id="high-risk">High Risk 🔴<a class="headerlink" href="#high-risk" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>None identified</strong> - all issues are fixable</li>
+</ul>
+<hr />
+<h2 id="conclusion">Conclusion<a class="headerlink" href="#conclusion" title="Permanent link">&para;</a></h2>
+<p>EigenScript is a <strong>well-built project</strong> with a solid foundation. The rapid 2-day development timeline shows, but not in a bad way - the core is strong, tests are comprehensive, and the architecture is clean.</p>
+<p><strong>What needs work:</strong>
+- Infrastructure (CI/CD, pre-commit hooks)
+- Code quality cleanup (mostly cosmetic)
+- Documentation organization
+- Test coverage in a few modules
+- Minor security hardening</p>
+<p><strong>What's already excellent:</strong>
+- Core interpreter and language features
+- Test coverage (82% is good!)
+- Documentation quality and completeness
+- Example programs all work
+- No security vulnerabilities in dependencies</p>
+<p><strong>Bottom line</strong>: With 2-3 weeks of focused effort following this plan, EigenScript will be in excellent shape for a proper alpha release. The project is already better than many open source projects - it just needs polish and professional infrastructure.</p>
+<p><strong>Recommendation</strong>: Follow this plan systematically. Don't try to fix everything at once. Each phase builds on the previous one. After Phase 1 (critical fixes), the project will be safe to share publicly. After Phase 3, it will have professional infrastructure. After all phases, it will be ready for broader use.</p>
+<hr />
+<h2 id="appendix-quick-wins-1-2-hours-each">Appendix: Quick Wins (1-2 hours each)<a class="headerlink" href="#appendix-quick-wins-1-2-hours-each" title="Permanent link">&para;</a></h2>
+<p>If time is limited, these fixes provide maximum impact:</p>
+<ol>
+<li><strong>Run black formatter</strong> (5 minutes)</li>
+<li>Eliminates 400+ flake8 warnings</li>
+<li>
+<p>Makes code consistent</p>
+</li>
+<li>
+<p><strong>Add CI/CD pipeline</strong> (1-2 hours)</p>
+</li>
+<li>Catches issues automatically</li>
+<li>
+<p>Professional appearance</p>
+</li>
+<li>
+<p><strong>Fix bare except clauses</strong> (30 minutes)</p>
+</li>
+<li>Critical security issue</li>
+<li>
+<p>Easy to find and fix</p>
+</li>
+<li>
+<p><strong>Add --version flag</strong> (15 minutes)</p>
+</li>
+<li>User convenience</li>
+<li>
+<p>Professional touch</p>
+</li>
+<li>
+<p><strong>Consolidate documentation</strong> (1-2 hours)</p>
+</li>
+<li>Remove confusion</li>
+<li>
+<p>Professional appearance</p>
+</li>
+<li>
+<p><strong>Split requirements files</strong> (15 minutes)</p>
+</li>
+<li>Standard practice</li>
+<li>Clearer dependencies</li>
+</ol>
+<p><strong>Total time for quick wins: ~4 hours</strong>
+<strong>Impact: Addresses 60% of issues</strong></p>
+<hr />
+<p><strong>Document Version</strong>: 1.0<br />
+<strong>Last Updated</strong>: 2025-11-19<br />
+<strong>Next Review</strong>: After Phase 1 completion</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/InauguralSystems/EigenScript" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
