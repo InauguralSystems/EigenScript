@@ -490,6 +490,80 @@ check_exit "EM14 runtime error exits 0" 'x is [1] - 5' "0"
 check_exit "EM15 warning exits 0" 'x is 10 / 0' "0"
 echo ""
 
+# [17] Transformer smoke test — only runs if model extension compiled in.
+# Detects by running a probe script and checking output.
+PROBE_FILE=$(mktemp /tmp/eigs_probe_XXXXXX.eigs)
+cat > "$PROBE_FILE" <<'PROBE'
+loaded is eigen_model_loaded of null
+print of "yes"
+PROBE
+PROBE_OUT=$(./eigenscript "$PROBE_FILE" 2>&1)
+rm -f "$PROBE_FILE"
+
+# Model extension present only if no "undefined variable" error
+if ! echo "$PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[17/17] Transformer Smoke (7 checks)"
+
+    # Generate tiny v1 model
+    python3 ../tests/gen_tiny_model.py > /tmp/eigs_tiny_v1.json 2>/dev/null
+
+    # Find a v0 model to test rejection
+    V0_MODEL=$(ls /home/jon/iLambdaAi/archive/checkpoints/eigenscript/*.json 2>/dev/null | head -1)
+
+    SMOKE_FILE=$(mktemp /tmp/eigs_smoke_XXXXXX.eigs)
+    cat > "$SMOKE_FILE" <<SMOKE
+load_result is eigen_model_load of "/tmp/eigs_tiny_v1.json"
+print of "TR1:"
+print of (eigen_model_loaded of null)
+print of "TR2:"
+print of (type of (eigen_generate of [[1,2,3], 0.0, 4]))
+print of "TR3:"
+print of (len of (eigen_generate of [[1,2,3], 0.0, 4]))
+print of "TR4:"
+print of (type of (native_train_step_builtin of [[1,2,3], [4,5,6], 0.01]))
+print of "TR5:"
+print of (native_train_step_builtin of ["bad", "also bad", 0.01])
+SMOKE
+    SMOKE_OUTPUT=$(./eigenscript "$SMOKE_FILE" 2>&1)
+    rm -f "$SMOKE_FILE"
+
+    check "TR1 v1 model loads" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR1:' | tail -1)" "1"
+    check "TR2 generate returns list" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR2:' | tail -1)" "list"
+    check "TR3 generate length matches max_tokens" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR3:' | tail -1)" "4"
+    check "TR4 train returns string (JSON)" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR4:' | tail -1)" "str"
+    TR5_LINE=$(echo "$SMOKE_OUTPUT" | grep -A1 'TR5:' | tail -1)
+    if echo "$TR5_LINE" | grep -q "must be lists"; then
+        echo "  PASS: TR5 bad inputs rejected"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: TR5 bad inputs rejected (got '$TR5_LINE')"; FAIL=$((FAIL + 1))
+    fi
+    TOTAL=$((TOTAL + 1))
+
+    # TR6/TR7: v0 rejection
+    if [ -n "$V0_MODEL" ]; then
+        V0_FILE=$(mktemp /tmp/eigs_v0_XXXXXX.eigs)
+        cat > "$V0_FILE" <<V0TEST
+r is eigen_model_load of "$V0_MODEL"
+print of (eigen_model_loaded of null)
+V0TEST
+        V0_OUTPUT=$(./eigenscript "$V0_FILE" 2>&1)
+        rm -f "$V0_FILE"
+        V0_LOADED=$(echo "$V0_OUTPUT" | tail -1)
+        check "TR6 v0 model rejected" "$V0_LOADED" "0"
+        if echo "$V0_OUTPUT" | grep -q "format mismatch"; then
+            echo "  PASS: TR7 v0 rejection prints format mismatch"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: TR7 v0 rejection prints format mismatch"; FAIL=$((FAIL + 1))
+        fi
+        TOTAL=$((TOTAL + 1))
+    else
+        echo "  SKIP: TR6/TR7 no v0 model available"
+    fi
+
+    rm -f /tmp/eigs_tiny_v1.json
+    echo ""
+fi
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 echo "============================================"

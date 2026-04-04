@@ -170,6 +170,8 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
     return 0;
 }
 
+#define MODEL_FORMAT_VERSION 1
+
 int load_model_weights(const char *path, TransformerModel *model) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "Cannot open model file: %s\n", path); return -1; }
@@ -191,6 +193,7 @@ int load_model_weights(const char *path, TransformerModel *model) {
     if (*p != '{') { free(data); return -1; }
     p++;
 
+    int format_version = 0;
     while (*p && *p != '}') {
         json_skip_ws(&p);
         char key[64];
@@ -199,7 +202,9 @@ int load_model_weights(const char *path, TransformerModel *model) {
         if (*p == ':') p++;
         json_skip_ws(&p);
 
-        if (strcmp(key, "config") == 0) {
+        if (strcmp(key, "format_version") == 0) {
+            format_version = (int)json_parse_number(&p);
+        } else if (strcmp(key, "config") == 0) {
             json_parse_config(&p, &model->config);
             printf("Config: vocab=%d d_model=%d n_layers=%d d_ff=%d\n",
                 model->config.vocab_size, model->config.d_model,
@@ -236,9 +241,20 @@ int load_model_weights(const char *path, TransformerModel *model) {
     }
 
     free(data);
+
+    if (format_version != MODEL_FORMAT_VERSION) {
+        fprintf(stderr,
+            "Model format mismatch: file is version %d, runtime expects %d.\n"
+            "  Version 0 models were byte-vocab; version 1 uses runtime token IDs.\n"
+            "  Retrain or rebuild the checkpoint with the current runtime.\n",
+            format_version, MODEL_FORMAT_VERSION);
+        model->loaded = 0;
+        return -1;
+    }
+
     model->loaded = 1;
-    printf("Model loaded successfully: %d layers, d_model=%d\n",
-        model->config.n_layers, model->config.d_model);
+    printf("Model loaded successfully: v%d, %d layers, d_model=%d\n",
+        format_version, model->config.n_layers, model->config.d_model);
     fflush(stdout);
     return 0;
 }
@@ -265,7 +281,8 @@ int save_model_weights(const char *path, TransformerModel *model) {
     FILE *f = fopen(path, "w");
     if (!f) return -1;
 
-    fprintf(f, "{\n\"config\": {\"vocab_size\": %d, \"d_model\": %d, \"n_layers\": %d, \"d_ff\": %d, \"max_seq_len\": %d},\n",
+    fprintf(f, "{\n\"format_version\": %d,\n", MODEL_FORMAT_VERSION);
+    fprintf(f, "\"config\": {\"vocab_size\": %d, \"d_model\": %d, \"n_layers\": %d, \"d_ff\": %d, \"max_seq_len\": %d},\n",
         vs, dm, nl, df, model->config.max_seq_len);
 
     fprintf(f, "\"token_embeddings\": [\n");
