@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate a tiny v1-format transformer model for smoke testing.
+Generate a tiny v2-format transformer model for smoke testing.
 Produces a JSON model file the full-build eigenscript runtime can load.
 
 Usage:
@@ -35,7 +35,8 @@ D_FF = 8
 MAX_SEQ = 16
 
 model = {
-    "format_version": 1,
+    "format_version": 2,
+    "weight_format": "ternary_weight_only",
     "config": {
         "vocab_size": VOCAB,
         "d_model": D_MODEL,

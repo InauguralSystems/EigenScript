@@ -25,12 +25,23 @@ typedef struct {
 } ModelConfig;
 
 typedef struct {
+    /* Master FP32 weights — updated by backprop, saved to JSON */
     float *w_q;
     float *w_k;
     float *w_v;
     float *w_o;
     float *w_ff1;
     float *w_ff2;
+    /* Ternary projections — refreshed from master after every update.
+     * Values are in {-alpha, 0, +alpha} per matrix (BitNet b1.58 style).
+     * Used for forward passes in place of master weights. */
+    float *w_q_tern;
+    float *w_k_tern;
+    float *w_v_tern;
+    float *w_o_tern;
+    float *w_ff1_tern;
+    float *w_ff2_tern;
+    /* LayerNorm params stay FP32, no ternary projection */
     float *ln1_gamma;
     float *ln1_beta;
     float *ln2_gamma;
@@ -91,6 +102,15 @@ void ne_fused_ffn_forward_buf_f(
     float *w1, int64_t d_ff, float *w2,
     int32_t use_gelu, float *out, float *pre_act_out);
 void create_sinusoidal_pe_f(float *pe, int seq_len, int d_model);
+
+/* ---- Ternary quantization — defined in model_train.c ---- */
+
+/* Project master FP32 weights to ternary {-alpha, 0, +alpha} stored as float.
+ * alpha = mean(|w|), threshold = alpha/2. BitNet b1.58 style. */
+void quantize_ternary(float *dst, float *src, int64_t n);
+
+/* Quantize all 6 dense matrices in all layers from master → _tern copies */
+void requantize_all_layers(TransformerModel *model);
 
 /* ---- IO functions — defined in model_io.c ---- */
 

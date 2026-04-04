@@ -5,6 +5,53 @@
 
 #include "model_internal.h"
 
+/* ================================================================
+ * TERNARY QUANTIZATION — BitNet b1.58 weight-only (Option A)
+ *
+ * Per-matrix scale alpha = mean(|w|). Threshold = alpha / 2.
+ * Values project to {-alpha, 0, +alpha}, stored as float.
+ * Existing matmul kernels work unchanged on the result.
+ * ================================================================ */
+
+void quantize_ternary(float *dst, float *src, int64_t n) {
+    if (n <= 0) return;
+    float abs_sum = 0.0f;
+    for (int64_t i = 0; i < n; i++) {
+        float a = src[i];
+        abs_sum += (a < 0.0f) ? -a : a;
+    }
+    float alpha = abs_sum / (float)n;
+    float threshold = alpha * 0.5f;
+    for (int64_t i = 0; i < n; i++) {
+        float w = src[i];
+        float aw = (w < 0.0f) ? -w : w;
+        if (aw <= threshold) {
+            dst[i] = 0.0f;
+        } else if (w > 0.0f) {
+            dst[i] = alpha;
+        } else {
+            dst[i] = -alpha;
+        }
+    }
+}
+
+void requantize_all_layers(TransformerModel *model) {
+    int d_model = model->config.d_model;
+    int d_ff = model->config.d_ff;
+    int64_t m2 = (int64_t)d_model * d_model;
+    int64_t mf = (int64_t)d_model * d_ff;
+    int64_t fm = (int64_t)d_ff * d_model;
+    for (int l = 0; l < model->config.n_layers; l++) {
+        TransformerLayer *layer = &model->layers[l];
+        quantize_ternary(layer->w_q_tern, layer->w_q, m2);
+        quantize_ternary(layer->w_k_tern, layer->w_k, m2);
+        quantize_ternary(layer->w_v_tern, layer->w_v, m2);
+        quantize_ternary(layer->w_o_tern, layer->w_o, m2);
+        quantize_ternary(layer->w_ff1_tern, layer->w_ff1, mf);
+        quantize_ternary(layer->w_ff2_tern, layer->w_ff2, fm);
+    }
+}
+
 static void ne_matmul_at_buf(
     float* a, int64_t m, int64_t k,
     float* b, int64_t n,
@@ -268,7 +315,7 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
 
         float *attn_out = calloc(seq_len * d_model, sizeof(float));
         ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
-            layer->w_q, layer->w_k, layer->w_v, layer->w_o,
+            layer->w_q_tern, layer->w_k_tern, layer->w_v_tern, layer->w_o_tern,
             attn_out, cache->attn_probs + lss);
         free(norm1);
 
@@ -299,7 +346,7 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
 
         float *ffn_out = calloc(seq_len * d_model, sizeof(float));
         ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
-            layer->w_ff1, d_ff, layer->w_ff2,
+            layer->w_ff1_tern, d_ff, layer->w_ff2_tern,
             1, ffn_out, cache->ffn_pre_act + lsf);
         free(norm2);
 
@@ -450,7 +497,7 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             float *d_ffn_w2 = calloc(d_ff * d_model, sizeof(float));
             float *d_norm2_out = calloc(ctx_len * d_model, sizeof(float));
             ne_fused_ffn_backward_buf(d_x, ctx_len, d_model,
-                cache.norm2_outputs + lsd, layer->w_ff1, d_ff, layer->w_ff2,
+                cache.norm2_outputs + lsd, layer->w_ff1_tern, d_ff, layer->w_ff2_tern,
                 cache.ffn_pre_act + lsf, d_ffn_w1, d_ffn_w2, d_norm2_out);
             for (int i = 0; i < d_model * d_ff; i++) lg_ff1[l][i] += d_ffn_w1[i];
             for (int i = 0; i < d_ff * d_model; i++) lg_ff2[l][i] += d_ffn_w2[i];
@@ -475,7 +522,7 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             float *d_norm1_out = calloc(ctx_len * d_model, sizeof(float));
             ne_fused_attention_backward_buf(d_post_attn, ctx_len, d_model,
                 cache.norm1_outputs + lsd,
-                layer->w_q, layer->w_k, layer->w_v, layer->w_o,
+                layer->w_q_tern, layer->w_k_tern, layer->w_v_tern, layer->w_o_tern,
                 cache.attn_probs + lss,
                 d_attn_wq, d_attn_wk, d_attn_wv, d_attn_wo, d_norm1_out);
             for (int i = 0; i < d_model * d_model; i++) {
@@ -585,6 +632,9 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             layer->ln2_beta[i] -= scale * lg_ln2b[l][i];
         }
     }
+
+    /* Re-quantize master weights → ternary copies for next forward pass */
+    requantize_all_layers(&g_model);
 
     g_model_age += num_tokens;
     g_training_samples++;

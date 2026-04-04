@@ -241,7 +241,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         float *attn_out = calloc(seq_len * d_model, sizeof(float));
         float *attn_probs = calloc(seq_len * seq_len, sizeof(float));
         ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
-            layer->w_q, layer->w_k, layer->w_v, layer->w_o,
+            layer->w_q_tern, layer->w_k_tern, layer->w_v_tern, layer->w_o_tern,
             attn_out, attn_probs);
         free(norm1);
         free(attn_probs);
@@ -257,7 +257,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         float *ffn_out = calloc(seq_len * d_model, sizeof(float));
         float *pre_act = calloc(seq_len * d_ff, sizeof(float));
         ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
-            layer->w_ff1, d_ff, layer->w_ff2,
+            layer->w_ff1_tern, d_ff, layer->w_ff2_tern,
             1, ffn_out, pre_act);
         free(norm2);
         free(pre_act);

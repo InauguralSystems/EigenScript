@@ -167,10 +167,19 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
         if (**p == ',') (*p)++;
     }
     if (**p == '}') (*p)++;
+
+    /* Allocate ternary projections (populated by requantize_all_layers after load) */
+    layer->w_q_tern = calloc(d_model * d_model, sizeof(float));
+    layer->w_k_tern = calloc(d_model * d_model, sizeof(float));
+    layer->w_v_tern = calloc(d_model * d_model, sizeof(float));
+    layer->w_o_tern = calloc(d_model * d_model, sizeof(float));
+    layer->w_ff1_tern = calloc(d_model * d_ff, sizeof(float));
+    layer->w_ff2_tern = calloc(d_ff * d_model, sizeof(float));
+
     return 0;
 }
 
-#define MODEL_FORMAT_VERSION 1
+#define MODEL_FORMAT_VERSION 2
 
 int load_model_weights(const char *path, TransformerModel *model) {
     FILE *f = fopen(path, "rb");
@@ -252,8 +261,11 @@ int load_model_weights(const char *path, TransformerModel *model) {
         return -1;
     }
 
+    /* Project master FP32 weights to ternary for forward passes */
+    requantize_all_layers(model);
+
     model->loaded = 1;
-    printf("Model loaded successfully: v%d, %d layers, d_model=%d\n",
+    printf("Model loaded successfully: v%d (ternary-weight-only), %d layers, d_model=%d\n",
         format_version, model->config.n_layers, model->config.d_model);
     fflush(stdout);
     return 0;
@@ -282,6 +294,7 @@ int save_model_weights(const char *path, TransformerModel *model) {
     if (!f) return -1;
 
     fprintf(f, "{\n\"format_version\": %d,\n", MODEL_FORMAT_VERSION);
+    fprintf(f, "\"weight_format\": \"ternary_weight_only\",\n");
     fprintf(f, "\"config\": {\"vocab_size\": %d, \"d_model\": %d, \"n_layers\": %d, \"d_ff\": %d, \"max_seq_len\": %d},\n",
         vs, dm, nl, df, model->config.max_seq_len);
 

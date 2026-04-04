@@ -527,7 +527,7 @@ SMOKE
     SMOKE_OUTPUT=$(./eigenscript "$SMOKE_FILE" 2>&1)
     rm -f "$SMOKE_FILE"
 
-    check "TR1 v1 model loads" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR1:' | tail -1)" "1"
+    check "TR1 v2 model loads" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR1:' | tail -1)" "1"
     check "TR2 generate returns list" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR2:' | tail -1)" "list"
     check "TR3 generate length matches max_tokens" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR3:' | tail -1)" "4"
     check "TR4 train returns string (JSON)" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR4:' | tail -1)" "str"
@@ -549,15 +549,15 @@ V0TEST
         V0_OUTPUT=$(./eigenscript "$V0_FILE" 2>&1)
         rm -f "$V0_FILE"
         V0_LOADED=$(echo "$V0_OUTPUT" | tail -1)
-        check "TR6 v0 model rejected" "$V0_LOADED" "0"
+        check "TR6 old model rejected" "$V0_LOADED" "0"
         if echo "$V0_OUTPUT" | grep -q "format mismatch"; then
-            echo "  PASS: TR7 v0 rejection prints format mismatch"; PASS=$((PASS + 1))
+            echo "  PASS: TR7 old rejection prints format mismatch"; PASS=$((PASS + 1))
         else
-            echo "  FAIL: TR7 v0 rejection prints format mismatch"; FAIL=$((FAIL + 1))
+            echo "  FAIL: TR7 old rejection prints format mismatch"; FAIL=$((FAIL + 1))
         fi
         TOTAL=$((TOTAL + 1))
     else
-        echo "  SKIP: TR6/TR7 no v0 model available"
+        echo "  SKIP: TR6/TR7 no old model available"
     fi
 
     rm -f /tmp/eigs_tiny_v1.json
