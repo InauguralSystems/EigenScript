@@ -3,6 +3,9 @@
  */
 
 #include "eigenscript.h"
+#if EIGENSCRIPT_EXT_HTTP
+#include "ext_http_internal.h"
+#endif
 
 Env *g_global_env = NULL;
 

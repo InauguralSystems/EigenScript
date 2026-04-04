@@ -4,8 +4,11 @@
  * Compiled only when EIGENSCRIPT_EXT_HTTP=1.
  */
 
-#include "eigenscript.h"
+#include "ext_http_internal.h"
 #include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 /* ================================================================
  * HTTP GLOBALS

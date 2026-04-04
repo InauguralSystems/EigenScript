@@ -1,11 +1,20 @@
 /*
  * EigenScript Native Bootstrap Runtime
- * Complete implementation: tokenizer + parser + evaluator + builtins + HTTP server
+ * Core: tokenizer + parser + evaluator + builtins
  * Compiles with: gcc -O2 -o eigenscript eigenscript.c -lm -lpthread
  */
 
 #include "eigenscript.h"
 #include <pthread.h>
+#if EIGENSCRIPT_EXT_HTTP
+#include "ext_http_internal.h"
+#endif
+#if EIGENSCRIPT_EXT_DB
+#include "ext_db_internal.h"
+#endif
+#if EIGENSCRIPT_EXT_MODEL
+#include "model_internal.h"
+#endif
 
 /* HTTP server globals and health thread are in ext_http.c */
 jmp_buf g_return_buf;

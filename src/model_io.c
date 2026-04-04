@@ -3,7 +3,7 @@
  * JSON weight parser, model serialization, load/save builtins.
  */
 
-#include "eigenscript.h"
+#include "model_internal.h"
 
 TransformerModel g_model = {0};
 

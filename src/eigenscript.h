@@ -1,13 +1,14 @@
+/*
+ * EigenScript Language Runtime — public header.
+ * Core types, parser, evaluator, value constructors, arena allocator.
+ * Extension types live in private headers (model_internal.h, ext_http_internal.h, ext_db_internal.h).
+ */
+
 #ifndef EIGENSCRIPT_H
 #define EIGENSCRIPT_H
 
 /* Extension flags — set to 0 to compile a minimal language-only binary.
- * Override at compile time: gcc -DEIGENSCRIPT_EXT_HTTP=0 ...
- *
- * The shipped build (build.sh) disables all extensions.
- * Extensions are legacy application code, not part of the language product.
- * Mixed flag combinations (e.g. HTTP=1 MODEL=0) are not supported —
- * enable all or none. The flag granularity exists for future separation. */
+ * Override at compile time: gcc -DEIGENSCRIPT_EXT_HTTP=0 ... */
 #ifndef EIGENSCRIPT_EXT_HTTP
 #define EIGENSCRIPT_EXT_HTTP 1
 #endif
@@ -30,28 +31,24 @@
 #include <setjmp.h>
 #include <unistd.h>
 #include <errno.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <time.h>
-#if EIGENSCRIPT_EXT_DB
-#include <libpq-fe.h>
-#endif
+
+/* ---- Language limits ---- */
 
 #define MAX_TOKENS      65536
 #define MAX_INDENT      64
 #define MAX_VARS        512
-#define MAX_ROUTES      256
 #define MAX_STMTS       4096
 #define MAX_LIST        1024
 #define MAX_STR         65536
 #define MAX_BODY        1048576
 #define MAX_HEADER      8192
+
+/* ---- Tokenizer ---- */
 
 typedef enum {
     TOK_NUM, TOK_STR, TOK_IDENT,
@@ -81,6 +78,8 @@ typedef struct {
     int count;
     int capacity;
 } TokenList;
+
+/* ---- AST ---- */
 
 typedef enum {
     AST_NUM, AST_STR, AST_IDENT, AST_NULL,
@@ -118,6 +117,8 @@ struct ASTNode {
     } data;
 };
 
+/* ---- Value types ---- */
+
 typedef enum {
     VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW
 } ValType;
@@ -132,8 +133,8 @@ struct Env {
     Value *values[MAX_VARS];
     int count;
     Env *parent;
-    int heap_allocated;  /* 1 = calloc'd, 0 = arena */
-    int captured;        /* 1 = used as closure by a define, do not free */
+    int heap_allocated;
+    int captured;
 };
 
 struct Value {
@@ -152,46 +153,24 @@ struct Value {
     double prev_dH;
 };
 
-#if EIGENSCRIPT_EXT_HTTP
-typedef struct {
-    char *method;
-    char *path;
-    char *kind;
-    char *payload;
-    int requires_auth;
-} Route;
+/* ---- Arena allocator ---- */
 
-typedef struct {
-    Route routes[MAX_ROUTES];
-    int route_count;
-    char *static_prefix;
-    char *static_dir;
-    Env *global_env;
-    char *request_body;
-    char *session_id;
-    char *request_headers;
-    int early_bind_fd;
-} Server;
-#endif /* EIGENSCRIPT_EXT_HTTP */
-
-/* Arena allocator for Value/Env — bump allocation with mark/reset */
-#define ARENA_BLOCK_SIZE (4 * 1024 * 1024) /* 4MB blocks */
+#define ARENA_BLOCK_SIZE (4 * 1024 * 1024)
 #define ARENA_MAX_BLOCKS 64
 
 typedef struct {
     char *blocks[ARENA_MAX_BLOCKS];
     int block_count;
     int current_block;
-    size_t offset;          /* current position within current block */
-    int mark_block;         /* saved block index */
-    size_t mark_offset;     /* saved offset */
-    int active;             /* 1 = arena is in use, 0 = fall back to calloc */
-    size_t total_allocated; /* running total for instrumentation */
-    /* String table for arena-allocated strings */
+    size_t offset;
+    int mark_block;
+    size_t mark_offset;
+    int active;
+    size_t total_allocated;
     char **strings;
     int string_count;
     int string_capacity;
-    int mark_string_count;  /* saved string count for reset */
+    int mark_string_count;
 } Arena;
 
 extern Arena g_arena;
@@ -203,6 +182,8 @@ void arena_mark_pos(void);
 void arena_reset_to_mark(void);
 void free_weight_val(Value *v);
 
+/* ---- Value constructors ---- */
+
 Value* make_num(double n);
 Value* make_str(const char *s);
 Value* make_null(void);
@@ -211,11 +192,15 @@ Value* make_fn(const char *name, const char *param, ASTNode **body, int body_cou
 Value* make_builtin(BuiltinFn fn);
 void list_append(Value *list, Value *item);
 
+/* ---- Environment ---- */
+
 Env* env_new(Env *parent);
 void env_set(Env *env, const char *name, Value *val);
 Value* env_get(Env *env, const char *name);
 void env_set_local(Env *env, const char *name, Value *val);
 void env_free(Env *env);
+
+/* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
 ASTNode* parse(TokenList *tl);
@@ -225,98 +210,30 @@ Value* eval_block(ASTNode **stmts, int count, Env *env);
 int is_truthy(Value *v);
 char* value_to_string(Value *v);
 
+/* ---- Registration ---- */
+
 void register_builtins(Env *env);
 extern Env *g_global_env;
 
-/* Utilities used across modules */
+/* ---- Utilities used across modules ---- */
+
 char* read_file_util(const char *path, long *out_size);
 Value* eigs_json_parse_value(const char *s, int *pos);
-#if EIGENSCRIPT_EXT_HTTP
-void http_serve_blocking(int port);
-void register_http_builtins(Env *env);
-#endif
 
-#if EIGENSCRIPT_EXT_DB
-extern PGconn *g_db_conn;
-void register_db_builtins(Env *env);
-#endif
+/* ---- Control flow (return statement) ---- */
 
-#if EIGENSCRIPT_EXT_MODEL
-void register_model_builtins(Env *env);
-#endif
-
-#if EIGENSCRIPT_EXT_MODEL
-#define MAX_LAYERS 8
-#define MAX_SEQ_LEN 128
-#define VOCAB_SIZE 256
-#define MAX_D_MODEL 128
-#define MAX_D_FF 512
-
-typedef struct {
-    int vocab_size;
-    int d_model;
-    int n_heads;
-    int n_layers;
-    int d_ff;
-    int max_seq_len;
-} ModelConfig;
-
-typedef struct {
-    double *w_q;
-    double *w_k;
-    double *w_v;
-    double *w_o;
-    double *w_ff1;
-    double *w_ff2;
-    double *ln1_gamma;
-    double *ln1_beta;
-    double *ln2_gamma;
-    double *ln2_beta;
-} TransformerLayer;
-
-typedef struct {
-    ModelConfig config;
-    double *token_embeddings;
-    double *output_proj;
-    TransformerLayer layers[MAX_LAYERS];
-    int loaded;
-} TransformerModel;
-
-typedef struct {
-    double *layer_inputs;
-    double *norm1_outputs;
-    double *norm2_outputs;
-    double *attn_probs;
-    double *ffn_pre_act;
-    double *post_attn_x;
-    double *final_x;
-    double *ln1_x_norm;
-    double *ln1_std;
-    double *ln2_x_norm;
-    double *ln2_std;
-    int seq_len;
-} TrainingCache;
-#endif /* EIGENSCRIPT_EXT_MODEL */
-
-#if EIGENSCRIPT_EXT_MODEL
-extern TransformerModel g_model;
-extern int g_model_age;
-extern int g_training_samples;
-void register_model_builtins(Env *env);
-/* Cross-file functions used by tensor builtins in eigenscript.c */
-void ne_softmax_buf(double* data, int64_t rows, int64_t cols);
-void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
-                   double *b, int64_t b_cols, double *out);
-Value* json_obj_get(Value *obj, const char *key);
-#endif
-#if EIGENSCRIPT_EXT_DB
-extern PGconn *g_db_conn;
-#endif
-#if EIGENSCRIPT_EXT_HTTP
-extern Server g_server;
-#endif
 extern jmp_buf g_return_buf;
 extern Value *g_return_val;
 extern int g_returning;
 
+/* ---- Cross-file functions for MODEL tensor builtins ---- */
+/* When MODEL is enabled, these are defined in model_infer.c.
+ * When disabled, eigenscript.c provides static stubs. */
+#if EIGENSCRIPT_EXT_MODEL
+void ne_softmax_buf(double *data, int64_t rows, int64_t cols);
+void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
+                   double *b, int64_t b_cols, double *out);
+Value* json_obj_get(Value *obj, const char *key);
 #endif
+
+#endif /* EIGENSCRIPT_H */
