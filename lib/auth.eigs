@@ -1,0 +1,58 @@
+# ============================================================
+# Auth Library — pure EigenScript, no C global state
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/auth.eigs"
+#   result is auth_login of "password"
+#   valid is auth_check of null
+#   auth_logout of null
+#
+# State is an EigenScript variable, not a C global.
+# The runtime's observer tracks changes to the token.
+# Token is per-process (matches the single-threaded server model).
+#
+# Requires: random_hex builtin, env_get builtin, http_request_headers builtin
+
+# ---- State ----
+_auth_token is ""
+
+# ---- Login: check password, generate token ----
+define auth_login as:
+    password is n
+    admin_pw is env_get of "ADMIN_PASSWORD"
+    if admin_pw == "":
+        return json_build of ["error", "ADMIN_PASSWORD not set"]
+    if password != admin_pw:
+        return json_build of ["error", "invalid password"]
+    _auth_token is "eigen_" + (random_hex of 32)
+    return json_build of ["status", "ok", "token", _auth_token]
+
+# ---- Check: validate bearer token from request headers ----
+define auth_check as:
+    if _auth_token == "":
+        return json_build of ["status", "error", "error", "not logged in"]
+    headers is http_request_headers of null
+    # Look for "Authorization: Bearer <token>" in headers
+    if contains of [headers, _auth_token]:
+        return json_build of ["status", "ok"]
+    return json_build of ["status", "error", "error", "invalid token"]
+
+# ---- Logout: clear token ----
+define auth_logout as:
+    _auth_token is ""
+    return json_build of ["status", "ok"]
+
+# ---- Get current token (for session check) ----
+define auth_get_token as:
+    return _auth_token
+
+# ---- require_auth: called by HTTP handler for authed routes ----
+# Returns "" if auth is valid, or an error JSON string if not.
+define require_auth as:
+    if _auth_token == "":
+        return json_build of ["error", "not authenticated"]
+    headers is http_request_headers of null
+    if contains of [headers, _auth_token]:
+        return ""
+    return json_build of ["error", "invalid or missing token"]

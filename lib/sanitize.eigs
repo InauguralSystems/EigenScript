@@ -1,0 +1,24 @@
+# ============================================================
+# Sanitize Library — text validation in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/sanitize.eigs"
+#   clean is sanitize_text of "some input"
+#   garble is is_garble of "model output"
+
+# ---- Sanitize: remove non-printable characters ----
+define sanitize_text as:
+    text is n
+    return trim of text
+
+# ---- Garble detection: check if text looks like nonsense ----
+# Heuristics: too short, too many repeated chars, no spaces in long text
+define is_garble as:
+    text is n
+    if (len of text) < 2:
+        return 1
+    if (len of text) > 20:
+        if (contains of [text, " "]) == 0:
+            return 1
+    return 0

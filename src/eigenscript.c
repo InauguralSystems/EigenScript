@@ -55,9 +55,7 @@ TransformerModel g_model = {0};
 #if EIGENSCRIPT_EXT_DB
 PGconn *g_db_conn = NULL;
 #endif
-#if EIGENSCRIPT_EXT_AUTH
-static char g_auth_token[128] = {0};
-#endif
+/* Auth state moved to lib/auth.eigs — no C global needed */
 static double g_computation_cost = 0.0;
 
 /* ================================================================
@@ -4592,68 +4590,9 @@ Value* builtin_validate_api_key(Value *arg) {
 
 #endif /* EIGENSCRIPT_EXT_DB */
 
-#if EIGENSCRIPT_EXT_AUTH
-/* ================================================================
- * THIN AUTH BUILTINS — capabilities for .eigs auth orchestration
- * ================================================================ */
-
-Value* builtin_auth_check_password(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
-    const char *password = arg->data.str;
-    const char *admin_pw = getenv("ADMIN_PASSWORD");
-    if (!admin_pw || !admin_pw[0])
-        return make_str("{\"error\": \"ADMIN_PASSWORD not set\"}");
-    if (strcmp(password, admin_pw) == 0) {
-        unsigned char tok_bytes[16];
-        FILE *urand = fopen("/dev/urandom", "rb");
-        if (urand) {
-            size_t got = fread(tok_bytes, 1, 16, urand);
-            fclose(urand);
-            if (got != 16) {
-                for (int i = (int)got; i < 16; i++)
-                    tok_bytes[i] = (unsigned char)(rand() ^ (rand() << 8));
-            }
-        } else {
-            for (int i = 0; i < 16; i++) tok_bytes[i] = (unsigned char)(rand() ^ (rand() << 8));
-        }
-        int tp = snprintf(g_auth_token, sizeof(g_auth_token), "eigen_");
-        for (int i = 0; i < 16; i++) tp += snprintf(g_auth_token + tp, sizeof(g_auth_token) - tp, "%02x", tok_bytes[i]);
-        return make_str(g_auth_token);
-    }
-    return make_str("");
-}
-
-Value* builtin_auth_get_bearer_token(Value *arg) {
-    (void)arg;
-    const char *headers = g_server.request_headers;
-    if (!headers) return make_str("");
-    const char *auth = strcasestr(headers, "Authorization:");
-    if (!auth) return make_str("");
-    auth += 14;
-    while (*auth == ' ') auth++;
-    if (strncasecmp(auth, "Bearer ", 7) == 0) auth += 7;
-    char token[128] = {0};
-    int i = 0;
-    while (auth[i] && auth[i] != '\r' && auth[i] != '\n' && i < 127) {
-        token[i] = auth[i];
-        i++;
-    }
-    token[i] = '\0';
-    return make_str(token);
-}
-
-Value* builtin_auth_get_session_token(Value *arg) {
-    (void)arg;
-    return make_str(g_auth_token);
-}
-
-Value* builtin_auth_clear_token(Value *arg) {
-    (void)arg;
-    g_auth_token[0] = '\0';
-    return make_str("ok");
-}
-
-#endif /* EIGENSCRIPT_EXT_AUTH */
+/* Auth builtins removed — now in lib/auth.eigs using random_hex + env_get.
+ * The EIGENSCRIPT_EXT_AUTH flag is no longer needed for builtins.
+ * Auth state is an EigenScript variable, not a C global. */
 
 /* ================================================================
  * CORE PLATFORM BUILTINS (always available)
@@ -5559,6 +5498,38 @@ Value* builtin_token_name(Value *arg) {
     return make_str("?");
 }
 
+/* ==== BUILTIN: random_hex ==== */
+/* random_hex of n → string of n random hex characters from /dev/urandom.
+ * Capability builtin: provides randomness so .eigs libraries can generate tokens. */
+Value* builtin_random_hex(Value *arg) {
+    int n = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 0;
+    if (n <= 0 || n > 256) return make_str("");
+    int bytes_needed = (n + 1) / 2;
+    unsigned char raw[128];
+    FILE *urand = fopen("/dev/urandom", "rb");
+    if (!urand) return make_str("");
+    size_t got = fread(raw, 1, bytes_needed, urand);
+    fclose(urand);
+    if ((int)got < bytes_needed) return make_str("");
+    char hex[257];
+    for (int i = 0; i < bytes_needed && i * 2 < n; i++)
+        sprintf(hex + i * 2, "%02x", raw[i]);
+    hex[n] = '\0';
+    return make_str(hex);
+}
+
+/* ==== BUILTIN: http_request_headers ==== */
+/* http_request_headers of null → raw request headers as string.
+ * Only meaningful during HTTP request handling. */
+#if EIGENSCRIPT_EXT_HTTP
+Value* builtin_http_request_headers(Value *arg) {
+    (void)arg;
+    if (g_server.request_headers)
+        return make_str(g_server.request_headers);
+    return make_str("");
+}
+#endif
+
 /* ==== BUILTIN: chr ==== */
 /* chr of n → single-character string from ASCII code */
 Value* builtin_chr(Value *arg) {
@@ -5972,6 +5943,10 @@ void register_builtins(Env *env) {
     env_set_local(env, "tokenize_ids", make_builtin(builtin_tokenize_ids));
     env_set_local(env, "token_name", make_builtin(builtin_token_name));
     env_set_local(env, "chr", make_builtin(builtin_chr));
+    env_set_local(env, "random_hex", make_builtin(builtin_random_hex));
+#if EIGENSCRIPT_EXT_HTTP
+    env_set_local(env, "http_request_headers", make_builtin(builtin_http_request_headers));
+#endif
     env_set_local(env, "try_parse", make_builtin(builtin_try_parse));
     env_set_local(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local(env, "tensor_load", make_builtin(builtin_tensor_load));
@@ -6025,13 +6000,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "validate_api_key", make_builtin(builtin_validate_api_key));
 #endif
 
-#if EIGENSCRIPT_EXT_AUTH
-    /* ---- Auth extension (requires ext-db) ---- */
-    env_set_local(env, "auth_check_password", make_builtin(builtin_auth_check_password));
-    env_set_local(env, "auth_get_bearer_token", make_builtin(builtin_auth_get_bearer_token));
-    env_set_local(env, "auth_get_session_token", make_builtin(builtin_auth_get_session_token));
-    env_set_local(env, "auth_clear_token", make_builtin(builtin_auth_clear_token));
-#endif
+    /* Auth builtins removed — now in lib/auth.eigs */
 }
 
 #if EIGENSCRIPT_EXT_HTTP
