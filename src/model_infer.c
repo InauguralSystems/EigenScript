@@ -221,33 +221,24 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     free(x);
 }
 
-static int is_whitespace(int c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
-}
-
-static int is_common_token(int c) {
-    return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u' ||
-           c == 't' || c == 'h' || c == 'n' || c == 's' || c == 'r' ||
-           c == '.' || c == ',' || c == '!' || c == '?' || c == '\'' || c == ':';
-}
-
-static char* generate_response(const char *prompt, TransformerModel *model, double temperature, int max_tokens) {
-    /* temperature controls sampling: < 0.01 = greedy argmax, otherwise top-k sampling */
+static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel *model, double temperature, int max_tokens, int *out_len) {
+    /* temperature controls sampling: < 0.01 = greedy argmax, otherwise top-k sampling
+     * Returns a caller-owned int array of generated token IDs. Caller must free. */
     int vocab_size = model->config.vocab_size;
     int max_seq_len = model->config.max_seq_len;
 
-    int prompt_len = strlen(prompt);
     int *token_ids = calloc(max_seq_len * 4, sizeof(int));
     int num_tokens = prompt_len < max_seq_len ? prompt_len : max_seq_len;
     for (int i = 0; i < num_tokens; i++) {
-        token_ids[i] = ((unsigned char)prompt[i]) % vocab_size;
+        int tid = prompt_ids[i];
+        if (tid < 0) tid = 0;
+        if (tid >= vocab_size) tid = vocab_size - 1;
+        token_ids[i] = tid;
     }
 
     int total_tokens = num_tokens;
-    char *output = calloc(max_tokens + 1, 1);
-    int output_len = 0;
-
-    int *token_counts = calloc(vocab_size, sizeof(int));
+    int *output_ids = calloc(max_tokens, sizeof(int));
+    int output_count = 0;
 
     for (int step = 0; step < max_tokens; step++) {
         int ctx_start = total_tokens > max_seq_len ? total_tokens - max_seq_len : 0;
@@ -256,35 +247,19 @@ static char* generate_response(const char *prompt, TransformerModel *model, doub
         double *logits = calloc(vocab_size, sizeof(double));
         native_forward(token_ids + ctx_start, ctx_len, model, logits);
 
-        for (int i = 0; i < vocab_size; i++) {
-            if (token_counts[i] > 0) {
-                if (is_whitespace(i)) {
-                } else if (is_common_token(i)) {
-                    logits[i] -= 0.1 * token_counts[i];
-                } else {
-                    logits[i] -= 0.3 * token_counts[i];
-                }
-            }
-        }
-
         int next_token;
         if (temperature < 0.01) {
-            /* Greedy argmax — preserves original behavior */
+            /* Greedy argmax */
             next_token = 0;
             double best = logits[0];
             for (int i = 1; i < vocab_size; i++) {
                 if (logits[i] > best) { best = logits[i]; next_token = i; }
             }
         } else {
-            /* Temperature-scaled top-k sampling.
-             * rand() seeded via srand(time(NULL)) in main — adequate for
-             * generation diversity, not cryptographic quality. */
-
-            /* Scale logits by temperature */
+            /* Temperature-scaled top-k sampling */
             for (int i = 0; i < vocab_size; i++)
                 logits[i] /= temperature;
 
-            /* Stable softmax */
             double max_l = logits[0];
             for (int i = 1; i < vocab_size; i++)
                 if (logits[i] > max_l) max_l = logits[i];
@@ -296,14 +271,10 @@ static char* generate_response(const char *prompt, TransformerModel *model, doub
             for (int i = 0; i < vocab_size; i++)
                 logits[i] /= sum;
 
-            /* Top-k filter (k=40).
-             * probs_sorted is sized to VOCAB_SIZE (256) which equals byte-vocab.
-             * If vocab_size ever becomes dynamic/larger, this must be heap-allocated. */
             int top_k = 40;
             if (top_k > vocab_size) top_k = vocab_size;
             double probs_sorted[VOCAB_SIZE];
             memcpy(probs_sorted, logits, (size_t)vocab_size * sizeof(double));
-            /* Partial sort: move top_k largest to front */
             for (int j = 0; j < top_k; j++) {
                 int max_idx = j;
                 for (int i = j + 1; i < vocab_size; i++)
@@ -323,10 +294,9 @@ static char* generate_response(const char *prompt, TransformerModel *model, doub
                     logits[i] /= filtered_sum;
             }
 
-            /* Weighted random sample */
             double r = (double)rand() / (double)RAND_MAX;
             double cumsum = 0.0;
-            next_token = vocab_size - 1; /* fallback to last token */
+            next_token = vocab_size - 1;
             for (int i = 0; i < vocab_size; i++) {
                 cumsum += logits[i];
                 if (cumsum >= r) { next_token = i; break; }
@@ -334,43 +304,15 @@ static char* generate_response(const char *prompt, TransformerModel *model, doub
         }
         free(logits);
 
-        token_counts[next_token]++;
-
         if (total_tokens < max_seq_len * 4) {
             token_ids[total_tokens++] = next_token;
         }
-
-        if (next_token > 0 && next_token < 128) {
-            output[output_len++] = (char)next_token;
-        }
-
-        if (next_token == '\n' || next_token == 0) break;
-        if (output_len > 3 && (output[output_len-1] == '.' || output[output_len-1] == '!' || output[output_len-1] == '?')) {
-            int sent_count = 0;
-            for (int si = 0; si < output_len; si++) {
-                if (output[si] == '.' || output[si] == '!' || output[si] == '?') sent_count++;
-            }
-            if (sent_count >= 3) break;
-            if (output_len <= 18) break;
-
-            double *peek_logits = calloc(vocab_size, sizeof(double));
-            int peek_ctx_start = total_tokens > max_seq_len ? total_tokens - max_seq_len : 0;
-            int peek_ctx_len = total_tokens - peek_ctx_start;
-            native_forward(token_ids + peek_ctx_start, peek_ctx_len, model, peek_logits);
-            double peek_max = peek_logits[0];
-            for (int i = 1; i < vocab_size; i++) if (peek_logits[i] > peek_max) peek_max = peek_logits[i];
-            double peek_sum = 0.0;
-            for (int i = 0; i < vocab_size; i++) { peek_logits[i] = exp(peek_logits[i] - peek_max); peek_sum += peek_logits[i]; }
-            double space_prob = peek_logits[' '] / peek_sum;
-            free(peek_logits);
-            if (space_prob < 0.3) break;
-        }
+        output_ids[output_count++] = next_token;
     }
-    free(token_counts);
 
-    output[output_len] = '\0';
     free(token_ids);
-    return output;
+    *out_len = output_count;
+    return output_ids;
 }
 
 int g_model_age = 0;
@@ -382,23 +324,41 @@ Value* builtin_eigen_model_loaded(Value *arg) {
 }
 
 Value* builtin_eigen_generate(Value *arg) {
+    /* Input: [prompt_ids_list, temperature, max_tokens]
+     * Output: list of generated token IDs */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        fprintf(stderr, "eigen_generate: requires [prompt, temperature, max_tokens]\n");
-        return make_str("");
+        fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
+        return make_list(0);
     }
-    const char *prompt = "";
+    Value *prompt_list = arg->data.list.items[0];
+    if (prompt_list->type != VAL_LIST) {
+        fprintf(stderr, "eigen_generate: prompt_ids must be a list\n");
+        return make_list(0);
+    }
+
     double temperature = 0.1;
     int max_tokens = 80;
-
-    if (arg->data.list.items[0]->type == VAL_STR) prompt = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_NUM) temperature = arg->data.list.items[1]->data.num;
     if (arg->data.list.items[2]->type == VAL_NUM) max_tokens = (int)arg->data.list.items[2]->data.num;
 
-    if (!g_model.loaded) return make_str("");
+    if (!g_model.loaded) return make_list(0);
 
-    char *response = generate_response(prompt, &g_model, temperature, max_tokens);
-    Value *result = make_str(response ? response : "");
-    free(response);
+    int prompt_len = prompt_list->data.list.count;
+    int *prompt_ids = calloc(prompt_len > 0 ? prompt_len : 1, sizeof(int));
+    for (int i = 0; i < prompt_len; i++) {
+        Value *v = prompt_list->data.list.items[i];
+        prompt_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+    }
+
+    int out_len = 0;
+    int *output_ids = generate_response(prompt_ids, prompt_len, &g_model, temperature, max_tokens, &out_len);
+    free(prompt_ids);
+
+    Value *result = make_list(out_len);
+    for (int i = 0; i < out_len; i++) {
+        list_append(result, make_num((double)output_ids[i]));
+    }
+    free(output_ids);
     return result;
 }
 

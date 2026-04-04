@@ -12,14 +12,13 @@
 
 #define MAX_LAYERS 8
 #define MAX_SEQ_LEN 128
-#define VOCAB_SIZE 256
+#define VOCAB_SIZE 64
 #define MAX_D_MODEL 128
 #define MAX_D_FF 512
 
 typedef struct {
     int vocab_size;
     int d_model;
-    int n_heads;
     int n_layers;
     int d_ff;
     int max_seq_len;

@@ -320,22 +320,7 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
     free(x);
 }
 
-static void sanitize_training_text(const char *src, char *dst, int max_len) {
-    int di = 0;
-    for (int i = 0; src[i] && di < max_len - 1; i++) {
-        unsigned char c = (unsigned char)src[i];
-        if (c < 32 && c != '\n' && c != '\t') continue;
-        if (c == 127) continue;
-        if (c == '\'' || c == '\x60') { dst[di++] = ' '; continue; }
-        if (c == '"') { dst[di++] = ' '; continue; }
-        if (c == '\\') { dst[di++] = ' '; continue; }
-        if (c >= 128) { dst[di++] = ' '; continue; }
-        dst[di++] = (char)c;
-    }
-    dst[di] = '\0';
-}
-
-static int native_train_step(const char *input_text, const char *output_text, double learning_rate, double *loss_out, int *tokens_trained_out) {
+static int native_train_step(int *input_ids, int input_len, int *output_ids, int output_len, double learning_rate, double *loss_out, int *tokens_trained_out) {
     if (!g_model.loaded) return -1;
 
     int vocab_size = g_model.config.vocab_size;
@@ -346,21 +331,22 @@ static int native_train_step(const char *input_text, const char *output_text, do
 
     double effective_lr = learning_rate / log((double)g_model_age + M_E);
 
-    char *clean_input = calloc(strlen(input_text) + 1, 1);
-    char *clean_output = calloc(strlen(output_text) + 1, 1);
-    sanitize_training_text(input_text, clean_input, strlen(input_text) + 1);
-    sanitize_training_text(output_text, clean_output, strlen(output_text) + 1);
-
-    int input_len = strlen(clean_input);
-    int output_len = strlen(clean_output);
     int full_len = input_len + output_len;
-    int *token_ids = calloc(full_len, sizeof(int));
-    for (int i = 0; i < input_len; i++) token_ids[i] = ((unsigned char)clean_input[i]) % vocab_size;
-    for (int i = 0; i < output_len; i++) token_ids[input_len + i] = ((unsigned char)clean_output[i]) % vocab_size;
-    free(clean_input);
-    free(clean_output);
+    if (full_len < 2) return -1;
 
-    if (full_len < 2) { free(token_ids); return -1; }
+    int *token_ids = calloc(full_len, sizeof(int));
+    for (int i = 0; i < input_len; i++) {
+        int tid = input_ids[i];
+        if (tid < 0) tid = 0;
+        if (tid >= vocab_size) tid = vocab_size - 1;
+        token_ids[i] = tid;
+    }
+    for (int i = 0; i < output_len; i++) {
+        int tid = output_ids[i];
+        if (tid < 0) tid = 0;
+        if (tid >= vocab_size) tid = vocab_size - 1;
+        token_ids[input_len + i] = tid;
+    }
 
     double *grad_token_emb = calloc(vocab_size * d_model, sizeof(double));
     double *grad_output_proj = calloc(d_model * vocab_size, sizeof(double));
@@ -626,29 +612,44 @@ static int native_train_step(const char *input_text, const char *output_text, do
 
 Value* builtin_native_train_step(Value *arg) {
     /* Thin wrapper around native_train_step().
-     * Input: [input_text, output_text, learning_rate]
+     * Input: [input_ids_list, output_ids_list, learning_rate]
      * Output: JSON string with status, loss, tokens, model_age, training_samples */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        return make_str("{\"status\": \"error\", \"error\": \"requires [input, output, lr]\"}");
+        return make_str("{\"status\": \"error\", \"error\": \"requires [input_ids, output_ids, lr]\"}");
     }
     if (!g_model.loaded) {
         return make_str("{\"status\": \"error\", \"error\": \"Model not loaded\"}");
     }
 
-    const char *input = "";
-    const char *output = "";
-    double lr = 0.001;
+    Value *in_list = arg->data.list.items[0];
+    Value *out_list = arg->data.list.items[1];
+    if (in_list->type != VAL_LIST || out_list->type != VAL_LIST) {
+        return make_str("{\"status\": \"error\", \"error\": \"input_ids and output_ids must be lists\"}");
+    }
 
-    if (arg->data.list.items[0]->type == VAL_STR) input = arg->data.list.items[0]->data.str;
-    if (arg->data.list.items[1]->type == VAL_STR) output = arg->data.list.items[1]->data.str;
+    double lr = 0.001;
     if (arg->data.list.items[2]->type == VAL_NUM) lr = arg->data.list.items[2]->data.num;
     else if (arg->data.list.items[2]->type == VAL_STR) lr = strtod(arg->data.list.items[2]->data.str, NULL);
-
     if (lr <= 0 || lr > 1) lr = 0.001;
+
+    int input_len = in_list->data.list.count;
+    int output_len = out_list->data.list.count;
+    int *input_ids = calloc(input_len > 0 ? input_len : 1, sizeof(int));
+    int *output_ids = calloc(output_len > 0 ? output_len : 1, sizeof(int));
+    for (int i = 0; i < input_len; i++) {
+        Value *v = in_list->data.list.items[i];
+        input_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+    }
+    for (int i = 0; i < output_len; i++) {
+        Value *v = out_list->data.list.items[i];
+        output_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+    }
 
     double loss = 0.0;
     int tokens_trained = 0;
-    int result = native_train_step(input, output, lr, &loss, &tokens_trained);
+    int result = native_train_step(input_ids, input_len, output_ids, output_len, lr, &loss, &tokens_trained);
+    free(input_ids);
+    free(output_ids);
 
     char buf[512];
     if (result == 0) {

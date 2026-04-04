@@ -107,7 +107,7 @@ static int json_parse_config(const char **p, ModelConfig *cfg) {
         int val = (int)json_parse_number(p);
         if (strcmp(key, "vocab_size") == 0) cfg->vocab_size = val;
         else if (strcmp(key, "d_model") == 0) cfg->d_model = val;
-        else if (strcmp(key, "n_heads") == 0) cfg->n_heads = val;
+        else if (strcmp(key, "n_heads") == 0) { (void)val; /* legacy, ignored */ }
         else if (strcmp(key, "n_layers") == 0) cfg->n_layers = val;
         else if (strcmp(key, "d_ff") == 0) cfg->d_ff = val;
         else if (strcmp(key, "max_seq_len") == 0) cfg->max_seq_len = val;
@@ -201,9 +201,9 @@ int load_model_weights(const char *path, TransformerModel *model) {
 
         if (strcmp(key, "config") == 0) {
             json_parse_config(&p, &model->config);
-            printf("Config: vocab=%d d_model=%d n_heads=%d n_layers=%d d_ff=%d\n",
+            printf("Config: vocab=%d d_model=%d n_layers=%d d_ff=%d\n",
                 model->config.vocab_size, model->config.d_model,
-                model->config.n_heads, model->config.n_layers, model->config.d_ff);
+                model->config.n_layers, model->config.d_ff);
             fflush(stdout);
         } else if (strcmp(key, "token_embeddings") == 0) {
             int vs = model->config.vocab_size;
@@ -265,8 +265,8 @@ int save_model_weights(const char *path, TransformerModel *model) {
     FILE *f = fopen(path, "w");
     if (!f) return -1;
 
-    fprintf(f, "{\n\"config\": {\"vocab_size\": %d, \"d_model\": %d, \"n_heads\": %d, \"n_layers\": %d, \"d_ff\": %d, \"max_seq_len\": %d},\n",
-        vs, dm, model->config.n_heads, nl, df, model->config.max_seq_len);
+    fprintf(f, "{\n\"config\": {\"vocab_size\": %d, \"d_model\": %d, \"n_layers\": %d, \"d_ff\": %d, \"max_seq_len\": %d},\n",
+        vs, dm, nl, df, model->config.max_seq_len);
 
     fprintf(f, "\"token_embeddings\": [\n");
     for (int i = 0; i < vs; i++) {
