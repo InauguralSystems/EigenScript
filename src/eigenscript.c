@@ -1573,10 +1573,9 @@ Value* builtin_append(Value *arg) {
     return target;
 }
 
-#if EIGENSCRIPT_EXT_HTTP || EIGENSCRIPT_EXT_MODEL || EIGENSCRIPT_EXT_DB
+#if EIGENSCRIPT_EXT_HTTP
 /* ================================================================
- * EXTENSION CODE: HTTP, MODEL, DB, TRAINING
- * Compiled only when extensions are enabled.
+ * HTTP EXTENSION — route registration, server builtins
  * ================================================================ */
 Value* builtin_http_route(Value *arg) {
     if (arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
@@ -1706,9 +1705,14 @@ Value* builtin_http_session_id(Value *arg) {
     return make_str("anonymous");
 }
 
+#endif /* EIGENSCRIPT_EXT_HTTP */
+
+#if EIGENSCRIPT_EXT_MODEL
 /* ================================================================
- * JSON MODEL WEIGHT LOADER
+ * MODEL EXTENSION — weight loader, inference, training kernels
  * ================================================================ */
+
+/* ---- JSON MODEL WEIGHT LOADER ---- */
 
 static void json_skip_ws(const char **p) {
     while (**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') (*p)++;
@@ -3053,6 +3057,8 @@ static int save_model_weights(const char *path, TransformerModel *model) {
 /* Dead extract_json_string removed — replaced by json_path builtin */
 /* Dead builtin_eigen_train removed — now in training.eigs via native_train_step_builtin */
 
+#if EIGENSCRIPT_EXT_DB
+/* These builtins need both MODEL and DB (training data comes from Postgres) */
 Value* builtin_eigen_batch_train(Value *arg) {
     (void)arg;
     if (!g_model.loaded) return make_str("{\"status\": \"error\", \"error\": \"Model not loaded\"}");
@@ -3079,6 +3085,8 @@ Value* builtin_eigen_batch_train(Value *arg) {
         trained, total_tokens, total_tokens > 0 ? total_loss / total_tokens : 0.0, g_model_age);
     return make_str(buf);
 }
+
+#endif /* EIGENSCRIPT_EXT_DB — batch_train needs both MODEL and DB */
 
 /* Dead builtin_model_save removed — now in training.eigs via model_save_weights */
 
@@ -3286,6 +3294,9 @@ static Value* json_obj_get(Value *obj, const char *key) {
 
 /* Dead monolithic eigen_hybrid_chat removed (264 lines) — now in chat.eigs */
 
+#endif /* EIGENSCRIPT_EXT_MODEL — model_load and sanitization */
+
+#if EIGENSCRIPT_EXT_DB
 Value* builtin_db_connect(Value *arg) {
     (void)arg;
     const char *url = getenv("DATABASE_URL");
@@ -3315,6 +3326,9 @@ Value* builtin_db_connect(Value *arg) {
 /* Dead corpus/feedback/auth/analytics/stats builtins removed —
    now in corpus.eigs, admin.eigs, auth.eigs via thin DB builtins */
 
+#endif /* EIGENSCRIPT_EXT_DB */
+
+#if EIGENSCRIPT_EXT_MODEL
 Value* builtin_eigen_check_openai(Value *arg) {
     (void)arg;
     const char *key = getenv("AI_INTEGRATIONS_OPENAI_API_KEY");
@@ -3329,6 +3343,9 @@ Value* builtin_eigen_check_openai(Value *arg) {
 
 /* Dead community_stats builtin removed — now in admin.eigs */
 
+#endif /* EIGENSCRIPT_EXT_MODEL — check_openai */
+
+#if EIGENSCRIPT_EXT_MODEL && EIGENSCRIPT_EXT_DB
 Value* builtin_eigen_export_corpus(Value *arg) {
     (void)arg;
     if (!g_db_conn) return make_str("{\"status\": \"error\", \"error\": \"Database not connected\"}");
@@ -3526,7 +3543,7 @@ static void ensure_api_keys_table(void) {
 }
 
 /* Dead monolithic API key builtins removed — now in admin.eigs */
-#endif /* EIGENSCRIPT_EXT_HTTP || EIGENSCRIPT_EXT_MODEL || EIGENSCRIPT_EXT_DB */
+#endif /* EIGENSCRIPT_EXT_MODEL && EIGENSCRIPT_EXT_DB — export_corpus */
 
 Value* builtin_report(Value *arg) {
     if (!arg) return make_str("equilibrium");
@@ -3923,7 +3940,8 @@ Value* builtin_str_replace(Value *arg) {
  * ================================================================ */
 
 Value* builtin_http_post(Value *arg) {
-    /* http_post of [url, headers_json, body_string] -> response body string */
+    /* http_post of [url, headers_json, body_string] -> response body string
+     * Uses fork/execvp to invoke curl — no shell involved, no injection risk. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
     const char *url = "", *headers_json = "", *body = "";
     if (arg->data.list.items[0]->type == VAL_STR) url = arg->data.list.items[0]->data.str;
@@ -3940,37 +3958,71 @@ Value* builtin_http_post(Value *arg) {
     fprintf(reqf, "%s", body);
     fclose(reqf);
 
-    /* Parse headers JSON to build -H flags */
-    char header_flags[4096] = {0};
-    int hpos = 0;
+    /* Build argv array for curl — no shell interpolation */
+    /* Max 64 args: curl -s --max-time 15 [-H "k: v"]... -d @file url */
+    char *argv[64];
+    int argc = 0;
+    argv[argc++] = "curl";
+    argv[argc++] = "-s";
+    argv[argc++] = "--max-time";
+    argv[argc++] = "15";
+
+    /* Parse headers JSON and add -H flags */
+    char header_bufs[32][256]; /* up to 32 headers */
+    int hdr_count = 0;
     int jpos = 0;
     Value *hdr_obj = eigs_json_parse_value(headers_json, &jpos);
     if (hdr_obj && hdr_obj->type == VAL_LIST) {
-        for (int i = 0; i + 1 < hdr_obj->data.list.count; i += 2) {
+        for (int i = 0; i + 1 < hdr_obj->data.list.count && hdr_count < 32 && argc < 60; i += 2) {
             char *hk = value_to_string(hdr_obj->data.list.items[i]);
             char *hv = value_to_string(hdr_obj->data.list.items[i + 1]);
-            hpos += snprintf(header_flags + hpos, sizeof(header_flags) - hpos,
-                "-H '%s: %s' ", hk, hv);
+            snprintf(header_bufs[hdr_count], sizeof(header_bufs[0]), "%s: %s", hk, hv);
             free(hk); free(hv);
+            argv[argc++] = "-H";
+            argv[argc++] = header_bufs[hdr_count];
+            hdr_count++;
         }
     }
 
-    char cmd[8192];
-    snprintf(cmd, sizeof(cmd),
-        "curl -s --max-time 15 '%s' %s -d @%s 2>/dev/null",
-        url, header_flags, req_path);
+    char data_arg[512];
+    snprintf(data_arg, sizeof(data_arg), "@%s", req_path);
+    argv[argc++] = "-d";
+    argv[argc++] = data_arg;
+    argv[argc++] = (char *)url;
+    argv[argc] = NULL;
 
-    FILE *fp = popen(cmd, "r");
-    if (!fp) { unlink(req_path); return make_str(""); }
+    /* Fork and exec curl, capture stdout via pipe */
+    int pipefd[2];
+    if (pipe(pipefd) < 0) { unlink(req_path); return make_str(""); }
+
+    pid_t pid = fork();
+    if (pid < 0) { close(pipefd[0]); close(pipefd[1]); unlink(req_path); return make_str(""); }
+
+    if (pid == 0) {
+        /* Child: redirect stdout to pipe, close stderr */
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
+        execvp("curl", argv);
+        _exit(127);
+    }
+
+    /* Parent: read response from pipe */
+    close(pipefd[1]);
     char buf[16384] = {0};
     int total = 0;
     while (total < 16383) {
-        int n = fread(buf + total, 1, 16383 - total, fp);
+        int n = read(pipefd[0], buf + total, 16383 - total);
         if (n <= 0) break;
         total += n;
     }
     buf[total] = '\0';
-    pclose(fp);
+    close(pipefd[0]);
+
+    int status;
+    waitpid(pid, &status, 0);
     unlink(req_path);
 
     return make_str(buf);
@@ -4549,7 +4601,8 @@ Value* builtin_auth_check_password(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
     const char *password = arg->data.str;
     const char *admin_pw = getenv("ADMIN_PASSWORD");
-    if (!admin_pw) admin_pw = "eigenadmin";
+    if (!admin_pw || !admin_pw[0])
+        return make_str("{\"error\": \"ADMIN_PASSWORD not set\"}");
     if (strcmp(password, admin_pw) == 0) {
         unsigned char tok_bytes[16];
         FILE *urand = fopen("/dev/urandom", "rb");
@@ -5954,10 +6007,12 @@ void register_builtins(Env *env) {
     env_set_local(env, "native_train_step_builtin", make_builtin(builtin_native_train_step));
     env_set_local(env, "model_save_weights", make_builtin(builtin_model_save_weights));
     env_set_local(env, "model_load_weights", make_builtin(builtin_model_load_weights));
-    env_set_local(env, "eigen_batch_train", make_builtin(builtin_eigen_batch_train));
     env_set_local(env, "eigen_model_load", make_builtin(builtin_eigen_model_load));
-    env_set_local(env, "eigen_export_corpus", make_builtin(builtin_eigen_export_corpus));
     env_set_local(env, "eigen_check_openai", make_builtin(builtin_eigen_check_openai));
+#if EIGENSCRIPT_EXT_DB
+    env_set_local(env, "eigen_batch_train", make_builtin(builtin_eigen_batch_train));
+    env_set_local(env, "eigen_export_corpus", make_builtin(builtin_eigen_export_corpus));
+#endif
 #endif
 
 #if EIGENSCRIPT_EXT_DB
@@ -6132,6 +6187,13 @@ static void handle_request(int fd) {
             } else if (strcmp(r->kind, "code") == 0) {
                 /* Route-level auth: reject before running handler */
                 if (r->requires_auth) {
+                    Value *auth_fn = env_get(g_server.global_env, "require_auth");
+                    if (!auth_fn || (auth_fn->type != VAL_FN && auth_fn->type != VAL_BUILTIN)) {
+                        send_response(fd, 500, "Internal Server Error", "application/json",
+                            "{\"error\": \"require_auth not defined or not callable\"}", 53);
+                        close(fd);
+                        return;
+                    }
                     TokenList auth_tl = tokenize("require_auth of null");
                     ASTNode *auth_ast = parse(&auth_tl);
                     Value *auth_result = eval_node(auth_ast, g_server.global_env);
