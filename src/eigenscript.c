@@ -13,10 +13,6 @@ Value *g_return_val = NULL;
 int g_returning = 0;
 static int g_parse_errors = 0;
 /* g_global_env defined in main.c */
-/* g_model moved to ext_model.c */
-/* DB block removed — now in ext_db.c (was line 19) */
-/* Auth state moved to lib/auth.eigs — no C global needed */
-static double g_computation_cost = 0.0;
 
 /* Arena allocator and free_weight_val are in arena.c */
 
@@ -1068,14 +1064,12 @@ Value* eval_node(ASTNode *node, Env *env) {
         const char *op = node->data.binop.op;
 
         if (strcmp(op, "and") == 0) {
-            g_computation_cost += 2.0;
             Value *left = eval_node(node->data.binop.left, env);
             if (!is_truthy(left)) return make_num(0);
             Value *right = eval_node(node->data.binop.right, env);
             return make_num(is_truthy(right) ? 1 : 0);
         }
         if (strcmp(op, "or") == 0) {
-            g_computation_cost += 1.0;
             Value *left = eval_node(node->data.binop.left, env);
             if (is_truthy(left)) return make_num(1);
             Value *right = eval_node(node->data.binop.right, env);
@@ -1192,7 +1186,6 @@ Value* eval_node(ASTNode *node, Env *env) {
     }
 
     case AST_IF: {
-        g_computation_cost += 0.5;
         Value *cond = eval_node(node->data.cond.cond, env);
         if (is_truthy(cond)) {
             return eval_block(node->data.cond.if_body, node->data.cond.if_count, env);
@@ -1325,7 +1318,6 @@ Value* eval_node(ASTNode *node, Env *env) {
     }
 
     case AST_INTERROGATE: {
-        g_computation_cost += 1.0;
         Value *target = eval_node(node->data.interrogate.expr, env);
         switch (node->data.interrogate.kind) {
             case 0:
@@ -1434,16 +1426,6 @@ Value* builtin_append(Value *arg) {
     return target;
 }
 
-/* HTTP builtins moved to ext_http.c */
-
-
-/* MODEL extension (weight loader, inference, training) moved to ext_model.c */
-
-/* DB block removed — now in ext_db.c (was line 3033) */
-
-/* builtin_eigen_check_openai moved to ext_model.c */
-
-/* MODEL&&DB builtins (export_corpus) moved to ext_model.c */
 
 Value* builtin_report(Value *arg) {
     if (!arg) return make_str("equilibrium");
@@ -1839,7 +1821,6 @@ Value* builtin_str_replace(Value *arg) {
  * GENERIC HTTP CLIENT — language-level, no product logic
  * ================================================================ */
 
-/* builtin_http_post moved to ext_http.c */
 
 /* ================================================================
  * JSON PATH — dot-notation extraction from nested JSON
@@ -1922,13 +1903,6 @@ Value* builtin_json_path(Value *arg) {
     return r;
 }
 
-/* Stubs removed — dead routes eliminated from eigen_server.eigs,
- * live routes now handled by .eigs modules (admin_ops.eigs etc.) */
-
-Value* builtin_computation_cost(Value *arg) {
-    (void)arg;
-    return make_num(g_computation_cost);
-}
 
 /* ================================================================
  * LOAD_FILE — include mechanism for .eigs modules
@@ -1974,13 +1948,6 @@ Value* builtin_load_file(Value *arg) {
  * THIN BUILTINS — individual capabilities for .eigs orchestration
  * ================================================================ */
 
-/* Thin model builtins moved to ext_model.c */
-
-/* DB block removed — now in ext_db.c (was line 4048) */
-
-/* Auth builtins removed — now in lib/auth.eigs using random_hex + env_get.
- * The EIGENSCRIPT_EXT_AUTH flag is no longer needed for builtins.
- * Auth state is an EigenScript variable, not a C global. */
 
 /* ================================================================
  * CORE PLATFORM BUILTINS (always available)
@@ -2036,7 +2003,6 @@ static void ne_matmul_buf(
 }
 #endif
 
-/* json_obj_get moved to before json_path (see below) */
 
 /* ====================================================================
  * TENSOR SUBSTRATE BUILTINS
@@ -2909,7 +2875,6 @@ Value* builtin_random_hex(Value *arg) {
 /* ==== BUILTIN: http_request_headers ==== */
 /* http_request_headers of null → raw request headers as string.
  * Only meaningful during HTTP request handling. */
-/* http_request_headers moved to ext_http.c */
 
 /* ==== BUILTIN: chr ==== */
 /* chr of n → single-character string from ASCII code */
@@ -3270,7 +3235,6 @@ void register_builtins(Env *env) {
     env_set_local(env, "str", make_builtin(builtin_str));
     env_set_local(env, "num", make_builtin(builtin_num));
     env_set_local(env, "append", make_builtin(builtin_append));
-    env_set_local(env, "computation_cost", make_builtin(builtin_computation_cost));
     env_set_local(env, "report", make_builtin(builtin_report));
     env_set_local(env, "assert", make_builtin(builtin_assert));
     env_set_local(env, "observe", make_builtin(builtin_observe));
@@ -3348,12 +3312,7 @@ void register_builtins(Env *env) {
     register_model_builtins(env);
 #endif
 
-/* DB block removed — now in ext_db.c (was line 5624) */
 
-    /* Auth builtins removed — now in lib/auth.eigs */
 }
 
-/* HTTP server moved to ext_http.c */
 
-
-/* main() moved to main.c */

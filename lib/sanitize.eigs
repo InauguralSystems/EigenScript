@@ -6,14 +6,16 @@
 #   load_file of "lib/sanitize.eigs"
 #   clean is sanitize_text of "some input"
 #   garble is is_garble of "model output"
+#   response is clean_response of "raw model output"
+#   available is check_openai of null
 
-# ---- Sanitize: remove non-printable characters ----
+# ---- Sanitize: trim whitespace ----
 define sanitize_text as:
     text is n
     return trim of text
 
 # ---- Garble detection: check if text looks like nonsense ----
-# Heuristics: too short, too many repeated chars, no spaces in long text
+# Heuristics: too short, no spaces in long text, too few words
 define is_garble as:
     text is n
     if (len of text) < 2:
@@ -21,4 +23,28 @@ define is_garble as:
     if (len of text) > 20:
         if (contains of [text, " "]) == 0:
             return 1
+    words is split of [text, " "]
+    wcount is len of words
+    if wcount < 1:
+        return 1
     return 0
+
+# ---- Clean response: trim at "User:" marker, find sentence boundary ----
+define clean_response as:
+    text is n
+    if (contains of [text, "User:"]) == 1:
+        parts is split of [text, "User:"]
+        text is parts[0]
+    text is trim of text
+    if (len of text) < 1:
+        return ""
+    return text
+
+# ---- Check OpenAI API key availability ----
+define check_openai as:
+    key is env_get of "AI_INTEGRATIONS_OPENAI_API_KEY"
+    if key == "":
+        key is env_get of "OPENAI_API_KEY"
+    if key == "":
+        return 0
+    return 1

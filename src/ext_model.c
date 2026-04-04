@@ -1354,13 +1354,6 @@ static int save_model_weights(const char *path, TransformerModel *model) {
     return 0;
 }
 
-/* Dead extract_json_string removed — replaced by json_path builtin */
-/* Dead builtin_eigen_train removed — now in training.eigs via native_train_step_builtin */
-
-/* DB block removed — now in ext_db.c (was line 2794) */
-
-/* Dead builtin_model_save removed — now in training.eigs via model_save_weights */
-
 Value* builtin_eigen_model_load(Value *arg) {
     const char *base_path = "";
     if (arg && arg->type == VAL_STR) base_path = arg->data.str;
@@ -1396,158 +1389,6 @@ Value* builtin_eigen_model_load(Value *arg) {
     }
 }
 
-static int g_conversation_count = 0;
-
-static const char *g_common_words[] = {
-    "i", "a", "am", "an", "as", "at", "be", "by", "do", "go", "he", "if",
-    "in", "is", "it", "me", "my", "no", "of", "on", "or", "so", "to", "up",
-    "us", "we", "the", "and", "for", "are", "but", "not", "you", "all", "any",
-    "can", "had", "has", "her", "him", "his", "how", "its", "may", "new",
-    "now", "old", "our", "out", "own", "say", "she", "too", "two", "use",
-    "who", "why", "yes", "was", "did", "get", "got", "let", "put", "run",
-    "set", "try", "way", "day", "man", "big", "see", "ask", "own",
-    "hello", "hi", "hey", "thanks", "thank", "good", "well", "help", "know",
-    "like", "just", "about", "doing", "great", "here", "name", "what", "your",
-    "been", "come", "each", "find", "from", "gave", "have", "keep", "last",
-    "long", "look", "made", "many", "more", "much", "must", "need", "only",
-    "over", "said", "some", "take", "tell", "than", "that", "them", "then",
-    "they", "this", "time", "very", "want", "were", "will", "with", "work",
-    "year", "eigen", "sure", "feel", "fine", "glad", "happy", "real",
-    "haha", "lol", "nice", "cool", "love", "best", "also", "back", "give",
-    "goodbye", "bye", "morning", "evening", "night", "welcome", "sorry",
-    "joke", "funny", "laugh", "smart", "learn", "chat", "talk", "answer",
-    "question", "wonder", "today", "tomorrow", "yesterday", "life",
-    "make", "most", "such", "used", "call", "first", "could", "would",
-    "should", "being", "after", "other", "still", "thing", "think", "those",
-    "where", "which", "while", "world", "right", "never", "every",
-    "doing", "there", "their", "these", "might", "quite", "really",
-    "please", "always", "people", "thanks", "don",
-    "ai", "eigenscript", "observermodel", "observeranalyzer", "observe",
-    "observation", "observations", "observer", "effect", "geometry", "geometric",
-    "watch", "step", "result", "final", "measure", "changed",
-    "track", "happen", "state", "output", "changes", "language",
-    "finds", "models", "model", "mode", "strict", "endpoint", "holonomy",
-    "temporal", "when", "things", "jon", "mcreynolds",
-    "maker", "creator", "trained", "knowledge", "settled", "stable",
-    "converged", "diverges", "drift", "identity", "native", "persist",
-    "remain", "repetition", "self-observation", "myself", "nothing",
-    "something", "else", "exist", "holds", "does", "change",
-    "alexa", "siri", "chatgpt", NULL
-};
-
-static void sanitize_input(char *str) {
-    int r = 0, w = 0;
-    while (str[r]) {
-        unsigned char c = (unsigned char)str[r];
-        if (c >= 0x20 && c <= 0x7E) {
-            str[w++] = str[r];
-        }
-        r++;
-    }
-    str[w] = '\0';
-    int start = 0;
-    while (str[start] == ' ') start++;
-    if (start > 0) {
-        int i = 0;
-        while (str[start + i]) { str[i] = str[start + i]; i++; }
-        str[i] = '\0';
-        w = i;
-    }
-    while (w > 0 && str[w - 1] == ' ') str[--w] = '\0';
-}
-
-/* is_trained_prompt — extracted to prompts.eigs */
-
-/* Deflection guard (check_deflection, is_self_prompt, is_content_prompt,
- * is_identity_token) — extracted to guards.eigs */
-
-static int is_known_word(const char *word, int wlen) {
-    char lower[64];
-    if (wlen >= 64) return 0;
-    for (int i = 0; i < wlen; i++) {
-        lower[i] = (word[i] >= 'A' && word[i] <= 'Z') ? word[i] + 32 : word[i];
-        if (lower[i] == '.' || lower[i] == ',' || lower[i] == '!' ||
-            lower[i] == '?' || lower[i] == '\'' || lower[i] == '"') {
-            wlen = i;
-            break;
-        }
-    }
-    lower[wlen] = '\0';
-    if (wlen == 0) return 1;
-
-    for (int i = 0; g_common_words[i]; i++) {
-        if (strcmp(lower, g_common_words[i]) == 0) return 1;
-    }
-    return 0;
-}
-
-static int is_garble_response(const char *text) {
-    if (!text || text[0] == '\0') return 1;
-    int len = strlen(text);
-    if (len < 2) return 1;
-
-    int control = 0;
-    for (int i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)text[i];
-        if (c < 0x20 && c != '\t' && c != '\n') control++;
-    }
-    if (control > 0) return 1;
-
-    int alpha = 0;
-    for (int i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)text[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) alpha++;
-    }
-    if (len > 0 && (alpha * 100 / len) < 40) return 1;
-
-    int repeated = 0;
-    for (int i = 1; i < len; i++) {
-        if (text[i] == text[i-1] && text[i] != ' ') repeated++;
-    }
-    if (len > 4 && (repeated * 100 / len) > 40) return 1;
-
-    int words = 0, known = 0, known_3plus = 0, unknown_count = 0;
-    int in_word = 0;
-    int word_start = 0;
-    for (int i = 0; i <= len; i++) {
-        if (i < len && text[i] != ' ' && text[i] != '\t' && text[i] != '\n') {
-            if (!in_word) { in_word = 1; word_start = i; }
-        } else {
-            if (in_word) {
-                int wlen = i - word_start;
-                int plen = wlen;
-                for (int j = 0; j < wlen; j++) {
-                    char c = text[word_start + j];
-                    if (c == '.' || c == ',' || c == '!' || c == '?') { plen = j; break; }
-                }
-                words++;
-                if (is_known_word(text + word_start, wlen)) {
-                    known++;
-                    if (plen >= 3) known_3plus++;
-                } else {
-                    unknown_count++;
-                }
-                in_word = 0;
-            }
-        }
-    }
-
-    if (words == 0) return 1;
-    if (words == 1 && known == 1) return 0;
-    if (words == 1 && known == 0) return 1;
-
-    if (words <= 4 && known_3plus == 0 && unknown_count > 0) return 1;
-
-    if (words >= 2 && unknown_count > 0 && known_3plus < 2) return 1;
-
-    int match_pct = (known * 100) / words;
-    if (match_pct < 60) return 1;
-
-    return 0;
-}
-
-/* Dead replay buffer removed — training now orchestrated by .eigs modules */
-
 Value* eigs_json_parse_value(const char *s, int *pos);
 
 Value* json_obj_get(Value *obj, const char *key) {
@@ -1561,140 +1402,8 @@ Value* json_obj_get(Value *obj, const char *key) {
     return NULL;
 }
 
-/* call_openai_fallback — extracted to chat.eigs (uses http_post + json_path) */
-
-/* Dead monolithic eigen_hybrid_chat removed (264 lines) — now in chat.eigs */
 
 
-Value* builtin_eigen_check_openai(Value *arg) {
-    (void)arg;
-    const char *key = getenv("AI_INTEGRATIONS_OPENAI_API_KEY");
-    if (!key || !key[0]) key = getenv("OPENAI_API_KEY");
-    if (key && key[0]) {
-        fprintf(stderr, "OpenAI fallback: ENABLED (API key found)\n");
-        return make_str("{\"available\": true}");
-    }
-    fprintf(stderr, "WARNING: OpenAI fallback DISABLED - no API key configured (set AI_INTEGRATIONS_OPENAI_API_KEY or OPENAI_API_KEY)\n");
-    return make_str("{\"available\": false}");
-}
-
-/* Dead community_stats builtin removed — now in admin.eigs */
-
-
-#if EIGENSCRIPT_EXT_MODEL && EIGENSCRIPT_EXT_DB
-Value* builtin_eigen_export_corpus(Value *arg) {
-    (void)arg;
-    if (!g_db_conn) return make_str("{\"status\": \"error\", \"error\": \"Database not connected\"}");
-
-    PGresult *res = PQexec(g_db_conn,
-        "SELECT user_message, bot_response, inference_mode FROM conversations "
-        "WHERE used_for_training = false AND bot_response != '' AND bot_response != 'I don''t know about that yet.' "
-        "ORDER BY id ASC");
-
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        char buf[512];
-        snprintf(buf, sizeof(buf), "{\"status\": \"error\", \"error\": \"%s\"}", PQerrorMessage(g_db_conn));
-        PQclear(res);
-        return make_str(buf);
-    }
-
-    int nrows = PQntuples(res);
-    if (nrows == 0) {
-        PQclear(res);
-        return make_str("{\"status\": \"ok\", \"exported\": 0, \"message\": \"No new conversations to export\"}");
-    }
-
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    char filename[256];
-    snprintf(filename, sizeof(filename), "../../corpus/community/export_%04d%02d%02d_%02d%02d%02d.json",
-        t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
-
-    int buf_size = nrows * 1024 + 4096;
-    if (buf_size < 65536) buf_size = 65536;
-    char *json_buf = calloc(buf_size, 1);
-    int pos = 0;
-    pos += snprintf(json_buf + pos, buf_size - pos, "[\n");
-
-    int native_count = 0, fallback_count = 0, exported = 0, skipped = 0;
-    for (int i = 0; i < nrows; i++) {
-        if (pos >= buf_size - 2048) { skipped = nrows - i; break; }
-        const char *msg = PQgetvalue(res, i, 0);
-        const char *resp = PQgetvalue(res, i, 1);
-        const char *mode = PQgetvalue(res, i, 2);
-
-        if (!msg || !resp || msg[0] == '\0' || resp[0] == '\0') continue;
-        if (strlen(msg) < 2 || strlen(resp) < 2) continue;
-
-        if (exported > 0) pos += snprintf(json_buf + pos, buf_size - pos, ",\n");
-
-        char esc_msg[2048] = {0};
-        int em = 0;
-        for (int j = 0; msg[j] && em < 2040; j++) {
-            if (msg[j] == '"') { esc_msg[em++] = '\\'; esc_msg[em++] = '"'; }
-            else if (msg[j] == '\\') { esc_msg[em++] = '\\'; esc_msg[em++] = '\\'; }
-            else if (msg[j] == '\n') { esc_msg[em++] = '\\'; esc_msg[em++] = 'n'; }
-            else if (msg[j] == '\t') { esc_msg[em++] = '\\'; esc_msg[em++] = 't'; }
-            else if ((unsigned char)msg[j] >= 0x20) esc_msg[em++] = msg[j];
-        }
-
-        char esc_resp[4096] = {0};
-        int er = 0;
-        for (int j = 0; resp[j] && er < 4088; j++) {
-            if (resp[j] == '"') { esc_resp[er++] = '\\'; esc_resp[er++] = '"'; }
-            else if (resp[j] == '\\') { esc_resp[er++] = '\\'; esc_resp[er++] = '\\'; }
-            else if (resp[j] == '\n') { esc_resp[er++] = '\\'; esc_resp[er++] = 'n'; }
-            else if (resp[j] == '\t') { esc_resp[er++] = '\\'; esc_resp[er++] = 't'; }
-            else if ((unsigned char)resp[j] >= 0x20) esc_resp[er++] = resp[j];
-        }
-
-        pos += snprintf(json_buf + pos, buf_size - pos,
-            "  {\"input\": \"%s\", \"target\": \"%s\", \"source\": \"%s\"}",
-            esc_msg, esc_resp, mode);
-
-        if (strcmp(mode, "native") == 0) native_count++;
-        else fallback_count++;
-        exported++;
-    }
-    pos += snprintf(json_buf + pos, buf_size - pos, "\n]\n");
-
-    FILE *f = fopen(filename, "w");
-    if (!f) {
-        free(json_buf);
-        PQclear(res);
-        return make_str("{\"status\": \"error\", \"error\": \"Could not write export file\"}");
-    }
-    fputs(json_buf, f);
-    fclose(f);
-    free(json_buf);
-
-    PGresult *upd = PQexec(g_db_conn,
-        "UPDATE conversations SET used_for_training = true "
-        "WHERE used_for_training = false AND bot_response != '' AND bot_response != 'I don''t know about that yet.'");
-    if (upd) PQclear(upd);
-
-    PQclear(res);
-
-    const char *short_name = strrchr(filename, '/');
-    if (short_name) short_name++; else short_name = filename;
-
-    char result[1024];
-    snprintf(result, sizeof(result),
-        "{\"status\": \"ok\", \"exported\": %d, \"native\": %d, \"openai_fallback\": %d, \"skipped\": %d, \"filename\": \"%s\"}",
-        exported, native_count, fallback_count, skipped, short_name);
-    return make_str(result);
-}
-
-/* SHA256 moved to ext_db.c */
-
-/* ================================================================
- * API Key Management
- * ================================================================ */
-
-/* ensure_api_keys_table moved to ext_db.c */
-
-/* Dead monolithic API key builtins removed — now in admin.eigs */
-#endif /* EIGENSCRIPT_EXT_MODEL && EIGENSCRIPT_EXT_DB — export_corpus */
 
 Value* builtin_eigen_model_loaded(Value *arg) {
     (void)arg;
@@ -1722,92 +1431,11 @@ Value* builtin_eigen_generate(Value *arg) {
     return result;
 }
 
-Value* builtin_eigen_sanitize(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
-    char *buf = strdup(arg->data.str);
-    sanitize_input(buf);
-    Value *result = make_str(buf);
-    free(buf);
-    return result;
-}
 
-Value* builtin_eigen_clean_response(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
 
-    char *clean = strdup(arg->data.str);
-    int clen = strlen(clean);
 
-    /* Trim at "User:" marker */
-    char *user_marker = strstr(clean, "User:");
-    if (user_marker) { *user_marker = '\0'; clen = strlen(clean); }
 
-    /* Trim leading whitespace */
-    char *start = clean;
-    while (*start == ' ' || *start == '\t' || *start == '\n') start++;
 
-    /* Trim trailing whitespace */
-    clen = strlen(start);
-    while (clen > 0 && (start[clen-1] == ' ' || start[clen-1] == '\n')) start[--clen] = '\0';
-
-    /* Find last good sentence boundary (same logic as builtin_eigen_hybrid_chat lines 3636-3678) */
-    int last_good = -1;
-    for (int i = clen - 1; i > 5; i--) {
-        if (start[i] == '.' || start[i] == '!' || start[i] == '?') {
-            int prev_end = -1;
-            for (int j = i - 1; j >= 0; j--) {
-                if (start[j] == '.' || start[j] == '!' || start[j] == '?') { prev_end = j; break; }
-            }
-            int seg_len = i - prev_end;
-            if (prev_end == -1) { last_good = i; break; }
-            if (seg_len >= 10) {
-                int seg_start = prev_end + 1;
-                int word_count = 0, total_word_chars = 0, wl = 0;
-                for (int k = seg_start; k <= i; k++) {
-                    char ch = start[k];
-                    if (ch == ' ' || ch == '.' || ch == '!' || ch == '?') {
-                        if (wl > 0) { word_count++; total_word_chars += wl; wl = 0; }
-                    } else { wl++; }
-                }
-                if (wl > 0) { word_count++; total_word_chars += wl; }
-                double avg_wl = word_count > 0 ? (double)total_word_chars / word_count : 0;
-                if (avg_wl >= 3.0) { last_good = i; break; }
-            }
-        }
-    }
-    if (last_good > 5 && last_good < clen - 1) {
-        if (last_good + 1 >= 20) {
-            start[last_good + 1] = '\0';
-        }
-    }
-
-    Value *result = make_str(start);
-    free(clean);
-    return result;
-}
-
-Value* builtin_eigen_is_garble(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(1);
-    return make_num(is_garble_response(arg->data.str) ? 1 : 0);
-}
-
-/* eigen_is_trained_prompt — extracted to prompts.eigs */
-
-/* eigen_check_deflection_v2 — extracted to guards.eigs */
-
-/* eigen_check_identity — extracted to guards.eigs */
-
-/* eigen_openai_chat — extracted to chat.eigs (uses http_post + json_path) */
-
-/* eigen_db_insert_conversation — extracted to chat.eigs (uses db_execute) */
-
-Value* builtin_eigen_conversation_count(Value *arg) {
-    (void)arg;
-    return make_num(g_conversation_count);
-}
-
-/* eigen_extract_message — replaced by json_path in .eigs */
-/* eigen_build_chat_response — extracted to chat.eigs */
-/* eigen_extract_json_field — replaced by json_path in .eigs */
 
 /* ================================================================
  * THIN TRAINING/MODEL BUILTINS — core platform capabilities
@@ -1873,44 +1501,7 @@ Value* builtin_model_save_weights(Value *arg) {
     return make_str("{\"status\": \"error\", \"error\": \"Failed to save model\"}");
 }
 
-Value* builtin_model_load_weights(Value *arg) {
-    /* Thin wrapper around load_model_weights().
-     * Input: path (string) — checks for _live.json variant automatically
-     * Output: JSON status with model config */
-    if (!arg || arg->type != VAL_STR || arg->data.str[0] == '\0') {
-        return make_str("{\"status\": \"error\", \"error\": \"requires path string\"}");
-    }
-    const char *base_path = arg->data.str;
-    char live_path[512];
-    const char *path = base_path;
 
-    /* Check for _live.json variant */
-    int base_len = strlen(base_path);
-    if (base_len > 5 && strcmp(base_path + base_len - 5, ".json") == 0) {
-        snprintf(live_path, sizeof(live_path), "%.*s_live.json", base_len - 5, base_path);
-        FILE *f = fopen(live_path, "r");
-        if (f) {
-            fclose(f);
-            path = live_path;
-            fprintf(stderr, "[model-load] Found live weights: %s\n", live_path);
-        } else {
-            fprintf(stderr, "[model-load] No live weights, using: %s\n", base_path);
-        }
-    }
-
-    fprintf(stderr, "[model-load] Loading from: %s\n", path);
-    int result = load_model_weights(path, &g_model);
-    if (result == 0) {
-        char buf[1024];
-        snprintf(buf, sizeof(buf),
-            "{\"status\": \"loaded\", \"vocab_size\": %d, \"n_layers\": %d, \"d_model\": %d, \"d_ff\": %d, \"path\": \"%s\"}",
-            g_model.config.vocab_size, g_model.config.n_layers, g_model.config.d_model, g_model.config.d_ff, path);
-        return make_str(buf);
-    }
-    return make_str("{\"status\": \"error\", \"error\": \"Failed to load model weights\"}");
-}
-
-/* builtin_file_exists moved to core section (always available) */
 
 /* ================================================================
  * THIN PLATFORM BUILTINS — model info
@@ -1928,21 +1519,13 @@ Value* builtin_eigen_model_info(Value *arg) {
     return make_str(buf);
 }
 
-/* builtin_env_get moved to core section (always available) */
-
 
 void register_model_builtins(Env *env) {
-    /* ---- Model/inference extension ---- */
     env_set_local(env, "eigen_model_loaded", make_builtin(builtin_eigen_model_loaded));
     env_set_local(env, "eigen_generate", make_builtin(builtin_eigen_generate));
-    env_set_local(env, "eigen_sanitize", make_builtin(builtin_eigen_sanitize));
-    env_set_local(env, "eigen_clean_response", make_builtin(builtin_eigen_clean_response));
-    env_set_local(env, "eigen_is_garble", make_builtin(builtin_eigen_is_garble));
-    env_set_local(env, "eigen_conversation_count", make_builtin(builtin_eigen_conversation_count));
     env_set_local(env, "eigen_model_info", make_builtin(builtin_eigen_model_info));
     env_set_local(env, "native_train_step_builtin", make_builtin(builtin_native_train_step));
     env_set_local(env, "model_save_weights", make_builtin(builtin_model_save_weights));
-    env_set_local(env, "model_load_weights", make_builtin(builtin_model_load_weights));
     env_set_local(env, "eigen_model_load", make_builtin(builtin_eigen_model_load));
-    env_set_local(env, "eigen_check_openai", make_builtin(builtin_eigen_check_openai));
+    env_set_local(env, "model_load_weights", make_builtin(builtin_eigen_model_load));
 }
