@@ -458,10 +458,17 @@ check_exit "EM1 parse error aborts with exit 1" 'x is @' "1"
 check_stderr "EM2 parse error names the token" 'if x > 0
     print of x' "expected ':'"
 check_stderr "EM3 unknown char shows character" 'x is @' "unexpected character"
-check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Type error"
+check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error line 1: cannot apply"
 check_stderr "EM5 index out of bounds" 'items is [1,2,3]
-print of items[10]' "Index error"
-check_stderr "EM6 division by zero warning" 'print of (10 / 0)' "division by zero"
+print of items[10]' "Error line 2: index 10 out of range"
+check_stderr "EM6 division by zero warning" 'print of (10 / 0)' "Warning line 1: division by zero"
+check_stderr "EM7 undefined variable includes line" 'x is 1
+y is 2
+print of z' "Error line 3: undefined variable"
+check_stderr "EM8 calling non-function" 'x is 5
+y is x of 10' "Error line 2: cannot call num"
+check_stderr "EM9 cannot index num" 'x is 42
+print of x[0]' "Error line 2: cannot index num"
 echo ""
 
 echo "============================================"

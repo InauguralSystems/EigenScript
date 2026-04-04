@@ -94,6 +94,7 @@ typedef struct ASTNode ASTNode;
 
 struct ASTNode {
     ASTType type;
+    int line;
     union {
         double num;
         char *str;

@@ -573,9 +573,10 @@ static void p_skip_newlines(Parser *p) {
     while (p_cur(p)->type == TOK_NEWLINE) p_advance(p);
 }
 
-static ASTNode* make_node(ASTType type) {
+static ASTNode* make_node(ASTType type, int line) {
     ASTNode *n = calloc(1, sizeof(ASTNode));
     n->type = type;
+    n->line = line;
     return n;
 }
 
@@ -612,18 +613,18 @@ static ASTNode* parse_primary(Parser *p) {
         if (p_cur(p)->type == TOK_IS) {
             p_advance(p);
             ASTNode *expr = parse_expression(p);
-            ASTNode *n = make_node(AST_INTERROGATE);
+            ASTNode *n = make_node(AST_INTERROGATE, p_cur(p)->line);
             n->data.interrogate.kind = kind;
             n->data.interrogate.expr = expr;
             return n;
         }
-        ASTNode *n = make_node(AST_IDENT);
+        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
         n->data.ident.name = strdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
             p_expect(p, TOK_RBRACKET);
-            ASTNode *index_node = make_node(AST_INDEX);
+            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
             index_node->data.index.target = n;
             index_node->data.index.index = idx;
             n = index_node;
@@ -634,20 +635,20 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type >= TOK_CONVERGED && t->type <= TOK_EQUILIBRIUM) {
         int kind = t->type - TOK_CONVERGED;
         p_advance(p);
-        ASTNode *n = make_node(AST_PREDICATE);
+        ASTNode *n = make_node(AST_PREDICATE, p_cur(p)->line);
         n->data.predicate.kind = kind;
         return n;
     }
 
     if (t->type == TOK_NUM) {
         p_advance(p);
-        ASTNode *n = make_node(AST_NUM);
+        ASTNode *n = make_node(AST_NUM, p_cur(p)->line);
         n->data.num = t->num_val;
         while (p_cur(p)->type == TOK_LBRACKET) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
             p_expect(p, TOK_RBRACKET);
-            ASTNode *index_node = make_node(AST_INDEX);
+            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
             index_node->data.index.target = n;
             index_node->data.index.index = idx;
             n = index_node;
@@ -657,13 +658,13 @@ static ASTNode* parse_primary(Parser *p) {
 
     if (t->type == TOK_STR) {
         p_advance(p);
-        ASTNode *n = make_node(AST_STR);
+        ASTNode *n = make_node(AST_STR, p_cur(p)->line);
         n->data.str = strdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
             p_expect(p, TOK_RBRACKET);
-            ASTNode *index_node = make_node(AST_INDEX);
+            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
             index_node->data.index.target = n;
             index_node->data.index.index = idx;
             n = index_node;
@@ -673,18 +674,18 @@ static ASTNode* parse_primary(Parser *p) {
 
     if (t->type == TOK_NULL) {
         p_advance(p);
-        return make_node(AST_NULL);
+        return make_node(AST_NULL, p_cur(p)->line);
     }
 
     if (t->type == TOK_IDENT) {
         p_advance(p);
-        ASTNode *n = make_node(AST_IDENT);
+        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
         n->data.ident.name = strdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
             p_expect(p, TOK_RBRACKET);
-            ASTNode *index_node = make_node(AST_INDEX);
+            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
             index_node->data.index.target = n;
             index_node->data.index.index = idx;
             n = index_node;
@@ -700,7 +701,7 @@ static ASTNode* parse_primary(Parser *p) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
             p_expect(p, TOK_RBRACKET);
-            ASTNode *index_node = make_node(AST_INDEX);
+            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
             index_node->data.index.target = expr;
             index_node->data.index.index = idx;
             expr = index_node;
@@ -712,7 +713,7 @@ static ASTNode* parse_primary(Parser *p) {
         p_advance(p);
         if (p_cur(p)->type == TOK_RBRACKET) {
             p_advance(p);
-            ASTNode *n = make_node(AST_LIST);
+            ASTNode *n = make_node(AST_LIST, p_cur(p)->line);
             n->data.list.elems = NULL;
             n->data.list.count = 0;
             return n;
@@ -732,7 +733,7 @@ static ASTNode* parse_primary(Parser *p) {
                 filter = parse_expression(p);
             }
             p_expect(p, TOK_RBRACKET);
-            ASTNode *n = make_node(AST_LISTCOMP);
+            ASTNode *n = make_node(AST_LISTCOMP, p_cur(p)->line);
             n->data.listcomp.expr = first;
             n->data.listcomp.var = strdup(var_tok->str_val);
             n->data.listcomp.iter = iter;
@@ -750,7 +751,7 @@ static ASTNode* parse_primary(Parser *p) {
         }
         p_expect(p, TOK_RBRACKET);
 
-        ASTNode *n = make_node(AST_LIST);
+        ASTNode *n = make_node(AST_LIST, p_cur(p)->line);
         n->data.list.elems = elems;
         n->data.list.count = count;
 
@@ -758,7 +759,7 @@ static ASTNode* parse_primary(Parser *p) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
             p_expect(p, TOK_RBRACKET);
-            ASTNode *index_node = make_node(AST_INDEX);
+            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
             index_node->data.index.target = n;
             index_node->data.index.index = idx;
             n = index_node;
@@ -766,7 +767,7 @@ static ASTNode* parse_primary(Parser *p) {
         return n;
     }
 
-    ASTNode *n = make_node(AST_NULL);
+    ASTNode *n = make_node(AST_NULL, p_cur(p)->line);
     if (t->type != TOK_EOF && t->type != TOK_NEWLINE && t->type != TOK_DEDENT) {
         g_parse_errors++;
         p_advance(p);
@@ -782,7 +783,7 @@ static ASTNode* parse_relation(Parser *p) {
     if (p_cur(p)->type == TOK_OF) {
         p_advance(p);
         ASTNode *right = parse_addition(p);
-        ASTNode *n = make_node(AST_RELATION);
+        ASTNode *n = make_node(AST_RELATION, p_cur(p)->line);
         n->data.relation.left = left;
         n->data.relation.right = right;
         return n;
@@ -795,7 +796,7 @@ static ASTNode* parse_unary(Parser *p) {
     if (p_cur(p)->type == TOK_MINUS) {
         p_advance(p);
         ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node(AST_UNARY);
+        ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
         strcpy(n->data.unary.op, "-");
         n->data.unary.operand = operand;
         return n;
@@ -803,7 +804,7 @@ static ASTNode* parse_unary(Parser *p) {
     if (p_cur(p)->type == TOK_NOT) {
         p_advance(p);
         ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node(AST_UNARY);
+        ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
         strcpy(n->data.unary.op, "not");
         n->data.unary.operand = operand;
         return n;
@@ -820,7 +821,7 @@ static ASTNode* parse_multiply(Parser *p) {
         else op[0] = '%';
         p_advance(p);
         ASTNode *right = parse_unary(p);
-        ASTNode *n = make_node(AST_BINOP);
+        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
         strcpy(n->data.binop.op, op);
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -836,7 +837,7 @@ static ASTNode* parse_addition(Parser *p) {
         op[0] = (p_cur(p)->type == TOK_PLUS) ? '+' : '-';
         p_advance(p);
         ASTNode *right = parse_multiply(p);
-        ASTNode *n = make_node(AST_BINOP);
+        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
         strcpy(n->data.binop.op, op);
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -861,7 +862,7 @@ static ASTNode* parse_comparison(Parser *p) {
         }
         p_advance(p);
         ASTNode *right = parse_addition(p);
-        ASTNode *n = make_node(AST_BINOP);
+        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
         strcpy(n->data.binop.op, op);
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -875,7 +876,7 @@ static ASTNode* parse_and(Parser *p) {
     while (p_cur(p)->type == TOK_AND) {
         p_advance(p);
         ASTNode *right = parse_comparison(p);
-        ASTNode *n = make_node(AST_BINOP);
+        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
         strcpy(n->data.binop.op, "and");
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -889,7 +890,7 @@ static ASTNode* parse_or(Parser *p) {
     while (p_cur(p)->type == TOK_OR) {
         p_advance(p);
         ASTNode *right = parse_and(p);
-        ASTNode *n = make_node(AST_BINOP);
+        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
         strcpy(n->data.binop.op, "or");
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -917,7 +918,7 @@ static ASTNode* parse_statement(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_FUNC);
+        ASTNode *n = make_node(AST_FUNC, p_cur(p)->line);
         n->data.func.name = strdup(name_tok->str_val);
         n->data.func.param = strdup("n");
         n->data.func.body = body;
@@ -947,7 +948,7 @@ static ASTNode* parse_statement(Parser *p) {
             p_skip_newlines(p);
             else_body = parse_block(p, &else_count);
         }
-        ASTNode *n = make_node(AST_IF);
+        ASTNode *n = make_node(AST_IF, p_cur(p)->line);
         n->data.cond.cond = cond;
         n->data.cond.if_body = if_body;
         n->data.cond.if_count = if_count;
@@ -964,7 +965,7 @@ static ASTNode* parse_statement(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_LOOP);
+        ASTNode *n = make_node(AST_LOOP, p_cur(p)->line);
         n->data.loop.cond = cond;
         n->data.loop.body = body;
         n->data.loop.body_count = body_count;
@@ -981,7 +982,7 @@ static ASTNode* parse_statement(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_FOR);
+        ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
         n->data.forloop.var = strdup(var_tok->str_val);
         n->data.forloop.iter = iter;
         n->data.forloop.body = body;
@@ -993,7 +994,7 @@ static ASTNode* parse_statement(Parser *p) {
         p_advance(p);
         ASTNode *expr = parse_expression(p);
         p_match(p, TOK_NEWLINE);
-        ASTNode *n = make_node(AST_RETURN);
+        ASTNode *n = make_node(AST_RETURN, p_cur(p)->line);
         n->data.ret.expr = expr;
         return n;
     }
@@ -1003,7 +1004,7 @@ static ASTNode* parse_statement(Parser *p) {
         p_advance(p);
         ASTNode *expr = parse_expression(p);
         p_match(p, TOK_NEWLINE);
-        ASTNode *n = make_node(AST_ASSIGN);
+        ASTNode *n = make_node(AST_ASSIGN, p_cur(p)->line);
         n->data.assign.name = strdup(name_tok->str_val);
         n->data.assign.expr = expr;
         return n;
@@ -1033,7 +1034,7 @@ ASTNode* parse(TokenList *tl) {
         }
     }
 
-    ASTNode *prog = make_node(AST_PROGRAM);
+    ASTNode *prog = make_node(AST_PROGRAM, p_cur(&p)->line);
     prog->data.program.stmts = stmts;
     prog->data.program.count = count;
     return prog;
@@ -1117,7 +1118,7 @@ Value* eval_node(ASTNode *node, Env *env) {
     case AST_IDENT: {
         Value *v = env_get(env, node->data.ident.name);
         if (!v) {
-            fprintf(stderr, "Warning: undefined variable '%s'\n", node->data.ident.name);
+            fprintf(stderr, "Error line %d: undefined variable '%s'\n", node->line, node->data.ident.name);
             return make_null();
         }
         return v;
@@ -1176,14 +1177,14 @@ Value* eval_node(ASTNode *node, Env *env) {
             return make_num(left->data.num * right->data.num);
         if (strcmp(op, "/") == 0 && left->type == VAL_NUM && right->type == VAL_NUM) {
             if (right->data.num == 0) {
-                fprintf(stderr, "Warning: division by zero\n");
+                fprintf(stderr, "Warning line %d: division by zero\n", node->line);
                 return make_num(0);
             }
             return make_num(left->data.num / right->data.num);
         }
         if (strcmp(op, "%") == 0 && left->type == VAL_NUM && right->type == VAL_NUM) {
             if (right->data.num == 0) {
-                fprintf(stderr, "Warning: division by zero\n");
+                fprintf(stderr, "Warning line %d: division by zero\n", node->line);
                 return make_num(0);
             }
             return make_num(fmod(left->data.num, right->data.num));
@@ -1215,17 +1216,20 @@ Value* eval_node(ASTNode *node, Env *env) {
             if (strcmp(op, ">=") == 0) return make_num(left->data.num >= right->data.num ? 1 : 0);
         }
 
-        fprintf(stderr, "Type error: cannot apply '%s' to %s and %s\n",
-                op, val_type_name(left->type), val_type_name(right->type));
+        fprintf(stderr, "Error line %d: cannot apply '%s' to %s and %s\n",
+                node->line, op, val_type_name(left->type), val_type_name(right->type));
         return make_null();
     }
 
     case AST_UNARY: {
         Value *operand = eval_node(node->data.unary.operand, env);
-        if (strcmp(node->data.unary.op, "-") == 0 && operand->type == VAL_NUM)
-            return make_num(-operand->data.num);
+        if (strcmp(node->data.unary.op, "-") == 0) {
+            if (operand->type == VAL_NUM)
+                return make_num(-operand->data.num);
+            fprintf(stderr, "Error line %d: cannot negate %s\n", node->line, val_type_name(operand->type));
+            return make_null();
+        }
         if (strcmp(node->data.unary.op, "not") == 0) {
-            /* free - no cost */
             return make_num(is_truthy(operand) ? 0 : 1);
         }
         return make_null();
@@ -1267,6 +1271,8 @@ Value* eval_node(ASTNode *node, Env *env) {
             return result;
         }
 
+        fprintf(stderr, "Error line %d: cannot call %s (not a function)\n",
+                node->line, val_type_name(left_val->type));
         return make_null();
     }
 
@@ -1312,8 +1318,8 @@ Value* eval_node(ASTNode *node, Env *env) {
     case AST_FOR: {
         Value *iter = eval_node(node->data.forloop.iter, env);
         if (!iter || iter->type != VAL_LIST) {
-            fprintf(stderr, "Type error: 'for' requires a list, got %s\n",
-                    iter ? val_type_name(iter->type) : "null");
+            fprintf(stderr, "Error line %d: 'for' requires a list, got %s\n",
+                    node->line, iter ? val_type_name(iter->type) : "null");
             return make_null();
         }
         Value *result = make_null();
@@ -1360,7 +1366,7 @@ Value* eval_node(ASTNode *node, Env *env) {
             int i = (int)idx->data.num;
             if (i >= 0 && i < target->data.list.count)
                 return target->data.list.items[i];
-            fprintf(stderr, "Index error: index %d out of range (length %d)\n",
+            fprintf(stderr, "Error line %d: index %d out of range (length %d)\n", node->line,
                     i, target->data.list.count);
             return make_null();
         }
@@ -1371,9 +1377,10 @@ Value* eval_node(ASTNode *node, Env *env) {
                 char buf[2] = {target->data.str[i], '\0'};
                 return make_str(buf);
             }
-            fprintf(stderr, "Index error: index %d out of range (length %d)\n", i, len);
+            fprintf(stderr, "Error line %d: index %d out of range (length %d)\n", node->line, i, len);
             return make_null();
         }
+        fprintf(stderr, "Error line %d: cannot index %s\n", node->line, val_type_name(target->type));
         return make_null();
     }
 
