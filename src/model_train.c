@@ -6,11 +6,11 @@
 #include "model_internal.h"
 
 static void ne_matmul_at_buf(
-    double* a, int64_t m, int64_t k,
-    double* b, int64_t n,
-    double* out
+    float* a, int64_t m, int64_t k,
+    float* b, int64_t n,
+    float* out
 ) {
-    memset(out, 0, k * n * sizeof(double));
+    memset(out, 0, k * n * sizeof(float));
     for (int64_t i0 = 0; i0 < k; i0 += NE_TILE_SIZE) {
         for (int64_t j0 = 0; j0 < n; j0 += NE_TILE_SIZE) {
             for (int64_t k0 = 0; k0 < m; k0 += NE_TILE_SIZE) {
@@ -19,7 +19,7 @@ static void ne_matmul_at_buf(
                 int64_t k_end = k0 + NE_TILE_SIZE < m ? k0 + NE_TILE_SIZE : m;
                 for (int64_t i = i0; i < i_end; i++) {
                     for (int64_t kk = k0; kk < k_end; kk++) {
-                        double a_ki = a[kk * k + i];
+                        float a_ki = a[kk * k + i];
                         for (int64_t j = j0; j < j_end; j++) {
                             out[i * n + j] += a_ki * b[kk * n + j];
                         }
@@ -31,11 +31,11 @@ static void ne_matmul_at_buf(
 }
 
 static void ne_matmul_bt_buf(
-    double* a, int64_t m, int64_t k,
-    double* b, int64_t n,
-    double* out
+    float* a, int64_t m, int64_t k,
+    float* b, int64_t n,
+    float* out
 ) {
-    memset(out, 0, m * k * sizeof(double));
+    memset(out, 0, m * k * sizeof(float));
     for (int64_t i0 = 0; i0 < m; i0 += NE_TILE_SIZE) {
         for (int64_t j0 = 0; j0 < k; j0 += NE_TILE_SIZE) {
             for (int64_t k0 = 0; k0 < n; k0 += NE_TILE_SIZE) {
@@ -44,7 +44,7 @@ static void ne_matmul_bt_buf(
                 int64_t k_end = k0 + NE_TILE_SIZE < n ? k0 + NE_TILE_SIZE : n;
                 for (int64_t i = i0; i < i_end; i++) {
                     for (int64_t kk = k0; kk < k_end; kk++) {
-                        double a_ik = a[i * n + kk];
+                        float a_ik = a[i * n + kk];
                         for (int64_t j = j0; j < j_end; j++) {
                             out[i * k + j] += a_ik * b[j * n + kk];
                         }
@@ -56,51 +56,51 @@ static void ne_matmul_bt_buf(
 }
 
 static void ne_fused_attention_backward_buf(
-    double* d_attn_out, int64_t seq_len, int64_t d_model,
-    double* x,
-    double* wq, double* wk, double* wv, double* wo,
-    double* attn_probs,
-    double* d_wq, double* d_wk, double* d_wv, double* d_wo,
-    double* d_x
+    float* d_attn_out, int64_t seq_len, int64_t d_model,
+    float* x,
+    float* wq, float* wk, float* wv, float* wo,
+    float* attn_probs,
+    float* d_wq, float* d_wk, float* d_wv, float* d_wo,
+    float* d_x
 ) {
     int64_t sd = seq_len * d_model;
     int64_t dd = d_model * d_model;
     int64_t ss = seq_len * seq_len;
     (void)dd;
 
-    double* Q = (double*)calloc(sd, sizeof(double));
-    double* K = (double*)calloc(sd, sizeof(double));
-    double* V = (double*)calloc(sd, sizeof(double));
-    double* context = (double*)calloc(sd, sizeof(double));
+    float* Q = (float*)calloc(sd, sizeof(float));
+    float* K = (float*)calloc(sd, sizeof(float));
+    float* V = (float*)calloc(sd, sizeof(float));
+    float* context = (float*)calloc(sd, sizeof(float));
 
-    ne_matmul_buf(x, seq_len, d_model, wq, d_model, Q);
-    ne_matmul_buf(x, seq_len, d_model, wk, d_model, K);
-    ne_matmul_buf(x, seq_len, d_model, wv, d_model, V);
-    ne_matmul_buf(attn_probs, seq_len, seq_len, V, d_model, context);
+    ne_matmul_buf_f(x, seq_len, d_model, wq, d_model, Q);
+    ne_matmul_buf_f(x, seq_len, d_model, wk, d_model, K);
+    ne_matmul_buf_f(x, seq_len, d_model, wv, d_model, V);
+    ne_matmul_buf_f(attn_probs, seq_len, seq_len, V, d_model, context);
 
-    double* d_context = (double*)calloc(sd, sizeof(double));
+    float* d_context = (float*)calloc(sd, sizeof(float));
     ne_matmul_bt_buf(d_attn_out, seq_len, d_model, wo, d_model, d_context);
 
     ne_matmul_at_buf(context, seq_len, d_model, d_attn_out, d_model, d_wo);
 
-    double* d_V = (double*)calloc(sd, sizeof(double));
+    float* d_V = (float*)calloc(sd, sizeof(float));
     ne_matmul_at_buf(attn_probs, seq_len, seq_len, d_context, d_model, d_V);
 
-    double* d_probs = (double*)calloc(ss, sizeof(double));
-    double* Vt = (double*)calloc(sd, sizeof(double));
+    float* d_probs = (float*)calloc(ss, sizeof(float));
+    float* Vt = (float*)calloc(sd, sizeof(float));
     for (int64_t i = 0; i < seq_len; i++) {
         for (int64_t j = 0; j < d_model; j++) {
             Vt[j * seq_len + i] = V[i * d_model + j];
         }
     }
-    ne_matmul_buf(d_context, seq_len, d_model, Vt, seq_len, d_probs);
+    ne_matmul_buf_f(d_context, seq_len, d_model, Vt, seq_len, d_probs);
     free(Vt);
 
     ne_matmul_at_buf(x, seq_len, d_model, d_V, d_model, d_wv);
 
-    double* d_scores = (double*)calloc(ss, sizeof(double));
+    float* d_scores = (float*)calloc(ss, sizeof(float));
     for (int64_t i = 0; i < seq_len; i++) {
-        double s = 0.0;
+        float s = 0.0f;
         for (int64_t j = 0; j < seq_len; j++) {
             s += attn_probs[i * seq_len + j] * d_probs[i * seq_len + j];
         }
@@ -109,37 +109,37 @@ static void ne_fused_attention_backward_buf(
         }
     }
 
-    double scale = 1.0 / sqrt((double)d_model);
+    float scale = 1.0f / sqrtf((float)d_model);
 
-    double* d_Q = (double*)calloc(sd, sizeof(double));
-    ne_matmul_buf(d_scores, seq_len, seq_len, K, d_model, d_Q);
+    float* d_Q = (float*)calloc(sd, sizeof(float));
+    ne_matmul_buf_f(d_scores, seq_len, seq_len, K, d_model, d_Q);
     for (int64_t i = 0; i < sd; i++) d_Q[i] *= scale;
 
-    double* d_K = (double*)calloc(sd, sizeof(double));
-    double* d_scores_t = (double*)calloc(ss, sizeof(double));
+    float* d_K = (float*)calloc(sd, sizeof(float));
+    float* d_scores_t = (float*)calloc(ss, sizeof(float));
     for (int64_t i = 0; i < seq_len; i++) {
         for (int64_t j = 0; j < seq_len; j++) {
             d_scores_t[j * seq_len + i] = d_scores[i * seq_len + j];
         }
     }
-    ne_matmul_buf(d_scores_t, seq_len, seq_len, Q, d_model, d_K);
+    ne_matmul_buf_f(d_scores_t, seq_len, seq_len, Q, d_model, d_K);
     for (int64_t i = 0; i < sd; i++) d_K[i] *= scale;
     free(d_scores_t);
 
     ne_matmul_at_buf(x, seq_len, d_model, d_Q, d_model, d_wq);
     ne_matmul_at_buf(x, seq_len, d_model, d_K, d_model, d_wk);
 
-    memset(d_x, 0, sd * sizeof(double));
-    double* temp = (double*)calloc(sd, sizeof(double));
+    memset(d_x, 0, sd * sizeof(float));
+    float* temp = (float*)calloc(sd, sizeof(float));
 
     ne_matmul_bt_buf(d_Q, seq_len, d_model, wq, d_model, temp);
     for (int64_t i = 0; i < sd; i++) d_x[i] += temp[i];
 
-    memset(temp, 0, sd * sizeof(double));
+    memset(temp, 0, sd * sizeof(float));
     ne_matmul_bt_buf(d_K, seq_len, d_model, wk, d_model, temp);
     for (int64_t i = 0; i < sd; i++) d_x[i] += temp[i];
 
-    memset(temp, 0, sd * sizeof(double));
+    memset(temp, 0, sd * sizeof(float));
     ne_matmul_bt_buf(d_V, seq_len, d_model, wv, d_model, temp);
     for (int64_t i = 0; i < sd; i++) d_x[i] += temp[i];
 
@@ -150,32 +150,32 @@ static void ne_fused_attention_backward_buf(
 }
 
 static void ne_fused_ffn_backward_buf(
-    double* d_out, int64_t seq_len, int64_t d_model,
-    double* x,
-    double* w1, int64_t d_ff,
-    double* w2,
-    double* pre_act,
-    double* d_w1, double* d_w2, double* d_x
+    float* d_out, int64_t seq_len, int64_t d_model,
+    float* x,
+    float* w1, int64_t d_ff,
+    float* w2,
+    float* pre_act,
+    float* d_w1, float* d_w2, float* d_x
 ) {
     int64_t sf = seq_len * d_ff;
-    const double sqrt_2_over_pi = sqrt(2.0 / M_PI);
-    const double sqrt_2pi = sqrt(2.0 * M_PI);
+    const float sqrt_2_over_pi = sqrtf(2.0f / M_PI);
+    const float sqrt_2pi = sqrtf(2.0f * M_PI);
 
-    double* gelu_out = (double*)calloc(sf, sizeof(double));
-    memcpy(gelu_out, pre_act, sf * sizeof(double));
-    ne_gelu_buf(gelu_out, sf);
+    float* gelu_out = (float*)calloc(sf, sizeof(float));
+    memcpy(gelu_out, pre_act, sf * sizeof(float));
+    ne_gelu_buf_f(gelu_out, sf);
 
-    double* d_gelu = (double*)calloc(sf, sizeof(double));
+    float* d_gelu = (float*)calloc(sf, sizeof(float));
     ne_matmul_bt_buf(d_out, seq_len, d_ff, w2, d_model, d_gelu);
 
     ne_matmul_at_buf(gelu_out, seq_len, d_ff, d_out, d_model, d_w2);
 
-    double* d_hidden = (double*)calloc(sf, sizeof(double));
+    float* d_hidden = (float*)calloc(sf, sizeof(float));
     for (int64_t i = 0; i < sf; i++) {
-        double h = pre_act[i];
-        double cdf = 0.5 * (1.0 + tanh(sqrt_2_over_pi * (h + 0.044715 * h * h * h)));
-        double pdf = exp(-0.5 * h * h) / sqrt_2pi;
-        double gelu_grad = cdf + h * pdf;
+        float h = pre_act[i];
+        float cdf = 0.5f * (1.0f + tanhf(sqrt_2_over_pi * (h + 0.044715f * h * h * h)));
+        float pdf = expf(-0.5f * h * h) / sqrt_2pi;
+        float gelu_grad = cdf + h * pdf;
         d_hidden[i] = d_gelu[i] * gelu_grad;
     }
 
@@ -185,15 +185,15 @@ static void ne_fused_ffn_backward_buf(
     free(gelu_out); free(d_gelu); free(d_hidden);
 }
 
-static void layer_norm_backward(double *d_out, double *x_norm, double *gamma, double std_val, int d_model,
-                                 double *d_x, double *d_gamma, double *d_beta) {
-    double *d_x_norm_vec = calloc(d_model, sizeof(double));
+static void layer_norm_backward(float *d_out, float *x_norm, float *gamma, float std_val, int d_model,
+                                 float *d_x, float *d_gamma, float *d_beta) {
+    float *d_x_norm_vec = calloc(d_model, sizeof(float));
     for (int j = 0; j < d_model; j++) {
         d_gamma[j] += d_out[j] * x_norm[j];
         d_beta[j] += d_out[j];
         d_x_norm_vec[j] = d_out[j] * gamma[j];
     }
-    double mean_d = 0.0, mean_xd = 0.0;
+    float mean_d = 0.0f, mean_xd = 0.0f;
     for (int j = 0; j < d_model; j++) {
         mean_d += d_x_norm_vec[j];
         mean_xd += d_x_norm_vec[j] * x_norm[j];
@@ -206,32 +206,32 @@ static void layer_norm_backward(double *d_out, double *x_norm, double *gamma, do
     free(d_x_norm_vec);
 }
 
-static double cross_entropy_loss(double *logits, int target_id, int vocab_size, double *probs_out) {
-    double max_l = logits[0];
+static float cross_entropy_loss(float *logits, int target_id, int vocab_size, float *probs_out) {
+    float max_l = logits[0];
     for (int i = 1; i < vocab_size; i++) if (logits[i] > max_l) max_l = logits[i];
-    double sum = 0.0;
-    for (int i = 0; i < vocab_size; i++) { probs_out[i] = exp(logits[i] - max_l); sum += probs_out[i]; }
+    float sum = 0.0f;
+    for (int i = 0; i < vocab_size; i++) { probs_out[i] = expf(logits[i] - max_l); sum += probs_out[i]; }
     for (int i = 0; i < vocab_size; i++) probs_out[i] /= sum;
-    double tp = probs_out[target_id];
-    if (tp < 1e-10) tp = 1e-10;
-    return -log(tp);
+    float tp = probs_out[target_id];
+    if (tp < 1e-10f) tp = 1e-10f;
+    return -logf(tp);
 }
 
-static void native_forward_with_cache(int *token_ids, int seq_len, TransformerModel *model, double *logits_out, TrainingCache *cache) {
+static void native_forward_with_cache(int *token_ids, int seq_len, TransformerModel *model, float *logits_out, TrainingCache *cache) {
     int d_model = model->config.d_model;
     int d_ff = model->config.d_ff;
     int n_layers = model->config.n_layers;
 
-    double *x = calloc(seq_len * d_model, sizeof(double));
+    float *x = calloc(seq_len * d_model, sizeof(float));
     for (int i = 0; i < seq_len; i++) {
         int tid = token_ids[i];
         if (tid < 0) tid = 0;
         if (tid >= model->config.vocab_size) tid = model->config.vocab_size - 1;
-        memcpy(x + i * d_model, model->token_embeddings + tid * d_model, d_model * sizeof(double));
+        memcpy(x + i * d_model, model->token_embeddings + tid * d_model, d_model * sizeof(float));
     }
 
-    double *pe = calloc(seq_len * d_model, sizeof(double));
-    create_sinusoidal_pe(pe, seq_len, d_model);
+    float *pe = calloc(seq_len * d_model, sizeof(float));
+    create_sinusoidal_pe_f(pe, seq_len, d_model);
     for (int i = 0; i < seq_len * d_model; i++) x[i] += pe[i];
     free(pe);
 
@@ -244,30 +244,30 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
         int lsf = l * seq_len * d_ff;
         int ls = l * seq_len;
 
-        memcpy(cache->layer_inputs + lsd, x, seq_len * d_model * sizeof(double));
+        memcpy(cache->layer_inputs + lsd, x, seq_len * d_model * sizeof(float));
 
-        double *norm1 = calloc(seq_len * d_model, sizeof(double));
+        float *norm1 = calloc(seq_len * d_model, sizeof(float));
         for (int i = 0; i < seq_len; i++) {
-            double *xi = x + i * d_model;
-            double *out = norm1 + i * d_model;
-            double mean = 0.0;
+            float *xi = x + i * d_model;
+            float *out = norm1 + i * d_model;
+            float mean = 0.0f;
             for (int j = 0; j < d_model; j++) mean += xi[j];
             mean /= d_model;
-            double var = 0.0;
-            for (int j = 0; j < d_model; j++) { double d = xi[j] - mean; var += d * d; }
+            float var = 0.0f;
+            for (int j = 0; j < d_model; j++) { float d = xi[j] - mean; var += d * d; }
             var /= d_model;
-            double std_val = sqrt(var + 1e-5);
+            float std_val = sqrtf(var + 1e-5f);
             for (int j = 0; j < d_model; j++) {
-                double xn = (xi[j] - mean) / std_val;
+                float xn = (xi[j] - mean) / std_val;
                 cache->ln1_x_norm[lsd + i * d_model + j] = xn;
                 out[j] = layer->ln1_gamma[j] * xn + layer->ln1_beta[j];
             }
             cache->ln1_std[ls + i] = std_val;
         }
-        memcpy(cache->norm1_outputs + lsd, norm1, seq_len * d_model * sizeof(double));
+        memcpy(cache->norm1_outputs + lsd, norm1, seq_len * d_model * sizeof(float));
 
-        double *attn_out = calloc(seq_len * d_model, sizeof(double));
-        ne_fused_attention_forward_buf(norm1, seq_len, d_model,
+        float *attn_out = calloc(seq_len * d_model, sizeof(float));
+        ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
             layer->w_q, layer->w_k, layer->w_v, layer->w_o,
             attn_out, cache->attn_probs + lss);
         free(norm1);
@@ -275,30 +275,30 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
         for (int i = 0; i < seq_len * d_model; i++) x[i] += attn_out[i];
         free(attn_out);
 
-        memcpy(cache->post_attn_x + lsd, x, seq_len * d_model * sizeof(double));
+        memcpy(cache->post_attn_x + lsd, x, seq_len * d_model * sizeof(float));
 
-        double *norm2 = calloc(seq_len * d_model, sizeof(double));
+        float *norm2 = calloc(seq_len * d_model, sizeof(float));
         for (int i = 0; i < seq_len; i++) {
-            double *xi = x + i * d_model;
-            double *out = norm2 + i * d_model;
-            double mean = 0.0;
+            float *xi = x + i * d_model;
+            float *out = norm2 + i * d_model;
+            float mean = 0.0f;
             for (int j = 0; j < d_model; j++) mean += xi[j];
             mean /= d_model;
-            double var = 0.0;
-            for (int j = 0; j < d_model; j++) { double d = xi[j] - mean; var += d * d; }
+            float var = 0.0f;
+            for (int j = 0; j < d_model; j++) { float d = xi[j] - mean; var += d * d; }
             var /= d_model;
-            double std_val = sqrt(var + 1e-5);
+            float std_val = sqrtf(var + 1e-5f);
             for (int j = 0; j < d_model; j++) {
-                double xn = (xi[j] - mean) / std_val;
+                float xn = (xi[j] - mean) / std_val;
                 cache->ln2_x_norm[lsd + i * d_model + j] = xn;
                 out[j] = layer->ln2_gamma[j] * xn + layer->ln2_beta[j];
             }
             cache->ln2_std[ls + i] = std_val;
         }
-        memcpy(cache->norm2_outputs + lsd, norm2, seq_len * d_model * sizeof(double));
+        memcpy(cache->norm2_outputs + lsd, norm2, seq_len * d_model * sizeof(float));
 
-        double *ffn_out = calloc(seq_len * d_model, sizeof(double));
-        ne_fused_ffn_forward_buf(norm2, seq_len, d_model,
+        float *ffn_out = calloc(seq_len * d_model, sizeof(float));
+        ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
             layer->w_ff1, d_ff, layer->w_ff2,
             1, ffn_out, cache->ffn_pre_act + lsf);
         free(norm2);
@@ -307,11 +307,11 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
         free(ffn_out);
     }
 
-    memcpy(cache->final_x, x, seq_len * d_model * sizeof(double));
+    memcpy(cache->final_x, x, seq_len * d_model * sizeof(float));
 
-    double *last_hidden = x + (seq_len - 1) * d_model;
+    float *last_hidden = x + (seq_len - 1) * d_model;
     for (int j = 0; j < model->config.vocab_size; j++) {
-        double sum = 0.0;
+        float sum = 0.0f;
         for (int k = 0; k < d_model; k++) {
             sum += last_hidden[k] * model->output_proj[k * model->config.vocab_size + j];
         }
@@ -320,7 +320,7 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
     free(x);
 }
 
-static int native_train_step(int *input_ids, int input_len, int *output_ids, int output_len, double learning_rate, double *loss_out, int *tokens_trained_out) {
+static int native_train_step(int *input_ids, int input_len, int *output_ids, int output_len, float learning_rate, float *loss_out, int *tokens_trained_out) {
     if (!g_model.loaded) return -1;
 
     int vocab_size = g_model.config.vocab_size;
@@ -329,7 +329,7 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
     int n_layers = g_model.config.n_layers;
     int max_seq_len = g_model.config.max_seq_len;
 
-    double effective_lr = learning_rate / log((double)g_model_age + M_E);
+    float effective_lr = learning_rate / logf((float)g_model_age + M_E);
 
     int full_len = input_len + output_len;
     if (full_len < 2) return -1;
@@ -348,48 +348,48 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
         token_ids[input_len + i] = tid;
     }
 
-    double *grad_token_emb = calloc(vocab_size * d_model, sizeof(double));
-    double *grad_output_proj = calloc(d_model * vocab_size, sizeof(double));
+    float *grad_token_emb = calloc(vocab_size * d_model, sizeof(float));
+    float *grad_output_proj = calloc(d_model * vocab_size, sizeof(float));
 
-    double **lg_wq = calloc(n_layers, sizeof(double*));
-    double **lg_wk = calloc(n_layers, sizeof(double*));
-    double **lg_wv = calloc(n_layers, sizeof(double*));
-    double **lg_wo = calloc(n_layers, sizeof(double*));
-    double **lg_ff1 = calloc(n_layers, sizeof(double*));
-    double **lg_ff2 = calloc(n_layers, sizeof(double*));
-    double **lg_ln1g = calloc(n_layers, sizeof(double*));
-    double **lg_ln1b = calloc(n_layers, sizeof(double*));
-    double **lg_ln2g = calloc(n_layers, sizeof(double*));
-    double **lg_ln2b = calloc(n_layers, sizeof(double*));
+    float **lg_wq = calloc(n_layers, sizeof(float*));
+    float **lg_wk = calloc(n_layers, sizeof(float*));
+    float **lg_wv = calloc(n_layers, sizeof(float*));
+    float **lg_wo = calloc(n_layers, sizeof(float*));
+    float **lg_ff1 = calloc(n_layers, sizeof(float*));
+    float **lg_ff2 = calloc(n_layers, sizeof(float*));
+    float **lg_ln1g = calloc(n_layers, sizeof(float*));
+    float **lg_ln1b = calloc(n_layers, sizeof(float*));
+    float **lg_ln2g = calloc(n_layers, sizeof(float*));
+    float **lg_ln2b = calloc(n_layers, sizeof(float*));
     for (int l = 0; l < n_layers; l++) {
-        lg_wq[l] = calloc(d_model * d_model, sizeof(double));
-        lg_wk[l] = calloc(d_model * d_model, sizeof(double));
-        lg_wv[l] = calloc(d_model * d_model, sizeof(double));
-        lg_wo[l] = calloc(d_model * d_model, sizeof(double));
-        lg_ff1[l] = calloc(d_model * d_ff, sizeof(double));
-        lg_ff2[l] = calloc(d_ff * d_model, sizeof(double));
-        lg_ln1g[l] = calloc(d_model, sizeof(double));
-        lg_ln1b[l] = calloc(d_model, sizeof(double));
-        lg_ln2g[l] = calloc(d_model, sizeof(double));
-        lg_ln2b[l] = calloc(d_model, sizeof(double));
+        lg_wq[l] = calloc(d_model * d_model, sizeof(float));
+        lg_wk[l] = calloc(d_model * d_model, sizeof(float));
+        lg_wv[l] = calloc(d_model * d_model, sizeof(float));
+        lg_wo[l] = calloc(d_model * d_model, sizeof(float));
+        lg_ff1[l] = calloc(d_model * d_ff, sizeof(float));
+        lg_ff2[l] = calloc(d_ff * d_model, sizeof(float));
+        lg_ln1g[l] = calloc(d_model, sizeof(float));
+        lg_ln1b[l] = calloc(d_model, sizeof(float));
+        lg_ln2g[l] = calloc(d_model, sizeof(float));
+        lg_ln2b[l] = calloc(d_model, sizeof(float));
     }
 
-    double total_loss = 0.0;
+    float total_loss = 0.0f;
     int num_tokens = 0;
 
     int max_ctx = max_seq_len < full_len ? max_seq_len : full_len;
     TrainingCache cache;
-    cache.layer_inputs = calloc(n_layers * max_ctx * d_model, sizeof(double));
-    cache.norm1_outputs = calloc(n_layers * max_ctx * d_model, sizeof(double));
-    cache.norm2_outputs = calloc(n_layers * max_ctx * d_model, sizeof(double));
-    cache.attn_probs = calloc(n_layers * max_ctx * max_ctx, sizeof(double));
-    cache.ffn_pre_act = calloc(n_layers * max_ctx * d_ff, sizeof(double));
-    cache.post_attn_x = calloc(n_layers * max_ctx * d_model, sizeof(double));
-    cache.final_x = calloc(max_ctx * d_model, sizeof(double));
-    cache.ln1_x_norm = calloc(n_layers * max_ctx * d_model, sizeof(double));
-    cache.ln1_std = calloc(n_layers * max_ctx, sizeof(double));
-    cache.ln2_x_norm = calloc(n_layers * max_ctx * d_model, sizeof(double));
-    cache.ln2_std = calloc(n_layers * max_ctx, sizeof(double));
+    cache.layer_inputs = calloc(n_layers * max_ctx * d_model, sizeof(float));
+    cache.norm1_outputs = calloc(n_layers * max_ctx * d_model, sizeof(float));
+    cache.norm2_outputs = calloc(n_layers * max_ctx * d_model, sizeof(float));
+    cache.attn_probs = calloc(n_layers * max_ctx * max_ctx, sizeof(float));
+    cache.ffn_pre_act = calloc(n_layers * max_ctx * d_ff, sizeof(float));
+    cache.post_attn_x = calloc(n_layers * max_ctx * d_model, sizeof(float));
+    cache.final_x = calloc(max_ctx * d_model, sizeof(float));
+    cache.ln1_x_norm = calloc(n_layers * max_ctx * d_model, sizeof(float));
+    cache.ln1_std = calloc(n_layers * max_ctx, sizeof(float));
+    cache.ln2_x_norm = calloc(n_layers * max_ctx * d_model, sizeof(float));
+    cache.ln2_std = calloc(n_layers * max_ctx, sizeof(float));
 
     for (int t = 0; t < full_len - 1; t++) {
         int ctx_len = t + 1;
@@ -397,41 +397,41 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
         int ctx_start = (t + 1) - ctx_len;
         int target_id = token_ids[t + 1];
 
-        memset(cache.layer_inputs, 0, n_layers * ctx_len * d_model * sizeof(double));
-        memset(cache.norm1_outputs, 0, n_layers * ctx_len * d_model * sizeof(double));
-        memset(cache.norm2_outputs, 0, n_layers * ctx_len * d_model * sizeof(double));
-        memset(cache.attn_probs, 0, n_layers * ctx_len * ctx_len * sizeof(double));
-        memset(cache.ffn_pre_act, 0, n_layers * ctx_len * d_ff * sizeof(double));
-        memset(cache.post_attn_x, 0, n_layers * ctx_len * d_model * sizeof(double));
-        memset(cache.ln1_x_norm, 0, n_layers * ctx_len * d_model * sizeof(double));
-        memset(cache.ln1_std, 0, n_layers * ctx_len * sizeof(double));
-        memset(cache.ln2_x_norm, 0, n_layers * ctx_len * d_model * sizeof(double));
-        memset(cache.ln2_std, 0, n_layers * ctx_len * sizeof(double));
+        memset(cache.layer_inputs, 0, n_layers * ctx_len * d_model * sizeof(float));
+        memset(cache.norm1_outputs, 0, n_layers * ctx_len * d_model * sizeof(float));
+        memset(cache.norm2_outputs, 0, n_layers * ctx_len * d_model * sizeof(float));
+        memset(cache.attn_probs, 0, n_layers * ctx_len * ctx_len * sizeof(float));
+        memset(cache.ffn_pre_act, 0, n_layers * ctx_len * d_ff * sizeof(float));
+        memset(cache.post_attn_x, 0, n_layers * ctx_len * d_model * sizeof(float));
+        memset(cache.ln1_x_norm, 0, n_layers * ctx_len * d_model * sizeof(float));
+        memset(cache.ln1_std, 0, n_layers * ctx_len * sizeof(float));
+        memset(cache.ln2_x_norm, 0, n_layers * ctx_len * d_model * sizeof(float));
+        memset(cache.ln2_std, 0, n_layers * ctx_len * sizeof(float));
 
-        double *logits = calloc(vocab_size, sizeof(double));
+        float *logits = calloc(vocab_size, sizeof(float));
         native_forward_with_cache(token_ids + ctx_start, ctx_len, &g_model, logits, &cache);
 
-        double *probs = calloc(vocab_size, sizeof(double));
-        double loss = cross_entropy_loss(logits, target_id, vocab_size, probs);
+        float *probs = calloc(vocab_size, sizeof(float));
+        float loss = cross_entropy_loss(logits, target_id, vocab_size, probs);
         total_loss += loss;
         num_tokens++;
         free(logits);
 
-        double *d_logits = calloc(vocab_size, sizeof(double));
-        memcpy(d_logits, probs, vocab_size * sizeof(double));
-        d_logits[target_id] -= 1.0;
+        float *d_logits = calloc(vocab_size, sizeof(float));
+        memcpy(d_logits, probs, vocab_size * sizeof(float));
+        d_logits[target_id] -= 1.0f;
         free(probs);
 
-        double *last_hidden = cache.final_x + (ctx_len - 1) * d_model;
+        float *last_hidden = cache.final_x + (ctx_len - 1) * d_model;
         for (int k = 0; k < d_model; k++) {
             for (int j = 0; j < vocab_size; j++) {
                 grad_output_proj[k * vocab_size + j] += last_hidden[k] * d_logits[j];
             }
         }
 
-        double *d_x = calloc(ctx_len * d_model, sizeof(double));
+        float *d_x = calloc(ctx_len * d_model, sizeof(float));
         for (int k = 0; k < d_model; k++) {
-            double sum = 0.0;
+            float sum = 0.0f;
             for (int j = 0; j < vocab_size; j++) {
                 sum += g_model.output_proj[k * vocab_size + j] * d_logits[j];
             }
@@ -446,9 +446,9 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             int lsf = l * ctx_len * d_ff;
             int ls = l * ctx_len;
 
-            double *d_ffn_w1 = calloc(d_model * d_ff, sizeof(double));
-            double *d_ffn_w2 = calloc(d_ff * d_model, sizeof(double));
-            double *d_norm2_out = calloc(ctx_len * d_model, sizeof(double));
+            float *d_ffn_w1 = calloc(d_model * d_ff, sizeof(float));
+            float *d_ffn_w2 = calloc(d_ff * d_model, sizeof(float));
+            float *d_norm2_out = calloc(ctx_len * d_model, sizeof(float));
             ne_fused_ffn_backward_buf(d_x, ctx_len, d_model,
                 cache.norm2_outputs + lsd, layer->w_ff1, d_ff, layer->w_ff2,
                 cache.ffn_pre_act + lsf, d_ffn_w1, d_ffn_w2, d_norm2_out);
@@ -456,9 +456,9 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             for (int i = 0; i < d_ff * d_model; i++) lg_ff2[l][i] += d_ffn_w2[i];
             free(d_ffn_w1); free(d_ffn_w2);
 
-            double *d_post_attn = calloc(ctx_len * d_model, sizeof(double));
+            float *d_post_attn = calloc(ctx_len * d_model, sizeof(float));
             for (int i = 0; i < ctx_len; i++) {
-                double d_ln_x[MAX_D_MODEL] = {0};
+                float d_ln_x[MAX_D_MODEL] = {0};
                 layer_norm_backward(d_norm2_out + i * d_model,
                     cache.ln2_x_norm + lsd + i * d_model,
                     layer->ln2_gamma, cache.ln2_std[ls + i], d_model,
@@ -468,11 +468,11 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             }
             free(d_norm2_out);
 
-            double *d_attn_wq = calloc(d_model * d_model, sizeof(double));
-            double *d_attn_wk = calloc(d_model * d_model, sizeof(double));
-            double *d_attn_wv = calloc(d_model * d_model, sizeof(double));
-            double *d_attn_wo = calloc(d_model * d_model, sizeof(double));
-            double *d_norm1_out = calloc(ctx_len * d_model, sizeof(double));
+            float *d_attn_wq = calloc(d_model * d_model, sizeof(float));
+            float *d_attn_wk = calloc(d_model * d_model, sizeof(float));
+            float *d_attn_wv = calloc(d_model * d_model, sizeof(float));
+            float *d_attn_wo = calloc(d_model * d_model, sizeof(float));
+            float *d_norm1_out = calloc(ctx_len * d_model, sizeof(float));
             ne_fused_attention_backward_buf(d_post_attn, ctx_len, d_model,
                 cache.norm1_outputs + lsd,
                 layer->w_q, layer->w_k, layer->w_v, layer->w_o,
@@ -486,9 +486,9 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             }
             free(d_attn_wq); free(d_attn_wk); free(d_attn_wv); free(d_attn_wo);
 
-            double *d_pre_attn = calloc(ctx_len * d_model, sizeof(double));
+            float *d_pre_attn = calloc(ctx_len * d_model, sizeof(float));
             for (int i = 0; i < ctx_len; i++) {
-                double d_ln_x[MAX_D_MODEL] = {0};
+                float d_ln_x[MAX_D_MODEL] = {0};
                 layer_norm_backward(d_norm1_out + i * d_model,
                     cache.ln1_x_norm + lsd + i * d_model,
                     layer->ln1_gamma, cache.ln1_std[ls + i], d_model,
@@ -498,7 +498,7 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             }
             free(d_post_attn); free(d_norm1_out);
 
-            memcpy(d_x, d_pre_attn, ctx_len * d_model * sizeof(double));
+            memcpy(d_x, d_pre_attn, ctx_len * d_model * sizeof(float));
             free(d_pre_attn);
         }
 
@@ -512,11 +512,11 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
         free(d_x);
     }
 
-    double avg_loss = num_tokens > 0 ? total_loss / num_tokens : 0.0;
+    float avg_loss = num_tokens > 0 ? total_loss / num_tokens : 0.0f;
 
     if (isnan(avg_loss) || isinf(avg_loss)) {
         fprintf(stderr, "[train-guard] NaN/Inf loss detected (%.4f) - SKIPPING weight update to prevent corruption\n", avg_loss);
-        *loss_out = 0.0;
+        *loss_out = 0.0f;
         *tokens_trained_out = 0;
         free(token_ids); free(grad_token_emb); free(grad_output_proj);
         for (int l = 0; l < n_layers; l++) {
@@ -543,7 +543,7 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
 
     if (has_nan_grad) {
         fprintf(stderr, "[train-guard] NaN/Inf gradient detected - SKIPPING weight update\n");
-        *loss_out = 0.0;
+        *loss_out = 0.0f;
         *tokens_trained_out = 0;
         free(token_ids); free(grad_token_emb); free(grad_output_proj);
         for (int l = 0; l < n_layers; l++) {
@@ -567,7 +567,7 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
     for (int i = 0; i < vocab_size * d_model; i++)
         g_model.token_embeddings[i] -= effective_lr * grad_token_emb[i];
 
-    double scale = effective_lr * 0.1;
+    float scale = effective_lr * 0.1f;
     for (int l = 0; l < n_layers; l++) {
         TransformerLayer *layer = &g_model.layers[l];
         for (int i = 0; i < d_model * d_model; i++) {
@@ -627,10 +627,10 @@ Value* builtin_native_train_step(Value *arg) {
         return make_str("{\"status\": \"error\", \"error\": \"input_ids and output_ids must be lists\"}");
     }
 
-    double lr = 0.001;
+    float lr = 0.001f;
     if (arg->data.list.items[2]->type == VAL_NUM) lr = arg->data.list.items[2]->data.num;
     else if (arg->data.list.items[2]->type == VAL_STR) lr = strtod(arg->data.list.items[2]->data.str, NULL);
-    if (lr <= 0 || lr > 1) lr = 0.001;
+    if (lr <= 0 || lr > 1) lr = 0.001f;
 
     int input_len = in_list->data.list.count;
     int output_len = out_list->data.list.count;
@@ -645,7 +645,7 @@ Value* builtin_native_train_step(Value *arg) {
         output_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;
     }
 
-    double loss = 0.0;
+    float loss = 0.0f;
     int tokens_trained = 0;
     int result = native_train_step(input_ids, input_len, output_ids, output_len, lr, &loss, &tokens_trained);
     free(input_ids);
@@ -653,7 +653,7 @@ Value* builtin_native_train_step(Value *arg) {
 
     char buf[512];
     if (result == 0) {
-        double effective_lr = lr / log((double)g_model_age + M_E);
+        float effective_lr = lr / logf((float)g_model_age + M_E);
         snprintf(buf, sizeof(buf),
             "{\"status\": \"trained\", \"loss\": %.6f, \"tokens_trained\": %d, "
             "\"model_age\": %d, \"training_samples\": %d, \"effective_lr\": %.6f, \"engine\": \"eigenscript\"}",

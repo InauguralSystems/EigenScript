@@ -25,38 +25,38 @@ typedef struct {
 } ModelConfig;
 
 typedef struct {
-    double *w_q;
-    double *w_k;
-    double *w_v;
-    double *w_o;
-    double *w_ff1;
-    double *w_ff2;
-    double *ln1_gamma;
-    double *ln1_beta;
-    double *ln2_gamma;
-    double *ln2_beta;
+    float *w_q;
+    float *w_k;
+    float *w_v;
+    float *w_o;
+    float *w_ff1;
+    float *w_ff2;
+    float *ln1_gamma;
+    float *ln1_beta;
+    float *ln2_gamma;
+    float *ln2_beta;
 } TransformerLayer;
 
 typedef struct {
     ModelConfig config;
-    double *token_embeddings;
-    double *output_proj;
+    float *token_embeddings;
+    float *output_proj;
     TransformerLayer layers[MAX_LAYERS];
     int loaded;
 } TransformerModel;
 
 typedef struct {
-    double *layer_inputs;
-    double *norm1_outputs;
-    double *norm2_outputs;
-    double *attn_probs;
-    double *ffn_pre_act;
-    double *post_attn_x;
-    double *final_x;
-    double *ln1_x_norm;
-    double *ln1_std;
-    double *ln2_x_norm;
-    double *ln2_std;
+    float *layer_inputs;
+    float *norm1_outputs;
+    float *norm2_outputs;
+    float *attn_probs;
+    float *ffn_pre_act;
+    float *post_attn_x;
+    float *final_x;
+    float *ln1_x_norm;
+    float *ln1_std;
+    float *ln2_x_norm;
+    float *ln2_std;
     int seq_len;
 } TrainingCache;
 
@@ -77,17 +77,20 @@ void ne_softmax_buf(double *data, int64_t rows, int64_t cols);
 void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
                    double *b, int64_t b_cols, double *out);
 
-/* Internal kernels — defined in model_infer.c, used by model_train.c */
-void ne_gelu_buf(double *data, int64_t size);
-void ne_fused_attention_forward_buf(
-    double *x, int64_t seq_len, int64_t d_model,
-    double *wq, double *wk, double *wv, double *wo,
-    double *out, double *attn_probs_out);
-void ne_fused_ffn_forward_buf(
-    double *x, int64_t seq_len, int64_t d_model,
-    double *w1, int64_t d_ff, double *w2,
-    int32_t use_gelu, double *out, double *pre_act_out);
-void create_sinusoidal_pe(double *pe, int seq_len, int d_model);
+/* Internal float kernels — defined in model_infer.c, used by model_train.c */
+void ne_softmax_buf_f(float *data, int64_t rows, int64_t cols);
+void ne_matmul_buf_f(float *a, int64_t a_rows, int64_t a_cols,
+                     float *b, int64_t b_cols, float *out);
+void ne_gelu_buf_f(float *data, int64_t size);
+void ne_fused_attention_forward_buf_f(
+    float *x, int64_t seq_len, int64_t d_model,
+    float *wq, float *wk, float *wv, float *wo,
+    float *out, float *attn_probs_out);
+void ne_fused_ffn_forward_buf_f(
+    float *x, int64_t seq_len, int64_t d_model,
+    float *w1, int64_t d_ff, float *w2,
+    int32_t use_gelu, float *out, float *pre_act_out);
+void create_sinusoidal_pe_f(float *pe, int seq_len, int d_model);
 
 /* ---- IO functions — defined in model_io.c ---- */
 

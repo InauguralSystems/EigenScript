@@ -63,13 +63,13 @@ static void json_skip_value(const char **p) {
     }
 }
 
-static int json_parse_1d_array(const char **p, double *out, int len) {
+static int json_parse_1d_array(const char **p, float *out, int len) {
     json_skip_ws(p);
     if (**p != '[') return -1;
     (*p)++;
     for (int i = 0; i < len; i++) {
         json_skip_ws(p);
-        out[i] = json_parse_number(p);
+        out[i] = (float)json_parse_number(p);
         json_skip_ws(p);
         if (**p == ',') (*p)++;
     }
@@ -78,7 +78,7 @@ static int json_parse_1d_array(const char **p, double *out, int len) {
     return 0;
 }
 
-static int json_parse_2d_array(const char **p, double *out, int rows, int cols) {
+static int json_parse_2d_array(const char **p, float *out, int rows, int cols) {
     json_skip_ws(p);
     if (**p != '[') return -1;
     (*p)++;
@@ -131,34 +131,34 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
         json_skip_ws(p);
 
         if (strcmp(key, "w_q") == 0) {
-            layer->w_q = calloc(d_model * d_model, sizeof(double));
+            layer->w_q = calloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_q, d_model, d_model);
         } else if (strcmp(key, "w_k") == 0) {
-            layer->w_k = calloc(d_model * d_model, sizeof(double));
+            layer->w_k = calloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_k, d_model, d_model);
         } else if (strcmp(key, "w_v") == 0) {
-            layer->w_v = calloc(d_model * d_model, sizeof(double));
+            layer->w_v = calloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_v, d_model, d_model);
         } else if (strcmp(key, "w_o") == 0) {
-            layer->w_o = calloc(d_model * d_model, sizeof(double));
+            layer->w_o = calloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_o, d_model, d_model);
         } else if (strcmp(key, "w_ff1") == 0) {
-            layer->w_ff1 = calloc(d_model * d_ff, sizeof(double));
+            layer->w_ff1 = calloc(d_model * d_ff, sizeof(float));
             json_parse_2d_array(p, layer->w_ff1, d_model, d_ff);
         } else if (strcmp(key, "w_ff2") == 0) {
-            layer->w_ff2 = calloc(d_ff * d_model, sizeof(double));
+            layer->w_ff2 = calloc(d_ff * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_ff2, d_ff, d_model);
         } else if (strcmp(key, "ln1_gamma") == 0) {
-            layer->ln1_gamma = calloc(d_model, sizeof(double));
+            layer->ln1_gamma = calloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln1_gamma, d_model);
         } else if (strcmp(key, "ln1_beta") == 0) {
-            layer->ln1_beta = calloc(d_model, sizeof(double));
+            layer->ln1_beta = calloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln1_beta, d_model);
         } else if (strcmp(key, "ln2_gamma") == 0) {
-            layer->ln2_gamma = calloc(d_model, sizeof(double));
+            layer->ln2_gamma = calloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln2_gamma, d_model);
         } else if (strcmp(key, "ln2_beta") == 0) {
-            layer->ln2_beta = calloc(d_model, sizeof(double));
+            layer->ln2_beta = calloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln2_beta, d_model);
         } else {
             json_skip_value(p);
@@ -213,12 +213,12 @@ int load_model_weights(const char *path, TransformerModel *model) {
         } else if (strcmp(key, "token_embeddings") == 0) {
             int vs = model->config.vocab_size;
             int dm = model->config.d_model;
-            model->token_embeddings = calloc(vs * dm, sizeof(double));
+            model->token_embeddings = calloc(vs * dm, sizeof(float));
             json_parse_2d_array(&p, model->token_embeddings, vs, dm);
         } else if (strcmp(key, "output_proj") == 0) {
             int dm = model->config.d_model;
             int vs = model->config.vocab_size;
-            model->output_proj = calloc(dm * vs, sizeof(double));
+            model->output_proj = calloc(dm * vs, sizeof(float));
             json_parse_2d_array(&p, model->output_proj, dm, vs);
         } else if (strcmp(key, "layers") == 0) {
             json_skip_ws(&p);
