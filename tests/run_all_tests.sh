@@ -411,6 +411,59 @@ check "TP_I6 rejects unterminated string" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I6
 check "TP_I7 rejects lone !" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I7:' | tail -1)" "0"
 echo ""
 
+echo "[16/16] Error Messages (6 checks)"
+
+check_stderr() {
+    TOTAL=$((TOTAL + 1))
+    local test_name="$1"
+    local script="$2"
+    local expected_substr="$3"
+    local tmpfile
+    tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
+    printf '%s\n' "$script" > "$tmpfile"
+    local errfile
+    errfile=$(mktemp /tmp/eigs_err_XXXXXX.txt)
+    ./eigenscript "$tmpfile" >"$errfile" 2>&1 || true
+    if grep -q "$expected_substr" "$errfile"; then
+        echo "  PASS: $test_name"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $test_name (output: '$(cat "$errfile")', expected to contain '$expected_substr')"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$tmpfile" "$errfile"
+}
+
+check_exit() {
+    TOTAL=$((TOTAL + 1))
+    local test_name="$1"
+    local script="$2"
+    local expected_exit="$3"
+    local tmpfile
+    tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
+    printf '%s\n' "$script" > "$tmpfile"
+    local actual_exit=0
+    ./eigenscript "$tmpfile" >/dev/null 2>&1 || actual_exit=$?
+    rm -f "$tmpfile"
+    if [ "$actual_exit" = "$expected_exit" ]; then
+        echo "  PASS: $test_name"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $test_name (exit $actual_exit, expected $expected_exit)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+check_exit "EM1 parse error aborts with exit 1" 'x is @' "1"
+check_stderr "EM2 parse error names the token" 'if x > 0
+    print of x' "expected ':'"
+check_stderr "EM3 unknown char shows character" 'x is @' "unexpected character"
+check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Type error"
+check_stderr "EM5 index out of bounds" 'items is [1,2,3]
+print of items[10]' "Index error"
+check_stderr "EM6 division by zero warning" 'print of (10 / 0)' "division by zero"
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 echo "============================================"

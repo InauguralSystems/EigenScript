@@ -20,7 +20,68 @@
 jmp_buf g_return_buf;
 Value *g_return_val = NULL;
 int g_returning = 0;
-static int g_parse_errors = 0;
+int g_parse_errors = 0;
+
+static const char* tok_type_name(TokType t) {
+    switch (t) {
+        case TOK_NUM: return "number";
+        case TOK_STR: return "string";
+        case TOK_IDENT: return "identifier";
+        case TOK_IS: return "'is'";
+        case TOK_OF: return "'of'";
+        case TOK_DEFINE: return "'define'";
+        case TOK_AS: return "'as'";
+        case TOK_IF: return "'if'";
+        case TOK_ELSE: return "'else'";
+        case TOK_ELIF: return "'elif'";
+        case TOK_LOOP: return "'loop'";
+        case TOK_WHILE: return "'while'";
+        case TOK_RETURN: return "'return'";
+        case TOK_AND: return "'and'";
+        case TOK_OR: return "'or'";
+        case TOK_NOT: return "'not'";
+        case TOK_FOR: return "'for'";
+        case TOK_IN: return "'in'";
+        case TOK_NULL: return "'null'";
+        case TOK_PLUS: return "'+'";
+        case TOK_MINUS: return "'-'";
+        case TOK_STAR: return "'*'";
+        case TOK_SLASH: return "'/'";
+        case TOK_PERCENT: return "'%'";
+        case TOK_LT: return "'<'";
+        case TOK_GT: return "'>'";
+        case TOK_LE: return "'<='";
+        case TOK_GE: return "'>='";
+        case TOK_EQ: return "'=='";
+        case TOK_NE: return "'!='";
+        case TOK_ASSIGN: return "'='";
+        case TOK_LPAREN: return "'('";
+        case TOK_RPAREN: return "')'";
+        case TOK_LBRACKET: return "'['";
+        case TOK_RBRACKET: return "']'";
+        case TOK_COMMA: return "','";
+        case TOK_COLON: return "':'";
+        case TOK_DOT: return "'.'";
+        case TOK_NEWLINE: return "newline";
+        case TOK_INDENT: return "indent";
+        case TOK_DEDENT: return "dedent";
+        case TOK_EOF: return "end of file";
+        default: return "?";
+    }
+}
+
+static const char* val_type_name(ValType t) {
+    switch (t) {
+        case VAL_NUM: return "num";
+        case VAL_STR: return "str";
+        case VAL_LIST: return "list";
+        case VAL_FN: return "fn";
+        case VAL_BUILTIN: return "builtin";
+        case VAL_NULL: return "null";
+        case VAL_JSON_RAW: return "json_raw";
+        default: return "?";
+    }
+}
 /* g_global_env defined in main.c */
 
 /* Arena allocator and free_weight_val are in arena.c */
@@ -382,7 +443,10 @@ TokenList tokenize(const char *source) {
             }
             buf[bi] = '\0';
             if (*p == '"') p++;
-            else g_parse_errors++; /* unterminated string */
+            else {
+                fprintf(stderr, "Syntax error line %d: unterminated string\n", line);
+                g_parse_errors++;
+            }
             tok_add(&tl, TOK_STR, 0, buf, line);
             continue;
         }
@@ -430,14 +494,18 @@ TokenList tokenize(const char *source) {
                 break;
             case '!':
                 if (*(p+1) == '=') { tok_add(&tl, TOK_NE, 0, NULL, line); p += 2; }
-                else { g_parse_errors++; p++; }
+                else {
+                    fprintf(stderr, "Syntax error line %d: expected '!=' after '!'\n", line);
+                    g_parse_errors++; p++;
+                }
                 break;
             case '=':
                 if (*(p+1) == '=') { tok_add(&tl, TOK_EQ, 0, NULL, line); p += 2; }
                 else { tok_add(&tl, TOK_ASSIGN, 0, NULL, line); p++; }
                 break;
             default:
-                g_parse_errors++; /* unknown character */
+                fprintf(stderr, "Syntax error line %d: unexpected character '%c'\n", line, *p);
+                g_parse_errors++;
                 p++;
                 break;
         }
@@ -492,8 +560,8 @@ static int p_match(Parser *p, TokType type) {
 
 static void p_expect(Parser *p, TokType type) {
     if (p_cur(p)->type != type) {
-        fprintf(stderr, "Parse error line %d: expected token %d, got %d",
-                p_cur(p)->line, type, p_cur(p)->type);
+        fprintf(stderr, "Parse error line %d: expected %s, got %s",
+                p_cur(p)->line, tok_type_name(type), tok_type_name(p_cur(p)->type));
         if (p_cur(p)->str_val) fprintf(stderr, " ('%s')", p_cur(p)->str_val);
         fprintf(stderr, "\n");
         g_parse_errors++;
@@ -1107,11 +1175,17 @@ Value* eval_node(ASTNode *node, Env *env) {
         if (strcmp(op, "*") == 0 && left->type == VAL_NUM && right->type == VAL_NUM)
             return make_num(left->data.num * right->data.num);
         if (strcmp(op, "/") == 0 && left->type == VAL_NUM && right->type == VAL_NUM) {
-            if (right->data.num == 0) return make_num(0);
+            if (right->data.num == 0) {
+                fprintf(stderr, "Warning: division by zero\n");
+                return make_num(0);
+            }
             return make_num(left->data.num / right->data.num);
         }
         if (strcmp(op, "%") == 0 && left->type == VAL_NUM && right->type == VAL_NUM) {
-            if (right->data.num == 0) return make_num(0);
+            if (right->data.num == 0) {
+                fprintf(stderr, "Warning: division by zero\n");
+                return make_num(0);
+            }
             return make_num(fmod(left->data.num, right->data.num));
         }
 
@@ -1141,6 +1215,8 @@ Value* eval_node(ASTNode *node, Env *env) {
             if (strcmp(op, ">=") == 0) return make_num(left->data.num >= right->data.num ? 1 : 0);
         }
 
+        fprintf(stderr, "Type error: cannot apply '%s' to %s and %s\n",
+                op, val_type_name(left->type), val_type_name(right->type));
         return make_null();
     }
 
@@ -1235,7 +1311,11 @@ Value* eval_node(ASTNode *node, Env *env) {
 
     case AST_FOR: {
         Value *iter = eval_node(node->data.forloop.iter, env);
-        if (!iter || iter->type != VAL_LIST) return make_null();
+        if (!iter || iter->type != VAL_LIST) {
+            fprintf(stderr, "Type error: 'for' requires a list, got %s\n",
+                    iter ? val_type_name(iter->type) : "null");
+            return make_null();
+        }
         Value *result = make_null();
         for (int i = 0; i < iter->data.list.count; i++) {
             Env *loop_env = env_new(env);
@@ -1280,6 +1360,9 @@ Value* eval_node(ASTNode *node, Env *env) {
             int i = (int)idx->data.num;
             if (i >= 0 && i < target->data.list.count)
                 return target->data.list.items[i];
+            fprintf(stderr, "Index error: index %d out of range (length %d)\n",
+                    i, target->data.list.count);
+            return make_null();
         }
         if (target->type == VAL_STR && idx->type == VAL_NUM) {
             int i = (int)idx->data.num;
@@ -1288,6 +1371,8 @@ Value* eval_node(ASTNode *node, Env *env) {
                 char buf[2] = {target->data.str[i], '\0'};
                 return make_str(buf);
             }
+            fprintf(stderr, "Index error: index %d out of range (length %d)\n", i, len);
+            return make_null();
         }
         return make_null();
     }
@@ -1656,8 +1741,9 @@ Value* eigs_json_parse_value(const char *s, int *pos) {
 
 Value* builtin_json_decode(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
-        fprintf(stderr, "RUNTIME ERROR: json_decode requires a string argument\n");
-        exit(1);
+        fprintf(stderr, "Type error: json_decode requires a string, got %s\n",
+                arg ? val_type_name(arg->type) : "null");
+        return make_null();
     }
     int pos = 0;
     return eigs_json_parse_value(arg->data.str, &pos);

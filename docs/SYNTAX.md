@@ -1,262 +1,157 @@
 # EigenScript v0.5.0 Syntax Guide
 
-Full language reference for EigenScript v0.5.0.
+## Variables and Assignment
 
-## Core Syntax
-
-### Variables and Assignment
-
-Assignment in EigenScript is **outward-mutable**: `x is value` walks up the
-scope chain looking for an existing `x`. If found in a parent scope, it
-updates that binding. If not found anywhere, it creates a new local.
-
-This means function bodies can mutate variables in their enclosing scope.
-This is intentional — the training scripts depend on it for updating global
-state (`global_step`, `block_loss_0`, etc.) from within functions.
-
-EigenScript does not have `let` or local shadowing. All assignment is to the
-nearest existing binding, or to a new local if no binding exists.
+Assignment uses `is`. It is **outward-mutable**: if a variable exists in a
+parent scope, assignment updates that binding. If not found, it creates a
+new local.
 
 ```eigenscript
-x is 5
+x is 42
 name is "hello"
 data is [1, 2, 3, 4, 5]
 ```
 
-### Functions
+## Functions
 
-**Single argument** - `arg` is the value directly:
+Functions are defined with `define ... as:`. The argument is always called `n`.
+
+**Single argument** — `n` is the value:
 ```eigenscript
 define square as:
-    n is arg
     return n * n
 
-result is square of 5    # Returns 25
+result is square of 5    # 25
 ```
 
-**Multiple arguments** - pass as array, access via `arg[i]`:
+**Multiple arguments** — pass a list, unpack with `n[0]`, `n[1]`:
 ```eigenscript
 define add_three as:
-    a is arg[0]
-    b is arg[1]
-    c is arg[2]
+    a is n[0]
+    b is n[1]
+    c is n[2]
     return a + b + c
 
-result is add_three of [10, 20, 30]    # Returns 60
+result is add_three of [10, 20, 30]    # 60
 ```
 
-**No arguments**:
+**No arguments** — pass `null`:
 ```eigenscript
 define greet as:
     print of "Hello!"
 
-greet
+greet of null
 ```
 
-### Loops
+**Convention:** Single-value functions use `n` directly. Multi-argument
+functions pass a list and unpack with `n[0]`, `n[1]`, etc.
+
+## Conditionals
+
+```eigenscript
+if x > 0:
+    print of "positive"
+elif x == 0:
+    print of "zero"
+else:
+    print of "negative"
+```
+
+## Loops
+
+**While loop:**
 ```eigenscript
 loop while counter < limit:
     counter is counter + 1
-    if condition:
-        break
 ```
 
-### Conditionals
+**For loop** — iterates over a list:
 ```eigenscript
-if condition:
-    # code
-else:
-    # code
+for i in range of 10:
+    print of i
+
+for item in items:
+    print of item
 ```
 
-### Imports (flat, not dotted)
+## Operators
+
+**Arithmetic:** `+`, `-`, `*`, `/`, `%`
+**Comparison:** `==`, `!=`, `<`, `>`, `<=`, `>=`
+**Logical:** `and`, `or`, `not`
+**String:** `+` (concatenation when either side is a string)
+
+## Lists
+
 ```eigenscript
-from layers import Linear, ReLU
-from optimizers import Adam
+items is [1, 2, 3, 4, 5]
+print of items[0]         # 1
+print of (len of items)   # 5
+append of [items, 6]      # mutates items
 ```
 
-### Print (single argument only)
+Note: list literals must be on a single line.
+
+## Modules (load_file)
+
 ```eigenscript
-print of "Hello"
-print of value
-print of "Value:"
-print of x
+load_file of "lib/math.eigs"
+print of (abs of -5)
 ```
 
-## Geometric Introspection
+The loaded file's definitions are added to the global environment.
 
-EigenScript provides native predicates and metrics:
+## Observer Semantics
 
-### Predicates (boolean)
-- `converged` - Has the computation reached convergence?
-- `stable` - Is the system stable?
-- `improving` - Is the loss/metric improving?
-- `oscillating` - Is there oscillation in values?
-- `equilibrium` - Has equilibrium been reached?
+Every value tracks its own change history (entropy, dH):
 
-### Metrics
-- `framework_strength` - Returns a float (0.0-1.0) indicating system strength
-- `signature` - Returns a unique identifier for the current state
+```eigenscript
+x is 10.0
+x is 8.0
+x is 6.0
 
-### Usage Example
+status is report of x     # "improving"
+state is observe of x     # [status, entropy, dH, prev_dH]
+```
+
+The runtime classifies trajectories as: `improving`, `diverging`,
+`stable`, `equilibrium`, `oscillating`, or `converged`.
+
+**Predicates** — boolean keywords for use in conditions:
 ```eigenscript
 loop while not converged:
-    # training iteration
-    if oscillating:
-        print of "Warning: oscillating"
+    x is x * 0.9
     if stable:
-        fs is framework_strength
-        print of fs
+        print of "reached stable band"
 ```
 
-## Module/Class Definitions
+## Standard Library
 
+Libraries live in `lib/` and are loaded with `load_file`:
+
+| Module | Functions |
+|--------|-----------|
+| `lib/math.eigs` | `abs`, `max_val`, `min_val`, `clamp`, `lerp`, `dot` |
+| `lib/list.eigs` | `map`, `filter`, `reduce`, `reverse`, `zip`, `flatten` |
+| `lib/string.eigs` | `join`, `repeat`, `pad_left` |
+| `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response` |
+| `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout` |
+
+See [BUILTINS.md](BUILTINS.md) for the complete builtin reference.
+
+## Limitations
+
+**Single-line arrays only:**
 ```eigenscript
-define MyClass as:
-    # extends ParentClass (noted in comment)
-
-    # Properties
-    value is 0
-
-    # Methods
-    define init as:
-        value is arg
-
-    define forward as:
-        x is arg
-        return x * value
-```
-
-## Matrix Operations (Verified Working)
-
-### Creating Matrices
-```eigenscript
-# Create from nested list (MUST use 'matrix of')
-A is matrix of [[1, 2], [3, 4]]
-
-# Create zeros/ones
-Z is zeros of [3, 4]    # 3x4 zero matrix
-O is ones of [2, 2]     # 2x2 ones matrix
-```
-
-### Matrix Operations
-```eigenscript
-# Multiplication
-C is matmul of [A, B]
-
-# Transpose
-At is transpose of A
-
-# Addition
-S is matrix_add of [A, B]
-
-# Scaling
-scaled is matrix_scale of [A, 0.5]
-
-# Softmax (per-row)
-weights is softmax_matrix of scores
-
-# Activations
-activated is gelu_matrix of hidden
-activated is relu_matrix of hidden
-
-# Normalization
-normed is layer_norm_matrix of input
-```
-
-### Displaying Matrix Results
-```eigenscript
-# Matrices display as 'null' - use matrix_to_list
-result is matmul of [A, B]
-result_list is matrix_to_list of result
-print of result_list    # Shows [[...], [...]]
-```
-
-### Example: Attention Computation
-```eigenscript
-Q is matrix of [[1.0, 0.0], [0.0, 1.0]]
-K is matrix of [[1.0, 0.0], [0.0, 1.0]]
-V is matrix of [[1.0, 2.0], [3.0, 4.0]]
-
-K_t is transpose of K
-scores is matmul of [Q, K_t]
-scaled is matrix_scale of [scores, 0.707]
-weights is softmax_matrix of scaled
-output is matmul of [weights, V]
-```
-
-## Translation from Original Syntax
-
-| Original | EigenScript v0.4.1 |
-|----------|-------------------|
-| `fn name of arg:` | `define name as:` + `x is arg` |
-| `fn name of a, b:` | `define name as:` + `a is arg[0]` + `b is arg[1]` |
-| `fn name:` | `define name as:` |
-| `while cond:` | `loop while cond:` |
-| `module X extends Y:` | `define X as:` + `# extends Y` |
-| `from core.layers import` | `from layers import` |
-| `print of "a", b` | `print of "a"` + `print of b` |
-| `func of a, b, c` | `func of [a, b, c]` |
-
-## Verified Working Features
-
-The following have been tested with EigenScript v0.4.1:
-- Variables and arithmetic ✓
-- Arrays and lists ✓
-- Single-argument functions ✓
-- Multi-argument functions with array syntax ✓
-- `loop while` loops ✓
-- Geometric predicates (`converged`, `stable`, `oscillating`, `improving`) ✓
-- `framework_strength` metric ✓
-- `signature` metric ✓
-- Conditional statements ✓
-- Matrix creation (`matrix of`, `zeros of`, `ones of`) ✓
-- Matrix operations (`matmul`, `transpose`, `matrix_add`, `matrix_scale`) ✓
-- Neural network ops (`softmax_matrix`, `gelu_matrix`, `layer_norm_matrix`) ✓
-
-## Limitations and Workarounds
-
-### No `==` equality operator
-Use subtraction and comparison:
-```eigenscript
-# Instead of: if a == b:
-diff is a - b
-if diff < 1:
-    if diff > -1:
-        # a equals b
-```
-
-### No modulo `%` operator
-Use division trick:
-```eigenscript
-# Instead of: if x % 10 == 0:
-tens is x / 10
-remainder is x - (tens * 10)
-if remainder < 1:
-    if remainder > -1:
-        # x is divisible by 10
-```
-
-### No multiline arrays
-Arrays must be on a single line:
-```eigenscript
-# Wrong:
-data is [
-    1,
-    2
-]
-
-# Correct:
+# Arrays must be on one line
 data is [1, 2, 3, 4]
 ```
 
-### No nested expressions in array literals
-Compute values first, then build array:
-```eigenscript
-# Wrong:
-result is func of [(other_func of x), y]
+**Single-parameter functions:**
+Functions take exactly one argument (`n`). Pass multiple values as a list.
 
-# Correct:
-temp is other_func of x
-result is func of [temp, y]
-```
+**No break/continue:**
+Use flag variables to exit loops early.
+
+**No try/catch:**
+Errors print to stderr but execution continues (except parse errors, which abort).

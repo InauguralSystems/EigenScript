@@ -48,8 +48,14 @@ int main(int argc, char **argv) {
     g_server.request_headers = NULL;
 #endif
 
+    g_parse_errors = 0;
     TokenList tl = tokenize(source);
     ASTNode *ast = parse(&tl);
+    if (g_parse_errors > 0) {
+        fprintf(stderr, "%d parse error(s) — aborting\n", g_parse_errors);
+        free(source);
+        return 1;
+    }
     eval_node(ast, global);
 
     free(source);
