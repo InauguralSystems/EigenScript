@@ -1,0 +1,32 @@
+# JSON Config Processing
+# Demonstrates: JSON builtins, string ops, conditionals
+
+# Build a config object
+config is json_build of ["name", "myapp", "version", "1.0", "debug", "false", "max_workers", "4"]
+print of ("Config JSON: " + config)
+
+# Extract values with json_path
+name is json_path of [config, "name"]
+version is json_path of [config, "version"]
+debug is json_path of [config, "debug"]
+workers is num of (json_path of [config, "max_workers"])
+
+print of ("App: " + name + " v" + version)
+print of ("Debug: " + debug)
+print of ("Workers: " + (str of workers))
+
+# Make decisions based on config
+if debug == "true":
+    print of "Running in debug mode"
+else:
+    print of "Running in production mode"
+
+if workers > 2:
+    print of ("Using " + (str of workers) + " workers (parallel)")
+else:
+    print of "Using single worker"
+
+# Round-trip: encode and decode
+data is json_decode of config
+encoded is json_encode of data
+print of ("Round-trip: " + encoded)

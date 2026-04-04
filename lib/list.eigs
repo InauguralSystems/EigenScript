@@ -1,0 +1,70 @@
+# ============================================================
+# List Library — functional list operations in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/list.eigs"
+#   doubled is map of [items, double_fn]
+#   evens is filter of [items, is_even]
+#   total is reduce of [items, add_fn, 0]
+
+# ---- map: apply fn to each element, return new list ----
+define map as:
+    items is n[0]
+    fn is n[1]
+    result is []
+    for i in range of (len of items):
+        append of [result, fn of items[i]]
+    return result
+
+# ---- filter: keep elements where fn returns truthy ----
+define filter as:
+    items is n[0]
+    fn is n[1]
+    result is []
+    for i in range of (len of items):
+        if fn of items[i]:
+            append of [result, items[i]]
+    return result
+
+# ---- reduce: fold left with initial value ----
+define reduce as:
+    items is n[0]
+    fn is n[1]
+    acc is n[2]
+    for i in range of (len of items):
+        acc is fn of [acc, items[i]]
+    return acc
+
+# ---- reverse: reverse a list ----
+define reverse as:
+    result is []
+    i is (len of n) - 1
+    loop while i >= 0:
+        append of [result, n[i]]
+        i is i - 1
+    return result
+
+# ---- zip: pair elements from two lists ----
+define zip as:
+    a is n[0]
+    b is n[1]
+    result is []
+    size is len of a
+    if (len of b) < size:
+        size is len of b
+    for i in range of size:
+        append of [result, [a[i], b[i]]]
+    return result
+
+# ---- flatten: flatten one level of nesting ----
+define flatten as:
+    result is []
+    for i in range of (len of n):
+        item is n[i]
+        if (type of item) == "list":
+            for j in range of (len of item):
+                append of [result, item[j]]
+        else:
+            append of [result, item]
+    return result

@@ -1,0 +1,44 @@
+# Standard Library Demo
+# Demonstrates: load_file, lib/math.eigs, lib/list.eigs, lib/string.eigs
+
+load_file of "lib/math.eigs"
+load_file of "lib/list.eigs"
+load_file of "lib/string.eigs"
+
+# ---- Math library ----
+print of ("abs(-7): " + (str of (abs of -7)))
+print of ("max_val: " + (str of (max_val of [3, 1, 4, 1, 5, 9])))
+print of ("min_val: " + (str of (min_val of [3, 1, 4, 1, 5, 9])))
+print of ("clamp(15, 0, 10): " + (str of (clamp of [15, 0, 10])))
+print of ("lerp(0, 100, 0.25): " + (str of (lerp of [0, 100, 0.25])))
+print of ("dot([1,2,3],[4,5,6]): " + (str of (dot of [[1,2,3],[4,5,6]])))
+
+# ---- List library ----
+nums is [1, 2, 3, 4, 5]
+
+define double as:
+    return n * 2
+
+define is_even as:
+    return (n % 2) == 0
+
+define add_fn as:
+    return n[0] + n[1]
+
+doubled is map of [nums, double]
+print of ("map double: " + (str of doubled))
+
+evens is filter of [nums, is_even]
+print of ("filter even: " + (str of evens))
+
+total is reduce of [nums, add_fn, 0]
+print of ("reduce sum: " + (str of total))
+
+print of ("reverse: " + (str of (reverse of [1, 2, 3, 4])))
+print of ("zip: " + (str of (zip of [["a","b","c"], [1,2,3]])))
+print of ("flatten: " + (str of (flatten of [[1,2],[3],[4,5,6]])))
+
+# ---- String library ----
+print of ("join: " + (join of [["hello", "world", "!"], " "]))
+print of ("repeat: " + (repeat of ["ab", 4]))
+print of ("pad_left: " + (pad_left of ["42", 6, "0"]))

@@ -87,13 +87,35 @@ arena_reset of null      # reclaim all transient allocations
 
 Bounded computation for constrained environments.
 
+## Standard Library
+
+Pure EigenScript libraries under `lib/`:
+
+| Module | Description |
+|--------|-------------|
+| `lib/math.eigs` | `abs`, `max_val`, `min_val`, `clamp`, `lerp`, `dot` |
+| `lib/list.eigs` | `map`, `filter`, `reduce`, `reverse`, `zip`, `flatten` |
+| `lib/string.eigs` | `join`, `repeat`, `pad_left` |
+| `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response`, `check_openai` |
+| `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout`, `require_auth` |
+
+```eigenscript
+load_file of "lib/list.eigs"
+doubled is map of [[1,2,3], double]
+```
+
 ## Examples
 
 ```bash
-eigenscript examples/hello.eigs
-eigenscript examples/basics.eigs
-eigenscript examples/observer.eigs
-eigenscript examples/tensors.eigs
+eigenscript examples/hello.eigs       # hello world
+eigenscript examples/basics.eigs      # variables, functions, loops
+eigenscript examples/observer.eigs    # observer semantics
+eigenscript examples/tensors.eigs     # tensor math and gradients
+eigenscript examples/fibonacci.eigs   # recursive and iterative
+eigenscript examples/fizzbuzz.eigs    # classic interview problem
+eigenscript examples/sort.eigs        # insertion sort
+eigenscript examples/json_config.eigs # JSON data processing
+eigenscript examples/stdlib_demo.eigs # standard library usage
 ```
 
 ## Test Suite
@@ -105,6 +127,7 @@ cd tests
 
 ## Documentation
 
+- [docs/BUILTINS.md](docs/BUILTINS.md) — complete builtin reference (83 builtins)
 - [docs/SYNTAX.md](docs/SYNTAX.md) — full language reference
 
 ## Build from Source

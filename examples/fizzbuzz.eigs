@@ -1,0 +1,12 @@
+# FizzBuzz — the classic
+# Demonstrates: conditionals, modular arithmetic, string building
+
+for i in range of [1, 31]:
+    if (i % 15) == 0:
+        print of "FizzBuzz"
+    elif (i % 3) == 0:
+        print of "Fizz"
+    elif (i % 5) == 0:
+        print of "Buzz"
+    else:
+        print of i

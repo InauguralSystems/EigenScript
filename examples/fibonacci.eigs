@@ -1,0 +1,28 @@
+# Fibonacci — recursive and iterative
+# Demonstrates: functions, recursion, loops, lists
+
+# Recursive
+define fib_rec as:
+    if n <= 1:
+        return n
+    return (fib_rec of (n - 1)) + (fib_rec of (n - 2))
+
+print of ("fib(10) recursive: " + (str of (fib_rec of 10)))
+
+# Iterative
+define fib_iter as:
+    if n <= 1:
+        return n
+    a is 0
+    b is 1
+    for i in range of [2, n + 1]:
+        temp is a + b
+        a is b
+        b is temp
+    return b
+
+# Print first 15 fibonacci numbers
+result is []
+for i in range of 15:
+    append of [result, fib_iter of i]
+print of ("First 15: " + (str of result))

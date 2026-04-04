@@ -1,0 +1,36 @@
+# ============================================================
+# String Library — string utilities in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/string.eigs"
+#   result is join of [["a","b","c"], ","]  # "a,b,c"
+
+# ---- join: join list elements with separator ----
+define join as:
+    items is n[0]
+    sep is n[1]
+    result is ""
+    for i in range of (len of items):
+        if i > 0:
+            result is result + sep
+        result is result + (str of items[i])
+    return result
+
+# ---- repeat: repeat string n times ----
+define repeat as:
+    s is n[0]
+    count is n[1]
+    result is ""
+    for i in range of count:
+        result is result + s
+    return result
+
+# ---- pad_left: left-pad string to width with char ----
+define pad_left as:
+    s is n[0]
+    width is n[1]
+    ch is n[2]
+    loop while (len of s) < width:
+        s is ch + s
+    return s

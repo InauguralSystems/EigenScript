@@ -1,0 +1,27 @@
+# Insertion Sort — pure EigenScript algorithm
+# Demonstrates: nested loops, list mutation, comparisons
+
+define insertion_sort as:
+    items is n
+    size is len of items
+    i is 1
+    loop while i < size:
+        key is items[i]
+        j is i - 1
+        loop while j >= 0 and items[j] > key:
+            set_at of [items, j + 1, items[j]]
+            j is j - 1
+        set_at of [items, j + 1, key]
+        i is i + 1
+    return items
+
+# Sort numbers
+data is [38, 27, 43, 3, 9, 82, 10]
+print of ("Before: " + (str of data))
+insertion_sort of data
+print of ("After:  " + (str of data))
+
+# Sort more
+data2 is [5, 1, 4, 2, 8, 5, 7]
+insertion_sort of data2
+print of ("Sorted: " + (str of data2))

@@ -1,6 +1,6 @@
-# EigenScript v0.4.1 Syntax Guide
+# EigenScript v0.5.0 Syntax Guide
 
-This document describes the EigenScript syntax used in iLambdaAi, translated for compatibility with EigenScript v0.4.1.
+Full language reference for EigenScript v0.5.0.
 
 ## Core Syntax
 

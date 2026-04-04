@@ -1,0 +1,57 @@
+# ============================================================
+# Math Library — numeric utilities in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/math.eigs"
+#   result is abs of -5          # 5
+#   biggest is max_val of [3,1,4] # 4
+
+# ---- abs: absolute value ----
+define abs as:
+    if n < 0:
+        return 0 - n
+    return n
+
+# ---- max_val: maximum element in a list ----
+define max_val as:
+    best is n[0]
+    for i in range of (len of n):
+        if n[i] > best:
+            best is n[i]
+    return best
+
+# ---- min_val: minimum element in a list ----
+define min_val as:
+    best is n[0]
+    for i in range of (len of n):
+        if n[i] < best:
+            best is n[i]
+    return best
+
+# ---- clamp: restrict value to [lo, hi] ----
+define clamp as:
+    val is n[0]
+    lo is n[1]
+    hi is n[2]
+    if val < lo:
+        return lo
+    if val > hi:
+        return hi
+    return val
+
+# ---- lerp: linear interpolation between a and b ----
+define lerp as:
+    a is n[0]
+    b is n[1]
+    t is n[2]
+    return a + (b - a) * t
+
+# ---- dot: dot product of two 1D lists ----
+define dot as:
+    a is n[0]
+    b is n[1]
+    result is 0
+    for i in range of (len of a):
+        result is result + a[i] * b[i]
+    return result
