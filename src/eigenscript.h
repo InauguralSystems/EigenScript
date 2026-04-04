@@ -302,6 +302,12 @@ typedef struct {
 extern TransformerModel g_model;
 extern int g_model_age;
 extern int g_training_samples;
+void register_model_builtins(Env *env);
+/* Cross-file functions used by tensor builtins in eigenscript.c */
+void ne_softmax_buf(double* data, int64_t rows, int64_t cols);
+void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
+                   double *b, int64_t b_cols, double *out);
+Value* json_obj_get(Value *obj, const char *key);
 #endif
 #if EIGENSCRIPT_EXT_DB
 extern PGconn *g_db_conn;
