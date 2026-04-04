@@ -4,9 +4,13 @@
 #
 # How to use:
 #   load_file of "lib/string.eigs"
-#   result is join of [["a","b","c"], ","]  # "a,b,c"
+#
+#   join of [["a","b","c"], ","]    # "a,b,c"
+#   repeat of ["ab", 3]            # "ababab"
+#   pad_left of ["42", 6, "0"]     # "000042"
 
 # ---- join: join list elements with separator ----
+# join of [list, separator] -> string
 define join as:
     items is n[0]
     sep is n[1]
@@ -18,6 +22,7 @@ define join as:
     return result
 
 # ---- repeat: repeat string n times ----
+# repeat of [string, count] -> string
 define repeat as:
     s is n[0]
     count is n[1]
@@ -26,7 +31,8 @@ define repeat as:
         result is result + s
     return result
 
-# ---- pad_left: left-pad string to width with char ----
+# ---- pad_left: left-pad string to width with character ----
+# pad_left of [string, width, pad_char] -> string
 define pad_left as:
     s is n[0]
     width is n[1]

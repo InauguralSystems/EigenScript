@@ -104,32 +104,37 @@ load_file of "lib/list.eigs"
 doubled is map of [[1,2,3], double]
 ```
 
+See [docs/STDLIB.md](docs/STDLIB.md) for the full library guide.
+
 ## Examples
 
+Ordered as a learning path:
+
 ```bash
-eigenscript examples/hello.eigs       # hello world
-eigenscript examples/basics.eigs      # variables, functions, loops
-eigenscript examples/observer.eigs    # observer semantics
-eigenscript examples/tensors.eigs     # tensor math and gradients
-eigenscript examples/fibonacci.eigs   # recursive and iterative
-eigenscript examples/fizzbuzz.eigs    # classic interview problem
-eigenscript examples/sort.eigs        # insertion sort
+eigenscript examples/hello.eigs       # printing
+eigenscript examples/basics.eigs      # variables, functions, loops, strings
+eigenscript examples/fizzbuzz.eigs    # conditionals and modular arithmetic
+eigenscript examples/fibonacci.eigs   # recursion
+eigenscript examples/sort.eigs        # algorithms with list mutation
 eigenscript examples/json_config.eigs # JSON data processing
-eigenscript examples/stdlib_demo.eigs # standard library usage
+eigenscript examples/stdlib_demo.eigs # standard library (map, filter, reduce)
+eigenscript examples/observer.eigs    # observer semantics (entropy, dH)
+eigenscript examples/tensors.eigs     # tensor math, gradients, SGD
 ```
 
 ## Test Suite
 
 ```bash
 cd tests
-./run_all_tests.sh    # 115/115
+./run_all_tests.sh    # 121/121
 ```
 
 ## Documentation
 
-- [docs/BUILTINS.md](docs/BUILTINS.md) — complete builtin reference (83 builtins)
-- [docs/SYNTAX.md](docs/SYNTAX.md) — full language reference
-- [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format, exit codes, error types
+- [docs/SYNTAX.md](docs/SYNTAX.md) — language reference
+- [docs/BUILTINS.md](docs/BUILTINS.md) — 83 builtin functions
+- [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
+- [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 
 ## Build from Source
 

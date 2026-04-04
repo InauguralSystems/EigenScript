@@ -4,11 +4,16 @@
 #
 # How to use:
 #   load_file of "lib/list.eigs"
-#   doubled is map of [items, double_fn]
-#   evens is filter of [items, is_even]
-#   total is reduce of [items, add_fn, 0]
+#
+#   map of [items, fn]              # apply fn to each element
+#   filter of [items, fn]           # keep where fn returns truthy
+#   reduce of [items, fn, init]     # fold left
+#   reverse of [1, 2, 3]           # [3, 2, 1]
+#   zip of [[1,2,3], ["a","b","c"]] # [[1,"a"], [2,"b"], [3,"c"]]
+#   flatten of [[1,2], [3], [4,5]]  # [1, 2, 3, 4, 5]
 
 # ---- map: apply fn to each element, return new list ----
+# map of [list, fn] -> list
 define map as:
     items is n[0]
     fn is n[1]
@@ -18,6 +23,7 @@ define map as:
     return result
 
 # ---- filter: keep elements where fn returns truthy ----
+# filter of [list, fn] -> list
 define filter as:
     items is n[0]
     fn is n[1]
@@ -28,6 +34,8 @@ define filter as:
     return result
 
 # ---- reduce: fold left with initial value ----
+# reduce of [list, fn, init] -> value
+# fn receives [accumulator, element] and returns new accumulator
 define reduce as:
     items is n[0]
     fn is n[1]
@@ -37,6 +45,7 @@ define reduce as:
     return acc
 
 # ---- reverse: reverse a list ----
+# reverse of list -> list
 define reverse as:
     result is []
     i is (len of n) - 1
@@ -46,6 +55,7 @@ define reverse as:
     return result
 
 # ---- zip: pair elements from two lists ----
+# zip of [list_a, list_b] -> list of [a, b] pairs
 define zip as:
     a is n[0]
     b is n[1]
@@ -58,6 +68,7 @@ define zip as:
     return result
 
 # ---- flatten: flatten one level of nesting ----
+# flatten of list -> list
 define flatten as:
     result is []
     for i in range of (len of n):
