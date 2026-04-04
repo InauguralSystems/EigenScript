@@ -227,6 +227,7 @@ extern jmp_buf g_return_buf;
 extern Value *g_return_val;
 extern int g_returning;
 extern int g_parse_errors;
+extern char g_script_dir[4096];
 
 /* ---- Cross-file functions for MODEL tensor builtins ---- */
 /* When MODEL is enabled, these are defined in model_infer.c.

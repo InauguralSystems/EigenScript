@@ -2032,13 +2032,28 @@ Value* builtin_load_file(Value *arg) {
         fprintf(stderr, "load_file: requires a string path argument\n");
         return make_null();
     }
+    const char *path = arg->data.str;
     long size = 0;
-    char *source = read_file_util(arg->data.str, &size);
+    char *source = read_file_util(path, &size);
+
+    /* Fallback: try relative to script directory, then its parent */
+    char resolved[8192];
+    if (!source && path[0] != '/') {
+        snprintf(resolved, sizeof(resolved), "%s/%s", g_script_dir, path);
+        source = read_file_util(resolved, &size);
+        if (source) path = resolved;
+    }
+    if (!source && path[0] != '/') {
+        snprintf(resolved, sizeof(resolved), "%s/../%s", g_script_dir, path);
+        source = read_file_util(resolved, &size);
+        if (source) path = resolved;
+    }
+
     if (!source) {
         fprintf(stderr, "load_file: cannot read '%s'\n", arg->data.str);
         return make_null();
     }
-    fprintf(stderr, "[load_file] Loading %s (%ld bytes)\n", arg->data.str, size);
+    fprintf(stderr, "[load_file] Loading %s (%ld bytes)\n", path, size);
     TokenList tl = tokenize(source);
     ASTNode *ast = parse(&tl);
     Value *result = eval_node(ast, g_global_env);

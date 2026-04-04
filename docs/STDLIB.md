@@ -10,8 +10,13 @@ load_file of "lib/math.eigs"
 load_file of "lib/list.eigs"
 ```
 
-Paths are relative to the **current working directory**, not the script file.
-Run scripts from the EigenScript root directory, or use absolute paths.
+Path resolution order:
+1. Relative to the **current working directory**
+2. Relative to the **script file's directory**
+3. Relative to the **script file's parent directory**
+
+This means `load_file of "lib/math.eigs"` works whether you run the
+script from the project root or from any other directory.
 
 ## Calling Convention
 

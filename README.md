@@ -117,7 +117,8 @@ eigenscript examples/fizzbuzz.eigs    # conditionals and modular arithmetic
 eigenscript examples/fibonacci.eigs   # recursion
 eigenscript examples/sort.eigs        # algorithms with list mutation
 eigenscript examples/json_config.eigs # JSON data processing
-eigenscript examples/stdlib_demo.eigs # standard library (map, filter, reduce)
+eigenscript examples/stdlib_demo.eigs  # standard library (map, filter, reduce)
+eigenscript examples/data_pipeline.eigs # combining libraries for real work
 eigenscript examples/observer.eigs    # observer semantics (entropy, dH)
 eigenscript examples/tensors.eigs     # tensor math, gradients, SGD
 ```

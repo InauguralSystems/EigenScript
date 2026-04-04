@@ -8,6 +8,7 @@
 #endif
 
 Env *g_global_env = NULL;
+char g_script_dir[4096] = ".";
 
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "0.5.0"
@@ -22,6 +23,19 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Usage: eigenscript <file.eigs>\n");
         fprintf(stderr, "       eigenscript --version\n");
         return 1;
+    }
+
+    /* Extract script directory for load_file resolution */
+    {
+        const char *last_slash = strrchr(argv[1], '/');
+        if (last_slash) {
+            int dir_len = (int)(last_slash - argv[1]);
+            if (dir_len >= (int)sizeof(g_script_dir)) dir_len = sizeof(g_script_dir) - 1;
+            memcpy(g_script_dir, argv[1], dir_len);
+            g_script_dir[dir_len] = '\0';
+        } else {
+            strcpy(g_script_dir, ".");
+        }
     }
 
     long src_size = 0;

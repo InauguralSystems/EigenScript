@@ -1,0 +1,64 @@
+# Data Pipeline — combining libraries for real work
+# Demonstrates: load_file, lib/math, lib/list, lib/string together
+
+load_file of "lib/math.eigs"
+load_file of "lib/list.eigs"
+load_file of "lib/string.eigs"
+
+# ---- Sample data: student scores ----
+names is ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+scores is [88, 72, 95, 63, 91]
+
+# ---- Compute statistics ----
+highest is max_val of scores
+lowest is min_val of scores
+
+define add_fn as:
+    return n[0] + n[1]
+total is reduce of [scores, add_fn, 0]
+average is total / (len of scores)
+
+print of ("Students: " + (str of (len of names)))
+print of ("Highest: " + (str of highest))
+print of ("Lowest: " + (str of lowest))
+print of ("Average: " + (str of average))
+
+# ---- Grade each student ----
+define grade as:
+    score is n
+    if score >= 90:
+        return "A"
+    elif score >= 80:
+        return "B"
+    elif score >= 70:
+        return "C"
+    else:
+        return "F"
+
+grades is map of [scores, grade]
+
+# ---- Build report ----
+print of ""
+print of "--- Report Card ---"
+for i in range of (len of names):
+    line is pad_left of [(str of (i + 1)), 2, " "]
+    line is line + ". " + names[i]
+    line is line + " — " + (str of scores[i]) + " (" + grades[i] + ")"
+    print of line
+
+# ---- Filter passing students ----
+pairs is zip of [names, scores]
+
+define passing as:
+    return n[1] >= 70
+
+passed is filter of [pairs, passing]
+print of ""
+print of ("Passing: " + (str of (len of passed)) + "/" + (str of (len of names)))
+
+# ---- Normalize scores to 0-1 range ----
+define normalize as:
+    return (n - lowest) / (highest - lowest)
+
+normalized is map of [scores, normalize]
+print of ("Normalized: " + (str of normalized))
