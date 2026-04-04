@@ -7,7 +7,7 @@ cd "$(dirname "$0")/src"
 
 VERSION=$(cat ../VERSION)
 
-gcc -Wall -Wextra -O2 -o eigenscript eigenscript.c \
+gcc -Wall -Wextra -O2 -o eigenscript eigenscript.c arena.c \
     -DEIGENSCRIPT_EXT_HTTP=0 \
     -DEIGENSCRIPT_EXT_MODEL=0 \
     -DEIGENSCRIPT_EXT_DB=0 \

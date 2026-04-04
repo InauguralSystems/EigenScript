@@ -198,8 +198,10 @@ extern Arena g_arena;
 
 void arena_init(void);
 void* arena_alloc(size_t size);
+void arena_track_string(char *s);
 void arena_mark_pos(void);
 void arena_reset_to_mark(void);
+void free_weight_val(Value *v);
 
 Value* make_num(double n);
 Value* make_str(const char *s);
