@@ -2,7 +2,12 @@
 #define EIGENSCRIPT_H
 
 /* Extension flags — set to 0 to compile a minimal language-only binary.
- * Override at compile time: gcc -DEIGENSCRIPT_EXT_HTTP=0 ... */
+ * Override at compile time: gcc -DEIGENSCRIPT_EXT_HTTP=0 ...
+ *
+ * The shipped build (build.sh) disables all extensions.
+ * Extensions are legacy application code, not part of the language product.
+ * Mixed flag combinations (e.g. HTTP=1 MODEL=0) are not supported —
+ * enable all or none. The flag granularity exists for future separation. */
 #ifndef EIGENSCRIPT_EXT_HTTP
 #define EIGENSCRIPT_EXT_HTTP 1
 #endif
