@@ -469,6 +469,25 @@ check_stderr "EM8 calling non-function" 'x is 5
 y is x of 10' "Error line 2: cannot call num"
 check_stderr "EM9 cannot index num" 'x is 42
 print of x[0]' "Error line 2: cannot index num"
+check_stderr "EM10 nested if line accuracy" 'x is 1
+if x == 1:
+    y is 2
+    if y == 2:
+        z is y[0]' "Error line 5: cannot index num"
+check_stderr "EM11 function body line" 'define foo as:
+    return n - "bad"
+result is foo of 5' "Error line 2: cannot apply"
+check_stderr "EM12 loop body line" 'items is [1, 2, 3]
+for i in items:
+    x is i * 2
+    print of missing' "Error line 4: undefined variable"
+check_stderr "EM13 elif branch line" 'x is 5
+if x == 1:
+    print of "one"
+elif x == 5:
+    y is x[0]' "Error line 5: cannot index"
+check_exit "EM14 runtime error exits 0" 'x is [1] - 5' "0"
+check_exit "EM15 warning exits 0" 'x is 10 / 0' "0"
 echo ""
 
 echo "============================================"

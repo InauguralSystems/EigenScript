@@ -122,13 +122,14 @@ eigenscript examples/stdlib_demo.eigs # standard library usage
 
 ```bash
 cd tests
-./run_all_tests.sh    # 106/106
+./run_all_tests.sh    # 115/115
 ```
 
 ## Documentation
 
 - [docs/BUILTINS.md](docs/BUILTINS.md) — complete builtin reference (83 builtins)
 - [docs/SYNTAX.md](docs/SYNTAX.md) — full language reference
+- [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format, exit codes, error types
 
 ## Build from Source
 
