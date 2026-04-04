@@ -6,11 +6,11 @@ set -e
 cd "$(dirname "$0")/src"
 
 VERSION=$(cat ../VERSION)
-SOURCES="eigenscript.c arena.c"
+SOURCES="eigenscript.c arena.c main.c"
 
 if [ "$1" = "full" ]; then
     # Full build: all extensions. Requires libpq-dev.
-    gcc -Wall -Wextra -O2 -o eigenscript $SOURCES ext_http.c \
+    gcc -Wall -Wextra -O2 -o eigenscript $SOURCES ext_http.c ext_db.c \
         -I/usr/include/postgresql \
         -DEIGENSCRIPT_VERSION="\"$VERSION\"" \
         -lm -lpthread -lpq

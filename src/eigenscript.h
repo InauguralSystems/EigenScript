@@ -226,6 +226,7 @@ int is_truthy(Value *v);
 char* value_to_string(Value *v);
 
 void register_builtins(Env *env);
+extern Env *g_global_env;
 
 /* Utilities used across modules */
 char* read_file_util(const char *path, long *out_size);
@@ -233,6 +234,15 @@ Value* eigs_json_parse_value(const char *s, int *pos);
 #if EIGENSCRIPT_EXT_HTTP
 void http_serve_blocking(int port);
 void register_http_builtins(Env *env);
+#endif
+
+#if EIGENSCRIPT_EXT_DB
+extern PGconn *g_db_conn;
+void register_db_builtins(Env *env);
+#endif
+
+#if EIGENSCRIPT_EXT_MODEL
+void register_model_builtins(Env *env);
 #endif
 
 #if EIGENSCRIPT_EXT_MODEL

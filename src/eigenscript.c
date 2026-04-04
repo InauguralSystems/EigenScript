@@ -12,13 +12,11 @@ jmp_buf g_return_buf;
 Value *g_return_val = NULL;
 int g_returning = 0;
 static int g_parse_errors = 0;
-static Env *g_global_env = NULL;
+/* g_global_env defined in main.c */
 #if EIGENSCRIPT_EXT_MODEL
 TransformerModel g_model = {0};
 #endif
-#if EIGENSCRIPT_EXT_DB
-PGconn *g_db_conn = NULL;
-#endif
+/* DB block removed — now in ext_db.c (was line 19) */
 /* Auth state moved to lib/auth.eigs — no C global needed */
 static double g_computation_cost = 0.0;
 
@@ -2791,36 +2789,7 @@ static int save_model_weights(const char *path, TransformerModel *model) {
 /* Dead extract_json_string removed — replaced by json_path builtin */
 /* Dead builtin_eigen_train removed — now in training.eigs via native_train_step_builtin */
 
-#if EIGENSCRIPT_EXT_DB
-/* These builtins need both MODEL and DB (training data comes from Postgres) */
-Value* builtin_eigen_batch_train(Value *arg) {
-    (void)arg;
-    if (!g_model.loaded) return make_str("{\"status\": \"error\", \"error\": \"Model not loaded\"}");
-    if (!g_db_conn) return make_str("{\"status\": \"error\", \"error\": \"Database not connected\"}");
-
-    PGresult *res = PQexec(g_db_conn, "SELECT input_text, output_text FROM training_data ORDER BY RANDOM() LIMIT 20");
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) { PQclear(res); return make_str("{\"status\": \"error\", \"error\": \"Failed to fetch training data\"}"); }
-
-    int nrows = PQntuples(res);
-    if (nrows == 0) { PQclear(res); return make_str("{\"status\": \"error\", \"error\": \"No training data\"}"); }
-
-    double total_loss = 0.0; int total_tokens = 0, trained = 0;
-    for (int i = 0; i < nrows; i++) {
-        double loss = 0.0; int tokens = 0;
-        if (native_train_step(PQgetvalue(res, i, 0), PQgetvalue(res, i, 1), 0.001, &loss, &tokens) == 0) {
-            total_loss += loss * tokens; total_tokens += tokens; trained++;
-        }
-    }
-    PQclear(res);
-
-    char buf[512];
-    snprintf(buf, sizeof(buf),
-        "{\"status\": \"trained\", \"samples_trained\": %d, \"total_tokens\": %d, \"avg_loss\": %.6f, \"model_age\": %d, \"engine\": \"native_c\"}",
-        trained, total_tokens, total_tokens > 0 ? total_loss / total_tokens : 0.0, g_model_age);
-    return make_str(buf);
-}
-
-#endif /* EIGENSCRIPT_EXT_DB — batch_train needs both MODEL and DB */
+/* DB block removed — now in ext_db.c (was line 2794) */
 
 /* Dead builtin_model_save removed — now in training.eigs via model_save_weights */
 
@@ -3030,37 +2999,7 @@ static Value* json_obj_get(Value *obj, const char *key) {
 
 #endif /* EIGENSCRIPT_EXT_MODEL — model_load and sanitization */
 
-#if EIGENSCRIPT_EXT_DB
-Value* builtin_db_connect(Value *arg) {
-    (void)arg;
-    const char *url = getenv("DATABASE_URL");
-    if (!url || !url[0]) {
-        return make_str("{\"status\": \"no_database\", \"message\": \"DATABASE_URL not set\"}");
-    }
-
-    char conn_str[4096];
-    if (strchr(url, '?')) {
-        snprintf(conn_str, sizeof(conn_str), "%s&connect_timeout=3", url);
-    } else {
-        snprintf(conn_str, sizeof(conn_str), "%s?connect_timeout=3", url);
-    }
-    g_db_conn = PQconnectdb(conn_str);
-
-    if (PQstatus(g_db_conn) != CONNECTION_OK) {
-        char buf[1024];
-        snprintf(buf, sizeof(buf), "{\"status\": \"error\", \"error\": \"%s\"}", PQerrorMessage(g_db_conn));
-        PQfinish(g_db_conn);
-        g_db_conn = NULL;
-        return make_str(buf);
-    }
-
-    return make_str("{\"status\": \"connected\", \"driver\": \"libpq\"}");
-}
-
-/* Dead corpus/feedback/auth/analytics/stats builtins removed —
-   now in corpus.eigs, admin.eigs, auth.eigs via thin DB builtins */
-
-#endif /* EIGENSCRIPT_EXT_DB */
+/* DB block removed — now in ext_db.c (was line 3033) */
 
 #if EIGENSCRIPT_EXT_MODEL
 Value* builtin_eigen_check_openai(Value *arg) {
@@ -3183,98 +3122,13 @@ Value* builtin_eigen_export_corpus(Value *arg) {
     return make_str(result);
 }
 
-/* ================================================================
- * SHA256 Implementation (minimal, no external library)
- * ================================================================ */
-
-static const uint32_t sha256_k[64] = {
-    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
-};
-
-#define SHA256_ROTR(x,n) (((x)>>(n))|((x)<<(32-(n))))
-#define SHA256_CH(x,y,z) (((x)&(y))^((~(x))&(z)))
-#define SHA256_MAJ(x,y,z) (((x)&(y))^((x)&(z))^((y)&(z)))
-#define SHA256_EP0(x) (SHA256_ROTR(x,2)^SHA256_ROTR(x,13)^SHA256_ROTR(x,22))
-#define SHA256_EP1(x) (SHA256_ROTR(x,6)^SHA256_ROTR(x,11)^SHA256_ROTR(x,25))
-#define SHA256_SIG0(x) (SHA256_ROTR(x,7)^SHA256_ROTR(x,18)^((x)>>3))
-#define SHA256_SIG1(x) (SHA256_ROTR(x,17)^SHA256_ROTR(x,19)^((x)>>10))
-
-static void sha256_hash(const unsigned char *data, size_t len, unsigned char out[32]) {
-    uint32_t h0=0x6a09e667, h1=0xbb67ae85, h2=0x3c6ef372, h3=0xa54ff53a;
-    uint32_t h4=0x510e527f, h5=0x9b05688c, h6=0x1f83d9ab, h7=0x5be0cd19;
-
-    size_t new_len = len + 1;
-    while (new_len % 64 != 56) new_len++;
-    new_len += 8;
-
-    unsigned char *msg = calloc(new_len, 1);
-    memcpy(msg, data, len);
-    msg[len] = 0x80;
-
-    uint64_t bits_len = (uint64_t)len * 8;
-    for (int i = 0; i < 8; i++)
-        msg[new_len - 1 - i] = (unsigned char)(bits_len >> (i * 8));
-
-    for (size_t offset = 0; offset < new_len; offset += 64) {
-        uint32_t w[64];
-        for (int i = 0; i < 16; i++)
-            w[i] = ((uint32_t)msg[offset+i*4]<<24) | ((uint32_t)msg[offset+i*4+1]<<16) |
-                    ((uint32_t)msg[offset+i*4+2]<<8) | (uint32_t)msg[offset+i*4+3];
-        for (int i = 16; i < 64; i++)
-            w[i] = SHA256_SIG1(w[i-2]) + w[i-7] + SHA256_SIG0(w[i-15]) + w[i-16];
-
-        uint32_t a=h0,b=h1,c=h2,d=h3,e=h4,f=h5,g=h6,h=h7;
-        for (int i = 0; i < 64; i++) {
-            uint32_t t1 = h + SHA256_EP1(e) + SHA256_CH(e,f,g) + sha256_k[i] + w[i];
-            uint32_t t2 = SHA256_EP0(a) + SHA256_MAJ(a,b,c);
-            h=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
-        }
-        h0+=a; h1+=b; h2+=c; h3+=d; h4+=e; h5+=f; h6+=g; h7+=h;
-    }
-    free(msg);
-
-    uint32_t hh[8] = {h0,h1,h2,h3,h4,h5,h6,h7};
-    for (int i = 0; i < 8; i++) {
-        out[i*4]   = (hh[i]>>24)&0xff;
-        out[i*4+1] = (hh[i]>>16)&0xff;
-        out[i*4+2] = (hh[i]>>8)&0xff;
-        out[i*4+3] = hh[i]&0xff;
-    }
-}
-
-static void sha256_hex(const char *input, char hex_out[65]) {
-    unsigned char hash[32];
-    sha256_hash((const unsigned char*)input, strlen(input), hash);
-    for (int i = 0; i < 32; i++)
-        sprintf(hex_out + i*2, "%02x", hash[i]);
-    hex_out[64] = '\0';
-}
+/* SHA256 moved to ext_db.c */
 
 /* ================================================================
  * API Key Management
  * ================================================================ */
 
-static void ensure_api_keys_table(void) {
-    if (!g_db_conn) return;
-    PQexec(g_db_conn,
-        "CREATE TABLE IF NOT EXISTS api_keys ("
-        "id SERIAL PRIMARY KEY, "
-        "name TEXT, "
-        "key_hash TEXT, "
-        "key_prefix TEXT, "
-        "created_at TIMESTAMP DEFAULT NOW(), "
-        "last_used TIMESTAMP, "
-        "is_active BOOLEAN DEFAULT TRUE)");
-    PGresult *r = PQexec(g_db_conn, "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_prefix TEXT");
-    PQclear(r);
-}
+/* ensure_api_keys_table moved to ext_db.c */
 
 /* Dead monolithic API key builtins removed — now in admin.eigs */
 #endif /* EIGENSCRIPT_EXT_MODEL && EIGENSCRIPT_EXT_DB — export_corpus */
@@ -4045,199 +3899,7 @@ Value* builtin_eigen_model_info(Value *arg) {
 
 #endif /* EIGENSCRIPT_EXT_MODEL */
 
-#if EIGENSCRIPT_EXT_DB
-/* ================================================================
- * THIN DB BUILTINS — general-purpose database capabilities
- * ================================================================ */
-
-Value* builtin_db_query_value(Value *arg) {
-    /* Run a SQL query and return the value from row 0 col 0 as a string.
-     * Usage: db_query_value of "SELECT COUNT(*) FROM table"
-     * Returns "" if no DB, query fails, or no rows. */
-    if (!arg || arg->type != VAL_STR) return make_str("");
-    if (!g_db_conn || PQstatus(g_db_conn) != CONNECTION_OK) return make_str("");
-    PGresult *res = PQexec(g_db_conn, arg->data.str);
-    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
-        PQclear(res);
-        return make_str("");
-    }
-    const char *val = PQgetvalue(res, 0, 0);
-    Value *result = make_str(val ? val : "");
-    PQclear(res);
-    return result;
-}
-
-Value* builtin_db_execute(Value *arg) {
-    /* Run a SQL command with optional params. Returns "ok" or "error".
-     * Usage: db_execute of "INSERT INTO ..." (no params)
-     *    or: db_execute of ["INSERT INTO t (a) VALUES ($1)", param1] */
-    if (!g_db_conn || PQstatus(g_db_conn) != CONNECTION_OK) return make_str("no_db");
-    PGresult *res = NULL;
-
-    if (arg && arg->type == VAL_STR) {
-        res = PQexec(g_db_conn, arg->data.str);
-    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        const char *sql = "";
-        if (arg->data.list.items[0]->type == VAL_STR) sql = arg->data.list.items[0]->data.str;
-        int nparams = arg->data.list.count - 1;
-        if (nparams == 0) {
-            res = PQexec(g_db_conn, sql);
-        } else {
-            const char *params[16];
-            char numbuf[16][64];
-            if (nparams > 16) nparams = 16;
-            for (int i = 0; i < nparams; i++) {
-                Value *v = arg->data.list.items[i + 1];
-                if (v->type == VAL_STR) {
-                    params[i] = v->data.str;
-                } else if (v->type == VAL_NUM) {
-                    snprintf(numbuf[i], sizeof(numbuf[i]), "%g", v->data.num);
-                    params[i] = numbuf[i];
-                } else {
-                    params[i] = "";
-                }
-            }
-            res = PQexecParams(g_db_conn, sql, nparams, NULL, params, NULL, NULL, 0);
-        }
-    } else {
-        return make_str("error");
-    }
-
-    int ok = (PQresultStatus(res) == PGRES_COMMAND_OK || PQresultStatus(res) == PGRES_TUPLES_OK);
-    PQclear(res);
-    return make_str(ok ? "ok" : "error");
-}
-
-Value* builtin_db_query_json(Value *arg) {
-    /* Run SQL and return all rows as a JSON array of objects.
-     * Usage: db_query_json of "SELECT id, name FROM table"
-     * Returns "[]" if no DB, error, or no rows. */
-    if (!arg || arg->type != VAL_STR) return make_str("[]");
-    if (!g_db_conn || PQstatus(g_db_conn) != CONNECTION_OK) return make_str("[]");
-    PGresult *res = PQexec(g_db_conn, arg->data.str);
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        PQclear(res);
-        return make_str("[]");
-    }
-    int nrows = PQntuples(res);
-    int ncols = PQnfields(res);
-    if (nrows == 0 || ncols == 0) { PQclear(res); return make_str("[]"); }
-
-    int buf_size = nrows * ncols * 256 + 256;
-    if (buf_size > 1048576) buf_size = 1048576;
-    char *buf = calloc(buf_size, 1);
-    int pos = 0;
-    pos += snprintf(buf + pos, buf_size - pos, "[");
-    for (int r = 0; r < nrows && pos < buf_size - 512; r++) {
-        if (r > 0) pos += snprintf(buf + pos, buf_size - pos, ", ");
-        pos += snprintf(buf + pos, buf_size - pos, "{");
-        for (int c = 0; c < ncols && pos < buf_size - 256; c++) {
-            if (c > 0) pos += snprintf(buf + pos, buf_size - pos, ", ");
-            const char *colname = PQfname(res, c);
-            const char *val = PQgetvalue(res, r, c);
-            /* Escape value for JSON */
-            char escaped[512];
-            int ei = 0;
-            for (int i = 0; val[i] && ei < 500; i++) {
-                if (val[i] == '"') { escaped[ei++] = '\\'; escaped[ei++] = '"'; }
-                else if (val[i] == '\\') { escaped[ei++] = '\\'; escaped[ei++] = '\\'; }
-                else if (val[i] == '\n') { escaped[ei++] = '\\'; escaped[ei++] = 'n'; }
-                else escaped[ei++] = val[i];
-            }
-            escaped[ei] = '\0';
-            pos += snprintf(buf + pos, buf_size - pos, "\"%s\": \"%s\"", colname, escaped);
-        }
-        pos += snprintf(buf + pos, buf_size - pos, "}");
-    }
-    pos += snprintf(buf + pos, buf_size - pos, "]");
-
-    PQclear(res);
-    Value *result = make_str(buf);
-    free(buf);
-    return result;
-}
-
-/* Generate API key — needs /dev/urandom and SHA256, must stay in C */
-Value* builtin_generate_api_key(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("{}");
-    const char *name = arg->data.str;
-
-    unsigned char raw_bytes[16];
-    FILE *urand = fopen("/dev/urandom", "rb");
-    if (urand) {
-        if (fread(raw_bytes, 1, 16, urand) != 16) {
-            fclose(urand);
-            return make_str("{\"error\": \"Failed to read random bytes\"}");
-        }
-        fclose(urand);
-    } else {
-        for (int i = 0; i < 16; i++) raw_bytes[i] = (unsigned char)(rand() ^ (rand() << 8));
-    }
-    char raw_key[40];
-    int kp = 0;
-    kp += sprintf(raw_key + kp, "eig_");
-    for (int i = 0; i < 16; i++) kp += sprintf(raw_key + kp, "%02x", raw_bytes[i]);
-
-    char key_hash[65];
-    sha256_hex(raw_key, key_hash);
-
-    char key_prefix[16];
-    snprintf(key_prefix, sizeof(key_prefix), "eig_%.8s", raw_key + 4);
-
-    /* Store in DB if available */
-    if (g_db_conn && PQstatus(g_db_conn) == CONNECTION_OK) {
-        ensure_api_keys_table();
-        const char *params[3] = {name, key_hash, key_prefix};
-        PGresult *res = PQexecParams(g_db_conn,
-            "INSERT INTO api_keys (name, key_hash, key_prefix) VALUES ($1, $2, $3)",
-            3, NULL, params, NULL, NULL, 0);
-        PQclear(res);
-    }
-
-    char buf[256];
-    snprintf(buf, sizeof(buf), "{\"success\": true, \"key\": \"%s\"}", raw_key);
-    return make_str(buf);
-}
-
-/* Validate API key — needs SHA256, must stay in C */
-Value* builtin_validate_api_key(Value *arg) {
-    if (!arg || arg->type != VAL_STR || arg->data.str[0] == '\0') {
-        return make_str("{\"valid\": false, \"error\": \"no key provided\"}");
-    }
-    if (!g_db_conn || PQstatus(g_db_conn) != CONNECTION_OK) {
-        return make_str("{\"valid\": false, \"error\": \"no database\"}");
-    }
-
-    char key_hash[65];
-    sha256_hex(arg->data.str, key_hash);
-
-    ensure_api_keys_table();
-    const char *params[1] = {key_hash};
-    PGresult *res = PQexecParams(g_db_conn,
-        "SELECT id, name FROM api_keys WHERE key_hash = $1 AND is_active = TRUE",
-        1, NULL, params, NULL, NULL, 0);
-
-    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
-        PQclear(res);
-        return make_str("{\"valid\": false}");
-    }
-
-    const char *name = PQgetvalue(res, 0, 1);
-    char buf[512];
-    snprintf(buf, sizeof(buf), "{\"valid\": true, \"name\": \"%s\"}", name);
-    PQclear(res);
-
-    /* Update last_used */
-    const char *update_params[1] = {key_hash};
-    PGresult *upd = PQexecParams(g_db_conn,
-        "UPDATE api_keys SET last_used = NOW() WHERE key_hash = $1",
-        1, NULL, update_params, NULL, NULL, 0);
-    PQclear(upd);
-
-    return make_str(buf);
-}
-
-#endif /* EIGENSCRIPT_EXT_DB */
+/* DB block removed — now in ext_db.c (was line 4048) */
 
 /* Auth builtins removed — now in lib/auth.eigs using random_hex + env_get.
  * The EIGENSCRIPT_EXT_AUTH flag is no longer needed for builtins.
@@ -5601,6 +5263,10 @@ void register_builtins(Env *env) {
     register_http_builtins(env);
 #endif
 
+#if EIGENSCRIPT_EXT_DB
+    register_db_builtins(env);
+#endif
+
 #if EIGENSCRIPT_EXT_MODEL
     /* ---- Model/inference extension ---- */
     env_set_local(env, "eigen_model_loaded", make_builtin(builtin_eigen_model_loaded));
@@ -5615,21 +5281,10 @@ void register_builtins(Env *env) {
     env_set_local(env, "model_load_weights", make_builtin(builtin_model_load_weights));
     env_set_local(env, "eigen_model_load", make_builtin(builtin_eigen_model_load));
     env_set_local(env, "eigen_check_openai", make_builtin(builtin_eigen_check_openai));
-#if EIGENSCRIPT_EXT_DB
-    env_set_local(env, "eigen_batch_train", make_builtin(builtin_eigen_batch_train));
-    env_set_local(env, "eigen_export_corpus", make_builtin(builtin_eigen_export_corpus));
-#endif
+/* DB block removed — now in ext_db.c (was line 5618) */
 #endif
 
-#if EIGENSCRIPT_EXT_DB
-    /* ---- Database extension (requires libpq) ---- */
-    env_set_local(env, "db_connect", make_builtin(builtin_db_connect));
-    env_set_local(env, "db_query_value", make_builtin(builtin_db_query_value));
-    env_set_local(env, "db_execute", make_builtin(builtin_db_execute));
-    env_set_local(env, "db_query_json", make_builtin(builtin_db_query_json));
-    env_set_local(env, "generate_api_key", make_builtin(builtin_generate_api_key));
-    env_set_local(env, "validate_api_key", make_builtin(builtin_validate_api_key));
-#endif
+/* DB block removed — now in ext_db.c (was line 5624) */
 
     /* Auth builtins removed — now in lib/auth.eigs */
 }
@@ -5637,53 +5292,4 @@ void register_builtins(Env *env) {
 /* HTTP server moved to ext_http.c */
 
 
-/* ================================================================
- * MAIN
- * ================================================================ */
-
-#ifndef EIGENSCRIPT_VERSION
-#define EIGENSCRIPT_VERSION "0.5.0"
-#endif
-
-int main(int argc, char **argv) {
-    if (argc >= 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
-        printf("%s\n", EIGENSCRIPT_VERSION);
-        return 0;
-    }
-    if (argc < 2) {
-        fprintf(stderr, "Usage: eigenscript <file.eigs>\n");
-        fprintf(stderr, "       eigenscript --version\n");
-        return 1;
-    }
-
-    long src_size = 0;
-    char *source = read_file_util(argv[1], &src_size);
-    if (!source) {
-        fprintf(stderr, "Error: cannot read file '%s'\n", argv[1]);
-        return 1;
-    }
-
-    srand(time(NULL));
-    arena_init();
-
-    Env *global = env_new(NULL);
-    register_builtins(global);
-    g_global_env = global;
-
-#if EIGENSCRIPT_EXT_HTTP
-    g_server.global_env = global;
-    g_server.route_count = 0;
-    g_server.static_prefix = NULL;
-    g_server.static_dir = NULL;
-    g_server.request_body = NULL;
-    g_server.session_id = NULL;
-    g_server.request_headers = NULL;
-#endif
-
-    TokenList tl = tokenize(source);
-    ASTNode *ast = parse(&tl);
-    eval_node(ast, global);
-
-    free(source);
-    return 0;
-}
+/* main() moved to main.c */
