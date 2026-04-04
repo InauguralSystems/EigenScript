@@ -1,0 +1,28 @@
+print of "=== STABLE BAND TEST ==="
+
+print of "--- SB1: Stable is reachable (small drift, moderate H) ---"
+x is 42
+x is 43
+x is 44
+
+s1 is stable
+r1 is report of x
+
+print of s1
+print of r1
+print of where is x
+print of why is x
+
+print of ""
+print of "--- SB2: Converged is NOT stable ---"
+y is 1000000
+y is 1000000
+
+s2 is stable
+r2 is report of y
+
+print of s2
+print of r2
+
+print of ""
+print of "=== STABLE BAND COMPLETE ==="

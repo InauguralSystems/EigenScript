@@ -1,0 +1,17 @@
+print of "=== OBSERVE TEST ==="
+
+print of "--- OB1: Observe returns list with report ---"
+x is 42
+x is 42
+obs is observe of x
+
+print of type of obs
+print of obs[0]
+
+print of ""
+print of "--- OB2: Observe matches report ---"
+r is report of x
+print of r
+
+print of ""
+print of "=== OBSERVE COMPLETE ==="

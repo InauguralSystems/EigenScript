@@ -1,0 +1,65 @@
+print of "=== KEYWORD RESERVATION TEST ==="
+print of "Confirms all 12 reserved words are first-class citizens"
+print of ""
+
+print of "--- Interrogatives as expressions ---"
+x is 42
+print of "what:"
+print of (what is x)
+print of "who:"
+print of (who is x)
+print of "when:"
+print of (when is x)
+print of "where:"
+print of (where is x)
+print of "why:"
+print of (why is x)
+print of "how:"
+print of (how is x)
+
+print of ""
+print of "--- Predicates in conditions ---"
+x is 0.001
+if converged:
+    print of "converged: YES"
+else:
+    print of "converged: NO"
+
+if stable:
+    print of "stable: YES"
+else:
+    print of "stable: NO"
+
+if improving:
+    print of "improving: YES"
+else:
+    print of "improving: NO"
+
+if oscillating:
+    print of "oscillating: YES"
+else:
+    print of "oscillating: NO"
+
+if diverging:
+    print of "diverging: YES"
+else:
+    print of "diverging: NO"
+
+if equilibrium:
+    print of "equilibrium: YES"
+else:
+    print of "equilibrium: NO"
+
+print of ""
+print of "--- Predicates as values ---"
+cc is converged
+ss is stable
+ii is improving
+oo is oscillating
+dd is diverging
+ee is equilibrium
+print of ("converged=" + cc + " stable=" + ss + " improving=" + ii)
+print of ("oscillating=" + oo + " diverging=" + dd + " equilibrium=" + ee)
+
+print of ""
+print of "=== KEYWORD RESERVATION COMPLETE ==="

@@ -1,0 +1,21 @@
+print of "=== HALTING: STALL DETECTION TEST ==="
+print of "--- HS1: Entropy-preserving at moderate H is NOT converged ---"
+
+x is 42
+x is 42
+
+c is converged
+e is equilibrium
+
+print of c
+print of e
+
+print of ""
+print of "--- HS2: Stall is observable via interrogation ---"
+
+print of where is x
+print of why is x
+print of report of x
+
+print of ""
+print of "=== STALL DETECTION COMPLETE ==="

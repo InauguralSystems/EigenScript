@@ -1,0 +1,36 @@
+# Observer Semantics in EigenScript
+# Every value tracks entropy, rate of change (dH), and observation age.
+# The runtime watches how values change over time.
+
+# Assign a value and update it several times
+x is 10.0
+x is 8.0
+x is 6.0
+x is 4.0
+x is 2.0
+
+# observe returns [status, entropy, dH, prev_dH]
+state is observe of x
+print of ("Observer state: " + (str of state))
+
+# report returns the status as a string
+status is report of x
+print of ("Status: " + status)
+
+# The observer classifies value trajectories:
+#   "improving"   — entropy is decreasing
+#   "diverging"   — entropy is increasing
+#   "stable"      — entropy is changing slowly
+#   "equilibrium" — entropy has nearly stopped changing
+#   "oscillating" — dH is sign-flipping
+#   "converged"   — entropy is very low and stable
+
+# Stable value
+y is 5.0
+y is 5.0
+y is 5.0
+print of ("Stable: " + (report of y))
+
+# This is the foundation of selective observation:
+# the runtime can tell you which values are still changing
+# and which have settled, without you asking explicitly.

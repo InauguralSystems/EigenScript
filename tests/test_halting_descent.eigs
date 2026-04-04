@@ -1,0 +1,18 @@
+print of "=== HALTING: BOUNDED DESCENT TEST ==="
+print of "--- HD1: Entropy strictly decreases each iteration ---"
+
+counter is 0
+x is 10
+x is 10
+
+loop while not converged:
+    counter is counter + 1
+    x is x * 2
+
+print of counter
+print of report of x
+print of where is x
+print of why is x
+
+print of ""
+print of "=== BOUNDED DESCENT COMPLETE ==="

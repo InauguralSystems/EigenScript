@@ -1,0 +1,60 @@
+# Test arena ownership semantics.
+# These tests cover fixes to free_weight_val and env_set_local
+# string tracking. Each test targets a specific guarantee.
+
+# --- Test 1: NEW local created inside arena window in heap env ---
+# The real pattern from token_train.eigs: a variable that does NOT
+# exist before arena_mark is created inside the arena window, then
+# read after arena_reset. The name string must survive because the
+# env is heap-allocated (function call_env). If env_set_local
+# incorrectly arena-tracks the string, this fails with undefined
+# variable or garbage after reset.
+define test_new_local as:
+    arena_mark of null
+    fresh_var is num_copy of 42
+    arena_reset of null
+    # fresh_var was created inside the arena window.
+    # Its name string must still be valid here.
+    print of "AO1:"
+    print of fresh_var
+    return fresh_var
+
+r is test_new_local of null
+
+# --- Test 2: sgd_update inside arena produces correct values ---
+# Runs multiple sgd_update cycles inside arena windows.
+# Tests that make_num_permanent Values survive arena_reset
+# (they're heap-allocated, not arena) and that free_weight_val
+# doesn't corrupt them. If free_weight_val incorrectly freed a
+# still-referenced Value, the weights would contain garbage.
+weights is [1.0, 2.0, 3.0, 4.0]
+grad is [0.01, 0.01, 0.01, 0.01]
+for i in range of 50:
+    arena_mark of null
+    sgd_update of [weights, grad, 1.0]
+    arena_reset of null
+# weights[0] = 1.0 - 50*0.01 = 0.5
+# weights[3] = 4.0 - 50*0.01 = 3.5
+print of "AO2:"
+print of (get_at of [weights, 0])
+print of (get_at of [weights, 3])
+
+# --- Test 3: tensor save/load round-trip preserves values ---
+t is [10.0, 20.0, 30.0]
+t is [10.5, 20.5, 30.5]
+t is [11.0, 21.0, 31.0]
+tensor_save of [t, "/tmp/test_ao3.bin"]
+t2 is tensor_load of "/tmp/test_ao3.bin"
+print of "AO3:"
+print of (get_at of [t2, 1])
+
+# --- Test 4: num_copy extracts value from arena to heap ---
+# The variable is NEW (created inside arena window).
+define test_numcopy as:
+    arena_mark of null
+    extracted is num_copy of 99.5
+    arena_reset of null
+    return extracted
+
+print of "AO4:"
+print of (test_numcopy of null)

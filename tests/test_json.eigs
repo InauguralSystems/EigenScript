@@ -1,0 +1,20 @@
+print of "=== JSON TEST ==="
+
+print of "--- JS1: Encode primitives ---"
+print of json_encode of 42
+print of json_encode of "hello"
+
+print of "--- JS2: Encode list ---"
+print of json_encode of [1, 2, 3]
+
+print of "--- JS3: Round-trip ---"
+decoded is json_decode of "[1,2,3]"
+print of json_encode of decoded
+
+print of "--- JS4: Object decode ---"
+obj is json_decode of "{\"name\":\"eigen\"}"
+print of obj[0]
+print of obj[1]
+
+print of ""
+print of "=== JSON COMPLETE ==="

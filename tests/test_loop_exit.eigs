@@ -1,0 +1,20 @@
+print of "=== LOOP EXIT TEST ==="
+
+print of "--- LE1: Normal exit ---"
+x is 10
+x is 10
+loop while not converged:
+    x is x * 2
+print of __loop_exit__
+print of __loop_iterations__
+
+print of ""
+print of "--- LE2: Stall exit ---"
+y is 42
+y is 42
+loop while not converged:
+    y is 42
+print of __loop_exit__
+
+print of ""
+print of "=== LOOP EXIT COMPLETE ==="

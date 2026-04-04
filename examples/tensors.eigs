@@ -1,0 +1,35 @@
+# Tensor Math in EigenScript
+# Matrix operations, activations, and gradients are builtins.
+
+# Create a random matrix [4, 3] with scale 0.1
+w is random_normal of [4, 3, 0.1]
+print of ("Shape: " + (str of (shape of w)))
+
+# Matrix multiply: [1, 4] @ [4, 3] → [1, 3]
+input is [1.0, 2.0, 3.0, 4.0]
+output is matmul of [input, w]
+print of ("Output: " + (str of output))
+
+# Activations
+print of ("ReLU: " + (str of (relu of [-1, 0, 1, 2])))
+print of ("Softmax: " + (str of (softmax of [1.0, 2.0, 3.0])))
+
+# Element-wise operations
+a is [1, 2, 3]
+b is [4, 5, 6]
+print of ("Add: " + (str of (add of [a, b])))
+print of ("Multiply: " + (str of (multiply of [a, b])))
+
+# Numerical gradient: compute dL/dw for each element
+bias is [0.1, 0.2, 0.3]
+
+define simple_loss as:
+    s is sum of bias
+    return s * s
+
+grad is numerical_grad of [simple_loss, bias, 0.001]
+print of ("Gradient: " + (str of grad))
+
+# SGD update: bias -= lr * grad
+sgd_update of [bias, grad, 0.01]
+print of ("Updated bias: " + (str of bias))

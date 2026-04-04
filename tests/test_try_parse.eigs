@@ -1,0 +1,30 @@
+# Test try_parse: structural validation oracle.
+# Must accept valid EigenScript and reject malformed input.
+
+# Valid cases
+print of "TP_V1:"
+print of (try_parse of "x is 42")
+print of "TP_V2:"
+print of (try_parse of "define foo as:\n    return 1")
+print of "TP_V3:"
+print of (try_parse of "if x > 0:\n    y is 1")
+print of "TP_V4:"
+print of (try_parse of "for i in range of 10:\n    print of i")
+
+# Invalid cases — parser level — must return 0
+print of "TP_I1:"
+print of (try_parse of "x is )")
+print of "TP_I2:"
+print of (try_parse of "if x > 0")
+print of "TP_I3:"
+print of (try_parse of "")
+print of "TP_I4:"
+print of (try_parse of "]]][[[")
+
+# Invalid cases — tokenizer level — must return 0
+print of "TP_I5:"
+print of (try_parse of "x is @")
+print of "TP_I6:"
+print of (try_parse of "x is \"unterminated")
+print of "TP_I7:"
+print of (try_parse of "x is !")
