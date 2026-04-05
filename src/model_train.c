@@ -283,6 +283,7 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
     free(pe);
 
     cache->seq_len = seq_len;
+    int use_tern = (model->weight_format == WEIGHT_FORMAT_TERNARY);
 
     for (int l = 0; l < n_layers; l++) {
         TransformerLayer *layer = &model->layers[l];
@@ -290,6 +291,12 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
         int lss = l * seq_len * seq_len;
         int lsf = l * seq_len * d_ff;
         int ls = l * seq_len;
+        float *wq = use_tern ? layer->w_q_tern : layer->w_q;
+        float *wk = use_tern ? layer->w_k_tern : layer->w_k;
+        float *wv = use_tern ? layer->w_v_tern : layer->w_v;
+        float *wo = use_tern ? layer->w_o_tern : layer->w_o;
+        float *wff1 = use_tern ? layer->w_ff1_tern : layer->w_ff1;
+        float *wff2 = use_tern ? layer->w_ff2_tern : layer->w_ff2;
 
         memcpy(cache->layer_inputs + lsd, x, seq_len * d_model * sizeof(float));
 
@@ -315,7 +322,7 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
 
         float *attn_out = calloc(seq_len * d_model, sizeof(float));
         ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
-            layer->w_q_tern, layer->w_k_tern, layer->w_v_tern, layer->w_o_tern,
+            wq, wk, wv, wo,
             attn_out, cache->attn_probs + lss);
         free(norm1);
 
@@ -346,7 +353,7 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
 
         float *ffn_out = calloc(seq_len * d_model, sizeof(float));
         ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
-            layer->w_ff1_tern, d_ff, layer->w_ff2_tern,
+            wff1, d_ff, wff2,
             1, ffn_out, cache->ffn_pre_act + lsf);
         free(norm2);
 
@@ -424,6 +431,8 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
     float total_loss = 0.0f;
     int num_tokens = 0;
 
+    int use_tern = (g_model.weight_format == WEIGHT_FORMAT_TERNARY);
+
     int max_ctx = max_seq_len < full_len ? max_seq_len : full_len;
     TrainingCache cache;
     cache.layer_inputs = calloc(n_layers * max_ctx * d_model, sizeof(float));
@@ -496,8 +505,10 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             float *d_ffn_w1 = calloc(d_model * d_ff, sizeof(float));
             float *d_ffn_w2 = calloc(d_ff * d_model, sizeof(float));
             float *d_norm2_out = calloc(ctx_len * d_model, sizeof(float));
+            float *bw_wff1 = use_tern ? layer->w_ff1_tern : layer->w_ff1;
+            float *bw_wff2 = use_tern ? layer->w_ff2_tern : layer->w_ff2;
             ne_fused_ffn_backward_buf(d_x, ctx_len, d_model,
-                cache.norm2_outputs + lsd, layer->w_ff1_tern, d_ff, layer->w_ff2_tern,
+                cache.norm2_outputs + lsd, bw_wff1, d_ff, bw_wff2,
                 cache.ffn_pre_act + lsf, d_ffn_w1, d_ffn_w2, d_norm2_out);
             for (int i = 0; i < d_model * d_ff; i++) lg_ff1[l][i] += d_ffn_w1[i];
             for (int i = 0; i < d_ff * d_model; i++) lg_ff2[l][i] += d_ffn_w2[i];
@@ -520,9 +531,13 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
             float *d_attn_wv = calloc(d_model * d_model, sizeof(float));
             float *d_attn_wo = calloc(d_model * d_model, sizeof(float));
             float *d_norm1_out = calloc(ctx_len * d_model, sizeof(float));
+            float *bw_wq = use_tern ? layer->w_q_tern : layer->w_q;
+            float *bw_wk = use_tern ? layer->w_k_tern : layer->w_k;
+            float *bw_wv = use_tern ? layer->w_v_tern : layer->w_v;
+            float *bw_wo = use_tern ? layer->w_o_tern : layer->w_o;
             ne_fused_attention_backward_buf(d_post_attn, ctx_len, d_model,
                 cache.norm1_outputs + lsd,
-                layer->w_q_tern, layer->w_k_tern, layer->w_v_tern, layer->w_o_tern,
+                bw_wq, bw_wk, bw_wv, bw_wo,
                 cache.attn_probs + lss,
                 d_attn_wq, d_attn_wk, d_attn_wv, d_attn_wo, d_norm1_out);
             for (int i = 0; i < d_model * d_model; i++) {
@@ -633,8 +648,10 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
         }
     }
 
-    /* Re-quantize master weights → ternary copies for next forward pass */
-    requantize_all_layers(&g_model);
+    /* Re-quantize master weights → ternary copies for next forward pass (if ternary format) */
+    if (g_model.weight_format == WEIGHT_FORMAT_TERNARY) {
+        requantize_all_layers(&g_model);
+    }
 
     g_model_age += num_tokens;
     g_training_samples++;

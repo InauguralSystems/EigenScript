@@ -230,8 +230,16 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     for (int i = 0; i < seq_len * d_model; i++) x[i] += pe[i];
     free(pe);
 
+    int use_tern = (model->weight_format == WEIGHT_FORMAT_TERNARY);
+
     for (int l = 0; l < model->config.n_layers; l++) {
         TransformerLayer *layer = &model->layers[l];
+        float *wq = use_tern ? layer->w_q_tern : layer->w_q;
+        float *wk = use_tern ? layer->w_k_tern : layer->w_k;
+        float *wv = use_tern ? layer->w_v_tern : layer->w_v;
+        float *wo = use_tern ? layer->w_o_tern : layer->w_o;
+        float *wff1 = use_tern ? layer->w_ff1_tern : layer->w_ff1;
+        float *wff2 = use_tern ? layer->w_ff2_tern : layer->w_ff2;
 
         float *norm1 = calloc(seq_len * d_model, sizeof(float));
         for (int i = 0; i < seq_len; i++) {
@@ -241,8 +249,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         float *attn_out = calloc(seq_len * d_model, sizeof(float));
         float *attn_probs = calloc(seq_len * seq_len, sizeof(float));
         ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
-            layer->w_q_tern, layer->w_k_tern, layer->w_v_tern, layer->w_o_tern,
-            attn_out, attn_probs);
+            wq, wk, wv, wo, attn_out, attn_probs);
         free(norm1);
         free(attn_probs);
 
@@ -257,8 +264,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         float *ffn_out = calloc(seq_len * d_model, sizeof(float));
         float *pre_act = calloc(seq_len * d_ff, sizeof(float));
         ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
-            layer->w_ff1_tern, d_ff, layer->w_ff2_tern,
-            1, ffn_out, pre_act);
+            wff1, d_ff, wff2, 1, ffn_out, pre_act);
         free(norm2);
         free(pre_act);
 

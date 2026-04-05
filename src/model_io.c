@@ -203,6 +203,7 @@ int load_model_weights(const char *path, TransformerModel *model) {
     p++;
 
     int format_version = 0;
+    model->weight_format = WEIGHT_FORMAT_TERNARY;  /* default for v2 models */
     while (*p && *p != '}') {
         json_skip_ws(&p);
         char key[64];
@@ -213,6 +214,14 @@ int load_model_weights(const char *path, TransformerModel *model) {
 
         if (strcmp(key, "format_version") == 0) {
             format_version = (int)json_parse_number(&p);
+        } else if (strcmp(key, "weight_format") == 0) {
+            char wf[64];
+            json_parse_string(&p, wf, sizeof(wf));
+            if (strcmp(wf, "fp32_dense") == 0) {
+                model->weight_format = WEIGHT_FORMAT_FP32;
+            } else {
+                model->weight_format = WEIGHT_FORMAT_TERNARY;
+            }
         } else if (strcmp(key, "config") == 0) {
             json_parse_config(&p, &model->config);
             printf("Config: vocab=%d d_model=%d n_layers=%d d_ff=%d\n",
@@ -261,12 +270,16 @@ int load_model_weights(const char *path, TransformerModel *model) {
         return -1;
     }
 
-    /* Project master FP32 weights to ternary for forward passes */
-    requantize_all_layers(model);
+    /* Project master FP32 weights to ternary for forward passes (if ternary format) */
+    if (model->weight_format == WEIGHT_FORMAT_TERNARY) {
+        requantize_all_layers(model);
+    }
 
     model->loaded = 1;
-    printf("Model loaded successfully: v%d (ternary-weight-only), %d layers, d_model=%d\n",
-        format_version, model->config.n_layers, model->config.d_model);
+    const char *wf_name = model->weight_format == WEIGHT_FORMAT_TERNARY
+        ? "ternary-weight-only" : "fp32-dense";
+    printf("Model loaded successfully: v%d (%s), %d layers, d_model=%d\n",
+        format_version, wf_name, model->config.n_layers, model->config.d_model);
     fflush(stdout);
     return 0;
 }
@@ -293,8 +306,10 @@ int save_model_weights(const char *path, TransformerModel *model) {
     FILE *f = fopen(path, "w");
     if (!f) return -1;
 
+    const char *wf_tag = model->weight_format == WEIGHT_FORMAT_TERNARY
+        ? "ternary_weight_only" : "fp32_dense";
     fprintf(f, "{\n\"format_version\": %d,\n", MODEL_FORMAT_VERSION);
-    fprintf(f, "\"weight_format\": \"ternary_weight_only\",\n");
+    fprintf(f, "\"weight_format\": \"%s\",\n", wf_tag);
     fprintf(f, "\"config\": {\"vocab_size\": %d, \"d_model\": %d, \"n_layers\": %d, \"d_ff\": %d, \"max_seq_len\": %d},\n",
         vs, dm, nl, df, model->config.max_seq_len);
 

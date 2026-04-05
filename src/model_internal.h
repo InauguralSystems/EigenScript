@@ -54,7 +54,14 @@ typedef struct {
     float *output_proj;
     TransformerLayer layers[MAX_LAYERS];
     int loaded;
+    /* Weight format: 0 = fp32_dense (use master directly),
+     *                1 = ternary_weight_only (use _tern copies).
+     * Set by load_model_weights from JSON "weight_format" field. */
+    int weight_format;
 } TransformerModel;
+
+#define WEIGHT_FORMAT_FP32 0
+#define WEIGHT_FORMAT_TERNARY 1
 
 typedef struct {
     float *layer_inputs;
