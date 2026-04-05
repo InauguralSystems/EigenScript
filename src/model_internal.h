@@ -34,13 +34,28 @@ typedef struct {
     float *w_ff2;
     /* Ternary projections — refreshed from master after every update.
      * Values are in {-alpha, 0, +alpha} per matrix (BitNet b1.58 style).
-     * Used for forward passes in place of master weights. */
+     * Used for backward passes (gradient flow through straight-through estimator). */
     float *w_q_tern;
     float *w_k_tern;
     float *w_v_tern;
     float *w_o_tern;
     float *w_ff1_tern;
     float *w_ff2_tern;
+    /* Packed ternary — 2 bits per weight (4 weights per byte).
+     * Used for forward passes. Encoding: 00=zero, 01=+1, 11=-1, 10=unused.
+     * alpha is the per-matrix scale: effective weight = code_sign * alpha. */
+    uint8_t *w_q_packed;
+    uint8_t *w_k_packed;
+    uint8_t *w_v_packed;
+    uint8_t *w_o_packed;
+    uint8_t *w_ff1_packed;
+    uint8_t *w_ff2_packed;
+    float w_q_alpha;
+    float w_k_alpha;
+    float w_v_alpha;
+    float w_o_alpha;
+    float w_ff1_alpha;
+    float w_ff2_alpha;
     /* LayerNorm params stay FP32, no ternary projection */
     float *ln1_gamma;
     float *ln1_beta;
@@ -113,11 +128,39 @@ void create_sinusoidal_pe_f(float *pe, int seq_len, int d_model);
 /* ---- Ternary quantization — defined in model_train.c ---- */
 
 /* Project master FP32 weights to ternary {-alpha, 0, +alpha} stored as float.
- * alpha = mean(|w|), threshold = alpha/2. BitNet b1.58 style. */
-void quantize_ternary(float *dst, float *src, int64_t n);
+ * alpha = mean(|w|), threshold = alpha/2. BitNet b1.58 style.
+ * Returns alpha via out_alpha (may be NULL). */
+void quantize_ternary(float *dst, float *src, int64_t n, float *out_alpha);
 
-/* Quantize all 6 dense matrices in all layers from master → _tern copies */
+/* Pack ternary weights (in {-alpha, 0, +alpha} as floats) into 2-bit codes.
+ * 4 weights per byte. Encoding: 00=zero, 01=+1, 11=-1. */
+void pack_ternary(uint8_t *dst, float *src_tern, float alpha, int64_t n);
+
+/* Quantize + pack all 6 dense matrices in all layers */
 void requantize_all_layers(TransformerModel *model);
+
+/* ---- Packed ternary forward kernels — defined in model_infer.c ---- */
+
+/* Packed ternary matmul: out = x @ W where W is 2-bit ternary with scale alpha.
+ * x: [m x k] float, w_packed: k*n ternary codes, out: [m x n] float */
+void ne_matmul_buf_packed_f(
+    float *x, int64_t m, int64_t k,
+    uint8_t *w_packed, float alpha, int64_t n,
+    float *out);
+
+void ne_fused_attention_forward_buf_packed_f(
+    float *x, int64_t seq_len, int64_t d_model,
+    uint8_t *wq_p, float wq_alpha,
+    uint8_t *wk_p, float wk_alpha,
+    uint8_t *wv_p, float wv_alpha,
+    uint8_t *wo_p, float wo_alpha,
+    float *out, float *attn_probs_out);
+
+void ne_fused_ffn_forward_buf_packed_f(
+    float *x, int64_t seq_len, int64_t d_model,
+    uint8_t *w1_p, float w1_alpha, int64_t d_ff,
+    uint8_t *w2_p, float w2_alpha,
+    int32_t use_gelu, float *out, float *pre_act_out);
 
 /* ---- IO functions — defined in model_io.c ---- */
 

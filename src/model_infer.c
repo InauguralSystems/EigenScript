@@ -105,6 +105,118 @@ void ne_matmul_buf_f(
     }
 }
 
+/* Packed ternary matmul: out[m,n] = x[m,k] @ W_packed[k,n]
+ * W encoded as 2 bits per weight, 4 weights per byte (row-major, n-major within row).
+ * code 00 = 0, 01 = +1, 11 = -1; scaled by alpha at the end.
+ *
+ * Optimization: unpack entire row of W once per k-iteration into a small
+ * signed-int buffer on the stack, then use that for the inner n-loop.
+ * This amortizes bit extraction over all m rows of x. */
+void ne_matmul_buf_packed_f(
+    float *x, int64_t m, int64_t k,
+    uint8_t *w_packed, float alpha, int64_t n,
+    float *out
+) {
+    memset(out, 0, m * n * sizeof(float));
+    /* Temporary unpacked row — allocated from heap to handle large n.
+     * Values in {-1, 0, +1}. */
+    int8_t *w_row = calloc(n, 1);
+    for (int64_t kk = 0; kk < k; kk++) {
+        /* Unpack row kk of W once */
+        int64_t row_base = kk * n;
+        for (int64_t j = 0; j < n; j++) {
+            int64_t idx = row_base + j;
+            uint8_t code = (w_packed[idx >> 2] >> ((idx & 3) << 1)) & 3;
+            w_row[j] = (code == 1) ? 1 : (code == 3) ? -1 : 0;
+        }
+        /* For each output row, apply w_row */
+        for (int64_t i = 0; i < m; i++) {
+            float a_ik = x[i * k + kk];
+            if (a_ik == 0.0f) continue;
+            float *out_row = out + i * n;
+            for (int64_t j = 0; j < n; j++) {
+                /* w_row[j] is -1, 0, or +1 — this multiply is effectively add/sub/skip
+                 * but writing it as multiply lets the compiler vectorize. */
+                out_row[j] += a_ik * (float)w_row[j];
+            }
+        }
+    }
+    free(w_row);
+    /* Apply per-matrix scale once at the end */
+    if (alpha != 1.0f) {
+        int64_t total = m * n;
+        for (int64_t i = 0; i < total; i++) out[i] *= alpha;
+    }
+}
+
+void ne_fused_attention_forward_buf_packed_f(
+    float *x, int64_t seq_len, int64_t d_model,
+    uint8_t *wq_p, float wq_alpha,
+    uint8_t *wk_p, float wk_alpha,
+    uint8_t *wv_p, float wv_alpha,
+    uint8_t *wo_p, float wo_alpha,
+    float *out, float *attn_probs_out
+) {
+    int64_t sd = seq_len * d_model;
+    int64_t ss = seq_len * seq_len;
+
+    float *Q = calloc(sd, sizeof(float));
+    float *K = calloc(sd, sizeof(float));
+    float *V = calloc(sd, sizeof(float));
+    float *scores = calloc(ss, sizeof(float));
+    float *context = calloc(sd, sizeof(float));
+
+    ne_matmul_buf_packed_f(x, seq_len, d_model, wq_p, wq_alpha, d_model, Q);
+    ne_matmul_buf_packed_f(x, seq_len, d_model, wk_p, wk_alpha, d_model, K);
+    ne_matmul_buf_packed_f(x, seq_len, d_model, wv_p, wv_alpha, d_model, V);
+
+    float *Kt = calloc(sd, sizeof(float));
+    for (int64_t i = 0; i < seq_len; i++) {
+        for (int64_t j = 0; j < d_model; j++) {
+            Kt[j * seq_len + i] = K[i * d_model + j];
+        }
+    }
+    ne_matmul_buf_f(Q, seq_len, d_model, Kt, seq_len, scores);
+    free(Kt);
+
+    float scale = 1.0f / sqrtf((float)d_model);
+    float neg_inf = -1.0f / 0.0f;
+    for (int64_t i = 0; i < seq_len; i++) {
+        for (int64_t j = 0; j < seq_len; j++) {
+            scores[i * seq_len + j] *= scale;
+            if (j > i) scores[i * seq_len + j] = neg_inf;
+        }
+    }
+
+    ne_softmax_buf_f(scores, seq_len, seq_len);
+    memcpy(attn_probs_out, scores, ss * sizeof(float));
+
+    ne_matmul_buf_f(scores, seq_len, seq_len, V, d_model, context);
+    ne_matmul_buf_packed_f(context, seq_len, d_model, wo_p, wo_alpha, d_model, out);
+
+    free(Q); free(K); free(V); free(scores); free(context);
+}
+
+void ne_fused_ffn_forward_buf_packed_f(
+    float *x, int64_t seq_len, int64_t d_model,
+    uint8_t *w1_p, float w1_alpha, int64_t d_ff,
+    uint8_t *w2_p, float w2_alpha,
+    int32_t use_gelu,
+    float *out, float *pre_act_out
+) {
+    int64_t sf = seq_len * d_ff;
+    float *hidden = calloc(sf, sizeof(float));
+
+    ne_matmul_buf_packed_f(x, seq_len, d_model, w1_p, w1_alpha, d_ff, hidden);
+    memcpy(pre_act_out, hidden, sf * sizeof(float));
+
+    if (use_gelu) ne_gelu_buf_f(hidden, sf);
+
+    ne_matmul_buf_packed_f(hidden, seq_len, d_ff, w2_p, w2_alpha, d_model, out);
+
+    free(hidden);
+}
+
 void ne_gelu_buf_f(float* data, int64_t size) {
     const float sqrt_2_over_pi = sqrtf(2.0f / (float)M_PI);
     for (int64_t i = 0; i < size; i++) {
@@ -234,12 +346,6 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
 
     for (int l = 0; l < model->config.n_layers; l++) {
         TransformerLayer *layer = &model->layers[l];
-        float *wq = use_tern ? layer->w_q_tern : layer->w_q;
-        float *wk = use_tern ? layer->w_k_tern : layer->w_k;
-        float *wv = use_tern ? layer->w_v_tern : layer->w_v;
-        float *wo = use_tern ? layer->w_o_tern : layer->w_o;
-        float *wff1 = use_tern ? layer->w_ff1_tern : layer->w_ff1;
-        float *wff2 = use_tern ? layer->w_ff2_tern : layer->w_ff2;
 
         float *norm1 = calloc(seq_len * d_model, sizeof(float));
         for (int i = 0; i < seq_len; i++) {
@@ -248,8 +354,18 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
 
         float *attn_out = calloc(seq_len * d_model, sizeof(float));
         float *attn_probs = calloc(seq_len * seq_len, sizeof(float));
-        ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
-            wq, wk, wv, wo, attn_out, attn_probs);
+        if (use_tern) {
+            ne_fused_attention_forward_buf_packed_f(norm1, seq_len, d_model,
+                layer->w_q_packed, layer->w_q_alpha,
+                layer->w_k_packed, layer->w_k_alpha,
+                layer->w_v_packed, layer->w_v_alpha,
+                layer->w_o_packed, layer->w_o_alpha,
+                attn_out, attn_probs);
+        } else {
+            ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
+                layer->w_q, layer->w_k, layer->w_v, layer->w_o,
+                attn_out, attn_probs);
+        }
         free(norm1);
         free(attn_probs);
 
@@ -263,8 +379,15 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
 
         float *ffn_out = calloc(seq_len * d_model, sizeof(float));
         float *pre_act = calloc(seq_len * d_ff, sizeof(float));
-        ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
-            wff1, d_ff, wff2, 1, ffn_out, pre_act);
+        if (use_tern) {
+            ne_fused_ffn_forward_buf_packed_f(norm2, seq_len, d_model,
+                layer->w_ff1_packed, layer->w_ff1_alpha, d_ff,
+                layer->w_ff2_packed, layer->w_ff2_alpha,
+                1, ffn_out, pre_act);
+        } else {
+            ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
+                layer->w_ff1, d_ff, layer->w_ff2, 1, ffn_out, pre_act);
+        }
         free(norm2);
         free(pre_act);
 

@@ -176,6 +176,17 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
     layer->w_ff1_tern = calloc(d_model * d_ff, sizeof(float));
     layer->w_ff2_tern = calloc(d_ff * d_model, sizeof(float));
 
+    /* Allocate packed ternary buffers (2 bits per weight, 4 per byte) */
+    int64_t n_m2 = (int64_t)d_model * d_model;
+    int64_t n_mf = (int64_t)d_model * d_ff;
+    int64_t n_fm = (int64_t)d_ff * d_model;
+    layer->w_q_packed = calloc((n_m2 + 3) / 4, 1);
+    layer->w_k_packed = calloc((n_m2 + 3) / 4, 1);
+    layer->w_v_packed = calloc((n_m2 + 3) / 4, 1);
+    layer->w_o_packed = calloc((n_m2 + 3) / 4, 1);
+    layer->w_ff1_packed = calloc((n_mf + 3) / 4, 1);
+    layer->w_ff2_packed = calloc((n_fm + 3) / 4, 1);
+
     return 0;
 }
 

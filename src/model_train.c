@@ -13,8 +13,8 @@
  * Existing matmul kernels work unchanged on the result.
  * ================================================================ */
 
-void quantize_ternary(float *dst, float *src, int64_t n) {
-    if (n <= 0) return;
+void quantize_ternary(float *dst, float *src, int64_t n, float *out_alpha) {
+    if (n <= 0) { if (out_alpha) *out_alpha = 0.0f; return; }
     float abs_sum = 0.0f;
     for (int64_t i = 0; i < n; i++) {
         float a = src[i];
@@ -33,6 +33,24 @@ void quantize_ternary(float *dst, float *src, int64_t n) {
             dst[i] = -alpha;
         }
     }
+    if (out_alpha) *out_alpha = alpha;
+}
+
+/* Pack ternary floats (in {-alpha, 0, +alpha}) into 2-bit codes.
+ * Encoding: 00 = zero, 01 = +alpha, 11 = -alpha.
+ * dst size = ceil(n / 4) bytes. Packed little-endian within byte. */
+void pack_ternary(uint8_t *dst, float *src_tern, float alpha, int64_t n) {
+    int64_t bytes = (n + 3) / 4;
+    memset(dst, 0, bytes);
+    float threshold = alpha * 0.5f;
+    for (int64_t i = 0; i < n; i++) {
+        float w = src_tern[i];
+        uint8_t code = 0;
+        if (w > threshold) code = 1;        /* +alpha → 01 */
+        else if (w < -threshold) code = 3;  /* -alpha → 11 */
+        /* zero → 00 (already zeroed) */
+        dst[i / 4] |= code << ((i % 4) * 2);
+    }
 }
 
 void requantize_all_layers(TransformerModel *model) {
@@ -43,12 +61,19 @@ void requantize_all_layers(TransformerModel *model) {
     int64_t fm = (int64_t)d_ff * d_model;
     for (int l = 0; l < model->config.n_layers; l++) {
         TransformerLayer *layer = &model->layers[l];
-        quantize_ternary(layer->w_q_tern, layer->w_q, m2);
-        quantize_ternary(layer->w_k_tern, layer->w_k, m2);
-        quantize_ternary(layer->w_v_tern, layer->w_v, m2);
-        quantize_ternary(layer->w_o_tern, layer->w_o, m2);
-        quantize_ternary(layer->w_ff1_tern, layer->w_ff1, mf);
-        quantize_ternary(layer->w_ff2_tern, layer->w_ff2, fm);
+        quantize_ternary(layer->w_q_tern, layer->w_q, m2, &layer->w_q_alpha);
+        quantize_ternary(layer->w_k_tern, layer->w_k, m2, &layer->w_k_alpha);
+        quantize_ternary(layer->w_v_tern, layer->w_v, m2, &layer->w_v_alpha);
+        quantize_ternary(layer->w_o_tern, layer->w_o, m2, &layer->w_o_alpha);
+        quantize_ternary(layer->w_ff1_tern, layer->w_ff1, mf, &layer->w_ff1_alpha);
+        quantize_ternary(layer->w_ff2_tern, layer->w_ff2, fm, &layer->w_ff2_alpha);
+        /* Pack for forward-pass kernels */
+        if (layer->w_q_packed) pack_ternary(layer->w_q_packed, layer->w_q_tern, layer->w_q_alpha, m2);
+        if (layer->w_k_packed) pack_ternary(layer->w_k_packed, layer->w_k_tern, layer->w_k_alpha, m2);
+        if (layer->w_v_packed) pack_ternary(layer->w_v_packed, layer->w_v_tern, layer->w_v_alpha, m2);
+        if (layer->w_o_packed) pack_ternary(layer->w_o_packed, layer->w_o_tern, layer->w_o_alpha, m2);
+        if (layer->w_ff1_packed) pack_ternary(layer->w_ff1_packed, layer->w_ff1_tern, layer->w_ff1_alpha, mf);
+        if (layer->w_ff2_packed) pack_ternary(layer->w_ff2_packed, layer->w_ff2_tern, layer->w_ff2_alpha, fm);
     }
 }
 
@@ -321,9 +346,18 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
         memcpy(cache->norm1_outputs + lsd, norm1, seq_len * d_model * sizeof(float));
 
         float *attn_out = calloc(seq_len * d_model, sizeof(float));
-        ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
-            wq, wk, wv, wo,
-            attn_out, cache->attn_probs + lss);
+        if (use_tern) {
+            ne_fused_attention_forward_buf_packed_f(norm1, seq_len, d_model,
+                layer->w_q_packed, layer->w_q_alpha,
+                layer->w_k_packed, layer->w_k_alpha,
+                layer->w_v_packed, layer->w_v_alpha,
+                layer->w_o_packed, layer->w_o_alpha,
+                attn_out, cache->attn_probs + lss);
+        } else {
+            ne_fused_attention_forward_buf_f(norm1, seq_len, d_model,
+                wq, wk, wv, wo,
+                attn_out, cache->attn_probs + lss);
+        }
         free(norm1);
 
         for (int i = 0; i < seq_len * d_model; i++) x[i] += attn_out[i];
@@ -352,9 +386,16 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
         memcpy(cache->norm2_outputs + lsd, norm2, seq_len * d_model * sizeof(float));
 
         float *ffn_out = calloc(seq_len * d_model, sizeof(float));
-        ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
-            wff1, d_ff, wff2,
-            1, ffn_out, cache->ffn_pre_act + lsf);
+        if (use_tern) {
+            ne_fused_ffn_forward_buf_packed_f(norm2, seq_len, d_model,
+                layer->w_ff1_packed, layer->w_ff1_alpha, d_ff,
+                layer->w_ff2_packed, layer->w_ff2_alpha,
+                1, ffn_out, cache->ffn_pre_act + lsf);
+        } else {
+            ne_fused_ffn_forward_buf_f(norm2, seq_len, d_model,
+                wff1, d_ff, wff2,
+                1, ffn_out, cache->ffn_pre_act + lsf);
+        }
         free(norm2);
 
         for (int i = 0; i < seq_len * d_model; i++) x[i] += ffn_out[i];
