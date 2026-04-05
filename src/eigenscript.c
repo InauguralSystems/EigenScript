@@ -2945,6 +2945,43 @@ Value* builtin_tokenize_ids(Value *arg) {
     return result;
 }
 
+/* ==== BUILTIN: tokenize_with_names ==== */
+/* tokenize_with_names of string → list of [type_id, name_str] pairs.
+ * Like tokenize_ids, but preserves the identifier name (for IDENT), the
+ * string content (for STR), and the number as a string (for NUM). Other
+ * token types get an empty string. Used by corpus builders that need
+ * per-identifier information for vocabulary enrichment. */
+Value* builtin_tokenize_with_names(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_list(0);
+    const char *src = arg->data.str;
+    if (!src || !src[0]) return make_list(0);
+
+    TokenList tl = tokenize(src);
+    Value *result = make_list(tl.count);
+    char numbuf[64];
+    for (int i = 0; i < tl.count; i++) {
+        Value *pair = make_list(2);
+        list_append(pair, make_num((double)tl.tokens[i].type));
+        const char *name = "";
+        if (tl.tokens[i].type == TOK_IDENT && tl.tokens[i].str_val) {
+            name = tl.tokens[i].str_val;
+        } else if (tl.tokens[i].type == TOK_STR && tl.tokens[i].str_val) {
+            name = tl.tokens[i].str_val;
+        } else if (tl.tokens[i].type == TOK_NUM) {
+            double d = tl.tokens[i].num_val;
+            if (d == (double)(long)d) {
+                snprintf(numbuf, sizeof(numbuf), "%ld", (long)d);
+            } else {
+                snprintf(numbuf, sizeof(numbuf), "%g", d);
+            }
+            name = numbuf;
+        }
+        list_append(pair, make_str(name));
+        list_append(result, pair);
+    }
+    return result;
+}
+
 /* ==== BUILTIN: token_name ==== */
 /* token_name of id → string name of token type (for display) */
 Value* builtin_token_name(Value *arg) {
@@ -3403,6 +3440,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "numerical_grad_cols", make_builtin(builtin_numerical_grad_cols));
     env_set_local(env, "sgd_update_cols", make_builtin(builtin_sgd_update_cols));
     env_set_local(env, "tokenize_ids", make_builtin(builtin_tokenize_ids));
+    env_set_local(env, "tokenize_with_names", make_builtin(builtin_tokenize_with_names));
     env_set_local(env, "token_name", make_builtin(builtin_token_name));
     env_set_local(env, "chr", make_builtin(builtin_chr));
     env_set_local(env, "random_hex", make_builtin(builtin_random_hex));
