@@ -508,8 +508,15 @@ if ! echo "$PROBE_OUT" | grep -q "undefined variable"; then
     # Generate tiny v1 model
     ./eigenscript ../tests/gen_tiny_model.eigs > /tmp/eigs_tiny_v1.json 2>/dev/null
 
-    # Find a v0 model to test rejection
-    V0_MODEL=$(ls /home/jon/iLambdaAi/archive/checkpoints/eigenscript/*.json 2>/dev/null | head -1)
+    # Find a v0 model to test rejection.
+    # Set EIGS_V0_MODEL_DIR to a directory containing legacy-format *.json
+    # checkpoints to exercise TR6/TR7. If unset (the common case), those
+    # two checks skip gracefully.
+    if [ -n "$EIGS_V0_MODEL_DIR" ]; then
+        V0_MODEL=$(ls "$EIGS_V0_MODEL_DIR"/*.json 2>/dev/null | head -1)
+    else
+        V0_MODEL=""
+    fi
 
     SMOKE_FILE=$(mktemp /tmp/eigs_smoke_XXXXXX.eigs)
     cat > "$SMOKE_FILE" <<SMOKE
