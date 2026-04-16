@@ -3276,23 +3276,19 @@ Value* builtin_mkdir(Value *arg) {
     return make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0);
 }
 
-/* ls of "path" → list of filenames in directory, or [] on failure */
+/* ls of "path" → list of filenames in directory, or [] on failure.
+ * Matches `ls -1` default behavior: hidden entries (starting with '.') are excluded. */
 Value* builtin_ls(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_list(0);
     Value *list = make_list(0);
-    /* Use opendir/readdir */
-    /* Note: dirent.h is POSIX, available on Linux */
-    char cmd[4200];
-    snprintf(cmd, sizeof(cmd), "ls -1 '%s' 2>/dev/null", arg->data.str);
-    FILE *f = popen(cmd, "r");
-    if (!f) return list;
-    char line[1024];
-    while (fgets(line, sizeof(line), f)) {
-        int l = strlen(line);
-        if (l > 0 && line[l-1] == '\n') line[l-1] = '\0';
-        if (line[0]) list_append(list, make_str(line));
+    DIR *d = opendir(arg->data.str);
+    if (!d) return list;
+    struct dirent *entry;
+    while ((entry = readdir(d))) {
+        if (entry->d_name[0] == '.') continue;
+        list_append(list, make_str(entry->d_name));
     }
-    pclose(f);
+    closedir(d);
     return list;
 }
 
