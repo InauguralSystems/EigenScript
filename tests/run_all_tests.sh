@@ -1005,6 +1005,21 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
         echo "  PASS: all $MRT_PASS model roundtrip checks"
     fi
     echo ""
+
+    echo "[47b/47] Model Overflow Regression (1 check)"
+    MO_OUTPUT=$(bash "$TESTS_DIR/test_model_overflow.sh" 2>&1)
+    MO_PASS=$(echo "$MO_OUTPUT" | grep -c "PASS:" || true)
+    MO_FAIL=$(echo "$MO_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + MO_PASS + MO_FAIL))
+    PASS=$((PASS + MO_PASS))
+    FAIL=$((FAIL + MO_FAIL))
+    if [ "$MO_FAIL" -gt 0 ]; then
+        echo "  FAIL: $MO_FAIL model overflow check(s) failed"
+        echo "$MO_OUTPUT" | grep "FAIL:" | head -3
+    else
+        echo "  PASS: malicious oversized-dim checkpoint rejected"
+    fi
+    echo ""
 else
     echo "[47/47] Model roundtrip SKIPPED (binary built without EIGENSCRIPT_EXT_MODEL)"
     echo ""

@@ -93,6 +93,13 @@ static int json_parse_2d_array(const char **p, float *out, int rows, int cols) {
     return 0;
 }
 
+/* Sanity caps on model dimensions. A checkpoint declaring dims outside
+ * these bounds is almost certainly malicious or corrupt — and more to
+ * the point, weight arrays are allocated as int*int products, so values
+ * near INT_MAX here can wrap to small positive sizes and then overflow
+ * the allocation when the JSON body is parsed in. */
+#define MODEL_MAX_DIM 1048576  /* 2^20; covers any realistic vocab/d_model */
+
 static int json_parse_config(const char **p, ModelConfig *cfg) {
     json_skip_ws(p);
     if (**p != '{') return -1;
@@ -105,6 +112,10 @@ static int json_parse_config(const char **p, ModelConfig *cfg) {
         if (**p == ':') (*p)++;
         json_skip_ws(p);
         int val = (int)json_parse_number(p);
+        if (val < 0 || val > MODEL_MAX_DIM) {
+            fprintf(stderr, "model_load: rejecting out-of-range config %s=%d\n", key, val);
+            return -1;
+        }
         if (strcmp(key, "vocab_size") == 0) cfg->vocab_size = val;
         else if (strcmp(key, "d_model") == 0) cfg->d_model = val;
         else if (strcmp(key, "n_heads") == 0) { (void)val; /* legacy, ignored */ }
@@ -131,22 +142,22 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
         json_skip_ws(p);
 
         if (strcmp(key, "w_q") == 0) {
-            layer->w_q = xcalloc(d_model * d_model, sizeof(float));
+            layer->w_q = xcalloc((size_t)d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_q, d_model, d_model);
         } else if (strcmp(key, "w_k") == 0) {
-            layer->w_k = xcalloc(d_model * d_model, sizeof(float));
+            layer->w_k = xcalloc((size_t)d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_k, d_model, d_model);
         } else if (strcmp(key, "w_v") == 0) {
-            layer->w_v = xcalloc(d_model * d_model, sizeof(float));
+            layer->w_v = xcalloc((size_t)d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_v, d_model, d_model);
         } else if (strcmp(key, "w_o") == 0) {
-            layer->w_o = xcalloc(d_model * d_model, sizeof(float));
+            layer->w_o = xcalloc((size_t)d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_o, d_model, d_model);
         } else if (strcmp(key, "w_ff1") == 0) {
-            layer->w_ff1 = xcalloc(d_model * d_ff, sizeof(float));
+            layer->w_ff1 = xcalloc((size_t)d_model * d_ff, sizeof(float));
             json_parse_2d_array(p, layer->w_ff1, d_model, d_ff);
         } else if (strcmp(key, "w_ff2") == 0) {
-            layer->w_ff2 = xcalloc(d_ff * d_model, sizeof(float));
+            layer->w_ff2 = xcalloc((size_t)d_ff * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_ff2, d_ff, d_model);
         } else if (strcmp(key, "ln1_gamma") == 0) {
             layer->ln1_gamma = xcalloc(d_model, sizeof(float));
@@ -169,12 +180,12 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
     if (**p == '}') (*p)++;
 
     /* Allocate ternary projections (populated by requantize_all_layers after load) */
-    layer->w_q_tern = xcalloc(d_model * d_model, sizeof(float));
-    layer->w_k_tern = xcalloc(d_model * d_model, sizeof(float));
-    layer->w_v_tern = xcalloc(d_model * d_model, sizeof(float));
-    layer->w_o_tern = xcalloc(d_model * d_model, sizeof(float));
-    layer->w_ff1_tern = xcalloc(d_model * d_ff, sizeof(float));
-    layer->w_ff2_tern = xcalloc(d_ff * d_model, sizeof(float));
+    layer->w_q_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
+    layer->w_k_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
+    layer->w_v_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
+    layer->w_o_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
+    layer->w_ff1_tern = xcalloc((size_t)d_model * d_ff, sizeof(float));
+    layer->w_ff2_tern = xcalloc((size_t)d_ff * d_model, sizeof(float));
 
     /* Allocate packed ternary buffers (2 bits per weight, 4 per byte) */
     int64_t n_m2 = (int64_t)d_model * d_model;
@@ -234,7 +245,10 @@ int load_model_weights(const char *path, TransformerModel *model) {
                 model->weight_format = WEIGHT_FORMAT_TERNARY;
             }
         } else if (strcmp(key, "config") == 0) {
-            json_parse_config(&p, &model->config);
+            if (json_parse_config(&p, &model->config) != 0) {
+                free(data);
+                return -1;
+            }
             printf("Config: vocab=%d d_model=%d n_layers=%d d_ff=%d\n",
                 model->config.vocab_size, model->config.d_model,
                 model->config.n_layers, model->config.d_ff);
@@ -242,12 +256,12 @@ int load_model_weights(const char *path, TransformerModel *model) {
         } else if (strcmp(key, "token_embeddings") == 0) {
             int vs = model->config.vocab_size;
             int dm = model->config.d_model;
-            model->token_embeddings = xcalloc(vs * dm, sizeof(float));
+            model->token_embeddings = xcalloc((size_t)vs * dm, sizeof(float));
             json_parse_2d_array(&p, model->token_embeddings, vs, dm);
         } else if (strcmp(key, "output_proj") == 0) {
             int dm = model->config.d_model;
             int vs = model->config.vocab_size;
-            model->output_proj = xcalloc(dm * vs, sizeof(float));
+            model->output_proj = xcalloc((size_t)dm * vs, sizeof(float));
             json_parse_2d_array(&p, model->output_proj, dm, vs);
         } else if (strcmp(key, "layers") == 0) {
             json_skip_ws(&p);
