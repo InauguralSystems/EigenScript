@@ -1,0 +1,909 @@
+        -:    0:Source:src/parser.c
+        -:    0:Graph:src/parser.gcno
+        -:    0:Data:src/parser.gcda
+        -:    0:Runs:101
+        -:    1:/*
+        -:    2: * EigenScript parser. Recursive-descent AST construction from
+        -:    3: * the token stream produced by the lexer.
+        -:    4: */
+        -:    5:
+        -:    6:#include "eigenscript.h"
+        -:    7:
+        -:    8:/* Parse-error counter owned by eigenscript.c. */
+        -:    9:extern int g_parse_errors;
+        -:   10:const char* tok_type_name(TokType t);
+        -:   11:
+        -:   12:
+        -:   13:typedef struct {
+        -:   14:    TokenList *tl;
+        -:   15:    int pos;
+        -:   16:} Parser;
+        -:   17:
+   279293:   18:static Token* p_cur(Parser *p) {
+   279293:   19:    if (p->pos >= p->tl->count) return &p->tl->tokens[p->tl->count - 1];
+   279205:   20:    return &p->tl->tokens[p->pos];
+        -:   21:}
+        -:   22:
+     6022:   23:static Token* p_peek(Parser *p, int offset) {
+     6022:   24:    int idx = p->pos + offset;
+    6022*:   25:    if (idx >= p->tl->count) return &p->tl->tokens[p->tl->count - 1];
+     6022:   26:    return &p->tl->tokens[idx];
+        -:   27:}
+        -:   28:
+    37954:   29:static Token* p_advance(Parser *p) {
+    37954:   30:    Token *t = p_cur(p);
+    37954:   31:    if (p->pos < p->tl->count) p->pos++;
+    37954:   32:    return t;
+        -:   33:}
+        -:   34:
+     3313:   35:static int p_match(Parser *p, TokType type) {
+     3313:   36:    if (p_cur(p)->type == type) {
+     3289:   37:        p_advance(p);
+     3289:   38:        return 1;
+        -:   39:    }
+       24:   40:    return 0;
+        -:   41:}
+        -:   42:
+     5710:   43:static void p_expect(Parser *p, TokType type) {
+     5710:   44:    if (p_cur(p)->type != type) {
+       22:   45:        fprintf(stderr, "Parse error line %d: expected %s, got %s",
+       22:   46:                p_cur(p)->line, tok_type_name(type), tok_type_name(p_cur(p)->type));
+      11*:   47:        if (p_cur(p)->str_val) fprintf(stderr, " ('%s')", p_cur(p)->str_val);
+       11:   48:        fprintf(stderr, "\n");
+       11:   49:        g_parse_errors++;
+        -:   50:    }
+     5710:   51:    p_advance(p);
+     5710:   52:}
+        -:   53:
+    11066:   54:static void p_skip_newlines(Parser *p) {
+    12178:   55:    while (p_cur(p)->type == TOK_NEWLINE) p_advance(p);
+    11066:   56:}
+        -:   57:
+    20359:   58:ASTNode* make_node(ASTType type, int line) {
+    20359:   59:    ASTNode *n = xcalloc(1, sizeof(ASTNode));
+    20359:   60:    n->type = type;
+    20359:   61:    n->line = line;
+    20359:   62:    return n;
+        -:   63:}
+        -:   64:
+        -:   65:/* Recursively free an AST tree. */
+        -:   66:/* Currently unreferenced: the tree-walker keeps AST nodes alive for the
+        -:   67: * lifetime of any function defined in them. Retained for future use and
+        -:   68: * because freeing ASTs with partial parses has edge cases. */
+        -:   69:__attribute__((unused))
+    #####:   70:static void free_ast(ASTNode *node) {
+    #####:   71:    if (!node) return;
+    #####:   72:    switch (node->type) {
+    #####:   73:        case AST_STR:
+    #####:   74:            if (node->data.str) free(node->data.str);
+    #####:   75:            break;
+    #####:   76:        case AST_IDENT:
+    #####:   77:            if (node->data.ident.name) free(node->data.ident.name);
+    #####:   78:            break;
+    #####:   79:        case AST_BINOP:
+    #####:   80:            free_ast(node->data.binop.left);
+    #####:   81:            free_ast(node->data.binop.right);
+    #####:   82:            break;
+    #####:   83:        case AST_UNARY:
+    #####:   84:            free_ast(node->data.unary.operand);
+    #####:   85:            break;
+    #####:   86:        case AST_ASSIGN:
+    #####:   87:            if (node->data.assign.name) free(node->data.assign.name);
+    #####:   88:            free_ast(node->data.assign.expr);
+    #####:   89:            break;
+    #####:   90:        case AST_RELATION:
+    #####:   91:            free_ast(node->data.relation.left);
+    #####:   92:            free_ast(node->data.relation.right);
+    #####:   93:            break;
+    #####:   94:        case AST_IF:
+    #####:   95:            free_ast(node->data.cond.cond);
+    #####:   96:            for (int i = 0; i < node->data.cond.if_count; i++) free_ast(node->data.cond.if_body[i]);
+    #####:   97:            if (node->data.cond.if_body) free(node->data.cond.if_body);
+    #####:   98:            for (int i = 0; i < node->data.cond.else_count; i++) free_ast(node->data.cond.else_body[i]);
+    #####:   99:            if (node->data.cond.else_body) free(node->data.cond.else_body);
+    #####:  100:            break;
+    #####:  101:        case AST_LOOP:
+    #####:  102:            free_ast(node->data.loop.cond);
+    #####:  103:            for (int i = 0; i < node->data.loop.body_count; i++) free_ast(node->data.loop.body[i]);
+    #####:  104:            if (node->data.loop.body) free(node->data.loop.body);
+    #####:  105:            break;
+    #####:  106:        case AST_FUNC:
+    #####:  107:            if (node->data.func.name) free(node->data.func.name);
+    #####:  108:            for (int i = 0; i < node->data.func.param_count; i++)
+    #####:  109:                free(node->data.func.params[i]);
+    #####:  110:            free(node->data.func.params);
+    #####:  111:            for (int i = 0; i < node->data.func.body_count; i++) free_ast(node->data.func.body[i]);
+    #####:  112:            if (node->data.func.body) free(node->data.func.body);
+    #####:  113:            break;
+    #####:  114:        case AST_RETURN:
+    #####:  115:            free_ast(node->data.ret.expr);
+    #####:  116:            break;
+    #####:  117:        case AST_TRY:
+    #####:  118:            for (int i = 0; i < node->data.trycatch.try_count; i++) free_ast(node->data.trycatch.try_body[i]);
+    #####:  119:            free(node->data.trycatch.try_body);
+    #####:  120:            for (int i = 0; i < node->data.trycatch.catch_count; i++) free_ast(node->data.trycatch.catch_body[i]);
+    #####:  121:            free(node->data.trycatch.catch_body);
+    #####:  122:            free(node->data.trycatch.err_name);
+    #####:  123:            break;
+    #####:  124:        case AST_LAMBDA:
+    #####:  125:            for (int i = 0; i < node->data.lambda.param_count; i++)
+    #####:  126:                free(node->data.lambda.params[i]);
+    #####:  127:            free(node->data.lambda.params);
+        -:  128:            /* Don't free body — it's shared with the return wrapper created at eval time */
+    #####:  129:            break;
+    #####:  130:        case AST_MATCH:
+    #####:  131:            free_ast(node->data.match.expr);
+    #####:  132:            for (int i = 0; i < node->data.match.case_count; i++) {
+    #####:  133:                if (node->data.match.patterns[i]) free_ast(node->data.match.patterns[i]);
+    #####:  134:                for (int j = 0; j < node->data.match.body_counts[i]; j++)
+    #####:  135:                    free_ast(node->data.match.bodies[i][j]);
+    #####:  136:                free(node->data.match.bodies[i]);
+        -:  137:            }
+    #####:  138:            free(node->data.match.patterns);
+    #####:  139:            free(node->data.match.bodies);
+    #####:  140:            free(node->data.match.body_counts);
+    #####:  141:            break;
+    #####:  142:        case AST_DICT:
+    #####:  143:            for (int i = 0; i < node->data.dict.count; i++) {
+    #####:  144:                free_ast(node->data.dict.keys[i]);
+    #####:  145:                free_ast(node->data.dict.vals[i]);
+        -:  146:            }
+    #####:  147:            free(node->data.dict.keys);
+    #####:  148:            free(node->data.dict.vals);
+    #####:  149:            break;
+    #####:  150:        case AST_DOT:
+    #####:  151:            free_ast(node->data.dot.target);
+    #####:  152:            free(node->data.dot.key);
+    #####:  153:            break;
+    #####:  154:        case AST_BLOCK:
+    #####:  155:            for (int i = 0; i < node->data.block.count; i++) free_ast(node->data.block.stmts[i]);
+    #####:  156:            if (node->data.block.stmts) free(node->data.block.stmts);
+    #####:  157:            break;
+    #####:  158:        case AST_LIST:
+    #####:  159:            for (int i = 0; i < node->data.list.count; i++) free_ast(node->data.list.elems[i]);
+    #####:  160:            if (node->data.list.elems) free(node->data.list.elems);
+    #####:  161:            break;
+    #####:  162:        case AST_INDEX:
+    #####:  163:            free_ast(node->data.index.target);
+    #####:  164:            free_ast(node->data.index.index);
+    #####:  165:            break;
+    #####:  166:        case AST_LISTCOMP:
+    #####:  167:            free_ast(node->data.listcomp.expr);
+    #####:  168:            if (node->data.listcomp.var) free(node->data.listcomp.var);
+    #####:  169:            free_ast(node->data.listcomp.iter);
+    #####:  170:            free_ast(node->data.listcomp.filter);
+    #####:  171:            break;
+    #####:  172:        case AST_FOR:
+    #####:  173:            if (node->data.forloop.var) free(node->data.forloop.var);
+    #####:  174:            free_ast(node->data.forloop.iter);
+    #####:  175:            for (int i = 0; i < node->data.forloop.body_count; i++) free_ast(node->data.forloop.body[i]);
+    #####:  176:            if (node->data.forloop.body) free(node->data.forloop.body);
+    #####:  177:            break;
+    #####:  178:        case AST_PROGRAM:
+    #####:  179:            for (int i = 0; i < node->data.program.count; i++) free_ast(node->data.program.stmts[i]);
+    #####:  180:            if (node->data.program.stmts) free(node->data.program.stmts);
+    #####:  181:            break;
+    #####:  182:        case AST_INTERROGATE:
+    #####:  183:            free_ast(node->data.interrogate.expr);
+    #####:  184:            break;
+    #####:  185:        default:
+        -:  186:            /* AST_NUM, AST_NULL, AST_PREDICATE — no owned memory */
+    #####:  187:            break;
+        -:  188:    }
+    #####:  189:    free(node);
+        -:  190:}
+        -:  191:
+        -:  192:static ASTNode* parse_expression(Parser *p);
+        -:  193:static ASTNode* parse_statement(Parser *p);
+        -:  194:
+     1033:  195:static ASTNode** parse_block(Parser *p, int *count) {
+     1033:  196:    ASTNode **stmts = xmalloc(MAX_STMTS * sizeof(ASTNode*));
+     1033:  197:    *count = 0;
+        -:  198:
+     1033:  199:    p_expect(p, TOK_INDENT);
+     1033:  200:    p_skip_newlines(p);
+        -:  201:
+     4253:  202:    while (p_cur(p)->type != TOK_DEDENT && p_cur(p)->type != TOK_EOF) {
+     2193:  203:        p_skip_newlines(p);
+     2193:  204:        if (p_cur(p)->type == TOK_DEDENT || p_cur(p)->type == TOK_EOF) break;
+     2187:  205:        int before = p->pos;
+     2187:  206:        ASTNode *stmt = parse_statement(p);
+     2187:  207:        if (stmt && *count < MAX_STMTS) {
+     2187:  208:            stmts[(*count)++] = stmt;
+        -:  209:        }
+     2187:  210:        if (p->pos == before) {
+    #####:  211:            g_parse_errors++;
+    #####:  212:            p_advance(p);
+        -:  213:        }
+        -:  214:    }
+        -:  215:
+     1033:  216:    if (p_cur(p)->type == TOK_DEDENT) p_advance(p);
+        -:  217:
+     1033:  218:    return stmts;
+        -:  219:}
+        -:  220:
+    12974:  221:static ASTNode* parse_primary(Parser *p) {
+    12974:  222:    Token *t = p_cur(p);
+        -:  223:
+    12974:  224:    if (t->type >= TOK_WHAT && t->type <= TOK_HOW) {
+       28:  225:        int kind = t->type - TOK_WHAT;
+       28:  226:        p_advance(p);
+       28:  227:        if (p_cur(p)->type == TOK_IS) {
+       28:  228:            p_advance(p);
+       28:  229:            ASTNode *expr = parse_expression(p);
+       28:  230:            ASTNode *n = make_node(AST_INTERROGATE, p_cur(p)->line);
+       28:  231:            n->data.interrogate.kind = kind;
+       28:  232:            n->data.interrogate.expr = expr;
+       28:  233:            return n;
+        -:  234:        }
+    #####:  235:        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
+    #####:  236:        n->data.ident.name = xstrdup(t->str_val);
+    #####:  237:        while (p_cur(p)->type == TOK_LBRACKET) {
+    #####:  238:            p_advance(p);
+    #####:  239:            ASTNode *idx = parse_expression(p);
+    #####:  240:            p_expect(p, TOK_RBRACKET);
+    #####:  241:            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+    #####:  242:            index_node->data.index.target = n;
+    #####:  243:            index_node->data.index.index = idx;
+    #####:  244:            n = index_node;
+        -:  245:        }
+    #####:  246:        return n;
+        -:  247:    }
+        -:  248:
+    12946:  249:    if (t->type >= TOK_CONVERGED && t->type <= TOK_EQUILIBRIUM) {
+       29:  250:        int kind = t->type - TOK_CONVERGED;
+       29:  251:        p_advance(p);
+       29:  252:        ASTNode *n = make_node(AST_PREDICATE, p_cur(p)->line);
+       29:  253:        n->data.predicate.kind = kind;
+       29:  254:        return n;
+        -:  255:    }
+        -:  256:
+    12917:  257:    if (t->type == TOK_NUM) {
+     2242:  258:        p_advance(p);
+     2242:  259:        ASTNode *n = make_node(AST_NUM, p_cur(p)->line);
+     2242:  260:        n->data.num = t->num_val;
+     2242:  261:        while (p_cur(p)->type == TOK_LBRACKET) {
+    #####:  262:            p_advance(p);
+    #####:  263:            ASTNode *idx = parse_expression(p);
+    #####:  264:            p_expect(p, TOK_RBRACKET);
+    #####:  265:            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+    #####:  266:            index_node->data.index.target = n;
+    #####:  267:            index_node->data.index.index = idx;
+    #####:  268:            n = index_node;
+        -:  269:        }
+     2242:  270:        return n;
+        -:  271:    }
+        -:  272:
+    10675:  273:    if (t->type == TOK_STR) {
+     1966:  274:        p_advance(p);
+     1966:  275:        ASTNode *n = make_node(AST_STR, p_cur(p)->line);
+     1966:  276:        n->data.str = xstrdup(t->str_val);
+     1966:  277:        while (p_cur(p)->type == TOK_LBRACKET) {
+    #####:  278:            p_advance(p);
+    #####:  279:            ASTNode *idx = parse_expression(p);
+    #####:  280:            p_expect(p, TOK_RBRACKET);
+    #####:  281:            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+    #####:  282:            index_node->data.index.target = n;
+    #####:  283:            index_node->data.index.index = idx;
+    #####:  284:            n = index_node;
+        -:  285:        }
+     1966:  286:        return n;
+        -:  287:    }
+        -:  288:
+     8709:  289:    if (t->type == TOK_NULL) {
+       45:  290:        p_advance(p);
+       45:  291:        return make_node(AST_NULL, p_cur(p)->line);
+        -:  292:    }
+        -:  293:
+     8664:  294:    if (t->type == TOK_IDENT) {
+     6520:  295:        p_advance(p);
+     6520:  296:        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
+     6520:  297:        n->data.ident.name = xstrdup(t->str_val);
+     7245:  298:        while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
+      725:  299:            if (p_cur(p)->type == TOK_DOT) {
+       34:  300:                p_advance(p);
+       34:  301:                Token *key_tok = p_cur(p);
+       34:  302:                p_expect(p, TOK_IDENT);
+       34:  303:                ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
+       34:  304:                dot->data.dot.target = n;
+       34:  305:                dot->data.dot.key = xstrdup(key_tok->str_val);
+       34:  306:                n = dot;
+        -:  307:            } else {
+      691:  308:                p_advance(p);
+      691:  309:                ASTNode *idx = parse_expression(p);
+      691:  310:                p_expect(p, TOK_RBRACKET);
+      691:  311:                ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+      691:  312:                index_node->data.index.target = n;
+      691:  313:                index_node->data.index.index = idx;
+      691:  314:                n = index_node;
+        -:  315:            }
+        -:  316:        }
+     6520:  317:        return n;
+        -:  318:    }
+        -:  319:
+     2144:  320:    if (t->type == TOK_LPAREN) {
+        -:  321:        /* Check if this is a lambda: (params) => expr */
+     1096:  322:        int saved = p->pos;
+     1096:  323:        int is_lambda = 0;
+     1096:  324:        p_advance(p); /* skip ( */
+        -:  325:        /* Scan forward: if we see IDENT [, IDENT]* ) => then it's a lambda */
+     1096:  326:        if (p_cur(p)->type == TOK_IDENT || p_cur(p)->type == TOK_RPAREN) {
+      856:  327:            int scan = p->pos;
+     1713:  328:            while (p->tl->tokens[scan].type == TOK_IDENT || p->tl->tokens[scan].type == TOK_COMMA)
+      857:  329:                scan++;
+      856:  330:            if (p->tl->tokens[scan].type == TOK_RPAREN && p->tl->tokens[scan+1].type == TOK_ARROW)
+        8:  331:                is_lambda = 1;
+        -:  332:        }
+     1096:  333:        p->pos = saved;
+        -:  334:
+     1096:  335:        if (is_lambda) {
+        8:  336:            p_advance(p); /* skip ( */
+        8:  337:            char **params = xmalloc(16 * sizeof(char*));
+        8:  338:            int param_count = 0;
+       16:  339:            while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
+        8:  340:                params[param_count++] = xstrdup(p_cur(p)->str_val);
+        8:  341:                p_advance(p);
+        8:  342:                if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+        -:  343:            }
+        8:  344:            if (param_count == 0) {
+        1:  345:                params[0] = xstrdup("n");
+        1:  346:                param_count = 1;
+        -:  347:            }
+        8:  348:            p_expect(p, TOK_RPAREN);
+        8:  349:            p_expect(p, TOK_ARROW); /* => */
+        8:  350:            ASTNode *body = parse_expression(p);
+        8:  351:            ASTNode *n = make_node(AST_LAMBDA, t->line);
+        8:  352:            n->data.lambda.params = params;
+        8:  353:            n->data.lambda.param_count = param_count;
+        8:  354:            n->data.lambda.body = body;
+        8:  355:            return n;
+        -:  356:        }
+        -:  357:
+        -:  358:        /* Regular grouping */
+     1088:  359:        p_advance(p);
+     1088:  360:        ASTNode *expr = parse_expression(p);
+     1088:  361:        p_expect(p, TOK_RPAREN);
+     1088:  362:        while (p_cur(p)->type == TOK_LBRACKET) {
+    #####:  363:            p_advance(p);
+    #####:  364:            ASTNode *idx = parse_expression(p);
+    #####:  365:            p_expect(p, TOK_RBRACKET);
+    #####:  366:            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+    #####:  367:            index_node->data.index.target = expr;
+    #####:  368:            index_node->data.index.index = idx;
+    #####:  369:            expr = index_node;
+        -:  370:        }
+     1088:  371:        return expr;
+        -:  372:    }
+        -:  373:
+     1048:  374:    if (t->type == TOK_LBRACKET) {
+     1021:  375:        p_advance(p);
+     1021:  376:        if (p_cur(p)->type == TOK_RBRACKET) {
+       87:  377:            p_advance(p);
+       87:  378:            ASTNode *n = make_node(AST_LIST, p_cur(p)->line);
+       87:  379:            n->data.list.elems = NULL;
+       87:  380:            n->data.list.count = 0;
+       87:  381:            return n;
+        -:  382:        }
+        -:  383:
+      934:  384:        ASTNode *first = parse_expression(p);
+        -:  385:
+      934:  386:        if (p_cur(p)->type == TOK_FOR) {
+    #####:  387:            p_advance(p);
+    #####:  388:            Token *var_tok = p_cur(p);
+    #####:  389:            p_expect(p, TOK_IDENT);
+    #####:  390:            p_expect(p, TOK_IN);
+    #####:  391:            ASTNode *iter = parse_expression(p);
+    #####:  392:            ASTNode *filter = NULL;
+    #####:  393:            if (p_cur(p)->type == TOK_IF) {
+    #####:  394:                p_advance(p);
+    #####:  395:                filter = parse_expression(p);
+        -:  396:            }
+    #####:  397:            p_expect(p, TOK_RBRACKET);
+    #####:  398:            ASTNode *n = make_node(AST_LISTCOMP, p_cur(p)->line);
+    #####:  399:            n->data.listcomp.expr = first;
+    #####:  400:            n->data.listcomp.var = xstrdup(var_tok->str_val);
+    #####:  401:            n->data.listcomp.iter = iter;
+    #####:  402:            n->data.listcomp.filter = filter;
+    #####:  403:            return n;
+        -:  404:        }
+        -:  405:
+      934:  406:        ASTNode **elems = xmalloc(MAX_LIST * sizeof(ASTNode*));
+      934:  407:        int count = 0;
+      934:  408:        elems[count++] = first;
+     2470:  409:        while (p_cur(p)->type == TOK_COMMA) {
+     1536:  410:            p_advance(p);
+    1536*:  411:            if (p_cur(p)->type == TOK_RBRACKET) break;
+     1536:  412:            elems[count++] = parse_expression(p);
+        -:  413:        }
+      934:  414:        p_expect(p, TOK_RBRACKET);
+        -:  415:
+      934:  416:        ASTNode *n = make_node(AST_LIST, p_cur(p)->line);
+      934:  417:        n->data.list.elems = elems;
+      934:  418:        n->data.list.count = count;
+        -:  419:
+      934:  420:        while (p_cur(p)->type == TOK_LBRACKET) {
+    #####:  421:            p_advance(p);
+    #####:  422:            ASTNode *idx = parse_expression(p);
+    #####:  423:            p_expect(p, TOK_RBRACKET);
+    #####:  424:            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+    #####:  425:            index_node->data.index.target = n;
+    #####:  426:            index_node->data.index.index = idx;
+    #####:  427:            n = index_node;
+        -:  428:        }
+      934:  429:        return n;
+        -:  430:    }
+        -:  431:
+        -:  432:    /* Dict literal: {"key": value, ...} */
+       27:  433:    if (t->type == TOK_LBRACE) {
+        9:  434:        p_advance(p);
+        9:  435:        ASTNode **keys = xmalloc(MAX_LIST * sizeof(ASTNode*));
+        9:  436:        ASTNode **vals = xmalloc(MAX_LIST * sizeof(ASTNode*));
+        9:  437:        int count = 0;
+        9:  438:        if (p_cur(p)->type != TOK_RBRACE) {
+        8:  439:            keys[count] = parse_expression(p);
+        8:  440:            p_expect(p, TOK_COLON);
+        8:  441:            vals[count] = parse_expression(p);
+        8:  442:            count++;
+       12:  443:            while (p_cur(p)->type == TOK_COMMA) {
+        4:  444:                p_advance(p);
+       4*:  445:                if (p_cur(p)->type == TOK_RBRACE) break;
+        4:  446:                keys[count] = parse_expression(p);
+        4:  447:                p_expect(p, TOK_COLON);
+        4:  448:                vals[count] = parse_expression(p);
+        4:  449:                count++;
+        -:  450:            }
+        -:  451:        }
+        9:  452:        p_expect(p, TOK_RBRACE);
+        9:  453:        ASTNode *n = make_node(AST_DICT, p_cur(p)->line);
+        9:  454:        n->data.dict.keys = keys;
+        9:  455:        n->data.dict.vals = vals;
+        9:  456:        n->data.dict.count = count;
+        -:  457:        /* Handle postfix .key and [idx] */
+        9:  458:        while (p_cur(p)->type == TOK_DOT || p_cur(p)->type == TOK_LBRACKET) {
+    #####:  459:            if (p_cur(p)->type == TOK_DOT) {
+    #####:  460:                p_advance(p);
+    #####:  461:                Token *key_tok = p_cur(p);
+    #####:  462:                p_expect(p, TOK_IDENT);
+    #####:  463:                ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
+    #####:  464:                dot->data.dot.target = n;
+    #####:  465:                dot->data.dot.key = xstrdup(key_tok->str_val);
+    #####:  466:                n = dot;
+        -:  467:            } else {
+    #####:  468:                p_advance(p);
+    #####:  469:                ASTNode *idx = parse_expression(p);
+    #####:  470:                p_expect(p, TOK_RBRACKET);
+    #####:  471:                ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+    #####:  472:                index_node->data.index.target = n;
+    #####:  473:                index_node->data.index.index = idx;
+    #####:  474:                n = index_node;
+        -:  475:            }
+        -:  476:        }
+        9:  477:        return n;
+        -:  478:    }
+        -:  479:
+       18:  480:    ASTNode *n = make_node(AST_NULL, p_cur(p)->line);
+       18:  481:    if (t->type != TOK_EOF && t->type != TOK_NEWLINE && t->type != TOK_DEDENT) {
+       10:  482:        g_parse_errors++;
+       10:  483:        p_advance(p);
+        -:  484:    }
+       18:  485:    return n;
+        -:  486:}
+        -:  487:
+        -:  488:static ASTNode* parse_addition(Parser *p);
+        -:  489:
+    12968:  490:static ASTNode* parse_relation(Parser *p) {
+    12968:  491:    ASTNode *left = parse_primary(p);
+        -:  492:
+    12968:  493:    if (p_cur(p)->type == TOK_OF) {
+     2733:  494:        p_advance(p);
+     2733:  495:        ASTNode *right = parse_addition(p);
+     2733:  496:        ASTNode *n = make_node(AST_RELATION, p_cur(p)->line);
+     2733:  497:        n->data.relation.left = left;
+     2733:  498:        n->data.relation.right = right;
+     2733:  499:        return n;
+        -:  500:    }
+        -:  501:
+    10235:  502:    return left;
+        -:  503:}
+        -:  504:
+    13008:  505:static ASTNode* parse_unary(Parser *p) {
+    13008:  506:    if (p_cur(p)->type == TOK_MINUS) {
+       31:  507:        p_advance(p);
+       31:  508:        ASTNode *operand = parse_unary(p);
+       31:  509:        ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
+       31:  510:        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "-");
+       31:  511:        n->data.unary.operand = operand;
+       31:  512:        return n;
+        -:  513:    }
+    12977:  514:    if (p_cur(p)->type == TOK_NOT) {
+        9:  515:        p_advance(p);
+        9:  516:        ASTNode *operand = parse_unary(p);
+        9:  517:        ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
+        9:  518:        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
+        9:  519:        n->data.unary.operand = operand;
+        9:  520:        return n;
+        -:  521:    }
+    12968:  522:    return parse_relation(p);
+        -:  523:}
+        -:  524:
+    12739:  525:static ASTNode* parse_multiply(Parser *p) {
+    12739:  526:    ASTNode *left = parse_unary(p);
+    12968:  527:    while (p_cur(p)->type == TOK_STAR || p_cur(p)->type == TOK_SLASH || p_cur(p)->type == TOK_PERCENT) {
+      229:  528:        char op[4] = {0};
+      229:  529:        if (p_cur(p)->type == TOK_STAR) op[0] = '*';
+       75:  530:        else if (p_cur(p)->type == TOK_SLASH) op[0] = '/';
+       18:  531:        else op[0] = '%';
+      229:  532:        p_advance(p);
+      229:  533:        ASTNode *right = parse_unary(p);
+      229:  534:        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+      229:  535:        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
+      229:  536:        n->data.binop.left = left;
+      229:  537:        n->data.binop.right = right;
+      229:  538:        left = n;
+        -:  539:    }
+    12739:  540:    return left;
+        -:  541:}
+        -:  542:
+    11458:  543:static ASTNode* parse_addition(Parser *p) {
+    11458:  544:    ASTNode *left = parse_multiply(p);
+    12739:  545:    while (p_cur(p)->type == TOK_PLUS || p_cur(p)->type == TOK_MINUS) {
+     1281:  546:        char op[4] = {0};
+     1281:  547:        op[0] = (p_cur(p)->type == TOK_PLUS) ? '+' : '-';
+     1281:  548:        p_advance(p);
+     1281:  549:        ASTNode *right = parse_multiply(p);
+     1281:  550:        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+     1281:  551:        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
+     1281:  552:        n->data.binop.left = left;
+     1281:  553:        n->data.binop.right = right;
+     1281:  554:        left = n;
+        -:  555:    }
+    11458:  556:    return left;
+        -:  557:}
+        -:  558:
+     8238:  559:static ASTNode* parse_comparison(Parser *p) {
+     8238:  560:    ASTNode *left = parse_addition(p);
+     8238:  561:    TokType tt = p_cur(p)->type;
+     8238:  562:    if (tt == TOK_LT || tt == TOK_GT || tt == TOK_LE || tt == TOK_GE || tt == TOK_EQ || tt == TOK_NE) {
+      487:  563:        char op[4] = {0};
+      487:  564:        switch (tt) {
+       85:  565:            case TOK_LT: snprintf(op, sizeof(op), "<"); break;
+       80:  566:            case TOK_GT: snprintf(op, sizeof(op), ">"); break;
+       23:  567:            case TOK_LE: snprintf(op, sizeof(op), "<="); break;
+       18:  568:            case TOK_GE: snprintf(op, sizeof(op), ">="); break;
+      261:  569:            case TOK_EQ: snprintf(op, sizeof(op), "="); break;
+       20:  570:            case TOK_NE: snprintf(op, sizeof(op), "!="); break;
+    #####:  571:            default: break;
+        -:  572:        }
+      487:  573:        p_advance(p);
+      487:  574:        ASTNode *right = parse_addition(p);
+      487:  575:        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+      487:  576:        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
+      487:  577:        n->data.binop.left = left;
+      487:  578:        n->data.binop.right = right;
+      487:  579:        return n;
+        -:  580:    }
+     7751:  581:    return left;
+        -:  582:}
+        -:  583:
+     8236:  584:static ASTNode* parse_and(Parser *p) {
+     8236:  585:    ASTNode *left = parse_comparison(p);
+     8238:  586:    while (p_cur(p)->type == TOK_AND) {
+        2:  587:        p_advance(p);
+        2:  588:        ASTNode *right = parse_comparison(p);
+        2:  589:        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        2:  590:        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
+        2:  591:        n->data.binop.left = left;
+        2:  592:        n->data.binop.right = right;
+        2:  593:        left = n;
+        -:  594:    }
+     8236:  595:    return left;
+        -:  596:}
+        -:  597:
+     8235:  598:static ASTNode* parse_or(Parser *p) {
+     8235:  599:    ASTNode *left = parse_and(p);
+     8236:  600:    while (p_cur(p)->type == TOK_OR) {
+        1:  601:        p_advance(p);
+        1:  602:        ASTNode *right = parse_and(p);
+        1:  603:        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        1:  604:        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "or");
+        1:  605:        n->data.binop.left = left;
+        1:  606:        n->data.binop.right = right;
+        1:  607:        left = n;
+        -:  608:    }
+     8235:  609:    return left;
+        -:  610:}
+        -:  611:
+     8229:  612:static ASTNode* parse_pipe(Parser *p) {
+     8229:  613:    ASTNode *left = parse_or(p);
+     8235:  614:    while (p_cur(p)->type == TOK_PIPE) {
+        6:  615:        p_advance(p);
+        6:  616:        ASTNode *fn = parse_or(p);
+        -:  617:        /* a |> b desugars to b of a */
+        6:  618:        ASTNode *n = make_node(AST_RELATION, p_cur(p)->line);
+        6:  619:        n->data.relation.left = fn;
+        6:  620:        n->data.relation.right = left;
+        6:  621:        left = n;
+        -:  622:    }
+     8229:  623:    return left;
+        -:  624:}
+        -:  625:
+     8229:  626:static ASTNode* parse_expression(Parser *p) {
+     8229:  627:    return parse_pipe(p);
+        -:  628:}
+        -:  629:
+     4217:  630:static ASTNode* parse_statement(Parser *p) {
+     4217:  631:    p_skip_newlines(p);
+     4217:  632:    Token *t = p_cur(p);
+        -:  633:
+    4217*:  634:    if (t->type == TOK_EOF || t->type == TOK_DEDENT) return NULL;
+        -:  635:
+     4217:  636:    if (t->type == TOK_DEFINE) {
+      284:  637:        p_advance(p);
+      284:  638:        Token *name_tok = p_cur(p);
+      284:  639:        p_expect(p, TOK_IDENT);
+        -:  640:
+        -:  641:        /* Parse optional named parameters: define add(a, b) as: */
+      284:  642:        char **params = NULL;
+      284:  643:        int param_count = 0;
+      284:  644:        if (p_cur(p)->type == TOK_LPAREN) {
+      155:  645:            p_advance(p); /* skip ( */
+      155:  646:            params = xmalloc(16 * sizeof(char*));
+      477:  647:            while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
+      322:  648:                params[param_count++] = xstrdup(p_cur(p)->str_val);
+      322:  649:                p_advance(p);
+      322:  650:                if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+        -:  651:            }
+      155:  652:            p_expect(p, TOK_RPAREN);
+        -:  653:        }
+      284:  654:        if (param_count == 0) {
+        -:  655:            /* No explicit params: default to single param "n" */
+      129:  656:            params = xmalloc(sizeof(char*));
+      129:  657:            params[0] = xstrdup("n");
+      129:  658:            param_count = 1;
+        -:  659:        }
+        -:  660:
+      284:  661:        if (p_cur(p)->type == TOK_AS) p_advance(p);
+      284:  662:        p_expect(p, TOK_COLON);
+      284:  663:        p_skip_newlines(p);
+        -:  664:        int body_count;
+      284:  665:        ASTNode **body = parse_block(p, &body_count);
+      284:  666:        ASTNode *n = make_node(AST_FUNC, p_cur(p)->line);
+     284*:  667:        n->data.func.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
+      284:  668:        n->data.func.params = params;
+      284:  669:        n->data.func.param_count = param_count;
+      284:  670:        n->data.func.body = body;
+      284:  671:        n->data.func.body_count = body_count;
+      284:  672:        return n;
+        -:  673:    }
+        -:  674:
+     3933:  675:    if (t->type == TOK_TRY) {
+       20:  676:        p_advance(p);
+       20:  677:        p_expect(p, TOK_COLON);
+       20:  678:        p_skip_newlines(p);
+        -:  679:        int try_count;
+       20:  680:        ASTNode **try_body = parse_block(p, &try_count);
+       20:  681:        p_skip_newlines(p);
+        -:  682:        /* Expect: catch err_name: */
+       20:  683:        p_expect(p, TOK_CATCH);
+       20:  684:        Token *err_tok = p_cur(p);
+       20:  685:        char *err_name = "err";
+       20:  686:        if (err_tok->type == TOK_IDENT) {
+       20:  687:            err_name = err_tok->str_val;
+       20:  688:            p_advance(p);
+        -:  689:        }
+       20:  690:        p_expect(p, TOK_COLON);
+       20:  691:        p_skip_newlines(p);
+        -:  692:        int catch_count;
+       20:  693:        ASTNode **catch_body = parse_block(p, &catch_count);
+       20:  694:        ASTNode *n = make_node(AST_TRY, t->line);
+       20:  695:        n->data.trycatch.try_body = try_body;
+       20:  696:        n->data.trycatch.try_count = try_count;
+       20:  697:        n->data.trycatch.err_name = xstrdup(err_name);
+       20:  698:        n->data.trycatch.catch_body = catch_body;
+       20:  699:        n->data.trycatch.catch_count = catch_count;
+       20:  700:        return n;
+        -:  701:    }
+        -:  702:
+     3913:  703:    if (t->type == TOK_MATCH) {
+       10:  704:        p_advance(p);
+       10:  705:        ASTNode *expr = parse_expression(p);
+       10:  706:        p_expect(p, TOK_COLON);
+       10:  707:        p_skip_newlines(p);
+       10:  708:        p_expect(p, TOK_INDENT);
+       10:  709:        p_skip_newlines(p);
+        -:  710:
+        -:  711:        /* Parse case branches */
+       10:  712:        ASTNode **patterns = xmalloc(64 * sizeof(ASTNode*));
+       10:  713:        ASTNode ***bodies = xmalloc(64 * sizeof(ASTNode**));
+       10:  714:        int *body_counts = xmalloc(64 * sizeof(int));
+       10:  715:        int case_count = 0;
+        -:  716:
+       33:  717:        while (p_cur(p)->type == TOK_CASE && case_count < 64) {
+       23:  718:            p_advance(p); /* skip 'case' */
+        -:  719:            /* Parse pattern — _ is wildcard (null pattern) */
+       23:  720:            ASTNode *pattern = NULL;
+       23:  721:            if (p_cur(p)->type == TOK_IDENT && p_cur(p)->str_val &&
+        6:  722:                strcmp(p_cur(p)->str_val, "_") == 0) {
+        5:  723:                p_advance(p); /* wildcard */
+        -:  724:            } else {
+       18:  725:                pattern = parse_expression(p);
+        -:  726:            }
+       23:  727:            p_expect(p, TOK_COLON);
+       23:  728:            p_skip_newlines(p);
+        -:  729:
+        -:  730:            int bc;
+       23:  731:            ASTNode **body = parse_block(p, &bc);
+        -:  732:
+       23:  733:            patterns[case_count] = pattern;
+       23:  734:            bodies[case_count] = body;
+       23:  735:            body_counts[case_count] = bc;
+       23:  736:            case_count++;
+       23:  737:            p_skip_newlines(p);
+        -:  738:        }
+        -:  739:
+       10:  740:        if (p_cur(p)->type == TOK_DEDENT) p_advance(p);
+        -:  741:
+       10:  742:        ASTNode *n = make_node(AST_MATCH, t->line);
+       10:  743:        n->data.match.expr = expr;
+       10:  744:        n->data.match.patterns = patterns;
+       10:  745:        n->data.match.bodies = bodies;
+       10:  746:        n->data.match.body_counts = body_counts;
+       10:  747:        n->data.match.case_count = case_count;
+       10:  748:        return n;
+        -:  749:    }
+        -:  750:
+     3903:  751:    if (t->type == TOK_IF) {
+      330:  752:        p_advance(p);
+      330:  753:        ASTNode *cond = parse_expression(p);
+      330:  754:        p_expect(p, TOK_COLON);
+      330:  755:        p_skip_newlines(p);
+        -:  756:        int if_count;
+      330:  757:        ASTNode **if_body = parse_block(p, &if_count);
+      330:  758:        ASTNode **else_body = NULL;
+      330:  759:        int else_count = 0;
+      330:  760:        p_skip_newlines(p);
+      330:  761:        if (p_cur(p)->type == TOK_ELIF) {
+        -:  762:            /* Treat elif as: else { if ... } — rewrite token and recurse */
+       30:  763:            p_cur(p)->type = TOK_IF;
+       30:  764:            else_body = xmalloc(sizeof(ASTNode*));
+       30:  765:            else_body[0] = parse_statement(p);
+       30:  766:            else_count = 1;
+      300:  767:        } else if (p_cur(p)->type == TOK_ELSE) {
+      113:  768:            p_advance(p);
+      113:  769:            p_expect(p, TOK_COLON);
+      113:  770:            p_skip_newlines(p);
+      113:  771:            else_body = parse_block(p, &else_count);
+        -:  772:        }
+      330:  773:        ASTNode *n = make_node(AST_IF, p_cur(p)->line);
+      330:  774:        n->data.cond.cond = cond;
+      330:  775:        n->data.cond.if_body = if_body;
+      330:  776:        n->data.cond.if_count = if_count;
+      330:  777:        n->data.cond.else_body = else_body;
+      330:  778:        n->data.cond.else_count = else_count;
+      330:  779:        return n;
+        -:  780:    }
+        -:  781:
+     3573:  782:    if (t->type == TOK_LOOP) {
+       55:  783:        p_advance(p);
+       55:  784:        if (p_cur(p)->type == TOK_WHILE) p_advance(p);
+       55:  785:        ASTNode *cond = parse_expression(p);
+       55:  786:        p_expect(p, TOK_COLON);
+       55:  787:        p_skip_newlines(p);
+        -:  788:        int body_count;
+       55:  789:        ASTNode **body = parse_block(p, &body_count);
+       55:  790:        ASTNode *n = make_node(AST_LOOP, p_cur(p)->line);
+       55:  791:        n->data.loop.cond = cond;
+       55:  792:        n->data.loop.body = body;
+       55:  793:        n->data.loop.body_count = body_count;
+       55:  794:        return n;
+        -:  795:    }
+        -:  796:
+     3518:  797:    if (t->type == TOK_FOR) {
+      188:  798:        p_advance(p);
+      188:  799:        Token *var_tok = p_cur(p);
+      188:  800:        p_expect(p, TOK_IDENT);
+      188:  801:        p_expect(p, TOK_IN);
+      188:  802:        ASTNode *iter = parse_expression(p);
+      188:  803:        p_expect(p, TOK_COLON);
+      188:  804:        p_skip_newlines(p);
+        -:  805:        int body_count;
+      188:  806:        ASTNode **body = parse_block(p, &body_count);
+      188:  807:        ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
+     188*:  808:        n->data.forloop.var = xstrdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
+      188:  809:        n->data.forloop.iter = iter;
+      188:  810:        n->data.forloop.body = body;
+      188:  811:        n->data.forloop.body_count = body_count;
+      188:  812:        return n;
+        -:  813:    }
+        -:  814:
+     3330:  815:    if (t->type == TOK_RETURN) {
+      294:  816:        p_advance(p);
+      294:  817:        ASTNode *expr = parse_expression(p);
+      294:  818:        p_match(p, TOK_NEWLINE);
+      294:  819:        ASTNode *n = make_node(AST_RETURN, p_cur(p)->line);
+      294:  820:        n->data.ret.expr = expr;
+      294:  821:        return n;
+        -:  822:    }
+        -:  823:
+     3036:  824:    if (t->type == TOK_IMPORT) {
+        5:  825:        p_advance(p);
+        5:  826:        Token *name_tok = p_cur(p);
+        5:  827:        p_expect(p, TOK_IDENT);
+        5:  828:        ASTNode *n = make_node(AST_IMPORT, t->line);
+        5:  829:        n->data.import.module_name = xstrdup(name_tok->str_val);
+        5:  830:        return n;
+        -:  831:    }
+        -:  832:
+     3031:  833:    if (t->type == TOK_BREAK) {
+        3:  834:        p_advance(p);
+        3:  835:        return make_node(AST_BREAK, t->line);
+        -:  836:    }
+        -:  837:
+     3028:  838:    if (t->type == TOK_CONTINUE) {
+        3:  839:        p_advance(p);
+        3:  840:        return make_node(AST_CONTINUE, t->line);
+        -:  841:    }
+        -:  842:
+        -:  843:    /* Dot-assignment: config.name is "value" */
+     3025:  844:    if (t->type == TOK_IDENT && p_peek(p, 1)->type == TOK_DOT) {
+        -:  845:        /* Look ahead to see if this ends in IS (assignment) */
+        6:  846:        int saved = p->pos;
+        6:  847:        ASTNode *target = parse_primary(p);
+        6:  848:        if (target->type == AST_DOT && p_cur(p)->type == TOK_IS) {
+        6:  849:            p_advance(p); /* skip IS */
+        6:  850:            ASTNode *expr = parse_expression(p);
+        6:  851:            ASTNode *n = make_node(AST_DOT_ASSIGN, t->line);
+        6:  852:            n->data.dot_assign.target = target->data.dot.target;
+        6:  853:            n->data.dot_assign.key = xstrdup(target->data.dot.key);
+        6:  854:            n->data.dot_assign.expr = expr;
+        6:  855:            return n;
+        -:  856:        }
+        -:  857:        /* Not a dot-assignment — restore and fall through */
+    #####:  858:        p->pos = saved;
+        -:  859:    }
+        -:  860:
+     3019:  861:    if (t->type == TOK_IDENT && p_peek(p, 1)->type == TOK_IS) {
+     1615:  862:        Token *name_tok = p_advance(p);
+     1615:  863:        p_advance(p);
+     1615:  864:        ASTNode *expr = parse_expression(p);
+     1615:  865:        p_match(p, TOK_NEWLINE);
+     1615:  866:        ASTNode *n = make_node(AST_ASSIGN, p_cur(p)->line);
+    1615*:  867:        n->data.assign.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
+     1615:  868:        n->data.assign.expr = expr;
+     1615:  869:        return n;
+        -:  870:    }
+        -:  871:
+     1404:  872:    ASTNode *expr = parse_expression(p);
+     1404:  873:    p_match(p, TOK_NEWLINE);
+     1404:  874:    return expr;
+        -:  875:}
+        -:  876:
+      148:  877:ASTNode* parse(TokenList *tl) {
+        -:  878:    Parser p;
+      148:  879:    p.tl = tl;
+      148:  880:    p.pos = 0;
+        -:  881:
+      148:  882:    ASTNode **stmts = xmalloc(MAX_STMTS * sizeof(ASTNode*));
+      148:  883:    int count = 0;
+        -:  884:
+      148:  885:    p_skip_newlines(&p);
+        -:  886:
+     2148:  887:    while (p_cur(&p)->type != TOK_EOF) {
+     2049:  888:        p_skip_newlines(&p);
+     2049:  889:        if (p_cur(&p)->type == TOK_EOF) break;
+     2000:  890:        int before = p.pos;
+     2000:  891:        ASTNode *stmt = parse_statement(&p);
+     2000:  892:        if (stmt && count < MAX_STMTS) {
+     2000:  893:            stmts[count++] = stmt;
+        -:  894:        }
+     2000:  895:        if (p.pos == before) {
+    #####:  896:            g_parse_errors++;
+    #####:  897:            p_advance(&p);
+        -:  898:        }
+        -:  899:    }
+        -:  900:
+      148:  901:    ASTNode *prog = make_node(AST_PROGRAM, p_cur(&p)->line);
+      148:  902:    prog->data.program.stmts = stmts;
+      148:  903:    prog->data.program.count = count;
+      148:  904:    return prog;
+        -:  905:}

@@ -83,4 +83,149 @@ ls is log_softmax of [1.0, 2.0, 3.0]
 assert of [ls[0] <= 0.0, "CG28 log_softmax <= 0"]
 assert of [ls[2] <= 0.0, "CG29 log_softmax <= 0"]
 
+# --- 2D zeros / get_at / set_at ---
+m2 is zeros of [2, 3]
+assert of [(len of m2) == 2, "CG30 zeros 2D rows"]
+assert of [(len of m2[0]) == 3, "CG31 zeros 2D cols"]
+
+# set_at 2D then get_at 2D
+mut is zeros of [2, 2]
+set_at of [mut, 0, 1, 7.5]
+assert of [(get_at of [mut, 0, 1]) == 7.5, "CG32 set/get_at 2D"]
+
+# set_at 1D then get_at 1D
+flat is zeros of 3
+set_at of [flat, 2, 99.0]
+assert of [(get_at of [flat, 2]) == 99.0, "CG33 set/get_at 1D"]
+
+# --- json_raw: JSON passthrough ---
+jr is json_raw of "{\"raw\": true}"
+assert of [(type of jr) == "json_raw", "CG34 json_raw type"]
+
+# --- tokenize_with_names: returns a list of name+id pairs ---
+toks is tokenize_with_names of "x is 42"
+assert of [(type of toks) == "list", "CG35 tokenize_with_names returns list"]
+assert of [(len of toks) > 0, "CG36 tokenize_with_names non-empty"]
+
+# --- stream_open/write/close: write 3 doubles to a temp file ---
+sfile is mktemp of null
+ok is stream_open of [sfile, 3]
+assert of [ok == 1, "CG37 stream_open"]
+w1 is stream_write of 1.5
+w2 is stream_write of 2.5
+w3 is stream_write of 3.5
+assert of [w1 == 1, "CG38 stream_write 1"]
+assert of [w3 == 1, "CG39 stream_write 3"]
+closed is stream_close of null
+assert of [closed == 1, "CG40 stream_close"]
+rm of sfile
+
+# --- numerical_grad_rows + sgd_update_rows ---
+# The loss fn is called with no arguments; it reads the matrix from its
+# enclosing scope (classic closure-based gradient computation).
+mat is [[1.0, 2.0], [3.0, 4.0]]
+
+define loss as:
+    s is 0.0
+    for row in mat:
+        for v in row:
+            s is s + v * v
+    return s
+
+g_rows is numerical_grad_rows of [loss, mat, [0], 0.001]
+assert of [(type of g_rows) == "list", "CG41 grad_rows returns list"]
+assert of [(len of g_rows) == 2, "CG42 grad_rows shape rows"]
+# Row 1 should be zeros (untouched)
+assert of [g_rows[1][0] == 0.0, "CG43 grad_rows untouched row zero"]
+
+# sgd_update_rows: update row 0 of mat in-place
+sgd_update_rows of [mat, g_rows, [0], 0.01]
+# mat[0][0] should now be slightly less than 1.0 (moved along gradient)
+assert of [mat[0][0] < 1.0, "CG44 sgd_update_rows moved row 0"]
+assert of [mat[1][0] == 3.0, "CG45 sgd_update_rows left row 1 alone"]
+
+# --- numerical_grad_cols + sgd_update_cols ---
+mat2 is [[1.0, 2.0], [3.0, 4.0]]
+
+define loss2 as:
+    s is 0.0
+    for row in mat2:
+        for v in row:
+            s is s + v * v
+    return s
+
+g_cols is numerical_grad_cols of [loss2, mat2, [1], 0.001]
+assert of [(type of g_cols) == "list", "CG46 grad_cols returns list"]
+# Column 0 should be zeros (untouched)
+assert of [g_cols[0][0] == 0.0, "CG47 grad_cols untouched col zero"]
+
+sgd_update_cols of [mat2, g_cols, [1], 0.01]
+assert of [mat2[0][1] < 2.0, "CG48 sgd_update_cols moved col 1"]
+assert of [mat2[0][0] == 1.0, "CG49 sgd_update_cols left col 0 alone"]
+
+# --- json_path: dotted-path lookup into a JSON string ---
+js is "{\"user\": {\"name\": \"alice\", \"age\": 30}, \"tags\": [\"a\", \"b\"]}"
+assert of [(json_path of [js, "user.name"]) == "alice", "CG50 json_path nested string"]
+assert of [(json_path of [js, "user.age"]) == "30", "CG51 json_path nested number"]
+assert of [(json_path of [js, "tags.0"]) == "a", "CG52 json_path array index"]
+assert of [(json_path of [js, "missing"]) == "", "CG53 json_path missing key"]
+
+# --- random_normal 1D and 2D ---
+r1 is random_normal of [5, 0.1]
+assert of [(len of r1) == 5, "CG54 random_normal 1D length"]
+r2 is random_normal of [3, 4, 0.1]
+assert of [(len of r2) == 3, "CG55 random_normal 2D rows"]
+assert of [(len of r2[0]) == 4, "CG56 random_normal 2D cols"]
+
+# --- numerical_grad (1D and 2D param) ---
+p1d is [1.0, 2.0, 3.0]
+define loss1d as:
+    s is 0.0
+    for v in p1d:
+        s is s + v * v
+    return s
+g1d is numerical_grad of [loss1d, p1d, 0.001]
+assert of [(len of g1d) == 3, "CG57 grad 1D length"]
+
+p2d is [[1.0, 2.0], [3.0, 4.0]]
+define loss2d as:
+    s is 0.0
+    for row in p2d:
+        for v in row:
+            s is s + v * v
+    return s
+g2d is numerical_grad of [loss2d, p2d, 0.001]
+assert of [(len of g2d) == 2, "CG58 grad 2D rows"]
+assert of [(len of g2d[0]) == 2, "CG59 grad 2D cols"]
+
+# sgd_update on 2D
+sgd_update of [p2d, g2d, 0.01]
+assert of [p2d[0][0] < 1.0, "CG60 sgd_update 2D moved"]
+
+# --- tensor_save / tensor_load round trip ---
+t_orig is [[1.5, 2.5], [3.5, 4.5]]
+tfile is mktemp of null
+save_ok is tensor_save of [t_orig, tfile]
+assert of [save_ok == 1, "CG61 tensor_save ok"]
+t_back is tensor_load of tfile
+assert of [t_back[0][0] == 1.5, "CG62 tensor_load round-trip 0,0"]
+assert of [t_back[1][1] == 4.5, "CG63 tensor_load round-trip 1,1"]
+rm of tfile
+
+# --- tensor_shape: 1D and 2D ---
+sh1 is shape of [1.0, 2.0, 3.0, 4.0]
+assert of [sh1[0] == 4, "CG64 shape 1D"]
+sh2 is shape of [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+assert of [sh2[0] == 2, "CG65 shape 2D rows"]
+assert of [sh2[1] == 3, "CG66 shape 2D cols"]
+
+# --- observe: returns [trajectory, entropy, dH, prev_dH] ---
+x is 10.0
+x is 8.0
+x is 6.0
+obs is observe of x
+assert of [(len of obs) == 4, "CG67 observe length"]
+assert of [(type of obs[0]) == "str", "CG68 observe trajectory is string"]
+assert of [(type of obs[1]) == "num", "CG69 observe entropy is number"]
+
 print of "All coverage-gap tests passed"
