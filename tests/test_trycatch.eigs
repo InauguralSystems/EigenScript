@@ -1,0 +1,68 @@
+# Try/catch and throw tests
+load_file of "lib/test.eigs"
+
+# Catch index out of bounds
+caught1 is ""
+try:
+    items is [1, 2, 3]
+    x is items[10]
+catch err:
+    caught1 is err
+assert_true of [contains of [caught1, "index"], "catch index error"]
+
+# Catch undefined variable
+caught2 is ""
+try:
+    x is nonexistent_var
+catch err:
+    caught2 is err
+assert_true of [contains of [caught2, "undefined"], "catch undefined var"]
+
+# Catch type error
+caught3 is ""
+try:
+    x is [1, 2] - 5
+catch err:
+    caught3 is err
+assert_true of [contains of [caught3, "cannot apply"], "catch type error"]
+
+# No error — catch body should not run
+ran_catch is 0
+try:
+    x is 42
+catch err:
+    ran_catch is 1
+assert_eq of [ran_catch, 0, "no error skips catch"]
+
+# Throw from user code
+caught4 is ""
+try:
+    throw of "custom error"
+catch err:
+    caught4 is err
+assert_eq of [caught4, "custom error", "throw caught"]
+
+# Nested try/catch
+inner_caught is ""
+outer_caught is ""
+try:
+    try:
+        throw of "inner"
+    catch e:
+        inner_caught is e
+        throw of "re-thrown"
+catch e:
+    outer_caught is e
+assert_eq of [inner_caught, "inner", "nested inner catch"]
+assert_eq of [outer_caught, "re-thrown", "nested re-throw"]
+
+# Code continues after try/catch
+after is 1
+try:
+    throw of "fail"
+catch e:
+    after is 2
+after is after + 1
+assert_eq of [after, 3, "continues after try/catch"]
+
+test_summary of null

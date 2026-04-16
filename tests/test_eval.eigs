@@ -1,0 +1,33 @@
+# Eval builtin tests
+load_file of "lib/test.eigs"
+
+# Eval simple expression
+eval of "eval_x is 42"
+assert_eq of [eval_x, 42, "eval assignment"]
+
+# Eval arithmetic
+eval of "eval_y is 10 + 5 * 2"
+assert_eq of [eval_y, 20, "eval arithmetic"]
+
+# Eval function definition
+eval of "define eval_double(x) as:\n    return x * 2"
+assert_eq of [eval_double of 5, 10, "eval function def"]
+
+# Eval with f-string construction
+key is "eval_z"
+eval of f"{key} is 99"
+assert_eq of [eval_z, 99, "eval via f-string"]
+
+# Eval returns last value
+result is eval of "1 + 2 + 3"
+assert_eq of [result, 6, "eval returns value"]
+
+# Eval error caught by try/catch
+caught is ""
+try:
+    eval of "bad_syntax is @#$"
+catch err:
+    caught is err
+assert_true of [(len of caught) > 0, "eval parse error catchable"]
+
+test_summary of null

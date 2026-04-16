@@ -1,0 +1,40 @@
+# F-string interpolation tests
+load_file of "lib/test.eigs"
+
+# Basic interpolation
+name is "World"
+assert_eq of [f"Hello {name}!", "Hello World!", "basic f-string"]
+
+# Numeric interpolation
+x is 42
+assert_eq of [f"x is {x}", "x is 42", "numeric f-string"]
+
+# Expression inside braces
+assert_eq of [f"doubled: {x * 2}", "doubled: 84", "expr f-string"]
+
+# Multiple interpolations
+a is "foo"
+b is "bar"
+assert_eq of [f"{a} and {b}", "foo and bar", "multi f-string"]
+
+# Empty f-string
+assert_eq of [f"", "", "empty f-string"]
+
+# No interpolation (plain f-string)
+assert_eq of [f"plain", "plain", "plain f-string"]
+
+# Nested function call in f-string
+define double(x) as:
+    return x * 2
+assert_eq of [f"result: {double of 5}", "result: 10", "fn call in f-string"]
+
+# List length in f-string
+items is [1, 2, 3]
+assert_eq of [f"count: {len of items}", "count: 3", "len in f-string"]
+
+# String concat comparison
+manual is "x is " + (str of x)
+interp is f"x is {x}"
+assert_eq of [manual, interp, "f-string matches concat"]
+
+test_summary of null

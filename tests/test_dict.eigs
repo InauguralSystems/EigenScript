@@ -1,0 +1,62 @@
+# Dictionary tests
+load_file of "lib/test.eigs"
+
+# Dict literal
+d is {"name": "eigen", "version": 6}
+assert_eq of [type of d, "dict", "type is dict"]
+
+# Dot access
+assert_eq of [d.name, "eigen", "dot access string"]
+assert_eq of [d.version, 6, "dot access number"]
+
+# Bracket access
+assert_eq of [d["name"], "eigen", "bracket access"]
+
+# Bracket access with variable key
+k is "version"
+assert_eq of [d[k], 6, "bracket access variable key"]
+
+# len
+assert_eq of [len of d, 2, "dict len"]
+
+# keys and values
+k_list is keys of d
+assert_eq of [len of k_list, 2, "keys length"]
+assert_eq of [k_list[0], "name", "keys first"]
+
+v_list is values of d
+assert_eq of [v_list[0], "eigen", "values first"]
+
+# has_key
+assert_eq of [has_key of [d, "name"], 1, "has_key true"]
+assert_eq of [has_key of [d, "missing"], 0, "has_key false"]
+
+# dict_set (mutates)
+dict_set of [d, "lang", "C"]
+assert_eq of [d.lang, "C", "dict_set new key"]
+assert_eq of [len of d, 3, "dict_set increases len"]
+
+# dict_set overwrite
+dict_set of [d, "version", 7]
+assert_eq of [d.version, 7, "dict_set overwrite"]
+
+# dict_remove
+dict_remove of [d, "lang"]
+assert_eq of [has_key of [d, "lang"], 0, "dict_remove"]
+assert_eq of [len of d, 2, "dict_remove decreases len"]
+
+# Empty dict
+empty is {}
+assert_eq of [len of empty, 0, "empty dict len"]
+assert_eq of [type of empty, "dict", "empty dict type"]
+
+# Nested dicts
+app is {"db": {"host": "localhost", "port": 5432}}
+assert_eq of [app.db.host, "localhost", "nested dot access"]
+assert_eq of [app.db.port, 5432, "nested dot number"]
+
+# Dict in f-string
+msg is f"name={d.name}"
+assert_eq of [msg, "name=eigen", "dict in f-string"]
+
+test_summary of null

@@ -1,0 +1,50 @@
+# Closure tests
+load_file of "lib/test.eigs"
+
+# Basic closure — capture outer variable
+define make_adder(x) as:
+    define adder(y) as:
+        return x + y
+    return adder
+
+add5 is make_adder of 5
+add10 is make_adder of 10
+assert_eq of [add5 of 3, 8, "closure captures x=5"]
+assert_eq of [add10 of 3, 13, "closure captures x=10"]
+
+# Multiple closures don't interfere
+assert_eq of [add5 of 100, 105, "add5 still works after add10"]
+
+# Closure over loop variable
+fns is []
+for i in range of 3:
+    define fn(x) as:
+        return x + i
+    append of [fns, fn]
+assert_eq of [fns[0] of 10, 10, "closure loop i=0"]
+assert_eq of [fns[1] of 10, 11, "closure loop i=1"]
+assert_eq of [fns[2] of 10, 12, "closure loop i=2"]
+
+# Factory pattern
+define make_multiplier(factor) as:
+    define mult(x) as:
+        return x * factor
+    return mult
+
+double is make_multiplier of 2
+triple is make_multiplier of 3
+assert_eq of [double of 7, 14, "factory double"]
+assert_eq of [triple of 7, 21, "factory triple"]
+
+# Closure with f-string
+define make_greeter(greeting) as:
+    define greet(name) as:
+        return f"{greeting}, {name}!"
+    return greet
+
+hello is make_greeter of "Hello"
+hey is make_greeter of "Hey"
+assert_eq of [hello of "World", "Hello, World!", "closure f-string hello"]
+assert_eq of [hey of "EigenScript", "Hey, EigenScript!", "closure f-string hey"]
+
+test_summary of null

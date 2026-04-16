@@ -1,0 +1,43 @@
+# Named parameter tests
+load_file of "lib/test.eigs"
+
+# Two params
+define add(a, b) as:
+    return a + b
+assert_eq of [add of [3, 4], 7, "two params"]
+
+# Three params
+define clamp(val, lo, hi) as:
+    if val < lo:
+        return lo
+    if val > hi:
+        return hi
+    return val
+assert_eq of [clamp of [15, 0, 10], 10, "three params high"]
+assert_eq of [clamp of [-5, 0, 10], 0, "three params low"]
+assert_eq of [clamp of [5, 0, 10], 5, "three params mid"]
+
+# Single named param
+define square(x) as:
+    return x * x
+assert_eq of [square of 5, 25, "single named param"]
+
+# Classic style still works
+define triple as:
+    return n * 3
+assert_eq of [triple of 7, 21, "classic n param"]
+
+# Named params with string
+define greet(name, greeting) as:
+    return f"{greeting}, {name}!"
+assert_eq of [greet of ["World", "Hello"], "Hello, World!", "string params"]
+
+# Params don't leak to outer scope
+outer_a is 100
+define use_a(a) as:
+    return a + 1
+result is use_a of 5
+assert_eq of [result, 6, "param doesn't leak"]
+assert_eq of [outer_a, 100, "outer unchanged"]
+
+test_summary of null

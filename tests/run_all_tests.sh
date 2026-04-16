@@ -630,8 +630,98 @@ else
 fi
 echo ""
 
-# [21] Example smoke tests
-echo "[21/21] Example Smoke Tests"
+# [22] F-string interpolation
+echo "[22/27] F-String Interpolation (9 checks)"
+FS_OUTPUT=$(./eigenscript ../tests/test_fstrings.eigs 2>&1)
+if echo "$FS_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 9))
+    PASS=$((PASS + 9))
+    echo "  PASS: all 9 f-string checks"
+else
+    TOTAL=$((TOTAL + 9))
+    FAIL=$((FAIL + 9))
+    echo "  FAIL: f-string tests"
+    echo "$FS_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [23] Named parameters
+echo "[23/27] Named Parameters (9 checks)"
+NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1)
+if echo "$NP_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 9))
+    PASS=$((PASS + 9))
+    echo "  PASS: all 9 named param checks"
+else
+    TOTAL=$((TOTAL + 9))
+    FAIL=$((FAIL + 9))
+    echo "  FAIL: named param tests"
+    echo "$NP_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [24] Try/catch and throw
+echo "[24/27] Try/Catch & Throw (8 checks)"
+TC_OUTPUT=$(./eigenscript ../tests/test_trycatch.eigs 2>&1)
+if echo "$TC_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 try/catch checks"
+else
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
+    echo "  FAIL: try/catch tests"
+    echo "$TC_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [25] Dictionaries
+echo "[25/27] Dictionaries (21 checks)"
+DI_OUTPUT=$(./eigenscript ../tests/test_dict.eigs 2>&1)
+if echo "$DI_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 21))
+    PASS=$((PASS + 21))
+    echo "  PASS: all 21 dict checks"
+else
+    TOTAL=$((TOTAL + 21))
+    FAIL=$((FAIL + 21))
+    echo "  FAIL: dict tests"
+    echo "$DI_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [26] Eval builtin
+echo "[26/27] Eval Builtin (6 checks)"
+EV_OUTPUT=$(./eigenscript ../tests/test_eval.eigs 2>&1)
+if echo "$EV_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 6))
+    PASS=$((PASS + 6))
+    echo "  PASS: all 6 eval checks"
+else
+    TOTAL=$((TOTAL + 6))
+    FAIL=$((FAIL + 6))
+    echo "  FAIL: eval tests"
+    echo "$EV_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [27] Closures
+echo "[27/27] Closures (10 checks)"
+CL_OUTPUT=$(./eigenscript ../tests/test_closures.eigs 2>&1)
+if echo "$CL_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 10))
+    PASS=$((PASS + 10))
+    echo "  PASS: all 10 closure checks"
+else
+    TOTAL=$((TOTAL + 10))
+    FAIL=$((FAIL + 10))
+    echo "  FAIL: closure tests"
+    echo "$CL_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [28] Example smoke tests
+echo "[28/28] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 
