@@ -1,0 +1,136 @@
+# ============================================================
+# Map Library — key-value data structure in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/map.eigs"
+#
+#   m is map_new of null                    # create empty map
+#   m is map_set of [m, "name", "eigen"]    # set key
+#   map_get of [m, "name"]                  # "eigen"
+#   map_has of [m, "name"]                  # 1
+#   map_keys of m                           # ["name"]
+#   map_values of m                         # ["eigen"]
+#   map_remove of [m, "name"]              # map without "name"
+#   map_size of m                           # number of entries
+#   map_from_lists of [keys, values]       # build from parallel lists
+#
+# Maps are lists of [key, value] pairs: [[k1,v1], [k2,v2], ...]
+# Keys are compared with ==. Last-write wins on duplicate keys.
+
+# ---- map_new: create an empty map ----
+define map_new as:
+    return []
+
+# ---- map_get: get value by key, or null if not found ----
+# map_get of [map, key] -> value or null
+define map_get as:
+    m is n[0]
+    key is n[1]
+    i is (len of m) - 1
+    loop while i >= 0:
+        if m[i][0] == key:
+            return m[i][1]
+        i is i - 1
+    return null
+
+# ---- map_get_default: get value by key, or default if not found ----
+# map_get_default of [map, key, default] -> value or default
+define map_get_default as:
+    m is n[0]
+    key is n[1]
+    default is n[2]
+    i is (len of m) - 1
+    loop while i >= 0:
+        if m[i][0] == key:
+            return m[i][1]
+        i is i - 1
+    return default
+
+# ---- map_has: check if key exists ----
+# map_has of [map, key] -> 1 or 0
+define map_has as:
+    m is n[0]
+    key is n[1]
+    for i in range of (len of m):
+        if m[i][0] == key:
+            return 1
+    return 0
+
+# ---- map_set: set a key-value pair (returns new map) ----
+# map_set of [map, key, value] -> map
+define map_set as:
+    m is n[0]
+    key is n[1]
+    value is n[2]
+    result is []
+    found is 0
+    for i in range of (len of m):
+        if m[i][0] == key:
+            append of [result, [key, value]]
+            found is 1
+        else:
+            append of [result, m[i]]
+    if found == 0:
+        append of [result, [key, value]]
+    return result
+
+# ---- map_remove: remove a key (returns new map) ----
+# map_remove of [map, key] -> map
+define map_remove as:
+    m is n[0]
+    key is n[1]
+    result is []
+    for i in range of (len of m):
+        if m[i][0] != key:
+            append of [result, m[i]]
+    return result
+
+# ---- map_keys: list all keys ----
+define map_keys as:
+    result is []
+    for i in range of (len of n):
+        append of [result, n[i][0]]
+    return result
+
+# ---- map_values: list all values ----
+define map_values as:
+    result is []
+    for i in range of (len of n):
+        append of [result, n[i][1]]
+    return result
+
+# ---- map_size: number of entries ----
+define map_size as:
+    return len of n
+
+# ---- map_from_lists: build map from parallel key and value lists ----
+# map_from_lists of [keys, values] -> map
+define map_from_lists as:
+    keys is n[0]
+    values is n[1]
+    result is []
+    for i in range of (len of keys):
+        append of [result, [keys[i], values[i]]]
+    return result
+
+# ---- map_merge: merge two maps (second wins on conflict) ----
+# map_merge of [map_a, map_b] -> map
+define map_merge as:
+    a is n[0]
+    b is n[1]
+    result is []
+    for i in range of (len of a):
+        append of [result, a[i]]
+    for i in range of (len of b):
+        key is b[i][0]
+        value is b[i][1]
+        result is map_set of [result, key, value]
+    return result
+
+# ---- map_entries: return list of [key, value] pairs ----
+define map_entries as:
+    result is []
+    for i in range of (len of n):
+        append of [result, [n[i][0], n[i][1]]]
+    return result

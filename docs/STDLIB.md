@@ -184,6 +184,77 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `fmt_padded` | `fmt_padded of [value, width]` | Right-aligned field |
 | `fmt_table` | `fmt_table of [headers, rows]` | Aligned text table |
 
+### lib/sort.eigs — Sorting Utilities
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `sort_asc` | `sort_asc of list` | Sort ascending |
+| `sort_desc` | `sort_desc of list` | Sort descending |
+| `sort_by` | `sort_by of [list, key_fn]` | Sort by key function |
+| `sorted_indices` | `sorted_indices of list` | Indices that would sort the list |
+| `is_sorted` | `is_sorted of list` | 1 if ascending order |
+| `unique` | `unique of list` | Sorted, deduplicated list |
+
+### lib/map.eigs — Key-Value Data Structure
+
+Maps are lists of `[key, value]` pairs. Keys are compared with `==`.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `map_new` | `map_new of null` | Create empty map |
+| `map_get` | `map_get of [map, key]` | Get value or null |
+| `map_get_default` | `map_get_default of [map, key, default]` | Get value or default |
+| `map_has` | `map_has of [map, key]` | 1 if key exists |
+| `map_set` | `map_set of [map, key, value]` | Set key (returns new map) |
+| `map_remove` | `map_remove of [map, key]` | Remove key (returns new map) |
+| `map_keys` | `map_keys of map` | List all keys |
+| `map_values` | `map_values of map` | List all values |
+| `map_size` | `map_size of map` | Number of entries |
+| `map_from_lists` | `map_from_lists of [keys, values]` | Build from parallel lists |
+| `map_merge` | `map_merge of [map_a, map_b]` | Merge (second wins) |
+| `map_entries` | `map_entries of map` | List of [key, value] pairs |
+
+```eigenscript
+load_file of "lib/map.eigs"
+
+m is map_new of null
+m is map_set of [m, "lang", "EigenScript"]
+m is map_set of [m, "version", "0.5"]
+print of (map_get of [m, "lang"])       # "EigenScript"
+print of (map_keys of m)                # ["lang", "version"]
+```
+
+### lib/functional.eigs — Composition and Higher-Order Utilities
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `identity` | `identity of x` | Return argument unchanged |
+| `constantly` | `constantly of x` | Return value (sentinel pattern) |
+| `chain` | `chain of [fn_list, value]` | Pipeline: apply left to right |
+| `apply_all` | `apply_all of [fn_list, value]` | Apply each fn, collect results |
+| `juxt` | `juxt of [fn_list, value]` | Alias for apply_all |
+| `complement` | `complement of [pred, value]` | Negate predicate result |
+| `when` | `when of [pred, fn, value]` | Apply fn if pred is truthy |
+| `unless` | `unless of [pred, fn, value]` | Apply fn if pred is falsy |
+| `times` | `times of [count, fn]` | Call fn(i) for i in 0..count-1 |
+| `iterate` | `iterate of [fn, value, count]` | Apply fn n times |
+
+```eigenscript
+load_file of "lib/functional.eigs"
+
+define double as:
+    return n * 2
+
+define square as:
+    return n * n
+
+# Pipeline: double then square
+result is chain of [[double, square], 3]   # square(double(3)) = 36
+
+# Apply multiple functions to same value
+results is apply_all of [[double, square], 5]  # [10, 25]
+```
+
 ## Writing Library Functions
 
 Follow these conventions:

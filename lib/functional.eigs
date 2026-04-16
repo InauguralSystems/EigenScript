@@ -1,0 +1,112 @@
+# ============================================================
+# Functional Library — composition and higher-order utilities
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/functional.eigs"
+#
+#   composed is compose of [f, g]           # f(g(x))
+#   piped is pipe of [f, g]                 # g(f(x))
+#   chain of [[f, g, h], value]             # h(g(f(value)))
+#   applied is apply_all of [[f, g, h], x]  # [f(x), g(x), h(x)]
+#   identity of x                           # x
+#   constantly of 42                        # fn that always returns 42
+#   complement of pred                      # fn that negates pred
+#   times of [5, fn]                        # call fn(i) for i in 0..4
+
+# ---- identity: return argument unchanged ----
+define identity as:
+    return n
+
+# ---- constantly: return a function that always returns the given value ----
+# Note: EigenScript doesn't have closures, so this returns the value itself.
+# Use it as a sentinel or default value pattern.
+define constantly as:
+    return n
+
+# ---- compose: create composed function f(g(x)) ----
+# compose of [f, g] returns a list [f, g] — use apply_compose to call
+# For immediate use, see chain.
+define compose as:
+    return [n[0], n[1]]
+
+# ---- chain: apply a pipeline of functions to a value ----
+# chain of [fn_list, value] -> result
+# Applies functions left to right: chain of [[f, g, h], x] = h(g(f(x)))
+define chain as:
+    fns is n[0]
+    val is n[1]
+    for i in range of (len of fns):
+        val is fns[i] of val
+    return val
+
+# ---- apply_all: apply each function to the same value ----
+# apply_all of [fn_list, value] -> [f1(value), f2(value), ...]
+define apply_all as:
+    fns is n[0]
+    val is n[1]
+    result is []
+    for i in range of (len of fns):
+        append of [result, fns[i] of val]
+    return result
+
+# ---- complement: negate a predicate function ----
+# Since EigenScript lacks closures, this takes [pred, value] at call time.
+# complement of [pred, value] -> 1 if pred returns falsy, else 0
+define complement as:
+    pred is n[0]
+    val is n[1]
+    if pred of val:
+        return 0
+    return 1
+
+# ---- times: call function n times with index ----
+# times of [count, fn] -> list of results
+define times as:
+    count is n[0]
+    fn is n[1]
+    result is []
+    for i in range of count:
+        append of [result, fn of i]
+    return result
+
+# ---- juxt: apply multiple functions, return list of results ----
+# juxt of [[f, g, h], value] -> [f(value), g(value), h(value)]
+# Alias for apply_all with a more functional name
+define juxt as:
+    fns is n[0]
+    val is n[1]
+    result is []
+    for i in range of (len of fns):
+        append of [result, fns[i] of val]
+    return result
+
+# ---- when: conditional application ----
+# when of [pred, fn, value] -> fn(value) if pred(value), else value
+define when as:
+    pred is n[0]
+    fn is n[1]
+    val is n[2]
+    if pred of val:
+        return fn of val
+    return val
+
+# ---- unless: inverse conditional application ----
+# unless of [pred, fn, value] -> fn(value) if NOT pred(value), else value
+define unless as:
+    pred is n[0]
+    fn is n[1]
+    val is n[2]
+    if pred of val:
+        return val
+    return fn of val
+
+# ---- iterate: apply fn n times starting from value ----
+# iterate of [fn, value, count] -> fn(fn(...fn(value)...))
+define iterate as:
+    fn is n[0]
+    val is n[1]
+    count is n[2]
+    for i in range of count:
+        val is fn of val
+    return val

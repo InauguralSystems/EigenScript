@@ -102,6 +102,9 @@ Pure EigenScript libraries under `lib/`:
 | `lib/json.eigs` | `json_get`, `json_has`, `json_merge`, `json_from_pairs`, `json_pretty` |
 | `lib/test.eigs` | `assert_eq`, `assert_near`, `assert_true`, `test_summary` |
 | `lib/format.eigs` | `fmt_num`, `fmt_percent`, `fmt_bar`, `fmt_table`, `fmt_padded` |
+| `lib/sort.eigs` | `sort_asc`, `sort_desc`, `sort_by`, `sorted_indices`, `unique` |
+| `lib/map.eigs` | `map_new`, `map_get`, `map_set`, `map_has`, `map_keys`, `map_merge` |
+| `lib/functional.eigs` | `chain`, `apply_all`, `complement`, `when`, `iterate`, `times` |
 | `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response`, `check_openai` |
 | `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout`, `require_auth` |
 
