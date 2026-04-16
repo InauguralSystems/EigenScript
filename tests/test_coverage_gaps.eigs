@@ -228,4 +228,78 @@ assert of [(len of obs) == 4, "CG67 observe length"]
 assert of [(type of obs[0]) == "str", "CG68 observe trajectory is string"]
 assert of [(type of obs[1]) == "num", "CG69 observe entropy is number"]
 
+# --- val_type_name + value_to_string: exercise each VAL_ type ---
+assert of [(type of 42) == "num", "CG71 type num"]
+assert of [(type of "hi") == "str", "CG72 type str"]
+assert of [(type of [1,2]) == "list", "CG73 type list"]
+assert of [(type of null) == "none", "CG74 type null"]
+define nop as:
+    return null
+assert of [(type of nop) == "fn", "CG75 type fn"]
+assert of [(type of print) == "builtin", "CG76 type builtin"]
+d is {"a": 1}
+assert of [(type of d) == "dict", "CG77 type dict"]
+
+# Stringification of each type
+assert of [(str of 3.14) == "3.14", "CG78 str num"]
+assert of [(str of "abc") == "abc", "CG79 str str"]
+assert of [(str of null) == "null", "CG80 str null"]
+# List/dict/fn stringification just needs to not crash and return a string
+assert of [(type of (str of [1,2,3])) == "str", "CG81 str list"]
+assert of [(type of (str of d)) == "str", "CG82 str dict"]
+assert of [(type of (str of nop)) == "str", "CG83 str fn"]
+
+# --- is_truthy across value types ---
+if 0:
+    assert of [0 == 1, "CG84 0 should be falsy"]
+if "":
+    assert of [0 == 1, "CG85 empty str should be falsy"]
+if []:
+    assert of [0 == 1, "CG86 empty list should be falsy"]
+if null:
+    assert of [0 == 1, "CG87 null should be falsy"]
+truthy_hit is 0
+if 1:
+    truthy_hit is truthy_hit + 1
+if "x":
+    truthy_hit is truthy_hit + 1
+if [0]:
+    truthy_hit is truthy_hit + 1
+assert of [truthy_hit == 3, "CG84-87 truthy branches all fired"]
+
+# --- list_append / dict_set growth past initial capacity (8) ---
+big_list is []
+for i in range of 50:
+    append of [big_list, i]
+assert of [(len of big_list) == 50, "CG88 list grew past initial capacity"]
+assert of [big_list[49] == 49, "CG89 list grew preserves order"]
+
+big_dict is {}
+for i in range of 50:
+    dict_set of [big_dict, str of i, i * 2]
+assert of [(len of (keys of big_dict)) == 50, "CG90 dict grew past initial capacity"]
+assert of [big_dict["25"] == 50, "CG91 dict lookup after growth"]
+
+# --- dict_remove ---
+remove_test is {"keep": 1, "drop": 2, "also_keep": 3}
+dict_remove of [remove_test, "drop"]
+assert of [(has_key of [remove_test, "drop"]) == 0, "CG92 dict_remove worked"]
+assert of [(has_key of [remove_test, "keep"]) == 1, "CG93 dict_remove left others"]
+
+# --- arena_track_string + arena_alloc growth ---
+# When the arena is active, make_str calls arena_track_string.
+# Allocate many strings under the arena to exercise the track-string
+# growth path and bump arena_alloc utilization.
+arena_mark of null
+for i in range of 200:
+    s is "string_" + str of i
+arena_reset of null
+# After reset the arena is no longer active; just verify we survived.
+post is "ok"
+assert of [post == "ok", "CG94 arena-active string loop survived"]
+
+# arena_stats returns total bytes allocated as a number
+stats is arena_stats of null
+assert of [(type of stats) == "num", "CG95 arena_stats returns number"]
+
 print of "All coverage-gap tests passed"
