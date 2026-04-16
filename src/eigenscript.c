@@ -21,6 +21,26 @@ jmp_buf g_return_buf;
 Value *g_return_val = NULL;
 int g_returning = 0;
 int g_parse_errors = 0;
+char g_error_msg[4096] = "";
+int g_has_error = 0;
+
+/* Set runtime error — captured by try/catch, or printed to stderr.
+ * Inside try blocks, the error is silently captured.
+ * Outside try blocks, it also prints to stderr. */
+static int g_try_depth = 0;
+
+static void runtime_error(int line, const char *fmt, ...) {
+    char tmp[3900];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(tmp, sizeof(tmp), fmt, args);
+    va_end(args);
+    snprintf(g_error_msg, sizeof(g_error_msg), "Error line %d: %s", line, tmp);
+    g_has_error = 1;
+    if (g_try_depth == 0) {
+        fprintf(stderr, "%s\n", g_error_msg);
+    }
+}
 
 static const char* tok_type_name(TokType t) {
     switch (t) {
@@ -66,6 +86,8 @@ static const char* tok_type_name(TokType t) {
         case TOK_INDENT: return "indent";
         case TOK_DEDENT: return "dedent";
         case TOK_EOF: return "end of file";
+        case TOK_TRY: return "'try'";
+        case TOK_CATCH: return "'catch'";
         default: return "?";
     }
 }
@@ -395,6 +417,8 @@ static TokType keyword_type(const char *word) {
     if (strcmp(word, "oscillating") == 0) return TOK_OSCILLATING;
     if (strcmp(word, "diverging") == 0) return TOK_DIVERGING;
     if (strcmp(word, "equilibrium") == 0) return TOK_EQUILIBRIUM;
+    if (strcmp(word, "try") == 0) return TOK_TRY;
+    if (strcmp(word, "catch") == 0) return TOK_CATCH;
     return TOK_IDENT;
 }
 
@@ -763,6 +787,13 @@ static void free_ast(ASTNode *node) {
             break;
         case AST_RETURN:
             free_ast(node->data.ret.expr);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < node->data.trycatch.try_count; i++) free_ast(node->data.trycatch.try_body[i]);
+            free(node->data.trycatch.try_body);
+            for (int i = 0; i < node->data.trycatch.catch_count; i++) free_ast(node->data.trycatch.catch_body[i]);
+            free(node->data.trycatch.catch_body);
+            free(node->data.trycatch.err_name);
             break;
         case AST_BLOCK:
             for (int i = 0; i < node->data.block.count; i++) free_ast(node->data.block.stmts[i]);
@@ -1175,6 +1206,34 @@ static ASTNode* parse_statement(Parser *p) {
         return n;
     }
 
+    if (t->type == TOK_TRY) {
+        p_advance(p);
+        p_expect(p, TOK_COLON);
+        p_skip_newlines(p);
+        int try_count;
+        ASTNode **try_body = parse_block(p, &try_count);
+        p_skip_newlines(p);
+        /* Expect: catch err_name: */
+        p_expect(p, TOK_CATCH);
+        Token *err_tok = p_cur(p);
+        char *err_name = "err";
+        if (err_tok->type == TOK_IDENT) {
+            err_name = err_tok->str_val;
+            p_advance(p);
+        }
+        p_expect(p, TOK_COLON);
+        p_skip_newlines(p);
+        int catch_count;
+        ASTNode **catch_body = parse_block(p, &catch_count);
+        ASTNode *n = make_node(AST_TRY, t->line);
+        n->data.trycatch.try_body = try_body;
+        n->data.trycatch.try_count = try_count;
+        n->data.trycatch.err_name = strdup(err_name);
+        n->data.trycatch.catch_body = catch_body;
+        n->data.trycatch.catch_count = catch_count;
+        return n;
+    }
+
     if (t->type == TOK_IF) {
         p_advance(p);
         ASTNode *cond = parse_expression(p);
@@ -1372,7 +1431,7 @@ Value* eval_node(ASTNode *node, Env *env) {
     case AST_IDENT: {
         Value *v = env_get(env, node->data.ident.name);
         if (!v) {
-            fprintf(stderr, "Error line %d: undefined variable '%s'\n", node->line, node->data.ident.name);
+            runtime_error(node->line, "undefined variable '%s'", node->data.ident.name);
             return make_null();
         }
         return v;
@@ -1470,8 +1529,8 @@ Value* eval_node(ASTNode *node, Env *env) {
             if (strcmp(op, ">=") == 0) return make_num(left->data.num >= right->data.num ? 1 : 0);
         }
 
-        fprintf(stderr, "Error line %d: cannot apply '%s' to %s and %s\n",
-                node->line, op, val_type_name(left->type), val_type_name(right->type));
+        runtime_error(node->line, "cannot apply '%s' to %s and %s",
+                op, val_type_name(left->type), val_type_name(right->type));
         return make_null();
     }
 
@@ -1480,7 +1539,7 @@ Value* eval_node(ASTNode *node, Env *env) {
         if (strcmp(node->data.unary.op, "-") == 0) {
             if (operand->type == VAL_NUM)
                 return make_num(-operand->data.num);
-            fprintf(stderr, "Error line %d: cannot negate %s\n", node->line, val_type_name(operand->type));
+            runtime_error(node->line, "cannot negate %s", val_type_name(operand->type));
             return make_null();
         }
         if (strcmp(node->data.unary.op, "not") == 0) {
@@ -1531,8 +1590,8 @@ Value* eval_node(ASTNode *node, Env *env) {
             return result;
         }
 
-        fprintf(stderr, "Error line %d: cannot call %s (not a function)\n",
-                node->line, val_type_name(left_val->type));
+        runtime_error(node->line, "cannot call %s (not a function)",
+                val_type_name(left_val->type));
         return make_null();
     }
 
@@ -1578,8 +1637,8 @@ Value* eval_node(ASTNode *node, Env *env) {
     case AST_FOR: {
         Value *iter = eval_node(node->data.forloop.iter, env);
         if (!iter || iter->type != VAL_LIST) {
-            fprintf(stderr, "Error line %d: 'for' requires a list, got %s\n",
-                    node->line, iter ? val_type_name(iter->type) : "null");
+            runtime_error(node->line, "'for' requires a list, got %s",
+                    iter ? val_type_name(iter->type) : "null");
             return make_null();
         }
         Value *result = make_null();
@@ -1612,6 +1671,34 @@ Value* eval_node(ASTNode *node, Env *env) {
         return val;
     }
 
+    case AST_TRY: {
+        /* Clear error state and run try body */
+        g_has_error = 0;
+        g_error_msg[0] = '\0';
+        g_try_depth++;
+        Value *result = make_null();
+        for (int i = 0; i < node->data.trycatch.try_count; i++) {
+            result = eval_node(node->data.trycatch.try_body[i], env);
+            if (g_returning) { g_try_depth--; return result; }
+            if (g_has_error) break;
+        }
+        g_try_depth--;
+        if (g_has_error) {
+            /* Error occurred — run catch body with error bound */
+            g_has_error = 0;
+            Env *catch_env = env_new(env);
+            env_set_local(catch_env, node->data.trycatch.err_name, make_str(g_error_msg));
+            g_error_msg[0] = '\0';
+            result = make_null();
+            for (int i = 0; i < node->data.trycatch.catch_count; i++) {
+                result = eval_node(node->data.trycatch.catch_body[i], catch_env);
+                if (g_returning) { env_free(catch_env); return result; }
+            }
+            env_free(catch_env);
+        }
+        return result;
+    }
+
     case AST_LIST: {
         Value *list = make_list(node->data.list.count);
         for (int i = 0; i < node->data.list.count; i++) {
@@ -1627,8 +1714,7 @@ Value* eval_node(ASTNode *node, Env *env) {
             int i = (int)idx->data.num;
             if (i >= 0 && i < target->data.list.count)
                 return target->data.list.items[i];
-            fprintf(stderr, "Error line %d: index %d out of range (length %d)\n", node->line,
-                    i, target->data.list.count);
+            runtime_error(node->line, "index %d out of range (length %d)", i, target->data.list.count);
             return make_null();
         }
         if (target->type == VAL_STR && idx->type == VAL_NUM) {
@@ -1638,10 +1724,10 @@ Value* eval_node(ASTNode *node, Env *env) {
                 char buf[2] = {target->data.str[i], '\0'};
                 return make_str(buf);
             }
-            fprintf(stderr, "Error line %d: index %d out of range (length %d)\n", node->line, i, len);
+            runtime_error(node->line, "index %d out of range (length %d)", i, len);
             return make_null();
         }
-        fprintf(stderr, "Error line %d: cannot index %s\n", node->line, val_type_name(target->type));
+        runtime_error(node->line, "cannot index %s", val_type_name(target->type));
         return make_null();
     }
 
@@ -1820,6 +1906,17 @@ Value* builtin_assert(Value *arg) {
         fprintf(stderr, "ASSERT FAIL\n");
         exit(1);
     }
+    return make_null();
+}
+
+Value* builtin_throw(Value *arg) {
+    char *msg = value_to_string(arg);
+    snprintf(g_error_msg, sizeof(g_error_msg), "%s", msg);
+    g_has_error = 1;
+    if (g_try_depth == 0) {
+        fprintf(stderr, "%s\n", g_error_msg);
+    }
+    free(msg);
     return make_null();
 }
 
@@ -4482,6 +4579,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "append", make_builtin(builtin_append));
     env_set_local(env, "report", make_builtin(builtin_report));
     env_set_local(env, "assert", make_builtin(builtin_assert));
+    env_set_local(env, "throw", make_builtin(builtin_throw));
     env_set_local(env, "observe", make_builtin(builtin_observe));
     env_set_local(env, "type", make_builtin(builtin_type));
     env_set_local(env, "json_encode", make_builtin(builtin_json_encode));

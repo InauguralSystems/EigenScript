@@ -11,7 +11,19 @@ All notable changes to EigenScript are documented here.
 - Backward compatible: `define foo as:` with single `n` argument still works
 - `n` is always available in all functions for compatibility with existing code
 
-### Fixes
+### Error Handling
+- **try/catch blocks**: `try: ... catch err: ...` — runtime errors are now recoverable
+- **throw builtin**: `throw of "message"` — raise errors from user code
+- Nested try/catch with re-throw support
+- All runtime errors (undefined variable, type error, index out of bounds, etc.) are catchable
+
+### Closures
+- Functions capture their defining environment (already worked, now documented)
+- `make_adder`, `make_multiplier`, factory patterns all work correctly
+
+### Code Quality
+- Removed `n` binding bloat from named-param functions
+- All 24 stdlib modules converted to named parameters
 - Fixed potential snprintf buffer overflow in list-to-string conversion (CodeQL #14-16)
 - Added least-privilege permissions to CI workflow (CodeQL #17)
 

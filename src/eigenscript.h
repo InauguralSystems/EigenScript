@@ -23,6 +23,7 @@
 #endif
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -59,6 +60,7 @@ typedef enum {
     TOK_FOR, TOK_IN, TOK_NULL,
     TOK_WHAT, TOK_WHO, TOK_WHEN, TOK_WHERE, TOK_WHY, TOK_HOW,
     TOK_CONVERGED, TOK_STABLE, TOK_IMPROVING, TOK_OSCILLATING, TOK_DIVERGING, TOK_EQUILIBRIUM,
+    TOK_TRY, TOK_CATCH,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
     TOK_LT, TOK_GT, TOK_LE, TOK_GE, TOK_EQ, TOK_NE, TOK_ASSIGN,
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACKET, TOK_RBRACKET,
@@ -88,7 +90,8 @@ typedef enum {
     AST_IF, AST_LOOP, AST_FUNC, AST_RETURN,
     AST_BLOCK, AST_LIST, AST_INDEX, AST_LISTCOMP, AST_FOR,
     AST_PROGRAM,
-    AST_INTERROGATE, AST_PREDICATE
+    AST_INTERROGATE, AST_PREDICATE,
+    AST_TRY
 } ASTType;
 
 typedef struct ASTNode ASTNode;
@@ -116,6 +119,7 @@ struct ASTNode {
         struct { ASTNode **stmts; int count; } program;
         struct { int kind; ASTNode *expr; } interrogate;
         struct { int kind; } predicate;
+        struct { ASTNode **try_body; int try_count; char *err_name; ASTNode **catch_body; int catch_count; } trycatch;
     } data;
 };
 
@@ -231,6 +235,8 @@ extern jmp_buf g_return_buf;
 extern Value *g_return_val;
 extern int g_returning;
 extern int g_parse_errors;
+extern char g_error_msg[4096];
+extern int g_has_error;
 extern char g_script_dir[4096];
 
 /* ---- Cross-file functions for MODEL tensor builtins ---- */

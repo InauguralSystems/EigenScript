@@ -129,6 +129,51 @@ for item in items:
     print of item
 ```
 
+## Error Handling
+
+```eigenscript
+try:
+    x is items[100]
+catch err:
+    print of f"Caught: {err}"
+```
+
+Errors inside a `try` block are caught and bound to the variable after `catch`.
+Without a `try` block, errors print to stderr and return null.
+
+Use `throw` to raise errors from user code:
+
+```eigenscript
+define safe_divide(a, b) as:
+    if b == 0:
+        throw of "division by zero"
+    return a / b
+
+try:
+    result is safe_divide of [10, 0]
+catch err:
+    print of f"Error: {err}"
+```
+
+Try/catch blocks can be nested. Errors re-thrown in a catch block are caught
+by the outer try.
+
+## Closures
+
+Functions capture their defining environment:
+
+```eigenscript
+define make_adder(x) as:
+    define adder(y) as:
+        return x + y
+    return adder
+
+add5 is make_adder of 5
+print of (add5 of 10)    # 15
+```
+
+This works for factory patterns, callbacks, and higher-order programming.
+
 ## Operators
 
 **Arithmetic:** `+`, `-`, `*`, `/`, `%`
