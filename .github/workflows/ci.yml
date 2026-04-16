@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Verify binary
+        run: ./src/eigenscript --version
+
+      - name: Run test suite
+        run: cd tests && bash run_all_tests.sh
+
+      - name: Run example programs
+        run: |
+          for f in examples/hello.eigs examples/basics.eigs examples/fizzbuzz.eigs examples/fibonacci.eigs examples/sort.eigs; do
+            echo "--- Running $f ---"
+            ./src/eigenscript "$f"
+          done

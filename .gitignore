@@ -1,2 +1,33 @@
+# Build artifacts
 src/eigenscript
+src/eigenscript-full
 *.o
+*.a
+*.so
+*.dylib
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+core
+core.*
+
+# Test artifacts
+tests/*.bin
+tests/*.tmp
+
+# Environment
+.env
+.codex
