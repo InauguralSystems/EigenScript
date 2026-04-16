@@ -1,0 +1,56 @@
+# HTTP extension builtin tests (state-only, no network).
+# Covers route registration, static handler registration, request-state defaults.
+# Runs only when the binary is compiled with EIGENSCRIPT_EXT_HTTP=1
+# (gated by run_all_tests.sh).
+
+# ---- http_route: minimal 3-arg form (method, path, body) ----
+r1 is http_route of ["GET", "/a", "body-a"]
+assert of [r1 == "route registered", "HTTP01 http_route GET returns ack"]
+
+# ---- http_route: 4-arg form (method, path, kind, payload) ----
+r2 is http_route of ["POST", "/b", "static", "body-b"]
+assert of [r2 == "route registered", "HTTP02 http_route POST 4-arg returns ack"]
+
+# ---- http_route: bad argument shape returns null ----
+r_bad1 is http_route of 42
+assert of [r_bad1 == null, "HTTP03 http_route non-list arg returns null"]
+
+r_bad2 is http_route of ["GET"]
+assert of [r_bad2 == null, "HTTP04 http_route too-few-elements returns null"]
+
+# ---- http_route_authed: registers a route requiring auth ----
+r3 is http_route_authed of ["GET", "/secret", "secret-body"]
+assert of [r3 == "route registered", "HTTP05 http_route_authed returns ack"]
+
+# ---- http_static: registers static prefix + dir ----
+s1 is http_static of ["/static", "/tmp"]
+assert of [s1 == "static registered", "HTTP06 http_static returns ack"]
+
+# ---- http_static: bad args return null ----
+s_bad is http_static of "just-a-string"
+assert of [s_bad == null, "HTTP07 http_static non-list returns null"]
+
+# ---- http_request_body: default empty-request returns '{}' ----
+body is http_request_body of null
+assert of [body == "{}", "HTTP08 http_request_body default is '{}'"]
+
+# ---- http_session_id: default session is 'anonymous' ----
+sid is http_session_id of null
+assert of [sid == "anonymous", "HTTP09 http_session_id default is 'anonymous'"]
+
+# ---- http_request_headers: default empty outside a request ----
+hdrs is http_request_headers of null
+assert of [hdrs == "", "HTTP10 http_request_headers default is empty"]
+
+# ---- http_post: malformed args return empty string ----
+# (Does not actually hit the network; argv validation only.)
+p_bad1 is http_post of null
+assert of [p_bad1 == "", "HTTP11 http_post null returns empty string"]
+
+p_bad2 is http_post of ["just-url"]
+assert of [p_bad2 == "", "HTTP12 http_post too-few-elements returns empty string"]
+
+p_bad3 is http_post of ["", "{}", "body"]
+assert of [p_bad3 == "", "HTTP13 http_post empty URL returns empty string"]
+
+print of "All http tests passed"

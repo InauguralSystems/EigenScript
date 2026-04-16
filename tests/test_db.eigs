@@ -1,0 +1,37 @@
+# Database extension tests.
+# Runs only when the binary is compiled with EIGENSCRIPT_EXT_DB=1
+# (gated by run_all_tests.sh). Tests exercise the "no-DATABASE_URL" /
+# "no-connection" safety paths. Real-DB tests are a TODO and should be
+# added behind an env-var gate when a Postgres instance is available.
+
+# ---- db_connect: without DATABASE_URL returns a well-formed status JSON.
+# NOTE: Some CI environments DO set DATABASE_URL, so we accept either the
+# "no_database" path or the "connected"/"error" path.
+conn is db_connect of null
+has_status is (contains of [conn, "status"])
+assert of [has_status == 1, "DB01 db_connect returns JSON containing 'status'"]
+
+# ---- db_query_value: without a live connection returns ""
+# (If a connection happens to be live, this still succeeds since COUNT(*) of
+# nonexistent table returns "" on error too.)
+v is db_query_value of "SELECT 1 FROM _eigs_no_such_table_XXXXX"
+assert of [v == "", "DB02 db_query_value on bad table returns empty string"]
+
+# ---- db_query_value: non-string arg returns ""
+v_bad is db_query_value of 42
+assert of [v_bad == "", "DB03 db_query_value non-string returns empty string"]
+
+# ---- db_query_json: bad/empty query returns "[]"
+j is db_query_json of "SELECT 1 FROM _eigs_no_such_table_XXXXX"
+assert of [j == "[]", "DB04 db_query_json on bad table returns '[]'"]
+
+j_bad is db_query_json of 42
+assert of [j_bad == "[]", "DB05 db_query_json non-string returns '[]'"]
+
+# ---- db_execute: null/bad arg returns 'error' or 'no_db'
+# (Depends on whether a connection happens to be active in the env.)
+e is db_execute of null
+is_safe is ((e == "error") or (e == "no_db"))
+assert of [is_safe == 1, "DB06 db_execute null returns 'error' or 'no_db'"]
+
+print of "All db tests passed"

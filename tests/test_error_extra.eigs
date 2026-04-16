@@ -1,0 +1,125 @@
+# Additional error-path coverage (assert-based).
+# Complements the substring-based error checks in run_all_tests.sh
+# by exercising try/catch around runtime errors and edge-case types.
+#
+# These are positive tests: we expect specific behavior after an error is
+# caught (or warned), not that the script aborts.
+
+# ---- try/catch around an undefined variable ----
+caught1 is 0
+msg1 is ""
+try:
+    x is no_such_identifier_1
+catch e:
+    caught1 is 1
+    msg1 is e
+assert of [caught1 == 1, "EE01 try/catch caught undefined variable"]
+assert of [(contains of [msg1, "undefined variable"]) == 1, "EE01 message mentions 'undefined variable'"]
+
+# ---- try/catch around an index-out-of-range ----
+caught2 is 0
+msg2 is ""
+try:
+    items is [10, 20]
+    y is items[99]
+catch e:
+    caught2 is 1
+    msg2 is e
+assert of [caught2 == 1, "EE02 try/catch caught out-of-range index"]
+assert of [(contains of [msg2, "out of range"]) == 1, "EE02 message mentions 'out of range'"]
+
+# ---- try/catch around indexing a number ----
+caught3 is 0
+msg3 is ""
+try:
+    n is 42
+    z is n[0]
+catch e:
+    caught3 is 1
+    msg3 is e
+assert of [caught3 == 1, "EE03 try/catch caught index-on-num"]
+assert of [(contains of [msg3, "cannot index"]) == 1, "EE03 message mentions 'cannot index'"]
+
+# ---- try/catch around calling a non-function ----
+caught4 is 0
+try:
+    notfn is 5
+    r is notfn of 10
+catch e:
+    caught4 is 1
+assert of [caught4 == 1, "EE04 try/catch caught call-of-non-function"]
+
+# ---- try/catch around bad subtraction (list - num) ----
+caught5 is 0
+try:
+    w is [1, 2] - 5
+catch e:
+    caught5 is 1
+assert of [caught5 == 1, "EE05 try/catch caught list-minus-num"]
+
+# ---- try/catch around bad negation ----
+caught6 is 0
+try:
+    bad_neg is (0 - "hi")
+catch e:
+    caught6 is 1
+assert of [caught6 == 1, "EE06 try/catch caught num-minus-string"]
+
+# ---- Division by zero: warns but yields a value (doesn't raise) ----
+# Interpreter convention: warning printed to stderr, expression evaluates to 0.
+v_dz is 10 / 0
+assert of [v_dz == 0, "EE07 division by zero returns 0"]
+
+# ---- Integer 0 / 0 is also 0 ----
+v_dz2 is 0 / 0
+assert of [v_dz2 == 0, "EE08 0/0 returns 0"]
+
+# ---- try/catch around throw with custom message ----
+caught9 is 0
+msg9 is ""
+try:
+    throw of "boom-custom-EE09"
+catch e:
+    caught9 is 1
+    msg9 is e
+assert of [caught9 == 1, "EE09 throw captured by try/catch"]
+assert of [(contains of [msg9, "boom-custom-EE09"]) == 1, "EE09 thrown message preserved"]
+
+# ---- Nested try/catch: inner swallows, outer doesn't see it ----
+outer_caught is 0
+inner_caught is 0
+try:
+    try:
+        r is no_such_10
+    catch e:
+        inner_caught is 1
+    # After the inner catch, execution continues normally:
+    z is 42
+catch e:
+    outer_caught is 1
+assert of [inner_caught == 1, "EE10 inner catch fired"]
+assert of [outer_caught == 0, "EE10 outer catch did NOT fire"]
+assert of [z == 42, "EE10 execution resumed after inner catch"]
+
+# ---- try/catch around indexing empty list ----
+caught11 is 0
+try:
+    empty is []
+    r is empty[0]
+catch e:
+    caught11 is 1
+assert of [caught11 == 1, "EE11 try/catch caught empty-list index"]
+
+# ---- Error in a called function propagates to caller's try/catch ----
+define propagate_fn as:
+    bad is n[0]
+    return bad
+
+caught12 is 0
+try:
+    r is propagate_fn of 99
+catch e:
+    caught12 is 1
+assert of [caught12 == 1, "EE12 error inside function body propagates to caller try/catch"]
+
+print of "All error_extra tests passed"
