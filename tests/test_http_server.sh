@@ -129,6 +129,37 @@ else
     fail "HS07 OPTIONS preflight" "status=$STATUS"
 fi
 
+# ---- Negative Content-Length rejected (regression) ----
+# Previously, atoi("-1") returned -1 and body_received >= content_length
+# was trivially true, so the read loop exited mid-body. Fix parses with
+# strtol and closes the connection on any value outside [0, MAX_BODY].
+# We test the server by opening a TCP socket directly and sending a
+# malformed request; the server should close the connection without
+# emitting a full HTTP response.
+if command -v timeout >/dev/null 2>&1; then
+    CL_RESP=$(timeout 2 bash -c "
+        exec 3<>/dev/tcp/127.0.0.1/$PORT
+        printf 'POST /ping HTTP/1.1\r\nHost: localhost\r\nContent-Length: -1\r\n\r\nHELLO' >&3
+        cat <&3
+        exec 3<&-
+    " 2>/dev/null || true)
+    if [ -z "$CL_RESP" ]; then
+        ok "HS08 negative Content-Length: server closes (no response)"
+    else
+        fail "HS08 negative Content-Length: server responded" "got $(echo "$CL_RESP" | head -1)"
+    fi
+
+    # Sanity: the server must still be alive after the malformed request.
+    RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/ping")
+    if [ "$RESP" = "pong" ]; then
+        ok "HS09 server still healthy after malformed request"
+    else
+        fail "HS09 server health after malformed request" "got '$RESP'"
+    fi
+else
+    echo "  SKIP: HS08/HS09 (timeout not available)"
+fi
+
 # ---- Summary ----
 echo ""
 echo "HTTP_SERVER: $PASS passed, $FAIL failed"
