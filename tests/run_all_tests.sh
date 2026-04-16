@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$(dirname "$0")/../src"
 
 PASS=0
@@ -631,7 +632,7 @@ echo ""
 
 # [21] Example smoke tests
 echo "[21/21] Example Smoke Tests"
-EX_OUTPUT=$(bash "$(dirname "$0")/test_examples.sh" 2>&1)
+EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 
 # Count passes and skips from output

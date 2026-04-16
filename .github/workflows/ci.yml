@@ -23,10 +23,3 @@ jobs:
 
       - name: Run test suite
         run: cd tests && bash run_all_tests.sh
-
-      - name: Run example programs
-        run: |
-          for f in examples/hello.eigs examples/basics.eigs examples/fizzbuzz.eigs examples/fibonacci.eigs examples/sort.eigs; do
-            echo "--- Running $f ---"
-            ./src/eigenscript "$f"
-          done
