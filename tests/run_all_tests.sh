@@ -825,8 +825,23 @@ else
 fi
 echo ""
 
-# [39] Example smoke tests
-echo "[39/39] Example Smoke Tests"
+# [40] Pipe operator and lambdas
+echo "[40/40] Pipe & Lambda (15 checks)"
+PL_OUTPUT=$(./eigenscript ../tests/test_pipe_lambda.eigs 2>&1)
+if echo "$PL_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 15))
+    PASS=$((PASS + 15))
+    echo "  PASS: all 15 pipe/lambda checks"
+else
+    TOTAL=$((TOTAL + 15))
+    FAIL=$((FAIL + 15))
+    echo "  FAIL: pipe/lambda tests"
+    echo "$PL_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [41] Example smoke tests
+echo "[41/41] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

@@ -1,0 +1,58 @@
+# Pipe operator and lambda tests
+load_file of "lib/test.eigs"
+load_file of "lib/list.eigs"
+load_file of "lib/sort.eigs"
+
+# === Pipe ===
+
+# Basic pipe: a |> b desugars to b of a
+assert_eq of [5 |> str, "5", "pipe str"]
+assert_eq of [-3 |> abs, 3, "pipe abs"]
+
+# Pipe chain
+items is [5, 3, 1, 4, 2]
+assert_eq of [items |> sort_asc |> len, 5, "pipe chain"]
+
+# Pipe with user function
+define double(x) as:
+    return x * 2
+assert_eq of [21 |> double, 42, "pipe user fn"]
+
+# === Lambda ===
+
+# Basic lambda
+sq is (x) => x * x
+assert_eq of [sq of 5, 25, "lambda basic"]
+
+# Lambda with map
+result is map of [[1, 2, 3], (x) => x * 10]
+assert_eq of [result[0], 10, "lambda map[0]"]
+assert_eq of [result[2], 30, "lambda map[2]"]
+
+# Lambda with filter
+evens is filter of [[1, 2, 3, 4, 5], (x) => (x % 2) == 0]
+assert_eq of [len of evens, 2, "lambda filter len"]
+assert_eq of [evens[0], 2, "lambda filter[0]"]
+
+# Multi-param lambda
+add is (a, b) => a + b
+assert_eq of [add of [3, 4], 7, "lambda multi-param"]
+
+# Lambda captures closure
+factor is 5
+scaled is map of [[1, 2, 3], (x) => x * factor]
+assert_eq of [scaled[0], 5, "lambda closure[0]"]
+assert_eq of [scaled[2], 15, "lambda closure[2]"]
+
+# No-param lambda
+greet is () => "hello"
+assert_eq of [greet of null, "hello", "lambda no-param"]
+
+# Lambda with string
+shout is (s) => s + "!"
+assert_eq of [shout of "hey", "hey!", "lambda string"]
+
+# Pipe with lambda
+assert_eq of [5 |> (x) => x * 3, 15, "pipe lambda"]
+
+test_summary of null

@@ -97,6 +97,8 @@ static const char* tok_type_name(TokType t) {
         case TOK_IMPORT: return "'import'";
         case TOK_MATCH: return "'match'";
         case TOK_CASE: return "'case'";
+        case TOK_PIPE: return "'|>'";
+        case TOK_ARROW: return "'=>'";
         default: return "?";
     }
 }
@@ -781,7 +783,12 @@ TokenList tokenize(const char *source) {
                 break;
             case '=':
                 if (*(p+1) == '=') { tok_add(&tl, TOK_EQ, 0, NULL, line); p += 2; }
+                else if (*(p+1) == '>') { tok_add(&tl, TOK_ARROW, 0, NULL, line); p += 2; }
                 else { tok_add(&tl, TOK_ASSIGN, 0, NULL, line); p++; }
+                break;
+            case '|':
+                if (*(p+1) == '>') { tok_add(&tl, TOK_PIPE, 0, NULL, line); p += 2; }
+                else { p++; } /* bare | not used */
                 break;
             default:
                 fprintf(stderr, "Syntax error line %d: unexpected character '%c'\n", line, *p);
@@ -914,6 +921,12 @@ static void free_ast(ASTNode *node) {
             for (int i = 0; i < node->data.trycatch.catch_count; i++) free_ast(node->data.trycatch.catch_body[i]);
             free(node->data.trycatch.catch_body);
             free(node->data.trycatch.err_name);
+            break;
+        case AST_LAMBDA:
+            for (int i = 0; i < node->data.lambda.param_count; i++)
+                free(node->data.lambda.params[i]);
+            free(node->data.lambda.params);
+            /* Don't free body — it's shared with the return wrapper created at eval time */
             break;
         case AST_MATCH:
             free_ast(node->data.match.expr);
@@ -1106,6 +1119,44 @@ static ASTNode* parse_primary(Parser *p) {
     }
 
     if (t->type == TOK_LPAREN) {
+        /* Check if this is a lambda: (params) => expr */
+        int saved = p->pos;
+        int is_lambda = 0;
+        p_advance(p); /* skip ( */
+        /* Scan forward: if we see IDENT [, IDENT]* ) => then it's a lambda */
+        if (p_cur(p)->type == TOK_IDENT || p_cur(p)->type == TOK_RPAREN) {
+            int scan = p->pos;
+            while (p->tl->tokens[scan].type == TOK_IDENT || p->tl->tokens[scan].type == TOK_COMMA)
+                scan++;
+            if (p->tl->tokens[scan].type == TOK_RPAREN && p->tl->tokens[scan+1].type == TOK_ARROW)
+                is_lambda = 1;
+        }
+        p->pos = saved;
+
+        if (is_lambda) {
+            p_advance(p); /* skip ( */
+            char **params = malloc(16 * sizeof(char*));
+            int param_count = 0;
+            while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
+                params[param_count++] = strdup(p_cur(p)->str_val);
+                p_advance(p);
+                if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+            }
+            if (param_count == 0) {
+                params[0] = strdup("n");
+                param_count = 1;
+            }
+            p_expect(p, TOK_RPAREN);
+            p_expect(p, TOK_ARROW); /* => */
+            ASTNode *body = parse_expression(p);
+            ASTNode *n = make_node(AST_LAMBDA, t->line);
+            n->data.lambda.params = params;
+            n->data.lambda.param_count = param_count;
+            n->data.lambda.body = body;
+            return n;
+        }
+
+        /* Regular grouping */
         p_advance(p);
         ASTNode *expr = parse_expression(p);
         p_expect(p, TOK_RPAREN);
@@ -1359,8 +1410,22 @@ static ASTNode* parse_or(Parser *p) {
     return left;
 }
 
+static ASTNode* parse_pipe(Parser *p) {
+    ASTNode *left = parse_or(p);
+    while (p_cur(p)->type == TOK_PIPE) {
+        p_advance(p);
+        ASTNode *fn = parse_or(p);
+        /* a |> b desugars to b of a */
+        ASTNode *n = make_node(AST_RELATION, p_cur(p)->line);
+        n->data.relation.left = fn;
+        n->data.relation.right = left;
+        left = n;
+    }
+    return left;
+}
+
 static ASTNode* parse_expression(Parser *p) {
-    return parse_or(p);
+    return parse_pipe(p);
 }
 
 static ASTNode* parse_statement(Parser *p) {
@@ -1941,6 +2006,18 @@ Value* eval_node(ASTNode *node, Env *env) {
             env_free(loop_env);
         }
         return result;
+    }
+
+    case AST_LAMBDA: {
+        /* Create a return-wrapping AST node for the body expression */
+        ASTNode *ret = make_node(AST_RETURN, node->line);
+        ret->data.ret.expr = node->data.lambda.body;
+        ASTNode **body = malloc(sizeof(ASTNode*));
+        body[0] = ret;
+        Value *fn = make_fn("", node->data.lambda.params,
+                           node->data.lambda.param_count, body, 1, env);
+        env->captured = 1;
+        return fn;
     }
 
     case AST_MATCH: {

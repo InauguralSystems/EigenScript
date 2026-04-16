@@ -68,6 +68,7 @@ typedef enum {
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACKET, TOK_RBRACKET,
     TOK_COMMA, TOK_COLON, TOK_DOT,
     TOK_LBRACE, TOK_RBRACE,
+    TOK_PIPE, TOK_ARROW,
     TOK_NEWLINE, TOK_INDENT, TOK_DEDENT,
     TOK_EOF
 } TokType;
@@ -95,7 +96,7 @@ typedef enum {
     AST_PROGRAM,
     AST_INTERROGATE, AST_PREDICATE,
     AST_TRY, AST_DICT, AST_DOT, AST_BREAK, AST_CONTINUE, AST_DOT_ASSIGN, AST_IMPORT,
-    AST_MATCH
+    AST_MATCH, AST_LAMBDA
 } ASTType;
 
 typedef struct ASTNode ASTNode;
@@ -129,6 +130,7 @@ struct ASTNode {
         struct { ASTNode *target; char *key; ASTNode *expr; } dot_assign;
         struct { char *module_name; } import;
         struct { ASTNode *expr; ASTNode **patterns; ASTNode ***bodies; int *body_counts; int case_count; } match;
+        struct { char **params; int param_count; ASTNode *body; } lambda;
     } data;
 };
 
