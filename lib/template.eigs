@@ -16,13 +16,42 @@
 
 # ---- render: interpolate {{key}} placeholders in a string ----
 # render of [template, vars] -> string
+#
+# Scans the template left-to-right and substitutes each {{key}} by
+# looking it up in vars. Values are NOT re-scanned for further
+# placeholders, so a value containing {{other}} is emitted verbatim
+# instead of being expanded on a second pass — closing the template-
+# injection path where a user-supplied value could reference another
+# variable.
 define render(tmpl, vars) as:
-    result is tmpl
-    for i in range of (len of vars):
-        key is vars[i][0]
-        val is str of vars[i][1]
-        placeholder is "{{" + key + "}}"
-        result is str_replace of [result, placeholder, val]
+    result is ""
+    remaining is tmpl
+    guard is 0
+    loop while (len of remaining) > 0:
+        guard is guard + 1
+        if guard > 100000:
+            # Hard stop — paranoid defence; normal templates never hit this.
+            return result + remaining
+        open_pos is index_of of [remaining, "{{"]
+        if open_pos < 0:
+            result is result + remaining
+            return result
+        # Literal prefix before the placeholder.
+        result is result + (substr of [remaining, 0, open_pos])
+        # Look for the matching }} after the opener.
+        after_open is substr of [remaining, open_pos + 2, (len of remaining) - open_pos - 2]
+        close_pos is index_of of [after_open, "}}"]
+        if close_pos < 0:
+            # Unterminated placeholder — emit it verbatim and stop.
+            result is result + (substr of [remaining, open_pos, (len of remaining) - open_pos])
+            return result
+        key is substr of [after_open, 0, close_pos]
+        val is "{{" + key + "}}"
+        for i in range of (len of vars):
+            if vars[i][0] == key:
+                val is str of vars[i][1]
+        result is result + val
+        remaining is substr of [after_open, close_pos + 2, (len of after_open) - close_pos - 2]
     return result
 
 # ---- render_file: load a template file and render it ----

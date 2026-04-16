@@ -27,7 +27,16 @@ define assert_eq(actual, expected, desc) as:
         print of msg
 
 # ---- assert_near: check approximate equality ----
+# Requires both operands to be numbers. A non-number (e.g. null, string,
+# NaN-shaped dict) fails the assertion explicitly instead of silently
+# passing — diff <= tol would otherwise be evaluated on unreliable input.
 define assert_near(actual, expected, tol, desc) as:
+    if (type of actual) != "num" or (type of expected) != "num":
+        _test_fail is _test_fail + 1
+        msg is "FAIL: " + desc + " — non-numeric operand (actual type=" + (type of actual) + ", expected type=" + (type of expected) + ")"
+        append of [_test_errors, msg]
+        print of msg
+        return null
     diff is actual - expected
     if diff < 0:
         diff is 0 - diff

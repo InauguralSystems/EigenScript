@@ -895,6 +895,21 @@ else
 fi
 echo ""
 
+# [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation)
+echo "[42c/47] Stdlib Fixes (11 checks)"
+SF_OUTPUT=$(./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1)
+if echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
+    TOTAL=$((TOTAL + 11))
+    PASS=$((PASS + 11))
+    echo "  PASS: all 11 stdlib-fix checks"
+else
+    TOTAL=$((TOTAL + 11))
+    FAIL=$((FAIL + 11))
+    echo "  FAIL: stdlib-fix tests"
+    echo "$SF_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [43] Extra error-path coverage (always runs)
 echo "[43/47] Error-Path Extras (24 checks)"
 EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1)
