@@ -373,10 +373,20 @@ static void handle_request(int fd) {
 
             char *cl = strcasestr(reqbuf, "Content-Length:");
             if (cl) {
-                int content_length = atoi(cl + 15);
+                /* atoi silently accepts negative and non-numeric input; a
+                 * negative Content-Length would make body_received trivially
+                 * >= content_length and exit the read loop mid-body. Parse
+                 * with strtol and reject anything outside [0, MAX_BODY]. */
+                char *clend = NULL;
+                long content_length = strtol(cl + 15, &clend, 10);
+                if (clend == cl + 15 || content_length < 0 || content_length > MAX_BODY) {
+                    /* Malformed Content-Length — close connection instead
+                     * of attempting to read an unknown amount of body. */
+                    close(fd);
+                    return;
+                }
                 int body_received = total - header_end;
                 if (body_received >= content_length) break;
-                if (content_length > MAX_BODY) break;
             } else {
                 break;
             }
