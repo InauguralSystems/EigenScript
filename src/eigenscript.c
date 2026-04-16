@@ -4260,6 +4260,32 @@ Value* builtin_try_parse(Value *arg) {
     return make_num(valid);
 }
 
+/* ==== BUILTIN: eval ==== */
+/* eval of code_string — execute EigenScript code and return result */
+Value* builtin_eval(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_null();
+    const char *src = arg->data.str;
+    if (!src || !src[0]) return make_null();
+
+    int saved_errors = g_parse_errors;
+    g_parse_errors = 0;
+
+    TokenList tl = tokenize(src);
+    ASTNode *ast = parse(&tl);
+
+    if (g_parse_errors > 0 || !ast) {
+        g_parse_errors = saved_errors;
+        free_tokenlist(&tl);
+        runtime_error(0, "eval: parse error in code string");
+        return make_null();
+    }
+    g_parse_errors = saved_errors;
+
+    Value *result = eval_node(ast, g_global_env);
+    free_tokenlist(&tl);
+    return result ? result : make_null();
+}
+
 /* ==== BUILTIN: tensor_save ==== */
 /* tensor_save of [tensor, path] — save 1D or 2D list to binary file.
  * Format: [uint32 ndim][uint32 rows][uint32 cols][uint32 flags]
@@ -4675,6 +4701,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "chr", make_builtin(builtin_chr));
     env_set_local(env, "random_hex", make_builtin(builtin_random_hex));
     env_set_local(env, "try_parse", make_builtin(builtin_try_parse));
+    env_set_local(env, "eval", make_builtin(builtin_eval));
     env_set_local(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local(env, "tensor_load", make_builtin(builtin_tensor_load));
     env_set_local(env, "copy_into", make_builtin(builtin_copy_into));

@@ -1,0 +1,891 @@
+# ============================================================
+# EigenScript Meta-Circular Interpreter
+# ============================================================
+#
+# EigenScript implemented in EigenScript.
+#
+# Usage:
+#   load_file of "lib/eigen.eigs"
+#   result is eigen_run of "x is 42\nprint of x"
+#
+# Components:
+#   eigen_tokenize of source    -> list of [type, value, line] tokens
+#   eigen_parse of tokens       -> AST (nested lists)
+#   eigen_eval of [ast, env]    -> value
+#   eigen_run of source         -> evaluate source string
+
+# ============================================================
+# Tokenizer
+# ============================================================
+
+# Token types (strings for readability)
+# "num", "str", "ident", "op", "kw", "newline", "indent", "dedent", "eof"
+
+define _is_digit(c) as:
+    return contains of ["0123456789", c]
+
+define _is_alpha(c) as:
+    return contains of ["abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ", c]
+
+define _is_alnum(c) as:
+    if (_is_alpha of c) == 1:
+        return 1
+    return _is_digit of c
+
+define _is_space(c) as:
+    if c == " ":
+        return 1
+    if c == "\t":
+        return 1
+    return 0
+
+_keywords is ["is", "of", "define", "as", "if", "else", "elif", "loop", "while", "return", "and", "or", "not", "for", "in", "null", "try", "catch"]
+
+define _is_keyword(word) as:
+    for i in range of (len of _keywords):
+        if word == _keywords[i]:
+            return 1
+    return 0
+
+define eigen_tokenize(source) as:
+    tokens is []
+    pos is 0
+    line is 1
+    src_len is len of source
+    indent_stack is [0]
+    at_line_start is 1
+
+    loop while pos < src_len:
+        # Handle line start: measure indent
+        if at_line_start == 1:
+            at_line_start is 0
+            spaces is 0
+            counting is 1
+            loop while (pos < src_len) and (counting == 1):
+                ch is char_at of [source, pos]
+                if ch == " ":
+                    spaces is spaces + 1
+                    pos is pos + 1
+                elif ch == "\t":
+                    spaces is spaces + 4
+                    pos is pos + 1
+                else:
+                    counting is 0
+            # Skip blank lines
+            blank_line is 0
+            if pos < src_len:
+                if (char_at of [source, pos]) == "\n":
+                    pos is pos + 1
+                    line is line + 1
+                    at_line_start is 1
+                    blank_line is 1
+            if blank_line == 0:
+                # Emit indent/dedent
+                current_indent is indent_stack[(len of indent_stack) - 1]
+                if spaces > current_indent:
+                    append of [indent_stack, spaces]
+                    append of [tokens, ["indent", null, line]]
+                else:
+                    loop while spaces < (indent_stack[(len of indent_stack) - 1]):
+                        # pop
+                        new_stack is []
+                        for si in range of ((len of indent_stack) - 1):
+                            append of [new_stack, indent_stack[si]]
+                        indent_stack is new_stack
+                        append of [tokens, ["dedent", null, line]]
+        # Now handle non-indent characters
+        if (at_line_start == 0) and (pos < src_len):
+            c is char_at of [source, pos]
+            handled is 0
+            # Skip inline spaces
+            if (_is_space of c) == 1:
+                pos is pos + 1
+                handled is 1
+            # Comments
+            if (handled == 0) and (c == "#"):
+                commenting is 1
+                loop while (pos < src_len) and (commenting == 1):
+                    ch2 is char_at of [source, pos]
+                    if ch2 == "\n":
+                        commenting is 0
+                    else:
+                        pos is pos + 1
+                handled is 1
+            # Newlines
+            if (handled == 0) and (c == "\n"):
+                if (len of tokens) > 0:
+                    last is tokens[(len of tokens) - 1]
+                    if last[0] != "newline":
+                        if last[0] != "indent":
+                            if last[0] != "dedent":
+                                append of [tokens, ["newline", null, line]]
+                pos is pos + 1
+                line is line + 1
+                at_line_start is 1
+                handled is 1
+            # Strings
+            if (handled == 0) and (c == "\""):
+                pos is pos + 1
+                buf is ""
+                reading_str is 1
+                loop while (pos < src_len) and (reading_str == 1):
+                    ch is char_at of [source, pos]
+                    if ch == "\"":
+                        pos is pos + 1
+                        reading_str is 0
+                    elif ch == "\\":
+                        pos is pos + 1
+                        esc is char_at of [source, pos]
+                        if esc == "n":
+                            buf is buf + "\n"
+                        elif esc == "t":
+                            buf is buf + "\t"
+                        elif esc == "\\":
+                            buf is buf + "\\"
+                        elif esc == "\"":
+                            buf is buf + "\""
+                        else:
+                            buf is buf + esc
+                        pos is pos + 1
+                    else:
+                        buf is buf + ch
+                        pos is pos + 1
+                append of [tokens, ["str", buf, line]]
+                handled is 1
+            # Numbers
+            if (handled == 0) and ((_is_digit of c) == 1):
+                buf is ""
+                has_dot is 0
+                reading_num is 1
+                loop while (pos < src_len) and (reading_num == 1):
+                    ch is char_at of [source, pos]
+                    if (_is_digit of ch) == 1:
+                        buf is buf + ch
+                        pos is pos + 1
+                    elif (ch == ".") and (has_dot == 0):
+                        has_dot is 1
+                        buf is buf + ch
+                        pos is pos + 1
+                    else:
+                        reading_num is 0
+                append of [tokens, ["num", num of buf, line]]
+                handled is 1
+            # Identifiers and keywords
+            if (handled == 0) and ((_is_alpha of c) == 1):
+                buf is ""
+                reading_id is 1
+                loop while (pos < src_len) and (reading_id == 1):
+                    ch is char_at of [source, pos]
+                    if (_is_alnum of ch) == 1:
+                        buf is buf + ch
+                        pos is pos + 1
+                    else:
+                        reading_id is 0
+                if buf == "null":
+                    append of [tokens, ["null", null, line]]
+                elif (_is_keyword of buf) == 1:
+                    append of [tokens, ["kw", buf, line]]
+                else:
+                    append of [tokens, ["ident", buf, line]]
+                handled is 1
+            # Two-character operators
+            if (handled == 0) and ((pos + 1) < src_len):
+                next is char_at of [source, pos + 1]
+                two is c + next
+                if two == "==":
+                    append of [tokens, ["op", "==", line]]
+                    pos is pos + 2
+                    handled is 1
+                elif two == "!=":
+                    append of [tokens, ["op", "!=", line]]
+                    pos is pos + 2
+                    handled is 1
+                elif two == "<=":
+                    append of [tokens, ["op", "<=", line]]
+                    pos is pos + 2
+                    handled is 1
+                elif two == ">=":
+                    append of [tokens, ["op", ">=", line]]
+                    pos is pos + 2
+                    handled is 1
+            # Single-character operators and punctuation
+            if handled == 0:
+                if (contains of ["+-*/%<>", c]) == 1:
+                    append of [tokens, ["op", c, line]]
+                    pos is pos + 1
+                    handled is 1
+                elif c == "(":
+                    append of [tokens, ["lparen", null, line]]
+                    pos is pos + 1
+                    handled is 1
+                elif c == ")":
+                    append of [tokens, ["rparen", null, line]]
+                    pos is pos + 1
+                    handled is 1
+                elif c == "[":
+                    append of [tokens, ["lbracket", null, line]]
+                    pos is pos + 1
+                    handled is 1
+                elif c == "]":
+                    append of [tokens, ["rbracket", null, line]]
+                    pos is pos + 1
+                    handled is 1
+                elif c == ",":
+                    append of [tokens, ["comma", null, line]]
+                    pos is pos + 1
+                    handled is 1
+                elif c == ":":
+                    append of [tokens, ["colon", null, line]]
+                    pos is pos + 1
+                    handled is 1
+                elif c == ".":
+                    append of [tokens, ["dot", null, line]]
+                    pos is pos + 1
+                    handled is 1
+                else:
+                    # Unknown character — skip
+                    pos is pos + 1
+
+    # Emit remaining dedents
+    loop while (len of indent_stack) > 1:
+        new_stack is []
+        for si in range of ((len of indent_stack) - 1):
+            append of [new_stack, indent_stack[si]]
+        indent_stack is new_stack
+        append of [tokens, ["dedent", null, line]]
+
+    append of [tokens, ["eof", null, line]]
+    return tokens
+
+# ============================================================
+# Parser
+# ============================================================
+#
+# AST nodes are lists: [type, ...data]
+# Examples:
+#   ["num", 42]
+#   ["str", "hello"]
+#   ["ident", "x"]
+#   ["assign", "x", expr]
+#   ["binop", "+", left, right]
+#   ["call", fn_expr, arg_expr]
+#   ["if", cond, if_body, else_body]
+#   ["loop", cond, body]
+#   ["for", var, iter, body]
+#   ["func", name, [params], body]
+#   ["return", expr]
+#   ["list", [elems]]
+#   ["index", target, idx]
+#   ["null"]
+#   ["try", try_body, err_name, catch_body]
+#   ["block", [stmts]]
+
+define _parser_new(tokens) as:
+    return [tokens, 0]
+
+define _p_pos(p) as:
+    return p[1]
+
+define _p_cur(p) as:
+    if p[1] >= (len of p[0]):
+        return ["eof", null, 0]
+    return p[0][p[1]]
+
+define _p_advance(p) as:
+    set_at of [p, 1, p[1] + 1]
+
+define _p_peek_type(p) as:
+    tok is _p_cur of p
+    return tok[0]
+
+define _p_peek_val(p) as:
+    tok is _p_cur of p
+    return tok[1]
+
+define _p_expect(p, ttype) as:
+    tok is _p_cur of p
+    if tok[0] != ttype:
+        throw of f"parse error: expected {ttype}, got {tok[0]} ('{tok[1]}') at line {tok[2]}"
+    _p_advance of p
+    return tok
+
+define _p_skip_newlines(p) as:
+    loop while (_p_peek_type of p) == "newline":
+        _p_advance of p
+
+define _p_parse_block(p) as:
+    stmts is []
+    if (_p_peek_type of p) == "indent":
+        _p_advance of p
+        loop while (_p_peek_type of p) != "dedent":
+            if (_p_peek_type of p) == "eof":
+                return stmts
+            _p_skip_newlines of p
+            if (_p_peek_type of p) == "dedent":
+                return stmts
+            stmt is _p_parse_statement of p
+            if stmt != null:
+                append of [stmts, stmt]
+            _p_skip_newlines of p
+        _p_advance of p
+    else:
+        # Single-line block
+        stmt is _p_parse_statement of p
+        if stmt != null:
+            append of [stmts, stmt]
+    return stmts
+
+define _p_parse_statement(p) as:
+    _p_skip_newlines of p
+    tt is _p_peek_type of p
+
+    if tt == "eof":
+        return null
+    if tt == "dedent":
+        return null
+
+    # define
+    if tt == "kw":
+        if (_p_peek_val of p) == "define":
+            _p_advance of p
+            name_tok is _p_expect of [p, "ident"]
+            name is name_tok[1]
+            # Optional params
+            params is []
+            if (_p_peek_type of p) == "lparen":
+                _p_advance of p
+                loop while (_p_peek_type of p) == "ident":
+                    append of [params, (_p_cur of p)[1]]
+                    _p_advance of p
+                    if (_p_peek_type of p) == "comma":
+                        _p_advance of p
+                _p_expect of [p, "rparen"]
+            if (len of params) == 0:
+                params is ["n"]
+            # as:
+            if (_p_peek_type of p) == "kw":
+                if (_p_peek_val of p) == "as":
+                    _p_advance of p
+            _p_expect of [p, "colon"]
+            _p_skip_newlines of p
+            body is _p_parse_block of p
+            return ["func", name, params, body]
+
+        # if
+        if (_p_peek_val of p) == "if":
+            _p_advance of p
+            cond is _p_parse_expr of p
+            _p_expect of [p, "colon"]
+            _p_skip_newlines of p
+            if_body is _p_parse_block of p
+            else_body is []
+            _p_skip_newlines of p
+            if (_p_peek_type of p) == "kw":
+                if (_p_peek_val of p) == "elif":
+                    # Rewrite as else { if ... }
+                    set_at of [(_p_cur of p), 1, "if"]
+                    elif_stmt is _p_parse_statement of p
+                    else_body is [elif_stmt]
+                elif (_p_peek_val of p) == "else":
+                    _p_advance of p
+                    _p_expect of [p, "colon"]
+                    _p_skip_newlines of p
+                    else_body is _p_parse_block of p
+            return ["if", cond, if_body, else_body]
+
+        # return
+        if (_p_peek_val of p) == "return":
+            _p_advance of p
+            expr is _p_parse_expr of p
+            return ["return", expr]
+
+        # for
+        if (_p_peek_val of p) == "for":
+            _p_advance of p
+            var_tok is _p_expect of [p, "ident"]
+            _p_expect of [p, "kw"]
+            iter is _p_parse_expr of p
+            _p_expect of [p, "colon"]
+            _p_skip_newlines of p
+            body is _p_parse_block of p
+            return ["for", var_tok[1], iter, body]
+
+        # loop while
+        if (_p_peek_val of p) == "loop":
+            _p_advance of p
+            # expect "while"
+            if (_p_peek_type of p) == "kw":
+                if (_p_peek_val of p) == "while":
+                    _p_advance of p
+            cond is _p_parse_expr of p
+            _p_expect of [p, "colon"]
+            _p_skip_newlines of p
+            body is _p_parse_block of p
+            return ["loop", cond, body]
+
+        # try/catch
+        if (_p_peek_val of p) == "try":
+            _p_advance of p
+            _p_expect of [p, "colon"]
+            _p_skip_newlines of p
+            try_body is _p_parse_block of p
+            _p_skip_newlines of p
+            _p_expect of [p, "kw"]
+            err_name is "err"
+            if (_p_peek_type of p) == "ident":
+                err_name is (_p_cur of p)[1]
+                _p_advance of p
+            _p_expect of [p, "colon"]
+            _p_skip_newlines of p
+            catch_body is _p_parse_block of p
+            return ["try", try_body, err_name, catch_body]
+
+    # Assignment: ident is expr
+    if tt == "ident":
+        # Look ahead for "is"
+        saved_pos is p[1]
+        name is (_p_cur of p)[1]
+        _p_advance of p
+        if (_p_peek_type of p) == "kw":
+            if (_p_peek_val of p) == "is":
+                _p_advance of p
+                expr is _p_parse_expr of p
+                return ["assign", name, expr]
+        # Not an assignment — restore and parse as expression
+        set_at of [p, 1, saved_pos]
+
+    # Expression statement
+    expr is _p_parse_expr of p
+    return expr
+
+# ---- Expression parser (precedence climbing) ----
+
+define _p_parse_expr(p) as:
+    return _p_parse_or of p
+
+define _p_parse_or(p) as:
+    left is _p_parse_and of p
+    loop while (_p_peek_type of p) == "kw":
+        if (_p_peek_val of p) == "or":
+            _p_advance of p
+            right is _p_parse_and of p
+            left is ["binop", "or", left, right]
+        else:
+            return left
+    return left
+
+define _p_parse_and(p) as:
+    left is _p_parse_not of p
+    loop while (_p_peek_type of p) == "kw":
+        if (_p_peek_val of p) == "and":
+            _p_advance of p
+            right is _p_parse_not of p
+            left is ["binop", "and", left, right]
+        else:
+            return left
+    return left
+
+define _p_parse_not(p) as:
+    if (_p_peek_type of p) == "kw":
+        if (_p_peek_val of p) == "not":
+            _p_advance of p
+            operand is _p_parse_not of p
+            return ["unary", "not", operand]
+    return _p_parse_comparison of p
+
+define _p_parse_comparison(p) as:
+    left is _p_parse_add of p
+    if (_p_peek_type of p) == "op":
+        op is _p_peek_val of p
+        if op == "==":
+            _p_advance of p
+            return ["binop", "==", left, _p_parse_add of p]
+        if op == "!=":
+            _p_advance of p
+            return ["binop", "!=", left, _p_parse_add of p]
+        if op == "<":
+            _p_advance of p
+            return ["binop", "<", left, _p_parse_add of p]
+        if op == ">":
+            _p_advance of p
+            return ["binop", ">", left, _p_parse_add of p]
+        if op == "<=":
+            _p_advance of p
+            return ["binop", "<=", left, _p_parse_add of p]
+        if op == ">=":
+            _p_advance of p
+            return ["binop", ">=", left, _p_parse_add of p]
+    return left
+
+define _p_parse_add(p) as:
+    left is _p_parse_mul of p
+    loop while (_p_peek_type of p) == "op":
+        op is _p_peek_val of p
+        if op == "+":
+            _p_advance of p
+            left is ["binop", "+", left, _p_parse_mul of p]
+        elif op == "-":
+            _p_advance of p
+            left is ["binop", "-", left, _p_parse_mul of p]
+        else:
+            return left
+    return left
+
+define _p_parse_mul(p) as:
+    left is _p_parse_unary of p
+    loop while (_p_peek_type of p) == "op":
+        op is _p_peek_val of p
+        if op == "*":
+            _p_advance of p
+            left is ["binop", "*", left, _p_parse_unary of p]
+        elif op == "/":
+            _p_advance of p
+            left is ["binop", "/", left, _p_parse_unary of p]
+        elif op == "%":
+            _p_advance of p
+            left is ["binop", "%", left, _p_parse_unary of p]
+        else:
+            return left
+    return left
+
+define _p_parse_unary(p) as:
+    if (_p_peek_type of p) == "op":
+        if (_p_peek_val of p) == "-":
+            _p_advance of p
+            return ["unary", "-", _p_parse_unary of p]
+    return _p_parse_call of p
+
+define _p_parse_call(p) as:
+    left is _p_parse_primary of p
+    # Handle "fn of arg" syntax
+    if (_p_peek_type of p) == "kw":
+        if (_p_peek_val of p) == "of":
+            _p_advance of p
+            arg is _p_parse_primary of p
+            left is ["call", left, arg]
+    # Handle indexing: expr[idx]
+    loop while (_p_peek_type of p) == "lbracket":
+        _p_advance of p
+        idx is _p_parse_expr of p
+        _p_expect of [p, "rbracket"]
+        left is ["index", left, idx]
+    return left
+
+define _p_parse_primary(p) as:
+    tt is _p_peek_type of p
+
+    if tt == "num":
+        tok is _p_cur of p
+        _p_advance of p
+        return ["num", tok[1]]
+
+    if tt == "str":
+        tok is _p_cur of p
+        _p_advance of p
+        return ["str", tok[1]]
+
+    if tt == "null":
+        _p_advance of p
+        return ["null"]
+
+    if tt == "ident":
+        tok is _p_cur of p
+        _p_advance of p
+        return ["ident", tok[1]]
+
+    if tt == "lparen":
+        _p_advance of p
+        expr is _p_parse_expr of p
+        _p_expect of [p, "rparen"]
+        return expr
+
+    if tt == "lbracket":
+        _p_advance of p
+        elems is []
+        if (_p_peek_type of p) != "rbracket":
+            append of [elems, _p_parse_expr of p]
+            loop while (_p_peek_type of p) == "comma":
+                _p_advance of p
+                append of [elems, _p_parse_expr of p]
+        _p_expect of [p, "rbracket"]
+        return ["list", elems]
+
+    throw of f"parse error: unexpected token {tt} '{_p_peek_val of p}'"
+
+define eigen_parse(tokens) as:
+    p is _parser_new of tokens
+    stmts is []
+    _p_skip_newlines of p
+    loop while (_p_peek_type of p) != "eof":
+        stmt is _p_parse_statement of p
+        if stmt != null:
+            append of [stmts, stmt]
+        _p_skip_newlines of p
+    return ["block", stmts]
+
+# ============================================================
+# Evaluator
+# ============================================================
+
+define _env_new(parent) as:
+    return [[], parent]
+
+define _env_get(env, name) as:
+    bindings is env[0]
+    for i in range of (len of bindings):
+        if bindings[i][0] == name:
+            return bindings[i][1]
+    if env[1] != null:
+        return _env_get of [env[1], name]
+    return null
+
+define _env_set(env, name, val) as:
+    bindings is env[0]
+    for i in range of (len of bindings):
+        if bindings[i][0] == name:
+            set_at of [bindings, i, [name, val]]
+            return null
+    if env[1] != null:
+        parent_val is _env_get of [env[1], name]
+        if parent_val != null:
+            _env_set of [env[1], name, val]
+            return null
+    # New binding in current scope
+    append of [bindings, [name, val]]
+    return null
+
+define _env_set_local(env, name, val) as:
+    bindings is env[0]
+    for i in range of (len of bindings):
+        if bindings[i][0] == name:
+            set_at of [bindings, i, [name, val]]
+            return null
+    append of [bindings, [name, val]]
+    return null
+
+# Return mechanism — global flag + value
+_eigen_returning is 0
+_eigen_return_val is null
+
+define eigen_eval(node, env) as:
+    if node == null:
+        return null
+    ntype is node[0]
+
+    if ntype == "num":
+        return node[1]
+    if ntype == "str":
+        return node[1]
+    if ntype == "null":
+        return null
+
+    if ntype == "ident":
+        val is _env_get of [env, node[1]]
+        if val == null:
+            throw of f"undefined variable '{node[1]}'"
+        return val
+
+    if ntype == "assign":
+        val is eigen_eval of [node[2], env]
+        _env_set of [env, node[1], val]
+        return val
+
+    if ntype == "binop":
+        op is node[1]
+        if op == "and":
+            left is eigen_eval of [node[2], env]
+            if left == 0:
+                return 0
+            right is eigen_eval of [node[3], env]
+            if right:
+                return 1
+            return 0
+        if op == "or":
+            left is eigen_eval of [node[2], env]
+            if left:
+                return 1
+            right is eigen_eval of [node[3], env]
+            if right:
+                return 1
+            return 0
+        left is eigen_eval of [node[2], env]
+        right is eigen_eval of [node[3], env]
+        if op == "+":
+            if (type of left) == "str":
+                return left + (str of right)
+            if (type of right) == "str":
+                return (str of left) + right
+            return left + right
+        if op == "-":
+            return left - right
+        if op == "*":
+            return left * right
+        if op == "/":
+            return left / right
+        if op == "%":
+            return left % right
+        if op == "==":
+            if left == right:
+                return 1
+            return 0
+        if op == "!=":
+            if left != right:
+                return 1
+            return 0
+        if op == "<":
+            if left < right:
+                return 1
+            return 0
+        if op == ">":
+            if left > right:
+                return 1
+            return 0
+        if op == "<=":
+            if left <= right:
+                return 1
+            return 0
+        if op == ">=":
+            if left >= right:
+                return 1
+            return 0
+
+    if ntype == "unary":
+        operand is eigen_eval of [node[2], env]
+        if node[1] == "-":
+            return 0 - operand
+        if node[1] == "not":
+            if operand:
+                return 0
+            return 1
+
+    if ntype == "call":
+        fn is eigen_eval of [node[1], env]
+        arg is eigen_eval of [node[2], env]
+        if (type of fn) == "list":
+            if (len of fn) >= 4:
+                if fn[0] == "__eigen_fn__":
+                    # fn is [__eigen_fn__, name, params, body]
+                    params is fn[2]
+                    body is fn[3]
+                    call_env is _env_new of env
+                    if (len of params) > 1:
+                        if (type of arg) == "list":
+                            for pi in range of (len of params):
+                                if pi < (len of arg):
+                                    _env_set_local of [call_env, params[pi], arg[pi]]
+                    else:
+                        _env_set_local of [call_env, params[0], arg]
+                    _eigen_returning is 0
+                    result is _eval_block of [body, call_env]
+                    if _eigen_returning == 1:
+                        _eigen_returning is 0
+                        return _eigen_return_val
+                    return result
+        # Fall back to C builtins via eval
+        throw of f"cannot call non-function"
+
+    if ntype == "list":
+        elems is node[1]
+        result is []
+        for i in range of (len of elems):
+            append of [result, eigen_eval of [elems[i], env]]
+        return result
+
+    if ntype == "index":
+        target is eigen_eval of [node[1], env]
+        idx is eigen_eval of [node[2], env]
+        return target[idx]
+
+    if ntype == "if":
+        cond is eigen_eval of [node[1], env]
+        if cond:
+            return _eval_block of [node[2], env]
+        else:
+            return _eval_block of [node[3], env]
+
+    if ntype == "loop":
+        result is null
+        max_iter is 100000
+        running is 1
+        loop while (max_iter > 0) and (running == 1):
+            cond is eigen_eval of [node[1], env]
+            if cond == 0:
+                running is 0
+            else:
+                result is _eval_block of [node[2], env]
+                if _eigen_returning == 1:
+                    return result
+                max_iter is max_iter - 1
+        return result
+
+    if ntype == "for":
+        var_name is node[1]
+        iter is eigen_eval of [node[2], env]
+        result is null
+        for i in range of (len of iter):
+            _env_set_local of [env, var_name, iter[i]]
+            result is _eval_block of [node[3], env]
+            if _eigen_returning == 1:
+                return result
+        return result
+
+    if ntype == "func":
+        name is node[1]
+        params is node[2]
+        body is node[3]
+        # Store function without env ref to avoid circular structure
+        # Closure is resolved at call time by passing current env
+        fn_val is ["__eigen_fn__", name, params, body]
+        _env_set of [env, name, fn_val]
+        return fn_val
+
+    if ntype == "return":
+        val is eigen_eval of [node[1], env]
+        _eigen_returning is 1
+        _eigen_return_val is val
+        return val
+
+    if ntype == "block":
+        return _eval_block of [node[1], env]
+
+    if ntype == "try":
+        try_body is node[1]
+        err_name is node[2]
+        catch_body is node[3]
+        try:
+            return _eval_block of [try_body, env]
+        catch err:
+            catch_env is _env_new of env
+            _env_set_local of [catch_env, err_name, err]
+            return _eval_block of [catch_body, catch_env]
+
+    return null
+
+define _eval_block(stmts, env) as:
+    result is null
+    for i in range of (len of stmts):
+        result is eigen_eval of [stmts[i], env]
+        if _eigen_returning == 1:
+            return result
+    return result
+
+# ============================================================
+# Built-in functions for the meta-circular environment
+# ============================================================
+
+define _make_default_env as:
+    env is _env_new of null
+    # We bootstrap with the C builtins via a thin wrapper
+    # For now, print is the essential one
+    _env_set_local of [env, "__has_print__", 1]
+    return env
+
+# ============================================================
+# Public API
+# ============================================================
+
+define eigen_run(source) as:
+    tokens is eigen_tokenize of source
+    ast is eigen_parse of tokens
+    env is _make_default_env of null
+    return eigen_eval of [ast, env]
