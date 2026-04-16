@@ -201,14 +201,14 @@ eigenscript examples/tensors.eigs     # tensor math, gradients, SGD
 
 ```bash
 cd tests
-./run_all_tests.sh    # 224/224
+./run_all_tests.sh    # 437/437 (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ## Documentation
 
 - [docs/SYNTAX.md](docs/SYNTAX.md) — language reference
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
-- [docs/BUILTINS.md](docs/BUILTINS.md) — 127 builtin functions
+- [docs/BUILTINS.md](docs/BUILTINS.md) — 139 builtin functions (119 core + 20 extensions)
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 
@@ -216,7 +216,7 @@ cd tests
 
 ```bash
 make                  # build
-make test             # build and run 224 tests
+make test             # build and run 437 tests
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts
 ```
