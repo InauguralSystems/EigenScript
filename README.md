@@ -207,6 +207,7 @@ cd tests
 ## Documentation
 
 - [docs/SYNTAX.md](docs/SYNTAX.md) — language reference
+- [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
 - [docs/BUILTINS.md](docs/BUILTINS.md) — 127 builtin functions
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
