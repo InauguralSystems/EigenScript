@@ -152,7 +152,7 @@ void free_value(Value *v) {
 }
 
 Value* make_num(double n) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : calloc(1, sizeof(Value));
+    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
     v->data.num = n;
     return v;
@@ -161,46 +161,46 @@ Value* make_num(double n) {
 /* Heap-only make_num — for values that must outlive arena reset
  * (e.g. updated model weights written in-place by sgd_update). */
 static Value* make_num_permanent(double n) {
-    Value *v = calloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
     v->data.num = n;
     return v;
 }
 
 Value* make_str(const char *s) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : calloc(1, sizeof(Value));
+    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
-    v->data.str = strdup(s ? s : "");
+    v->data.str = xstrdup(s);
     if (g_arena.active) arena_track_string(v->data.str);
     return v;
 }
 
 Value* make_null(void) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : calloc(1, sizeof(Value));
+    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_NULL;
     return v;
 }
 
 Value* make_list(int capacity) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : calloc(1, sizeof(Value));
+    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
     if (g_arena.active)
         v->data.list.items = arena_alloc(v->data.list.capacity * sizeof(Value*));
     else
-        v->data.list.items = calloc(v->data.list.capacity, sizeof(Value*));
+        v->data.list.items = xcalloc(v->data.list.capacity, sizeof(Value*));
     v->data.list.count = 0;
     return v;
 }
 
 Value* make_fn(const char *name, char **params, int param_count, ASTNode **body, int body_count, Env *closure) {
-    Value *v = calloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_FN;
-    v->data.fn.name = strdup(name ? name : "");
-    v->data.fn.params = malloc(param_count * sizeof(char*));
+    v->data.fn.name = xstrdup(name);
+    v->data.fn.params = xmalloc(param_count * sizeof(char*));
     v->data.fn.param_count = param_count;
     for (int i = 0; i < param_count; i++)
-        v->data.fn.params[i] = strdup(params[i]);
+        v->data.fn.params[i] = xstrdup(params[i]);
     v->data.fn.body = body;
     v->data.fn.body_count = body_count;
     v->data.fn.closure = closure;
@@ -208,7 +208,7 @@ Value* make_fn(const char *name, char **params, int param_count, ASTNode **body,
 }
 
 Value* make_builtin(BuiltinFn fn) {
-    Value *v = calloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUILTIN;
     v->data.builtin = fn;
     return v;
@@ -216,10 +216,10 @@ Value* make_builtin(BuiltinFn fn) {
 
 Value* make_dict(int capacity) {
     if (capacity < 8) capacity = 8;
-    Value *v = calloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_DICT;
-    v->data.dict.keys = calloc(capacity, sizeof(char*));
-    v->data.dict.vals = calloc(capacity, sizeof(Value*));
+    v->data.dict.keys = xcalloc(capacity, sizeof(char*));
+    v->data.dict.vals = xcalloc(capacity, sizeof(Value*));
     v->data.dict.count = 0;
     v->data.dict.capacity = capacity;
     return v;

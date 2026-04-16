@@ -194,6 +194,14 @@ typedef struct {
 
 extern Arena g_arena;
 
+/* ---- OOM-safe allocation wrappers ----
+ * Abort with a diagnostic on allocation failure. Used by value constructors
+ * and the arena allocator, where a NULL return would immediately crash. */
+void* xmalloc(size_t size);
+void* xcalloc(size_t nmemb, size_t size);
+void* xrealloc(void *p, size_t size);
+char* xstrdup(const char *s);
+
 void arena_init(void);
 void* arena_alloc(size_t size);
 void arena_track_string(char *s);
