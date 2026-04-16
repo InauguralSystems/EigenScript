@@ -434,6 +434,22 @@ msg is render of ["{{name}} is running v{{version}}", vars]
 print of msg   # "World is running v0.5"
 ```
 
+### lib/eigen.eigs — Meta-Circular Interpreter
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `eigen_tokenize` | `eigen_tokenize of source` | Tokenize source string into token list |
+| `eigen_parse` | `eigen_parse of tokens` | Parse token list into AST |
+| `eigen_eval` | `eigen_eval of [ast, env]` | Evaluate AST in environment, return value |
+| `eigen_run` | `eigen_run of source` | Evaluate source string end-to-end |
+
+```eigenscript
+load_file of "lib/eigen.eigs"
+tokens is eigen_tokenize of "x is 2 + 3"
+ast is eigen_parse of tokens
+result is eigen_run of "x is 2 + 3"
+```
+
 ## Writing Library Functions
 
 Follow these conventions:

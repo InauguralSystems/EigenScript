@@ -9,7 +9,7 @@ HTTP, PostgreSQL, and transformer models (full build).
 ```
 src/
 ├── eigenscript.h          # Public header: types, parser, evaluator API
-├── eigenscript.c          # Core: lexer, parser, evaluator, 121 builtins (4.5K lines)
+├── eigenscript.c          # Core: lexer, parser, evaluator, 127 builtins (4.5K lines)
 ├── arena.c                # Arena memory allocator (mark/reset)
 ├── main.c                 # Entry point, CLI argument handling
 ├── ext_http.c             # HTTP server extension (optional)
@@ -56,7 +56,7 @@ child expressions. Expressions use a Pratt-style precedence parser.
 
 The tree-walking evaluator (`eval_stmt()`, `eval_expr()`) executes the AST
 directly. There is no bytecode compilation step. Values are tagged unions
-(`EigenValue`) that can be numbers, strings, lists, functions, or builtins.
+(`EigenValue`) that can be numbers, strings, lists, dictionaries, functions, or builtins.
 
 ### Observer
 
@@ -98,7 +98,11 @@ The minimal build (`./build.sh`) sets all flags to 0. The full build
 
 ## Standard Library
 
-The 24 modules in `lib/` are pure EigenScript — no C code. They are loaded at
+The 25 modules in `lib/` are pure EigenScript — no C code. They are loaded at
 runtime via `load_file of "lib/module.eigs"`. Path resolution searches relative
 to the current working directory, then the script's directory, then the script's
 parent directory.
+
+The meta-circular interpreter (`lib/eigen.eigs`) is notable: it implements
+tokenization, parsing, and evaluation of EigenScript source code in EigenScript
+itself, using `eigen_run of source` as the top-level entry point.

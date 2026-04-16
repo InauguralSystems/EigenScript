@@ -11,8 +11,9 @@
 
 # EigenScript
 
-A programming language with native observer semantics, tensor math, and
-selective-observation training.
+A complete, standalone programming language with native observer semantics,
+tensor math, closures, dictionaries, error handling, and a 25-module standard
+library — all in a single zero-dependency C binary.
 
 ## Install
 
@@ -67,6 +68,25 @@ print of (len of items)
 # Conditionals
 if x > 0:
     print of "positive"
+
+# Dictionaries
+person is {"name": "Alice", "age": 30}
+print of person["name"]
+
+# Closures
+define make_adder(n) as:
+    define inner(x) as:
+        return x + n
+    return inner
+
+add5 is make_adder of 5
+print of (add5 of 10)    # 15
+
+# Error handling
+try:
+    result is risky_operation of data
+catch e:
+    print of f"Error: {e}"
 ```
 
 ### Observer Semantics
@@ -138,6 +158,7 @@ Pure EigenScript libraries under `lib/`:
 | `lib/template.eigs` | `render`, `render_file`, `render_each`, `fill` |
 | `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response`, `check_openai` |
 | `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout`, `require_auth` |
+| `lib/eigen.eigs` | Meta-circular interpreter — EigenScript evaluator written in EigenScript |
 
 ```eigenscript
 load_file of "lib/list.eigs"
@@ -173,7 +194,7 @@ cd tests
 ## Documentation
 
 - [docs/SYNTAX.md](docs/SYNTAX.md) — language reference
-- [docs/BUILTINS.md](docs/BUILTINS.md) — 83 builtin functions
+- [docs/BUILTINS.md](docs/BUILTINS.md) — 127 builtin functions
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 

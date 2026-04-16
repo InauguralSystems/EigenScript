@@ -192,6 +192,53 @@ append of [items, 6]      # mutates items
 
 Note: list literals must be on a single line.
 
+## Dictionaries
+
+Dictionary literals use `{}` with string keys:
+
+```eigenscript
+config is {"host": "localhost", "port": 8080, "debug": 1}
+```
+
+**Dot access:**
+```eigenscript
+print of config.host       # "localhost"
+print of config.port       # 8080
+```
+
+**Bracket access:**
+```eigenscript
+key is "host"
+print of config["host"]    # "localhost"
+print of config[key]       # "localhost"
+```
+
+**Nested dictionaries:**
+```eigenscript
+app is {"db": {"host": "localhost", "port": 5432}, "name": "myapp"}
+print of app.db.host       # "localhost"
+```
+
+**Builtins:**
+```eigenscript
+print of (keys of config)          # ["host", "port", "debug"]
+print of (values of config)        # ["localhost", 8080, 1]
+print of (has_key of [config, "host"])   # 1
+dict_set of [config, "timeout", 30]      # mutates config
+dict_remove of [config, "debug"]         # mutates config
+```
+
+## eval
+
+The `eval` builtin executes a string as EigenScript code and returns the result:
+
+```eigenscript
+result is eval of "1 + 2"          # 3
+eval of "print of 42"              # prints 42
+code is "x is 10\nprint of x"
+eval of code
+```
+
 ## Modules (load_file)
 
 ```eigenscript
@@ -252,6 +299,3 @@ Functions take exactly one argument (`n`). Pass multiple values as a list.
 
 **No break/continue:**
 Use flag variables to exit loops early.
-
-**No try/catch:**
-Errors print to stderr but execution continues (except parse errors, which abort).

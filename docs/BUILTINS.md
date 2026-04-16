@@ -1,6 +1,6 @@
 # EigenScript Builtin Reference
 
-121 builtins organized by module. Core builtins are always available.
+127 builtins organized by module. Core builtins are always available.
 Extension builtins require a full build (`./build.sh full`).
 
 ## Core Language
@@ -16,6 +16,8 @@ Extension builtins require a full build (`./build.sh full`).
 | `type` | `type of value` | Return type name: "num", "str", "list", "fn", "builtin", "null" |
 | `assert` | `assert of [cond, msg]` | Exit with message if condition is false |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
+| `eval` | `eval of code_string` | Execute EigenScript code, return result |
+| `throw` | `throw of message` | Raise catchable error |
 
 ### Lists
 
@@ -55,6 +57,16 @@ Extension builtins require a full build (`./build.sh full`).
 | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs |
 | `json_raw` | `json_raw of s` | Wrap raw JSON string (skip encoding) |
 | `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value by dot-notation path |
+
+## Dictionaries
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `keys` | `keys of dict` | List of keys |
+| `values` | `values of dict` | List of values |
+| `has_key` | `has_key of [dict, "key"]` | 1 or 0 |
+| `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict |
+| `dict_remove` | `dict_remove of [dict, "key"]` | Remove key from dict (mutates), return dict |
 
 ## Observer
 
