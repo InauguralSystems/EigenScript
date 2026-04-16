@@ -2,6 +2,39 @@
 
 All notable changes to EigenScript are documented here.
 
+## [0.7.0] — 2026-04-16
+
+### Language
+- **Pattern matching**: `match expr: case pattern: ...` with wildcard `_`
+- **Pipe operator**: `data |> transform |> sort` — left-to-right data flow
+- **Lambda expressions**: `(x) => x * 2` — inline anonymous functions with closure capture
+- **Break/continue**: proper loop control flow
+- **Dot-assignment**: `config.name is "value"` on dicts
+- **Multiline collections**: lists and dicts can span multiple lines
+- **Regex builtins**: `regex_match`, `regex_find`, `regex_replace` (POSIX ERE)
+- **Import system**: `import math` loads modules into namespaced dicts
+
+### Architecture
+- **Source split**: monolithic `eigenscript.c` → `lexer.c`, `parser.c`, `eval.c`, `builtins.c`
+- **OOM-safe allocations**: all value constructors use `xmalloc`/`xcalloc` wrappers
+- **Recursion depth guard**: `eval_node` checks against max depth to prevent stack overflow
+- **Stack protector**: `-fstack-protector-strong` enabled in builds
+
+### Security
+- Fixed shell injection in `ls` builtin
+- Hardened `strcpy` into fixed-size op fields with `snprintf`
+- Reject negative/malformed Content-Length in HTTP server
+- Reject out-of-range model dimensions; safe `size_t` casts in weight allocations
+- Softmax NaN guard: zero-sum falls back to uniform distribution
+- Three stdlib correctness fixes (math, template, test modules)
+
+### Testing
+- **552 tests** across 40+ suites (up from 224 in 0.6.0)
+- Fuzz testing: 44 edge case + adversarial tests under ASAN+UBSan
+- Coverage targets: `make coverage`, `make fuzz`, `make fuzz-run`
+- CLI/REPL, HTTP, DB, model extension test suites
+- Formal EBNF grammar specification (`docs/GRAMMAR.md`)
+
 ## [0.6.0] — 2026-04-16
 
 ### Language
