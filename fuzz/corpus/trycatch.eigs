@@ -1,0 +1,4 @@
+try:
+    x is items[100]
+catch e:
+    print of e

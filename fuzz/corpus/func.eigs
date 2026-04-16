@@ -1,0 +1,3 @@
+define add(a, b) as:
+    return a + b
+print of (add of [1, 2])

@@ -37,3 +37,5 @@ tests/*.tmp
 # Environment
 .env
 .codex
+fuzz/fuzz_stdin
+fuzz/fuzz_eigenscript

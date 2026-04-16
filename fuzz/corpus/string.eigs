@@ -1,0 +1,2 @@
+name is "hello"
+print of f"hi {name}"

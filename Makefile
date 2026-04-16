@@ -12,7 +12,7 @@ FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c \
 
 PREFIX  := $(HOME)/.local
 
-.PHONY: all build full http test install clean coverage coverage-clean
+.PHONY: all build full http test install clean coverage coverage-clean fuzz fuzz-run
 
 all: build
 
@@ -78,6 +78,21 @@ coverage: coverage-clean
 	@echo ""
 	@echo "Per-file .gcov reports written to $(SRC_DIR)/*.gcov"
 	@echo "Run 'make coverage-clean' to remove coverage artifacts."
+
+FUZZ_SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/eval.c $(SRC_DIR)/builtins.c $(SRC_DIR)/arena.c
+
+fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
+	$(CC) -g -fsanitize=address,undefined -o fuzz/fuzz_stdin \
+		fuzz/fuzz_stdin.c $(FUZZ_SOURCES) \
+		-DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_VERSION='"fuzz"' \
+		-lm -lpthread
+	@echo "Fuzz binary built. Usage: echo 'code' | ./fuzz/fuzz_stdin"
+
+fuzz-run: fuzz
+	@bash fuzz/run_fuzz.sh
 
 version:
 	@echo $(VERSION)

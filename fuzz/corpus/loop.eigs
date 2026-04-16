@@ -1,0 +1,8 @@
+i is 0
+loop while i < 5:
+    i is i + 1
+    if i == 3:
+        continue
+for x in [1, 2, 3]:
+    if x == 2:
+        break

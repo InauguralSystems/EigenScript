@@ -1,0 +1,3 @@
+d is {"a": 1, "b": 2}
+print of d.a
+d.c is 3

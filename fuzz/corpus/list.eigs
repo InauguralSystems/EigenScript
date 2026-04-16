@@ -1,0 +1,3 @@
+items is [1, 2, 3]
+print of items[0]
+print of (len of items)

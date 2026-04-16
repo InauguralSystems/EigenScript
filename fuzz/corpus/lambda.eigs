@@ -1,0 +1,2 @@
+f is (x) => x * 2
+print of (f of 5)
