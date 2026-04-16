@@ -120,7 +120,7 @@ void ne_matmul_buf_packed_f(
     memset(out, 0, m * n * sizeof(float));
     /* Temporary unpacked row — allocated from heap to handle large n.
      * Values in {-1, 0, +1}. */
-    int8_t *w_row = calloc(n, 1);
+    int8_t *w_row = xcalloc(n, 1);
     for (int64_t kk = 0; kk < k; kk++) {
         /* Unpack row kk of W once */
         int64_t row_base = kk * n;
@@ -160,17 +160,17 @@ void ne_fused_attention_forward_buf_packed_f(
     int64_t sd = seq_len * d_model;
     int64_t ss = seq_len * seq_len;
 
-    float *Q = calloc(sd, sizeof(float));
-    float *K = calloc(sd, sizeof(float));
-    float *V = calloc(sd, sizeof(float));
-    float *scores = calloc(ss, sizeof(float));
-    float *context = calloc(sd, sizeof(float));
+    float *Q = xcalloc(sd, sizeof(float));
+    float *K = xcalloc(sd, sizeof(float));
+    float *V = xcalloc(sd, sizeof(float));
+    float *scores = xcalloc(ss, sizeof(float));
+    float *context = xcalloc(sd, sizeof(float));
 
     ne_matmul_buf_packed_f(x, seq_len, d_model, wq_p, wq_alpha, d_model, Q);
     ne_matmul_buf_packed_f(x, seq_len, d_model, wk_p, wk_alpha, d_model, K);
     ne_matmul_buf_packed_f(x, seq_len, d_model, wv_p, wv_alpha, d_model, V);
 
-    float *Kt = calloc(sd, sizeof(float));
+    float *Kt = xcalloc(sd, sizeof(float));
     for (int64_t i = 0; i < seq_len; i++) {
         for (int64_t j = 0; j < d_model; j++) {
             Kt[j * seq_len + i] = K[i * d_model + j];
@@ -205,7 +205,7 @@ void ne_fused_ffn_forward_buf_packed_f(
     float *out, float *pre_act_out
 ) {
     int64_t sf = seq_len * d_ff;
-    float *hidden = calloc(sf, sizeof(float));
+    float *hidden = xcalloc(sf, sizeof(float));
 
     ne_matmul_buf_packed_f(x, seq_len, d_model, w1_p, w1_alpha, d_ff, hidden);
     memcpy(pre_act_out, hidden, sf * sizeof(float));
@@ -234,17 +234,17 @@ void ne_fused_attention_forward_buf_f(
     int64_t sd = seq_len * d_model;
     int64_t ss = seq_len * seq_len;
 
-    float* Q = (float*)calloc(sd, sizeof(float));
-    float* K = (float*)calloc(sd, sizeof(float));
-    float* V = (float*)calloc(sd, sizeof(float));
-    float* scores = (float*)calloc(ss, sizeof(float));
-    float* context = (float*)calloc(sd, sizeof(float));
+    float* Q = (float*)xcalloc(sd, sizeof(float));
+    float* K = (float*)xcalloc(sd, sizeof(float));
+    float* V = (float*)xcalloc(sd, sizeof(float));
+    float* scores = (float*)xcalloc(ss, sizeof(float));
+    float* context = (float*)xcalloc(sd, sizeof(float));
 
     ne_matmul_buf_f(x, seq_len, d_model, wq, d_model, Q);
     ne_matmul_buf_f(x, seq_len, d_model, wk, d_model, K);
     ne_matmul_buf_f(x, seq_len, d_model, wv, d_model, V);
 
-    float* Kt = (float*)calloc(sd, sizeof(float));
+    float* Kt = (float*)xcalloc(sd, sizeof(float));
     for (int64_t i = 0; i < seq_len; i++) {
         for (int64_t j = 0; j < d_model; j++) {
             Kt[j * seq_len + i] = K[i * d_model + j];
@@ -289,7 +289,7 @@ void ne_fused_ffn_forward_buf_f(
 ) {
     int64_t sf = seq_len * d_ff;
 
-    float* hidden = (float*)calloc(sf, sizeof(float));
+    float* hidden = (float*)xcalloc(sf, sizeof(float));
 
     ne_matmul_buf_f(x, seq_len, d_model, w1, d_ff, hidden);
 
@@ -329,7 +329,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     int d_model = model->config.d_model;
     int d_ff = model->config.d_ff;
 
-    float *x = calloc(seq_len * d_model, sizeof(float));
+    float *x = xcalloc(seq_len * d_model, sizeof(float));
     for (int i = 0; i < seq_len; i++) {
         int tid = token_ids[i];
         if (tid < 0) tid = 0;
@@ -337,7 +337,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         memcpy(x + i * d_model, model->token_embeddings + tid * d_model, d_model * sizeof(float));
     }
 
-    float *pe = calloc(seq_len * d_model, sizeof(float));
+    float *pe = xcalloc(seq_len * d_model, sizeof(float));
     create_sinusoidal_pe_f(pe, seq_len, d_model);
     for (int i = 0; i < seq_len * d_model; i++) x[i] += pe[i];
     free(pe);
@@ -347,13 +347,13 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     for (int l = 0; l < model->config.n_layers; l++) {
         TransformerLayer *layer = &model->layers[l];
 
-        float *norm1 = calloc(seq_len * d_model, sizeof(float));
+        float *norm1 = xcalloc(seq_len * d_model, sizeof(float));
         for (int i = 0; i < seq_len; i++) {
             layer_norm(x + i * d_model, d_model, layer->ln1_gamma, layer->ln1_beta, 1e-6f, norm1 + i * d_model);
         }
 
-        float *attn_out = calloc(seq_len * d_model, sizeof(float));
-        float *attn_probs = calloc(seq_len * seq_len, sizeof(float));
+        float *attn_out = xcalloc(seq_len * d_model, sizeof(float));
+        float *attn_probs = xcalloc(seq_len * seq_len, sizeof(float));
         if (use_tern) {
             ne_fused_attention_forward_buf_packed_f(norm1, seq_len, d_model,
                 layer->w_q_packed, layer->w_q_alpha,
@@ -372,13 +372,13 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         for (int i = 0; i < seq_len * d_model; i++) x[i] += attn_out[i];
         free(attn_out);
 
-        float *norm2 = calloc(seq_len * d_model, sizeof(float));
+        float *norm2 = xcalloc(seq_len * d_model, sizeof(float));
         for (int i = 0; i < seq_len; i++) {
             layer_norm(x + i * d_model, d_model, layer->ln2_gamma, layer->ln2_beta, 1e-6f, norm2 + i * d_model);
         }
 
-        float *ffn_out = calloc(seq_len * d_model, sizeof(float));
-        float *pre_act = calloc(seq_len * d_ff, sizeof(float));
+        float *ffn_out = xcalloc(seq_len * d_model, sizeof(float));
+        float *pre_act = xcalloc(seq_len * d_ff, sizeof(float));
         if (use_tern) {
             ne_fused_ffn_forward_buf_packed_f(norm2, seq_len, d_model,
                 layer->w_ff1_packed, layer->w_ff1_alpha, d_ff,
@@ -413,7 +413,7 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
     int vocab_size = model->config.vocab_size;
     int max_seq_len = model->config.max_seq_len;
 
-    int *token_ids = calloc(max_seq_len * 4, sizeof(int));
+    int *token_ids = xcalloc(max_seq_len * 4, sizeof(int));
     int num_tokens = prompt_len < max_seq_len ? prompt_len : max_seq_len;
     for (int i = 0; i < num_tokens; i++) {
         int tid = prompt_ids[i];
@@ -423,7 +423,7 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
     }
 
     int total_tokens = num_tokens;
-    int *output_ids = calloc(max_tokens, sizeof(int));
+    int *output_ids = xcalloc(max_tokens, sizeof(int));
     int output_count = 0;
 
     float temp_f = (float)temperature;
@@ -432,7 +432,7 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
         int ctx_start = total_tokens > max_seq_len ? total_tokens - max_seq_len : 0;
         int ctx_len = total_tokens - ctx_start;
 
-        float *logits = calloc(vocab_size, sizeof(float));
+        float *logits = xcalloc(vocab_size, sizeof(float));
         native_forward(token_ids + ctx_start, ctx_len, model, logits);
 
         int next_token;
@@ -532,7 +532,7 @@ Value* builtin_eigen_generate(Value *arg) {
     if (!g_model.loaded) return make_list(0);
 
     int prompt_len = prompt_list->data.list.count;
-    int *prompt_ids = calloc(prompt_len > 0 ? prompt_len : 1, sizeof(int));
+    int *prompt_ids = xcalloc(prompt_len > 0 ? prompt_len : 1, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
         Value *v = prompt_list->data.list.items[i];
         prompt_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;

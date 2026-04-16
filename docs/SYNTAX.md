@@ -248,6 +248,22 @@ print of (abs of -5)
 
 The loaded file's definitions are added to the global environment.
 
+### Path resolution
+
+For non-absolute paths, `load_file` searches (in order):
+
+1. The path as given, relative to the current working directory.
+2. `<script_dir>/<path>` — relative to the script being executed.
+3. `<script_dir>/../<path>` — relative to the script's parent directory.
+
+The third step is what lets a script in `examples/` pick up `lib/foo.eigs`
+without the caller having to `cd` to the repository root. `..` segments
+embedded in the `load_file` argument itself are resolved by the OS
+normally — there is no sandbox, so a script can read any file the
+invoking user can read.
+
+Absolute paths (starting with `/`) are used verbatim with no fallback.
+
 ## Interrogatives — Ask Your Code
 
 Every value in EigenScript tracks its own observer state. Interrogatives

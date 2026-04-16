@@ -131,34 +131,34 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
         json_skip_ws(p);
 
         if (strcmp(key, "w_q") == 0) {
-            layer->w_q = calloc(d_model * d_model, sizeof(float));
+            layer->w_q = xcalloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_q, d_model, d_model);
         } else if (strcmp(key, "w_k") == 0) {
-            layer->w_k = calloc(d_model * d_model, sizeof(float));
+            layer->w_k = xcalloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_k, d_model, d_model);
         } else if (strcmp(key, "w_v") == 0) {
-            layer->w_v = calloc(d_model * d_model, sizeof(float));
+            layer->w_v = xcalloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_v, d_model, d_model);
         } else if (strcmp(key, "w_o") == 0) {
-            layer->w_o = calloc(d_model * d_model, sizeof(float));
+            layer->w_o = xcalloc(d_model * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_o, d_model, d_model);
         } else if (strcmp(key, "w_ff1") == 0) {
-            layer->w_ff1 = calloc(d_model * d_ff, sizeof(float));
+            layer->w_ff1 = xcalloc(d_model * d_ff, sizeof(float));
             json_parse_2d_array(p, layer->w_ff1, d_model, d_ff);
         } else if (strcmp(key, "w_ff2") == 0) {
-            layer->w_ff2 = calloc(d_ff * d_model, sizeof(float));
+            layer->w_ff2 = xcalloc(d_ff * d_model, sizeof(float));
             json_parse_2d_array(p, layer->w_ff2, d_ff, d_model);
         } else if (strcmp(key, "ln1_gamma") == 0) {
-            layer->ln1_gamma = calloc(d_model, sizeof(float));
+            layer->ln1_gamma = xcalloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln1_gamma, d_model);
         } else if (strcmp(key, "ln1_beta") == 0) {
-            layer->ln1_beta = calloc(d_model, sizeof(float));
+            layer->ln1_beta = xcalloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln1_beta, d_model);
         } else if (strcmp(key, "ln2_gamma") == 0) {
-            layer->ln2_gamma = calloc(d_model, sizeof(float));
+            layer->ln2_gamma = xcalloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln2_gamma, d_model);
         } else if (strcmp(key, "ln2_beta") == 0) {
-            layer->ln2_beta = calloc(d_model, sizeof(float));
+            layer->ln2_beta = xcalloc(d_model, sizeof(float));
             json_parse_1d_array(p, layer->ln2_beta, d_model);
         } else {
             json_skip_value(p);
@@ -169,23 +169,23 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
     if (**p == '}') (*p)++;
 
     /* Allocate ternary projections (populated by requantize_all_layers after load) */
-    layer->w_q_tern = calloc(d_model * d_model, sizeof(float));
-    layer->w_k_tern = calloc(d_model * d_model, sizeof(float));
-    layer->w_v_tern = calloc(d_model * d_model, sizeof(float));
-    layer->w_o_tern = calloc(d_model * d_model, sizeof(float));
-    layer->w_ff1_tern = calloc(d_model * d_ff, sizeof(float));
-    layer->w_ff2_tern = calloc(d_ff * d_model, sizeof(float));
+    layer->w_q_tern = xcalloc(d_model * d_model, sizeof(float));
+    layer->w_k_tern = xcalloc(d_model * d_model, sizeof(float));
+    layer->w_v_tern = xcalloc(d_model * d_model, sizeof(float));
+    layer->w_o_tern = xcalloc(d_model * d_model, sizeof(float));
+    layer->w_ff1_tern = xcalloc(d_model * d_ff, sizeof(float));
+    layer->w_ff2_tern = xcalloc(d_ff * d_model, sizeof(float));
 
     /* Allocate packed ternary buffers (2 bits per weight, 4 per byte) */
     int64_t n_m2 = (int64_t)d_model * d_model;
     int64_t n_mf = (int64_t)d_model * d_ff;
     int64_t n_fm = (int64_t)d_ff * d_model;
-    layer->w_q_packed = calloc((n_m2 + 3) / 4, 1);
-    layer->w_k_packed = calloc((n_m2 + 3) / 4, 1);
-    layer->w_v_packed = calloc((n_m2 + 3) / 4, 1);
-    layer->w_o_packed = calloc((n_m2 + 3) / 4, 1);
-    layer->w_ff1_packed = calloc((n_mf + 3) / 4, 1);
-    layer->w_ff2_packed = calloc((n_fm + 3) / 4, 1);
+    layer->w_q_packed = xcalloc((n_m2 + 3) / 4, 1);
+    layer->w_k_packed = xcalloc((n_m2 + 3) / 4, 1);
+    layer->w_v_packed = xcalloc((n_m2 + 3) / 4, 1);
+    layer->w_o_packed = xcalloc((n_m2 + 3) / 4, 1);
+    layer->w_ff1_packed = xcalloc((n_mf + 3) / 4, 1);
+    layer->w_ff2_packed = xcalloc((n_fm + 3) / 4, 1);
 
     return 0;
 }
@@ -198,7 +198,7 @@ int load_model_weights(const char *path, TransformerModel *model) {
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    char *data = malloc(size + 1);
+    char *data = xmalloc(size + 1);
     if (!data) { fclose(f); return -1; }
     size_t got = fread(data, 1, size, f);
     fclose(f);
@@ -242,12 +242,12 @@ int load_model_weights(const char *path, TransformerModel *model) {
         } else if (strcmp(key, "token_embeddings") == 0) {
             int vs = model->config.vocab_size;
             int dm = model->config.d_model;
-            model->token_embeddings = calloc(vs * dm, sizeof(float));
+            model->token_embeddings = xcalloc(vs * dm, sizeof(float));
             json_parse_2d_array(&p, model->token_embeddings, vs, dm);
         } else if (strcmp(key, "output_proj") == 0) {
             int dm = model->config.d_model;
             int vs = model->config.vocab_size;
-            model->output_proj = calloc(dm * vs, sizeof(float));
+            model->output_proj = xcalloc(dm * vs, sizeof(float));
             json_parse_2d_array(&p, model->output_proj, dm, vs);
         } else if (strcmp(key, "layers") == 0) {
             json_skip_ws(&p);

@@ -110,7 +110,7 @@ Value* builtin_db_query_json(Value *arg) {
 
     int buf_size = nrows * ncols * 256 + 256;
     if (buf_size > 1048576) buf_size = 1048576;
-    char *buf = calloc(buf_size, 1);
+    char *buf = xcalloc(buf_size, 1);
     int pos = 0;
     pos += snprintf(buf + pos, buf_size - pos, "[");
     for (int r = 0; r < nrows && pos < buf_size - 512; r++) {
