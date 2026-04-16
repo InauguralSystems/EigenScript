@@ -82,6 +82,8 @@ static const char* tok_type_name(TokType t) {
         case TOK_COMMA: return "','";
         case TOK_COLON: return "':'";
         case TOK_DOT: return "'.'";
+        case TOK_LBRACE: return "'{'";
+        case TOK_RBRACE: return "'}'";
         case TOK_NEWLINE: return "newline";
         case TOK_INDENT: return "indent";
         case TOK_DEDENT: return "dedent";
@@ -101,6 +103,7 @@ static const char* val_type_name(ValType t) {
         case VAL_BUILTIN: return "builtin";
         case VAL_NULL: return "null";
         case VAL_JSON_RAW: return "json_raw";
+        case VAL_DICT: return "dict";
         default: return "?";
     }
 }
@@ -202,6 +205,67 @@ Value* make_builtin(BuiltinFn fn) {
     return v;
 }
 
+Value* make_dict(int capacity) {
+    if (capacity < 8) capacity = 8;
+    Value *v = calloc(1, sizeof(Value));
+    v->type = VAL_DICT;
+    v->data.dict.keys = calloc(capacity, sizeof(char*));
+    v->data.dict.vals = calloc(capacity, sizeof(Value*));
+    v->data.dict.count = 0;
+    v->data.dict.capacity = capacity;
+    return v;
+}
+
+void dict_set(Value *dict, const char *key, Value *val) {
+    if (!dict || dict->type != VAL_DICT) return;
+    /* Check if key exists */
+    for (int i = 0; i < dict->data.dict.count; i++) {
+        if (strcmp(dict->data.dict.keys[i], key) == 0) {
+            dict->data.dict.vals[i] = val;
+            return;
+        }
+    }
+    /* Grow if needed */
+    if (dict->data.dict.count >= dict->data.dict.capacity) {
+        int new_cap = dict->data.dict.capacity * 2;
+        dict->data.dict.keys = realloc(dict->data.dict.keys, new_cap * sizeof(char*));
+        dict->data.dict.vals = realloc(dict->data.dict.vals, new_cap * sizeof(Value*));
+        dict->data.dict.capacity = new_cap;
+    }
+    dict->data.dict.keys[dict->data.dict.count] = strdup(key);
+    dict->data.dict.vals[dict->data.dict.count] = val;
+    dict->data.dict.count++;
+}
+
+Value* dict_get(Value *dict, const char *key) {
+    if (!dict || dict->type != VAL_DICT) return NULL;
+    for (int i = 0; i < dict->data.dict.count; i++) {
+        if (strcmp(dict->data.dict.keys[i], key) == 0)
+            return dict->data.dict.vals[i];
+    }
+    return NULL;
+}
+
+int dict_has(Value *dict, const char *key) {
+    return dict_get(dict, key) != NULL;
+}
+
+void dict_remove(Value *dict, const char *key) {
+    if (!dict || dict->type != VAL_DICT) return;
+    for (int i = 0; i < dict->data.dict.count; i++) {
+        if (strcmp(dict->data.dict.keys[i], key) == 0) {
+            free(dict->data.dict.keys[i]);
+            /* Shift remaining */
+            for (int j = i; j < dict->data.dict.count - 1; j++) {
+                dict->data.dict.keys[j] = dict->data.dict.keys[j+1];
+                dict->data.dict.vals[j] = dict->data.dict.vals[j+1];
+            }
+            dict->data.dict.count--;
+            return;
+        }
+    }
+}
+
 void value_free(Value *v) {
     if (!v) return;
     switch (v->type) {
@@ -218,6 +282,14 @@ void value_free(Value *v) {
             for (int i = 0; i < v->data.fn.param_count; i++)
                 free(v->data.fn.params[i]);
             free(v->data.fn.params);
+            break;
+        case VAL_DICT:
+            for (int i = 0; i < v->data.dict.count; i++) {
+                free(v->data.dict.keys[i]);
+                value_free(v->data.dict.vals[i]);
+            }
+            free(v->data.dict.keys);
+            free(v->data.dict.vals);
             break;
         default:
             break;
@@ -252,6 +324,7 @@ int is_truthy(Value *v) {
         case VAL_FN: return 1;
         case VAL_BUILTIN: return 1;
         case VAL_JSON_RAW: return v->data.str && v->data.str[0] != '\0';
+        case VAL_DICT: return v->data.dict.count > 0;
     }
     return 0;
 }
@@ -298,6 +371,36 @@ char* value_to_string(Value *v) {
             return result;
         }
         case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return strdup(buf);
+        case VAL_DICT: {
+            char *result = malloc(MAX_STR);
+            int pos = 0;
+            int remaining;
+            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+            pos += snprintf(result + pos, remaining, "{");
+            if (pos >= MAX_STR) pos = MAX_STR - 1;
+            for (int i = 0; i < v->data.dict.count; i++) {
+                if (i > 0) {
+                    remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+                    pos += snprintf(result + pos, remaining, ", ");
+                    if (pos >= MAX_STR) pos = MAX_STR - 1;
+                }
+                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+                pos += snprintf(result + pos, remaining, "\"%s\": ", v->data.dict.keys[i]);
+                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                char *vs = value_to_string(v->data.dict.vals[i]);
+                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+                if (v->data.dict.vals[i] && v->data.dict.vals[i]->type == VAL_STR)
+                    pos += snprintf(result + pos, remaining, "\"%s\"", vs);
+                else
+                    pos += snprintf(result + pos, remaining, "%s", vs);
+                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                free(vs);
+            }
+            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+            pos += snprintf(result + pos, remaining, "}");
+            if (pos >= MAX_STR) pos = MAX_STR - 1;
+            return result;
+        }
         case VAL_BUILTIN: return strdup("<builtin>");
         case VAL_JSON_RAW: return strdup(v->data.str);
     }
@@ -641,6 +744,8 @@ TokenList tokenize(const char *source) {
             case ')': tok_add(&tl, TOK_RPAREN, 0, NULL, line); p++; break;
             case '[': tok_add(&tl, TOK_LBRACKET, 0, NULL, line); p++; break;
             case ']': tok_add(&tl, TOK_RBRACKET, 0, NULL, line); p++; break;
+            case '{': tok_add(&tl, TOK_LBRACE, 0, NULL, line); p++; break;
+            case '}': tok_add(&tl, TOK_RBRACE, 0, NULL, line); p++; break;
             case ',': tok_add(&tl, TOK_COMMA, 0, NULL, line); p++; break;
             case ':': tok_add(&tl, TOK_COLON, 0, NULL, line); p++; break;
             case '.': tok_add(&tl, TOK_DOT, 0, NULL, line); p++; break;
@@ -795,6 +900,18 @@ static void free_ast(ASTNode *node) {
             free(node->data.trycatch.catch_body);
             free(node->data.trycatch.err_name);
             break;
+        case AST_DICT:
+            for (int i = 0; i < node->data.dict.count; i++) {
+                free_ast(node->data.dict.keys[i]);
+                free_ast(node->data.dict.vals[i]);
+            }
+            free(node->data.dict.keys);
+            free(node->data.dict.vals);
+            break;
+        case AST_DOT:
+            free_ast(node->data.dot.target);
+            free(node->data.dot.key);
+            break;
         case AST_BLOCK:
             for (int i = 0; i < node->data.block.count; i++) free_ast(node->data.block.stmts[i]);
             if (node->data.block.stmts) free(node->data.block.stmts);
@@ -939,14 +1056,24 @@ static ASTNode* parse_primary(Parser *p) {
         p_advance(p);
         ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
         n->data.ident.name = strdup(t->str_val);
-        while (p_cur(p)->type == TOK_LBRACKET) {
-            p_advance(p);
-            ASTNode *idx = parse_expression(p);
-            p_expect(p, TOK_RBRACKET);
-            ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
-            index_node->data.index.target = n;
-            index_node->data.index.index = idx;
-            n = index_node;
+        while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
+            if (p_cur(p)->type == TOK_DOT) {
+                p_advance(p);
+                Token *key_tok = p_cur(p);
+                p_expect(p, TOK_IDENT);
+                ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
+                dot->data.dot.target = n;
+                dot->data.dot.key = strdup(key_tok->str_val);
+                n = dot;
+            } else {
+                p_advance(p);
+                ASTNode *idx = parse_expression(p);
+                p_expect(p, TOK_RBRACKET);
+                ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+                index_node->data.index.target = n;
+                index_node->data.index.index = idx;
+                n = index_node;
+            }
         }
         return n;
     }
@@ -1021,6 +1148,54 @@ static ASTNode* parse_primary(Parser *p) {
             index_node->data.index.target = n;
             index_node->data.index.index = idx;
             n = index_node;
+        }
+        return n;
+    }
+
+    /* Dict literal: {"key": value, ...} */
+    if (t->type == TOK_LBRACE) {
+        p_advance(p);
+        ASTNode **keys = malloc(MAX_LIST * sizeof(ASTNode*));
+        ASTNode **vals = malloc(MAX_LIST * sizeof(ASTNode*));
+        int count = 0;
+        if (p_cur(p)->type != TOK_RBRACE) {
+            keys[count] = parse_expression(p);
+            p_expect(p, TOK_COLON);
+            vals[count] = parse_expression(p);
+            count++;
+            while (p_cur(p)->type == TOK_COMMA) {
+                p_advance(p);
+                if (p_cur(p)->type == TOK_RBRACE) break;
+                keys[count] = parse_expression(p);
+                p_expect(p, TOK_COLON);
+                vals[count] = parse_expression(p);
+                count++;
+            }
+        }
+        p_expect(p, TOK_RBRACE);
+        ASTNode *n = make_node(AST_DICT, p_cur(p)->line);
+        n->data.dict.keys = keys;
+        n->data.dict.vals = vals;
+        n->data.dict.count = count;
+        /* Handle postfix .key and [idx] */
+        while (p_cur(p)->type == TOK_DOT || p_cur(p)->type == TOK_LBRACKET) {
+            if (p_cur(p)->type == TOK_DOT) {
+                p_advance(p);
+                Token *key_tok = p_cur(p);
+                p_expect(p, TOK_IDENT);
+                ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
+                dot->data.dot.target = n;
+                dot->data.dot.key = strdup(key_tok->str_val);
+                n = dot;
+            } else {
+                p_advance(p);
+                ASTNode *idx = parse_expression(p);
+                p_expect(p, TOK_RBRACKET);
+                ASTNode *index_node = make_node(AST_INDEX, p_cur(p)->line);
+                index_node->data.index.target = n;
+                index_node->data.index.index = idx;
+                n = index_node;
+            }
         }
         return n;
     }
@@ -1707,9 +1882,36 @@ Value* eval_node(ASTNode *node, Env *env) {
         return list;
     }
 
+    case AST_DICT: {
+        Value *d = make_dict(node->data.dict.count);
+        for (int i = 0; i < node->data.dict.count; i++) {
+            Value *key = eval_node(node->data.dict.keys[i], env);
+            Value *val = eval_node(node->data.dict.vals[i], env);
+            char *key_str = value_to_string(key);
+            dict_set(d, key_str, val);
+            free(key_str);
+        }
+        return d;
+    }
+
+    case AST_DOT: {
+        Value *target = eval_node(node->data.dot.target, env);
+        if (target->type == VAL_DICT) {
+            Value *val = dict_get(target, node->data.dot.key);
+            return val ? val : make_null();
+        }
+        runtime_error(node->line, "cannot access .%s on %s", node->data.dot.key, val_type_name(target->type));
+        return make_null();
+    }
+
     case AST_INDEX: {
         Value *target = eval_node(node->data.index.target, env);
         Value *idx = eval_node(node->data.index.index, env);
+        /* Dict indexing: d["key"] */
+        if (target->type == VAL_DICT && idx->type == VAL_STR) {
+            Value *val = dict_get(target, idx->data.str);
+            return val ? val : make_null();
+        }
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i = (int)idx->data.num;
             if (i >= 0 && i < target->data.list.count)
@@ -1846,6 +2048,8 @@ Value* builtin_len(Value *arg) {
         return make_num(arg->data.list.count);
     if (arg->type == VAL_STR)
         return make_num(strlen(arg->data.str));
+    if (arg->type == VAL_DICT)
+        return make_num(arg->data.dict.count);
     return make_num(0);
 }
 
@@ -1920,6 +2124,55 @@ Value* builtin_throw(Value *arg) {
     return make_null();
 }
 
+/* ==== Dict builtins ==== */
+
+Value* builtin_keys(Value *arg) {
+    if (arg->type == VAL_DICT) {
+        Value *list = make_list(arg->data.dict.count);
+        for (int i = 0; i < arg->data.dict.count; i++)
+            list_append(list, make_str(arg->data.dict.keys[i]));
+        return list;
+    }
+    return make_list(0);
+}
+
+Value* builtin_values(Value *arg) {
+    if (arg->type == VAL_DICT) {
+        Value *list = make_list(arg->data.dict.count);
+        for (int i = 0; i < arg->data.dict.count; i++)
+            list_append(list, arg->data.dict.vals[i]);
+        return list;
+    }
+    return make_list(0);
+}
+
+Value* builtin_has_key(Value *arg) {
+    if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    Value *d = arg->data.list.items[0];
+    Value *key = arg->data.list.items[1];
+    if (d->type != VAL_DICT || key->type != VAL_STR) return make_num(0);
+    return make_num(dict_has(d, key->data.str) ? 1 : 0);
+}
+
+Value* builtin_dict_set(Value *arg) {
+    if (arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    Value *d = arg->data.list.items[0];
+    Value *key = arg->data.list.items[1];
+    Value *val = arg->data.list.items[2];
+    if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    dict_set(d, key->data.str, val);
+    return d;
+}
+
+Value* builtin_dict_remove(Value *arg) {
+    if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    Value *d = arg->data.list.items[0];
+    Value *key = arg->data.list.items[1];
+    if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    dict_remove(d, key->data.str);
+    return d;
+}
+
 Value* builtin_observe(Value *arg) {
     Value *list = make_list(4);
     if (!arg) {
@@ -1947,6 +2200,7 @@ Value* builtin_type(Value *arg) {
         case VAL_BUILTIN: return make_str("builtin");
         case VAL_NULL: return make_str("none");
         case VAL_JSON_RAW: return make_str("json_raw");
+        case VAL_DICT: return make_str("dict");
     }
     return make_str("none");
 }
@@ -4606,6 +4860,11 @@ void register_builtins(Env *env) {
     env_set_local(env, "report", make_builtin(builtin_report));
     env_set_local(env, "assert", make_builtin(builtin_assert));
     env_set_local(env, "throw", make_builtin(builtin_throw));
+    env_set_local(env, "keys", make_builtin(builtin_keys));
+    env_set_local(env, "values", make_builtin(builtin_values));
+    env_set_local(env, "has_key", make_builtin(builtin_has_key));
+    env_set_local(env, "dict_set", make_builtin(builtin_dict_set));
+    env_set_local(env, "dict_remove", make_builtin(builtin_dict_remove));
     env_set_local(env, "observe", make_builtin(builtin_observe));
     env_set_local(env, "type", make_builtin(builtin_type));
     env_set_local(env, "json_encode", make_builtin(builtin_json_encode));

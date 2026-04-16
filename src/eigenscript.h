@@ -65,6 +65,7 @@ typedef enum {
     TOK_LT, TOK_GT, TOK_LE, TOK_GE, TOK_EQ, TOK_NE, TOK_ASSIGN,
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACKET, TOK_RBRACKET,
     TOK_COMMA, TOK_COLON, TOK_DOT,
+    TOK_LBRACE, TOK_RBRACE,
     TOK_NEWLINE, TOK_INDENT, TOK_DEDENT,
     TOK_EOF
 } TokType;
@@ -91,7 +92,7 @@ typedef enum {
     AST_BLOCK, AST_LIST, AST_INDEX, AST_LISTCOMP, AST_FOR,
     AST_PROGRAM,
     AST_INTERROGATE, AST_PREDICATE,
-    AST_TRY
+    AST_TRY, AST_DICT, AST_DOT
 } ASTType;
 
 typedef struct ASTNode ASTNode;
@@ -120,13 +121,15 @@ struct ASTNode {
         struct { int kind; ASTNode *expr; } interrogate;
         struct { int kind; } predicate;
         struct { ASTNode **try_body; int try_count; char *err_name; ASTNode **catch_body; int catch_count; } trycatch;
+        struct { ASTNode **keys; ASTNode **vals; int count; } dict;
+        struct { ASTNode *target; char *key; } dot;
     } data;
 };
 
 /* ---- Value types ---- */
 
 typedef enum {
-    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW
+    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT
 } ValType;
 
 typedef struct Value Value;
@@ -151,6 +154,7 @@ struct Value {
         struct { Value **items; int count; int capacity; } list;
         struct { char *name; char **params; int param_count; ASTNode **body; int body_count; Env *closure; } fn;
         BuiltinFn builtin;
+        struct { char **keys; Value **vals; int count; int capacity; } dict;
     } data;
     double entropy;
     double dH;
@@ -196,6 +200,9 @@ Value* make_null(void);
 Value* make_list(int capacity);
 Value* make_fn(const char *name, char **params, int param_count, ASTNode **body, int body_count, Env *closure);
 Value* make_builtin(BuiltinFn fn);
+Value* make_dict(int capacity);
+void dict_set(Value *dict, const char *key, Value *val);
+Value* dict_get(Value *dict, const char *key);
 void list_append(Value *list, Value *item);
 
 /* ---- Environment ---- */
