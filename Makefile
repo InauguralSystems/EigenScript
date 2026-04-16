@@ -4,7 +4,7 @@ CFLAGS  := -Wall -Wextra -O2
 LDFLAGS := -lm -lpthread
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/arena.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/builtins.c $(SRC_DIR)/arena.c $(SRC_DIR)/main.c
 BINARY  := $(SRC_DIR)/eigenscript
 
 FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c \
