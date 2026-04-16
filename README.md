@@ -29,7 +29,8 @@ Requires only `gcc` — no external dependencies.
 ## Run
 
 ```bash
-eigenscript program.eigs
+eigenscript program.eigs    # run a script
+eigenscript                 # interactive REPL
 eigenscript --version
 ```
 
@@ -40,11 +41,20 @@ eigenscript --version
 x is 42
 name is "hello"
 
-# Functions take one argument (n)
+# Functions with named parameters
+define add(a, b) as:
+    return a + b
+
+print of (add of [3, 4])
+
+# Single-argument functions (classic style)
 define double as:
     return n * 2
 
 print of (double of 21)
+
+# String interpolation
+print of f"Hello {name}, {x} doubled is {double of x}"
 
 # Loops
 for i in range of 10:

@@ -2,6 +2,19 @@
 
 All notable changes to EigenScript are documented here.
 
+## [0.6.0] — 2026-04-16
+
+### Language
+- **REPL**: Run `eigenscript` with no arguments for an interactive session
+- **Named function parameters**: `define add(a, b) as:` — no more manual `n[0]`/`n[1]` unpacking
+- **String interpolation**: `f"Hello {name}, {x * 2}"` — expressions inside braces are evaluated
+- Backward compatible: `define foo as:` with single `n` argument still works
+- `n` is always available in all functions for compatibility with existing code
+
+### Fixes
+- Fixed potential snprintf buffer overflow in list-to-string conversion (CodeQL #14-16)
+- Added least-privilege permissions to CI workflow (CodeQL #17)
+
 ## [0.5.0] — 2025-04-03
 
 Initial public release of the C-native EigenScript runtime.

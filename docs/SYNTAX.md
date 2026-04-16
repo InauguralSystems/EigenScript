@@ -1,4 +1,4 @@
-# EigenScript v0.5.0 Syntax Guide
+# EigenScript v0.6.0 Syntax Guide
 
 ## Variables and Assignment
 
@@ -14,9 +14,31 @@ data is [1, 2, 3, 4, 5]
 
 ## Functions
 
-Functions are defined with `define ... as:`. The argument is always called `n`.
+### Named Parameters (recommended)
 
-**Single argument** — `n` is the value:
+Define functions with named parameters in parentheses:
+
+```eigenscript
+define add(a, b) as:
+    return a + b
+
+result is add of [3, 4]    # 7
+```
+
+```eigenscript
+define greet(name, age) as:
+    return f"Hello {name}, you are {age}"
+
+print of (greet of ["Jon", 30])
+```
+
+The argument list is unpacked into the named parameters automatically.
+`n` is still available as the raw argument for backward compatibility.
+
+### Classic Style
+
+Functions can also be defined without named parameters. The argument is `n`:
+
 ```eigenscript
 define square as:
     return n * n
@@ -24,18 +46,17 @@ define square as:
 result is square of 5    # 25
 ```
 
-**Multiple arguments** — pass a list, unpack with `n[0]`, `n[1]`:
+For multiple arguments in classic style, pass a list and unpack manually:
 ```eigenscript
 define add_three as:
-    a is n[0]
-    b is n[1]
-    c is n[2]
-    return a + b + c
+    return n[0] + n[1] + n[2]
 
 result is add_three of [10, 20, 30]    # 60
 ```
 
-**No arguments** — pass `null`:
+### No arguments
+
+Pass `null`:
 ```eigenscript
 define greet as:
     print of "Hello!"
@@ -43,8 +64,42 @@ define greet as:
 greet of null
 ```
 
-**Convention:** Single-value functions use `n` directly. Multi-argument
-functions pass a list and unpack with `n[0]`, `n[1]`, etc.
+## String Interpolation
+
+Prefix a string with `f` to enable expression interpolation with `{...}`:
+
+```eigenscript
+name is "World"
+x is 42
+print of f"Hello {name}!"
+print of f"x = {x}, doubled = {x * 2}"
+print of f"list length: {len of items}"
+```
+
+Expressions inside `{}` are evaluated and converted to strings. Use `\{` and
+`\}` for literal braces.
+
+## Interactive REPL
+
+Run `eigenscript` with no arguments to enter the REPL:
+
+```
+$ eigenscript
+EigenScript 0.6.0
+Type 'exit' or Ctrl-D to quit.
+
+eigs> x is 42
+eigs> print of f"x = {x}"
+x = 42
+eigs> define double(n) as:
+...       return n * 2
+...
+eigs> double of 21
+=> 42
+```
+
+Multi-line input (functions, loops, conditionals) is detected automatically
+when a line ends with `:`. A blank line ends the block.
 
 ## Conditionals
 

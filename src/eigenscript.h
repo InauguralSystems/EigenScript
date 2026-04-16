@@ -106,7 +106,7 @@ struct ASTNode {
         struct { ASTNode *left; ASTNode *right; } relation;
         struct { ASTNode *cond; ASTNode **if_body; int if_count; ASTNode **else_body; int else_count; } cond;
         struct { ASTNode *cond; ASTNode **body; int body_count; } loop;
-        struct { char *name; char *param; ASTNode **body; int body_count; } func;
+        struct { char *name; char **params; int param_count; ASTNode **body; int body_count; } func;
         struct { ASTNode *expr; } ret;
         struct { ASTNode **stmts; int count; } block;
         struct { ASTNode **elems; int count; } list;
@@ -145,7 +145,7 @@ struct Value {
         double num;
         char *str;
         struct { Value **items; int count; int capacity; } list;
-        struct { char *name; char *param; ASTNode **body; int body_count; Env *closure; } fn;
+        struct { char *name; char **params; int param_count; ASTNode **body; int body_count; Env *closure; } fn;
         BuiltinFn builtin;
     } data;
     double entropy;
@@ -190,7 +190,7 @@ Value* make_num(double n);
 Value* make_str(const char *s);
 Value* make_null(void);
 Value* make_list(int capacity);
-Value* make_fn(const char *name, const char *param, ASTNode **body, int body_count, Env *closure);
+Value* make_fn(const char *name, char **params, int param_count, ASTNode **body, int body_count, Env *closure);
 Value* make_builtin(BuiltinFn fn);
 void list_append(Value *list, Value *item);
 

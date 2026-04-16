@@ -159,11 +159,14 @@ Value* make_list(int capacity) {
     return v;
 }
 
-Value* make_fn(const char *name, const char *param, ASTNode **body, int body_count, Env *closure) {
+Value* make_fn(const char *name, char **params, int param_count, ASTNode **body, int body_count, Env *closure) {
     Value *v = calloc(1, sizeof(Value));
     v->type = VAL_FN;
     v->data.fn.name = strdup(name ? name : "");
-    v->data.fn.param = strdup(param ? param : "n");
+    v->data.fn.params = malloc(param_count * sizeof(char*));
+    v->data.fn.param_count = param_count;
+    for (int i = 0; i < param_count; i++)
+        v->data.fn.params[i] = strdup(params[i]);
     v->data.fn.body = body;
     v->data.fn.body_count = body_count;
     v->data.fn.closure = closure;
@@ -190,7 +193,9 @@ void value_free(Value *v) {
             break;
         case VAL_FN:
             free(v->data.fn.name);
-            free(v->data.fn.param);
+            for (int i = 0; i < v->data.fn.param_count; i++)
+                free(v->data.fn.params[i]);
+            free(v->data.fn.params);
             break;
         default:
             break;
@@ -460,6 +465,99 @@ TokenList tokenize(const char *source) {
             continue;
         }
 
+        /* f-string: f"hello {expr}" expands to ("hello " + (str of (expr))) */
+        if (*p == 'f' && *(p+1) == '"') {
+            p += 2; /* skip f" */
+            char buf[MAX_STR];
+            int bi = 0;
+            int has_segments = 0;
+
+            while (*p && *p != '"') {
+                if (*p == '\\' && (*(p+1) == '{' || *(p+1) == '}')) {
+                    buf[bi++] = *(p+1);
+                    p += 2;
+                    continue;
+                }
+                if (*p == '\\') {
+                    p++;
+                    switch (*p) {
+                        case 'n': buf[bi++] = '\n'; break;
+                        case 't': buf[bi++] = '\t'; break;
+                        case '\\': buf[bi++] = '\\'; break;
+                        case '"': buf[bi++] = '"'; break;
+                        default: buf[bi++] = *p; break;
+                    }
+                    p++;
+                    continue;
+                }
+                if (*p == '{') {
+                    /* Emit accumulated literal and + operator */
+                    buf[bi] = '\0';
+                    if (bi > 0 || !has_segments) {
+                        if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line);
+                        tok_add(&tl, TOK_STR, 0, buf, line);
+                        has_segments = 1;
+                    }
+                    bi = 0;
+                    p++; /* skip { */
+
+                    /* Emit: + (str of (expr)) */
+                    if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line);
+                    else has_segments = 1;
+                    tok_add(&tl, TOK_LPAREN, 0, NULL, line);
+                    tok_add(&tl, TOK_IDENT, 0, "str", line);
+                    tok_add(&tl, TOK_OF, 0, NULL, line);
+                    tok_add(&tl, TOK_LPAREN, 0, NULL, line);
+
+                    /* Tokenize the expression inside braces */
+                    int depth = 1;
+                    char expr_buf[MAX_STR];
+                    int ei = 0;
+                    while (*p && depth > 0 && ei < MAX_STR - 1) {
+                        if (*p == '{') depth++;
+                        else if (*p == '}') { depth--; if (depth == 0) break; }
+                        expr_buf[ei++] = *p++;
+                    }
+                    expr_buf[ei] = '\0';
+                    if (*p == '}') p++;
+                    else {
+                        fprintf(stderr, "Syntax error line %d: unterminated f-string expression\n", line);
+                        g_parse_errors++;
+                    }
+
+                    /* Tokenize the inner expression and splice tokens in */
+                    TokenList inner = tokenize(expr_buf);
+                    for (int ti = 0; ti < inner.count; ti++) {
+                        if (inner.tokens[ti].type == TOK_EOF) break;
+                        if (inner.tokens[ti].type == TOK_NEWLINE) continue;
+                        Token *it = &inner.tokens[ti];
+                        tok_add(&tl, it->type, it->num_val, it->str_val, line);
+                    }
+                    free_tokenlist(&inner);
+
+                    tok_add(&tl, TOK_RPAREN, 0, NULL, line);
+                    tok_add(&tl, TOK_RPAREN, 0, NULL, line);
+                    continue;
+                }
+                buf[bi++] = *p++;
+            }
+            /* Emit trailing literal */
+            buf[bi] = '\0';
+            if (bi > 0) {
+                if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line);
+                tok_add(&tl, TOK_STR, 0, buf, line);
+            } else if (!has_segments) {
+                /* empty f-string: f"" */
+                tok_add(&tl, TOK_STR, 0, "", line);
+            }
+            if (*p == '"') p++;
+            else {
+                fprintf(stderr, "Syntax error line %d: unterminated f-string\n", line);
+                g_parse_errors++;
+            }
+            continue;
+        }
+
         if (*p == '"') {
             p++;
             char buf[MAX_STR];
@@ -657,7 +755,9 @@ static void free_ast(ASTNode *node) {
             break;
         case AST_FUNC:
             if (node->data.func.name) free(node->data.func.name);
-            if (node->data.func.param) free(node->data.func.param);
+            for (int i = 0; i < node->data.func.param_count; i++)
+                free(node->data.func.params[i]);
+            free(node->data.func.params);
             for (int i = 0; i < node->data.func.body_count; i++) free_ast(node->data.func.body[i]);
             if (node->data.func.body) free(node->data.func.body);
             break;
@@ -1040,6 +1140,27 @@ static ASTNode* parse_statement(Parser *p) {
         p_advance(p);
         Token *name_tok = p_cur(p);
         p_expect(p, TOK_IDENT);
+
+        /* Parse optional named parameters: define add(a, b) as: */
+        char **params = NULL;
+        int param_count = 0;
+        if (p_cur(p)->type == TOK_LPAREN) {
+            p_advance(p); /* skip ( */
+            params = malloc(16 * sizeof(char*));
+            while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
+                params[param_count++] = strdup(p_cur(p)->str_val);
+                p_advance(p);
+                if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+            }
+            p_expect(p, TOK_RPAREN);
+        }
+        if (param_count == 0) {
+            /* No explicit params: default to single param "n" */
+            params = malloc(sizeof(char*));
+            params[0] = strdup("n");
+            param_count = 1;
+        }
+
         if (p_cur(p)->type == TOK_AS) p_advance(p);
         p_expect(p, TOK_COLON);
         p_skip_newlines(p);
@@ -1047,7 +1168,8 @@ static ASTNode* parse_statement(Parser *p) {
         ASTNode **body = parse_block(p, &body_count);
         ASTNode *n = make_node(AST_FUNC, p_cur(p)->line);
         n->data.func.name = strdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
-        n->data.func.param = strdup("n");
+        n->data.func.params = params;
+        n->data.func.param_count = param_count;
         n->data.func.body = body;
         n->data.func.body_count = body_count;
         return n;
@@ -1380,7 +1502,15 @@ Value* eval_node(ASTNode *node, Env *env) {
 
         if (left_val->type == VAL_FN) {
             Env *call_env = env_new(left_val->data.fn.closure);
-            env_set_local(call_env, left_val->data.fn.param, right_val);
+            if (left_val->data.fn.param_count > 1 && right_val && right_val->type == VAL_LIST) {
+                /* Multi-param: unpack list into named params */
+                for (int pi = 0; pi < left_val->data.fn.param_count && pi < right_val->data.list.count; pi++)
+                    env_set_local(call_env, left_val->data.fn.params[pi], right_val->data.list.items[pi]);
+            } else if (left_val->data.fn.param_count == 1) {
+                /* Single param: bind to param name */
+                env_set_local(call_env, left_val->data.fn.params[0], right_val);
+            }
+            /* Always bind "n" for backward compatibility */
             env_set_local(call_env, "n", right_val);
 
             g_returning = 0;
@@ -1469,7 +1599,8 @@ Value* eval_node(ASTNode *node, Env *env) {
     }
 
     case AST_FUNC: {
-        Value *fn = make_fn(node->data.func.name, node->data.func.param,
+        Value *fn = make_fn(node->data.func.name, node->data.func.params,
+                           node->data.func.param_count,
                            node->data.func.body, node->data.func.body_count, env);
         env->captured = 1;  /* This env is now a closure — do not free */
         env_set(env, node->data.func.name, fn);
@@ -3440,7 +3571,12 @@ static Value* call_eigs_fn(Value *fn, Value *arg) {
     if (fn->type == VAL_BUILTIN) return fn->data.builtin(arg);
     if (fn->type != VAL_FN) return make_null();
     Env *call_env = env_new(fn->data.fn.closure);
-    env_set_local(call_env, fn->data.fn.param, arg);
+    if (fn->data.fn.param_count > 1 && arg && arg->type == VAL_LIST) {
+        for (int pi = 0; pi < fn->data.fn.param_count && pi < arg->data.list.count; pi++)
+            env_set_local(call_env, fn->data.fn.params[pi], arg->data.list.items[pi]);
+    } else if (fn->data.fn.param_count == 1) {
+        env_set_local(call_env, fn->data.fn.params[0], arg);
+    }
     env_set_local(call_env, "n", arg);
     g_returning = 0;
     g_return_val = NULL;

@@ -1,5 +1,5 @@
 /*
- * EigenScript CLI — script runner entry point.
+ * EigenScript CLI — script runner and REPL entry point.
  */
 
 #include "eigenscript.h"
@@ -11,18 +11,144 @@ Env *g_global_env = NULL;
 char g_script_dir[4096] = ".";
 
 #ifndef EIGENSCRIPT_VERSION
-#define EIGENSCRIPT_VERSION "0.5.0"
+#define EIGENSCRIPT_VERSION "dev"
 #endif
+
+/* ---- REPL ---- */
+
+static void eigenscript_repl(Env *env) {
+    printf("EigenScript %s\n", EIGENSCRIPT_VERSION);
+    printf("Type 'exit' or Ctrl-D to quit.\n\n");
+
+    char line_buf[MAX_STR];
+    char input_buf[MAX_BODY];
+    int input_len = 0;
+    int continuation = 0;
+
+    while (1) {
+        printf(continuation ? "...   " : "eigs> ");
+        fflush(stdout);
+
+        if (!fgets(line_buf, sizeof(line_buf), stdin)) {
+            printf("\n");
+            break;
+        }
+
+        /* Exit commands */
+        if (!continuation) {
+            char *trimmed = line_buf;
+            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+            if (strcmp(trimmed, "exit\n") == 0 || strcmp(trimmed, "quit\n") == 0 ||
+                strcmp(trimmed, "exit\r\n") == 0 || strcmp(trimmed, "quit\r\n") == 0) {
+                break;
+            }
+        }
+
+        /* Append to input buffer */
+        int len = strlen(line_buf);
+        if (input_len + len < MAX_BODY - 1) {
+            memcpy(input_buf + input_len, line_buf, len);
+            input_len += len;
+        }
+        input_buf[input_len] = '\0';
+
+        /* Multi-line detection */
+        if (!continuation) {
+            /* Check if line ends with colon (block opener) */
+            char *end = line_buf + len - 1;
+            while (end > line_buf && (*end == '\n' || *end == '\r' || *end == ' ')) end--;
+            if (*end == ':') {
+                continuation = 1;
+                continue;
+            }
+        } else {
+            /* In continuation: blank line or unindented line ends block */
+            char *trimmed = line_buf;
+            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+            if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0') {
+                continuation = 0;
+                /* fall through to execute */
+            } else if (line_buf[0] == ' ' || line_buf[0] == '\t') {
+                continue; /* still indented, keep accumulating */
+            } else {
+                continuation = 0;
+                /* unindented non-blank: end of block */
+            }
+        }
+
+        /* Skip empty input */
+        {
+            char *check = input_buf;
+            while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') check++;
+            if (*check == '\0') {
+                input_len = 0;
+                continue;
+            }
+        }
+
+        /* Tokenize, parse, eval with error recovery */
+        g_parse_errors = 0;
+        TokenList tl = tokenize(input_buf);
+        if (g_parse_errors > 0) {
+            free_tokenlist(&tl);
+            input_len = 0;
+            continue;
+        }
+
+        ASTNode *ast = parse(&tl);
+        if (g_parse_errors > 0) {
+            free_tokenlist(&tl);
+            input_len = 0;
+            continue;
+        }
+
+        g_returning = 0;
+        g_return_val = NULL;
+        Value *result = eval_node(ast, env);
+
+        /* Print non-null results */
+        if (result && result->type != VAL_NULL) {
+            char *s = value_to_string(result);
+            printf("=> %s\n", s);
+            free(s);
+        }
+
+        free_tokenlist(&tl);
+        /* Don't free AST — function defs hold pointers into it */
+        input_len = 0;
+    }
+}
+
+/* ---- Main ---- */
 
 int main(int argc, char **argv) {
     if (argc >= 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
         printf("%s\n", EIGENSCRIPT_VERSION);
         return 0;
     }
+
+    /* No arguments: enter REPL */
     if (argc < 2) {
-        fprintf(stderr, "Usage: eigenscript <file.eigs>\n");
-        fprintf(stderr, "       eigenscript --version\n");
-        return 1;
+        srand(time(NULL));
+        eigenscript_set_args(argc, argv);
+        arena_init();
+
+        Env *global = env_new(NULL);
+        register_builtins(global);
+        g_global_env = global;
+
+#if EIGENSCRIPT_EXT_HTTP
+        g_server.global_env = global;
+        g_server.route_count = 0;
+        g_server.static_prefix = NULL;
+        g_server.static_dir = NULL;
+        g_server.request_body = NULL;
+        g_server.session_id = NULL;
+        g_server.request_headers = NULL;
+#endif
+
+        eigenscript_repl(global);
+        return 0;
     }
 
     /* Extract script directory for load_file resolution */
