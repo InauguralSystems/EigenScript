@@ -765,8 +765,23 @@ else
 fi
 echo ""
 
-# [32] Example smoke tests
-echo "[32/32] Example Smoke Tests"
+# [33] Misc builtins
+echo "[33/33] Misc Builtins (30 checks)"
+MB_OUTPUT=$(./eigenscript ../tests/test_misc_builtins.eigs 2>&1)
+if echo "$MB_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 30))
+    PASS=$((PASS + 30))
+    echo "  PASS: all 30 misc builtin checks"
+else
+    TOTAL=$((TOTAL + 30))
+    FAIL=$((FAIL + 30))
+    echo "  FAIL: misc builtin tests"
+    echo "$MB_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [34] Example smoke tests
+echo "[34/34] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

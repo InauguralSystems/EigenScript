@@ -1,0 +1,79 @@
+# Miscellaneous builtin coverage tests
+load_file of "lib/test.eigs"
+
+# chr — ASCII code to character
+assert_eq of [chr of 65, "A", "chr 65 = A"]
+assert_eq of [chr of 48, "0", "chr 48 = 0"]
+assert_eq of [chr of 10, "\n", "chr 10 = newline"]
+
+# coalesce — return first non-null/non-empty
+assert_eq of [coalesce of ["hello", "default"], "hello", "coalesce non-empty"]
+assert_eq of [coalesce of ["", "default"], "default", "coalesce empty string"]
+assert_eq of [coalesce of [null, "fallback"], "fallback", "coalesce null"]
+
+# negative — element-wise negation
+neg is negative of [1, 2, 3]
+assert_eq of [neg[0], -1, "negative[0]"]
+assert_eq of [neg[2], -3, "negative[2]"]
+
+# gather — gather rows by index
+matrix is [[10, 20], [30, 40], [50, 60]]
+gathered is gather of [matrix, [0, 2], 0]
+assert_eq of [len of gathered, 2, "gather row count"]
+
+# num_copy — independent copy of numeric value
+x is 42
+y is num_copy of x
+assert_eq of [y, 42, "num_copy value"]
+
+# arena_stats — returns number (bytes allocated)
+stats is arena_stats of null
+assert_true of [(type of stats) == "num", "arena_stats is num"]
+
+# concat — concatenate two lists
+a is [1, 2]
+b is [3, 4]
+c is concat of [a, b]
+assert_eq of [len of c, 4, "concat length"]
+assert_eq of [c[0], 1, "concat[0]"]
+assert_eq of [c[3], 4, "concat[3]"]
+
+# copy_into — copy src into dest at offset
+dest is [0, 0, 0, 0, 0]
+src is [7, 8, 9]
+copy_into of [dest, 1, src]
+assert_eq of [dest[0], 0, "copy_into[0] unchanged"]
+assert_eq of [dest[1], 7, "copy_into[1]"]
+assert_eq of [dest[3], 9, "copy_into[3]"]
+
+# get_at — safe index access
+items is [10, 20, 30]
+assert_eq of [get_at of [items, 1], 20, "get_at"]
+
+# pi
+assert_near of [pi of null, 3.14159, 0.001, "pi"]
+
+# abs — builtin abs
+assert_eq of [abs of -5, 5, "abs negative"]
+assert_eq of [abs of 5, 5, "abs positive"]
+
+# floor, ceil, round
+assert_eq of [floor of 3.7, 3, "floor"]
+assert_eq of [ceil of 3.2, 4, "ceil"]
+assert_eq of [round of 3.5, 4, "round"]
+
+# min, max
+assert_eq of [min of [3, 7], 3, "min"]
+assert_eq of [max of [3, 7], 7, "max"]
+
+# pow
+assert_eq of [pow of [2, 10], 1024, "pow"]
+
+# sqrt
+assert_near of [sqrt of 16, 4.0, 0.001, "sqrt"]
+
+# sin, cos
+assert_near of [sin of 0, 0.0, 0.001, "sin 0"]
+assert_near of [cos of 0, 1.0, 0.001, "cos 0"]
+
+test_summary of null
