@@ -83,21 +83,40 @@ catch e:
     print of f"Error: {e}"
 ```
 
-### Observer Semantics
+### Ask Your Code
 
-Every value in EigenScript tracks its own change history:
+Every value in EigenScript tracks its own change history — entropy, rate
+of change, stability. You don't pay for it until you ask:
 
 ```eigenscript
-x is 10.0
-x is 8.0
-x is 6.0
+loss is 100.0
+loss is 80.0
+loss is 65.0
+loss is 55.0
 
-status is report of x     # "improving"
-state is observe of x     # [status, entropy, dH, prev_dH]
+what is loss       # 55.0 — current value
+who is loss        # "loss" — variable name
+when is loss       # 4 — number of assignments
+where is loss      # entropy (information content)
+why is loss        # dH — rate of change (negative = improving)
+how is loss        # stability score (0-1)
 ```
 
-The runtime classifies value trajectories as: `improving`, `diverging`,
-`stable`, `equilibrium`, `oscillating`, or `converged`.
+Six interrogatives, zero cost when unused. The runtime classifies
+trajectories automatically:
+
+```eigenscript
+status is report of loss   # "improving"
+
+# Loop until the runtime says the value has converged
+loop while not converged:
+    loss is loss * 0.9
+```
+
+States: `improving`, `diverging`, `stable`, `equilibrium`, `oscillating`,
+`converged`. Use them for convergence detection, instability alerts, or
+just debugging — `why is x` tells you what your value is doing without
+writing logging code.
 
 ### Tensor Math
 

@@ -68,12 +68,38 @@ Extension builtins require a full build (`./build.sh full`).
 | `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict |
 | `dict_remove` | `dict_remove of [dict, "key"]` | Remove key from dict (mutates), return dict |
 
+## Interrogatives
+
+Six keywords for querying a value's observer state. Zero cost when unused.
+
+| Name | Syntax | Returns |
+|------|--------|---------|
+| `what` | `what is x` | Current value (scalar), or length (list/string) |
+| `who` | `who is x` | Variable name as string |
+| `when` | `when is x` | Observation age (number of assignments) |
+| `where` | `where is x` | Entropy (information content) |
+| `why` | `why is x` | dH (rate of change) |
+| `how` | `how is x` | Stability score (0 = unstable, 1 = stable) |
+
 ## Observer
 
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `report` | `report of value` | Classify change trajectory: "improving", "diverging", "stable", "equilibrium", "oscillating", "converged" |
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
+
+### Predicates
+
+Boolean keywords that check the most recently observed value:
+
+| Name | True when |
+|------|-----------|
+| `converged` | Entropy very low and stable |
+| `stable` | Entropy changing slowly |
+| `improving` | Entropy decreasing |
+| `oscillating` | dH sign-flipping |
+| `diverging` | Entropy increasing |
+| `equilibrium` | dH near zero |
 
 ## File I/O
 

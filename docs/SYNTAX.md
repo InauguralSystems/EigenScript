@@ -248,29 +248,59 @@ print of (abs of -5)
 
 The loaded file's definitions are added to the global environment.
 
-## Observer Semantics
+## Interrogatives — Ask Your Code
 
-Every value tracks its own change history (entropy, dH):
+Every value in EigenScript tracks its own observer state. Interrogatives
+are the query interface — zero cost when you don't ask:
+
+| Keyword | Returns | Example |
+|---------|---------|---------|
+| `what is x` | Current value (scalar), or length (list/string) | `what is loss` → `55.0` |
+| `who is x` | Variable name as string | `who is loss` → `"loss"` |
+| `when is x` | Observation age (number of assignments) | `when is loss` → `4` |
+| `where is x` | Entropy (information content) | `where is loss` → `0.832` |
+| `why is x` | dH (rate of change, negative = improving) | `why is loss` → `-0.15` |
+| `how is x` | Stability score (0 = unstable, 1 = stable) | `how is loss` → `0.95` |
 
 ```eigenscript
-x is 10.0
-x is 8.0
-x is 6.0
+loss is 100.0
+loss is 80.0
+loss is 55.0
 
-status is report of x     # "improving"
-state is observe of x     # [status, entropy, dH, prev_dH]
+print of (what is loss)    # 55
+print of (why is loss)     # negative — loss is decreasing
+print of (how is loss)     # high — change is consistent
+print of (when is loss)    # 3 — three assignments
 ```
 
-The runtime classifies trajectories as: `improving`, `diverging`,
-`stable`, `equilibrium`, `oscillating`, or `converged`.
+Use interrogatives for debugging, convergence detection, or understanding
+runtime behavior without writing logging code.
+
+## Observer Semantics
+
+The observer system classifies value trajectories automatically:
+
+```eigenscript
+status is report of loss   # "improving"
+state is observe of loss   # [status, entropy, dH, prev_dH]
+```
+
+Six trajectory states: `improving`, `diverging`, `stable`, `equilibrium`,
+`oscillating`, `converged`.
 
 **Predicates** — boolean keywords for use in conditions:
 ```eigenscript
 loop while not converged:
-    x is x * 0.9
+    loss is loss * 0.9
     if stable:
         print of "reached stable band"
+    if oscillating:
+        lr is lr * 0.5   # reduce learning rate
 ```
+
+The observer tracks every variable. Predicates check the most recently
+observed value. `report of x` and `observe of x` let you query any
+specific variable.
 
 ## Standard Library
 
@@ -288,14 +318,8 @@ See [BUILTINS.md](BUILTINS.md) for the complete builtin reference.
 
 ## Limitations
 
-**Single-line arrays only:**
-```eigenscript
-# Arrays must be on one line
-data is [1, 2, 3, 4]
-```
-
-**Single-parameter functions:**
-Functions take exactly one argument (`n`). Pass multiple values as a list.
+**Single-line collections:**
+List and dict literals must be on a single line.
 
 **No break/continue:**
 Use flag variables to exit loops early.
