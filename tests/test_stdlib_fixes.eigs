@@ -1,0 +1,58 @@
+# Regression tests for stdlib fixes:
+# - math.eigs dot: bounds-safe on mismatched lengths
+# - test.eigs assert_near: rejects non-numeric operands
+# - template.eigs render: no template-injection from variable values
+
+load_file of "lib/math.eigs"
+load_file of "lib/test.eigs"
+load_file of "lib/template.eigs"
+
+# --- math.dot bounds ---
+assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
+# Mismatched lengths must not crash; iterate over the shorter list.
+assert of [(dot of [[1, 2, 3], [4, 5]]) == 14, "SF2 dot shorter b"]
+assert of [(dot of [[1, 2], [4, 5, 6]]) == 14, "SF3 dot shorter a"]
+assert of [(dot of [[], [1, 2, 3]]) == 0, "SF4 dot empty a"]
+assert of [(dot of [[1, 2, 3], []]) == 0, "SF5 dot empty b"]
+
+# --- test.assert_near type guard ---
+# These must not silently pass on non-numeric input. Use the library's
+# internal counters to detect: a non-numeric call must bump _test_fail.
+before_pass is _test_pass
+before_fail is _test_fail
+assert_near of [1.0, 1.0001, 0.01, "numeric OK"]
+after_numeric_pass is _test_pass
+assert of [(after_numeric_pass - before_pass) == 1, "SF6 assert_near numeric counts as pass"]
+
+before_fail_2 is _test_fail
+assert_near of ["not a number", 1.0, 0.01, "bad operand"]
+after_bad_fail is _test_fail
+assert of [(after_bad_fail - before_fail_2) == 1, "SF7 assert_near non-numeric counts as fail"]
+
+# Reset counters so [41b] doesn't report a spurious failure from
+# the deliberately-wrong assert_near above.
+_test_pass is 0
+_test_fail is 0
+_test_errors is []
+
+# --- template.render injection ---
+# A variable's value containing {{other}} must be emitted verbatim,
+# not re-substituted in a second pass.
+vars is [["user", "{{admin}}"], ["admin", "pwned"]]
+rendered is render of ["Hello {{user}}!", vars]
+assert of [rendered == "Hello {{admin}}!", "SF8 template no-reinterpretation of values"]
+
+# Normal substitution still works.
+vars2 is [["name", "World"], ["n", "42"]]
+r2 is render of ["Hi {{name}}, count={{n}}.", vars2]
+assert of [r2 == "Hi World, count=42.", "SF9 template normal substitution"]
+
+# Unknown placeholder is left as-is.
+r3 is render of ["{{missing}} remains", []]
+assert of [r3 == "{{missing}} remains", "SF10 template unknown placeholder"]
+
+# Unterminated placeholder is emitted verbatim.
+r4 is render of ["prefix {{forever", [["forever", "nope"]]]
+assert of [r4 == "prefix {{forever", "SF11 template unterminated placeholder"]
+
+print of "All stdlib-fix tests passed"
