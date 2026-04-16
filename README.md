@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="EigenScript" width="300">
+</p>
+
 # EigenScript
 
 A programming language with native observer semantics, tensor math, and
