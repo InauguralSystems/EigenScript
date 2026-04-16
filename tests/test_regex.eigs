@@ -1,0 +1,46 @@
+# Regex builtin tests
+load_file of "lib/test.eigs"
+
+# match — returns [full_match, group1, ...]
+result is match of ["hello world", "h([a-z]+) ([a-z]+)"]
+assert_eq of [result[0], "hello world", "match full"]
+assert_eq of [result[1], "ello", "match group1"]
+assert_eq of [result[2], "world", "match group2"]
+
+# match — no match returns empty list
+empty is match of ["hello", "^[0-9]+$"]
+assert_eq of [len of empty, 0, "match no match"]
+
+# match_all — find all occurrences
+nums is match_all of ["a1 b2 c3", "[a-z][0-9]"]
+assert_eq of [len of nums, 3, "match_all count"]
+assert_eq of [nums[0], "a1", "match_all first"]
+assert_eq of [nums[2], "c3", "match_all last"]
+
+# match_all — no matches
+empty2 is match_all of ["hello", "[0-9]+"]
+assert_eq of [len of empty2, 0, "match_all empty"]
+
+# regex_replace — replace all
+replaced is regex_replace of ["hello world", "[aeiou]", "X"]
+assert_eq of [replaced, "hXllX wXrld", "regex_replace vowels"]
+
+# regex_replace — word boundaries
+cleaned is regex_replace of ["  extra   spaces  ", "  +", " "]
+assert_eq of [cleaned, " extra spaces ", "regex_replace spaces"]
+
+# regex_replace — no match leaves unchanged
+same is regex_replace of ["hello", "[0-9]+", "X"]
+assert_eq of [same, "hello", "regex_replace no match"]
+
+# match with email pattern
+email is match of ["user@example.com", "^([a-zA-Z0-9.]+)@([a-zA-Z0-9.]+)$"]
+assert_eq of [email[1], "user", "email local part"]
+assert_eq of [email[2], "example.com", "email domain"]
+
+# Extract numbers from text
+prices is match_all of ["$42 and $7 total $294", "[0-9]+"]
+assert_eq of [len of prices, 3, "extract numbers count"]
+assert_eq of [prices[0], "42", "extract first number"]
+
+test_summary of null

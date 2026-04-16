@@ -1,0 +1,44 @@
+# Import system tests
+load_file of "lib/test.eigs"
+
+# Import creates a dict namespace
+import math
+assert_eq of [type of math, "dict", "import returns dict"]
+
+# Functions accessible via dot
+assert_eq of [math.abs of -5, 5, "import math.abs"]
+assert_eq of [math.clamp of [15, 0, 10], 10, "import math.clamp"]
+assert_eq of [math.dot of [[1,2,3], [4,5,6]], 32, "import math.dot"]
+
+# Import list module
+import list
+define double(x) as:
+    return x * 2
+result is list.map of [[1, 2, 3], double]
+assert_eq of [result[0], 2, "import list.map[0]"]
+assert_eq of [result[2], 6, "import list.map[2]"]
+
+# Import string module
+import string
+assert_eq of [string.join of [["a", "b"], "-"], "a-b", "import string.join"]
+
+# Import sort
+import sort
+sorted is sort.sort_asc of [5, 3, 1]
+assert_eq of [sorted[0], 1, "import sort.sort_asc"]
+
+# Modules don't pollute global namespace
+# (abs should still be the builtin, not math's abs)
+assert_eq of [abs of -10, 10, "global abs unchanged"]
+
+# keys shows module contents
+k is keys of math
+assert_true of [(len of k) > 0, "import has keys"]
+assert_eq of [has_key of [math, "abs"], 1, "math has abs"]
+
+# Import format
+import format
+result is format.fmt_num of [3.14159, 2]
+assert_eq of [result, "3.14", "import format.fmt_num"]
+
+test_summary of null

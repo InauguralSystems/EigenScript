@@ -780,8 +780,38 @@ else
 fi
 echo ""
 
-# [34] Example smoke tests
-echo "[34/34] Example Smoke Tests"
+# [35] Regex builtins
+echo "[35/36] Regex (15 checks)"
+RX_OUTPUT=$(./eigenscript ../tests/test_regex.eigs 2>&1)
+if echo "$RX_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 15))
+    PASS=$((PASS + 15))
+    echo "  PASS: all 15 regex checks"
+else
+    TOTAL=$((TOTAL + 15))
+    FAIL=$((FAIL + 15))
+    echo "  FAIL: regex tests"
+    echo "$RX_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [36] Import system
+echo "[36/36] Import System (12 checks)"
+IM_OUTPUT=$(./eigenscript ../tests/test_import.eigs 2>&1)
+if echo "$IM_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 12))
+    PASS=$((PASS + 12))
+    echo "  PASS: all 12 import checks"
+else
+    TOTAL=$((TOTAL + 12))
+    FAIL=$((FAIL + 12))
+    echo "  FAIL: import tests"
+    echo "$IM_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [37] Example smoke tests
+echo "[37/37] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

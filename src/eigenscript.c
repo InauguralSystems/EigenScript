@@ -94,6 +94,7 @@ static const char* tok_type_name(TokType t) {
         case TOK_CATCH: return "'catch'";
         case TOK_BREAK: return "'break'";
         case TOK_CONTINUE: return "'continue'";
+        case TOK_IMPORT: return "'import'";
         default: return "?";
     }
 }
@@ -528,6 +529,7 @@ static TokType keyword_type(const char *word) {
     if (strcmp(word, "catch") == 0) return TOK_CATCH;
     if (strcmp(word, "break") == 0) return TOK_BREAK;
     if (strcmp(word, "continue") == 0) return TOK_CONTINUE;
+    if (strcmp(word, "import") == 0) return TOK_IMPORT;
     return TOK_IDENT;
 }
 
@@ -1491,6 +1493,15 @@ static ASTNode* parse_statement(Parser *p) {
         return n;
     }
 
+    if (t->type == TOK_IMPORT) {
+        p_advance(p);
+        Token *name_tok = p_cur(p);
+        p_expect(p, TOK_IDENT);
+        ASTNode *n = make_node(AST_IMPORT, t->line);
+        n->data.import.module_name = strdup(name_tok->str_val);
+        return n;
+    }
+
     if (t->type == TOK_BREAK) {
         p_advance(p);
         return make_node(AST_BREAK, t->line);
@@ -1879,6 +1890,62 @@ Value* eval_node(ASTNode *node, Env *env) {
         return make_null();
     }
 
+    case AST_IMPORT: {
+        /* import math → loads lib/math.eigs into a dict namespace */
+        const char *name = node->data.import.module_name;
+        char path[4096];
+
+        /* Try: lib/NAME.eigs relative to cwd, then script dir */
+        snprintf(path, sizeof(path), "lib/%s.eigs", name);
+        if (access(path, F_OK) != 0) {
+            snprintf(path, sizeof(path), "%s/lib/%s.eigs", g_script_dir, name);
+            if (access(path, F_OK) != 0) {
+                snprintf(path, sizeof(path), "%s/../lib/%s.eigs", g_script_dir, name);
+                if (access(path, F_OK) != 0) {
+                    runtime_error(node->line, "import: module '%s' not found", name);
+                    return make_null();
+                }
+            }
+        }
+
+        /* Load and execute in an isolated env (parent = global for builtins) */
+        long src_size = 0;
+        char *source = read_file_util(path, &src_size);
+        if (!source) {
+            runtime_error(node->line, "import: cannot read '%s'", path);
+            return make_null();
+        }
+
+        Env *mod_env = env_new(g_global_env);
+        int saved_errors = g_parse_errors;
+        g_parse_errors = 0;
+        TokenList tl = tokenize(source);
+        ASTNode *ast = parse(&tl);
+        if (g_parse_errors > 0) {
+            runtime_error(node->line, "import: parse errors in '%s'", name);
+            g_parse_errors = saved_errors;
+            free_tokenlist(&tl);
+            free(source);
+            return make_null();
+        }
+        g_parse_errors = saved_errors;
+        eval_node(ast, mod_env);
+        free_tokenlist(&tl);
+        free(source);
+
+        /* Collect module's own bindings into a dict.
+         * mod_env is a child of env, so mod_env->names[] contains only
+         * names that were set in the module (not inherited lookups). */
+        Value *mod_dict = make_dict(mod_env->count);
+        for (int i = 0; i < mod_env->count; i++) {
+            if (mod_env->names[i][0] == '_') continue; /* skip private */
+            dict_set(mod_dict, mod_env->names[i], mod_env->values[i]);
+        }
+
+        env_set(env, name, mod_dict);
+        return mod_dict;
+    }
+
     case AST_BREAK:
         g_breaking = 1;
         return make_null();
@@ -1892,7 +1959,7 @@ Value* eval_node(ASTNode *node, Env *env) {
                            node->data.func.param_count,
                            node->data.func.body, node->data.func.body_count, env);
         env->captured = 1;  /* This env is now a closure — do not free */
-        env_set(env, node->data.func.name, fn);
+        env_set_local(env, node->data.func.name, fn);
         return fn;
     }
 
@@ -2586,6 +2653,115 @@ Value* builtin_str_replace(Value *arg) {
     Value *r = make_str(result);
     free(result);
     return r;
+}
+
+/* ==== BUILTIN: match — regex match, return list of groups ==== */
+/* match of [string, pattern] -> [full_match, group1, ...] or [] */
+Value* builtin_match(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
+    if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR)
+        return make_list(0);
+    const char *str = arg->data.list.items[0]->data.str;
+    const char *pattern = arg->data.list.items[1]->data.str;
+
+    regex_t re;
+    if (regcomp(&re, pattern, REG_EXTENDED) != 0) return make_list(0);
+
+    regmatch_t matches[16];
+    if (regexec(&re, str, 16, matches, 0) != 0) {
+        regfree(&re);
+        return make_list(0);
+    }
+
+    Value *result = make_list(8);
+    for (int i = 0; i < 16 && matches[i].rm_so >= 0; i++) {
+        int len = matches[i].rm_eo - matches[i].rm_so;
+        char *buf = malloc(len + 1);
+        memcpy(buf, str + matches[i].rm_so, len);
+        buf[len] = '\0';
+        list_append(result, make_str(buf));
+        free(buf);
+    }
+    regfree(&re);
+    return result;
+}
+
+/* ==== BUILTIN: match_all — find all matches of pattern ==== */
+/* match_all of [string, pattern] -> [match1, match2, ...] */
+Value* builtin_match_all(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
+    if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR)
+        return make_list(0);
+    const char *str = arg->data.list.items[0]->data.str;
+    const char *pattern = arg->data.list.items[1]->data.str;
+
+    regex_t re;
+    if (regcomp(&re, pattern, REG_EXTENDED) != 0) return make_list(0);
+
+    Value *result = make_list(16);
+    regmatch_t m[1];
+    const char *p = str;
+    while (regexec(&re, p, 1, m, 0) == 0) {
+        int len = m[0].rm_eo - m[0].rm_so;
+        char *buf = malloc(len + 1);
+        memcpy(buf, p + m[0].rm_so, len);
+        buf[len] = '\0';
+        list_append(result, make_str(buf));
+        free(buf);
+        p += m[0].rm_eo;
+        if (len == 0) p++; /* avoid infinite loop on zero-length match */
+        if (!*p) break;
+    }
+    regfree(&re);
+    return result;
+}
+
+/* ==== BUILTIN: regex_replace — replace all matches ==== */
+/* regex_replace of [string, pattern, replacement] -> string */
+Value* builtin_regex_replace(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
+    if (arg->data.list.items[0]->type != VAL_STR ||
+        arg->data.list.items[1]->type != VAL_STR ||
+        arg->data.list.items[2]->type != VAL_STR)
+        return make_str("");
+    const char *str = arg->data.list.items[0]->data.str;
+    const char *pattern = arg->data.list.items[1]->data.str;
+    const char *replacement = arg->data.list.items[2]->data.str;
+
+    regex_t re;
+    if (regcomp(&re, pattern, REG_EXTENDED) != 0) return make_str(str);
+
+    char result[MAX_STR];
+    int pos = 0;
+    const char *p = str;
+    regmatch_t m[1];
+    int rep_len = strlen(replacement);
+
+    while (regexec(&re, p, 1, m, 0) == 0 && pos < MAX_STR - 1) {
+        /* Copy text before match */
+        int pre_len = m[0].rm_so;
+        if (pos + pre_len >= MAX_STR) pre_len = MAX_STR - pos - 1;
+        memcpy(result + pos, p, pre_len);
+        pos += pre_len;
+        /* Copy replacement */
+        if (pos + rep_len >= MAX_STR) break;
+        memcpy(result + pos, replacement, rep_len);
+        pos += rep_len;
+        p += m[0].rm_eo;
+        if (m[0].rm_eo == m[0].rm_so) { /* zero-length match */
+            if (*p) result[pos++] = *p++;
+            else break;
+        }
+    }
+    /* Copy remaining */
+    int remain = strlen(p);
+    if (pos + remain >= MAX_STR) remain = MAX_STR - pos - 1;
+    memcpy(result + pos, p, remain);
+    pos += remain;
+    result[pos] = '\0';
+
+    regfree(&re);
+    return make_str(result);
 }
 
 /* ==== BUILTIN: str_upper ==== */
@@ -4974,6 +5150,9 @@ void register_builtins(Env *env) {
     env_set_local(env, "split", make_builtin(builtin_split));
     env_set_local(env, "trim", make_builtin(builtin_trim));
     env_set_local(env, "str_replace", make_builtin(builtin_str_replace));
+    env_set_local(env, "match", make_builtin(builtin_match));
+    env_set_local(env, "match_all", make_builtin(builtin_match_all));
+    env_set_local(env, "regex_replace", make_builtin(builtin_regex_replace));
     env_set_local(env, "load_file", make_builtin(builtin_load_file));
     env_set_local(env, "file_exists", make_builtin(builtin_file_exists));
     env_set_local(env, "env_get", make_builtin(builtin_env_get));
