@@ -246,17 +246,28 @@ char* value_to_string(Value *v) {
         case VAL_LIST: {
             char *result = malloc(MAX_STR);
             int pos = 0;
-            pos += snprintf(result + pos, MAX_STR - pos, "[");
+            int remaining;
+            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+            pos += snprintf(result + pos, remaining, "[");
+            if (pos >= MAX_STR) pos = MAX_STR - 1;
             for (int i = 0; i < v->data.list.count; i++) {
-                if (i > 0) pos += snprintf(result + pos, MAX_STR - pos, ", ");
+                if (i > 0) {
+                    remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+                    pos += snprintf(result + pos, remaining, ", ");
+                    if (pos >= MAX_STR) pos = MAX_STR - 1;
+                }
                 char *s = value_to_string(v->data.list.items[i]);
+                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
                 if (v->data.list.items[i] && v->data.list.items[i]->type == VAL_STR)
-                    pos += snprintf(result + pos, MAX_STR - pos, "\"%s\"", s);
+                    pos += snprintf(result + pos, remaining, "\"%s\"", s);
                 else
-                    pos += snprintf(result + pos, MAX_STR - pos, "%s", s);
+                    pos += snprintf(result + pos, remaining, "%s", s);
+                if (pos >= MAX_STR) pos = MAX_STR - 1;
                 free(s);
             }
-            pos += snprintf(result + pos, MAX_STR - pos, "]");
+            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
+            pos += snprintf(result + pos, remaining, "]");
+            if (pos >= MAX_STR) pos = MAX_STR - 1;
             return result;
         }
         case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return strdup(buf);
