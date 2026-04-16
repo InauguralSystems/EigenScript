@@ -1,0 +1,86 @@
+# Tests for builtins that had 0% coverage in gcov:
+# string: split, starts_with, str_replace
+# system: env_get, random_hex, chdir, free_val
+# tensor: subtract, divide, exp, log, mean, zeros, zeros_like,
+#         leaky_relu, log_softmax
+
+# --- string builtins ---
+parts is split of ["a,b,c,d", ","]
+assert of [(len of parts) == 4, "CG1 split count"]
+assert of [parts[2] == "c", "CG2 split element"]
+
+single is split of ["no-delim-here", ","]
+assert of [(len of single) == 1, "CG3 split no-delim"]
+
+assert of [(starts_with of ["hello world", "hello"]) == 1, "CG4 starts_with hit"]
+assert of [(starts_with of ["hello world", "world"]) == 0, "CG5 starts_with miss"]
+
+rep is str_replace of ["foo bar foo", "foo", "baz"]
+assert of [rep == "baz bar baz", "CG6 str_replace all"]
+
+rep2 is str_replace of ["xxx", "x", "ab"]
+assert of [rep2 == "ababab", "CG7 str_replace multi-char repl"]
+
+# --- system builtins ---
+path is env_get of "PATH"
+assert of [(type of path) == "str", "CG8 env_get returns string"]
+
+missing is env_get of "EIGS_NONEXISTENT_VAR_XYZ_12345"
+assert of [missing == "", "CG9 env_get missing returns empty"]
+
+hex is random_hex of 16
+assert of [(len of hex) == 16, "CG10 random_hex length"]
+
+# chdir to /tmp and back
+original is getcwd of null
+ok is chdir of "/tmp"
+assert of [ok == 1, "CG11 chdir succeeds"]
+now is getcwd of null
+assert of [now == "/tmp", "CG12 chdir moved us"]
+chdir of original
+
+# free_val no-op on null
+r is free_val of null
+assert of [(type of r) == "none", "CG13 free_val returns null-typed value"]
+
+# --- tensor builtins ---
+a is [1.0, 2.0, 3.0, 4.0]
+b is [0.5, 1.0, 1.5, 2.0]
+
+sub is subtract of [a, b]
+assert of [sub[0] == 0.5, "CG14 tensor_subtract"]
+assert of [sub[3] == 2.0, "CG15 tensor_subtract last"]
+
+div is divide of [a, b]
+assert of [div[0] == 2.0, "CG16 tensor_divide"]
+
+ex is exp of [0.0, 1.0]
+assert of [ex[0] == 1.0, "CG17 tensor_exp(0) == 1"]
+
+lg is log of [1.0, 2.718281828]
+assert of [lg[0] == 0.0, "CG18 tensor_log(1) == 0"]
+
+m is mean of [1.0, 2.0, 3.0, 4.0, 5.0]
+assert of [m == 3.0, "CG19 tensor_mean"]
+
+z is zeros of 3
+assert of [(len of z) == 3, "CG20 zeros length"]
+assert of [z[0] == 0.0, "CG21 zeros value"]
+
+zl is zeros_like of [10.0, 20.0, 30.0]
+assert of [(len of zl) == 3, "CG22 zeros_like length"]
+assert of [zl[2] == 0.0, "CG23 zeros_like value"]
+
+# leaky_relu: negative stays negative but scaled down
+lr is leaky_relu of [-2.0, 0.0, 5.0]
+assert of [lr[1] == 0.0, "CG24 leaky_relu(0)"]
+assert of [lr[2] == 5.0, "CG25 leaky_relu(pos) passthrough"]
+assert of [lr[0] < 0.0, "CG26 leaky_relu(neg) negative"]
+assert of [lr[0] > -2.0, "CG27 leaky_relu(neg) scaled"]
+
+# log_softmax: row-stochastic log-probs (values <= 0)
+ls is log_softmax of [1.0, 2.0, 3.0]
+assert of [ls[0] <= 0.0, "CG28 log_softmax <= 0"]
+assert of [ls[2] <= 0.0, "CG29 log_softmax <= 0"]
+
+print of "All coverage-gap tests passed"
