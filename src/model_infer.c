@@ -18,6 +18,7 @@
 void ne_softmax_buf(double* data, int64_t rows, int64_t cols) {
     for (int64_t i = 0; i < rows; i++) {
         double* row = data + i * cols;
+        if (cols <= 0) continue;
         double max_val = row[0];
         for (int64_t j = 1; j < cols; j++) {
             if (row[j] > max_val) max_val = row[j];
@@ -26,6 +27,15 @@ void ne_softmax_buf(double* data, int64_t rows, int64_t cols) {
         for (int64_t j = 0; j < cols; j++) {
             row[j] = exp(row[j] - max_val);
             sum += row[j];
+        }
+        /* With numerically stable max-subtract, at least one term is
+         * exp(0)=1, so sum should always be >= 1. Guard anyway: on NaN
+         * inputs max_val may itself be NaN and all terms underflow,
+         * leaving sum=0. Fall back to a uniform distribution. */
+        if (!(sum > 0.0)) {
+            double u = 1.0 / (double)cols;
+            for (int64_t j = 0; j < cols; j++) row[j] = u;
+            continue;
         }
         for (int64_t j = 0; j < cols; j++) {
             row[j] /= sum;
@@ -65,6 +75,7 @@ void ne_matmul_buf(
 void ne_softmax_buf_f(float* data, int64_t rows, int64_t cols) {
     for (int64_t i = 0; i < rows; i++) {
         float* row = data + i * cols;
+        if (cols <= 0) continue;
         float max_val = row[0];
         for (int64_t j = 1; j < cols; j++) {
             if (row[j] > max_val) max_val = row[j];
@@ -73,6 +84,12 @@ void ne_softmax_buf_f(float* data, int64_t rows, int64_t cols) {
         for (int64_t j = 0; j < cols; j++) {
             row[j] = expf(row[j] - max_val);
             sum += row[j];
+        }
+        /* See ne_softmax_buf for the NaN-fallback rationale. */
+        if (!(sum > 0.0f)) {
+            float u = 1.0f / (float)cols;
+            for (int64_t j = 0; j < cols; j++) row[j] = u;
+            continue;
         }
         for (int64_t j = 0; j < cols; j++) {
             row[j] /= sum;
@@ -456,8 +473,13 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
                 logits[i] = expf(logits[i] - max_l);
                 sum += logits[i];
             }
-            for (int i = 0; i < vocab_size; i++)
-                logits[i] /= sum;
+            /* Fallback to uniform on NaN/underflow (see ne_softmax_buf_f). */
+            if (!(sum > 0.0f)) {
+                float u = 1.0f / (float)vocab_size;
+                for (int i = 0; i < vocab_size; i++) logits[i] = u;
+            } else {
+                for (int i = 0; i < vocab_size; i++) logits[i] /= sum;
+            }
 
             int top_k = 40;
             if (top_k > vocab_size) top_k = vocab_size;

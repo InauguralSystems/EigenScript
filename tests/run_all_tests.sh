@@ -880,6 +880,21 @@ else
 fi
 echo ""
 
+# [42b] Softmax numerical guard (always runs — uses core tensor builtins)
+echo "[42b/47] Softmax Guard (7 checks)"
+SG_OUTPUT=$(./eigenscript ../tests/test_softmax_guard.eigs 2>&1)
+if echo "$SG_OUTPUT" | grep -q "All softmax-guard tests passed"; then
+    TOTAL=$((TOTAL + 7))
+    PASS=$((PASS + 7))
+    echo "  PASS: all 7 softmax-guard checks"
+else
+    TOTAL=$((TOTAL + 7))
+    FAIL=$((FAIL + 7))
+    echo "  FAIL: softmax-guard tests"
+    echo "$SG_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [43] Extra error-path coverage (always runs)
 echo "[43/47] Error-Path Extras (24 checks)"
 EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1)
