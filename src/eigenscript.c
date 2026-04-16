@@ -1308,7 +1308,7 @@ static ASTNode* parse_unary(Parser *p) {
         p_advance(p);
         ASTNode *operand = parse_unary(p);
         ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
-        strcpy(n->data.unary.op, "-");
+        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "-");
         n->data.unary.operand = operand;
         return n;
     }
@@ -1316,7 +1316,7 @@ static ASTNode* parse_unary(Parser *p) {
         p_advance(p);
         ASTNode *operand = parse_unary(p);
         ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
-        strcpy(n->data.unary.op, "not");
+        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
         n->data.unary.operand = operand;
         return n;
     }
@@ -1333,7 +1333,7 @@ static ASTNode* parse_multiply(Parser *p) {
         p_advance(p);
         ASTNode *right = parse_unary(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
-        strcpy(n->data.binop.op, op);
+        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
         n->data.binop.left = left;
         n->data.binop.right = right;
         left = n;
@@ -1349,7 +1349,7 @@ static ASTNode* parse_addition(Parser *p) {
         p_advance(p);
         ASTNode *right = parse_multiply(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
-        strcpy(n->data.binop.op, op);
+        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
         n->data.binop.left = left;
         n->data.binop.right = right;
         left = n;
@@ -1363,18 +1363,18 @@ static ASTNode* parse_comparison(Parser *p) {
     if (tt == TOK_LT || tt == TOK_GT || tt == TOK_LE || tt == TOK_GE || tt == TOK_EQ || tt == TOK_NE) {
         char op[4] = {0};
         switch (tt) {
-            case TOK_LT: strcpy(op, "<"); break;
-            case TOK_GT: strcpy(op, ">"); break;
-            case TOK_LE: strcpy(op, "<="); break;
-            case TOK_GE: strcpy(op, ">="); break;
-            case TOK_EQ: strcpy(op, "="); break;
-            case TOK_NE: strcpy(op, "!="); break;
+            case TOK_LT: snprintf(op, sizeof(op), "<"); break;
+            case TOK_GT: snprintf(op, sizeof(op), ">"); break;
+            case TOK_LE: snprintf(op, sizeof(op), "<="); break;
+            case TOK_GE: snprintf(op, sizeof(op), ">="); break;
+            case TOK_EQ: snprintf(op, sizeof(op), "="); break;
+            case TOK_NE: snprintf(op, sizeof(op), "!="); break;
             default: break;
         }
         p_advance(p);
         ASTNode *right = parse_addition(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
-        strcpy(n->data.binop.op, op);
+        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
         n->data.binop.left = left;
         n->data.binop.right = right;
         return n;
@@ -1388,7 +1388,7 @@ static ASTNode* parse_and(Parser *p) {
         p_advance(p);
         ASTNode *right = parse_comparison(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
-        strcpy(n->data.binop.op, "and");
+        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
         n->data.binop.left = left;
         n->data.binop.right = right;
         left = n;
@@ -1402,7 +1402,7 @@ static ASTNode* parse_or(Parser *p) {
         p_advance(p);
         ASTNode *right = parse_and(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
-        strcpy(n->data.binop.op, "or");
+        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "or");
         n->data.binop.left = left;
         n->data.binop.right = right;
         left = n;
