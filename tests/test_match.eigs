@@ -1,0 +1,111 @@
+# Pattern matching tests
+load_file of "lib/test.eigs"
+
+# Match on string
+result is ""
+match "hello":
+    case "hello":
+        result is "matched"
+    case "world":
+        result is "wrong"
+assert_eq of [result, "matched", "match string"]
+
+# Match on number
+result is ""
+match 404:
+    case 200:
+        result is "OK"
+    case 404:
+        result is "Not Found"
+    case 500:
+        result is "Error"
+assert_eq of [result, "Not Found", "match number"]
+
+# Wildcard
+result is ""
+match "unknown":
+    case "yes":
+        result is "yes"
+    case _:
+        result is "wildcard"
+assert_eq of [result, "wildcard", "match wildcard"]
+
+# No match returns null (no wildcard)
+result is "untouched"
+match "x":
+    case "a":
+        result is "a"
+    case "b":
+        result is "b"
+assert_eq of [result, "untouched", "match no match"]
+
+# Match on type of
+result is ""
+match type of [1, 2, 3]:
+    case "num":
+        result is "num"
+    case "list":
+        result is "list"
+    case _:
+        result is "other"
+assert_eq of [result, "list", "match type of"]
+
+# Match on computed expression
+x is 10
+threshold is 10
+result is ""
+match x:
+    case threshold:
+        result is "at threshold"
+    case _:
+        result is "not at threshold"
+assert_eq of [result, "at threshold", "match computed pattern"]
+
+# Match on report (observer state)
+val is 5.0
+val is 5.0
+val is 5.0
+result is ""
+match report of val:
+    case "converged":
+        result is "converged"
+    case "equilibrium":
+        result is "equilibrium"
+    case _:
+        result is report of val
+assert_true of [(len of result) > 0, "match observer state"]
+
+# Match with multiple statements in body
+count is 0
+match "go":
+    case "go":
+        count is count + 1
+        count is count + 1
+        count is count + 1
+assert_eq of [count, 3, "match multi-statement body"]
+
+# Match inside function
+define classify(code) as:
+    match code:
+        case 200:
+            return "OK"
+        case 404:
+            return "Not Found"
+        case _:
+            return "Unknown"
+
+assert_eq of [classify of 200, "OK", "match in function 200"]
+assert_eq of [classify of 404, "Not Found", "match in function 404"]
+assert_eq of [classify of 999, "Unknown", "match in function wildcard"]
+
+# Match on dict value
+config is {"mode": "production"}
+result is ""
+match config.mode:
+    case "development":
+        result is "dev"
+    case "production":
+        result is "prod"
+assert_eq of [result, "prod", "match dict value"]
+
+test_summary of null

@@ -810,8 +810,23 @@ else
 fi
 echo ""
 
-# [37] Example smoke tests
-echo "[37/37] Example Smoke Tests"
+# [38] Pattern matching
+echo "[38/38] Pattern Matching (12 checks)"
+PM_OUTPUT=$(./eigenscript ../tests/test_match.eigs 2>&1)
+if echo "$PM_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 12))
+    PASS=$((PASS + 12))
+    echo "  PASS: all 12 match checks"
+else
+    TOTAL=$((TOTAL + 12))
+    FAIL=$((FAIL + 12))
+    echo "  FAIL: match tests"
+    echo "$PM_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [39] Example smoke tests
+echo "[39/39] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

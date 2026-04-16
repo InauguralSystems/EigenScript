@@ -95,6 +95,8 @@ static const char* tok_type_name(TokType t) {
         case TOK_BREAK: return "'break'";
         case TOK_CONTINUE: return "'continue'";
         case TOK_IMPORT: return "'import'";
+        case TOK_MATCH: return "'match'";
+        case TOK_CASE: return "'case'";
         default: return "?";
     }
 }
@@ -530,6 +532,8 @@ static TokType keyword_type(const char *word) {
     if (strcmp(word, "break") == 0) return TOK_BREAK;
     if (strcmp(word, "continue") == 0) return TOK_CONTINUE;
     if (strcmp(word, "import") == 0) return TOK_IMPORT;
+    if (strcmp(word, "match") == 0) return TOK_MATCH;
+    if (strcmp(word, "case") == 0) return TOK_CASE;
     return TOK_IDENT;
 }
 
@@ -910,6 +914,18 @@ static void free_ast(ASTNode *node) {
             for (int i = 0; i < node->data.trycatch.catch_count; i++) free_ast(node->data.trycatch.catch_body[i]);
             free(node->data.trycatch.catch_body);
             free(node->data.trycatch.err_name);
+            break;
+        case AST_MATCH:
+            free_ast(node->data.match.expr);
+            for (int i = 0; i < node->data.match.case_count; i++) {
+                if (node->data.match.patterns[i]) free_ast(node->data.match.patterns[i]);
+                for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                    free_ast(node->data.match.bodies[i][j]);
+                free(node->data.match.bodies[i]);
+            }
+            free(node->data.match.patterns);
+            free(node->data.match.bodies);
+            free(node->data.match.body_counts);
             break;
         case AST_DICT:
             for (int i = 0; i < node->data.dict.count; i++) {
@@ -1420,6 +1436,54 @@ static ASTNode* parse_statement(Parser *p) {
         return n;
     }
 
+    if (t->type == TOK_MATCH) {
+        p_advance(p);
+        ASTNode *expr = parse_expression(p);
+        p_expect(p, TOK_COLON);
+        p_skip_newlines(p);
+        p_expect(p, TOK_INDENT);
+        p_skip_newlines(p);
+
+        /* Parse case branches */
+        ASTNode **patterns = malloc(64 * sizeof(ASTNode*));
+        ASTNode ***bodies = malloc(64 * sizeof(ASTNode**));
+        int *body_counts = malloc(64 * sizeof(int));
+        int case_count = 0;
+
+        while (p_cur(p)->type == TOK_CASE && case_count < 64) {
+            p_advance(p); /* skip 'case' */
+            /* Parse pattern — _ is wildcard (null pattern) */
+            ASTNode *pattern = NULL;
+            if (p_cur(p)->type == TOK_IDENT && p_cur(p)->str_val &&
+                strcmp(p_cur(p)->str_val, "_") == 0) {
+                p_advance(p); /* wildcard */
+            } else {
+                pattern = parse_expression(p);
+            }
+            p_expect(p, TOK_COLON);
+            p_skip_newlines(p);
+
+            int bc;
+            ASTNode **body = parse_block(p, &bc);
+
+            patterns[case_count] = pattern;
+            bodies[case_count] = body;
+            body_counts[case_count] = bc;
+            case_count++;
+            p_skip_newlines(p);
+        }
+
+        if (p_cur(p)->type == TOK_DEDENT) p_advance(p);
+
+        ASTNode *n = make_node(AST_MATCH, t->line);
+        n->data.match.expr = expr;
+        n->data.match.patterns = patterns;
+        n->data.match.bodies = bodies;
+        n->data.match.body_counts = body_counts;
+        n->data.match.case_count = case_count;
+        return n;
+    }
+
     if (t->type == TOK_IF) {
         p_advance(p);
         ASTNode *cond = parse_expression(p);
@@ -1877,6 +1941,32 @@ Value* eval_node(ASTNode *node, Env *env) {
             env_free(loop_env);
         }
         return result;
+    }
+
+    case AST_MATCH: {
+        Value *val = eval_node(node->data.match.expr, env);
+        for (int i = 0; i < node->data.match.case_count; i++) {
+            ASTNode *pattern = node->data.match.patterns[i];
+            if (!pattern) {
+                /* Wildcard _ — always matches */
+                return eval_block(node->data.match.bodies[i], node->data.match.body_counts[i], env);
+            }
+            Value *pat_val = eval_node(pattern, env);
+            /* Compare: numbers, strings, or null */
+            int matches = 0;
+            if (val->type == VAL_NUM && pat_val->type == VAL_NUM)
+                matches = (val->data.num == pat_val->data.num);
+            else if (val->type == VAL_STR && pat_val->type == VAL_STR)
+                matches = (strcmp(val->data.str, pat_val->data.str) == 0);
+            else if (val->type == VAL_NULL && pat_val->type == VAL_NULL)
+                matches = 1;
+            else if (val->type == pat_val->type)
+                matches = (val == pat_val); /* identity for other types */
+            if (matches) {
+                return eval_block(node->data.match.bodies[i], node->data.match.body_counts[i], env);
+            }
+        }
+        return make_null(); /* no match */
     }
 
     case AST_DOT_ASSIGN: {
@@ -5150,8 +5240,8 @@ void register_builtins(Env *env) {
     env_set_local(env, "split", make_builtin(builtin_split));
     env_set_local(env, "trim", make_builtin(builtin_trim));
     env_set_local(env, "str_replace", make_builtin(builtin_str_replace));
-    env_set_local(env, "match", make_builtin(builtin_match));
-    env_set_local(env, "match_all", make_builtin(builtin_match_all));
+    env_set_local(env, "regex_match", make_builtin(builtin_match));
+    env_set_local(env, "regex_find", make_builtin(builtin_match_all));
     env_set_local(env, "regex_replace", make_builtin(builtin_regex_replace));
     env_set_local(env, "load_file", make_builtin(builtin_load_file));
     env_set_local(env, "file_exists", make_builtin(builtin_file_exists));
