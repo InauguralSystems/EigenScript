@@ -35,6 +35,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <time.h>
 #include <poll.h>
