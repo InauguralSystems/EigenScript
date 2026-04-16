@@ -23,6 +23,8 @@ int g_returning = 0;
 int g_parse_errors = 0;
 char g_error_msg[4096] = "";
 int g_has_error = 0;
+int g_breaking = 0;
+int g_continuing = 0;
 
 /* Set runtime error — captured by try/catch, or printed to stderr.
  * Inside try blocks, the error is silently captured.
@@ -90,6 +92,8 @@ static const char* tok_type_name(TokType t) {
         case TOK_EOF: return "end of file";
         case TOK_TRY: return "'try'";
         case TOK_CATCH: return "'catch'";
+        case TOK_BREAK: return "'break'";
+        case TOK_CONTINUE: return "'continue'";
         default: return "?";
     }
 }
@@ -522,6 +526,8 @@ static TokType keyword_type(const char *word) {
     if (strcmp(word, "equilibrium") == 0) return TOK_EQUILIBRIUM;
     if (strcmp(word, "try") == 0) return TOK_TRY;
     if (strcmp(word, "catch") == 0) return TOK_CATCH;
+    if (strcmp(word, "break") == 0) return TOK_BREAK;
+    if (strcmp(word, "continue") == 0) return TOK_CONTINUE;
     return TOK_IDENT;
 }
 
@@ -538,9 +544,10 @@ TokenList tokenize(const char *source) {
     const char *p = source;
     int line = 1;
     int at_line_start = 1;
+    int bracket_depth = 0;  /* inside [], {}, () — suppress newlines/indent */
 
     while (*p) {
-        if (at_line_start) {
+        if (at_line_start && bracket_depth == 0) {
             int spaces = 0;
             while (*p == ' ') { spaces++; p++; }
             if (*p == '\t') {
@@ -582,13 +589,15 @@ TokenList tokenize(const char *source) {
         }
 
         if (*p == '\n') {
-            if (tl.count > 0 && tl.tokens[tl.count-1].type != TOK_NEWLINE
-                && tl.tokens[tl.count-1].type != TOK_INDENT
-                && tl.tokens[tl.count-1].type != TOK_DEDENT) {
-                tok_add(&tl, TOK_NEWLINE, 0, NULL, line);
+            if (bracket_depth == 0) {
+                if (tl.count > 0 && tl.tokens[tl.count-1].type != TOK_NEWLINE
+                    && tl.tokens[tl.count-1].type != TOK_INDENT
+                    && tl.tokens[tl.count-1].type != TOK_DEDENT) {
+                    tok_add(&tl, TOK_NEWLINE, 0, NULL, line);
+                }
+                at_line_start = 1;
             }
             p++; line++;
-            at_line_start = 1;
             continue;
         }
 
@@ -740,12 +749,12 @@ TokenList tokenize(const char *source) {
             case '*': tok_add(&tl, TOK_STAR, 0, NULL, line); p++; break;
             case '/': tok_add(&tl, TOK_SLASH, 0, NULL, line); p++; break;
             case '%': tok_add(&tl, TOK_PERCENT, 0, NULL, line); p++; break;
-            case '(': tok_add(&tl, TOK_LPAREN, 0, NULL, line); p++; break;
-            case ')': tok_add(&tl, TOK_RPAREN, 0, NULL, line); p++; break;
-            case '[': tok_add(&tl, TOK_LBRACKET, 0, NULL, line); p++; break;
-            case ']': tok_add(&tl, TOK_RBRACKET, 0, NULL, line); p++; break;
-            case '{': tok_add(&tl, TOK_LBRACE, 0, NULL, line); p++; break;
-            case '}': tok_add(&tl, TOK_RBRACE, 0, NULL, line); p++; break;
+            case '(': tok_add(&tl, TOK_LPAREN, 0, NULL, line); p++; bracket_depth++; break;
+            case ')': tok_add(&tl, TOK_RPAREN, 0, NULL, line); p++; if (bracket_depth > 0) bracket_depth--; break;
+            case '[': tok_add(&tl, TOK_LBRACKET, 0, NULL, line); p++; bracket_depth++; break;
+            case ']': tok_add(&tl, TOK_RBRACKET, 0, NULL, line); p++; if (bracket_depth > 0) bracket_depth--; break;
+            case '{': tok_add(&tl, TOK_LBRACE, 0, NULL, line); p++; bracket_depth++; break;
+            case '}': tok_add(&tl, TOK_RBRACE, 0, NULL, line); p++; if (bracket_depth > 0) bracket_depth--; break;
             case ',': tok_add(&tl, TOK_COMMA, 0, NULL, line); p++; break;
             case ':': tok_add(&tl, TOK_COLON, 0, NULL, line); p++; break;
             case '.': tok_add(&tl, TOK_DOT, 0, NULL, line); p++; break;
@@ -1482,6 +1491,34 @@ static ASTNode* parse_statement(Parser *p) {
         return n;
     }
 
+    if (t->type == TOK_BREAK) {
+        p_advance(p);
+        return make_node(AST_BREAK, t->line);
+    }
+
+    if (t->type == TOK_CONTINUE) {
+        p_advance(p);
+        return make_node(AST_CONTINUE, t->line);
+    }
+
+    /* Dot-assignment: config.name is "value" */
+    if (t->type == TOK_IDENT && p_peek(p, 1)->type == TOK_DOT) {
+        /* Look ahead to see if this ends in IS (assignment) */
+        int saved = p->pos;
+        ASTNode *target = parse_primary(p);
+        if (target->type == AST_DOT && p_cur(p)->type == TOK_IS) {
+            p_advance(p); /* skip IS */
+            ASTNode *expr = parse_expression(p);
+            ASTNode *n = make_node(AST_DOT_ASSIGN, t->line);
+            n->data.dot_assign.target = target->data.dot.target;
+            n->data.dot_assign.key = strdup(target->data.dot.key);
+            n->data.dot_assign.expr = expr;
+            return n;
+        }
+        /* Not a dot-assignment — restore and fall through */
+        p->pos = saved;
+    }
+
     if (t->type == TOK_IDENT && p_peek(p, 1)->type == TOK_IS) {
         Token *name_tok = p_advance(p);
         p_advance(p);
@@ -1792,6 +1829,8 @@ Value* eval_node(ASTNode *node, Env *env) {
             iterations++;
             result = eval_block(node->data.loop.body, node->data.loop.body_count, env);
             if (g_returning) return result;
+            if (g_breaking) { g_breaking = 0; break; }
+            if (g_continuing) { g_continuing = 0; }
             Value *obs = env_get(env, "__observer__");
             if (obs && fabs(obs->dH) < 0.001 && obs->entropy >= 0.1) {
                 stall_count++;
@@ -1821,14 +1860,32 @@ Value* eval_node(ASTNode *node, Env *env) {
             Env *loop_env = env_new(env);
             env_set_local(loop_env, node->data.forloop.var, iter->data.list.items[i]);
             result = eval_block(node->data.forloop.body, node->data.forloop.body_count, loop_env);
-            if (g_returning) {
-                env_free(loop_env);
-                return result;
-            }
+            if (g_returning) { env_free(loop_env); return result; }
+            if (g_breaking) { g_breaking = 0; env_free(loop_env); break; }
+            if (g_continuing) { g_continuing = 0; }
             env_free(loop_env);
         }
         return result;
     }
+
+    case AST_DOT_ASSIGN: {
+        Value *target = eval_node(node->data.dot_assign.target, env);
+        Value *val = eval_node(node->data.dot_assign.expr, env);
+        if (target->type == VAL_DICT) {
+            dict_set(target, node->data.dot_assign.key, val);
+            return val;
+        }
+        runtime_error(node->line, "cannot assign .%s on %s", node->data.dot_assign.key, val_type_name(target->type));
+        return make_null();
+    }
+
+    case AST_BREAK:
+        g_breaking = 1;
+        return make_null();
+
+    case AST_CONTINUE:
+        g_continuing = 1;
+        return make_null();
 
     case AST_FUNC: {
         Value *fn = make_fn(node->data.func.name, node->data.func.params,
@@ -2026,7 +2083,7 @@ Value* eval_block(ASTNode **stmts, int count, Env *env) {
     Value *result = make_null();
     for (int i = 0; i < count; i++) {
         result = eval_node(stmts[i], env);
-        if (g_returning) return result;
+        if (g_returning || g_breaking || g_continuing) return result;
     }
     return result;
 }

@@ -1,0 +1,61 @@
+# Multiline collection tests
+load_file of "lib/test.eigs"
+
+# Multiline list
+items is [
+    1, 2, 3,
+    4, 5, 6,
+    7, 8, 9
+]
+assert_eq of [len of items, 9, "multiline list length"]
+assert_eq of [items[0], 1, "multiline list first"]
+assert_eq of [items[8], 9, "multiline list last"]
+
+# Multiline dict
+person is {
+    "name": "Alice",
+    "age": 30,
+    "city": "Portland"
+}
+assert_eq of [person.name, "Alice", "multiline dict name"]
+assert_eq of [person.age, 30, "multiline dict age"]
+assert_eq of [len of person, 3, "multiline dict len"]
+
+# Multiline nested
+matrix is [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+]
+assert_eq of [matrix[1][1], 5, "multiline nested"]
+
+# Multiline with expressions
+computed is [
+    1 + 2,
+    3 * 4,
+    10 - 1
+]
+assert_eq of [computed[0], 3, "multiline expr 0"]
+assert_eq of [computed[1], 12, "multiline expr 1"]
+assert_eq of [computed[2], 9, "multiline expr 2"]
+
+# Empty multiline
+empty is [
+]
+assert_eq of [len of empty, 0, "empty multiline list"]
+
+# Multiline in function call
+define sum_list(items) as:
+    total is 0
+    for x in items:
+        total is total + x
+    return total
+
+result is sum_list of [
+    10,
+    20,
+    30
+]
+assert_eq of [result, 60, "multiline in call"]
+
+test_summary of null

@@ -720,8 +720,53 @@ else
 fi
 echo ""
 
-# [28] Example smoke tests
-echo "[28/28] Example Smoke Tests"
+# [29] Break and continue
+echo "[29/31] Break & Continue (9 checks)"
+BC_OUTPUT=$(./eigenscript ../tests/test_break_continue.eigs 2>&1)
+if echo "$BC_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 9))
+    PASS=$((PASS + 9))
+    echo "  PASS: all 9 break/continue checks"
+else
+    TOTAL=$((TOTAL + 9))
+    FAIL=$((FAIL + 9))
+    echo "  FAIL: break/continue tests"
+    echo "$BC_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [30] Dot-assignment
+echo "[30/31] Dot-Assignment (6 checks)"
+DA_OUTPUT=$(./eigenscript ../tests/test_dot_assign.eigs 2>&1)
+if echo "$DA_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 6))
+    PASS=$((PASS + 6))
+    echo "  PASS: all 6 dot-assign checks"
+else
+    TOTAL=$((TOTAL + 6))
+    FAIL=$((FAIL + 6))
+    echo "  FAIL: dot-assign tests"
+    echo "$DA_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [31] Multiline collections
+echo "[31/31] Multiline Collections (12 checks)"
+ML_OUTPUT=$(./eigenscript ../tests/test_multiline.eigs 2>&1)
+if echo "$ML_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 12))
+    PASS=$((PASS + 12))
+    echo "  PASS: all 12 multiline checks"
+else
+    TOTAL=$((TOTAL + 12))
+    FAIL=$((FAIL + 12))
+    echo "  FAIL: multiline tests"
+    echo "$ML_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [32] Example smoke tests
+echo "[32/32] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

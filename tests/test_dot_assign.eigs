@@ -1,0 +1,28 @@
+# Dot-assignment tests
+load_file of "lib/test.eigs"
+
+# Basic dot-assignment
+d is {"name": "old"}
+d.name is "new"
+assert_eq of [d.name, "new", "overwrite existing key"]
+
+# Add new key via dot
+d.version is 42
+assert_eq of [d.version, 42, "new key via dot"]
+assert_eq of [len of d, 2, "len after dot-assign"]
+
+# Numeric value
+d.count is 0
+d.count is d.count + 1
+assert_eq of [d.count, 1, "increment via dot"]
+
+# Nested dict dot-assign
+app is {"config": {"debug": 0}}
+app.config.debug is 1
+assert_eq of [app.config.debug, 1, "nested dot-assign"]
+
+# Dot-assign with f-string value
+d.greeting is f"hello {d.name}"
+assert_eq of [d.greeting, "hello new", "f-string dot-assign"]
+
+test_summary of null

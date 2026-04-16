@@ -60,7 +60,7 @@ typedef enum {
     TOK_FOR, TOK_IN, TOK_NULL,
     TOK_WHAT, TOK_WHO, TOK_WHEN, TOK_WHERE, TOK_WHY, TOK_HOW,
     TOK_CONVERGED, TOK_STABLE, TOK_IMPROVING, TOK_OSCILLATING, TOK_DIVERGING, TOK_EQUILIBRIUM,
-    TOK_TRY, TOK_CATCH,
+    TOK_TRY, TOK_CATCH, TOK_BREAK, TOK_CONTINUE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
     TOK_LT, TOK_GT, TOK_LE, TOK_GE, TOK_EQ, TOK_NE, TOK_ASSIGN,
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACKET, TOK_RBRACKET,
@@ -92,7 +92,7 @@ typedef enum {
     AST_BLOCK, AST_LIST, AST_INDEX, AST_LISTCOMP, AST_FOR,
     AST_PROGRAM,
     AST_INTERROGATE, AST_PREDICATE,
-    AST_TRY, AST_DICT, AST_DOT
+    AST_TRY, AST_DICT, AST_DOT, AST_BREAK, AST_CONTINUE, AST_DOT_ASSIGN
 } ASTType;
 
 typedef struct ASTNode ASTNode;
@@ -123,6 +123,7 @@ struct ASTNode {
         struct { ASTNode **try_body; int try_count; char *err_name; ASTNode **catch_body; int catch_count; } trycatch;
         struct { ASTNode **keys; ASTNode **vals; int count; } dict;
         struct { ASTNode *target; char *key; } dot;
+        struct { ASTNode *target; char *key; ASTNode *expr; } dot_assign;
     } data;
 };
 
@@ -244,6 +245,8 @@ extern int g_returning;
 extern int g_parse_errors;
 extern char g_error_msg[4096];
 extern int g_has_error;
+extern int g_breaking;
+extern int g_continuing;
 extern char g_script_dir[4096];
 
 /* ---- Cross-file functions for MODEL tensor builtins ---- */

@@ -1,0 +1,65 @@
+# Break and continue tests
+load_file of "lib/test.eigs"
+
+# Break in for loop
+total is 0
+for i in range of 100:
+    if i >= 5:
+        break
+    total is total + i
+assert_eq of [total, 10, "break in for"]
+
+# Continue in for loop — sum even numbers 0-9
+evens is 0
+for i in range of 10:
+    if (i % 2) != 0:
+        continue
+    evens is evens + i
+assert_eq of [evens, 20, "continue in for"]
+
+# Break in while loop
+x is 0
+loop while 1 == 1:
+    x is x + 1
+    if x == 10:
+        break
+assert_eq of [x, 10, "break in while"]
+
+# Continue in while loop
+total is 0
+i is 0
+loop while i < 10:
+    i is i + 1
+    if i == 5:
+        continue
+    total is total + i
+assert_eq of [total, 50, "continue in while"]
+
+# Nested break — only breaks inner
+outer_count is 0
+for i in range of 3:
+    for j in range of 100:
+        if j >= 2:
+            break
+    outer_count is outer_count + 1
+assert_eq of [outer_count, 3, "nested break"]
+
+# Break with return in function
+define find_first_even(items) as:
+    for item in items:
+        if (item % 2) == 0:
+            return item
+    return -1
+assert_eq of [find_first_even of [1, 3, 4, 6], 4, "break via return"]
+
+# Continue skips rest of body
+collected is []
+for i in range of 5:
+    if i == 2:
+        continue
+    append of [collected, i]
+assert_eq of [len of collected, 4, "continue skips"]
+assert_eq of [collected[0], 0, "continue collected[0]"]
+assert_eq of [collected[2], 3, "continue collected[2]"]
+
+test_summary of null
