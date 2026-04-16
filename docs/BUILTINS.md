@@ -1,7 +1,8 @@
 # EigenScript Builtin Reference
 
-127 builtins organized by module. Core builtins are always available.
-Extension builtins require a full build (`./build.sh full`).
+139 builtins organized by module (119 core + 20 extensions).
+Core builtins are always available; extension builtins (HTTP, DB, model)
+require a full build (`./build.sh full`).
 
 ## Core Language
 

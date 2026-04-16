@@ -9,7 +9,8 @@ HTTP, PostgreSQL, and transformer models (full build).
 ```
 src/
 ├── eigenscript.h          # Public header: types, parser, evaluator API
-├── eigenscript.c          # Core: lexer, parser, evaluator, 127 builtins (4.5K lines)
+├── eigenscript.c          # Core: lexer, parser, evaluator, observer (2.3K lines)
+├── builtins.c             # 119 core builtins + registration table (3.1K lines)
 ├── arena.c                # Arena memory allocator (mark/reset)
 ├── main.c                 # Entry point, CLI argument handling
 ├── ext_http.c             # HTTP server extension (optional)

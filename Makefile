@@ -1,6 +1,6 @@
 VERSION := $(shell cat VERSION)
 CC      := gcc
-CFLAGS  := -Wall -Wextra -O2
+CFLAGS  := -Wall -Wextra -O2 -fstack-protector-strong
 LDFLAGS := -lm -lpthread
 
 SRC_DIR := src
