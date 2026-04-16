@@ -74,7 +74,7 @@ coverage: coverage-clean
 	@cd $(SRC_DIR) && gcov -n $(notdir $(SOURCES)) > ../coverage.txt 2>&1 || true
 	@echo ""
 	@echo "=== Coverage Summary ==="
-	@awk '/^File/{f=$$2} /^Lines executed/{gsub(/:/," ",$$0); print "  " f ": " $$3 " of " $$5 " lines"}' coverage.txt | sed "s/'//g"
+	@awk '/^File/{f=$$2; next} /^Lines executed/ && f {gsub(/:/," ",$$0); print "  " f ": " $$3 " of " $$5 " lines"; f=""}' coverage.txt | sed "s/'//g"
 	@echo ""
 	@echo "Per-file .gcov reports written to $(SRC_DIR)/*.gcov"
 	@echo "Run 'make coverage-clean' to remove coverage artifacts."

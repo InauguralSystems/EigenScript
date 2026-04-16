@@ -1362,12 +1362,12 @@ Value* builtin_load_file(Value *arg) {
     /* Fallback: try relative to script directory, then its parent */
     char resolved[8192];
     if (!source && path[0] != '/') {
-        snprintf(resolved, sizeof(resolved), "%s/%s", g_script_dir, path);
+        snprintf(resolved, sizeof(resolved), "%.4000s/%.4000s", g_script_dir, path);
         source = read_file_util(resolved, &size);
         if (source) path = resolved;
     }
     if (!source && path[0] != '/') {
-        snprintf(resolved, sizeof(resolved), "%s/../%s", g_script_dir, path);
+        snprintf(resolved, sizeof(resolved), "%.4000s/../%.4000s", g_script_dir, path);
         source = read_file_util(resolved, &size);
         if (source) path = resolved;
     }
