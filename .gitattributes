@@ -4,7 +4,7 @@
 # Source files
 *.c text eol=lf
 *.h text eol=lf
-*.eigs text eol=lf linguist-language=EigenScript
+*.eigs text eol=lf linguist-detectable linguist-language=EigenScript
 
 # Scripts
 *.sh text eol=lf
