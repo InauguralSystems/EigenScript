@@ -895,6 +895,21 @@ else
 fi
 echo ""
 
+# [43b] Eval-recursion-depth guard (runaway recursion → runtime error)
+echo "[43b/47] Recursion Guard (4 checks)"
+RG_OUTPUT=$(./eigenscript ../tests/test_recursion_guard.eigs 2>&1)
+if echo "$RG_OUTPUT" | grep -q "All recursion-guard tests passed"; then
+    TOTAL=$((TOTAL + 4))
+    PASS=$((PASS + 4))
+    echo "  PASS: all 4 recursion-guard checks"
+else
+    TOTAL=$((TOTAL + 4))
+    FAIL=$((FAIL + 4))
+    echo "  FAIL: recursion-guard tests"
+    echo "$RG_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [44] HTTP extension builtins (probe-gated)
 HTTP_PROBE_FILE=$(mktemp /tmp/eigs_http_probe_XXXXXX.eigs)
 cat > "$HTTP_PROBE_FILE" <<'PROBE'

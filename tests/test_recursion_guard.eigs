@@ -1,0 +1,44 @@
+# Regression: eval-depth guard must turn runaway recursion into a
+# catchable runtime error, not a SIGSEGV.
+
+# Case 1: direct self-recursion
+define forever as:
+    return forever of null
+caught1 is 0
+try:
+    forever of null
+catch e:
+    caught1 is 1
+assert of [caught1 == 1, "RG1 direct self-recursion caught"]
+
+# Case 2: mutual recursion (ping -> pong -> ping -> ...)
+define ping as:
+    return pong of null
+define pong as:
+    return ping of null
+caught2 is 0
+try:
+    ping of null
+catch e:
+    caught2 is 1
+assert of [caught2 == 1, "RG2 mutual recursion caught"]
+
+# Case 3: deep-but-legitimate recursion under the guard still works.
+# Each fib(n) call descends 2 levels at most, so fib(8) stays well
+# under the 500-frame cap.
+define fib as:
+    if n <= 1:
+        return n
+    return (fib of (n - 1)) + (fib of (n - 2))
+assert of [(fib of 8) == 21, "RG3 shallow recursion still works"]
+
+# Case 4: after a caught runaway, further evaluation must succeed.
+# This exercises correct depth-counter decrement on error unwinding.
+try:
+    forever of null
+catch e:
+    caught1 is 2
+after_val is 42 + 1
+assert of [after_val == 43, "RG4 depth counter reset after error"]
+
+print of "All recursion-guard tests passed"
