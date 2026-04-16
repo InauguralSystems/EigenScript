@@ -109,6 +109,81 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 
 Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 
+### lib/observer.eigs — Observer Utilities
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `entropy_of` | `entropy_of of value` | Current entropy |
+| `delta_of` | `delta_of of value` | Current dH (rate of change) |
+| `prev_delta_of` | `prev_delta_of of value` | Previous dH |
+| `is_converged` | `is_converged of value` | 1 if converged |
+| `is_stable` | `is_stable of value` | 1 if stable or converged |
+| `is_improving` | `is_improving of value` | 1 if entropy decreasing |
+| `is_diverging` | `is_diverging of value` | 1 if entropy increasing |
+| `is_oscillating` | `is_oscillating of value` | 1 if dH sign-flipping |
+| `wait_until_converged` | `wait_until_converged of [val, fn, max]` | Run fn until convergence |
+| `track_regimes` | `track_regimes of [val, fn, max]` | Log regime transitions |
+| `threshold_alert` | `threshold_alert of [val, lo, hi]` | "below", "above", or "ok" |
+| `snapshot` | `snapshot of value` | [value, status, entropy, dH, prev_dH] |
+
+### lib/tensor.eigs — Tensor Convenience Wrappers
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `xavier_init` | `xavier_init of [rows, cols]` | Xavier/Glorot initialization |
+| `he_init` | `he_init of [rows, cols]` | He/Kaiming initialization |
+| `ones` | `ones of [rows, cols]` | Tensor of ones |
+| `linear` | `linear of [input, W, bias]` | Affine transform x@W + b |
+| `mse_loss` | `mse_loss of [pred, target]` | Mean squared error |
+| `cross_entropy_loss` | `cross_entropy_loss of [logits, idx]` | Cross-entropy loss |
+| `accuracy` | `accuracy of [logits_list, labels]` | Classification accuracy |
+| `normalize` | `normalize of tensor` | Zero-mean, unit-variance |
+| `clip` | `clip of [tensor, lo, hi]` | Clamp elements |
+| `l2_norm` | `l2_norm of tensor` | Euclidean norm |
+| `scale` | `scale of [tensor, scalar]` | Scalar multiplication |
+
+### lib/io.eigs — File and Data Helpers
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `read_lines` | `read_lines of "path"` | File to list of lines |
+| `write_lines` | `write_lines of ["path", lines]` | List of lines to file |
+| `read_csv` | `read_csv of "path.csv"` | CSV to list of lists |
+| `write_csv` | `write_csv of ["path.csv", rows]` | List of lists to CSV |
+| `file_copy` | `file_copy of ["src", "dst"]` | Copy file contents |
+| `slurp` | `slurp of "path"` | Read with existence check |
+
+### lib/json.eigs — JSON Manipulation
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `json_get` | `json_get of [json, "key"]` | Extract top-level value |
+| `json_get_path` | `json_get_path of [json, "a.b"]` | Extract nested value |
+| `json_has` | `json_has of [json, "key"]` | 1 if key exists |
+| `json_from_pairs` | `json_from_pairs of pairs` | [[k,v],...] to JSON |
+| `json_merge` | `json_merge of [json_a, json_b]` | Merge two objects |
+| `json_pretty` | `json_pretty of json_str` | Indented output |
+
+### lib/test.eigs — Test Runner
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `assert_eq` | `assert_eq of [actual, expected, desc]` | Exact equality |
+| `assert_near` | `assert_near of [actual, expected, tol, desc]` | Approximate equality |
+| `assert_true` | `assert_true of [cond, desc]` | Truthy check |
+| `assert_false` | `assert_false of [cond, desc]` | Falsy check |
+| `test_summary` | `test_summary of null` | Print results, exit on failure |
+
+### lib/format.eigs — Number Formatting and Tables
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `fmt_num` | `fmt_num of [value, decimals]` | Fixed decimal places |
+| `fmt_percent` | `fmt_percent of [value, decimals]` | Format as percentage |
+| `fmt_bar` | `fmt_bar of [val, max, width]` | Text progress bar |
+| `fmt_padded` | `fmt_padded of [value, width]` | Right-aligned field |
+| `fmt_table` | `fmt_table of [headers, rows]` | Aligned text table |
+
 ## Writing Library Functions
 
 Follow these conventions:

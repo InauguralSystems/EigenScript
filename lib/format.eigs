@@ -1,0 +1,117 @@
+# ============================================================
+# Format Library — number formatting and text output helpers
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/format.eigs"
+#
+#   fmt_num of [value, decimals]            # "3.14"
+#   fmt_percent of [0.856, 1]               # "85.6%"
+#   fmt_table of [headers, rows]            # aligned text table
+#   fmt_bar of [value, max_val, width]      # "████░░░░░░"
+#   fmt_padded of [value, width]            # right-aligned in field
+
+# ---- fmt_num: format number to fixed decimal places ----
+# fmt_num of [value, decimals] -> string
+define fmt_num as:
+    value is n[0]
+    decimals is n[1]
+    if decimals == 0:
+        return str of (round of value)
+    factor is 1
+    for i in range of decimals:
+        factor is factor * 10
+    rounded is round of (value * factor)
+    int_part is floor of (rounded / factor)
+    frac_part is rounded - (int_part * factor)
+    if frac_part < 0:
+        frac_part is 0 - frac_part
+    frac_str is str of frac_part
+    loop while (len of frac_str) < decimals:
+        frac_str is "0" + frac_str
+    return (str of int_part) + "." + frac_str
+
+# ---- fmt_percent: format as percentage ----
+# fmt_percent of [value, decimals] -> string
+define fmt_percent as:
+    value is n[0]
+    decimals is n[1]
+    pct is value * 100.0
+    return (fmt_num of [pct, decimals]) + "%"
+
+# ---- fmt_bar: text progress bar ----
+# fmt_bar of [value, max_val, width] -> string
+define fmt_bar as:
+    value is n[0]
+    max_val is n[1]
+    width is n[2]
+    if max_val <= 0:
+        max_val is 1
+    ratio is value / max_val
+    if ratio < 0:
+        ratio is 0
+    if ratio > 1:
+        ratio is 1
+    filled is round of (ratio * width)
+    empty is width - filled
+    bar is ""
+    for i in range of filled:
+        bar is bar + "#"
+    for i in range of empty:
+        bar is bar + "."
+    return "[" + bar + "] " + (fmt_percent of [ratio, 1])
+
+# ---- fmt_padded: right-align value in a field ----
+# fmt_padded of [value, width] -> string
+define fmt_padded as:
+    s is str of n[0]
+    width is n[1]
+    loop while (len of s) < width:
+        s is " " + s
+    return s
+
+# ---- fmt_table: print aligned table ----
+# fmt_table of [headers, rows] -> string
+# headers is a list of strings, rows is a list of lists
+define fmt_table as:
+    headers is n[0]
+    rows is n[1]
+    ncols is len of headers
+    widths is []
+    for i in range of ncols:
+        append of [widths, len of (str of headers[i])]
+    for i in range of (len of rows):
+        row is rows[i]
+        for j in range of ncols:
+            w is len of (str of row[j])
+            if w > widths[j]:
+                set_at of [widths, j, w]
+    # Build header line
+    header_line is ""
+    sep_line is ""
+    for i in range of ncols:
+        cell is str of headers[i]
+        loop while (len of cell) < widths[i]:
+            cell is cell + " "
+        if i > 0:
+            header_line is header_line + " | "
+            sep_line is sep_line + "-+-"
+        header_line is header_line + cell
+        dashes is ""
+        for d in range of widths[i]:
+            dashes is dashes + "-"
+        sep_line is sep_line + dashes
+    result is header_line + "\n" + sep_line
+    # Build data rows
+    for i in range of (len of rows):
+        row is rows[i]
+        line is ""
+        for j in range of ncols:
+            cell is str of row[j]
+            loop while (len of cell) < widths[j]:
+                cell is cell + " "
+            if j > 0:
+                line is line + " | "
+            line is line + cell
+        result is result + "\n" + line
+    return result

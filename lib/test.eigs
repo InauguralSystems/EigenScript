@@ -1,0 +1,84 @@
+# ============================================================
+# Test Library — lightweight assertion and test runner
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/test.eigs"
+#
+#   assert_eq of [actual, expected, "description"]
+#   assert_near of [actual, expected, tolerance, "description"]
+#   assert_true of [condition, "description"]
+#   assert_false of [condition, "description"]
+#   test_summary of null
+
+# ---- State ----
+_test_pass is 0
+_test_fail is 0
+_test_errors is []
+
+# ---- assert_eq: check exact equality ----
+define assert_eq as:
+    actual is n[0]
+    expected is n[1]
+    desc is n[2]
+    if actual == expected:
+        _test_pass is _test_pass + 1
+    else:
+        _test_fail is _test_fail + 1
+        msg is "FAIL: " + desc + " — expected " + (str of expected) + ", got " + (str of actual)
+        append of [_test_errors, msg]
+        print of msg
+
+# ---- assert_near: check approximate equality ----
+define assert_near as:
+    actual is n[0]
+    expected is n[1]
+    tol is n[2]
+    desc is n[3]
+    diff is actual - expected
+    if diff < 0:
+        diff is 0 - diff
+    if diff <= tol:
+        _test_pass is _test_pass + 1
+    else:
+        _test_fail is _test_fail + 1
+        msg is "FAIL: " + desc + " — expected ~" + (str of expected) + " (±" + (str of tol) + "), got " + (str of actual)
+        append of [_test_errors, msg]
+        print of msg
+
+# ---- assert_true: check condition is truthy ----
+define assert_true as:
+    cond is n[0]
+    desc is n[1]
+    if cond:
+        _test_pass is _test_pass + 1
+    else:
+        _test_fail is _test_fail + 1
+        msg is "FAIL: " + desc + " — expected true"
+        append of [_test_errors, msg]
+        print of msg
+
+# ---- assert_false: check condition is falsy ----
+define assert_false as:
+    cond is n[0]
+    desc is n[1]
+    if cond:
+        _test_fail is _test_fail + 1
+        msg is "FAIL: " + desc + " — expected false"
+        append of [_test_errors, msg]
+        print of msg
+    else:
+        _test_pass is _test_pass + 1
+
+# ---- test_summary: print results and exit with status ----
+define test_summary as:
+    total is _test_pass + _test_fail
+    print of ""
+    print of ("Tests: " + (str of total) + " | Pass: " + (str of _test_pass) + " | Fail: " + (str of _test_fail))
+    if _test_fail > 0:
+        print of "Errors:"
+        for i in range of (len of _test_errors):
+            print of ("  " + _test_errors[i])
+        assert of [0, (str of _test_fail) + " test(s) failed"]
+    else:
+        print of "All tests passed."

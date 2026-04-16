@@ -1,0 +1,87 @@
+# ============================================================
+# I/O Library — file and data helpers in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/io.eigs"
+#
+#   read_lines of "path.txt"                # file -> list of lines
+#   write_lines of ["path.txt", lines]      # list of lines -> file
+#   read_csv of "data.csv"                  # CSV -> list of lists
+#   write_csv of ["out.csv", rows]          # list of lists -> CSV
+#   file_copy of ["src", "dst"]             # copy file contents
+#   slurp of "path"                         # read_text alias with error check
+
+# ---- read_lines: read file into list of lines ----
+define read_lines as:
+    text is read_text of n
+    if text == "":
+        return []
+    return split of [text, "\n"]
+
+# ---- write_lines: write list of lines to file ----
+# write_lines of [path, lines]
+define write_lines as:
+    path is n[0]
+    lines is n[1]
+    load_file of "lib/string.eigs"
+    text is join of [lines, "\n"]
+    return write_text of [path, text]
+
+# ---- read_csv: parse CSV file into list of lists ----
+# read_csv of "path.csv" -> [[col1, col2, ...], ...]
+# Simple CSV: no quoting, comma-delimited
+define read_csv as:
+    text is read_text of n
+    if text == "":
+        return []
+    lines is split of [text, "\n"]
+    rows is []
+    for i in range of (len of lines):
+        line is trim of lines[i]
+        if (len of line) > 0:
+            fields is split of [line, ","]
+            trimmed is []
+            for j in range of (len of fields):
+                append of [trimmed, trim of fields[j]]
+            append of [rows, trimmed]
+    return rows
+
+# ---- write_csv: write list of lists as CSV ----
+# write_csv of ["path.csv", rows]
+define write_csv as:
+    path is n[0]
+    rows is n[1]
+    lines is []
+    for i in range of (len of rows):
+        row is rows[i]
+        parts is []
+        for j in range of (len of row):
+            append of [parts, str of row[j]]
+        line is ""
+        for j in range of (len of parts):
+            if j > 0:
+                line is line + ","
+            line is line + parts[j]
+        append of [lines, line]
+    text is ""
+    for i in range of (len of lines):
+        if i > 0:
+            text is text + "\n"
+        text is text + lines[i]
+    return write_text of [path, text]
+
+# ---- file_copy: copy contents of one file to another ----
+# file_copy of [src_path, dst_path]
+define file_copy as:
+    src is n[0]
+    dst is n[1]
+    text is read_text of src
+    return write_text of [dst, text]
+
+# ---- slurp: read file with existence check ----
+# slurp of "path" -> string (exits with error if file not found)
+define slurp as:
+    if (file_exists of n) == 0:
+        assert of [0, "slurp: file not found: " + n]
+    return read_text of n

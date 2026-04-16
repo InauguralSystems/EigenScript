@@ -1,0 +1,114 @@
+# ============================================================
+# Observer Library — higher-level observer utilities
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/observer.eigs"
+#
+#   entropy_of of x                         # current entropy
+#   delta_of of x                           # current dH (rate of change)
+#   is_converged of x                       # 1 if converged, else 0
+#   is_stable of x                          # 1 if stable or converged
+#   is_improving of x                       # 1 if improving
+#   is_oscillating of x                     # 1 if oscillating
+#   wait_until_converged of [x, update_fn, max_steps]
+#   track_regimes of [x, update_fn, max_steps]
+#   threshold_alert of [x, lo, hi]
+
+# ---- entropy_of: extract entropy from observer state ----
+define entropy_of as:
+    state is observe of n
+    return state[1]
+
+# ---- delta_of: extract dH (rate of change) ----
+define delta_of as:
+    state is observe of n
+    return state[2]
+
+# ---- prev_delta_of: extract previous dH ----
+define prev_delta_of as:
+    state is observe of n
+    return state[3]
+
+# ---- is_converged: check if value has converged ----
+define is_converged as:
+    return (report of n) == "converged"
+
+# ---- is_stable: check if value is stable or converged ----
+define is_stable as:
+    status is report of n
+    if status == "stable":
+        return 1
+    if status == "converged":
+        return 1
+    return 0
+
+# ---- is_improving: check if entropy is decreasing ----
+define is_improving as:
+    return (report of n) == "improving"
+
+# ---- is_diverging: check if entropy is increasing ----
+define is_diverging as:
+    return (report of n) == "diverging"
+
+# ---- is_oscillating: check if dH is sign-flipping ----
+define is_oscillating as:
+    return (report of n) == "oscillating"
+
+# ---- wait_until_converged: run update_fn until value converges ----
+# wait_until_converged of [value, update_fn, max_steps]
+# Returns [final_value, steps_taken, final_status]
+define wait_until_converged as:
+    val is n[0]
+    update_fn is n[1]
+    max_steps is n[2]
+    step is 0
+    status is "start"
+    loop while status != "converged":
+        val is update_fn of val
+        step is step + 1
+        status is report of val
+        if step >= max_steps:
+            return [val, step, status]
+    return [val, step, "converged"]
+
+# ---- track_regimes: run update_fn and log regime transitions ----
+# track_regimes of [value, update_fn, max_steps]
+# Returns [final_value, steps, list_of_transitions]
+# Each transition is [step, from_regime, to_regime]
+define track_regimes as:
+    val is n[0]
+    update_fn is n[1]
+    max_steps is n[2]
+    step is 0
+    last is "start"
+    transitions is []
+    loop while last != "converged":
+        val is update_fn of val
+        step is step + 1
+        current is report of val
+        if current != last:
+            append of [transitions, [step, last, current]]
+            last is current
+        if step >= max_steps:
+            return [val, step, transitions]
+    return [val, step, transitions]
+
+# ---- threshold_alert: check if value is outside bounds ----
+# threshold_alert of [value, lo, hi]
+# Returns "below" | "above" | "ok"
+define threshold_alert as:
+    val is n[0]
+    lo is n[1]
+    hi is n[2]
+    if val < lo:
+        return "below"
+    if val > hi:
+        return "above"
+    return "ok"
+
+# ---- snapshot: capture full observer state as a named record ----
+# snapshot of value -> [value, status, entropy, dH, prev_dH]
+define snapshot as:
+    state is observe of n
+    return [n, state[0], state[1], state[2], state[3]]

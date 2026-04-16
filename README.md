@@ -96,6 +96,12 @@ Pure EigenScript libraries under `lib/`:
 | `lib/math.eigs` | `abs`, `max_val`, `min_val`, `clamp`, `lerp`, `dot` |
 | `lib/list.eigs` | `map`, `filter`, `reduce`, `reverse`, `zip`, `flatten` |
 | `lib/string.eigs` | `join`, `repeat`, `pad_left` |
+| `lib/observer.eigs` | `is_converged`, `is_stable`, `entropy_of`, `track_regimes`, `snapshot` |
+| `lib/tensor.eigs` | `xavier_init`, `he_init`, `linear`, `mse_loss`, `cross_entropy_loss`, `accuracy` |
+| `lib/io.eigs` | `read_lines`, `write_lines`, `read_csv`, `write_csv`, `slurp` |
+| `lib/json.eigs` | `json_get`, `json_has`, `json_merge`, `json_from_pairs`, `json_pretty` |
+| `lib/test.eigs` | `assert_eq`, `assert_near`, `assert_true`, `test_summary` |
+| `lib/format.eigs` | `fmt_num`, `fmt_percent`, `fmt_bar`, `fmt_table`, `fmt_padded` |
 | `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response`, `check_openai` |
 | `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout`, `require_auth` |
 
