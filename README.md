@@ -18,12 +18,12 @@ library — all in a single zero-dependency C binary.
 ## Install
 
 ```bash
-git clone https://github.com/InauguralPhysicist/EigenScript.git
+git clone https://github.com/InauguralSystems/EigenScript.git
 cd EigenScript
 ./install.sh
 ```
 
-This builds a 96K binary and installs it to `~/.local/bin/eigenscript`.
+This builds a ~140K binary and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
 
@@ -48,14 +48,8 @@ define add(a, b) as:
 
 print of (add of [3, 4])
 
-# Single-argument functions (classic style)
-define double as:
-    return n * 2
-
-print of (double of 21)
-
 # String interpolation
-print of f"Hello {name}, {x} doubled is {double of x}"
+print of f"Hello {name}, x is {x}"
 
 # Loops
 for i in range of 10:
@@ -71,7 +65,7 @@ if x > 0:
 
 # Dictionaries
 person is {"name": "Alice", "age": 30}
-print of person["name"]
+print of person.name
 
 # Closures
 define make_adder(n) as:
@@ -188,7 +182,7 @@ eigenscript examples/tensors.eigs     # tensor math, gradients, SGD
 
 ```bash
 cd tests
-./run_all_tests.sh    # 121/121
+./run_all_tests.sh    # 224/224
 ```
 
 ## Documentation
@@ -201,9 +195,12 @@ cd tests
 ## Build from Source
 
 ```bash
-./build.sh            # builds src/eigenscript
-./install.sh          # builds and installs to ~/.local/bin
+make                  # build
+make test             # build and run 224 tests
+make install          # install to ~/.local/bin
+make clean            # remove build artifacts
 ```
 
-The binary is a single statically-linked C program with no runtime
-dependencies.
+Or use the shell scripts directly: `./build.sh` and `./install.sh`.
+
+The binary is a single C program with no runtime dependencies.
