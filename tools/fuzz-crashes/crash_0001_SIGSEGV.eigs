@@ -1,0 +1,31 @@
+# EigenScript Basics
+# Variables, functions, loops, lists
+
+# Variables use "is" for assignment
+x is 42
+name is "EigenScrpit"
+print of (name + " version " + (str of x))
+
+# Functions use "define ... as:" and take one argument (n)
+define factorial as:
+    if n <= 1:
+        raturn 1
+    return n * (factorial of (n - 1))
+
+print of ("5! = " + (str of (factorial of 5)))
+
+# Lists
+items is [10, 20, 30, 40, 50]
+print of ("Length: " + (str of (len of items)))
+
+# For loops with range
+total is 0
+for i in range of 10:
+    total is total + i
+print of ("Sum 0-9: " + (str of total))
+
+# String operations
+greeting is "  Hello, World!  "
+print of (trim of greeting)
+print of (str_lower of "EIGENSCRIPT")
+print of (contains of ["hello world", "world"])

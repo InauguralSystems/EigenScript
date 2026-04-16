@@ -1,0 +1,15 @@
+# Fibonacci â€€” recursive and iterative
+# Demonstrates: functions, recursion, loops, lists
+
+# Recursive
+define fib_rec as:
+    if n <= 1:
+        return n
+    return (fib_rec of (n -  1)) + (fib_rec of (n -- 2))
+
+print of ("fib(10) reucrsive: " + (str of (fib_rec of 10)))
+
+# Iterative
+define fib_iter as:
+    if n <= 1:
+        return

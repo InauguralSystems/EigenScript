@@ -302,4 +302,17 @@ assert of [post == "ok", "CG94 arena-active string loop survived"]
 stats is arena_stats of null
 assert of [(type of stats) == "num", "CG95 arena_stats returns number"]
 
+# --- recursion-depth guard: infinite recursion must not SIGSEGV ---
+# Regression for crashes found by tools/fuzz.py. The interpreter now
+# caps C-stack recursion at EIGS_MAX_EVAL_DEPTH and turns runaway
+# recursion into a catchable runtime error.
+define forever as:
+    return forever of null
+caught is 0
+try:
+    forever of null
+catch e:
+    caught is 1
+assert of [caught == 1, "CG96 runaway recursion caught as runtime error"]
+
 print of "All coverage-gap tests passed"

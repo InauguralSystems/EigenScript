@@ -79,7 +79,30 @@ static void update_observer(Value *v) {
 }
 
 
+/* Recursion-depth guard. Each user-visible recursion level typically
+ * consumes 3-6 eval_node frames (wrapper + _impl + sub-expressions).
+ * 500 guard units gives ~100 user-recursion levels while leaving several
+ * MB of headroom below the default 8MB linux stack. The goal is to
+ * surface runaway recursion as a catchable runtime error rather than a
+ * SIGSEGV. */
+#define EIGS_MAX_EVAL_DEPTH 500
+static int g_eval_depth = 0;
+
+static Value* eval_node_impl(ASTNode *node, Env *env);
+
 Value* eval_node(ASTNode *node, Env *env) {
+    if (!node) return make_null();
+    if (g_eval_depth >= EIGS_MAX_EVAL_DEPTH) {
+        runtime_error(node->line, "eval recursion too deep (limit %d)", EIGS_MAX_EVAL_DEPTH);
+        return make_null();
+    }
+    g_eval_depth++;
+    Value *result = eval_node_impl(node, env);
+    g_eval_depth--;
+    return result;
+}
+
+static Value* eval_node_impl(ASTNode *node, Env *env) {
     if (!node) return make_null();
 
     switch (node->type) {
