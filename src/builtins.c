@@ -243,7 +243,7 @@ static void eigs_json_encode_value(Value *v, char *buf, int *pos, int max_len) {
 }
 
 Value* builtin_json_encode(Value *arg) {
-    char *buf = malloc(MAX_STR);
+    char *buf = xmalloc(MAX_STR);
     int pos = 0;
     eigs_json_encode_value(arg, buf, &pos, MAX_STR - 1);
     buf[pos] = '\0';
@@ -377,7 +377,7 @@ Value* builtin_json_build(Value *arg) {
     int count = arg->data.list.count;
     int buf_size = count * 256 + 64;
     if (buf_size < 1024) buf_size = 1024;
-    char *buf = calloc(buf_size, 1);
+    char *buf = xcalloc(buf_size, 1);
     int pos = 0;
     pos += snprintf(buf + pos, buf_size - pos, "{");
     for (int i = 0; i + 1 < count && pos < buf_size - 64; i += 2) {
@@ -421,10 +421,10 @@ Value* builtin_json_build(Value *arg) {
 
 Value* builtin_json_raw(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
-    Value *v = malloc(sizeof(Value));
+    Value *v = xmalloc(sizeof(Value));
     memset(v, 0, sizeof(Value));
     v->type = VAL_JSON_RAW;
-    v->data.str = strdup(arg->data.str);
+    v->data.str = xstrdup(arg->data.str);
     return v;
 }
 
@@ -434,7 +434,7 @@ Value* builtin_json_raw(Value *arg) {
 
 Value* builtin_str_lower(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
-    char *s = strdup(arg->data.str);
+    char *s = xstrdup(arg->data.str);
     for (int i = 0; s[i]; i++) s[i] = tolower((unsigned char)s[i]);
     Value *r = make_str(s);
     free(s);
@@ -467,7 +467,7 @@ Value* builtin_split(Value *arg) {
             delim = arg->data.list.items[1]->data.str;
     }
     Value *list = make_list(0);
-    char *copy = strdup(str);
+    char *copy = xstrdup(str);
     char *saveptr;
     char *token = strtok_r(copy, delim, &saveptr);
     while (token) {
@@ -484,7 +484,7 @@ Value* builtin_trim(Value *arg) {
     while (*s && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')) s++;
     int len = strlen(s);
     while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t' || s[len-1] == '\n' || s[len-1] == '\r')) len--;
-    char *r = malloc(len + 1);
+    char *r = xmalloc(len + 1);
     memcpy(r, s, len);
     r[len] = '\0';
     Value *result = make_str(r);
@@ -505,7 +505,7 @@ Value* builtin_str_replace(Value *arg) {
     const char *p = str;
     while ((p = strstr(p, old_s)) != NULL) { count++; p += old_len; }
     int result_len = str_len + count * (new_len - old_len);
-    char *result = malloc(result_len + 1);
+    char *result = xmalloc(result_len + 1);
     char *dst = result;
     p = str;
     while (*p) {
@@ -544,7 +544,7 @@ Value* builtin_match(Value *arg) {
     Value *result = make_list(8);
     for (int i = 0; i < 16 && matches[i].rm_so >= 0; i++) {
         int len = matches[i].rm_eo - matches[i].rm_so;
-        char *buf = malloc(len + 1);
+        char *buf = xmalloc(len + 1);
         memcpy(buf, str + matches[i].rm_so, len);
         buf[len] = '\0';
         list_append(result, make_str(buf));
@@ -571,7 +571,7 @@ Value* builtin_match_all(Value *arg) {
     const char *p = str;
     while (regexec(&re, p, 1, m, 0) == 0) {
         int len = m[0].rm_eo - m[0].rm_so;
-        char *buf = malloc(len + 1);
+        char *buf = xmalloc(len + 1);
         memcpy(buf, p + m[0].rm_so, len);
         buf[len] = '\0';
         list_append(result, make_str(buf));
@@ -635,7 +635,7 @@ Value* builtin_regex_replace(Value *arg) {
 /* ==== BUILTIN: str_upper ==== */
 Value* builtin_str_upper(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
-    char *s = strdup(arg->data.str);
+    char *s = xstrdup(arg->data.str);
     for (int i = 0; s[i]; i++) s[i] = toupper((unsigned char)s[i]);
     Value *r = make_str(s);
     free(s);
@@ -685,7 +685,7 @@ Value* builtin_substr(Value *arg) {
     if (start >= slen) return make_str("");
     if (rlen < 0) rlen = 0;
     if (start + rlen > slen) rlen = slen - start;
-    char *buf = malloc(rlen + 1);
+    char *buf = xmalloc(rlen + 1);
     memcpy(buf, str_val->data.str + start, rlen);
     buf[rlen] = '\0';
     Value *r = make_str(buf);
@@ -913,7 +913,7 @@ Value* builtin_path_join(Value *arg) {
     int strip_a = (alen > 0 && a->data.str[alen-1] == '/') ? 1 : 0;
     int skip_b = (blen > 0 && b->data.str[0] == '/') ? 1 : 0;
     int rlen = (alen - strip_a) + 1 + (blen - skip_b);
-    char *buf = malloc(rlen + 1);
+    char *buf = xmalloc(rlen + 1);
     memcpy(buf, a->data.str, alen - strip_a);
     buf[alen - strip_a] = '/';
     memcpy(buf + alen - strip_a + 1, b->data.str + skip_b, blen - skip_b);
@@ -931,7 +931,7 @@ Value* builtin_path_dir(Value *arg) {
     if (!last) return make_str(".");
     if (last == s) return make_str("/");
     int len = last - s;
-    char *buf = malloc(len + 1);
+    char *buf = xmalloc(len + 1);
     memcpy(buf, s, len);
     buf[len] = '\0';
     Value *r = make_str(buf);
@@ -962,7 +962,7 @@ Value* builtin_path_ext(Value *arg) {
 Value* builtin_mkdir(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_num(0);
     /* Simple recursive mkdir */
-    char *path = strdup(arg->data.str);
+    char *path = xstrdup(arg->data.str);
     int len = strlen(path);
     for (int i = 1; i <= len; i++) {
         if (path[i] == '/' || path[i] == '\0') {
@@ -1074,7 +1074,7 @@ Value* builtin_build_corpus(Value *arg) {
     int n_idents = 0;
     int idents_cap = 0;
 
-    int *file_tok_counts = calloc(n_files, sizeof(int));
+    int *file_tok_counts = xcalloc(n_files, sizeof(int));
     int total_tokens = 0;
     int files_found = 0;
 
@@ -1112,9 +1112,9 @@ Value* builtin_build_corpus(Value *arg) {
                 } else {
                     if (n_idents >= idents_cap) {
                         idents_cap = idents_cap < 256 ? 256 : idents_cap * 2;
-                        idents = realloc(idents, idents_cap * sizeof(IdentEntry));
+                        idents = xrealloc(idents, idents_cap * sizeof(IdentEntry));
                     }
-                    idents[n_idents].name = strdup(name);
+                    idents[n_idents].name = xstrdup(name);
                     idents[n_idents].count = 1;
                     n_idents++;
                 }
@@ -1132,11 +1132,11 @@ Value* builtin_build_corpus(Value *arg) {
     /* ---- Pass 2: pick top-N identifiers ---- */
     int actual_top = top_n < n_idents ? top_n : n_idents;
     if (actual_top <= 0) actual_top = 0;
-    char **top_names = calloc(actual_top > 0 ? actual_top : 1, sizeof(char*));
-    int *top_ids = calloc(actual_top > 0 ? actual_top : 1, sizeof(int));
+    char **top_names = xcalloc(actual_top > 0 ? actual_top : 1, sizeof(char*));
+    int *top_ids = xcalloc(actual_top > 0 ? actual_top : 1, sizeof(int));
 
     /* Work on a copy of counts */
-    int *work_counts = malloc(n_idents * sizeof(int));
+    int *work_counts = xmalloc(n_idents * sizeof(int));
     for (int i = 0; i < n_idents; i++) work_counts[i] = idents[i].count;
 
     for (int t = 0; t < actual_top; t++) {
@@ -1319,7 +1319,7 @@ Value* builtin_json_path(Value *arg) {
     }
     if (current->type == VAL_NULL) return make_str("");
     /* For complex types, json_encode them */
-    char *encoded = malloc(MAX_STR);
+    char *encoded = xmalloc(MAX_STR);
     int epos = 0;
     eigs_json_encode_value(current, encoded, &epos, MAX_STR - 1);
     encoded[epos] = '\0';
@@ -1340,7 +1340,7 @@ char* read_file_util(const char *path, long *out_size) {
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    char *buf = malloc(size + 1);
+    char *buf = xmalloc(size + 1);
     if (!buf) { fclose(f); return NULL; }
     size_t got = fread(buf, 1, size, f);
     fclose(f);
@@ -1420,7 +1420,7 @@ Value* builtin_read_text(Value *arg) {
         fclose(f);
         return make_str("");
     }
-    char *buf = malloc(len + 1);
+    char *buf = xmalloc(len + 1);
     if (!buf) { fclose(f); return make_str(""); }
     size_t read = fread(buf, 1, len, f);
     fclose(f);
@@ -1488,7 +1488,7 @@ Value* builtin_exec_capture(Value *arg) {
     int total = cmd_list->data.list.count;
 
     /* Build argv array */
-    char **argv = malloc((total + 1) * sizeof(char*));
+    char **argv = xmalloc((total + 1) * sizeof(char*));
     if (!argv) return exec_capture_result(-1, "");
     for (int i = 0; i < total; i++) {
         Value *v = cmd_list->data.list.items[i];
@@ -1540,7 +1540,7 @@ Value* builtin_exec_capture(Value *arg) {
     }
 
     size_t cap = 4096, len = 0;
-    char *buf = malloc(cap + 1);
+    char *buf = xmalloc(cap + 1);
     if (!buf) {
         close(pipefd[0]);
         kill(pid, SIGKILL);
@@ -1574,7 +1574,7 @@ Value* builtin_exec_capture(Value *arg) {
             if (cap >= 10 * 1024 * 1024) break;
             size_t newcap = cap * 2;
             if (newcap > 10 * 1024 * 1024) newcap = 10 * 1024 * 1024;
-            char *newbuf = realloc(buf, newcap + 1);
+            char *newbuf = xrealloc(buf, newcap + 1);
             if (!newbuf) break;
             buf = newbuf;
             cap = newcap;
@@ -1667,7 +1667,7 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols) {
     int ndim = tensor_dims(v, rows, cols);
     if (ndim == 0) return NULL;
     int total = (*rows) * (*cols);
-    double *out = calloc(total, sizeof(double));
+    double *out = xcalloc(total, sizeof(double));
     if (ndim == 1) {
         for (int i = 0; i < *cols; i++)
             out[i] = (v->data.list.items[i]->type == VAL_NUM) ? v->data.list.items[i]->data.num : 0.0;
@@ -1829,7 +1829,7 @@ Value* builtin_tensor_matmul(Value *arg) {
     double *af = tensor_to_flat(a, &ar, &ac);
     double *bf = tensor_to_flat(b, &br, &bc);
     if (!af || !bf || ac != br) { free(af); free(bf); return make_null(); }
-    double *out = calloc(ar * bc, sizeof(double));
+    double *out = xcalloc(ar * bc, sizeof(double));
     ne_matmul_buf(af, ar, ac, bf, bc, out);
     Value *result;
     if (ar == 1)
@@ -1916,7 +1916,7 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
 Value* builtin_tensor_mean(Value *arg) {
     int total = tensor_total(arg);
     if (total == 0) return make_num(0.0);
-    double *flat = calloc(total, sizeof(double));
+    double *flat = xcalloc(total, sizeof(double));
     int idx = 0;
     tensor_flatten_recursive(arg, flat, &idx);
     double sum = 0.0;
@@ -1929,7 +1929,7 @@ Value* builtin_tensor_mean(Value *arg) {
 Value* builtin_tensor_sum(Value *arg) {
     int total = tensor_total(arg);
     if (total == 0) return make_num(0.0);
-    double *flat = calloc(total, sizeof(double));
+    double *flat = xcalloc(total, sizeof(double));
     int idx = 0;
     tensor_flatten_recursive(arg, flat, &idx);
     double sum = 0.0;
@@ -2768,14 +2768,14 @@ Value* builtin_tensor_load(Value *arg) {
     int total = rows * cols;
 
     /* Read numeric data */
-    double *data = malloc(total * sizeof(double));
+    double *data = xmalloc(total * sizeof(double));
     if (!data) { fclose(f); return make_null(); }
     if ((int)fread(data, sizeof(double), total, f) != total) { free(data); fclose(f); return make_null(); }
 
     /* Read observer state if present */
     double *obs_data = NULL;
     if (has_observer) {
-        obs_data = malloc(total * 5 * sizeof(double));
+        obs_data = xmalloc(total * 5 * sizeof(double));
         if (obs_data) {
             if ((int)fread(obs_data, sizeof(double), total * 5, f) != total * 5) {
                 free(obs_data);

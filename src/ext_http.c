@@ -71,10 +71,10 @@ Value* builtin_http_route(Value *arg) {
     } else {
         Value *handler = arg->data.list.items[2];
         if (handler->type == VAL_STR) {
-            r->kind = strdup("static");
-            r->payload = strdup(handler->data.str);
+            r->kind = xstrdup("static");
+            r->payload = xstrdup(handler->data.str);
         } else {
-            r->kind = strdup("static");
+            r->kind = xstrdup("static");
             char *s = value_to_string(handler);
             r->payload = s;
         }

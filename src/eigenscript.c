@@ -237,11 +237,11 @@ void dict_set(Value *dict, const char *key, Value *val) {
     /* Grow if needed */
     if (dict->data.dict.count >= dict->data.dict.capacity) {
         int new_cap = dict->data.dict.capacity * 2;
-        dict->data.dict.keys = realloc(dict->data.dict.keys, new_cap * sizeof(char*));
-        dict->data.dict.vals = realloc(dict->data.dict.vals, new_cap * sizeof(Value*));
+        dict->data.dict.keys = xrealloc(dict->data.dict.keys, new_cap * sizeof(char*));
+        dict->data.dict.vals = xrealloc(dict->data.dict.vals, new_cap * sizeof(Value*));
         dict->data.dict.capacity = new_cap;
     }
-    dict->data.dict.keys[dict->data.dict.count] = strdup(key);
+    dict->data.dict.keys[dict->data.dict.count] = xstrdup(key);
     dict->data.dict.vals[dict->data.dict.count] = val;
     dict->data.dict.count++;
 }
@@ -316,7 +316,7 @@ void list_append(Value *list, Value *item) {
             memcpy(new_items, list->data.list.items, list->data.list.count * sizeof(Value*));
             list->data.list.items = new_items;
         } else {
-            list->data.list.items = realloc(list->data.list.items, new_cap * sizeof(Value*));
+            list->data.list.items = xrealloc(list->data.list.items, new_cap * sizeof(Value*));
         }
         list->data.list.capacity = new_cap;
     }
@@ -339,21 +339,21 @@ int is_truthy(Value *v) {
 }
 
 char* value_to_string(Value *v) {
-    if (!v) return strdup("null");
+    if (!v) return xstrdup("null");
     char buf[256];
     switch (v->type) {
-        case VAL_NULL: return strdup("null");
+        case VAL_NULL: return xstrdup("null");
         case VAL_NUM: {
             double n = v->data.num;
             if (n == (long long)n && fabs(n) < 1e15)
                 snprintf(buf, sizeof(buf), "%lld", (long long)n);
             else
                 snprintf(buf, sizeof(buf), "%.6g", n);
-            return strdup(buf);
+            return xstrdup(buf);
         }
-        case VAL_STR: return strdup(v->data.str);
+        case VAL_STR: return xstrdup(v->data.str);
         case VAL_LIST: {
-            char *result = malloc(MAX_STR);
+            char *result = xmalloc(MAX_STR);
             int pos = 0;
             int remaining;
             remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
@@ -379,9 +379,9 @@ char* value_to_string(Value *v) {
             if (pos >= MAX_STR) pos = MAX_STR - 1;
             return result;
         }
-        case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return strdup(buf);
+        case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return xstrdup(buf);
         case VAL_DICT: {
-            char *result = malloc(MAX_STR);
+            char *result = xmalloc(MAX_STR);
             int pos = 0;
             int remaining;
             remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
@@ -410,10 +410,10 @@ char* value_to_string(Value *v) {
             if (pos >= MAX_STR) pos = MAX_STR - 1;
             return result;
         }
-        case VAL_BUILTIN: return strdup("<builtin>");
-        case VAL_JSON_RAW: return strdup(v->data.str);
+        case VAL_BUILTIN: return xstrdup("<builtin>");
+        case VAL_JSON_RAW: return xstrdup(v->data.str);
     }
-    return strdup("?");
+    return xstrdup("?");
 }
 
 /* ================================================================
@@ -421,7 +421,7 @@ char* value_to_string(Value *v) {
  * ================================================================ */
 
 Env* env_new(Env *parent) {
-    Env *e = g_arena.active ? arena_alloc(sizeof(Env)) : calloc(1, sizeof(Env));
+    Env *e = g_arena.active ? arena_alloc(sizeof(Env)) : xcalloc(1, sizeof(Env));
     e->parent = parent;
     e->count = 0;
     e->heap_allocated = !g_arena.active;
@@ -451,7 +451,7 @@ void env_set_local(Env *env, const char *name, Value *val) {
         }
     }
     if (env->count < MAX_VARS) {
-        char *name_copy = strdup(name);
+        char *name_copy = xstrdup(name);
         /* Only arena-track the string if the env is arena-allocated.
          * Heap env strings must survive arena_reset — they are freed
          * by env_free when the env's scope ends. */
@@ -491,12 +491,12 @@ Value* env_get(Env *env, const char *name) {
 static void tok_add(TokenList *tl, TokType type, double num, const char *str, int line) {
     if (tl->count >= tl->capacity) {
         tl->capacity *= 2;
-        tl->tokens = realloc(tl->tokens, tl->capacity * sizeof(Token));
+        tl->tokens = xrealloc(tl->tokens, tl->capacity * sizeof(Token));
     }
     Token *t = &tl->tokens[tl->count++];
     t->type = type;
     t->num_val = num;
-    t->str_val = str ? strdup(str) : NULL;
+    t->str_val = str ? xstrdup(str) : NULL;
     t->line = line;
 }
 
@@ -542,7 +542,7 @@ static TokType keyword_type(const char *word) {
 TokenList tokenize(const char *source) {
     TokenList tl;
     tl.capacity = MAX_TOKENS;
-    tl.tokens = malloc(tl.capacity * sizeof(Token));
+    tl.tokens = xmalloc(tl.capacity * sizeof(Token));
     tl.count = 0;
 
     int indent_stack[MAX_INDENT];
@@ -861,7 +861,7 @@ static void p_skip_newlines(Parser *p) {
 }
 
 static ASTNode* make_node(ASTType type, int line) {
-    ASTNode *n = calloc(1, sizeof(ASTNode));
+    ASTNode *n = xcalloc(1, sizeof(ASTNode));
     n->type = type;
     n->line = line;
     return n;
@@ -994,7 +994,7 @@ static ASTNode* parse_expression(Parser *p);
 static ASTNode* parse_statement(Parser *p);
 
 static ASTNode** parse_block(Parser *p, int *count) {
-    ASTNode **stmts = malloc(MAX_STMTS * sizeof(ASTNode*));
+    ASTNode **stmts = xmalloc(MAX_STMTS * sizeof(ASTNode*));
     *count = 0;
 
     p_expect(p, TOK_INDENT);
@@ -1034,7 +1034,7 @@ static ASTNode* parse_primary(Parser *p) {
             return n;
         }
         ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
-        n->data.ident.name = strdup(t->str_val);
+        n->data.ident.name = xstrdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
@@ -1074,7 +1074,7 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type == TOK_STR) {
         p_advance(p);
         ASTNode *n = make_node(AST_STR, p_cur(p)->line);
-        n->data.str = strdup(t->str_val);
+        n->data.str = xstrdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET) {
             p_advance(p);
             ASTNode *idx = parse_expression(p);
@@ -1095,7 +1095,7 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type == TOK_IDENT) {
         p_advance(p);
         ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
-        n->data.ident.name = strdup(t->str_val);
+        n->data.ident.name = xstrdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
             if (p_cur(p)->type == TOK_DOT) {
                 p_advance(p);
@@ -1103,7 +1103,7 @@ static ASTNode* parse_primary(Parser *p) {
                 p_expect(p, TOK_IDENT);
                 ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
                 dot->data.dot.target = n;
-                dot->data.dot.key = strdup(key_tok->str_val);
+                dot->data.dot.key = xstrdup(key_tok->str_val);
                 n = dot;
             } else {
                 p_advance(p);
@@ -1135,15 +1135,15 @@ static ASTNode* parse_primary(Parser *p) {
 
         if (is_lambda) {
             p_advance(p); /* skip ( */
-            char **params = malloc(16 * sizeof(char*));
+            char **params = xmalloc(16 * sizeof(char*));
             int param_count = 0;
             while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
-                params[param_count++] = strdup(p_cur(p)->str_val);
+                params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
                 if (p_cur(p)->type == TOK_COMMA) p_advance(p);
             }
             if (param_count == 0) {
-                params[0] = strdup("n");
+                params[0] = xstrdup("n");
                 param_count = 1;
             }
             p_expect(p, TOK_RPAREN);
@@ -1198,13 +1198,13 @@ static ASTNode* parse_primary(Parser *p) {
             p_expect(p, TOK_RBRACKET);
             ASTNode *n = make_node(AST_LISTCOMP, p_cur(p)->line);
             n->data.listcomp.expr = first;
-            n->data.listcomp.var = strdup(var_tok->str_val);
+            n->data.listcomp.var = xstrdup(var_tok->str_val);
             n->data.listcomp.iter = iter;
             n->data.listcomp.filter = filter;
             return n;
         }
 
-        ASTNode **elems = malloc(MAX_LIST * sizeof(ASTNode*));
+        ASTNode **elems = xmalloc(MAX_LIST * sizeof(ASTNode*));
         int count = 0;
         elems[count++] = first;
         while (p_cur(p)->type == TOK_COMMA) {
@@ -1233,8 +1233,8 @@ static ASTNode* parse_primary(Parser *p) {
     /* Dict literal: {"key": value, ...} */
     if (t->type == TOK_LBRACE) {
         p_advance(p);
-        ASTNode **keys = malloc(MAX_LIST * sizeof(ASTNode*));
-        ASTNode **vals = malloc(MAX_LIST * sizeof(ASTNode*));
+        ASTNode **keys = xmalloc(MAX_LIST * sizeof(ASTNode*));
+        ASTNode **vals = xmalloc(MAX_LIST * sizeof(ASTNode*));
         int count = 0;
         if (p_cur(p)->type != TOK_RBRACE) {
             keys[count] = parse_expression(p);
@@ -1263,7 +1263,7 @@ static ASTNode* parse_primary(Parser *p) {
                 p_expect(p, TOK_IDENT);
                 ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
                 dot->data.dot.target = n;
-                dot->data.dot.key = strdup(key_tok->str_val);
+                dot->data.dot.key = xstrdup(key_tok->str_val);
                 n = dot;
             } else {
                 p_advance(p);
@@ -1444,9 +1444,9 @@ static ASTNode* parse_statement(Parser *p) {
         int param_count = 0;
         if (p_cur(p)->type == TOK_LPAREN) {
             p_advance(p); /* skip ( */
-            params = malloc(16 * sizeof(char*));
+            params = xmalloc(16 * sizeof(char*));
             while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
-                params[param_count++] = strdup(p_cur(p)->str_val);
+                params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
                 if (p_cur(p)->type == TOK_COMMA) p_advance(p);
             }
@@ -1454,8 +1454,8 @@ static ASTNode* parse_statement(Parser *p) {
         }
         if (param_count == 0) {
             /* No explicit params: default to single param "n" */
-            params = malloc(sizeof(char*));
-            params[0] = strdup("n");
+            params = xmalloc(sizeof(char*));
+            params[0] = xstrdup("n");
             param_count = 1;
         }
 
@@ -1465,7 +1465,7 @@ static ASTNode* parse_statement(Parser *p) {
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
         ASTNode *n = make_node(AST_FUNC, p_cur(p)->line);
-        n->data.func.name = strdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
+        n->data.func.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         n->data.func.params = params;
         n->data.func.param_count = param_count;
         n->data.func.body = body;
@@ -1495,7 +1495,7 @@ static ASTNode* parse_statement(Parser *p) {
         ASTNode *n = make_node(AST_TRY, t->line);
         n->data.trycatch.try_body = try_body;
         n->data.trycatch.try_count = try_count;
-        n->data.trycatch.err_name = strdup(err_name);
+        n->data.trycatch.err_name = xstrdup(err_name);
         n->data.trycatch.catch_body = catch_body;
         n->data.trycatch.catch_count = catch_count;
         return n;
@@ -1510,9 +1510,9 @@ static ASTNode* parse_statement(Parser *p) {
         p_skip_newlines(p);
 
         /* Parse case branches */
-        ASTNode **patterns = malloc(64 * sizeof(ASTNode*));
-        ASTNode ***bodies = malloc(64 * sizeof(ASTNode**));
-        int *body_counts = malloc(64 * sizeof(int));
+        ASTNode **patterns = xmalloc(64 * sizeof(ASTNode*));
+        ASTNode ***bodies = xmalloc(64 * sizeof(ASTNode**));
+        int *body_counts = xmalloc(64 * sizeof(int));
         int case_count = 0;
 
         while (p_cur(p)->type == TOK_CASE && case_count < 64) {
@@ -1562,7 +1562,7 @@ static ASTNode* parse_statement(Parser *p) {
         if (p_cur(p)->type == TOK_ELIF) {
             /* Treat elif as: else { if ... } — rewrite token and recurse */
             p_cur(p)->type = TOK_IF;
-            else_body = malloc(sizeof(ASTNode*));
+            else_body = xmalloc(sizeof(ASTNode*));
             else_body[0] = parse_statement(p);
             else_count = 1;
         } else if (p_cur(p)->type == TOK_ELSE) {
@@ -1606,7 +1606,7 @@ static ASTNode* parse_statement(Parser *p) {
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
         ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
-        n->data.forloop.var = strdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
+        n->data.forloop.var = xstrdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
         n->data.forloop.iter = iter;
         n->data.forloop.body = body;
         n->data.forloop.body_count = body_count;
@@ -1627,7 +1627,7 @@ static ASTNode* parse_statement(Parser *p) {
         Token *name_tok = p_cur(p);
         p_expect(p, TOK_IDENT);
         ASTNode *n = make_node(AST_IMPORT, t->line);
-        n->data.import.module_name = strdup(name_tok->str_val);
+        n->data.import.module_name = xstrdup(name_tok->str_val);
         return n;
     }
 
@@ -1651,7 +1651,7 @@ static ASTNode* parse_statement(Parser *p) {
             ASTNode *expr = parse_expression(p);
             ASTNode *n = make_node(AST_DOT_ASSIGN, t->line);
             n->data.dot_assign.target = target->data.dot.target;
-            n->data.dot_assign.key = strdup(target->data.dot.key);
+            n->data.dot_assign.key = xstrdup(target->data.dot.key);
             n->data.dot_assign.expr = expr;
             return n;
         }
@@ -1665,7 +1665,7 @@ static ASTNode* parse_statement(Parser *p) {
         ASTNode *expr = parse_expression(p);
         p_match(p, TOK_NEWLINE);
         ASTNode *n = make_node(AST_ASSIGN, p_cur(p)->line);
-        n->data.assign.name = strdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
+        n->data.assign.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         n->data.assign.expr = expr;
         return n;
     }
@@ -1680,7 +1680,7 @@ ASTNode* parse(TokenList *tl) {
     p.tl = tl;
     p.pos = 0;
 
-    ASTNode **stmts = malloc(MAX_STMTS * sizeof(ASTNode*));
+    ASTNode **stmts = xmalloc(MAX_STMTS * sizeof(ASTNode*));
     int count = 0;
 
     p_skip_newlines(&p);
@@ -1826,7 +1826,7 @@ Value* eval_node(ASTNode *node, Env *env) {
             if (left->type == VAL_STR || right->type == VAL_STR) {
                 char *ls = value_to_string(left);
                 char *rs = value_to_string(right);
-                char *result = malloc(strlen(ls) + strlen(rs) + 1);
+                char *result = xmalloc(strlen(ls) + strlen(rs) + 1);
                 strcpy(result, ls);
                 strcat(result, rs);
                 Value *v = make_str(result);
@@ -2012,7 +2012,7 @@ Value* eval_node(ASTNode *node, Env *env) {
         /* Create a return-wrapping AST node for the body expression */
         ASTNode *ret = make_node(AST_RETURN, node->line);
         ret->data.ret.expr = node->data.lambda.body;
-        ASTNode **body = malloc(sizeof(ASTNode*));
+        ASTNode **body = xmalloc(sizeof(ASTNode*));
         body[0] = ret;
         Value *fn = make_fn("", node->data.lambda.params,
                            node->data.lambda.param_count, body, 1, env);
