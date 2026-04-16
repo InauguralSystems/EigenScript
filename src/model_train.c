@@ -283,7 +283,13 @@ static float cross_entropy_loss(float *logits, int target_id, int vocab_size, fl
     for (int i = 1; i < vocab_size; i++) if (logits[i] > max_l) max_l = logits[i];
     float sum = 0.0f;
     for (int i = 0; i < vocab_size; i++) { probs_out[i] = expf(logits[i] - max_l); sum += probs_out[i]; }
-    for (int i = 0; i < vocab_size; i++) probs_out[i] /= sum;
+    /* Guard against NaN/underflow propagating through training. */
+    if (!(sum > 0.0f)) {
+        float u = 1.0f / (float)vocab_size;
+        for (int i = 0; i < vocab_size; i++) probs_out[i] = u;
+    } else {
+        for (int i = 0; i < vocab_size; i++) probs_out[i] /= sum;
+    }
     float tp = probs_out[target_id];
     if (tp < 1e-10f) tp = 1e-10f;
     return -logf(tp);

@@ -1,0 +1,27 @@
+# Regression: softmax must not divide by zero on degenerate inputs.
+# Prior to the guard, if all row values produced exp-underflow after
+# max-subtract, sum could be 0, leading to NaN/Inf propagation. Now
+# the kernel falls back to a uniform distribution when sum <= 0.
+
+# Normal path: ordinary input still sums to 1.
+s is softmax of [1.0, 2.0, 3.0]
+sum is s[0] + s[1] + s[2]
+assert of [(sum > 0.99) and (sum < 1.01), "SG1 softmax sums to ~1"]
+
+# All-zeros path: exp(0) = 1 for every element, producing uniform.
+u is softmax of [0.0, 0.0, 0.0, 0.0]
+assert of [(len of u) == 4, "SG2 softmax preserves length"]
+assert of [(u[0] > 0.24) and (u[0] < 0.26), "SG3 softmax of zeros is uniform"]
+
+# Empty-ish guard: 1-element input must return [1.0]
+one is softmax of [5.0]
+assert of [(len of one) == 1, "SG4 softmax 1D length"]
+assert of [(one[0] > 0.99) and (one[0] < 1.01), "SG5 softmax 1-element is 1.0"]
+
+# Large-magnitude input: max-subtract must keep sum finite.
+big is softmax of [1000.0, 999.0, 998.0]
+assert of [(big[0] > big[1]), "SG6 softmax preserves ordering on large input"]
+big_sum is big[0] + big[1] + big[2]
+assert of [(big_sum > 0.99) and (big_sum < 1.01), "SG7 softmax stable at magnitude 1e3"]
+
+print of "All softmax-guard tests passed"
