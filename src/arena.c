@@ -9,8 +9,38 @@
 
 Arena g_arena = {0};
 
+static void x_oom(size_t size) {
+    fprintf(stderr, "eigenscript: out of memory (requested %zu bytes)\n", size);
+    abort();
+}
+
+void* xmalloc(size_t size) {
+    void *p = malloc(size);
+    if (!p) x_oom(size);
+    return p;
+}
+
+void* xcalloc(size_t nmemb, size_t size) {
+    void *p = calloc(nmemb, size);
+    if (!p) x_oom(nmemb * size);
+    return p;
+}
+
+void* xrealloc(void *p, size_t size) {
+    void *q = realloc(p, size);
+    if (!q && size) x_oom(size);
+    return q;
+}
+
+char* xstrdup(const char *s) {
+    if (!s) s = "";
+    char *r = strdup(s);
+    if (!r) x_oom(strlen(s) + 1);
+    return r;
+}
+
 void arena_init(void) {
-    g_arena.blocks[0] = malloc(ARENA_BLOCK_SIZE);
+    g_arena.blocks[0] = xmalloc(ARENA_BLOCK_SIZE);
     g_arena.block_count = 1;
     g_arena.current_block = 0;
     g_arena.offset = 0;
@@ -31,9 +61,9 @@ void* arena_alloc(size_t size) {
         g_arena.current_block++;
         if (g_arena.current_block >= g_arena.block_count) {
             if (g_arena.block_count >= ARENA_MAX_BLOCKS) {
-                return calloc(1, size);
+                return xcalloc(1, size);
             }
-            g_arena.blocks[g_arena.block_count] = malloc(ARENA_BLOCK_SIZE);
+            g_arena.blocks[g_arena.block_count] = xmalloc(ARENA_BLOCK_SIZE);
             g_arena.block_count++;
         }
         g_arena.offset = 0;
@@ -49,7 +79,7 @@ void* arena_alloc(size_t size) {
 void arena_track_string(char *s) {
     if (g_arena.string_count >= g_arena.string_capacity) {
         int new_cap = g_arena.string_capacity < 1024 ? 1024 : g_arena.string_capacity * 2;
-        g_arena.strings = realloc(g_arena.strings, new_cap * sizeof(char*));
+        g_arena.strings = xrealloc(g_arena.strings, new_cap * sizeof(char*));
         g_arena.string_capacity = new_cap;
     }
     g_arena.strings[g_arena.string_count++] = s;
