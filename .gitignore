@@ -6,6 +6,12 @@ src/eigenscript-full
 *.so
 *.dylib
 
+# Coverage artifacts
+*.gcno
+*.gcda
+*.gcov
+coverage.txt
+
 # Editor files
 *.swp
 *.swo

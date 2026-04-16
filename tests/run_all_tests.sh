@@ -848,16 +848,17 @@ fi
 echo ""
 
 # [41] Coverage-gap builtins (split/starts_with/str_replace/env_get/
-#      random_hex/chdir/free_val and cold tensor ops)
-echo "[41/47] Coverage-Gap Builtins (29 checks)"
+#      random_hex/chdir/free_val, cold tensor ops, streams, grad/sgd
+#      rows & cols variants, tokenize_with_names, json_raw, 2D get/set_at)
+echo "[41/47] Coverage-Gap Builtins (93 checks)"
 CG_OUTPUT=$(./eigenscript ../tests/test_coverage_gaps.eigs 2>&1)
 if echo "$CG_OUTPUT" | grep -q "All coverage-gap tests passed"; then
-    TOTAL=$((TOTAL + 29))
-    PASS=$((PASS + 29))
-    echo "  PASS: all 29 coverage-gap checks"
+    TOTAL=$((TOTAL + 93))
+    PASS=$((PASS + 93))
+    echo "  PASS: all 93 coverage-gap checks"
 else
-    TOTAL=$((TOTAL + 29))
-    FAIL=$((FAIL + 29))
+    TOTAL=$((TOTAL + 93))
+    FAIL=$((FAIL + 93))
     echo "  FAIL: coverage-gap tests"
     echo "$CG_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
