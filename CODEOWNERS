@@ -1,0 +1,11 @@
+# Default owner for everything
+* @InauguralPhysicist
+
+# Core runtime
+src/ @InauguralPhysicist
+
+# Standard library
+lib/ @InauguralPhysicist
+
+# Documentation
+docs/ @InauguralPhysicist

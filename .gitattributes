@@ -1,0 +1,21 @@
+# Enforce consistent line endings
+* text=auto
+
+# Source files
+*.c text eol=lf
+*.h text eol=lf
+*.eigs text eol=lf linguist-language=EigenScript
+
+# Scripts
+*.sh text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.yml text eol=lf
+
+# Binary files
+*.png binary
+*.bin binary
+
+# Ensure Makefile uses tabs
+Makefile text eol=lf
