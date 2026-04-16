@@ -1,0 +1,103 @@
+# Generate a tiny v2-format transformer model for smoke testing.
+# EigenScript port of gen_tiny_model.py.
+#
+# Usage:
+#   eigenscript tests/gen_tiny_model.eigs > /tmp/tiny_model.json
+#
+# Model shape: vocab=8, d_model=4, n_layers=1, d_ff=8, max_seq_len=16
+
+seed_random of 42
+
+# ---- Gaussian random via Box-Muller ----
+define gauss as:
+    gm_scale is n
+    gm_u1 is random of null
+    gm_u2 is random of null
+    if gm_u1 < 0.0000001:
+        gm_u1 is 0.0000001
+    gm_l is log of gm_u1
+    gm_r is sqrt of ((0 - 2.0) * gm_l)
+    gm_c is cos of (2.0 * (pi of null) * gm_u2)
+    return gm_r * gm_c * gm_scale
+
+# ---- Matrix generators ----
+define rand_2d as:
+    r2_rows is n[0]
+    r2_cols is n[1]
+    r2_scale is n[2]
+    r2_mat is []
+    for r2_r in range of r2_rows:
+        r2_row is []
+        for r2_c in range of r2_cols:
+            append of [r2_row, gauss of r2_scale]
+        append of [r2_mat, r2_row]
+    return r2_mat
+
+define ones_1d as:
+    o_list is []
+    for o_i in range of n:
+        append of [o_list, 1.0]
+    return o_list
+
+define zeros_1d as:
+    z_list is []
+    for z_i in range of n:
+        append of [z_list, 0.0]
+    return z_list
+
+# ---- Model config ----
+vocab is 8
+d_model is 4
+n_layers is 1
+d_ff is 8
+max_seq is 16
+
+# ---- Build layer as JSON string ----
+define make_layer_json as:
+    ml_dm is n[0]
+    ml_df is n[1]
+    ml_wq is rand_2d of [ml_dm, ml_dm, 0.1]
+    ml_wk is rand_2d of [ml_dm, ml_dm, 0.1]
+    ml_wv is rand_2d of [ml_dm, ml_dm, 0.1]
+    ml_wo is rand_2d of [ml_dm, ml_dm, 0.1]
+    ml_ff1 is rand_2d of [ml_dm, ml_df, 0.1]
+    ml_ff2 is rand_2d of [ml_df, ml_dm, 0.1]
+    ml_g1 is ones_1d of ml_dm
+    ml_b1 is zeros_1d of ml_dm
+    ml_g2 is ones_1d of ml_dm
+    ml_b2 is zeros_1d of ml_dm
+    ml_j is "{\"w_q\":" + (json_encode of ml_wq)
+    ml_j is ml_j + ",\"w_k\":" + (json_encode of ml_wk)
+    ml_j is ml_j + ",\"w_v\":" + (json_encode of ml_wv)
+    ml_j is ml_j + ",\"w_o\":" + (json_encode of ml_wo)
+    ml_j is ml_j + ",\"w_ff1\":" + (json_encode of ml_ff1)
+    ml_j is ml_j + ",\"w_ff2\":" + (json_encode of ml_ff2)
+    ml_j is ml_j + ",\"ln1_gamma\":" + (json_encode of ml_g1)
+    ml_j is ml_j + ",\"ln1_beta\":" + (json_encode of ml_b1)
+    ml_j is ml_j + ",\"ln2_gamma\":" + (json_encode of ml_g2)
+    ml_j is ml_j + ",\"ln2_beta\":" + (json_encode of ml_b2) + "}"
+    return ml_j
+
+# ---- Build full model ----
+token_emb is rand_2d of [vocab, d_model, 0.1]
+output_proj is rand_2d of [d_model, vocab, 0.1]
+
+layers_json is "["
+for layer_i in range of n_layers:
+    if layer_i > 0:
+        layers_json is layers_json + ","
+    layers_json is layers_json + (make_layer_json of [d_model, d_ff])
+layers_json is layers_json + "]"
+
+# ---- Assemble as raw JSON string ----
+config_str is "{\"vocab_size\":" + (str of vocab) + ",\"d_model\":" + (str of d_model) + ",\"n_layers\":" + (str of n_layers) + ",\"d_ff\":" + (str of d_ff) + ",\"max_seq_len\":" + (str of max_seq) + "}"
+
+out is "{\"format_version\":2"
+out is out + ",\"weight_format\":\"ternary_weight_only\""
+out is out + ",\"config\":" + config_str
+out is out + ",\"token_embeddings\":" + (json_encode of token_emb)
+out is out + ",\"output_proj\":" + (json_encode of output_proj)
+out is out + ",\"layers\":" + layers_json
+out is out + "}"
+
+print of out

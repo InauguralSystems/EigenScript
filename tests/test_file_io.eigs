@@ -1,0 +1,67 @@
+# Tests for read_text, write_text, exec_capture
+
+# ---- read_text ----
+# RT1: read existing file returns non-empty
+content is read_text of "/etc/hostname"
+assert of [(len of content) > 0, "RT1 read existing file should be non-empty"]
+
+# RT2: read missing file returns empty string
+missing is read_text of "/tmp/eigenscript_no_such_file_xyz"
+assert of [missing == "", "RT2 missing file should return empty string"]
+
+# RT3: read with non-string arg returns empty string
+bad is read_text of 42
+assert of [bad == "", "RT3 non-string arg should return empty string"]
+
+# ---- write_text ----
+# WT1: write and read back
+ok is write_text of ["/tmp/eigen_test_wt1.txt", "hello eigen"]
+assert of [ok == 1, "WT1 write should succeed"]
+readback is read_text of "/tmp/eigen_test_wt1.txt"
+assert of [readback == "hello eigen", "WT1 read back should match"]
+
+# WT2: write empty string
+ok2 is write_text of ["/tmp/eigen_test_wt2.txt", ""]
+assert of [ok2 == 1, "WT2 write empty should succeed"]
+readback2 is read_text of "/tmp/eigen_test_wt2.txt"
+assert of [readback2 == "", "WT2 read back empty should match"]
+
+# WT3: bad args return 0
+assert of [(write_text of 42) == 0, "WT3 non-list arg"]
+assert of [(write_text of [42, "text"]) == 0, "WT3 non-string path"]
+assert of [(write_text of ["/tmp/x", 42]) == 0, "WT3 non-string text"]
+
+# ---- exec_capture ----
+# EC1: basic command
+result is exec_capture of ["echo", "test123"]
+assert of [result[0] == 0, "EC1 echo exit code"]
+assert of [(contains of [result[1], "test123"]) == 1, "EC1 echo stdout"]
+
+# EC2: failing command
+result2 is exec_capture of ["ls", "/nonexistent_eigen_xyz"]
+assert of [result2[0] != 0, "EC2 failing command exit code"]
+
+# EC3: bad args return [-1, ""]
+result3 is exec_capture of 42
+assert of [result3[0] == -1, "EC3 bad arg exit code"]
+assert of [result3[1] == "", "EC3 bad arg stdout"]
+
+# EC4: non-string in arg list
+result4 is exec_capture of ["echo", 42]
+assert of [result4[0] == -1, "EC4 non-string arg"]
+
+# EC5: cat without stdin should exit immediately (stdin is /dev/null)
+result5 is exec_capture of ["cat"]
+assert of [result5[0] == 0, "EC5 cat with /dev/null stdin exits"]
+assert of [result5[1] == "", "EC5 cat produces no output"]
+
+# EC6: timeout form completes before deadline
+result6 is exec_capture of [["echo", "fast"], 5]
+assert of [result6[0] == 0, "EC6 timeout form exit code"]
+assert of [(contains of [result6[1], "fast"]) == 1, "EC6 timeout form stdout"]
+
+# EC7: timeout fires and returns -2
+result7 is exec_capture of [["sleep", "10"], 1]
+assert of [result7[0] == -2, "EC7 timeout returns -2"]
+
+print of "All file_io tests passed"

@@ -1,0 +1,138 @@
+# Functional Programming — higher-order functions and pipelines
+# Demonstrates: passing functions as arguments, composition, custom combinators
+
+load_file of "lib/list.eigs"
+
+# ---- Basic higher-order patterns ----
+
+define square as:
+    return n * n
+
+define double as:
+    return n * 2
+
+define is_positive as:
+    return n > 0
+
+define is_even as:
+    return (n % 2) == 0
+
+define add as:
+    return n[0] + n[1]
+
+# Map, filter, reduce with custom functions
+nums is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+print of "--- Higher-Order Functions ---"
+print of ("Squares: " + (str of (map of [nums, square])))
+print of ("Doubled: " + (str of (map of [nums, double])))
+print of ("Evens: " + (str of (filter of [nums, is_even])))
+print of ("Sum: " + (str of (reduce of [nums, add, 0])))
+
+# ---- Compose: apply a list of functions in sequence ----
+define compose as:
+    funcs is n[0]
+    value is n[1]
+    result is value
+    for i in range of (len of funcs):
+        result is funcs[i] of result
+    return result
+
+define add_one as:
+    return n + 1
+
+print of ""
+print of "--- Composition ---"
+# square(double(add_one(3))) = square(double(4)) = square(8) = 64
+pipeline is [add_one, double, square]
+print of ("Pipeline [+1, *2, ^2] on 3: " + (str of (compose of [pipeline, 3])))
+print of ("Pipeline [+1, *2, ^2] on 5: " + (str of (compose of [pipeline, 5])))
+
+# ---- Apply a function N times ----
+define apply_n as:
+    func is n[0]
+    value is n[1]
+    times is n[2]
+    result is value
+    for i in range of times:
+        result is func of result
+    return result
+
+print of ""
+print of "--- Apply N Times ---"
+print of ("Double 1 five times: " + (str of (apply_n of [double, 1, 5])))
+print of ("Square 2 three times: " + (str of (apply_n of [square, 2, 3])))
+
+# ---- Map with index: pass [value, index] to function ----
+define map_indexed as:
+    list is n[0]
+    func is n[1]
+    result is []
+    for i in range of (len of list):
+        append of [result, func of [list[i], i]]
+    return result
+
+define label as:
+    return (str of n[1]) + ": " + (str of n[0])
+
+print of ""
+print of "--- Map with Index ---"
+items is ["apple", "banana", "cherry"]
+labeled is map_indexed of [items, label]
+for i in range of (len of labeled):
+    print of labeled[i]
+
+# ---- Group by: partition a list using a classifier function ----
+define group_by as:
+    list is n[0]
+    classifier is n[1]
+    keys is []
+    groups is []
+    for i in range of (len of list):
+        key is classifier of list[i]
+        found is 0
+        for j in range of (len of keys):
+            if keys[j] == key:
+                append of [groups[j], list[i]]
+                found is 1
+        if found == 0:
+            append of [keys, key]
+            append of [groups, [list[i]]]
+    return [keys, groups]
+
+define parity as:
+    if (n % 2) == 0:
+        return "even"
+    return "odd"
+
+print of ""
+print of "--- Group By ---"
+numbers is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+result is group_by of [numbers, parity]
+keys is result[0]
+groups is result[1]
+for i in range of (len of keys):
+    print of (keys[i] + ": " + (str of groups[i]))
+
+# ---- Zip-with: combine two lists using a function ----
+define zip_with as:
+    list_a is n[0]
+    list_b is n[1]
+    func is n[2]
+    result is []
+    size is len of list_a
+    if (len of list_b) < size:
+        size is len of list_b
+    for i in range of size:
+        append of [result, func of [list_a[i], list_b[i]]]
+    return result
+
+define multiply as:
+    return n[0] * n[1]
+
+print of ""
+print of "--- Zip With ---"
+a is [1, 2, 3, 4]
+b is [10, 20, 30, 40]
+print of ("Pairwise add: " + (str of (zip_with of [a, b, add])))
+print of ("Pairwise mul: " + (str of (zip_with of [a, b, multiply])))

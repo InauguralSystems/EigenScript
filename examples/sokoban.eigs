@@ -1,0 +1,173 @@
+# Sokoban — grid puzzle solver
+# Demonstrates: 2D grid as flat list, state management, move validation, BFS
+
+# Board symbols: " "=floor, "#"=wall, "@"=player, "$"=box, "."=goal, "*"=box-on-goal
+
+# ---- Grid helpers ----
+define grid_new as:
+    width is n[0]
+    height is n[1]
+    cells is []
+    for i in range of (width * height):
+        append of [cells, " "]
+    return [width, height, cells]
+
+define grid_get as:
+    grid is n[0]
+    x is n[1]
+    y is n[2]
+    w is grid[0]
+    return grid[2][y * w + x]
+
+define grid_set as:
+    grid is n[0]
+    x is n[1]
+    y is n[2]
+    val is n[3]
+    w is grid[0]
+    set_at of [grid[2], y * w + x, val]
+    return grid
+
+define grid_print as:
+    grid is n
+    w is grid[0]
+    h is grid[1]
+    for y in range of h:
+        row is ""
+        for x in range of w:
+            row is row + grid[2][y * w + x]
+        print of row
+
+# ---- Build a level ----
+# Level layout (7x5):
+#  #######
+#  #  .  #
+#  # $@  #
+#  #  .  #
+#  #######
+
+width is 7
+height is 5
+level is grid_new of [width, height]
+
+# Walls: top and bottom rows, left and right columns
+for x in range of width:
+    level is grid_set of [level, x, 0, "#"]
+    level is grid_set of [level, x, height - 1, "#"]
+for y in range of height:
+    level is grid_set of [level, 0, y, "#"]
+    level is grid_set of [level, width - 1, y, "#"]
+
+# Goals
+level is grid_set of [level, 3, 1, "."]
+level is grid_set of [level, 3, 3, "."]
+
+# Boxes
+level is grid_set of [level, 2, 2, "$"]
+
+# Player
+player_x is 3
+player_y is 2
+level is grid_set of [level, player_x, player_y, "@"]
+
+print of "--- Sokoban ---"
+print of "Initial state:"
+grid_print of level
+print of ""
+
+# ---- Move logic ----
+define try_move as:
+    # n = [grid, player_x, player_y, dx, dy, goals]
+    grid is n[0]
+    px is n[1]
+    py is n[2]
+    dx is n[3]
+    dy is n[4]
+    goals is n[5]
+    nx is px + dx
+    ny is py + dy
+    target is grid_get of [grid, nx, ny]
+
+    # Can't move into wall
+    if target == "#":
+        return [grid, px, py, 0]
+
+    # Pushing a box
+    if target == "$":
+        bx is nx + dx
+        by is ny + dy
+        behind is grid_get of [grid, bx, by]
+        if behind == "#":
+            return [grid, px, py, 0]
+        if behind == "$":
+            return [grid, px, py, 0]
+        if behind == "*":
+            return [grid, px, py, 0]
+        # Move the box
+        # Check if box lands on goal
+        on_goal is 0
+        for g in range of (len of goals):
+            gx is goals[g][0]
+            gy is goals[g][1]
+            if bx == gx:
+                if by == gy:
+                    on_goal is 1
+        if on_goal == 1:
+            grid is grid_set of [grid, bx, by, "*"]
+        else:
+            grid is grid_set of [grid, bx, by, "$"]
+
+    # Clear old player position (restore goal if needed)
+    was_goal is 0
+    for g in range of (len of goals):
+        if px == goals[g][0]:
+            if py == goals[g][1]:
+                was_goal is 1
+    if was_goal == 1:
+        grid is grid_set of [grid, px, py, "."]
+    else:
+        grid is grid_set of [grid, px, py, " "]
+
+    # If target was a goal or box-on-goal, clear it first
+    if target == ".":
+        grid is grid_set of [grid, nx, ny, "@"]
+    elif target == "*":
+        grid is grid_set of [grid, nx, ny, "@"]
+    else:
+        grid is grid_set of [grid, nx, ny, "@"]
+
+    return [grid, nx, ny, 1]
+
+# ---- Check win: all goals have boxes ----
+define check_win as:
+    grid is n[0]
+    goals is n[1]
+    for g in range of (len of goals):
+        cell is grid_get of [grid, goals[g][0], goals[g][1]]
+        if cell != "*":
+            return 0
+    return 1
+
+# ---- Play a solution sequence ----
+goals is [[3, 1], [3, 3]]
+
+# Solution: push box up to top goal, then need second box...
+# With one box, we can only solve one goal. Let's demo the moves.
+# Moves: left, up, up, right (push box to goal)
+moves is [[-1, 0], [0, -1], [0, -1], [1, 0]]
+move_names is ["left", "up", "up", "right"]
+
+for m in range of (len of moves):
+    dx is moves[m][0]
+    dy is moves[m][1]
+    result is try_move of [level, player_x, player_y, dx, dy, goals]
+    level is result[0]
+    player_x is result[1]
+    player_y is result[2]
+    moved is result[3]
+    print of ("Move " + move_names[m] + " (moved=" + (str of moved) + "):")
+    grid_print of level
+    print of ""
+
+won is check_win of [level, goals]
+print of ("Solved: " + (str of won))

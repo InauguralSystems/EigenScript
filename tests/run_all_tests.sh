@@ -505,7 +505,7 @@ if ! echo "$PROBE_OUT" | grep -q "undefined variable"; then
     echo "[17/17] Transformer Smoke (7 checks)"
 
     # Generate tiny v1 model
-    python3 ../tests/gen_tiny_model.py > /tmp/eigs_tiny_v1.json 2>/dev/null
+    ./eigenscript ../tests/gen_tiny_model.eigs > /tmp/eigs_tiny_v1.json 2>/dev/null
 
     # Find a v0 model to test rejection
     V0_MODEL=$(ls /home/jon/iLambdaAi/archive/checkpoints/eigenscript/*.json 2>/dev/null | head -1)
@@ -563,6 +563,88 @@ V0TEST
     rm -f /tmp/eigs_tiny_v1.json
     echo ""
 fi
+
+# [18] File I/O builtins: read_text, write_text, exec_capture
+echo "[18/18] File I/O Builtins (14 checks)"
+FIO_OUTPUT=$(./eigenscript ../tests/test_file_io.eigs 2>&1)
+FIO_EXIT=$?
+
+if echo "$FIO_OUTPUT" | grep -q "All file_io tests passed"; then
+    # All asserts passed — count individual checks
+    TOTAL=$((TOTAL + 14))
+    PASS=$((PASS + 14))
+    echo "  PASS: RT1 read existing file"
+    echo "  PASS: RT2 read missing file"
+    echo "  PASS: RT3 read bad arg"
+    echo "  PASS: WT1 write and read back"
+    echo "  PASS: WT2 write empty"
+    echo "  PASS: WT3 bad args"
+    echo "  PASS: EC1 basic command"
+    echo "  PASS: EC2 failing command"
+    echo "  PASS: EC3 bad arg return"
+    echo "  PASS: EC4 non-string arg"
+    echo "  PASS: EC5 cat stdin /dev/null"
+    echo "  PASS: EC6 timeout form completes"
+    echo "  PASS: EC7 timeout fires"
+    echo "  PASS: EC7 timeout returns -2"
+else
+    TOTAL=$((TOTAL + 14))
+    FAIL=$((FAIL + 14))
+    echo "  FAIL: file_io tests (assert failed)"
+    echo "$FIO_OUTPUT" | grep -i "assert\|error" | head -5
+fi
+# Clean up temp files
+rm -f /tmp/eigen_test_wt1.txt /tmp/eigen_test_wt2.txt
+echo ""
+
+# [19] String and math builtins
+echo "[19/19] String & Math Builtins (40 checks)"
+SM_OUTPUT=$(./eigenscript ../tests/test_string_math.eigs 2>&1)
+
+if echo "$SM_OUTPUT" | grep -q "All string_math tests passed"; then
+    TOTAL=$((TOTAL + 40))
+    PASS=$((PASS + 40))
+    echo "  PASS: all 40 string/math checks"
+else
+    TOTAL=$((TOTAL + 40))
+    FAIL=$((FAIL + 40))
+    echo "  FAIL: string_math tests (assert failed)"
+    echo "$SM_OUTPUT" | grep -i "assert\|error" | head -5
+fi
+echo ""
+
+# [20] System builtins (random, args, paths, filesystem)
+echo "[20/21] System Builtins (22 checks)"
+SYS_OUTPUT=$(./eigenscript ../tests/test_system.eigs 2>&1)
+
+if echo "$SYS_OUTPUT" | grep -q "All system tests passed"; then
+    TOTAL=$((TOTAL + 22))
+    PASS=$((PASS + 22))
+    echo "  PASS: all 22 system checks"
+else
+    TOTAL=$((TOTAL + 22))
+    FAIL=$((FAIL + 22))
+    echo "  FAIL: system tests (assert failed)"
+    echo "$SYS_OUTPUT" | grep -i "assert\|error" | head -5
+fi
+echo ""
+
+# [21] Example smoke tests
+echo "[21/21] Example Smoke Tests"
+EX_OUTPUT=$(bash "$(dirname "$0")/test_examples.sh" 2>&1)
+EX_EXIT=$?
+
+# Count passes and skips from output
+EX_PASS=$(echo "$EX_OUTPUT" | grep -c "PASS:" || true)
+EX_SKIP=$(echo "$EX_OUTPUT" | grep -c "SKIP:" || true)
+EX_FAIL=$(echo "$EX_OUTPUT" | grep -c "FAIL:" || true)
+
+TOTAL=$((TOTAL + EX_PASS + EX_FAIL))
+PASS=$((PASS + EX_PASS))
+FAIL=$((FAIL + EX_FAIL))
+
+echo "$EX_OUTPUT" | grep "EXAMPLES:"
+echo ""
 
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"

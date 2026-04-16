@@ -1,0 +1,132 @@
+# Registry — key-value lookup tables and dispatch
+# Demonstrates: parallel lists as maps, dynamic dispatch, configuration
+
+# ============================================================
+# Key-value store using parallel lists
+# ============================================================
+
+define kv_new as:
+    return [[], []]
+
+define kv_set as:
+    store is n[0]
+    key is n[1]
+    value is n[2]
+    keys is store[0]
+    vals is store[1]
+    # Update if key exists
+    for i in range of (len of keys):
+        if keys[i] == key:
+            set_at of [vals, i, value]
+            return [keys, vals]
+    # Otherwise append
+    append of [keys, key]
+    append of [vals, value]
+    return [keys, vals]
+
+define kv_get as:
+    store is n[0]
+    key is n[1]
+    keys is store[0]
+    vals is store[1]
+    for i in range of (len of keys):
+        if keys[i] == key:
+            return vals[i]
+    return "NOT_FOUND"
+
+define kv_has as:
+    store is n[0]
+    key is n[1]
+    keys is store[0]
+    for i in range of (len of keys):
+        if keys[i] == key:
+            return 1
+    return 0
+
+define kv_keys as:
+    return n[0]
+
+define kv_size as:
+    return len of n[0]
+
+# ---- Build a config registry ----
+print of "--- Key-Value Store ---"
+config is kv_new of null
+config is kv_set of [config, "host", "localhost"]
+config is kv_set of [config, "port", 8080]
+config is kv_set of [config, "debug", 1]
+config is kv_set of [config, "name", "eigenserver"]
+
+print of ("host: " + (str of (kv_get of [config, "host"])))
+print of ("port: " + (str of (kv_get of [config, "port"])))
+print of ("debug: " + (str of (kv_get of [config, "debug"])))
+print of ("missing: " + (str of (kv_get of [config, "missing"])))
+print of ("has port: " + (str of (kv_has of [config, "port"])))
+print of ("size: " + (str of (kv_size of config)))
+
+# Update existing key
+config is kv_set of [config, "port", 9090]
+print of ("updated port: " + (str of (kv_get of [config, "port"])))
+
+# ============================================================
+# Function registry — dispatch by name
+# ============================================================
+
+print of ""
+print of "--- Function Registry ---"
+
+define greet_english as:
+    return "Hello, " + n + "!"
+
+define greet_spanish as:
+    return "Hola, " + n + "!"
+
+define greet_french as:
+    return "Bonjour, " + n + "!"
+
+define greet_german as:
+    return "Hallo, " + n + "!"
+
+# Register functions
+registry is kv_new of null
+registry is kv_set of [registry, "english", greet_english]
+registry is kv_set of [registry, "spanish", greet_spanish]
+registry is kv_set of [registry, "french", greet_french]
+registry is kv_set of [registry, "german", greet_german]
+
+# Dispatch by name
+define greet as:
+    lang is n[0]
+    name is n[1]
+    func is kv_get of [registry, lang]
+    if func == "NOT_FOUND":
+        return "Unknown language: " + lang
+    return func of name
+
+languages is ["english", "spanish", "french", "german", "italian"]
+for i in range of (len of languages):
+    print of (greet of [languages[i], "World"])
+
+# ============================================================
+# Counting registry — track event frequencies
+# ============================================================
+
+print of ""
+print of "--- Event Counter ---"
+
+events is ["click", "scroll", "click", "hover", "click", "scroll", "keypress", "click", "hover", "scroll"]
+counter is kv_new of null
+
+for i in range of (len of events):
+    event is events[i]
+    current is kv_get of [counter, event]
+    if current == "NOT_FOUND":
+        counter is kv_set of [counter, event, 1]
+    else:
+        counter is kv_set of [counter, event, current + 1]
+
+print of "Event counts:"
+all_keys is kv_keys of counter
+for i in range of (len of all_keys):
+    key is all_keys[i]
+    print of ("  " + key + ": " + (str of (kv_get of [counter, key])))

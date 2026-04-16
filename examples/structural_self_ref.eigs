@@ -1,0 +1,72 @@
+# Structural drill — self-referential forms
+# Minimal patterns for tokenize_ids, try_parse, code-as-data.
+# Every line parses. Every pattern is short and complete.
+
+# ---- tokenize_ids on literals ----
+toks is tokenize_ids of "x is 1"
+print of toks
+
+toks is tokenize_ids of "print of 42"
+print of toks
+
+toks is tokenize_ids of "if x > 0:\n    y is 1"
+print of toks
+
+# ---- try_parse on valid code ----
+valid is try_parse of "x is 1"
+print of valid
+
+valid is try_parse of "define foo as:\n    return n"
+print of valid
+
+# ---- try_parse on invalid code ----
+bad is try_parse of "x is )"
+print of bad
+
+bad is try_parse of "if x > 0"
+print of bad
+
+# ---- token_name ----
+name is token_name of 0
+print of name
+
+name is token_name of 2
+print of name
+
+# ---- Build code as a string, then parse it ----
+code is "x is 42"
+valid is try_parse of code
+print of valid
+
+code is "define " + "foo" + " as:\n    return n"
+valid is try_parse of code
+print of valid
+
+# ---- Generate and validate a function ----
+define make_fn as:
+    mf_name is n[0]
+    mf_expr is n[1]
+    return "define " + mf_name + " as:\n    return " + mf_expr
+
+code is make_fn of ["double", "n * 2"]
+valid is try_parse of code
+print of valid
+
+code is make_fn of ["square", "n * n"]
+valid is try_parse of code
+print of valid
+
+# ---- Count tokens in a piece of code ----
+toks is tokenize_ids of "x is 1\ny is 2"
+count is len of toks
+print of count
+
+# ---- Check if generated code is valid before use ----
+candidate is "x is 5"
+if (try_parse of candidate) == 1:
+    print of "valid"
+
+# ---- Guard pattern for self-modification ----
+new_code is "result is 100"
+if (try_parse of new_code) == 1:
+    write_text of ["/tmp/gen.eigs", new_code]

@@ -6,7 +6,7 @@ selective-observation training.
 ## Install
 
 ```bash
-git clone <repo-url> EigenScript
+git clone https://github.com/InauguralPhysicist/EigenScript.git
 cd EigenScript
 ./install.sh
 ```

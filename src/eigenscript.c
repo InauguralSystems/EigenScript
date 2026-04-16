@@ -90,6 +90,33 @@ static const char* val_type_name(ValType t) {
  * VALUE CONSTRUCTORS
  * ================================================================ */
 
+/* Recursively free a heap-allocated Value tree.
+ * Only safe when arena is NOT active (values are individually calloc'd).
+ * Skips arena-allocated values. */
+static int is_arena_ptr(void *ptr) {
+    for (int i = 0; i < g_arena.block_count; i++) {
+        char *start = g_arena.blocks[i];
+        if ((char*)ptr >= start && (char*)ptr < start + ARENA_BLOCK_SIZE) return 1;
+    }
+    return 0;
+}
+
+void free_value(Value *v) {
+    if (!v || is_arena_ptr(v)) return;
+    if (v->type == VAL_STR) {
+        if (v->data.str && !is_arena_ptr(v->data.str)) free(v->data.str);
+    } else if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            free_value(v->data.list.items[i]);
+        }
+        if (v->data.list.items && !is_arena_ptr(v->data.list.items))
+            free(v->data.list.items);
+    } else if (v->type == VAL_JSON_RAW) {
+        if (v->data.str && !is_arena_ptr(v->data.str)) free(v->data.str);
+    }
+    free(v);
+}
+
 Value* make_num(double n) {
     Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : calloc(1, sizeof(Value));
     v->type = VAL_NUM;
@@ -580,6 +607,90 @@ static ASTNode* make_node(ASTType type, int line) {
     return n;
 }
 
+/* Recursively free an AST tree. */
+static void free_ast(ASTNode *node) {
+    if (!node) return;
+    switch (node->type) {
+        case AST_STR:
+            if (node->data.str) free(node->data.str);
+            break;
+        case AST_IDENT:
+            if (node->data.ident.name) free(node->data.ident.name);
+            break;
+        case AST_BINOP:
+            free_ast(node->data.binop.left);
+            free_ast(node->data.binop.right);
+            break;
+        case AST_UNARY:
+            free_ast(node->data.unary.operand);
+            break;
+        case AST_ASSIGN:
+            if (node->data.assign.name) free(node->data.assign.name);
+            free_ast(node->data.assign.expr);
+            break;
+        case AST_RELATION:
+            free_ast(node->data.relation.left);
+            free_ast(node->data.relation.right);
+            break;
+        case AST_IF:
+            free_ast(node->data.cond.cond);
+            for (int i = 0; i < node->data.cond.if_count; i++) free_ast(node->data.cond.if_body[i]);
+            if (node->data.cond.if_body) free(node->data.cond.if_body);
+            for (int i = 0; i < node->data.cond.else_count; i++) free_ast(node->data.cond.else_body[i]);
+            if (node->data.cond.else_body) free(node->data.cond.else_body);
+            break;
+        case AST_LOOP:
+            free_ast(node->data.loop.cond);
+            for (int i = 0; i < node->data.loop.body_count; i++) free_ast(node->data.loop.body[i]);
+            if (node->data.loop.body) free(node->data.loop.body);
+            break;
+        case AST_FUNC:
+            if (node->data.func.name) free(node->data.func.name);
+            if (node->data.func.param) free(node->data.func.param);
+            for (int i = 0; i < node->data.func.body_count; i++) free_ast(node->data.func.body[i]);
+            if (node->data.func.body) free(node->data.func.body);
+            break;
+        case AST_RETURN:
+            free_ast(node->data.ret.expr);
+            break;
+        case AST_BLOCK:
+            for (int i = 0; i < node->data.block.count; i++) free_ast(node->data.block.stmts[i]);
+            if (node->data.block.stmts) free(node->data.block.stmts);
+            break;
+        case AST_LIST:
+            for (int i = 0; i < node->data.list.count; i++) free_ast(node->data.list.elems[i]);
+            if (node->data.list.elems) free(node->data.list.elems);
+            break;
+        case AST_INDEX:
+            free_ast(node->data.index.target);
+            free_ast(node->data.index.index);
+            break;
+        case AST_LISTCOMP:
+            free_ast(node->data.listcomp.expr);
+            if (node->data.listcomp.var) free(node->data.listcomp.var);
+            free_ast(node->data.listcomp.iter);
+            free_ast(node->data.listcomp.filter);
+            break;
+        case AST_FOR:
+            if (node->data.forloop.var) free(node->data.forloop.var);
+            free_ast(node->data.forloop.iter);
+            for (int i = 0; i < node->data.forloop.body_count; i++) free_ast(node->data.forloop.body[i]);
+            if (node->data.forloop.body) free(node->data.forloop.body);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < node->data.program.count; i++) free_ast(node->data.program.stmts[i]);
+            if (node->data.program.stmts) free(node->data.program.stmts);
+            break;
+        case AST_INTERROGATE:
+            free_ast(node->data.interrogate.expr);
+            break;
+        default:
+            /* AST_NUM, AST_NULL, AST_PREDICATE — no owned memory */
+            break;
+    }
+    free(node);
+}
+
 static ASTNode* parse_expression(Parser *p);
 static ASTNode* parse_statement(Parser *p);
 
@@ -593,9 +704,14 @@ static ASTNode** parse_block(Parser *p, int *count) {
     while (p_cur(p)->type != TOK_DEDENT && p_cur(p)->type != TOK_EOF) {
         p_skip_newlines(p);
         if (p_cur(p)->type == TOK_DEDENT || p_cur(p)->type == TOK_EOF) break;
+        int before = p->pos;
         ASTNode *stmt = parse_statement(p);
         if (stmt && *count < MAX_STMTS) {
             stmts[(*count)++] = stmt;
+        }
+        if (p->pos == before) {
+            g_parse_errors++;
+            p_advance(p);
         }
     }
 
@@ -919,7 +1035,7 @@ static ASTNode* parse_statement(Parser *p) {
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
         ASTNode *n = make_node(AST_FUNC, p_cur(p)->line);
-        n->data.func.name = strdup(name_tok->str_val);
+        n->data.func.name = strdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         n->data.func.param = strdup("n");
         n->data.func.body = body;
         n->data.func.body_count = body_count;
@@ -983,7 +1099,7 @@ static ASTNode* parse_statement(Parser *p) {
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
         ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
-        n->data.forloop.var = strdup(var_tok->str_val);
+        n->data.forloop.var = strdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
         n->data.forloop.iter = iter;
         n->data.forloop.body = body;
         n->data.forloop.body_count = body_count;
@@ -1005,7 +1121,7 @@ static ASTNode* parse_statement(Parser *p) {
         ASTNode *expr = parse_expression(p);
         p_match(p, TOK_NEWLINE);
         ASTNode *n = make_node(AST_ASSIGN, p_cur(p)->line);
-        n->data.assign.name = strdup(name_tok->str_val);
+        n->data.assign.name = strdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         n->data.assign.expr = expr;
         return n;
     }
@@ -1028,9 +1144,14 @@ ASTNode* parse(TokenList *tl) {
     while (p_cur(&p)->type != TOK_EOF) {
         p_skip_newlines(&p);
         if (p_cur(&p)->type == TOK_EOF) break;
+        int before = p.pos;
         ASTNode *stmt = parse_statement(&p);
         if (stmt && count < MAX_STMTS) {
             stmts[count++] = stmt;
+        }
+        if (p.pos == before) {
+            g_parse_errors++;
+            p_advance(&p);
         }
     }
 
@@ -1919,6 +2040,620 @@ Value* builtin_str_replace(Value *arg) {
     return r;
 }
 
+/* ==== BUILTIN: str_upper ==== */
+Value* builtin_str_upper(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_str("");
+    char *s = strdup(arg->data.str);
+    for (int i = 0; s[i]; i++) s[i] = toupper((unsigned char)s[i]);
+    Value *r = make_str(s);
+    free(s);
+    return r;
+}
+
+/* ==== BUILTIN: char_at ==== */
+/* char_at of [string, index] → single character as string, or "" if out of range */
+Value* builtin_char_at(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_str("");
+    Value *str_val = arg->data.list.items[0];
+    Value *idx_val = arg->data.list.items[1];
+    if (!str_val || str_val->type != VAL_STR || !idx_val || idx_val->type != VAL_NUM)
+        return make_str("");
+    int idx = (int)idx_val->data.num;
+    int len = strlen(str_val->data.str);
+    if (idx < 0 || idx >= len) return make_str("");
+    char buf[2] = { str_val->data.str[idx], '\0' };
+    return make_str(buf);
+}
+
+/* ==== BUILTIN: ends_with ==== */
+Value* builtin_ends_with(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    const char *str = "", *suffix = "";
+    if (arg->data.list.items[0]->type == VAL_STR) str = arg->data.list.items[0]->data.str;
+    if (arg->data.list.items[1]->type == VAL_STR) suffix = arg->data.list.items[1]->data.str;
+    int slen = strlen(str), xlen = strlen(suffix);
+    if (xlen > slen) return make_num(0);
+    return make_num(strcmp(str + slen - xlen, suffix) == 0 ? 1 : 0);
+}
+
+/* ==== BUILTIN: substr ==== */
+/* substr of [string, start, length] → substring */
+Value* builtin_substr(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
+    Value *str_val = arg->data.list.items[0];
+    Value *start_val = arg->data.list.items[1];
+    Value *len_val = arg->data.list.items[2];
+    if (!str_val || str_val->type != VAL_STR) return make_str("");
+    if (!start_val || start_val->type != VAL_NUM) return make_str("");
+    if (!len_val || len_val->type != VAL_NUM) return make_str("");
+    int slen = strlen(str_val->data.str);
+    int start = (int)start_val->data.num;
+    int rlen = (int)len_val->data.num;
+    if (start < 0) start = 0;
+    if (start >= slen) return make_str("");
+    if (rlen < 0) rlen = 0;
+    if (start + rlen > slen) rlen = slen - start;
+    char *buf = malloc(rlen + 1);
+    memcpy(buf, str_val->data.str + start, rlen);
+    buf[rlen] = '\0';
+    Value *r = make_str(buf);
+    free(buf);
+    return r;
+}
+
+/* ==== BUILTIN: index_of ==== */
+/* index_of of [haystack, needle] → first index, or -1 */
+Value* builtin_index_of(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(-1);
+    const char *haystack = "", *needle = "";
+    if (arg->data.list.items[0]->type == VAL_STR) haystack = arg->data.list.items[0]->data.str;
+    if (arg->data.list.items[1]->type == VAL_STR) needle = arg->data.list.items[1]->data.str;
+    const char *p = strstr(haystack, needle);
+    if (!p) return make_num(-1);
+    return make_num((double)(p - haystack));
+}
+
+/* ================================================================
+ * MATH BUILTINS — trig, rounding, abs
+ * ================================================================ */
+
+Value* builtin_sin(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(sin(arg->data.num));
+}
+
+Value* builtin_cos(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(cos(arg->data.num));
+}
+
+Value* builtin_tan(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(tan(arg->data.num));
+}
+
+Value* builtin_asin(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(asin(arg->data.num));
+}
+
+Value* builtin_acos(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(acos(arg->data.num));
+}
+
+Value* builtin_atan(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(atan(arg->data.num));
+}
+
+Value* builtin_atan2(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    Value *y = arg->data.list.items[0];
+    Value *x = arg->data.list.items[1];
+    if (!y || y->type != VAL_NUM || !x || x->type != VAL_NUM) return make_num(0);
+    return make_num(atan2(y->data.num, x->data.num));
+}
+
+Value* builtin_floor(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(floor(arg->data.num));
+}
+
+Value* builtin_ceil(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(ceil(arg->data.num));
+}
+
+Value* builtin_round(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(round(arg->data.num));
+}
+
+Value* builtin_abs(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    return make_num(fabs(arg->data.num));
+}
+
+Value* builtin_min(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) return make_num(0);
+    return make_num(a->data.num < b->data.num ? a->data.num : b->data.num);
+}
+
+Value* builtin_max(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) return make_num(0);
+    return make_num(a->data.num > b->data.num ? a->data.num : b->data.num);
+}
+
+Value* builtin_pi(Value *arg) {
+    (void)arg;
+    return make_num(3.14159265358979323846);
+}
+
+/* ================================================================
+ * SYSTEM BUILTINS — random, args, paths, filesystem
+ * ================================================================ */
+
+static int g_random_seeded = 0;
+
+static void ensure_random_seeded(void) {
+    if (!g_random_seeded) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
+        g_random_seeded = 1;
+    }
+}
+
+/* random of null → float in [0, 1) */
+Value* builtin_random(Value *arg) {
+    (void)arg;
+    ensure_random_seeded();
+    return make_num(drand48());
+}
+
+/* random_int of [lo, hi] → integer in [lo, hi] inclusive */
+Value* builtin_random_int(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_num(0);
+    Value *lo = arg->data.list.items[0];
+    Value *hi = arg->data.list.items[1];
+    if (!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM)
+        return make_num(0);
+    ensure_random_seeded();
+    int lo_i = (int)lo->data.num;
+    int hi_i = (int)hi->data.num;
+    if (hi_i < lo_i) return make_num(lo_i);
+    return make_num(lo_i + (lrand48() % (hi_i - lo_i + 1)));
+}
+
+/* seed_random of n → seeds the RNG, returns 1 */
+Value* builtin_seed_random(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    srand48((long)arg->data.num);
+    g_random_seeded = 1;
+    return make_num(1);
+}
+
+/* ================================================================
+ * STREAMING BINARY WRITER — write tensor-format data incrementally
+ * ================================================================
+ * stream_open of ["path", count]  → opens file, writes header with count, returns 1
+ * stream_write of value           → writes one float64, returns 1
+ * stream_close of null            → closes the stream file, returns 1
+ *
+ * Format: [uint32 ndim=1][uint32 rows=1][uint32 cols=count][uint32 flags=0]
+ *         then count × float64 values (written one at a time via stream_write)
+ */
+
+static FILE *g_stream_file = NULL;
+
+Value* builtin_stream_open(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_num(0);
+    Value *path_val = arg->data.list.items[0];
+    Value *count_val = arg->data.list.items[1];
+    if (!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM)
+        return make_num(0);
+    if (g_stream_file) { fclose(g_stream_file); g_stream_file = NULL; }
+    g_stream_file = fopen(path_val->data.str, "wb");
+    if (!g_stream_file) return make_num(0);
+    uint32_t count = (uint32_t)count_val->data.num;
+    uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
+    fwrite(header, sizeof(uint32_t), 4, g_stream_file);
+    return make_num(1);
+}
+
+Value* builtin_stream_write(Value *arg) {
+    if (!g_stream_file || !arg || arg->type != VAL_NUM) return make_num(0);
+    double val = arg->data.num;
+    fwrite(&val, sizeof(double), 1, g_stream_file);
+    return make_num(1);
+}
+
+Value* builtin_stream_close(Value *arg) {
+    (void)arg;
+    if (!g_stream_file) return make_num(0);
+    int ok = (fclose(g_stream_file) == 0);
+    g_stream_file = NULL;
+    return make_num(ok ? 1 : 0);
+}
+
+/* ---- Command-line arguments ---- */
+static int g_argc = 0;
+static char **g_argv = NULL;
+
+void eigenscript_set_args(int argc, char **argv) {
+    g_argc = argc;
+    g_argv = argv;
+}
+
+/* args of null → list of command-line arguments (after the script name) */
+Value* builtin_args(Value *arg) {
+    (void)arg;
+    Value *list = make_list(g_argc > 2 ? g_argc - 2 : 0);
+    /* g_argv[0] = eigenscript, g_argv[1] = script.eigs, g_argv[2..] = user args */
+    for (int i = 2; i < g_argc; i++) {
+        list_append(list, make_str(g_argv[i]));
+    }
+    return list;
+}
+
+/* ---- Path manipulation ---- */
+
+/* path_join of [a, b] → "a/b" */
+Value* builtin_path_join(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_str("");
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    if (!a || a->type != VAL_STR || !b || b->type != VAL_STR)
+        return make_str("");
+    int alen = strlen(a->data.str);
+    int blen = strlen(b->data.str);
+    /* Skip trailing slash on a, skip leading slash on b */
+    int strip_a = (alen > 0 && a->data.str[alen-1] == '/') ? 1 : 0;
+    int skip_b = (blen > 0 && b->data.str[0] == '/') ? 1 : 0;
+    int rlen = (alen - strip_a) + 1 + (blen - skip_b);
+    char *buf = malloc(rlen + 1);
+    memcpy(buf, a->data.str, alen - strip_a);
+    buf[alen - strip_a] = '/';
+    memcpy(buf + alen - strip_a + 1, b->data.str + skip_b, blen - skip_b);
+    buf[rlen] = '\0';
+    Value *r = make_str(buf);
+    free(buf);
+    return r;
+}
+
+/* path_dir of "a/b/c.txt" → "a/b" */
+Value* builtin_path_dir(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_str("");
+    const char *s = arg->data.str;
+    const char *last = strrchr(s, '/');
+    if (!last) return make_str(".");
+    if (last == s) return make_str("/");
+    int len = last - s;
+    char *buf = malloc(len + 1);
+    memcpy(buf, s, len);
+    buf[len] = '\0';
+    Value *r = make_str(buf);
+    free(buf);
+    return r;
+}
+
+/* path_base of "a/b/c.txt" → "c.txt" */
+Value* builtin_path_base(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_str("");
+    const char *s = arg->data.str;
+    const char *last = strrchr(s, '/');
+    return make_str(last ? last + 1 : s);
+}
+
+/* path_ext of "a/b/c.txt" → ".txt" */
+Value* builtin_path_ext(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_str("");
+    const char *base = strrchr(arg->data.str, '/');
+    const char *s = base ? base + 1 : arg->data.str;
+    const char *dot = strrchr(s, '.');
+    return make_str(dot ? dot : "");
+}
+
+/* ---- Filesystem ---- */
+
+/* mkdir of "path" → 1 on success, 0 on failure. Creates parents. */
+Value* builtin_mkdir(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_num(0);
+    /* Simple recursive mkdir */
+    char *path = strdup(arg->data.str);
+    int len = strlen(path);
+    for (int i = 1; i <= len; i++) {
+        if (path[i] == '/' || path[i] == '\0') {
+            char saved = path[i];
+            path[i] = '\0';
+            mkdir(path, 0755); /* ignore errors on intermediate dirs */
+            path[i] = saved;
+        }
+    }
+    free(path);
+    struct stat st;
+    return make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0);
+}
+
+/* ls of "path" → list of filenames in directory, or [] on failure */
+Value* builtin_ls(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_list(0);
+    Value *list = make_list(0);
+    /* Use opendir/readdir */
+    /* Note: dirent.h is POSIX, available on Linux */
+    char cmd[4200];
+    snprintf(cmd, sizeof(cmd), "ls -1 '%s' 2>/dev/null", arg->data.str);
+    FILE *f = popen(cmd, "r");
+    if (!f) return list;
+    char line[1024];
+    while (fgets(line, sizeof(line), f)) {
+        int l = strlen(line);
+        if (l > 0 && line[l-1] == '\n') line[l-1] = '\0';
+        if (line[0]) list_append(list, make_str(line));
+    }
+    pclose(f);
+    return list;
+}
+
+/* getcwd of null → current working directory as string */
+Value* builtin_getcwd(Value *arg) {
+    (void)arg;
+    char buf[4096];
+    if (getcwd(buf, sizeof(buf))) return make_str(buf);
+    return make_str("");
+}
+
+/* chdir of "path" → 1 on success, 0 on failure */
+Value* builtin_chdir(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_num(0);
+    return make_num(chdir(arg->data.str) == 0 ? 1 : 0);
+}
+
+/* mktemp of null → path to a new temporary file */
+Value* builtin_mktemp(Value *arg) {
+    (void)arg;
+    char tmpl[] = "/tmp/eigen_XXXXXX";
+    int fd = mkstemp(tmpl);
+    if (fd < 0) return make_str("");
+    close(fd);
+    return make_str(tmpl);
+}
+
+/* free_val of value → frees a heap-allocated Value tree. Returns null.
+ * Use this to release large temporary results (e.g. tokenize_with_names output)
+ * when the arena is not active. No-op on arena-allocated values. */
+Value* builtin_free_val(Value *arg) {
+    if (arg && !g_arena.active) free_value(arg);
+    return make_null();
+}
+
+/* rm of "path" → 1 on success, 0 on failure */
+Value* builtin_rm(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_num(0);
+    return make_num(unlink(arg->data.str) == 0 ? 1 : 0);
+}
+
+/* ================================================================
+ * BUILTIN: build_corpus — 3-pass corpus builder in C
+ * ================================================================
+ * build_corpus of [file_list, top_n, stream_path, vocab_path]
+ *
+ * file_list:    list of strings (paths to .eigs files)
+ * top_n:        number of identifier tokens to promote (e.g. 64)
+ * stream_path:  output path for binary token stream
+ * vocab_path:   output path for identifier vocab JSON
+ *
+ * Returns: [stream_length, distinct_identifiers, files_found]
+ */
+
+/* Identifier frequency entry */
+typedef struct {
+    char *name;
+    int count;
+} IdentEntry;
+
+Value* builtin_build_corpus(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4)
+        return make_null();
+
+    Value *file_list = arg->data.list.items[0];
+    Value *topn_val = arg->data.list.items[1];
+    Value *stream_path_val = arg->data.list.items[2];
+    Value *vocab_path_val = arg->data.list.items[3];
+
+    if (!file_list || file_list->type != VAL_LIST) return make_null();
+    if (!topn_val || topn_val->type != VAL_NUM) return make_null();
+    if (!stream_path_val || stream_path_val->type != VAL_STR) return make_null();
+    if (!vocab_path_val || vocab_path_val->type != VAL_STR) return make_null();
+
+    int top_n = (int)topn_val->data.num;
+    int n_files = file_list->data.list.count;
+    const int FIRST_IDENT = 54;
+    const int BASE_VOCAB = 54;
+
+    /* ---- Pass 1: tokenize all files, count identifier frequencies ---- */
+    IdentEntry *idents = NULL;
+    int n_idents = 0;
+    int idents_cap = 0;
+
+    int *file_tok_counts = calloc(n_files, sizeof(int));
+    int total_tokens = 0;
+    int files_found = 0;
+
+    for (int fi = 0; fi < n_files; fi++) {
+        Value *path_val = file_list->data.list.items[fi];
+        if (!path_val || path_val->type != VAL_STR) { file_tok_counts[fi] = 0; continue; }
+        const char *path = path_val->data.str;
+
+        /* Read file */
+        long fsize = 0;
+        char *source = read_file_util(path, &fsize);
+        if (!source) {
+            fprintf(stderr, "  skip: %s\n", path);
+            file_tok_counts[fi] = 0;
+            continue;
+        }
+
+        /* Tokenize */
+        TokenList tl = tokenize(source);
+        file_tok_counts[fi] = tl.count;
+        total_tokens += tl.count;
+        files_found++;
+
+        /* Count identifiers */
+        for (int i = 0; i < tl.count; i++) {
+            if (tl.tokens[i].type == TOK_IDENT && tl.tokens[i].str_val && tl.tokens[i].str_val[0]) {
+                const char *name = tl.tokens[i].str_val;
+                /* Linear scan for existing entry */
+                int found = -1;
+                for (int j = 0; j < n_idents; j++) {
+                    if (strcmp(idents[j].name, name) == 0) { found = j; break; }
+                }
+                if (found >= 0) {
+                    idents[found].count++;
+                } else {
+                    if (n_idents >= idents_cap) {
+                        idents_cap = idents_cap < 256 ? 256 : idents_cap * 2;
+                        idents = realloc(idents, idents_cap * sizeof(IdentEntry));
+                    }
+                    idents[n_idents].name = strdup(name);
+                    idents[n_idents].count = 1;
+                    n_idents++;
+                }
+            }
+        }
+
+        fprintf(stderr, "  %s: %d tokens\n", path, tl.count);
+        free_tokenlist(&tl);
+        free(source);
+    }
+
+    fprintf(stderr, "\nFiles: %d/%d\n", files_found, n_files);
+    fprintf(stderr, "Distinct identifiers: %d\n", n_idents);
+
+    /* ---- Pass 2: pick top-N identifiers ---- */
+    int actual_top = top_n < n_idents ? top_n : n_idents;
+    if (actual_top <= 0) actual_top = 0;
+    char **top_names = calloc(actual_top > 0 ? actual_top : 1, sizeof(char*));
+    int *top_ids = calloc(actual_top > 0 ? actual_top : 1, sizeof(int));
+
+    /* Work on a copy of counts */
+    int *work_counts = malloc(n_idents * sizeof(int));
+    for (int i = 0; i < n_idents; i++) work_counts[i] = idents[i].count;
+
+    for (int t = 0; t < actual_top; t++) {
+        int best_idx = -1, best_val = -1;
+        for (int j = 0; j < n_idents; j++) {
+            if (work_counts[j] > best_val) { best_val = work_counts[j]; best_idx = j; }
+        }
+        if (best_idx < 0) break;
+        top_names[t] = idents[best_idx].name;
+        top_ids[t] = FIRST_IDENT + t;
+        work_counts[best_idx] = -1;
+    }
+    free(work_counts);
+
+    fprintf(stderr, "\nTop %d identifiers:\n", actual_top);
+    for (int i = 0; i < 10 && i < actual_top; i++) {
+        fprintf(stderr, "  %3d  %-20s  %d uses\n", top_ids[i], top_names[i],
+                idents[top_ids[i] - FIRST_IDENT].count);
+    }
+
+    /* ---- Pass 3: re-tokenize and write binary stream ---- */
+    int stream_size = total_tokens + files_found * 2; /* +2 EOF per file */
+
+    FILE *stream_file = fopen(stream_path_val->data.str, "wb");
+    if (!stream_file) {
+        fprintf(stderr, "Error: cannot open %s\n", stream_path_val->data.str);
+        free(file_tok_counts); free(top_names); free(top_ids);
+        for (int i = 0; i < n_idents; i++) free(idents[i].name);
+        free(idents);
+        return make_null();
+    }
+
+    /* Write header: ndim=1, rows=1, cols=stream_size, flags=0 */
+    uint32_t header[4] = { 1, 1, (uint32_t)stream_size, 0 };
+    fwrite(header, sizeof(uint32_t), 4, stream_file);
+    int stream_pos = 0;
+
+    for (int fi = 0; fi < n_files; fi++) {
+        if (file_tok_counts[fi] <= 0) continue;
+
+        Value *path_val = file_list->data.list.items[fi];
+        long fsize = 0;
+        char *source = read_file_util(path_val->data.str, &fsize);
+        if (!source) continue;
+
+        /* Write double-EOF separator */
+        double eof_val = (double)TOK_EOF;
+        fwrite(&eof_val, sizeof(double), 1, stream_file);
+        fwrite(&eof_val, sizeof(double), 1, stream_file);
+        stream_pos += 2;
+
+        TokenList tl = tokenize(source);
+
+        for (int i = 0; i < tl.count; i++) {
+            int tid = tl.tokens[i].type;
+            /* Replace known identifiers with extended IDs */
+            if (tid == TOK_IDENT && tl.tokens[i].str_val && tl.tokens[i].str_val[0]) {
+                for (int j = 0; j < actual_top; j++) {
+                    if (strcmp(top_names[j], tl.tokens[i].str_val) == 0) {
+                        tid = top_ids[j];
+                        break;
+                    }
+                }
+            }
+            double d = (double)tid;
+            fwrite(&d, sizeof(double), 1, stream_file);
+            stream_pos++;
+        }
+
+        free_tokenlist(&tl);
+        free(source);
+    }
+
+    fclose(stream_file);
+    fprintf(stderr, "\nWritten: %s (%d tokens)\n", stream_path_val->data.str, stream_pos);
+
+    /* ---- Write identifier vocab JSON ---- */
+    FILE *vocab_file = fopen(vocab_path_val->data.str, "w");
+    if (vocab_file) {
+        fprintf(vocab_file, "{\"first_ident_id\": %d, \"ext_vocab_size\": %d, \"top_n\": %d, \"names\": [",
+                FIRST_IDENT, BASE_VOCAB + top_n, top_n);
+        for (int i = 0; i < actual_top; i++) {
+            if (i > 0) fprintf(vocab_file, ", ");
+            fprintf(vocab_file, "\"%s\"", top_names[i]);
+        }
+        fprintf(vocab_file, "]}");
+        fclose(vocab_file);
+        fprintf(stderr, "Written: %s\n", vocab_path_val->data.str);
+    }
+
+    /* ---- Cleanup ---- */
+    free(file_tok_counts);
+    free(top_names);
+    free(top_ids);
+    for (int i = 0; i < n_idents; i++) free(idents[i].name);
+    free(idents);
+
+    /* Return [stream_length, distinct_identifiers, files_found] */
+    Value *result = make_list(3);
+    list_append(result, make_num(stream_pos));
+    list_append(result, make_num(n_idents));
+    list_append(result, make_num(files_found));
+    return result;
+}
+
 /* ================================================================
  * GENERIC HTTP CLIENT — language-level, no product logic
  * ================================================================ */
@@ -2058,6 +2793,7 @@ Value* builtin_load_file(Value *arg) {
     ASTNode *ast = parse(&tl);
     Value *result = eval_node(ast, g_global_env);
     free(source);
+    free_tokenlist(&tl);
     return result ? result : make_null();
 }
 
@@ -2081,6 +2817,198 @@ Value* builtin_env_get(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
     const char *val = getenv(arg->data.str);
     return make_str(val ? val : "");
+}
+
+/* ==== BUILTIN: read_text ==== */
+/* read_text of "path" → file contents as string, or "" on failure. */
+Value* builtin_read_text(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_str("");
+    FILE *f = fopen(arg->data.str, "r");
+    if (!f) return make_str("");
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
+        fclose(f);
+        return make_str("");
+    }
+    char *buf = malloc(len + 1);
+    if (!buf) { fclose(f); return make_str(""); }
+    size_t read = fread(buf, 1, len, f);
+    fclose(f);
+    buf[read] = '\0';
+    Value *result = make_str(buf);
+    free(buf);
+    return result;
+}
+
+/* ==== BUILTIN: write_text ==== */
+/* write_text of ["path", text] → 1 on success, 0 on failure. */
+Value* builtin_write_text(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_num(0);
+    Value *path_val = arg->data.list.items[0];
+    Value *text_val = arg->data.list.items[1];
+    if (!path_val || path_val->type != VAL_STR ||
+        !text_val || text_val->type != VAL_STR)
+        return make_num(0);
+    FILE *f = fopen(path_val->data.str, "w");
+    if (!f) return make_num(0);
+    size_t len = strlen(text_val->data.str);
+    size_t written = fwrite(text_val->data.str, 1, len, f);
+    int close_ok = (fclose(f) == 0);
+    return make_num(written == len && close_ok ? 1 : 0);
+}
+
+/* ==== BUILTIN: exec_capture ==== */
+/* exec_capture of ["cmd", "arg1", ...]               → [exit_code, stdout_text]
+ * exec_capture of [["cmd", "arg1", ...], timeout_sec] → same, with timeout
+ *
+ * Runs a subprocess with fork/exec, captures stdout. No shell.
+ * Child stdin is /dev/null. 10 MB output cap.
+ *
+ * Timeout form: pass a 2-element list where the first element is the
+ * command list and the second is the timeout in seconds.
+ * On timeout the child is killed and the return is [-2, partial_stdout].
+ *
+ * Always returns a 2-item list. Returns [-1, ""] on failure. */
+
+static Value* exec_capture_result(int code, const char *text) {
+    Value *result = make_list(2);
+    result->data.list.items[0] = make_num(code);
+    result->data.list.items[1] = make_str(text);
+    result->data.list.count = 2;
+    return result;
+}
+
+Value* builtin_exec_capture(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1)
+        return exec_capture_result(-1, "");
+
+    /* Detect timeout form: [["cmd", ...], timeout_num] */
+    double timeout_sec = -1;
+    Value *cmd_list = arg;
+    if (arg->data.list.count == 2
+        && arg->data.list.items[0] && arg->data.list.items[0]->type == VAL_LIST
+        && arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM) {
+        cmd_list = arg->data.list.items[0];
+        timeout_sec = arg->data.list.items[1]->data.num;
+        if (cmd_list->data.list.count < 1)
+            return exec_capture_result(-1, "");
+    }
+
+    int total = cmd_list->data.list.count;
+
+    /* Build argv array */
+    char **argv = malloc((total + 1) * sizeof(char*));
+    if (!argv) return exec_capture_result(-1, "");
+    for (int i = 0; i < total; i++) {
+        Value *v = cmd_list->data.list.items[i];
+        if (!v || v->type != VAL_STR) {
+            free(argv);
+            return exec_capture_result(-1, "");
+        }
+        argv[i] = v->data.str;
+    }
+    argv[total] = NULL;
+
+    /* Create pipe for stdout capture */
+    int pipefd[2];
+    if (pipe(pipefd) != 0) { free(argv); return exec_capture_result(-1, ""); }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]); close(pipefd[1]);
+        free(argv);
+        return exec_capture_result(-1, "");
+    }
+
+    if (pid == 0) {
+        /* Child: redirect stdout to pipe, stdin to /dev/null */
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        int devnull = open("/dev/null", O_RDONLY);
+        if (devnull >= 0) { dup2(devnull, STDIN_FILENO); close(devnull); }
+        execvp(argv[0], argv);
+        _exit(127); /* exec failed */
+    }
+
+    /* Parent: read from pipe, close write end */
+    close(pipefd[1]);
+    free(argv);
+
+    /* Compute deadline */
+    struct timespec deadline;
+    int has_timeout = (timeout_sec >= 0);
+    if (has_timeout) {
+        clock_gettime(CLOCK_MONOTONIC, &deadline);
+        deadline.tv_sec += (time_t)timeout_sec;
+        deadline.tv_nsec += (long)((timeout_sec - (time_t)timeout_sec) * 1e9);
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000L;
+        }
+    }
+
+    size_t cap = 4096, len = 0;
+    char *buf = malloc(cap + 1);
+    if (!buf) {
+        close(pipefd[0]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        return exec_capture_result(-1, "");
+    }
+
+    int timed_out = 0;
+
+    /* Read loop with optional timeout via poll() */
+    for (;;) {
+        int poll_ms = -1; /* infinite */
+        if (has_timeout) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            long remaining_ms = (deadline.tv_sec - now.tv_sec) * 1000
+                              + (deadline.tv_nsec - now.tv_nsec) / 1000000;
+            if (remaining_ms <= 0) { timed_out = 1; break; }
+            poll_ms = (int)remaining_ms;
+        }
+
+        struct pollfd pfd = { .fd = pipefd[0], .events = POLLIN };
+        int pr = poll(&pfd, 1, poll_ms);
+        if (pr == 0) { timed_out = 1; break; }       /* timeout */
+        if (pr < 0) { if (errno == EINTR) continue; break; } /* error */
+
+        ssize_t n = read(pipefd[0], buf + len, cap - len);
+        if (n <= 0) break; /* EOF or error */
+        len += n;
+        if (len >= cap) {
+            if (cap >= 10 * 1024 * 1024) break;
+            size_t newcap = cap * 2;
+            if (newcap > 10 * 1024 * 1024) newcap = 10 * 1024 * 1024;
+            char *newbuf = realloc(buf, newcap + 1);
+            if (!newbuf) break;
+            buf = newbuf;
+            cap = newcap;
+        }
+    }
+    close(pipefd[0]);
+    buf[len] = '\0';
+
+    int exit_code;
+    if (timed_out) {
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        exit_code = -2;
+    } else {
+        int status = 0;
+        waitpid(pid, &status, 0);
+        exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
+
+    Value *result = exec_capture_result(exit_code, buf);
+    free(buf);
+    return result;
 }
 
 /* ================================================================
@@ -2928,6 +3856,20 @@ Value* builtin_arena_stats(Value *arg) {
     return make_num((double)g_arena.total_allocated);
 }
 
+/* Free a TokenList's malloc'd storage (token array and str_vals) */
+void free_tokenlist(TokenList *tl) {
+    if (!tl->tokens) return;
+    for (int i = 0; i < tl->count; i++) {
+        if (tl->tokens[i].str_val) {
+            free(tl->tokens[i].str_val);
+            tl->tokens[i].str_val = NULL;
+        }
+    }
+    free(tl->tokens);
+    tl->tokens = NULL;
+    tl->count = 0;
+}
+
 /* ==== BUILTIN: tokenize_ids ==== */
 /* tokenize_ids of string → list of token type IDs (integers).
  * Exposes the runtime's own tokenizer to .eigs code.
@@ -2942,6 +3884,7 @@ Value* builtin_tokenize_ids(Value *arg) {
     for (int i = 0; i < tl.count; i++) {
         list_append(result, make_num((double)tl.tokens[i].type));
     }
+    free_tokenlist(&tl);
     return result;
 }
 
@@ -2976,9 +3919,10 @@ Value* builtin_tokenize_with_names(Value *arg) {
             }
             name = numbuf;
         }
-        list_append(pair, make_str(name));
+        list_append(pair, make_str(name)); /* make_str copies the string */
         list_append(result, pair);
     }
+    free_tokenlist(&tl);
     return result;
 }
 
@@ -3069,6 +4013,9 @@ Value* builtin_try_parse(Value *arg) {
     /* Valid only if: non-null AST, at least one statement, AND no parse errors */
     int valid = (ast != NULL && ast->type == AST_PROGRAM
                  && ast->data.program.count > 0 && errors == 0) ? 1 : 0;
+    free_tokenlist(&tl);
+    /* AST intentionally leaked — try_parse called rarely enough that this
+     * is acceptable, and free_ast has edge cases with partial parses. */
     return make_num(valid);
 }
 
@@ -3400,6 +4347,44 @@ void register_builtins(Env *env) {
     env_set_local(env, "json_raw", make_builtin(builtin_json_raw));
     env_set_local(env, "json_path", make_builtin(builtin_json_path));
     env_set_local(env, "str_lower", make_builtin(builtin_str_lower));
+    env_set_local(env, "str_upper", make_builtin(builtin_str_upper));
+    env_set_local(env, "char_at", make_builtin(builtin_char_at));
+    env_set_local(env, "ends_with", make_builtin(builtin_ends_with));
+    env_set_local(env, "substr", make_builtin(builtin_substr));
+    env_set_local(env, "index_of", make_builtin(builtin_index_of));
+    env_set_local(env, "sin", make_builtin(builtin_sin));
+    env_set_local(env, "cos", make_builtin(builtin_cos));
+    env_set_local(env, "tan", make_builtin(builtin_tan));
+    env_set_local(env, "asin", make_builtin(builtin_asin));
+    env_set_local(env, "acos", make_builtin(builtin_acos));
+    env_set_local(env, "atan", make_builtin(builtin_atan));
+    env_set_local(env, "atan2", make_builtin(builtin_atan2));
+    env_set_local(env, "floor", make_builtin(builtin_floor));
+    env_set_local(env, "ceil", make_builtin(builtin_ceil));
+    env_set_local(env, "round", make_builtin(builtin_round));
+    env_set_local(env, "abs", make_builtin(builtin_abs));
+    env_set_local(env, "min", make_builtin(builtin_min));
+    env_set_local(env, "max", make_builtin(builtin_max));
+    env_set_local(env, "pi", make_builtin(builtin_pi));
+    env_set_local(env, "random", make_builtin(builtin_random));
+    env_set_local(env, "random_int", make_builtin(builtin_random_int));
+    env_set_local(env, "seed_random", make_builtin(builtin_seed_random));
+    env_set_local(env, "args", make_builtin(builtin_args));
+    env_set_local(env, "path_join", make_builtin(builtin_path_join));
+    env_set_local(env, "path_dir", make_builtin(builtin_path_dir));
+    env_set_local(env, "path_base", make_builtin(builtin_path_base));
+    env_set_local(env, "path_ext", make_builtin(builtin_path_ext));
+    env_set_local(env, "mkdir", make_builtin(builtin_mkdir));
+    env_set_local(env, "ls", make_builtin(builtin_ls));
+    env_set_local(env, "getcwd", make_builtin(builtin_getcwd));
+    env_set_local(env, "chdir", make_builtin(builtin_chdir));
+    env_set_local(env, "mktemp", make_builtin(builtin_mktemp));
+    env_set_local(env, "rm", make_builtin(builtin_rm));
+    env_set_local(env, "free_val", make_builtin(builtin_free_val));
+    env_set_local(env, "stream_open", make_builtin(builtin_stream_open));
+    env_set_local(env, "stream_write", make_builtin(builtin_stream_write));
+    env_set_local(env, "stream_close", make_builtin(builtin_stream_close));
+    env_set_local(env, "build_corpus", make_builtin(builtin_build_corpus));
     env_set_local(env, "contains", make_builtin(builtin_contains));
     env_set_local(env, "starts_with", make_builtin(builtin_starts_with));
     env_set_local(env, "split", make_builtin(builtin_split));
@@ -3408,6 +4393,9 @@ void register_builtins(Env *env) {
     env_set_local(env, "load_file", make_builtin(builtin_load_file));
     env_set_local(env, "file_exists", make_builtin(builtin_file_exists));
     env_set_local(env, "env_get", make_builtin(builtin_env_get));
+    env_set_local(env, "read_text", make_builtin(builtin_read_text));
+    env_set_local(env, "write_text", make_builtin(builtin_write_text));
+    env_set_local(env, "exec_capture", make_builtin(builtin_exec_capture));
 
     /* ---- Tensor / math stdlib (always available) ---- */
     env_set_local(env, "matmul", make_builtin(builtin_tensor_matmul));

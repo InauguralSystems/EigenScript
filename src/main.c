@@ -46,6 +46,7 @@ int main(int argc, char **argv) {
     }
 
     srand(time(NULL));
+    eigenscript_set_args(argc, argv);
     arena_init();
 
     Env *global = env_new(NULL);

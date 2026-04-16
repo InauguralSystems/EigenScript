@@ -1,0 +1,120 @@
+# Orbital Mechanics — trajectory-not-state framing
+# Demonstrates: Kepler orbit as geometry, anomaly iteration, energy conservation
+
+# Orbital elements define the trajectory, not a position+velocity state.
+# At any time t, solve Kepler's equation to find position on the ellipse.
+
+# ---- Taylor-series sin/cos (no builtin trig) ----
+define sin_approx as:
+    sa_x is n * 1.0
+    sa_pi is 3.14159265
+    loop while sa_x > sa_pi:
+        sa_x is sa_x - 2 * sa_pi
+    loop while sa_x < (0 - sa_pi):
+        sa_x is sa_x + 2 * sa_pi
+    sa_x2 is sa_x * sa_x
+    sa_x3 is sa_x2 * sa_x
+    sa_x5 is sa_x2 * sa_x3
+    sa_x7 is sa_x2 * sa_x5
+    return sa_x - sa_x3 / 6 + sa_x5 / 120 - sa_x7 / 5040
+
+define cos_approx as:
+    ca_x is n * 1.0
+    ca_pi is 3.14159265
+    loop while ca_x > ca_pi:
+        ca_x is ca_x - 2 * ca_pi
+    loop while ca_x < (0 - ca_pi):
+        ca_x is ca_x + 2 * ca_pi
+    ca_x2 is ca_x * ca_x
+    ca_x4 is ca_x2 * ca_x2
+    ca_x6 is ca_x4 * ca_x2
+    return 1.0 - ca_x2 / 2 + ca_x4 / 24 - ca_x6 / 720
+
+# ---- Solve Kepler's equation: M = E - e*sin(E) ----
+define solve_kepler as:
+    k_mean is n[0] * 1.0
+    k_ecc is n[1] * 1.0
+    k_e is k_mean
+    for k_iter in range of 20:
+        k_s is sin_approx of k_e
+        k_c is cos_approx of k_e
+        k_f is k_e - k_ecc * k_s - k_mean
+        k_fp is 1.0 - k_ecc * k_c
+        if k_fp < 0.0001:
+            k_fp is 0.0001
+        k_e is k_e - k_f / k_fp
+    return k_e
+
+# ---- Position on ellipse from eccentric anomaly ----
+define orbit_position as:
+    op_e is n[0]
+    op_a is n[1]
+    op_ecc is n[2]
+    op_c is cos_approx of op_e
+    op_s is sin_approx of op_e
+    op_x is op_a * (op_c - op_ecc)
+    op_bf is sqrt of (1.0 - op_ecc * op_ecc)
+    op_y is op_a * op_bf * op_s
+    return [op_x, op_y]
+
+# ---- Orbital speed (vis-viva equation) ----
+define orbit_speed as:
+    os_r is n[0]
+    os_a is n[1]
+    os_mu is n[2]
+    os_v2 is os_mu * (2.0 / os_r - 1.0 / os_a)
+    if os_v2 < 0:
+        os_v2 is 0
+    return sqrt of (os_v2)
+
+# ---- Simulate an orbit ----
+print of "--- Orbital Mechanics ---"
+
+pi is 3.14159265
+orb_a is 1.0
+orb_ecc is 0.3
+orb_period is 2 * pi
+orb_mu is 1.0
+
+print of ("Semi-major axis: " + (str of orb_a))
+print of ("Eccentricity: " + (str of orb_ecc))
+print of ""
+
+# Sample the orbit at 12 points
+n_samples is 12
+for i in range of n_samples:
+    t is i * orb_period / n_samples
+    mean_anom is 2 * pi * t / orb_period
+    big_e is solve_kepler of [mean_anom, orb_ecc]
+    pos is orbit_position of [big_e, orb_a, orb_ecc]
+    px is pos[0]
+    py is pos[1]
+    r is sqrt of (px * px + py * py)
+    v is orbit_speed of [r, orb_a, orb_mu]
+    energy is v * v / 2.0 - orb_mu / r
+    print of ("t=" + (str of t) + "  pos=(" + (str of px) + ", " + (str of py) + ")  r=" + (str of r) + "  v=" + (str of v) + "  E=" + (str of energy))
+
+# Energy should be constant: -mu/(2a) = -0.5
+print of ""
+print of ("Expected specific energy: " + (str of (0.0 - orb_mu / (2.0 * orb_a))))
+
+# ---- Hohmann transfer delta-v ----
+print of ""
+print of "--- Hohmann Transfer ---"
+r1 is 1.0
+r2 is 1.5
+a_tr is (r1 + r2) / 2.0
+
+v1_circ is sqrt of (orb_mu / r1)
+v1_tr is sqrt of (orb_mu * (2.0 / r1 - 1.0 / a_tr))
+v2_tr is sqrt of (orb_mu * (2.0 / r2 - 1.0 / a_tr))
+v2_circ is sqrt of (orb_mu / r2)
+
+dv1 is v1_tr - v1_circ
+dv2 is v2_circ - v2_tr
+dv_total is dv1 + dv2
+
+print of ("Inner orbit v: " + (str of v1_circ))
+print of ("Transfer burn 1: dv=" + (str of dv1))
+print of ("Transfer burn 2: dv=" + (str of dv2))
+print of ("Total delta-v: " + (str of dv_total))

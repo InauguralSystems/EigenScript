@@ -1,0 +1,222 @@
+# EigenScript Idioms — patterns that exist because of language constraints
+# No break/continue, no try/catch, outward-mutable scoping, single-param functions.
+
+# ============================================================
+# 1. Flag variables instead of break
+# ============================================================
+
+# Find the first negative number in a list.
+# Python: for x in items: if x < 0: break
+# EigenScript: flag variable, check on every iteration.
+
+print of "--- flag variable (no break) ---"
+items is [4, 7, 2, -3, 8, -1, 5]
+found is 0
+found_value is 0
+found_index is 0
+
+for i in range of (len of items):
+    if found == 0:
+        if items[i] < 0:
+            found is 1
+            found_value is items[i]
+            found_index is i
+
+if found == 1:
+    print of ("First negative: " + (str of found_value) + " at index " + (str of found_index))
+else:
+    print of "No negatives found"
+
+# ============================================================
+# 2. Flag variable instead of continue
+# ============================================================
+
+# Sum only positive numbers.
+# Python: for x in items: if x < 0: continue; total += x
+# EigenScript: conditional body, no skip.
+
+print of ""
+print of "--- conditional body (no continue) ---"
+total is 0
+count is 0
+for i in range of (len of items):
+    if items[i] > 0:
+        total is total + items[i]
+        count is count + 1
+
+print of ("Sum of positives: " + (str of total) + " (" + (str of count) + " values)")
+
+# ============================================================
+# 3. Non-fatal errors — execution continues
+# ============================================================
+
+# Division that might fail. No try/catch — guard explicitly.
+# Note: variable names are prefixed to avoid scope collision
+# if this function is called from code that uses 'a' or 'b'.
+
+print of ""
+print of "--- non-fatal errors (no try/catch) ---"
+
+define safe_divide as:
+    sd_a is n[0]
+    sd_b is n[1]
+    if sd_b == 0:
+        print of ("Warning: division by zero, returning 0")
+        return 0
+    return sd_a / sd_b
+
+values is [[10, 3], [15, 0], [20, 4], [0, 0], [100, 7]]
+for i in range of (len of values):
+    pair is values[i]
+    result is safe_divide of pair
+    print of ("  " + (str of pair[0]) + " / " + (str of pair[1]) + " = " + (str of result))
+
+# ============================================================
+# 4. Outward-mutable scoping — the load-bearing behavior
+# ============================================================
+
+# Assignment inside a function mutates the caller's variable
+# if it already exists in the outer scope. This is intentional.
+
+print of ""
+print of "--- outward mutation ---"
+
+counter is 0
+
+define increment as:
+    counter is counter + n
+    return counter
+
+# Each call mutates the outer 'counter'
+print of ("After +1: " + (str of (increment of 1)))
+print of ("After +5: " + (str of (increment of 5)))
+print of ("After +3: " + (str of (increment of 3)))
+print of ("Outer counter: " + (str of counter))
+
+# ============================================================
+# 5. Scope collision — the hazard, and how to avoid it
+# ============================================================
+
+# BAD: a function that mutates a variable the caller depends on.
+# 'total' in count_and_sum clobbers the outer 'total'.
+
+print of ""
+print of "--- scope collision (the hazard) ---"
+
+total is 0
+
+define count_and_sum_bad as:
+    total is 0
+    for cs_i in range of (len of n):
+        total is total + n[cs_i]
+    return total
+
+# We're accumulating into outer 'total', but count_and_sum_bad
+# also assigns to 'total' — clobbering our running sum.
+batches is [[10, 20], [30, 40], [50, 60]]
+print of "BAD (function resets outer 'total'):"
+for i in range of (len of batches):
+    batch_sum is count_and_sum_bad of batches[i]
+    total is total + batch_sum
+    print of ("  batch " + (str of i) + ": batch_sum=" + (str of batch_sum) + " total=" + (str of total))
+
+# Expected: 30 + 70 + 110 = 210
+# Actual: 220, because the function and caller share 'total'.
+# The function leaves total=batch_sum, then the caller adds batch_sum again.
+print of ("  final total=" + (str of total) + " (expected 210)")
+
+# GOOD: prefix internal variables to avoid collision.
+print of ""
+total is 0
+
+define count_and_sum as:
+    cs_total is 0
+    for cs_i in range of (len of n):
+        cs_total is cs_total + n[cs_i]
+    return cs_total
+
+print of "GOOD (prefixed 'cs_total' is safe):"
+for i in range of (len of batches):
+    batch_sum is count_and_sum of batches[i]
+    total is total + batch_sum
+    print of ("  batch " + (str of i) + ": batch_sum=" + (str of batch_sum) + " total=" + (str of total))
+
+print of ("  final total=" + (str of total) + " (expected 210)")
+
+# ============================================================
+# 6. Multi-arg convention — lists as argument packs
+# ============================================================
+
+# Single arg: n is the value directly
+define double as:
+    return n * 2
+
+# Multi arg: n is a list, unpack with n[0], n[1]
+define lerp as:
+    lerp_a is n[0]
+    lerp_b is n[1]
+    lerp_t is n[2]
+    return lerp_a + (lerp_b - lerp_a) * lerp_t
+
+# No arg: pass null
+define timestamp as:
+    return 1712419200
+
+print of ""
+print of "--- calling conventions ---"
+print of ("double of 7: " + (str of (double of 7)))
+print of ("lerp of [0, 100, 0.75]: " + (str of (lerp of [0, 100, 0.75])))
+print of ("timestamp of null: " + (str of (timestamp of null)))
+
+# ============================================================
+# 7. Early return via flag (function version)
+# ============================================================
+
+# Search with early exit. The flag prevents further work
+# but the loop still iterates — just doing nothing.
+
+print of ""
+print of "--- early exit pattern ---"
+
+define find_in as:
+    fi_found is 0
+    fi_result is -1
+    for fi_i in range of (len of n[0]):
+        if fi_found == 0:
+            if n[0][fi_i] == n[1]:
+                fi_found is 1
+                fi_result is fi_i
+    return fi_result
+
+names is ["alice", "bob", "charlie", "diana", "eve"]
+print of ("bob: index " + (str of (find_in of [names, "bob"])))
+print of ("diana: index " + (str of (find_in of [names, "diana"])))
+print of ("frank: index " + (str of (find_in of [names, "frank"])))
+
+# ============================================================
+# 8. Observer + flag pattern — converge or bail
+# ============================================================
+
+# Convergence with a safety limit. Uses report-driven loop
+# (not 'loop while not converged' which needs function scope).
+
+print of ""
+print of "--- convergence with safety limit ---"
+x is 100.0
+max_steps is 500
+step is 0
+bailed is 0
+status is "start"
+
+loop while status != "converged":
+    x is x * 0.95
+    step is step + 1
+    status is report of x
+    if step >= max_steps:
+        bailed is 1
+        status is "converged"
+
+if bailed == 1:
+    print of ("Bailed at step " + (str of step) + " x=" + (str of x))
+else:
+    print of ("Converged at step " + (str of step) + " x=" + (str of x))

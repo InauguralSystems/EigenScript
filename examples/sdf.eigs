@@ -1,0 +1,114 @@
+# SDF Renderer — signed distance function ray marching
+# Demonstrates: functional geometry, ray marching, ASCII rendering
+
+load_file of "lib/math.eigs"
+
+# ---- SDF primitives ----
+
+define sdf_sphere as:
+    # n = [px, py, pz, cx, cy, cz, radius]
+    sp_dx is n[0] - n[3]
+    sp_dy is n[1] - n[4]
+    sp_dz is n[2] - n[5]
+    return (sqrt of (sp_dx * sp_dx + sp_dy * sp_dy + sp_dz * sp_dz)) - n[6]
+
+define sdf_box as:
+    # n = [px, py, pz, cx, cy, cz, half_w, half_h, half_d]
+    bx_dx is abs of (n[0] - n[3])
+    bx_dy is abs of (n[1] - n[4])
+    bx_dz is abs of (n[2] - n[5])
+    bx_qx is bx_dx - n[6]
+    bx_qy is bx_dy - n[7]
+    bx_qz is bx_dz - n[8]
+    if bx_qx < 0:
+        bx_qx is 0
+    if bx_qy < 0:
+        bx_qy is 0
+    if bx_qz < 0:
+        bx_qz is 0
+    bx_outside is sqrt of (bx_qx * bx_qx + bx_qy * bx_qy + bx_qz * bx_qz)
+    bx_inside is bx_dx - n[6]
+    if (bx_dy - n[7]) > bx_inside:
+        bx_inside is bx_dy - n[7]
+    if (bx_dz - n[8]) > bx_inside:
+        bx_inside is bx_dz - n[8]
+    if bx_inside > 0:
+        return bx_outside
+    return bx_inside
+
+define sdf_plane as:
+    # n = [px, py, pz, height]
+    return n[1] - n[3]
+
+# ---- CSG operations ----
+define sdf_union as:
+    if n[0] < n[1]:
+        return n[0]
+    return n[1]
+
+# ---- Scene: sphere + box + ground plane ----
+define scene_sdf as:
+    sc_px is n[0]
+    sc_py is n[1]
+    sc_pz is n[2]
+    sc_sphere is sdf_sphere of [sc_px, sc_py, sc_pz, 0.0, 1.0, 5.0, 1.0]
+    sc_box is sdf_box of [sc_px, sc_py, sc_pz, 2.0, 0.5, 5.0, 0.5, 0.5, 0.5]
+    sc_plane is sdf_plane of [sc_px, sc_py, sc_pz, 0.0]
+    sc_objs is sdf_union of [sc_sphere, sc_box]
+    return sdf_union of [sc_objs, sc_plane]
+
+# ---- Ray marching ----
+define ray_march as:
+    # n = [ox, oy, oz, dx, dy, dz]
+    rm_ox is n[0]
+    rm_oy is n[1]
+    rm_oz is n[2]
+    rm_dx is n[3]
+    rm_dy is n[4]
+    rm_dz is n[5]
+    rm_t is 0.0
+    for rm_step in range of 40:
+        rm_px is rm_ox + rm_dx * rm_t
+        rm_py is rm_oy + rm_dy * rm_t
+        rm_pz is rm_oz + rm_dz * rm_t
+        rm_d is scene_sdf of [rm_px, rm_py, rm_pz]
+        if rm_d < 0.01:
+            return rm_t
+        rm_t is rm_t + rm_d
+        if rm_t > 20.0:
+            return 20.0
+    return 20.0
+
+# ---- Render to ASCII ----
+print of "--- SDF Ray Marcher ---"
+
+r_width is 60
+r_height is 24
+r_fov is 1.0
+r_cam_y is 2.0
+
+shades is "@%#*+=-:. "
+
+for row in range of r_height:
+    line is ""
+    for col in range of r_width:
+        r_u is (col - r_width / 2) * r_fov / r_width
+        r_v is (0 - (row - r_height / 2)) * r_fov / r_height
+        # Normalize direction
+        r_mag is sqrt of (r_u * r_u + (r_v - 0.3) * (r_v - 0.3) + 1.0)
+        r_dirx is r_u / r_mag
+        r_diry is (r_v - 0.3) / r_mag
+        r_dirz is 1.0 / r_mag
+
+        dist is ray_march of [0, r_cam_y, 0, r_dirx, r_diry, r_dirz]
+
+        if dist >= 19.9:
+            line is line + " "
+        else:
+            idx is (dist * (len of shades)) / 20
+            if idx < 0:
+                idx is 0
+            if idx >= (len of shades):
+                idx is (len of shades) - 1
+            line is line + shades[idx]
+    print of line

@@ -1,0 +1,120 @@
+# Self-Referential Code — tokenize_ids, try_parse, tokenize_with_names
+# EigenScript can inspect its own syntax. This is the foundation of
+# self-improvement: generate code, validate it, analyze its structure.
+
+# ============================================================
+# 1. tokenize_ids — see what the parser sees
+# ============================================================
+
+print of "--- tokenize_ids: inspect token stream ---"
+
+code is "x is 42"
+tokens is tokenize_ids of code
+print of ("Code: " + code)
+print of ("Tokens: " + (str of tokens))
+
+# Token IDs: 2=IDENT, 3=IS, 0=NUM, 50=NEWLINE, 53=EOF
+# So "x is 42" → [IDENT, IS, NUM, NEWLINE, EOF]
+
+code2 is "define foo as:\n    return n + 1"
+tokens2 is tokenize_ids of code2
+print of ""
+print of ("Code: define foo as: / return n + 1")
+print of ("Tokens: " + (str of tokens2))
+print of ("Token count: " + (str of (len of tokens2)))
+
+# ============================================================
+# 2. try_parse — validate generated code without executing it
+# ============================================================
+
+print of ""
+print of "--- try_parse: structural validation ---"
+
+# Valid EigenScript
+valid_samples is ["x is 42", "define f as:\n    return n", "if x > 0:\n    print of x", "for i in range of 10:\n    x is i"]
+for i in range of (len of valid_samples):
+    result is try_parse of valid_samples[i]
+    print of ("valid[" + (str of i) + "]: " + (str of result))
+
+# Invalid EigenScript
+invalid_samples is ["x is )", "if x > 0", "def f(x): return x", "]]][[["]
+for i in range of (len of invalid_samples):
+    result is try_parse of invalid_samples[i]
+    print of ("invalid[" + (str of i) + "]: " + (str of result))
+
+# ============================================================
+# 3. Build code as a string and validate it
+# ============================================================
+
+print of ""
+print of "--- code generation and validation ---"
+
+# Generate a simple function definition
+func_name is "double"
+body is "return n * 2"
+generated is "define " + func_name + " as:\n    " + body
+
+print of ("Generated: " + generated)
+valid is try_parse of generated
+print of ("Valid: " + (str of valid))
+
+# Generate with a parameter
+define make_function as:
+    name is n[0]
+    expr is n[1]
+    return "define " + name + " as:\n    return " + expr
+
+candidates is [["square", "n * n"], ["add_one", "n + 1"], ["negate", "0 - n"], ["broken", "n +++ n"]]
+
+print of ""
+for i in range of (len of candidates):
+    code is make_function of candidates[i]
+    valid is try_parse of code
+    label is candidates[i][0]
+    if valid == 1:
+        print of ("  " + label + ": VALID")
+    else:
+        print of ("  " + label + ": INVALID")
+
+# ============================================================
+# 4. Token-level analysis — count structural tokens
+# ============================================================
+
+print of ""
+print of "--- token analysis ---"
+
+# Count how many INDENT/DEDENT tokens a piece of code has
+# 51=INDENT, 52=DEDENT
+define count_structure as:
+    tokens is tokenize_ids of n
+    indents is 0
+    dedents is 0
+    newlines is 0
+    for i in range of (len of tokens):
+        tid is tokens[i]
+        if tid == 51:
+            indents is indents + 1
+        if tid == 52:
+            dedents is dedents + 1
+        if tid == 50:
+            newlines is newlines + 1
+    return [indents, dedents, newlines, len of tokens]
+
+samples is ["x is 1", "if x > 0:\n    y is 1", "define f as:\n    if n > 0:\n        return n\n    return 0"]
+labels is ["flat", "one block", "nested"]
+
+for i in range of (len of samples):
+    stats is count_structure of samples[i]
+    print of (labels[i] + ": indent=" + (str of stats[0]) + " dedent=" + (str of stats[1]) + " newlines=" + (str of stats[2]) + " total=" + (str of stats[3]))
+
+# ============================================================
+# 5. token_name — map IDs back to human-readable names
+# ============================================================
+
+print of ""
+print of "--- token_name: ID to name ---"
+important_ids is [0, 1, 2, 3, 5, 7, 16, 50, 51, 52, 53]
+for i in range of (len of important_ids):
+    tid is important_ids[i]
+    name is token_name of tid
+    print of ("  " + (str of tid) + " -> " + name)

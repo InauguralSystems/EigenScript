@@ -1,0 +1,93 @@
+# Text Processor — string parsing and transformation
+# Demonstrates: character-level processing, string building, list ops
+
+# ---- Count occurrences of a character in a string ----
+define count_char as:
+    text is n[0]
+    target is n[1]
+    count is 0
+    for i in range of (len of text):
+        if text[i] == target:
+            count is count + 1
+    return count
+
+# ---- Reverse a string ----
+define reverse_str as:
+    text is n
+    result is ""
+    i is (len of text) - 1
+    loop while i >= 0:
+        result is result + text[i]
+        i is i - 1
+    return result
+
+# ---- Check if string is a palindrome ----
+define is_palindrome as:
+    text is str_lower of n
+    reversed is reverse_str of text
+    if text == reversed:
+        return 1
+    return 0
+
+# ---- Extract words (split on spaces) ----
+define split_words as:
+    text is n
+    words is []
+    current is ""
+    for i in range of (len of text):
+        ch is text[i]
+        if ch == " ":
+            if current != "":
+                append of [words, current]
+                current is ""
+        else:
+            current is current + ch
+    if current != "":
+        append of [words, current]
+    return words
+
+# ---- Word frequency counter ----
+define word_freq as:
+    words is split_words of n
+    unique is []
+    counts is []
+    for i in range of (len of words):
+        word is str_lower of words[i]
+        found is 0
+        for j in range of (len of unique):
+            if unique[j] == word:
+                set_at of [counts, j, counts[j] + 1]
+                found is 1
+        if found == 0:
+            append of [unique, word]
+            append of [counts, 1]
+    result is []
+    for i in range of (len of unique):
+        append of [result, [unique[i], counts[i]]]
+    return result
+
+# ---- Test everything ----
+print of "--- Text Processor ---"
+
+text is "hello world"
+print of ("Count 'l': " + (str of (count_char of [text, "l"])))
+print of ("Reverse: " + (reverse_str of text))
+
+print of ""
+print of "--- Palindrome Check ---"
+words is ["racecar", "hello", "madam", "world", "level"]
+for i in range of (len of words):
+    word is words[i]
+    check is is_palindrome of word
+    if check == 1:
+        print of (word + " -> palindrome")
+    else:
+        print of (word + " -> not palindrome")
+
+print of ""
+print of "--- Word Frequency ---"
+sentence is "the cat sat on the mat the cat"
+freq is word_freq of sentence
+for i in range of (len of freq):
+    pair is freq[i]
+    print of (pair[0] + ": " + (str of pair[1]))

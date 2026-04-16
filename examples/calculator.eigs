@@ -1,0 +1,96 @@
+# Calculator — a reusable math evaluator
+# Demonstrates: functions, conditionals, string comparison, lists, recursion
+
+# ---- Basic operations ----
+define add as:
+    return n[0] + n[1]
+
+define subtract as:
+    return n[0] - n[1]
+
+define multiply as:
+    return n[0] * n[1]
+
+define divide as:
+    if n[1] == 0:
+        print of "Error: division by zero"
+        return 0
+    return n[0] / n[1]
+
+define power as:
+    base is n[0]
+    exp is n[1]
+    result is 1
+    i is 0
+    loop while i < exp:
+        result is result * base
+        i is i + 1
+    return result
+
+# ---- Dispatch by operator string ----
+define calc as:
+    op is n[0]
+    a is n[1]
+    b is n[2]
+    if op == "+":
+        return add of [a, b]
+    elif op == "-":
+        return subtract of [a, b]
+    elif op == "*":
+        return multiply of [a, b]
+    elif op == "/":
+        return divide of [a, b]
+    elif op == "^":
+        return power of [a, b]
+    else:
+        print of ("Unknown operator: " + op)
+        return 0
+
+# ---- Test the calculator ----
+print of "--- Calculator ---"
+print of ("10 + 3 = " + (str of (calc of ["+", 10, 3])))
+print of ("10 - 3 = " + (str of (calc of ["-", 10, 3])))
+print of ("10 * 3 = " + (str of (calc of ["*", 10, 3])))
+print of ("10 / 3 = " + (str of (calc of ["/", 10, 3])))
+print of ("2 ^ 8 = " + (str of (calc of ["^", 2, 8])))
+print of ("5 / 0 = " + (str of (calc of ["/", 5, 0])))
+
+# ---- Chain operations: evaluate a list of [op, value] pairs ----
+define chain_calc as:
+    steps is n[0]
+    result is n[1]
+    for i in range of (len of steps):
+        step is steps[i]
+        result is calc of [step[0], result, step[1]]
+    return result
+
+# (((10 + 5) * 2) - 4) / 2 = 13
+steps is [["+", 5], ["*", 2], ["-", 4], ["/", 2]]
+answer is chain_calc of [steps, 10]
+print of ""
+print of ("Chain: (((10 + 5) * 2) - 4) / 2 = " + (str of answer))
+
+# ---- Factorial using the calculator's multiply ----
+define factorial as:
+    if n <= 1:
+        return 1
+    return calc of ["*", n, factorial of (n - 1)]
+
+print of ""
+print of ("7! = " + (str of (factorial of 7)))
+print of ("10! = " + (str of (factorial of 10)))
+
+# ---- Running total over a list of numbers ----
+define running_total as:
+    nums is n
+    totals is []
+    sum is 0
+    for i in range of (len of nums):
+        sum is calc of ["+", sum, nums[i]]
+        append of [totals, sum]
+    return totals
+
+values is [4, 7, 2, 9, 1, 6]
+print of ""
+print of ("Values: " + (str of values))
+print of ("Running total: " + (str of (running_total of values)))

@@ -36,6 +36,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#include <poll.h>
 
 /* ---- Language limits ---- */
 
@@ -156,7 +157,7 @@ struct Value {
 
 /* ---- Arena allocator ---- */
 
-#define ARENA_BLOCK_SIZE (4 * 1024 * 1024)
+#define ARENA_BLOCK_SIZE (16 * 1024 * 1024)
 #define ARENA_MAX_BLOCKS 64
 
 typedef struct {
@@ -204,6 +205,8 @@ void env_free(Env *env);
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
+void free_tokenlist(TokenList *tl);
+void free_value(Value *v);
 ASTNode* parse(TokenList *tl);
 Value* eval_node(ASTNode *node, Env *env);
 Value* eval_block(ASTNode **stmts, int count, Env *env);
@@ -214,6 +217,7 @@ char* value_to_string(Value *v);
 /* ---- Registration ---- */
 
 void register_builtins(Env *env);
+void eigenscript_set_args(int argc, char **argv);
 extern Env *g_global_env;
 
 /* ---- Utilities used across modules ---- */

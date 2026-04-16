@@ -1,0 +1,102 @@
+# Numerical Methods — convergence loops with observer semantics
+# Demonstrates: loop while not converged, observe, report, iterative algorithms
+
+# ============================================================
+# Newton's Method — find sqrt(x) by solving f(t) = t^2 - x = 0
+# ============================================================
+
+define sqrt as:
+    x is n * 1.0
+    guess is x / 2.0
+    if guess == 0:
+        guess is 1.0
+    loop while not converged:
+        guess is (guess + x / guess) / 2.0
+    return guess
+
+print of "--- Newton's Method: Square Roots ---"
+print of ("sqrt(2) = " + (str of (sqrt of 2)))
+print of ("sqrt(9) = " + (str of (sqrt of 9)))
+print of ("sqrt(144) = " + (str of (sqrt of 144)))
+print of ("sqrt(2.5) = " + (str of (sqrt of 2.5)))
+
+# ============================================================
+# Bisection Method — find root of f(x) = x^3 - x - 2
+# ============================================================
+
+define f as:
+    return n * n * n - n - 2
+
+define bisect as:
+    lo is n[0]
+    hi is n[1]
+    mid is (lo + hi) / 2
+    loop while not converged:
+        mid is (lo + hi) / 2
+        val is f of mid
+        if val > 0:
+            hi is mid
+        else:
+            lo is mid
+    return mid
+
+print of ""
+print of "--- Bisection Method: x^3 - x - 2 = 0 ---"
+root is bisect of [1, 2]
+print of ("Root: " + (str of root))
+print of ("f(root) = " + (str of (f of root)))
+
+# ============================================================
+# Fixed-point iteration — find x where cos(x) = x
+# ============================================================
+
+define fixed_point_cos as:
+    x is n
+    loop while not converged:
+        x is cos of x
+    return x
+
+print of ""
+print of "--- Fixed Point: cos(x) = x ---"
+fp is fixed_point_cos of 1.0
+print of ("Fixed point: " + (str of fp))
+status is report of fp
+print of ("Observer status: " + status)
+
+# ============================================================
+# Exponential decay — watch observer classify the trajectory
+# ============================================================
+
+print of ""
+print of "--- Exponential Decay ---"
+value is 100.0
+rate is 0.85
+step is 0
+status is "start"
+
+loop while status != "converged":
+    value is value * rate
+    step is step + 1
+    state is observe of value
+    status is report of value
+    if (step % 5) == 0:
+        print of ("Step " + (str of step) + ": value=" + (str of value) + " status=" + status)
+
+print of ("Converged at step " + (str of step) + " with value " + (str of value))
+
+# ============================================================
+# Gradient descent by hand — minimize f(x) = (x - 3)^2
+# ============================================================
+
+print of ""
+print of "--- Gradient Descent: minimize (x-3)^2 ---"
+x is 10.0
+lr is 0.1
+
+loop while not converged:
+    grad is 2 * (x - 3)
+    x is x - lr * grad
+
+print of ("Minimum at x = " + (str of x))
+print of ("f(x) = " + (str of ((x - 3) * (x - 3))))
+print of ("Status: " + (report of x))

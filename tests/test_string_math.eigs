@@ -1,0 +1,77 @@
+# Tests for string and math builtins
+
+# ---- str_upper ----
+assert of [(str_upper of "hello") == "HELLO", "SU1 basic upper"]
+assert of [(str_upper of "") == "", "SU2 empty string"]
+assert of [(str_upper of "ABC") == "ABC", "SU3 already upper"]
+
+# ---- char_at ----
+assert of [(char_at of ["hello", 0]) == "h", "CA1 first char"]
+assert of [(char_at of ["hello", 4]) == "o", "CA2 last char"]
+assert of [(char_at of ["hello", 5]) == "", "CA3 out of range"]
+assert of [(char_at of ["hello", -1]) == "", "CA4 negative index"]
+
+# ---- ends_with ----
+assert of [(ends_with of ["hello.eigs", ".eigs"]) == 1, "EW1 match"]
+assert of [(ends_with of ["hello.eigs", ".py"]) == 0, "EW2 no match"]
+assert of [(ends_with of ["hi", "hello"]) == 0, "EW3 suffix longer"]
+
+# ---- substr ----
+assert of [(substr of ["hello world", 6, 5]) == "world", "SS1 basic"]
+assert of [(substr of ["hello", 0, 2]) == "he", "SS2 from start"]
+assert of [(substr of ["hello", 10, 2]) == "", "SS3 past end"]
+
+# ---- index_of ----
+assert of [(index_of of ["hello world", "world"]) == 6, "IO1 found"]
+assert of [(index_of of ["hello world", "xyz"]) == -1, "IO2 not found"]
+assert of [(index_of of ["hello", "h"]) == 0, "IO3 at start"]
+
+# ---- sin/cos/tan ----
+p is pi of null
+assert of [p > 3.14, "PI1 pi > 3.14"]
+assert of [p < 3.15, "PI2 pi < 3.15"]
+
+s is sin of (p / 2)
+assert of [s > 0.999, "SN1 sin(pi/2) near 1"]
+
+c is cos of 0
+assert of [c > 0.999, "CS1 cos(0) near 1"]
+
+c2 is cos of p
+assert of [c2 < -0.999, "CS2 cos(pi) near -1"]
+
+t is tan of (p / 4)
+assert of [t > 0.999, "TN1 tan(pi/4) near 1"]
+assert of [t < 1.001, "TN2 tan(pi/4) near 1"]
+
+# ---- inverse trig ----
+assert of [(asin of 0) == 0, "AS1 asin(0)"]
+a1 is asin of 1
+assert of [a1 > 1.57, "AS2 asin(1) near pi/2"]
+
+assert of [(acos of 1) == 0, "AC1 acos(1)"]
+
+assert of [(atan of 0) == 0, "AT1 atan(0)"]
+a2 is atan2 of [1, 1]
+assert of [a2 > 0.78, "AT2 atan2(1,1) near pi/4"]
+
+# ---- floor/ceil/round ----
+assert of [(floor of 3.7) == 3, "FL1 floor"]
+assert of [(floor of -2.3) == -3, "FL2 floor negative"]
+assert of [(ceil of 3.2) == 4, "CL1 ceil"]
+assert of [(ceil of -2.7) == -2, "CL2 ceil negative"]
+assert of [(round of 3.5) == 4, "RN1 round up"]
+assert of [(round of 3.4) == 3, "RN2 round down"]
+
+# ---- abs ----
+assert of [(abs of -42) == 42, "AB1 negative"]
+assert of [(abs of 42) == 42, "AB2 positive"]
+assert of [(abs of 0) == 0, "AB3 zero"]
+
+# ---- min/max ----
+assert of [(min of [3, 7]) == 3, "MN1 min"]
+assert of [(min of [7, 3]) == 3, "MN2 min reversed"]
+assert of [(max of [3, 7]) == 7, "MX1 max"]
+assert of [(max of [7, 3]) == 7, "MX2 max reversed"]
+
+print of "All string_math tests passed"

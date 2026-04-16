@@ -1,0 +1,127 @@
+# State Machine — a simple tokenizer for arithmetic expressions
+# Demonstrates: loop while, string state, conditionals, list building
+
+# ---- Character classification ----
+define is_digit as:
+    if n == "0":
+        return 1
+    elif n == "1":
+        return 1
+    elif n == "2":
+        return 1
+    elif n == "3":
+        return 1
+    elif n == "4":
+        return 1
+    elif n == "5":
+        return 1
+    elif n == "6":
+        return 1
+    elif n == "7":
+        return 1
+    elif n == "8":
+        return 1
+    elif n == "9":
+        return 1
+    return 0
+
+define is_operator as:
+    if n == "+":
+        return 1
+    elif n == "-":
+        return 1
+    elif n == "*":
+        return 1
+    elif n == "/":
+        return 1
+    return 0
+
+# ---- Tokenizer state machine ----
+# States: "start", "number", "done"
+# Produces a list of tokens: ["123", "+", "45", "*", "6"]
+
+define tokenize as:
+    input is n
+    tokens is []
+    state is "start"
+    current is ""
+    pos is 0
+    length is len of input
+
+    loop while pos < length:
+        ch is input[pos]
+
+        if state == "start":
+            if (is_digit of ch) == 1:
+                current is ch
+                state is "number"
+            elif (is_operator of ch) == 1:
+                append of [tokens, ch]
+            elif ch == " ":
+                pos is pos
+            else:
+                print of ("Unexpected character: " + ch)
+
+        elif state == "number":
+            if (is_digit of ch) == 1:
+                current is current + ch
+            else:
+                append of [tokens, current]
+                current is ""
+                state is "start"
+                pos is pos - 1
+
+        pos is pos + 1
+
+    # Flush remaining number
+    if current != "":
+        append of [tokens, current]
+
+    return tokens
+
+# ---- Evaluate a flat token list (left to right, no precedence) ----
+define evaluate as:
+    tokens is n
+    if (len of tokens) == 0:
+        return 0
+    result is num of tokens[0]
+    i is 1
+    loop while i < (len of tokens) - 1:
+        op is tokens[i]
+        val is num of tokens[i + 1]
+        if op == "+":
+            result is result + val
+        elif op == "-":
+            result is result - val
+        elif op == "*":
+            result is result * val
+        elif op == "/":
+            if val != 0:
+                result is result / val
+            else:
+                print of "Error: division by zero"
+        i is i + 2
+    return result
+
+# ---- Test it ----
+print of "--- Expression Tokenizer ---"
+
+expr1 is "12 + 34 - 5"
+tokens1 is tokenize of expr1
+print of ("Input:  " + expr1)
+print of ("Tokens: " + (str of tokens1))
+print of ("Result: " + (str of (evaluate of tokens1)))
+
+print of ""
+expr2 is "100 * 3 + 50"
+tokens2 is tokenize of expr2
+print of ("Input:  " + expr2)
+print of ("Tokens: " + (str of tokens2))
+print of ("Result: " + (str of (evaluate of tokens2)))
+
+print of ""
+expr3 is "7"
+tokens3 is tokenize of expr3
+print of ("Input:  " + expr3)
+print of ("Tokens: " + (str of tokens3))
+print of ("Result: " + (str of (evaluate of tokens3)))

@@ -1,0 +1,90 @@
+# Inverse Kinematics — 2D arm with FABRIK solver
+# Demonstrates: iterative constraint satisfaction, geometric reasoning
+
+load_file of "lib/math.eigs"
+
+print of "--- Inverse Kinematics (FABRIK) ---"
+
+# Arm: 3 segments, each 2.0 units long, 4 joints
+seg_lengths is [2.0, 2.0, 2.0]
+num_joints is 4
+
+# Initial pose: straight arm along x-axis
+jx is [0.0, 2.0, 4.0, 6.0]
+jy is [0.0, 0.0, 0.0, 0.0]
+
+# Target position
+tgt_x is 3.0
+tgt_y is 4.0
+
+print of ("Target: (" + (str of tgt_x) + ", " + (str of tgt_y) + ")")
+print of ("Initial end: (" + (str of jx[3]) + ", " + (str of jy[3]) + ")")
+
+# Check reachability
+total_reach is 0.0
+for i in range of (len of seg_lengths):
+    total_reach is total_reach + seg_lengths[i]
+dist_to_tgt is sqrt of (tgt_x * tgt_x + tgt_y * tgt_y)
+if dist_to_tgt > total_reach:
+    print of "Target unreachable — stretching toward it"
+
+# ---- FABRIK iterations ----
+base_x is jx[0]
+base_y is jy[0]
+
+for iteration in range of 20:
+    # Forward pass: set end effector to target, propagate backward
+    set_at of [jx, num_joints - 1, tgt_x]
+    set_at of [jy, num_joints - 1, tgt_y]
+
+    ik_i is num_joints - 2
+    loop while ik_i >= 0:
+        seg is seg_lengths[ik_i]
+        # Constrain: move jx[ik_i] to be exactly seg away from jx[ik_i+1]
+        cd_dx is jx[ik_i] - jx[ik_i + 1]
+        cd_dy is jy[ik_i] - jy[ik_i + 1]
+        cd_dist is sqrt of (cd_dx * cd_dx + cd_dy * cd_dy)
+        if cd_dist < 0.0001:
+            cd_dist is 0.0001
+        cd_ratio is seg / cd_dist
+        set_at of [jx, ik_i, jx[ik_i + 1] + cd_dx * cd_ratio]
+        set_at of [jy, ik_i, jy[ik_i + 1] + cd_dy * cd_ratio]
+        ik_i is ik_i - 1
+
+    # Backward pass: anchor base, propagate forward
+    set_at of [jx, 0, base_x]
+    set_at of [jy, 0, base_y]
+
+    for ik_i in range of (num_joints - 1):
+        seg is seg_lengths[ik_i]
+        cd_dx is jx[ik_i + 1] - jx[ik_i]
+        cd_dy is jy[ik_i + 1] - jy[ik_i]
+        cd_dist is sqrt of (cd_dx * cd_dx + cd_dy * cd_dy)
+        if cd_dist < 0.0001:
+            cd_dist is 0.0001
+        cd_ratio is seg / cd_dist
+        set_at of [jx, ik_i + 1, jx[ik_i] + cd_dx * cd_ratio]
+        set_at of [jy, ik_i + 1, jy[ik_i] + cd_dy * cd_ratio]
+
+    # Check convergence
+    err_dx is jx[num_joints - 1] - tgt_x
+    err_dy is jy[num_joints - 1] - tgt_y
+    err is sqrt of (err_dx * err_dx + err_dy * err_dy)
+
+    if (iteration % 5) == 0:
+        print of ("Iter " + (str of iteration) + ": end=(" + (str of jx[3]) + ", " + (str of jy[3]) + ")  err=" + (str of err))
+
+# ---- Final pose ----
+print of ""
+print of "Final arm pose:"
+for i in range of num_joints:
+    print of ("  joint " + (str of i) + ": (" + (str of jx[i]) + ", " + (str of jy[i]) + ")")
+
+# Verify segment lengths
+print of ""
+print of "Segment length verification:"
+for i in range of (num_joints - 1):
+    v_dx is jx[i + 1] - jx[i]
+    v_dy is jy[i + 1] - jy[i]
+    v_len is sqrt of (v_dx * v_dx + v_dy * v_dy)
+    print of ("  segment " + (str of i) + ": " + (str of v_len) + " (target " + (str of seg_lengths[i]) + ")")

@@ -1,0 +1,70 @@
+# Tests for random, args, path, filesystem builtins
+
+# ---- random ----
+r1 is random of null
+assert of [r1 >= 0, "RD1 random >= 0"]
+assert of [r1 < 1, "RD2 random < 1"]
+
+ri is random_int of [5, 10]
+assert of [ri >= 5, "RI1 random_int >= lo"]
+assert of [ri <= 10, "RI2 random_int <= hi"]
+
+seed_random of 99
+a is random of null
+seed_random of 99
+b is random of null
+assert of [a == b, "RS1 seeded random is deterministic"]
+
+# ---- args ----
+a is args of null
+assert of [(type of a) == "list", "AR1 args returns list"]
+
+# ---- path_join ----
+assert of [(path_join of ["/home", "test"]) == "/home/test", "PJ1 basic join"]
+assert of [(path_join of ["/home/", "/test"]) == "/home/test", "PJ2 strip slashes"]
+assert of [(path_join of ["a", "b"]) == "a/b", "PJ3 relative"]
+
+# ---- path_dir ----
+assert of [(path_dir of "/a/b/c.txt") == "/a/b", "PD1 dir"]
+assert of [(path_dir of "file.txt") == ".", "PD2 no slash"]
+assert of [(path_dir of "/file.txt") == "/", "PD3 root"]
+
+# ---- path_base ----
+assert of [(path_base of "/a/b/c.txt") == "c.txt", "PB1 base"]
+assert of [(path_base of "file.txt") == "file.txt", "PB2 no slash"]
+
+# ---- path_ext ----
+assert of [(path_ext of "test.eigs") == ".eigs", "PE1 ext"]
+assert of [(path_ext of "noext") == "", "PE2 no ext"]
+assert of [(path_ext of "/a/b.tar.gz") == ".gz", "PE3 double ext"]
+
+# ---- mkdir ----
+ok is mkdir of "/tmp/eigen_sys_test_dir"
+assert of [ok == 1, "MK1 mkdir"]
+assert of [(file_exists of "/tmp/eigen_sys_test_dir") == 1, "MK2 dir exists"]
+
+# ---- ls ----
+write_text of ["/tmp/eigen_sys_test_dir/a.txt", "a"]
+write_text of ["/tmp/eigen_sys_test_dir/b.txt", "b"]
+files is ls of "/tmp/eigen_sys_test_dir"
+assert of [(len of files) == 2, "LS1 ls count"]
+
+# ---- getcwd ----
+cwd is getcwd of null
+assert of [(len of cwd) > 0, "GC1 getcwd non-empty"]
+
+# ---- mktemp ----
+tmp is mktemp of null
+assert of [(len of tmp) > 0, "MT1 mktemp non-empty"]
+assert of [(file_exists of tmp) == 1, "MT2 temp file exists"]
+
+# ---- rm ----
+rm of tmp
+assert of [(file_exists of tmp) == 0, "RM1 rm removes file"]
+
+# ---- cleanup ----
+rm of "/tmp/eigen_sys_test_dir/a.txt"
+rm of "/tmp/eigen_sys_test_dir/b.txt"
+exec_capture of ["rmdir", "/tmp/eigen_sys_test_dir"]
+
+print of "All system tests passed"

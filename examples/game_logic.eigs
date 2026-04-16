@@ -1,0 +1,119 @@
+# Game Logic — tic-tac-toe board with AI opponent
+# Demonstrates: 2D board as flat list, game state, strategy, complex conditionals
+
+# Board is a flat list of 9 cells: "X", "O", or " "
+# Layout:  0 | 1 | 2
+#          ---------
+#          3 | 4 | 5
+#          ---------
+#          6 | 7 | 8
+
+define new_board as:
+    return [" ", " ", " ", " ", " ", " ", " ", " ", " "]
+
+define print_board as:
+    b is n
+    row1 is " " + b[0] + " | " + b[1] + " | " + b[2]
+    row2 is " " + b[3] + " | " + b[4] + " | " + b[5]
+    row3 is " " + b[6] + " | " + b[7] + " | " + b[8]
+    print of row1
+    print of "-----------"
+    print of row2
+    print of "-----------"
+    print of row3
+
+define place as:
+    board is n[0]
+    pos is n[1]
+    mark is n[2]
+    if board[pos] != " ":
+        return 0
+    set_at of [board, pos, mark]
+    return 1
+
+# ---- Win detection ----
+define check_line as:
+    board is n[0]
+    a is n[1]
+    b is n[2]
+    c is n[3]
+    if board[a] == " ":
+        return " "
+    if board[a] == board[b]:
+        if board[b] == board[c]:
+            return board[a]
+    return " "
+
+define check_winner as:
+    b is n
+    lines is [[0,1,2], [3,4,5], [6,7,8], [0,3,6], [1,4,7], [2,5,8], [0,4,8], [2,4,6]]
+    for i in range of (len of lines):
+        line is lines[i]
+        w is check_line of [b, line[0], line[1], line[2]]
+        if w != " ":
+            return w
+    return " "
+
+define board_full as:
+    b is n
+    for i in range of 9:
+        if b[i] == " ":
+            return 0
+    return 1
+
+# ---- Simple AI: take center, then corners, then sides ----
+define ai_move as:
+    b is n
+    # Try center
+    if b[4] == " ":
+        return 4
+    # Try corners
+    corners is [0, 2, 6, 8]
+    for i in range of 4:
+        if b[corners[i]] == " ":
+            return corners[i]
+    # Try sides
+    sides is [1, 3, 5, 7]
+    for i in range of 4:
+        if b[sides[i]] == " ":
+            return sides[i]
+    return 0
+
+# ---- Play a game: X uses a fixed sequence, O uses AI ----
+print of "--- Tic-Tac-Toe ---"
+print of ""
+
+board is new_board of null
+x_moves is [0, 1, 5, 6, 8]
+x_idx is 0
+turn is "X"
+game_over is 0
+move_count is 0
+
+loop while game_over == 0:
+    if turn == "X":
+        pos is x_moves[x_idx]
+        x_idx is x_idx + 1
+    else:
+        pos is ai_move of board
+
+    ok is place of [board, pos, turn]
+    move_count is move_count + 1
+    print of (turn + " plays position " + (str of pos))
+    print_board of board
+    print of ""
+
+    winner is check_winner of board
+    if winner != " ":
+        print of (winner + " wins!")
+        game_over is 1
+    elif (board_full of board) == 1:
+        print of "Draw!"
+        game_over is 1
+    else:
+        if turn == "X":
+            turn is "O"
+        else:
+            turn is "X"
+
+print of ("Game over in " + (str of move_count) + " moves")

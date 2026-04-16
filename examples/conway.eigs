@@ -1,0 +1,166 @@
+# Conway's Game of Life — cellular automata
+# Demonstrates: 2D grid simulation, neighbor counting, generation stepping
+
+# Grid is [width, height, cells] where cells is a flat list of 0/1
+
+define life_new as:
+    w is n[0]
+    h is n[1]
+    cells is []
+    for i in range of (w * h):
+        append of [cells, 0]
+    return [w, h, cells]
+
+define life_set as:
+    grid is n[0]
+    x is n[1]
+    y is n[2]
+    val is n[3]
+    w is grid[0]
+    set_at of [grid[2], y * w + x, val]
+
+define life_get as:
+    grid is n[0]
+    x is n[1]
+    y is n[2]
+    w is grid[0]
+    h is grid[1]
+    # Wrap around (toroidal)
+    wx is x
+    wy is y
+    if wx < 0:
+        wx is wx + w
+    if wx >= w:
+        wx is wx - w
+    if wy < 0:
+        wy is wy + h
+    if wy >= h:
+        wy is wy - h
+    return grid[2][wy * w + wx]
+
+define count_neighbors as:
+    grid is n[0]
+    x is n[1]
+    y is n[2]
+    count is 0
+    count is count + (life_get of [grid, x - 1, y - 1])
+    count is count + (life_get of [grid, x, y - 1])
+    count is count + (life_get of [grid, x + 1, y - 1])
+    count is count + (life_get of [grid, x - 1, y])
+    count is count + (life_get of [grid, x + 1, y])
+    count is count + (life_get of [grid, x - 1, y + 1])
+    count is count + (life_get of [grid, x, y + 1])
+    count is count + (life_get of [grid, x + 1, y + 1])
+    return count
+
+define life_step as:
+    grid is n
+    w is grid[0]
+    h is grid[1]
+    new_cells is []
+    for y in range of h:
+        for x in range of w:
+            alive is life_get of [grid, x, y]
+            neighbors is count_neighbors of [grid, x, y]
+            # Rules: born if 3 neighbors, survive if 2 or 3
+            if alive == 1:
+                if neighbors == 2:
+                    append of [new_cells, 1]
+                elif neighbors == 3:
+                    append of [new_cells, 1]
+                else:
+                    append of [new_cells, 0]
+            else:
+                if neighbors == 3:
+                    append of [new_cells, 1]
+                else:
+                    append of [new_cells, 0]
+    return [w, h, new_cells]
+
+define life_print as:
+    grid is n
+    w is grid[0]
+    h is grid[1]
+    for y in range of h:
+        row is ""
+        for x in range of w:
+            if grid[2][y * w + x] == 1:
+                row is row + "#"
+            else:
+                row is row + "."
+        print of row
+
+define life_count as:
+    grid is n
+    total is 0
+    for i in range of (len of grid[2]):
+        total is total + grid[2][i]
+    return total
+
+# ============================================================
+# Pattern 1: Glider
+# ============================================================
+print of "--- Conway's Game of Life ---"
+print of ""
+print of "=== Glider ==="
+
+w is 10
+h is 10
+grid is life_new of [w, h]
+
+# Glider pattern at (1,1)
+#  .#.
+#  ..#
+#  ###
+life_set of [grid, 2, 1, 1]
+life_set of [grid, 3, 2, 1]
+life_set of [grid, 1, 3, 1]
+life_set of [grid, 2, 3, 1]
+life_set of [grid, 3, 3, 1]
+
+for gen in range of 20:
+    if (gen % 4) == 0:
+        print of ("Generation " + (str of gen) + " (alive: " + (str of (life_count of grid)) + "):")
+        life_print of grid
+        print of ""
+    grid is life_step of grid
+
+# ============================================================
+# Pattern 2: Blinker (period 2 oscillator)
+# ============================================================
+print of "=== Blinker ==="
+
+grid2 is life_new of [5, 5]
+life_set of [grid2, 1, 2, 1]
+life_set of [grid2, 2, 2, 1]
+life_set of [grid2, 3, 2, 1]
+
+for gen in range of 4:
+    print of ("Generation " + (str of gen) + ":")
+    life_print of grid2
+    print of ""
+    grid2 is life_step of grid2
+
+# ============================================================
+# Pattern 3: Block (still life)
+# ============================================================
+print of "=== Block (still life) ==="
+
+grid3 is life_new of [4, 4]
+life_set of [grid3, 1, 1, 1]
+life_set of [grid3, 2, 1, 1]
+life_set of [grid3, 1, 2, 1]
+life_set of [grid3, 2, 2, 1]
+
+print of "Generation 0:"
+life_print of grid3
+grid3 is life_step of grid3
+print of "Generation 1:"
+life_print of grid3
+
+same is 1
+grid3b is life_step of grid3
+for i in range of (len of grid3[2]):
+    if grid3[2][i] != grid3b[2][i]:
+        same is 0
+print of ("Still life verified: " + (str of same))

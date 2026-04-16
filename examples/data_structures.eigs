@@ -1,0 +1,183 @@
+# Data Structures — linked list and stack using lists
+# Demonstrates: nested lists as nodes, loops, building complex structures
+
+# ============================================================
+# Linked List — each node is [value, next] where next is a node or []
+# ============================================================
+
+define make_node as:
+    return [n, []]
+
+define prepend as:
+    return [n[0], n[1]]
+
+define list_length as:
+    node is n
+    count is 0
+    loop while (len of node) > 0:
+        count is count + 1
+        node is node[1]
+    return count
+
+define list_to_array as:
+    node is n
+    result is []
+    loop while (len of node) > 0:
+        append of [result, node[0]]
+        node is node[1]
+    return result
+
+define list_find as:
+    node is n[0]
+    target is n[1]
+    loop while (len of node) > 0:
+        if node[0] == target:
+            return 1
+        node is node[1]
+    return 0
+
+# Build a linked list: 5 -> 4 -> 3 -> 2 -> 1
+print of "--- Linked List ---"
+ll is make_node of 1
+ll is prepend of [2, ll]
+ll is prepend of [3, ll]
+ll is prepend of [4, ll]
+ll is prepend of [5, ll]
+
+print of ("Length: " + (str of (list_length of ll)))
+print of ("Contents: " + (str of (list_to_array of ll)))
+print of ("Find 3: " + (str of (list_find of [ll, 3])))
+print of ("Find 9: " + (str of (list_find of [ll, 9])))
+
+# Reverse a linked list
+define list_reverse as:
+    node is n
+    reversed is []
+    loop while (len of node) > 0:
+        reversed is [node[0], reversed]
+        node is node[1]
+    return reversed
+
+print of ("Reversed: " + (str of (list_to_array of (list_reverse of ll))))
+
+# ============================================================
+# Stack — push/pop using a list
+# ============================================================
+
+print of ""
+print of "--- Stack ---"
+
+stack is []
+
+define push as:
+    append of [n[0], n[1]]
+    return n[0]
+
+define pop as:
+    s is n
+    size is len of s
+    if size == 0:
+        print of "Error: stack empty"
+        return []
+    top is s[size - 1]
+    # Remove last element by rebuilding
+    new_stack is []
+    for i in range of (size - 1):
+        append of [new_stack, s[i]]
+    return [top, new_stack]
+
+stack is push of [stack, 10]
+stack is push of [stack, 20]
+stack is push of [stack, 30]
+print of ("Stack: " + (str of stack))
+
+result is pop of stack
+print of ("Popped: " + (str of result[0]))
+stack is result[1]
+print of ("Stack: " + (str of stack))
+
+result is pop of stack
+print of ("Popped: " + (str of result[0]))
+stack is result[1]
+print of ("Stack: " + (str of stack))
+
+# ============================================================
+# Sorted insert — maintain a sorted list
+# ============================================================
+
+print of ""
+print of "--- Sorted List ---"
+
+define sorted_insert as:
+    list is n[0]
+    value is n[1]
+    result is []
+    inserted is 0
+    for i in range of (len of list):
+        if inserted == 0:
+            if value <= list[i]:
+                append of [result, value]
+                inserted is 1
+        append of [result, list[i]]
+    if inserted == 0:
+        append of [result, value]
+    return result
+
+sorted is []
+values is [5, 2, 8, 1, 9, 3, 7, 4, 6]
+for i in range of (len of values):
+    sorted is sorted_insert of [sorted, values[i]]
+    print of ("Insert " + (str of values[i]) + ": " + (str of sorted))
+
+# ============================================================
+# Queue — using two lists (enqueue/dequeue)
+# ============================================================
+
+print of ""
+print of "--- Queue ---"
+
+# Queue is [inbox, outbox] — enqueue to inbox, dequeue from outbox
+define enqueue as:
+    queue is n[0]
+    value is n[1]
+    inbox is queue[0]
+    append of [inbox, value]
+    return [inbox, queue[1]]
+
+define dequeue as:
+    queue is n
+    inbox is queue[0]
+    outbox is queue[1]
+    # If outbox is empty, reverse inbox into outbox
+    if (len of outbox) == 0:
+        i is (len of inbox) - 1
+        loop while i >= 0:
+            append of [outbox, inbox[i]]
+            i is i - 1
+        inbox is []
+    if (len of outbox) == 0:
+        print of "Error: queue empty"
+        return [0, [[], []]]
+    top is outbox[(len of outbox) - 1]
+    new_outbox is []
+    for i in range of ((len of outbox) - 1):
+        append of [new_outbox, outbox[i]]
+    return [top, [inbox, new_outbox]]
+
+queue is [[], []]
+queue is enqueue of [queue, "first"]
+queue is enqueue of [queue, "second"]
+queue is enqueue of [queue, "third"]
+print of ("Queue inbox: " + (str of queue[0]))
+
+result is dequeue of queue
+print of ("Dequeued: " + result[0])
+queue is result[1]
+
+result is dequeue of queue
+print of ("Dequeued: " + result[0])
+queue is result[1]
+
+queue is enqueue of [queue, "fourth"]
+result is dequeue of queue
+print of ("Dequeued: " + result[0])

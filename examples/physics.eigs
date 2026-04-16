@@ -1,0 +1,66 @@
+# Rigid Body Collision — pure constraint satisfaction
+# Demonstrates: position-based dynamics, iterative constraint solving
+
+# 2D circles: each body is [x, y, vx, vy, radius, mass]
+
+print of "--- Rigid Body Collision ---"
+
+# Two circles moving toward each other
+a is [0.0, 0.0, 2.0, 0.0, 1.0, 1.0]
+b is [3.0, 0.5, -1.0, 0.0, 1.0, 1.0]
+dt is 0.1
+
+for step in range of 20:
+    # Save old positions
+    old_ax is a[0]
+    old_ay is a[1]
+    old_bx is b[0]
+    old_by is b[1]
+
+    # Predict: advance position by velocity
+    a is [a[0] + a[2] * dt, a[1] + a[3] * dt, a[2], a[3], a[4], a[5]]
+    b is [b[0] + b[2] * dt, b[1] + b[3] * dt, b[2], b[3], b[4], b[5]]
+
+    # Solve overlap constraints (iterate for stability)
+    for iter in range of 4:
+        c_dx is b[0] - a[0]
+        c_dy is b[1] - a[1]
+        c_d2 is c_dx * c_dx + c_dy * c_dy
+        c_dist is sqrt of (c_d2)
+        if c_dist < 0.0001:
+            c_dist is 0.0001
+        min_dist is a[4] + b[4]
+        overlap is min_dist - c_dist
+        if overlap > 0:
+            # Normalize collision axis
+            c_nx is c_dx / c_dist
+            c_ny is c_dy / c_dist
+            # Inverse mass weighting
+            total_m is a[5] + b[5]
+            wa is b[5] / total_m
+            wb is a[5] / total_m
+            # Push apart
+            a is [a[0] - c_nx * overlap * wa, a[1] - c_ny * overlap * wa, a[2], a[3], a[4], a[5]]
+            b is [b[0] + c_nx * overlap * wb, b[1] + c_ny * overlap * wb, b[2], b[3], b[4], b[5]]
+
+    # Derive velocity from corrected positions
+    new_vax is (a[0] - old_ax) / dt
+    new_vay is (a[1] - old_ay) / dt
+    new_vbx is (b[0] - old_bx) / dt
+    new_vby is (b[1] - old_by) / dt
+    a is [a[0], a[1], new_vax, new_vay, a[4], a[5]]
+    b is [b[0], b[1], new_vbx, new_vby, b[4], b[5]]
+
+    if (step % 5) == 0:
+        # Check overlap
+        chk_dx is b[0] - a[0]
+        chk_dy is b[1] - a[1]
+        chk_d is sqrt of (chk_dx * chk_dx + chk_dy * chk_dy)
+        chk_overlap is 0
+        if chk_d < (a[4] + b[4]):
+            chk_overlap is 1
+        print of ("t=" + (str of (step * dt)) + "  a=(" + (str of a[0]) + "," + (str of a[1]) + ")  b=(" + (str of b[0]) + "," + (str of b[1]) + ")  overlap=" + (str of chk_overlap))
+
+print of ""
+print of ("Final a vel: (" + (str of a[2]) + ", " + (str of a[3]) + ")")
+print of ("Final b vel: (" + (str of b[2]) + ", " + (str of b[3]) + ")")

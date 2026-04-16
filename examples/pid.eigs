@@ -1,0 +1,137 @@
+# PID Controller — classic feedback control loop
+# Demonstrates: error tracking, integral/derivative terms, observer convergence
+
+# PID state: [kp, ki, kd, integral, prev_error]
+define pid_new as:
+    kp is n[0]
+    ki is n[1]
+    kd is n[2]
+    return [kp, ki, kd, 0.0, 0.0]
+
+define pid_update as:
+    state is n[0]
+    error is n[1]
+    dt is n[2]
+    kp is state[0]
+    ki is state[1]
+    kd is state[2]
+    integral is state[3] + error * dt
+    derivative is (error - state[4]) / dt
+    output is kp * error + ki * integral + kd * derivative
+    new_state is [kp, ki, kd, integral, error]
+    return [output, new_state]
+
+# ---- Plant: simple mass with friction ----
+# position, velocity, mass, friction
+define plant_step as:
+    pos is n[0]
+    vel is n[1]
+    force is n[2]
+    mass is n[3]
+    friction is n[4]
+    dt is n[5]
+    accel is (force - friction * vel) / mass
+    vel is vel + accel * dt
+    pos is pos + vel * dt
+    return [pos, vel]
+
+# ============================================================
+# Scenario 1: Position control — move to target
+# ============================================================
+print of "--- PID Position Control ---"
+
+target is 10.0
+pos is 0.0
+vel is 0.0
+mass is 1.0
+friction is 0.3
+dt is 0.05
+
+pid is pid_new of [2.0, 0.5, 1.0]
+
+for step in range of 100:
+    error is target - pos
+    result is pid_update of [pid, error, dt]
+    force is result[0]
+    pid is result[1]
+
+    plant is plant_step of [pos, vel, force, mass, friction, dt]
+    pos is plant[0]
+    vel is plant[1]
+
+    if (step % 10) == 0:
+        print of ("t=" + (str of (step * dt)) + "  pos=" + (str of pos) + "  vel=" + (str of vel) + "  err=" + (str of error))
+
+print of ("Final: pos=" + (str of pos) + " target=" + (str of target))
+
+# ============================================================
+# Scenario 2: Temperature control — track setpoint with disturbance
+# ============================================================
+print of ""
+print of "--- PID Temperature Control ---"
+
+setpoint is 72.0
+temp is 60.0
+pid2 is pid_new of [1.5, 0.3, 0.8]
+dt is 0.1
+
+for step in range of 80:
+    error is setpoint - temp
+    result is pid_update of [pid2, error, dt]
+    heater is result[0]
+    pid2 is result[1]
+
+    # Clamp heater to [0, 100]
+    if heater < 0:
+        heater is 0
+    if heater > 100:
+        heater is 100
+
+    # Thermal model: temp drifts toward ambient (50) and heater adds energy
+    ambient is 50.0
+    temp is temp + (heater * 0.05 - (temp - ambient) * 0.02) * dt
+
+    # Add disturbance at step 40 (window opens)
+    if step == 40:
+        temp is temp - 5.0
+        print of "  ** disturbance: -5 degrees **"
+
+    if (step % 10) == 0:
+        print of ("t=" + (str of (step * dt)) + "  temp=" + (str of temp) + "  heater=" + (str of heater) + "  err=" + (str of error))
+
+print of ("Final temp: " + (str of temp))
+
+# ============================================================
+# Scenario 3: Tuning comparison — overdamped vs underdamped
+# ============================================================
+print of ""
+print of "--- Tuning Comparison ---"
+
+configs is [[5.0, 0.1, 0.5], [1.0, 0.1, 3.0], [2.0, 0.5, 1.0]]
+labels is ["aggressive", "overdamped", "balanced"]
+
+for c in range of (len of configs):
+    pid3 is pid_new of configs[c]
+    pos is 0.0
+    vel is 0.0
+    max_overshoot is 0.0
+    settle_step is 0
+
+    for step in range of 100:
+        error is 10.0 - pos
+        result is pid_update of [pid3, error, 0.05]
+        force is result[0]
+        pid3 is result[1]
+        plant is plant_step of [pos, vel, force, 1.0, 0.3, 0.05]
+        pos is plant[0]
+        vel is plant[1]
+        overshoot is pos - 10.0
+        if overshoot > max_overshoot:
+            max_overshoot is overshoot
+        diff is pos - 10.0
+        if diff < 0:
+            diff is 0 - diff
+        if diff > 0.1:
+            settle_step is step
+
+    print of (labels[c] + ": final=" + (str of pos) + " overshoot=" + (str of max_overshoot) + " settle=" + (str of (settle_step * 0.05)) + "s")

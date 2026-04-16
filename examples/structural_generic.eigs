@@ -1,0 +1,77 @@
+# Structural drill — generic forms
+# Minimal valid EigenScript statements. One construct per idea.
+# Every line parses on its own. No side effects beyond print.
+
+# ---- Assignment ----
+x is 1
+y is 2
+z is 42
+name is "alice"
+result is 0
+total is 100
+
+# ---- Arithmetic ----
+a is 1 + 2
+b is 5 - 3
+c is 4 * 7
+d is 10 / 2
+e is 10 % 3
+f is (1 + 2) * 3
+
+# ---- Comparison ----
+g is x > 0
+h is x < 10
+k is x == 1
+m is x != 2
+
+# ---- String ----
+greeting is "hello"
+msg is greeting + " world"
+
+# ---- Lists ----
+nums is [1, 2, 3]
+names is ["alice", "bob"]
+empty is []
+nested is [[1, 2], [3, 4]]
+
+# ---- Index ----
+first is nums[0]
+second is nums[1]
+last is nums[len of nums - 1]
+
+# ---- Function calls ----
+print of "hello"
+print of x
+print of (len of nums)
+print of (str of 42)
+
+# ---- Simple conditionals ----
+if x > 0:
+    print of "positive"
+
+if x == 1:
+    y is 10
+
+if x > 0:
+    print of "yes"
+else:
+    print of "no"
+
+# ---- For loop ----
+for i in range of 10:
+    print of i
+
+for i in range of (len of nums):
+    print of nums[i]
+
+# ---- While loop ----
+counter is 0
+loop while counter < 5:
+    counter is counter + 1
+
+# ---- Combining patterns ----
+sum is 0
+for i in range of 10:
+    sum is sum + i
+
+print of sum
