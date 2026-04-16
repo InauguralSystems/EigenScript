@@ -1506,12 +1506,10 @@ Value* eval_node(ASTNode *node, Env *env) {
                 /* Multi-param: unpack list into named params */
                 for (int pi = 0; pi < left_val->data.fn.param_count && pi < right_val->data.list.count; pi++)
                     env_set_local(call_env, left_val->data.fn.params[pi], right_val->data.list.items[pi]);
-            } else if (left_val->data.fn.param_count == 1) {
-                /* Single param: bind to param name */
+            } else {
+                /* Single param: bind to param name (default "n" for classic style) */
                 env_set_local(call_env, left_val->data.fn.params[0], right_val);
             }
-            /* Always bind "n" for backward compatibility */
-            env_set_local(call_env, "n", right_val);
 
             g_returning = 0;
             g_return_val = NULL;
@@ -3574,10 +3572,9 @@ static Value* call_eigs_fn(Value *fn, Value *arg) {
     if (fn->data.fn.param_count > 1 && arg && arg->type == VAL_LIST) {
         for (int pi = 0; pi < fn->data.fn.param_count && pi < arg->data.list.count; pi++)
             env_set_local(call_env, fn->data.fn.params[pi], arg->data.list.items[pi]);
-    } else if (fn->data.fn.param_count == 1) {
+    } else {
         env_set_local(call_env, fn->data.fn.params[0], arg);
     }
-    env_set_local(call_env, "n", arg);
     g_returning = 0;
     g_return_val = NULL;
     Value *result = make_null();

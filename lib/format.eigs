@@ -13,9 +13,7 @@
 
 # ---- fmt_num: format number to fixed decimal places ----
 # fmt_num of [value, decimals] -> string
-define fmt_num as:
-    value is n[0]
-    decimals is n[1]
+define fmt_num(value, decimals) as:
     if decimals == 0:
         return str of (round of value)
     factor is 1
@@ -33,18 +31,13 @@ define fmt_num as:
 
 # ---- fmt_percent: format as percentage ----
 # fmt_percent of [value, decimals] -> string
-define fmt_percent as:
-    value is n[0]
-    decimals is n[1]
+define fmt_percent(value, decimals) as:
     pct is value * 100.0
     return (fmt_num of [pct, decimals]) + "%"
 
 # ---- fmt_bar: text progress bar ----
 # fmt_bar of [value, max_val, width] -> string
-define fmt_bar as:
-    value is n[0]
-    max_val is n[1]
-    width is n[2]
+define fmt_bar(value, max_val, width) as:
     if max_val <= 0:
         max_val is 1
     ratio is value / max_val
@@ -63,9 +56,8 @@ define fmt_bar as:
 
 # ---- fmt_padded: right-align value in a field ----
 # fmt_padded of [value, width] -> string
-define fmt_padded as:
-    s is str of n[0]
-    width is n[1]
+define fmt_padded(value, width) as:
+    s is str of value
     loop while (len of s) < width:
         s is " " + s
     return s
@@ -73,9 +65,7 @@ define fmt_padded as:
 # ---- fmt_table: print aligned table ----
 # fmt_table of [headers, rows] -> string
 # headers is a list of strings, rows is a list of lists
-define fmt_table as:
-    headers is n[0]
-    rows is n[1]
+define fmt_table(headers, rows) as:
     ncols is len of headers
     widths is []
     for i in range of ncols:

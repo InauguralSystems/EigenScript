@@ -14,41 +14,33 @@
 #   json_pretty of json_str                 # indented output
 
 # ---- json_get: extract a top-level value by key ----
-define json_get as:
-    json_str is n[0]
-    key is n[1]
+define json_get(json_str, key) as:
     return json_path of [json_str, key]
 
 # ---- json_get_path: extract a nested value by dot path ----
-define json_get_path as:
-    json_str is n[0]
-    path is n[1]
+define json_get_path(json_str, path) as:
     return json_path of [json_str, path]
 
 # ---- json_has: check if top-level key exists ----
 # Returns 1 if key exists and value is not null, 0 otherwise
-define json_has as:
-    json_str is n[0]
-    key is n[1]
+define json_has(json_str, key) as:
     val is json_path of [json_str, key]
     if (type of val) == "null":
         return 0
     return 1
 
 # ---- json_from_pairs: convert [[k,v], ...] to JSON string ----
-define json_from_pairs as:
+define json_from_pairs(pairs) as:
     flat is []
-    for i in range of (len of n):
-        pair is n[i]
+    for i in range of (len of pairs):
+        pair is pairs[i]
         append of [flat, pair[0]]
         append of [flat, pair[1]]
     return json_build of flat
 
 # ---- json_merge: merge two JSON objects (b overwrites a) ----
 # Simple merge using re-encoding. Works for flat objects.
-define json_merge as:
-    a is n[0]
-    b is n[1]
+define json_merge(a, b) as:
     obj_a is json_decode of a
     obj_b is json_decode of b
     merged is []
@@ -60,8 +52,8 @@ define json_merge as:
 
 # ---- json_pretty: simple indented JSON output ----
 # Produces readable output for printing
-define json_pretty as:
-    s is n
+define json_pretty(x) as:
+    s is x
     if (type of s) != "str":
         s is json_encode of s
     result is ""

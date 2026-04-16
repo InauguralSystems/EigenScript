@@ -13,17 +13,15 @@
 #   slurp of "path"                         # read_text alias with error check
 
 # ---- read_lines: read file into list of lines ----
-define read_lines as:
-    text is read_text of n
+define read_lines(path) as:
+    text is read_text of path
     if text == "":
         return []
     return split of [text, "\n"]
 
 # ---- write_lines: write list of lines to file ----
 # write_lines of [path, lines]
-define write_lines as:
-    path is n[0]
-    lines is n[1]
+define write_lines(path, lines) as:
     load_file of "lib/string.eigs"
     text is join of [lines, "\n"]
     return write_text of [path, text]
@@ -31,8 +29,8 @@ define write_lines as:
 # ---- read_csv: parse CSV file into list of lists ----
 # read_csv of "path.csv" -> [[col1, col2, ...], ...]
 # Simple CSV: no quoting, comma-delimited
-define read_csv as:
-    text is read_text of n
+define read_csv(path) as:
+    text is read_text of path
     if text == "":
         return []
     lines is split of [text, "\n"]
@@ -49,9 +47,7 @@ define read_csv as:
 
 # ---- write_csv: write list of lists as CSV ----
 # write_csv of ["path.csv", rows]
-define write_csv as:
-    path is n[0]
-    rows is n[1]
+define write_csv(path, rows) as:
     lines is []
     for i in range of (len of rows):
         row is rows[i]
@@ -73,15 +69,13 @@ define write_csv as:
 
 # ---- file_copy: copy contents of one file to another ----
 # file_copy of [src_path, dst_path]
-define file_copy as:
-    src is n[0]
-    dst is n[1]
+define file_copy(src, dst) as:
     text is read_text of src
     return write_text of [dst, text]
 
 # ---- slurp: read file with existence check ----
 # slurp of "path" -> string (exits with error if file not found)
-define slurp as:
-    if (file_exists of n) == 0:
-        assert of [0, "slurp: file not found: " + n]
-    return read_text of n
+define slurp(path) as:
+    if (file_exists of path) == 0:
+        assert of [0, "slurp: file not found: " + path]
+    return read_text of path

@@ -29,12 +29,10 @@
 # Queue (FIFO)
 # ============================================================
 
-define queue_new as:
+define queue_new(x) as:
     return []
 
-define enqueue as:
-    q is n[0]
-    item is n[1]
+define enqueue(q, item) as:
     result is []
     for i in range of (len of q):
         append of [result, q[i]]
@@ -42,36 +40,34 @@ define enqueue as:
     return result
 
 # dequeue of q -> [item, remaining_queue]
-define dequeue as:
-    if (len of n) == 0:
+define dequeue(q) as:
+    if (len of q) == 0:
         return [null, []]
-    item is n[0]
+    item is q[0]
     rest is []
-    for i in range of ((len of n) - 1):
-        append of [rest, n[i + 1]]
+    for i in range of ((len of q) - 1):
+        append of [rest, q[i + 1]]
     return [item, rest]
 
-define peek as:
-    if (len of n) == 0:
+define peek(q) as:
+    if (len of q) == 0:
         return null
-    return n[0]
+    return q[0]
 
-define queue_size as:
-    return len of n
+define queue_size(q) as:
+    return len of q
 
-define queue_empty as:
-    return (len of n) == 0
+define queue_empty(q) as:
+    return (len of q) == 0
 
 # ============================================================
 # Stack (LIFO)
 # ============================================================
 
-define stack_new as:
+define stack_new(x) as:
     return []
 
-define push as:
-    s is n[0]
-    item is n[1]
+define push(s, item) as:
     result is []
     for i in range of (len of s):
         append of [result, s[i]]
@@ -79,39 +75,36 @@ define push as:
     return result
 
 # pop of stack -> [item, remaining_stack]
-define pop as:
-    if (len of n) == 0:
+define pop(s) as:
+    if (len of s) == 0:
         return [null, []]
-    item is n[(len of n) - 1]
+    item is s[(len of s) - 1]
     rest is []
-    for i in range of ((len of n) - 1):
-        append of [rest, n[i]]
+    for i in range of ((len of s) - 1):
+        append of [rest, s[i]]
     return [item, rest]
 
-define stack_peek as:
-    if (len of n) == 0:
+define stack_peek(s) as:
+    if (len of s) == 0:
         return null
-    return n[(len of n) - 1]
+    return s[(len of s) - 1]
 
-define stack_size as:
-    return len of n
+define stack_size(s) as:
+    return len of s
 
-define stack_empty as:
-    return (len of n) == 0
+define stack_empty(s) as:
+    return (len of s) == 0
 
 # ============================================================
 # Priority Queue (sorted list, min-first)
 # ============================================================
 # Entries are [priority, item]. Sorted ascending by priority.
 
-define pq_new as:
+define pq_new(x) as:
     return []
 
 # pq_push of [pq, priority, item] -> new pq
-define pq_push as:
-    pq is n[0]
-    pri is n[1]
-    item is n[2]
+define pq_push(pq, pri, item) as:
     entry is [pri, item]
     result is []
     inserted is 0
@@ -126,23 +119,23 @@ define pq_push as:
     return result
 
 # pq_pop of pq -> [item, remaining_pq]
-define pq_pop as:
-    if (len of n) == 0:
+define pq_pop(pq) as:
+    if (len of pq) == 0:
         return [null, []]
-    item is n[0][1]
+    item is pq[0][1]
     rest is []
-    for i in range of ((len of n) - 1):
-        append of [rest, n[i + 1]]
+    for i in range of ((len of pq) - 1):
+        append of [rest, pq[i + 1]]
     return [item, rest]
 
 # pq_peek of pq -> item with lowest priority (or null)
-define pq_peek as:
-    if (len of n) == 0:
+define pq_peek(pq) as:
+    if (len of pq) == 0:
         return null
-    return n[0][1]
+    return pq[0][1]
 
-define pq_size as:
-    return len of n
+define pq_size(pq) as:
+    return len of pq
 
-define pq_empty as:
-    return (len of n) == 0
+define pq_empty(pq) as:
+    return (len of pq) == 0

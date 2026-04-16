@@ -21,38 +21,36 @@ _log_min_level is 1
 # ---- Level numbers ----
 # debug=0, info=1, warn=2, error=3, silent=4
 
-define _log_level_num as:
-    if n == "debug":
+define _log_level_num(name) as:
+    if name == "debug":
         return 0
-    if n == "info":
+    if name == "info":
         return 1
-    if n == "warn":
+    if name == "warn":
         return 2
-    if n == "error":
+    if name == "error":
         return 3
-    if n == "silent":
+    if name == "silent":
         return 4
     return 1
 
-define _log_level_tag as:
-    if n == 0:
+define _log_level_tag(level) as:
+    if level == 0:
         return "DEBUG"
-    if n == 1:
+    if level == 1:
         return "INFO"
-    if n == 2:
+    if level == 2:
         return "WARN"
-    if n == 3:
+    if level == 3:
         return "ERROR"
     return "LOG"
 
 # ---- log_level: set minimum log level ----
-define log_level as:
-    _log_min_level is _log_level_num of n
+define log_level(name) as:
+    _log_min_level is _log_level_num of name
 
 # ---- _log_emit: internal log printer ----
-define _log_emit as:
-    level is n[0]
-    msg is n[1]
+define _log_emit(level, msg) as:
     if level >= _log_min_level:
         tag is _log_level_tag of level
         ts is exec_capture of ["date", "+%H:%M:%S"]
@@ -61,20 +59,20 @@ define _log_emit as:
 
 # ---- Public log functions ----
 
-define log_debug as:
-    _log_emit of [0, n]
+define log_debug(msg) as:
+    _log_emit of [0, msg]
 
-define log_info as:
-    _log_emit of [1, n]
+define log_info(msg) as:
+    _log_emit of [1, msg]
 
-define log_warn as:
-    _log_emit of [2, n]
+define log_warn(msg) as:
+    _log_emit of [2, msg]
 
-define log_error as:
-    _log_emit of [3, n]
+define log_error(msg) as:
+    _log_emit of [3, msg]
 
 # ---- log_msg: log with named level ----
 # log_msg of ["warn", "something happened"]
-define log_msg as:
-    level is _log_level_num of n[0]
-    _log_emit of [level, n[1]]
+define log_msg(level_name, msg) as:
+    level is _log_level_num of level_name
+    _log_emit of [level, msg]

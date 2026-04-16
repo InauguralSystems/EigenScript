@@ -18,8 +18,7 @@
 _auth_token is ""
 
 # ---- Login: check password, generate token ----
-define auth_login as:
-    password is n
+define auth_login(password) as:
     admin_pw is env_get of "ADMIN_PASSWORD"
     if admin_pw == "":
         return json_build of ["error", "ADMIN_PASSWORD not set"]
@@ -29,7 +28,7 @@ define auth_login as:
     return json_build of ["status", "ok", "token", _auth_token]
 
 # ---- Check: validate bearer token from request headers ----
-define auth_check as:
+define auth_check(x) as:
     if _auth_token == "":
         return json_build of ["status", "error", "error", "not logged in"]
     headers is http_request_headers of null
@@ -39,17 +38,17 @@ define auth_check as:
     return json_build of ["status", "error", "error", "invalid token"]
 
 # ---- Logout: clear token ----
-define auth_logout as:
+define auth_logout(x) as:
     _auth_token is ""
     return json_build of ["status", "ok"]
 
 # ---- Get current token (for session check) ----
-define auth_get_token as:
+define auth_get_token(x) as:
     return _auth_token
 
 # ---- require_auth: called by HTTP handler for authed routes ----
 # Returns "" if auth is valid, or an error JSON string if not.
-define require_auth as:
+define require_auth(x) as:
     if _auth_token == "":
         return json_build of ["error", "not authenticated"]
     headers is http_request_headers of null

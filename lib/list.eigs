@@ -14,9 +14,7 @@
 
 # ---- map: apply fn to each element, return new list ----
 # map of [list, fn] -> list
-define map as:
-    items is n[0]
-    fn is n[1]
+define map(items, fn) as:
     result is []
     for i in range of (len of items):
         append of [result, fn of items[i]]
@@ -24,9 +22,7 @@ define map as:
 
 # ---- filter: keep elements where fn returns truthy ----
 # filter of [list, fn] -> list
-define filter as:
-    items is n[0]
-    fn is n[1]
+define filter(items, fn) as:
     result is []
     for i in range of (len of items):
         if fn of items[i]:
@@ -36,29 +32,24 @@ define filter as:
 # ---- reduce: fold left with initial value ----
 # reduce of [list, fn, init] -> value
 # fn receives [accumulator, element] and returns new accumulator
-define reduce as:
-    items is n[0]
-    fn is n[1]
-    acc is n[2]
+define reduce(items, fn, acc) as:
     for i in range of (len of items):
         acc is fn of [acc, items[i]]
     return acc
 
 # ---- reverse: reverse a list ----
 # reverse of list -> list
-define reverse as:
+define reverse(items) as:
     result is []
-    i is (len of n) - 1
+    i is (len of items) - 1
     loop while i >= 0:
-        append of [result, n[i]]
+        append of [result, items[i]]
         i is i - 1
     return result
 
 # ---- zip: pair elements from two lists ----
 # zip of [list_a, list_b] -> list of [a, b] pairs
-define zip as:
-    a is n[0]
-    b is n[1]
+define zip(a, b) as:
     result is []
     size is len of a
     if (len of b) < size:
@@ -69,10 +60,10 @@ define zip as:
 
 # ---- flatten: flatten one level of nesting ----
 # flatten of list -> list
-define flatten as:
+define flatten(items) as:
     result is []
-    for i in range of (len of n):
-        item is n[i]
+    for i in range of (len of items):
+        item is items[i]
         if (type of item) == "list":
             for j in range of (len of item):
                 append of [result, item[j]]

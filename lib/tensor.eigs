@@ -18,41 +18,30 @@
 
 # ---- xavier_init: Xavier/Glorot initialization ----
 # xavier_init of [rows, cols] -> tensor
-define xavier_init as:
-    rows is n[0]
-    cols is n[1]
+define xavier_init(rows, cols) as:
     scale is sqrt of (2.0 / (rows + cols))
     return random_normal of [rows, cols, scale]
 
 # ---- he_init: He/Kaiming initialization ----
 # he_init of [rows, cols] -> tensor
-define he_init as:
-    rows is n[0]
-    cols is n[1]
+define he_init(rows, cols) as:
     scale is sqrt of (2.0 / rows)
     return random_normal of [rows, cols, scale]
 
 # ---- ones: tensor filled with ones ----
 # ones of [rows, cols] -> tensor
-define ones as:
-    rows is n[0]
-    cols is n[1]
+define ones(rows, cols) as:
     z is zeros of [rows, cols]
     return add of [z, [1.0]]
 
 # ---- linear: affine transform y = x @ W + b ----
 # linear of [input, weights, bias] -> tensor
-define linear as:
-    input is n[0]
-    weights is n[1]
-    bias is n[2]
+define linear(input, weights, bias) as:
     return add of [(matmul of [input, weights]), bias]
 
 # ---- mse_loss: mean squared error ----
 # mse_loss of [predicted, target] -> scalar
-define mse_loss as:
-    predicted is n[0]
-    target is n[1]
+define mse_loss(predicted, target) as:
     diff is subtract of [predicted, target]
     sq is multiply of [diff, diff]
     return mean of sq
@@ -60,9 +49,7 @@ define mse_loss as:
 # ---- cross_entropy_loss: cross-entropy from logits ----
 # cross_entropy_loss of [logits, target_idx] -> scalar
 # target_idx is the index of the correct class
-define cross_entropy_loss as:
-    logits is n[0]
-    target_idx is n[1]
+define cross_entropy_loss(logits, target_idx) as:
     lsm is log_softmax of logits
     s is shape of lsm
     if (len of s) == 2:
@@ -74,9 +61,7 @@ define cross_entropy_loss as:
 # ---- accuracy: fraction of correct predictions ----
 # accuracy of [logits_list, labels_list] -> float
 # logits_list is a list of logit vectors, labels is list of target indices
-define accuracy as:
-    logits_list is n[0]
-    labels is n[1]
+define accuracy(logits_list, labels) as:
     correct is 0
     total is len of logits_list
     for i in range of total:
@@ -94,9 +79,9 @@ define accuracy as:
 
 # ---- normalize: zero-mean unit-variance ----
 # normalize of tensor -> tensor
-define normalize as:
-    m is mean of n
-    centered is subtract of [n, [m]]
+define normalize(t) as:
+    m is mean of t
+    centered is subtract of [t, [m]]
     sq is multiply of [centered, centered]
     variance is mean of sq
     std is sqrt of (variance + 0.00001)
@@ -104,10 +89,7 @@ define normalize as:
 
 # ---- clip: clamp elements to [lo, hi] ----
 # clip of [tensor, lo, hi] -> tensor
-define clip as:
-    t is n[0]
-    lo is n[1]
-    hi is n[2]
+define clip(t, lo, hi) as:
     s is shape of t
     if (len of s) == 2:
         rows is s[0]
@@ -135,11 +117,11 @@ define clip as:
 
 # ---- l2_norm: Euclidean norm ----
 # l2_norm of tensor -> scalar
-define l2_norm as:
-    sq is multiply of [n, n]
+define l2_norm(t) as:
+    sq is multiply of [t, t]
     return sqrt of (sum of sq)
 
 # ---- scale: multiply tensor by scalar ----
 # scale of [tensor, scalar] -> tensor
-define scale as:
-    return multiply of [n[0], [n[1]]]
+define scale(t, s) as:
+    return multiply of [t, [s]]

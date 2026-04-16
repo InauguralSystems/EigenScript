@@ -14,39 +14,36 @@
 
 # ---- abs: absolute value ----
 # abs of value -> number
-define abs as:
-    if n < 0:
-        return 0 - n
-    return n
+define abs(x) as:
+    if x < 0:
+        return 0 - x
+    return x
 
 # ---- max_val: maximum element in a list ----
 # max_val of list -> number
-define max_val as:
-    if (len of n) < 1:
+define max_val(items) as:
+    if (len of items) < 1:
         return 0
-    best is n[0]
-    for i in range of (len of n):
-        if n[i] > best:
-            best is n[i]
+    best is items[0]
+    for i in range of (len of items):
+        if items[i] > best:
+            best is items[i]
     return best
 
 # ---- min_val: minimum element in a list ----
 # min_val of list -> number
-define min_val as:
-    if (len of n) < 1:
+define min_val(items) as:
+    if (len of items) < 1:
         return 0
-    best is n[0]
-    for i in range of (len of n):
-        if n[i] < best:
-            best is n[i]
+    best is items[0]
+    for i in range of (len of items):
+        if items[i] < best:
+            best is items[i]
     return best
 
 # ---- clamp: restrict value to [lo, hi] ----
 # clamp of [value, lo, hi] -> number
-define clamp as:
-    val is n[0]
-    lo is n[1]
-    hi is n[2]
+define clamp(val, lo, hi) as:
     if val < lo:
         return lo
     if val > hi:
@@ -55,17 +52,12 @@ define clamp as:
 
 # ---- lerp: linear interpolation between a and b ----
 # lerp of [a, b, t] -> number (a + (b-a)*t)
-define lerp as:
-    a is n[0]
-    b is n[1]
-    t is n[2]
+define lerp(a, b, t) as:
     return a + (b - a) * t
 
 # ---- dot: dot product of two 1D lists ----
 # dot of [list_a, list_b] -> number
-define dot as:
-    a is n[0]
-    b is n[1]
+define dot(a, b) as:
     result is 0
     for i in range of (len of a):
         result is result + a[i] * b[i]

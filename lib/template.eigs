@@ -16,9 +16,7 @@
 
 # ---- render: interpolate {{key}} placeholders in a string ----
 # render of [template, vars] -> string
-define render as:
-    tmpl is n[0]
-    vars is n[1]
+define render(tmpl, vars) as:
     result is tmpl
     for i in range of (len of vars):
         key is vars[i][0]
@@ -29,26 +27,21 @@ define render as:
 
 # ---- render_file: load a template file and render it ----
 # render_file of ["template.txt", vars] -> string
-define render_file as:
-    path is n[0]
-    vars is n[1]
+define render_file(path, vars) as:
     tmpl is read_text of path
     return render of [tmpl, vars]
 
 # ---- render_lines: render template, return list of lines ----
 # render_lines of [template, vars] -> list of strings
-define render_lines as:
-    rendered is render of [n[0], n[1]]
+define render_lines(tmpl, vars) as:
+    rendered is render of [tmpl, vars]
     return split of [rendered, "\n"]
 
 # ---- render_each: render a template for each item in a list ----
 # render_each of [template, items, key_name]
 # For each item, sets {{key_name}} and renders.
 # Returns list of rendered strings.
-define render_each as:
-    tmpl is n[0]
-    items is n[1]
-    key_name is n[2]
+define render_each(tmpl, items, key_name) as:
     result is []
     for i in range of (len of items):
         vars is [[key_name, items[i]]]
@@ -58,19 +51,14 @@ define render_each as:
 # ---- render_block: conditional block rendering ----
 # render_block of [template, vars, condition]
 # Returns rendered template if condition is truthy, else empty string.
-define render_block as:
-    tmpl is n[0]
-    vars is n[1]
-    cond is n[2]
+define render_block(tmpl, vars, cond) as:
     if cond:
         return render of [tmpl, vars]
     return ""
 
 # ---- fill: shorthand for single-variable render ----
 # fill of [template, key, value] -> string
-define fill as:
-    tmpl is n[0]
-    key is n[1]
-    val is str of n[2]
+define fill(tmpl, key, val) as:
+    val is str of val
     placeholder is "{{" + key + "}}"
     return str_replace of [tmpl, placeholder, val]

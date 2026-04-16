@@ -19,14 +19,12 @@
 # Keys are compared with ==. Last-write wins on duplicate keys.
 
 # ---- map_new: create an empty map ----
-define map_new as:
+define map_new(x) as:
     return []
 
 # ---- map_get: get value by key, or null if not found ----
 # map_get of [map, key] -> value or null
-define map_get as:
-    m is n[0]
-    key is n[1]
+define map_get(m, key) as:
     i is (len of m) - 1
     loop while i >= 0:
         if m[i][0] == key:
@@ -36,10 +34,7 @@ define map_get as:
 
 # ---- map_get_default: get value by key, or default if not found ----
 # map_get_default of [map, key, default] -> value or default
-define map_get_default as:
-    m is n[0]
-    key is n[1]
-    default is n[2]
+define map_get_default(m, key, default) as:
     i is (len of m) - 1
     loop while i >= 0:
         if m[i][0] == key:
@@ -49,9 +44,7 @@ define map_get_default as:
 
 # ---- map_has: check if key exists ----
 # map_has of [map, key] -> 1 or 0
-define map_has as:
-    m is n[0]
-    key is n[1]
+define map_has(m, key) as:
     for i in range of (len of m):
         if m[i][0] == key:
             return 1
@@ -59,10 +52,7 @@ define map_has as:
 
 # ---- map_set: set a key-value pair (returns new map) ----
 # map_set of [map, key, value] -> map
-define map_set as:
-    m is n[0]
-    key is n[1]
-    value is n[2]
+define map_set(m, key, value) as:
     result is []
     found is 0
     for i in range of (len of m):
@@ -77,9 +67,7 @@ define map_set as:
 
 # ---- map_remove: remove a key (returns new map) ----
 # map_remove of [map, key] -> map
-define map_remove as:
-    m is n[0]
-    key is n[1]
+define map_remove(m, key) as:
     result is []
     for i in range of (len of m):
         if m[i][0] != key:
@@ -87,28 +75,26 @@ define map_remove as:
     return result
 
 # ---- map_keys: list all keys ----
-define map_keys as:
+define map_keys(m) as:
     result is []
-    for i in range of (len of n):
-        append of [result, n[i][0]]
+    for i in range of (len of m):
+        append of [result, m[i][0]]
     return result
 
 # ---- map_values: list all values ----
-define map_values as:
+define map_values(m) as:
     result is []
-    for i in range of (len of n):
-        append of [result, n[i][1]]
+    for i in range of (len of m):
+        append of [result, m[i][1]]
     return result
 
 # ---- map_size: number of entries ----
-define map_size as:
-    return len of n
+define map_size(m) as:
+    return len of m
 
 # ---- map_from_lists: build map from parallel key and value lists ----
 # map_from_lists of [keys, values] -> map
-define map_from_lists as:
-    keys is n[0]
-    values is n[1]
+define map_from_lists(keys, values) as:
     result is []
     for i in range of (len of keys):
         append of [result, [keys[i], values[i]]]
@@ -116,9 +102,7 @@ define map_from_lists as:
 
 # ---- map_merge: merge two maps (second wins on conflict) ----
 # map_merge of [map_a, map_b] -> map
-define map_merge as:
-    a is n[0]
-    b is n[1]
+define map_merge(a, b) as:
     result is []
     for i in range of (len of a):
         append of [result, a[i]]
@@ -129,8 +113,8 @@ define map_merge as:
     return result
 
 # ---- map_entries: return list of [key, value] pairs ----
-define map_entries as:
+define map_entries(m) as:
     result is []
-    for i in range of (len of n):
-        append of [result, [n[i][0], n[i][1]]]
+    for i in range of (len of m):
+        append of [result, [m[i][0], m[i][1]]]
     return result

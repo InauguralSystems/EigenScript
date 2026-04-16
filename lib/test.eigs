@@ -17,10 +17,7 @@ _test_fail is 0
 _test_errors is []
 
 # ---- assert_eq: check exact equality ----
-define assert_eq as:
-    actual is n[0]
-    expected is n[1]
-    desc is n[2]
+define assert_eq(actual, expected, desc) as:
     if actual == expected:
         _test_pass is _test_pass + 1
     else:
@@ -30,11 +27,7 @@ define assert_eq as:
         print of msg
 
 # ---- assert_near: check approximate equality ----
-define assert_near as:
-    actual is n[0]
-    expected is n[1]
-    tol is n[2]
-    desc is n[3]
+define assert_near(actual, expected, tol, desc) as:
     diff is actual - expected
     if diff < 0:
         diff is 0 - diff
@@ -47,9 +40,7 @@ define assert_near as:
         print of msg
 
 # ---- assert_true: check condition is truthy ----
-define assert_true as:
-    cond is n[0]
-    desc is n[1]
+define assert_true(cond, desc) as:
     if cond:
         _test_pass is _test_pass + 1
     else:
@@ -59,9 +50,7 @@ define assert_true as:
         print of msg
 
 # ---- assert_false: check condition is falsy ----
-define assert_false as:
-    cond is n[0]
-    desc is n[1]
+define assert_false(cond, desc) as:
     if cond:
         _test_fail is _test_fail + 1
         msg is "FAIL: " + desc + " — expected false"

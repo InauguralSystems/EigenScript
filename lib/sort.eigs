@@ -14,8 +14,7 @@
 
 # ---- sort_asc: sort list in ascending order ----
 # Insertion sort — stable, simple, good for typical EigenScript list sizes
-define sort_asc as:
-    items is n
+define sort_asc(items) as:
     result is []
     for i in range of (len of items):
         append of [result, items[i]]
@@ -32,8 +31,7 @@ define sort_asc as:
     return result
 
 # ---- sort_desc: sort list in descending order ----
-define sort_desc as:
-    items is n
+define sort_desc(items) as:
     result is []
     for i in range of (len of items):
         append of [result, items[i]]
@@ -52,9 +50,7 @@ define sort_desc as:
 # ---- sort_by: sort list using a key function ----
 # sort_by of [items, key_fn] -> sorted list
 # Sorts ascending by key_fn(item)
-define sort_by as:
-    items is n[0]
-    key_fn is n[1]
+define sort_by(items, key_fn) as:
     # Build [key, index] pairs
     pairs is []
     for i in range of (len of items):
@@ -78,10 +74,10 @@ define sort_by as:
 
 # ---- sorted_indices: return indices that would sort the list ----
 # sorted_indices of list -> list of indices
-define sorted_indices as:
+define sorted_indices(items) as:
     pairs is []
-    for i in range of (len of n):
-        append of [pairs, [n[i], i]]
+    for i in range of (len of items):
+        append of [pairs, [items[i], i]]
     for i in range of (len of pairs):
         j is i
         loop while j > 0:
@@ -98,17 +94,17 @@ define sorted_indices as:
     return result
 
 # ---- is_sorted: check if list is in ascending order ----
-define is_sorted as:
-    if (len of n) < 2:
+define is_sorted(items) as:
+    if (len of items) < 2:
         return 1
-    for i in range of ((len of n) - 1):
-        if n[i + 1] < n[i]:
+    for i in range of ((len of items) - 1):
+        if items[i + 1] < items[i]:
             return 0
     return 1
 
 # ---- unique: return sorted list with duplicates removed ----
-define unique as:
-    sorted is sort_asc of n
+define unique(items) as:
+    sorted is sort_asc of items
     result is []
     for i in range of (len of sorted):
         if i == 0:

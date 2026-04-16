@@ -63,9 +63,7 @@ define parse_args as:
 
 # ---- get_flag: check if a flag is present ----
 # get_flag of [parsed, "--verbose"] -> 1 or 0
-define get_flag as:
-    parsed is n[0]
-    flag is n[1]
+define get_flag(parsed, flag) as:
     for i in range of (len of parsed):
         if parsed[i][0] == flag:
             return 1
@@ -73,32 +71,26 @@ define get_flag as:
 
 # ---- get_opt: get option value with default ----
 # get_opt of [parsed, "--output", "default"] -> value or default
-define get_opt as:
-    parsed is n[0]
-    key is n[1]
-    default is n[2]
+define get_opt(parsed, key, default) as:
     for i in range of (len of parsed):
         if parsed[i][0] == key:
             return parsed[i][1]
     return default
 
 # ---- get_positional: get list of positional arguments ----
-define get_positional as:
-    for i in range of (len of n):
-        if n[i][0] == "positional":
-            return n[i][1]
+define get_positional(parsed) as:
+    for i in range of (len of parsed):
+        if parsed[i][0] == "positional":
+            return parsed[i][1]
     return []
 
 # ---- has_flag: alias for get_flag ----
-define has_flag as:
-    return get_flag of n
+define has_flag(parsed, flag) as:
+    return get_flag of [parsed, flag]
 
 # ---- require_opt: get option or exit with error ----
 # require_opt of [parsed, "--input", "Usage: prog --input FILE"]
-define require_opt as:
-    parsed is n[0]
-    key is n[1]
-    usage is n[2]
+define require_opt(parsed, key, usage) as:
     for i in range of (len of parsed):
         if parsed[i][0] == key:
             return parsed[i][1]

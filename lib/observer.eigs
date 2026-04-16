@@ -16,27 +16,27 @@
 #   threshold_alert of [x, lo, hi]
 
 # ---- entropy_of: extract entropy from observer state ----
-define entropy_of as:
-    state is observe of n
+define entropy_of(x) as:
+    state is observe of x
     return state[1]
 
 # ---- delta_of: extract dH (rate of change) ----
-define delta_of as:
-    state is observe of n
+define delta_of(x) as:
+    state is observe of x
     return state[2]
 
 # ---- prev_delta_of: extract previous dH ----
-define prev_delta_of as:
-    state is observe of n
+define prev_delta_of(x) as:
+    state is observe of x
     return state[3]
 
 # ---- is_converged: check if value has converged ----
-define is_converged as:
-    return (report of n) == "converged"
+define is_converged(x) as:
+    return (report of x) == "converged"
 
 # ---- is_stable: check if value is stable or converged ----
-define is_stable as:
-    status is report of n
+define is_stable(x) as:
+    status is report of x
     if status == "stable":
         return 1
     if status == "converged":
@@ -44,24 +44,21 @@ define is_stable as:
     return 0
 
 # ---- is_improving: check if entropy is decreasing ----
-define is_improving as:
-    return (report of n) == "improving"
+define is_improving(x) as:
+    return (report of x) == "improving"
 
 # ---- is_diverging: check if entropy is increasing ----
-define is_diverging as:
-    return (report of n) == "diverging"
+define is_diverging(x) as:
+    return (report of x) == "diverging"
 
 # ---- is_oscillating: check if dH is sign-flipping ----
-define is_oscillating as:
-    return (report of n) == "oscillating"
+define is_oscillating(x) as:
+    return (report of x) == "oscillating"
 
 # ---- wait_until_converged: run update_fn until value converges ----
 # wait_until_converged of [value, update_fn, max_steps]
 # Returns [final_value, steps_taken, final_status]
-define wait_until_converged as:
-    val is n[0]
-    update_fn is n[1]
-    max_steps is n[2]
+define wait_until_converged(val, update_fn, max_steps) as:
     step is 0
     status is "start"
     loop while status != "converged":
@@ -76,10 +73,7 @@ define wait_until_converged as:
 # track_regimes of [value, update_fn, max_steps]
 # Returns [final_value, steps, list_of_transitions]
 # Each transition is [step, from_regime, to_regime]
-define track_regimes as:
-    val is n[0]
-    update_fn is n[1]
-    max_steps is n[2]
+define track_regimes(val, update_fn, max_steps) as:
     step is 0
     last is "start"
     transitions is []
@@ -97,10 +91,7 @@ define track_regimes as:
 # ---- threshold_alert: check if value is outside bounds ----
 # threshold_alert of [value, lo, hi]
 # Returns "below" | "above" | "ok"
-define threshold_alert as:
-    val is n[0]
-    lo is n[1]
-    hi is n[2]
+define threshold_alert(val, lo, hi) as:
     if val < lo:
         return "below"
     if val > hi:
@@ -109,6 +100,6 @@ define threshold_alert as:
 
 # ---- snapshot: capture full observer state as a named record ----
 # snapshot of value -> [value, status, entropy, dH, prev_dH]
-define snapshot as:
-    state is observe of n
-    return [n, state[0], state[1], state[2], state[3]]
+define snapshot(x) as:
+    state is observe of x
+    return [x, state[0], state[1], state[2], state[3]]

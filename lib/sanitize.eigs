@@ -10,14 +10,12 @@
 #   available is check_openai of null
 
 # ---- Sanitize: trim whitespace ----
-define sanitize_text as:
-    text is n
+define sanitize_text(text) as:
     return trim of text
 
 # ---- Garble detection: check if text looks like nonsense ----
 # Heuristics: too short, no spaces in long text, too few words
-define is_garble as:
-    text is n
+define is_garble(text) as:
     if (len of text) < 2:
         return 1
     if (len of text) > 20:
@@ -30,8 +28,7 @@ define is_garble as:
     return 0
 
 # ---- Clean response: trim at "User:" marker, find sentence boundary ----
-define clean_response as:
-    text is n
+define clean_response(text) as:
     if (contains of [text, "User:"]) == 1:
         parts is split of [text, "User:"]
         text is parts[0]
@@ -41,7 +38,7 @@ define clean_response as:
     return text
 
 # ---- Check OpenAI API key availability ----
-define check_openai as:
+define check_openai(x) as:
     key is env_get of "AI_INTEGRATIONS_OPENAI_API_KEY"
     if key == "":
         key is env_get of "OPENAI_API_KEY"

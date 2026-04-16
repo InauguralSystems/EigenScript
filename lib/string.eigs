@@ -11,9 +11,7 @@
 
 # ---- join: join list elements with separator ----
 # join of [list, separator] -> string
-define join as:
-    items is n[0]
-    sep is n[1]
+define join(items, sep) as:
     result is ""
     for i in range of (len of items):
         if i > 0:
@@ -23,9 +21,7 @@ define join as:
 
 # ---- repeat: repeat string n times ----
 # repeat of [string, count] -> string
-define repeat as:
-    s is n[0]
-    count is n[1]
+define repeat(s, count) as:
     result is ""
     for i in range of count:
         result is result + s
@@ -33,10 +29,7 @@ define repeat as:
 
 # ---- pad_left: left-pad string to width with character ----
 # pad_left of [string, width, pad_char] -> string
-define pad_left as:
-    s is n[0]
-    width is n[1]
-    ch is n[2]
+define pad_left(s, width, ch) as:
     loop while (len of s) < width:
         s is ch + s
     return s
