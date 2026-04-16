@@ -868,6 +868,10 @@ static ASTNode* make_node(ASTType type, int line) {
 }
 
 /* Recursively free an AST tree. */
+/* Currently unreferenced: the tree-walker keeps AST nodes alive for the
+ * lifetime of any function defined in them. Retained for future use and
+ * because freeing ASTs with partial parses has edge cases. */
+__attribute__((unused))
 static void free_ast(ASTNode *node) {
     if (!node) return;
     switch (node->type) {
@@ -1746,6 +1750,14 @@ static double compute_entropy(Value *v) {
             }
             return sum / v->data.list.count + log2(v->data.list.count + 1);
         }
+        case VAL_DICT: {
+            if (v->data.dict.count == 0) return 0.0;
+            double sum = 0.0;
+            for (int i = 0; i < v->data.dict.count; i++) {
+                sum += compute_entropy(v->data.dict.vals[i]);
+            }
+            return sum / v->data.dict.count + log2(v->data.dict.count + 1);
+        }
         case VAL_FN: return 1.0;
         case VAL_BUILTIN: return 0.0;
         case VAL_JSON_RAW: return 0.0;
@@ -2063,11 +2075,11 @@ Value* eval_node(ASTNode *node, Env *env) {
         char path[4096];
 
         /* Try: lib/NAME.eigs relative to cwd, then script dir */
-        snprintf(path, sizeof(path), "lib/%s.eigs", name);
+        snprintf(path, sizeof(path), "lib/%.1024s.eigs", name);
         if (access(path, F_OK) != 0) {
-            snprintf(path, sizeof(path), "%s/lib/%s.eigs", g_script_dir, name);
+            snprintf(path, sizeof(path), "%.2048s/lib/%.1024s.eigs", g_script_dir, name);
             if (access(path, F_OK) != 0) {
-                snprintf(path, sizeof(path), "%s/../lib/%s.eigs", g_script_dir, name);
+                snprintf(path, sizeof(path), "%.2048s/../lib/%.1024s.eigs", g_script_dir, name);
                 if (access(path, F_OK) != 0) {
                     runtime_error(node->line, "import: module '%s' not found", name);
                     return make_null();
