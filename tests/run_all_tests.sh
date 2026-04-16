@@ -840,8 +840,139 @@ else
 fi
 echo ""
 
-# [41] Example smoke tests
-echo "[41/41] Example Smoke Tests"
+# [42] CLI / REPL integration tests (always runs — exercises main.c)
+echo "[42/47] CLI & REPL (15 checks)"
+CLI_OUTPUT=$(bash "$TESTS_DIR/test_cli.sh" 2>&1)
+CLI_PASS=$(echo "$CLI_OUTPUT" | grep -c "PASS:" || true)
+CLI_FAIL=$(echo "$CLI_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + CLI_PASS + CLI_FAIL))
+PASS=$((PASS + CLI_PASS))
+FAIL=$((FAIL + CLI_FAIL))
+if [ "$CLI_FAIL" -gt 0 ]; then
+    echo "  FAIL: $CLI_FAIL CLI check(s) failed"
+    echo "$CLI_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $CLI_PASS CLI checks"
+fi
+echo ""
+
+# [43] Extra error-path coverage (always runs)
+echo "[43/47] Error-Path Extras (24 checks)"
+EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1)
+if echo "$EE_OUTPUT" | grep -q "All error_extra tests passed"; then
+    TOTAL=$((TOTAL + 24))
+    PASS=$((PASS + 24))
+    echo "  PASS: all 24 error-path checks"
+else
+    TOTAL=$((TOTAL + 24))
+    FAIL=$((FAIL + 24))
+    echo "  FAIL: error-path tests"
+    echo "$EE_OUTPUT" | grep -iE "assert|error" | head -5
+fi
+echo ""
+
+# [44] HTTP extension builtins (probe-gated)
+HTTP_PROBE_FILE=$(mktemp /tmp/eigs_http_probe_XXXXXX.eigs)
+cat > "$HTTP_PROBE_FILE" <<'PROBE'
+r is http_route of ["GET", "/probe", "probe"]
+print of r
+PROBE
+HTTP_PROBE_OUT=$(./eigenscript "$HTTP_PROBE_FILE" 2>&1)
+rm -f "$HTTP_PROBE_FILE"
+
+if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[44/47] HTTP Builtins (13 checks)"
+    HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1)
+    if echo "$HTTP_OUTPUT" | grep -q "All http tests passed"; then
+        TOTAL=$((TOTAL + 13))
+        PASS=$((PASS + 13))
+        echo "  PASS: all 13 HTTP builtin checks"
+    else
+        TOTAL=$((TOTAL + 13))
+        FAIL=$((FAIL + 13))
+        echo "  FAIL: HTTP builtin tests"
+        echo "$HTTP_OUTPUT" | grep -iE "assert|error" | head -5
+    fi
+    echo ""
+
+    # [45] HTTP server integration (probe-gated)
+    echo "[45/47] HTTP Server Integration (7 checks)"
+    HS_OUTPUT=$(bash "$TESTS_DIR/test_http_server.sh" 2>&1)
+    HS_PASS=$(echo "$HS_OUTPUT" | grep -c "PASS:" || true)
+    HS_FAIL=$(echo "$HS_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + HS_PASS + HS_FAIL))
+    PASS=$((PASS + HS_PASS))
+    FAIL=$((FAIL + HS_FAIL))
+    if [ "$HS_FAIL" -gt 0 ]; then
+        echo "  FAIL: $HS_FAIL HTTP server check(s) failed"
+        echo "$HS_OUTPUT" | grep "FAIL:" | head -5
+    else
+        echo "  PASS: all $HS_PASS HTTP server checks"
+    fi
+    echo ""
+else
+    echo "[44-45/47] HTTP tests SKIPPED (binary built without EIGENSCRIPT_EXT_HTTP)"
+    echo ""
+fi
+
+# [46] Database extension (probe-gated)
+DB_PROBE_FILE=$(mktemp /tmp/eigs_db_probe_XXXXXX.eigs)
+cat > "$DB_PROBE_FILE" <<'PROBE'
+r is db_connect of null
+print of "probed"
+PROBE
+DB_PROBE_OUT=$(./eigenscript "$DB_PROBE_FILE" 2>&1)
+rm -f "$DB_PROBE_FILE"
+
+if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[46/47] DB Builtins (6 checks)"
+    DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1)
+    if echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
+        TOTAL=$((TOTAL + 6))
+        PASS=$((PASS + 6))
+        echo "  PASS: all 6 DB builtin checks"
+    else
+        TOTAL=$((TOTAL + 6))
+        FAIL=$((FAIL + 6))
+        echo "  FAIL: DB builtin tests"
+        echo "$DB_OUTPUT" | grep -iE "assert|error" | head -5
+    fi
+    echo ""
+else
+    echo "[46/47] DB tests SKIPPED (binary built without EIGENSCRIPT_EXT_DB)"
+    echo ""
+fi
+
+# [47] Model save/load/infer roundtrip (probe-gated)
+MODEL_PROBE_FILE=$(mktemp /tmp/eigs_model_probe_XXXXXX.eigs)
+cat > "$MODEL_PROBE_FILE" <<'PROBE'
+print of (eigen_model_loaded of null)
+PROBE
+MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
+rm -f "$MODEL_PROBE_FILE"
+
+if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[47/47] Model Save/Load Roundtrip (9 checks)"
+    MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
+    MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
+    MRT_FAIL=$(echo "$MRT_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + MRT_PASS + MRT_FAIL))
+    PASS=$((PASS + MRT_PASS))
+    FAIL=$((FAIL + MRT_FAIL))
+    if [ "$MRT_FAIL" -gt 0 ]; then
+        echo "  FAIL: $MRT_FAIL model roundtrip check(s) failed"
+        echo "$MRT_OUTPUT" | grep "FAIL:" | head -5
+    else
+        echo "  PASS: all $MRT_PASS model roundtrip checks"
+    fi
+    echo ""
+else
+    echo "[47/47] Model roundtrip SKIPPED (binary built without EIGENSCRIPT_EXT_MODEL)"
+    echo ""
+fi
+
+# [48] Example smoke tests
+echo "[48/48] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

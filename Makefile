@@ -12,7 +12,7 @@ FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c \
 
 PREFIX  := $(HOME)/.local
 
-.PHONY: all build full test install clean
+.PHONY: all build full http test install clean coverage coverage-clean
 
 all: build
 
@@ -32,6 +32,19 @@ full:
 		$(LDFLAGS) -lpq
 	@echo "EigenScript $(VERSION) (full) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
 
+# Build with HTTP + model extensions but without DB (no libpq-dev required).
+# Useful for running HTTP test suites on systems without PostgreSQL headers.
+http:
+	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) \
+		$(SRC_DIR)/ext_http.c \
+		$(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c \
+		-DEIGENSCRIPT_EXT_HTTP=1 \
+		-DEIGENSCRIPT_EXT_MODEL=1 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+		$(LDFLAGS)
+	@echo "EigenScript $(VERSION) (http+model, no db) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+
 test: build
 	cd tests && bash run_all_tests.sh
 
@@ -43,6 +56,28 @@ install: build
 
 clean:
 	rm -f $(BINARY) $(SRC_DIR)/*.o
+
+coverage-clean:
+	rm -f $(SRC_DIR)/*.gcda $(SRC_DIR)/*.gcno $(SRC_DIR)/*.gcov coverage.txt
+
+coverage: coverage-clean
+	@for src in $(SOURCES); do \
+		obj=$${src%.c}.o; \
+		$(CC) -O0 -g --coverage -Wall -Wextra -c $$src -o $$obj \
+			-DEIGENSCRIPT_EXT_HTTP=0 \
+			-DEIGENSCRIPT_EXT_MODEL=0 \
+			-DEIGENSCRIPT_EXT_DB=0 \
+			-DEIGENSCRIPT_VERSION='"$(VERSION)"' || exit 1; \
+	done
+	$(CC) --coverage -o $(BINARY) $(SOURCES:.c=.o) $(LDFLAGS)
+	-cd tests && bash run_all_tests.sh > /dev/null 2>&1 || true
+	@cd $(SRC_DIR) && gcov -n $(notdir $(SOURCES)) > ../coverage.txt 2>&1 || true
+	@echo ""
+	@echo "=== Coverage Summary ==="
+	@awk '/^File/{f=$$2} /^Lines executed/{gsub(/:/," ",$$0); print "  " f ": " $$3 " of " $$5 " lines"}' coverage.txt | sed "s/'//g"
+	@echo ""
+	@echo "Per-file .gcov reports written to $(SRC_DIR)/*.gcov"
+	@echo "Run 'make coverage-clean' to remove coverage artifacts."
 
 version:
 	@echo $(VERSION)
