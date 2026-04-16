@@ -1,0 +1,101 @@
+# ============================================================
+# DateTime Library — date, time, and duration utilities
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/datetime.eigs"
+#
+#   now of null                             # "2026-04-16 14:30:05"
+#   today of null                           # "2026-04-16"
+#   timestamp of null                       # Unix epoch seconds
+#   elapsed of [start_ts, end_ts]           # human-readable duration
+#   format_date of fmt                      # strftime format string
+#   sleep_ms of 500                         # pause execution
+#
+# Note: uses exec_capture to call system `date`. Works on Linux/macOS.
+
+# ---- now: current date and time ----
+define now as:
+    result is exec_capture of ["date", "+%Y-%m-%d %H:%M:%S"]
+    return trim of result[1]
+
+# ---- today: current date only ----
+define today as:
+    result is exec_capture of ["date", "+%Y-%m-%d"]
+    return trim of result[1]
+
+# ---- timestamp: Unix epoch seconds as number ----
+define timestamp as:
+    result is exec_capture of ["date", "+%s"]
+    return num of (trim of result[1])
+
+# ---- format_date: format current date with strftime format ----
+# format_date of "+%A, %B %d" -> "Wednesday, April 16"
+define format_date as:
+    result is exec_capture of ["date", n]
+    return trim of result[1]
+
+# ---- elapsed: human-readable duration between two timestamps ----
+# elapsed of [start_ts, end_ts] -> "2h 15m 30s"
+define elapsed as:
+    start is n[0]
+    finish is n[1]
+    total is finish - start
+    if total < 0:
+        total is 0 - total
+    hours is floor of (total / 3600)
+    remaining is total - (hours * 3600)
+    minutes is floor of (remaining / 60)
+    seconds is floor of (remaining - (minutes * 60))
+    result is ""
+    if hours > 0:
+        result is (str of hours) + "h "
+    if minutes > 0:
+        result is result + (str of minutes) + "m "
+    result is result + (str of seconds) + "s"
+    return trim of result
+
+# ---- elapsed_ms: duration in milliseconds ----
+# elapsed_ms of [start_ts, end_ts] -> number
+define elapsed_ms as:
+    return (n[1] - n[0]) * 1000
+
+# ---- sleep_ms: pause execution for n milliseconds ----
+# Uses a small busy-wait via exec_capture + sleep
+define sleep_ms as:
+    seconds is n / 1000.0
+    exec_capture of ["sleep", str of seconds]
+
+# ---- iso_date: current date in ISO 8601 format ----
+define iso_date as:
+    result is exec_capture of ["date", "+%Y-%m-%dT%H:%M:%S%z"]
+    return trim of result[1]
+
+# ---- year: current year as number ----
+define year as:
+    result is exec_capture of ["date", "+%Y"]
+    return num of (trim of result[1])
+
+# ---- month: current month as number (1-12) ----
+define month as:
+    result is exec_capture of ["date", "+%-m"]
+    return num of (trim of result[1])
+
+# ---- day: current day of month as number ----
+define day as:
+    result is exec_capture of ["date", "+%-d"]
+    return num of (trim of result[1])
+
+# ---- weekday: current day of week ----
+define weekday as:
+    result is exec_capture of ["date", "+%A"]
+    return trim of result[1]
+
+# ---- timer_start: capture a start timestamp ----
+define timer_start as:
+    return timestamp of null
+
+# ---- timer_elapsed: seconds since start ----
+# timer_elapsed of start_ts -> seconds
+define timer_elapsed as:
+    return (timestamp of null) - n

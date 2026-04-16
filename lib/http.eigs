@@ -1,0 +1,107 @@
+# ============================================================
+# HTTP Library — HTTP client and server helpers
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/http.eigs"
+#
+# Client:
+#   response is http_get of "https://example.com/api"
+#   response is http_post_json of ["url", data]
+#
+# Server:
+#   route_get of ["/api/items", handler]
+#   route_post of ["/api/items", handler]
+#   json_response of data
+#   text_response of "hello"
+#   error_response of [404, "not found"]
+#   parse_query of "key=val&foo=bar"
+#   start_server of 8080
+#
+# Requires full build for server builtins.
+
+# ============================================================
+# Client helpers
+# ============================================================
+
+# ---- http_get: simple GET request ----
+# http_get of "url" -> [exit_code, body]
+define http_get as:
+    return exec_capture of ["curl", "-s", "-L", n]
+
+# ---- http_post_json: POST JSON data ----
+# http_post_json of ["url", json_string] -> [exit_code, body]
+define http_post_json as:
+    url is n[0]
+    data is n[1]
+    if (type of data) != "str":
+        data is json_encode of data
+    return exec_capture of ["curl", "-s", "-L", "-X", "POST", "-H", "Content-Type: application/json", "-d", data, url]
+
+# ============================================================
+# Server helpers (require http extension builtins)
+# ============================================================
+
+# ---- route_get: register a GET handler ----
+define route_get as:
+    path is n[0]
+    handler is n[1]
+    http_route of ["GET", path, handler]
+
+# ---- route_post: register a POST handler ----
+define route_post as:
+    path is n[0]
+    handler is n[1]
+    http_route of ["POST", path, handler]
+
+# ---- route_authed_get: register an authenticated GET handler ----
+define route_authed_get as:
+    path is n[0]
+    handler is n[1]
+    http_route_authed of ["GET", path, handler]
+
+# ---- route_authed_post: register an authenticated POST handler ----
+define route_authed_post as:
+    path is n[0]
+    handler is n[1]
+    http_route_authed of ["POST", path, handler]
+
+# ---- json_response: build a JSON response string ----
+define json_response as:
+    if (type of n) == "str":
+        return n
+    return json_encode of n
+
+# ---- text_response: wrap text in a JSON response ----
+define text_response as:
+    return json_build of ["text", n]
+
+# ---- error_response: build an error JSON response ----
+# error_response of [code, message]
+define error_response as:
+    code is n[0]
+    msg is n[1]
+    return json_build of ["error", msg, "code", code]
+
+# ---- parse_query: parse query string into map ----
+# parse_query of "key=val&foo=bar" -> [["key","val"],["foo","bar"]]
+define parse_query as:
+    if (len of n) == 0:
+        return []
+    parts is split of [n, "&"]
+    result is []
+    for i in range of (len of parts):
+        pair is parts[i]
+        eq_pos is index_of of [pair, "="]
+        if eq_pos > 0:
+            key is substr of [pair, 0, eq_pos]
+            val is substr of [pair, eq_pos + 1, (len of pair) - eq_pos - 1]
+            append of [result, [key, val]]
+        else:
+            append of [result, [pair, ""]]
+    return result
+
+# ---- start_server: bind and start serving ----
+define start_server as:
+    http_early_bind of null
+    http_serve of n

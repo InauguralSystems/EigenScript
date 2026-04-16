@@ -1,0 +1,183 @@
+# ============================================================
+# Set Library — set operations in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/set.eigs"
+#
+#   s is set_from of [3, 1, 2, 1, 3]       # [1, 2, 3]
+#   union of [set_a, set_b]                 # all elements from both
+#   intersect of [set_a, set_b]             # elements in both
+#   difference of [set_a, set_b]            # in a but not b
+#   symmetric_diff of [set_a, set_b]        # in one but not both
+#   is_subset of [set_a, set_b]             # 1 if a ⊆ b
+#   is_superset of [set_a, set_b]           # 1 if a ⊇ b
+#   set_has of [set, value]                 # 1 if value in set
+#   set_add of [set, value]                 # add element
+#   set_remove of [set, value]              # remove element
+#   set_size of set                         # number of elements
+#   set_equal of [set_a, set_b]             # 1 if same elements
+#
+# Sets are sorted lists with no duplicates.
+
+# ---- set_from: create a set from a list ----
+define set_from as:
+    # Sort and deduplicate
+    items is n
+    if (len of items) == 0:
+        return []
+    # Insertion sort
+    sorted is []
+    for i in range of (len of items):
+        append of [sorted, items[i]]
+    for i in range of (len of sorted):
+        j is i
+        loop while j > 0:
+            if sorted[j] < sorted[j - 1]:
+                tmp is sorted[j]
+                set_at of [sorted, j, sorted[j - 1]]
+                set_at of [sorted, j - 1, tmp]
+                j is j - 1
+            else:
+                j is 0
+    # Deduplicate
+    result is [sorted[0]]
+    for i in range of ((len of sorted) - 1):
+        if sorted[i + 1] != sorted[i]:
+            append of [result, sorted[i + 1]]
+    return result
+
+# ---- set_has: check if value is in set ----
+define set_has as:
+    s is n[0]
+    val is n[1]
+    for i in range of (len of s):
+        if s[i] == val:
+            return 1
+        if s[i] > val:
+            return 0
+    return 0
+
+# ---- set_add: add element to set ----
+define set_add as:
+    s is n[0]
+    val is n[1]
+    if (set_has of [s, val]) == 1:
+        return s
+    result is []
+    inserted is 0
+    for i in range of (len of s):
+        if inserted == 0:
+            if val < s[i]:
+                append of [result, val]
+                inserted is 1
+        append of [result, s[i]]
+    if inserted == 0:
+        append of [result, val]
+    return result
+
+# ---- set_remove: remove element from set ----
+define set_remove as:
+    s is n[0]
+    val is n[1]
+    result is []
+    for i in range of (len of s):
+        if s[i] != val:
+            append of [result, s[i]]
+    return result
+
+# ---- set_size: number of elements ----
+define set_size as:
+    return len of n
+
+# ---- union: all elements from both sets ----
+define union as:
+    a is n[0]
+    b is n[1]
+    result is []
+    i is 0
+    j is 0
+    loop while i < (len of a):
+        if j >= (len of b):
+            append of [result, a[i]]
+            i is i + 1
+        elif a[i] < b[j]:
+            append of [result, a[i]]
+            i is i + 1
+        elif a[i] > b[j]:
+            append of [result, b[j]]
+            j is j + 1
+        else:
+            append of [result, a[i]]
+            i is i + 1
+            j is j + 1
+    loop while j < (len of b):
+        append of [result, b[j]]
+        j is j + 1
+    return result
+
+# ---- intersect: elements in both sets ----
+define intersect as:
+    a is n[0]
+    b is n[1]
+    result is []
+    i is 0
+    j is 0
+    loop while i < (len of a):
+        if j >= (len of b):
+            i is len of a
+        elif a[i] < b[j]:
+            i is i + 1
+        elif a[i] > b[j]:
+            j is j + 1
+        else:
+            append of [result, a[i]]
+            i is i + 1
+            j is j + 1
+    return result
+
+# ---- difference: elements in a but not b ----
+define difference as:
+    a is n[0]
+    b is n[1]
+    result is []
+    for i in range of (len of a):
+        found is 0
+        for j in range of (len of b):
+            if a[i] == b[j]:
+                found is 1
+        if found == 0:
+            append of [result, a[i]]
+    return result
+
+# ---- symmetric_diff: elements in one but not both ----
+define symmetric_diff as:
+    a is n[0]
+    b is n[1]
+    left is difference of [a, b]
+    right is difference of [b, a]
+    return union of [left, right]
+
+# ---- is_subset: 1 if a ⊆ b ----
+define is_subset as:
+    a is n[0]
+    b is n[1]
+    for i in range of (len of a):
+        if (set_has of [b, a[i]]) == 0:
+            return 0
+    return 1
+
+# ---- is_superset: 1 if a ⊇ b ----
+define is_superset as:
+    return is_subset of [n[1], n[0]]
+
+# ---- set_equal: 1 if same elements ----
+define set_equal as:
+    a is n[0]
+    b is n[1]
+    if (len of a) != (len of b):
+        return 0
+    for i in range of (len of a):
+        if a[i] != b[i]:
+            return 0
+    return 1

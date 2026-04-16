@@ -1,0 +1,148 @@
+# ============================================================
+# Queue Library — queue, stack, deque, and priority queue
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/queue.eigs"
+#
+# Queue (FIFO):
+#   q is queue_new of null
+#   q is enqueue of [q, item]
+#   result is dequeue of q                  # [item, remaining_queue]
+#   front is peek of q
+#
+# Stack (LIFO):
+#   s is stack_new of null
+#   s is push of [s, item]
+#   result is pop of s                      # [item, remaining_stack]
+#   top is stack_peek of s
+#
+# Priority Queue (min-heap as sorted list):
+#   pq is pq_new of null
+#   pq is pq_push of [pq, priority, item]
+#   result is pq_pop of pq                  # [item, remaining_pq]
+#   pq_peek of pq                           # item with lowest priority
+#
+# All structures are immutable — operations return new structures.
+
+# ============================================================
+# Queue (FIFO)
+# ============================================================
+
+define queue_new as:
+    return []
+
+define enqueue as:
+    q is n[0]
+    item is n[1]
+    result is []
+    for i in range of (len of q):
+        append of [result, q[i]]
+    append of [result, item]
+    return result
+
+# dequeue of q -> [item, remaining_queue]
+define dequeue as:
+    if (len of n) == 0:
+        return [null, []]
+    item is n[0]
+    rest is []
+    for i in range of ((len of n) - 1):
+        append of [rest, n[i + 1]]
+    return [item, rest]
+
+define peek as:
+    if (len of n) == 0:
+        return null
+    return n[0]
+
+define queue_size as:
+    return len of n
+
+define queue_empty as:
+    return (len of n) == 0
+
+# ============================================================
+# Stack (LIFO)
+# ============================================================
+
+define stack_new as:
+    return []
+
+define push as:
+    s is n[0]
+    item is n[1]
+    result is []
+    for i in range of (len of s):
+        append of [result, s[i]]
+    append of [result, item]
+    return result
+
+# pop of stack -> [item, remaining_stack]
+define pop as:
+    if (len of n) == 0:
+        return [null, []]
+    item is n[(len of n) - 1]
+    rest is []
+    for i in range of ((len of n) - 1):
+        append of [rest, n[i]]
+    return [item, rest]
+
+define stack_peek as:
+    if (len of n) == 0:
+        return null
+    return n[(len of n) - 1]
+
+define stack_size as:
+    return len of n
+
+define stack_empty as:
+    return (len of n) == 0
+
+# ============================================================
+# Priority Queue (sorted list, min-first)
+# ============================================================
+# Entries are [priority, item]. Sorted ascending by priority.
+
+define pq_new as:
+    return []
+
+# pq_push of [pq, priority, item] -> new pq
+define pq_push as:
+    pq is n[0]
+    pri is n[1]
+    item is n[2]
+    entry is [pri, item]
+    result is []
+    inserted is 0
+    for i in range of (len of pq):
+        if inserted == 0:
+            if pri < pq[i][0]:
+                append of [result, entry]
+                inserted is 1
+        append of [result, pq[i]]
+    if inserted == 0:
+        append of [result, entry]
+    return result
+
+# pq_pop of pq -> [item, remaining_pq]
+define pq_pop as:
+    if (len of n) == 0:
+        return [null, []]
+    item is n[0][1]
+    rest is []
+    for i in range of ((len of n) - 1):
+        append of [rest, n[i + 1]]
+    return [item, rest]
+
+# pq_peek of pq -> item with lowest priority (or null)
+define pq_peek as:
+    if (len of n) == 0:
+        return null
+    return n[0][1]
+
+define pq_size as:
+    return len of n
+
+define pq_empty as:
+    return (len of n) == 0

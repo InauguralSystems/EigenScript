@@ -1,0 +1,128 @@
+# ============================================================
+# Config Library — load configuration from files and env vars
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/config.eigs"
+#
+#   cfg is load_env_file of ".env"          # load KEY=VALUE file
+#   cfg is load_ini of "config.ini"         # load INI-style config
+#   config_get of [cfg, "key", "default"]   # get with default
+#   config_require of [cfg, "key"]          # get or error
+#   env_or of ["VAR", "default"]            # env var with fallback
+
+# ---- load_env_file: parse a .env / KEY=VALUE file into a map ----
+# Lines starting with # are comments. Empty lines are skipped.
+# Returns a list of [key, value] pairs (map format).
+define load_env_file as:
+    text is read_text of n
+    if text == "":
+        return []
+    lines is split of [text, "\n"]
+    result is []
+    for i in range of (len of lines):
+        line is trim of lines[i]
+        if (len of line) == 0:
+            i is i
+        elif (starts_with of [line, "#"]) == 1:
+            i is i
+        else:
+            eq_pos is index_of of [line, "="]
+            if eq_pos > 0:
+                key is trim of (substr of [line, 0, eq_pos])
+                val is trim of (substr of [line, eq_pos + 1, (len of line) - eq_pos - 1])
+                # Strip surrounding quotes if present
+                if (len of val) >= 2:
+                    first is char_at of [val, 0]
+                    last is char_at of [val, (len of val) - 1]
+                    if first == last:
+                        if first == "\"":
+                            val is substr of [val, 1, (len of val) - 2]
+                        elif first == "'":
+                            val is substr of [val, 1, (len of val) - 2]
+                append of [result, [key, val]]
+    return result
+
+# ---- load_ini: parse INI-style config ----
+# Supports [section] headers. Keys become "section.key".
+# No section = top-level key.
+define load_ini as:
+    text is read_text of n
+    if text == "":
+        return []
+    lines is split of [text, "\n"]
+    result is []
+    section is ""
+    for i in range of (len of lines):
+        line is trim of lines[i]
+        if (len of line) == 0:
+            i is i
+        elif (starts_with of [line, "#"]) == 1:
+            i is i
+        elif (starts_with of [line, ";"]) == 1:
+            i is i
+        elif (starts_with of [line, "["]) == 1:
+            # Section header
+            end is index_of of [line, "]"]
+            if end > 1:
+                section is substr of [line, 1, end - 1]
+        else:
+            eq_pos is index_of of [line, "="]
+            if eq_pos > 0:
+                key is trim of (substr of [line, 0, eq_pos])
+                val is trim of (substr of [line, eq_pos + 1, (len of line) - eq_pos - 1])
+                if (len of section) > 0:
+                    key is section + "." + key
+                append of [result, [key, val]]
+    return result
+
+# ---- config_get: get config value with default ----
+# config_get of [cfg, "key", "default"]
+define config_get as:
+    cfg is n[0]
+    key is n[1]
+    default is n[2]
+    for i in range of (len of cfg):
+        if cfg[i][0] == key:
+            return cfg[i][1]
+    return default
+
+# ---- config_require: get config value or exit with error ----
+# config_require of [cfg, "DATABASE_URL"]
+define config_require as:
+    cfg is n[0]
+    key is n[1]
+    for i in range of (len of cfg):
+        if cfg[i][0] == key:
+            return cfg[i][1]
+    assert of [0, "Missing required config key: " + key]
+
+# ---- env_or: get environment variable with fallback ----
+# env_or of ["PORT", "8080"]
+define env_or as:
+    key is n[0]
+    default is n[1]
+    val is env_get of key
+    if val == "":
+        return default
+    return val
+
+# ---- config_keys: list all keys in config ----
+define config_keys as:
+    result is []
+    for i in range of (len of n):
+        append of [result, n[i][0]]
+    return result
+
+# ---- config_section: get all keys under a section prefix ----
+# config_section of [cfg, "database"] -> map of keys without prefix
+define config_section as:
+    cfg is n[0]
+    prefix is n[1] + "."
+    result is []
+    for i in range of (len of cfg):
+        key is cfg[i][0]
+        if (starts_with of [key, prefix]) == 1:
+            short_key is substr of [key, len of prefix, (len of key) - (len of prefix)]
+            append of [result, [short_key, cfg[i][1]]]
+    return result

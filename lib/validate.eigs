@@ -1,0 +1,174 @@
+# ============================================================
+# Validate Library — input validation utilities
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/validate.eigs"
+#
+#   is_nonempty of value                    # 1 if non-empty string/list
+#   is_number of value                      # 1 if numeric
+#   is_integer of value                     # 1 if whole number
+#   in_range of [value, lo, hi]             # 1 if lo <= value <= hi
+#   is_one_of of [value, allowed_list]      # 1 if value in list
+#   is_email of "user@example.com"          # basic email check
+#   is_alpha of "hello"                     # 1 if only letters
+#   is_alphanumeric of "abc123"             # 1 if letters and digits
+#   validate_all of [[check1, check2, ...]] # run multiple checks
+
+# ---- is_nonempty: check if value is non-empty ----
+define is_nonempty as:
+    if (type of n) == "str":
+        return (len of n) > 0
+    if (type of n) == "list":
+        return (len of n) > 0
+    if (type of n) == "null":
+        return 0
+    return 1
+
+# ---- is_number: check if value is numeric or parseable as number ----
+define is_number as:
+    if (type of n) == "num":
+        return 1
+    if (type of n) == "str":
+        if (len of n) == 0:
+            return 0
+        # Try parsing: check each character
+        has_dot is 0
+        start is 0
+        if (char_at of [n, 0]) == "-":
+            if (len of n) == 1:
+                return 0
+            start is 1
+        for i in range of [(len of n) - start]:
+            c is char_at of [n, i + start]
+            if c == ".":
+                if has_dot == 1:
+                    return 0
+                has_dot is 1
+            elif c == "0":
+                i is i
+            elif c == "1":
+                i is i
+            elif c == "2":
+                i is i
+            elif c == "3":
+                i is i
+            elif c == "4":
+                i is i
+            elif c == "5":
+                i is i
+            elif c == "6":
+                i is i
+            elif c == "7":
+                i is i
+            elif c == "8":
+                i is i
+            elif c == "9":
+                i is i
+            else:
+                return 0
+        return 1
+    return 0
+
+# ---- is_integer: check if value is a whole number ----
+define is_integer as:
+    if (type of n) == "num":
+        return n == (floor of n)
+    if (type of n) == "str":
+        if (is_number of n) == 0:
+            return 0
+        val is num of n
+        return val == (floor of val)
+    return 0
+
+# ---- in_range: check if value is within [lo, hi] ----
+# in_range of [value, lo, hi]
+define in_range as:
+    val is n[0]
+    lo is n[1]
+    hi is n[2]
+    if val < lo:
+        return 0
+    if val > hi:
+        return 0
+    return 1
+
+# ---- is_one_of: check if value is in an allowed list ----
+# is_one_of of [value, [allowed1, allowed2, ...]]
+define is_one_of as:
+    val is n[0]
+    allowed is n[1]
+    for i in range of (len of allowed):
+        if val == allowed[i]:
+            return 1
+    return 0
+
+# ---- is_email: basic email format check ----
+# Checks for: non-empty local part, @, non-empty domain with dot
+define is_email as:
+    if (type of n) != "str":
+        return 0
+    at_pos is index_of of [n, "@"]
+    if at_pos < 1:
+        return 0
+    domain is substr of [n, at_pos + 1, (len of n) - at_pos - 1]
+    if (len of domain) < 3:
+        return 0
+    dot_pos is index_of of [domain, "."]
+    if dot_pos < 1:
+        return 0
+    if dot_pos >= ((len of domain) - 1):
+        return 0
+    return 1
+
+# ---- is_alpha: check if string contains only letters ----
+define is_alpha as:
+    if (type of n) != "str":
+        return 0
+    if (len of n) == 0:
+        return 0
+    lower is str_lower of n
+    for i in range of (len of lower):
+        c is char_at of [lower, i]
+        code is num of c
+        # a-z check via lowercase comparison
+        if (contains of ["abcdefghijklmnopqrstuvwxyz", c]) == 0:
+            return 0
+    return 1
+
+# ---- is_alphanumeric: check if string is letters and digits only ----
+define is_alphanumeric as:
+    if (type of n) != "str":
+        return 0
+    if (len of n) == 0:
+        return 0
+    lower is str_lower of n
+    allowed is "abcdefghijklmnopqrstuvwxyz0123456789"
+    for i in range of (len of lower):
+        c is char_at of [lower, i]
+        if (contains of [allowed, c]) == 0:
+            return 0
+    return 1
+
+# ---- is_url: basic URL format check ----
+define is_url as:
+    if (type of n) != "str":
+        return 0
+    if (starts_with of [n, "http://"]) == 1:
+        return (len of n) > 10
+    if (starts_with of [n, "https://"]) == 1:
+        return (len of n) > 11
+    return 0
+
+# ---- validate_all: run a list of [value, check_fn, description] triples ----
+# Returns list of failed descriptions. Empty list = all passed.
+define validate_all as:
+    checks is n
+    errors is []
+    for i in range of (len of checks):
+        val is checks[i][0]
+        check_fn is checks[i][1]
+        desc is checks[i][2]
+        if (check_fn of val) == 0:
+            append of [errors, desc]
+    return errors

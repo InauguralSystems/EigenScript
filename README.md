@@ -105,6 +105,16 @@ Pure EigenScript libraries under `lib/`:
 | `lib/sort.eigs` | `sort_asc`, `sort_desc`, `sort_by`, `sorted_indices`, `unique` |
 | `lib/map.eigs` | `map_new`, `map_get`, `map_set`, `map_has`, `map_keys`, `map_merge` |
 | `lib/functional.eigs` | `chain`, `apply_all`, `complement`, `when`, `iterate`, `times` |
+| `lib/args.eigs` | `parse_args`, `get_flag`, `get_opt`, `get_positional`, `require_opt` |
+| `lib/datetime.eigs` | `now`, `today`, `timestamp`, `elapsed`, `timer_start`, `sleep_ms` |
+| `lib/config.eigs` | `load_env_file`, `load_ini`, `config_get`, `env_or`, `config_section` |
+| `lib/set.eigs` | `set_from`, `union`, `intersect`, `difference`, `is_subset`, `set_equal` |
+| `lib/log.eigs` | `log_debug`, `log_info`, `log_warn`, `log_error`, `log_level` |
+| `lib/validate.eigs` | `is_number`, `is_email`, `in_range`, `is_one_of`, `validate_all` |
+| `lib/http.eigs` | `http_get`, `http_post_json`, `route_get`, `parse_query`, `json_response` |
+| `lib/queue.eigs` | `enqueue`, `dequeue`, `push`, `pop`, `pq_push`, `pq_pop` |
+| `lib/state.eigs` | `sm_new`, `sm_add_transition`, `sm_send`, `sm_state`, `sm_history` |
+| `lib/template.eigs` | `render`, `render_file`, `render_each`, `fill` |
 | `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response`, `check_openai` |
 | `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout`, `require_auth` |
 

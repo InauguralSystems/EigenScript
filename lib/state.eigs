@@ -1,0 +1,130 @@
+# ============================================================
+# State Library — finite state machine in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/state.eigs"
+#
+#   sm is sm_new of "idle"
+#   sm is sm_add_transition of [sm, "idle", "start", "running"]
+#   sm is sm_add_transition of [sm, "running", "stop", "idle"]
+#   sm is sm_add_transition of [sm, "running", "error", "failed"]
+#   sm is sm_send of [sm, "start"]          # state -> "running"
+#   sm_state of sm                          # "running"
+#   sm_can_send of [sm, "stop"]             # 1
+#   sm_history of sm                        # ["idle", "running"]
+#
+# Structure: [current_state, transitions, history]
+# transitions: [[from, event, to], ...]
+
+# ---- sm_new: create a new state machine ----
+define sm_new as:
+    return [n, [], [n]]
+
+# ---- sm_state: get current state ----
+define sm_state as:
+    return n[0]
+
+# ---- sm_history: get state history ----
+define sm_history as:
+    return n[2]
+
+# ---- sm_add_transition: add a transition rule ----
+# sm_add_transition of [sm, from_state, event, to_state]
+define sm_add_transition as:
+    sm is n[0]
+    from_state is n[1]
+    event is n[2]
+    to_state is n[3]
+    transitions is sm[1]
+    new_transitions is []
+    for i in range of (len of transitions):
+        append of [new_transitions, transitions[i]]
+    append of [new_transitions, [from_state, event, to_state]]
+    return [sm[0], new_transitions, sm[2]]
+
+# ---- sm_send: send an event to the state machine ----
+# sm_send of [sm, event] -> new sm (or error if no matching transition)
+define sm_send as:
+    sm is n[0]
+    event is n[1]
+    current is sm[0]
+    transitions is sm[1]
+    history is sm[2]
+    for i in range of (len of transitions):
+        t is transitions[i]
+        if t[0] == current:
+            if t[1] == event:
+                new_history is []
+                for j in range of (len of history):
+                    append of [new_history, history[j]]
+                append of [new_history, t[2]]
+                return [t[2], transitions, new_history]
+    assert of [0, "No transition from '" + current + "' on event '" + event + "'"]
+
+# ---- sm_try_send: send event, return unchanged sm if no transition ----
+# sm_try_send of [sm, event] -> sm (unchanged if no match)
+define sm_try_send as:
+    sm is n[0]
+    event is n[1]
+    current is sm[0]
+    transitions is sm[1]
+    history is sm[2]
+    for i in range of (len of transitions):
+        t is transitions[i]
+        if t[0] == current:
+            if t[1] == event:
+                new_history is []
+                for j in range of (len of history):
+                    append of [new_history, history[j]]
+                append of [new_history, t[2]]
+                return [t[2], transitions, new_history]
+    return sm
+
+# ---- sm_can_send: check if event is valid from current state ----
+# sm_can_send of [sm, event] -> 1 or 0
+define sm_can_send as:
+    sm is n[0]
+    event is n[1]
+    current is sm[0]
+    transitions is sm[1]
+    for i in range of (len of transitions):
+        t is transitions[i]
+        if t[0] == current:
+            if t[1] == event:
+                return 1
+    return 0
+
+# ---- sm_available_events: list valid events from current state ----
+define sm_available_events as:
+    current is n[0]
+    transitions is n[1]
+    result is []
+    for i in range of (len of transitions):
+        t is transitions[i]
+        if t[0] == current:
+            append of [result, t[1]]
+    return result
+
+# ---- sm_reset: reset to initial state (first in history) ----
+define sm_reset as:
+    initial is n[2][0]
+    return [initial, n[1], [initial]]
+
+# ---- sm_is: check if current state matches ----
+# sm_is of [sm, "running"] -> 1 or 0
+define sm_is as:
+    return n[0][0] == n[1]
+
+# ---- sm_transitions_from: list all transitions from a state ----
+# sm_transitions_from of [sm, "idle"] -> [[event, to_state], ...]
+define sm_transitions_from as:
+    sm is n[0]
+    state is n[1]
+    transitions is sm[1]
+    result is []
+    for i in range of (len of transitions):
+        t is transitions[i]
+        if t[0] == state:
+            append of [result, [t[1], t[2]]]
+    return result

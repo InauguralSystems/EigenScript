@@ -1,0 +1,106 @@
+# ============================================================
+# Args Library — CLI argument parsing in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/args.eigs"
+#
+#   parsed is parse_args of null
+#   # Returns a map (list of [key, value] pairs):
+#   #   "positional" -> [list of positional args]
+#   #   "--flag"     -> "true"
+#   #   "--key"      -> "value"
+#
+#   get_flag of [parsed, "--verbose"]       # 1 if present, else 0
+#   get_opt of [parsed, "--output", ""]     # value or default
+#   get_positional of parsed                # list of positional args
+#   has_flag of [parsed, "--help"]          # 1 or 0
+
+# ---- parse_args: parse CLI arguments into a map ----
+define parse_args as:
+    raw is args of null
+    result is [["positional", []]]
+    i is 0
+    loop while i < (len of raw):
+        arg is raw[i]
+        if (starts_with of [arg, "--"]) == 1:
+            # Check for --key=value
+            eq_pos is index_of of [arg, "="]
+            if eq_pos >= 0:
+                key is substr of [arg, 0, eq_pos]
+                val is substr of [arg, eq_pos + 1, (len of arg) - eq_pos - 1]
+                found is 0
+                for j in range of (len of result):
+                    if result[j][0] == key:
+                        set_at of [result, j, [key, val]]
+                        found is 1
+                if found == 0:
+                    append of [result, [key, val]]
+            else:
+                # Check if next arg is a value or another flag
+                if (i + 1) < (len of raw):
+                    next is raw[i + 1]
+                    if (starts_with of [next, "--"]) == 1:
+                        # It's a boolean flag
+                        append of [result, [arg, "true"]]
+                    else:
+                        # It's --key value
+                        append of [result, [arg, next]]
+                        i is i + 1
+                else:
+                    # Last arg, must be a flag
+                    append of [result, [arg, "true"]]
+        elif (starts_with of [arg, "-"]) == 1:
+            # Short flag: -v, -n etc. Treat as boolean
+            append of [result, [arg, "true"]]
+        else:
+            # Positional argument
+            for j in range of (len of result):
+                if result[j][0] == "positional":
+                    append of [result[j][1], arg]
+        i is i + 1
+    return result
+
+# ---- get_flag: check if a flag is present ----
+# get_flag of [parsed, "--verbose"] -> 1 or 0
+define get_flag as:
+    parsed is n[0]
+    flag is n[1]
+    for i in range of (len of parsed):
+        if parsed[i][0] == flag:
+            return 1
+    return 0
+
+# ---- get_opt: get option value with default ----
+# get_opt of [parsed, "--output", "default"] -> value or default
+define get_opt as:
+    parsed is n[0]
+    key is n[1]
+    default is n[2]
+    for i in range of (len of parsed):
+        if parsed[i][0] == key:
+            return parsed[i][1]
+    return default
+
+# ---- get_positional: get list of positional arguments ----
+define get_positional as:
+    for i in range of (len of n):
+        if n[i][0] == "positional":
+            return n[i][1]
+    return []
+
+# ---- has_flag: alias for get_flag ----
+define has_flag as:
+    return get_flag of n
+
+# ---- require_opt: get option or exit with error ----
+# require_opt of [parsed, "--input", "Usage: prog --input FILE"]
+define require_opt as:
+    parsed is n[0]
+    key is n[1]
+    usage is n[2]
+    for i in range of (len of parsed):
+        if parsed[i][0] == key:
+            return parsed[i][1]
+    print of usage
+    assert of [0, "Missing required option: " + key]
