@@ -1055,8 +1055,51 @@ else
     echo ""
 fi
 
-# [48] Example smoke tests
-echo "[48/48] Example Smoke Tests"
+# [48] Large-buffer regression tests — exercise strbuf growth paths
+# that replaced the fixed MAX_STR stack arrays in v0.8.0.
+echo "[48a] Large Strings (4 checks)"
+LS_OUTPUT=$(./eigenscript "$TESTS_DIR/test_large_strings.eigs" 2>&1)
+if echo "$LS_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 4)); PASS=$((PASS + 4))
+    echo "  PASS: all 4 large-string checks"
+else
+    TOTAL=$((TOTAL + 4)); FAIL=$((FAIL + 1))
+    echo "  FAIL: large-string checks"; echo "$LS_OUTPUT" | grep FAIL | head -3
+fi
+
+echo "[48b] F-String Large (3 checks)"
+FL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_fstring_large.eigs" 2>&1)
+if echo "$FL_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 3)); PASS=$((PASS + 3))
+    echo "  PASS: all 3 f-string-large checks"
+else
+    TOTAL=$((TOTAL + 3)); FAIL=$((FAIL + 1))
+    echo "  FAIL: f-string-large checks"; echo "$FL_OUTPUT" | grep FAIL | head -3
+fi
+
+echo "[48c] Regex Large (3 checks)"
+RL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_regex_large.eigs" 2>&1)
+if echo "$RL_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 3)); PASS=$((PASS + 3))
+    echo "  PASS: all 3 regex-large checks"
+else
+    TOTAL=$((TOTAL + 3)); FAIL=$((FAIL + 1))
+    echo "  FAIL: regex-large checks"; echo "$RL_OUTPUT" | grep FAIL | head -3
+fi
+
+echo "[48d] JSON Large (6 checks)"
+JL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_json_large.eigs" 2>&1)
+if echo "$JL_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 6)); PASS=$((PASS + 6))
+    echo "  PASS: all 6 json-large checks"
+else
+    TOTAL=$((TOTAL + 6)); FAIL=$((FAIL + 1))
+    echo "  FAIL: json-large checks"; echo "$JL_OUTPUT" | grep FAIL | head -3
+fi
+echo ""
+
+# [49] Example smoke tests
+echo "[49] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

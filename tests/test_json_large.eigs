@@ -1,0 +1,20 @@
+# Verify json_encode handles large lists without the old MAX_STR cap.
+load_file of "lib/test.eigs"
+
+# 20,000-element numeric list → JSON should be ~ 140KB, well past 64KB.
+nums is []
+for i in range of 20000:
+    append of [nums, i * 13 + 7]
+
+js is json_encode of nums
+assert_true of [(len of js) > 65536, "json_encode(20000 nums) > 64KB"]
+assert_eq of [char_at of [js, 0], "[", "JSON starts with ["]
+assert_eq of [char_at of [js, (len of js) - 1], "]", "JSON ends with ]"]
+
+# Roundtrip must produce the original list (first element + length).
+decoded is json_decode of js
+assert_eq of [len of decoded, 20000, "roundtrip preserves length"]
+assert_eq of [decoded[0], 7, "roundtrip preserves first element"]
+assert_eq of [decoded[19999], 20000 * 13 + 7 - 13, "roundtrip preserves last element"]
+
+test_summary of null

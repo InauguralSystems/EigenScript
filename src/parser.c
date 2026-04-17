@@ -193,7 +193,7 @@ static ASTNode* parse_expression(Parser *p);
 static ASTNode* parse_statement(Parser *p);
 
 static ASTNode** parse_block(Parser *p, int *count) {
-    ASTNode **stmts = xmalloc(MAX_STMTS * sizeof(ASTNode*));
+    ASTNode **stmts = xmalloc_array(MAX_STMTS, sizeof(ASTNode*));
     *count = 0;
 
     p_expect(p, TOK_INDENT);
@@ -334,7 +334,7 @@ static ASTNode* parse_primary(Parser *p) {
 
         if (is_lambda) {
             p_advance(p); /* skip ( */
-            char **params = xmalloc(16 * sizeof(char*));
+            char **params = xmalloc_array(16, sizeof(char*));
             int param_count = 0;
             while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
@@ -403,7 +403,7 @@ static ASTNode* parse_primary(Parser *p) {
             return n;
         }
 
-        ASTNode **elems = xmalloc(MAX_LIST * sizeof(ASTNode*));
+        ASTNode **elems = xmalloc_array(MAX_LIST, sizeof(ASTNode*));
         int count = 0;
         elems[count++] = first;
         while (p_cur(p)->type == TOK_COMMA) {
@@ -432,8 +432,8 @@ static ASTNode* parse_primary(Parser *p) {
     /* Dict literal: {"key": value, ...} */
     if (t->type == TOK_LBRACE) {
         p_advance(p);
-        ASTNode **keys = xmalloc(MAX_LIST * sizeof(ASTNode*));
-        ASTNode **vals = xmalloc(MAX_LIST * sizeof(ASTNode*));
+        ASTNode **keys = xmalloc_array(MAX_LIST, sizeof(ASTNode*));
+        ASTNode **vals = xmalloc_array(MAX_LIST, sizeof(ASTNode*));
         int count = 0;
         if (p_cur(p)->type != TOK_RBRACE) {
             keys[count] = parse_expression(p);
@@ -643,7 +643,7 @@ static ASTNode* parse_statement(Parser *p) {
         int param_count = 0;
         if (p_cur(p)->type == TOK_LPAREN) {
             p_advance(p); /* skip ( */
-            params = xmalloc(16 * sizeof(char*));
+            params = xmalloc_array(16, sizeof(char*));
             while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
@@ -709,9 +709,9 @@ static ASTNode* parse_statement(Parser *p) {
         p_skip_newlines(p);
 
         /* Parse case branches */
-        ASTNode **patterns = xmalloc(64 * sizeof(ASTNode*));
-        ASTNode ***bodies = xmalloc(64 * sizeof(ASTNode**));
-        int *body_counts = xmalloc(64 * sizeof(int));
+        ASTNode **patterns = xmalloc_array(64, sizeof(ASTNode*));
+        ASTNode ***bodies = xmalloc_array(64, sizeof(ASTNode**));
+        int *body_counts = xmalloc_array(64, sizeof(int));
         int case_count = 0;
 
         while (p_cur(p)->type == TOK_CASE && case_count < 64) {
@@ -879,7 +879,7 @@ ASTNode* parse(TokenList *tl) {
     p.tl = tl;
     p.pos = 0;
 
-    ASTNode **stmts = xmalloc(MAX_STMTS * sizeof(ASTNode*));
+    ASTNode **stmts = xmalloc_array(MAX_STMTS, sizeof(ASTNode*));
     int count = 0;
 
     p_skip_newlines(&p);

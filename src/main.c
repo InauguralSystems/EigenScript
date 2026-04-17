@@ -20,9 +20,9 @@ static void eigenscript_repl(Env *env) {
     printf("EigenScript %s\n", EIGENSCRIPT_VERSION);
     printf("Type 'exit' or Ctrl-D to quit.\n\n");
 
-    char line_buf[MAX_STR];
-    char input_buf[MAX_BODY];
-    int input_len = 0;
+    char line_buf[4096];
+    strbuf input;
+    strbuf_init(&input);
     int continuation = 0;
 
     while (1) {
@@ -44,13 +44,8 @@ static void eigenscript_repl(Env *env) {
             }
         }
 
-        /* Append to input buffer */
         int len = strlen(line_buf);
-        if (input_len + len < MAX_BODY - 1) {
-            memcpy(input_buf + input_len, line_buf, len);
-            input_len += len;
-        }
-        input_buf[input_len] = '\0';
+        strbuf_append_n(&input, line_buf, (size_t)len);
 
         /* Multi-line detection */
         if (!continuation) {
@@ -78,27 +73,30 @@ static void eigenscript_repl(Env *env) {
 
         /* Skip empty input */
         {
-            char *check = input_buf;
+            char *check = input.data;
             while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') check++;
             if (*check == '\0') {
-                input_len = 0;
+                input.len = 0;
+                input.data[0] = '\0';
                 continue;
             }
         }
 
         /* Tokenize, parse, eval with error recovery */
         g_parse_errors = 0;
-        TokenList tl = tokenize(input_buf);
+        TokenList tl = tokenize(input.data);
         if (g_parse_errors > 0) {
             free_tokenlist(&tl);
-            input_len = 0;
+            input.len = 0;
+            input.data[0] = '\0';
             continue;
         }
 
         ASTNode *ast = parse(&tl);
         if (g_parse_errors > 0) {
             free_tokenlist(&tl);
-            input_len = 0;
+            input.len = 0;
+            input.data[0] = '\0';
             continue;
         }
 
@@ -115,8 +113,10 @@ static void eigenscript_repl(Env *env) {
 
         free_tokenlist(&tl);
         /* Don't free AST — function defs hold pointers into it */
-        input_len = 0;
+        input.len = 0;
+        input.data[0] = '\0';
     }
+    strbuf_free(&input);
 }
 
 /* ---- Main ---- */

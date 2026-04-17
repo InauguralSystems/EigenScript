@@ -29,6 +29,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <limits.h>
 #include <setjmp.h>
 #include <unistd.h>
 #include <errno.h>
@@ -48,9 +49,6 @@
 #define MAX_VARS        512
 #define MAX_STMTS       4096
 #define MAX_LIST        1024
-#define MAX_STR         65536
-#define MAX_BODY        1048576
-#define MAX_HEADER      8192
 
 /* ---- Tokenizer ---- */
 
@@ -196,11 +194,34 @@ extern Arena g_arena;
 
 /* ---- OOM-safe allocation wrappers ----
  * Abort with a diagnostic on allocation failure. Used by value constructors
- * and the arena allocator, where a NULL return would immediately crash. */
+ * and the arena allocator, where a NULL return would immediately crash.
+ * The _array variants guard against size_t overflow in nmemb*size. */
 void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
 void* xrealloc(void *p, size_t size);
 char* xstrdup(const char *s);
+size_t safe_size_mul(size_t a, size_t b);
+void* xmalloc_array(size_t nmemb, size_t size);
+void* xcalloc_array(size_t nmemb, size_t size);
+void* xrealloc_array(void *p, size_t nmemb, size_t size);
+
+/* ---- Growable string buffer ----
+ * Heap-backed, doubling growth. Used to replace fixed MAX_STR stack
+ * buffers in the lexer, regex_replace, JSON encoder, value_to_string. */
+typedef struct {
+    char  *data;
+    size_t len;
+    size_t cap;
+} strbuf;
+
+void   strbuf_init(strbuf *b);
+void   strbuf_reserve(strbuf *b, size_t need);
+void   strbuf_append_char(strbuf *b, char c);
+void   strbuf_append(strbuf *b, const char *s);
+void   strbuf_append_n(strbuf *b, const char *s, size_t n);
+void   strbuf_append_fmt(strbuf *b, const char *fmt, ...);
+char  *strbuf_finish(strbuf *b);
+void   strbuf_free(strbuf *b);
 
 void arena_init(void);
 void* arena_alloc(size_t size);

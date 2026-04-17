@@ -19,6 +19,23 @@ static volatile int g_init_complete = 0;
 static pthread_t g_health_tid;
 static int g_health_thread_active = 0;
 
+/* Maximum allowed request body in bytes. Default 16 MiB; override via
+ * EIGS_HTTP_MAX_BODY env var. Initialised lazily on first request. */
+#define EIGS_HTTP_DEFAULT_MAX_BODY (16L * 1024L * 1024L)
+static long g_http_max_body = 0;
+
+static long http_max_body(void) {
+    if (g_http_max_body != 0) return g_http_max_body;
+    const char *env = getenv("EIGS_HTTP_MAX_BODY");
+    if (env && *env) {
+        char *end = NULL;
+        long v = strtol(env, &end, 10);
+        if (end != env && v > 0) { g_http_max_body = v; return v; }
+    }
+    g_http_max_body = EIGS_HTTP_DEFAULT_MAX_BODY;
+    return g_http_max_body;
+}
+
 void* health_thread(void *arg) {
     int fd = (int)(intptr_t)arg;
     printf("[health-thread] Started on fd=%d, pid=%d\n", fd, getpid());
@@ -302,7 +319,7 @@ static const char* get_content_type(const char *path) {
 
 static void send_response(int fd, int status, const char *status_text,
                           const char *content_type, const char *body, long body_len) {
-    char header[MAX_HEADER];
+    char header[8192];
     int hlen = snprintf(header, sizeof(header),
         "HTTP/1.1 %d %s\r\n"
         "Content-Type: %s\r\n"
@@ -357,12 +374,23 @@ static void generate_session_id(char *buf, int len) {
 }
 
 static void handle_request(int fd) {
-    char reqbuf[MAX_BODY + MAX_HEADER];
+    long max_body = http_max_body();
+    size_t cap = 8192;
+    char *reqbuf = xmalloc(cap);
     int total = 0;
     int header_end = -1;
 
-    while (total < (int)sizeof(reqbuf) - 1) {
-        int n = read(fd, reqbuf + total, sizeof(reqbuf) - 1 - total);
+    for (;;) {
+        /* Grow when less than 4KB headroom, subject to max_body + 64KB header slack. */
+        if ((size_t)total + 4096 >= cap) {
+            size_t new_cap = cap * 2;
+            size_t hard_cap = (size_t)max_body + 65536;
+            if (new_cap > hard_cap) new_cap = hard_cap;
+            if (new_cap == cap) break; /* already at ceiling */
+            reqbuf = xrealloc_array(reqbuf, new_cap, 1);
+            cap = new_cap;
+        }
+        int n = read(fd, reqbuf + total, cap - 1 - total);
         if (n <= 0) break;
         total += n;
         reqbuf[total] = '\0';
@@ -376,12 +404,12 @@ static void handle_request(int fd) {
                 /* atoi silently accepts negative and non-numeric input; a
                  * negative Content-Length would make body_received trivially
                  * >= content_length and exit the read loop mid-body. Parse
-                 * with strtol and reject anything outside [0, MAX_BODY]. */
+                 * with strtol and reject anything outside [0, max_body]. */
                 char *clend = NULL;
                 long content_length = strtol(cl + 15, &clend, 10);
-                if (clend == cl + 15 || content_length < 0 || content_length > MAX_BODY) {
-                    /* Malformed Content-Length — close connection instead
-                     * of attempting to read an unknown amount of body. */
+                if (clend == cl + 15 || content_length < 0 || content_length > max_body) {
+                    /* Malformed or oversized Content-Length — close. */
+                    free(reqbuf);
                     close(fd);
                     return;
                 }
@@ -393,7 +421,7 @@ static void handle_request(int fd) {
         }
     }
 
-    if (total == 0) { close(fd); return; }
+    if (total == 0) { free(reqbuf); close(fd); return; }
     reqbuf[total] = '\0';
 
     char method[16] = {0}, path[2048] = {0}, version[16] = {0};
@@ -406,8 +434,7 @@ static void handle_request(int fd) {
 
     if (strcmp(method, "OPTIONS") == 0) {
         send_response(fd, 200, "OK", "text/plain", "", 0);
-        close(fd);
-        return;
+        goto done;
     }
 
     static char sess_id[64];
@@ -422,13 +449,11 @@ static void handle_request(int fd) {
         if (rel[0] == '/') rel++;
         if (strstr(rel, "..") != NULL || rel[0] == '/') {
             send_response(fd, 403, "Forbidden", "text/plain", "Forbidden", 9);
-            close(fd);
-            return;
+            goto done;
         }
         snprintf(filepath, sizeof(filepath), "%s/%s", g_server.static_dir, rel);
         send_file(fd, filepath);
-        close(fd);
-        return;
+        goto done;
     }
 
     for (int i = 0; i < g_server.route_count; i++) {
@@ -443,8 +468,7 @@ static void handle_request(int fd) {
                     if (!auth_fn || (auth_fn->type != VAL_FN && auth_fn->type != VAL_BUILTIN)) {
                         send_response(fd, 500, "Internal Server Error", "application/json",
                             "{\"error\": \"require_auth not defined or not callable\"}", 53);
-                        close(fd);
-                        return;
+                        goto done;
                     }
                     TokenList auth_tl = tokenize("require_auth of null");
                     ASTNode *auth_ast = parse(&auth_tl);
@@ -454,8 +478,7 @@ static void handle_request(int fd) {
                         send_response(fd, 401, "Unauthorized", "application/json",
                                       auth_str, strlen(auth_str));
                         free(auth_str);
-                        close(fd);
-                        return;
+                        goto done;
                     }
                     free(auth_str);
                 }
@@ -475,12 +498,15 @@ static void handle_request(int fd) {
                     ct = "text/plain";
                 send_response(fd, 200, "OK", ct, r->payload, strlen(r->payload));
             }
-            close(fd);
-            return;
+            goto done;
         }
     }
 
     send_404(fd, path);
+done:
+    g_server.request_body = NULL;
+    g_server.request_headers = NULL;
+    free(reqbuf);
     close(fd);
 }
 

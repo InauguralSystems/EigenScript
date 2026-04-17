@@ -14,6 +14,12 @@ static void x_oom(size_t size) {
     abort();
 }
 
+size_t safe_size_mul(size_t a, size_t b) {
+    if (a == 0 || b == 0) return 0;
+    if (a > SIZE_MAX / b) return SIZE_MAX;
+    return a * b;
+}
+
 void* xmalloc(size_t size) {
     void *p = malloc(size);
     if (!p) x_oom(size);
@@ -22,7 +28,7 @@ void* xmalloc(size_t size) {
 
 void* xcalloc(size_t nmemb, size_t size) {
     void *p = calloc(nmemb, size);
-    if (!p) x_oom(nmemb * size);
+    if (!p) x_oom(safe_size_mul(nmemb, size));
     return p;
 }
 
@@ -37,6 +43,23 @@ char* xstrdup(const char *s) {
     char *r = strdup(s);
     if (!r) x_oom(strlen(s) + 1);
     return r;
+}
+
+void* xmalloc_array(size_t nmemb, size_t size) {
+    size_t total = safe_size_mul(nmemb, size);
+    if (total == SIZE_MAX) x_oom(SIZE_MAX);
+    return xmalloc(total);
+}
+
+void* xcalloc_array(size_t nmemb, size_t size) {
+    if (safe_size_mul(nmemb, size) == SIZE_MAX) x_oom(SIZE_MAX);
+    return xcalloc(nmemb, size);
+}
+
+void* xrealloc_array(void *p, size_t nmemb, size_t size) {
+    size_t total = safe_size_mul(nmemb, size);
+    if (total == SIZE_MAX) x_oom(SIZE_MAX);
+    return xrealloc(p, total);
 }
 
 void arena_init(void) {
@@ -79,7 +102,7 @@ void* arena_alloc(size_t size) {
 void arena_track_string(char *s) {
     if (g_arena.string_count >= g_arena.string_capacity) {
         int new_cap = g_arena.string_capacity < 1024 ? 1024 : g_arena.string_capacity * 2;
-        g_arena.strings = xrealloc(g_arena.strings, new_cap * sizeof(char*));
+        g_arena.strings = xrealloc_array(g_arena.strings, new_cap, sizeof(char*));
         g_arena.string_capacity = new_cap;
     }
     g_arena.strings[g_arena.string_count++] = s;

@@ -142,22 +142,22 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
         json_skip_ws(p);
 
         if (strcmp(key, "w_q") == 0) {
-            layer->w_q = xcalloc((size_t)d_model * d_model, sizeof(float));
+            layer->w_q = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
             json_parse_2d_array(p, layer->w_q, d_model, d_model);
         } else if (strcmp(key, "w_k") == 0) {
-            layer->w_k = xcalloc((size_t)d_model * d_model, sizeof(float));
+            layer->w_k = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
             json_parse_2d_array(p, layer->w_k, d_model, d_model);
         } else if (strcmp(key, "w_v") == 0) {
-            layer->w_v = xcalloc((size_t)d_model * d_model, sizeof(float));
+            layer->w_v = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
             json_parse_2d_array(p, layer->w_v, d_model, d_model);
         } else if (strcmp(key, "w_o") == 0) {
-            layer->w_o = xcalloc((size_t)d_model * d_model, sizeof(float));
+            layer->w_o = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
             json_parse_2d_array(p, layer->w_o, d_model, d_model);
         } else if (strcmp(key, "w_ff1") == 0) {
-            layer->w_ff1 = xcalloc((size_t)d_model * d_ff, sizeof(float));
+            layer->w_ff1 = xcalloc_array(safe_size_mul(d_model, d_ff), sizeof(float));
             json_parse_2d_array(p, layer->w_ff1, d_model, d_ff);
         } else if (strcmp(key, "w_ff2") == 0) {
-            layer->w_ff2 = xcalloc((size_t)d_ff * d_model, sizeof(float));
+            layer->w_ff2 = xcalloc_array(safe_size_mul(d_ff, d_model), sizeof(float));
             json_parse_2d_array(p, layer->w_ff2, d_ff, d_model);
         } else if (strcmp(key, "ln1_gamma") == 0) {
             layer->ln1_gamma = xcalloc(d_model, sizeof(float));
@@ -180,12 +180,12 @@ static int json_parse_layer(const char **p, TransformerLayer *layer, int d_model
     if (**p == '}') (*p)++;
 
     /* Allocate ternary projections (populated by requantize_all_layers after load) */
-    layer->w_q_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
-    layer->w_k_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
-    layer->w_v_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
-    layer->w_o_tern = xcalloc((size_t)d_model * d_model, sizeof(float));
-    layer->w_ff1_tern = xcalloc((size_t)d_model * d_ff, sizeof(float));
-    layer->w_ff2_tern = xcalloc((size_t)d_ff * d_model, sizeof(float));
+    layer->w_q_tern = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
+    layer->w_k_tern = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
+    layer->w_v_tern = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
+    layer->w_o_tern = xcalloc_array(safe_size_mul(d_model, d_model), sizeof(float));
+    layer->w_ff1_tern = xcalloc_array(safe_size_mul(d_model, d_ff), sizeof(float));
+    layer->w_ff2_tern = xcalloc_array(safe_size_mul(d_ff, d_model), sizeof(float));
 
     /* Allocate packed ternary buffers (2 bits per weight, 4 per byte) */
     int64_t n_m2 = (int64_t)d_model * d_model;
@@ -256,12 +256,12 @@ int load_model_weights(const char *path, TransformerModel *model) {
         } else if (strcmp(key, "token_embeddings") == 0) {
             int vs = model->config.vocab_size;
             int dm = model->config.d_model;
-            model->token_embeddings = xcalloc((size_t)vs * dm, sizeof(float));
+            model->token_embeddings = xcalloc_array(safe_size_mul(vs, dm), sizeof(float));
             json_parse_2d_array(&p, model->token_embeddings, vs, dm);
         } else if (strcmp(key, "output_proj") == 0) {
             int dm = model->config.d_model;
             int vs = model->config.vocab_size;
-            model->output_proj = xcalloc((size_t)dm * vs, sizeof(float));
+            model->output_proj = xcalloc_array(safe_size_mul(dm, vs), sizeof(float));
             json_parse_2d_array(&p, model->output_proj, dm, vs);
         } else if (strcmp(key, "layers") == 0) {
             json_skip_ws(&p);

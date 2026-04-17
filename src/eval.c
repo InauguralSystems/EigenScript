@@ -160,9 +160,10 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             if (left->type == VAL_STR || right->type == VAL_STR) {
                 char *ls = value_to_string(left);
                 char *rs = value_to_string(right);
-                char *result = xmalloc(strlen(ls) + strlen(rs) + 1);
-                strcpy(result, ls);
-                strcat(result, rs);
+                size_t llen = strlen(ls), rlen = strlen(rs);
+                char *result = xmalloc(llen + rlen + 1);
+                memcpy(result, ls, llen);
+                memcpy(result + llen, rs, rlen + 1);
                 Value *v = make_str(result);
                 free(ls); free(rs); free(result);
                 return v;

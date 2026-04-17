@@ -197,7 +197,7 @@ Value* make_fn(const char *name, char **params, int param_count, ASTNode **body,
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_FN;
     v->data.fn.name = xstrdup(name);
-    v->data.fn.params = xmalloc(param_count * sizeof(char*));
+    v->data.fn.params = xmalloc_array(param_count, sizeof(char*));
     v->data.fn.param_count = param_count;
     for (int i = 0; i < param_count; i++)
         v->data.fn.params[i] = xstrdup(params[i]);
@@ -237,8 +237,8 @@ void dict_set(Value *dict, const char *key, Value *val) {
     /* Grow if needed */
     if (dict->data.dict.count >= dict->data.dict.capacity) {
         int new_cap = dict->data.dict.capacity * 2;
-        dict->data.dict.keys = xrealloc(dict->data.dict.keys, new_cap * sizeof(char*));
-        dict->data.dict.vals = xrealloc(dict->data.dict.vals, new_cap * sizeof(Value*));
+        dict->data.dict.keys = xrealloc_array(dict->data.dict.keys, new_cap, sizeof(char*));
+        dict->data.dict.vals = xrealloc_array(dict->data.dict.vals, new_cap, sizeof(Value*));
         dict->data.dict.capacity = new_cap;
     }
     dict->data.dict.keys[dict->data.dict.count] = xstrdup(key);
@@ -312,11 +312,11 @@ void list_append(Value *list, Value *item) {
         int new_cap = list->data.list.capacity * 2;
         if (g_arena.active) {
             /* Cannot realloc arena memory — allocate new array and copy */
-            Value **new_items = arena_alloc(new_cap * sizeof(Value*));
+            Value **new_items = arena_alloc(safe_size_mul(new_cap, sizeof(Value*)));
             memcpy(new_items, list->data.list.items, list->data.list.count * sizeof(Value*));
             list->data.list.items = new_items;
         } else {
-            list->data.list.items = xrealloc(list->data.list.items, new_cap * sizeof(Value*));
+            list->data.list.items = xrealloc_array(list->data.list.items, new_cap, sizeof(Value*));
         }
         list->data.list.capacity = new_cap;
     }
@@ -353,62 +353,38 @@ char* value_to_string(Value *v) {
         }
         case VAL_STR: return xstrdup(v->data.str);
         case VAL_LIST: {
-            char *result = xmalloc(MAX_STR);
-            int pos = 0;
-            int remaining;
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "[");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
+            strbuf out;
+            strbuf_init(&out);
+            strbuf_append_char(&out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
-                if (i > 0) {
-                    remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-                    pos += snprintf(result + pos, remaining, ", ");
-                    if (pos >= MAX_STR) pos = MAX_STR - 1;
-                }
+                if (i > 0) strbuf_append_n(&out, ", ", 2);
                 char *s = value_to_string(v->data.list.items[i]);
-                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
                 if (v->data.list.items[i] && v->data.list.items[i]->type == VAL_STR)
-                    pos += snprintf(result + pos, remaining, "\"%s\"", s);
+                    strbuf_append_fmt(&out, "\"%s\"", s);
                 else
-                    pos += snprintf(result + pos, remaining, "%s", s);
-                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                    strbuf_append(&out, s);
                 free(s);
             }
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "]");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
-            return result;
+            strbuf_append_char(&out, ']');
+            return strbuf_finish(&out);
         }
         case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return xstrdup(buf);
         case VAL_DICT: {
-            char *result = xmalloc(MAX_STR);
-            int pos = 0;
-            int remaining;
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "{");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
+            strbuf out;
+            strbuf_init(&out);
+            strbuf_append_char(&out, '{');
             for (int i = 0; i < v->data.dict.count; i++) {
-                if (i > 0) {
-                    remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-                    pos += snprintf(result + pos, remaining, ", ");
-                    if (pos >= MAX_STR) pos = MAX_STR - 1;
-                }
-                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-                pos += snprintf(result + pos, remaining, "\"%s\": ", v->data.dict.keys[i]);
-                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                if (i > 0) strbuf_append_n(&out, ", ", 2);
+                strbuf_append_fmt(&out, "\"%s\": ", v->data.dict.keys[i]);
                 char *vs = value_to_string(v->data.dict.vals[i]);
-                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
                 if (v->data.dict.vals[i] && v->data.dict.vals[i]->type == VAL_STR)
-                    pos += snprintf(result + pos, remaining, "\"%s\"", vs);
+                    strbuf_append_fmt(&out, "\"%s\"", vs);
                 else
-                    pos += snprintf(result + pos, remaining, "%s", vs);
-                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                    strbuf_append(&out, vs);
                 free(vs);
             }
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "}");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
-            return result;
+            strbuf_append_char(&out, '}');
+            return strbuf_finish(&out);
         }
         case VAL_BUILTIN: return xstrdup("<builtin>");
         case VAL_JSON_RAW: return xstrdup(v->data.str);
