@@ -1,0 +1,33 @@
+# Streaming tensor I/O tests — stream_open / stream_write / stream_close
+load_file of "lib/test.eigs"
+
+path is mktemp of null
+
+# Open a stream for 4 values
+ok is stream_open of [path, 4]
+assert_eq of [ok, 1, "stream_open returns 1 on success"]
+
+# Write four doubles
+assert_eq of [stream_write of 1.5, 1, "stream_write returns 1"]
+assert_eq of [stream_write of -2.25, 1, "stream_write returns 1"]
+assert_eq of [stream_write of 3.125, 1, "stream_write returns 1"]
+assert_eq of [stream_write of 0, 1, "stream_write returns 1"]
+
+# Close
+assert_eq of [stream_close of null, 1, "stream_close returns 1 on success"]
+
+# Roundtrip via tensor_load (stream format is the no-observer 1-D tensor format)
+t is tensor_load of path
+assert_eq of [len of t, 4, "loaded tensor has 4 values"]
+assert_eq of [get_at of [t, 0], 1.5, "stream value 0"]
+assert_eq of [get_at of [t, 1], -2.25, "stream value 1"]
+assert_eq of [get_at of [t, 2], 3.125, "stream value 2"]
+assert_eq of [get_at of [t, 3], 0, "stream value 3"]
+
+# Rejection cases
+assert_eq of [stream_write of 1.0, 0, "stream_write fails after close"]
+assert_eq of [stream_close of null, 0, "stream_close on closed stream returns 0"]
+assert_eq of [stream_open of ["nonsense", "not-a-number"], 0, "stream_open rejects bad args"]
+
+rm of path
+test_summary of null

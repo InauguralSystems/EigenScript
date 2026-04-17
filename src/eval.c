@@ -97,72 +97,78 @@ static Value* eval_node_impl(ASTNode *node, Env *env);
 
 /* Purely-numeric RHS fast path used by the unobserved fast mutation
  * path. Computes a side-effect-free arithmetic tree into *out without
- * allocating any intermediate Values. Returns 1 on success, 0 on bail. */
+ * allocating any intermediate Values. Returns 1 on success, 0 on bail.
+ * Shares the eval recursion counter so deeply-nested arithmetic bails
+ * rather than overflowing the C stack. */
 static int eval_num_fast(ASTNode *node, Env *env, double *out) {
     if (!node) return 0;
+    if (g_eval_depth >= EIGS_MAX_EVAL_DEPTH) return 0;
+    g_eval_depth++;
+    int ok = 0;
     switch (node->type) {
         case AST_NUM:
             *out = node->data.num;
-            return 1;
+            ok = 1;
+            break;
         case AST_IDENT: {
             Value *v = env_get(env, node->data.ident.name);
-            if (!v || v->type != VAL_NUM) return 0;
-            *out = v->data.num;
-            return 1;
+            if (v && v->type == VAL_NUM) { *out = v->data.num; ok = 1; }
+            break;
         }
         case AST_DOT: {
             if (node->data.dot.target->type != AST_IDENT &&
                 node->data.dot.target->type != AST_DOT &&
-                node->data.dot.target->type != AST_INDEX) return 0;
+                node->data.dot.target->type != AST_INDEX) break;
             Value *target = eval_node(node->data.dot.target, env);
-            if (!target || target->type != VAL_DICT) return 0;
+            if (!target || target->type != VAL_DICT) break;
             Value *v = dict_get(target, node->data.dot.key);
-            if (!v || v->type != VAL_NUM) return 0;
-            *out = v->data.num;
-            return 1;
+            if (v && v->type == VAL_NUM) { *out = v->data.num; ok = 1; }
+            break;
         }
         case AST_INDEX: {
             if (node->data.index.target->type != AST_IDENT &&
                 node->data.index.target->type != AST_DOT &&
-                node->data.index.target->type != AST_INDEX) return 0;
+                node->data.index.target->type != AST_INDEX) break;
             Value *target = eval_node(node->data.index.target, env);
-            if (!target || target->type != VAL_LIST) return 0;
+            if (!target || target->type != VAL_LIST) break;
             double idx_d;
-            if (!eval_num_fast(node->data.index.index, env, &idx_d)) return 0;
+            if (!eval_num_fast(node->data.index.index, env, &idx_d)) break;
             int i = (int)idx_d;
-            if (i < 0 || i >= target->data.list.count) return 0;
+            if (i < 0 || i >= target->data.list.count) break;
             Value *v = target->data.list.items[i];
-            if (!v || v->type != VAL_NUM) return 0;
-            *out = v->data.num;
-            return 1;
+            if (v && v->type == VAL_NUM) { *out = v->data.num; ok = 1; }
+            break;
         }
         case AST_UNARY: {
-            if (strcmp(node->data.unary.op, "-") != 0) return 0;
+            if (strcmp(node->data.unary.op, "-") != 0) break;
             double x;
-            if (!eval_num_fast(node->data.unary.operand, env, &x)) return 0;
+            if (!eval_num_fast(node->data.unary.operand, env, &x)) break;
             *out = -x;
-            return 1;
+            ok = 1;
+            break;
         }
         case AST_BINOP: {
             const char *op = node->data.binop.op;
-            if (op[1] != '\0') return 0;
+            if (op[1] != '\0') break;
             if (op[0] != '+' && op[0] != '-' && op[0] != '*' &&
-                op[0] != '/' && op[0] != '%') return 0;
+                op[0] != '/' && op[0] != '%') break;
             double l, r;
-            if (!eval_num_fast(node->data.binop.left, env, &l)) return 0;
-            if (!eval_num_fast(node->data.binop.right, env, &r)) return 0;
+            if (!eval_num_fast(node->data.binop.left, env, &l)) break;
+            if (!eval_num_fast(node->data.binop.right, env, &r)) break;
             switch (op[0]) {
-                case '+': *out = l + r; return 1;
-                case '-': *out = l - r; return 1;
-                case '*': *out = l * r; return 1;
-                case '/': if (r == 0) return 0; *out = l / r; return 1;
-                case '%': if (r == 0) return 0; *out = fmod(l, r); return 1;
+                case '+': *out = l + r; ok = 1; break;
+                case '-': *out = l - r; ok = 1; break;
+                case '*': *out = l * r; ok = 1; break;
+                case '/': if (r != 0) { *out = l / r; ok = 1; } break;
+                case '%': if (r != 0) { *out = fmod(l, r); ok = 1; } break;
             }
-            return 0;
+            break;
         }
         default:
-            return 0;
+            break;
     }
+    g_eval_depth--;
+    return ok;
 }
 
 Value* eval_node(ASTNode *node, Env *env) {

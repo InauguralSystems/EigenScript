@@ -1,6 +1,6 @@
 # EigenScript Formal Grammar
 
-EBNF specification for EigenScript v0.7.x. This grammar describes the
+EBNF specification for EigenScript v0.8.0+. This grammar describes the
 concrete syntax accepted by the parser in `src/parser.c`.
 
 ## Notation
