@@ -794,6 +794,18 @@ static ASTNode* parse_statement(Parser *p) {
         return n;
     }
 
+    if (t->type == TOK_UNOBSERVED) {
+        p_advance(p);
+        p_expect(p, TOK_COLON);
+        p_skip_newlines(p);
+        int body_count;
+        ASTNode **body = parse_block(p, &body_count);
+        ASTNode *n = make_node(AST_UNOBSERVED, t->line);
+        n->data.block.stmts = body;
+        n->data.block.count = body_count;
+        return n;
+    }
+
     if (t->type == TOK_FOR) {
         p_advance(p);
         Token *var_tok = p_cur(p);

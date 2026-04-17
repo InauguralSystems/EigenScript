@@ -1,0 +1,53 @@
+# Tests for the 'unobserved' block — opt-out of observer tracking.
+# Semantics: inside the block, numeric assignments may mutate Values
+# in place, and update_observer is not called. Values keep their
+# identity; their entropy/dH/obs_age go stale until the next
+# observed write.
+load_file of "lib/test.eigs"
+
+# Values computed inside unobserved are still correct
+g is {"x": 0.0, "y": 10.0}
+unobserved:
+    i is 0
+    loop while i < 1000:
+        g.x is g.x + 0.5
+        g.y is g.y - 0.01
+        i is i + 1
+
+assert_eq of [g.x, 500.0, "unobserved dict field sums correctly"]
+# g.y subject to float drift across 1000 multiply-adds — use tolerance
+assert_true of [g.y > -0.01, "unobserved dict field y in range (upper)"]
+assert_true of [g.y < 0.01, "unobserved dict field y in range (lower)"]
+
+# Local variable mutation inside unobserved
+unobserved:
+    s is 0
+    j is 0
+    loop while j < 100:
+        s is s + j
+        j is j + 1
+assert_eq of [s, 4950, "unobserved local var accumulator"]
+
+# After the block, normal observed behavior resumes
+g.x is g.x + 1.0
+assert_eq of [g.x, 501.0, "post-unobserved assignment works"]
+
+# Non-numeric assignment still works inside unobserved (no fast path, but
+# correctness preserved)
+unobserved:
+    g.label is "set inside"
+assert_eq of [g.label, "set inside", "non-numeric unobserved assignment"]
+
+# Nested unobserved is idempotent (depth counter)
+unobserved:
+    unobserved:
+        g.x is 0
+    g.x is g.x + 42
+assert_eq of [g.x, 42, "nested unobserved blocks"]
+
+# Outside unobserved, observer still tracks (sanity)
+g.z is 5
+g.z is g.z + 1
+assert_eq of [g.z, 6, "observed mutation still works"]
+
+test_summary of null

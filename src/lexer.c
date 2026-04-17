@@ -56,6 +56,7 @@ static TokType keyword_type(const char *word) {
     if (strcmp(word, "import") == 0) return TOK_IMPORT;
     if (strcmp(word, "match") == 0) return TOK_MATCH;
     if (strcmp(word, "case") == 0) return TOK_CASE;
+    if (strcmp(word, "unobserved") == 0) return TOK_UNOBSERVED;
     return TOK_IDENT;
 }
 

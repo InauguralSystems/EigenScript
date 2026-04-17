@@ -1128,8 +1128,23 @@ else
 fi
 echo ""
 
-# [51] Example smoke tests
-echo "[51] Example Smoke Tests"
+# [51] Unobserved block
+echo "[51] Unobserved Block (8 checks)"
+UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1)
+if echo "$UN_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 unobserved checks"
+else
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
+    echo "  FAIL: unobserved tests"
+    echo "$UN_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [52] Example smoke tests
+echo "[52] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 
