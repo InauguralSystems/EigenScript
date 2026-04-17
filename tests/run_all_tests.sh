@@ -965,7 +965,7 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 
     # [45] HTTP server integration (probe-gated)
-    echo "[45/47] HTTP Server Integration (9 checks)"
+    echo "[45/47] HTTP Server Integration (10 checks)"
     HS_OUTPUT=$(bash "$TESTS_DIR/test_http_server.sh" 2>&1)
     HS_PASS=$(echo "$HS_OUTPUT" | grep -c "PASS:" || true)
     HS_FAIL=$(echo "$HS_OUTPUT" | grep -c "FAIL:" || true)

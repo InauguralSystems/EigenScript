@@ -344,10 +344,12 @@ static void send_response(int fd, int status, const char *status_text,
 }
 
 static void send_404(int fd, const char *path) {
-    char body[512];
-    int blen = snprintf(body, sizeof(body),
-        "{\"error\": \"not_found\", \"path\": \"%s\"}", path);
-    send_response(fd, 404, "Not Found", "application/json", body, blen);
+    /* Path is deliberately omitted from the response body: it is attacker-
+     * controlled and was previously interpolated into JSON unescaped. The
+     * server still logs the miss via send_file. */
+    (void)path;
+    const char *body = "{\"error\": \"not_found\"}";
+    send_response(fd, 404, "Not Found", "application/json", body, (long)strlen(body));
 }
 
 static void send_file(int fd, const char *filepath) {
@@ -447,11 +449,30 @@ static void handle_request(int fd) {
         char filepath[4096];
         const char *rel = path + strlen(g_server.static_prefix);
         if (rel[0] == '/') rel++;
-        if (strstr(rel, "..") != NULL || rel[0] == '/') {
+        if (rel[0] == '/') {
             send_response(fd, 403, "Forbidden", "text/plain", "Forbidden", 9);
             goto done;
         }
         snprintf(filepath, sizeof(filepath), "%s/%s", g_server.static_dir, rel);
+
+        /* Confine to static_dir via realpath — normalises ``..``, follows
+         * symlinks, and rejects anything resolving outside the configured
+         * root. Missing files fall through to a plain 404. */
+        char *real_file = realpath(filepath, NULL);
+        char *real_root = realpath(g_server.static_dir, NULL);
+        if (!real_file || !real_root) {
+            free(real_file); free(real_root);
+            send_404(fd, path);
+            goto done;
+        }
+        size_t root_len = strlen(real_root);
+        int confined = strncmp(real_file, real_root, root_len) == 0
+                       && (real_file[root_len] == '/' || real_file[root_len] == '\0');
+        free(real_file); free(real_root);
+        if (!confined) {
+            send_response(fd, 403, "Forbidden", "text/plain", "Forbidden", 9);
+            goto done;
+        }
         send_file(fd, filepath);
         goto done;
     }

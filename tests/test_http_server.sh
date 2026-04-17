@@ -120,6 +120,22 @@ else
     fail "HS06 path traversal" "status=$STATUS (expected 403 or 404)"
 fi
 
+# ---- Symlink escape rejected (realpath confinement) ----
+# Drop a symlink inside static_dir that points outside. A purely string-based
+# path-traversal check misses this; realpath-based confinement catches it.
+ln -s /etc/hostname "$STATIC_DIR/escape" 2>/dev/null || true
+if [ -L "$STATIC_DIR/escape" ]; then
+    STATUS=$(curl -s --max-time 2 -o /dev/null -w "%{http_code}" \
+             "http://127.0.0.1:$PORT/files/escape")
+    if [ "$STATUS" = "403" ] || [ "$STATUS" = "404" ]; then
+        ok "HS06b symlink escape rejected (status=$STATUS)"
+    else
+        fail "HS06b symlink escape" "status=$STATUS (expected 403 or 404)"
+    fi
+else
+    echo "  SKIP: HS06b (could not create symlink)"
+fi
+
 # ---- CORS headers on OPTIONS ----
 STATUS=$(curl -s --max-time 2 -X OPTIONS -o /dev/null -w "%{http_code}" \
          "http://127.0.0.1:$PORT/ping")

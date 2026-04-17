@@ -11,6 +11,20 @@ All notable changes to EigenScript are documented here.
   crash (or corrupt adjacent frames). Deployments that accept untrusted
   `.eigs` source are advised to upgrade. Fixed as part of the strbuf
   migration below.
+- **HTTP 404 response JSON injection (low)**: `send_404` in `src/ext_http.c`
+  interpolated the unescaped request path into the JSON body. A crafted URL
+  containing `"` could break the JSON structure. The path is now omitted from
+  the response body (server-side logs still record it).
+- **HTTP static-file confinement hardened (medium)**: `src/ext_http.c` now
+  resolves the candidate path and the configured `static_dir` with `realpath`
+  and rejects anything whose resolved prefix is not the root. This replaces
+  the previous `strstr(rel, "..")` check and also defends against symlinks
+  inside `static_dir` that point outside it. New regression test `HS06b`
+  covers the symlink-escape case.
+- **Threat model documented in `SECURITY.md`**: clarifies that `.eigs`
+  authors are trusted (the runtime gives scripts the same file/process/network
+  access the host user has), while the runtime itself must be safe against
+  malformed input, crafted HTTP requests, and malicious model files.
 
 ### Hardening
 - **Overflow-safe allocator helpers**: new `safe_size_mul`, `xmalloc_array`,
