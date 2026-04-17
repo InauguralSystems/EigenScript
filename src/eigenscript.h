@@ -208,6 +208,24 @@ void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);
 void* xrealloc_array(void *p, size_t nmemb, size_t size);
 
+/* ---- Growable string buffer ----
+ * Heap-backed, doubling growth. Used to replace fixed MAX_STR stack
+ * buffers in the lexer, regex_replace, JSON encoder, value_to_string. */
+typedef struct {
+    char  *data;
+    size_t len;
+    size_t cap;
+} strbuf;
+
+void   strbuf_init(strbuf *b);
+void   strbuf_reserve(strbuf *b, size_t need);
+void   strbuf_append_char(strbuf *b, char c);
+void   strbuf_append(strbuf *b, const char *s);
+void   strbuf_append_n(strbuf *b, const char *s, size_t n);
+void   strbuf_append_fmt(strbuf *b, const char *fmt, ...);
+char  *strbuf_finish(strbuf *b);
+void   strbuf_free(strbuf *b);
+
 void arena_init(void);
 void* arena_alloc(size_t size);
 void arena_track_string(char *s);
