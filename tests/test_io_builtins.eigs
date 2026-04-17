@@ -1,0 +1,66 @@
+# Tests for write, flush, join, usleep builtins
+load_file of "lib/test.eigs"
+
+# === write (output without newline) ===
+# Can't easily test output capture, but verify it doesn't crash
+write of "hello"
+write of " "
+write of "world\n"
+assert_true of [1, "write doesn't crash"]
+
+# === flush ===
+flush of null
+assert_true of [1, "flush doesn't crash"]
+
+# === join (C builtin) ===
+# Basic join
+assert_eq of [join of [["a", "b", "c"], ","], "a,b,c", "join comma"]
+
+# Join with empty separator
+assert_eq of [join of [["x", "y", "z"], ""], "xyz", "join empty sep"]
+
+# Join with space
+assert_eq of [join of [["hello", "world"], " "], "hello world", "join space"]
+
+# Join single element
+assert_eq of [join of [["only"], ","], "only", "join single"]
+
+# Join empty list
+assert_eq of [join of [[], ","], "", "join empty list"]
+
+# Join with numbers (auto-converts)
+assert_eq of [join of [[1, 2, 3], "-"], "1-2-3", "join numbers"]
+
+# Join large list (performance test — should be fast)
+big is []
+for i in range of 1000:
+    append of [big, "x"]
+result is join of [big, ""]
+assert_eq of [len of result, 1000, "join 1000 elements"]
+
+# Join with multi-char separator
+assert_eq of [join of [["a", "b"], " :: "], "a :: b", "join multi-char sep"]
+
+# === usleep ===
+# Can't test timing precisely, just verify no crash
+usleep of 1000
+assert_true of [1, "usleep doesn't crash"]
+
+# usleep of 0
+usleep of 0
+assert_true of [1, "usleep zero"]
+
+# === refcount GC ===
+# Verify values don't leak (indirect — just that reassignment works in loops)
+for i in range of 1000:
+    temp is [1, 2, 3, 4, 5]
+    temp is "replaced"
+assert_true of [1, "1000 list replacements no crash"]
+
+# Dict value replacement
+d is {"key": "initial"}
+for i in range of 500:
+    d.key is f"value_{i}"
+assert_eq of [d.key, "value_499", "dict value replacement"]
+
+test_summary of null

@@ -1098,8 +1098,23 @@ else
 fi
 echo ""
 
-# [49] Example smoke tests
-echo "[49] Example Smoke Tests"
+# I/O builtins + join + refcount GC
+echo "[49] I/O Builtins & GC (14 checks)"
+IO_OUTPUT=$(./eigenscript ../tests/test_io_builtins.eigs 2>&1)
+if echo "$IO_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 14))
+    PASS=$((PASS + 14))
+    echo "  PASS: all 14 I/O + GC checks"
+else
+    TOTAL=$((TOTAL + 14))
+    FAIL=$((FAIL + 14))
+    echo "  FAIL: I/O builtins tests"
+    echo "$IO_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [50] Example smoke tests
+echo "[50] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

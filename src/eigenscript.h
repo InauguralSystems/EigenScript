@@ -247,6 +247,7 @@ Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 Value* dict_get(Value *dict, const char *key);
 void list_append(Value *list, Value *item);
+void free_value(Value *v);
 
 /* ---- Reference counting ---- */
 static inline void val_incref(Value *v) {
@@ -271,7 +272,6 @@ void env_free(Env *env);
 
 TokenList tokenize(const char *source);
 void free_tokenlist(TokenList *tl);
-void free_value(Value *v);
 ASTNode* parse(TokenList *tl);
 Value* eval_node(ASTNode *node, Env *env);
 Value* eval_block(ASTNode **stmts, int count, Env *env);
