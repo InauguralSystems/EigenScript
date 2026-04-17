@@ -1143,8 +1143,38 @@ else
 fi
 echo ""
 
-# [52] Example smoke tests
-echo "[52] Example Smoke Tests"
+# [52] Stream I/O
+echo "[52] Stream Tensor I/O (12 checks)"
+SI_OUTPUT=$(./eigenscript ../tests/test_stream_io.eigs 2>&1)
+if echo "$SI_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 12))
+    PASS=$((PASS + 12))
+    echo "  PASS: all 12 stream I/O checks"
+else
+    TOTAL=$((TOTAL + 12))
+    FAIL=$((FAIL + 12))
+    echo "  FAIL: stream I/O tests"
+    echo "$SI_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [53] Monotonic timers
+echo "[53] Monotonic Timers (6 checks)"
+MT_OUTPUT=$(./eigenscript ../tests/test_monotonic_timers.eigs 2>&1)
+if echo "$MT_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 6))
+    PASS=$((PASS + 6))
+    echo "  PASS: all 6 monotonic timer checks"
+else
+    TOTAL=$((TOTAL + 6))
+    FAIL=$((FAIL + 6))
+    echo "  FAIL: monotonic timer tests"
+    echo "$MT_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [54] Example smoke tests
+echo "[54] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

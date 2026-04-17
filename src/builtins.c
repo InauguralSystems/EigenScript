@@ -1137,14 +1137,22 @@ Value* builtin_stream_open(Value *arg) {
     if (!g_stream_file) return make_num(0);
     uint32_t count = (uint32_t)count_val->data.num;
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
-    fwrite(header, sizeof(uint32_t), 4, g_stream_file);
+    if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {
+        fclose(g_stream_file);
+        g_stream_file = NULL;
+        return make_num(0);
+    }
     return make_num(1);
 }
 
 Value* builtin_stream_write(Value *arg) {
     if (!g_stream_file || !arg || arg->type != VAL_NUM) return make_num(0);
     double val = arg->data.num;
-    fwrite(&val, sizeof(double), 1, g_stream_file);
+    if (fwrite(&val, sizeof(double), 1, g_stream_file) != 1) {
+        fclose(g_stream_file);
+        g_stream_file = NULL;
+        return make_num(0);
+    }
     return make_num(1);
 }
 

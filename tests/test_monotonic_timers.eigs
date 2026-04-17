@@ -1,0 +1,36 @@
+# Monotonic timer tests — monotonic_ns / monotonic_ms
+load_file of "lib/test.eigs"
+
+# Both return positive numbers
+ns is monotonic_ns of null
+ms is monotonic_ms of null
+assert_true of [ns > 0, "monotonic_ns returns positive value"]
+assert_true of [ms > 0, "monotonic_ms returns positive value"]
+
+# Non-decreasing across successive calls (monotonic contract)
+t0 is monotonic_ns of null
+t1 is monotonic_ns of null
+assert_true of [t1 >= t0, "monotonic_ns is non-decreasing"]
+
+m0 is monotonic_ms of null
+m1 is monotonic_ms of null
+assert_true of [m1 >= m0, "monotonic_ms is non-decreasing"]
+
+# usleep advances the clock by at least the requested amount
+before is monotonic_ns of null
+usleep of 5000
+after is monotonic_ns of null
+elapsed_ns is after - before
+assert_true of [elapsed_ns >= 1000, "monotonic_ns advances after usleep"]
+
+# ns and ms scales agree within a reasonable window
+ns_now is monotonic_ns of null
+ms_now is monotonic_ms of null
+derived_ms is ns_now / 1000000
+# They're sampled sequentially, so allow a generous 50 ms window
+diff is derived_ms - ms_now
+if diff < 0:
+    diff is 0 - diff
+assert_true of [diff < 50, "ns and ms scales agree within 50 ms"]
+
+test_summary of null

@@ -1,8 +1,8 @@
 # EigenScript Builtin Reference
 
-139 builtins organized by module (119 core + 20 extensions).
-Core builtins are always available; extension builtins (HTTP, DB, model)
-require a full build (`./build.sh full`).
+168 builtins organized by module (136 core + 32 extensions).
+Core builtins are always available; extension builtins (HTTP, DB, model,
+gfx) require a full build (`./build.sh full`).
 
 ## Core Language
 
@@ -48,6 +48,32 @@ require a full build (`./build.sh full`).
 | `trim` | `trim of s` | Strip leading/trailing whitespace |
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new |
 | `chr` | `chr of code` | Convert ASCII code to single character |
+| `join` | `join of [list, sep]` | Concatenate list elements with separator (C-backed, O(n)) |
+
+### Regex
+
+POSIX ERE (extended regular expressions). No lookahead, named groups, or
+lazy quantifiers.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `regex_match` | `regex_match of [s, pattern]` | `[full_match, group1, ...]` or `[]` |
+| `regex_find` | `regex_find of [s, pattern]` | All matches as `[match1, match2, ...]` |
+| `regex_replace` | `regex_replace of [s, pattern, replacement]` | Replace all matches |
+
+### Bitwise
+
+Operate on 32-bit two's-complement integers. Shift amounts are masked
+to `[0,31]`; non-numeric arguments yield 0.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `bit_and` | `bit_and of [a, b]` | Bitwise AND |
+| `bit_or` | `bit_or of [a, b]` | Bitwise OR |
+| `bit_xor` | `bit_xor of [a, b]` | Bitwise XOR |
+| `bit_not` | `bit_not of x` | Bitwise NOT |
+| `bit_shl` | `bit_shl of [a, b]` | Left shift |
+| `bit_shr` | `bit_shr of [a, b]` | Unsigned right shift |
 
 ### JSON
 
@@ -120,6 +146,19 @@ Boolean keywords that check the most recently observed value:
 | `chdir` | `chdir of "path"` | Change working directory. 1 on success, 0 on failure |
 | `mktemp` | `mktemp of null` | Create temporary file, return its path |
 | `rm` | `rm of "path"` | Remove a file. 1 on success, 0 on failure |
+| `write` | `write of value` | Write to stdout without newline |
+| `flush` | `flush of null` | Flush stdout |
+
+### Streaming Tensor I/O
+
+Single-handle streaming writer for the tensor binary format. Use when
+producing tensors too large to materialise in memory.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `stream_open` | `stream_open of ["path", count]` | Open file, write header for `count` float64 values. 1 on success, 0 on failure |
+| `stream_write` | `stream_write of value` | Append one float64 to the open stream. 1 on success, 0 on failure |
+| `stream_close` | `stream_close of null` | Close the stream. 1 on success, 0 on failure |
 
 ## Path Manipulation
 
@@ -137,6 +176,27 @@ Boolean keywords that check the most recently observed value:
 | `random` | `random of null` | Random float in [0, 1) |
 | `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive |
 | `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences |
+
+## Time
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `monotonic_ns` | `monotonic_ns of null` | Nanoseconds from `CLOCK_MONOTONIC` (jump-free) |
+| `monotonic_ms` | `monotonic_ms of null` | Milliseconds from `CLOCK_MONOTONIC` |
+| `usleep` | `usleep of microseconds` | Pause execution |
+
+## Terminal
+
+Raw-mode keyboard input and ANSI cursor rendering. Terminal is restored
+automatically at exit.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `raw_key` | `raw_key of null` | Non-blocking single keypress. Returns key as string, arrow keys as `"up"`/`"down"`/`"left"`/`"right"`, or `""` if none |
+| `screen_clear` | `screen_clear of null` | Clear screen and hide cursor |
+| `screen_end` | `screen_end of null` | Show cursor, reset attributes, newline |
+| `screen_put` | `screen_put of [row, col, char, color]` | Write single character with optional ANSI color code |
+| `screen_render` | `screen_render of [entities, sw, sh, px, py, ww, wh]` | Project a list of `[wx, wy, char, color]` entities onto a `sw×sh` viewport centred on player `(px, py)` in a toroidal `ww×wh` world |
 
 ## Command-Line Arguments
 
@@ -236,13 +296,21 @@ Boolean keywords that check the most recently observed value:
 | `arena_mark` | `arena_mark of null` | Snapshot arena allocation point |
 | `arena_reset` | `arena_reset of null` | Reclaim all allocations since mark |
 | `arena_stats` | `arena_stats of null` | Return total bytes allocated |
+| `free_val` | `free_val of value` | Free a heap-allocated value tree (no-op while arena is active). Advanced use only |
 
 ## Tokenizer Introspection
 
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `tokenize_ids` | `tokenize_ids of code_string` | Return list of token type IDs |
+| `tokenize_with_names` | `tokenize_with_names of code_string` | Return list of `[id, name]` pairs |
 | `token_name` | `token_name of id` | Return token type name by ID |
+
+## Corpus Preparation
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs |
 
 ## Optional: HTTP Extension
 
@@ -259,6 +327,27 @@ Requires full build. Provides an embedded HTTP server.
 | `http_session_id` | `http_session_id of null` | Get current session ID |
 | `http_post` | `http_post of [url, headers, body]` | HTTP POST via curl (no shell) |
 | `http_request_headers` | `http_request_headers of null` | Get current request headers |
+
+## Optional: Graphics (SDL2) Extension
+
+Requires full build with gfx (`./build.sh gfx`). Dynamically loads
+libSDL2 at runtime — no SDL2 headers needed at build time.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer |
+| `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
+| `gfx_clear` | `gfx_clear of [r, g, b]` | Clear backbuffer to color |
+| `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle |
+| `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment |
+| `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel |
+| `gfx_circle` | `gfx_circle of [cx, cy, radius, r, g, b]` | Filled circle (midpoint) |
+| `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Bitmap-font text |
+| `gfx_present` | `gfx_present of null` | Flip backbuffer to screen |
+| `gfx_poll` | `gfx_poll of null` | Return next event as dict (`quit`, `keydown`, `keyup`, `mousemove`, `mousedown`, `mouseup`), or null |
+| `gfx_ticks` | `gfx_ticks of null` | Milliseconds since `SDL_Init` |
+| `gfx_delay` | `gfx_delay of ms` | Sleep for ms (SDL-coordinated) |
+| `gfx_title` | `gfx_title of "text"` | Update window title |
 
 ## Optional: Database Extension
 
