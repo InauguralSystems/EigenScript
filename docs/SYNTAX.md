@@ -1,4 +1,4 @@
-# EigenScript v0.6.0 Syntax Guide
+# EigenScript Syntax Guide
 
 ## Variables and Assignment
 
@@ -317,6 +317,47 @@ loop while not converged:
 The observer tracks every variable. Predicates check the most recently
 observed value. `report of x` and `observe of x` let you query any
 specific variable.
+
+## Unobserved Blocks — Opting Out
+
+The observer runs on every assignment so interrogations are always
+cheap. That cost is unavoidable when the value *might* be observed
+later — and wasted when you know a region won't be.
+
+The `unobserved` block is the user-level opt-out:
+
+```eigenscript
+unobserved:
+    game.px is game.px + game.vx * DT
+    game.py is game.py + game.vy * DT
+    game.angle is game.angle + DT
+```
+
+Inside the block:
+
+- **Numeric mutations land in place.** Local-var and dict-field
+  assignments whose right-hand side is pure arithmetic over numbers
+  update the existing `Value`'s data, keeping pointer identity. No
+  intermediate allocation.
+- **`update_observer` is skipped.** Entropy / dH / obs_age on touched
+  values stay frozen at whatever the last observed write left them.
+  Interrogatives (`why is game.px`, `how is game.px`) will return
+  stale answers until the next observed assignment.
+- **`__observer__` is not updated.** Predicates in scope continue to
+  report whatever was last observed outside the block.
+
+Outside the block, normal observed behavior resumes. Nested `unobserved`
+blocks compose — the inner block doesn't re-enable observation.
+
+This mirrors what tensor code already does at the C level via
+`arena_mark` / `arena_reset` (lifecycle-scoped) and the save-restore
+pointer pattern in `numerical_grad_*` (identity-preserving raw swap).
+`unobserved` is the same idea at statement scope, visible in user
+source.
+
+**When to reach for it:** game loops, physics integrators, and other
+hot paths where you'll inspect state via normal reads (`game.px`),
+not via interrogatives (`what is game.px`).
 
 ## Standard Library
 

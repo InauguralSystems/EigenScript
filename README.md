@@ -118,6 +118,21 @@ States: `improving`, `diverging`, `stable`, `equilibrium`, `oscillating`,
 just debugging — `why is x` tells you what your value is doing without
 writing logging code.
 
+### Don't Ask — `unobserved`
+
+The observer runs on every assignment so interrogations are always
+cheap. When you know a hot region won't be interrogated, opt out:
+
+```eigenscript
+unobserved:
+    game.px is game.px + game.vx * DT
+    game.py is game.py + game.vy * DT
+```
+
+Inside the block, numeric assignments mutate the existing `Value` in
+place (identity preserved) and the observer is skipped. Outside,
+normal behavior resumes. ~22% faster on a mutation-heavy hot loop.
+
 ### Tensor Math
 
 ```eigenscript
