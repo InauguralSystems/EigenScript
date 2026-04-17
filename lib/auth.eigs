@@ -12,6 +12,11 @@
 # The runtime's observer tracks changes to the token.
 # Token is per-process (matches the single-threaded server model).
 #
+# Limitations:
+#   - Single session per process (no concurrent users)
+#   - No token expiry (caller should implement timeout if needed)
+#   - Password compared as plaintext from ADMIN_PASSWORD env var
+#
 # Requires: random_hex builtin, env_get builtin, http_request_headers builtin
 
 # ---- State ----
@@ -27,13 +32,27 @@ define auth_login(password) as:
     _auth_token is "eigen_" + (random_hex of 32)
     return json_build of ["status", "ok", "token", _auth_token]
 
+# ---- Extract bearer token from Authorization header ----
+define _extract_bearer(headers) as:
+    # headers is a string of all headers; find "Authorization: Bearer <token>"
+    # Split by newlines and look for the Authorization line
+    lines is split of [headers, "\n"]
+    for i in range of (len of lines):
+        line is lines[i]
+        # Check if this line starts with "Authorization: Bearer "
+        prefix is "Authorization: Bearer "
+        if (len of line) > (len of prefix):
+            if (slice of [line, 0, len of prefix]) == prefix:
+                return slice of [line, len of prefix, len of line]
+    return ""
+
 # ---- Check: validate bearer token from request headers ----
 define auth_check(x) as:
     if _auth_token == "":
         return json_build of ["status", "error", "error", "not logged in"]
     headers is http_request_headers of null
-    # Look for "Authorization: Bearer <token>" in headers
-    if contains of [headers, _auth_token]:
+    bearer is _extract_bearer of headers
+    if bearer == _auth_token:
         return json_build of ["status", "ok"]
     return json_build of ["status", "error", "error", "invalid token"]
 
@@ -52,6 +71,7 @@ define require_auth(x) as:
     if _auth_token == "":
         return json_build of ["error", "not authenticated"]
     headers is http_request_headers of null
-    if contains of [headers, _auth_token]:
+    bearer is _extract_bearer of headers
+    if bearer == _auth_token:
         return ""
     return json_build of ["error", "invalid or missing token"]
