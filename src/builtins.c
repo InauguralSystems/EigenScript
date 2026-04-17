@@ -1112,7 +1112,7 @@ Value* builtin_build_corpus(Value *arg) {
                 } else {
                     if (n_idents >= idents_cap) {
                         idents_cap = idents_cap < 256 ? 256 : idents_cap * 2;
-                        idents = xrealloc(idents, idents_cap * sizeof(IdentEntry));
+                        idents = xrealloc_array(idents, idents_cap, sizeof(IdentEntry));
                     }
                     idents[n_idents].name = xstrdup(name);
                     idents[n_idents].count = 1;
@@ -1136,7 +1136,7 @@ Value* builtin_build_corpus(Value *arg) {
     int *top_ids = xcalloc(actual_top > 0 ? actual_top : 1, sizeof(int));
 
     /* Work on a copy of counts */
-    int *work_counts = xmalloc(n_idents * sizeof(int));
+    int *work_counts = xmalloc_array(n_idents, sizeof(int));
     for (int i = 0; i < n_idents; i++) work_counts[i] = idents[i].count;
 
     for (int t = 0; t < actual_top; t++) {
@@ -1488,7 +1488,7 @@ Value* builtin_exec_capture(Value *arg) {
     int total = cmd_list->data.list.count;
 
     /* Build argv array */
-    char **argv = xmalloc((total + 1) * sizeof(char*));
+    char **argv = xmalloc_array((size_t)total + 1, sizeof(char*));
     if (!argv) return exec_capture_result(-1, "");
     for (int i = 0; i < total; i++) {
         Value *v = cmd_list->data.list.items[i];
@@ -2765,17 +2765,19 @@ Value* builtin_tensor_load(Value *arg) {
 
     if (rows <= 0 || cols <= 0 || rows > 100000 || cols > 100000) { fclose(f); return make_null(); }
 
+    /* Guard against int overflow: rows*cols may exceed INT_MAX under the 100k cap. */
+    if ((size_t)rows * (size_t)cols > (size_t)INT_MAX) { fclose(f); return make_null(); }
     int total = rows * cols;
 
     /* Read numeric data */
-    double *data = xmalloc(total * sizeof(double));
+    double *data = xmalloc_array((size_t)total, sizeof(double));
     if (!data) { fclose(f); return make_null(); }
     if ((int)fread(data, sizeof(double), total, f) != total) { free(data); fclose(f); return make_null(); }
 
     /* Read observer state if present */
     double *obs_data = NULL;
     if (has_observer) {
-        obs_data = xmalloc(total * 5 * sizeof(double));
+        obs_data = xmalloc_array(safe_size_mul((size_t)total, 5), sizeof(double));
         if (obs_data) {
             if ((int)fread(obs_data, sizeof(double), total * 5, f) != total * 5) {
                 free(obs_data);

@@ -11,7 +11,7 @@ extern int g_parse_errors;
 static void tok_add(TokenList *tl, TokType type, double num, const char *str, int line) {
     if (tl->count >= tl->capacity) {
         tl->capacity *= 2;
-        tl->tokens = xrealloc(tl->tokens, tl->capacity * sizeof(Token));
+        tl->tokens = xrealloc_array(tl->tokens, tl->capacity, sizeof(Token));
     }
     Token *t = &tl->tokens[tl->count++];
     t->type = type;
@@ -62,7 +62,7 @@ static TokType keyword_type(const char *word) {
 TokenList tokenize(const char *source) {
     TokenList tl;
     tl.capacity = MAX_TOKENS;
-    tl.tokens = xmalloc(tl.capacity * sizeof(Token));
+    tl.tokens = xmalloc_array(tl.capacity, sizeof(Token));
     tl.count = 0;
 
     int indent_stack[MAX_INDENT];

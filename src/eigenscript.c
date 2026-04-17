@@ -197,7 +197,7 @@ Value* make_fn(const char *name, char **params, int param_count, ASTNode **body,
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_FN;
     v->data.fn.name = xstrdup(name);
-    v->data.fn.params = xmalloc(param_count * sizeof(char*));
+    v->data.fn.params = xmalloc_array(param_count, sizeof(char*));
     v->data.fn.param_count = param_count;
     for (int i = 0; i < param_count; i++)
         v->data.fn.params[i] = xstrdup(params[i]);
@@ -237,8 +237,8 @@ void dict_set(Value *dict, const char *key, Value *val) {
     /* Grow if needed */
     if (dict->data.dict.count >= dict->data.dict.capacity) {
         int new_cap = dict->data.dict.capacity * 2;
-        dict->data.dict.keys = xrealloc(dict->data.dict.keys, new_cap * sizeof(char*));
-        dict->data.dict.vals = xrealloc(dict->data.dict.vals, new_cap * sizeof(Value*));
+        dict->data.dict.keys = xrealloc_array(dict->data.dict.keys, new_cap, sizeof(char*));
+        dict->data.dict.vals = xrealloc_array(dict->data.dict.vals, new_cap, sizeof(Value*));
         dict->data.dict.capacity = new_cap;
     }
     dict->data.dict.keys[dict->data.dict.count] = xstrdup(key);
@@ -312,11 +312,11 @@ void list_append(Value *list, Value *item) {
         int new_cap = list->data.list.capacity * 2;
         if (g_arena.active) {
             /* Cannot realloc arena memory — allocate new array and copy */
-            Value **new_items = arena_alloc(new_cap * sizeof(Value*));
+            Value **new_items = arena_alloc(safe_size_mul(new_cap, sizeof(Value*)));
             memcpy(new_items, list->data.list.items, list->data.list.count * sizeof(Value*));
             list->data.list.items = new_items;
         } else {
-            list->data.list.items = xrealloc(list->data.list.items, new_cap * sizeof(Value*));
+            list->data.list.items = xrealloc_array(list->data.list.items, new_cap, sizeof(Value*));
         }
         list->data.list.capacity = new_cap;
     }

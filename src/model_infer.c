@@ -346,7 +346,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     int d_model = model->config.d_model;
     int d_ff = model->config.d_ff;
 
-    float *x = xcalloc(seq_len * d_model, sizeof(float));
+    float *x = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
     for (int i = 0; i < seq_len; i++) {
         int tid = token_ids[i];
         if (tid < 0) tid = 0;
@@ -354,7 +354,7 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         memcpy(x + i * d_model, model->token_embeddings + tid * d_model, d_model * sizeof(float));
     }
 
-    float *pe = xcalloc(seq_len * d_model, sizeof(float));
+    float *pe = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
     create_sinusoidal_pe_f(pe, seq_len, d_model);
     for (int i = 0; i < seq_len * d_model; i++) x[i] += pe[i];
     free(pe);
@@ -364,13 +364,13 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     for (int l = 0; l < model->config.n_layers; l++) {
         TransformerLayer *layer = &model->layers[l];
 
-        float *norm1 = xcalloc(seq_len * d_model, sizeof(float));
+        float *norm1 = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
         for (int i = 0; i < seq_len; i++) {
             layer_norm(x + i * d_model, d_model, layer->ln1_gamma, layer->ln1_beta, 1e-6f, norm1 + i * d_model);
         }
 
-        float *attn_out = xcalloc(seq_len * d_model, sizeof(float));
-        float *attn_probs = xcalloc(seq_len * seq_len, sizeof(float));
+        float *attn_out = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
+        float *attn_probs = xcalloc_array(safe_size_mul(seq_len, seq_len), sizeof(float));
         if (use_tern) {
             ne_fused_attention_forward_buf_packed_f(norm1, seq_len, d_model,
                 layer->w_q_packed, layer->w_q_alpha,
@@ -389,13 +389,13 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
         for (int i = 0; i < seq_len * d_model; i++) x[i] += attn_out[i];
         free(attn_out);
 
-        float *norm2 = xcalloc(seq_len * d_model, sizeof(float));
+        float *norm2 = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
         for (int i = 0; i < seq_len; i++) {
             layer_norm(x + i * d_model, d_model, layer->ln2_gamma, layer->ln2_beta, 1e-6f, norm2 + i * d_model);
         }
 
-        float *ffn_out = xcalloc(seq_len * d_model, sizeof(float));
-        float *pre_act = xcalloc(seq_len * d_ff, sizeof(float));
+        float *ffn_out = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
+        float *pre_act = xcalloc_array(safe_size_mul(seq_len, d_ff), sizeof(float));
         if (use_tern) {
             ne_fused_ffn_forward_buf_packed_f(norm2, seq_len, d_model,
                 layer->w_ff1_packed, layer->w_ff1_alpha, d_ff,
@@ -430,7 +430,7 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
     int vocab_size = model->config.vocab_size;
     int max_seq_len = model->config.max_seq_len;
 
-    int *token_ids = xcalloc(max_seq_len * 4, sizeof(int));
+    int *token_ids = xcalloc_array(safe_size_mul(max_seq_len, 4), sizeof(int));
     int num_tokens = prompt_len < max_seq_len ? prompt_len : max_seq_len;
     for (int i = 0; i < num_tokens; i++) {
         int tid = prompt_ids[i];

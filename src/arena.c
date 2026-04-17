@@ -102,7 +102,7 @@ void* arena_alloc(size_t size) {
 void arena_track_string(char *s) {
     if (g_arena.string_count >= g_arena.string_capacity) {
         int new_cap = g_arena.string_capacity < 1024 ? 1024 : g_arena.string_capacity * 2;
-        g_arena.strings = xrealloc(g_arena.strings, new_cap * sizeof(char*));
+        g_arena.strings = xrealloc_array(g_arena.strings, new_cap, sizeof(char*));
         g_arena.string_capacity = new_cap;
     }
     g_arena.strings[g_arena.string_count++] = s;

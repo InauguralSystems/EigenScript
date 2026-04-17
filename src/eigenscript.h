@@ -29,6 +29,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <limits.h>
 #include <setjmp.h>
 #include <unistd.h>
 #include <errno.h>
