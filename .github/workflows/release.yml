@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: Build minimal binary
+        run: |
+          ./build.sh
+          mv src/eigenscript eigenscript-linux-x86_64
+          chmod +x eigenscript-linux-x86_64
+
+      - name: Build full binary
+        run: |
+          sudo apt-get install -y libpq-dev
+          ./build.sh full
+          mv src/eigenscript eigenscript-full-linux-x86_64
+          chmod +x eigenscript-full-linux-x86_64
+
+      - name: Run tests
+        run: |
+          cp eigenscript-linux-x86_64 src/eigenscript
+          cd tests && bash run_all_tests.sh
+
+      - name: Upload binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            eigenscript-linux-x86_64
+            eigenscript-full-linux-x86_64
