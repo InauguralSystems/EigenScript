@@ -286,6 +286,7 @@ void dict_remove(Value *dict, const char *key) {
     for (int i = 0; i < dict->data.dict.count; i++) {
         if (strcmp(dict->data.dict.keys[i], key) == 0) {
             free(dict->data.dict.keys[i]);
+            val_decref(dict->data.dict.vals[i]);
             /* Shift remaining */
             for (int j = i; j < dict->data.dict.count - 1; j++) {
                 dict->data.dict.keys[j] = dict->data.dict.keys[j+1];
@@ -469,11 +470,12 @@ void env_set_local(Env *env, const char *name, Value *val) {
 
 void env_free(Env *env) {
     if (!env || !env->heap_allocated || env->captured) return;
-    /* Free name strings. Heap env strings are never arena-tracked
-     * (env_set_local only tracks strings for arena-allocated envs),
-     * so these are always safe to free here. */
-    for (int i = 0; i < env->count; i++)
+    for (int i = 0; i < env->count; i++) {
         free(env->names[i]);
+        /* Only decref heap-allocated values, not arena values */
+        if (env->values[i] && !env->values[i]->arena)
+            val_decref(env->values[i]);
+    }
     free(env);
 }
 
