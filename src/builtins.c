@@ -197,58 +197,56 @@ Value* builtin_type(Value *arg) {
     return make_str("none");
 }
 
-static void eigs_json_encode_value(Value *v, char *buf, int *pos, int max_len) {
+static void eigs_json_encode_value(Value *v, strbuf *out) {
     if (!v || v->type == VAL_NULL || v->type == VAL_FN || v->type == VAL_BUILTIN) {
-        *pos += snprintf(buf + *pos, max_len - *pos, "null");
+        strbuf_append(out, "null");
         return;
     }
     switch (v->type) {
         case VAL_NUM: {
             double n = v->data.num;
             if (n == (int)n && fabs(n) < 1e15)
-                *pos += snprintf(buf + *pos, max_len - *pos, "%d", (int)n);
+                strbuf_append_fmt(out, "%d", (int)n);
             else
-                *pos += snprintf(buf + *pos, max_len - *pos, "%.15g", n);
+                strbuf_append_fmt(out, "%.15g", n);
             break;
         }
         case VAL_STR: {
-            buf[(*pos)++] = '"';
-            for (const char *c = v->data.str; *c && *pos < max_len - 2; c++) {
+            strbuf_append_char(out, '"');
+            for (const char *c = v->data.str; *c; c++) {
                 switch (*c) {
-                    case '"': buf[(*pos)++] = '\\'; buf[(*pos)++] = '"'; break;
-                    case '\\': buf[(*pos)++] = '\\'; buf[(*pos)++] = '\\'; break;
-                    case '\n': buf[(*pos)++] = '\\'; buf[(*pos)++] = 'n'; break;
-                    case '\r': buf[(*pos)++] = '\\'; buf[(*pos)++] = 'r'; break;
-                    case '\t': buf[(*pos)++] = '\\'; buf[(*pos)++] = 't'; break;
-                    default: buf[(*pos)++] = *c; break;
+                    case '"': strbuf_append_n(out, "\\\"", 2); break;
+                    case '\\': strbuf_append_n(out, "\\\\", 2); break;
+                    case '\n': strbuf_append_n(out, "\\n", 2); break;
+                    case '\r': strbuf_append_n(out, "\\r", 2); break;
+                    case '\t': strbuf_append_n(out, "\\t", 2); break;
+                    default: strbuf_append_char(out, *c); break;
                 }
             }
-            buf[(*pos)++] = '"';
+            strbuf_append_char(out, '"');
             break;
         }
         case VAL_LIST: {
-            buf[(*pos)++] = '[';
+            strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
-                if (i > 0) buf[(*pos)++] = ',';
-                eigs_json_encode_value(v->data.list.items[i], buf, pos, max_len);
+                if (i > 0) strbuf_append_char(out, ',');
+                eigs_json_encode_value(v->data.list.items[i], out);
             }
-            buf[(*pos)++] = ']';
+            strbuf_append_char(out, ']');
             break;
         }
         default:
-            *pos += snprintf(buf + *pos, max_len - *pos, "null");
+            strbuf_append(out, "null");
             break;
     }
-    buf[*pos] = '\0';
 }
 
 Value* builtin_json_encode(Value *arg) {
-    char *buf = xmalloc(MAX_STR);
-    int pos = 0;
-    eigs_json_encode_value(arg, buf, &pos, MAX_STR - 1);
-    buf[pos] = '\0';
-    Value *result = make_str(buf);
-    free(buf);
+    strbuf out;
+    strbuf_init(&out);
+    eigs_json_encode_value(arg, &out);
+    Value *result = make_str(out.data);
+    strbuf_free(&out);
     return result;
 }
 
@@ -262,28 +260,29 @@ static void eigs_json_skip_ws(const char *s, int *pos) {
 static Value* eigs_json_parse_string(const char *s, int *pos) {
     if (s[*pos] != '"') return NULL;
     (*pos)++;
-    char buf[MAX_STR];
-    int len = 0;
-    while (s[*pos] && s[*pos] != '"' && len < MAX_STR - 1) {
+    strbuf buf;
+    strbuf_init(&buf);
+    while (s[*pos] && s[*pos] != '"') {
         if (s[*pos] == '\\') {
             (*pos)++;
             switch (s[*pos]) {
-                case '"': buf[len++] = '"'; break;
-                case '\\': buf[len++] = '\\'; break;
-                case 'n': buf[len++] = '\n'; break;
-                case 'r': buf[len++] = '\r'; break;
-                case 't': buf[len++] = '\t'; break;
-                case '/': buf[len++] = '/'; break;
-                default: buf[len++] = s[*pos]; break;
+                case '"': strbuf_append_char(&buf, '"'); break;
+                case '\\': strbuf_append_char(&buf, '\\'); break;
+                case 'n': strbuf_append_char(&buf, '\n'); break;
+                case 'r': strbuf_append_char(&buf, '\r'); break;
+                case 't': strbuf_append_char(&buf, '\t'); break;
+                case '/': strbuf_append_char(&buf, '/'); break;
+                default: strbuf_append_char(&buf, s[*pos]); break;
             }
         } else {
-            buf[len++] = s[*pos];
+            strbuf_append_char(&buf, s[*pos]);
         }
         (*pos)++;
     }
     if (s[*pos] == '"') (*pos)++;
-    buf[len] = '\0';
-    return make_str(buf);
+    Value *v = make_str(buf.data);
+    strbuf_free(&buf);
+    return v;
 }
 
 static Value* eigs_json_parse_number(const char *s, int *pos) {
@@ -599,37 +598,27 @@ Value* builtin_regex_replace(Value *arg) {
     regex_t re;
     if (regcomp(&re, pattern, REG_EXTENDED) != 0) return make_str(str);
 
-    char result[MAX_STR];
-    int pos = 0;
+    strbuf out;
+    strbuf_init(&out);
     const char *p = str;
     regmatch_t m[1];
-    int rep_len = strlen(replacement);
+    size_t rep_len = strlen(replacement);
 
-    while (regexec(&re, p, 1, m, 0) == 0 && pos < MAX_STR - 1) {
-        /* Copy text before match */
-        int pre_len = m[0].rm_so;
-        if (pos + pre_len >= MAX_STR) pre_len = MAX_STR - pos - 1;
-        memcpy(result + pos, p, pre_len);
-        pos += pre_len;
-        /* Copy replacement */
-        if (pos + rep_len >= MAX_STR) break;
-        memcpy(result + pos, replacement, rep_len);
-        pos += rep_len;
+    while (regexec(&re, p, 1, m, 0) == 0) {
+        strbuf_append_n(&out, p, (size_t)m[0].rm_so);
+        strbuf_append_n(&out, replacement, rep_len);
         p += m[0].rm_eo;
-        if (m[0].rm_eo == m[0].rm_so) { /* zero-length match */
-            if (*p) result[pos++] = *p++;
+        if (m[0].rm_eo == m[0].rm_so) {
+            if (*p) strbuf_append_char(&out, *p++);
             else break;
         }
     }
-    /* Copy remaining */
-    int remain = strlen(p);
-    if (pos + remain >= MAX_STR) remain = MAX_STR - pos - 1;
-    memcpy(result + pos, p, remain);
-    pos += remain;
-    result[pos] = '\0';
+    strbuf_append(&out, p);
 
     regfree(&re);
-    return make_str(result);
+    Value *v = make_str(out.data);
+    strbuf_free(&out);
+    return v;
 }
 
 /* ==== BUILTIN: str_upper ==== */
@@ -1319,12 +1308,11 @@ Value* builtin_json_path(Value *arg) {
     }
     if (current->type == VAL_NULL) return make_str("");
     /* For complex types, json_encode them */
-    char *encoded = xmalloc(MAX_STR);
-    int epos = 0;
-    eigs_json_encode_value(current, encoded, &epos, MAX_STR - 1);
-    encoded[epos] = '\0';
-    Value *r = make_str(encoded);
-    free(encoded);
+    strbuf out;
+    strbuf_init(&out);
+    eigs_json_encode_value(current, &out);
+    Value *r = make_str(out.data);
+    strbuf_free(&out);
     return r;
 }
 

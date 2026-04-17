@@ -132,37 +132,37 @@ TokenList tokenize(const char *source) {
         /* f-string: f"hello {expr}" expands to ("hello " + (str of (expr))) */
         if (*p == 'f' && *(p+1) == '"') {
             p += 2; /* skip f" */
-            char buf[MAX_STR];
-            int bi = 0;
+            strbuf buf;
+            strbuf_init(&buf);
             int has_segments = 0;
 
             while (*p && *p != '"') {
                 if (*p == '\\' && (*(p+1) == '{' || *(p+1) == '}')) {
-                    buf[bi++] = *(p+1);
+                    strbuf_append_char(&buf, *(p+1));
                     p += 2;
                     continue;
                 }
                 if (*p == '\\') {
                     p++;
                     switch (*p) {
-                        case 'n': buf[bi++] = '\n'; break;
-                        case 't': buf[bi++] = '\t'; break;
-                        case '\\': buf[bi++] = '\\'; break;
-                        case '"': buf[bi++] = '"'; break;
-                        default: buf[bi++] = *p; break;
+                        case 'n': strbuf_append_char(&buf, '\n'); break;
+                        case 't': strbuf_append_char(&buf, '\t'); break;
+                        case '\\': strbuf_append_char(&buf, '\\'); break;
+                        case '"': strbuf_append_char(&buf, '"'); break;
+                        default: strbuf_append_char(&buf, *p); break;
                     }
                     p++;
                     continue;
                 }
                 if (*p == '{') {
                     /* Emit accumulated literal and + operator */
-                    buf[bi] = '\0';
-                    if (bi > 0 || !has_segments) {
+                    if (buf.len > 0 || !has_segments) {
                         if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line);
-                        tok_add(&tl, TOK_STR, 0, buf, line);
+                        tok_add(&tl, TOK_STR, 0, buf.data, line);
                         has_segments = 1;
                     }
-                    bi = 0;
+                    buf.len = 0;
+                    buf.data[0] = '\0';
                     p++; /* skip { */
 
                     /* Emit: + (str of (expr)) */
@@ -175,14 +175,13 @@ TokenList tokenize(const char *source) {
 
                     /* Tokenize the expression inside braces */
                     int depth = 1;
-                    char expr_buf[MAX_STR];
-                    int ei = 0;
-                    while (*p && depth > 0 && ei < MAX_STR - 1) {
+                    strbuf expr_buf;
+                    strbuf_init(&expr_buf);
+                    while (*p && depth > 0) {
                         if (*p == '{') depth++;
                         else if (*p == '}') { depth--; if (depth == 0) break; }
-                        expr_buf[ei++] = *p++;
+                        strbuf_append_char(&expr_buf, *p++);
                     }
-                    expr_buf[ei] = '\0';
                     if (*p == '}') p++;
                     else {
                         fprintf(stderr, "Syntax error line %d: unterminated f-string expression\n", line);
@@ -190,7 +189,8 @@ TokenList tokenize(const char *source) {
                     }
 
                     /* Tokenize the inner expression and splice tokens in */
-                    TokenList inner = tokenize(expr_buf);
+                    TokenList inner = tokenize(expr_buf.data);
+                    strbuf_free(&expr_buf);
                     for (int ti = 0; ti < inner.count; ti++) {
                         if (inner.tokens[ti].type == TOK_EOF) break;
                         if (inner.tokens[ti].type == TOK_NEWLINE) continue;
@@ -203,13 +203,12 @@ TokenList tokenize(const char *source) {
                     tok_add(&tl, TOK_RPAREN, 0, NULL, line);
                     continue;
                 }
-                buf[bi++] = *p++;
+                strbuf_append_char(&buf, *p++);
             }
             /* Emit trailing literal */
-            buf[bi] = '\0';
-            if (bi > 0) {
+            if (buf.len > 0) {
                 if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line);
-                tok_add(&tl, TOK_STR, 0, buf, line);
+                tok_add(&tl, TOK_STR, 0, buf.data, line);
             } else if (!has_segments) {
                 /* empty f-string: f"" */
                 tok_add(&tl, TOK_STR, 0, "", line);
@@ -219,35 +218,36 @@ TokenList tokenize(const char *source) {
                 fprintf(stderr, "Syntax error line %d: unterminated f-string\n", line);
                 g_parse_errors++;
             }
+            strbuf_free(&buf);
             continue;
         }
 
         if (*p == '"') {
             p++;
-            char buf[MAX_STR];
-            int bi = 0;
-            while (*p && *p != '"' && bi < MAX_STR - 1) {
+            strbuf buf;
+            strbuf_init(&buf);
+            while (*p && *p != '"') {
                 if (*p == '\\') {
                     p++;
                     switch (*p) {
-                        case 'n': buf[bi++] = '\n'; break;
-                        case 't': buf[bi++] = '\t'; break;
-                        case '\\': buf[bi++] = '\\'; break;
-                        case '"': buf[bi++] = '"'; break;
-                        default: buf[bi++] = *p; break;
+                        case 'n': strbuf_append_char(&buf, '\n'); break;
+                        case 't': strbuf_append_char(&buf, '\t'); break;
+                        case '\\': strbuf_append_char(&buf, '\\'); break;
+                        case '"': strbuf_append_char(&buf, '"'); break;
+                        default: strbuf_append_char(&buf, *p); break;
                     }
                 } else {
-                    buf[bi++] = *p;
+                    strbuf_append_char(&buf, *p);
                 }
                 p++;
             }
-            buf[bi] = '\0';
             if (*p == '"') p++;
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated string\n", line);
                 g_parse_errors++;
             }
-            tok_add(&tl, TOK_STR, 0, buf, line);
+            tok_add(&tl, TOK_STR, 0, buf.data, line);
+            strbuf_free(&buf);
             continue;
         }
 

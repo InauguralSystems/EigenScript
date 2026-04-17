@@ -353,62 +353,38 @@ char* value_to_string(Value *v) {
         }
         case VAL_STR: return xstrdup(v->data.str);
         case VAL_LIST: {
-            char *result = xmalloc(MAX_STR);
-            int pos = 0;
-            int remaining;
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "[");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
+            strbuf out;
+            strbuf_init(&out);
+            strbuf_append_char(&out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
-                if (i > 0) {
-                    remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-                    pos += snprintf(result + pos, remaining, ", ");
-                    if (pos >= MAX_STR) pos = MAX_STR - 1;
-                }
+                if (i > 0) strbuf_append_n(&out, ", ", 2);
                 char *s = value_to_string(v->data.list.items[i]);
-                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
                 if (v->data.list.items[i] && v->data.list.items[i]->type == VAL_STR)
-                    pos += snprintf(result + pos, remaining, "\"%s\"", s);
+                    strbuf_append_fmt(&out, "\"%s\"", s);
                 else
-                    pos += snprintf(result + pos, remaining, "%s", s);
-                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                    strbuf_append(&out, s);
                 free(s);
             }
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "]");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
-            return result;
+            strbuf_append_char(&out, ']');
+            return strbuf_finish(&out);
         }
         case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return xstrdup(buf);
         case VAL_DICT: {
-            char *result = xmalloc(MAX_STR);
-            int pos = 0;
-            int remaining;
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "{");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
+            strbuf out;
+            strbuf_init(&out);
+            strbuf_append_char(&out, '{');
             for (int i = 0; i < v->data.dict.count; i++) {
-                if (i > 0) {
-                    remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-                    pos += snprintf(result + pos, remaining, ", ");
-                    if (pos >= MAX_STR) pos = MAX_STR - 1;
-                }
-                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-                pos += snprintf(result + pos, remaining, "\"%s\": ", v->data.dict.keys[i]);
-                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                if (i > 0) strbuf_append_n(&out, ", ", 2);
+                strbuf_append_fmt(&out, "\"%s\": ", v->data.dict.keys[i]);
                 char *vs = value_to_string(v->data.dict.vals[i]);
-                remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
                 if (v->data.dict.vals[i] && v->data.dict.vals[i]->type == VAL_STR)
-                    pos += snprintf(result + pos, remaining, "\"%s\"", vs);
+                    strbuf_append_fmt(&out, "\"%s\"", vs);
                 else
-                    pos += snprintf(result + pos, remaining, "%s", vs);
-                if (pos >= MAX_STR) pos = MAX_STR - 1;
+                    strbuf_append(&out, vs);
                 free(vs);
             }
-            remaining = MAX_STR - pos; if (remaining < 1) remaining = 1;
-            pos += snprintf(result + pos, remaining, "}");
-            if (pos >= MAX_STR) pos = MAX_STR - 1;
-            return result;
+            strbuf_append_char(&out, '}');
+            return strbuf_finish(&out);
         }
         case VAL_BUILTIN: return xstrdup("<builtin>");
         case VAL_JSON_RAW: return xstrdup(v->data.str);
