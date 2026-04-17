@@ -49,9 +49,6 @@
 #define MAX_VARS        512
 #define MAX_STMTS       4096
 #define MAX_LIST        1024
-#define MAX_STR         65536
-#define MAX_BODY        1048576
-#define MAX_HEADER      8192
 
 /* ---- Tokenizer ---- */
 
