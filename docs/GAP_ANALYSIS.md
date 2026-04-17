@@ -1,6 +1,6 @@
 # EigenScript Gap Analysis
 
-Version surveyed: **0.7.0**
+Version surveyed: **0.8.0**
 
 EigenScript is a general-purpose language, but some program classes stress
 capabilities that the current runtime and standard library do not provide.
@@ -68,17 +68,18 @@ Node.js).
 
 ### Text-Heavy Parsing
 
-**Gap.** No regular expressions. String operations are literal
-(`contains`, `starts_with`, `index_of`, `str_replace`). Unicode handling
-is basic — no grapheme clusters, no normalization.
+**Partial.** POSIX ERE regex is available via `regex_match`,
+`regex_find`, and `regex_replace`. Basic string operations cover
+`contains`, `starts_with`, `index_of`, `str_replace`, `split`. Unicode
+handling is basic — no grapheme clusters, no normalization. No PCRE
+features (lookahead, named groups, lazy quantifiers).
 
 **Affected programs.**
-- Log parsers and structured-log extractors
-- Lexers/tokenizers for other languages
-- HTML / Markdown sanitizers and extractors
+- HTML / Markdown sanitizers (need more than ERE)
 - Scrapers that pull structured data out of messy input
+- Unicode-heavy text processing (normalization, collation)
 
-**Reach for.** Python, Perl, Go, Rust.
+**Reach for.** Python, Perl, Go, Rust (for complex regex or Unicode).
 
 ### Network Protocol Implementations
 
@@ -168,7 +169,10 @@ cleanly with what ships today:
 - Single-threaded automation scripts and data pipelines over JSON / CSV
 - Small HTTP toys using the optional server/client extension
 - Observer-driven analytics that exploit the built-in entropy, dH, and
-  trajectory tracking on every variable
+  trajectory tracking on every variable (`unobserved:` blocks for
+  performance-critical paths)
+- SDL2 graphical applications using the `gfx_*` extension
+  (see [Tidepool](https://github.com/InauguralSystems/Tidepool))
 - Physics, game-logic, and simulation demos (see `examples/`: rope,
   orbital, PID control, ray marching, Sokoban, Game of Life)
 
@@ -185,6 +189,6 @@ Many of the gaps above have corresponding roadmap entries:
 - FFI — long-term
 - JIT — long-term
 
-Gaps without roadmap entries (notably regex, crypto, sockets, additional
+Gaps without roadmap entries (notably crypto, sockets, additional
 database drivers, compression, decimal/bigint, streaming subprocess I/O)
-are candidates for future proposals.
+are candidates for future proposals. Regex was added in 0.7.0 (POSIX ERE).
