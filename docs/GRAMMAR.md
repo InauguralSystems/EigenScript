@@ -1,7 +1,7 @@
 # EigenScript Formal Grammar
 
-EBNF specification for EigenScript v0.6.0. This grammar describes the
-concrete syntax accepted by the parser in `src/eigenscript.c`.
+EBNF specification for EigenScript v0.7.x. This grammar describes the
+concrete syntax accepted by the parser in `src/parser.c`.
 
 ## Notation
 
@@ -40,6 +40,7 @@ escape      = '\n' | '\t' | '\\' | '\"' | '\{' | '\}'
 ```
 is  of  define  as  if  elif  else  loop  while  for  in
 return  and  or  not  null  try  catch  break  continue  import
+match  case  unobserved
 ```
 
 ### Interrogatives
@@ -87,6 +88,8 @@ statement   = define_stmt
             | loop_stmt
             | for_stmt
             | try_stmt
+            | match_stmt
+            | unobserved_stmt
             | import_stmt
             | return_stmt
             | break_stmt
@@ -109,6 +112,11 @@ for_stmt    = 'for' IDENT 'in' expression ':' NEWLINE block
 
 try_stmt    = 'try' ':' NEWLINE block
               'catch' [ IDENT ] ':' NEWLINE block
+
+match_stmt  = 'match' expression ':' NEWLINE
+              INDENT { 'case' ( expression | '_' ) ':' NEWLINE block } DEDENT
+
+unobserved_stmt = 'unobserved' ':' NEWLINE block
 
 import_stmt = 'import' IDENT
 

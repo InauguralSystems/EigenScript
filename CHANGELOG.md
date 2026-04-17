@@ -4,6 +4,37 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Language
+- **`unobserved` block**: user-level opt-out of observer tracking. Inside
+  the block, numeric assignments to local vars and dict fields mutate the
+  existing `Value` in place (identity preserved, `data.num` updated), and
+  `update_observer` is skipped. Outside the block, normal observed
+  semantics resume unchanged. Nested blocks compose via a depth counter.
+  Measurement: ~22% faster on a 200k-iteration mutation hot loop. Covered
+  by 8 new tests in `tests/test_unobserved.eigs`. Syntax:
+  ```
+  unobserved:
+      game.px is game.px + game.vx * DT
+  ```
+
+### Hardening
+- **Refcount GC — unified teardown path**: `free_value` and `value_free`
+  collapsed into a single `free_value` that handles all composite types
+  (STR, JSON_RAW, LIST, DICT, FN) and uses `val_decref` for child
+  teardown. Previously two near-duplicate functions coexisted: one had no
+  DICT/FN handling (silent leak when `val_decref` freed a dict), the
+  other recursed with the wrong function on dict children (double-free
+  risk on shared Values). Unified path is both leak-free and
+  sharing-safe. Two regression tests added for shared values across
+  lists and dicts.
+- **Bitwise builtins — type checks + defined shift semantics**:
+  `bit_and/or/xor/shl/shr` now validate both args are `VAL_NUM` before
+  dereferencing `.data.num` (previously read a garbage union field on
+  type mismatch — undefined behavior). Shift counts masked with `& 31`
+  so `bit_shl of [1, 32]` and similar have defined behavior instead of
+  relying on x86's natural modulo-shift. Uses `uint32_t` internally with
+  a final cast back to `int32_t` for sign preservation. +6 test checks.
+
 ### Security
 - **Stack buffer overflow in f-string lexer (high)**: `src/lexer.c:206` wrote
   into a 64 KB stack buffer without bounds-checking the accumulator index.
