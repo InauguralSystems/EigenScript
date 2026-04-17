@@ -196,11 +196,16 @@ extern Arena g_arena;
 
 /* ---- OOM-safe allocation wrappers ----
  * Abort with a diagnostic on allocation failure. Used by value constructors
- * and the arena allocator, where a NULL return would immediately crash. */
+ * and the arena allocator, where a NULL return would immediately crash.
+ * The _array variants guard against size_t overflow in nmemb*size. */
 void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
 void* xrealloc(void *p, size_t size);
 char* xstrdup(const char *s);
+size_t safe_size_mul(size_t a, size_t b);
+void* xmalloc_array(size_t nmemb, size_t size);
+void* xcalloc_array(size_t nmemb, size_t size);
+void* xrealloc_array(void *p, size_t nmemb, size_t size);
 
 void arena_init(void);
 void* arena_alloc(size_t size);
