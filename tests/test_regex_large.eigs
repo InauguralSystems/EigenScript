@@ -1,0 +1,15 @@
+# Verify regex_replace grows beyond old MAX_STR ceiling.
+# Pre-strbuf, output was silently truncated at 64KB.
+load_file of "lib/test.eigs"
+
+# 10 KB input of "a" → replace each "a" with 20 chars → 200 KB output.
+body is ""
+for i in range of 10000:
+    body is body + "a"
+
+result is regex_replace of [body, "a", "XXXXXXXXXXXXXXXXXXXX"]
+assert_eq of [len of result, 200000, "regex_replace output is 200KB (was truncated at 64KB pre-strbuf)"]
+assert_eq of [substr of [result, 0, 20], "XXXXXXXXXXXXXXXXXXXX", "replacement pattern at start intact"]
+assert_eq of [substr of [result, 199980, 20], "XXXXXXXXXXXXXXXXXXXX", "replacement pattern at end intact"]
+
+test_summary of null

@@ -1,0 +1,21 @@
+# Verify f-string interpolation survives inputs > old MAX_STR.
+# Pre-strbuf, the lexer's 64KB stack buffer could overflow on long
+# literal segments (security fix: src/lexer.c:206).
+load_file of "lib/test.eigs"
+
+# Build a ~100 KB string and interpolate it — the assembled f-string
+# output must equal that plus a short suffix, uncorrupted.
+body is ""
+chunk is "abcdefghijklmnopqrstuvwxyz0123456789"
+for i in range of 3000:
+    body is body + chunk
+
+name is "World"
+result is f"{body} and {name}"
+
+expected_len is (len of body) + 5 + (len of name)
+assert_eq of [len of result, expected_len, "f-string with 108KB interpolation preserves length"]
+assert_eq of [char_at of [result, 0], "a", "first byte of f-string intact"]
+assert_eq of [char_at of [result, (len of result) - 1], "d", "last byte of f-string is 'd' of World"]
+
+test_summary of null

@@ -1,0 +1,24 @@
+# Verify strings exceed the old MAX_STR (65536) ceiling.
+# Pre-strbuf these concats silently truncated at 64KB.
+load_file of "lib/test.eigs"
+
+# Build a 200 KB string via repeated concatenation.
+s is ""
+chunk is "0123456789abcdef"
+for i in range of 12800:
+    s is s + chunk
+
+assert_eq of [len of s, 204800, "200KB concat preserves full length"]
+assert_eq of [char_at of [s, 0], "0", "first byte intact"]
+assert_eq of [char_at of [s, 204799], "f", "last byte intact"]
+
+# value_to_string on a big list should also grow without truncation.
+big is []
+for i in range of 20000:
+    append of [big, i * 999]
+
+encoded is str of big
+# Each element averages ~7 chars + ", " — result well beyond 64KB.
+assert_true of [(len of encoded) > 65536, "value_to_string(20000-element list) > 64KB"]
+
+test_summary of null
