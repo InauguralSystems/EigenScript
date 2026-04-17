@@ -104,6 +104,115 @@ Value* builtin_usleep(Value *arg) {
     return make_null();
 }
 
+/* screen_put of [row, col, char, color_code] — write a character at terminal position */
+Value* builtin_screen_put(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    int row = (int)arg->data.list.items[0]->data.num;
+    int col = (int)arg->data.list.items[1]->data.num;
+    const char *ch = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : " ";
+    int color = (arg->data.list.count >= 4 && arg->data.list.items[3]->type == VAL_NUM)
+                ? (int)arg->data.list.items[3]->data.num : 0;
+    if (color > 0)
+        printf("\033[%d;%dH\033[%dm%s", row, col, color, ch);
+    else
+        printf("\033[%d;%dH%s", row, col, ch);
+    return make_null();
+}
+
+/* screen_clear of null — clear terminal and hide cursor */
+Value* builtin_screen_clear(Value *arg) {
+    (void)arg;
+    printf("\033[2J\033[H\033[?25l");
+    fflush(stdout);
+    return make_null();
+}
+
+/* screen_end of null — show cursor and reset */
+Value* builtin_screen_end(Value *arg) {
+    (void)arg;
+    printf("\033[?25h\033[0m\n");
+    fflush(stdout);
+    return make_null();
+}
+
+/* screen_render of [entities_list, screen_w, screen_h, player_x, player_y, world_w, world_h]
+ * entities_list: [[wx, wy, char, color], ...]
+ * Clears screen, projects all entities, flushes once. All in C. */
+Value* builtin_screen_render(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 7) return make_null();
+    Value *entities = arg->data.list.items[0];
+    int sw = (int)arg->data.list.items[1]->data.num;
+    int sh = (int)arg->data.list.items[2]->data.num;
+    double px = arg->data.list.items[3]->data.num;
+    double py = arg->data.list.items[4]->data.num;
+    double ww = arg->data.list.items[5]->data.num;
+    double wh = arg->data.list.items[6]->data.num;
+
+    if (!entities || entities->type != VAL_LIST) return make_null();
+
+    double vw = sw * 0.5;
+    double vh = sh * 0.5;
+    double hvw = vw / 2.0;
+    double hvh = vh / 2.0;
+
+    /* Allocate screen buffer */
+    int buf_size = sw * sh;
+    char *chars = calloc(buf_size, 1);
+    int *cols = calloc(buf_size, sizeof(int));
+    memset(chars, ' ', buf_size);
+
+    /* Project entities */
+    for (int i = 0; i < entities->data.list.count; i++) {
+        Value *ent = entities->data.list.items[i];
+        if (!ent || ent->type != VAL_LIST || ent->data.list.count < 4) continue;
+        double ex = ent->data.list.items[0]->data.num;
+        double ey = ent->data.list.items[1]->data.num;
+        const char *ch = ent->data.list.items[2]->type == VAL_STR ? ent->data.list.items[2]->data.str : " ";
+        int color = (int)ent->data.list.items[3]->data.num;
+
+        /* Torus delta */
+        double dx = ex - px;
+        double half_ww = ww * 0.5;
+        if (dx > half_ww) dx -= ww;
+        else if (dx < -half_ww) dx += ww;
+        double dy = ey - py;
+        double half_wh = wh * 0.5;
+        if (dy > half_wh) dy -= wh;
+        else if (dy < -half_wh) dy += wh;
+
+        int col = (int)((dx + hvw) / vw * sw);
+        int row = (int)((dy + hvh) / vh * sh);
+        if (col >= 0 && col < sw && row >= 0 && row < sh) {
+            int idx = row * sw + col;
+            chars[idx] = ch[0];
+            cols[idx] = color;
+        }
+    }
+
+    /* Dump to terminal */
+    printf("\033[H"); /* home */
+    int prev_color = 0;
+    for (int row = 0; row < sh; row++) {
+        for (int col = 0; col < sw; col++) {
+            int idx = row * sw + col;
+            int c = cols[idx];
+            if (c != prev_color) {
+                if (c > 0) printf("\033[%dm", c);
+                else printf("\033[0m");
+                prev_color = c;
+            }
+            putchar(chars[idx]);
+        }
+        putchar('\n');
+    }
+    printf("\033[0m");
+    fflush(stdout);
+
+    free(chars);
+    free(cols);
+    return make_null();
+}
+
 Value* builtin_len(Value *arg) {
     if (arg->type == VAL_LIST)
         return make_num(arg->data.list.count);
@@ -2024,6 +2133,10 @@ void register_builtins(Env *env) {
     env_set_local(env, "flush", make_builtin(builtin_flush));
     env_set_local(env, "raw_key", make_builtin(builtin_raw_key));
     env_set_local(env, "usleep", make_builtin(builtin_usleep));
+    env_set_local(env, "screen_put", make_builtin(builtin_screen_put));
+    env_set_local(env, "screen_clear", make_builtin(builtin_screen_clear));
+    env_set_local(env, "screen_end", make_builtin(builtin_screen_end));
+    env_set_local(env, "screen_render", make_builtin(builtin_screen_render));
     env_set_local(env, "len", make_builtin(builtin_len));
     env_set_local(env, "str", make_builtin(builtin_str));
     env_set_local(env, "num", make_builtin(builtin_num));
