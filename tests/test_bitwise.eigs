@@ -24,12 +24,22 @@ assert_eq of [bit_shl of [5, 2], 20, "SHL 5 << 2"]
 assert_eq of [bit_shr of [8, 3], 1, "SHR 8 >> 3"]
 assert_eq of [bit_shr of [255, 4], 15, "SHR 255 >> 4"]
 
-# Bitmask patterns (game use case)
+# Bitmask patterns
 unlocked is 0
 unlocked is bit_or of [unlocked, bit_shl of [1, 0]]
 unlocked is bit_or of [unlocked, bit_shl of [1, 2]]
 assert_eq of [bit_and of [unlocked, 1], 1, "bitmask bit 0 set"]
 assert_eq of [bit_and of [unlocked, 2], 0, "bitmask bit 1 clear"]
 assert_eq of [bit_and of [unlocked, 4], 4, "bitmask bit 2 set"]
+
+# Shift amount masking — out-of-range shifts are defined, not UB
+assert_eq of [bit_shl of [1, 32], 1, "SHL 1 << 32 masks to << 0"]
+assert_eq of [bit_shl of [1, 33], 2, "SHL 1 << 33 masks to << 1"]
+assert_eq of [bit_shr of [8, 35], 1, "SHR 8 >> 35 masks to >> 3"]
+
+# Type safety — non-numeric args return 0 instead of UB
+assert_eq of [bit_and of ["abc", 5], 0, "AND string arg returns 0"]
+assert_eq of [bit_or of [null, 5], 0, "OR null arg returns 0"]
+assert_eq of [bit_shl of [[1,2], 4], 0, "SHL list arg returns 0"]
 
 test_summary of null
