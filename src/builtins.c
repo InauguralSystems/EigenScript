@@ -258,47 +258,55 @@ Value* builtin_join(Value *arg) {
     return v;
 }
 
-/* ==== Bitwise operations ==== */
+/* ==== Bitwise operations ====
+ * Semantics: operate on 32-bit two's-complement ints. Shift amounts are
+ * masked to [0,31] so large/negative shifts are defined behavior, not UB.
+ * Non-numeric args yield 0. */
+
+static int bit_pair(Value *arg, uint32_t *a_out, uint32_t *b_out) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return 0;
+    Value *va = arg->data.list.items[0];
+    Value *vb = arg->data.list.items[1];
+    if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
+    *a_out = (uint32_t)(int32_t)va->data.num;
+    *b_out = (uint32_t)(int32_t)vb->data.num;
+    return 1;
+}
 
 Value* builtin_bit_and(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    int a = (int)arg->data.list.items[0]->data.num;
-    int b = (int)arg->data.list.items[1]->data.num;
-    return make_num((double)(a & b));
+    uint32_t a, b;
+    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    return make_num((double)(int32_t)(a & b));
 }
 
 Value* builtin_bit_or(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    int a = (int)arg->data.list.items[0]->data.num;
-    int b = (int)arg->data.list.items[1]->data.num;
-    return make_num((double)(a | b));
+    uint32_t a, b;
+    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    return make_num((double)(int32_t)(a | b));
 }
 
 Value* builtin_bit_xor(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    int a = (int)arg->data.list.items[0]->data.num;
-    int b = (int)arg->data.list.items[1]->data.num;
-    return make_num((double)(a ^ b));
+    uint32_t a, b;
+    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    return make_num((double)(int32_t)(a ^ b));
 }
 
 Value* builtin_bit_not(Value *arg) {
     if (!arg || arg->type != VAL_NUM) return make_num(0);
-    int a = (int)arg->data.num;
-    return make_num((double)(~a));
+    uint32_t a = (uint32_t)(int32_t)arg->data.num;
+    return make_num((double)(int32_t)(~a));
 }
 
 Value* builtin_bit_shift_left(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    int a = (int)arg->data.list.items[0]->data.num;
-    int b = (int)arg->data.list.items[1]->data.num;
-    return make_num((double)(a << b));
+    uint32_t a, b;
+    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    return make_num((double)(int32_t)(a << (b & 31)));
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    int a = (int)arg->data.list.items[0]->data.num;
-    int b = (int)arg->data.list.items[1]->data.num;
-    return make_num((double)((unsigned int)a >> b));
+    uint32_t a, b;
+    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    return make_num((double)(a >> (b & 31)));
 }
 
 Value* builtin_len(Value *arg) {

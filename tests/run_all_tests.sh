@@ -1099,30 +1099,30 @@ fi
 echo ""
 
 # I/O builtins + join + refcount GC
-echo "[49] I/O Builtins & GC (14 checks)"
+echo "[49] I/O Builtins & GC (16 checks)"
 IO_OUTPUT=$(./eigenscript ../tests/test_io_builtins.eigs 2>&1)
 if echo "$IO_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 14))
-    PASS=$((PASS + 14))
-    echo "  PASS: all 14 I/O + GC checks"
+    TOTAL=$((TOTAL + 16))
+    PASS=$((PASS + 16))
+    echo "  PASS: all 16 I/O + GC checks"
 else
-    TOTAL=$((TOTAL + 14))
-    FAIL=$((FAIL + 14))
+    TOTAL=$((TOTAL + 16))
+    FAIL=$((FAIL + 16))
     echo "  FAIL: I/O builtins tests"
     echo "$IO_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
 echo ""
 
 # [50] Bitwise operations
-echo "[50] Bitwise Operations (16 checks)"
+echo "[50] Bitwise Operations (22 checks)"
 BW_OUTPUT=$(./eigenscript ../tests/test_bitwise.eigs 2>&1)
 if echo "$BW_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 16))
-    PASS=$((PASS + 16))
-    echo "  PASS: all 16 bitwise checks"
+    TOTAL=$((TOTAL + 22))
+    PASS=$((PASS + 22))
+    echo "  PASS: all 22 bitwise checks"
 else
-    TOTAL=$((TOTAL + 16))
-    FAIL=$((FAIL + 16))
+    TOTAL=$((TOTAL + 22))
+    FAIL=$((FAIL + 22))
     echo "  FAIL: bitwise tests"
     echo "$BW_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi

@@ -135,18 +135,39 @@ static int is_arena_ptr(void *ptr) {
     return 0;
 }
 
+/* Refcount-aware teardown. Called by val_decref when refcount hits 0.
+ * Children are val_decref'd (not recursively freed), so shared values
+ * tracked by refcount elsewhere stay alive. Arena-owned memory is
+ * skipped — it gets reclaimed by arena_reset. */
 void free_value(Value *v) {
-    if (!v || is_arena_ptr(v)) return;
-    if (v->type == VAL_STR) {
-        if (v->data.str && !is_arena_ptr(v->data.str)) free(v->data.str);
-    } else if (v->type == VAL_LIST) {
-        for (int i = 0; i < v->data.list.count; i++) {
-            free_value(v->data.list.items[i]);
-        }
-        if (v->data.list.items && !is_arena_ptr(v->data.list.items))
-            free(v->data.list.items);
-    } else if (v->type == VAL_JSON_RAW) {
-        if (v->data.str && !is_arena_ptr(v->data.str)) free(v->data.str);
+    if (!v || v->arena || is_arena_ptr(v)) return;
+    switch (v->type) {
+        case VAL_STR:
+        case VAL_JSON_RAW:
+            if (v->data.str && !is_arena_ptr(v->data.str)) free(v->data.str);
+            break;
+        case VAL_LIST:
+            for (int i = 0; i < v->data.list.count; i++)
+                val_decref(v->data.list.items[i]);
+            if (v->data.list.items && !is_arena_ptr(v->data.list.items))
+                free(v->data.list.items);
+            break;
+        case VAL_DICT:
+            for (int i = 0; i < v->data.dict.count; i++) {
+                free(v->data.dict.keys[i]);
+                val_decref(v->data.dict.vals[i]);
+            }
+            free(v->data.dict.keys);
+            free(v->data.dict.vals);
+            break;
+        case VAL_FN:
+            free(v->data.fn.name);
+            for (int i = 0; i < v->data.fn.param_count; i++)
+                free(v->data.fn.params[i]);
+            free(v->data.fn.params);
+            break;
+        default:
+            break;
     }
     free(v);
 }
@@ -296,38 +317,6 @@ void dict_remove(Value *dict, const char *key) {
             return;
         }
     }
-}
-
-void value_free(Value *v) {
-    if (!v) return;
-    if (v->arena) return;  /* arena-allocated — freed by arena_reset */
-    switch (v->type) {
-        case VAL_STR:
-            free(v->data.str);
-            break;
-        case VAL_LIST:
-            for (int i = 0; i < v->data.list.count; i++)
-                val_decref(v->data.list.items[i]);
-            free(v->data.list.items);
-            break;
-        case VAL_FN:
-            free(v->data.fn.name);
-            for (int i = 0; i < v->data.fn.param_count; i++)
-                free(v->data.fn.params[i]);
-            free(v->data.fn.params);
-            break;
-        case VAL_DICT:
-            for (int i = 0; i < v->data.dict.count; i++) {
-                free(v->data.dict.keys[i]);
-                value_free(v->data.dict.vals[i]);
-            }
-            free(v->data.dict.keys);
-            free(v->data.dict.vals);
-            break;
-        default:
-            break;
-    }
-    free(v);
 }
 
 void list_append(Value *list, Value *item) {

@@ -63,4 +63,15 @@ for i in range of 500:
     d.key is f"value_{i}"
 assert_eq of [d.key, "value_499", "dict value replacement"]
 
+# Shared values across containers — same Value referenced from multiple
+# collections must survive until all refs drop. Previously at risk of
+# double-free when free_value recursed instead of decref'ing children.
+shared is [10, 20, 30]
+holder_a is [shared, shared, shared]
+holder_b is {"x": shared, "y": shared}
+holder_a is "dropped"
+assert_eq of [holder_b.x[1], 20, "shared value survives partial drop"]
+holder_b is "dropped"
+assert_eq of [shared[2], 30, "shared value survives after holders gone"]
+
 test_summary of null
