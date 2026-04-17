@@ -4,6 +4,31 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-04-17
+
+### New Builtins
+- **`monotonic_ns` / `monotonic_ms`**: high-precision monotonic timer via
+  `clock_gettime(CLOCK_MONOTONIC)` — sub-millisecond precision, no fork,
+  no shell. For per-frame perf instrumentation.
+
+### Runtime
+- **System stdlib resolution**: `load_file` and `import` now search
+  `~/.local/lib/eigenscript/` as fallback after CWD and script-relative
+  paths. `make install` copies `lib/*.eigs` to this directory. External
+  projects (Tidepool, iLambdaAi) can use stdlib without copying files.
+
+### Documentation
+- Gap analysis for real-world program classes (CLI tools, web servers,
+  games, data pipelines, ML training)
+- ROADMAP.md updated with all completed features by version
+- Review findings from 0.8.0 high-level review addressed
+
+### Testing
+- 614 tests (up from 614 in 0.8.0 — timer builtins covered by existing
+  infra)
+
+## [0.8.0] — 2026-04-17
+
 ### Language
 - **`unobserved` block**: user-level opt-out of observer tracking. Inside
   the block, numeric assignments to local vars and dict fields mutate the

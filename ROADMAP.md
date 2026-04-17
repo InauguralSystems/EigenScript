@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: **0.8.0**
+Current version: **0.8.1**
 
 ## Near-term
 

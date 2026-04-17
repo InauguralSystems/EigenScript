@@ -1,6 +1,6 @@
 # EigenScript Gap Analysis
 
-Version surveyed: **0.8.0**
+Version surveyed: **0.8.1**
 
 EigenScript is a general-purpose language, but some program classes stress
 capabilities that the current runtime and standard library do not provide.
