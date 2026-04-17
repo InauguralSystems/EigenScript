@@ -4,7 +4,7 @@ CFLAGS  := -Wall -Wextra -O2 -fstack-protector-strong
 LDFLAGS := -lm -lpthread
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/eval.c $(SRC_DIR)/builtins.c $(SRC_DIR)/arena.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/eval.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/arena.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/main.c
 BINARY  := $(SRC_DIR)/eigenscript
 
 FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c \
@@ -79,7 +79,7 @@ coverage: coverage-clean
 	@echo "Per-file .gcov reports written to $(SRC_DIR)/*.gcov"
 	@echo "Run 'make coverage-clean' to remove coverage artifacts."
 
-FUZZ_SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/eval.c $(SRC_DIR)/builtins.c $(SRC_DIR)/arena.c $(SRC_DIR)/strbuf.c
+FUZZ_SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/eval.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/arena.c $(SRC_DIR)/strbuf.c
 
 fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
 	$(CC) -g -fsanitize=address,undefined -o fuzz/fuzz_stdin \
