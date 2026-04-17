@@ -45,6 +45,16 @@ http:
 		$(LDFLAGS)
 	@echo "EigenScript $(VERSION) (http+model, no db) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
 
+gfx:
+	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) $(SRC_DIR)/ext_gfx.c \
+		-DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_EXT_GFX=1 \
+		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+		$(LDFLAGS) -ldl
+	@echo "EigenScript $(VERSION) (gfx) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+
 test: build
 	cd tests && bash run_all_tests.sh
 

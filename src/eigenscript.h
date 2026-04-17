@@ -21,6 +21,9 @@
 #ifndef EIGENSCRIPT_EXT_AUTH
 #define EIGENSCRIPT_EXT_AUTH 1
 #endif
+#ifndef EIGENSCRIPT_EXT_GFX
+#define EIGENSCRIPT_EXT_GFX 0
+#endif
 
 #include <stdio.h>
 #include <stdarg.h>

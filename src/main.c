@@ -6,6 +6,9 @@
 #if EIGENSCRIPT_EXT_HTTP
 #include "ext_http_internal.h"
 #endif
+#if EIGENSCRIPT_EXT_GFX
+void register_gfx_builtins(Env *env);
+#endif
 
 Env *g_global_env = NULL;
 char g_script_dir[4096] = ".";
@@ -146,6 +149,9 @@ int main(int argc, char **argv) {
         g_server.session_id = NULL;
         g_server.request_headers = NULL;
 #endif
+#if EIGENSCRIPT_EXT_GFX
+        register_gfx_builtins(global);
+#endif
 
         eigenscript_repl(global);
         return 0;
@@ -187,6 +193,9 @@ int main(int argc, char **argv) {
     g_server.request_body = NULL;
     g_server.session_id = NULL;
     g_server.request_headers = NULL;
+#endif
+#if EIGENSCRIPT_EXT_GFX
+    register_gfx_builtins(global);
 #endif
 
     g_parse_errors = 0;
