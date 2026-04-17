@@ -1113,8 +1113,23 @@ else
 fi
 echo ""
 
-# [50] Example smoke tests
-echo "[50] Example Smoke Tests"
+# [50] Bitwise operations
+echo "[50] Bitwise Operations (16 checks)"
+BW_OUTPUT=$(./eigenscript ../tests/test_bitwise.eigs 2>&1)
+if echo "$BW_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 16))
+    PASS=$((PASS + 16))
+    echo "  PASS: all 16 bitwise checks"
+else
+    TOTAL=$((TOTAL + 16))
+    FAIL=$((FAIL + 16))
+    echo "  FAIL: bitwise tests"
+    echo "$BW_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
+# [51] Example smoke tests
+echo "[51] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
 EX_EXIT=$?
 

@@ -258,6 +258,49 @@ Value* builtin_join(Value *arg) {
     return v;
 }
 
+/* ==== Bitwise operations ==== */
+
+Value* builtin_bit_and(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    int a = (int)arg->data.list.items[0]->data.num;
+    int b = (int)arg->data.list.items[1]->data.num;
+    return make_num((double)(a & b));
+}
+
+Value* builtin_bit_or(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    int a = (int)arg->data.list.items[0]->data.num;
+    int b = (int)arg->data.list.items[1]->data.num;
+    return make_num((double)(a | b));
+}
+
+Value* builtin_bit_xor(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    int a = (int)arg->data.list.items[0]->data.num;
+    int b = (int)arg->data.list.items[1]->data.num;
+    return make_num((double)(a ^ b));
+}
+
+Value* builtin_bit_not(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    int a = (int)arg->data.num;
+    return make_num((double)(~a));
+}
+
+Value* builtin_bit_shift_left(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    int a = (int)arg->data.list.items[0]->data.num;
+    int b = (int)arg->data.list.items[1]->data.num;
+    return make_num((double)(a << b));
+}
+
+Value* builtin_bit_shift_right(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    int a = (int)arg->data.list.items[0]->data.num;
+    int b = (int)arg->data.list.items[1]->data.num;
+    return make_num((double)((unsigned int)a >> b));
+}
+
 Value* builtin_len(Value *arg) {
     if (arg->type == VAL_LIST)
         return make_num(arg->data.list.count);
@@ -2179,6 +2222,12 @@ void register_builtins(Env *env) {
     env_set_local(env, "raw_key", make_builtin(builtin_raw_key));
     env_set_local(env, "usleep", make_builtin(builtin_usleep));
     env_set_local(env, "join", make_builtin(builtin_join));
+    env_set_local(env, "bit_and", make_builtin(builtin_bit_and));
+    env_set_local(env, "bit_or", make_builtin(builtin_bit_or));
+    env_set_local(env, "bit_xor", make_builtin(builtin_bit_xor));
+    env_set_local(env, "bit_not", make_builtin(builtin_bit_not));
+    env_set_local(env, "bit_shl", make_builtin(builtin_bit_shift_left));
+    env_set_local(env, "bit_shr", make_builtin(builtin_bit_shift_right));
     env_set_local(env, "screen_put", make_builtin(builtin_screen_put));
     env_set_local(env, "screen_clear", make_builtin(builtin_screen_clear));
     env_set_local(env, "screen_end", make_builtin(builtin_screen_end));

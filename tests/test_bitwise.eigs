@@ -1,0 +1,35 @@
+# Bitwise operation tests
+load_file of "lib/test.eigs"
+
+# AND
+assert_eq of [bit_and of [0xFF, 0x0F], 15, "AND FF & 0F"]
+assert_eq of [bit_and of [12, 10], 8, "AND 12 & 10"]
+assert_eq of [bit_and of [7, 0], 0, "AND 7 & 0"]
+
+# OR
+assert_eq of [bit_or of [0xF0, 0x0F], 255, "OR F0 | 0F"]
+assert_eq of [bit_or of [4, 2], 6, "OR 4 | 2"]
+assert_eq of [bit_or of [0, 0], 0, "OR 0 | 0"]
+
+# XOR
+assert_eq of [bit_xor of [0xFF, 0x0F], 240, "XOR FF ^ 0F"]
+assert_eq of [bit_xor of [5, 3], 6, "XOR 5 ^ 3"]
+
+# Shift left
+assert_eq of [bit_shl of [1, 0], 1, "SHL 1 << 0"]
+assert_eq of [bit_shl of [1, 3], 8, "SHL 1 << 3"]
+assert_eq of [bit_shl of [5, 2], 20, "SHL 5 << 2"]
+
+# Shift right
+assert_eq of [bit_shr of [8, 3], 1, "SHR 8 >> 3"]
+assert_eq of [bit_shr of [255, 4], 15, "SHR 255 >> 4"]
+
+# Bitmask patterns (game use case)
+unlocked is 0
+unlocked is bit_or of [unlocked, bit_shl of [1, 0]]
+unlocked is bit_or of [unlocked, bit_shl of [1, 2]]
+assert_eq of [bit_and of [unlocked, 1], 1, "bitmask bit 0 set"]
+assert_eq of [bit_and of [unlocked, 2], 0, "bitmask bit 1 clear"]
+assert_eq of [bit_and of [unlocked, 4], 4, "bitmask bit 2 set"]
+
+test_summary of null
