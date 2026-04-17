@@ -2,6 +2,56 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Security
+- **Stack buffer overflow in f-string lexer (high)**: `src/lexer.c:206` wrote
+  into a 64 KB stack buffer without bounds-checking the accumulator index.
+  An f-string literal segment longer than 64 KB would overrun the stack and
+  crash (or corrupt adjacent frames). Deployments that accept untrusted
+  `.eigs` source are advised to upgrade. Fixed as part of the strbuf
+  migration below.
+
+### Hardening
+- **Overflow-safe allocator helpers**: new `safe_size_mul`, `xmalloc_array`,
+  `xcalloc_array`, `xrealloc_array` in `src/arena.c` abort cleanly on
+  `nmemb * size` wrap. Migrated multiplicative allocations across
+  `model_io.c`, `model_infer.c`, `model_train.c`, `parser.c`, `lexer.c`,
+  `eigenscript.c`, `builtins.c`. `tensor_load` now rejects `rows*cols`
+  that exceed `INT_MAX` up front.
+- **Growable string buffers replace fixed MAX_STR ceilings**: new
+  `src/strbuf.c` helper with doubling growth. Adopted by f-string and
+  regular-string lexing, `regex_replace`, JSON encoder/parser,
+  `value_to_string` (list + dict), and REPL stdin. Strings, regex
+  output, JSON, and f-strings now grow with memory instead of silently
+  truncating at 64 KB.
+- **Dynamic HTTP request buffer**: `src/ext_http.c handle_request` now
+  allocates a heap reqbuf that grows via `xrealloc_array`, replacing
+  the 1 MB stack array. Default body cap raised from 1 MB → 16 MiB,
+  configurable at runtime via `EIGS_HTTP_MAX_BODY`.
+- **`strcpy`/`strcat` hardening**: `src/eval.c:164` string concatenation
+  rewritten with `memcpy` + pre-computed lengths for consistency with
+  the rest of the hardened codebase.
+- Deleted `MAX_STR` / `MAX_BODY` / `MAX_HEADER` from `eigenscript.h`
+  (no remaining consumers).
+
+### Architecture
+- **`builtins.c` split**: tensor code (~990 lines — all `builtin_tensor_*`,
+  `builtin_random_normal`, `builtin_numerical_grad*`, `builtin_sgd_update*`,
+  `builtin_tensor_save/load` plus their static helpers) moved to new
+  `src/builtins_tensor.c`. Cross-TU prototypes live in new
+  `src/builtins_internal.h`. `builtins.c` dropped from 3079 → 2091 lines.
+
+### BREAKING
+- Default HTTP request body cap rose from 1 MB to 16 MiB. Deployments
+  that relied on the 1 MB ceiling as a DoS mitigation should set
+  `EIGS_HTTP_MAX_BODY=1048576`.
+
+### Testing
+- 4 new large-buffer regression tests (`test_large_strings`,
+  `test_fstring_large`, `test_regex_large`, `test_json_large`) that
+  would fail against v0.7.0 with silent truncation or stack overflow.
+
 ## [0.7.0] — 2026-04-16
 
 ### Language
