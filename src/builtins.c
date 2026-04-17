@@ -213,6 +213,51 @@ Value* builtin_screen_render(Value *arg) {
     return make_null();
 }
 
+/* join of [list, separator] — concatenate list elements into a string.
+ * C-backed for performance — single allocation instead of O(n²) concat. */
+Value* builtin_join(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_str("");
+    Value *list = arg->data.list.items[0];
+    Value *sep_val = arg->data.list.items[1];
+    if (!list || list->type != VAL_LIST) return make_str("");
+    const char *sep = (sep_val && sep_val->type == VAL_STR) ? sep_val->data.str : "";
+    int sep_len = strlen(sep);
+
+    /* First pass: compute total length */
+    int count = list->data.list.count;
+    if (count == 0) return make_str("");
+
+    char **parts = malloc(count * sizeof(char*));
+    int *lengths = malloc(count * sizeof(int));
+    int total = 0;
+    for (int i = 0; i < count; i++) {
+        parts[i] = value_to_string(list->data.list.items[i]);
+        lengths[i] = strlen(parts[i]);
+        total += lengths[i];
+        if (i > 0) total += sep_len;
+    }
+
+    /* Single allocation */
+    char *result = malloc(total + 1);
+    int pos = 0;
+    for (int i = 0; i < count; i++) {
+        if (i > 0 && sep_len > 0) {
+            memcpy(result + pos, sep, sep_len);
+            pos += sep_len;
+        }
+        memcpy(result + pos, parts[i], lengths[i]);
+        pos += lengths[i];
+        free(parts[i]);
+    }
+    result[pos] = '\0';
+    free(parts);
+    free(lengths);
+
+    Value *v = make_str(result);
+    free(result);
+    return v;
+}
+
 Value* builtin_len(Value *arg) {
     if (arg->type == VAL_LIST)
         return make_num(arg->data.list.count);
@@ -2133,6 +2178,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "flush", make_builtin(builtin_flush));
     env_set_local(env, "raw_key", make_builtin(builtin_raw_key));
     env_set_local(env, "usleep", make_builtin(builtin_usleep));
+    env_set_local(env, "join", make_builtin(builtin_join));
     env_set_local(env, "screen_put", make_builtin(builtin_screen_put));
     env_set_local(env, "screen_clear", make_builtin(builtin_screen_clear));
     env_set_local(env, "screen_end", make_builtin(builtin_screen_end));
