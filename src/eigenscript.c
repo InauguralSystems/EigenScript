@@ -152,44 +152,57 @@ void free_value(Value *v) {
 }
 
 Value* make_num(double n) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    int from_arena = g_arena.active;
+    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
     v->data.num = n;
+    v->refcount = 1;
+    v->arena = from_arena;
     return v;
 }
 
-/* Heap-only make_num — for values that must outlive arena reset
- * (e.g. updated model weights written in-place by sgd_update). */
+/* Heap-only make_num — for values that must outlive arena reset */
 Value* make_num_permanent(double n) {
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
     v->data.num = n;
+    v->refcount = 1;
+    v->arena = 0;
     return v;
 }
 
 Value* make_str(const char *s) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    int from_arena = g_arena.active;
+    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
     v->data.str = xstrdup(s);
-    if (g_arena.active) arena_track_string(v->data.str);
+    if (from_arena) arena_track_string(v->data.str);
+    v->refcount = 1;
+    v->arena = from_arena;
     return v;
 }
 
 Value* make_null(void) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    int from_arena = g_arena.active;
+    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_NULL;
+    v->refcount = 1;
+    v->arena = from_arena;
     return v;
 }
 
 Value* make_list(int capacity) {
-    Value *v = g_arena.active ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    int from_arena = g_arena.active;
+    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
-    if (g_arena.active)
+    if (from_arena)
         v->data.list.items = arena_alloc(v->data.list.capacity * sizeof(Value*));
     else
         v->data.list.items = xcalloc(v->data.list.capacity, sizeof(Value*));
     v->data.list.count = 0;
+    v->refcount = 1;
+    v->arena = from_arena;
     return v;
 }
 
@@ -204,6 +217,8 @@ Value* make_fn(const char *name, char **params, int param_count, ASTNode **body,
     v->data.fn.body = body;
     v->data.fn.body_count = body_count;
     v->data.fn.closure = closure;
+    v->refcount = 1;
+    v->arena = 0;
     return v;
 }
 
@@ -211,6 +226,8 @@ Value* make_builtin(BuiltinFn fn) {
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUILTIN;
     v->data.builtin = fn;
+    v->refcount = 1;
+    v->arena = 0;
     return v;
 }
 
@@ -222,6 +239,8 @@ Value* make_dict(int capacity) {
     v->data.dict.vals = xcalloc(capacity, sizeof(Value*));
     v->data.dict.count = 0;
     v->data.dict.capacity = capacity;
+    v->refcount = 1;
+    v->arena = 0;
     return v;
 }
 
@@ -230,6 +249,8 @@ void dict_set(Value *dict, const char *key, Value *val) {
     /* Check if key exists */
     for (int i = 0; i < dict->data.dict.count; i++) {
         if (strcmp(dict->data.dict.keys[i], key) == 0) {
+            val_incref(val);
+            val_decref(dict->data.dict.vals[i]);
             dict->data.dict.vals[i] = val;
             return;
         }
@@ -243,6 +264,7 @@ void dict_set(Value *dict, const char *key, Value *val) {
     }
     dict->data.dict.keys[dict->data.dict.count] = xstrdup(key);
     dict->data.dict.vals[dict->data.dict.count] = val;
+    val_incref(val);
     dict->data.dict.count++;
 }
 
@@ -277,13 +299,14 @@ void dict_remove(Value *dict, const char *key) {
 
 void value_free(Value *v) {
     if (!v) return;
+    if (v->arena) return;  /* arena-allocated — freed by arena_reset */
     switch (v->type) {
         case VAL_STR:
             free(v->data.str);
             break;
         case VAL_LIST:
             for (int i = 0; i < v->data.list.count; i++)
-                value_free(v->data.list.items[i]);
+                val_decref(v->data.list.items[i]);
             free(v->data.list.items);
             break;
         case VAL_FN:
@@ -321,6 +344,7 @@ void list_append(Value *list, Value *item) {
         list->data.list.capacity = new_cap;
     }
     list->data.list.items[list->data.list.count++] = item;
+    val_incref(item);
 }
 
 int is_truthy(Value *v) {
@@ -410,6 +434,8 @@ void env_set(Env *env, const char *name, Value *val) {
     while (e) {
         for (int i = 0; i < e->count; i++) {
             if (strcmp(e->names[i], name) == 0) {
+                val_incref(val);
+                val_decref(e->values[i]);
                 e->values[i] = val;
                 return;
             }
@@ -422,6 +448,8 @@ void env_set(Env *env, const char *name, Value *val) {
 void env_set_local(Env *env, const char *name, Value *val) {
     for (int i = 0; i < env->count; i++) {
         if (strcmp(env->names[i], name) == 0) {
+            val_incref(val);
+            val_decref(env->values[i]);
             env->values[i] = val;
             return;
         }
@@ -434,6 +462,7 @@ void env_set_local(Env *env, const char *name, Value *val) {
         if (g_arena.active && !env->heap_allocated) arena_track_string(name_copy);
         env->names[env->count] = name_copy;
         env->values[env->count] = val;
+        val_incref(val);
         env->count++;
     }
 }

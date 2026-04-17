@@ -171,6 +171,8 @@ struct Value {
     double last_entropy;
     int obs_age;
     double prev_dH;
+    int refcount;       /* reference counting GC: 0 = unmanaged, >0 = tracked */
+    unsigned char arena; /* 1 if arena-allocated (don't free) */
 };
 
 /* ---- Arena allocator ---- */
@@ -245,6 +247,17 @@ Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 Value* dict_get(Value *dict, const char *key);
 void list_append(Value *list, Value *item);
+
+/* ---- Reference counting ---- */
+static inline void val_incref(Value *v) {
+    if (v && !v->arena) v->refcount++;
+}
+static inline void val_decref(Value *v) {
+    if (v && !v->arena && v->refcount > 0) {
+        v->refcount--;
+        if (v->refcount == 0) free_value(v);
+    }
+}
 
 /* ---- Environment ---- */
 
