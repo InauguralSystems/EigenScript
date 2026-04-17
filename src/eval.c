@@ -501,15 +501,21 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         const char *name = node->data.import.module_name;
         char path[4096];
 
-        /* Try: lib/NAME.eigs relative to cwd, then script dir */
+        /* Try: lib/NAME.eigs relative to cwd, then script dir, then system lib */
         snprintf(path, sizeof(path), "lib/%.1024s.eigs", name);
         if (access(path, F_OK) != 0) {
             snprintf(path, sizeof(path), "%.2048s/lib/%.1024s.eigs", g_script_dir, name);
             if (access(path, F_OK) != 0) {
                 snprintf(path, sizeof(path), "%.2048s/../lib/%.1024s.eigs", g_script_dir, name);
                 if (access(path, F_OK) != 0) {
-                    runtime_error(node->line, "import: module '%s' not found", name);
-                    return make_null();
+                    /* System stdlib: ~/.local/lib/eigenscript/ */
+                    const char *home = getenv("HOME");
+                    if (home)
+                        snprintf(path, sizeof(path), "%.2048s/.local/lib/eigenscript/%.1024s.eigs", home, name);
+                    if (!home || access(path, F_OK) != 0) {
+                        runtime_error(node->line, "import: module '%s' not found", name);
+                        return make_null();
+                    }
                 }
             }
         }

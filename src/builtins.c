@@ -309,6 +309,22 @@ Value* builtin_bit_shift_right(Value *arg) {
     return make_num((double)(a >> (b & 31)));
 }
 
+/* monotonic_ns of null — nanoseconds from CLOCK_MONOTONIC */
+Value* builtin_monotonic_ns(Value *arg) {
+    (void)arg;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return make_num((double)ts.tv_sec * 1e9 + (double)ts.tv_nsec);
+}
+
+/* monotonic_ms of null — milliseconds from CLOCK_MONOTONIC */
+Value* builtin_monotonic_ms(Value *arg) {
+    (void)arg;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return make_num((double)ts.tv_sec * 1e3 + (double)ts.tv_nsec / 1e6);
+}
+
 Value* builtin_len(Value *arg) {
     if (arg->type == VAL_LIST)
         return make_num(arg->data.list.count);
@@ -1633,6 +1649,24 @@ Value* builtin_load_file(Value *arg) {
         source = read_file_util(resolved, &size);
         if (source) path = resolved;
     }
+    /* Fallback: system stdlib at ~/.local/lib/eigenscript/ */
+    if (!source && path[0] != '/') {
+        const char *home = getenv("HOME");
+        if (home) {
+            snprintf(resolved, sizeof(resolved), "%.2000s/.local/lib/eigenscript/%.4000s", home, path);
+            source = read_file_util(resolved, &size);
+            if (source) path = resolved;
+        }
+    }
+    /* Also try stripping "lib/" prefix for import-style loads */
+    if (!source && path[0] != '/' && strncmp(path, "lib/", 4) == 0) {
+        const char *home = getenv("HOME");
+        if (home) {
+            snprintf(resolved, sizeof(resolved), "%.2000s/.local/lib/eigenscript/%.4000s", home, path + 4);
+            source = read_file_util(resolved, &size);
+            if (source) path = resolved;
+        }
+    }
 
     if (!source) {
         fprintf(stderr, "load_file: cannot read '%s'\n", arg->data.str);
@@ -2229,6 +2263,8 @@ void register_builtins(Env *env) {
     env_set_local(env, "flush", make_builtin(builtin_flush));
     env_set_local(env, "raw_key", make_builtin(builtin_raw_key));
     env_set_local(env, "usleep", make_builtin(builtin_usleep));
+    env_set_local(env, "monotonic_ns", make_builtin(builtin_monotonic_ns));
+    env_set_local(env, "monotonic_ms", make_builtin(builtin_monotonic_ms));
     env_set_local(env, "join", make_builtin(builtin_join));
     env_set_local(env, "bit_and", make_builtin(builtin_bit_and));
     env_set_local(env, "bit_or", make_builtin(builtin_bit_or));

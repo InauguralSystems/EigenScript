@@ -7,12 +7,17 @@ set -e
 
 cd "$(dirname "$0")"
 mkdir -p ~/.local/bin
+mkdir -p ~/.local/lib/eigenscript
 VERSION=$(cat VERSION)
 
 # Build and install minimal
 ./build.sh
 cp src/eigenscript ~/.local/bin/eigenscript
 chmod +x ~/.local/bin/eigenscript
+
+# Install stdlib
+cp -r lib/*.eigs ~/.local/lib/eigenscript/
+echo "Stdlib installed to ~/.local/lib/eigenscript/"
 
 # Build and install full (if requested or if HTTP/DB/model extensions needed)
 if [ "$1" != "minimal-only" ]; then

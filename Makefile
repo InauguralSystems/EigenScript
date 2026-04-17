@@ -60,9 +60,12 @@ test: build
 
 install: build
 	mkdir -p $(PREFIX)/bin
+	mkdir -p $(PREFIX)/lib/eigenscript
 	cp $(BINARY) $(PREFIX)/bin/eigenscript
 	chmod +x $(PREFIX)/bin/eigenscript
+	cp lib/*.eigs $(PREFIX)/lib/eigenscript/
 	@echo "Installed: $(PREFIX)/bin/eigenscript (v$(VERSION))"
+	@echo "Stdlib:    $(PREFIX)/lib/eigenscript/"
 
 clean:
 	rm -f $(BINARY) $(SRC_DIR)/*.o
