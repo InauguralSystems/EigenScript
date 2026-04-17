@@ -7,6 +7,7 @@
 #include "eigenscript.h"
 #include "builtins_internal.h"
 #include <pthread.h>
+#include <termios.h>
 
 #if EIGENSCRIPT_EXT_HTTP
 #include "ext_http_internal.h"
@@ -33,6 +34,73 @@ Value* builtin_print(Value *arg) {
     printf("%s\n", s);
     fflush(stdout);
     free(s);
+    return make_null();
+}
+
+/* write of value — output without trailing newline */
+Value* builtin_write(Value *arg) {
+    char *s = value_to_string(arg);
+    fputs(s, stdout);
+    free(s);
+    return make_null();
+}
+
+/* flush of null — flush stdout */
+Value* builtin_flush(Value *arg) {
+    (void)arg;
+    fflush(stdout);
+    return make_null();
+}
+
+/* raw_key of null — non-blocking single keypress read.
+ * Returns the key as a string, or "" if no key pressed.
+ * Sets terminal to raw mode on first call, restores on exit. */
+static struct termios g_orig_termios;
+static int g_raw_mode = 0;
+
+static void restore_terminal(void) {
+    if (g_raw_mode) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_orig_termios);
+        g_raw_mode = 0;
+    }
+}
+
+static void enable_raw_mode(void) {
+    if (g_raw_mode) return;
+    tcgetattr(STDIN_FILENO, &g_orig_termios);
+    atexit(restore_terminal);
+    struct termios raw = g_orig_termios;
+    raw.c_lflag &= ~(ECHO | ICANON);
+    raw.c_cc[VMIN] = 0;   /* non-blocking */
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    g_raw_mode = 1;
+}
+
+Value* builtin_raw_key(Value *arg) {
+    (void)arg;
+    enable_raw_mode();
+    char buf[4] = {0};
+    ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+    if (n <= 0) return make_str("");
+    buf[n] = '\0';
+    /* Arrow keys come as ESC [ A/B/C/D */
+    if (buf[0] == 27 && n >= 3 && buf[1] == '[') {
+        switch (buf[2]) {
+            case 'A': return make_str("up");
+            case 'B': return make_str("down");
+            case 'C': return make_str("right");
+            case 'D': return make_str("left");
+        }
+    }
+    return make_str(buf);
+}
+
+/* usleep of microseconds — pause execution */
+Value* builtin_usleep(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_null();
+    int us = (int)arg->data.num;
+    if (us > 0) usleep(us);
     return make_null();
 }
 
@@ -1952,6 +2020,10 @@ Value* builtin_get_at(Value *arg) {
 void register_builtins(Env *env) {
     /* ---- Core language builtins (always available) ---- */
     env_set_local(env, "print", make_builtin(builtin_print));
+    env_set_local(env, "write", make_builtin(builtin_write));
+    env_set_local(env, "flush", make_builtin(builtin_flush));
+    env_set_local(env, "raw_key", make_builtin(builtin_raw_key));
+    env_set_local(env, "usleep", make_builtin(builtin_usleep));
     env_set_local(env, "len", make_builtin(builtin_len));
     env_set_local(env, "str", make_builtin(builtin_str));
     env_set_local(env, "num", make_builtin(builtin_num));
