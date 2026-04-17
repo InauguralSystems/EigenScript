@@ -65,6 +65,7 @@ const char* tok_type_name(TokType t) {
         case TOK_FOR: return "'for'";
         case TOK_IN: return "'in'";
         case TOK_NULL: return "'null'";
+        case TOK_UNOBSERVED: return "'unobserved'";
         case TOK_PLUS: return "'+'";
         case TOK_MINUS: return "'-'";
         case TOK_STAR: return "'*'";

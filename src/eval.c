@@ -87,7 +87,83 @@ static void update_observer(Value *v) {
 #define EIGS_MAX_EVAL_DEPTH 500
 static int g_eval_depth = 0;
 
+/* Unobserved-block depth. Nonzero means assignments inside this region
+ * skip update_observer and attempt in-place numeric mutation. The
+ * observer's existing entropy/dH/obs_age on touched Values goes stale —
+ * by design. User declared they won't interrogate. */
+int g_unobserved_depth = 0;
+
 static Value* eval_node_impl(ASTNode *node, Env *env);
+
+/* Purely-numeric RHS fast path used by the unobserved fast mutation
+ * path. Computes a side-effect-free arithmetic tree into *out without
+ * allocating any intermediate Values. Returns 1 on success, 0 on bail. */
+static int eval_num_fast(ASTNode *node, Env *env, double *out) {
+    if (!node) return 0;
+    switch (node->type) {
+        case AST_NUM:
+            *out = node->data.num;
+            return 1;
+        case AST_IDENT: {
+            Value *v = env_get(env, node->data.ident.name);
+            if (!v || v->type != VAL_NUM) return 0;
+            *out = v->data.num;
+            return 1;
+        }
+        case AST_DOT: {
+            if (node->data.dot.target->type != AST_IDENT &&
+                node->data.dot.target->type != AST_DOT &&
+                node->data.dot.target->type != AST_INDEX) return 0;
+            Value *target = eval_node(node->data.dot.target, env);
+            if (!target || target->type != VAL_DICT) return 0;
+            Value *v = dict_get(target, node->data.dot.key);
+            if (!v || v->type != VAL_NUM) return 0;
+            *out = v->data.num;
+            return 1;
+        }
+        case AST_INDEX: {
+            if (node->data.index.target->type != AST_IDENT &&
+                node->data.index.target->type != AST_DOT &&
+                node->data.index.target->type != AST_INDEX) return 0;
+            Value *target = eval_node(node->data.index.target, env);
+            if (!target || target->type != VAL_LIST) return 0;
+            double idx_d;
+            if (!eval_num_fast(node->data.index.index, env, &idx_d)) return 0;
+            int i = (int)idx_d;
+            if (i < 0 || i >= target->data.list.count) return 0;
+            Value *v = target->data.list.items[i];
+            if (!v || v->type != VAL_NUM) return 0;
+            *out = v->data.num;
+            return 1;
+        }
+        case AST_UNARY: {
+            if (strcmp(node->data.unary.op, "-") != 0) return 0;
+            double x;
+            if (!eval_num_fast(node->data.unary.operand, env, &x)) return 0;
+            *out = -x;
+            return 1;
+        }
+        case AST_BINOP: {
+            const char *op = node->data.binop.op;
+            if (op[1] != '\0') return 0;
+            if (op[0] != '+' && op[0] != '-' && op[0] != '*' &&
+                op[0] != '/' && op[0] != '%') return 0;
+            double l, r;
+            if (!eval_num_fast(node->data.binop.left, env, &l)) return 0;
+            if (!eval_num_fast(node->data.binop.right, env, &r)) return 0;
+            switch (op[0]) {
+                case '+': *out = l + r; return 1;
+                case '-': *out = l - r; return 1;
+                case '*': *out = l * r; return 1;
+                case '/': if (r == 0) return 0; *out = l / r; return 1;
+                case '%': if (r == 0) return 0; *out = fmod(l, r); return 1;
+            }
+            return 0;
+        }
+        default:
+            return 0;
+    }
+}
 
 Value* eval_node(ASTNode *node, Env *env) {
     if (!node) return make_null();
@@ -124,6 +200,21 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
     }
 
     case AST_ASSIGN: {
+        /* Inside 'unobserved' blocks: try to mutate existing NUM slot in
+         * place, skip update_observer and __observer__ tracking. */
+        if (g_unobserved_depth > 0) {
+            Value *old = env_get(env, node->data.assign.name);
+            if (old && old->type == VAL_NUM && !old->arena) {
+                double result;
+                if (eval_num_fast(node->data.assign.expr, env, &result)) {
+                    old->data.num = result;
+                    return old;
+                }
+            }
+            Value *val = eval_node(node->data.assign.expr, env);
+            env_set(env, node->data.assign.name, val);
+            return val;
+        }
         Value *val = eval_node(node->data.assign.expr, env);
         Value *old = env_get(env, node->data.assign.name);
         if (old) {
@@ -383,13 +474,26 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
 
     case AST_DOT_ASSIGN: {
         Value *target = eval_node(node->data.dot_assign.target, env);
-        Value *val = eval_node(node->data.dot_assign.expr, env);
-        if (target->type == VAL_DICT) {
+        if (target->type != VAL_DICT) {
+            runtime_error(node->line, "cannot assign .%s on %s", node->data.dot_assign.key, val_type_name(target->type));
+            return make_null();
+        }
+        if (g_unobserved_depth > 0) {
+            Value *old = dict_get(target, node->data.dot_assign.key);
+            if (old && old->type == VAL_NUM && !old->arena) {
+                double result;
+                if (eval_num_fast(node->data.dot_assign.expr, env, &result)) {
+                    old->data.num = result;
+                    return old;
+                }
+            }
+            Value *val = eval_node(node->data.dot_assign.expr, env);
             dict_set(target, node->data.dot_assign.key, val);
             return val;
         }
-        runtime_error(node->line, "cannot assign .%s on %s", node->data.dot_assign.key, val_type_name(target->type));
-        return make_null();
+        Value *val = eval_node(node->data.dot_assign.expr, env);
+        dict_set(target, node->data.dot_assign.key, val);
+        return val;
     }
 
     case AST_IMPORT: {
@@ -591,6 +695,13 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
 
     case AST_BLOCK: {
         return eval_block(node->data.block.stmts, node->data.block.count, env);
+    }
+
+    case AST_UNOBSERVED: {
+        g_unobserved_depth++;
+        Value *result = eval_block(node->data.block.stmts, node->data.block.count, env);
+        g_unobserved_depth--;
+        return result;
     }
 
     case AST_INTERROGATE: {
