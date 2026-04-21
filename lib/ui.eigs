@@ -1,0 +1,1959 @@
+# ============================================================
+# UI Toolkit — widget constructors, rendering, and event dispatch
+# ============================================================
+#
+# Usage:
+#   import ui
+#
+#   root is ui.panel of ["root", 0, 0, 800, 600]
+#   ui.add_child of [root, ui.button of ["play", 8, 8, 60, 24, "Play", on_click]]
+#   ui.app_loop of [root, on_key, null]
+#
+# Widget types: panel, button, label, slider, toggle
+# All widgets are plain dicts with a "type" field.
+# Panels have a "children" list and act as containers.
+# Positions are relative to parent panel origin.
+
+load_file of "lib/ui_theme.eigs"
+load_file of "lib/ui_draw.eigs"
+
+# ============================================================
+# Module state — drag capture
+# ============================================================
+
+_drag_widget is null
+_tooltip_widget is null
+_tooltip_timer is 0
+_tooltip_x is 0
+_tooltip_y is 0
+_last_click_time is 0
+_last_click_id is ""
+_cursor_blink is 0
+_frame_time is 0
+_edit_root is null
+
+# ============================================================
+# Widget constructors
+# ============================================================
+
+define label(id, x, y, text) as:
+    return {
+        "type": "label",
+        "id": id,
+        "x": x, "y": y,
+        "text": text,
+        "color": _theme.text_color,
+        "scale": _theme.font_scale,
+        "visible": 1
+    }
+
+define panel(id, x, y, w, h) as:
+    return {
+        "type": "panel",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "bg": _theme.panel_bg,
+        "border": _theme.panel_border,
+        "children": [],
+        "visible": 1
+    }
+
+define button(id, x, y, w, h, text, on_click) as:
+    return {
+        "type": "button",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "label": text,
+        "on_click": on_click,
+        "hover": 0,
+        "pressed": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define slider(id, x, y, w, min_val, max_val, value, on_change) as:
+    return {
+        "type": "slider",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 16,
+        "min_val": min_val, "max_val": max_val, "value": value,
+        "on_change": on_change,
+        "dragging": 0,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define toggle(id, x, y, value, on_change) as:
+    return {
+        "type": "toggle",
+        "id": id,
+        "x": x, "y": y, "w": 32, "h": 16,
+        "value": value,
+        "on_change": on_change,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define knob(id, x, y, size, min_val, max_val, value, on_change) as:
+    return {
+        "type": "knob",
+        "id": id,
+        "x": x, "y": y, "w": size, "h": size,
+        "min_val": min_val, "max_val": max_val, "value": value,
+        "on_change": on_change,
+        "dragging": 0,
+        "drag_start_y": 0,
+        "drag_start_val": 0,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define dropdown(id, x, y, w, items, selected, on_change) as:
+    return {
+        "type": "dropdown",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 24,
+        "items": items,
+        "selected": selected,
+        "on_change": on_change,
+        "open": 0,
+        "hover": 0,
+        "hover_index": -1,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define tabs(id, x, y, w, h, tab_names, on_tab) as:
+    return {
+        "type": "tabs",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "tab_names": tab_names,
+        "active": 0,
+        "on_tab": on_tab,
+        "tab_panels": [],
+        "hover_tab": -1,
+        "visible": 1
+    }
+
+define canvas(id, x, y, w, h, on_paint, on_mouse) as:
+    return {
+        "type": "canvas",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "on_paint": on_paint,
+        "on_mouse": on_mouse,
+        "hover": 0,
+        "visible": 1
+    }
+
+define scroll_panel(id, x, y, w, h) as:
+    return {
+        "type": "scroll_panel",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "bg": _theme.panel_bg,
+        "border": _theme.panel_border,
+        "children": [],
+        "scroll_x": 0,
+        "scroll_y": 0,
+        "content_w": 0,
+        "content_h": 0,
+        "visible": 1
+    }
+
+define vslider(id, x, y, h, min_val, max_val, value, on_change) as:
+    return {
+        "type": "vslider",
+        "id": id,
+        "x": x, "y": y, "w": 16, "h": h,
+        "min_val": min_val, "max_val": max_val, "value": value,
+        "on_change": on_change,
+        "dragging": 0,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define checkbox(id, x, y, text, value, on_change) as:
+    tw is (text_width of [text, _theme.font_scale]) + 22
+    return {
+        "type": "checkbox",
+        "id": id,
+        "x": x, "y": y, "w": tw, "h": 16,
+        "label": text,
+        "value": value,
+        "on_change": on_change,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define text_input(id, x, y, w, text, on_change) as:
+    return {
+        "type": "text_input",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 24,
+        "text": text,
+        "cursor": len of text,
+        "on_change": on_change,
+        "focused": 0,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define menu(id, items, on_select) as:
+    return {
+        "type": "menu",
+        "id": id,
+        "x": 0, "y": 0, "w": 140, "h": 0,
+        "items": items,
+        "on_select": on_select,
+        "hover_index": -1,
+        "visible": 0
+    }
+
+define meter(id, x, y, w, h) as:
+    return {
+        "type": "meter",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "value": 0,
+        "peak": 0,
+        "peak_hold": 0,
+        "visible": 1
+    }
+
+define toggle_button(id, x, y, w, h, text, on_click) as:
+    return {
+        "type": "toggle_button",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "label": text,
+        "value": 0,
+        "on_click": on_click,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1,
+        "color_on": _theme.accent,
+        "color_off": _theme.btn_bg
+    }
+
+define separator(id, x, y, length, vertical) as:
+    if vertical == 1:
+        sw is 1
+        sh is length
+    else:
+        sw is length
+        sh is 1
+    return {
+        "type": "separator",
+        "id": id,
+        "x": x, "y": y, "w": sw, "h": sh,
+        "color": _theme.panel_border,
+        "visible": 1
+    }
+
+define spinbox(id, x, y, w, min_val, max_val, value, step, on_change) as:
+    return {
+        "type": "spinbox",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 24,
+        "min_val": min_val, "max_val": max_val,
+        "value": value, "step": step,
+        "on_change": on_change,
+        "hover": 0,
+        "hover_btn": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define radio_group(id, x, y, items, selected, on_change) as:
+    return {
+        "type": "radio_group",
+        "id": id,
+        "x": x, "y": y, "w": 0, "h": 24,
+        "items": items,
+        "selected": selected,
+        "on_change": on_change,
+        "hover_index": -1,
+        "visible": 1,
+        "enabled": 1
+    }
+
+define progress_bar(id, x, y, w, value) as:
+    return {
+        "type": "progress_bar",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 12,
+        "value": value,
+        "visible": 1
+    }
+
+define splitter(id, x, y, w, h, split_pos, on_resize) as:
+    return {
+        "type": "splitter",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "split_pos": split_pos,
+        "on_resize": on_resize,
+        "panel_a": null,
+        "panel_b": null,
+        "dragging": 0,
+        "hover": 0,
+        "visible": 1,
+        "bar_width": 4
+    }
+
+define dialog(id, w, h, title, message, buttons, on_button) as:
+    return {
+        "type": "dialog",
+        "id": id,
+        "x": 0, "y": 0, "w": w, "h": h,
+        "title": title,
+        "message": message,
+        "buttons": buttons,
+        "on_button": on_button,
+        "hover_btn": -1,
+        "visible": 0
+    }
+
+define editable_label(id, x, y, text, on_commit) as:
+    return {
+        "type": "editable_label",
+        "id": id,
+        "x": x, "y": y,
+        "w": (text_width of [text, _theme.font_scale]) + 8,
+        "h": _theme.char_h + 4,
+        "text": text,
+        "editing": 0,
+        "cursor": 0,
+        "on_commit": on_commit,
+        "on_dblclick": null,
+        "color": _theme.text_color,
+        "scale": _theme.font_scale,
+        "visible": 1
+    }
+
+define grid(id, x, y, cols, rows, cell_w, cell_h, on_cell) as:
+    # Initialize cells to all zeros
+    cells is []
+    for r in range of rows:
+        row is []
+        for c in range of cols:
+            append of [row, 0]
+        append of [cells, row]
+    return {
+        "type": "grid",
+        "id": id,
+        "x": x, "y": y,
+        "w": cols * cell_w, "h": rows * cell_h,
+        "cols": cols, "rows": rows,
+        "cell_w": cell_w, "cell_h": cell_h,
+        "cells": cells,
+        "on_cell": on_cell,
+        "row_labels": null,
+        "col_highlight": -1,
+        "hover_col": -1, "hover_row": -1,
+        "color_on": _theme.accent,
+        "color_off": [40, 40, 55],
+        "color_beat": [45, 45, 60],
+        "color_hover": [55, 55, 75],
+        "visible": 1
+    }
+
+define item_list(id, x, y, w, h, items, on_select) as:
+    return {
+        "type": "item_list",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "items": items,
+        "selected": -1,
+        "scroll_y": 0,
+        "on_select": on_select,
+        "hover_index": -1,
+        "item_h": 22,
+        "visible": 1
+    }
+
+define section(id, x, y, w, text) as:
+    return {
+        "type": "section",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 20,
+        "text": text,
+        "visible": 1
+    }
+
+define color_dot(id, x, y, size, color) as:
+    return {
+        "type": "color_dot",
+        "id": id,
+        "x": x, "y": y, "w": size, "h": size,
+        "color": color,
+        "visible": 1
+    }
+
+define piano_keyboard(id, x, y, octaves, on_note) as:
+    # 2 octaves = 24 semitones, white keys are wider
+    whites_per_oct is 7
+    key_w is 18
+    key_h is 80
+    black_h is 50
+    total_w is octaves * whites_per_oct * key_w + key_w
+    return {
+        "type": "piano_kb",
+        "id": id,
+        "x": x, "y": y,
+        "w": total_w, "h": key_h,
+        "octaves": octaves,
+        "on_note": on_note,
+        "key_w": key_w,
+        "key_h": key_h,
+        "black_h": black_h,
+        "pressed_note": -1,
+        "hover_note": -1,
+        "base_octave": 4,
+        "visible": 1
+    }
+
+define waveform_view(id, x, y, w, h) as:
+    return {
+        "type": "waveform_view",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "samples": [],
+        "zoom": 1.0,
+        "offset": 0,
+        "sel_start": -1,
+        "sel_end": -1,
+        "playhead": -1,
+        "color": [80, 160, 220],
+        "visible": 1
+    }
+
+# ============================================================
+# Tree operations
+# ============================================================
+
+define add_child(parent, child) as:
+    append of [parent.children, child]
+    return parent
+
+define find_by_id(widget, id) as:
+    if widget.id == id:
+        return widget
+    if widget.type == "panel" or widget.type == "scroll_panel":
+        for i in range of (len of widget.children):
+            found is find_by_id of [widget.children[i], id]
+            if found != null:
+                return found
+    if widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                found is find_by_id of [widget.tab_panels[i], id]
+                if found != null:
+                    return found
+    return null
+
+# ============================================================
+# Layout helpers
+# ============================================================
+
+define stack_vertical(widgets, x, y, gap) as:
+    cy is y
+    for i in range of (len of widgets):
+        widgets[i].x is x
+        widgets[i].y is cy
+        cy is cy + widgets[i].h + gap
+    return widgets
+
+define stack_horizontal(widgets, x, y, gap) as:
+    cx is x
+    for i in range of (len of widgets):
+        widgets[i].x is cx
+        widgets[i].y is y
+        cx is cx + widgets[i].w + gap
+    return widgets
+
+# ============================================================
+# Rendering
+# ============================================================
+
+define render(widget, ox, oy) as:
+    if widget.visible == 0:
+        return null
+    ax is ox + widget.x
+    ay is oy + widget.y
+
+    match widget.type:
+        case "panel":
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius, widget.bg, widget.border]
+            for i in range of (len of widget.children):
+                render of [widget.children[i], ax, ay]
+
+        case "label":
+            gfx_text of [ax, ay, widget.text, widget.color[0], widget.color[1], widget.color[2], widget.scale]
+
+        case "button":
+            bg is _theme.btn_bg
+            tc is _theme.btn_text
+            if widget.enabled == 0:
+                bg is _theme.btn_disabled
+                tc is _theme.btn_text_disabled
+            elif widget.pressed == 1:
+                bg is _theme.btn_pressed
+            elif widget.hover == 1:
+                bg is _theme.btn_hover
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, bg, _theme.panel_border]
+            # Center text in button
+            tw is text_width of [widget.label, _theme.font_scale]
+            th is text_height of _theme.font_scale
+            tx is ax + floor of ((widget.w - tw) / 2)
+            ty is ay + floor of ((widget.h - th) / 2)
+            _draw_text_clipped of [tx, ty, widget.w - 4, widget.label, tc, _theme.font_scale]
+
+        case "slider":
+            track_y is ay + floor of (widget.h / 2) - 2
+            # Track background
+            gfx_rrect of [ax, track_y, widget.w, 4, 2, _theme.slider_track[0], _theme.slider_track[1], _theme.slider_track[2]]
+            # Fill
+            range_val is widget.max_val - widget.min_val
+            if range_val > 0:
+                frac is (widget.value - widget.min_val) / range_val
+            else:
+                frac is 0
+            fill_w is floor of (frac * (widget.w - 8))
+            if fill_w > 0:
+                gfx_rrect of [ax, track_y, fill_w, 4, 2, _theme.slider_fill[0], _theme.slider_fill[1], _theme.slider_fill[2]]
+            # Thumb
+            thumb_x is ax + fill_w - 5
+            gfx_rrect of [thumb_x, ay + 2, 10, widget.h - 4, 3, _theme.slider_thumb[0], _theme.slider_thumb[1], _theme.slider_thumb[2]]
+
+        case "toggle":
+            if widget.value == 1:
+                bg is _theme.toggle_on
+            else:
+                bg is _theme.toggle_off
+            # Pill shape — radius = half height
+            pill_r is floor of (widget.h / 2)
+            gfx_rrect of [ax, ay, widget.w, widget.h, pill_r, bg[0], bg[1], bg[2]]
+            # Circular knob
+            knob_r is pill_r - 3
+            if widget.value == 1:
+                knob_cx is ax + widget.w - pill_r
+            else:
+                knob_cx is ax + pill_r
+            gfx_circle of [knob_cx, ay + pill_r, knob_r, 220, 220, 230]
+
+        case "knob":
+            # Draw knob as a filled circle with a pointer line
+            cx is ax + floor of (widget.w / 2)
+            cy is ay + floor of (widget.h / 2)
+            r is floor of (widget.w / 2) - 2
+            gfx_circle of [cx, cy, r, _theme.knob_bg[0], _theme.knob_bg[1], _theme.knob_bg[2]]
+            # Arc indicator — draw small filled circle at edge
+            range_val is widget.max_val - widget.min_val
+            if range_val > 0:
+                frac is (widget.value - widget.min_val) / range_val
+            else:
+                frac is 0
+            # Angle: from 225deg (min) to -45deg (max), i.e. 270deg sweep
+            angle is (3.927 - frac * 4.712)
+            px is cx + floor of ((cos of angle) * (r - 2))
+            py is cy - floor of ((sin of angle) * (r - 2))
+            gfx_line of [cx, cy, px, py, _theme.knob_pointer[0], _theme.knob_pointer[1], _theme.knob_pointer[2]]
+            # Small dot at pointer tip
+            gfx_circle of [px, py, 2, _theme.knob_fg[0], _theme.knob_fg[1], _theme.knob_fg[2]]
+
+        case "dropdown":
+            if widget.hover == 1:
+                dbg is _theme.dropdown_hover
+            else:
+                dbg is _theme.dropdown_bg
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, dbg, _theme.panel_border]
+            # Current selection text
+            if widget.selected >= 0 and widget.selected < (len of widget.items):
+                sel_text is widget.items[widget.selected]
+            else:
+                sel_text is ""
+            _draw_text_clipped of [ax + 6, ay + 5, widget.w - 24, sel_text, _theme.text_color, _theme.font_scale]
+            # Arrow indicator
+            arrow_x is ax + widget.w - 16
+            arrow_y is ay + 8
+            gfx_line of [arrow_x, arrow_y, arrow_x + 4, arrow_y + 6, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]]
+            gfx_line of [arrow_x + 8, arrow_y, arrow_x + 4, arrow_y + 6, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]]
+            # Open menu
+            if widget.open == 1:
+                item_h is 24
+                menu_h is (len of widget.items) * item_h
+                gfx_rrect of [ax, ay + widget.h + 2, widget.w, menu_h, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
+                for i in range of (len of widget.items):
+                    iy is ay + widget.h + 2 + i * item_h
+                    if i == widget.hover_index:
+                        gfx_rrect of [ax + 2, iy, widget.w - 4, item_h, _theme.radius_sm, _theme.menu_hover[0], _theme.menu_hover[1], _theme.menu_hover[2]]
+                    _draw_text_clipped of [ax + 8, iy + 5, widget.w - 16, widget.items[i], _theme.text_color, _theme.font_scale]
+
+        case "tabs":
+            # Tab bar
+            tab_h is 28
+            gfx_rect of [ax, ay, widget.w, tab_h, _theme.tab_bg[0], _theme.tab_bg[1], _theme.tab_bg[2]]
+            tab_x is ax
+            for i in range of (len of widget.tab_names):
+                tw is (text_width of [widget.tab_names[i], _theme.font_scale]) + 24
+                if i == widget.active:
+                    tbg is _theme.tab_active
+                    tc is _theme.tab_text_active
+                elif i == widget.hover_tab:
+                    tbg is _theme.tab_hover
+                    tc is _theme.tab_text
+                else:
+                    tbg is _theme.tab_bg
+                    tc is _theme.tab_text
+                gfx_rect of [tab_x, ay, tw, tab_h, tbg[0], tbg[1], tbg[2]]
+                gfx_text of [tab_x + 12, ay + 7, widget.tab_names[i], tc[0], tc[1], tc[2], _theme.font_scale]
+                tab_x is tab_x + tw
+            # Active tab panel
+            if widget.active < (len of widget.tab_panels):
+                tp is widget.tab_panels[widget.active]
+                if tp != null:
+                    render of [tp, ax, ay + tab_h]
+
+        case "canvas":
+            if widget.on_paint != null:
+                widget.on_paint of [widget, ax, ay]
+
+        case "scroll_panel":
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius, widget.bg, widget.border]
+            gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+            for i in range of (len of widget.children):
+                render of [widget.children[i], ax - widget.scroll_x, ay - widget.scroll_y]
+            gfx_clip of null
+            # Vertical scrollbar
+            if widget.content_h > widget.h:
+                sb_h is floor of (widget.h * widget.h / widget.content_h)
+                if sb_h < 20:
+                    sb_h is 20
+                sb_y is ay + floor of (widget.scroll_y * (widget.h - sb_h) / (widget.content_h - widget.h))
+                gfx_rrect of [ax + widget.w - 6, sb_y, 4, sb_h, 2, 80, 80, 100]
+            # Horizontal scrollbar
+            if widget.content_w > widget.w:
+                sb_w is floor of (widget.w * widget.w / widget.content_w)
+                if sb_w < 20:
+                    sb_w is 20
+                sb_x is ax + floor of (widget.scroll_x * (widget.w - sb_w) / (widget.content_w - widget.w))
+                gfx_rrect of [sb_x, ay + widget.h - 6, sb_w, 4, 2, 80, 80, 100]
+
+        case "vslider":
+            track_x is ax + floor of (widget.w / 2) - 2
+            gfx_rrect of [track_x, ay, 4, widget.h, 2, _theme.slider_track[0], _theme.slider_track[1], _theme.slider_track[2]]
+            range_val is widget.max_val - widget.min_val
+            if range_val > 0:
+                frac is (widget.value - widget.min_val) / range_val
+            else:
+                frac is 0
+            # Fill from bottom up
+            fill_h is floor of (frac * (widget.h - 8))
+            if fill_h > 0:
+                gfx_rrect of [track_x, ay + widget.h - fill_h, 4, fill_h, 2, _theme.slider_fill[0], _theme.slider_fill[1], _theme.slider_fill[2]]
+            # Thumb
+            thumb_y is ay + widget.h - fill_h - 5
+            gfx_rrect of [ax + 2, thumb_y, widget.w - 4, 10, 3, _theme.slider_thumb[0], _theme.slider_thumb[1], _theme.slider_thumb[2]]
+
+        case "checkbox":
+            # Box
+            box_bg is _theme.panel_bg
+            if widget.value == 1:
+                box_bg is _theme.accent
+            gfx_rrect of [ax, ay, 14, 14, 2, box_bg[0], box_bg[1], box_bg[2]]
+            if widget.value == 1:
+                # Checkmark — two lines
+                gfx_line of [ax + 3, ay + 7, ax + 6, ay + 10, 255, 255, 255]
+                gfx_line of [ax + 6, ay + 10, ax + 11, ay + 3, 255, 255, 255]
+            else:
+                # Empty box border
+                gfx_rrect of [ax, ay, 14, 14, 2, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]]
+                gfx_rrect of [ax + 1, ay + 1, 12, 12, 2, box_bg[0], box_bg[1], box_bg[2]]
+            # Label
+            gfx_text of [ax + 20, ay + 1, widget.label, _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
+
+        case "text_input":
+            if widget.focused == 1:
+                border is _theme.accent
+            else:
+                border is _theme.panel_border
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, _theme.dropdown_bg, border]
+            _draw_text_clipped of [ax + 6, ay + 5, widget.w - 12, widget.text, _theme.text_color, _theme.font_scale]
+            # Blinking cursor
+            if widget.focused == 1 and _cursor_blink < 35:
+                cursor_x is ax + 6 + widget.cursor * _theme.char_w
+                if cursor_x < ax + widget.w - 4:
+                    gfx_line of [cursor_x, ay + 4, cursor_x, ay + widget.h - 4, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
+
+        case "menu":
+            if widget.visible == 1:
+                item_h is 24
+                menu_h is (len of widget.items) * item_h
+                # Shadow
+                gfx_rrect of [ax + 2, ay + 2, widget.w, menu_h, _theme.radius_sm, 10, 10, 15, 120]
+                # Background
+                gfx_rrect of [ax, ay, widget.w, menu_h, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
+                for i in range of (len of widget.items):
+                    iy is ay + i * item_h
+                    if i == widget.hover_index:
+                        gfx_rrect of [ax + 2, iy + 1, widget.w - 4, item_h - 2, _theme.radius_sm, _theme.menu_hover[0], _theme.menu_hover[1], _theme.menu_hover[2]]
+                    item is widget.items[i]
+                    if item == "-":
+                        # Separator
+                        gfx_line of [ax + 8, iy + 12, ax + widget.w - 8, iy + 12, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]]
+                    elif (type of item) == "list":
+                        # [label, shortcut]
+                        _draw_text_clipped of [ax + 10, iy + 5, widget.w - 20, item[0], _theme.text_color, _theme.font_scale]
+                        sw is text_width of [item[1], 1]
+                        gfx_text of [ax + widget.w - sw - 10, iy + 8, item[1], _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
+                    else:
+                        _draw_text_clipped of [ax + 10, iy + 5, widget.w - 20, item, _theme.text_color, _theme.font_scale]
+
+        case "meter":
+            # Background
+            gfx_rrect of [ax, ay, widget.w, widget.h, 2, 20, 20, 25]
+            # Filled bar from bottom — green/yellow/red gradient
+            bar_h is floor of (widget.value * widget.h)
+            if bar_h > widget.h:
+                bar_h is widget.h
+            if bar_h > 0:
+                # Green zone (bottom 60%)
+                green_h is floor of (widget.h * 0.6)
+                yellow_h is floor of (widget.h * 0.2)
+                # Draw green portion
+                gh is bar_h
+                if gh > green_h:
+                    gh is green_h
+                if gh > 0:
+                    gfx_rect of [ax + 1, ay + widget.h - gh, widget.w - 2, gh, 40, 180, 80]
+                # Draw yellow portion
+                if bar_h > green_h:
+                    yh is bar_h - green_h
+                    if yh > yellow_h:
+                        yh is yellow_h
+                    gfx_rect of [ax + 1, ay + widget.h - green_h - yh, widget.w - 2, yh, 200, 200, 40]
+                # Draw red portion
+                if bar_h > green_h + yellow_h:
+                    rh is bar_h - green_h - yellow_h
+                    gfx_rect of [ax + 1, ay + widget.h - bar_h, widget.w - 2, rh, 220, 50, 40]
+            # Peak hold line
+            if widget.peak > 0:
+                peak_y is ay + widget.h - floor of (widget.peak * widget.h)
+                if peak_y >= ay and peak_y < ay + widget.h:
+                    gfx_line of [ax + 1, peak_y, ax + widget.w - 1, peak_y, 255, 255, 255]
+
+        case "toggle_button":
+            if widget.value == 1:
+                bg is widget.color_on
+            elif widget.hover == 1:
+                bg is _theme.btn_hover
+            else:
+                bg is widget.color_off
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, bg, _theme.panel_border]
+            tc is _theme.btn_text
+            if widget.value == 1:
+                tc is [255, 255, 255]
+            tw is text_width of [widget.label, _theme.font_scale]
+            th is text_height of _theme.font_scale
+            tx is ax + floor of ((widget.w - tw) / 2)
+            ty is ay + floor of ((widget.h - th) / 2)
+            _draw_text_clipped of [tx, ty, widget.w - 4, widget.label, tc, _theme.font_scale]
+
+        case "separator":
+            gfx_rect of [ax, ay, widget.w, widget.h, widget.color[0], widget.color[1], widget.color[2]]
+
+        case "spinbox":
+            # Main box
+            _draw_rbox of [ax, ay, widget.w - 40, widget.h, _theme.radius_sm, _theme.dropdown_bg, _theme.panel_border]
+            # Value text
+            val_text is f"{floor of widget.value}"
+            _draw_text_clipped of [ax + 6, ay + 5, widget.w - 52, val_text, _theme.text_color, _theme.font_scale]
+            # Minus button
+            btn_w is 18
+            mbg is _theme.btn_bg
+            if widget.hover_btn == 1:
+                mbg is _theme.btn_hover
+            _draw_rbox of [ax + widget.w - 40, ay, btn_w, widget.h, _theme.radius_sm, mbg, _theme.panel_border]
+            gfx_text of [ax + widget.w - 36, ay + 5, "-", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
+            # Plus button
+            pbg is _theme.btn_bg
+            if widget.hover_btn == 2:
+                pbg is _theme.btn_hover
+            _draw_rbox of [ax + widget.w - 20, ay, btn_w, widget.h, _theme.radius_sm, pbg, _theme.panel_border]
+            gfx_text of [ax + widget.w - 15, ay + 5, "+", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
+
+        case "radio_group":
+            rx is ax
+            for i in range of (len of widget.items):
+                rw is (text_width of [widget.items[i], _theme.font_scale]) + 16
+                if i == widget.selected:
+                    rbg is _theme.accent
+                    rtc is [255, 255, 255]
+                elif i == widget.hover_index:
+                    rbg is _theme.btn_hover
+                    rtc is _theme.text_color
+                else:
+                    rbg is _theme.btn_bg
+                    rtc is _theme.text_color
+                # First item gets left radius, last gets right, middle gets none
+                if i == 0:
+                    gfx_rrect of [rx, ay, rw, widget.h, _theme.radius_sm, rbg[0], rbg[1], rbg[2]]
+                elif i == (len of widget.items) - 1:
+                    gfx_rrect of [rx, ay, rw, widget.h, _theme.radius_sm, rbg[0], rbg[1], rbg[2]]
+                else:
+                    gfx_rect of [rx, ay, rw, widget.h, rbg[0], rbg[1], rbg[2]]
+                gfx_text of [rx + 8, ay + 5, widget.items[i], rtc[0], rtc[1], rtc[2], _theme.font_scale]
+                rx is rx + rw
+
+        case "progress_bar":
+            gfx_rrect of [ax, ay, widget.w, widget.h, 3, _theme.slider_track[0], _theme.slider_track[1], _theme.slider_track[2]]
+            fill_w is floor of (widget.value * widget.w)
+            if fill_w > 0:
+                gfx_rrect of [ax, ay, fill_w, widget.h, 3, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
+
+        case "splitter":
+            sp is floor of widget.split_pos
+            bw is widget.bar_width
+            # Panel A (left)
+            if widget.panel_a != null:
+                gfx_clip of [ax, ay, sp, widget.h]
+                render of [widget.panel_a, ax, ay]
+                gfx_clip of null
+            # Divider bar
+            dbg is _theme.panel_border
+            if widget.hover == 1 or widget.dragging == 1:
+                dbg is _theme.accent
+            gfx_rect of [ax + sp, ay, bw, widget.h, dbg[0], dbg[1], dbg[2]]
+            # Panel B (right)
+            if widget.panel_b != null:
+                gfx_clip of [ax + sp + bw, ay, widget.w - sp - bw, widget.h]
+                render of [widget.panel_b, ax + sp + bw, ay]
+                gfx_clip of null
+
+        case "dialog":
+            if widget.visible == 1:
+                # Overlay dims the background
+                gfx_rect of [0, 0, 9999, 9999, 0, 0, 0, 140]
+                # Center the dialog
+                dx is ax + floor of ((widget.w - widget.w) / 2)
+                dy is ay + floor of ((widget.h - widget.h) / 2)
+                # Dialog background
+                gfx_rrect of [ax, ay, widget.w, widget.h, _theme.radius_lg, _theme.panel_bg[0], _theme.panel_bg[1], _theme.panel_bg[2]]
+                # Title bar
+                gfx_rrect of [ax, ay, widget.w, 32, _theme.radius_lg, _theme.tab_bg[0], _theme.tab_bg[1], _theme.tab_bg[2]]
+                gfx_text of [ax + 12, ay + 9, widget.title, _theme.tab_text_active[0], _theme.tab_text_active[1], _theme.tab_text_active[2], _theme.font_scale]
+                # Message
+                gfx_text of [ax + 16, ay + 48, widget.message, _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
+                # Buttons
+                btn_y is ay + widget.h - 40
+                btn_x is ax + widget.w
+                i is (len of widget.buttons) - 1
+                loop while i >= 0:
+                    btext is widget.buttons[i]
+                    bw is (text_width of [btext, _theme.font_scale]) + 24
+                    btn_x is btn_x - bw - 8
+                    if i == widget.hover_btn:
+                        bbg is _theme.btn_hover
+                    else:
+                        bbg is _theme.btn_bg
+                    if i == 0:
+                        bbg is _theme.accent
+                    _draw_rbox of [btn_x, btn_y, bw, 28, _theme.radius_sm, bbg, _theme.panel_border]
+                    gfx_text of [btn_x + 12, btn_y + 7, btext, 255, 255, 255, _theme.font_scale]
+                    i is i - 1
+
+        case "editable_label":
+            if widget.editing == 1:
+                # Editing mode — draw like text_input
+                ew is widget.w
+                if ew < 60:
+                    ew is 60
+                _draw_rbox of [ax, ay - 2, ew, widget.h + 4, _theme.radius_sm, _theme.dropdown_bg, _theme.accent]
+                _draw_text_clipped of [ax + 4, ay, ew - 8, widget.text, _theme.text_color, widget.scale]
+                if _cursor_blink < 35:
+                    cursor_x is ax + 4 + widget.cursor * (6 * widget.scale)
+                    gfx_line of [cursor_x, ay, cursor_x, ay + widget.h, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
+            else:
+                gfx_text of [ax, ay, widget.text, widget.color[0], widget.color[1], widget.color[2], widget.scale]
+
+        case "grid":
+            for r in range of widget.rows:
+                for c in range of widget.cols:
+                    cx is ax + c * widget.cell_w
+                    cy is ay + r * widget.cell_h
+                    # Cell color
+                    cell_val is widget.cells[r][c]
+                    if cell_val > 0:
+                        gc is widget.color_on
+                    elif c == widget.col_highlight:
+                        gc is widget.color_beat
+                    elif r == widget.hover_row and c == widget.hover_col:
+                        gc is widget.color_hover
+                    else:
+                        gc is widget.color_off
+                        # Alternate beat shading (every 4 cols)
+                        beat is floor of (c / 4)
+                        if beat == floor of (beat / 2) * 2:
+                            gc is widget.color_off
+                        else:
+                            gc is [35, 35, 48]
+                    gfx_rrect of [cx + 1, cy + 1, widget.cell_w - 2, widget.cell_h - 2, 2, gc[0], gc[1], gc[2]]
+            # Row labels
+            if widget.row_labels != null:
+                for r in range of widget.rows:
+                    if r < (len of widget.row_labels):
+                        ly is ay + r * widget.cell_h + floor of ((widget.cell_h - 7) / 2)
+                        gfx_text of [ax - 60, ly, widget.row_labels[r], _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
+
+        case "item_list":
+            # Background
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, _theme.panel_bg, _theme.panel_border]
+            gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+            for i in range of (len of widget.items):
+                iy is ay - widget.scroll_y + i * widget.item_h
+                if iy + widget.item_h > ay and iy < ay + widget.h:
+                    if i == widget.selected:
+                        gfx_rrect of [ax + 2, iy + 1, widget.w - 4, widget.item_h - 2, 2, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
+                        _draw_text_clipped of [ax + 8, iy + 4, widget.w - 16, widget.items[i], [255, 255, 255], _theme.font_scale]
+                    elif i == widget.hover_index:
+                        gfx_rrect of [ax + 2, iy + 1, widget.w - 4, widget.item_h - 2, 2, _theme.btn_hover[0], _theme.btn_hover[1], _theme.btn_hover[2]]
+                        _draw_text_clipped of [ax + 8, iy + 4, widget.w - 16, widget.items[i], _theme.text_color, _theme.font_scale]
+                    else:
+                        _draw_text_clipped of [ax + 8, iy + 4, widget.w - 16, widget.items[i], _theme.text_color, _theme.font_scale]
+            gfx_clip of null
+            # Scrollbar
+            total_h is (len of widget.items) * widget.item_h
+            if total_h > widget.h:
+                sb_h is floor of (widget.h * widget.h / total_h)
+                if sb_h < 16:
+                    sb_h is 16
+                sb_y is ay + floor of (widget.scroll_y * (widget.h - sb_h) / (total_h - widget.h))
+                gfx_rrect of [ax + widget.w - 6, sb_y, 4, sb_h, 2, 80, 80, 100]
+
+        case "section":
+            # Line — label — line
+            lw is text_width of [widget.text, 1]
+            line_y is ay + 10
+            gfx_line of [ax, line_y, ax + 6, line_y, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]]
+            gfx_text of [ax + 10, ay + 6, widget.text, _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
+            gfx_line of [ax + 14 + lw, line_y, ax + widget.w, line_y, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]]
+
+        case "color_dot":
+            gfx_circle of [ax + floor of (widget.w / 2), ay + floor of (widget.h / 2), floor of (widget.w / 2), widget.color[0], widget.color[1], widget.color[2]]
+
+        case "piano_kb":
+            kw is widget.key_w
+            kh is widget.key_h
+            bh is widget.black_h
+            # White key pattern per octave: C D E F G A B = indices 0,2,4,5,7,9,11
+            # Draw white keys first
+            wx is ax
+            for o in range of widget.octaves:
+                for wk in range of 7:
+                    # Map white key index to semitone
+                    if wk == 0:
+                        note is o * 12
+                    elif wk == 1:
+                        note is o * 12 + 2
+                    elif wk == 2:
+                        note is o * 12 + 4
+                    elif wk == 3:
+                        note is o * 12 + 5
+                    elif wk == 4:
+                        note is o * 12 + 7
+                    elif wk == 5:
+                        note is o * 12 + 9
+                    else:
+                        note is o * 12 + 11
+                    if note == widget.pressed_note:
+                        gfx_rrect of [wx, ay, kw - 1, kh, 2, 80, 140, 220]
+                    elif note == widget.hover_note:
+                        gfx_rrect of [wx, ay, kw - 1, kh, 2, 230, 230, 240]
+                    else:
+                        gfx_rrect of [wx, ay, kw - 1, kh, 2, 240, 240, 245]
+                    # Border
+                    gfx_line of [wx + kw - 1, ay, wx + kw - 1, ay + kh, 180, 180, 190]
+                    wx is wx + kw
+            # Final C
+            note is widget.octaves * 12
+            if note == widget.pressed_note:
+                gfx_rrect of [wx, ay, kw - 1, kh, 2, 80, 140, 220]
+            else:
+                gfx_rrect of [wx, ay, kw - 1, kh, 2, 240, 240, 245]
+            # Black keys on top
+            wx is ax
+            for o in range of widget.octaves:
+                # Black keys at positions: C#(1) D#(3) F#(6) G#(8) A#(10)
+                for wk in range of 7:
+                    has_black is 0
+                    if wk == 0:
+                        has_black is 1
+                        bnote is o * 12 + 1
+                    elif wk == 1:
+                        has_black is 1
+                        bnote is o * 12 + 3
+                    elif wk == 3:
+                        has_black is 1
+                        bnote is o * 12 + 6
+                    elif wk == 4:
+                        has_black is 1
+                        bnote is o * 12 + 8
+                    elif wk == 5:
+                        has_black is 1
+                        bnote is o * 12 + 10
+                    if has_black == 1:
+                        bx is wx + kw - 5
+                        if bnote == widget.pressed_note:
+                            gfx_rrect of [bx, ay, 10, bh, 2, 60, 100, 180]
+                        elif bnote == widget.hover_note:
+                            gfx_rrect of [bx, ay, 10, bh, 2, 60, 60, 70]
+                        else:
+                            gfx_rrect of [bx, ay, 10, bh, 2, 30, 30, 35]
+                    wx is wx + kw
+            # Octave labels
+            for o in range of widget.octaves:
+                lx is ax + o * 7 * kw + 2
+                gfx_text of [lx, ay + kh - 12, f"C{widget.base_octave + o}", 140, 140, 160, 1]
+
+        case "waveform_view":
+            # Background
+            gfx_rect of [ax, ay, widget.w, widget.h, 18, 18, 26]
+            mid_y is ay + floor of (widget.h / 2)
+            # Center line
+            gfx_line of [ax, mid_y, ax + widget.w, mid_y, 35, 35, 45]
+            # Selection highlight
+            if widget.sel_start >= 0 and widget.sel_end >= 0:
+                s0 is floor of ((widget.sel_start - widget.offset) / widget.zoom)
+                s1 is floor of ((widget.sel_end - widget.offset) / widget.zoom)
+                if s1 > s0:
+                    gfx_rect of [ax + s0, ay, s1 - s0, widget.h, widget.color[0], widget.color[1], widget.color[2], 30]
+            # Waveform
+            n is len of widget.samples
+            if n > 0:
+                c is widget.color
+                prev_y is mid_y
+                for px in range of widget.w:
+                    si is floor of (widget.offset + px * widget.zoom)
+                    if si >= 0 and si < n:
+                        amp is widget.samples[si] * (widget.h / 2)
+                        sy is mid_y - floor of amp
+                        gfx_line of [ax + px, prev_y, ax + px + 1, sy, c[0], c[1], c[2]]
+                        prev_y is sy
+                    else:
+                        prev_y is mid_y
+            # Playhead
+            if widget.playhead >= 0:
+                px is floor of ((widget.playhead - widget.offset) / widget.zoom)
+                if px >= 0 and px < widget.w:
+                    gfx_line of [ax + px, ay, ax + px, ay + widget.h, 255, 80, 80]
+            # Border
+            gfx_rrect of [ax, ay, widget.w, 1, 0, 35, 35, 45]
+            gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, 35, 35, 45]
+
+    return null
+
+# Render tooltip overlay — called after main render
+define _render_tooltip() as:
+    if _tooltip_widget == null:
+        return null
+    if _tooltip_timer < 30:
+        return null
+    tw is (text_width of [_tooltip_widget.tooltip, 1]) + 8
+    th is 18
+    tx is _tooltip_x + 12
+    ty is _tooltip_y - 20
+    if ty < 0:
+        ty is _tooltip_y + 20
+    # Shadow
+    gfx_rrect of [tx + 1, ty + 1, tw, th, 3, 10, 10, 15, 150]
+    # Background
+    gfx_rrect of [tx, ty, tw, th, 3, 50, 50, 65]
+    # Text
+    gfx_text of [tx + 4, ty + 4, _tooltip_widget.tooltip, 220, 220, 230, 1]
+
+# ============================================================
+# Hit testing
+# ============================================================
+
+define _hit_test(widget, ox, oy, mx, my) as:
+    if widget.visible == 0:
+        return null
+    ax is ox + widget.x
+    ay is oy + widget.y
+
+    if widget.type == "panel":
+        # Test children in reverse order (topmost first)
+        i is (len of widget.children) - 1
+        loop while i >= 0:
+            hit is _hit_test of [widget.children[i], ax, ay, mx, my]
+            if hit != null:
+                return hit
+            i is i - 1
+        return null
+
+    # Tabs — check active tab panel first, then tab bar
+    if widget.type == "tabs":
+        tab_h is 28
+        if widget.active < (len of widget.tab_panels):
+            tp is widget.tab_panels[widget.active]
+            if tp != null:
+                hit is _hit_test of [tp, ax, ay + tab_h, mx, my]
+                if hit != null:
+                    return hit
+        # Tab bar hit — return the tabs widget itself
+        if _point_in_rect of [mx, my, ax, ay, widget.w, 28]:
+            return widget
+        return null
+
+    # Scroll panel — check scrollbar first, then children
+    if widget.type == "scroll_panel":
+        if _point_in_rect of [mx, my, ax, ay, widget.w, widget.h]:
+            # Check if clicking on vertical scrollbar area (right 8px)
+            if widget.content_h > widget.h and mx >= ax + widget.w - 8:
+                return widget
+            # Check children with scroll offset
+            i is (len of widget.children) - 1
+            loop while i >= 0:
+                hit is _hit_test of [widget.children[i], ax - widget.scroll_x, ay - widget.scroll_y, mx, my]
+                if hit != null:
+                    return hit
+                i is i - 1
+            return widget
+        return null
+
+    # Splitter — check both panels then the bar
+    if widget.type == "splitter":
+        sp is floor of widget.split_pos
+        bw is widget.bar_width
+        # Check divider bar
+        if _point_in_rect of [mx, my, ax + sp, ay, bw, widget.h]:
+            return widget
+        # Check panel A
+        if widget.panel_a != null:
+            hit is _hit_test of [widget.panel_a, ax, ay, mx, my]
+            if hit != null:
+                return hit
+        # Check panel B
+        if widget.panel_b != null:
+            hit is _hit_test of [widget.panel_b, ax + sp + bw, ay, mx, my]
+            if hit != null:
+                return hit
+        return null
+
+    # Leaf widget — check bounds
+    if widget.type == "button" or widget.type == "slider" or widget.type == "vslider" or widget.type == "toggle" or widget.type == "knob" or widget.type == "canvas" or widget.type == "checkbox" or widget.type == "text_input" or widget.type == "toggle_button" or widget.type == "spinbox" or widget.type == "radio_group" or widget.type == "meter" or widget.type == "grid" or widget.type == "editable_label" or widget.type == "item_list" or widget.type == "piano_kb" or widget.type == "waveform_view":
+        if _point_in_rect of [mx, my, ax, ay, widget.w, widget.h]:
+            return widget
+
+    # Dropdown — include open menu area
+    if widget.type == "dropdown":
+        total_h is widget.h
+        if widget.open == 1:
+            total_h is widget.h + (len of widget.items) * 24 + 2
+        if _point_in_rect of [mx, my, ax, ay, widget.w, total_h]:
+            return widget
+
+    # Context menu
+    if widget.type == "menu" and widget.visible == 1:
+        menu_h is (len of widget.items) * 24
+        if _point_in_rect of [mx, my, ax, ay, widget.w, menu_h]:
+            return widget
+
+    return null
+
+# ============================================================
+# Clear hover/pressed state
+# ============================================================
+
+define _clear_hover(widget) as:
+    if widget.type == "panel":
+        for i in range of (len of widget.children):
+            _clear_hover of widget.children[i]
+    elif widget.type == "tabs":
+        widget.hover_tab is -1
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _clear_hover of widget.tab_panels[i]
+    elif widget.type == "scroll_panel":
+        for i in range of (len of widget.children):
+            _clear_hover of widget.children[i]
+    elif widget.type == "splitter":
+        widget.hover is 0
+        if widget.panel_a != null:
+            _clear_hover of widget.panel_a
+        if widget.panel_b != null:
+            _clear_hover of widget.panel_b
+    elif widget.type == "dropdown":
+        widget.hover is 0
+        widget.hover_index is -1
+    elif widget.type == "spinbox":
+        widget.hover is 0
+        widget.hover_btn is 0
+    elif widget.type == "radio_group":
+        widget.hover_index is -1
+    else:
+        if (type of widget) == "dict":
+            widget.hover is 0
+
+# ============================================================
+# Event dispatch
+# ============================================================
+
+define dispatch(root, ev) as:
+    mx is 0
+    my is 0
+    if ev.type == "mousemove" or ev.type == "mousedown" or ev.type == "mouseup":
+        mx is ev.x
+        my is ev.y
+
+    # Handle drag in progress (slider, vslider, or knob)
+    if ev.type == "mousemove" and _drag_widget != null:
+        if _drag_widget.type == "knob":
+            _update_knob_drag of [_drag_widget, my]
+        elif _drag_widget.type == "vslider":
+            _update_vdrag of [_drag_widget, my]
+        elif _drag_widget.type == "waveform_view":
+            sample_pos is floor of (_drag_widget.offset + (mx - _drag_ox) * _drag_widget.zoom)
+            _drag_widget.sel_end is sample_pos
+        elif _drag_widget.type == "splitter":
+            new_pos is mx - _drag_ox
+            if new_pos < 50:
+                new_pos is 50
+            if new_pos > _drag_widget.w - 50:
+                new_pos is _drag_widget.w - 50
+            _drag_widget.split_pos is new_pos
+            if _drag_widget.on_resize != null:
+                _drag_widget.on_resize of _drag_widget
+        else:
+            _update_drag of [_drag_widget, mx]
+        return null
+
+    if ev.type == "mouseup" and _drag_widget != null:
+        _drag_widget.dragging is 0
+        if _drag_widget.on_change != null:
+            _drag_widget.on_change of _drag_widget
+        _drag_widget is null
+        return null
+
+    # Mouse move — update hover + tooltip
+    if ev.type == "mousemove":
+        _clear_hover of root
+        hit is _hit_test of [root, 0, 0, mx, my]
+        if hit != null:
+            hit.hover is 1
+            # Tooltip tracking
+            if hit.tooltip != null and (len of hit.tooltip) > 0:
+                if _tooltip_widget == null or _tooltip_widget.id != hit.id:
+                    _tooltip_widget is hit
+                    _tooltip_timer is 0
+                _tooltip_x is mx
+                _tooltip_y is my
+            else:
+                _tooltip_widget is null
+                _tooltip_timer is 0
+            # Dropdown hover index
+            if hit.type == "dropdown" and hit.open == 1:
+                abs_y is _find_abs_y of [root, hit, 0, 0]
+                rel_y is my - abs_y - hit.h
+                if rel_y >= 0:
+                    hit.hover_index is floor of (rel_y / 24)
+                else:
+                    hit.hover_index is -1
+            # Tabs hover
+            if hit.type == "tabs":
+                abs_x is _find_abs_x of [root, hit, 0, 0]
+                _update_tab_hover of [hit, mx - abs_x]
+            # Menu hover index
+            if hit.type == "menu":
+                abs_y is _find_abs_y of [root, hit, 0, 0]
+                hit.hover_index is floor of ((my - abs_y) / 24)
+            # Spinbox button hover
+            if hit.type == "spinbox":
+                abs_x is _find_abs_x of [root, hit, 0, 0]
+                rel_x is mx - abs_x
+                if rel_x >= hit.w - 40 and rel_x < hit.w - 20:
+                    hit.hover_btn is 1
+                elif rel_x >= hit.w - 20:
+                    hit.hover_btn is 2
+                else:
+                    hit.hover_btn is 0
+            # Radio group hover
+            if hit.type == "radio_group":
+                abs_x is _find_abs_x of [root, hit, 0, 0]
+                hit.hover_index is _radio_index_at of [hit, mx - abs_x]
+            # Piano hover
+            if hit.type == "piano_kb":
+                abs_x is _find_abs_x of [root, hit, 0, 0]
+                abs_y is _find_abs_y of [root, hit, 0, 0]
+                hit.hover_note is _piano_note_at of [hit, mx - abs_x, my - abs_y]
+            # Item list hover
+            if hit.type == "item_list":
+                abs_y is _find_abs_y of [root, hit, 0, 0]
+                hit.hover_index is floor of ((my - abs_y + hit.scroll_y) / hit.item_h)
+            # Grid hover
+            if hit.type == "grid":
+                abs_x is _find_abs_x of [root, hit, 0, 0]
+                abs_y is _find_abs_y of [root, hit, 0, 0]
+                hit.hover_col is floor of ((mx - abs_x) / hit.cell_w)
+                hit.hover_row is floor of ((my - abs_y) / hit.cell_h)
+        else:
+            _tooltip_widget is null
+            _tooltip_timer is 0
+        return null
+
+    # Mouse down — start interaction
+    if ev.type == "mousedown":
+        # Reset tooltip
+        _tooltip_widget is null
+        _tooltip_timer is 0
+        # Close any open dropdowns first
+        _close_dropdowns of root
+        # Check dialogs first (they're modal)
+        dlg is _find_visible_dialog of root
+        if dlg != null:
+            _handle_dialog_click of [dlg, mx, my]
+            return null
+        hit is _hit_test of [root, 0, 0, mx, my]
+        if hit == null:
+            _unfocus_all of root
+            _focused_input is null
+            return null
+        # Double-click detection
+        now is gfx_ticks of null
+        if hit.id == _last_click_id and (now - _last_click_time) < 400:
+            if hit.type == "editable_label":
+                _start_editing of hit
+            elif hit.on_dblclick != null:
+                hit.on_dblclick of hit
+            _last_click_id is ""
+            _last_click_time is 0
+            return null
+        _last_click_id is hit.id
+        _last_click_time is now
+        if hit.type == "button" and hit.enabled == 1:
+            hit.pressed is 1
+        elif hit.type == "slider" and hit.enabled == 1:
+            hit.dragging is 1
+            _drag_widget is hit
+            _drag_ox is _find_abs_x of [root, hit, 0, 0]
+            _update_drag of [hit, mx]
+        elif hit.type == "knob" and hit.enabled == 1:
+            hit.dragging is 1
+            hit.drag_start_y is my
+            hit.drag_start_val is hit.value
+            _drag_widget is hit
+        elif hit.type == "toggle" and hit.enabled == 1:
+            if hit.value == 1:
+                hit.value is 0
+            else:
+                hit.value is 1
+            if hit.on_change != null:
+                hit.on_change of hit
+        elif hit.type == "dropdown" and hit.enabled == 1:
+            if hit.open == 1:
+                # Click on open menu — select item
+                if hit.hover_index >= 0 and hit.hover_index < (len of hit.items):
+                    hit.selected is hit.hover_index
+                    if hit.on_change != null:
+                        hit.on_change of hit
+                hit.open is 0
+            else:
+                hit.open is 1
+        elif hit.type == "tabs":
+            abs_x is _find_abs_x of [root, hit, 0, 0]
+            idx is _tab_index_at of [hit, mx - abs_x]
+            if idx >= 0:
+                hit.active is idx
+                if hit.on_tab != null:
+                    hit.on_tab of hit
+        elif hit.type == "vslider" and hit.enabled == 1:
+            hit.dragging is 1
+            _drag_widget is hit
+            _drag_oy is _find_abs_y of [root, hit, 0, 0]
+            _update_vdrag of [hit, my]
+        elif hit.type == "checkbox" and hit.enabled == 1:
+            if hit.value == 1:
+                hit.value is 0
+            else:
+                hit.value is 1
+            if hit.on_change != null:
+                hit.on_change of hit
+        elif hit.type == "toggle_button" and hit.enabled == 1:
+            if hit.value == 1:
+                hit.value is 0
+            else:
+                hit.value is 1
+            if hit.on_click != null:
+                hit.on_click of hit
+        elif hit.type == "spinbox" and hit.enabled == 1:
+            abs_x is _find_abs_x of [root, hit, 0, 0]
+            rel_x is mx - abs_x
+            if rel_x >= hit.w - 40 and rel_x < hit.w - 20:
+                # Minus button
+                hit.value is hit.value - hit.step
+                if hit.value < hit.min_val:
+                    hit.value is hit.min_val
+                if hit.on_change != null:
+                    hit.on_change of hit
+            elif rel_x >= hit.w - 20:
+                # Plus button
+                hit.value is hit.value + hit.step
+                if hit.value > hit.max_val:
+                    hit.value is hit.max_val
+                if hit.on_change != null:
+                    hit.on_change of hit
+        elif hit.type == "radio_group" and hit.enabled == 1:
+            abs_x is _find_abs_x of [root, hit, 0, 0]
+            idx is _radio_index_at of [hit, mx - abs_x]
+            if idx >= 0 and idx != hit.selected:
+                hit.selected is idx
+                if hit.on_change != null:
+                    hit.on_change of hit
+        elif hit.type == "piano_kb":
+            abs_x is _find_abs_x of [root, hit, 0, 0]
+            abs_y is _find_abs_y of [root, hit, 0, 0]
+            note is _piano_note_at of [hit, mx - abs_x, my - abs_y]
+            if note >= 0:
+                hit.pressed_note is note
+                if hit.on_note != null:
+                    hit.on_note of [hit, note, 1]
+        elif hit.type == "waveform_view":
+            abs_x is _find_abs_x of [root, hit, 0, 0]
+            sample_pos is floor of (hit.offset + (mx - abs_x) * hit.zoom)
+            hit.sel_start is sample_pos
+            hit.sel_end is sample_pos
+            _drag_widget is hit
+            _drag_ox is abs_x
+        elif hit.type == "item_list":
+            abs_y is _find_abs_y of [root, hit, 0, 0]
+            idx is floor of ((my - abs_y + hit.scroll_y) / hit.item_h)
+            if idx >= 0 and idx < (len of hit.items):
+                hit.selected is idx
+                if hit.on_select != null:
+                    hit.on_select of hit
+        elif hit.type == "scroll_panel":
+            # Scrollbar click — jump to position
+            if hit.content_h > hit.h:
+                abs_y is _find_abs_y of [root, hit, 0, 0]
+                abs_x is _find_abs_x of [root, hit, 0, 0]
+                if mx >= abs_x + hit.w - 8:
+                    frac is (my - abs_y) / hit.h
+                    hit.scroll_y is floor of (frac * (hit.content_h - hit.h))
+                    if hit.scroll_y < 0:
+                        hit.scroll_y is 0
+                    max_sy is hit.content_h - hit.h
+                    if hit.scroll_y > max_sy:
+                        hit.scroll_y is max_sy
+        elif hit.type == "grid":
+            abs_x is _find_abs_x of [root, hit, 0, 0]
+            abs_y is _find_abs_y of [root, hit, 0, 0]
+            gc is floor of ((mx - abs_x) / hit.cell_w)
+            gr is floor of ((my - abs_y) / hit.cell_h)
+            if gc >= 0 and gc < hit.cols and gr >= 0 and gr < hit.rows:
+                # Toggle cell
+                if hit.cells[gr][gc] > 0:
+                    hit.cells[gr][gc] is 0
+                else:
+                    hit.cells[gr][gc] is 1
+                if hit.on_cell != null:
+                    hit.on_cell of [hit, gr, gc]
+        elif hit.type == "editable_label":
+            # Single click does nothing (double-click starts editing)
+            pass is 0
+        elif hit.type == "splitter":
+            hit.dragging is 1
+            _drag_widget is hit
+            _drag_ox is _find_abs_x of [root, hit, 0, 0]
+        elif hit.type == "text_input" and hit.enabled == 1:
+            _unfocus_all of root
+            hit.focused is 1
+            _focused_input is hit
+        elif hit.type == "menu":
+            if hit.hover_index >= 0 and hit.hover_index < (len of hit.items):
+                item is hit.items[hit.hover_index]
+                is_sep is 0
+                if (type of item) == "str" and item == "-":
+                    is_sep is 1
+                if is_sep == 0:
+                    if hit.on_select != null:
+                        hit.on_select of [hit, hit.hover_index]
+            hit.visible is 0
+        elif hit.type == "canvas":
+            if hit.on_mouse != null:
+                hit.on_mouse of [hit, ev]
+        # Close menus on click elsewhere
+        _close_menus of root
+        return null
+
+    # Mouse up — fire button click
+    if ev.type == "mouseup":
+        hit is _hit_test of [root, 0, 0, mx, my]
+        if hit != null and hit.type == "button" and hit.pressed == 1:
+            hit.pressed is 0
+            if hit.on_click != null and hit.enabled == 1:
+                hit.on_click of hit
+            return null
+        if hit != null and hit.type == "piano_kb":
+            if hit.pressed_note >= 0:
+                if hit.on_note != null:
+                    hit.on_note of [hit, hit.pressed_note, 0]
+                hit.pressed_note is -1
+            return null
+        if hit != null and hit.type == "canvas":
+            if hit.on_mouse != null:
+                hit.on_mouse of [hit, ev]
+            return null
+        _clear_pressed of root
+        return null
+
+    # Scroll wheel
+    if ev.type == "wheel":
+        _scroll_panels of [root, ev.x * -20, ev.y * -20]
+        return null
+
+    return null
+
+define _clear_pressed(widget) as:
+    if widget.type == "button":
+        widget.pressed is 0
+    elif widget.type == "panel":
+        for i in range of (len of widget.children):
+            _clear_pressed of widget.children[i]
+    elif widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _clear_pressed of widget.tab_panels[i]
+
+# ============================================================
+# Slider drag math
+# ============================================================
+# _drag_widget stores absolute x from the last hit_test walk.
+# But we need the absolute x of the slider to compute the value.
+# For simplicity, we walk up from root to find it. Instead,
+# we store _drag_ox when drag starts.
+
+_drag_ox is 0
+
+define _find_abs_x(root, target, ox, oy) as:
+    ax is ox + root.x
+    ay is oy + root.y
+    if root.id == target.id:
+        return ax
+    if root.type == "panel":
+        for i in range of (len of root.children):
+            result is _find_abs_x of [root.children[i], target, ax, ay]
+            if result != -1:
+                return result
+    if root.type == "tabs":
+        for i in range of (len of root.tab_panels):
+            if root.tab_panels[i] != null:
+                result is _find_abs_x of [root.tab_panels[i], target, ax, ay + 28]
+                if result != -1:
+                    return result
+    return -1
+
+define _find_abs_y(root, target, ox, oy) as:
+    ax is ox + root.x
+    ay is oy + root.y
+    if root.id == target.id:
+        return ay
+    if root.type == "panel":
+        for i in range of (len of root.children):
+            result is _find_abs_y of [root.children[i], target, ax, ay]
+            if result != -1:
+                return result
+    if root.type == "tabs":
+        for i in range of (len of root.tab_panels):
+            if root.tab_panels[i] != null:
+                result is _find_abs_y of [root.tab_panels[i], target, ax, ay + 28]
+                if result != -1:
+                    return result
+    return -1
+
+define _update_knob_drag(widget, my) as:
+    # Vertical drag: up = increase, down = decrease
+    # 200px of drag covers the full range
+    range_val is widget.max_val - widget.min_val
+    if range_val <= 0:
+        return null
+    delta is (widget.drag_start_y - my) / 200.0
+    new_val is widget.drag_start_val + delta * range_val
+    if new_val < widget.min_val:
+        new_val is widget.min_val
+    if new_val > widget.max_val:
+        new_val is widget.max_val
+    widget.value is new_val
+    if widget.on_change != null:
+        widget.on_change of widget
+
+define _update_tab_hover(widget, rel_x) as:
+    tab_x is 0
+    for i in range of (len of widget.tab_names):
+        tw is (text_width of [widget.tab_names[i], _theme.font_scale]) + 24
+        if rel_x >= tab_x and rel_x < tab_x + tw:
+            widget.hover_tab is i
+            return null
+        tab_x is tab_x + tw
+    widget.hover_tab is -1
+
+define _tab_index_at(widget, rel_x) as:
+    tab_x is 0
+    for i in range of (len of widget.tab_names):
+        tw is (text_width of [widget.tab_names[i], _theme.font_scale]) + 24
+        if rel_x >= tab_x and rel_x < tab_x + tw:
+            return i
+        tab_x is tab_x + tw
+    return -1
+
+_drag_oy is 0
+_focused_input is null
+
+define _update_vdrag(widget, my) as:
+    range_val is widget.max_val - widget.min_val
+    if range_val <= 0:
+        return null
+    # Inverted: top = max, bottom = min
+    frac is 1.0 - (my - _drag_oy) / widget.h
+    if frac < 0:
+        frac is 0
+    if frac > 1:
+        frac is 1
+    widget.value is widget.min_val + frac * range_val
+    if widget.on_change != null:
+        widget.on_change of widget
+
+define _unfocus_all(widget) as:
+    if widget.type == "text_input":
+        widget.focused is 0
+    elif widget.type == "panel" or widget.type == "scroll_panel":
+        for i in range of (len of widget.children):
+            _unfocus_all of widget.children[i]
+    elif widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _unfocus_all of widget.tab_panels[i]
+
+define _close_menus(widget) as:
+    if widget.type == "menu":
+        widget.visible is 0
+    elif widget.type == "panel" or widget.type == "scroll_panel":
+        for i in range of (len of widget.children):
+            _close_menus of widget.children[i]
+    elif widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _close_menus of widget.tab_panels[i]
+
+define _scroll_panels(widget, dx, dy) as:
+    if widget.type == "item_list":
+        widget.scroll_y is widget.scroll_y + dy
+        if widget.scroll_y < 0:
+            widget.scroll_y is 0
+        max_sy is (len of widget.items) * widget.item_h - widget.h
+        if max_sy < 0:
+            max_sy is 0
+        if widget.scroll_y > max_sy:
+            widget.scroll_y is max_sy
+    elif widget.type == "scroll_panel":
+        # Vertical scroll
+        widget.scroll_y is widget.scroll_y + dy
+        if widget.scroll_y < 0:
+            widget.scroll_y is 0
+        max_sy is widget.content_h - widget.h
+        if max_sy < 0:
+            max_sy is 0
+        if widget.scroll_y > max_sy:
+            widget.scroll_y is max_sy
+        # Horizontal scroll
+        widget.scroll_x is widget.scroll_x + dx
+        if widget.scroll_x < 0:
+            widget.scroll_x is 0
+        max_sx is widget.content_w - widget.w
+        if max_sx < 0:
+            max_sx is 0
+        if widget.scroll_x > max_sx:
+            widget.scroll_x is max_sx
+    elif widget.type == "panel":
+        for i in range of (len of widget.children):
+            _scroll_panels of [widget.children[i], dx, dy]
+    elif widget.type == "tabs":
+        if widget.active < (len of widget.tab_panels):
+            if widget.tab_panels[widget.active] != null:
+                _scroll_panels of [widget.tab_panels[widget.active], dx, dy]
+
+define _handle_text_key(widget, ev) as:
+    k is ev.key
+    shift is 0
+    if ev.shift != null:
+        shift is ev.shift
+    if k == "backspace":
+        if widget.cursor > 0:
+            before is substr of [widget.text, 0, widget.cursor - 1]
+            after is substr of [widget.text, widget.cursor, (len of widget.text) - widget.cursor]
+            widget.text is before + after
+            widget.cursor is widget.cursor - 1
+            if widget.on_change != null:
+                widget.on_change of widget
+    elif k == "delete":
+        if widget.cursor < (len of widget.text):
+            before is substr of [widget.text, 0, widget.cursor]
+            after is substr of [widget.text, widget.cursor + 1, (len of widget.text) - widget.cursor - 1]
+            widget.text is before + after
+            if widget.on_change != null:
+                widget.on_change of widget
+    elif k == "left":
+        if widget.cursor > 0:
+            widget.cursor is widget.cursor - 1
+    elif k == "right":
+        if widget.cursor < (len of widget.text):
+            widget.cursor is widget.cursor + 1
+    elif k == "home":
+        widget.cursor is 0
+    elif k == "end":
+        widget.cursor is len of widget.text
+    elif k == "return":
+        if widget.type == "editable_label":
+            _commit_editing of widget
+        else:
+            _focused_input is null
+            widget.focused is 0
+    elif k == "escape":
+        if widget.type == "editable_label":
+            widget.editing is 0
+            _focused_input is null
+        else:
+            _focused_input is null
+            widget.focused is 0
+    elif k == "space":
+        _insert_char of [widget, " "]
+    elif (len of k) == 1:
+        ch is k
+        if shift == 1:
+            ch is str_upper of k
+            # Shift+number → symbol
+            if k == "1":
+                ch is "!"
+            elif k == "2":
+                ch is "@"
+            elif k == "3":
+                ch is "#"
+            elif k == "4":
+                ch is "$"
+            elif k == "5":
+                ch is "%"
+            elif k == "6":
+                ch is "^"
+            elif k == "7":
+                ch is "&"
+            elif k == "8":
+                ch is "*"
+            elif k == "9":
+                ch is "("
+            elif k == "0":
+                ch is ")"
+            elif k == "-":
+                ch is "_"
+            elif k == "=":
+                ch is "+"
+            elif k == ";":
+                ch is ":"
+            elif k == "'":
+                ch is "\""
+            elif k == ",":
+                ch is "<"
+            elif k == ".":
+                ch is ">"
+            elif k == "/":
+                ch is "?"
+        _insert_char of [widget, ch]
+
+define _insert_char(widget, ch) as:
+    before is substr of [widget.text, 0, widget.cursor]
+    after is substr of [widget.text, widget.cursor, (len of widget.text) - widget.cursor]
+    widget.text is before + ch + after
+    widget.cursor is widget.cursor + 1
+    if widget.on_change != null:
+        widget.on_change of widget
+
+define show_menu(menu_widget, x, y) as:
+    menu_widget.x is x
+    menu_widget.y is y
+    menu_widget.visible is 1
+    menu_widget.hover_index is -1
+
+define _find_visible_dialog(widget) as:
+    if widget.type == "dialog" and widget.visible == 1:
+        return widget
+    if widget.type == "panel" or widget.type == "scroll_panel":
+        for i in range of (len of widget.children):
+            found is _find_visible_dialog of widget.children[i]
+            if found != null:
+                return found
+    if widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                found is _find_visible_dialog of widget.tab_panels[i]
+                if found != null:
+                    return found
+    return null
+
+define _handle_dialog_click(dlg, mx, my) as:
+    btn_y is dlg.y + dlg.h - 40
+    btn_x is dlg.x + dlg.w
+    i is (len of dlg.buttons) - 1
+    loop while i >= 0:
+        btext is dlg.buttons[i]
+        bw is (text_width of [btext, _theme.font_scale]) + 24
+        btn_x is btn_x - bw - 8
+        if _point_in_rect of [mx, my, btn_x, btn_y, bw, 28]:
+            dlg.visible is 0
+            if dlg.on_button != null:
+                dlg.on_button of [dlg, i]
+            return null
+        i is i - 1
+
+define show_dialog(dlg, parent_w, parent_h) as:
+    dlg.x is floor of ((parent_w - dlg.w) / 2)
+    dlg.y is floor of ((parent_h - dlg.h) / 2)
+    dlg.visible is 1
+    dlg.hover_btn is -1
+
+define _start_editing(widget) as:
+    _unfocus_all_editable of _edit_root
+    widget.editing is 1
+    widget.cursor is len of widget.text
+    _focused_input is widget
+
+define _commit_editing(widget) as:
+    widget.editing is 0
+    widget.w is (text_width of [widget.text, widget.scale]) + 8
+    _focused_input is null
+    if widget.on_commit != null:
+        widget.on_commit of widget
+
+define _unfocus_all_editable(widget) as:
+    if widget == null:
+        return null
+    if widget.type == "editable_label" and widget.editing == 1:
+        _commit_editing of widget
+    if widget.type == "panel" or widget.type == "scroll_panel":
+        for i in range of (len of widget.children):
+            _unfocus_all_editable of widget.children[i]
+    if widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _unfocus_all_editable of widget.tab_panels[i]
+
+define _piano_note_at(widget, rel_x, rel_y) as:
+    kw is widget.key_w
+    bh is widget.black_h
+    # Check black keys first (they overlap white keys)
+    if rel_y < bh:
+        for o in range of widget.octaves:
+            ox is o * 7 * kw
+            # Black key positions relative to octave start
+            # C#: after C, D#: after D, F#: after F, G#: after G, A#: after A
+            blacks is [0, 1, 3, 4, 5]
+            notes is [1, 3, 6, 8, 10]
+            for bi in range of 5:
+                bx is ox + blacks[bi] * kw + kw - 5
+                if rel_x >= bx and rel_x < bx + 10:
+                    return o * 12 + notes[bi]
+    # White key
+    white_idx is floor of (rel_x / kw)
+    oct is floor of (white_idx / 7)
+    key_in_oct is white_idx - oct * 7
+    # White key -> semitone: 0,2,4,5,7,9,11
+    white_to_semi is [0, 2, 4, 5, 7, 9, 11]
+    if key_in_oct >= 0 and key_in_oct < 7:
+        return oct * 12 + white_to_semi[key_in_oct]
+    # Final C
+    if oct == widget.octaves:
+        return widget.octaves * 12
+    return -1
+
+define _radio_index_at(widget, rel_x) as:
+    rx is 0
+    for i in range of (len of widget.items):
+        rw is (text_width of [widget.items[i], _theme.font_scale]) + 16
+        if rel_x >= rx and rel_x < rx + rw:
+            return i
+        rx is rx + rw
+    return -1
+
+define _close_dropdowns(widget) as:
+    if widget.type == "dropdown":
+        widget.open is 0
+    elif widget.type == "panel":
+        for i in range of (len of widget.children):
+            _close_dropdowns of widget.children[i]
+    elif widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _close_dropdowns of widget.tab_panels[i]
+
+define _update_drag(widget, mx) as:
+    range_val is widget.max_val - widget.min_val
+    if range_val <= 0:
+        return null
+    frac is (mx - _drag_ox) / widget.w
+    if frac < 0:
+        frac is 0
+    if frac > 1:
+        frac is 1
+    widget.value is widget.min_val + frac * range_val
+    if widget.on_change != null:
+        widget.on_change of widget
+
+# ============================================================
+# App loop
+# ============================================================
+
+define app_loop(root, on_key, on_tick) as:
+    _edit_root is root
+    _running is 1
+    loop while _running == 1:
+        ev is gfx_poll of null
+        loop while ev != null:
+            if ev.type == "quit":
+                _running is 0
+            elif ev.type == "keydown":
+                # Text input gets first crack at keys
+                if _focused_input != null:
+                    _handle_text_key of [_focused_input, ev]
+                if on_key != null:
+                    result is on_key of ev
+                    if result == 0:
+                        _running is 0
+            elif ev.type == "keyup":
+                if on_key != null:
+                    result is on_key of ev
+                    if result == 0:
+                        _running is 0
+            else:
+                dispatch of [root, ev]
+            ev is gfx_poll of null
+        # Update timers
+        _frame_time is _frame_time + 1
+        _cursor_blink is _cursor_blink + 1
+        if _cursor_blink > 60:
+            _cursor_blink is 0
+        if _tooltip_widget != null:
+            _tooltip_timer is _tooltip_timer + 1
+        if on_tick != null:
+            on_tick of root
+        gfx_clear of [_theme.bg[0], _theme.bg[1], _theme.bg[2]]
+        render of [root, 0, 0]
+        _render_tooltip of null
+        gfx_present of null
+        gfx_delay of 1
+    return null

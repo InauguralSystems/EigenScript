@@ -1,0 +1,45 @@
+# ============================================================
+# UI Draw — low-level drawing helpers for the UI toolkit
+# ============================================================
+#
+# Loaded internally by lib/ui.eigs via load_file.
+
+# ---- Hit testing ----
+
+define _point_in_rect(px, py, x, y, w, h) as:
+    if px >= x and px < x + w and py >= y and py < y + h:
+        return 1
+    return 0
+
+# ---- Text measurement ----
+# Based on the 5x7 bitmap font: advance = (5+1) * scale
+
+define text_width(text, scale) as:
+    return (len of text) * 6 * scale
+
+define text_height(scale) as:
+    return 7 * scale
+
+# ---- Drawing primitives ----
+
+define _draw_box(x, y, w, h, bg, border) as:
+    _draw_rbox of [x, y, w, h, 0, bg, border]
+
+define _draw_rbox(x, y, w, h, rad, bg, border) as:
+    if border != null:
+        gfx_rrect of [x, y, w, h, rad, border[0], border[1], border[2]]
+    if bg != null:
+        if border != null:
+            gfx_rrect of [x + 1, y + 1, w - 2, h - 2, rad, bg[0], bg[1], bg[2]]
+        else:
+            gfx_rrect of [x, y, w, h, rad, bg[0], bg[1], bg[2]]
+
+define _draw_text_clipped(x, y, w, text, color, scale) as:
+    cw is 6 * scale
+    max_chars is floor of (w / cw)
+    if max_chars < 1:
+        return null
+    display is text
+    if (len of text) > max_chars:
+        display is substr of [text, 0, max_chars]
+    gfx_text of [x, y, display, color[0], color[1], color[2], scale]

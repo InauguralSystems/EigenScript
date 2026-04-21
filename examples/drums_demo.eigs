@@ -1,0 +1,175 @@
+# ============================================================
+# Drum Machine Demo — step sequencer with grid widget
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/drums_demo.eigs
+
+import ui
+
+WINDOW_W is 750
+WINDOW_H is 420
+
+gfx_open of [WINDOW_W, WINDOW_H, "Deslan Studio — Drums"]
+
+status_text is "Click grid pads to toggle"
+
+# ---- Callbacks ----
+
+define on_cell(grid, row, col) as:
+    name is grid.row_labels[row]
+    if grid.cells[row][col] > 0:
+        status_text is f"{name} on at step {col + 1}"
+    else:
+        status_text is f"{name} off at step {col + 1}"
+
+define on_play(w) as:
+    if w.value == 1:
+        status_text is "Playing"
+    else:
+        status_text is "Stopped"
+
+define on_clear(w) as:
+    g is ui.find_by_id of [root, "drum_grid"]
+    for r in range of g.rows:
+        for c in range of g.cols:
+            g.cells[r][c] is 0
+    status_text is "Pattern cleared"
+
+define on_random(w) as:
+    g is ui.find_by_id of [root, "drum_grid"]
+    for r in range of g.rows:
+        for c in range of g.cols:
+            if (random_int of [0, 3]) == 0:
+                g.cells[r][c] is 1
+            else:
+                g.cells[r][c] is 0
+    status_text is "Random pattern"
+
+define on_pattern(w) as:
+    status_text is f"Pattern {w.selected + 1}"
+
+define on_swing(w) as:
+    status_text is f"Swing: {floor of w.value}%"
+
+define on_bpm(w) as:
+    status_text is f"BPM: {floor of w.value}"
+
+define on_name_commit(w) as:
+    status_text is f"Renamed: {w.text}"
+
+# ---- Build UI ----
+
+root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
+root.bg is [22, 22, 32]
+root.border is null
+
+# Toolbar
+toolbar is ui.panel of ["toolbar", 0, 0, WINDOW_W, 44]
+toolbar.bg is [28, 28, 38]
+toolbar.border is null
+
+play_btn is ui.toggle_button of ["play", 8, 10, 50, 24, "Play", on_play]
+play_btn.tooltip is "Play pattern (Space)"
+ui.add_child of [toolbar, play_btn]
+ui.add_child of [toolbar, ui.button of ["clear", 66, 10, 50, 24, "Clear", on_clear]]
+ui.add_child of [toolbar, ui.button of ["random", 124, 10, 60, 24, "Random", on_random]]
+
+ui.add_child of [toolbar, ui.separator of ["sep1", 196, 8, 32, 1]]
+
+ui.add_child of [toolbar, ui.label of ["bpm_lbl", 208, 15, "BPM"]]
+ui.add_child of [toolbar, ui.spinbox of ["bpm", 250, 12, 80, 60, 200, 120, 1, on_bpm]]
+
+ui.add_child of [toolbar, ui.separator of ["sep2", 342, 8, 32, 1]]
+
+ui.add_child of [toolbar, ui.label of ["swing_lbl", 354, 15, "Swing"]]
+ui.add_child of [toolbar, ui.slider of ["swing", 410, 18, 80, 0, 100, 0, on_swing]]
+
+ui.add_child of [toolbar, ui.separator of ["sep3", 502, 8, 32, 1]]
+
+ui.add_child of [toolbar, ui.radio_group of ["pattern", 514, 12, ["1", "2", "3", "4"], 0, on_pattern]]
+
+# Pattern name
+ui.add_child of [toolbar, ui.editable_label of ["pat_name", 630, 15, "My Pattern", on_name_commit]]
+
+# Grid
+drum_grid is ui.grid of ["drum_grid", 70, 60, 16, 8, 38, 32, on_cell]
+drum_grid.row_labels is ["Kick", "Snare", "HiHat", "Clap", "808", "Perc", "Rim", "Clave"]
+
+# Set some default pattern
+drum_grid.cells[0][0] is 1
+drum_grid.cells[0][4] is 1
+drum_grid.cells[0][8] is 1
+drum_grid.cells[0][12] is 1
+drum_grid.cells[1][4] is 1
+drum_grid.cells[1][12] is 1
+drum_grid.cells[2][0] is 1
+drum_grid.cells[2][2] is 1
+drum_grid.cells[2][4] is 1
+drum_grid.cells[2][6] is 1
+drum_grid.cells[2][8] is 1
+drum_grid.cells[2][10] is 1
+drum_grid.cells[2][12] is 1
+drum_grid.cells[2][14] is 1
+drum_grid.cells[3][8] is 1
+
+ui.add_child of [root, toolbar]
+ui.add_child of [root, drum_grid]
+
+# Status bar
+status_bar is ui.panel of ["status", 0, WINDOW_H - 28, WINDOW_W, 28]
+status_bar.bg is [28, 28, 38]
+status_bar.border is null
+status_label is ui.label of ["status_text", 8, 7, "Click grid pads to toggle"]
+status_label.color is [100, 100, 120]
+ui.add_child of [status_bar, status_label]
+ui.add_child of [root, status_bar]
+
+# Right-click context menu with shortcuts
+ctx is ui.menu of ["ctx", [["Cut", "Ctrl+X"], ["Copy", "Ctrl+C"], ["Paste", "Ctrl+V"], "-", "Clear Row", "Fill Row", "-", ["Undo", "Ctrl+Z"]], null]
+ui.add_child of [root, ctx]
+
+# ---- Handlers ----
+
+_step is 0
+_step_timer is 0
+
+define on_key(ev) as:
+    if ev.type == "keydown":
+        if ev.key == "escape":
+            return 0
+        if ev.key == "space":
+            pb is ui.find_by_id of [root, "play"]
+            if pb.value == 1:
+                pb.value is 0
+            else:
+                pb.value is 1
+    return 1
+
+define on_tick(root) as:
+    sl is ui.find_by_id of [root, "status_text"]
+    if sl != null:
+        sl.text is status_text
+
+    # Animate step highlight when playing
+    pb is ui.find_by_id of [root, "play"]
+    g is ui.find_by_id of [root, "drum_grid"]
+    if pb != null and pb.value == 1:
+        _step_timer is _step_timer + 1
+        bpm_widget is ui.find_by_id of [root, "bpm"]
+        step_speed is 8
+        if bpm_widget != null:
+            step_speed is floor of (60 / bpm_widget.value * 15)
+            if step_speed < 2:
+                step_speed is 2
+        if _step_timer >= step_speed:
+            _step_timer is 0
+            _step is _step + 1
+            if _step >= 16:
+                _step is 0
+        g.col_highlight is _step
+    else:
+        g.col_highlight is -1
+
+# ---- Run ----
+
+ui.app_loop of [root, on_key, on_tick]
+gfx_close of null

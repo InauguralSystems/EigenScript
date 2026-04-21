@@ -1,0 +1,56 @@
+# ============================================================
+# UI Theme — color and sizing constants for the UI toolkit
+# ============================================================
+#
+# Loaded internally by lib/ui.eigs via load_file.
+# All names are prefixed with _ so they stay private on import.
+# Access via theme of null / set_theme of new_theme.
+
+_theme is {
+    "bg": [25, 25, 35],
+    "panel_bg": [35, 35, 50],
+    "panel_border": [60, 60, 80],
+    "btn_bg": [50, 50, 70],
+    "btn_hover": [65, 65, 90],
+    "btn_pressed": [40, 40, 55],
+    "btn_disabled": [35, 35, 45],
+    "btn_text": [200, 200, 200],
+    "btn_text_disabled": [90, 90, 100],
+    "text_color": [200, 200, 200],
+    "text_dim": [120, 120, 140],
+    "accent": [80, 140, 220],
+    "slider_track": [40, 40, 55],
+    "slider_fill": [80, 140, 220],
+    "slider_thumb": [200, 200, 220],
+    "toggle_off": [50, 50, 65],
+    "toggle_on": [80, 140, 220],
+    "knob_bg": [40, 40, 55],
+    "knob_fg": [80, 140, 220],
+    "knob_pointer": [220, 220, 230],
+    "dropdown_bg": [45, 45, 60],
+    "dropdown_hover": [55, 55, 75],
+    "dropdown_item_hover": [65, 65, 90],
+    "dropdown_arrow": [160, 160, 180],
+    "tab_bg": [30, 30, 42],
+    "tab_active": [50, 50, 70],
+    "tab_hover": [40, 40, 55],
+    "tab_text": [160, 160, 180],
+    "tab_text_active": [220, 220, 230],
+    "menu_bg": [40, 40, 55],
+    "menu_hover": [65, 65, 90],
+    "menu_border": [70, 70, 90],
+    "font_scale": 2,
+    "char_w": 12,
+    "char_h": 14,
+    "padding": 6,
+    "border_width": 1,
+    "radius": 4,
+    "radius_sm": 3,
+    "radius_lg": 6
+}
+
+define theme() as:
+    return _theme
+
+define set_theme(t) as:
+    _theme is t

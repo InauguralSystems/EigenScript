@@ -1,0 +1,500 @@
+# ============================================================
+# Deslan Studio — DAW Shell
+# ============================================================
+# The main Deslan Studio layout with all tabs.
+# Run: make gfx && ./src/eigenscript examples/deslan_shell.eigs
+
+import ui
+
+WINDOW_W is 960
+WINDOW_H is 600
+
+gfx_open of [WINDOW_W, WINDOW_H, "Deslan Studio"]
+
+status_text is "Ready"
+track_colors is [[80, 160, 220], [220, 80, 80], [80, 220, 120], [220, 180, 60], [180, 80, 220], [220, 120, 60], [60, 200, 200], [200, 200, 80]]
+track_names is ["Vocals", "Beat", "Bass", "Synth Lead", "Pads", "FX", "Sub", "Master"]
+
+# ---- Callbacks ----
+
+define on_play(w) as:
+    status_text is "Playing"
+
+define on_stop(w) as:
+    status_text is "Stopped"
+
+define on_rec(w) as:
+    status_text is "Recording..."
+
+define on_loop(w) as:
+    if w.value == 1:
+        status_text is "Loop enabled"
+    else:
+        status_text is "Loop disabled"
+
+define on_bpm(w) as:
+    status_text is f"BPM: {floor of w.value}"
+
+define on_tab(w) as:
+    status_text is f"{w.tab_names[w.active]}"
+
+define on_snap(w) as:
+    status_text is f"Snap: {w.items[w.selected]}"
+
+define on_file_select(w) as:
+    if w.selected >= 0 and w.selected < (len of w.items):
+        status_text is f"Selected: {w.items[w.selected]}"
+
+define on_track_name(w) as:
+    status_text is f"Renamed: {w.text}"
+
+define on_fader(w) as:
+    status_text is f"{w.id}: {floor of w.value} dB"
+
+define on_pan(w) as:
+    status_text is f"Pan: {floor of w.value}"
+
+define on_mute(w) as:
+    if w.value == 1:
+        status_text is "Muted"
+    else:
+        status_text is "Unmuted"
+
+define on_solo(w) as:
+    if w.value == 1:
+        status_text is "Solo"
+    else:
+        status_text is "Solo off"
+
+define on_drum_cell(g, row, col) as:
+    status_text is f"{g.row_labels[row]} step {col + 1}"
+
+define on_attack(w) as:
+    status_text is f"Attack: {floor of (w.value * 100) / 100}"
+
+define on_decay(w) as:
+    status_text is f"Decay: {floor of (w.value * 100) / 100}"
+
+define on_sustain(w) as:
+    status_text is f"Sustain: {floor of (w.value * 100) / 100}"
+
+define on_release(w) as:
+    status_text is f"Release: {floor of (w.value * 100) / 100}"
+
+define on_cutoff(w) as:
+    status_text is f"Cutoff: {floor of w.value} Hz"
+
+define on_waveform(w) as:
+    status_text is f"Waveform: {w.items[w.selected]}"
+
+# Note names
+_note_names is ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+define on_note(kb, note, on) as:
+    octave is kb.base_octave + floor of (note / 12)
+    name is _note_names[note - floor of (note / 12) * 12]
+    if on == 1:
+        status_text is f"Note: {name}{octave}"
+    else:
+        status_text is f"Note off: {name}{octave}"
+
+define on_fx_active(w) as:
+    if w.value == 1:
+        status_text is "Effect active"
+    else:
+        status_text is "Effect bypassed"
+
+define paint_timeline(widget, ax, ay) as:
+    # Background
+    gfx_rect of [ax, ay, widget.w, widget.h, 22, 22, 30]
+    # Track lanes
+    for t in range of 8:
+        ty is ay + t * 48 + 30
+        c is track_colors[t]
+        # Lane background
+        gfx_rect of [ax, ty, widget.w, 46, 28, 28, 36]
+        gfx_line of [ax, ty + 46, ax + widget.w, ty + 46, 35, 35, 45]
+        # Fake clips
+        if t < 4:
+            cx is 40 + t * 30
+            cw is 120 + t * 40
+            gfx_rrect of [ax + cx, ty + 4, cw, 38, 3, c[0], c[1], c[2], 120]
+            # Waveform squiggle inside clip
+            for i in range of cw:
+                amp is (sin of (i * 0.1 + t)) * 12
+                py is ty + 23 + floor of amp
+                gfx_point of [ax + cx + i, py, c[0], c[1], c[2]]
+    # Beat grid
+    for b in range of 32:
+        bx is ax + b * 30
+        if (b / 4) == floor of (b / 4):
+            gfx_line of [bx, ay, bx, ay + widget.h, 50, 50, 65]
+        else:
+            gfx_line of [bx, ay, bx, ay + widget.h, 30, 30, 40]
+    # Ruler
+    gfx_rect of [ax, ay, widget.w, 28, 30, 30, 42]
+    for b in range of 8:
+        bx is ax + b * 120
+        gfx_text of [bx + 4, ay + 8, f"{b + 1}", 120, 120, 140, 1]
+        gfx_line of [bx, ay, bx, ay + 28, 60, 60, 80]
+    # Playhead
+    gfx_line of [ax + 100, ay, ax + 100, ay + widget.h, 255, 80, 80]
+
+define on_timeline_mouse(widget, ev) as:
+    status_text is f"Timeline: bar {floor of (ev.x / 120) + 1}"
+
+# ---- Build UI ----
+
+root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
+root.bg is [22, 22, 32]
+root.border is null
+
+# ========== Transport bar ==========
+transport is ui.panel of ["transport", 0, 0, WINDOW_W, 48]
+transport.bg is [28, 28, 38]
+transport.border is null
+
+stop_btn is ui.button of ["stop", 8, 12, 44, 24, "Stop", on_stop]
+stop_btn.tooltip is "Stop"
+ui.add_child of [transport, stop_btn]
+play_btn is ui.toggle_button of ["play", 56, 12, 44, 24, "Play", on_play]
+play_btn.tooltip is "Play (Space)"
+ui.add_child of [transport, play_btn]
+rec_btn is ui.toggle_button of ["rec", 104, 12, 40, 24, "Rec", on_rec]
+rec_btn.color_on is [200, 50, 50]
+rec_btn.tooltip is "Record"
+ui.add_child of [transport, rec_btn]
+loop_btn is ui.toggle_button of ["loop", 148, 12, 44, 24, "Loop", on_loop]
+loop_btn.tooltip is "Toggle loop"
+ui.add_child of [transport, loop_btn]
+
+ui.add_child of [transport, ui.separator of ["ts1", 204, 8, 32, 1]]
+
+ui.add_child of [transport, ui.label of ["bpm_lbl", 216, 15, "BPM"]]
+ui.add_child of [transport, ui.spinbox of ["bpm", 260, 12, 80, 40, 300, 120, 1, on_bpm]]
+
+ui.add_child of [transport, ui.separator of ["ts2", 352, 8, 32, 1]]
+
+snap_items is ["Off", "1/32", "1/16", "1/8", "1/4", "Beat", "Bar"]
+ui.add_child of [transport, ui.dropdown of ["snap", 364, 12, 80, snap_items, 4, on_snap]]
+
+ui.add_child of [transport, ui.separator of ["ts3", 456, 8, 32, 1]]
+
+# Time display
+time_lbl is ui.label of ["time", 468, 10, "0:00.000"]
+time_lbl.color is [100, 200, 100]
+ui.add_child of [transport, time_lbl]
+
+ui.add_child of [transport, ui.label of ["app_title", 780, 15, "Deslan Studio"]]
+title_lbl is ui.find_by_id of [transport, "app_title"]
+title_lbl.color is [70, 70, 90]
+
+# ========== Main tabs ==========
+tab_y is 48
+tab_h is WINDOW_H - 48 - 28
+main_tabs is ui.tabs of ["main", 0, tab_y, WINDOW_W, tab_h, ["Arrange", "Mix", "Drums", "Synth", "FX"], on_tab]
+
+# ========== Arrange tab ==========
+arrange is ui.panel of ["arrange_tab", 0, 0, WINDOW_W, tab_h - 28]
+arrange.border is null
+
+# Sidebar with track list
+sidebar is ui.panel of ["sidebar", 0, 0, 180, tab_h - 28]
+sidebar.bg is [26, 26, 36]
+sidebar.border is null
+
+ui.add_child of [sidebar, ui.section of ["trk_sec", 8, 4, 164, "Tracks"]]
+
+for t in range of 8:
+    ty is 28 + t * 36
+    ui.add_child of [sidebar, ui.color_dot of [f"cd_{t}", 10, ty + 8, 10, track_colors[t]]]
+    ui.add_child of [sidebar, ui.editable_label of [f"tn_{t}", 26, ty + 6, track_names[t], on_track_name]]
+    m_btn is ui.toggle_button of [f"am_{t}", 130, ty + 4, 20, 16, "M", on_mute]
+    m_btn.color_on is [200, 80, 40]
+    ui.add_child of [sidebar, m_btn]
+    s_btn is ui.toggle_button of [f"as_{t}", 154, ty + 4, 20, 16, "S", on_solo]
+    s_btn.color_on is [200, 200, 40]
+    ui.add_child of [sidebar, s_btn]
+
+# Timeline canvas
+timeline is ui.canvas of ["timeline", 184, 0, WINDOW_W - 184, tab_h - 340, paint_timeline, on_timeline_mouse]
+
+# Waveform view below timeline
+wv is ui.waveform_view of ["waveform", 184, tab_h - 340, WINDOW_W - 184, 120]
+# Generate fake audio data
+_samples is []
+for i in range of 2000:
+    s is (sin of (i * 0.05)) * (cos of (i * 0.013)) * 0.6
+    s is s + (sin of (i * 0.17)) * 0.2
+    append of [_samples, s]
+wv.samples is _samples
+wv.color is [80, 160, 220]
+
+ui.add_child of [arrange, sidebar]
+ui.add_child of [arrange, timeline]
+ui.add_child of [arrange, wv]
+
+# Section label for waveform
+wv_sec is ui.section of ["wv_sec", 184, tab_h - 348, WINDOW_W - 194, "Waveform Editor"]
+ui.add_child of [arrange, wv_sec]
+
+# ========== Mix tab ==========
+mix is ui.panel of ["mix_tab", 0, 0, WINDOW_W, tab_h - 28]
+mix.border is null
+
+strip_w is 100
+for ch in range of 8:
+    sx is ch * (strip_w + 4) + 8
+    strip is ui.panel of [f"ms_{ch}", sx, 4, strip_w, tab_h - 60]
+    strip.bg is [30, 30, 42]
+    ui.add_child of [strip, ui.color_dot of [f"mc_{ch}", 8, 8, 8, track_colors[ch]]]
+    ui.add_child of [strip, ui.label of [f"ml_{ch}", 22, 6, track_names[ch]]]
+    m_btn is ui.toggle_button of [f"mm_{ch}", 8, 26, 26, 18, "M", on_mute]
+    m_btn.color_on is [200, 80, 40]
+    ui.add_child of [strip, m_btn]
+    s_btn is ui.toggle_button of [f"ms2_{ch}", 38, 26, 26, 18, "S", on_solo]
+    s_btn.color_on is [200, 200, 40]
+    ui.add_child of [strip, s_btn]
+    ui.add_child of [strip, ui.knob of [f"mp_{ch}", 70, 22, 24, -100, 100, 0, on_pan]]
+    fader_h is tab_h - 140
+    ui.add_child of [strip, ui.vslider of [f"mf_{ch}", 10, 56, fader_h, -60, 12, 0, on_fader]]
+    ui.add_child of [strip, ui.meter of [f"ml1_{ch}", 34, 56, 8, fader_h]]
+    ui.add_child of [strip, ui.meter of [f"mr1_{ch}", 46, 56, 8, fader_h]]
+    ui.add_child of [mix, strip]
+
+# Master
+mx is 8 * (strip_w + 4) + 16
+master is ui.panel of ["master_strip", mx, 4, strip_w + 20, tab_h - 60]
+master.bg is [35, 30, 42]
+lbl is ui.label of ["master_l", 8, 6, "Master"]
+lbl.color is [100, 160, 220]
+ui.add_child of [master, lbl]
+fader_h is tab_h - 140
+ui.add_child of [master, ui.vslider of ["mast_f", 15, 40, fader_h, -60, 12, 0, on_fader]]
+ui.add_child of [master, ui.meter of ["mast_l", 44, 40, 10, fader_h]]
+ui.add_child of [master, ui.meter of ["mast_r", 58, 40, 10, fader_h]]
+ui.add_child of [mix, master]
+
+# ========== Drums tab ==========
+drums is ui.panel of ["drums_tab", 0, 0, WINDOW_W, tab_h - 28]
+drums.border is null
+
+drum_grid is ui.grid of ["dg", 80, 50, 16, 8, 36, 30, on_drum_cell]
+drum_grid.row_labels is ["Kick", "Snare", "HiHat", "Clap", "808", "Perc", "Rim", "Clave"]
+
+# Default pattern
+drum_grid.cells[0][0] is 1
+drum_grid.cells[0][4] is 1
+drum_grid.cells[0][8] is 1
+drum_grid.cells[0][12] is 1
+drum_grid.cells[1][4] is 1
+drum_grid.cells[1][12] is 1
+drum_grid.cells[2][0] is 1
+drum_grid.cells[2][2] is 1
+drum_grid.cells[2][4] is 1
+drum_grid.cells[2][6] is 1
+drum_grid.cells[2][8] is 1
+drum_grid.cells[2][10] is 1
+drum_grid.cells[2][12] is 1
+drum_grid.cells[2][14] is 1
+
+ui.add_child of [drums, ui.label of ["drums_title", 10, 10, "Step Sequencer"]]
+ui.add_child of [drums, ui.radio_group of ["dpat", 200, 10, ["1", "2", "3", "4"], 0, null]]
+ui.add_child of [drums, ui.label of ["dswing_lbl", 350, 13, "Swing"]]
+ui.add_child of [drums, ui.slider of ["dswing", 400, 16, 80, 0, 100, 0, null]]
+ui.add_child of [drums, drum_grid]
+
+# ========== Synth tab ==========
+synth is ui.panel of ["synth_tab", 0, 0, WINDOW_W, tab_h - 28]
+synth.border is null
+
+ui.add_child of [synth, ui.section of ["osc_sec", 10, 8, 300, "Oscillator"]]
+ui.add_child of [synth, ui.radio_group of ["wave", 10, 30, ["Saw", "Square", "Sine", "Tri", "Noise"], 0, on_waveform]]
+
+ui.add_child of [synth, ui.section of ["env_sec", 10, 68, 300, "Envelope"]]
+ui.add_child of [synth, ui.label of ["a_lbl", 20, 88, "A"]]
+a_lbl is ui.find_by_id of [synth, "a_lbl"]
+a_lbl.scale is 1
+ui.add_child of [synth, ui.knob of ["s_atk", 10, 100, 40, 0, 2.0, 0.05, on_attack]]
+ui.add_child of [synth, ui.label of ["d_lbl", 70, 88, "D"]]
+d_lbl is ui.find_by_id of [synth, "d_lbl"]
+d_lbl.scale is 1
+ui.add_child of [synth, ui.knob of ["s_dec", 60, 100, 40, 0, 2.0, 0.2, on_decay]]
+ui.add_child of [synth, ui.label of ["s_lbl", 120, 88, "S"]]
+s_lbl is ui.find_by_id of [synth, "s_lbl"]
+s_lbl.scale is 1
+ui.add_child of [synth, ui.knob of ["s_sus", 110, 100, 40, 0, 1.0, 0.7, on_sustain]]
+ui.add_child of [synth, ui.label of ["r_lbl", 170, 88, "R"]]
+r_lbl is ui.find_by_id of [synth, "r_lbl"]
+r_lbl.scale is 1
+ui.add_child of [synth, ui.knob of ["s_rel", 160, 100, 40, 0, 3.0, 0.3, on_release]]
+
+ui.add_child of [synth, ui.section of ["flt_sec", 10, 158, 300, "Filter"]]
+ui.add_child of [synth, ui.label of ["cut_lbl", 20, 178, "Cutoff"]]
+cut_lbl is ui.find_by_id of [synth, "cut_lbl"]
+cut_lbl.scale is 1
+ui.add_child of [synth, ui.knob of ["s_cut", 10, 190, 44, 20, 20000, 8000, on_cutoff]]
+
+# Piano keyboard
+ui.add_child of [synth, ui.section of ["kb_sec", 10, 248, 300, "Keyboard"]]
+ui.add_child of [synth, ui.piano_keyboard of ["piano", 10, 268, 3, on_note]]
+
+# Instrument list
+ui.add_child of [synth, ui.section of ["inst_sec", 500, 8, 280, "Instruments"]]
+instruments is ["Grand Piano", "Electric Piano", "Organ", "Strings", "Brass", "Pad Warm", "Pad Choir", "Lead Synth", "Bass Synth", "Pluck", "Marimba", "Vibraphone"]
+ui.add_child of [synth, ui.item_list of ["inst_list", 500, 28, 280, tab_h - 80, instruments, on_file_select]]
+
+# ========== FX tab ==========
+fx is ui.panel of ["fx_tab", 0, 0, WINDOW_W, tab_h - 28]
+fx.border is null
+
+# FX chain
+ui.add_child of [fx, ui.section of ["fx_chain_sec", 10, 8, 400, "FX Chain"]]
+fx_names is ["Parametric EQ", "Compressor", "Reverb", "Delay", "Chorus", "Limiter"]
+fy is 28
+for i in range of (len of fx_names):
+    ui.add_child of [fx, ui.checkbox of [f"fx_{i}", 20, fy, fx_names[i], 1, on_fx_active]]
+    fy is fy + 28
+
+# FX knobs area
+ui.add_child of [fx, ui.section of ["fx_knob_sec", 10, fy + 10, 400, "Parameters"]]
+ui.add_child of [fx, ui.label of ["mix_lbl", 20, fy + 34, "Mix"]]
+mix_lbl is ui.find_by_id of [fx, "mix_lbl"]
+mix_lbl.scale is 1
+ui.add_child of [fx, ui.knob of ["fx_mix", 10, fy + 46, 40, 0, 100, 50, null]]
+ui.add_child of [fx, ui.label of ["room_lbl", 70, fy + 34, "Room"]]
+room_lbl is ui.find_by_id of [fx, "room_lbl"]
+room_lbl.scale is 1
+ui.add_child of [fx, ui.knob of ["fx_room", 60, fy + 46, 40, 0, 100, 60, null]]
+ui.add_child of [fx, ui.label of ["damp_lbl", 120, fy + 34, "Damp"]]
+damp_lbl is ui.find_by_id of [fx, "damp_lbl"]
+damp_lbl.scale is 1
+ui.add_child of [fx, ui.knob of ["fx_damp", 110, fy + 46, 40, 0, 100, 40, null]]
+
+# ========== Wire tabs ==========
+append of [main_tabs.tab_panels, arrange]
+append of [main_tabs.tab_panels, mix]
+append of [main_tabs.tab_panels, drums]
+append of [main_tabs.tab_panels, synth]
+append of [main_tabs.tab_panels, fx]
+
+# ========== Status bar ==========
+status_bar is ui.panel of ["status", 0, WINDOW_H - 28, WINDOW_W, 28]
+status_bar.bg is [28, 28, 38]
+status_bar.border is null
+status_label is ui.label of ["status_text", 8, 7, "Ready"]
+status_label.color is [100, 100, 120]
+ui.add_child of [status_bar, status_label]
+
+# ========== Assemble ==========
+ui.add_child of [root, transport]
+ui.add_child of [root, main_tabs]
+ui.add_child of [root, status_bar]
+
+# ---- Handlers ----
+_tick is 0
+
+define on_key(ev) as:
+    if ev.type == "keydown":
+        if ev.key == "escape":
+            return 0
+        if ev.key == "space":
+            pb is ui.find_by_id of [root, "play"]
+            if pb.value == 1:
+                pb.value is 0
+            else:
+                pb.value is 1
+    return 1
+
+define on_tick(root) as:
+    _tick is _tick + 1
+    # Status
+    sl is ui.find_by_id of [root, "status_text"]
+    if sl != null:
+        sl.text is status_text
+
+    # Time display
+    pb is ui.find_by_id of [root, "play"]
+    tl is ui.find_by_id of [root, "time"]
+    if pb != null and tl != null:
+        if pb.value == 1:
+            secs is _tick / 60.0
+            mins is floor of (secs / 60)
+            s is secs - mins * 60
+            ms is floor of ((s - floor of s) * 1000)
+            tl.text is f"{mins}:{floor of s}.{ms}"
+
+    # Animate meters on mix tab
+    for ch in range of 8:
+        ml is ui.find_by_id of [root, f"ml1_{ch}"]
+        mr is ui.find_by_id of [root, f"mr1_{ch}"]
+        if ml != null:
+            t is 0.3 + (sin of (_tick * 0.07 + ch * 1.1)) * 0.25 + (sin of (_tick * 0.13 + ch * 0.7)) * 0.15
+            if t < 0:
+                t is 0
+            if t > 1:
+                t is 1
+            ml.value is ml.value * 0.85 + t * 0.15
+            if ml.value > ml.peak:
+                ml.peak is ml.value
+                ml.peak_hold is 30
+            elif ml.peak_hold > 0:
+                ml.peak_hold is ml.peak_hold - 1
+            else:
+                ml.peak is ml.peak * 0.98
+        if mr != null:
+            t is 0.3 + (cos of (_tick * 0.11 + ch * 0.9)) * 0.25 + (cos of (_tick * 0.09 + ch * 1.3)) * 0.15
+            if t < 0:
+                t is 0
+            if t > 1:
+                t is 1
+            mr.value is mr.value * 0.85 + t * 0.15
+            if mr.value > mr.peak:
+                mr.peak is mr.value
+                mr.peak_hold is 30
+            elif mr.peak_hold > 0:
+                mr.peak_hold is mr.peak_hold - 1
+            else:
+                mr.peak is mr.peak * 0.98
+
+    # Master meters
+    mml is ui.find_by_id of [root, "mast_l"]
+    mmr is ui.find_by_id of [root, "mast_r"]
+    if mml != null:
+        mml.value is mml.value * 0.85 + (0.5 + (sin of (_tick * 0.05)) * 0.3) * 0.15
+        if mml.value > mml.peak:
+            mml.peak is mml.value
+            mml.peak_hold is 30
+        elif mml.peak_hold > 0:
+            mml.peak_hold is mml.peak_hold - 1
+        else:
+            mml.peak is mml.peak * 0.98
+    if mmr != null:
+        mmr.value is mmr.value * 0.85 + (0.5 + (cos of (_tick * 0.06)) * 0.3) * 0.15
+        if mmr.value > mmr.peak:
+            mmr.peak is mmr.value
+            mmr.peak_hold is 30
+        elif mmr.peak_hold > 0:
+            mmr.peak_hold is mmr.peak_hold - 1
+        else:
+            mmr.peak is mmr.peak * 0.98
+
+    # Drum step highlight
+    g is ui.find_by_id of [root, "dg"]
+    if pb != null and g != null:
+        if pb.value == 1:
+            bpm_w is ui.find_by_id of [root, "bpm"]
+            spd is 8
+            if bpm_w != null:
+                spd is floor of (60 / bpm_w.value * 15)
+                if spd < 2:
+                    spd is 2
+            if (_tick / spd) > floor of ((_tick - 1) / spd):
+                g.col_highlight is (g.col_highlight + 1)
+                if g.col_highlight >= 16:
+                    g.col_highlight is 0
+        else:
+            g.col_highlight is -1
+
+ui.app_loop of [root, on_key, on_tick]
+gfx_close of null

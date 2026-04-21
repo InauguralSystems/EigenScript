@@ -1,0 +1,277 @@
+# ============================================================
+# Mixer Demo — DAW-style channel strips
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/mixer_demo.eigs
+
+import ui
+
+WINDOW_W is 800
+WINDOW_H is 500
+NUM_CHANNELS is 6
+
+gfx_open of [WINDOW_W, WINDOW_H, "Deslan Studio — Mixer"]
+
+# ---- State ----
+status_text is "Mixer"
+meter_values is [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+meter_peaks is [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+channel_names is ["Kick", "Snare", "HiHat", "Bass", "Synth", "Vox"]
+
+# ---- Callbacks ----
+
+define on_fader(w) as:
+    status_text is f"{w.id}: {floor of w.value} dB"
+
+define on_pan(w) as:
+    status_text is f"{w.id}: {floor of w.value}"
+
+define on_mute(w) as:
+    if w.value == 1:
+        status_text is f"{w.id}: Muted"
+    else:
+        status_text is f"{w.id}: Unmuted"
+
+define on_solo(w) as:
+    if w.value == 1:
+        status_text is f"{w.id}: Solo"
+    else:
+        status_text is f"{w.id}: Solo off"
+
+define on_bpm(w) as:
+    status_text is f"BPM: {floor of w.value}"
+
+define on_snap(w) as:
+    status_text is f"Snap: {w.items[w.selected]}"
+
+define on_wave(w) as:
+    status_text is f"Waveform: {w.items[w.selected]}"
+
+# ---- Build UI ----
+
+root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
+root.bg is [22, 22, 32]
+root.border is null
+
+# -- Transport bar --
+transport is ui.panel of ["transport", 0, 0, WINDOW_W, 48]
+transport.bg is [28, 28, 38]
+transport.border is null
+
+stop_btn is ui.toggle_button of ["tb_stop", 8, 12, 40, 24, "Stop", null]
+stop_btn.tooltip is "Stop playback"
+ui.add_child of [transport, stop_btn]
+play_btn is ui.toggle_button of ["tb_play", 52, 12, 40, 24, "Play", null]
+play_btn.tooltip is "Play / Space"
+ui.add_child of [transport, play_btn]
+rec_btn is ui.toggle_button of ["tb_rec", 96, 12, 40, 24, "Rec", null]
+rec_btn.color_on is [200, 50, 50]
+rec_btn.tooltip is "Record audio"
+ui.add_child of [transport, rec_btn]
+
+ui.add_child of [transport, ui.separator of ["sep1", 148, 8, 32, 1]]
+
+ui.add_child of [transport, ui.label of ["bpm_lbl", 160, 15, "BPM"]]
+ui.add_child of [transport, ui.spinbox of ["bpm", 210, 12, 80, 40, 300, 120, 1, on_bpm]]
+
+ui.add_child of [transport, ui.separator of ["sep2", 302, 8, 32, 1]]
+
+snap_items is ["Off", "1/4", "1/8", "1/16", "Bar"]
+ui.add_child of [transport, ui.dropdown of ["snap", 314, 12, 80, snap_items, 3, on_snap]]
+
+ui.add_child of [transport, ui.separator of ["sep3", 406, 8, 32, 1]]
+
+ui.add_child of [transport, ui.radio_group of ["wave", 418, 12, ["Saw", "Sqr", "Sin", "Tri"], 0, on_wave]]
+
+ui.add_child of [transport, ui.label of ["title", 660, 15, "Deslan Studio"]]
+title_lbl is ui.find_by_id of [transport, "title"]
+title_lbl.color is [80, 80, 100]
+
+# -- Mixer area --
+mixer_scroll is ui.scroll_panel of ["mixer_scroll", 0, 48, WINDOW_W, WINDOW_H - 48 - 28]
+mixer_scroll.bg is [22, 22, 32]
+mixer_scroll.border is null
+mixer_scroll.content_h is 400
+
+# Build channel strips
+strip_w is 110
+for ch in range of NUM_CHANNELS:
+    sx is ch * (strip_w + 4) + 8
+    strip is ui.panel of [f"strip_{ch}", sx, 4, strip_w, 390]
+    strip.bg is [30, 30, 42]
+
+    # Channel name
+    name_lbl is ui.label of [f"name_{ch}", 8, 6, channel_names[ch]]
+    ui.add_child of [strip, name_lbl]
+
+    # M / S toggle buttons
+    m_btn is ui.toggle_button of [f"mute_{ch}", 8, 26, 30, 20, "M", on_mute]
+    m_btn.color_on is [200, 80, 40]
+    ui.add_child of [strip, m_btn]
+    s_btn is ui.toggle_button of [f"solo_{ch}", 42, 26, 30, 20, "S", on_solo]
+    s_btn.color_on is [200, 200, 40]
+    ui.add_child of [strip, s_btn]
+
+    # Pan knob
+    ui.add_child of [strip, ui.label of [f"pan_lbl_{ch}", 80, 28, "P"]]
+    pan_lbl is ui.find_by_id of [strip, f"pan_lbl_{ch}"]
+    pan_lbl.color is [90, 90, 110]
+    pan_lbl.scale is 1
+    ui.add_child of [strip, ui.knob of [f"pan_{ch}", 78, 40, 28, -100, 100, 0, on_pan]]
+
+    # Fader + meter side by side
+    ui.add_child of [strip, ui.vslider of [f"fader_{ch}", 12, 80, 200, -60, 12, 0, on_fader]]
+    ui.add_child of [strip, ui.meter of [f"meter_l_{ch}", 38, 80, 8, 200]]
+    ui.add_child of [strip, ui.meter of [f"meter_r_{ch}", 50, 80, 8, 200]]
+
+    # dB readout
+    db_lbl is ui.label of [f"db_{ch}", 8, 290, "0 dB"]
+    db_lbl.color is [90, 90, 110]
+    db_lbl.scale is 1
+    ui.add_child of [strip, db_lbl]
+
+    ui.add_child of [mixer_scroll, strip]
+
+# Master strip
+mx is NUM_CHANNELS * (strip_w + 4) + 16
+master is ui.panel of ["master", mx, 4, strip_w + 10, 390]
+master.bg is [35, 30, 42]
+ui.add_child of [master, ui.label of ["master_lbl", 8, 6, "Master"]]
+master_lbl is ui.find_by_id of [master, "master_lbl"]
+master_lbl.color is [100, 160, 220]
+ui.add_child of [master, ui.vslider of ["master_fader", 15, 80, 200, -60, 12, 0, on_fader]]
+ui.add_child of [master, ui.meter of ["master_l", 44, 80, 10, 200]]
+ui.add_child of [master, ui.meter of ["master_r", 58, 80, 10, 200]]
+master_db is ui.label of ["master_db", 8, 290, "0 dB"]
+master_db.color is [90, 90, 110]
+master_db.scale is 1
+ui.add_child of [master, master_db]
+
+# Progress bar at bottom of master
+ui.add_child of [master, ui.label of ["exp_lbl", 8, 320, "Export"]]
+exp_lbl is ui.find_by_id of [master, "exp_lbl"]
+exp_lbl.color is [90, 90, 110]
+exp_lbl.scale is 1
+ui.add_child of [master, ui.progress_bar of ["export_prog", 8, 340, 100, 0]]
+
+ui.add_child of [mixer_scroll, master]
+
+# Confirm dialog (hidden)
+define on_confirm(dlg, btn_idx) as:
+    if btn_idx == 0:
+        status_text is "Export confirmed"
+    else:
+        status_text is "Export cancelled"
+
+confirm_dlg is ui.dialog of ["confirm", 300, 140, "Export", "Export mix to WAV file?", ["Export", "Cancel"], on_confirm]
+ui.add_child of [root, confirm_dlg]
+
+# -- Status bar --
+status_bar is ui.panel of ["status", 0, WINDOW_H - 28, WINDOW_W, 28]
+status_bar.bg is [28, 28, 38]
+status_bar.border is null
+status_label is ui.label of ["status_text", 8, 7, "Mixer"]
+status_label.color is [100, 100, 120]
+ui.add_child of [status_bar, status_label]
+
+# -- Assemble --
+ui.add_child of [root, transport]
+ui.add_child of [root, mixer_scroll]
+ui.add_child of [root, status_bar]
+
+# ---- Handlers ----
+
+define on_key(ev) as:
+    if ev.type == "keydown":
+        if ev.key == "escape":
+            return 0
+        if ev.key == "space":
+            tb is ui.find_by_id of [root, "tb_play"]
+            if tb.value == 1:
+                tb.value is 0
+            else:
+                tb.value is 1
+        if ev.key == "e":
+            ui.show_dialog of [confirm_dlg, WINDOW_W, WINDOW_H]
+    return 1
+
+# ---- Per-frame update ----
+_tick is 0
+_export_prog is 0
+
+define on_tick(root) as:
+    _tick is _tick + 1
+    sl is ui.find_by_id of [root, "status_text"]
+    if sl != null:
+        sl.text is status_text
+
+    # Animate meters with fake audio levels
+    for ch in range of NUM_CHANNELS:
+        # Simulate bouncing levels
+        base is 0.3 + (sin of (_tick * 0.07 + ch * 1.1)) * 0.25
+        ml is ui.find_by_id of [root, f"meter_l_{ch}"]
+        mr is ui.find_by_id of [root, f"meter_r_{ch}"]
+        if ml != null:
+            target is base + (sin of (_tick * 0.13 + ch * 0.7)) * 0.15
+            if target < 0:
+                target is 0
+            if target > 1:
+                target is 1
+            # Smooth falloff
+            ml.value is ml.value * 0.85 + target * 0.15
+            if ml.value > ml.peak:
+                ml.peak is ml.value
+                ml.peak_hold is 30
+            elif ml.peak_hold > 0:
+                ml.peak_hold is ml.peak_hold - 1
+            else:
+                ml.peak is ml.peak * 0.98
+        if mr != null:
+            target is base + (cos of (_tick * 0.11 + ch * 0.9)) * 0.15
+            if target < 0:
+                target is 0
+            if target > 1:
+                target is 1
+            mr.value is mr.value * 0.85 + target * 0.15
+            if mr.value > mr.peak:
+                mr.peak is mr.value
+                mr.peak_hold is 30
+            elif mr.peak_hold > 0:
+                mr.peak_hold is mr.peak_hold - 1
+            else:
+                mr.peak is mr.peak * 0.98
+
+    # Animate master meters
+    mml is ui.find_by_id of [root, "master_l"]
+    mmr is ui.find_by_id of [root, "master_r"]
+    if mml != null:
+        mml.value is mml.value * 0.85 + (0.5 + (sin of (_tick * 0.05)) * 0.3) * 0.15
+        if mml.value > mml.peak:
+            mml.peak is mml.value
+            mml.peak_hold is 30
+        elif mml.peak_hold > 0:
+            mml.peak_hold is mml.peak_hold - 1
+        else:
+            mml.peak is mml.peak * 0.98
+    if mmr != null:
+        mmr.value is mmr.value * 0.85 + (0.5 + (cos of (_tick * 0.06)) * 0.3) * 0.15
+        if mmr.value > mmr.peak:
+            mmr.peak is mmr.value
+            mmr.peak_hold is 30
+        elif mmr.peak_hold > 0:
+            mmr.peak_hold is mmr.peak_hold - 1
+        else:
+            mmr.peak is mmr.peak * 0.98
+
+    # Animate export progress
+    _export_prog is _export_prog + 0.002
+    if _export_prog > 1:
+        _export_prog is 0
+    ep is ui.find_by_id of [root, "export_prog"]
+    if ep != null:
+        ep.value is _export_prog
+
+# ---- Run ----
+
+ui.app_loop of [root, on_key, on_tick]
+gfx_close of null

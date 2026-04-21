@@ -1,0 +1,215 @@
+# ============================================================
+# UI Toolkit Demo — all widget types
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/ui_demo.eigs
+
+import ui
+
+WINDOW_W is 900
+WINDOW_H is 560
+
+gfx_open of [WINDOW_W, WINDOW_H, "UI Toolkit Demo"]
+
+# ---- State ----
+status_text is "Ready"
+
+# ---- Callbacks ----
+define on_play(w) as:
+    status_text is "Playing..."
+
+define on_stop(w) as:
+    status_text is "Stopped"
+
+define on_rec(w) as:
+    status_text is "Recording..."
+
+define on_volume(w) as:
+    status_text is f"Volume: {floor of w.value}"
+
+define on_pan(w) as:
+    status_text is f"Pan: {floor of w.value}"
+
+define on_mute(w) as:
+    if w.value == 1:
+        status_text is "Muted"
+    else:
+        status_text is "Unmuted"
+
+define on_attack(w) as:
+    status_text is f"Attack: {floor of (w.value * 100) / 100}"
+
+define on_release(w) as:
+    status_text is f"Release: {floor of (w.value * 100) / 100}"
+
+define on_cutoff(w) as:
+    status_text is f"Cutoff: {floor of w.value} Hz"
+
+define on_snap(w) as:
+    status_text is f"Snap: {w.items[w.selected]}"
+
+define on_tab(w) as:
+    status_text is f"Tab: {w.tab_names[w.active]}"
+
+define on_fader(w) as:
+    status_text is f"Fader: {floor of w.value} dB"
+
+define on_active(w) as:
+    if w.value == 1:
+        status_text is "Effect active"
+    else:
+        status_text is "Effect bypassed"
+
+define on_name_change(w) as:
+    status_text is f"Name: {w.text}"
+
+define on_menu_select(m, idx) as:
+    status_text is f"Menu: {m.items[idx]}"
+
+# Canvas waveform painter
+define paint_waveform(widget, ax, ay) as:
+    gfx_rect of [ax, ay, widget.w, widget.h, 20, 20, 30]
+    mid_y is ay + floor of (widget.h / 2)
+    gfx_line of [ax, mid_y, ax + widget.w, mid_y, 40, 40, 55]
+    prev_y is mid_y
+    for i in range of widget.w:
+        amp is (sin of (i * 0.05)) * (cos of (i * 0.013)) * (widget.h / 3)
+        y is mid_y + floor of amp
+        gfx_line of [ax + i, prev_y, ax + i + 1, y, 80, 160, 220]
+        prev_y is y
+
+define on_wave_mouse(widget, ev) as:
+    status_text is f"Wave: x={ev.x} y={ev.y}"
+
+# ---- Build UI ----
+
+root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
+root.bg is [25, 25, 35]
+root.border is null
+
+# -- Toolbar --
+toolbar is ui.panel of ["toolbar", 0, 0, WINDOW_W, 44]
+toolbar.bg is [30, 30, 42]
+toolbar.border is null
+ui.add_child of [toolbar, ui.button of ["play", 8, 10, 60, 24, "Play", on_play]]
+ui.add_child of [toolbar, ui.button of ["stop", 76, 10, 60, 24, "Stop", on_stop]]
+ui.add_child of [toolbar, ui.button of ["rec", 144, 10, 60, 24, "Rec", on_rec]]
+snap_items is ["Off", "1/4", "1/8", "1/16", "1/32", "Beat", "Bar"]
+ui.add_child of [toolbar, ui.dropdown of ["snap", 230, 10, 90, snap_items, 0, on_snap]]
+ui.add_child of [toolbar, ui.text_input of ["track_name", 340, 10, 140, "Track 1", on_name_change]]
+ui.add_child of [toolbar, ui.label of ["title", 700, 14, "Deslan Studio"]]
+
+# -- Tabs --
+main_tabs is ui.tabs of ["main", 0, 44, WINDOW_W, WINDOW_H - 44 - 28, ["Mix", "Synth", "Wave", "FX"], on_tab]
+
+# --- Mix tab ---
+mix_panel is ui.panel of ["mix_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+mix_panel.border is null
+
+# Channel strip area with sliders
+ui.add_child of [mix_panel, ui.label of ["vol_lbl", 20, 12, "Volume"]]
+ui.add_child of [mix_panel, ui.slider of ["volume", 20, 32, 200, 0, 100, 75, on_volume]]
+ui.add_child of [mix_panel, ui.label of ["pan_lbl", 20, 60, "Pan"]]
+ui.add_child of [mix_panel, ui.slider of ["pan", 20, 80, 200, -100, 100, 0, on_pan]]
+ui.add_child of [mix_panel, ui.label of ["mute_lbl", 20, 112, "Mute"]]
+ui.add_child of [mix_panel, ui.toggle of ["mute", 80, 110, 0, on_mute]]
+
+# Vertical faders
+ui.add_child of [mix_panel, ui.label of ["ch1_lbl", 280, 12, "Ch 1"]]
+ui.add_child of [mix_panel, ui.vslider of ["fader1", 285, 32, 120, -60, 12, 0, on_fader]]
+ui.add_child of [mix_panel, ui.label of ["ch2_lbl", 320, 12, "Ch 2"]]
+ui.add_child of [mix_panel, ui.vslider of ["fader2", 325, 32, 120, -60, 12, -6, on_fader]]
+ui.add_child of [mix_panel, ui.label of ["ch3_lbl", 360, 12, "Ch 3"]]
+ui.add_child of [mix_panel, ui.vslider of ["fader3", 365, 32, 120, -60, 12, -12, on_fader]]
+
+# --- Synth tab ---
+synth_panel is ui.panel of ["synth_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+synth_panel.border is null
+ui.add_child of [synth_panel, ui.label of ["atk_lbl", 30, 10, "Attack"]]
+ui.add_child of [synth_panel, ui.knob of ["attack", 30, 30, 44, 0, 1.0, 0.1, on_attack]]
+ui.add_child of [synth_panel, ui.label of ["rel_lbl", 110, 10, "Release"]]
+ui.add_child of [synth_panel, ui.knob of ["release", 110, 30, 44, 0, 2.0, 0.5, on_release]]
+ui.add_child of [synth_panel, ui.label of ["cut_lbl", 190, 10, "Cutoff"]]
+ui.add_child of [synth_panel, ui.knob of ["cutoff", 190, 30, 44, 20, 20000, 5000, on_cutoff]]
+
+# --- Wave tab ---
+wave_panel is ui.panel of ["wave_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+wave_panel.border is null
+ui.add_child of [wave_panel, ui.canvas of ["waveform", 10, 10, WINDOW_W - 20, 180, paint_waveform, on_wave_mouse]]
+ui.add_child of [wave_panel, ui.label of ["wave_hint", 10, 200, "Click the waveform"]]
+
+# --- FX tab with scrollable panel and checkboxes ---
+fx_panel is ui.panel of ["fx_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+fx_panel.border is null
+
+fx_scroll is ui.scroll_panel of ["fx_list", 10, 10, 400, 300]
+fx_scroll.content_h is 400
+# Build effect items inside scroll panel
+ui.add_child of [fx_scroll, ui.checkbox of ["eq_active", 10, 10, "EQ", 1, on_active]]
+ui.add_child of [fx_scroll, ui.label of ["eq_lbl", 10, 34, "3-Band Parametric EQ"]]
+eq_lbl is ui.find_by_id of [fx_scroll, "eq_lbl"]
+eq_lbl.color is [120, 120, 140]
+
+ui.add_child of [fx_scroll, ui.checkbox of ["comp_active", 10, 60, "Compressor", 1, on_active]]
+ui.add_child of [fx_scroll, ui.label of ["comp_lbl", 10, 84, "Threshold / Ratio / Attack / Release"]]
+comp_lbl is ui.find_by_id of [fx_scroll, "comp_lbl"]
+comp_lbl.color is [120, 120, 140]
+
+ui.add_child of [fx_scroll, ui.checkbox of ["rev_active", 10, 110, "Reverb", 0, on_active]]
+ui.add_child of [fx_scroll, ui.label of ["rev_lbl", 10, 134, "Room / Damp / Width / Mix"]]
+rev_lbl is ui.find_by_id of [fx_scroll, "rev_lbl"]
+rev_lbl.color is [120, 120, 140]
+
+ui.add_child of [fx_scroll, ui.checkbox of ["del_active", 10, 160, "Delay", 0, on_active]]
+ui.add_child of [fx_scroll, ui.label of ["del_lbl", 10, 184, "Time / Feedback / Mix"]]
+del_lbl is ui.find_by_id of [fx_scroll, "del_lbl"]
+del_lbl.color is [120, 120, 140]
+
+ui.add_child of [fx_scroll, ui.checkbox of ["cho_active", 10, 210, "Chorus", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["lim_active", 10, 240, "Limiter", 1, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["dist_active", 10, 270, "Distortion", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["flg_active", 10, 300, "Flanger", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["phs_active", 10, 330, "Phaser", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["gate_active", 10, 360, "Noise Gate", 0, on_active]]
+
+ui.add_child of [fx_panel, fx_scroll]
+
+# Context menu (hidden until right-click)
+ctx_menu is ui.menu of ["ctx", ["Cut", "Copy", "Paste", "-", "Delete", "Duplicate"], on_menu_select]
+ui.add_child of [fx_panel, ctx_menu]
+
+# Wire tab panels
+append of [main_tabs.tab_panels, mix_panel]
+append of [main_tabs.tab_panels, synth_panel]
+append of [main_tabs.tab_panels, wave_panel]
+append of [main_tabs.tab_panels, fx_panel]
+
+# -- Status bar --
+status_bar is ui.panel of ["status", 0, WINDOW_H - 28, WINDOW_W, 28]
+status_bar.bg is [30, 30, 42]
+status_bar.border is null
+status_label is ui.label of ["status_text", 8, 7, "Ready"]
+status_label.color is [120, 120, 140]
+ui.add_child of [status_bar, status_label]
+
+# -- Assemble --
+ui.add_child of [root, toolbar]
+ui.add_child of [root, main_tabs]
+ui.add_child of [root, status_bar]
+
+# ---- Handlers ----
+
+define on_key(ev) as:
+    if ev.type == "keydown":
+        if ev.key == "escape":
+            return 0
+    return 1
+
+define on_tick(root) as:
+    sl is ui.find_by_id of [root, "status_text"]
+    if sl != null:
+        sl.text is status_text
+
+# ---- Run ----
+
+ui.app_loop of [root, on_key, on_tick]
+gfx_close of null
