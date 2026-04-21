@@ -1,0 +1,138 @@
+# ============================================================
+# UI Animation — tween system with easing functions
+# ============================================================
+#
+# Loaded internally by lib/ui.eigs via load_file.
+#
+# Usage:
+#   tween of [widget, "x", 200, 300, "ease_out"]
+#   tween of [widget, "value", 1.0, 500, "ease_in_out"]
+
+_active_tweens is []
+
+# ---- Easing functions ----
+
+define _ease_linear(t) as:
+    return t
+
+define _ease_in(t) as:
+    return t * t
+
+define _ease_out(t) as:
+    return 1 - (1 - t) * (1 - t)
+
+define _ease_in_out(t) as:
+    if t < 0.5:
+        return 2 * t * t
+    else:
+        return 1 - ((-2 * t + 2) * (-2 * t + 2)) / 2
+
+# ---- Tween API ----
+
+define tween(widget, field, target, duration, easing) as:
+    now is gfx_ticks of null
+    # Read start value from widget field
+    start_val is _tween_get of [widget, field]
+    t is {
+        "widget": widget,
+        "field": field,
+        "start": start_val,
+        "target": target,
+        "duration": duration,
+        "start_time": now,
+        "easing": easing,
+        "on_done": null
+    }
+    # Remove any existing tween on same widget+field
+    _remove_tween of [widget, field]
+    append of [_active_tweens, t]
+    return t
+
+define _remove_tween(widget, field) as:
+    new_list is []
+    for i in range of (len of _active_tweens):
+        tw is _active_tweens[i]
+        if tw.widget.id != widget.id or tw.field != field:
+            append of [new_list, tw]
+    _active_tweens is new_list
+
+define cancel_tweens(widget) as:
+    new_list is []
+    for i in range of (len of _active_tweens):
+        tw is _active_tweens[i]
+        if tw.widget.id != widget.id:
+            append of [new_list, tw]
+    _active_tweens is new_list
+
+# ---- Field access ----
+# EigenScript supports dict["key"] for read but we need explicit
+# dispatch for write since dot-assign requires literal field names.
+
+define _tween_get(widget, field) as:
+    if field == "x":
+        return widget.x
+    elif field == "y":
+        return widget.y
+    elif field == "w":
+        return widget.w
+    elif field == "h":
+        return widget.h
+    elif field == "value":
+        return widget.value
+    elif field == "split_pos":
+        return widget.split_pos
+    elif field == "scroll_x":
+        return widget.scroll_x
+    elif field == "scroll_y":
+        return widget.scroll_y
+    elif field == "opacity":
+        return widget.opacity
+    return 0
+
+define _tween_set(widget, field, val) as:
+    if field == "x":
+        widget.x is val
+    elif field == "y":
+        widget.y is val
+    elif field == "w":
+        widget.w is val
+    elif field == "h":
+        widget.h is val
+    elif field == "value":
+        widget.value is val
+    elif field == "split_pos":
+        widget.split_pos is val
+    elif field == "scroll_x":
+        widget.scroll_x is val
+    elif field == "scroll_y":
+        widget.scroll_y is val
+    elif field == "opacity":
+        widget.opacity is val
+
+# ---- Per-frame update ----
+
+define _update_tweens() as:
+    now is gfx_ticks of null
+    still_active is []
+    for i in range of (len of _active_tweens):
+        tw is _active_tweens[i]
+        elapsed is now - tw.start_time
+        if elapsed >= tw.duration:
+            # Done — snap to target
+            _tween_set of [tw.widget, tw.field, tw.target]
+            if tw.on_done != null:
+                tw.on_done of tw.widget
+        else:
+            # In progress — interpolate
+            t is elapsed / tw.duration
+            if tw.easing == "ease_in":
+                t is _ease_in of t
+            elif tw.easing == "ease_out":
+                t is _ease_out of t
+            elif tw.easing == "ease_in_out":
+                t is _ease_in_out of t
+            # else linear (t unchanged)
+            val is tw.start + (tw.target - tw.start) * t
+            _tween_set of [tw.widget, tw.field, val]
+            append of [still_active, tw]
+    _active_tweens is still_active

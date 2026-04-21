@@ -1,17 +1,28 @@
 # ============================================================
-# UI Toolkit Demo — all widget types
+# UI Toolkit Demo — all widget types + new features
 # ============================================================
 # Run: make gfx && ./src/eigenscript examples/ui_demo.eigs
+#
+# New features demonstrated:
+#   - Theme switching (1/2/3 keys)
+#   - Layout containers (hbox/vbox)
+#   - Table widget
+#   - Toolbar/statusbar widgets
+#   - Scrollbar widget
+#   - Disabled widgets
+#   - Keyboard navigation (Tab/Shift+Tab, Enter, arrows)
+#   - Animation (tween)
 
 import ui
 
-WINDOW_W is 900
-WINDOW_H is 560
+WINDOW_W is 960
+WINDOW_H is 620
 
 gfx_open of [WINDOW_W, WINDOW_H, "UI Toolkit Demo"]
 
 # ---- State ----
-status_text is "Ready"
+status_text is "Ready — Tab to navigate, 1/2/3 to switch themes"
+_current_theme is "dark"
 
 # ---- Callbacks ----
 define on_play(w) as:
@@ -19,9 +30,6 @@ define on_play(w) as:
 
 define on_stop(w) as:
     status_text is "Stopped"
-
-define on_rec(w) as:
-    status_text is "Recording..."
 
 define on_volume(w) as:
     status_text is f"Volume: {floor of w.value}"
@@ -65,6 +73,33 @@ define on_name_change(w) as:
 define on_menu_select(m, idx) as:
     status_text is f"Menu: {m.items[idx]}"
 
+define on_scroll(w) as:
+    status_text is f"Scroll: {floor of (w.value * 100)}%"
+
+define on_table_select(w) as:
+    if w.selected >= 0 and w.selected < (len of w.rows):
+        row is w.rows[w.selected]
+        status_text is f"Selected: {row[0]}"
+
+define on_table_sort(w) as:
+    dir is "asc"
+    if w.sort_asc == 0:
+        dir is "desc"
+    status_text is f"Sort: column {w.sort_col} {dir}"
+
+define on_disabled_toggle(w) as:
+    vol is ui.find_by_id of [root, "volume"]
+    pan_s is ui.find_by_id of [root, "pan"]
+    if vol != null:
+        if w.value == 1:
+            vol.enabled is 0
+            pan_s.enabled is 0
+            status_text is "Sliders disabled"
+        else:
+            vol.enabled is 1
+            pan_s.enabled is 1
+            status_text is "Sliders enabled"
+
 # Canvas waveform painter
 define paint_waveform(widget, ax, ay) as:
     gfx_rect of [ax, ay, widget.w, widget.h, 20, 20, 30]
@@ -86,94 +121,133 @@ root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
 root.bg is [25, 25, 35]
 root.border is null
 
-# -- Toolbar --
-toolbar is ui.panel of ["toolbar", 0, 0, WINDOW_W, 44]
-toolbar.bg is [30, 30, 42]
-toolbar.border is null
-ui.add_child of [toolbar, ui.button of ["play", 8, 10, 60, 24, "Play", on_play]]
-ui.add_child of [toolbar, ui.button of ["stop", 76, 10, 60, 24, "Stop", on_stop]]
-ui.add_child of [toolbar, ui.button of ["rec", 144, 10, 60, 24, "Rec", on_rec]]
+# -- Toolbar (new widget type) --
+tb is ui.toolbar of ["toolbar", 0, 0, WINDOW_W]
+ui.add_child of [tb, ui.button of ["play", 0, 0, 60, 24, "Play", on_play]]
+ui.add_child of [tb, ui.button of ["stop", 0, 0, 60, 24, "Stop", on_stop]]
+ui.add_child of [tb, ui.separator of ["sep1", 0, 0, 24, 1]]
 snap_items is ["Off", "1/4", "1/8", "1/16", "1/32", "Beat", "Bar"]
-ui.add_child of [toolbar, ui.dropdown of ["snap", 230, 10, 90, snap_items, 0, on_snap]]
-ui.add_child of [toolbar, ui.text_input of ["track_name", 340, 10, 140, "Track 1", on_name_change]]
-ui.add_child of [toolbar, ui.label of ["title", 700, 14, "Deslan Studio"]]
+ui.add_child of [tb, ui.dropdown of ["snap", 0, 0, 90, snap_items, 0, on_snap]]
+ui.add_child of [tb, ui.text_input of ["track_name", 0, 0, 140, "Track 1", on_name_change]]
+ui.add_child of [tb, ui.separator of ["sep2", 0, 0, 24, 1]]
+ui.add_child of [tb, ui.label of ["title", 0, 0, "UI Demo"]]
 
 # -- Tabs --
-main_tabs is ui.tabs of ["main", 0, 44, WINDOW_W, WINDOW_H - 44 - 28, ["Mix", "Synth", "Wave", "FX"], on_tab]
+main_tabs is ui.tabs of ["main", 0, 40, WINDOW_W, WINDOW_H - 40 - 24, ["Mix", "Synth", "Wave", "Table", "FX"], on_tab]
 
-# --- Mix tab ---
-mix_panel is ui.panel of ["mix_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+# --- Mix tab (with hbox/vbox layout) ---
+mix_panel is ui.panel of ["mix_content", 0, 0, WINDOW_W, WINDOW_H - 92]
 mix_panel.border is null
 
-# Channel strip area with sliders
-ui.add_child of [mix_panel, ui.label of ["vol_lbl", 20, 12, "Volume"]]
-ui.add_child of [mix_panel, ui.slider of ["volume", 20, 32, 200, 0, 100, 75, on_volume]]
-ui.add_child of [mix_panel, ui.label of ["pan_lbl", 20, 60, "Pan"]]
-ui.add_child of [mix_panel, ui.slider of ["pan", 20, 80, 200, -100, 100, 0, on_pan]]
-ui.add_child of [mix_panel, ui.label of ["mute_lbl", 20, 112, "Mute"]]
-ui.add_child of [mix_panel, ui.toggle of ["mute", 80, 110, 0, on_mute]]
+# Left column: sliders in a vbox
+left_col is ui.vbox of ["left_col", 10, 10, 280, 300]
+left_col.gap is 8
+left_col.padding is 8
+left_col.bg is [30, 30, 42]
+left_col.border is [50, 50, 65]
 
-# Vertical faders
-ui.add_child of [mix_panel, ui.label of ["ch1_lbl", 280, 12, "Ch 1"]]
-ui.add_child of [mix_panel, ui.vslider of ["fader1", 285, 32, 120, -60, 12, 0, on_fader]]
-ui.add_child of [mix_panel, ui.label of ["ch2_lbl", 320, 12, "Ch 2"]]
-ui.add_child of [mix_panel, ui.vslider of ["fader2", 325, 32, 120, -60, 12, -6, on_fader]]
-ui.add_child of [mix_panel, ui.label of ["ch3_lbl", 360, 12, "Ch 3"]]
-ui.add_child of [mix_panel, ui.vslider of ["fader3", 365, 32, 120, -60, 12, -12, on_fader]]
+ui.add_child of [left_col, ui.label of ["vol_lbl", 0, 0, "Volume"]]
+ui.add_child of [left_col, ui.slider of ["volume", 0, 0, 260, 0, 100, 75, on_volume]]
+ui.add_child of [left_col, ui.label of ["pan_lbl", 0, 0, "Pan"]]
+ui.add_child of [left_col, ui.slider of ["pan", 0, 0, 260, -100, 100, 0, on_pan]]
+ui.add_child of [left_col, ui.label of ["mute_lbl", 0, 0, "Mute"]]
+ui.add_child of [left_col, ui.toggle of ["mute", 0, 0, 0, on_mute]]
+ui.add_child of [left_col, ui.label of ["dis_lbl", 0, 0, "Disable sliders"]]
+ui.add_child of [left_col, ui.toggle of ["disable_tog", 0, 0, 0, on_disabled_toggle]]
+
+# Right column: vertical faders in hbox
+right_col is ui.hbox of ["right_col", 310, 10, 300, 300]
+right_col.gap is 16
+right_col.padding is 10
+right_col.align is "end"
+right_col.bg is [30, 30, 42]
+right_col.border is [50, 50, 65]
+
+for ch in range of 4:
+    strip is ui.vbox of [f"strip_{ch}", 0, 0, 50, 280]
+    strip.gap is 4
+    strip.align is "center"
+    ui.add_child of [strip, ui.label of [f"ch{ch}_lbl", 0, 0, f"Ch {ch + 1}"]]
+    ui.add_child of [strip, ui.vslider of [f"fader_{ch}", 0, 0, 200, -60, 12, 0, on_fader]]
+    ui.add_child of [right_col, strip]
+
+# Scrollbar demo
+ui.add_child of [mix_panel, ui.label of ["sb_lbl", 640, 10, "Scrollbar"]]
+ui.add_child of [mix_panel, ui.scrollbar of ["vscroll", 640, 36, 200, 1, on_scroll]]
+ui.add_child of [mix_panel, ui.scrollbar of ["hscroll", 670, 36, 200, 0, on_scroll]]
+
+ui.add_child of [mix_panel, left_col]
+ui.add_child of [mix_panel, right_col]
 
 # --- Synth tab ---
-synth_panel is ui.panel of ["synth_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+synth_panel is ui.panel of ["synth_content", 0, 0, WINDOW_W, WINDOW_H - 92]
 synth_panel.border is null
-ui.add_child of [synth_panel, ui.label of ["atk_lbl", 30, 10, "Attack"]]
-ui.add_child of [synth_panel, ui.knob of ["attack", 30, 30, 44, 0, 1.0, 0.1, on_attack]]
-ui.add_child of [synth_panel, ui.label of ["rel_lbl", 110, 10, "Release"]]
-ui.add_child of [synth_panel, ui.knob of ["release", 110, 30, 44, 0, 2.0, 0.5, on_release]]
-ui.add_child of [synth_panel, ui.label of ["cut_lbl", 190, 10, "Cutoff"]]
-ui.add_child of [synth_panel, ui.knob of ["cutoff", 190, 30, 44, 20, 20000, 5000, on_cutoff]]
+
+knob_row is ui.hbox of ["knob_row", 10, 10, 400, 80]
+knob_row.gap is 20
+knob_row.padding is 10
+knob_row.align is "center"
+knob_row.bg is [30, 30, 42]
+knob_row.border is [50, 50, 65]
+ui.add_child of [knob_row, ui.knob of ["attack", 0, 0, 44, 0, 1.0, 0.1, on_attack]]
+ui.add_child of [knob_row, ui.knob of ["release", 0, 0, 44, 0, 2.0, 0.5, on_release]]
+ui.add_child of [knob_row, ui.knob of ["cutoff", 0, 0, 44, 20, 20000, 5000, on_cutoff]]
+ui.add_child of [synth_panel, knob_row]
 
 # --- Wave tab ---
-wave_panel is ui.panel of ["wave_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+wave_panel is ui.panel of ["wave_content", 0, 0, WINDOW_W, WINDOW_H - 92]
 wave_panel.border is null
 ui.add_child of [wave_panel, ui.canvas of ["waveform", 10, 10, WINDOW_W - 20, 180, paint_waveform, on_wave_mouse]]
 ui.add_child of [wave_panel, ui.label of ["wave_hint", 10, 200, "Click the waveform"]]
 
+# --- Table tab ---
+table_panel is ui.panel of ["table_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+table_panel.border is null
+
+cols is [{"name": "Track", "width": 200}, {"name": "Duration", "width": 120}, {"name": "BPM", "width": 80}, {"name": "Key", "width": 80}, {"name": "Genre", "width": 160}]
+tbl is ui.table of ["track_table", 10, 10, 650, 400, cols, on_table_select]
+tbl.on_sort is on_table_sort
+tbl.rows is [
+    ["Midnight Drive", "3:42", "128", "Am", "Synthwave"],
+    ["Ocean Breeze", "4:15", "96", "C", "Ambient"],
+    ["Neon Lights", "2:58", "140", "Fm", "Electro"],
+    ["Summer Rain", "3:30", "110", "G", "Lo-fi"],
+    ["Velvet Thunder", "5:02", "150", "Dm", "DnB"],
+    ["Crystal Caves", "4:48", "80", "Em", "Downtempo"],
+    ["Urban Jungle", "3:15", "130", "Bb", "Hip-Hop"],
+    ["Starlight", "4:00", "120", "D", "House"],
+    ["Deep Blue", "6:12", "72", "F", "Ambient"],
+    ["Electric Dreams", "3:55", "135", "Gm", "Techno"],
+    ["Autumn Leaves", "3:22", "95", "A", "Jazz"],
+    ["Pulse", "4:30", "145", "Cm", "Trance"],
+    ["Horizon", "5:18", "88", "Eb", "Chillout"],
+    ["Thunderstorm", "3:48", "160", "Bm", "Metal"],
+    ["Coral Reef", "4:05", "105", "Ab", "R&B"]
+]
+
+ui.add_child of [table_panel, tbl]
+
 # --- FX tab with scrollable panel and checkboxes ---
-fx_panel is ui.panel of ["fx_content", 0, 0, WINDOW_W, WINDOW_H - 100]
+fx_panel is ui.panel of ["fx_content", 0, 0, WINDOW_W, WINDOW_H - 92]
 fx_panel.border is null
 
 fx_scroll is ui.scroll_panel of ["fx_list", 10, 10, 400, 300]
 fx_scroll.content_h is 400
-# Build effect items inside scroll panel
 ui.add_child of [fx_scroll, ui.checkbox of ["eq_active", 10, 10, "EQ", 1, on_active]]
-ui.add_child of [fx_scroll, ui.label of ["eq_lbl", 10, 34, "3-Band Parametric EQ"]]
-eq_lbl is ui.find_by_id of [fx_scroll, "eq_lbl"]
-eq_lbl.color is [120, 120, 140]
-
-ui.add_child of [fx_scroll, ui.checkbox of ["comp_active", 10, 60, "Compressor", 1, on_active]]
-ui.add_child of [fx_scroll, ui.label of ["comp_lbl", 10, 84, "Threshold / Ratio / Attack / Release"]]
-comp_lbl is ui.find_by_id of [fx_scroll, "comp_lbl"]
-comp_lbl.color is [120, 120, 140]
-
-ui.add_child of [fx_scroll, ui.checkbox of ["rev_active", 10, 110, "Reverb", 0, on_active]]
-ui.add_child of [fx_scroll, ui.label of ["rev_lbl", 10, 134, "Room / Damp / Width / Mix"]]
-rev_lbl is ui.find_by_id of [fx_scroll, "rev_lbl"]
-rev_lbl.color is [120, 120, 140]
-
-ui.add_child of [fx_scroll, ui.checkbox of ["del_active", 10, 160, "Delay", 0, on_active]]
-ui.add_child of [fx_scroll, ui.label of ["del_lbl", 10, 184, "Time / Feedback / Mix"]]
-del_lbl is ui.find_by_id of [fx_scroll, "del_lbl"]
-del_lbl.color is [120, 120, 140]
-
-ui.add_child of [fx_scroll, ui.checkbox of ["cho_active", 10, 210, "Chorus", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["lim_active", 10, 240, "Limiter", 1, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["dist_active", 10, 270, "Distortion", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["flg_active", 10, 300, "Flanger", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["phs_active", 10, 330, "Phaser", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["gate_active", 10, 360, "Noise Gate", 0, on_active]]
-
+ui.add_child of [fx_scroll, ui.checkbox of ["comp_active", 10, 40, "Compressor", 1, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["rev_active", 10, 70, "Reverb", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["del_active", 10, 100, "Delay", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["cho_active", 10, 130, "Chorus", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["lim_active", 10, 160, "Limiter", 1, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["dist_active", 10, 190, "Distortion", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["flg_active", 10, 220, "Flanger", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["phs_active", 10, 250, "Phaser", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["gate_active", 10, 280, "Noise Gate", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["sat_active", 10, 310, "Saturator", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["wid_active", 10, 340, "Stereo Width", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["de_active", 10, 370, "De-Esser", 0, on_active]]
 ui.add_child of [fx_panel, fx_scroll]
 
-# Context menu (hidden until right-click)
 ctx_menu is ui.menu of ["ctx", ["Cut", "Copy", "Paste", "-", "Delete", "Duplicate"], on_menu_select]
 ui.add_child of [fx_panel, ctx_menu]
 
@@ -181,20 +255,21 @@ ui.add_child of [fx_panel, ctx_menu]
 append of [main_tabs.tab_panels, mix_panel]
 append of [main_tabs.tab_panels, synth_panel]
 append of [main_tabs.tab_panels, wave_panel]
+append of [main_tabs.tab_panels, table_panel]
 append of [main_tabs.tab_panels, fx_panel]
 
-# -- Status bar --
-status_bar is ui.panel of ["status", 0, WINDOW_H - 28, WINDOW_W, 28]
-status_bar.bg is [30, 30, 42]
-status_bar.border is null
-status_label is ui.label of ["status_text", 8, 7, "Ready"]
-status_label.color is [120, 120, 140]
-ui.add_child of [status_bar, status_label]
+# -- Statusbar (new widget type) --
+sb is ui.statusbar of ["status", 0, WINDOW_H - 24, WINDOW_W]
+sb.sections is [
+    {"text": "Ready", "width": 0, "flex": 1},
+    {"text": "Dark", "width": 100, "flex": 0},
+    {"text": "Tab: navigate", "width": 160, "flex": 0}
+]
 
 # -- Assemble --
-ui.add_child of [root, toolbar]
+ui.add_child of [root, tb]
 ui.add_child of [root, main_tabs]
-ui.add_child of [root, status_bar]
+ui.add_child of [root, sb]
 
 # ---- Handlers ----
 
@@ -202,12 +277,27 @@ define on_key(ev) as:
     if ev.type == "keydown":
         if ev.key == "escape":
             return 0
+        # Theme switching
+        if ev.key == "1":
+            ui.set_theme of (ui.theme_dark of null)
+            _current_theme is "dark"
+            status_text is "Theme: Dark"
+        if ev.key == "2":
+            ui.set_theme of (ui.theme_light of null)
+            _current_theme is "light"
+            status_text is "Theme: Light"
+        if ev.key == "3":
+            ui.set_theme of (ui.theme_high_contrast of null)
+            _current_theme is "high contrast"
+            status_text is "Theme: High Contrast"
     return 1
 
 define on_tick(root) as:
-    sl is ui.find_by_id of [root, "status_text"]
-    if sl != null:
-        sl.text is status_text
+    # Update statusbar
+    sbar is ui.find_by_id of [root, "status"]
+    if sbar != null and (len of sbar.sections) >= 2:
+        sbar.sections[0].text is status_text
+        sbar.sections[1].text is _current_theme
 
 # ---- Run ----
 

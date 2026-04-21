@@ -9,16 +9,19 @@
 #   ui.add_child of [root, ui.button of ["play", 8, 8, 60, 24, "Play", on_click]]
 #   ui.app_loop of [root, on_key, null]
 #
-# Widget types: panel, button, label, slider, toggle
+# Widget types: panel, button, label, slider, toggle, hbox, vbox,
+#   toolbar, statusbar, scrollbar, table, and many more.
 # All widgets are plain dicts with a "type" field.
 # Panels have a "children" list and act as containers.
 # Positions are relative to parent panel origin.
 
 load_file of "lib/ui_theme.eigs"
 load_file of "lib/ui_draw.eigs"
+load_file of "lib/ui_layout.eigs"
+load_file of "lib/ui_anim.eigs"
 
 # ============================================================
-# Module state — drag capture
+# Module state — drag capture, focus, animation
 # ============================================================
 
 _drag_widget is null
@@ -31,6 +34,11 @@ _last_click_id is ""
 _cursor_blink is 0
 _frame_time is 0
 _edit_root is null
+_focus_list is []
+_focus_index is -1
+_focused_widget is null
+_window_w is 800
+_window_h is 600
 
 # ============================================================
 # Widget constructors
@@ -436,6 +444,108 @@ define waveform_view(id, x, y, w, h) as:
         "visible": 1
     }
 
+# ---- Layout containers ----
+
+define hbox(id, x, y, w, h) as:
+    return {
+        "type": "hbox",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "bg": null,
+        "border": null,
+        "children": [],
+        "gap": 0,
+        "padding": 0,
+        "align": "start",
+        "visible": 1
+    }
+
+define vbox(id, x, y, w, h) as:
+    return {
+        "type": "vbox",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "bg": null,
+        "border": null,
+        "children": [],
+        "gap": 0,
+        "padding": 0,
+        "align": "start",
+        "visible": 1
+    }
+
+# ---- Toolbar ----
+
+define toolbar(id, x, y, w) as:
+    return {
+        "type": "toolbar",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 40,
+        "bg": _theme.tab_bg,
+        "children": [],
+        "gap": 4,
+        "padding": 8,
+        "visible": 1
+    }
+
+# ---- Statusbar ----
+
+define statusbar(id, x, y, w) as:
+    return {
+        "type": "statusbar",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": 24,
+        "bg": _theme.tab_bg,
+        "sections": [],
+        "visible": 1
+    }
+
+# ---- Standalone scrollbar ----
+
+define scrollbar(id, x, y, length, vertical, on_change) as:
+    if vertical == 1:
+        sw is 12
+        sh is length
+    else:
+        sw is length
+        sh is 12
+    return {
+        "type": "scrollbar",
+        "id": id,
+        "x": x, "y": y, "w": sw, "h": sh,
+        "vertical": vertical,
+        "value": 0,
+        "thumb_size": 0.2,
+        "on_change": on_change,
+        "dragging": 0,
+        "hover": 0,
+        "visible": 1,
+        "enabled": 1
+    }
+
+# ---- Data table ----
+
+define table(id, x, y, w, h, columns, on_select) as:
+    return {
+        "type": "table",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "columns": columns,
+        "rows": [],
+        "selected": -1,
+        "scroll_y": 0,
+        "sort_col": -1,
+        "sort_asc": 1,
+        "on_select": on_select,
+        "on_sort": null,
+        "hover_row": -1,
+        "hover_col_header": -1,
+        "header_h": 24,
+        "row_h": 22,
+        "visible": 1,
+        "enabled": 1
+    }
+
 # ============================================================
 # Tree operations
 # ============================================================
@@ -447,7 +557,7 @@ define add_child(parent, child) as:
 define find_by_id(widget, id) as:
     if widget.id == id:
         return widget
-    if widget.type == "panel" or widget.type == "scroll_panel":
+    if _is_container of widget.type:
         for i in range of (len of widget.children):
             found is find_by_id of [widget.children[i], id]
             if found != null:
@@ -458,6 +568,15 @@ define find_by_id(widget, id) as:
                 found is find_by_id of [widget.tab_panels[i], id]
                 if found != null:
                     return found
+    if widget.type == "splitter":
+        if widget.panel_a != null:
+            found is find_by_id of [widget.panel_a, id]
+            if found != null:
+                return found
+        if widget.panel_b != null:
+            found is find_by_id of [widget.panel_b, id]
+            if found != null:
+                return found
     return null
 
 # ============================================================
@@ -1059,6 +1178,153 @@ define render(widget, ox, oy) as:
             gfx_rrect of [ax, ay, widget.w, 1, 0, 35, 35, 45]
             gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, 35, 35, 45]
 
+        case "hbox":
+            if widget.bg != null:
+                _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius, widget.bg, widget.border]
+            for i in range of (len of widget.children):
+                render of [widget.children[i], ax, ay]
+
+        case "vbox":
+            if widget.bg != null:
+                _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius, widget.bg, widget.border]
+            for i in range of (len of widget.children):
+                render of [widget.children[i], ax, ay]
+
+        case "toolbar":
+            if widget.bg != null:
+                gfx_rect of [ax, ay, widget.w, widget.h, widget.bg[0], widget.bg[1], widget.bg[2]]
+            for i in range of (len of widget.children):
+                render of [widget.children[i], ax, ay]
+
+        case "statusbar":
+            if widget.bg != null:
+                gfx_rect of [ax, ay, widget.w, widget.h, widget.bg[0], widget.bg[1], widget.bg[2]]
+            # Render sections left-to-right
+            sx is ax
+            total_flex is 0
+            fixed_w is 0
+            for i in range of (len of widget.sections):
+                sec is widget.sections[i]
+                sf is 0
+                if sec.flex != null:
+                    sf is sec.flex
+                if sf > 0:
+                    total_flex is total_flex + sf
+                else:
+                    fixed_w is fixed_w + sec.width
+            flex_avail is widget.w - fixed_w
+            for i in range of (len of widget.sections):
+                sec is widget.sections[i]
+                sf is 0
+                if sec.flex != null:
+                    sf is sec.flex
+                if sf > 0 and total_flex > 0:
+                    sw is floor of (sf / total_flex * flex_avail)
+                else:
+                    sw is sec.width
+                # Separator between sections
+                if i > 0:
+                    gfx_line of [sx, ay + 4, sx, ay + widget.h - 4, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]]
+                _draw_text_clipped of [sx + 6, ay + 5, sw - 12, sec.text, _theme.text_dim, _theme.font_scale]
+                sx is sx + sw
+
+        case "scrollbar":
+            c is _theme.slider_track
+            gfx_rrect of [ax, ay, widget.w, widget.h, 3, c[0], c[1], c[2]]
+            # Thumb
+            ts is widget.thumb_size
+            if ts < 0.05:
+                ts is 0.05
+            if ts > 1:
+                ts is 1
+            if widget.vertical == 1:
+                thumb_h is floor of (ts * widget.h)
+                if thumb_h < 16:
+                    thumb_h is 16
+                thumb_y is ay + floor of (widget.value * (widget.h - thumb_h))
+                tc is _theme.slider_thumb
+                if widget.hover == 1 or widget.dragging == 1:
+                    tc is _theme.slider_fill
+                gfx_rrect of [ax + 2, thumb_y, widget.w - 4, thumb_h, 3, tc[0], tc[1], tc[2]]
+            else:
+                thumb_w is floor of (ts * widget.w)
+                if thumb_w < 16:
+                    thumb_w is 16
+                thumb_x is ax + floor of (widget.value * (widget.w - thumb_w))
+                tc is _theme.slider_thumb
+                if widget.hover == 1 or widget.dragging == 1:
+                    tc is _theme.slider_fill
+                gfx_rrect of [thumb_x, ay + 2, thumb_w, widget.h - 4, 3, tc[0], tc[1], tc[2]]
+
+        case "table":
+            # Background
+            _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, _theme.panel_bg, _theme.panel_border]
+            # Column headers
+            hx is ax
+            for ci in range of (len of widget.columns):
+                col is widget.columns[ci]
+                hbg is _theme.tab_bg
+                if ci == widget.hover_col_header:
+                    hbg is _theme.tab_hover
+                gfx_rect of [hx, ay, col.width, widget.header_h, hbg[0], hbg[1], hbg[2]]
+                _draw_text_clipped of [hx + 6, ay + 5, col.width - 12, col.name, _theme.tab_text_active, _theme.font_scale]
+                # Sort indicator
+                if ci == widget.sort_col:
+                    if widget.sort_asc == 1:
+                        gfx_text of [hx + col.width - 14, ay + 5, "^", _theme.accent[0], _theme.accent[1], _theme.accent[2], 1]
+                    else:
+                        gfx_text of [hx + col.width - 14, ay + 5, "v", _theme.accent[0], _theme.accent[1], _theme.accent[2], 1]
+                # Column separator
+                gfx_line of [hx + col.width - 1, ay, hx + col.width - 1, ay + widget.header_h, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]]
+                hx is hx + col.width
+            # Header bottom border
+            gfx_line of [ax, ay + widget.header_h, ax + widget.w, ay + widget.header_h, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]]
+            # Rows
+            body_y is ay + widget.header_h
+            body_h is widget.h - widget.header_h
+            gfx_clip of [ax + 1, body_y, widget.w - 2, body_h]
+            for ri in range of (len of widget.rows):
+                ry is body_y - widget.scroll_y + ri * widget.row_h
+                if ry + widget.row_h > body_y and ry < body_y + body_h:
+                    if ri == widget.selected:
+                        gfx_rrect of [ax + 1, ry, widget.w - 2, widget.row_h, 0, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
+                        row_tc is [255, 255, 255]
+                    elif ri == widget.hover_row:
+                        gfx_rrect of [ax + 1, ry, widget.w - 2, widget.row_h, 0, _theme.btn_hover[0], _theme.btn_hover[1], _theme.btn_hover[2]]
+                        row_tc is _theme.text_color
+                    else:
+                        # Alternating row tint
+                        if (ri / 2) != floor of (ri / 2):
+                            gfx_rrect of [ax + 1, ry, widget.w - 2, widget.row_h, 0, _theme.dropdown_bg[0], _theme.dropdown_bg[1], _theme.dropdown_bg[2]]
+                        row_tc is _theme.text_color
+                    # Cell values
+                    cx is ax
+                    row is widget.rows[ri]
+                    for ci in range of (len of widget.columns):
+                        col is widget.columns[ci]
+                        cell_text is ""
+                        if ci < (len of row):
+                            cell_text is f"{row[ci]}"
+                        _draw_text_clipped of [cx + 6, ry + 4, col.width - 12, cell_text, row_tc, _theme.font_scale]
+                        cx is cx + col.width
+            gfx_clip of null
+            # Scrollbar
+            total_h is (len of widget.rows) * widget.row_h
+            if total_h > body_h:
+                sb_h is floor of (body_h * body_h / total_h)
+                if sb_h < 16:
+                    sb_h is 16
+                sb_y is body_y + floor of (widget.scroll_y * (body_h - sb_h) / (total_h - body_h))
+                gfx_rrect of [ax + widget.w - 6, sb_y, 4, sb_h, 2, 80, 80, 100]
+
+    # Disabled overlay for interactive widgets
+    if widget.enabled != null and widget.enabled == 0:
+        _draw_disabled_overlay of [ax, ay, widget.w, widget.h]
+
+    # Focus ring for focused widget
+    if _focused_widget != null and _focused_widget.id == widget.id:
+        _draw_focus_ring of [ax, ay, widget.w, widget.h, _theme.radius_sm]
+
     return null
 
 # Render tooltip overlay — called after main render
@@ -1073,12 +1339,21 @@ define _render_tooltip() as:
     ty is _tooltip_y - 20
     if ty < 0:
         ty is _tooltip_y + 20
+    # Clamp to window bounds
+    if tx + tw > _window_w:
+        tx is _window_w - tw - 4
+    if tx < 0:
+        tx is 4
+    if ty + th > _window_h:
+        ty is _window_h - th - 4
     # Shadow
+    tbg is _theme.tooltip_bg
+    ttc is _theme.tooltip_text
     gfx_rrect of [tx + 1, ty + 1, tw, th, 3, 10, 10, 15, 150]
     # Background
-    gfx_rrect of [tx, ty, tw, th, 3, 50, 50, 65]
+    gfx_rrect of [tx, ty, tw, th, 3, tbg[0], tbg[1], tbg[2]]
     # Text
-    gfx_text of [tx + 4, ty + 4, _tooltip_widget.tooltip, 220, 220, 230, 1]
+    gfx_text of [tx + 4, ty + 4, _tooltip_widget.tooltip, ttc[0], ttc[1], ttc[2], 1]
 
 # ============================================================
 # Hit testing
@@ -1090,7 +1365,7 @@ define _hit_test(widget, ox, oy, mx, my) as:
     ax is ox + widget.x
     ay is oy + widget.y
 
-    if widget.type == "panel":
+    if widget.type == "panel" or widget.type == "hbox" or widget.type == "vbox" or widget.type == "toolbar":
         # Test children in reverse order (topmost first)
         i is (len of widget.children) - 1
         loop while i >= 0:
@@ -1150,7 +1425,7 @@ define _hit_test(widget, ox, oy, mx, my) as:
         return null
 
     # Leaf widget — check bounds
-    if widget.type == "button" or widget.type == "slider" or widget.type == "vslider" or widget.type == "toggle" or widget.type == "knob" or widget.type == "canvas" or widget.type == "checkbox" or widget.type == "text_input" or widget.type == "toggle_button" or widget.type == "spinbox" or widget.type == "radio_group" or widget.type == "meter" or widget.type == "grid" or widget.type == "editable_label" or widget.type == "item_list" or widget.type == "piano_kb" or widget.type == "waveform_view":
+    if widget.type == "button" or widget.type == "slider" or widget.type == "vslider" or widget.type == "toggle" or widget.type == "knob" or widget.type == "canvas" or widget.type == "checkbox" or widget.type == "text_input" or widget.type == "toggle_button" or widget.type == "spinbox" or widget.type == "radio_group" or widget.type == "meter" or widget.type == "grid" or widget.type == "editable_label" or widget.type == "item_list" or widget.type == "piano_kb" or widget.type == "waveform_view" or widget.type == "scrollbar" or widget.type == "table" or widget.type == "statusbar":
         if _point_in_rect of [mx, my, ax, ay, widget.w, widget.h]:
             return widget
 
@@ -1175,7 +1450,7 @@ define _hit_test(widget, ox, oy, mx, my) as:
 # ============================================================
 
 define _clear_hover(widget) as:
-    if widget.type == "panel":
+    if _is_container of widget.type:
         for i in range of (len of widget.children):
             _clear_hover of widget.children[i]
     elif widget.type == "tabs":
@@ -1183,9 +1458,6 @@ define _clear_hover(widget) as:
         for i in range of (len of widget.tab_panels):
             if widget.tab_panels[i] != null:
                 _clear_hover of widget.tab_panels[i]
-    elif widget.type == "scroll_panel":
-        for i in range of (len of widget.children):
-            _clear_hover of widget.children[i]
     elif widget.type == "splitter":
         widget.hover is 0
         if widget.panel_a != null:
@@ -1200,6 +1472,9 @@ define _clear_hover(widget) as:
         widget.hover_btn is 0
     elif widget.type == "radio_group":
         widget.hover_index is -1
+    elif widget.type == "table":
+        widget.hover_row is -1
+        widget.hover_col_header is -1
     else:
         if (type of widget) == "dict":
             widget.hover is 0
@@ -1224,6 +1499,8 @@ define dispatch(root, ev) as:
         elif _drag_widget.type == "waveform_view":
             sample_pos is floor of (_drag_widget.offset + (mx - _drag_ox) * _drag_widget.zoom)
             _drag_widget.sel_end is sample_pos
+        elif _drag_widget.type == "scrollbar":
+            _update_scrollbar_drag of [_drag_widget, mx, my]
         elif _drag_widget.type == "splitter":
             new_pos is mx - _drag_ox
             if new_pos < 50:
@@ -1305,6 +1582,21 @@ define dispatch(root, ev) as:
                 abs_y is _find_abs_y of [root, hit, 0, 0]
                 hit.hover_col is floor of ((mx - abs_x) / hit.cell_w)
                 hit.hover_row is floor of ((my - abs_y) / hit.cell_h)
+            # Table hover
+            if hit.type == "table":
+                abs_x is _find_abs_x of [root, hit, 0, 0]
+                abs_y is _find_abs_y of [root, hit, 0, 0]
+                rel_y is my - abs_y
+                if rel_y < hit.header_h:
+                    # Column header hover
+                    rx is 0
+                    for ci in range of (len of hit.columns):
+                        col is hit.columns[ci]
+                        if (mx - abs_x) >= rx and (mx - abs_x) < rx + col.width:
+                            hit.hover_col_header is ci
+                        rx is rx + col.width
+                else:
+                    hit.hover_row is floor of ((rel_y - hit.header_h + hit.scroll_y) / hit.row_h)
         else:
             _tooltip_widget is null
             _tooltip_timer is 0
@@ -1326,7 +1618,14 @@ define dispatch(root, ev) as:
         if hit == null:
             _unfocus_all of root
             _focused_input is null
+            _focused_widget is null
+            _focus_index is -1
             return null
+        # Universal disabled check
+        if hit.enabled != null and hit.enabled == 0:
+            return null
+        # Sync focus to clicked widget
+        _sync_focus_to of hit
         # Double-click detection
         now is gfx_ticks of null
         if hit.id == _last_click_id and (now - _last_click_time) < 400:
@@ -1490,6 +1789,40 @@ define dispatch(root, ev) as:
         elif hit.type == "canvas":
             if hit.on_mouse != null:
                 hit.on_mouse of [hit, ev]
+        elif hit.type == "scrollbar" and hit.enabled == 1:
+            hit.dragging is 1
+            _drag_widget is hit
+            _drag_ox is _find_abs_x of [root, hit, 0, 0]
+            _drag_oy is _find_abs_y of [root, hit, 0, 0]
+            _update_scrollbar_drag of [hit, mx, my]
+        elif hit.type == "table" and hit.enabled == 1:
+            abs_x is _find_abs_x of [root, hit, 0, 0]
+            abs_y is _find_abs_y of [root, hit, 0, 0]
+            rel_y is my - abs_y
+            if rel_y < hit.header_h:
+                # Header click — sort
+                rx is 0
+                for ci in range of (len of hit.columns):
+                    col is hit.columns[ci]
+                    if (mx - abs_x) >= rx and (mx - abs_x) < rx + col.width:
+                        if hit.sort_col == ci:
+                            if hit.sort_asc == 1:
+                                hit.sort_asc is 0
+                            else:
+                                hit.sort_asc is 1
+                        else:
+                            hit.sort_col is ci
+                            hit.sort_asc is 1
+                        if hit.on_sort != null:
+                            hit.on_sort of hit
+                    rx is rx + col.width
+            else:
+                # Row click — select
+                ri is floor of ((rel_y - hit.header_h + hit.scroll_y) / hit.row_h)
+                if ri >= 0 and ri < (len of hit.rows):
+                    hit.selected is ri
+                    if hit.on_select != null:
+                        hit.on_select of hit
         # Close menus on click elsewhere
         _close_menus of root
         return null
@@ -1525,13 +1858,18 @@ define dispatch(root, ev) as:
 define _clear_pressed(widget) as:
     if widget.type == "button":
         widget.pressed is 0
-    elif widget.type == "panel":
+    elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _clear_pressed of widget.children[i]
     elif widget.type == "tabs":
         for i in range of (len of widget.tab_panels):
             if widget.tab_panels[i] != null:
                 _clear_pressed of widget.tab_panels[i]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _clear_pressed of widget.panel_a
+        if widget.panel_b != null:
+            _clear_pressed of widget.panel_b
 
 # ============================================================
 # Slider drag math
@@ -1548,7 +1886,7 @@ define _find_abs_x(root, target, ox, oy) as:
     ay is oy + root.y
     if root.id == target.id:
         return ax
-    if root.type == "panel":
+    if _is_container of root.type:
         for i in range of (len of root.children):
             result is _find_abs_x of [root.children[i], target, ax, ay]
             if result != -1:
@@ -1559,6 +1897,16 @@ define _find_abs_x(root, target, ox, oy) as:
                 result is _find_abs_x of [root.tab_panels[i], target, ax, ay + 28]
                 if result != -1:
                     return result
+    if root.type == "splitter":
+        if root.panel_a != null:
+            result is _find_abs_x of [root.panel_a, target, ax, ay]
+            if result != -1:
+                return result
+        if root.panel_b != null:
+            sp is floor of root.split_pos
+            result is _find_abs_x of [root.panel_b, target, ax + sp + root.bar_width, ay]
+            if result != -1:
+                return result
     return -1
 
 define _find_abs_y(root, target, ox, oy) as:
@@ -1566,7 +1914,7 @@ define _find_abs_y(root, target, ox, oy) as:
     ay is oy + root.y
     if root.id == target.id:
         return ay
-    if root.type == "panel":
+    if _is_container of root.type:
         for i in range of (len of root.children):
             result is _find_abs_y of [root.children[i], target, ax, ay]
             if result != -1:
@@ -1577,6 +1925,16 @@ define _find_abs_y(root, target, ox, oy) as:
                 result is _find_abs_y of [root.tab_panels[i], target, ax, ay + 28]
                 if result != -1:
                     return result
+    if root.type == "splitter":
+        if root.panel_a != null:
+            result is _find_abs_y of [root.panel_a, target, ax, ay]
+            if result != -1:
+                return result
+        if root.panel_b != null:
+            sp is floor of root.split_pos
+            result is _find_abs_y of [root.panel_b, target, ax + sp + root.bar_width, ay]
+            if result != -1:
+                return result
     return -1
 
 define _update_knob_drag(widget, my) as:
@@ -1634,24 +1992,34 @@ define _update_vdrag(widget, my) as:
 define _unfocus_all(widget) as:
     if widget.type == "text_input":
         widget.focused is 0
-    elif widget.type == "panel" or widget.type == "scroll_panel":
+    elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _unfocus_all of widget.children[i]
     elif widget.type == "tabs":
         for i in range of (len of widget.tab_panels):
             if widget.tab_panels[i] != null:
                 _unfocus_all of widget.tab_panels[i]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _unfocus_all of widget.panel_a
+        if widget.panel_b != null:
+            _unfocus_all of widget.panel_b
 
 define _close_menus(widget) as:
     if widget.type == "menu":
         widget.visible is 0
-    elif widget.type == "panel" or widget.type == "scroll_panel":
+    elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _close_menus of widget.children[i]
     elif widget.type == "tabs":
         for i in range of (len of widget.tab_panels):
             if widget.tab_panels[i] != null:
                 _close_menus of widget.tab_panels[i]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _close_menus of widget.panel_a
+        if widget.panel_b != null:
+            _close_menus of widget.panel_b
 
 define _scroll_panels(widget, dx, dy) as:
     if widget.type == "item_list":
@@ -1682,13 +2050,29 @@ define _scroll_panels(widget, dx, dy) as:
             max_sx is 0
         if widget.scroll_x > max_sx:
             widget.scroll_x is max_sx
-    elif widget.type == "panel":
+    elif widget.type == "table":
+        body_h is widget.h - widget.header_h
+        total_h is (len of widget.rows) * widget.row_h
+        widget.scroll_y is widget.scroll_y + dy
+        if widget.scroll_y < 0:
+            widget.scroll_y is 0
+        max_sy is total_h - body_h
+        if max_sy < 0:
+            max_sy is 0
+        if widget.scroll_y > max_sy:
+            widget.scroll_y is max_sy
+    elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _scroll_panels of [widget.children[i], dx, dy]
     elif widget.type == "tabs":
         if widget.active < (len of widget.tab_panels):
             if widget.tab_panels[widget.active] != null:
                 _scroll_panels of [widget.tab_panels[widget.active], dx, dy]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _scroll_panels of [widget.panel_a, dx, dy]
+        if widget.panel_b != null:
+            _scroll_panels of [widget.panel_b, dx, dy]
 
 define _handle_text_key(widget, ev) as:
     k is ev.key
@@ -1793,7 +2177,7 @@ define show_menu(menu_widget, x, y) as:
 define _find_visible_dialog(widget) as:
     if widget.type == "dialog" and widget.visible == 1:
         return widget
-    if widget.type == "panel" or widget.type == "scroll_panel":
+    if _is_container of widget.type:
         for i in range of (len of widget.children):
             found is _find_visible_dialog of widget.children[i]
             if found != null:
@@ -1804,6 +2188,15 @@ define _find_visible_dialog(widget) as:
                 found is _find_visible_dialog of widget.tab_panels[i]
                 if found != null:
                     return found
+    if widget.type == "splitter":
+        if widget.panel_a != null:
+            found is _find_visible_dialog of widget.panel_a
+            if found != null:
+                return found
+        if widget.panel_b != null:
+            found is _find_visible_dialog of widget.panel_b
+            if found != null:
+                return found
     return null
 
 define _handle_dialog_click(dlg, mx, my) as:
@@ -1845,13 +2238,18 @@ define _unfocus_all_editable(widget) as:
         return null
     if widget.type == "editable_label" and widget.editing == 1:
         _commit_editing of widget
-    if widget.type == "panel" or widget.type == "scroll_panel":
+    if _is_container of widget.type:
         for i in range of (len of widget.children):
             _unfocus_all_editable of widget.children[i]
     if widget.type == "tabs":
         for i in range of (len of widget.tab_panels):
             if widget.tab_panels[i] != null:
                 _unfocus_all_editable of widget.tab_panels[i]
+    if widget.type == "splitter":
+        if widget.panel_a != null:
+            _unfocus_all_editable of widget.panel_a
+        if widget.panel_b != null:
+            _unfocus_all_editable of widget.panel_b
 
 define _piano_note_at(widget, rel_x, rel_y) as:
     kw is widget.key_w
@@ -1893,13 +2291,18 @@ define _radio_index_at(widget, rel_x) as:
 define _close_dropdowns(widget) as:
     if widget.type == "dropdown":
         widget.open is 0
-    elif widget.type == "panel":
+    elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _close_dropdowns of widget.children[i]
     elif widget.type == "tabs":
         for i in range of (len of widget.tab_panels):
             if widget.tab_panels[i] != null:
                 _close_dropdowns of widget.tab_panels[i]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _close_dropdowns of widget.panel_a
+        if widget.panel_b != null:
+            _close_dropdowns of widget.panel_b
 
 define _update_drag(widget, mx) as:
     range_val is widget.max_val - widget.min_val
@@ -1914,13 +2317,198 @@ define _update_drag(widget, mx) as:
     if widget.on_change != null:
         widget.on_change of widget
 
+define _update_scrollbar_drag(widget, mx, my) as:
+    if widget.vertical == 1:
+        ts is widget.thumb_size
+        if ts < 0.05:
+            ts is 0.05
+        thumb_h is floor of (ts * widget.h)
+        if thumb_h < 16:
+            thumb_h is 16
+        track is widget.h - thumb_h
+        if track <= 0:
+            return null
+        frac is (my - _drag_oy - thumb_h / 2) / track
+    else:
+        ts is widget.thumb_size
+        if ts < 0.05:
+            ts is 0.05
+        thumb_w is floor of (ts * widget.w)
+        if thumb_w < 16:
+            thumb_w is 16
+        track is widget.w - thumb_w
+        if track <= 0:
+            return null
+        frac is (mx - _drag_ox - thumb_w / 2) / track
+    if frac < 0:
+        frac is 0
+    if frac > 1:
+        frac is 1
+    widget.value is frac
+    if widget.on_change != null:
+        widget.on_change of widget
+
+# ============================================================
+# Focus system
+# ============================================================
+
+_focusable_types is ["button", "slider", "vslider", "toggle", "knob", "checkbox", "text_input", "toggle_button", "spinbox", "radio_group", "dropdown", "item_list", "scrollbar", "table"]
+
+define _is_focusable(widget) as:
+    for i in range of (len of _focusable_types):
+        if widget.type == _focusable_types[i]:
+            if widget.enabled != null and widget.enabled == 0:
+                return 0
+            if widget.visible == 0:
+                return 0
+            return 1
+    return 0
+
+define _build_focus_list(widget) as:
+    if widget.visible == 0:
+        return null
+    if (_is_focusable of widget) == 1:
+        append of [_focus_list, widget]
+    if _is_container of widget.type:
+        for i in range of (len of widget.children):
+            _build_focus_list of widget.children[i]
+    if widget.type == "tabs":
+        if widget.active < (len of widget.tab_panels):
+            if widget.tab_panels[widget.active] != null:
+                _build_focus_list of widget.tab_panels[widget.active]
+    if widget.type == "splitter":
+        if widget.panel_a != null:
+            _build_focus_list of widget.panel_a
+        if widget.panel_b != null:
+            _build_focus_list of widget.panel_b
+
+define _sync_focus_to(widget) as:
+    if (_is_focusable of widget) == 1:
+        _focused_widget is widget
+        # Try to find index in current focus list
+        for i in range of (len of _focus_list):
+            if _focus_list[i].id == widget.id:
+                _focus_index is i
+                return null
+        _focus_index is -1
+
+define _focus_next(root, reverse) as:
+    _focus_list is []
+    _build_focus_list of root
+    n is len of _focus_list
+    if n == 0:
+        _focused_widget is null
+        _focus_index is -1
+        return null
+    if reverse == 1:
+        _focus_index is _focus_index - 1
+        if _focus_index < 0:
+            _focus_index is n - 1
+    else:
+        _focus_index is _focus_index + 1
+        if _focus_index >= n:
+            _focus_index is 0
+    _focused_widget is _focus_list[_focus_index]
+    # If it's a text input, focus it
+    _unfocus_all of root
+    _focused_input is null
+    if _focused_widget.type == "text_input":
+        _focused_widget.focused is 1
+        _focused_input is _focused_widget
+
+define _handle_focus_key(root, ev) as:
+    if ev.key == "tab":
+        if ev.shift == 1:
+            _focus_next of [root, 1]
+        else:
+            _focus_next of [root, 0]
+        return 1
+    # Activation keys
+    if _focused_widget == null:
+        return 0
+    w is _focused_widget
+    if ev.key == "return" or ev.key == "space":
+        if w.type == "button" and w.enabled == 1:
+            if w.on_click != null:
+                w.on_click of w
+            return 1
+        if w.type == "toggle" or w.type == "checkbox":
+            if w.value == 1:
+                w.value is 0
+            else:
+                w.value is 1
+            if w.on_change != null:
+                w.on_change of w
+            return 1
+        if w.type == "toggle_button":
+            if w.value == 1:
+                w.value is 0
+            else:
+                w.value is 1
+            if w.on_click != null:
+                w.on_click of w
+            return 1
+    # Arrow keys for sliders/knobs
+    if ev.key == "left" or ev.key == "right" or ev.key == "up" or ev.key == "down":
+        if w.type == "slider" or w.type == "vslider" or w.type == "knob":
+            step is (w.max_val - w.min_val) / 50
+            if ev.key == "right" or ev.key == "up":
+                w.value is w.value + step
+            else:
+                w.value is w.value - step
+            if w.value < w.min_val:
+                w.value is w.min_val
+            if w.value > w.max_val:
+                w.value is w.max_val
+            if w.on_change != null:
+                w.on_change of w
+            return 1
+        if w.type == "radio_group":
+            if ev.key == "left" or ev.key == "up":
+                w.selected is w.selected - 1
+                if w.selected < 0:
+                    w.selected is (len of w.items) - 1
+            else:
+                w.selected is w.selected + 1
+                if w.selected >= (len of w.items):
+                    w.selected is 0
+            if w.on_change != null:
+                w.on_change of w
+            return 1
+        if w.type == "item_list":
+            if ev.key == "up":
+                w.selected is w.selected - 1
+                if w.selected < 0:
+                    w.selected is 0
+            elif ev.key == "down":
+                w.selected is w.selected + 1
+                if w.selected >= (len of w.items):
+                    w.selected is (len of w.items) - 1
+            if w.on_select != null:
+                w.on_select of w
+            return 1
+    # Escape closes dropdowns/menus/dialogs
+    if ev.key == "escape":
+        _close_dropdowns of root
+        _close_menus of root
+        dlg is _find_visible_dialog of root
+        if dlg != null:
+            dlg.visible is 0
+        return 1
+    return 0
+
 # ============================================================
 # App loop
 # ============================================================
 
 define app_loop(root, on_key, on_tick) as:
     _edit_root is root
+    _window_w is root.w
+    _window_h is root.h
     _running is 1
+    # Build initial focus list
+    _focus_list is []
+    _build_focus_list of root
     loop while _running == 1:
         ev is gfx_poll of null
         loop while ev != null:
@@ -1930,6 +2518,11 @@ define app_loop(root, on_key, on_tick) as:
                 # Text input gets first crack at keys
                 if _focused_input != null:
                     _handle_text_key of [_focused_input, ev]
+                # Focus navigation (Tab, Enter, Space, arrows, Escape)
+                elif ev.key == "tab" or ev.key == "escape":
+                    _handle_focus_key of [root, ev]
+                elif (_focused_widget != null and _focused_input == null):
+                    _handle_focus_key of [root, ev]
                 if on_key != null:
                     result is on_key of ev
                     if result == 0:
@@ -1951,6 +2544,11 @@ define app_loop(root, on_key, on_tick) as:
             _tooltip_timer is _tooltip_timer + 1
         if on_tick != null:
             on_tick of root
+        # Layout pass
+        _layout of root
+        # Animation pass
+        _update_tweens of null
+        # Render
         gfx_clear of [_theme.bg[0], _theme.bg[1], _theme.bg[2]]
         render of [root, 0, 0]
         _render_tooltip of null

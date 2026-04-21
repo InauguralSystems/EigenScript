@@ -43,3 +43,20 @@ define _draw_text_clipped(x, y, w, text, color, scale) as:
     if (len of text) > max_chars:
         display is substr of [text, 0, max_chars]
     gfx_text of [x, y, display, color[0], color[1], color[2], scale]
+
+# ---- Focus ring ----
+# Draws a 2px accent-colored border outside widget bounds
+
+define _draw_focus_ring(x, y, w, h, rad) as:
+    c is _theme.focus_ring
+    # Outer ring
+    gfx_rrect of [x - 2, y - 2, w + 4, h + 4, rad + 1, c[0], c[1], c[2]]
+    # Inner cutout — restore bg color to create border effect
+    gfx_rrect of [x, y, w, h, rad, _theme.panel_bg[0], _theme.panel_bg[1], _theme.panel_bg[2]]
+
+# ---- Disabled overlay ----
+# Semi-transparent overlay to dim disabled widgets
+
+define _draw_disabled_overlay(x, y, w, h) as:
+    c is _theme.disabled_overlay
+    gfx_rrect of [x, y, w, h, 0, c[0], c[1], c[2], 140]

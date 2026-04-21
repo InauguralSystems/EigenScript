@@ -5,8 +5,15 @@
 # Loaded internally by lib/ui.eigs via load_file.
 # All names are prefixed with _ so they stay private on import.
 # Access via theme of null / set_theme of new_theme.
+#
+# Built-in themes:
+#   set_theme of (theme_dark of null)
+#   set_theme of (theme_light of null)
+#   set_theme of (theme_high_contrast of null)
 
-_theme is {
+# ---- Dark theme (default) ----
+
+_theme_dark is {
     "bg": [25, 25, 35],
     "panel_bg": [35, 35, 50],
     "panel_border": [60, 60, 80],
@@ -19,6 +26,7 @@ _theme is {
     "text_color": [200, 200, 200],
     "text_dim": [120, 120, 140],
     "accent": [80, 140, 220],
+    "focus_ring": [80, 140, 220],
     "slider_track": [40, 40, 55],
     "slider_fill": [80, 140, 220],
     "slider_thumb": [200, 200, 220],
@@ -39,6 +47,9 @@ _theme is {
     "menu_bg": [40, 40, 55],
     "menu_hover": [65, 65, 90],
     "menu_border": [70, 70, 90],
+    "tooltip_bg": [50, 50, 65],
+    "tooltip_text": [220, 220, 230],
+    "disabled_overlay": [25, 25, 35],
     "font_scale": 2,
     "char_w": 12,
     "char_h": 14,
@@ -49,8 +60,119 @@ _theme is {
     "radius_lg": 6
 }
 
+# ---- Light theme ----
+
+_theme_light is {
+    "bg": [235, 235, 240],
+    "panel_bg": [245, 245, 248],
+    "panel_border": [200, 200, 210],
+    "btn_bg": [220, 220, 228],
+    "btn_hover": [210, 210, 218],
+    "btn_pressed": [195, 195, 205],
+    "btn_disabled": [230, 230, 235],
+    "btn_text": [40, 40, 50],
+    "btn_text_disabled": [160, 160, 170],
+    "text_color": [30, 30, 40],
+    "text_dim": [120, 120, 130],
+    "accent": [40, 110, 200],
+    "focus_ring": [40, 110, 200],
+    "slider_track": [200, 200, 210],
+    "slider_fill": [40, 110, 200],
+    "slider_thumb": [60, 60, 70],
+    "toggle_off": [180, 180, 190],
+    "toggle_on": [40, 110, 200],
+    "knob_bg": [200, 200, 210],
+    "knob_fg": [40, 110, 200],
+    "knob_pointer": [40, 40, 50],
+    "dropdown_bg": [240, 240, 244],
+    "dropdown_hover": [225, 225, 232],
+    "dropdown_item_hover": [210, 210, 218],
+    "dropdown_arrow": [100, 100, 120],
+    "tab_bg": [225, 225, 232],
+    "tab_active": [245, 245, 248],
+    "tab_hover": [235, 235, 240],
+    "tab_text": [100, 100, 120],
+    "tab_text_active": [30, 30, 40],
+    "menu_bg": [245, 245, 248],
+    "menu_hover": [210, 210, 218],
+    "menu_border": [200, 200, 210],
+    "tooltip_bg": [50, 50, 60],
+    "tooltip_text": [240, 240, 245],
+    "disabled_overlay": [235, 235, 240],
+    "font_scale": 2,
+    "char_w": 12,
+    "char_h": 14,
+    "padding": 6,
+    "border_width": 1,
+    "radius": 4,
+    "radius_sm": 3,
+    "radius_lg": 6
+}
+
+# ---- High-contrast theme ----
+
+_theme_high_contrast is {
+    "bg": [0, 0, 0],
+    "panel_bg": [10, 10, 10],
+    "panel_border": [255, 255, 255],
+    "btn_bg": [30, 30, 30],
+    "btn_hover": [50, 50, 50],
+    "btn_pressed": [20, 20, 20],
+    "btn_disabled": [15, 15, 15],
+    "btn_text": [255, 255, 255],
+    "btn_text_disabled": [80, 80, 80],
+    "text_color": [255, 255, 255],
+    "text_dim": [180, 180, 180],
+    "accent": [255, 255, 0],
+    "focus_ring": [255, 255, 0],
+    "slider_track": [40, 40, 40],
+    "slider_fill": [255, 255, 0],
+    "slider_thumb": [255, 255, 255],
+    "toggle_off": [40, 40, 40],
+    "toggle_on": [255, 255, 0],
+    "knob_bg": [30, 30, 30],
+    "knob_fg": [255, 255, 0],
+    "knob_pointer": [255, 255, 255],
+    "dropdown_bg": [20, 20, 20],
+    "dropdown_hover": [50, 50, 50],
+    "dropdown_item_hover": [60, 60, 60],
+    "dropdown_arrow": [255, 255, 255],
+    "tab_bg": [10, 10, 10],
+    "tab_active": [40, 40, 40],
+    "tab_hover": [25, 25, 25],
+    "tab_text": [200, 200, 200],
+    "tab_text_active": [255, 255, 255],
+    "menu_bg": [20, 20, 20],
+    "menu_hover": [60, 60, 60],
+    "menu_border": [255, 255, 255],
+    "tooltip_bg": [40, 40, 0],
+    "tooltip_text": [255, 255, 255],
+    "disabled_overlay": [0, 0, 0],
+    "font_scale": 2,
+    "char_w": 12,
+    "char_h": 14,
+    "padding": 6,
+    "border_width": 1,
+    "radius": 4,
+    "radius_sm": 3,
+    "radius_lg": 6
+}
+
+# ---- Active theme ----
+
+_theme is _theme_dark
+
 define theme() as:
     return _theme
 
 define set_theme(t) as:
     _theme is t
+
+define theme_dark() as:
+    return _theme_dark
+
+define theme_light() as:
+    return _theme_light
+
+define theme_high_contrast() as:
+    return _theme_high_contrast

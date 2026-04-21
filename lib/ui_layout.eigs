@@ -1,0 +1,139 @@
+# ============================================================
+# UI Layout — auto-layout engine for hbox/vbox containers
+# ============================================================
+#
+# Loaded internally by lib/ui.eigs via load_file.
+#
+# hbox: positions children left-to-right
+# vbox: positions children top-to-bottom
+#
+# Children with flex > 0 share remaining space by weight.
+# Children with flex == 0 (or no flex field) keep their own w/h.
+
+define _layout(widget) as:
+    if widget.type == "hbox":
+        _layout_box of [widget, 1]
+    elif widget.type == "vbox":
+        _layout_box of [widget, 0]
+    elif widget.type == "toolbar":
+        _layout_toolbar of widget
+    else:
+        # Recurse into containers but don't reposition their children
+        if _is_container of widget.type:
+            for i in range of (len of widget.children):
+                _layout of widget.children[i]
+        if widget.type == "tabs":
+            for i in range of (len of widget.tab_panels):
+                if widget.tab_panels[i] != null:
+                    _layout of widget.tab_panels[i]
+        if widget.type == "splitter":
+            if widget.panel_a != null:
+                _layout of widget.panel_a
+            if widget.panel_b != null:
+                _layout of widget.panel_b
+
+define _layout_box(widget, horizontal) as:
+    pad is 0
+    if widget.padding != null:
+        pad is widget.padding
+    gap is 0
+    if widget.gap != null:
+        gap is widget.gap
+    align is "start"
+    if widget.align != null:
+        align is widget.align
+
+    n is len of widget.children
+    if n == 0:
+        return null
+
+    # First pass: recurse into children, sum fixed sizes and flex weights
+    fixed_total is 0
+    flex_total is 0
+    gap_total is 0
+    if n > 1:
+        gap_total is (n - 1) * gap
+
+    for i in range of n:
+        child is widget.children[i]
+        _layout of child
+        child_flex is 0
+        if child.flex != null:
+            child_flex is child.flex
+        if child_flex == 0:
+            if horizontal == 1:
+                fixed_total is fixed_total + child.w
+            else:
+                fixed_total is fixed_total + child.h
+        else:
+            flex_total is flex_total + child_flex
+
+    # Available space along main axis
+    if horizontal == 1:
+        avail is widget.w - pad * 2
+    else:
+        avail is widget.h - pad * 2
+    flex_space is avail - fixed_total - gap_total
+    if flex_space < 0:
+        flex_space is 0
+
+    # Second pass: position children
+    pos is pad
+    for i in range of n:
+        child is widget.children[i]
+        child_flex is 0
+        if child.flex != null:
+            child_flex is child.flex
+
+        if horizontal == 1:
+            child.x is pos
+            # Cross-axis alignment
+            if align == "center":
+                child.y is floor of ((widget.h - child.h) / 2)
+            elif align == "end":
+                child.y is widget.h - child.h - pad
+            else:
+                child.y is pad
+            # Main-axis sizing
+            if child_flex > 0 and flex_total > 0:
+                child.w is floor of (child_flex / flex_total * flex_space)
+            pos is pos + child.w + gap
+        else:
+            child.y is pos
+            # Cross-axis alignment
+            if align == "center":
+                child.x is floor of ((widget.w - child.w) / 2)
+            elif align == "end":
+                child.x is widget.w - child.w - pad
+            else:
+                child.x is pad
+            # Main-axis sizing
+            if child_flex > 0 and flex_total > 0:
+                child.h is floor of (child_flex / flex_total * flex_space)
+            pos is pos + child.h + gap
+
+define _layout_toolbar(widget) as:
+    pad is 0
+    if widget.padding != null:
+        pad is widget.padding
+    gap is 0
+    if widget.gap != null:
+        gap is widget.gap
+
+    n is len of widget.children
+    if n == 0:
+        return null
+
+    pos is pad
+    for i in range of n:
+        child is widget.children[i]
+        _layout of child
+        child.x is pos
+        # Center vertically in toolbar
+        child.y is floor of ((widget.h - child.h) / 2)
+        pos is pos + child.w + gap
+
+define _is_container(t) as:
+    if t == "panel" or t == "hbox" or t == "vbox" or t == "scroll_panel" or t == "toolbar":
+        return 1
+    return 0
