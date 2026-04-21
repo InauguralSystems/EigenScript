@@ -524,6 +524,7 @@ define _p_parse_block(p) as:
 define _p_parse_statement(p) as:
     _p_skip_newlines of p
     tt is _p_peek_type of p
+    _stmt_line is (_p_cur of p)[2]
 
     if tt == "eof":
         return null
@@ -555,7 +556,7 @@ define _p_parse_statement(p) as:
             _p_expect of [p, "colon"]
             _p_skip_newlines of p
             body is _p_parse_block of p
-            return ["func", name, params, body]
+            return ["_line", _stmt_line, ["func", name, params, body]]
 
         # if
         if (_p_peek_val of p) == "if":
@@ -577,13 +578,13 @@ define _p_parse_statement(p) as:
                     _p_expect of [p, "colon"]
                     _p_skip_newlines of p
                     else_body is _p_parse_block of p
-            return ["if", cond, if_body, else_body]
+            return ["_line", _stmt_line, ["if", cond, if_body, else_body]]
 
         # return
         if (_p_peek_val of p) == "return":
             _p_advance of p
             expr is _p_parse_expr of p
-            return ["return", expr]
+            return ["_line", _stmt_line, ["return", expr]]
 
         # for
         if (_p_peek_val of p) == "for":
@@ -594,7 +595,7 @@ define _p_parse_statement(p) as:
             _p_expect of [p, "colon"]
             _p_skip_newlines of p
             body is _p_parse_block of p
-            return ["for", var_tok[1], iter, body]
+            return ["_line", _stmt_line, ["for", var_tok[1], iter, body]]
 
         # loop while
         if (_p_peek_val of p) == "loop":
@@ -607,7 +608,7 @@ define _p_parse_statement(p) as:
             _p_expect of [p, "colon"]
             _p_skip_newlines of p
             body is _p_parse_block of p
-            return ["loop", cond, body]
+            return ["_line", _stmt_line, ["loop", cond, body]]
 
         # try/catch
         if (_p_peek_val of p) == "try":
@@ -624,23 +625,23 @@ define _p_parse_statement(p) as:
             _p_expect of [p, "colon"]
             _p_skip_newlines of p
             catch_body is _p_parse_block of p
-            return ["try", try_body, err_name, catch_body]
+            return ["_line", _stmt_line, ["try", try_body, err_name, catch_body]]
 
         # break
         if (_p_peek_val of p) == "break":
             _p_advance of p
-            return ["break"]
+            return ["_line", _stmt_line, ["break"]]
 
         # continue
         if (_p_peek_val of p) == "continue":
             _p_advance of p
-            return ["continue"]
+            return ["_line", _stmt_line, ["continue"]]
 
         # import
         if (_p_peek_val of p) == "import":
             _p_advance of p
             name_tok is _p_expect of [p, "ident"]
-            return ["import", name_tok[1]]
+            return ["_line", _stmt_line, ["import", name_tok[1]]]
 
         # match
         if (_p_peek_val of p) == "match":
@@ -671,7 +672,7 @@ define _p_parse_statement(p) as:
                 _p_skip_newlines of p
             if (_p_peek_type of p) == "dedent":
                 _p_advance of p
-            return ["match", expr, cases]
+            return ["_line", _stmt_line, ["match", expr, cases]]
 
         # unobserved
         if (_p_peek_val of p) == "unobserved":
@@ -679,7 +680,7 @@ define _p_parse_statement(p) as:
             _p_expect of [p, "colon"]
             _p_skip_newlines of p
             body is _p_parse_block of p
-            return ["unobserved", body]
+            return ["_line", _stmt_line, ["unobserved", body]]
 
     # Dot-assignment and index-assignment: ident.field is val, ident[i] is val
     if tt == "ident":
@@ -692,12 +693,12 @@ define _p_parse_statement(p) as:
                 if (_p_peek_val of p) == "is":
                     _p_advance of p
                     expr is _p_parse_expr of p
-                    return ["dot_assign", target[1], target[2], expr]
+                    return ["_line", _stmt_line, ["dot_assign", target[1], target[2], expr]]
             if (target[0] == "index") and ((_p_peek_type of p) == "kw"):
                 if (_p_peek_val of p) == "is":
                     _p_advance of p
                     expr is _p_parse_expr of p
-                    return ["index_assign", target[1], target[2], expr]
+                    return ["_line", _stmt_line, ["index_assign", target[1], target[2], expr]]
             # Not an assignment — restore and fall through
             set_at of [p, 1, saved_pos]
 
@@ -709,13 +710,13 @@ define _p_parse_statement(p) as:
             if (_p_peek_val of p) == "is":
                 _p_advance of p
                 expr is _p_parse_expr of p
-                return ["assign", name, expr]
+                return ["_line", _stmt_line, ["assign", name, expr]]
         # Not an assignment — restore and parse as expression
         set_at of [p, 1, saved_pos]
 
     # Expression statement
     expr is _p_parse_expr of p
-    return expr
+    return ["_line", _stmt_line, expr]
 
 # ---- Postfix parser for dot/index chains (used by assignment detection) ----
 
@@ -1069,6 +1070,13 @@ _eigen_return_val is null
 _eigen_breaking is 0
 _eigen_continuing is 0
 
+# Debug hook support — set via eigen_set_hook to intercept each statement
+_eigen_debug_hook is null
+_eigen_current_line is 0
+
+define eigen_set_hook(hook) as:
+    _eigen_debug_hook is hook
+
 # Observer state per binding: [name, value, obs_count, entropy, prev_entropy, dH]
 # For simplicity, we store observer metadata in a separate dict keyed by name.
 _eigen_obs is {}
@@ -1122,6 +1130,11 @@ define eigen_eval(node, env) as:
     if node == null:
         return null
     ntype is node[0]
+
+    # Unwrap _line wrapper (line-number annotation from parser)
+    if ntype == "_line":
+        _eigen_current_line is node[1]
+        return eigen_eval of [node[2], env]
 
     if ntype == "num":
         return node[1]
@@ -1558,7 +1571,17 @@ define eigen_eval(node, env) as:
 define _eval_block(stmts, env) as:
     result is null
     for i in range of (len of stmts):
-        result is eigen_eval of [stmts[i], env]
+        stmt is stmts[i]
+        # Unwrap _line wrapper to extract line number
+        if (type of stmt) == "list":
+            if (len of stmt) >= 3:
+                if stmt[0] == "_line":
+                    _eigen_current_line is stmt[1]
+                    stmt is stmt[2]
+        # Call debug hook if set
+        if _eigen_debug_hook != null:
+            _eigen_debug_hook of [stmt, env]
+        result is eigen_eval of [stmt, env]
         if _eigen_returning == 1:
             return result
         if _eigen_breaking == 1:

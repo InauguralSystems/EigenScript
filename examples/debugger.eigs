@@ -1,0 +1,448 @@
+# ============================================================
+# EigenScript Graphical Debugger
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/debugger.eigs
+#
+# Runs an EigenScript program through the meta-circular interpreter
+# (lib/eigen.eigs) with debug hooks.  UI provided by lib/ui.eigs.
+#
+# Controls:
+#   F5        Run / restart
+#   F10       Step (single statement)
+#   F9        Continue (resume until breakpoint)
+#   Escape    Stop / quit
+#   Click     Toggle breakpoint (gutter area)
+#   Scroll    Scroll source view
+
+import ui
+
+# ---- Target script --------------------------------------------------------
+# Change this path or pass as argv if desired
+_target_path is "examples/fibonacci.eigs"
+
+# Fallback if file doesn't exist
+_target_exists is file_exists of _target_path
+if _target_exists == 0:
+    _target_path is "examples/hello.eigs"
+
+_dbg_source is read_text of _target_path
+
+# Load the meta-circular interpreter
+load_file of "lib/eigen.eigs"
+
+# ---- Debugger state -------------------------------------------------------
+_dbg_lines is split of [_dbg_source, "\n"]
+_dbg_breakpoints is {}
+_dbg_paused is 0
+_dbg_step_mode is 0
+_dbg_current_line is 0
+_dbg_current_env is null
+_dbg_running is 0
+_dbg_output is []
+_dbg_done is 0
+_dbg_quit is 0
+_dbg_scroll_y is 0
+_dbg_entropy_history is []
+_dbg_status is "Ready"
+
+# ---- Debug hook -----------------------------------------------------------
+define _debug_hook(info) as:
+    node is info[0]
+    env is info[1]
+    line is _eigen_current_line
+    _dbg_current_line is line
+    _dbg_current_env is env
+
+    # Collect entropy snapshot for chart
+    _snapshot_entropy of env
+
+    # Decide whether to pause
+    should_pause is 0
+    if _dbg_step_mode == 1:
+        should_pause is 1
+    key is str of line
+    if (has_key of [_dbg_breakpoints, key]) == 1:
+        if _dbg_breakpoints[key] == 1:
+            should_pause is 1
+
+    if should_pause == 1:
+        _dbg_paused is 1
+        _dbg_status is f"Paused at line {line}"
+        _dbg_full_render of null
+        # Pump UI events while paused
+        loop while _dbg_paused == 1:
+            if _dbg_quit == 1:
+                _dbg_running is 0
+                return null
+            pev is gfx_poll of null
+            loop while pev != null:
+                if pev.type == "quit":
+                    _dbg_paused is 0
+                    _dbg_running is 0
+                    _dbg_quit is 1
+                    return null
+                elif pev.type == "keydown":
+                    _handle_key of pev
+                else:
+                    ui.dispatch of [_root, pev]
+                pev is gfx_poll of null
+            _dbg_full_render of null
+            gfx_delay of 16
+    # If user hit stop
+    if _dbg_running == 0:
+        throw of "__debugger_stop__"
+
+# ---- Entropy snapshot -----------------------------------------------------
+define _snapshot_entropy(env) as:
+    if env == null:
+        return null
+    total is 0
+    count is 0
+    bindings is env[0]
+    for i in range of (len of bindings):
+        b is bindings[i]
+        name is b[0]
+        if (has_key of [_eigen_obs, name]) == 1:
+            obs is _eigen_obs[name]
+            total is total + obs[1]
+            count is count + 1
+    avg is 0
+    if count > 0:
+        avg is total / count
+    append of [_dbg_entropy_history, avg]
+    # Keep chart data in sync
+    if (len of _entropy_chart.series) > 0:
+        append of [_entropy_chart.series[0].data, avg]
+
+# ---- Window setup ---------------------------------------------------------
+WINDOW_W is 1200
+WINDOW_H is 700
+gfx_open of [WINDOW_W, WINDOW_H, "EigenScript Debugger"]
+
+# ---- UI tree --------------------------------------------------------------
+_root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
+_root.bg is [22, 22, 32]
+_root.border is null
+
+# Toolbar
+_toolbar is ui.toolbar of ["toolbar", 0, 0, WINDOW_W]
+
+define _on_run(w) as:
+    if _dbg_running == 0:
+        _dbg_step_mode is 0
+        _dbg_paused is 0
+        _dbg_running is 1
+        _start_debug of null
+
+define _on_step(w) as:
+    if _dbg_running == 1:
+        if _dbg_paused == 1:
+            _dbg_step_mode is 1
+            _dbg_paused is 0
+    else:
+        _dbg_step_mode is 1
+        _dbg_running is 1
+        _start_debug of null
+
+define _on_continue(w) as:
+    _dbg_step_mode is 0
+    _dbg_paused is 0
+
+define _on_stop(w) as:
+    _dbg_running is 0
+    _dbg_paused is 0
+
+_btn_run is ui.button of ["btn_run", 0, 0, 60, 28, "Run F5", _on_run]
+_btn_step is ui.button of ["btn_step", 0, 0, 72, 28, "Step F10", _on_step]
+_btn_cont is ui.button of ["btn_cont", 0, 0, 68, 28, "Cont F9", _on_continue]
+_btn_stop is ui.button of ["btn_stop", 0, 0, 60, 28, "Stop", _on_stop]
+
+ui.add_child of [_toolbar, _btn_run]
+ui.add_child of [_toolbar, _btn_step]
+ui.add_child of [_toolbar, _btn_cont]
+ui.add_child of [_toolbar, _btn_stop]
+
+# ---- Main split: source (left) + inspector (right) -----------------------
+TOOLBAR_H is 40
+BOTTOM_H is 200
+MAIN_H is WINDOW_H - TOOLBAR_H - BOTTOM_H
+SPLIT_POS is 700
+
+_main_split is ui.splitter of ["main_split", 0, TOOLBAR_H, WINDOW_W, MAIN_H, SPLIT_POS, null]
+
+# Left: source code canvas
+_source_panel is ui.panel of ["source_panel", 0, 0, SPLIT_POS, MAIN_H]
+_source_panel.bg is [25, 25, 35]
+_source_panel.border is null
+
+define _paint_source(widget, ax, ay) as:
+    gfx_rect of [ax, ay, widget.w, widget.h, 25, 25, 35]
+    line_h is 18
+    gutter_w is 50
+    visible_lines is floor of (widget.h / line_h) + 1
+
+    for i in range of (len of _dbg_lines):
+        ly is ay + (i * line_h) - _dbg_scroll_y
+        if (ly + line_h) < ay:
+            continue
+        if ly > (ay + widget.h):
+            continue
+        line_num is i + 1
+
+        # Current line highlight
+        if line_num == _dbg_current_line:
+            gfx_rect of [ax + gutter_w, ly, widget.w - gutter_w, line_h, 60, 55, 25]
+
+        # Breakpoint marker (red circle in gutter)
+        bp_key is str of line_num
+        if (has_key of [_dbg_breakpoints, bp_key]) == 1:
+            if _dbg_breakpoints[bp_key] == 1:
+                gfx_circle of [ax + 12, ly + 9, 5, 200, 50, 50]
+
+        # Current line arrow
+        if line_num == _dbg_current_line:
+            gfx_rect of [ax + 22, ly + 6, 8, 6, 80, 220, 80]
+
+        # Line number
+        ln_str is str of line_num
+        gfx_text of [ax + 28, ly + 3, ln_str, 80, 80, 100, 1]
+
+        # Gutter separator
+        gfx_line of [ax + gutter_w - 2, ly, ax + gutter_w - 2, ly + line_h, 40, 40, 55]
+
+        # Source text
+        if i < (len of _dbg_lines):
+            src_line is _dbg_lines[i]
+            gfx_text of [ax + gutter_w + 4, ly + 3, src_line, 200, 200, 215, 1]
+
+define _on_source_mouse(widget, ev) as:
+    if ev.type == "mousedown":
+        line_h is 18
+        gutter_w is 50
+        # Click in gutter toggles breakpoint
+        rel_y is ev.y - TOOLBAR_H
+        line_idx is floor of ((rel_y + _dbg_scroll_y) / line_h)
+        line_num is line_idx + 1
+        if line_num >= 1:
+            if line_num <= (len of _dbg_lines):
+                # Only toggle if clicked in gutter region
+                if ev.x < (gutter_w + 20):
+                    bp_key is str of line_num
+                    if (has_key of [_dbg_breakpoints, bp_key]) == 1:
+                        if _dbg_breakpoints[bp_key] == 1:
+                            dict_set of [_dbg_breakpoints, bp_key, 0]
+                        else:
+                            dict_set of [_dbg_breakpoints, bp_key, 1]
+                    else:
+                        dict_set of [_dbg_breakpoints, bp_key, 1]
+    elif ev.type == "wheel":
+        _dbg_scroll_y is _dbg_scroll_y - (ev.y * 18)
+        if _dbg_scroll_y < 0:
+            _dbg_scroll_y is 0
+        max_scroll is ((len of _dbg_lines) * 18) - MAIN_H + 36
+        if max_scroll < 0:
+            max_scroll is 0
+        if _dbg_scroll_y > max_scroll:
+            _dbg_scroll_y is max_scroll
+
+_source_canvas is ui.canvas of ["source_view", 0, 0, SPLIT_POS, MAIN_H, _paint_source, _on_source_mouse]
+ui.add_child of [_source_panel, _source_canvas]
+
+# Right: variable inspector table
+_inspector_panel is ui.panel of ["inspector_panel", 0, 0, WINDOW_W - SPLIT_POS, MAIN_H]
+_inspector_panel.bg is [28, 28, 40]
+_inspector_panel.border is null
+
+_var_columns is [
+    {"name": "Name", "width": 80},
+    {"name": "Value", "width": 100},
+    {"name": "Type", "width": 50},
+    {"name": "When", "width": 45},
+    {"name": "Entropy", "width": 65},
+    {"name": "dH", "width": 55},
+    {"name": "Status", "width": 70}
+]
+_var_table is ui.table of ["var_table", 4, 4, WINDOW_W - SPLIT_POS - 12, MAIN_H - 8, _var_columns, null]
+ui.add_child of [_inspector_panel, _var_table]
+
+_main_split.panel_a is _source_panel
+_main_split.panel_b is _inspector_panel
+
+# ---- Bottom panel: output + entropy chart --------------------------------
+_bottom is ui.panel of ["bottom", 0, TOOLBAR_H + MAIN_H, WINDOW_W, BOTTOM_H]
+_bottom.bg is [25, 25, 35]
+_bottom.border is [40, 40, 55]
+
+# Output console (left half)
+_output_label is ui.label of ["output_label", 8, 4, "Output"]
+_output_label.color is [120, 120, 150]
+ui.add_child of [_bottom, _output_label]
+
+_output_view is ui.code_view of ["output", 4, 22, 590, BOTTOM_H - 26, ""]
+_output_view.line_numbers is 0
+ui.add_child of [_bottom, _output_view]
+
+# Entropy chart (right half)
+_chart_label is ui.label of ["chart_label", 604, 4, "Avg Entropy"]
+_chart_label.color is [120, 120, 150]
+ui.add_child of [_bottom, _chart_label]
+
+_entropy_chart is ui.chart of ["entropy_chart", 600, 22, WINDOW_W - 608, BOTTOM_H - 26]
+_entropy_chart.y_label is "H"
+_entropy_chart.x_label is "step"
+# Initialize with one series
+_entropy_chart.series is [{"label": "Avg H", "data": [], "color": [80, 180, 220]}]
+ui.add_child of [_bottom, _entropy_chart]
+
+# Status bar at very bottom (re-use a label)
+_status_label is ui.label of ["status_lbl", 8, BOTTOM_H - 18, "Ready"]
+_status_label.color is [100, 100, 130]
+ui.add_child of [_bottom, _status_label]
+
+# Assemble root
+ui.add_child of [_root, _toolbar]
+ui.add_child of [_root, _main_split]
+ui.add_child of [_root, _bottom]
+
+# ---- Variable table update ------------------------------------------------
+define _update_var_table() as:
+    if _dbg_current_env == null:
+        return null
+    rows is []
+    env is _dbg_current_env
+    loop while env != null:
+        bindings is env[0]
+        for i in range of (len of bindings):
+            b is bindings[i]
+            name is b[0]
+            val is b[1]
+            # Skip functions for readability
+            if (type of val) == "list":
+                if (len of val) >= 1:
+                    if val[0] == "__eigen_fn__":
+                        continue
+            val_str is str of val
+            if (len of val_str) > 20:
+                val_str is substr of [val_str, 0, 20]
+            type_str is type of val
+            # Observer data
+            obs_count is ""
+            entropy_str is ""
+            dh_str is ""
+            status is ""
+            if (has_key of [_eigen_obs, name]) == 1:
+                obs is _eigen_obs[name]
+                obs_count is str of obs[0]
+                ent is obs[1]
+                dh is obs[2]
+                entropy_str is str of (floor of (ent * 1000) / 1000)
+                dh_str is str of (floor of (dh * 1000) / 1000)
+                if dh < -0.01:
+                    status is "improving"
+                elif dh > 0.01:
+                    status is "diverging"
+                elif ent < 0.01:
+                    status is "converged"
+                else:
+                    status is "stable"
+            row is [name, val_str, type_str, obs_count, entropy_str, dh_str, status]
+            append of [rows, row]
+        env is env[1]
+    _var_table.rows is rows
+
+# ---- Render helper --------------------------------------------------------
+define _dbg_full_render() as:
+    _update_var_table of null
+    _status_label.text is _dbg_status
+    gfx_clear of [22, 22, 32]
+    ui.render of [_root, 0, 0]
+    gfx_present of null
+
+# ---- Start debugging ------------------------------------------------------
+define _start_debug() as:
+    # Reset state
+    _dbg_current_line is 0
+    _dbg_current_env is null
+    _dbg_output is []
+    _dbg_entropy_history is []
+    _dbg_done is 0
+    _dbg_status is "Running..."
+    _output_view.text is ""
+    # Reset chart data
+    _entropy_chart.series is [{"label": "Avg H", "data": [], "color": [80, 180, 220]}]
+    # Reset observer state
+    _eigen_obs is {}
+
+    # Set the debug hook
+    eigen_set_hook of _debug_hook
+
+    # Tokenize and parse target source
+    tokens is eigen_tokenize of _dbg_source
+    ast is eigen_parse of tokens
+    env is _make_default_env of null
+
+    # Override print to capture output
+    define _captured_print(val) as:
+        line is str of val
+        append of [_dbg_output, line]
+        _output_view.text is join of [_dbg_output, "\n"]
+        print of val
+    _env_set_local of [env, "print", _captured_print]
+
+    # Run the program
+    try:
+        eigen_eval of [ast, env]
+    catch err:
+        if err != "__debugger_stop__":
+            append of [_dbg_output, f"ERROR: {err}"]
+            _output_view.text is join of [_dbg_output, "\n"]
+
+    # Done
+    _dbg_running is 0
+    _dbg_paused is 0
+    eigen_set_hook of null
+    _dbg_status is "Execution complete"
+    _dbg_done is 1
+    _dbg_full_render of null
+
+# ---- Key handler ----------------------------------------------------------
+define _handle_key(ev) as:
+    if ev.key == "f5":
+        _on_run of null
+    elif ev.key == "f10":
+        _on_step of null
+    elif ev.key == "f9":
+        _on_continue of null
+    elif ev.key == "escape":
+        if _dbg_running == 1:
+            _on_stop of null
+        else:
+            _dbg_quit is 1
+
+# ---- Main loop ------------------------------------------------------------
+_dbg_full_render of null
+
+loop while _dbg_quit == 0:
+    ev is gfx_poll of null
+    loop while ev != null:
+        if ev.type == "quit":
+            _dbg_quit is 1
+        elif ev.type == "keydown":
+            _handle_key of ev
+        elif ev.type == "wheel":
+            # Forward scroll to source view
+            _on_source_mouse of [_source_canvas, ev]
+        elif ev.type == "mousedown" or ev.type == "mouseup" or ev.type == "mousemove":
+            # Route clicks to source canvas if in gutter area
+            if ev.type == "mousedown" and ev.x < 70 and ev.y >= TOOLBAR_H and ev.y < (TOOLBAR_H + MAIN_H):
+                _on_source_mouse of [_source_canvas, ev]
+            else:
+                ui.dispatch of [_root, ev]
+        else:
+            ui.dispatch of [_root, ev]
+        ev is gfx_poll of null
+    if _dbg_quit == 0:
+        _dbg_full_render of null
+    gfx_delay of 16
+
+gfx_close of null
