@@ -60,3 +60,22 @@ define _draw_focus_ring(x, y, w, h, rad) as:
 define _draw_disabled_overlay(x, y, w, h) as:
     c is _theme.disabled_overlay
     gfx_rrect of [x, y, w, h, 0, c[0], c[1], c[2], 140]
+
+# ---- Arc drawing ----
+# Draws an arc as a series of points from start_angle to end_angle (radians)
+# thickness controls how many concentric rings of points to draw
+
+define _draw_arc(cx, cy, r, start_angle, end_angle, thickness, color) as:
+    steps is floor of (r * 3)
+    if steps < 20:
+        steps is 20
+    sweep is end_angle - start_angle
+    for t in range of thickness:
+        cr is r - t
+        if cr < 1:
+            cr is 1
+        for i in range of (steps + 1):
+            angle is start_angle + sweep * i / steps
+            px is cx + floor of ((cos of angle) * cr)
+            py is cy - floor of ((sin of angle) * cr)
+            gfx_point of [px, py, color[0], color[1], color[2]]

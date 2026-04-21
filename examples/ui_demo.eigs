@@ -172,7 +172,7 @@ ui.add_child of [tb, ui.separator of ["sep2", 0, 0, 24, 1]]
 ui.add_child of [tb, ui.label of ["title", 0, 0, "UI Demo"]]
 
 # -- Tabs --
-main_tabs is ui.tabs of ["main", 0, 40, WINDOW_W, WINDOW_H - 40 - 24, ["Mix", "Synth", "Wave", "Table", "FX", "Extras"], on_tab]
+main_tabs is ui.tabs of ["main", 0, 40, WINDOW_W, WINDOW_H - 40 - 24, ["Mix", "Synth", "Wave", "Table", "FX", "Extras", "Data"], on_tab]
 
 # --- Mix tab (with hbox/vbox layout) ---
 mix_panel is ui.panel of ["mix_content", 0, 0, WINDOW_W, WINDOW_H - 92]
@@ -340,6 +340,72 @@ reorder_list.on_reorder is on_reorder
 ui.add_child of [extras_panel, ui.label of ["reorder_lbl", 460, 318, "Drag to reorder"]]
 ui.add_child of [extras_panel, reorder_list]
 
+# --- Data tab (chart, bar_chart, gauge, badge, code_view, property_editor, toasts) ---
+data_panel is ui.panel of ["data_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+data_panel.border is null
+
+# Line chart with two series
+demo_chart is ui.chart of ["demo_chart", 10, 10, 400, 200]
+loss_data is []
+acc_data is []
+for i in range of 30:
+    v is 2.0 - i * 0.05 + (sin of (i * 0.5)) * 0.2
+    append of [loss_data, v]
+    a is 0.3 + i * 0.02 + (cos of (i * 0.3)) * 0.05
+    append of [acc_data, a]
+demo_chart.series is [
+    {"label": "Loss", "data": loss_data, "color": [220, 80, 80]},
+    {"label": "Accuracy", "data": acc_data, "color": [80, 200, 120]}
+]
+demo_chart.x_label is "Epoch"
+ui.add_child of [data_panel, demo_chart]
+
+# Bar chart
+bar_labels is ["Mon", "Tue", "Wed", "Thu", "Fri"]
+bar_values is [42, 78, 55, 91, 63]
+define on_bar_click(w, idx) as:
+    status_text is f"Bar clicked: {w.labels[idx]} = {w.values[idx]}"
+demo_bars is ui.bar_chart of ["demo_bars", 430, 10, 280, 200, bar_labels, bar_values, on_bar_click]
+demo_bars.colors is [[80, 140, 220], [220, 140, 80], [80, 200, 120], [200, 80, 200], [220, 200, 80]]
+ui.add_child of [data_panel, demo_bars]
+
+# Gauges
+g1 is ui.gauge of ["gauge_cpu", 730, 10, 80, 0, 100, 72, "CPU"]
+g1.color is [80, 200, 120]
+ui.add_child of [data_panel, g1]
+
+g2 is ui.gauge of ["gauge_mem", 830, 10, 80, 0, 100, 45, "MEM"]
+g2.color is [220, 140, 80]
+ui.add_child of [data_panel, g2]
+
+# Badges
+ui.add_child of [data_panel, ui.badge of ["badge_ok", 730, 100, "OK", [40, 180, 80]]]
+ui.add_child of [data_panel, ui.badge of ["badge_warn", 780, 100, "WARN", [220, 180, 40]]]
+ui.add_child of [data_panel, ui.badge of ["badge_err", 844, 100, "ERR", [220, 60, 60]]]
+
+# Code view
+sample_code is "define fib(n) as:\n    if n < 2:\n        return n\n    return (fib of (n - 1)) + (fib of (n - 2))\n\nresult is fib of 10\nprint of result\n# Output: 55"
+cv is ui.code_view of ["demo_code", 10, 230, 400, 180, sample_code]
+ui.add_child of [data_panel, cv]
+
+# Property editor
+demo_props is [
+    {"key": "Name", "value": "Synth 1", "type": "text"},
+    {"key": "Volume", "value": 75, "type": "number", "min": 0, "max": 100},
+    {"key": "Active", "value": 1, "type": "bool"},
+    {"key": "Mode", "value": "Poly", "type": "choice", "items": ["Mono", "Poly", "Unison", "Legato"]}
+]
+define on_prop_change(info) as:
+    status_text is f"Property: {info.key} = {info.value}"
+prop_ed is ui.property_editor of ["demo_props", 430, 230, 280, 180, demo_props, on_prop_change]
+ui.add_child of [data_panel, prop_ed]
+
+# Toast button
+define on_toast_click(w) as:
+    ui.show_toast of ["Data saved successfully!", 3000]
+    status_text is "Toast shown"
+ui.add_child of [data_panel, ui.button of ["toast_btn", 730, 140, 120, 28, "Show Toast", on_toast_click]]
+
 # Wire tab panels
 append of [main_tabs.tab_panels, mix_panel]
 append of [main_tabs.tab_panels, synth_panel]
@@ -347,6 +413,7 @@ append of [main_tabs.tab_panels, wave_panel]
 append of [main_tabs.tab_panels, table_panel]
 append of [main_tabs.tab_panels, fx_panel]
 append of [main_tabs.tab_panels, extras_panel]
+append of [main_tabs.tab_panels, data_panel]
 
 # -- Statusbar --
 sb is ui.statusbar of ["status", 0, WINDOW_H - 24, WINDOW_W]
