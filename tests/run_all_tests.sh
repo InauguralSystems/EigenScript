@@ -32,7 +32,8 @@ check_numeric() {
         FAIL=$((FAIL + 1))
         return
     fi
-    local in_range=$(python3 -c "v=float('$actual'); print(1 if $min <= v <= $max else 0)" 2>/dev/null || echo "0")
+    local in_range
+    in_range=$(python3 -c "v=float('$actual'); print(1 if $min <= v <= $max else 0)" 2>/dev/null || echo "0")
     if [ "$in_range" = "1" ]; then
         echo "  PASS: $test_name ($actual in [$min, $max])"
         PASS=$((PASS + 1))
@@ -513,7 +514,7 @@ if ! echo "$PROBE_OUT" | grep -q "undefined variable"; then
     # checkpoints to exercise TR6/TR7. If unset (the common case), those
     # two checks skip gracefully.
     if [ -n "$EIGS_V0_MODEL_DIR" ]; then
-        V0_MODEL=$(ls "$EIGS_V0_MODEL_DIR"/*.json 2>/dev/null | head -1)
+        V0_MODEL=$(find "$EIGS_V0_MODEL_DIR" -maxdepth 1 -name '*.json' 2>/dev/null | head -1)
     else
         V0_MODEL=""
     fi
@@ -575,7 +576,6 @@ fi
 # [18] File I/O builtins: read_text, write_text, exec_capture
 echo "[18/18] File I/O Builtins (14 checks)"
 FIO_OUTPUT=$(./eigenscript ../tests/test_file_io.eigs 2>&1)
-FIO_EXIT=$?
 
 if echo "$FIO_OUTPUT" | grep -q "All file_io tests passed"; then
     # All asserts passed — count individual checks
@@ -1237,11 +1237,9 @@ echo ""
 # [54] Example smoke tests
 echo "[54] Example Smoke Tests"
 EX_OUTPUT=$(bash "$TESTS_DIR/test_examples.sh" 2>&1)
-EX_EXIT=$?
 
-# Count passes and skips from output
+# Count passes from output
 EX_PASS=$(echo "$EX_OUTPUT" | grep -c "PASS:" || true)
-EX_SKIP=$(echo "$EX_OUTPUT" | grep -c "SKIP:" || true)
 EX_FAIL=$(echo "$EX_OUTPUT" | grep -c "FAIL:" || true)
 
 TOTAL=$((TOTAL + EX_PASS + EX_FAIL))
