@@ -366,14 +366,59 @@ Value* builtin_report(Value *arg) {
     double dh = arg->dH;
     double h = arg->entropy;
     double prev_dh = arg->prev_dH;
-    if (prev_dh != 0.0 && dh * prev_dh < 0 && fabs(dh) > 0.001)
+    if (prev_dh != 0.0 && dh * prev_dh < 0 && fabs(dh) > g_obs_dh_zero)
         return make_str("oscillating");
-    if (dh > 0.01) return make_str("diverging");
-    if (dh < -0.01) return make_str("improving");
-    if (fabs(dh) < 0.001 && h < 0.1) return make_str("converged");
-    if (fabs(dh) < 0.001) return make_str("equilibrium");
-    if (fabs(dh) < 0.01 && h >= 0.1) return make_str("stable");
+    if (dh > g_obs_dh_small) return make_str("diverging");
+    if (dh < -g_obs_dh_small) return make_str("improving");
+    if (fabs(dh) < g_obs_dh_zero && h < g_obs_h_low) return make_str("converged");
+    if (fabs(dh) < g_obs_dh_zero) return make_str("equilibrium");
+    if (fabs(dh) < g_obs_dh_small && h >= g_obs_h_low) return make_str("stable");
     return make_str("stable");
+}
+
+/* Set observer classification thresholds.
+ * Usage: set_observer_thresholds of [dh_zero, dh_small, h_low]
+ *   dh_zero:  |dH| below this is "essentially zero change"  (default 0.001)
+ *   dh_small: |dH| below this is "small but nonzero change"  (default 0.01)
+ *   h_low:    entropy below this is "low information content" (default 0.1)
+ *
+ * WARNING: Changing these affects ALL observer predicates (converged, stable,
+ * improving, oscillating, diverging, equilibrium) and the report builtin.
+ * The defaults are precisely tuned. Only adjust for studying slow convergence
+ * or when working with values whose entropy changes are unusually small. */
+Value* builtin_set_observer_thresholds(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        runtime_error(0, "set_observer_thresholds requires [dh_zero, dh_small, h_low]");
+        return make_null();
+    }
+    double dh_zero  = arg->data.list.items[0]->data.num;
+    double dh_small = arg->data.list.items[1]->data.num;
+    double h_low    = arg->data.list.items[2]->data.num;
+    if (dh_zero <= 0 || dh_small <= 0 || h_low <= 0) {
+        runtime_error(0, "observer thresholds must be positive");
+        return make_null();
+    }
+    if (dh_zero >= dh_small) {
+        runtime_error(0, "dh_zero must be less than dh_small");
+        return make_null();
+    }
+    fprintf(stderr, "Warning: observer thresholds changed — dh_zero=%.6f dh_small=%.6f h_low=%.6f\n",
+            dh_zero, dh_small, h_low);
+    g_obs_dh_zero  = dh_zero;
+    g_obs_dh_small = dh_small;
+    g_obs_h_low    = h_low;
+    return make_null();
+}
+
+/* Get current observer thresholds.
+ * Returns [dh_zero, dh_small, h_low]. */
+Value* builtin_get_observer_thresholds(Value *arg) {
+    (void)arg;
+    Value *result = make_list(3);
+    list_append(result, make_num(g_obs_dh_zero));
+    list_append(result, make_num(g_obs_dh_small));
+    list_append(result, make_num(g_obs_h_low));
+    return result;
 }
 
 Value* builtin_assert(Value *arg) {
@@ -2475,6 +2520,8 @@ void register_builtins(Env *env) {
     env_set_local(env, "num", make_builtin(builtin_num));
     env_set_local(env, "append", make_builtin(builtin_append));
     env_set_local(env, "report", make_builtin(builtin_report));
+    env_set_local(env, "set_observer_thresholds", make_builtin(builtin_set_observer_thresholds));
+    env_set_local(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
     env_set_local(env, "assert", make_builtin(builtin_assert));
     env_set_local(env, "throw", make_builtin(builtin_throw));
     env_set_local(env, "keys", make_builtin(builtin_keys));

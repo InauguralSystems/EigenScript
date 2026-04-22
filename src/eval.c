@@ -93,6 +93,20 @@ static __thread int g_eval_depth = 0;
  * by design. User declared they won't interrogate. */
 __thread int g_unobserved_depth = 0;
 
+/* Observer classification thresholds — tunable via set_observer_thresholds.
+ * Defaults are very precise. Advanced users studying slow convergence may
+ * need to loosen these. Changing them affects how `report of`, `converged`,
+ * `stable`, `improving`, `oscillating`, `diverging`, and `equilibrium`
+ * classify variable trajectories.
+ *
+ *   dh_zero:  |dH| below this is "essentially zero change"  (default 0.001)
+ *   dh_small: |dH| below this is "small change"              (default 0.01)
+ *   h_low:    entropy below this means "low information"      (default 0.1)
+ */
+__thread double g_obs_dh_zero  = 0.001;
+__thread double g_obs_dh_small = 0.01;
+__thread double g_obs_h_low    = 0.1;
+
 static Value* eval_node_impl(ASTNode *node, Env *env);
 
 /* Purely-numeric RHS fast path used by the unobserved fast mutation
@@ -769,18 +783,18 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         double h = last ? last->entropy : 0.0;
         double dh = last ? last->dH : 0.0;
         switch (node->data.predicate.kind) {
-            case 0:
-                return make_num((fabs(dh) < 0.001 && h < 0.1) ? 1.0 : 0.0);
-            case 1:
-                return make_num((fabs(dh) < 0.01 && h >= 0.1 && !(last && last->prev_dH != 0.0 && dh * last->prev_dH < 0 && fabs(dh) > 0.001)) ? 1.0 : 0.0);
-            case 2:
-                return make_num((dh < -0.001) ? 1.0 : 0.0);
-            case 3:
-                return make_num((last && dh * last->prev_dH < 0 && fabs(dh) > 0.001) ? 1.0 : 0.0);
-            case 4:
-                return make_num((dh > 0.001) ? 1.0 : 0.0);
-            case 5:
-                return make_num((fabs(dh) < 0.001) ? 1.0 : 0.0);
+            case 0: /* converged: dH~0 AND low entropy */
+                return make_num((fabs(dh) < g_obs_dh_zero && h < g_obs_h_low) ? 1.0 : 0.0);
+            case 1: /* stable: dH small, entropy not low, not oscillating */
+                return make_num((fabs(dh) < g_obs_dh_small && h >= g_obs_h_low && !(last && last->prev_dH != 0.0 && dh * last->prev_dH < 0 && fabs(dh) > g_obs_dh_zero)) ? 1.0 : 0.0);
+            case 2: /* improving: dH negative (entropy decreasing) */
+                return make_num((dh < -g_obs_dh_zero) ? 1.0 : 0.0);
+            case 3: /* oscillating: dH sign-flipping */
+                return make_num((last && dh * last->prev_dH < 0 && fabs(dh) > g_obs_dh_zero) ? 1.0 : 0.0);
+            case 4: /* diverging: dH positive (entropy increasing) */
+                return make_num((dh > g_obs_dh_zero) ? 1.0 : 0.0);
+            case 5: /* equilibrium: dH~0 (regardless of entropy level) */
+                return make_num((fabs(dh) < g_obs_dh_zero) ? 1.0 : 0.0);
         }
         return make_num(0.0);
     }

@@ -309,6 +309,11 @@ extern __thread int g_breaking;
 extern __thread int g_continuing;
 extern char g_script_dir[4096];
 
+/* ---- Observer thresholds (tunable via set_observer_thresholds) ---- */
+extern __thread double g_obs_dh_zero;   /* |dH| < this → "zero change" (default 0.001) */
+extern __thread double g_obs_dh_small;  /* |dH| < this → "small change" (default 0.01)  */
+extern __thread double g_obs_h_low;     /* entropy < this → "low info"  (default 0.1)   */
+
 /* ---- Cross-file functions for MODEL tensor builtins ---- */
 /* When MODEL is enabled, these are defined in model_infer.c.
  * When disabled, eigenscript.c provides static stubs. */
