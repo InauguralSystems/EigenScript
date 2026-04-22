@@ -1,0 +1,302 @@
+# ============================================================
+# Numerical Calculus Library — differentiation, integration,
+# root finding, ODEs, series, and interpolation
+# ============================================================
+#
+# How to use:
+#   import calculus
+#
+#   calculus.derivative of [f, 3]           # f'(3)
+#   calculus.integrate_simpson of [f, 0, 1, 100]
+#   calculus.bisection of [f, 1, 2, 1e-10]
+#   calculus.rk4_method of [f, 1, 0, 1, 100]
+
+# ============================================================
+# Differentiation
+# ============================================================
+
+# derivative: central difference f'(x) ~ (f(x+h) - f(x-h)) / (2h)
+define derivative(f, x, h) as:
+    if h == null or h == 0:
+        h is 1e-8
+    fplus is f of (x + h)
+    fminus is f of (x - h)
+    return (fplus - fminus) / (2 * h)
+
+# second_derivative: f''(x) ~ (f(x+h) - 2f(x) + f(x-h)) / h^2
+define second_derivative(f, x, h) as:
+    if h == null or h == 0:
+        h is 1e-5
+    fplus is f of (x + h)
+    fmid is f of x
+    fminus is f of (x - h)
+    return (fplus - 2 * fmid + fminus) / (h * h)
+
+# partial_derivative: partial derivative of f(vars) with respect to vars[index]
+define partial_derivative(f, vars, index, h) as:
+    if h == null or h == 0:
+        h is 1e-8
+    # Create vars+ and vars-
+    n is len of vars
+    vars_plus is []
+    vars_minus is []
+    for i in range of n:
+        if i == index:
+            append of [vars_plus, vars[i] + h]
+            append of [vars_minus, vars[i] - h]
+        else:
+            append of [vars_plus, vars[i]]
+            append of [vars_minus, vars[i]]
+    fplus is f of vars_plus
+    fminus is f of vars_minus
+    return (fplus - fminus) / (2 * h)
+
+# gradient: gradient vector [df/dx1, df/dx2, ...]
+define gradient(f, vars, h) as:
+    if h == null or h == 0:
+        h is 1e-8
+    n is len of vars
+    grad is []
+    for i in range of n:
+        append of [grad, partial_derivative of [f, vars, i, h]]
+    return grad
+
+# ============================================================
+# Integration
+# ============================================================
+
+# integrate_trapezoidal: trapezoidal rule with n intervals
+define integrate_trapezoidal(f, a, b, n) as:
+    h is (b - a) / n
+    fa is f of a
+    fb is f of b
+    s is (fa + fb) / 2
+    for i in range of (n - 1):
+        xi is a + (i + 1) * h
+        s is s + (f of xi)
+    return s * h
+
+# integrate_simpson: Simpson's 1/3 rule (n must be even)
+define integrate_simpson(f, a, b, n) as:
+    if (n % 2) != 0:
+        n is n + 1
+    h is (b - a) / n
+    fa is f of a
+    fb is f of b
+    s is fa + fb
+    for i in range of (n - 1):
+        k is i + 1
+        xk is a + k * h
+        if (k % 2) == 0:
+            s is s + 2 * (f of xk)
+        else:
+            s is s + 4 * (f of xk)
+    return s * h / 3
+
+# integrate_midpoint: midpoint rule
+define integrate_midpoint(f, a, b, n) as:
+    h is (b - a) / n
+    s is 0
+    for i in range of n:
+        mid is a + (i + 0.5) * h
+        s is s + f of mid
+    return s * h
+
+# integrate_monte_carlo: Monte Carlo integration
+define integrate_monte_carlo(f, a, b, n) as:
+    s is 0
+    for i in range of n:
+        x is a + (random of null) * (b - a)
+        s is s + f of x
+    return (b - a) * s / n
+
+# ============================================================
+# Root Finding
+# ============================================================
+
+# bisection: find x where f(x)=0 in [a,b]
+define bisection(f, a, b, tol) as:
+    if tol == null or tol == 0:
+        tol is 1e-10
+    fa is f of a
+    fb is f of b
+    max_iter is 100
+    for i in range of max_iter:
+        mid is (a + b) / 2
+        fm is f of mid
+        if (abs of fm) < tol:
+            return mid
+        if (b - a) / 2 < tol:
+            return mid
+        if fa * fm < 0:
+            b is mid
+            fb is fm
+        else:
+            a is mid
+            fa is fm
+    return (a + b) / 2
+
+# newton_raphson: Newton's method x_{n+1} = x_n - f(x_n)/f'(x_n)
+define newton_raphson(f, df, x0, tol, max_iter) as:
+    if tol == null or tol == 0:
+        tol is 1e-10
+    if max_iter == null or max_iter == 0:
+        max_iter is 100
+    x is x0
+    for i in range of max_iter:
+        fx is f of x
+        dfx is df of x
+        if (abs of dfx) < 1e-15:
+            return x
+        x_new is x - fx / dfx
+        if (abs of (x_new - x)) < tol:
+            return x_new
+        x is x_new
+    return x
+
+# secant_method: derivative-free root finding
+define secant_method(f, x0, x1, tol, max_iter) as:
+    if tol == null or tol == 0:
+        tol is 1e-10
+    if max_iter == null or max_iter == 0:
+        max_iter is 100
+    f0 is f of x0
+    f1 is f of x1
+    for i in range of max_iter:
+        if (abs of (f1 - f0)) < 1e-15:
+            return x1
+        x2 is x1 - f1 * (x1 - x0) / (f1 - f0)
+        if (abs of (x2 - x1)) < tol:
+            return x2
+        x0 is x1
+        f0 is f1
+        x1 is x2
+        f1 is f of x2
+    return x1
+
+# ============================================================
+# Differential Equations
+# ============================================================
+
+# euler_method: solve y' = f(t, y) from t0 to t1 with n steps
+# Returns list of [t, y] pairs
+define euler_method(f, y0, t0, t1, n) as:
+    h is (t1 - t0) / n
+    t is t0
+    y is y0
+    result is [[t, y]]
+    for i in range of n:
+        y is y + h * (f of [t, y])
+        t is t + h
+        append of [result, [t, y]]
+    return result
+
+# rk4_method: 4th-order Runge-Kutta for scalar ODE y' = f(t, y)
+# Returns list of [t, y] pairs
+define rk4_method(f, y0, t0, t1, n) as:
+    h is (t1 - t0) / n
+    t is t0
+    y is y0
+    result is [[t, y]]
+    for i in range of n:
+        k1 is f of [t, y]
+        k2 is f of [t + h / 2, y + h / 2 * k1]
+        k3 is f of [t + h / 2, y + h / 2 * k2]
+        k4 is f of [t + h, y + h * k3]
+        y is y + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        t is t + h
+        append of [result, [t, y]]
+    return result
+
+# rk4_system: RK4 for systems y' = f(t, y) where y is a vector
+# Returns list of [t, [y1, y2, ...]] pairs
+define rk4_system(f, y0, t0, t1, n) as:
+    h is (t1 - t0) / n
+    t is t0
+    dim is len of y0
+    # Copy y0
+    y is []
+    for i in range of dim:
+        append of [y, y0[i]]
+    result is [[t, y]]
+    for step in range of n:
+        k1 is f of [t, y]
+        # y + h/2 * k1
+        y_tmp is []
+        for i in range of dim:
+            append of [y_tmp, y[i] + h / 2 * k1[i]]
+        k2 is f of [t + h / 2, y_tmp]
+        # y + h/2 * k2
+        y_tmp is []
+        for i in range of dim:
+            append of [y_tmp, y[i] + h / 2 * k2[i]]
+        k3 is f of [t + h / 2, y_tmp]
+        # y + h * k3
+        y_tmp is []
+        for i in range of dim:
+            append of [y_tmp, y[i] + h * k3[i]]
+        k4 is f of [t + h, y_tmp]
+        # Update y
+        y_new is []
+        for i in range of dim:
+            append of [y_new, y[i] + h / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i])]
+        y is y_new
+        t is t + h
+        append of [result, [t, y]]
+    return result
+
+# ============================================================
+# Series & Interpolation
+# ============================================================
+
+# taylor_exp: e^x = sum x^n / n!
+define taylor_exp(x, terms) as:
+    if terms == null or terms == 0:
+        terms is 20
+    s is 0
+    term is 1.0
+    for n in range of terms:
+        s is s + term
+        term is term * x / (n + 1)
+    return s
+
+# taylor_sin: sin(x) = sum (-1)^n * x^(2n+1) / (2n+1)!
+define taylor_sin(x, terms) as:
+    if terms == null or terms == 0:
+        terms is 15
+    s is 0
+    term is x * 1.0
+    for n in range of terms:
+        s is s + term
+        term is 0 - term * x * x / ((2 * n + 2) * (2 * n + 3))
+    return s
+
+# taylor_cos: cos(x) = sum (-1)^n * x^(2n) / (2n)!
+define taylor_cos(x, terms) as:
+    if terms == null or terms == 0:
+        terms is 15
+    s is 0
+    term is 1.0
+    for n in range of terms:
+        s is s + term
+        term is 0 - term * x * x / ((2 * n + 1) * (2 * n + 2))
+    return s
+
+# lagrange_interpolation: Lagrange polynomial interpolation at point x
+define lagrange_interpolation(xs, ys, x) as:
+    n is len of xs
+    result is 0
+    for i in range of n:
+        basis is 1.0
+        for j in range of n:
+            if j != i:
+                basis is basis * (x - xs[j]) / (xs[i] - xs[j])
+        result is result + ys[i] * basis
+    return result
+
+# linear_interpolation: linear interpolation between (x0,y0) and (x1,y1) at x
+define linear_interpolation(x0, y0, x1, y1, x) as:
+    if (abs of (x1 - x0)) < 1e-15:
+        return y0
+    t is (x - x0) / (x1 - x0)
+    return y0 + t * (y1 - y0)

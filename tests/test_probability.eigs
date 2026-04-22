@@ -1,0 +1,129 @@
+# ============================================================
+# Probability & Distributions Tests
+# ============================================================
+load_file of "lib/test.eigs"
+import probability
+
+print of "=== PROBABILITY TESTS ==="
+
+# ---- Combinatorics ----
+print of "--- Combinatorics ---"
+assert_eq of [probability.factorial of 0, 1, "0! = 1"]
+assert_eq of [probability.factorial of 1, 1, "1! = 1"]
+assert_eq of [probability.factorial of 5, 120, "5! = 120"]
+assert_eq of [probability.factorial of 10, 3628800, "10! = 3628800"]
+
+assert_eq of [probability.combinations of [10, 3], 120, "C(10,3) = 120"]
+assert_eq of [probability.combinations of [5, 0], 1, "C(5,0) = 1"]
+assert_eq of [probability.combinations of [5, 5], 1, "C(5,5) = 1"]
+assert_eq of [probability.combinations of [20, 10], 184756, "C(20,10) = 184756"]
+
+assert_eq of [probability.permutations of [10, 3], 720, "P(10,3) = 720"]
+assert_eq of [probability.permutations of [5, 0], 1, "P(5,0) = 1"]
+assert_eq of [probability.permutations of [5, 5], 120, "P(5,5) = 120"]
+
+# ---- Binomial Distribution ----
+print of "--- Binomial ---"
+# B(10, 3, 0.5) = C(10,3) * 0.5^3 * 0.5^7 = 120/1024 ~ 0.1172
+bpmf is probability.binomial_pmf of [10, 3, 0.5]
+assert_near of [bpmf, 0.1172, 0.001, "binomial_pmf(10,3,0.5)"]
+
+# CDF: P(X<=10) for B(10, p) = 1.0 (all outcomes)
+bcdf is probability.binomial_cdf of [10, 10, 0.5]
+assert_near of [bcdf, 1.0, 1e-8, "binomial_cdf(10,10,0.5) = 1"]
+
+# CDF: P(X<=0) for B(10, 0.5) = 0.5^10 ~ 0.000977
+bcdf0 is probability.binomial_cdf of [10, 0, 0.5]
+assert_near of [bcdf0, 0.000977, 0.0001, "binomial_cdf(10,0,0.5)"]
+
+# ---- Poisson Distribution ----
+print of "--- Poisson ---"
+# P(X=3 | lambda=2.5) = 2.5^3 * e^(-2.5) / 3! ~ 0.2138
+ppmf is probability.poisson_pmf of [3, 2.5]
+assert_near of [ppmf, 0.2138, 0.001, "poisson_pmf(3, 2.5)"]
+
+# P(X=0 | lambda=1) = e^(-1) ~ 0.3679
+p0 is probability.poisson_pmf of [0, 1]
+assert_near of [p0, 0.3679, 0.001, "poisson_pmf(0, 1)"]
+
+# CDF: P(X<=5 | lambda=2) should be close to 1
+pcdf is probability.poisson_cdf of [5, 2]
+assert_near of [pcdf, 0.9834, 0.001, "poisson_cdf(5, 2)"]
+
+# ---- Normal Distribution ----
+print of "--- Normal ---"
+# N(0, 0, 1) = 1/sqrt(2*pi) ~ 0.3989
+npdf is probability.normal_pdf of [0, 0, 1]
+assert_near of [npdf, 0.3989, 0.001, "normal_pdf(0,0,1)"]
+
+# N(1, 1, 1) = 1/sqrt(2*pi) ~ 0.3989 (x = mu)
+npdf2 is probability.normal_pdf of [1, 1, 1]
+assert_near of [npdf2, 0.3989, 0.001, "normal_pdf at mean"]
+
+# N(0, 0, 2) = 1/(2*sqrt(2*pi)) ~ 0.1995
+npdf3 is probability.normal_pdf of [0, 0, 2]
+assert_near of [npdf3, 0.1995, 0.001, "normal_pdf sigma=2"]
+
+# CDF approximation: Phi(0) = 0.5
+ncdf0 is probability.normal_cdf_approx of 0
+assert_near of [ncdf0, 0.5, 0.001, "normal_cdf(0) = 0.5"]
+
+# Phi(1.96) ~ 0.975
+ncdf196 is probability.normal_cdf_approx of 1.96
+assert_near of [ncdf196, 0.975, 0.001, "normal_cdf(1.96) ~ 0.975"]
+
+# Phi(-1.96) ~ 0.025
+ncdfn is probability.normal_cdf_approx of -1.96
+assert_near of [ncdfn, 0.025, 0.001, "normal_cdf(-1.96) ~ 0.025"]
+
+# ---- Exponential Distribution ----
+print of "--- Exponential ---"
+# f(1, 1) = e^(-1) ~ 0.3679
+epdf is probability.exponential_pdf of [1, 1]
+assert_near of [epdf, 0.3679, 0.001, "exp_pdf(1,1)"]
+
+# F(1, 1) = 1 - e^(-1) ~ 0.6321
+ecdf is probability.exponential_cdf of [1, 1]
+assert_near of [ecdf, 0.6321, 0.001, "exp_cdf(1,1)"]
+
+# Negative x
+assert_eq of [probability.exponential_pdf of [-1, 1], 0, "exp_pdf negative x"]
+assert_eq of [probability.exponential_cdf of [-1, 1], 0, "exp_cdf negative x"]
+
+# ---- Uniform Distribution ----
+print of "--- Uniform ---"
+# U(0.5, 0, 1) = 1
+assert_eq of [probability.uniform_pdf of [0.5, 0, 1], 1, "uniform_pdf midpoint"]
+assert_eq of [probability.uniform_pdf of [2, 0, 1], 0, "uniform_pdf outside"]
+assert_near of [probability.uniform_cdf of [0.5, 0, 1], 0.5, 1e-10, "uniform_cdf midpoint"]
+assert_eq of [probability.uniform_cdf of [-1, 0, 1], 0, "uniform_cdf below"]
+assert_eq of [probability.uniform_cdf of [2, 0, 1], 1, "uniform_cdf above"]
+
+# ---- Bayes' Theorem ----
+print of "--- Bayes ---"
+# Classic disease test: prior=0.01, likelihood=0.9, evidence=0.099
+# P(disease|positive) = 0.9 * 0.01 / 0.099 ~ 0.0909
+post is probability.bayes of [0.01, 0.9, 0.099]
+assert_near of [post, 0.0909, 0.001, "bayes disease test"]
+
+# ---- Expected Value & Variance ----
+print of "--- Expected Value & Variance ---"
+# Fair die: values [1..6], each p = 1/6
+vals is [1, 2, 3, 4, 5, 6]
+probs is [0.166667, 0.166667, 0.166667, 0.166667, 0.166667, 0.166667]
+ev is probability.expected_value of [vals, probs]
+assert_near of [ev, 3.5, 0.01, "E[fair die] = 3.5"]
+
+var is probability.variance_discrete of [vals, probs]
+# Var = 35/12 ~ 2.9167
+assert_near of [var, 2.9167, 0.01, "Var[fair die] ~ 2.917"]
+
+# ---- Chi-Squared Statistic ----
+print of "--- Chi-Squared ---"
+# Observed: [10, 20, 30], Expected: [20, 20, 20]
+# chi2 = (10-20)^2/20 + (20-20)^2/20 + (30-20)^2/20 = 5 + 0 + 5 = 10
+chi2 is probability.chi_squared_stat of [[10, 20, 30], [20, 20, 20]]
+assert_near of [chi2, 10, 1e-8, "chi2 = 10"]
+
+print of ""
+test_summary of null

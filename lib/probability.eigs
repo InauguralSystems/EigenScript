@@ -1,0 +1,167 @@
+# ============================================================
+# Probability & Distributions Library
+# ============================================================
+#
+# How to use:
+#   import probability
+#
+#   probability.factorial of 5               # 120
+#   probability.combinations of [10, 3]      # 120
+#   probability.binomial_pmf of [10, 3, 0.5] # 0.1172
+#   probability.normal_pdf of [0, 0, 1]      # 0.3989
+#   probability.bayes of [0.01, 0.9, 0.099]  # 0.0909
+
+# ============================================================
+# Combinatorics
+# ============================================================
+
+# factorial: n!
+define factorial(n) as:
+    if n <= 1:
+        return 1
+    result is 1
+    i is 2
+    loop while i <= n:
+        result is result * i
+        i is i + 1
+    return result
+
+# combinations: C(n, k) = n! / (k! * (n-k)!)
+# Uses multiplicative formula to avoid overflow for moderate n
+define combinations(n, k) as:
+    if k < 0 or k > n:
+        return 0
+    if k == 0 or k == n:
+        return 1
+    # Use smaller k for efficiency
+    if k > n - k:
+        k is n - k
+    result is 1
+    for i in range of k:
+        result is result * (n - i) / (i + 1)
+    return round of result
+
+# permutations: P(n, k) = n! / (n-k)!
+define permutations(n, k) as:
+    if k < 0 or k > n:
+        return 0
+    result is 1
+    for i in range of k:
+        result is result * (n - i)
+    return result
+
+# ============================================================
+# Discrete Distributions
+# ============================================================
+
+# binomial_pmf: P(X=k) = C(n,k) * p^k * (1-p)^(n-k)
+define binomial_pmf(n, k, p) as:
+    return (combinations of [n, k]) * (pow of [p, k]) * (pow of [1 - p, n - k])
+
+# binomial_cdf: P(X <= k) = sum_{i=0}^{k} binomial_pmf(n, i, p)
+define binomial_cdf(n, k, p) as:
+    s is 0
+    for i in range of (k + 1):
+        s is s + binomial_pmf of [n, i, p]
+    return s
+
+# poisson_pmf: P(X=k) = lambda^k * e^(-lambda) / k!
+define poisson_pmf(k, lam) as:
+    return (pow of [lam, k]) * (exp of (0 - lam)) / (factorial of k)
+
+# poisson_cdf: P(X <= k) = sum_{i=0}^{k} poisson_pmf(i, lambda)
+define poisson_cdf(k, lam) as:
+    s is 0
+    for i in range of (k + 1):
+        s is s + poisson_pmf of [i, lam]
+    return s
+
+# ============================================================
+# Continuous Distributions
+# ============================================================
+
+# normal_pdf: phi(x) = (1 / (sigma * sqrt(2*pi))) * exp(-(x-mu)^2 / (2*sigma^2))
+define normal_pdf(x, mu, sigma) as:
+    pi_val is pi of null
+    coeff is 1 / (sigma * (sqrt of (2 * pi_val)))
+    exponent is 0 - (x - mu) * (x - mu) / (2 * sigma * sigma)
+    return coeff * (exp of exponent)
+
+# normal_cdf_approx: Abramowitz & Stegun approximation for Phi(x) (standard normal CDF)
+# Uses formula 26.2.17 with constants for |error| < 7.5e-8
+define normal_cdf_approx(x) as:
+    # Handle negative x via symmetry: Phi(-x) = 1 - Phi(x)
+    if x < 0:
+        return 1 - (normal_cdf_approx of (0 - x))
+    pi_val is pi of null
+    b0 is 0.2316419
+    b1 is 0.319381530
+    b2 is -0.356563782
+    b3 is 1.781477937
+    b4 is -1.821255978
+    b5 is 1.330274429
+    t is 1 / (1 + b0 * x)
+    pdf is (1 / (sqrt of (2 * pi_val))) * (exp of (0 - x * x / 2))
+    poly is b1 * t + b2 * t * t + b3 * t * t * t + b4 * t * t * t * t + b5 * t * t * t * t * t
+    return 1 - pdf * poly
+
+# exponential_pdf: f(x) = lambda * e^(-lambda * x) for x >= 0
+define exponential_pdf(x, lam) as:
+    if x < 0:
+        return 0
+    return lam * (exp of (0 - lam * x))
+
+# exponential_cdf: F(x) = 1 - e^(-lambda * x) for x >= 0
+define exponential_cdf(x, lam) as:
+    if x < 0:
+        return 0
+    return 1 - (exp of (0 - lam * x))
+
+# uniform_pdf: 1/(b-a) if a <= x <= b, else 0
+define uniform_pdf(x, a, b) as:
+    if x < a or x > b:
+        return 0
+    return 1 / (b - a)
+
+# uniform_cdf: (x-a)/(b-a) clamped to [0,1]
+define uniform_cdf(x, a, b) as:
+    if x <= a:
+        return 0
+    if x >= b:
+        return 1
+    return (x - a) / (b - a)
+
+# ============================================================
+# Bayesian & Descriptive
+# ============================================================
+
+# bayes: P(A|B) = P(B|A) * P(A) / P(B)
+define bayes(prior, likelihood, evidence) as:
+    return likelihood * prior / evidence
+
+# expected_value: E[X] = sum xi * pi
+define expected_value(values, probabilities) as:
+    n is len of values
+    s is 0
+    for i in range of n:
+        s is s + values[i] * probabilities[i]
+    return s
+
+# variance_discrete: Var(X) = sum pi * (xi - E[X])^2
+define variance_discrete(values, probabilities) as:
+    mu is expected_value of [values, probabilities]
+    n is len of values
+    s is 0
+    for i in range of n:
+        diff is values[i] - mu
+        s is s + probabilities[i] * diff * diff
+    return s
+
+# chi_squared_stat: chi^2 = sum (O - E)^2 / E
+define chi_squared_stat(observed, expected) as:
+    n is len of observed
+    s is 0
+    for i in range of n:
+        diff is observed[i] - expected[i]
+        s is s + diff * diff / expected[i]
+    return s

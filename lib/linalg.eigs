@@ -1,0 +1,456 @@
+# ============================================================
+# Linear Algebra Library — matrices and vectors in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   import linalg
+#
+#   linalg.mat_identity of 3
+#   linalg.mat_mul of [A, B]
+#   linalg.mat_det of A
+#   linalg.solve_linear of [A, b]
+#   linalg.vec_cross of [[1,0,0], [0,1,0]]
+#
+# Matrices are lists of lists (row-major). Vectors are flat lists.
+
+# ============================================================
+# Matrix Construction
+# ============================================================
+
+# mat_new: create rows x cols matrix filled with fill value
+define mat_new(rows, cols, fill) as:
+    result is []
+    for i in range of rows:
+        row is []
+        for j in range of cols:
+            append of [row, fill]
+        append of [result, row]
+    return result
+
+# mat_identity: n x n identity matrix
+define mat_identity(n) as:
+    result is []
+    for i in range of n:
+        row is []
+        for j in range of n:
+            if i == j:
+                append of [row, 1]
+            else:
+                append of [row, 0]
+        append of [result, row]
+    return result
+
+# mat_shape: returns [rows, cols]
+define mat_shape(A) as:
+    rows is len of A
+    if rows == 0:
+        return [0, 0]
+    cols is len of A[0]
+    return [rows, cols]
+
+# ============================================================
+# Matrix Element Access
+# ============================================================
+
+# mat_row: extract row i
+define mat_row(A, i) as:
+    row is []
+    for j in range of (len of A[i]):
+        append of [row, A[i][j]]
+    return row
+
+# mat_col: extract column j
+define mat_col(A, j) as:
+    col is []
+    for i in range of (len of A):
+        append of [col, A[i][j]]
+    return col
+
+# mat_trace: sum of diagonal elements
+define mat_trace(A) as:
+    s is 0
+    n is len of A
+    for i in range of n:
+        s is s + A[i][i]
+    return s
+
+# ============================================================
+# Matrix Arithmetic
+# ============================================================
+
+# mat_transpose: transpose matrix
+define mat_transpose(A) as:
+    rows is len of A
+    if rows == 0:
+        return []
+    cols is len of A[0]
+    result is []
+    for j in range of cols:
+        row is []
+        for i in range of rows:
+            append of [row, A[i][j]]
+        append of [result, row]
+    return result
+
+# mat_add: element-wise addition
+define mat_add(A, B) as:
+    rows is len of A
+    cols is len of A[0]
+    result is []
+    for i in range of rows:
+        row is []
+        for j in range of cols:
+            append of [row, A[i][j] + B[i][j]]
+        append of [result, row]
+    return result
+
+# mat_sub: element-wise subtraction
+define mat_sub(A, B) as:
+    rows is len of A
+    cols is len of A[0]
+    result is []
+    for i in range of rows:
+        row is []
+        for j in range of cols:
+            append of [row, A[i][j] - B[i][j]]
+        append of [result, row]
+    return result
+
+# mat_scale: multiply all elements by scalar
+define mat_scale(A, scalar) as:
+    rows is len of A
+    cols is len of A[0]
+    result is []
+    for i in range of rows:
+        row is []
+        for j in range of cols:
+            append of [row, A[i][j] * scalar]
+        append of [result, row]
+    return result
+
+# mat_mul: matrix multiplication (nested loops, not tensor builtin)
+define mat_mul(A, B) as:
+    rows_a is len of A
+    cols_a is len of A[0]
+    cols_b is len of B[0]
+    result is []
+    for i in range of rows_a:
+        row is []
+        for j in range of cols_b:
+            s is 0
+            for k in range of cols_a:
+                s is s + A[i][k] * B[k][j]
+            append of [row, s]
+        append of [result, row]
+    return result
+
+# ============================================================
+# Determinant
+# ============================================================
+
+# mat_det: determinant via cofactor expansion (2x2, 3x3) or LU for general
+define mat_det(A) as:
+    n is len of A
+    if n == 1:
+        return A[0][0]
+    if n == 2:
+        return A[0][0] * A[1][1] - A[0][1] * A[1][0]
+    if n == 3:
+        return A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) - A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) + A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0])
+    # General case: LU decomposition with partial pivoting
+    # Copy matrix to avoid mutation
+    M is []
+    for i in range of n:
+        row is []
+        for j in range of n:
+            append of [row, A[i][j] * 1.0]
+        append of [M, row]
+    sign is 1
+    for col in range of n:
+        # Partial pivoting: find max in column
+        max_val is abs of M[col][col]
+        max_row is col
+        r is col + 1
+        loop while r < n:
+            v is abs of M[r][col]
+            if v > max_val:
+                max_val is v
+                max_row is r
+            r is r + 1
+        if max_val < 1e-12:
+            return 0
+        if max_row != col:
+            # Swap rows
+            tmp is M[col]
+            set_at of [M, col, M[max_row]]
+            set_at of [M, max_row, tmp]
+            sign is sign * -1
+        # Eliminate below
+        r is col + 1
+        loop while r < n:
+            factor is M[r][col] / M[col][col]
+            for j in range of n:
+                set_at of [M[r], j, M[r][j] - factor * M[col][j]]
+            r is r + 1
+    # Determinant is product of diagonal * sign
+    det is sign * 1.0
+    for i in range of n:
+        det is det * M[i][i]
+    return det
+
+# ============================================================
+# Matrix Inverse (Gauss-Jordan elimination)
+# ============================================================
+
+define mat_inverse(A) as:
+    n is len of A
+    # Build augmented matrix [A | I]
+    aug is []
+    for i in range of n:
+        row is []
+        for j in range of n:
+            append of [row, A[i][j] * 1.0]
+        for j in range of n:
+            if i == j:
+                append of [row, 1.0]
+            else:
+                append of [row, 0.0]
+        append of [aug, row]
+    # Forward elimination with partial pivoting
+    for col in range of n:
+        # Find pivot
+        max_val is abs of aug[col][col]
+        max_row is col
+        r is col + 1
+        loop while r < n:
+            v is abs of aug[r][col]
+            if v > max_val:
+                max_val is v
+                max_row is r
+            r is r + 1
+        if max_val < 1e-12:
+            return null
+        if max_row != col:
+            tmp is aug[col]
+            set_at of [aug, col, aug[max_row]]
+            set_at of [aug, max_row, tmp]
+        # Scale pivot row
+        pivot is aug[col][col]
+        n2 is 2 * n
+        for j in range of n2:
+            set_at of [aug[col], j, aug[col][j] / pivot]
+        # Eliminate all other rows
+        for r in range of n:
+            if r != col:
+                factor is aug[r][col]
+                for j in range of n2:
+                    set_at of [aug[r], j, aug[r][j] - factor * aug[col][j]]
+    # Extract right half
+    result is []
+    for i in range of n:
+        row is []
+        for j in range of n:
+            append of [row, aug[i][j + n]]
+        append of [result, row]
+    return result
+
+# ============================================================
+# Vector Operations
+# ============================================================
+
+# vec_add: element-wise addition
+define vec_add(a, b) as:
+    n is len of a
+    result is []
+    for i in range of n:
+        append of [result, a[i] + b[i]]
+    return result
+
+# vec_sub: element-wise subtraction
+define vec_sub(a, b) as:
+    n is len of a
+    result is []
+    for i in range of n:
+        append of [result, a[i] - b[i]]
+    return result
+
+# vec_scale: scalar multiplication
+define vec_scale(a, s) as:
+    result is []
+    for i in range of (len of a):
+        append of [result, a[i] * s]
+    return result
+
+# vec_dot: dot product
+define vec_dot(a, b) as:
+    n is len of a
+    s is 0
+    for i in range of n:
+        s is s + a[i] * b[i]
+    return s
+
+# vec_cross: 3D cross product
+define vec_cross(a, b) as:
+    return [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0]
+    ]
+
+# vec_norm: Euclidean norm
+define vec_norm(a) as:
+    s is 0
+    for i in range of (len of a):
+        s is s + a[i] * a[i]
+    return sqrt of s
+
+# vec_normalize: unit vector
+define vec_normalize(a) as:
+    n is vec_norm of a
+    if n < 1e-15:
+        return a
+    result is []
+    for i in range of (len of a):
+        append of [result, a[i] / n]
+    return result
+
+# vec_angle: angle between vectors (radians)
+define vec_angle(a, b) as:
+    d is vec_dot of [a, b]
+    na is vec_norm of a
+    nb is vec_norm of b
+    if na < 1e-15 or nb < 1e-15:
+        return 0
+    cos_theta is d / (na * nb)
+    # Clamp to [-1, 1] for numerical safety
+    if cos_theta > 1:
+        cos_theta is 1
+    if cos_theta < -1:
+        cos_theta is -1
+    return acos of cos_theta
+
+# vec_project: project a onto b
+define vec_project(a, b) as:
+    d is vec_dot of [a, b]
+    bb is vec_dot of [b, b]
+    if bb < 1e-15:
+        return b
+    scalar is d / bb
+    return vec_scale of [b, scalar]
+
+# ============================================================
+# Systems of Equations
+# ============================================================
+
+# solve_linear: Solve Ax = b via Gaussian elimination with partial pivoting
+define solve_linear(A, b) as:
+    n is len of b
+    # Build augmented matrix [A | b]
+    aug is []
+    for i in range of n:
+        row is []
+        for j in range of n:
+            append of [row, A[i][j] * 1.0]
+        append of [row, b[i] * 1.0]
+        append of [aug, row]
+    # Forward elimination with partial pivoting
+    for col in range of n:
+        # Find pivot
+        max_val is abs of aug[col][col]
+        max_row is col
+        r is col + 1
+        loop while r < n:
+            v is abs of aug[r][col]
+            if v > max_val:
+                max_val is v
+                max_row is r
+            r is r + 1
+        if max_val < 1e-12:
+            return null
+        if max_row != col:
+            tmp is aug[col]
+            set_at of [aug, col, aug[max_row]]
+            set_at of [aug, max_row, tmp]
+        # Eliminate below
+        r is col + 1
+        loop while r < n:
+            factor is aug[r][col] / aug[col][col]
+            for j in range of (n + 1):
+                set_at of [aug[r], j, aug[r][j] - factor * aug[col][j]]
+            r is r + 1
+    # Back substitution
+    x is []
+    for i in range of n:
+        append of [x, 0]
+    i is n - 1
+    loop while i >= 0:
+        s is aug[i][n]
+        j is i + 1
+        loop while j < n:
+            s is s - aug[i][j] * x[j]
+            j is j + 1
+        set_at of [x, i, s / aug[i][i]]
+        i is i - 1
+    return x
+
+# least_squares: Solve overdetermined Ax ~ b via normal equations
+# x = (A^T A)^(-1) A^T b
+define least_squares(A, b) as:
+    At is mat_transpose of A
+    AtA is mat_mul of [At, A]
+    # A^T b as matrix multiply: reshape b as column vector
+    rows is len of b
+    b_col is []
+    for i in range of rows:
+        append of [b_col, [b[i]]]
+    Atb_mat is mat_mul of [At, b_col]
+    # Extract column vector
+    Atb is []
+    for i in range of (len of Atb_mat):
+        append of [Atb, Atb_mat[i][0]]
+    return solve_linear of [AtA, Atb]
+
+# ============================================================
+# Eigenvalues (2x2)
+# ============================================================
+
+# eigenvalues_2x2: eigenvalues of 2x2 matrix via characteristic polynomial
+# det(A - lambda*I) = 0  =>  lambda^2 - trace*lambda + det = 0
+define eigenvalues_2x2(A) as:
+    tr is A[0][0] + A[1][1]
+    det is A[0][0] * A[1][1] - A[0][1] * A[1][0]
+    disc is tr * tr - 4 * det
+    if disc < 0:
+        return null
+    sq is sqrt of disc
+    return [(tr + sq) / 2, (tr - sq) / 2]
+
+# eigenvectors_2x2: eigenvectors for each eigenvalue of 2x2 matrix
+define eigenvectors_2x2(A) as:
+    evals is eigenvalues_2x2 of A
+    if evals == null:
+        return null
+    vecs is []
+    for k in range of 2:
+        lam is evals[k]
+        # Solve (A - lam*I) v = 0
+        a11 is A[0][0] - lam
+        a12 is A[0][1]
+        a21 is A[1][0]
+        a22 is A[1][1] - lam
+        # Use the row with larger absolute values for numerical stability
+        if (abs of a11) + (abs of a12) >= (abs of a21) + (abs of a22):
+            if (abs of a12) > 1e-12:
+                append of [vecs, [0 - a12, a11]]
+            elif (abs of a11) > 1e-12:
+                append of [vecs, [0, 1]]
+            else:
+                append of [vecs, [1, 0]]
+        else:
+            if (abs of a22) > 1e-12:
+                append of [vecs, [0 - a22, a21]]
+            elif (abs of a21) > 1e-12:
+                append of [vecs, [0, 1]]
+            else:
+                append of [vecs, [1, 0]]
+    return vecs

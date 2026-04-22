@@ -1,0 +1,213 @@
+# ============================================================
+# Linear Algebra Tests
+# ============================================================
+load_file of "lib/test.eigs"
+import linalg
+
+print of "=== LINEAR ALGEBRA TESTS ==="
+
+# ---- Matrix construction ----
+print of "--- Matrix Construction ---"
+Z is linalg.mat_new of [2, 3, 0]
+assert_eq of [len of Z, 2, "mat_new rows"]
+assert_eq of [len of Z[0], 3, "mat_new cols"]
+assert_eq of [Z[0][0], 0, "mat_new fill"]
+
+I3 is linalg.mat_identity of 3
+assert_eq of [I3[0][0], 1, "identity diag 0"]
+assert_eq of [I3[1][1], 1, "identity diag 1"]
+assert_eq of [I3[0][1], 0, "identity off-diag"]
+
+shape is linalg.mat_shape of I3
+assert_eq of [shape[0], 3, "shape rows"]
+assert_eq of [shape[1], 3, "shape cols"]
+
+# ---- Trace ----
+print of "--- Trace ---"
+A is [[1, 2], [3, 4]]
+assert_eq of [linalg.mat_trace of A, 5, "trace 2x2"]
+
+# ---- Transpose ----
+print of "--- Transpose ---"
+M is [[1, 2, 3], [4, 5, 6]]
+Mt is linalg.mat_transpose of M
+assert_eq of [Mt[0][0], 1, "transpose [0][0]"]
+assert_eq of [Mt[0][1], 4, "transpose [0][1]"]
+assert_eq of [Mt[1][0], 2, "transpose [1][0]"]
+assert_eq of [Mt[2][1], 6, "transpose [2][1]"]
+
+# ---- Matrix Arithmetic ----
+print of "--- Matrix Arithmetic ---"
+A is [[1, 2], [3, 4]]
+B is [[5, 6], [7, 8]]
+S is linalg.mat_add of [A, B]
+assert_eq of [S[0][0], 6, "mat_add [0][0]"]
+assert_eq of [S[1][1], 12, "mat_add [1][1]"]
+
+D is linalg.mat_sub of [B, A]
+assert_eq of [D[0][0], 4, "mat_sub [0][0]"]
+assert_eq of [D[1][1], 4, "mat_sub [1][1]"]
+
+Sc is linalg.mat_scale of [A, 3]
+assert_eq of [Sc[0][0], 3, "mat_scale [0][0]"]
+assert_eq of [Sc[1][0], 9, "mat_scale [1][0]"]
+
+# ---- Matrix Multiplication ----
+print of "--- Matrix Multiplication ---"
+A is [[1, 2], [3, 4]]
+B is [[5, 6], [7, 8]]
+P is linalg.mat_mul of [A, B]
+assert_eq of [P[0][0], 19, "mat_mul [0][0]"]
+assert_eq of [P[0][1], 22, "mat_mul [0][1]"]
+assert_eq of [P[1][0], 43, "mat_mul [1][0]"]
+assert_eq of [P[1][1], 50, "mat_mul [1][1]"]
+
+# Identity * vector (as column matrix)
+I2 is linalg.mat_identity of 2
+v_col is [[3], [7]]
+Iv is linalg.mat_mul of [I2, v_col]
+assert_eq of [Iv[0][0], 3, "I*v [0]"]
+assert_eq of [Iv[1][0], 7, "I*v [1]"]
+
+# ---- Determinant ----
+print of "--- Determinant ---"
+A is [[1, 2], [3, 4]]
+assert_eq of [linalg.mat_det of A, -2, "det 2x2"]
+
+B is [[1, 2, 3], [4, 5, 6], [7, 8, 0]]
+assert_eq of [linalg.mat_det of B, 27, "det 3x3"]
+
+# 1x1
+assert_eq of [linalg.mat_det of [[5]], 5, "det 1x1"]
+
+# 4x4
+C is [[1, 0, 2, -1], [3, 0, 0, 5], [2, 1, 4, -3], [1, 0, 5, 0]]
+assert_near of [linalg.mat_det of C, 30, 0.01, "det 4x4"]
+
+# ---- Matrix Inverse ----
+print of "--- Matrix Inverse ---"
+A is [[1, 2], [3, 4]]
+Ai is linalg.mat_inverse of A
+# A * A^(-1) should be identity
+prod is linalg.mat_mul of [A, Ai]
+assert_near of [prod[0][0], 1, 1e-8, "inv*A [0][0] = 1"]
+assert_near of [prod[0][1], 0, 1e-8, "inv*A [0][1] = 0"]
+assert_near of [prod[1][0], 0, 1e-8, "inv*A [1][0] = 0"]
+assert_near of [prod[1][1], 1, 1e-8, "inv*A [1][1] = 1"]
+
+# Known inverse of [[1,2],[3,4]] is [[-2,1],[1.5,-0.5]]
+assert_near of [Ai[0][0], -2, 1e-8, "inv [0][0]"]
+assert_near of [Ai[0][1], 1, 1e-8, "inv [0][1]"]
+assert_near of [Ai[1][0], 1.5, 1e-8, "inv [1][0]"]
+assert_near of [Ai[1][1], -0.5, 1e-8, "inv [1][1]"]
+
+# Singular matrix returns null
+S is [[1, 2], [2, 4]]
+assert_eq of [linalg.mat_inverse of S, null, "singular inverse is null"]
+
+# ---- Vector Operations ----
+print of "--- Vector Operations ---"
+a is [1, 2, 3]
+b is [4, 5, 6]
+
+s is linalg.vec_add of [a, b]
+assert_eq of [s[0], 5, "vec_add [0]"]
+assert_eq of [s[2], 9, "vec_add [2]"]
+
+d is linalg.vec_sub of [b, a]
+assert_eq of [d[0], 3, "vec_sub [0]"]
+assert_eq of [d[2], 3, "vec_sub [2]"]
+
+sc is linalg.vec_scale of [a, 2]
+assert_eq of [sc[0], 2, "vec_scale [0]"]
+assert_eq of [sc[2], 6, "vec_scale [2]"]
+
+assert_eq of [linalg.vec_dot of [a, b], 32, "vec_dot"]
+
+# Cross product
+c is linalg.vec_cross of [[1, 0, 0], [0, 1, 0]]
+assert_eq of [c[0], 0, "cross [0]"]
+assert_eq of [c[1], 0, "cross [1]"]
+assert_eq of [c[2], 1, "cross [2]"]
+
+# Norm
+assert_near of [linalg.vec_norm of [3, 4], 5, 1e-10, "vec_norm [3,4]"]
+
+# Normalize
+u is linalg.vec_normalize of [3, 4]
+assert_near of [u[0], 0.6, 1e-10, "normalize [0]"]
+assert_near of [u[1], 0.8, 1e-10, "normalize [1]"]
+
+# Angle between orthogonal vectors
+pi_val is pi of null
+angle is linalg.vec_angle of [[1, 0], [0, 1]]
+assert_near of [angle, pi_val / 2, 1e-8, "angle 90 deg"]
+
+# Projection
+p is linalg.vec_project of [[3, 4], [1, 0]]
+assert_near of [p[0], 3, 1e-10, "project [0]"]
+assert_near of [p[1], 0, 1e-10, "project [1]"]
+
+# ---- Solve Linear System ----
+print of "--- Solve Linear ---"
+# 2x + y = 5, x + 3y = 10 => x=1, y=3
+A is [[2, 1], [1, 3]]
+b is [5, 10]
+x is linalg.solve_linear of [A, b]
+assert_near of [x[0], 1, 1e-8, "solve x=1"]
+assert_near of [x[1], 3, 1e-8, "solve y=3"]
+
+# 3x3 system
+A3 is [[2, 1, -1], [-3, -1, 2], [-2, 1, 2]]
+b3 is [8, -11, -3]
+x3 is linalg.solve_linear of [A3, b3]
+assert_near of [x3[0], 2, 1e-8, "solve3 x=2"]
+assert_near of [x3[1], 3, 1e-8, "solve3 y=3"]
+assert_near of [x3[2], -1, 1e-8, "solve3 z=-1"]
+
+# ---- Least Squares ----
+print of "--- Least Squares ---"
+# Fit y = 2x + 1 to points (0,1), (1,3), (2,5) (exact fit)
+# A = [[1, 0], [1, 1], [1, 2]], b = [1, 3, 5]
+# x = [intercept, slope] = [1, 2]
+A_ls is [[1, 0], [1, 1], [1, 2]]
+b_ls is [1, 3, 5]
+x_ls is linalg.least_squares of [A_ls, b_ls]
+assert_near of [x_ls[0], 1, 1e-6, "least_squares intercept"]
+assert_near of [x_ls[1], 2, 1e-6, "least_squares slope"]
+
+# ---- Eigenvalues 2x2 ----
+print of "--- Eigenvalues 2x2 ---"
+# [[2,1],[1,2]] has eigenvalues 3 and 1
+A is [[2, 1], [1, 2]]
+evals is linalg.eigenvalues_2x2 of A
+assert_near of [evals[0], 3, 1e-8, "eigenvalue 1 = 3"]
+assert_near of [evals[1], 1, 1e-8, "eigenvalue 2 = 1"]
+
+# Eigenvectors
+evecs is linalg.eigenvectors_2x2 of A
+# For lambda=3: (A - 3I)v = 0 => [-1,1;1,-1]v = 0 => v ~ [1,1]
+# For lambda=1: (A - I)v = 0 => [1,1;1,1]v = 0 => v ~ [-1,1]
+# Check Av = lambda*v for both
+v1 is evecs[0]
+Av1_0 is A[0][0] * v1[0] + A[0][1] * v1[1]
+Av1_1 is A[1][0] * v1[0] + A[1][1] * v1[1]
+assert_near of [Av1_0 / v1[0], 3, 1e-8, "eigvec1 check"]
+
+v2 is evecs[1]
+Av2_0 is A[0][0] * v2[0] + A[0][1] * v2[1]
+Av2_1 is A[1][0] * v2[0] + A[1][1] * v2[1]
+assert_near of [Av2_0 / v2[0], 1, 1e-8, "eigvec2 check"]
+
+# ---- Row/Col extraction ----
+print of "--- Row/Col ---"
+M is [[1, 2, 3], [4, 5, 6]]
+r is linalg.mat_row of [M, 1]
+assert_eq of [r[0], 4, "row 1 [0]"]
+assert_eq of [r[2], 6, "row 1 [2]"]
+c is linalg.mat_col of [M, 2]
+assert_eq of [c[0], 3, "col 2 [0]"]
+assert_eq of [c[1], 6, "col 2 [1]"]
+
+print of ""
+test_summary of null
