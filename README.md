@@ -13,7 +13,7 @@
 
 A complete, standalone programming language with native observer semantics,
 real concurrency, a 44-widget GUI toolkit, embedded database, tensor math,
-and a 47-module standard library (12 STEM) — all in a single zero-dependency C binary.
+and a 49-module standard library (14 STEM) — all in a single zero-dependency C binary.
 
 ## Install
 
@@ -203,6 +203,8 @@ Pure EigenScript libraries under `lib/`:
 | `lib/simulation.eigs` | Observer-aware spring-mass, Lotka-Volterra, heat equation, equilibrium detection |
 | `lib/numerics.eigs` | Jacobi/Gauss-Seidel solvers, power iteration — observer convergence |
 | `lib/experiment.eigs` | Measurement stability, entropy spike detection, regime classification |
+| `lib/geometry.eigs` | Points, vectors, triangles, polygons, convex hull, circles, transforms |
+| `lib/lab.eigs` | Experiment management, data collection with observer feedback, CSV export |
 | `lib/audio.eigs` | `play_note`, `note_freq`, `play_chord`, drum synthesis |
 | `lib/eigen.eigs` | Meta-circular interpreter — full language parity, debug hooks |
 
@@ -228,13 +230,19 @@ eigenscript examples/stdlib_demo.eigs  # standard library (map, filter, reduce)
 eigenscript examples/data_pipeline.eigs # combining libraries for real work
 eigenscript examples/observer.eigs    # observer semantics (entropy, dH)
 eigenscript examples/tensors.eigs     # tensor math, gradients, SGD
+
+# STEM simulations
+eigenscript examples/stem/orbital_mechanics.eigs   # Kepler orbits via RK4
+eigenscript examples/stem/climate_model.eigs       # energy balance, CO2 sensitivity
+eigenscript examples/stem/genetic_drift.eigs       # Wright-Fisher population genetics
+eigenscript examples/stem/signal_analysis.eigs     # DFT frequency detection
 ```
 
 ## Test Suite
 
 ```bash
 cd tests
-./run_all_tests.sh    # 817/817 (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 831/831 (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ## Documentation

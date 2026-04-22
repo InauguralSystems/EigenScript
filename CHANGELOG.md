@@ -4,6 +4,38 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-04-22
+
+### New Libraries
+- **`lib/geometry.eigs`**: Computational geometry — 60+ functions for 2D/3D
+  points, vectors, line/segment intersection, triangles (area, centroid,
+  circumcenter, incenter, barycentric coords), polygons (shoelace area,
+  point-in-polygon ray casting, convexity), convex hull (Andrew's monotone
+  chain), circles (from 3 points, intersection), 2D transforms (translate,
+  rotate, scale, reflect), Hausdorff distance, solid geometry. 124 tests.
+- **`lib/lab.eigs`**: Experiment and data collection framework composing
+  EigenStore, observer semantics, stats, and experiment libraries. Real-time
+  measurement stability detection, outlier flagging, tagged groups, CSV
+  export, persistence via EigenStore.
+
+### New Builtins
+- **`set_observer_thresholds of [dh_zero, dh_small, h_low]`**: Tune observer
+  classification thresholds for advanced use (slow convergence studies).
+  Prints warning on change. Defaults: 0.001, 0.01, 0.1.
+- **`get_observer_thresholds of null`**: Read current thresholds.
+
+### Examples
+- **15 STEM simulations** in `examples/stem/`: double pendulum chaos,
+  radioactive decay chains, RC circuits, projectile drag, heat diffusion,
+  Lotka-Volterra ecology, chemical kinetics, orbital mechanics, spring
+  resonance, diffraction, genetic drift, eigenvalue vibration, acid-base
+  titration, climate modeling, signal analysis.
+
+### Hardening
+- Documented Euler invariant in range builtin, suppressed cppcheck false flag
+- Observer predicates and `report` now use tunable threshold variables
+  instead of hardcoded constants (same defaults, no behavior change)
+
 ## [0.9.2] — 2026-04-22
 
 ### STEM Standard Library (12 modules, 500+ functions)

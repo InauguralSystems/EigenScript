@@ -1,8 +1,19 @@
 # EigenScript Builtin Reference
 
-168 builtins organized by module (136 core + 32 extensions).
+200+ builtins organized by module (160+ core + 45 extensions).
 Core builtins are always available; extension builtins (HTTP, DB, model,
-gfx) require a full build (`./build.sh full`).
+gfx, audio) require a full build or the `gfx` target.
+
+New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
+`recv`, `close_channel`, `channel_closed`), hashing (`sha256`, `md5`,
+`sha256_file`, `md5_file`, `hmac_sha256`), EigenStore (`store_open`,
+`store_close`, `store_put`, `store_get`, `store_delete`, `store_query`,
+`store_count`, `store_update`, `store_collections`, `store_drop`),
+observer tuning (`set_observer_thresholds`, `get_observer_thresholds`),
+audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
+`audio_queue_size`, `audio_clear`, `audio_sine`, `audio_saw`,
+`audio_square`, `audio_noise`, `audio_mix`, `audio_gain`,
+`audio_envelope`), and `free_val`/`free_ast` for memory management.
 
 ## Core Language
 

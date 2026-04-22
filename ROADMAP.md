@@ -1,11 +1,11 @@
 # Roadmap
 
-Current version: **0.9.2**
+Current version: **0.9.3**
 
 ## Near-term
 
 - [ ] Streaming subprocess I/O (stdin pipe, unbuffered stdout)
-- [ ] More STEM modules (signal processing, computational geometry, graph theory)
+- [ ] More STEM modules (graph theory, regression/curve fitting, numerical PDEs)
 
 ## Medium-term
 
@@ -18,6 +18,14 @@ Current version: **0.9.2**
 
 - [ ] Self-hosting compiler (EigenScript written in EigenScript)
 - [ ] Foreign function interface (FFI) for calling C libraries
+
+## Completed (0.9.3)
+
+- [x] Computational geometry library (EigenScript's namesake) — 60+ functions, convex hull, transforms
+- [x] Lab data collection framework — experiment management with observer-aware measurement analysis
+- [x] Tunable observer thresholds (`set_observer_thresholds`) for advanced convergence studies
+- [x] 15 STEM simulation examples (orbital mechanics, climate model, genetic drift, etc.)
+- [x] 49 stdlib modules, 14 STEM
 
 ## Completed (0.9.2)
 

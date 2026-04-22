@@ -478,3 +478,97 @@ define my_func as:
     # ... implementation ...
     return result
 ```
+
+## STEM Libraries (0.9.2+)
+
+### lib/physics.eigs
+14 CODATA constants, 80+ functions: kinematics, projectile motion, forces,
+energy, waves, thermodynamics, electromagnetism, optics, special relativity,
+nuclear/quantum, fluid mechanics.
+
+### lib/chemistry.eigs
+Periodic table (36 elements H–Kr), molecular weight parser, stoichiometry,
+gas laws, acids/bases (pH, Henderson-Hasselbalch), thermochemistry (Gibbs,
+Nernst), solution properties.
+
+### lib/biology.eigs
+Population dynamics, genetics (Hardy-Weinberg, Punnett squares), molecular
+biology (DNA complement, transcription, full 64-codon table, translation),
+enzyme kinetics (Michaelis-Menten), ecology (Shannon/Simpson diversity).
+
+### lib/engineering.eigs
+Unit conversions, signal processing (DFT/IDFT, convolution, spectrum),
+control systems (PID), structural (beam deflection, Euler buckling),
+electrical (impedance, resonance, voltage/current dividers).
+
+### lib/earth_science.eigs
+Atmospheric science (barometric formula, wind chill), seismology (Richter),
+oceanography (wave speed, seawater density), astronomy (Kepler, escape
+velocity, Schwarzschild radius, stellar luminosity), climate (CO2 forcing).
+
+### lib/linalg.eigs
+Matrix operations (transpose, multiply, determinant, inverse via Gauss-
+Jordan), vector algebra (dot, cross, norm, project), linear system solver,
+least squares, 2×2 eigenvalues/eigenvectors.
+
+### lib/calculus.eigs
+Numerical differentiation (central difference, gradient), integration
+(trapezoidal, Simpson's, Monte Carlo), root finding (bisection, Newton-
+Raphson, secant), ODEs (Euler, RK4 scalar and system), Taylor series,
+interpolation (Lagrange, linear).
+
+### lib/probability.eigs
+Combinatorics (factorial, C(n,k), P(n,k)), distributions (binomial,
+Poisson, normal, exponential, uniform), Bayesian inference, expected value,
+chi-squared statistic.
+
+### lib/optimize.eigs — Observer-Aware
+Gradient descent with observer-adaptive learning rate, multi-variable
+optimization, simulated annealing, golden section search, genetic algorithm.
+All use `report of loss` for automatic convergence detection.
+
+### lib/simulation.eigs — Observer-Aware
+Generic equilibrium detector, stability analyzer, spring-mass-damper,
+Lotka-Volterra predator-prey, 1D heat equation. Observer detects
+equilibrium, oscillation, and convergence.
+
+### lib/numerics.eigs — Observer-Aware
+Jacobi/Gauss-Seidel iterative solvers, power iteration for eigenvalues,
+fixed-point iteration. Observer detects residual convergence.
+
+### lib/experiment.eigs — Observer-Aware
+Measurement stability tracking, entropy spike outlier detection,
+convergence rate estimation, behavioral regime detection.
+
+### lib/geometry.eigs
+Computational geometry: 2D/3D points and vectors, line/segment intersection,
+triangles (area, centroid, circumcenter, incenter, barycentric coordinates),
+polygons (shoelace area, point-in-polygon, convexity), convex hull (Andrew's
+monotone chain), circles, 2D transforms, Hausdorff distance, solid geometry.
+
+### lib/lab.eigs
+Experiment management and data collection framework composing EigenStore,
+observer semantics, stats, and experiment libraries. Record measurements
+with live observer feedback, detect stability, flag outliers, export to CSV.
+
+## Additional Libraries (0.9.0+)
+
+### lib/data.eigs
+DataFrame operations on list-of-dicts: `df_from_csv`, `df_select`,
+`df_where`, `df_sort_by`, `df_group_by`, `df_join`, `df_to_csv`.
+
+### lib/stats.eigs
+Statistical functions: `mean`, `median`, `std_dev`, `variance`, `quantile`,
+`histogram`, `correlation`, `describe`.
+
+### lib/concurrent.eigs
+High-level concurrency: `future`, `await_all`, `parallel_map`,
+`parallel_each`, `worker_pool`.
+
+### lib/store.eigs
+EigenStore high-level layer: `find`, `find_one`, `upsert`, `bulk_put`,
+`to_dataframe`.
+
+### lib/audio.eigs
+Audio synthesis: `play_note`, `note_freq`, `play_chord`, drum sounds
+(`play_kick`, `play_snare`, `play_hihat`).
