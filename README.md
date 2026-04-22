@@ -12,8 +12,8 @@
 # EigenScript
 
 A complete, standalone programming language with native observer semantics,
-tensor math, closures, dictionaries, error handling, and a 25-module standard
-library — all in a single zero-dependency C binary.
+real concurrency, a 44-widget GUI toolkit, embedded database, tensor math,
+and a 34-module standard library — all in a single zero-dependency C binary.
 
 ## Install
 
@@ -23,7 +23,7 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds a ~140K binary and installs it to `~/.local/bin/eigenscript`.
+This builds a ~172K binary and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
 
@@ -186,7 +186,12 @@ Pure EigenScript libraries under `lib/`:
 | `lib/template.eigs` | `render`, `render_file`, `render_each`, `fill` |
 | `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response`, `check_openai` |
 | `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout`, `require_auth` |
-| `lib/eigen.eigs` | Meta-circular interpreter — EigenScript evaluator written in EigenScript |
+| `lib/data.eigs` | `df_from_csv`, `df_select`, `df_where`, `df_sort_by`, `df_join`, `df_group_by` |
+| `lib/stats.eigs` | `mean`, `median`, `std_dev`, `variance`, `histogram`, `correlation`, `describe` |
+| `lib/concurrent.eigs` | `future`, `await_all`, `parallel_map`, `parallel_each`, `worker_pool` |
+| `lib/store.eigs` | `open`, `put`, `get`, `find`, `upsert`, `bulk_put`, `to_dataframe` |
+| `lib/ui.eigs` | 44-widget GUI toolkit (buttons, sliders, tables, charts, trees, etc.) |
+| `lib/eigen.eigs` | Meta-circular interpreter — full language parity, debug hooks |
 
 ```eigenscript
 load_file of "lib/list.eigs"
@@ -216,14 +221,14 @@ eigenscript examples/tensors.eigs     # tensor math, gradients, SGD
 
 ```bash
 cd tests
-./run_all_tests.sh    # 437/437 (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 817/817 (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ## Documentation
 
 - [docs/SYNTAX.md](docs/SYNTAX.md) — language reference
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
-- [docs/BUILTINS.md](docs/BUILTINS.md) — 139 builtin functions (119 core + 20 extensions)
+- [docs/BUILTINS.md](docs/BUILTINS.md) — 150+ builtin functions (130 core + 20 extensions)
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 
@@ -231,7 +236,8 @@ cd tests
 
 ```bash
 make                  # build
-make test             # build and run 437 tests
+make test             # build and run 817 tests
+make gfx              # build with SDL2 graphics (UI toolkit, games)
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts
 ```

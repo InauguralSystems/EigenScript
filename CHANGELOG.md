@@ -4,6 +4,98 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-04-21
+
+### Language
+- **Index-assignment syntax**: `list[i] is value`, `dict[key] is value` —
+  new `AST_INDEX_ASSIGN` node. Supports chained access: `items[0].x is 10`,
+  `grid[r][c] is val`. 15 tests.
+- **Real concurrency**: 12 global variables converted to `__thread` thread-local
+  storage. Each OS thread gets its own eval state, error handling, and arena.
+  Atomic `val_incref`/`val_decref` for thread-safe reference counting.
+
+### New Builtins
+- **`spawn(fn)`**: create a pthread running an EigenScript function, returns handle
+- **`thread_join(handle)`**: block until thread completes, returns result
+- **`channel(null)`**: bounded mutex/condvar channel (64 slots)
+- **`send([ch, val])`** / **`recv(ch)`**: channel message passing (blocks when full/empty)
+- **`close_channel(ch)`** / **`channel_closed(ch)`**: channel lifecycle
+- **`gfx_rrect`**: filled rounded rectangle with optional alpha
+- **`gfx_clip`**: render clip rectangle (wraps SDL_RenderSetClipRect)
+- **EigenStore database**: `store_open`, `store_close`, `store_put`, `store_get`,
+  `store_delete`, `store_query`, `store_count`, `store_update`, `store_collections`,
+  `store_drop` — zero-dependency page-based embedded database
+
+### SDL2 Graphics
+- Mouse wheel events (`SDL_MouseWheelEvent`)
+- Modifier keys on key events (`shift`, `ctrl`, `alt`)
+- Full a-z + punctuation + F-key scancode table
+- Window resize events (`SDL_WINDOW_RESIZABLE`)
+
+### UI Toolkit (`lib/ui.eigs` + helpers) — NEW
+44-widget retained-mode GUI framework:
+- **Containers**: panel, hbox, vbox, scroll_panel, toolbar, tabs, splitter
+- **Buttons**: button, toggle_button, toggle, checkbox, radio_group
+- **Inputs**: text_input, slider, vslider, knob, spinbox, dropdown, combobox,
+  scrollbar, editable_label
+- **Data display**: label, table, item_list, tree, chart, bar_chart, gauge,
+  meter, progress_bar, badge, code_view
+- **Overlays**: dialog, menu, toast system
+- **Domain**: grid, piano_keyboard, waveform_view, color_picker, canvas
+- **Layout**: statusbar, property_editor (composed)
+
+Features:
+- 3 built-in themes (dark, light, high-contrast) with runtime switching
+- Flex layout engine (hbox/vbox with gap, padding, alignment)
+- Tab/Shift+Tab keyboard navigation with focus ring
+- Animation system with 4 easing functions (linear, ease_in, ease_out, ease_in_out)
+- Hotkey registration (`register_hotkey of ["ctrl+s", callback]`)
+- Right-click context menus
+- Clipboard (Ctrl+C/X/V/A) with text selection in inputs
+- Drag & drop with drop targets and reorder support
+- Modal dialog stack
+- Window resize with automatic re-layout
+
+### Standard Library — NEW MODULES
+- **`lib/data.eigs`**: DataFrame operations on list-of-dicts — 27 functions
+  (df_from_csv, df_select, df_where, df_sort_by, df_group_by, df_join, etc.)
+- **`lib/stats.eigs`**: Statistical functions — 18 functions (mean, median,
+  std_dev, variance, quantile, histogram, correlation, describe, etc.)
+- **`lib/concurrent.eigs`**: High-level concurrency — future, await_all,
+  parallel_map, parallel_each, worker_pool
+- **`lib/store.eigs`**: EigenStore high-level layer — find, find_one, upsert,
+  bulk_put, to_dataframe
+- **`lib/ui.eigs`**: UI toolkit (see above)
+- **`lib/ui_theme.eigs`**: Theme presets and management
+- **`lib/ui_draw.eigs`**: Low-level drawing helpers
+- **`lib/ui_layout.eigs`**: Flex layout engine
+- **`lib/ui_anim.eigs`**: Tween animation system
+
+### Meta-Circular Interpreter
+- **`lib/eigen.eigs` upgraded to full language parity** (892 → 1680 lines):
+  dicts, dot access, lambdas, pipes, pattern matching, list comprehensions,
+  break/continue, imports, observer interrogatives with real entropy tracking,
+  80+ C builtin bridge
+- **Debug hook support**: `eigen_set_hook(fn)` — callback before each statement
+  with AST node, environment, and line number
+
+### Graphical Debugger — NEW
+- **`examples/debugger.eigs`**: Observer-aware graphical debugger using UI toolkit
+- Source view with line numbers, breakpoint markers, current-line highlight
+- Variable inspector: Name, Value, Type, When, Entropy, dH, Status
+- Output console capturing print from debugged program
+- Entropy chart tracking average entropy over execution steps
+- Run (F5), Step (F10), Continue (F9), Stop controls
+
+### Testing
+- **817 tests** (up from 614 in 0.8.1)
+- Coverage: eval.c 96.6%, builtins.c 86.0%, eigenscript.c 81.9%
+- GC coverage: val_free for all value types (string, list, dict, function)
+- Import error path coverage (module not found, parse errors)
+- Terminal builtin coverage (screen_*, raw_key)
+- EigenStore CRUD + persistence tests
+- Concurrency tests (spawn/join, channels, producer/consumer)
+
 ## [0.8.1] — 2026-04-17
 
 ### New Builtins

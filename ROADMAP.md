@@ -1,29 +1,38 @@
 # Roadmap
 
-Current version: **0.8.1**
+Current version: **0.9.0**
 
 ## Near-term
 
-- [ ] Package manager / module registry for third-party `.eigs` libraries
-- [ ] Debugger with step/inspect/breakpoint support
-- [ ] Source maps for error traces across `load_file` boundaries
+- [ ] Audio extension (SDL2 audio for Deslan Studio)
+- [ ] Language server protocol (LSP) for editor integration
+- [ ] Hashing builtins (SHA-256, MD5)
 - [ ] Streaming subprocess I/O (stdin pipe, unbuffered stdout)
 
 ## Medium-term
 
-- [ ] Concurrency primitives (channels, spawn)
 - [ ] WASM compilation target
 - [ ] Destructuring assignment
-- [ ] SQLite extension
-- [ ] Hashing builtins (SHA-256, MD5)
+- [ ] Package manager / module registry
+- [ ] Optimizing JIT backend
 
 ## Long-term
 
-- [~] Self-hosting (meta-circular interpreter in `lib/eigen.eigs` — partially complete)
 - [ ] Self-hosting compiler (EigenScript written in EigenScript)
-- [ ] Language server protocol (LSP) for editor integration
-- [ ] Optimizing JIT backend
 - [ ] Foreign function interface (FFI) for calling C libraries
+
+## Completed (0.9.0)
+
+- [x] UI toolkit — 44 widgets, 3 themes, flex layout, animation, keyboard navigation
+- [x] Real concurrency — thread-local globals, `spawn`/`thread_join`, channels
+- [x] EigenStore — zero-dependency native embedded database
+- [x] Data library — DataFrame operations (df_from_csv, df_select, df_where, df_join, etc.)
+- [x] Statistics library — mean, median, std_dev, histogram, correlation, describe
+- [x] Graphical debugger with observer-aware variable inspection
+- [x] Meta-circular interpreter at full language parity (dicts, lambdas, imports, observer)
+- [x] Index-assignment syntax (`list[i] is val`, `dict[key] is val`)
+- [x] SDL2 enhancements (rounded rects, clip rects, mouse wheel, modifier keys, window resize)
+- [x] 817 tests, eval.c at 96.6% coverage
 
 ## Completed (0.8.0)
 
