@@ -13,7 +13,7 @@
 
 A complete, standalone programming language with native observer semantics,
 real concurrency, a 44-widget GUI toolkit, embedded database, tensor math,
-and a 34-module standard library — all in a single zero-dependency C binary.
+and a 47-module standard library (12 STEM) — all in a single zero-dependency C binary.
 
 ## Install
 
@@ -191,6 +191,19 @@ Pure EigenScript libraries under `lib/`:
 | `lib/concurrent.eigs` | `future`, `await_all`, `parallel_map`, `parallel_each`, `worker_pool` |
 | `lib/store.eigs` | `open`, `put`, `get`, `find`, `upsert`, `bulk_put`, `to_dataframe` |
 | `lib/ui.eigs` | 44-widget GUI toolkit (buttons, sliders, tables, charts, trees, etc.) |
+| `lib/physics.eigs` | Kinematics, forces, waves, thermodynamics, EM, optics, relativity, quantum |
+| `lib/chemistry.eigs` | Periodic table, molecular weight, stoichiometry, gas laws, pH, Gibbs |
+| `lib/biology.eigs` | Population dynamics, genetics, DNA/RNA/codons, enzyme kinetics, ecology |
+| `lib/engineering.eigs` | Unit conversion, DFT/signal processing, PID, structural, electrical |
+| `lib/earth_science.eigs` | Atmosphere, seismology, oceanography, astronomy, climate |
+| `lib/linalg.eigs` | Matrices, vectors, determinant, inverse, linear solve, eigenvalues |
+| `lib/calculus.eigs` | Derivatives, integrals, root finding, ODEs (Euler, RK4), Taylor series |
+| `lib/probability.eigs` | Binomial, Poisson, normal, exponential distributions, Bayesian inference |
+| `lib/optimize.eigs` | Observer-aware gradient descent, simulated annealing, genetic algorithm |
+| `lib/simulation.eigs` | Observer-aware spring-mass, Lotka-Volterra, heat equation, equilibrium detection |
+| `lib/numerics.eigs` | Jacobi/Gauss-Seidel solvers, power iteration — observer convergence |
+| `lib/experiment.eigs` | Measurement stability, entropy spike detection, regime classification |
+| `lib/audio.eigs` | `play_note`, `note_freq`, `play_chord`, drum synthesis |
 | `lib/eigen.eigs` | Meta-circular interpreter — full language parity, debug hooks |
 
 ```eigenscript

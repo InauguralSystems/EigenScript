@@ -4,6 +4,75 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-04-22
+
+### STEM Standard Library (12 modules, 500+ functions)
+- **`lib/physics.eigs`**: 14 CODATA constants, 80+ functions — kinematics,
+  projectile motion, forces, energy, waves, thermodynamics, electromagnetism,
+  optics, special relativity, nuclear/quantum, fluid mechanics
+- **`lib/chemistry.eigs`**: Periodic table (36 elements), molecular weight
+  parser, stoichiometry, gas laws, acids/bases, thermochemistry, solutions
+- **`lib/biology.eigs`**: Population dynamics, genetics (Hardy-Weinberg,
+  Punnett), molecular biology (DNA complement, transcription, full 64-codon
+  translation), enzyme kinetics, ecology (Shannon/Simpson diversity)
+- **`lib/engineering.eigs`**: Unit conversions, signal processing (DFT/IDFT,
+  convolution, spectrum), control systems (PID), structural (beam deflection,
+  Euler buckling), electrical (impedance, resonance, dividers)
+- **`lib/earth_science.eigs`**: Atmospheric science, seismology (Richter),
+  oceanography, astronomy (Kepler, Schwarzschild, stellar luminosity, Hubble),
+  climate science (CO2 radiative forcing)
+- **`lib/linalg.eigs`**: Matrix operations, vector algebra, Gaussian
+  elimination with pivoting, matrix inverse, least squares, 2x2 eigenvalues
+- **`lib/calculus.eigs`**: Numerical differentiation (central difference,
+  gradient), integration (trapezoidal, Simpson's, Monte Carlo), root finding
+  (bisection, Newton-Raphson, secant), ODEs (Euler, RK4), Taylor series,
+  interpolation
+- **`lib/probability.eigs`**: Combinatorics, distributions (binomial, Poisson,
+  normal, exponential, uniform — PMF/PDF/CDF), Bayesian inference, chi-squared
+
+### Observer-Aware Libraries (unique to EigenScript)
+- **`lib/optimize.eigs`**: Gradient descent with observer-adaptive learning
+  rate, multi-variable optimization, simulated annealing, golden section,
+  genetic algorithm — all use `report of loss` for convergence detection
+- **`lib/simulation.eigs`**: Equilibrium detector, stability analyzer,
+  spring-mass-damper, Lotka-Volterra, 1D heat equation — observer detects
+  equilibrium, oscillation, and convergence
+- **`lib/numerics.eigs`**: Jacobi/Gauss-Seidel iterative solvers, power
+  iteration, fixed-point iteration — observer detects residual convergence
+- **`lib/experiment.eigs`**: Measurement stability tracking, entropy spike
+  outlier detection, convergence rate estimation, regime detection
+
+### SDL2 Audio Extension
+- 13 audio builtins: `audio_open/close/pause/play/queue_size/clear`,
+  `audio_sine/saw/square/noise` (C synthesis), `audio_mix/gain/envelope`
+- **`lib/audio.eigs`**: `play_note`, `note_freq`, `play_chord`, drum sounds
+
+### Code Formatter & Linter
+- **`eigenscript --fmt`**: Line-based formatter — indentation, spacing,
+  trailing whitespace, blank lines, comment formatting. `--write` for in-place
+- **`eigenscript --lint`**: AST-walking linter — unused variables, unreachable
+  code, builtin shadowing, duplicate dict keys, empty blocks, unused params
+
+### Hardening
+- **Valgrind leak fix**: TokenList and AST now freed on exit (2MB → 1.8KB)
+- **free_ast** made public for proper cleanup
+- **shellcheck**: All warnings fixed in test runner
+- **Linter dogfooding**: stdlib cleaned — `while` → `loop while` in audio,
+  builtin shadowing fixed in validate/store, unused params prefixed with `_`
+
+### Tidepool Game (near-parity with C version)
+- Creature spec system (14-socket body plans, 5 palettes, visual traits)
+- Multi-segment body rendering (wobble, patterns, appendages, eyes, mouths)
+- Zone-based combat (front/side/rear power), poison clouds, electric bolts, jets
+- Epic cells (leviathans) with suction, part drops, NPC combat
+- Mating system + evolution, creature editor with UI toolkit
+- Camera zoom by tier, caustic lights, particles, high score persistence
+
+### Testing
+- **~490 new STEM tests** verified against known scientific values
+- 831+ total tests in core suite
+- `cppcheck`, `valgrind`, `shellcheck` integrated into workflow
+
 ## [0.9.1] — 2026-04-21
 
 ### New Builtins

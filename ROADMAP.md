@@ -1,11 +1,11 @@
 # Roadmap
 
-Current version: **0.9.1**
+Current version: **0.9.2**
 
 ## Near-term
 
-- [ ] Audio extension (SDL2 audio for Deslan Studio)
 - [ ] Streaming subprocess I/O (stdin pipe, unbuffered stdout)
+- [ ] More STEM modules (signal processing, computational geometry, graph theory)
 
 ## Medium-term
 
@@ -18,6 +18,15 @@ Current version: **0.9.1**
 
 - [ ] Self-hosting compiler (EigenScript written in EigenScript)
 - [ ] Foreign function interface (FFI) for calling C libraries
+
+## Completed (0.9.2)
+
+- [x] STEM standard library — 12 modules: physics, chemistry, biology, engineering, earth_science, linalg, calculus, probability, optimize, simulation, numerics, experiment
+- [x] Observer-aware computation — optimization, simulation, iterative methods, and experimental analysis that leverage EigenScript's native convergence detection
+- [x] SDL2 audio extension — synthesis (sine/saw/square/noise), playback, mixing, ADSR envelope
+- [x] Code formatter (`--fmt`) and linter (`--lint`) built into binary
+- [x] Valgrind leak fix (2MB → 1.8KB per run), shellcheck clean test runner
+- [x] Tidepool near-parity: creature system, combat, mating, editor, camera zoom, particles, high scores
 
 ## Completed (0.9.1)
 
