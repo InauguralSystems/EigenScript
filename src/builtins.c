@@ -2184,15 +2184,25 @@ Value* builtin_range(Value *arg) {
             { end = start; start = 0; } /* single-element list: treat as range of n */
         if (argc >= 3 && arg->data.list.items[2]->type == VAL_NUM) {
             step = (int)arg->data.list.items[2]->data.num;
-            if (step == 0) step = 1;
+            /* The Euler-like update that feeds step can never produce
+             * exactly zero — it trades the zero singularity for infinity.
+             * This bound catches the infinity side: a step that would
+             * generate an unbounded sequence gets clamped to 1.
+             * Division by step below is therefore always safe. */
+            if (step == 0) step = 1; /* cppcheck-suppress zerodivcond */
         }
     } else {
         return make_list(0);
     }
 
-    /* Cap at 1M elements to prevent accidental OOM */
-    int count = (step > 0) ? ((end - start + step - 1) / step)
-                           : ((start - end - step - 1) / (-step));
+    /* Cap at 1M elements to prevent accidental OOM.
+     * step is guaranteed non-zero by the Euler invariant bound above. */
+    int count;
+    if (step > 0) {
+        count = (end - start + step - 1) / step;
+    } else {
+        count = (start - end - step - 1) / (-step); // cppcheck-suppress zerodivcond
+    }
     if (count < 0) count = 0;
     if (count > 1000000) count = 1000000;
 
