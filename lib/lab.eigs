@@ -1,0 +1,433 @@
+# ============================================================
+# Lab Library — Experiment & Data Collection Framework
+# ============================================================
+#
+# Composes EigenStore, observer semantics, experiment analysis,
+# stats, and DataFrames into a practical STEM experiment tool.
+#
+# How to use:
+#   load_file of "lib/lab.eigs"
+#
+#   exp is new_experiment of "thermal_conductivity"
+#   set_param of [exp, "material", "copper"]
+#   record of [exp, "temperature", 45.2]
+#   st is status of [exp, "temperature"]
+#   summ is summary of [exp, "temperature"]
+#   save of exp
+
+# Dependencies loaded via load_file (not import) so functions
+# are available at top level alongside lab functions.
+load_file of "lib/stats.eigs"
+load_file of "lib/experiment.eigs"
+load_file of "lib/data.eigs"
+
+# ---- Module State ----
+
+# In-memory cache of values per variable per experiment
+_variable_data is {}
+
+# Per-variable units
+_variable_units is {}
+
+# Observer tracker (shared; observer state reflects most recent record call)
+_obs_tracker is 0
+
+# DB path
+_lab_db_path is "data/experiments.db"
+
+# ---- Internal Helpers ----
+
+define _tracker_key(exp, variable) as:
+    return f"{exp.id}__{variable}"
+
+define _collection_name(exp, variable) as:
+    return f"{exp.id}__{variable}"
+
+define _ensure_db() as:
+    mkdir of "data"
+    return store_open of _lab_db_path
+
+define _ensure_variable(exp, variable) as:
+    # Make sure the variable is listed in the experiment
+    found is 0
+    for i in range of (len of exp.variables):
+        if exp.variables[i] == variable:
+            found is 1
+    if found == 0:
+        append of [exp.variables, variable]
+
+define _cache_get(key) as:
+    if has_key of [_variable_data, key]:
+        return _variable_data[key]
+    return null
+
+define _cache_ensure(key) as:
+    if has_key of [_variable_data, key] == 0:
+        dict_set of [_variable_data, key, []]
+
+# ---- Experiment Lifecycle ----
+
+define new_experiment(name) as:
+    db is _ensure_db of null
+    ts is monotonic_ms of null
+    id is f"{name}_{ts}"
+    exp is {
+        "db": db,
+        "id": id,
+        "name": name,
+        "created": ts,
+        "params": {},
+        "variables": [],
+        "notes": []
+    }
+    # Store metadata
+    meta is {
+        "_id": id,
+        "name": name,
+        "created": ts,
+        "params": {},
+        "variables": [],
+        "notes": []
+    }
+    store_put of [db, "experiments", meta]
+    return exp
+
+define set_param(exp, key, value) as:
+    dict_set of [exp.params, key, value]
+    # Update stored metadata
+    meta is store_get of [exp.db, "experiments", exp.id]
+    if meta != null:
+        dict_set of [meta.params, key, value]
+        store_update of [exp.db, "experiments", exp.id, meta]
+
+define set_unit(exp, variable, unit) as:
+    key is _tracker_key of [exp, variable]
+    dict_set of [_variable_units, key, unit]
+    _ensure_variable of [exp, variable]
+
+define add_note(exp, text) as:
+    ts is monotonic_ms of null
+    note is {"time": ts, "text": text}
+    append of [exp.notes, note]
+    # Update stored metadata
+    meta is store_get of [exp.db, "experiments", exp.id]
+    if meta != null:
+        append of [meta.notes, note]
+        store_update of [exp.db, "experiments", exp.id, meta]
+
+# ---- Data Collection ----
+
+define record(exp, variable, value) as:
+    _ensure_variable of [exp, variable]
+    key is _tracker_key of [exp, variable]
+    _cache_ensure of key
+    append of [_variable_data[key], value]
+
+    # Get unit if set
+    unit is ""
+    if has_key of [_variable_units, key]:
+        unit is _variable_units[key]
+
+    # Store in EigenStore
+    collection is _collection_name of [exp, variable]
+    ts is monotonic_ms of null
+    rec is {"value": value, "time": ts, "unit": unit, "tag": ""}
+    store_put of [exp.db, collection, rec]
+
+    # Observer update
+    _obs_tracker is value
+    obs is observe of _obs_tracker
+    st is report of _obs_tracker
+
+    n is len of _variable_data[key]
+    return {"value": value, "entropy": obs[1], "dH": obs[2], "status": st, "n": n}
+
+define record_batch(exp, variable, vals) as:
+    results is []
+    for i in range of (len of vals):
+        r is record of [exp, variable, vals[i]]
+        append of [results, r]
+    return results
+
+define record_with_tag(exp, variable, value, tag) as:
+    _ensure_variable of [exp, variable]
+    key is _tracker_key of [exp, variable]
+    _cache_ensure of key
+    append of [_variable_data[key], value]
+
+    # Get unit if set
+    unit is ""
+    if has_key of [_variable_units, key]:
+        unit is _variable_units[key]
+
+    # Store in EigenStore
+    collection is _collection_name of [exp, variable]
+    ts is monotonic_ms of null
+    rec is {"value": value, "time": ts, "unit": unit, "tag": tag}
+    store_put of [exp.db, collection, rec]
+
+    # Observer update
+    _obs_tracker is value
+    obs is observe of _obs_tracker
+    st is report of _obs_tracker
+
+    n is len of _variable_data[key]
+    return {"value": value, "entropy": obs[1], "dH": obs[2], "status": st, "n": n}
+
+# ---- Real-Time Analysis ----
+
+define status(exp, variable) as:
+    key is _tracker_key of [exp, variable]
+    vals is _cache_get of key
+    if vals == null:
+        vals is []
+
+    n is len of vals
+    if n == 0:
+        return {
+            "n": 0, "mean": 0, "std": 0, "min": 0, "max": 0,
+            "last": 0, "observer_status": "no_data", "entropy": 0,
+            "dH": 0, "outliers": [], "stable": 0
+        }
+
+    m is mean of vals
+    sd is std_dev of vals
+    lo is vals[0]
+    hi is vals[0]
+    for i in range of n:
+        if vals[i] < lo:
+            lo is vals[i]
+        if vals[i] > hi:
+            hi is vals[i]
+    last is vals[n - 1]
+
+    # Run observer over all values to get current state
+    tracked is track_measurements of vals
+    last_obs is tracked[n - 1]
+    obs_status is last_obs.status
+    entropy is last_obs.entropy
+    dH is last_obs.dH
+
+    # Detect outliers via entropy spikes
+    spikes is detect_entropy_spikes of [vals, 0.5]
+    outlier_vals is []
+    for i in range of (len of spikes):
+        append of [outlier_vals, spikes[i].value]
+
+    # Stability: check if last 5 readings are stable
+    stable is 0
+    if n >= 5:
+        last5 is []
+        for i in range of 5:
+            append of [last5, vals[n - 5 + i]]
+        stable_check is is_measurement_stable of [last5, 3]
+        if stable_check:
+            stable is 1
+
+    return {
+        "n": n,
+        "mean": m,
+        "std": sd,
+        "min": lo,
+        "max": hi,
+        "last": last,
+        "observer_status": obs_status,
+        "entropy": entropy,
+        "dH": dH,
+        "outliers": outlier_vals,
+        "stable": stable
+    }
+
+define is_stable(exp, variable) as:
+    key is _tracker_key of [exp, variable]
+    vals is _cache_get of key
+    if vals == null:
+        return 0
+    n is len of vals
+    if n < 3:
+        return 0
+    return is_measurement_stable of [vals, 3]
+
+define wait_for_stable(exp, variable, collect_fn, interval, timeout) as:
+    start is monotonic_ms of null
+    loop while 1:
+        val is collect_fn of null
+        record of [exp, variable, val]
+        if is_stable of [exp, variable]:
+            return status of [exp, variable]
+        elapsed is (monotonic_ms of null) - start
+        if elapsed >= timeout:
+            return status of [exp, variable]
+        # interval is in milliseconds, usleep takes microseconds
+        usleep of (interval * 1000)
+
+# ---- Data Retrieval & Export ----
+
+define measurements(exp, variable) as:
+    collection is _collection_name of [exp, variable]
+    recs is store_query of [exp.db, collection]
+    result is []
+    for i in range of (len of recs):
+        r is recs[i]
+        append of [result, {"value": r.value, "time": r.time, "unit": r.unit, "tag": r.tag}]
+    return result
+
+define values(exp, variable) as:
+    key is _tracker_key of [exp, variable]
+    vals is _cache_get of key
+    if vals != null:
+        return vals
+    # Fallback: load from store
+    collection is _collection_name of [exp, variable]
+    recs is store_query of [exp.db, collection]
+    result is []
+    for i in range of (len of recs):
+        append of [result, recs[i].value]
+    return result
+
+define to_dataframe(exp, variable) as:
+    return measurements of [exp, variable]
+
+define to_csv(exp, variable, path) as:
+    recs is measurements of [exp, variable]
+    if (len of recs) == 0:
+        write_text of [path, ""]
+        return null
+    # Header
+    text is "value,time,unit,tag"
+    for i in range of (len of recs):
+        r is recs[i]
+        line is f"{r.value},{r.time},{r.unit},{r.tag}"
+        text is text + "\n" + line
+    write_text of [path, text]
+    return null
+
+define summary(exp, variable) as:
+    vals is values of [exp, variable]
+    if (len of vals) == 0:
+        return {"count": 0, "mean": 0, "median": 0, "std_dev": 0, "min": 0, "max": 0}
+    desc is describe of vals
+    # Add observer trajectory info
+    conv is convergence_rate of vals
+    regimes is detect_regimes of vals
+    desc.convergence is conv
+    desc.regimes is regimes
+    return desc
+
+define compare(exp, var1, var2) as:
+    v1 is values of [exp, var1]
+    v2 is values of [exp, var2]
+    # Align to shorter length
+    n is len of v1
+    n2 is len of v2
+    if n2 < n:
+        n is n2
+    xs is []
+    ys is []
+    for i in range of n:
+        append of [xs, v1[i]]
+        append of [ys, v2[i]]
+    corr is correlation of [xs, ys]
+    return {"correlation": corr, "n": n, "var1_mean": mean of xs, "var2_mean": mean of ys}
+
+define tagged_groups(exp, variable) as:
+    collection is _collection_name of [exp, variable]
+    recs is store_query of [exp.db, collection]
+    groups is {}
+    for i in range of (len of recs):
+        tag is recs[i].tag
+        if tag != "":
+            if has_key of [groups, tag] == 0:
+                dict_set of [groups, tag, []]
+            append of [groups[tag], recs[i].value]
+    return groups
+
+# ---- Experiment Persistence ----
+
+define save(exp) as:
+    # Update stored metadata with current state
+    meta is store_get of [exp.db, "experiments", exp.id]
+    if meta != null:
+        meta.params is exp.params
+        meta.variables is exp.variables
+        meta.notes is exp.notes
+        store_update of [exp.db, "experiments", exp.id, meta]
+    return 1
+
+define load(name) as:
+    db is _ensure_db of null
+    # Find experiment by name
+    all is store_query of [db, "experiments"]
+    meta is null
+    for i in range of (len of all):
+        if all[i].name == name:
+            meta is all[i]
+    if meta == null:
+        return null
+    exp is {
+        "db": db,
+        "id": meta._id,
+        "name": meta.name,
+        "created": meta.created,
+        "params": meta.params,
+        "variables": meta.variables,
+        "notes": meta.notes
+    }
+    # Reload in-memory caches from store
+    for i in range of (len of exp.variables):
+        variable is exp.variables[i]
+        key is _tracker_key of [exp, variable]
+        collection is _collection_name of [exp, variable]
+        recs is store_query of [db, collection]
+        vals is []
+        for j in range of (len of recs):
+            append of [vals, recs[j].value]
+        dict_set of [_variable_data, key, vals]
+    return exp
+
+define list_experiments() as:
+    db is _ensure_db of null
+    all is store_query of [db, "experiments"]
+    result is []
+    for i in range of (len of all):
+        append of [result, {"id": all[i]._id, "name": all[i].name, "created": all[i].created}]
+    store_close of db
+    return result
+
+define delete_experiment(name) as:
+    db is _ensure_db of null
+    all is store_query of [db, "experiments"]
+    for i in range of (len of all):
+        if all[i].name == name:
+            id is all[i]._id
+            # Drop variable collections
+            vars is all[i].variables
+            for j in range of (len of vars):
+                col is f"{id}__{vars[j]}"
+                store_drop of [db, col]
+                # Clear in-memory cache
+                key is f"{id}__{vars[j]}"
+                if has_key of [_variable_data, key]:
+                    dict_set of [_variable_data, key, []]
+            # Delete experiment metadata
+            store_delete of [db, "experiments", id]
+    store_close of db
+    return 1
+
+# ---- Analysis Helpers ----
+
+define find_outliers(exp, variable, threshold) as:
+    vals is values of [exp, variable]
+    spikes is detect_entropy_spikes of [vals, threshold]
+    result is []
+    for i in range of (len of spikes):
+        append of [result, spikes[i]]
+    return result
+
+define detect_phases(exp, variable) as:
+    vals is values of [exp, variable]
+    return detect_regimes of vals
+
+define convergence_info(exp, variable) as:
+    vals is values of [exp, variable]
+    return convergence_rate of vals

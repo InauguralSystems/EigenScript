@@ -1,0 +1,81 @@
+load_file of "lib/test.eigs"
+load_file of "lib/lab.eigs"
+
+# Clean up from previous test runs
+if file_exists of "data":
+    if file_exists of "data/experiments.db":
+        rm of "data/experiments.db"
+
+# Create experiment
+exp is new_experiment of "test_thermal"
+assert of [exp != null, "new_experiment returns handle"]
+
+# Set parameters
+set_param of [exp, "material", "copper"]
+set_param of [exp, "ambient_temp", 22.3]
+
+# Record measurements
+r1 is record of [exp, "temperature", 45.2]
+assert of [r1 != null, "record returns result"]
+r2 is record of [exp, "temperature", 44.8]
+r3 is record of [exp, "temperature", 44.9]
+r4 is record of [exp, "temperature", 44.7]
+r5 is record of [exp, "temperature", 44.85]
+
+# Status check
+st is status of [exp, "temperature"]
+assert_eq of [st.n, 5, "5 measurements recorded"]
+assert_near of [st.mean, 44.89, 0.1, "mean temperature"]
+assert_true of [st.min < 44.8, "min tracked"]
+assert_true of [st.max > 45.1, "max tracked"]
+
+# Stability
+assert_true of [is_stable of [exp, "temperature"], "temperature is stable"]
+
+# Record an outlier
+record of [exp, "temperature", 72.1]
+outliers is find_outliers of [exp, "temperature", 0.01]
+assert_true of [(len of outliers) > 0, "outlier detected"]
+
+# Get values
+vals is values of [exp, "temperature"]
+assert_eq of [len of vals, 6, "6 values total"]
+
+# Summary
+summ is summary of [exp, "temperature"]
+assert_true of [summ.count == 6, "summary count"]
+assert_true of [summ.mean > 0, "summary has mean"]
+
+# Tagged recording
+record_with_tag of [exp, "voltage", 3.30, "trial_1"]
+record_with_tag of [exp, "voltage", 3.31, "trial_1"]
+record_with_tag of [exp, "voltage", 3.50, "trial_2"]
+record_with_tag of [exp, "voltage", 3.49, "trial_2"]
+
+groups is tagged_groups of [exp, "voltage"]
+assert_true of [has_key of [groups, "trial_1"], "trial_1 group exists"]
+assert_eq of [len of groups.trial_1, 2, "trial_1 has 2 values"]
+
+# Export to CSV
+to_csv of [exp, "temperature", "/tmp/test_lab_temp.csv"]
+assert_true of [file_exists of "/tmp/test_lab_temp.csv", "CSV exported"]
+
+# Save and reload
+save of exp
+exp2 is load of "test_thermal"
+vals2 is values of [exp2, "temperature"]
+assert_eq of [len of vals2, 6, "data persists after reload"]
+
+# List experiments
+exps is list_experiments of null
+assert_true of [(len of exps) > 0, "experiment listed"]
+
+# Cleanup
+delete_experiment of "test_thermal"
+rm of "/tmp/test_lab_temp.csv"
+if file_exists of "data/experiments.db":
+    rm of "data/experiments.db"
+if file_exists of "data":
+    rm of "data"
+
+test_summary of null
