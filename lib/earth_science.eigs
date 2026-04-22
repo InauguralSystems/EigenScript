@@ -1,0 +1,155 @@
+# ============================================================
+# Earth Science Library — atmospheric, geology, oceanography,
+#   astronomy, and climate science
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/earth_science.eigs"
+#
+#   barometric_pressure of 5000           # ~54019 Pa
+#   orbital_period of [1.496e11, 1.989e30]  # ~3.156e7 s (1 year)
+#   escape_velocity of [5.972e24, 6.371e6]  # ~11186 m/s
+#
+# All SI units unless otherwise noted.
+
+# ============================================================
+# Atmospheric Science
+# ============================================================
+
+# International barometric formula (troposphere, h < 11000 m)
+# P = P0 * (1 - L*h/T0)^(g*M/(R*L))
+define barometric_pressure(h) as:
+    P0 is 101325
+    L is 0.0065
+    T0 is 288.15
+    g is 9.80665
+    M is 0.0289644
+    R is 8.31447
+    exponent is g * M / (R * L)
+    base is 1 - L * h / T0
+    return P0 * (pow of [base, exponent])
+
+# Troposphere lapse rate: T = T0 - L*h (Kelvin)
+define temperature_at_altitude(h) as:
+    return 288.15 - 0.0065 * h
+
+# Dew point via Magnus formula approximation (T in Celsius, RH in percent)
+define dew_point(T, RH) as:
+    a is 17.27
+    b is 237.7
+    alpha is (a * T / (b + T)) + (log of (RH / 100)) / (log of 2.718281828)
+    return b * alpha / (a - alpha)
+
+# Wind chill index (T in Celsius, V in km/h)
+define wind_chill(T, V) as:
+    return 13.12 + 0.6215 * T - 11.37 * (pow of [V, 0.16]) + 0.3965 * T * (pow of [V, 0.16])
+
+# Air density: rho = P/(R_specific * T), R_specific = 287.058 J/(kg*K)
+define air_density(P, T) as:
+    return P / (287.058 * T)
+
+# ============================================================
+# Geology & Seismology
+# ============================================================
+
+# Richter energy: E = 10^(1.5*M + 4.8) joules
+define richter_energy(magnitude) as:
+    return pow of [10, 1.5 * magnitude + 4.8]
+
+# Amplitude ratio between two magnitudes
+define richter_amplitude_ratio(M1, M2) as:
+    return pow of [10, M1 - M2]
+
+# Approximate distance from P-S wave time difference (km)
+# d ~ (t_s - t_p) * 8
+define p_wave_distance(t_p, t_s) as:
+    return (t_s - t_p) * 8
+
+# ============================================================
+# Oceanography
+# ============================================================
+
+# Depth from pressure: d = P/(rho*g), rho_seawater ~ 1025 kg/m^3
+define ocean_depth_from_pressure(P) as:
+    return P / (1025 * 9.80665)
+
+# Deep water wave speed: v = sqrt(g*lambda/(2*pi))
+define wave_speed_deep(wavelength) as:
+    return sqrt of (9.80665 * wavelength / (2 * (pi of null)))
+
+# Shallow water wave speed: v = sqrt(g*d)
+define wave_speed_shallow(depth) as:
+    return sqrt of (9.80665 * depth)
+
+# Simplified UNESCO seawater density
+# rho ~ 1000 + 0.8*S - 0.004*(T-4)^2
+# S in PSU, T in Celsius
+define salinity_density(S, T) as:
+    return 1000 + 0.8 * S - 0.004 * (T - 4) * (T - 4)
+
+# ============================================================
+# Astronomy
+# ============================================================
+
+# Kepler's third law: T = 2*pi*sqrt(a^3/(G*M))
+define orbital_period(a, M) as:
+    G is 6.67430e-11
+    return 2 * (pi of null) * (sqrt of (a * a * a / (G * M)))
+
+# Orbital velocity: v = sqrt(G*M/r)
+define orbital_velocity(M, r) as:
+    G is 6.67430e-11
+    return sqrt of (G * M / r)
+
+# Escape velocity: v = sqrt(2*G*M/r)
+define escape_velocity(M, r) as:
+    G is 6.67430e-11
+    return sqrt of (2 * G * M / r)
+
+# Schwarzschild radius: rs = 2*G*M/c^2
+define schwarzschild_radius(M) as:
+    G is 6.67430e-11
+    c is 299792458
+    return 2 * G * M / (c * c)
+
+# Apparent magnitude: m = M + 5*log10(d/10), d in parsecs
+define apparent_magnitude(M, d) as:
+    return M + 5 * (log of (d / 10)) / (log of 10)
+
+# Luminosity distance: d = 10^((m-M+5)/5) parsecs
+define luminosity_distance(m, M) as:
+    return pow of [10, (m - M + 5) / 5]
+
+# Stellar luminosity: L = 4*pi*R^2*sigma*T^4 (Stefan-Boltzmann for stars)
+define stellar_luminosity(R, T) as:
+    sigma is 5.670374419e-8
+    return 4 * (pi of null) * R * R * sigma * T * T * T * T
+
+# Hubble distance: d = v/H0, H0 typically in km/s/Mpc
+define hubble_distance(v, H0) as:
+    return v / H0
+
+# Redshift velocity (non-relativistic): v = c*z
+define redshift_velocity(z) as:
+    return 299792458 * z
+
+# Parallax distance: d = 1/p parsecs (p in arcseconds)
+define parallax_distance(arcseconds) as:
+    return 1 / arcseconds
+
+# ============================================================
+# Climate Science
+# ============================================================
+
+# CO2 radiative forcing: dF = 5.35 * ln(C/C0) W/m^2
+# C0 = pre-industrial CO2 (280 ppm typically)
+define co2_radiative_forcing(C, C0) as:
+    return 5.35 * (log of (C / C0)) / (log of 2.718281828)
+
+# Climate sensitivity: lambda = dT/dF (K per W/m^2)
+define climate_sensitivity(dF, dT) as:
+    return dT / dF
+
+# Sea level rise from thermal expansion: dh = alpha * depth * dT
+define sea_level_thermal(dT, depth, alpha) as:
+    return alpha * depth * dT

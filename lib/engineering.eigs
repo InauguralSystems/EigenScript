@@ -1,0 +1,276 @@
+# ============================================================
+# Engineering Library — unit conversion, signal processing,
+#   control systems, structural, and electrical engineering
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/engineering.eigs"
+#
+#   celsius_to_fahrenheit of 100          # 212
+#   voltage_divider of [12, 1000, 2000]   # 8
+#   beam_deflection_center of [1000, 2, 200e9, 8.33e-6]
+#
+# All SI units unless otherwise noted.
+
+# ============================================================
+# Unit Conversion — Temperature
+# ============================================================
+
+define celsius_to_fahrenheit(c) as:
+    return c * 9 / 5 + 32
+
+define fahrenheit_to_celsius(f) as:
+    return (f - 32) * 5 / 9
+
+define celsius_to_kelvin(c) as:
+    return c + 273.15
+
+define kelvin_to_celsius(k) as:
+    return k - 273.15
+
+# ============================================================
+# Unit Conversion — Length
+# ============================================================
+
+define meters_to_feet(m) as:
+    return m * 3.28084
+
+define feet_to_meters(ft) as:
+    return ft / 3.28084
+
+define miles_to_km(mi) as:
+    return mi * 1.60934
+
+define km_to_miles(km) as:
+    return km / 1.60934
+
+# ============================================================
+# Unit Conversion — Mass
+# ============================================================
+
+define kg_to_lbs(kg) as:
+    return kg * 2.20462
+
+define lbs_to_kg(lbs) as:
+    return lbs / 2.20462
+
+# ============================================================
+# Unit Conversion — Pressure
+# ============================================================
+
+define atm_to_pascal(atm) as:
+    return atm * 101325
+
+define pascal_to_atm(pa) as:
+    return pa / 101325
+
+define psi_to_pascal(psi) as:
+    return psi * 6894.76
+
+# ============================================================
+# Unit Conversion — Energy
+# ============================================================
+
+define joules_to_calories(j) as:
+    return j / 4.184
+
+define calories_to_joules(cal) as:
+    return cal * 4.184
+
+define kwh_to_joules(kwh) as:
+    return kwh * 3600000
+
+define ev_to_joules(ev) as:
+    return ev * 1.602176634e-19
+
+# ============================================================
+# Signal Processing
+# ============================================================
+
+# Discrete Fourier Transform — O(n^2) but correct
+# Returns list of [real, imaginary] pairs
+define dft(signal) as:
+    N is len of signal
+    result is []
+    for k in range of N:
+        re is 0
+        im is 0
+        for n in range of N:
+            angle is 0 - 2 * (pi of null) * k * n / N
+            re is re + signal[n] * (cos of angle)
+            im is im + signal[n] * (sin of angle)
+        append of [result, [re, im]]
+    return result
+
+# Inverse DFT
+define idft(spectrum) as:
+    N is len of spectrum
+    result is []
+    for n in range of N:
+        re is 0
+        for k in range of N:
+            angle is 2 * (pi of null) * k * n / N
+            re is re + spectrum[k][0] * (cos of angle) - spectrum[k][1] * (sin of angle)
+        append of [result, re / N]
+    return result
+
+# |X[k]| = sqrt(re^2 + im^2)
+define magnitude_spectrum(dft_result) as:
+    result is []
+    for i in range of (len of dft_result):
+        re is dft_result[i][0]
+        im is dft_result[i][1]
+        append of [result, sqrt of (re * re + im * im)]
+    return result
+
+# |X[k]|^2
+define power_spectrum(dft_result) as:
+    result is []
+    for i in range of (len of dft_result):
+        re is dft_result[i][0]
+        im is dft_result[i][1]
+        append of [result, re * re + im * im]
+    return result
+
+# Linear convolution
+define convolve(signal, kernel) as:
+    n is len of signal
+    m is len of kernel
+    result is []
+    for i in range of (n + m - 1):
+        s is 0
+        for j in range of m:
+            if (i - j) >= 0 and (i - j) < n:
+                s is s + signal[i - j] * kernel[j]
+        append of [result, s]
+    return result
+
+# Moving average filter
+define moving_average(signal, window) as:
+    result is []
+    half is floor of (window / 2)
+    for i in range of (len of signal):
+        s is 0
+        count is 0
+        for j in range of window:
+            idx is i - half + j
+            if idx >= 0 and idx < (len of signal):
+                s is s + signal[idx]
+                count is count + 1
+        if count > 0:
+            append of [result, s / count]
+        else:
+            append of [result, 0]
+    return result
+
+# Convert amplitude to decibels
+define db_from_amplitude(amplitude) as:
+    return 20 * (log of amplitude) / (log of 10)
+
+# Convert decibels to amplitude
+define amplitude_from_db(db) as:
+    return pow of [10, db / 20]
+
+# Convert power to decibels
+define db_from_power(power) as:
+    return 10 * (log of power) / (log of 10)
+
+# ============================================================
+# Control Systems
+# ============================================================
+
+# PID controller single step
+# Returns [output, new_integral, new_prev_error]
+define pid_step(kp, ki, kd, error, integral, prev_error, dt) as:
+    new_integral is integral + error * dt
+    derivative is (error - prev_error) / dt
+    output is kp * error + ki * new_integral + kd * derivative
+    return [output, new_integral, error]
+
+# Transfer function poles for 2nd order: as^2 + bs + c = 0
+# Returns [[re1, im1], [re2, im2]]
+define transfer_function_poles(a, b, c) as:
+    disc is b * b - 4 * a * c
+    if disc >= 0:
+        sq is sqrt of disc
+        p1 is (0 - b + sq) / (2 * a)
+        p2 is (0 - b - sq) / (2 * a)
+        return [[p1, 0], [p2, 0]]
+    else:
+        sq is sqrt of (0 - disc)
+        re is (0 - b) / (2 * a)
+        im is sq / (2 * a)
+        return [[re, im], [re, 0 - im]]
+
+# ============================================================
+# Structural Engineering
+# ============================================================
+
+# Simply supported beam, center point load
+# delta = FL^3 / (48EI)
+define beam_deflection_center(F, L, E, I) as:
+    return F * L * L * L / (48 * E * I)
+
+# Bending stress: sigma = Mc/I
+define beam_max_stress(M, c, I) as:
+    return M * c / I
+
+# Rectangular cross-section: I = bh^3/12
+define moment_of_inertia_rect(b, h) as:
+    return b * h * h * h / 12
+
+# Circular cross-section: I = pi*r^4/4
+define moment_of_inertia_circle(r) as:
+    return (pi of null) * r * r * r * r / 4
+
+# Young's modulus: E = stress/strain
+define youngs_modulus_stress_strain(stress, strain) as:
+    return stress / strain
+
+# Factor of safety: FOS = ultimate/actual
+define factor_of_safety(ultimate, actual) as:
+    return ultimate / actual
+
+# Euler buckling load: Pcr = pi^2 * EI / L^2
+define buckling_load(E, I, L) as:
+    return (pi of null) * (pi of null) * E * I / (L * L)
+
+# ============================================================
+# Electrical Engineering
+# ============================================================
+
+# RC time constant: tau = R*C
+define rc_time_constant(R, C) as:
+    return R * C
+
+# RL time constant: tau = L/R
+define rl_time_constant(L, R) as:
+    return L / R
+
+# LC resonant frequency: f = 1/(2*pi*sqrt(LC))
+define resonant_frequency(L, C) as:
+    return 1 / (2 * (pi of null) * (sqrt of (L * C)))
+
+# Capacitive impedance: Xc = 1/(2*pi*f*C)
+define impedance_capacitor(C, freq) as:
+    return 1 / (2 * (pi of null) * freq * C)
+
+# Inductive impedance: Xl = 2*pi*f*L
+define impedance_inductor(L, freq) as:
+    return 2 * (pi of null) * freq * L
+
+# Voltage divider: Vout = Vin * R2/(R1+R2)
+define voltage_divider(Vin, R1, R2) as:
+    return Vin * R2 / (R1 + R2)
+
+# Current divider: I1 = Itotal * R2/(R1+R2)  (current through R1)
+define current_divider(Itotal, R1, R2) as:
+    return Itotal * R2 / (R1 + R2)
+
+# Power factor: PF = real_power / apparent_power
+define power_factor(real_power, apparent_power) as:
+    return real_power / apparent_power
+
+# Three-phase power: P = sqrt(3) * V * I * pf
+define three_phase_power(V, I, pf) as:
+    return (sqrt of 3) * V * I * pf
