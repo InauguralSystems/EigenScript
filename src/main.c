@@ -130,6 +130,32 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    /* --fmt flag */
+    if (argc >= 2 && strcmp(argv[1], "--fmt") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: eigenscript --fmt [--write] file.eigs\n");
+            return 1;
+        }
+        int write_mode = 0;
+        const char *path;
+        if (argc >= 4 && strcmp(argv[2], "--write") == 0) {
+            write_mode = 1;
+            path = argv[3];
+        } else {
+            path = argv[2];
+        }
+        return eigenscript_fmt(path, write_mode);
+    }
+
+    /* --lint flag */
+    if (argc >= 2 && strcmp(argv[1], "--lint") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: eigenscript --lint file.eigs\n");
+            return 1;
+        }
+        return eigenscript_lint(argv[2]);
+    }
+
     /* No arguments: enter REPL */
     if (argc < 2) {
         srand(time(NULL));

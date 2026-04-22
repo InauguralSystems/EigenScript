@@ -322,4 +322,8 @@ Value* json_obj_get(Value *obj, const char *key);
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
 
+/* ---- Formatter & Linter ---- */
+int eigenscript_fmt(const char *path, int write_mode);
+int eigenscript_lint(const char *path);
+
 #endif /* EIGENSCRIPT_H */
