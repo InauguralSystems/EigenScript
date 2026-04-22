@@ -1,0 +1,49 @@
+# Import error-path coverage tests
+# Exercises eval.c lines 539-562: fallback not-found, cannot-read, parse-errors
+load_file of "lib/test.eigs"
+
+# ---- Test 1: Import a module that does not exist anywhere ----
+# Searches lib/, script_dir/lib/, script_dir/../lib/, ~/.local/lib/eigenscript/
+# All will fail for a nonsense module name.
+err1 is ""
+try:
+    import _nonexistent_module_xyz_42
+catch e:
+    err1 is e
+assert_true of [contains of [err1, "not found"], "import nonexistent triggers 'not found' error"]
+
+# ---- Test 2: Import module with parse errors ----
+# Write a file with invalid syntax into script_dir/../lib/ which is where
+# the runtime finds stdlib modules. Clean up after.
+bad_path is "../lib/_test_bad_syntax_tmp.eigs"
+write_text of [bad_path, "this is not valid eigenscript @@@"]
+err2 is ""
+try:
+    import _test_bad_syntax_tmp
+catch e:
+    err2 is e
+rm of bad_path
+assert_true of [(len of err2) > 0, "import parse-error triggers error"]
+assert_true of [contains of [err2, "parse errors"], "import parse-error message contains 'parse errors'"]
+
+# ---- Test 3: Import via eval — nonexistent ----
+# Confirms the same not-found path works through eval indirection
+err3 is ""
+try:
+    eval of "import _also_nonexistent_999"
+catch e:
+    err3 is e
+assert_true of [contains of [err3, "not found"], "eval import nonexistent caught"]
+
+# ---- Test 4: Import valid module works (sanity check) ----
+import math
+assert_eq of [type of math, "dict", "import valid module returns dict"]
+
+# ---- Test 5: Import module that is empty (no exports) ----
+empty_path is "../lib/_test_empty_tmp.eigs"
+write_text of [empty_path, "# empty module\n_private is 42"]
+import _test_empty_tmp
+rm of empty_path
+assert_eq of [type of _test_empty_tmp, "dict", "import empty module returns dict"]
+
+test_summary of null

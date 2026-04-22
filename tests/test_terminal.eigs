@@ -1,0 +1,57 @@
+# Terminal builtin coverage tests
+# Exercises builtins.c: screen_clear, screen_put, screen_end, screen_render, raw_key
+# These write ANSI escapes to stdout; they execute even when piped (no real tty).
+load_file of "lib/test.eigs"
+
+# ---- screen_clear: writes "\033[2J\033[H\033[?25l" ----
+r1 is screen_clear of null
+assert_eq of [r1, null, "screen_clear returns null"]
+
+# ---- screen_put: writes "\033[row;colH" + text ----
+# Without color (branch: color == 0)
+r2 is screen_put of [1, 1, "X"]
+assert_eq of [r2, null, "screen_put no-color returns null"]
+
+# With color (branch: color > 0)
+r3 is screen_put of [2, 5, "@", 32]
+assert_eq of [r3, null, "screen_put with-color returns null"]
+
+# Bad args (< 3 items) — early return
+r4 is screen_put of [1, 2]
+assert_eq of [r4, null, "screen_put bad args returns null"]
+
+# ---- screen_end: writes "\033[?25h\033[0m\n" ----
+r5 is screen_end of null
+assert_eq of [r5, null, "screen_end returns null"]
+
+# ---- screen_render: full render pipeline ----
+# Provide a small 4x3 screen with one entity to exercise the full render path
+# entities: [[wx, wy, char, color], ...]
+# args: [entities_list, screen_w, screen_h, player_x, player_y, world_w, world_h]
+entities is [[5.0, 5.0, "#", 31], [6.0, 6.0, ".", 0]]
+r6 is screen_render of [entities, 4, 3, 5.0, 5.0, 20.0, 20.0]
+assert_eq of [r6, null, "screen_render with entities returns null"]
+
+# screen_render with empty entity list
+r7 is screen_render of [[], 4, 3, 0.0, 0.0, 10.0, 10.0]
+assert_eq of [r7, null, "screen_render empty entities returns null"]
+
+# screen_render bad args (< 7 items) — early return
+r8 is screen_render of [[], 4, 3]
+assert_eq of [r8, null, "screen_render bad args returns null"]
+
+# screen_render non-list entities — early return at line 151
+r9 is screen_render of ["not-a-list", 4, 3, 0.0, 0.0, 10.0, 10.0]
+assert_eq of [r9, null, "screen_render non-list entities returns null"]
+
+# ---- raw_key: enable_raw_mode + read ----
+# Without a tty, tcsetattr may fail silently and read returns 0 → empty string.
+# Wrapping in try/catch in case it throws, but it should just return "".
+rk is ""
+try:
+    rk is raw_key of null
+catch e:
+    rk is "caught"
+assert_true of [rk == "" or rk == "caught", "raw_key returns empty or caught without tty"]
+
+test_summary of null

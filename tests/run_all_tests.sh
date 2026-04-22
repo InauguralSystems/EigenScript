@@ -1251,6 +1251,36 @@ FAIL=$((FAIL + EX_FAIL))
 echo "$EX_OUTPUT" | grep "EXAMPLES:"
 echo ""
 
+# [59] Import error paths (not-found, parse-errors)
+echo "[59] Import Error Paths (6 checks)"
+IE_OUTPUT=$(./eigenscript ../tests/test_import_errors.eigs 2>&1)
+if echo "$IE_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 6))
+    PASS=$((PASS + 6))
+    echo "  PASS: all 6 import-error checks"
+else
+    TOTAL=$((TOTAL + 6))
+    FAIL=$((FAIL + 6))
+    echo "  FAIL: import-error tests"
+    echo "$IE_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
+# [60] Terminal builtins (screen_clear, screen_put, screen_end, screen_render, raw_key)
+echo "[60] Terminal Builtins (10 checks)"
+TM_OUTPUT=$(./eigenscript ../tests/test_terminal.eigs 2>&1)
+if echo "$TM_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 10))
+    PASS=$((PASS + 10))
+    echo "  PASS: all 10 terminal builtin checks"
+else
+    TOTAL=$((TOTAL + 10))
+    FAIL=$((FAIL + 10))
+    echo "  FAIL: terminal builtin tests"
+    echo "$TM_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 echo "============================================"
