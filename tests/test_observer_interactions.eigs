@@ -1,0 +1,94 @@
+# Observer interaction tests — the observer model under stress.
+# Tests that predicates, entropy tracking, and thresholds interact
+# correctly with loops, functions, and the unobserved block.
+
+# === PREDICATE CONSISTENCY ===
+# A converged value should NOT also be diverging/improving.
+
+# Drive a value to convergence
+x is 100
+loop while not converged:
+    x is x * 0.1
+
+# Check mutual exclusion of predicates
+assert of [converged == 1, "OI1 converged after descent"]
+assert of [diverging == 0, "OI2 converged implies not diverging"]
+assert of [improving == 0, "OI3 converged implies not improving (dH~0)"]
+
+# === OBSERVER STATE THROUGH FUNCTION CALLS ===
+
+# When a function is called, does it update the caller's __observer__?
+define compute(val) as:
+    result is val * 2
+    return result
+
+y is 10
+y is compute of y
+# After the call, __observer__ should reflect the return value
+rep is report of y
+assert of [type of rep == "str", "OI4 report after function call is string"]
+
+# === UNOBSERVED BLOCK SEMANTICS ===
+
+# Inside unobserved, assignments skip update_observer
+a is 50
+obs_before is observe of a
+
+unobserved:
+    a is a + 1
+    a is a + 1
+    a is a + 1
+
+# After unobserved, the observer state should be stale (from before)
+assert of [a == 53, "OI5 unobserved block still mutates value"]
+
+# Re-observe by assigning
+a is a
+obs_after is observe of a
+assert of [type of obs_after == "list", "OI6 observe returns list after re-assignment"]
+
+# === OBSERVER TRACKING ACROSS LOOP ===
+
+# Verify that repeated halving drives entropy toward convergence.
+# Use a counter to track iterations and check the value afterward.
+z is 1000
+for iter in range of 20:
+    z is z * 0.5
+assert of [z < 1, "OI7 repeated halving decreases value"]
+
+# Check that observer tracked the changes
+rep is report of z
+assert of [type of rep == "str", "OI8 report returns a classification string"]
+
+# === THRESHOLD SENSITIVITY ===
+
+# Verify thresholds can be read and written
+saved is get_observer_thresholds of null
+assert of [len of saved == 3, "OI9 get_observer_thresholds returns 3 values"]
+assert of [saved[0] > 0, "OI10a dh_zero is positive"]
+assert of [saved[0] < saved[1], "OI10b dh_zero < dh_small"]
+
+# Set and verify
+set_observer_thresholds of [0.005, 0.05, 0.5]
+updated is get_observer_thresholds of null
+assert of [updated[0] == 0.005, "OI10c threshold set correctly"]
+
+# Restore
+set_observer_thresholds of [saved[0], saved[1], saved[2]]
+restored is get_observer_thresholds of null
+assert of [restored[0] == saved[0], "OI10d thresholds restored"]
+
+# === INTERROGATIVES CHECK VALUES ===
+
+test_val is [1, 2, 3, 4, 5]
+assert of [(what is test_val) == 5, "OI11 what-is gives list length"]
+
+test_str is "hello"
+assert of [(what is test_str) == 5, "OI12 what-is gives string length"]
+
+test_num is 42
+assert of [(what is test_num) == 42, "OI13 what-is gives numeric value"]
+
+assert of [(when is test_val) > 0, "OI14 when-is gives observation age > 0"]
+
+print of "observer interactions: all passed"

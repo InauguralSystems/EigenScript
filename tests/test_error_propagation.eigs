@@ -1,0 +1,125 @@
+# Error propagation through call chains.
+# Tests that errors thrown deep in a call stack reach the right catch.
+
+# --- Error propagates through one function call ---
+define thrower as:
+    throw of "deep error"
+
+caught1 is ""
+try:
+    thrower of null
+catch e:
+    caught1 is e
+assert of [contains of [caught1, "deep error"], "EP1 error propagates through function call"]
+
+# --- Error propagates through two levels ---
+define inner_thrower as:
+    throw of "level 2"
+
+define middle as:
+    inner_thrower of null
+    return "should not reach"
+
+caught2 is ""
+try:
+    middle of null
+catch e:
+    caught2 is e
+assert of [contains of [caught2, "level 2"], "EP2 error propagates through two calls"]
+
+# --- Error propagates through three levels ---
+define deep3 as:
+    throw of "level 3"
+
+define mid2 as:
+    deep3 of null
+
+define top1 as:
+    mid2 of null
+
+caught3 is ""
+try:
+    top1 of null
+catch e:
+    caught3 is e
+assert of [contains of [caught3, "level 3"], "EP3 error through three levels"]
+
+# --- Inner catch handles, outer does not fire ---
+define inner_handler as:
+    try:
+        throw of "handled"
+    catch e:
+        return "caught: " + e
+
+outer_fired is 0
+result is ""
+try:
+    result is inner_handler of null
+catch e:
+    outer_fired is 1
+assert of [outer_fired == 0, "EP4 inner catch prevents outer catch"]
+assert of [result == "caught: handled", "EP5 inner catch returns value"]
+
+# --- Error in loop body caught outside loop ---
+caught_loop is ""
+try:
+    for i in [1, 2, 3]:
+        if i == 2:
+            throw of "loop error"
+catch e:
+    caught_loop is e
+assert of [contains of [caught_loop, "loop error"], "EP6 throw in loop caught outside"]
+
+# --- Runtime error (not throw) propagates ---
+caught_rt is ""
+define bad_index as:
+    items is [1, 2]
+    return items[99]
+
+try:
+    bad_index of null
+catch e:
+    caught_rt is e
+assert of [contains of [caught_rt, "out of range"], "EP7 runtime error propagates through call"]
+
+# --- Try/catch in loop — each iteration independent ---
+results is []
+for i in [0, 1, 2]:
+    try:
+        if i == 1:
+            throw of "skip"
+        append of [results, i]
+    catch e:
+        append of [results, -1]
+assert of [len of results == 3, "EP8 try/catch per iteration, all run"]
+assert of [results[0] == 0, "EP9 iteration 0 ok"]
+assert of [results[1] == -1, "EP10 iteration 1 caught"]
+assert of [results[2] == 2, "EP11 iteration 2 ok"]
+
+# --- Error after partial work — verify side effects persisted ---
+side_effect is 0
+define partial_work as:
+    side_effect is 42
+    throw of "after side effect"
+
+try:
+    partial_work of null
+catch e:
+    pass is 1
+assert of [side_effect == 42, "EP12 side effects persist before throw"]
+
+# --- Closure that throws, caught by caller ---
+define make_bomb as:
+    define explode as:
+        throw of "boom"
+    return explode
+
+bomb is make_bomb of null
+caught_bomb is ""
+try:
+    bomb of null
+catch e:
+    caught_bomb is e
+assert of [contains of [caught_bomb, "boom"], "EP13 closure throw caught by caller"]
+
+print of "error propagation: all passed"

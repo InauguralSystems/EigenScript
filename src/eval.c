@@ -639,6 +639,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         for (int i = 0; i < node->data.trycatch.try_count; i++) {
             result = eval_node(node->data.trycatch.try_body[i], env);
             if (g_returning) { g_try_depth--; return result; }
+            if (g_breaking || g_continuing) { g_try_depth--; return result; }
             if (g_has_error) break;
         }
         g_try_depth--;
@@ -652,6 +653,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             for (int i = 0; i < node->data.trycatch.catch_count; i++) {
                 result = eval_node(node->data.trycatch.catch_body[i], catch_env);
                 if (g_returning) { env_free(catch_env); return result; }
+                if (g_breaking || g_continuing) { env_free(catch_env); return result; }
             }
             env_free(catch_env);
         }

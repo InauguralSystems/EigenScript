@@ -1,0 +1,152 @@
+# Control flow interactions — combinations that expose scoping bugs.
+# Each test combines two or more features that share global flag state.
+
+# === BREAK/CONTINUE ACROSS FUNCTION BOUNDARIES ===
+
+# --- break in function must not break caller's for loop ---
+define do_break as:
+    break
+
+count is 0
+for i in [1, 2, 3, 4, 5]:
+    do_break of null
+    count is count + 1
+assert of [count == 5, "CF1 break in function does not escape for"]
+
+# --- continue in function must not skip caller's loop body ---
+total is 0
+define do_continue as:
+    continue
+
+for i in [1, 2, 3]:
+    do_continue of null
+    total is total + i
+assert of [total == 6, "CF2 continue in function does not escape for"]
+
+# --- break in function must not break caller's while loop ---
+wcount is 0
+j is 0
+loop while j < 5:
+    j is j + 1
+    do_break of null
+    wcount is wcount + 1
+assert of [wcount == 5, "CF3 break in function does not escape while"]
+
+# --- nested: break in inner function, called from outer function, in loop ---
+define inner_break as:
+    break
+
+define outer_call as:
+    inner_break of null
+    return 99
+
+ocount is 0
+r is 0
+for i in [1, 2, 3]:
+    r is outer_call of null
+    ocount is ocount + 1
+assert of [ocount == 3, "CF4 nested break does not escape two calls"]
+assert of [r == 99, "CF5 function returns normally despite inner break"]
+
+# === RETURN ACROSS NESTED CONTEXTS ===
+
+# --- return in if-block inside function ---
+define early_return(x) as:
+    if x > 0:
+        return "positive"
+    return "non-positive"
+
+assert of [early_return of 5 == "positive", "CF6 return from if block"]
+assert of [early_return of -1 == "non-positive", "CF7 fallthrough return"]
+
+# --- return in for-loop inside function ---
+define find_first(lst) as:
+    for item in lst:
+        if item > 10:
+            return item
+    return -1
+
+assert of [find_first of [1, 5, 15, 20] == 15, "CF8 return from for loop"]
+assert of [find_first of [1, 2, 3] == -1, "CF9 no match returns default"]
+
+# --- return in try/catch inside function ---
+define safe_divide(a, b) as:
+    try:
+        if b == 0:
+            throw of "div zero"
+        return a / b
+    catch e:
+        return 0
+
+assert of [safe_divide of [10, 2] == 5, "CF10 return from try body"]
+assert of [safe_divide of [10, 0] == 0, "CF11 return from catch body"]
+
+# === BREAK + TRY/CATCH INTERACTION ===
+
+# --- break inside try/catch inside loop ---
+items is []
+for i in [1, 2, 3, 4, 5]:
+    try:
+        if i == 3:
+            break
+        append of [items, i]
+    catch e:
+        append of [items, -1]
+assert of [len of items == 2, "CF12 break inside try exits loop"]
+assert of [items[0] == 1, "CF13 pre-break items correct"]
+
+# --- continue inside try/catch inside loop ---
+items2 is []
+for i in [1, 2, 3, 4]:
+    try:
+        if i == 2:
+            continue
+        append of [items2, i]
+    catch e:
+        pass is 1
+assert of [len of items2 == 3, "CF14 continue inside try skips iteration"]
+assert of [items2[1] == 3, "CF15 continue skipped i=2"]
+
+# --- throw + break: throw exits before break would ---
+caught_in_loop is 0
+for i in [1, 2, 3]:
+    try:
+        if i == 2:
+            throw of "error at 2"
+    catch e:
+        caught_in_loop is caught_in_loop + 1
+assert of [caught_in_loop == 1, "CF16 throw caught inside loop, loop continues"]
+
+# === MATCH + RETURN INTERACTION ===
+
+define classify(x) as:
+    match x:
+        case 1:
+            return "one"
+        case 2:
+            return "two"
+        case _:
+            return "other"
+
+assert of [classify of 1 == "one", "CF17 return from match case"]
+assert of [classify of 2 == "two", "CF18 return from second case"]
+assert of [classify of 99 == "other", "CF19 return from wildcard"]
+
+# === LOOP + CLOSURE + BREAK ===
+
+# --- closure defined in loop, break doesn't affect closure's caller ---
+fns is []
+for i in range of 3:
+    define f(x) as:
+        break
+        return x
+    append of [fns, f]
+
+# calling f should not break THIS loop
+results is []
+for i in range of 3:
+    r is fns[i] of i
+    append of [results, r]
+assert of [len of results == 3, "CF20 closure with break does not escape caller loop"]
+
+print of "control flow interactions: all passed"

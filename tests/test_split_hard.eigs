@@ -1,0 +1,69 @@
+# Split hard cases — the tests strtok_r silently passes.
+# Every test checks EXACT element count and element values.
+
+# --- Consecutive delimiters produce empty segments ---
+p1 is split of ["a,,b", ","]
+assert of [len of p1 == 3, "SH1 consecutive delims: count"]
+assert of [p1[0] == "a", "SH2 first"]
+assert of [p1[1] == "", "SH3 empty middle"]
+assert of [p1[2] == "b", "SH4 last"]
+
+# --- Leading delimiter produces empty first segment ---
+p2 is split of [",a", ","]
+assert of [len of p2 == 2, "SH5 leading delim: count"]
+assert of [p2[0] == "", "SH6 leading empty"]
+assert of [p2[1] == "a", "SH7 after leading"]
+
+# --- Trailing delimiter produces empty last segment ---
+p3 is split of ["a,", ","]
+assert of [len of p3 == 2, "SH8 trailing delim: count"]
+assert of [p3[0] == "a", "SH9 before trailing"]
+assert of [p3[1] == "", "SH10 trailing empty"]
+
+# --- All delimiters: empty segments everywhere ---
+p4 is split of [",,,", ","]
+assert of [len of p4 == 4, "SH11 all delims: four empties"]
+assert of [p4[0] == "", "SH12 all delims [0]"]
+assert of [p4[1] == "", "SH13 all delims [1]"]
+assert of [p4[2] == "", "SH14 all delims [2]"]
+assert of [p4[3] == "", "SH15 all delims [3]"]
+
+# --- Multi-character delimiter ---
+p5 is split of ["a::b::c", "::"]
+assert of [len of p5 == 3, "SH16 multi-char delim: count"]
+assert of [p5[0] == "a", "SH17 multi-char [0]"]
+assert of [p5[1] == "b", "SH18 multi-char [1]"]
+assert of [p5[2] == "c", "SH19 multi-char [2]"]
+
+# --- Multi-char delimiter with empties ---
+p6 is split of ["a::::b", "::"]
+assert of [len of p6 == 3, "SH20 multi-char consecutive: count"]
+assert of [p6[1] == "", "SH21 multi-char empty middle"]
+
+# --- Delimiter not found: return original as single element ---
+p7 is split of ["hello world", ","]
+assert of [len of p7 == 1, "SH22 no delim: single element"]
+assert of [p7[0] == "hello world", "SH23 no delim: full string"]
+
+# --- Empty input: one empty segment ---
+p8 is split of ["", ","]
+assert of [len of p8 == 1, "SH24 empty input: count 1"]
+assert of [p8[0] == "", "SH25 empty input: element is empty"]
+
+# --- CSV-style: positional fields with empty values ---
+csv is "Alice,,30,,engineer"
+fields is split of [csv, ","]
+assert of [len of fields == 5, "SH26 CSV field count"]
+assert of [fields[0] == "Alice", "SH27 CSV name"]
+assert of [fields[1] == "", "SH28 CSV empty field 2"]
+assert of [fields[2] == "30", "SH29 CSV age"]
+assert of [fields[3] == "", "SH30 CSV empty field 4"]
+assert of [fields[4] == "engineer", "SH31 CSV occupation"]
+
+# --- Default space delimiter still works ---
+p9 is split of "hello world"
+assert of [len of p9 == 2, "SH32 default space split: count"]
+assert of [p9[0] == "hello", "SH33 default space [0]"]
+assert of [p9[1] == "world", "SH34 default space [1]"]
+
+print of "split hard: all passed"

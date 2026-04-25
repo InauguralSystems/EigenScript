@@ -1,0 +1,92 @@
+# Closure mutation tests — the HARD cases.
+# Closures that read outer state are easy. Closures that WRITE outer state
+# expose whether the closure shares the enclosing scope or copies it.
+
+# --- Closure mutates outer variable ---
+counter is 0
+define inc as:
+    counter is counter + 1
+
+inc of null
+inc of null
+inc of null
+assert of [counter == 3, "CM1 closure must mutate outer variable"]
+
+# --- Closure mutation visible to sibling closure ---
+shared is 0
+define writer as:
+    shared is shared + 10
+
+define reader as:
+    return shared
+
+writer of null
+assert of [reader of null == 10, "CM2 sibling closure sees mutation"]
+writer of null
+assert of [reader of null == 20, "CM3 second mutation visible"]
+
+# --- Closure over mutable list (structural mutation) ---
+log is []
+define logger(msg) as:
+    append of [log, msg]
+
+logger of "first"
+logger of "second"
+logger of "third"
+assert of [len of log == 3, "CM4 closure appends to shared list"]
+assert of [log[0] == "first", "CM5 first log entry"]
+assert of [log[2] == "third", "CM6 third log entry"]
+
+# --- Module-style state: define + read + write + reset ---
+_count is 0
+define get_count as:
+    return _count
+
+define bump as:
+    _count is _count + 1
+
+define reset_count as:
+    _count is 0
+
+bump of null
+bump of null
+bump of null
+assert of [get_count of null == 3, "CM7 module-state read after write"]
+reset_count of null
+assert of [get_count of null == 0, "CM8 module-state reset"]
+
+# --- Factory closures with independent state ---
+define make_counter as:
+    val is 0
+    define next as:
+        val is val + 1
+        return val
+    return next
+
+c1 is make_counter of null
+c2 is make_counter of null
+assert of [c1 of null == 1, "CM9 counter1 first"]
+assert of [c1 of null == 2, "CM10 counter1 second"]
+assert of [c2 of null == 1, "CM11 counter2 independent"]
+assert of [c1 of null == 3, "CM12 counter1 third after counter2"]
+
+# --- Closure mutation inside loop ---
+total is 0
+define accumulate(x) as:
+    total is total + x
+
+for i in [10, 20, 30]:
+    accumulate of i
+assert of [total == 60, "CM13 closure mutation across loop iterations"]
+
+# --- Nested closure mutation (3 levels) ---
+outer_val is "start"
+define level1 as:
+    define level2 as:
+        outer_val is "deep"
+    level2 of null
+
+level1 of null
+assert of [outer_val == "deep", "CM14 three-level closure mutation"]
+
+print of "closure mutation: all passed"

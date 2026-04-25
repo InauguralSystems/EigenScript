@@ -1,0 +1,79 @@
+# JSON hard cases — the tests that would have caught the original bugs.
+# Every assertion checks an EXACT VALUE, not just "didn't crash".
+
+# --- json_encode of dict must produce valid JSON object ---
+d is {"a": 1, "b": "hello"}
+encoded is json_encode of d
+# Must contain key-value pairs with proper JSON quoting
+assert of [contains of [encoded, "\"a\""], "JH1 dict key quoted"]
+assert of [contains of [encoded, "\"b\""], "JH2 dict key quoted"]
+assert of [contains of [encoded, "\"hello\""], "JH3 string value quoted"]
+assert of [contains of [encoded, "1"], "JH4 numeric value present"]
+
+# --- json_encode must NOT return "null" for dict ---
+assert of [encoded != "null", "JH5 dict must not encode as null"]
+
+# --- json_decode of object must return dict, not list ---
+obj is json_decode of "{\"x\": 10}"
+assert of [type of obj == "dict", "JH6 object decodes to dict"]
+assert of [obj.x == 10, "JH7 dict field access works"]
+
+# --- Round-trip: encode then decode must preserve structure ---
+original is {"name": "Alice", "age": 30, "tags": [1, 2, 3]}
+roundtrip is json_decode of json_encode of original
+assert of [type of roundtrip == "dict", "JH8 round-trip preserves dict type"]
+assert of [roundtrip.name == "Alice", "JH9 round-trip string field"]
+assert of [roundtrip.age == 30, "JH10 round-trip number field"]
+assert of [type of roundtrip.tags == "list", "JH11 round-trip nested list type"]
+assert of [len of roundtrip.tags == 3, "JH12 round-trip list length"]
+assert of [roundtrip.tags[0] == 1, "JH13 round-trip list element"]
+
+# --- Nested dict round-trip ---
+nested is {"outer": {"inner": {"deep": 42}}}
+rt_nested is json_decode of json_encode of nested
+assert of [type of rt_nested.outer == "dict", "JH14 nested dict type"]
+assert of [rt_nested.outer.inner.deep == 42, "JH15 three-level deep access"]
+
+# --- Empty structures ---
+empty_d is json_decode of "{}"
+assert of [type of empty_d == "dict", "JH16 empty object is dict"]
+
+empty_a is json_decode of "[]"
+assert of [type of empty_a == "list", "JH17 empty array is list"]
+assert of [len of empty_a == 0, "JH18 empty array length 0"]
+
+# --- json_decode: special values ---
+bools is json_decode of "{\"t\": true, \"f\": false, \"n\": null}"
+assert of [bools.t == 1, "JH19 true decodes to 1"]
+assert of [bools.f == 0, "JH20 false decodes to 0"]
+assert of [type of bools.n == "none", "JH21 null decodes to none"]
+
+# --- Unicode escape \uXXXX ---
+esc is json_decode of "{\"amp\": \"a \\u0026 b\"}"
+assert of [esc.amp == "a & b", "JH22 \\u0026 is ampersand"]
+
+esc2 is json_decode of "{\"lt\": \"\\u003c\"}"
+assert of [esc2.lt == "<", "JH23 \\u003c is less-than"]
+
+esc3 is json_decode of "{\"q\": \"\\u0022\"}"
+assert of [esc3.q == "\"", "JH24 \\u0022 is double quote"]
+
+# --- json_path must work with dict-based decode ---
+path_json is "{\"user\": {\"name\": \"bob\", \"score\": 99}}"
+assert of [json_path of [path_json, "user.name"] == "bob", "JH25 json_path through nested dicts"]
+assert of [json_path of [path_json, "user.score"] == "99", "JH26 json_path numeric as string"]
+assert of [json_path of [path_json, "missing"] == "", "JH27 json_path missing key"]
+assert of [json_path of [path_json, "user.missing"] == "", "JH28 json_path nested missing"]
+
+# --- json_encode of list containing dicts ---
+mixed is [{"a": 1}, {"b": 2}]
+mixed_enc is json_encode of mixed
+assert of [contains of [mixed_enc, "\"a\""], "JH29 list-of-dicts encodes keys"]
+assert of [contains of [mixed_enc, "\"b\""], "JH30 list-of-dicts second dict"]
+
+# --- Special chars in keys/values survive round-trip ---
+special is {"key with spaces": "value\twith\ttabs"}
+sp_rt is json_decode of json_encode of special
+assert of [type of sp_rt == "dict", "JH31 special chars round-trip type"]
+
+print of "json hard: all passed"

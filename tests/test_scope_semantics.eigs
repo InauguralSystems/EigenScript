@@ -1,0 +1,115 @@
+# Scope semantics — assignment, shadowing, and visibility rules.
+# These tests verify the "outward-mutable" assignment model and
+# the interaction between scopes at different levels.
+
+# === ASSIGNMENT IS OUTWARD-MUTABLE ===
+
+# --- Assignment in if-block mutates outer scope ---
+x is 1
+if 1:
+    x is 2
+assert of [x == 2, "SS1 if-block assignment mutates outer"]
+
+# --- Assignment in for-loop mutates outer scope ---
+total is 0
+for i in [10, 20, 30]:
+    total is total + i
+assert of [total == 60, "SS2 for-loop mutation of outer var"]
+
+# --- New variable in for-loop is local, not visible outside ---
+for i in [1]:
+    loop_local is 99
+
+# loop_local should not exist in outer scope — but EigenScript's
+# env_set creates in the local scope if not found in parents.
+# After the loop, the loop env is freed. So loop_local is gone.
+caught_local is 0
+try:
+    x is loop_local
+catch e:
+    caught_local is 1
+assert of [caught_local == 1, "SS3 loop-local variable is not visible outside"]
+
+# === FUNCTION SCOPE ===
+
+# --- Function creates its own scope ---
+outer is "outer"
+define shadow_test as:
+    outer is "inner"
+    return outer
+
+result is shadow_test of null
+assert of [result == "inner", "SS4 function sees its own assignment"]
+# Tricky: does function's assignment mutate outer?
+# env_set walks up — it finds 'outer' in parent and mutates it.
+assert of [outer == "inner", "SS5 function assignment mutates enclosing scope"]
+
+# --- Function parameter shadows outer variable ---
+param_val is "original"
+define param_shadow(param_val) as:
+    return param_val
+
+assert of [param_shadow of "argument" == "argument", "SS6 param shadows outer"]
+assert of [param_val == "original", "SS7 outer unchanged after param shadow"]
+
+# === FOR-LOOP VARIABLE SCOPING ===
+
+# --- Loop variable is local to each iteration ---
+i is 999
+for i in [1, 2, 3]:
+    pass is 1
+# After loop, does i retain its pre-loop value or last iteration?
+# for-loop creates a child env with i as local. After loop, child is freed.
+# The outer i=999 should be unchanged since the loop var is in child scope.
+assert of [i == 999, "SS8 loop variable does not overwrite outer"]
+
+# --- Nested loops with same variable name ---
+results is []
+for i in [1, 2]:
+    for i in [10, 20]:
+        append of [results, i]
+assert of [len of results == 4, "SS9 nested same-name loop runs all"]
+assert of [results[0] == 10, "SS10 inner loop values correct"]
+assert of [results[3] == 20, "SS11 last inner value"]
+
+# === OBSERVER TRACKING THROUGH SCOPES ===
+
+# --- Assignment updates __observer__ ---
+x is 42
+obs is env_get of "__observer__"
+# __observer__ should be the last assigned value
+# (we can't call env_get directly, but we can check observer via report)
+report_x is report of x
+assert of [type of report_x == "str", "SS12 report returns string"]
+
+# --- Assignment in function updates caller's __observer__ ---
+define set_val as:
+    y is 100
+    return y
+
+r is set_val of null
+# The function call itself updates __observer__ via AST_RELATION
+
+# === DICT MUTATION ACROSS SCOPES ===
+
+# --- Dict passed to function is mutable ---
+d is {"count": 0}
+define bump_dict(dict) as:
+    dict.count is dict.count + 1
+
+bump_dict of d
+bump_dict of d
+assert of [d.count == 2, "SS13 dict mutated through function call"]
+
+# --- List passed to function is mutable ---
+lst is [0]
+define push(list) as:
+    append of [list, len of list]
+
+push of lst
+push of lst
+push of lst
+assert of [len of lst == 4, "SS14 list mutated through function call"]
+assert of [lst[3] == 3, "SS15 appended values correct"]
+
+print of "scope semantics: all passed"
