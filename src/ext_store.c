@@ -341,9 +341,31 @@ static int store_read_header(Store *store) {
             store->page_count, max_pages);
         return -1;
     }
-    if (store->free_page >= store->page_count && store->free_page != 0) {
-        store->free_page = 0;  /* corrupt free pointer — reset */
+    if (store->free_page != 0 && store->free_page >= store->page_count) {
+        fprintf(stderr, "store_open: free_page %u out of range (page_count %u)\n",
+            store->free_page, store->page_count);
+        return -1;
     }
+
+    /* Validate free-list chain: every page must be PAGE_FREE and in range */
+    uint32_t fp = store->free_page;
+    for (int hops = 0; fp != 0 && hops < STORE_MAX_PAGE_HOPS; hops++) {
+        Page page;
+        if (store_read_page(store, fp, &page) != 0) {
+            fprintf(stderr, "store_open: cannot read free-list page %u\n", fp);
+            return -1;
+        }
+        if (page.type != PAGE_FREE) {
+            fprintf(stderr, "store_open: free-list page %u has type %d, expected FREE\n", fp, page.type);
+            return -1;
+        }
+        if (page.next_page != 0 && page.next_page >= store->page_count) {
+            fprintf(stderr, "store_open: free-list page %u has invalid next %u\n", fp, page.next_page);
+            return -1;
+        }
+        fp = page.next_page;
+    }
+
     return 0;
 }
 
@@ -398,26 +420,60 @@ static int store_load_catalog(Store *store) {
 
     for (int hops = 0; hops < STORE_MAX_PAGE_HOPS; hops++) {
         Page page;
-        if (store_read_page(store, pg, &page) != 0) break;
-        if (page.type != PAGE_CATALOG) break;
-        if (page.count > 0 && page.count <= STORE_PAGE_DATA_SIZE) {
-            strbuf_append_n(&buf, page.data, page.count);
-        } else if (page.count > STORE_PAGE_DATA_SIZE) {
-            break;  /* corrupt catalog page */
+        if (store_read_page(store, pg, &page) != 0) {
+            fprintf(stderr, "store_open: cannot read catalog page %u\n", pg);
+            strbuf_free(&buf);
+            return -1;
         }
-        if (page.next_page == 0 || page.next_page >= store->page_count) break;
+        if (page.type != PAGE_CATALOG) {
+            fprintf(stderr, "store_open: page %u is type %d, expected catalog\n", pg, page.type);
+            strbuf_free(&buf);
+            return -1;
+        }
+        if (page.count > STORE_PAGE_DATA_SIZE) {
+            fprintf(stderr, "store_open: catalog page %u has invalid count %u\n", pg, page.count);
+            strbuf_free(&buf);
+            return -1;
+        }
+        if (page.count > 0) {
+            strbuf_append_n(&buf, page.data, page.count);
+        }
+        if (page.next_page == 0) break;
+        if (page.next_page >= store->page_count) {
+            fprintf(stderr, "store_open: catalog page %u has invalid next_page %u\n", pg, page.next_page);
+            strbuf_free(&buf);
+            return -1;
+        }
         pg = page.next_page;
     }
 
-    if (buf.len > 0) {
-        store->catalog = store_json_decode(buf.data);
-        if (!store->catalog || store->catalog->type != VAL_DICT) {
-            store->catalog = make_dict(8);
-        }
-    } else {
-        store->catalog = make_dict(8);
+    if (buf.len == 0) {
+        fprintf(stderr, "store_open: empty catalog\n");
+        strbuf_free(&buf);
+        return -1;
     }
+
+    store->catalog = store_json_decode(buf.data);
     strbuf_free(&buf);
+    if (!store->catalog || store->catalog->type != VAL_DICT) {
+        fprintf(stderr, "store_open: catalog is not valid JSON dict\n");
+        return -1;
+    }
+
+    /* Validate all collection root pages */
+    for (int i = 0; i < store->catalog->data.dict.count; i++) {
+        Value *col = store->catalog->data.dict.vals[i];
+        if (!col || col->type != VAL_DICT) continue;
+        Value *rv = dict_get(col, "root");
+        if (!rv || rv->type != VAL_NUM) continue;
+        uint32_t root = (uint32_t)rv->data.num;
+        if (root == 0 || root >= store->page_count) {
+            fprintf(stderr, "store_open: collection '%s' has invalid root page %u\n",
+                store->catalog->data.dict.keys[i], root);
+            return -1;
+        }
+    }
+
     return 0;
 }
 
@@ -480,7 +536,12 @@ static Value* builtin_store_open(Value *arg) {
             free(store);
             return make_null();
         }
-        store_load_catalog(store);
+        if (store_load_catalog(store) != 0) {
+            fprintf(stderr, "Error: store_open: corrupt catalog in '%s'\n", path);
+            fclose(fp);
+            free(store);
+            return make_null();
+        }
     } else {
         /* Create new file */
         fp = fopen(path, "w+b");
@@ -579,11 +640,6 @@ static Value* builtin_store_put(Value *arg) {
         Value *nv = dict_get(col_info, "next_id");
         root_page = (uint32_t)(rv ? rv->data.num : 0);
         next_id = (int)(nv ? nv->data.num : 1);
-
-        if (root_page == 0 || root_page >= store->page_count) {
-            fprintf(stderr, "Error: store_put: corrupt root page %u for collection '%s'\n", root_page, collection);
-            return make_null();
-        }
     }
 
     /* Determine key */
