@@ -224,10 +224,10 @@ static void md5_final(MD5_CTX *ctx, uint8_t hash[16]) {
  *  Hex helper
  * ================================================================ */
 
-static void bytes_to_hex(const uint8_t *bytes, int len, char *hex) {
-    for (int i = 0; i < len; i++)
-        sprintf(hex + i * 2, "%02x", bytes[i]);
-    hex[len * 2] = '\0';
+static void bytes_to_hex(const uint8_t *bytes, int len, char *hex, int hex_size) {
+    for (int i = 0; i < len && i * 2 + 2 < hex_size; i++)
+        snprintf(hex + i * 2, 3, "%02x", bytes[i]);
+    hex[len * 2 < hex_size ? len * 2 : hex_size - 1] = '\0';
 }
 
 /* ================================================================
@@ -242,7 +242,7 @@ Value* builtin_sha256(Value *arg) {
     uint8_t hash[32];
     sha256_final(&ctx, hash);
     char hex[65];
-    bytes_to_hex(hash, 32, hex);
+    bytes_to_hex(hash, 32, hex, sizeof(hex));
     return make_str(hex);
 }
 
@@ -254,7 +254,7 @@ Value* builtin_md5(Value *arg) {
     uint8_t hash[16];
     md5_final(&ctx, hash);
     char hex[33];
-    bytes_to_hex(hash, 16, hex);
+    bytes_to_hex(hash, 16, hex, sizeof(hex));
     return make_str(hex);
 }
 
@@ -272,7 +272,7 @@ Value* builtin_sha256_file(Value *arg) {
     uint8_t hash[32];
     sha256_final(&ctx, hash);
     char hex[65];
-    bytes_to_hex(hash, 32, hex);
+    bytes_to_hex(hash, 32, hex, sizeof(hex));
     return make_str(hex);
 }
 
@@ -290,7 +290,7 @@ Value* builtin_md5_file(Value *arg) {
     uint8_t hash[16];
     md5_final(&ctx, hash);
     char hex[33];
-    bytes_to_hex(hash, 16, hex);
+    bytes_to_hex(hash, 16, hex, sizeof(hex));
     return make_str(hex);
 }
 
@@ -346,7 +346,7 @@ Value* builtin_hmac_sha256(Value *arg) {
     sha256_final(&outer, final_hash);
 
     char hex[65];
-    bytes_to_hex(final_hash, 32, hex);
+    bytes_to_hex(final_hash, 32, hex, sizeof(hex));
     return make_str(hex);
 }
 

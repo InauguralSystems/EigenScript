@@ -36,7 +36,7 @@ static void lint_warn(LintContext *ctx, int line, const char *fmt, ...) {
     if (ctx->warning_count >= MAX_LINT_WARNINGS) return;
     LintWarning *w = &ctx->warnings[ctx->warning_count++];
     w->line = line;
-    strcpy(w->level, "warning");
+    memcpy(w->level, "warning", 8);
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(w->message, sizeof(w->message), fmt, ap);

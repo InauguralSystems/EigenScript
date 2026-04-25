@@ -2097,7 +2097,7 @@ Value* builtin_random_hex(Value *arg) {
     if ((int)got < bytes_needed) return make_str("");
     char hex[257];
     for (int i = 0; i < bytes_needed && i * 2 < n; i++)
-        sprintf(hex + i * 2, "%02x", raw[i]);
+        snprintf(hex + i * 2, 3, "%02x", raw[i]);
     hex[n] = '\0';
     return make_str(hex);
 }

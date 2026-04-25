@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
             memcpy(g_script_dir, argv[1], dir_len);
             g_script_dir[dir_len] = '\0';
         } else {
-            strcpy(g_script_dir, ".");
+            memcpy(g_script_dir, ".", 2);
         }
     }
 

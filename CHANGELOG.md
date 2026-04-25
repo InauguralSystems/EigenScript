@@ -14,6 +14,13 @@ All notable changes to EigenScript are documented here.
 - **Test runner injection**: pass values to Python via `sys.argv` instead of
   shell-interpolated string in `check_range`.
 
+### Hardening
+- Eliminate all `sprintf` from the codebase — replaced with bounds-checked
+  `snprintf` in `hash.c` (`bytes_to_hex`) and `builtins.c` (`random_hex`).
+- Eliminate all `strcpy` — replaced with `memcpy` of known-length constants
+  in `lint.c` and `main.c`.
+- Zero unsafe string functions (`sprintf`, `strcpy`, `strcat`, `gets`) remain.
+
 ## [0.9.3.2] — 2026-04-25
 
 ### Security
