@@ -75,6 +75,8 @@ static int store_record_next(const Page *page, int *offset, StoreRecord *rec) {
 
 static void store_json_encode(Value *v, strbuf *out);
 
+static int page_data_used(Page *page);
+
 static void store_json_encode(Value *v, strbuf *out) {
     if (!v || v->type == VAL_NULL || v->type == VAL_FN || v->type == VAL_BUILTIN) {
         strbuf_append(out, "null");
@@ -141,6 +143,10 @@ static void store_json_skip_ws(const char *s, int *pos) {
 
 static Value* store_json_parse_value(const char *s, int *pos);
 
+/* Strict JSON parser for on-disk store data.
+ * Returns NULL on any malformed input — missing separators, unterminated
+ * strings, trailing garbage, unknown tokens. */
+
 static Value* store_json_parse_string(const char *s, int *pos) {
     if (s[*pos] != '"') return NULL;
     (*pos)++;
@@ -156,72 +162,73 @@ static Value* store_json_parse_string(const char *s, int *pos) {
                 case 'r': strbuf_append_char(&buf, '\r'); break;
                 case 't': strbuf_append_char(&buf, '\t'); break;
                 case '/': strbuf_append_char(&buf, '/'); break;
-                default: strbuf_append_char(&buf, s[*pos]); break;
+                default: strbuf_free(&buf); return NULL;  /* invalid escape */
             }
         } else {
             strbuf_append_char(&buf, s[*pos]);
         }
         (*pos)++;
     }
-    if (s[*pos] == '"') (*pos)++;
+    if (s[*pos] != '"') { strbuf_free(&buf); return NULL; }  /* unterminated */
+    (*pos)++;
     Value *v = make_str(buf.data);
     strbuf_free(&buf);
     return v;
 }
 
 static Value* store_json_parse_number(const char *s, int *pos) {
-    char numbuf[64];
-    int len = 0;
-    if (s[*pos] == '-') numbuf[len++] = s[(*pos)++];
-    while (s[*pos] && (isdigit(s[*pos]) || s[*pos] == '.' || s[*pos] == 'e' || s[*pos] == 'E' || s[*pos] == '+') && len < 63) {
-        numbuf[len++] = s[(*pos)++];
-    }
-    numbuf[len] = '\0';
-    return make_num(atof(numbuf));
+    char *end = NULL;
+    double val = strtod(s + *pos, &end);
+    if (end == s + *pos) return NULL;  /* no digits consumed */
+    *pos = (int)(end - s);
+    return make_num(val);
 }
 
 static Value* store_json_parse_array(const char *s, int *pos) {
+    if (s[*pos] != '[') return NULL;
     (*pos)++;
     Value *list = make_list(8);
     store_json_skip_ws(s, pos);
     if (s[*pos] == ']') { (*pos)++; return list; }
-    while (s[*pos]) {
+    while (1) {
         store_json_skip_ws(s, pos);
         Value *val = store_json_parse_value(s, pos);
-        if (val) list_append(list, val);
+        if (!val) return NULL;
+        list_append(list, val);
         store_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
-        if (s[*pos] == ']') { (*pos)++; break; }
-        break;
+        if (s[*pos] == ']') { (*pos)++; return list; }
+        return NULL;  /* expected , or ] */
     }
-    return list;
 }
 
 static Value* store_json_parse_object(const char *s, int *pos) {
+    if (s[*pos] != '{') return NULL;
     (*pos)++;
     Value *dict = make_dict(8);
     store_json_skip_ws(s, pos);
     if (s[*pos] == '}') { (*pos)++; return dict; }
-    while (s[*pos]) {
+    while (1) {
         store_json_skip_ws(s, pos);
         Value *key = store_json_parse_string(s, pos);
-        if (!key) break;
+        if (!key) return NULL;
         store_json_skip_ws(s, pos);
-        if (s[*pos] == ':') (*pos)++;
+        if (s[*pos] != ':') return NULL;  /* require colon */
+        (*pos)++;
         store_json_skip_ws(s, pos);
         Value *val = store_json_parse_value(s, pos);
-        dict_set(dict, key->data.str, val ? val : make_null());
+        if (!val) return NULL;
+        dict_set(dict, key->data.str, val);
         store_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
-        if (s[*pos] == '}') { (*pos)++; break; }
-        break;
+        if (s[*pos] == '}') { (*pos)++; return dict; }
+        return NULL;  /* expected , or } */
     }
-    return dict;
 }
 
 static Value* store_json_parse_value(const char *s, int *pos) {
     store_json_skip_ws(s, pos);
-    if (!s[*pos]) return make_null();
+    if (!s[*pos]) return NULL;
     if (s[*pos] == '"') return store_json_parse_string(s, pos);
     if (s[*pos] == '[') return store_json_parse_array(s, pos);
     if (s[*pos] == '{') return store_json_parse_object(s, pos);
@@ -229,12 +236,17 @@ static Value* store_json_parse_value(const char *s, int *pos) {
     if (strncmp(s + *pos, "null", 4) == 0) { *pos += 4; return make_null(); }
     if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_num(1); }
     if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_num(0); }
-    return make_null();
+    return NULL;  /* unknown token */
 }
 
+/* Strict decode: parse value, then require only whitespace/end remaining */
 static Value* store_json_decode(const char *s) {
     int pos = 0;
-    return store_json_parse_value(s, &pos);
+    Value *v = store_json_parse_value(s, &pos);
+    if (!v) return NULL;
+    store_json_skip_ws(s, &pos);
+    if (s[pos] != '\0') return NULL;  /* trailing garbage */
+    return v;
 }
 
 /* ================================================================
@@ -325,47 +337,68 @@ static int store_read_header(Store *store) {
     if (fseek(store->fp, 0, SEEK_SET) != 0) return -1;
     unsigned char hdr[STORE_HEADER_SIZE];
     if (fread(hdr, 1, STORE_HEADER_SIZE, store->fp) != STORE_HEADER_SIZE) return -1;
+
+    /* Magic, version, page size */
     if (memcmp(hdr, STORE_MAGIC, 4) != 0) return -1;
+    uint32_t version = (uint32_t)(hdr[4] | (hdr[5] << 8) | (hdr[6] << 16) | (hdr[7] << 24));
+    if (version != STORE_VERSION) {
+        fprintf(stderr, "store_open: version %u, expected %d\n", version, STORE_VERSION);
+        return -1;
+    }
+    uint32_t page_size = (uint32_t)(hdr[8] | (hdr[9] << 8) | (hdr[10] << 16) | (hdr[11] << 24));
+    if (page_size != STORE_PAGE_SIZE) {
+        fprintf(stderr, "store_open: page_size %u, expected %d\n", page_size, STORE_PAGE_SIZE);
+        return -1;
+    }
+
     store->page_count = (uint32_t)(hdr[12] | (hdr[13] << 8) | (hdr[14] << 16) | (hdr[15] << 24));
     store->free_page  = (uint32_t)(hdr[16] | (hdr[17] << 8) | (hdr[18] << 16) | (hdr[19] << 24));
 
-    /* Validate page_count against file size */
-    long pos = ftell(store->fp);
+    /* Exact file size validation */
     if (fseek(store->fp, 0, SEEK_END) != 0) return -1;
     long file_size = ftell(store->fp);
-    fseek(store->fp, pos, SEEK_SET);
-    if (file_size < 0) return -1;
-    uint32_t max_pages = (uint32_t)((file_size - STORE_HEADER_SIZE) / STORE_PAGE_SIZE) + 1;
-    if (store->page_count > max_pages) {
-        fprintf(stderr, "store_open: page_count %u exceeds file capacity %u\n",
-            store->page_count, max_pages);
+    fseek(store->fp, STORE_HEADER_SIZE, SEEK_SET);
+    if (file_size < (long)STORE_HEADER_SIZE) return -1;
+    long data_size = file_size - STORE_HEADER_SIZE;
+    if (data_size % STORE_PAGE_SIZE != 0) {
+        fprintf(stderr, "store_open: file not page-aligned (data=%ld, page_size=%d)\n",
+            data_size, STORE_PAGE_SIZE);
         return -1;
     }
-    if (store->free_page != 0 && store->free_page >= store->page_count) {
-        fprintf(stderr, "store_open: free_page %u out of range (page_count %u)\n",
-            store->free_page, store->page_count);
+    uint32_t file_pages = (uint32_t)(data_size / STORE_PAGE_SIZE);
+    if (store->page_count < 1 || store->page_count != file_pages) {
+        fprintf(stderr, "store_open: page_count %u != file pages %u\n",
+            store->page_count, file_pages);
         return -1;
     }
 
-    /* Validate free-list chain: every page must be PAGE_FREE and in range */
+    if (store->free_page != 0 && store->free_page >= store->page_count) {
+        fprintf(stderr, "store_open: free_page %u out of range\n", store->free_page);
+        return -1;
+    }
+
+    /* Validate free-list chain with visited bitmap */
+    uint8_t *visited = xcalloc((store->page_count + 7) / 8, 1);
     uint32_t fp = store->free_page;
-    for (int hops = 0; fp != 0 && hops < STORE_MAX_PAGE_HOPS; hops++) {
+    while (fp != 0) {
+        if (fp >= store->page_count) { free(visited); return -1; }
+        uint32_t byte = fp / 8, bit = fp % 8;
+        if (visited[byte] & (1 << bit)) {
+            fprintf(stderr, "store_open: cycle in free-list at page %u\n", fp);
+            free(visited);
+            return -1;
+        }
+        visited[byte] |= (1 << bit);
         Page page;
-        if (store_read_page(store, fp, &page) != 0) {
-            fprintf(stderr, "store_open: cannot read free-list page %u\n", fp);
-            return -1;
-        }
+        if (store_read_page(store, fp, &page) != 0) { free(visited); return -1; }
         if (page.type != PAGE_FREE) {
-            fprintf(stderr, "store_open: free-list page %u has type %d, expected FREE\n", fp, page.type);
-            return -1;
-        }
-        if (page.next_page != 0 && page.next_page >= store->page_count) {
-            fprintf(stderr, "store_open: free-list page %u has invalid next %u\n", fp, page.next_page);
+            fprintf(stderr, "store_open: free-list page %u has type %d\n", fp, page.type);
+            free(visited);
             return -1;
         }
         fp = page.next_page;
     }
-
+    free(visited);
     return 0;
 }
 
@@ -417,35 +450,41 @@ static int store_load_catalog(Store *store) {
     strbuf buf;
     strbuf_init(&buf);
     uint32_t pg = 0;
+    size_t bmp_size = (store->page_count + 7) / 8;
+    uint8_t *cat_visited = xcalloc(bmp_size, 1);
 
-    for (int hops = 0; hops < STORE_MAX_PAGE_HOPS; hops++) {
+    while (1) {
+        if (pg >= store->page_count) {
+            fprintf(stderr, "store_open: catalog page %u out of range\n", pg);
+            goto cat_fail;
+        }
+        uint32_t byte = pg / 8, bit = pg % 8;
+        if (cat_visited[byte] & (1 << bit)) {
+            fprintf(stderr, "store_open: cycle in catalog chain at page %u\n", pg);
+            goto cat_fail;
+        }
+        cat_visited[byte] |= (1 << bit);
+
         Page page;
         if (store_read_page(store, pg, &page) != 0) {
             fprintf(stderr, "store_open: cannot read catalog page %u\n", pg);
-            strbuf_free(&buf);
-            return -1;
+            goto cat_fail;
         }
         if (page.type != PAGE_CATALOG) {
             fprintf(stderr, "store_open: page %u is type %d, expected catalog\n", pg, page.type);
-            strbuf_free(&buf);
-            return -1;
+            goto cat_fail;
         }
         if (page.count > STORE_PAGE_DATA_SIZE) {
             fprintf(stderr, "store_open: catalog page %u has invalid count %u\n", pg, page.count);
-            strbuf_free(&buf);
-            return -1;
+            goto cat_fail;
         }
         if (page.count > 0) {
             strbuf_append_n(&buf, page.data, page.count);
         }
         if (page.next_page == 0) break;
-        if (page.next_page >= store->page_count) {
-            fprintf(stderr, "store_open: catalog page %u has invalid next_page %u\n", pg, page.next_page);
-            strbuf_free(&buf);
-            return -1;
-        }
         pg = page.next_page;
     }
+    free(cat_visited);
 
     if (buf.len == 0) {
         fprintf(stderr, "store_open: empty catalog\n");
@@ -460,21 +499,79 @@ static int store_load_catalog(Store *store) {
         return -1;
     }
 
-    /* Validate all collection root pages */
+    /* Validate every collection: strict schema + walk record chains */
+    uint8_t *visited = xcalloc((store->page_count + 7) / 8, 1);
+    /* Mark page 0 (catalog) as owned */
+    visited[0] |= 1;
+
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
+        const char *name = store->catalog->data.dict.keys[i];
         Value *col = store->catalog->data.dict.vals[i];
-        if (!col || col->type != VAL_DICT) continue;
+
+        /* Strict schema: must be dict with numeric "root" and "next_id" */
+        if (!col || col->type != VAL_DICT) {
+            fprintf(stderr, "store_open: collection '%s' is not a dict\n", name);
+            free(visited);
+            return -1;
+        }
         Value *rv = dict_get(col, "root");
-        if (!rv || rv->type != VAL_NUM) continue;
+        Value *nv = dict_get(col, "next_id");
+        if (!rv || rv->type != VAL_NUM || !nv || nv->type != VAL_NUM) {
+            fprintf(stderr, "store_open: collection '%s' missing root or next_id\n", name);
+            free(visited);
+            return -1;
+        }
         uint32_t root = (uint32_t)rv->data.num;
         if (root == 0 || root >= store->page_count) {
-            fprintf(stderr, "store_open: collection '%s' has invalid root page %u\n",
-                store->catalog->data.dict.keys[i], root);
+            fprintf(stderr, "store_open: collection '%s' has invalid root %u\n", name, root);
+            free(visited);
             return -1;
+        }
+
+        /* Walk the record chain: validate page types, records, no cycles */
+        uint32_t pg = root;
+        while (pg != 0) {
+            if (pg >= store->page_count) {
+                fprintf(stderr, "store_open: collection '%s' page %u out of range\n", name, pg);
+                free(visited);
+                return -1;
+            }
+            uint32_t byte = pg / 8, bit = pg % 8;
+            if (visited[byte] & (1 << bit)) {
+                fprintf(stderr, "store_open: collection '%s' page %u already owned\n", name, pg);
+                free(visited);
+                return -1;
+            }
+            visited[byte] |= (1 << bit);
+
+            Page page;
+            if (store_read_page(store, pg, &page) != 0) {
+                fprintf(stderr, "store_open: collection '%s' cannot read page %u\n", name, pg);
+                free(visited);
+                return -1;
+            }
+            if (page.type != PAGE_RECORDS) {
+                fprintf(stderr, "store_open: collection '%s' page %u type %d, expected RECORDS\n",
+                    name, pg, page.type);
+                free(visited);
+                return -1;
+            }
+            if (page_data_used(&page) < 0) {
+                fprintf(stderr, "store_open: collection '%s' page %u has corrupt records\n", name, pg);
+                free(visited);
+                return -1;
+            }
+            pg = page.next_page;
         }
     }
 
+    free(visited);
     return 0;
+
+cat_fail:
+    free(cat_visited);
+    strbuf_free(&buf);
+    return -1;
 }
 
 /* ================================================================
