@@ -580,9 +580,9 @@ cat_fail:
 
 static Store* get_store(Value *v) {
     if (!v || v->type != VAL_DICT) return NULL;
-    Value *sv = dict_get(v, "_store");
+    Value *sv = dict_get(v, "_store_id");
     if (!sv || sv->type != VAL_NUM) return NULL;
-    return (Store*)(uintptr_t)sv->data.num;
+    return (Store*)handle_lookup((int)sv->data.num, HANDLE_STORE);
 }
 
 /* ================================================================
@@ -591,7 +591,7 @@ static Store* get_store(Value *v) {
 
 /*
  * Deleted record format: [key_len=0 : 2 bytes][skip_len : 4 bytes][skip_len bytes of dead data]
- * skip_len = original_key_len + 4 + original_json_len  (everything after the skip_len field)
+ * skip_len = original_key_len + original_json_len  (key data + json data; the 4-byte json_len header is replaced by skip_len)
  *
  * Live record format:    [key_len : 2 bytes][key_data : key_len bytes][json_len : 4 bytes][json_data : json_len bytes]
  */
@@ -667,8 +667,14 @@ static Value* builtin_store_open(Value *arg) {
         store->dirty = 0;
     }
 
+    int hid = handle_register(store, HANDLE_STORE);
+    if (hid < 0) {
+        fclose(store->fp);
+        free(store);
+        return make_null();
+    }
     Value *handle = make_dict(8);
-    dict_set(handle, "_store", make_num((double)(uintptr_t)store));
+    dict_set(handle, "_store_id", make_num((double)hid));
     dict_set(handle, "_type", make_str("eigenstore"));
     return handle;
 }
@@ -680,13 +686,17 @@ static Value* builtin_store_close(Value *arg) {
         fprintf(stderr, "Error: store_close requires a store handle\n");
         return make_null();
     }
+    /* Release handle before freeing */
+    Value *id_val = (arg && arg->type == VAL_DICT) ? dict_get(arg, "_store_id") : NULL;
+    int hid = (id_val && id_val->type == VAL_NUM) ? (int)id_val->data.num : -1;
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
     fclose(store->fp);
     free(store);
+    handle_release(hid);
     /* Invalidate handle */
     if (arg && arg->type == VAL_DICT) {
-        dict_set(arg, "_store", make_null());
+        dict_set(arg, "_store_id", make_null());
     }
     return make_null();
 }

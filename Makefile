@@ -1,7 +1,7 @@
 VERSION := $(shell cat VERSION)
 CC      := gcc
-CFLAGS  := -Wall -Wextra -O2 -fstack-protector-strong
-LDFLAGS := -lm -lpthread
+CFLAGS  := -Wall -Wextra -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+LDFLAGS := -pie -Wl,-z,relro,-z,now -lm -lpthread
 
 SRC_DIR := src
 SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/eval.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/main.c

@@ -482,3 +482,52 @@ Value* env_get(Env *env, const char *name) {
     return NULL;
 }
 
+/* ================================================================
+ * HANDLE TABLE — opaque pointer indirection for Store/Thread/Channel
+ * ================================================================ */
+
+#include <pthread.h>
+
+static struct {
+    void      *ptr;
+    HandleType type;
+} g_handle_table[HANDLE_TABLE_SIZE];
+
+static pthread_mutex_t g_handle_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int g_handle_next = 1; /* 0 reserved as invalid */
+
+int handle_register(void *ptr, HandleType type) {
+    pthread_mutex_lock(&g_handle_mutex);
+    for (int i = 0; i < HANDLE_TABLE_SIZE; i++) {
+        int idx = (g_handle_next + i) % HANDLE_TABLE_SIZE;
+        if (idx == 0) continue;
+        if (g_handle_table[idx].ptr == NULL) {
+            g_handle_table[idx].ptr = ptr;
+            g_handle_table[idx].type = type;
+            g_handle_next = (idx + 1) % HANDLE_TABLE_SIZE;
+            pthread_mutex_unlock(&g_handle_mutex);
+            return idx;
+        }
+    }
+    pthread_mutex_unlock(&g_handle_mutex);
+    fprintf(stderr, "Error: handle table full\n");
+    return -1;
+}
+
+void* handle_lookup(int id, HandleType type) {
+    if (id <= 0 || id >= HANDLE_TABLE_SIZE) return NULL;
+    pthread_mutex_lock(&g_handle_mutex);
+    void *ptr = NULL;
+    if (g_handle_table[id].ptr != NULL && g_handle_table[id].type == type)
+        ptr = g_handle_table[id].ptr;
+    pthread_mutex_unlock(&g_handle_mutex);
+    return ptr;
+}
+
+void handle_release(int id) {
+    if (id <= 0 || id >= HANDLE_TABLE_SIZE) return;
+    pthread_mutex_lock(&g_handle_mutex);
+    g_handle_table[id].ptr = NULL;
+    pthread_mutex_unlock(&g_handle_mutex);
+}
+

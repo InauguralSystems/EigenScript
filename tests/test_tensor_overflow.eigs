@@ -1,0 +1,6 @@
+small is [[1, 2], [3, 4]]
+result is add of [small, small]
+assert of [result != null, "small tensor add works"]
+assert of [get_at of [result, 0, 0] == 2, "element 0,0 is 2"]
+assert of [get_at of [result, 1, 1] == 8, "element 1,1 is 8"]
+print of "PASS: tensor overflow guard"

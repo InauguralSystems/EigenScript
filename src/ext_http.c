@@ -397,8 +397,17 @@ static void send_file(int fd, const char *filepath) {
 }
 
 static void generate_session_id(char *buf, int len) {
-    static int counter = 0;
-    snprintf(buf, len, "sess_%lx_%d", (unsigned long)time(NULL), counter++);
+    unsigned char raw[16];
+    FILE *urand = fopen("/dev/urandom", "rb");
+    if (urand && fread(raw, 1, 16, urand) == 16) {
+        fclose(urand);
+        int pos = snprintf(buf, len, "sess_");
+        for (int i = 0; i < 16 && pos + 2 < len; i++)
+            pos += snprintf(buf + pos, len - pos, "%02x", raw[i]);
+        return;
+    }
+    if (urand) fclose(urand);
+    snprintf(buf, len, "sess_%lx_%ld", (unsigned long)time(NULL), (long)getpid());
 }
 
 /* Per-connection total deadline: 30 seconds for entire request (header + body).
@@ -487,7 +496,7 @@ static void handle_request(int fd) {
         goto done;
     }
 
-    static char sess_id[64];
+    char sess_id[64];
     generate_session_id(sess_id, sizeof(sess_id));
     g_server.session_id = sess_id;
     g_server.request_body = body ? body : "";
@@ -545,7 +554,9 @@ static void handle_request(int fd) {
                     }
                     TokenList auth_tl = tokenize("require_auth of null");
                     ASTNode *auth_ast = parse(&auth_tl);
-                    Value *auth_result = eval_node(auth_ast, g_server.global_env);
+                    Env *auth_env = env_new(g_server.global_env);
+                    Value *auth_result = eval_node(auth_ast, auth_env);
+                    env_free(auth_env);
                     char *auth_str = value_to_string(auth_result);
                     if (auth_str[0] != '\0') {
                         send_response(fd, 401, "Unauthorized", "application/json",
@@ -557,8 +568,10 @@ static void handle_request(int fd) {
                 }
                 TokenList tl = tokenize(r->payload);
                 ASTNode *ast = parse(&tl);
-                Value *result = eval_node(ast, g_server.global_env);
+                Env *req_env = env_new(g_server.global_env);
+                Value *result = eval_node(ast, req_env);
                 char *result_str = value_to_string(result);
+                env_free(req_env);
 
                 const char *ct = "application/json";
                 if (result_str[0] != '{' && result_str[0] != '[')

@@ -325,6 +325,19 @@ void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
 Value* json_obj_get(Value *obj, const char *key);
 #endif
 
+/* ---- Handle table (opaque pointer indirection) ---- */
+#define HANDLE_TABLE_SIZE 256
+
+typedef enum {
+    HANDLE_STORE,
+    HANDLE_THREAD,
+    HANDLE_CHANNEL
+} HandleType;
+
+int    handle_register(void *ptr, HandleType type);
+void*  handle_lookup(int id, HandleType type);
+void   handle_release(int id);
+
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
 

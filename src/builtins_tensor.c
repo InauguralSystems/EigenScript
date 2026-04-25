@@ -71,9 +71,13 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
 /* --- Tensor helper: flatten nested list to double* (caller must free) --- */
 static double* tensor_to_flat(Value *v, int *rows, int *cols) {
     int ndim = tensor_dims(v, rows, cols);
-    if (ndim == 0) return NULL;
-    int total = (*rows) * (*cols);
-    double *out = xcalloc(total, sizeof(double));
+    if (ndim == 0 || *rows <= 0 || *cols <= 0) return NULL;
+    size_t total = safe_size_mul((size_t)*rows, (size_t)*cols);
+    if (total > 10000000) {
+        fprintf(stderr, "Error: tensor too large (%d x %d)\n", *rows, *cols);
+        return NULL;
+    }
+    double *out = xcalloc_array(total, sizeof(double));
     if (ndim == 1) {
         for (int i = 0; i < *cols; i++)
             out[i] = (v->data.list.items[i]->type == VAL_NUM) ? v->data.list.items[i]->data.num : 0.0;

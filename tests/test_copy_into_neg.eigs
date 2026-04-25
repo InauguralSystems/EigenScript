@@ -1,0 +1,6 @@
+dest is [1, 2, 3, 4, 5]
+result is copy_into of [dest, -1, [9]]
+assert of [type of result == "none", "negative offset returns null"]
+result2 is copy_into of [dest, 0, [9]]
+assert of [result2 != null, "zero offset works"]
+print of "PASS: copy_into negative offset"

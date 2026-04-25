@@ -1,0 +1,15 @@
+fake is {"_store_id": 9999, "_type": "eigenstore"}
+result is store_get of [fake, "col", "key"]
+assert of [type of result == "none", "forged store_get returns null"]
+
+db is store_open of "/tmp/test_handle.db"
+store_put of [db, "c", {"x": 1}]
+v is store_get of [db, "c", "1"]
+assert of [v != null, "real handle works"]
+store_close of db
+
+v2 is store_get of [db, "c", "1"]
+assert of [type of v2 == "none", "closed handle returns null"]
+
+rm of "/tmp/test_handle.db"
+print of "PASS: handle table"

@@ -24,11 +24,16 @@ Value* builtin_db_connect(Value *arg) {
     g_db_conn = PQconnectdb(conn_str);
 
     if (PQstatus(g_db_conn) != CONNECTION_OK) {
-        char buf[1024];
-        snprintf(buf, sizeof(buf), "{\"status\": \"error\", \"error\": \"%s\"}", PQerrorMessage(g_db_conn));
+        strbuf sb;
+        strbuf_init(&sb);
+        strbuf_append(&sb, "{\"status\": \"error\", \"error\": ");
+        eigs_json_escape_string(&sb, PQerrorMessage(g_db_conn));
+        strbuf_append_char(&sb, '}');
         PQfinish(g_db_conn);
         g_db_conn = NULL;
-        return make_str(buf);
+        Value *result = make_str(sb.data);
+        strbuf_free(&sb);
+        return result;
     }
 
     return make_str("{\"status\": \"connected\", \"driver\": \"libpq\"}");
@@ -108,37 +113,25 @@ Value* builtin_db_query_json(Value *arg) {
     int ncols = PQnfields(res);
     if (nrows == 0 || ncols == 0) { PQclear(res); return make_str("[]"); }
 
-    int buf_size = nrows * ncols * 256 + 256;
-    if (buf_size > 1048576) buf_size = 1048576;
-    char *buf = xcalloc(buf_size, 1);
-    int pos = 0;
-    pos += snprintf(buf + pos, buf_size - pos, "[");
-    for (int r = 0; r < nrows && pos < buf_size - 512; r++) {
-        if (r > 0) pos += snprintf(buf + pos, buf_size - pos, ", ");
-        pos += snprintf(buf + pos, buf_size - pos, "{");
-        for (int c = 0; c < ncols && pos < buf_size - 256; c++) {
-            if (c > 0) pos += snprintf(buf + pos, buf_size - pos, ", ");
-            const char *colname = PQfname(res, c);
-            const char *val = PQgetvalue(res, r, c);
-            /* Escape value for JSON */
-            char escaped[512];
-            int ei = 0;
-            for (int i = 0; val[i] && ei < 500; i++) {
-                if (val[i] == '"') { escaped[ei++] = '\\'; escaped[ei++] = '"'; }
-                else if (val[i] == '\\') { escaped[ei++] = '\\'; escaped[ei++] = '\\'; }
-                else if (val[i] == '\n') { escaped[ei++] = '\\'; escaped[ei++] = 'n'; }
-                else escaped[ei++] = val[i];
-            }
-            escaped[ei] = '\0';
-            pos += snprintf(buf + pos, buf_size - pos, "\"%s\": \"%s\"", colname, escaped);
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append_char(&sb, '[');
+    for (int r = 0; r < nrows; r++) {
+        if (r > 0) strbuf_append(&sb, ", ");
+        strbuf_append_char(&sb, '{');
+        for (int c = 0; c < ncols; c++) {
+            if (c > 0) strbuf_append(&sb, ", ");
+            eigs_json_escape_string(&sb, PQfname(res, c));
+            strbuf_append(&sb, ": ");
+            eigs_json_escape_string(&sb, PQgetvalue(res, r, c));
         }
-        pos += snprintf(buf + pos, buf_size - pos, "}");
+        strbuf_append_char(&sb, '}');
     }
-    pos += snprintf(buf + pos, buf_size - pos, "]");
+    strbuf_append_char(&sb, ']');
 
     PQclear(res);
-    Value *result = make_str(buf);
-    free(buf);
+    Value *result = make_str(sb.data);
+    strbuf_free(&sb);
     return result;
 }
 

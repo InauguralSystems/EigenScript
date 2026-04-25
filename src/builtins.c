@@ -2191,6 +2191,7 @@ Value* builtin_copy_into(Value *arg) {
     int offset = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
     Value *src = arg->data.list.items[2];
     if (!dest || dest->type != VAL_LIST || !src || src->type != VAL_LIST) return make_null();
+    if (offset < 0) return make_null();
     for (int i = 0; i < src->data.list.count && offset + i < dest->data.list.count; i++)
         dest->data.list.items[offset + i] = src->data.list.items[i];
     return dest;
@@ -2387,9 +2388,11 @@ Value* builtin_spawn(Value *arg) {
     h->parent_env = g_global_env;
     h->result = NULL;
     h->done = 0;
+    int hid = handle_register(h, HANDLE_THREAD);
+    if (hid < 0) { free(h); val_decref(arg); return make_null(); }
     pthread_create(&h->tid, NULL, thread_entry, h);
     Value *d = make_dict(8);
-    dict_set(d, "_handle", make_num((double)(uintptr_t)h));
+    dict_set(d, "_handle_id", make_num((double)hid));
     dict_set(d, "done", make_num(0));
     return d;
 }
@@ -2399,12 +2402,15 @@ Value* builtin_thread_join(Value *arg) {
         runtime_error(0, "thread_join requires a thread handle");
         return make_null();
     }
-    Value *hv = dict_get(arg, "_handle");
+    Value *hv = dict_get(arg, "_handle_id");
     if (!hv || hv->type != VAL_NUM) return make_null();
-    ThreadHandle *h = (ThreadHandle*)(uintptr_t)hv->data.num;
+    int hid = (int)hv->data.num;
+    ThreadHandle *h = (ThreadHandle*)handle_lookup(hid, HANDLE_THREAD);
+    if (!h) return make_null();
     pthread_join(h->tid, NULL);
     Value *result = h->result ? h->result : make_null();
     val_decref(h->fn);
+    handle_release(hid);
     free(h);
     return result;
 }
@@ -2424,9 +2430,9 @@ typedef struct {
 
 static Channel* get_channel(Value *v) {
     if (!v || v->type != VAL_DICT) return NULL;
-    Value *cv = dict_get(v, "_channel");
+    Value *cv = dict_get(v, "_channel_id");
     if (!cv || cv->type != VAL_NUM) return NULL;
-    return (Channel*)(uintptr_t)cv->data.num;
+    return (Channel*)handle_lookup((int)cv->data.num, HANDLE_CHANNEL);
 }
 
 Value* builtin_channel(Value *arg) {
@@ -2436,8 +2442,10 @@ Value* builtin_channel(Value *arg) {
     pthread_cond_init(&ch->not_empty, NULL);
     pthread_cond_init(&ch->not_full, NULL);
     ch->closed = 0;
+    int hid = handle_register(ch, HANDLE_CHANNEL);
+    if (hid < 0) { free(ch); return make_null(); }
     Value *d = make_dict(8);
-    dict_set(d, "_channel", make_num((double)(uintptr_t)ch));
+    dict_set(d, "_channel_id", make_num((double)hid));
     return d;
 }
 
