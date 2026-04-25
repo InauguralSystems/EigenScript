@@ -4,6 +4,41 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.9.3.4] — 2026-04-25
+
+### UI Toolkit
+
+- **Widget registry**: replace 74 hardcoded type dispatches with registry
+  pattern. Adding a new widget type now requires one registration block
+  instead of editing 6+ functions.
+- **Layout position caching**: cache absolute positions (`_ax`/`_ay`) during
+  layout pass, eliminating 53 per-frame tree walks in event dispatch.
+- **Frame-rate independent timers**: cursor blink and tooltip delay now use
+  millisecond timestamps instead of frame counters.
+- **Keyboard accessibility**: 10 widget types (grid, chart, bar_chart,
+  color_picker, canvas, waveform_view, piano_kb, editable_label, code_view,
+  gauge) are now keyboard-accessible via Tab + arrow/Enter/Space.
+- **File decomposition**: split 4522-line `ui.eigs` into 14 focused files
+  grouped by widget category.
+- **UI unit tests**: 81 new assertions covering constructors, registry,
+  layout, hit-testing, focus cycling, scroll clamping, and keyboard nav.
+
+### Bug Fixes
+
+- **SDL2 dlsym crash**: validate all `dlsym` results — missing symbols now
+  fail with a diagnostic instead of segfaulting via NULL function pointer.
+- **SDL2 audio null-check**: `audio_open` now checks for audio symbol
+  availability before calling.
+- **`gfx_open` window leak**: destroy window on renderer creation failure.
+- **`gfx_close` resource leak**: close audio device and `dlclose` SDL2
+  library handle on shutdown.
+- **Focus ring overwrite**: focus ring no longer fills over widget content
+  with `panel_bg`; draws four edge rects instead.
+- **Scroll wheel targeting**: wheel events now scroll only the scrollable
+  widget under the cursor, not all scrollable containers.
+- **`gfx_delay` CPU burn**: increased from 1ms to 8ms for software-renderer
+  fallback when vsync is unavailable.
+
 ## [0.9.3.3] — 2026-04-25
 
 ### Security
