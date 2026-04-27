@@ -1826,6 +1826,29 @@ Value* builtin_env_get(Value *arg) {
 
 /* ==== BUILTIN: read_text ==== */
 /* read_text of "path" → file contents as string, or "" on failure. */
+/* read_bytes of path — read binary file, return list of byte values (0-255) */
+Value* builtin_read_bytes(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_null();
+    FILE *f = fopen(arg->data.str, "rb");
+    if (!f) return make_null();
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
+        fclose(f);
+        return make_null();
+    }
+    unsigned char *buf = xmalloc(len);
+    if (!buf) { fclose(f); return make_null(); }
+    size_t nread = fread(buf, 1, len, f);
+    fclose(f);
+    Value *result = make_list((int)nread);
+    for (size_t i = 0; i < nread; i++)
+        list_append(result, make_num((double)buf[i]));
+    free(buf);
+    return result;
+}
+
 Value* builtin_read_text(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
     FILE *f = fopen(arg->data.str, "r");
@@ -2827,6 +2850,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "load_file", make_builtin(builtin_load_file));
     env_set_local(env, "file_exists", make_builtin(builtin_file_exists));
     env_set_local(env, "env_get", make_builtin(builtin_env_get));
+    env_set_local(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local(env, "read_text", make_builtin(builtin_read_text));
     env_set_local(env, "write_text", make_builtin(builtin_write_text));
     env_set_local(env, "exec_capture", make_builtin(builtin_exec_capture));
