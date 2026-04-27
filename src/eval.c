@@ -107,6 +107,7 @@ __thread int g_unobserved_depth = 0;
 static __thread struct {
     Value  val;
     Value *items[SCRATCH_LIST_CAP];
+    Value  nums[SCRATCH_LIST_CAP];  /* scratch numeric Values for args */
 } g_scratch_stack[SCRATCH_STACK_DEPTH];
 static __thread int g_scratch_depth = 0;
 static __thread int g_scratch_init = 0;
@@ -119,6 +120,12 @@ static Value *scratch_list_begin(void) {
             g_scratch_stack[i].val.arena = 0;
             g_scratch_stack[i].val.data.list.items = g_scratch_stack[i].items;
             g_scratch_stack[i].val.data.list.capacity = SCRATCH_LIST_CAP;
+            for (int j = 0; j < SCRATCH_LIST_CAP; j++) {
+                g_scratch_stack[i].nums[j].type = VAL_NUM;
+                g_scratch_stack[i].nums[j].refcount = 999;
+                g_scratch_stack[i].nums[j].arena = 0;
+                g_scratch_stack[i].nums[j].data.num = 0;
+            }
         }
         g_scratch_init = 1;
     }
@@ -273,23 +280,28 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
     }
 
     case AST_ASSIGN: {
-        /* Inside 'unobserved' blocks: try to mutate existing NUM slot in
-         * place, skip update_observer and __observer__ tracking. */
-        if (g_unobserved_depth > 0) {
-            Value *old = env_get(env, node->data.assign.name);
-            if (old && old->type == VAL_NUM && !old->arena) {
-                double result;
-                if (eval_num_fast(node->data.assign.expr, env, &result)) {
-                    old->data.num = result;
-                    return old;
+        /* Fast path: mutate existing NUM slot in-place when RHS is a
+         * pure numeric expression.  Avoids make_num allocation entirely.
+         * Inside unobserved blocks, also skip observer tracking. */
+        Value *old = env_get(env, node->data.assign.name);
+        if (old && old->type == VAL_NUM && !old->arena && old->refcount <= 2) {
+            double result;
+            if (eval_num_fast(node->data.assign.expr, env, &result)) {
+                old->data.num = result;
+                if (g_unobserved_depth == 0) {
+                    update_observer(old);
+                    env_set(env, "__observer__", old);
                 }
+                return old;
             }
+        }
+        if (g_unobserved_depth > 0) {
             Value *val = eval_node(node->data.assign.expr, env);
             env_set(env, node->data.assign.name, val);
             return val;
         }
         Value *val = eval_node(node->data.assign.expr, env);
-        Value *old = env_get(env, node->data.assign.name);
+        old = env_get(env, node->data.assign.name);
         if (old) {
             val->last_entropy = old->entropy;
             val->obs_age = old->obs_age;
@@ -598,7 +610,8 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             runtime_error(node->line, "cannot assign .%s on %s", node->data.dot_assign.key, val_type_name(target->type));
             return make_null();
         }
-        if (g_unobserved_depth > 0) {
+        /* Fast path: mutate existing NUM dict value in-place */
+        {
             Value *old = dict_get(target, node->data.dot_assign.key);
             if (old && old->type == VAL_NUM && !old->arena) {
                 double result;
@@ -607,9 +620,6 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                     return old;
                 }
             }
-            Value *val = eval_node(node->data.dot_assign.expr, env);
-            dict_set(target, node->data.dot_assign.key, val);
-            return val;
         }
         Value *val = eval_node(node->data.dot_assign.expr, env);
         dict_set(target, node->data.dot_assign.key, val);
@@ -618,6 +628,19 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
 
     case AST_INDEX_ASSIGN: {
         Value *target = eval_node(node->data.index_assign.target, env);
+        /* Fast path for buffer[idx] = numeric_expr — zero allocation */
+        if (target->type == VAL_BUFFER) {
+            double idx_d, val_d;
+            if (eval_num_fast(node->data.index_assign.index, env, &idx_d) &&
+                eval_num_fast(node->data.index_assign.expr, env, &val_d)) {
+                int i = (int)idx_d;
+                if (i >= 0 && i < target->data.buffer.count)
+                    target->data.buffer.data[i] = val_d;
+                else
+                    runtime_error(node->line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+                return target;
+            }
+        }
         Value *idx = eval_node(node->data.index_assign.index, env);
         Value *val = eval_node(node->data.index_assign.expr, env);
         if (target->type == VAL_LIST) {
