@@ -137,12 +137,29 @@ static int is_arena_ptr(void *ptr) {
     return 0;
 }
 
+#define NUM_FREELIST_CAP 4096
+static __thread Value *g_num_freelist = NULL;
+static __thread int g_num_freelist_count = 0;
+
+/* (debug counters removed) */
+
 /* Refcount-aware teardown. Called by val_decref when refcount hits 0.
  * Children are val_decref'd (not recursively freed), so shared values
  * tracked by refcount elsewhere stay alive. Arena-owned memory is
  * skipped — it gets reclaimed by arena_reset. */
 void free_value(Value *v) {
     if (!v || v->arena || is_arena_ptr(v)) return;
+    if (v->type == VAL_NUM) {
+        /* Route freed NUMs to freelist for reuse by make_num */
+        if (g_num_freelist_count < NUM_FREELIST_CAP) {
+            memcpy(&v->data, &g_num_freelist, sizeof(Value *));
+            g_num_freelist = v;
+            g_num_freelist_count++;
+            return;
+        }
+        free(v);
+        return;
+    }
     switch (v->type) {
         case VAL_STR:
         case VAL_JSON_RAW:
@@ -179,12 +196,31 @@ void free_value(Value *v) {
 
 Value* make_num(double n) {
     int from_arena = g_arena.active;
-    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    Value *v;
+    if (!from_arena && g_num_freelist) {
+        v = g_num_freelist;
+        memcpy(&g_num_freelist, &v->data, sizeof(Value *));
+        g_num_freelist_count--;
+        memset(v, 0, sizeof(Value));
+    } else {
+        v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    }
     v->type = VAL_NUM;
     v->data.num = n;
     v->refcount = 1;
     v->arena = from_arena;
     return v;
+}
+
+void recycle_intermediate(Value *v) {
+    if (!v || v->type != VAL_NUM || v->arena || v->refcount > 1) return;
+    if (g_num_freelist_count >= NUM_FREELIST_CAP) {
+        free(v);
+        return;
+    }
+    memcpy(&v->data, &g_num_freelist, sizeof(Value *));
+    g_num_freelist = v;
+    g_num_freelist_count++;
 }
 
 /* Heap-only make_num — for values that must outlive arena reset */
@@ -194,6 +230,35 @@ Value* make_num_permanent(double n) {
     v->data.num = n;
     v->refcount = 1;
     v->arena = 0;
+    return v;
+}
+
+Value* promote_if_arena(Value *v) {
+    if (!v || !v->arena) return v;
+    if (v->type == VAL_NUM) {
+        Value *h = make_num_permanent(v->data.num);
+        h->entropy = v->entropy;
+        h->dH = v->dH;
+        h->last_entropy = v->last_entropy;
+        h->obs_age = v->obs_age;
+        h->prev_dH = v->prev_dH;
+        return h;
+    }
+    if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
+        Value *h = xcalloc(1, sizeof(Value));
+        h->type = v->type;
+        h->data.str = xstrdup(v->data.str);
+        h->refcount = 1;
+        return h;
+    }
+    if (v->type == VAL_NULL) {
+        Value *h = xcalloc(1, sizeof(Value));
+        h->type = VAL_NULL;
+        h->refcount = 1;
+        return h;
+    }
+    /* Lists, dicts, functions: leave as-is (complex deep copy).
+     * Callers should avoid storing arena-allocated complex types. */
     return v;
 }
 
@@ -208,13 +273,10 @@ Value* make_str(const char *s) {
     return v;
 }
 
+static Value g_null_singleton = { .type = VAL_NULL, .refcount = 1000000, .arena = 1 };
+
 Value* make_null(void) {
-    int from_arena = g_arena.active;
-    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
-    v->type = VAL_NULL;
-    v->refcount = 1;
-    v->arena = from_arena;
-    return v;
+    return &g_null_singleton;
 }
 
 Value* make_list(int capacity) {
@@ -275,9 +337,15 @@ void dict_set(Value *dict, const char *key, Value *val) {
     /* Check if key exists */
     for (int i = 0; i < dict->data.dict.count; i++) {
         if (strcmp(dict->data.dict.keys[i], key) == 0) {
-            val_incref(val);
-            val_decref(dict->data.dict.vals[i]);
-            dict->data.dict.vals[i] = val;
+            Value *promoted = promote_if_arena(val);
+            if (promoted != val) {
+                val_decref(dict->data.dict.vals[i]);
+                dict->data.dict.vals[i] = promoted;
+            } else {
+                val_incref(val);
+                val_decref(dict->data.dict.vals[i]);
+                dict->data.dict.vals[i] = val;
+            }
             return;
         }
     }
@@ -289,8 +357,9 @@ void dict_set(Value *dict, const char *key, Value *val) {
         dict->data.dict.capacity = new_cap;
     }
     dict->data.dict.keys[dict->data.dict.count] = xstrdup(key);
-    dict->data.dict.vals[dict->data.dict.count] = val;
-    val_incref(val);
+    Value *promoted = promote_if_arena(val);
+    dict->data.dict.vals[dict->data.dict.count] = promoted;
+    if (promoted == val) val_incref(val);
     dict->data.dict.count++;
 }
 
@@ -428,21 +497,14 @@ char* value_to_string(Value *v) {
  * ================================================================ */
 
 Env* env_new(Env *parent) {
-    Env *e = g_arena.active ? arena_alloc(sizeof(Env)) : xcalloc(1, sizeof(Env));
+    Env *e = xcalloc(1, sizeof(Env));
     e->parent = parent;
     e->count = 0;
     e->capacity = ENV_INIT_CAP;
-    e->heap_allocated = !g_arena.active;
+    e->heap_allocated = 1;
     e->captured = 0;
-    size_t nsz = ENV_INIT_CAP * sizeof(char *);
-    size_t vsz = ENV_INIT_CAP * sizeof(Value *);
-    if (g_arena.active) {
-        e->names  = arena_alloc(nsz);
-        e->values = arena_alloc(vsz);
-    } else {
-        e->names  = xcalloc(ENV_INIT_CAP, sizeof(char *));
-        e->values = xcalloc(ENV_INIT_CAP, sizeof(Value *));
-    }
+    e->names  = xcalloc(ENV_INIT_CAP, sizeof(char *));
+    e->values = xcalloc(ENV_INIT_CAP, sizeof(Value *));
     return e;
 }
 
@@ -451,9 +513,16 @@ void env_set(Env *env, const char *name, Value *val) {
     while (e) {
         for (int i = 0; i < e->count; i++) {
             if (strcmp(e->names[i], name) == 0) {
-                val_incref(val);
-                val_decref(e->values[i]);
-                e->values[i] = val;
+                Value *promoted = promote_if_arena(val);
+                if (promoted != val) {
+                    /* Arena value promoted to heap — env takes ownership */
+                    val_decref(e->values[i]);
+                    e->values[i] = promoted;
+                } else {
+                    val_incref(val);
+                    val_decref(e->values[i]);
+                    e->values[i] = val;
+                }
                 return;
             }
         }
@@ -465,9 +534,15 @@ void env_set(Env *env, const char *name, Value *val) {
 void env_set_local(Env *env, const char *name, Value *val) {
     for (int i = 0; i < env->count; i++) {
         if (strcmp(env->names[i], name) == 0) {
-            val_incref(val);
-            val_decref(env->values[i]);
-            env->values[i] = val;
+            Value *promoted = promote_if_arena(val);
+            if (promoted != val) {
+                val_decref(env->values[i]);
+                env->values[i] = promoted;
+            } else {
+                val_incref(val);
+                val_decref(env->values[i]);
+                env->values[i] = val;
+            }
             return;
         }
     }
@@ -495,8 +570,10 @@ void env_set_local(Env *env, const char *name, Value *val) {
     char *name_copy = xstrdup(name);
     if (g_arena.active && !env->heap_allocated) arena_track_string(name_copy);
     env->names[env->count] = name_copy;
-    env->values[env->count] = val;
-    val_incref(val);
+    Value *promoted = promote_if_arena(val);
+    env->values[env->count] = promoted;
+    if (promoted == val) val_incref(val);
+    /* promoted values start at refcount 1 — env takes ownership */
     env->count++;
 }
 
@@ -504,7 +581,6 @@ void env_free(Env *env) {
     if (!env || !env->heap_allocated || env->captured) return;
     for (int i = 0; i < env->count; i++) {
         free(env->names[i]);
-        /* Only decref heap-allocated values, not arena values */
         if (env->values[i] && !env->values[i]->arena)
             val_decref(env->values[i]);
     }

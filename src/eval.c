@@ -332,52 +332,55 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         Value *left = eval_node(node->data.binop.left, env);
         Value *right = eval_node(node->data.binop.right, env);
 
-        if (strcmp(op, "+") == 0) {
-            if (left->type == VAL_STR || right->type == VAL_STR) {
-                char *ls = value_to_string(left);
-                char *rs = value_to_string(right);
-                size_t llen = strlen(ls), rlen = strlen(rs);
-                char *result = xmalloc(llen + rlen + 1);
-                memcpy(result, ls, llen);
-                memcpy(result + llen, rs, rlen + 1);
-                Value *v = make_str(result);
-                free(ls); free(rs); free(result);
-                return v;
-            }
-            if (left->type == VAL_NUM && right->type == VAL_NUM)
-                return make_num(left->data.num + right->data.num);
-        }
-        if (strcmp(op, "-") == 0 && left->type == VAL_NUM && right->type == VAL_NUM)
-            return make_num(left->data.num - right->data.num);
-        if (strcmp(op, "*") == 0 && left->type == VAL_NUM && right->type == VAL_NUM)
-            return make_num(left->data.num * right->data.num);
-        if (strcmp(op, "/") == 0 && left->type == VAL_NUM && right->type == VAL_NUM) {
-            if (right->data.num == 0) {
-                fprintf(stderr, "Warning line %d: division by zero\n", node->line);
-                return make_num(0);
-            }
-            return make_num(left->data.num / right->data.num);
-        }
-        if (strcmp(op, "%") == 0 && left->type == VAL_NUM && right->type == VAL_NUM) {
-            if (right->data.num == 0) {
-                fprintf(stderr, "Warning line %d: division by zero\n", node->line);
-                return make_num(0);
-            }
-            return make_num(fmod(left->data.num, right->data.num));
-        }
-
-        /* Bitwise binary operators — zero-allocation fast path */
+        /* Fast path: both operands are NUM — switch dispatch */
         if (left->type == VAL_NUM && right->type == VAL_NUM) {
-            if (strcmp(op, "&") == 0) return make_num((double)((int64_t)left->data.num & (int64_t)right->data.num));
-            if (strcmp(op, "|") == 0) return make_num((double)((int64_t)left->data.num | (int64_t)right->data.num));
-            if (strcmp(op, "^") == 0) return make_num((double)((int64_t)left->data.num ^ (int64_t)right->data.num));
-            if (strcmp(op, "<<") == 0) return make_num((double)((int64_t)left->data.num << (int64_t)right->data.num));
-            if (strcmp(op, ">>") == 0) return make_num((double)((uint64_t)(int64_t)left->data.num >> (int64_t)right->data.num));
+            double lv = left->data.num, rv = right->data.num;
+            int64_t li = (int64_t)lv, ri = (int64_t)rv;
+
+            if (op[1] == '\0') {
+                switch (op[0]) {
+                    case '+': return make_num(lv + rv);
+                    case '-': return make_num(lv - rv);
+                    case '*': return make_num(lv * rv);
+                    case '/':
+                        if (rv == 0) { fprintf(stderr, "Warning line %d: division by zero\n", node->line); return make_num(0); }
+                        return make_num(lv / rv);
+                    case '%':
+                        if (rv == 0) { fprintf(stderr, "Warning line %d: division by zero\n", node->line); return make_num(0); }
+                        return make_num(fmod(lv, rv));
+                    case '&': return make_num((double)(li & ri));
+                    case '|': return make_num((double)(li | ri));
+                    case '^': return make_num((double)(li ^ ri));
+                    case '=': return make_num(lv == rv ? 1 : 0);
+                    case '<': return make_num(lv < rv ? 1 : 0);
+                    case '>': return make_num(lv > rv ? 1 : 0);
+                }
+            }
+            if (strcmp(op, "<<") == 0) return make_num((double)(li << ri));
+            if (strcmp(op, ">>") == 0) return make_num((double)((uint64_t)li >> ri));
+            if (strcmp(op, "<=") == 0) return make_num(lv <= rv ? 1 : 0);
+            if (strcmp(op, ">=") == 0) return make_num(lv >= rv ? 1 : 0);
+            if (strcmp(op, "!=") == 0) return make_num(lv != rv ? 1 : 0);
+
+            runtime_error(node->line, "cannot apply '%s' to num and num", op);
+            return make_null();
         }
 
+        /* String concatenation */
+        if (strcmp(op, "+") == 0 && (left->type == VAL_STR || right->type == VAL_STR)) {
+            char *ls = value_to_string(left);
+            char *rs = value_to_string(right);
+            size_t llen = strlen(ls), rlen = strlen(rs);
+            char *result = xmalloc(llen + rlen + 1);
+            memcpy(result, ls, llen);
+            memcpy(result + llen, rs, rlen + 1);
+            Value *v = make_str(result);
+            free(ls); free(rs); free(result);
+            return v;
+        }
+
+        /* Equality/inequality for non-numeric types */
         if (strcmp(op, "=") == 0) {
-            if (left->type == VAL_NUM && right->type == VAL_NUM)
-                return make_num(left->data.num == right->data.num ? 1 : 0);
             if (left->type == VAL_STR && right->type == VAL_STR)
                 return make_num(strcmp(left->data.str, right->data.str) == 0 ? 1 : 0);
             if (left->type == VAL_NULL && right->type == VAL_NULL)
@@ -385,20 +388,11 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             return make_num(0);
         }
         if (strcmp(op, "!=") == 0) {
-            if (left->type == VAL_NUM && right->type == VAL_NUM)
-                return make_num(left->data.num != right->data.num ? 1 : 0);
             if (left->type == VAL_STR && right->type == VAL_STR)
                 return make_num(strcmp(left->data.str, right->data.str) != 0 ? 1 : 0);
             if (left->type == VAL_NULL && right->type == VAL_NULL)
                 return make_num(0);
             return make_num(1);
-        }
-
-        if (left->type == VAL_NUM && right->type == VAL_NUM) {
-            if (strcmp(op, "<") == 0) return make_num(left->data.num < right->data.num ? 1 : 0);
-            if (strcmp(op, ">") == 0) return make_num(left->data.num > right->data.num ? 1 : 0);
-            if (strcmp(op, "<=") == 0) return make_num(left->data.num <= right->data.num ? 1 : 0);
-            if (strcmp(op, ">=") == 0) return make_num(left->data.num >= right->data.num ? 1 : 0);
         }
 
         runtime_error(node->line, "cannot apply '%s' to %s and %s",
@@ -544,10 +538,12 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
 
     case AST_LOOP: {
         Value *result = make_null();
-        int max_iter = 1000000;
+        int max_iter = 100000000;
         int stall_count = 0;
         int iterations = 0;
         const char *exit_reason = "normal";
+        /* Arena per-iteration was tested but promotion cost exceeds benefit.
+         * Memory is bounded by: null singleton, eval_num_fast, scratch lists, freelist. */
         while (max_iter-- > 0) {
             Value *cond = eval_node(node->data.loop.cond, env);
             if (!is_truthy(cond)) break;
@@ -673,6 +669,8 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         if (target->type == VAL_LIST) {
             int i = (int)idx->data.num;
             if (i >= 0 && i < target->data.list.count) {
+                val_incref(val);
+                val_decref(target->data.list.items[i]);
                 target->data.list.items[i] = val;
             } else {
                 runtime_error(node->line, "index %d out of range (list length %d)", i, target->data.list.count);

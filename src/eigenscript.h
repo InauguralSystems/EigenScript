@@ -246,6 +246,8 @@ void free_weight_val(Value *v);
 /* ---- Value constructors ---- */
 
 Value* make_num(double n);
+Value* promote_if_arena(Value *v);
+void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
 Value* make_null(void);
 Value* make_list(int capacity);
