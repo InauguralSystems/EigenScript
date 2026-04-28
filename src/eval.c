@@ -433,17 +433,42 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         ASTNode *rhs = node->data.relation.right;
         int use_scratch = (rhs->type == AST_LIST && rhs->data.list.count <= SCRATCH_LIST_CAP);
         Value *right_val;
+        Value *left_val = eval_node(node->data.relation.left, env);
         if (use_scratch) {
             right_val = scratch_list_begin();
             if (!right_val) { use_scratch = 0; right_val = eval_node(rhs, env); }
-            else {
+            else if (left_val->type == VAL_BUILTIN) {
+                /* For builtins: try scratch nums for ALL-numeric arg lists.
+                 * If all args are numeric, the builtin is a pure compute fn
+                 * (bit ops, math, etc.) and won't store arg pointers.
+                 * If any arg is non-numeric, fall back to eval_node for all
+                 * to avoid aliasing in mutation builtins (dict_set, append). */
+                int depth = g_scratch_depth - 1;
+                int all_num = 1;
+                for (int i = 0; i < rhs->data.list.count && all_num; i++) {
+                    double d;
+                    if (eval_num_fast(rhs->data.list.elems[i], env, &d)) {
+                        g_scratch_stack[depth].nums[i].data.num = d;
+                    } else {
+                        all_num = 0;
+                    }
+                }
+                if (all_num) {
+                    for (int i = 0; i < rhs->data.list.count; i++)
+                        scratch_list_push(right_val, &g_scratch_stack[depth].nums[i]);
+                } else {
+                    for (int i = 0; i < rhs->data.list.count; i++)
+                        scratch_list_push(right_val, eval_node(rhs->data.list.elems[i], env));
+                }
+            } else {
+                /* For user functions: use eval_node (scratch nums unsafe
+                 * because env_set_local stores the pointer). */
                 for (int i = 0; i < rhs->data.list.count; i++)
                     scratch_list_push(right_val, eval_node(rhs->data.list.elems[i], env));
             }
         } else {
             right_val = eval_node(rhs, env);
         }
-        Value *left_val = eval_node(node->data.relation.left, env);
 
         if (left_val->type == VAL_BUILTIN) {
             Value *result = left_val->data.builtin(right_val);
@@ -459,6 +484,8 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 /* Multi-param: unpack list into named params */
                 for (int pi = 0; pi < left_val->data.fn.param_count && pi < right_val->data.list.count; pi++)
                     env_set_local(call_env, left_val->data.fn.params[pi], right_val->data.list.items[pi]);
+                /* Release scratch structure but defer item cleanup until after
+                 * env_free — items are currently incref'd by env_set_local. */
                 if (use_scratch) scratch_list_end();
             } else {
                 /* Single param: the list itself IS the argument — cannot use
