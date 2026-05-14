@@ -205,6 +205,7 @@ void free_value(Value *v) {
 }
 
 Value* make_num(double n) {
+    n = num_guard(n);
     int from_arena = g_arena.active;
     Value *v;
     if (!from_arena && g_num_freelist) {
@@ -235,6 +236,7 @@ void recycle_intermediate(Value *v) {
 
 /* Heap-only make_num — for values that must outlive arena reset */
 Value* make_num_permanent(double n) {
+    n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
     v->data.num = n;
@@ -712,4 +714,3 @@ void handle_release(int id) {
     g_handle_table[id].ptr = NULL;
     pthread_mutex_unlock(&g_handle_mutex);
 }
-

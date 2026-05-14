@@ -148,6 +148,11 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
 
+EigenScript numbers are finite by construction. Operations that would create
+`NaN` return `0`; operations that would overflow to infinity saturate at
+`+/-1e308`; domain-limited functions clamp their inputs where appropriate
+(`asin`, `acos`) or return a boundary value (`sqrt of -1` -> `0`).
+
 ### Arena Memory
 
 ```eigenscript

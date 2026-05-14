@@ -64,6 +64,20 @@ Warning line 1: division by zero
 0
 ```
 
+### Finite numbers — saturates instead of NaN/Inf
+EigenScript numeric values never expose `NaN` or `Inf` to user code. Invalid
+numeric results collapse or saturate:
+
+```
+1 / 1e-320       # 1e+308
+sqrt of -1       # 0
+exp of 999999    # 1e+308
+asin of 5        # 1.5708
+num of "nan"     # 0
+```
+
+Exact division or modulo by zero remains a warning and returns `0`.
+
 ### Line numbers in nested code
 ```
 $ cat nested.eigs
@@ -87,6 +101,10 @@ Error line 3: cannot index num
 | `cannot negate T` | Unary minus on non-number | `-"hello"` |
 | `cannot index T` | Indexing a non-list/non-string | `42[0]` |
 | `division by zero` | Dividing or modulo by zero | `10 / 0` (warning, returns 0) |
+
+Numeric overflow and invalid math domains are not diagnostics. They are
+handled by the finite-number invariant: `NaN` -> `0`, overflow/Inf ->
+`+/-1e308`, and selected functions clamp their domains.
 
 ## Builtin Errors
 

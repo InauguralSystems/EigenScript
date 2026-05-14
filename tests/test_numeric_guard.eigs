@@ -1,0 +1,67 @@
+# Regression: EigenScript numeric values must stay finite.
+# NaN collapses to 0; overflow and infinity saturate to +/-1e308.
+
+CAP is 1e308
+
+zdiv is 10 / 0
+assert of [zdiv == 0, "NG1 10/0 returns 0"]
+
+tiny_div is 1 / 1e-320
+assert of [tiny_div == CAP, "NG2 near-zero division caps"]
+
+root_neg is sqrt of -1
+assert of [root_neg == 0, "NG3 sqrt negative returns 0"]
+
+pow_inf is pow of [0, -1]
+assert of [pow_inf == CAP, "NG4 pow singular caps"]
+
+exp_inf is exp of 999999
+assert of [exp_inf == CAP, "NG5 exp overflow caps"]
+
+asin_hi is asin of 5
+assert of [(asin_hi > 1.5707) and (asin_hi < 1.5709), "NG6 asin clamps high domain"]
+
+acos_lo is acos of -2
+assert of [(acos_lo > 3.1415) and (acos_lo < 3.1417), "NG7 acos clamps low domain"]
+
+mul_inf is 1e308 * 2
+assert of [mul_inf == CAP, "NG8 multiply overflow caps"]
+
+zero_zero is 0 / 0
+assert of [zero_zero == 0, "NG9 0/0 returns 0"]
+
+tensor_tiny_div is divide of [1, 1e-320]
+assert of [tensor_tiny_div == CAP, "NG10 tensor near-zero division caps"]
+
+literal_inf is 1e309
+assert of [literal_inf == CAP, "NG11 overflowing literal caps"]
+
+string_nan is num of "nan"
+assert of [string_nan == 0, "NG12 string nan collapses to 0"]
+
+string_inf is num of "inf"
+assert of [string_inf == CAP, "NG13 string inf caps"]
+
+neg_mul_inf is -1e308 * 2
+assert of [neg_mul_inf == (0 - CAP), "NG14 negative overflow caps"]
+
+reassign_inf is 0
+reassign_inf is 1e309
+assert of [reassign_inf == CAP, "NG15 reassignment literal caps"]
+
+reassign_inf is -1e309
+assert of [reassign_inf == (0 - CAP), "NG16 reassignment negative literal caps"]
+
+box is {"x": 0}
+box.x is 1e309
+assert of [box.x == CAP, "NG17 dot reassignment literal caps"]
+
+box.x is -1e309
+assert of [box.x == (0 - CAP), "NG18 dot reassignment negative literal caps"]
+
+unobserved_inf is 0
+unobserved:
+    unobserved_inf is 1e309
+assert of [unobserved_inf == CAP, "NG19 unobserved reassignment literal caps"]
+
+print of "All numeric-guard tests passed"

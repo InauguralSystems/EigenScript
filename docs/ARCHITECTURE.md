@@ -66,6 +66,12 @@ The tree-walking evaluator (`eval_node()`) executes the AST directly. There is
 no bytecode compilation step. Values are tagged unions (`Value`) that can be
 numbers, strings, lists, dictionaries, functions, or builtins.
 
+Numeric values pass through `num_guard` at construction and numeric fast-path
+boundaries. The runtime invariant is that user-visible numbers are finite:
+`NaN` collapses to `0`, and overflow or infinity saturates at `+/-1e308`.
+Scalar arithmetic, tensor arithmetic, `num` conversion, reassignment fast
+paths, and `unobserved` numeric mutation all preserve this invariant.
+
 ### Observer
 
 The observer system is embedded in the evaluator. Every variable assignment

@@ -170,7 +170,7 @@ static int eval_num_fast(ASTNode *node, Env *env, double *out) {
     int ok = 0;
     switch (node->type) {
         case AST_NUM:
-            *out = node->data.num;
+            *out = num_guard(node->data.num);
             ok = 1;
             break;
         case AST_IDENT: {
@@ -211,7 +211,7 @@ static int eval_num_fast(ASTNode *node, Env *env, double *out) {
         case AST_UNARY: {
             double x;
             if (!eval_num_fast(node->data.unary.operand, env, &x)) break;
-            if (node->data.unary.op[0] == '-') { *out = -x; ok = 1; }
+            if (node->data.unary.op[0] == '-') { *out = num_guard(-x); ok = 1; }
             else if (node->data.unary.op[0] == '~') { *out = (double)(~(int64_t)x); ok = 1; }
             break;
         }
@@ -300,7 +300,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         if (old && old->type == VAL_NUM && !old->arena && old->refcount <= 2) {
             double result;
             if (eval_num_fast(node->data.assign.expr, env, &result)) {
-                old->data.num = result;
+                old->data.num = num_guard(result);
                 if (g_unobserved_depth == 0) {
                     update_observer(old);
                     env_set(env, "__observer__", old);
@@ -683,7 +683,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             if (old && old->type == VAL_NUM && !old->arena) {
                 double result;
                 if (eval_num_fast(node->data.dot_assign.expr, env, &result)) {
-                    old->data.num = result;
+                    old->data.num = num_guard(result);
                     return old;
                 }
             }
@@ -1032,4 +1032,3 @@ Value* eval_block(ASTNode **stmts, int count, Env *env) {
     }
     return result;
 }
-

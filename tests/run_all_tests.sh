@@ -895,8 +895,23 @@ else
 fi
 echo ""
 
+# [42c] General finite-number guard (scalar, tensor, literals, conversions)
+echo "[42c/47] Numeric Guard (19 checks)"
+NG_OUTPUT=$(./eigenscript ../tests/test_numeric_guard.eigs 2>&1)
+if echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
+    TOTAL=$((TOTAL + 19))
+    PASS=$((PASS + 19))
+    echo "  PASS: all 19 numeric-guard checks"
+else
+    TOTAL=$((TOTAL + 19))
+    FAIL=$((FAIL + 19))
+    echo "  FAIL: numeric-guard tests"
+    echo "$NG_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation)
-echo "[42c/47] Stdlib Fixes (11 checks)"
+echo "[42d/47] Stdlib Fixes (11 checks)"
 SF_OUTPUT=$(./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1)
 if echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
     TOTAL=$((TOTAL + 11))

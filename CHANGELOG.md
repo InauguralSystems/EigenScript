@@ -30,6 +30,10 @@ All notable changes to EigenScript are documented here.
 - `ppu_render_frame of [mem_buf, fb_buf]` — full Game Boy PPU rendering in C
 
 ### Hardening
+- Finite-number invariant: numeric construction, scalar arithmetic, tensor
+  arithmetic, math builtins, and numeric fast paths now prevent `NaN`/`Inf`
+  from entering EigenScript values. `NaN` collapses to `0`; overflow and
+  infinity saturate at `+/-1e308`; domain-limited inverse trig clamps inputs.
 - Shift-amount bounds checks (`<<`, `>>`) — out-of-range yields 0, not UB
 - Null guards on dot-assign, index-assign, and list comprehension targets
 - JSON control-character escaping for bytes < 0x20

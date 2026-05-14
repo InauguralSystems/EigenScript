@@ -275,8 +275,8 @@ void free_value(Value *v);
 /* ---- Reference counting (atomic for thread safety) ---- */
 /* Numeric invariant: EigenScript has no NaN or Infinity.
  * All numeric operations route through this guard.
- * NaN → 0, +-Inf → 0. The Zeno principle: values that would
- * escape the number line fold back to zero. */
+ * NaN -> 0; values escaping the finite number line saturate at
+ * +/-1e308 instead of becoming Infinity. */
 static inline double num_guard(double x) {
     if (x != x) return 0.0;            /* NaN */
     if (x > 1e308) return 1e308;       /* +Inf or overflow */

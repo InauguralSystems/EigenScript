@@ -12,6 +12,23 @@ name is "hello"
 data is [1, 2, 3, 4, 5]
 ```
 
+### Numeric Semantics
+
+Numbers are finite by construction. EigenScript does not expose `NaN` or
+`Inf` values to user code:
+
+```eigenscript
+1 / 1e-320       # 1e+308
+sqrt of -1       # 0
+exp of 999999    # 1e+308
+asin of 5        # 1.5708
+num of "nan"     # 0
+```
+
+Exact division or modulo by zero emits a warning and returns `0`. Results
+that would overflow to infinity saturate at `+/-1e308`; `NaN` collapses to
+`0`; domain-limited functions clamp inputs where appropriate.
+
 ### Compound Assignment
 
 All arithmetic, bitwise, and shift operators have compound forms:

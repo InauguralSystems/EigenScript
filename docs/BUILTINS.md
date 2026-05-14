@@ -32,6 +32,11 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `eval` | `eval of code_string` | Execute EigenScript code, return result |
 | `throw` | `throw of message` | Raise catchable error |
 
+Numeric values are finite by construction. `NaN` collapses to `0`, and
+overflow or infinity saturates at `+/-1e308`. This applies to numeric
+literals, `num` conversion, scalar arithmetic, tensor arithmetic, and the
+numeric fast paths used by reassignment and `unobserved` blocks.
+
 ### Lists
 
 | Name | Signature | Description |
@@ -249,8 +254,8 @@ automatically at exit.
 | `sin` | `sin of x` | Sine (radians) |
 | `cos` | `cos of x` | Cosine (radians) |
 | `tan` | `tan of x` | Tangent (radians) |
-| `asin` | `asin of x` | Inverse sine |
-| `acos` | `acos of x` | Inverse cosine |
+| `asin` | `asin of x` | Inverse sine; input is clamped to [-1, 1] |
+| `acos` | `acos of x` | Inverse cosine; input is clamped to [-1, 1] |
 | `atan` | `atan of x` | Inverse tangent |
 | `atan2` | `atan2 of [y, x]` | Two-argument inverse tangent |
 | `pi` | `pi of null` | The constant &pi; (3.14159265...) |
@@ -264,17 +269,17 @@ automatically at exit.
 | `add` | `add of [a, b]` | Element-wise addition |
 | `subtract` | `subtract of [a, b]` | Element-wise subtraction |
 | `multiply` | `multiply of [a, b]` | Element-wise multiplication |
-| `divide` | `divide of [a, b]` | Element-wise division |
-| `pow` | `pow of [base, exp]` | Element-wise exponentiation |
+| `divide` | `divide of [a, b]` | Element-wise division; zero denominator returns 0, overflow saturates |
+| `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow saturates |
 | `negative` | `negative of t` | Element-wise negation |
 
 ### Functions
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `sqrt` | `sqrt of t` | Element-wise square root |
-| `exp` | `exp of t` | Element-wise e^x |
-| `log` | `log of t` | Element-wise natural log |
+| `sqrt` | `sqrt of t` | Element-wise square root; negative input returns 0 |
+| `exp` | `exp of t` | Element-wise e^x; overflow saturates |
+| `log` | `log of t` | Element-wise natural log; input is floored at 1e-10 |
 | `softmax` | `softmax of t` | Row-wise softmax normalization |
 | `log_softmax` | `log_softmax of t` | Row-wise log(softmax) |
 | `relu` | `relu of t` | Element-wise max(0, x) |
