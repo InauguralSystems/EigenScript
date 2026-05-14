@@ -88,14 +88,18 @@ of change), and trajectory classification. The six states are:
 Observer state is accessible from EigenScript via `report of x` and
 `observe of x` builtins, and drives `loop while not converged` termination.
 
-Observation has a write-time cost: `update_observer` (and its
-`compute_entropy` input) runs on every assignment so interrogations
-can be answered in O(1) without maintaining a history log. When user
-code has a hot region it knows won't be interrogated, an `unobserved`
-block skips the observer pass for assignments inside it and enables
-in-place numeric mutation on dict fields and locals (`eval.c` fast
-path). Arena mark/reset provides lifecycle-scoped opt-out; `unobserved`
-provides statement-scoped opt-out.
+Observation uses lazy evaluation: assignments mark values dirty (O(1)),
+and entropy is computed on demand when observer state is read
+(interrogation, predicate check, `report`, or loop stall detection).
+The in-place numeric fast path eagerly computes entropy since it is
+O(1) for numbers. The last observed value is tracked via a thread-local
+pointer (`g_last_observer`) rather than an environment binding, avoiding
+hash lookups and refcount overhead on every assignment. When user code
+has a hot region it knows won't be interrogated, an `unobserved` block
+skips observer marking entirely and enables in-place numeric mutation
+on dict fields and locals (`eval.c` fast path). Arena mark/reset
+provides lifecycle-scoped opt-out; `unobserved` provides
+statement-scoped opt-out.
 
 ## Memory
 

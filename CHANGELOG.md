@@ -14,6 +14,19 @@ All notable changes to EigenScript are documented here.
   first-class iterable type.
 
 ### Performance
+- **For-loop env reuse**: Reuse a single `Env` per for-loop and list
+  comprehension instead of allocating/freeing per iteration. Falls back to
+  fresh allocation when closures capture the loop scope.
+- **Lazy observer entropy**: Assignments mark values dirty; `compute_entropy`
+  deferred until observer state is actually read. In-place NUM fast path
+  eagerly computes entropy (O(1) for numbers).
+- **Thread-local observer state**: `g_last_observer` replaces the
+  `__observer__` env variable, eliminating hash lookup and atomic refcount
+  per assignment and function call.
+- **String concat fast path**: `make_str_owned` avoids double-copy;
+  STR+STR concat skips `value_to_string`.
+- **Keyword dispatch**: `keyword_type` uses `switch(word[0])` instead of
+  37 sequential `strcmp` calls.
 - **Environment hash index**: FNV-1a hash table for O(1) variable lookup in
   `env_get`/`env_set`/`env_set_local`, replacing linear scan.
 - **Dict hash index**: Dicts now use the same FNV-1a hash table for O(1) key

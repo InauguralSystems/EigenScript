@@ -379,12 +379,12 @@ Inside the block:
   assignments whose right-hand side is pure arithmetic over numbers
   update the existing `Value`'s data, keeping pointer identity. No
   intermediate allocation.
-- **`update_observer` is skipped.** Entropy / dH / obs_age on touched
+- **Observer tracking is skipped.** Entropy / dH / obs_age on touched
   values stay frozen at whatever the last observed write left them.
   Interrogatives (`why is game.px`, `how is game.px`) will return
   stale answers until the next observed assignment.
-- **`__observer__` is not updated.** Predicates in scope continue to
-  report whatever was last observed outside the block.
+- **The last-observer pointer is not updated.** Predicates in scope
+  continue to report whatever was last observed outside the block.
 
 Outside the block, normal observed behavior resumes. Nested `unobserved`
 blocks compose — the inner block doesn't re-enable observation.
