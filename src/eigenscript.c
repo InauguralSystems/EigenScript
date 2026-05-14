@@ -100,6 +100,16 @@ const char* tok_type_name(TokType t) {
         case TOK_CASE: return "'case'";
         case TOK_PIPE: return "'|>'";
         case TOK_ARROW: return "'=>'";
+        case TOK_PLUS_EQ: return "'+='";
+        case TOK_MINUS_EQ: return "'-='";
+        case TOK_STAR_EQ: return "'*='";
+        case TOK_SLASH_EQ: return "'/='";
+        case TOK_PERCENT_EQ: return "'%='";
+        case TOK_AMP_EQ: return "'&='";
+        case TOK_BITOR_EQ: return "'|='";
+        case TOK_CARET_EQ: return "'^='";
+        case TOK_SHL_EQ: return "'<<='";
+        case TOK_SHR_EQ: return "'>>='";
         default: return "?";
     }
 }

@@ -298,11 +298,26 @@ TokenList tokenize(const char *source) {
         }
 
         switch (*p) {
-            case '+': tok_add(&tl, TOK_PLUS, 0, NULL, line, tok_col); p++; col++; break;
-            case '-': tok_add(&tl, TOK_MINUS, 0, NULL, line, tok_col); p++; col++; break;
-            case '*': tok_add(&tl, TOK_STAR, 0, NULL, line, tok_col); p++; col++; break;
-            case '/': tok_add(&tl, TOK_SLASH, 0, NULL, line, tok_col); p++; col++; break;
-            case '%': tok_add(&tl, TOK_PERCENT, 0, NULL, line, tok_col); p++; col++; break;
+            case '+':
+                if (*(p+1) == '=') { tok_add(&tl, TOK_PLUS_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else { tok_add(&tl, TOK_PLUS, 0, NULL, line, tok_col); p++; col++; }
+                break;
+            case '-':
+                if (*(p+1) == '=') { tok_add(&tl, TOK_MINUS_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else { tok_add(&tl, TOK_MINUS, 0, NULL, line, tok_col); p++; col++; }
+                break;
+            case '*':
+                if (*(p+1) == '=') { tok_add(&tl, TOK_STAR_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else { tok_add(&tl, TOK_STAR, 0, NULL, line, tok_col); p++; col++; }
+                break;
+            case '/':
+                if (*(p+1) == '=') { tok_add(&tl, TOK_SLASH_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else { tok_add(&tl, TOK_SLASH, 0, NULL, line, tok_col); p++; col++; }
+                break;
+            case '%':
+                if (*(p+1) == '=') { tok_add(&tl, TOK_PERCENT_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else { tok_add(&tl, TOK_PERCENT, 0, NULL, line, tok_col); p++; col++; }
+                break;
             case '(': tok_add(&tl, TOK_LPAREN, 0, NULL, line, tok_col); p++; col++; bracket_depth++; break;
             case ')': tok_add(&tl, TOK_RPAREN, 0, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
             case '[': tok_add(&tl, TOK_LBRACKET, 0, NULL, line, tok_col); p++; col++; bracket_depth++; break;
@@ -313,13 +328,15 @@ TokenList tokenize(const char *source) {
             case ':': tok_add(&tl, TOK_COLON, 0, NULL, line, tok_col); p++; col++; break;
             case '.': tok_add(&tl, TOK_DOT, 0, NULL, line, tok_col); p++; col++; break;
             case '<':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_LE, 0, NULL, line, tok_col); p += 2; col += 2; }
+                if (*(p+1) == '<' && *(p+2) == '=') { tok_add(&tl, TOK_SHL_EQ, 0, NULL, line, tok_col); p += 3; col += 3; }
                 else if (*(p+1) == '<') { tok_add(&tl, TOK_SHL, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else if (*(p+1) == '=') { tok_add(&tl, TOK_LE, 0, NULL, line, tok_col); p += 2; col += 2; }
                 else { tok_add(&tl, TOK_LT, 0, NULL, line, tok_col); p++; col++; }
                 break;
             case '>':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_GE, 0, NULL, line, tok_col); p += 2; col += 2; }
+                if (*(p+1) == '>' && *(p+2) == '=') { tok_add(&tl, TOK_SHR_EQ, 0, NULL, line, tok_col); p += 3; col += 3; }
                 else if (*(p+1) == '>') { tok_add(&tl, TOK_SHR, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else if (*(p+1) == '=') { tok_add(&tl, TOK_GE, 0, NULL, line, tok_col); p += 2; col += 2; }
                 else { tok_add(&tl, TOK_GT, 0, NULL, line, tok_col); p++; col++; }
                 break;
             case '!':
@@ -336,10 +353,17 @@ TokenList tokenize(const char *source) {
                 break;
             case '|':
                 if (*(p+1) == '>') { tok_add(&tl, TOK_PIPE, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else if (*(p+1) == '=') { tok_add(&tl, TOK_BITOR_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
                 else { tok_add(&tl, TOK_BITOR, 0, NULL, line, tok_col); p++; col++; }
                 break;
-            case '&': tok_add(&tl, TOK_AMP, 0, NULL, line, tok_col); p++; col++; break;
-            case '^': tok_add(&tl, TOK_CARET, 0, NULL, line, tok_col); p++; col++; break;
+            case '&':
+                if (*(p+1) == '=') { tok_add(&tl, TOK_AMP_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else { tok_add(&tl, TOK_AMP, 0, NULL, line, tok_col); p++; col++; }
+                break;
+            case '^':
+                if (*(p+1) == '=') { tok_add(&tl, TOK_CARET_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
+                else { tok_add(&tl, TOK_CARET, 0, NULL, line, tok_col); p++; col++; }
+                break;
             case '~': tok_add(&tl, TOK_TILDE, 0, NULL, line, tok_col); p++; col++; break;
             default:
                 fprintf(stderr, "Syntax error line %d: unexpected character '%c'\n", line, *p);

@@ -193,6 +193,27 @@ void free_ast(ASTNode *node) {
     free(node);
 }
 
+static int is_compound_assign(TokType t) {
+    return t >= TOK_PLUS_EQ && t <= TOK_SHR_EQ;
+}
+
+static void compound_to_op(TokType t, char op[4]) {
+    memset(op, 0, 4);
+    switch (t) {
+        case TOK_PLUS_EQ:    op[0] = '+'; break;
+        case TOK_MINUS_EQ:   op[0] = '-'; break;
+        case TOK_STAR_EQ:    op[0] = '*'; break;
+        case TOK_SLASH_EQ:   op[0] = '/'; break;
+        case TOK_PERCENT_EQ: op[0] = '%'; break;
+        case TOK_AMP_EQ:     op[0] = '&'; break;
+        case TOK_BITOR_EQ:   op[0] = '|'; break;
+        case TOK_CARET_EQ:   op[0] = '^'; break;
+        case TOK_SHL_EQ:     op[0] = '<'; op[1] = '<'; break;
+        case TOK_SHR_EQ:     op[0] = '>'; op[1] = '>'; break;
+        default: break;
+    }
+}
+
 static ASTNode* parse_expression(Parser *p);
 static ASTNode* parse_statement(Parser *p);
 
@@ -940,23 +961,51 @@ static ASTNode* parse_statement(Parser *p) {
         /* Look ahead to see if this ends in IS (assignment) */
         int saved = p->pos;
         ASTNode *target = parse_primary(p);
-        if (target->type == AST_DOT && p_cur(p)->type == TOK_IS) {
-            p_advance(p); /* skip IS */
-            ASTNode *expr = parse_expression(p);
+        if (target->type == AST_DOT && (p_cur(p)->type == TOK_IS || is_compound_assign(p_cur(p)->type))) {
+            int compound = is_compound_assign(p_cur(p)->type);
+            char cop[4];
+            if (compound) compound_to_op(p_cur(p)->type, cop);
+            p_advance(p); /* skip IS or compound op */
+            ASTNode *rhs = parse_expression(p);
+            if (compound) {
+                /* Desugar obj.f += expr → obj.f is obj.f + expr */
+                ASTNode *read = make_node(AST_DOT, t->line);
+                read->data.dot.target = target->data.dot.target;
+                read->data.dot.key = xstrdup(target->data.dot.key);
+                ASTNode *binop = make_node(AST_BINOP, t->line);
+                memcpy(binop->data.binop.op, cop, 4);
+                binop->data.binop.left = read;
+                binop->data.binop.right = rhs;
+                rhs = binop;
+            }
             ASTNode *n = make_node(AST_DOT_ASSIGN, t->line);
             n->data.dot_assign.target = target->data.dot.target;
             n->data.dot_assign.key = xstrdup(target->data.dot.key);
-            n->data.dot_assign.expr = expr;
+            n->data.dot_assign.expr = rhs;
             return n;
         }
         /* Index-assignment: grid[0][1] is value, items[i] is value */
-        if (target->type == AST_INDEX && p_cur(p)->type == TOK_IS) {
-            p_advance(p); /* skip IS */
-            ASTNode *expr = parse_expression(p);
+        if (target->type == AST_INDEX && (p_cur(p)->type == TOK_IS || is_compound_assign(p_cur(p)->type))) {
+            int compound = is_compound_assign(p_cur(p)->type);
+            char cop[4];
+            if (compound) compound_to_op(p_cur(p)->type, cop);
+            p_advance(p); /* skip IS or compound op */
+            ASTNode *rhs = parse_expression(p);
+            if (compound) {
+                /* Desugar a[i] += expr → a[i] is a[i] + expr */
+                ASTNode *read = make_node(AST_INDEX, t->line);
+                read->data.index.target = target->data.index.target;
+                read->data.index.index = target->data.index.index;
+                ASTNode *binop = make_node(AST_BINOP, t->line);
+                memcpy(binop->data.binop.op, cop, 4);
+                binop->data.binop.left = read;
+                binop->data.binop.right = rhs;
+                rhs = binop;
+            }
             ASTNode *n = make_node(AST_INDEX_ASSIGN, t->line);
             n->data.index_assign.target = target->data.index.target;
             n->data.index_assign.index = target->data.index.index;
-            n->data.index_assign.expr = expr;
+            n->data.index_assign.expr = rhs;
             return n;
         }
         /* Not a dot-assignment — restore and fall through */
@@ -964,10 +1013,23 @@ static ASTNode* parse_statement(Parser *p) {
         p->pos = saved;
     }
 
-    if (t->type == TOK_IDENT && p_peek(p, 1)->type == TOK_IS) {
+    if (t->type == TOK_IDENT && (p_peek(p, 1)->type == TOK_IS || is_compound_assign(p_peek(p, 1)->type))) {
         Token *name_tok = p_advance(p);
+        int compound = is_compound_assign(p_cur(p)->type);
+        char cop[4];
+        if (compound) compound_to_op(p_cur(p)->type, cop);
         p_advance(p);
         ASTNode *expr = parse_expression(p);
+        if (compound) {
+            /* Desugar x += expr → x is x + expr */
+            ASTNode *ident = make_node(AST_IDENT, t->line);
+            ident->data.ident.name = xstrdup(name_tok->str_val);
+            ASTNode *binop = make_node(AST_BINOP, t->line);
+            memcpy(binop->data.binop.op, cop, 4);
+            binop->data.binop.left = ident;
+            binop->data.binop.right = expr;
+            expr = binop;
+        }
         p_match(p, TOK_NEWLINE);
         ASTNode *n = make_node(AST_ASSIGN, p_cur(p)->line);
         n->data.assign.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");

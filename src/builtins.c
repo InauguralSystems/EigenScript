@@ -2827,6 +2827,37 @@ Value* builtin_buf_copy(Value *arg) {
     return make_null();
 }
 
+/* sign_extend of [val, bits] — sign-extend val from given bit width.
+ * E.g. sign_extend of [0xFF, 8] → -1 */
+Value* builtin_sign_extend(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_num(0);
+    double val = arg->data.list.items[0]->data.num;
+    int bits = (int)arg->data.list.items[1]->data.num;
+    if (bits <= 0 || bits > 32) return make_num(val);
+    int64_t mask = 1LL << (bits - 1);
+    if ((int64_t)val & mask)
+        return make_num((double)((int64_t)val - (1LL << bits)));
+    return make_num(val);
+}
+
+/* sort of list — sort a numeric list in-place using qsort, return the list */
+static int sort_cmp_asc(const void *a, const void *b) {
+    Value *va = *(Value**)a, *vb = *(Value**)b;
+    if (va->type == VAL_NUM && vb->type == VAL_NUM) {
+        double d = va->data.num - vb->data.num;
+        return (d > 0) - (d < 0);
+    }
+    return 0;
+}
+
+Value* builtin_sort(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return arg ? arg : make_null();
+    qsort(arg->data.list.items, arg->data.list.count, sizeof(Value*), sort_cmp_asc);
+    return arg;
+}
+
 Value* builtin_dispatch(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         runtime_error(0, "dispatch requires [table, key, arg]");
@@ -3037,6 +3068,8 @@ void register_builtins(Env *env) {
     env_set_local(env, "buf_len", make_builtin(builtin_buf_len));
     env_set_local(env, "buf_from_list", make_builtin(builtin_buf_from_list));
     env_set_local(env, "buf_copy", make_builtin(builtin_buf_copy));
+    env_set_local(env, "sign_extend", make_builtin(builtin_sign_extend));
+    env_set_local(env, "sort", make_builtin(builtin_sort));
     env_set_local(env, "close_channel", make_builtin(builtin_close_channel));
     env_set_local(env, "channel_closed", make_builtin(builtin_channel_closed));
 

@@ -230,6 +230,9 @@ static int eval_num_fast(ASTNode *node, Env *env, double *out) {
                     case '&': *out = (double)((int64_t)l & (int64_t)r); ok = 1; break;
                     case '|': *out = (double)((int64_t)l | (int64_t)r); ok = 1; break;
                     case '^': *out = (double)((int64_t)l ^ (int64_t)r); ok = 1; break;
+                    case '<': *out = (l < r) ? 1.0 : 0.0; ok = 1; break;
+                    case '>': *out = (l > r) ? 1.0 : 0.0; ok = 1; break;
+                    case '=': *out = (l == r) ? 1.0 : 0.0; ok = 1; break;
                 }
             } else if (op[0] == '<' && op[1] == '<') {
                 int64_t shift = (int64_t)r;
@@ -239,6 +242,12 @@ static int eval_num_fast(ASTNode *node, Env *env, double *out) {
                 int64_t shift = (int64_t)r;
                 if (shift >= 0 && shift < 64) { *out = (double)((uint64_t)(int64_t)l >> shift); ok = 1; }
                 else { *out = 0.0; ok = 1; }
+            } else if (op[0] == '<' && op[1] == '=') {
+                *out = (l <= r) ? 1.0 : 0.0; ok = 1;
+            } else if (op[0] == '>' && op[1] == '=') {
+                *out = (l >= r) ? 1.0 : 0.0; ok = 1;
+            } else if (op[0] == '!' && op[1] == '=') {
+                *out = (l != r) ? 1.0 : 0.0; ok = 1;
             }
             break;
         }
@@ -546,11 +555,20 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         int stall_count = 0;
         int iterations = 0;
         const char *exit_reason = "normal";
-        /* Arena per-iteration was tested but promotion cost exceeds benefit.
-         * Memory is bounded by: null singleton, eval_num_fast, scratch lists, freelist. */
         while (max_iter-- > 0) {
-            Value *cond = eval_node(node->data.loop.cond, env);
-            if (!is_truthy(cond)) break;
+            /* Fast path: numeric conditions avoid allocating a Value per iteration */
+            double cond_num;
+            if (eval_num_fast(node->data.loop.cond, env, &cond_num)) {
+                if (cond_num == 0.0) break;
+            } else {
+                Value *cond = eval_node(node->data.loop.cond, env);
+                int truthy = is_truthy(cond);
+                /* Safe to decref nodes that always allocate fresh Values */
+                ASTType ct = node->data.loop.cond->type;
+                if (ct == AST_BINOP || ct == AST_UNARY || ct == AST_RELATION)
+                    val_decref(cond);
+                if (!truthy) break;
+            }
             iterations++;
             result = eval_block(node->data.loop.body, node->data.loop.body_count, env);
             if (g_returning) return result;
@@ -580,20 +598,32 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
 
     case AST_FOR: {
         Value *iter = eval_node(node->data.forloop.iter, env);
-        if (!iter || iter->type != VAL_LIST) {
-            runtime_error(node->line, "'for' requires a list, got %s",
+        if (!iter || (iter->type != VAL_LIST && iter->type != VAL_BUFFER)) {
+            runtime_error(node->line, "'for' requires a list or buffer, got %s",
                     iter ? val_type_name(iter->type) : "null");
             return make_null();
         }
         Value *result = make_null();
-        for (int i = 0; i < iter->data.list.count; i++) {
-            Env *loop_env = env_new(env);
-            env_set_local(loop_env, node->data.forloop.var, iter->data.list.items[i]);
-            result = eval_block(node->data.forloop.body, node->data.forloop.body_count, loop_env);
-            if (g_returning) { env_free(loop_env); return result; }
-            if (g_breaking) { g_breaking = 0; env_free(loop_env); break; }
-            if (g_continuing) { g_continuing = 0; }
-            env_free(loop_env);
+        if (iter->type == VAL_BUFFER) {
+            for (int i = 0; i < iter->data.buffer.count; i++) {
+                Env *loop_env = env_new(env);
+                env_set_local(loop_env, node->data.forloop.var, make_num(iter->data.buffer.data[i]));
+                result = eval_block(node->data.forloop.body, node->data.forloop.body_count, loop_env);
+                if (g_returning) { env_free(loop_env); return result; }
+                if (g_breaking) { g_breaking = 0; env_free(loop_env); break; }
+                if (g_continuing) { g_continuing = 0; }
+                env_free(loop_env);
+            }
+        } else {
+            for (int i = 0; i < iter->data.list.count; i++) {
+                Env *loop_env = env_new(env);
+                env_set_local(loop_env, node->data.forloop.var, iter->data.list.items[i]);
+                result = eval_block(node->data.forloop.body, node->data.forloop.body_count, loop_env);
+                if (g_returning) { env_free(loop_env); return result; }
+                if (g_breaking) { g_breaking = 0; env_free(loop_env); break; }
+                if (g_continuing) { g_continuing = 0; }
+                env_free(loop_env);
+            }
         }
         return result;
     }
@@ -630,8 +660,13 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             else if (val->type == pat_val->type)
                 matches = (val == pat_val); /* identity for other types */
             if (matches) {
+                val_decref(pat_val);
                 return eval_block(node->data.match.bodies[i], node->data.match.body_counts[i], env);
             }
+            /* Decref non-matching pattern values (literals always allocate fresh) */
+            ASTType pt = pattern->type;
+            if (pt == AST_NUM || pt == AST_STR || pt == AST_BINOP || pt == AST_UNARY)
+                val_decref(pat_val);
         }
         return make_null(); /* no match */
     }
@@ -887,14 +922,20 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
 
     case AST_LISTCOMP: {
         Value *iter = eval_node(node->data.listcomp.iter, env);
-        if (!iter || iter->type != VAL_LIST) return make_list(0);
-        Value *result = make_list(iter->data.list.count);
-        for (int i = 0; i < iter->data.list.count; i++) {
+        if (!iter || (iter->type != VAL_LIST && iter->type != VAL_BUFFER)) return make_list(0);
+        int iter_count = (iter->type == VAL_BUFFER) ? iter->data.buffer.count : iter->data.list.count;
+        Value *result = make_list(iter_count);
+        for (int i = 0; i < iter_count; i++) {
             Env *loop_env = env_new(env);
-            env_set_local(loop_env, node->data.listcomp.var, iter->data.list.items[i]);
+            Value *elem = (iter->type == VAL_BUFFER) ? make_num(iter->data.buffer.data[i]) : iter->data.list.items[i];
+            env_set_local(loop_env, node->data.listcomp.var, elem);
             if (node->data.listcomp.filter) {
                 Value *cond = eval_node(node->data.listcomp.filter, loop_env);
-                if (!is_truthy(cond)) {
+                int truthy = is_truthy(cond);
+                ASTType ft = node->data.listcomp.filter->type;
+                if (ft == AST_BINOP || ft == AST_UNARY || ft == AST_RELATION)
+                    val_decref(cond);
+                if (!truthy) {
                     env_free(loop_env);
                     continue;
                 }
@@ -933,6 +974,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 if (target->type == VAL_NUM) return make_num(target->data.num);
                 if (target->type == VAL_STR) return make_num((double)strlen(target->data.str));
                 if (target->type == VAL_LIST) return make_num((double)target->data.list.count);
+                if (target->type == VAL_BUFFER) return make_num((double)target->data.buffer.count);
                 return make_num(0.0);
             case 1:
                 if (node->data.interrogate.expr->type == AST_IDENT)
@@ -940,6 +982,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 if (target->type == VAL_NUM) return make_str("number");
                 if (target->type == VAL_STR) return make_str("string");
                 if (target->type == VAL_LIST) return make_str("list");
+                if (target->type == VAL_BUFFER) return make_str("buffer");
                 return make_str("unknown");
             case 2:
                 return make_num((double)target->obs_age);
