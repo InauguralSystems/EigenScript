@@ -26,15 +26,32 @@
 
 # ---- http_get: simple GET request ----
 # http_get of "url" -> [exit_code, body]
+define _http_is_safe_url(url) as:
+    if (type of url) != "str":
+        return 0
+    if (len of url) == 0:
+        return 0
+    if (starts_with of [url, "-"]) == 1:
+        return 0
+    if (starts_with of [url, "http://"]) == 1:
+        return 1
+    if (starts_with of [url, "https://"]) == 1:
+        return 1
+    return 0
+
 define http_get(url) as:
-    return exec_capture of ["curl", "-s", "-L", url]
+    if (_http_is_safe_url of url) == 0:
+        return [-1, ""]
+    return exec_capture of ["curl", "-s", "-L", "--proto", "=http,https", "--proto-redir", "=http,https", "--", url]
 
 # ---- http_post_json: POST JSON data ----
 # http_post_json of ["url", json_string] -> [exit_code, body]
 define http_post_json(url, data) as:
+    if (_http_is_safe_url of url) == 0:
+        return [-1, ""]
     if (type of data) != "str":
         data is json_encode of data
-    return exec_capture of ["curl", "-s", "-L", "-X", "POST", "-H", "Content-Type: application/json", "-d", data, url]
+    return exec_capture of ["curl", "-s", "-L", "--proto", "=http,https", "--proto-redir", "=http,https", "-X", "POST", "-H", "Content-Type: application/json", "--data-raw", data, "--", url]
 
 # ============================================================
 # Server helpers (require http extension builtins)

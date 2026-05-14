@@ -37,13 +37,13 @@ define _extract_bearer(headers) as:
     # headers is a string of all headers; find "Authorization: Bearer <token>"
     # Split by newlines and look for the Authorization line
     lines is split of [headers, "\n"]
+    prefix is "authorization: bearer "
     for i in range of (len of lines):
-        line is lines[i]
-        # Check if this line starts with "Authorization: Bearer "
-        prefix is "Authorization: Bearer "
+        line is trim of lines[i]
+        lower_line is str_lower of line
         if (len of line) > (len of prefix):
-            if (slice of [line, 0, len of prefix]) == prefix:
-                return slice of [line, len of prefix, len of line]
+            if (substr of [lower_line, 0, len of prefix]) == prefix:
+                return trim of (substr of [line, len of prefix, (len of line) - (len of prefix)])
     return ""
 
 # ---- Check: validate bearer token from request headers ----

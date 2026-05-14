@@ -395,9 +395,9 @@ Requires full build with libpq. PostgreSQL client.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `db_connect` | `db_connect of null` | Connect via DATABASE_URL env var |
-| `db_query_value` | `db_query_value of sql` | Execute query, return first value |
+| `db_query_value` | `db_query_value of sql` or `db_query_value of [sql, p1, p2]` | Execute query, return first value with optional params |
 | `db_execute` | `db_execute of sql` or `db_execute of [sql, p1, p2]` | Execute command with optional params |
-| `db_query_json` | `db_query_json of sql` | Execute query, return all rows as JSON |
+| `db_query_json` | `db_query_json of sql` or `db_query_json of [sql, p1, p2]` | Execute query, return all rows as JSON with optional params |
 
 ## Optional: Model Extension
 

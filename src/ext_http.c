@@ -200,6 +200,11 @@ Value* builtin_http_session_id(Value *arg) {
 }
 
 
+static int http_url_is_allowed(const char *url) {
+    if (!url || !url[0] || url[0] == '-') return 0;
+    return strncmp(url, "http://", 7) == 0 || strncmp(url, "https://", 8) == 0;
+}
+
 Value* builtin_http_post(Value *arg) {
     /* http_post of [url, headers_json, body_string] -> response body string
      * Uses fork/execvp to invoke curl — no shell involved, no injection risk. */
@@ -208,7 +213,7 @@ Value* builtin_http_post(Value *arg) {
     if (arg->data.list.items[0]->type == VAL_STR) url = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_STR) headers_json = arg->data.list.items[1]->data.str;
     if (arg->data.list.items[2]->type == VAL_STR) body = arg->data.list.items[2]->data.str;
-    if (!url[0]) return make_str("");
+    if (!http_url_is_allowed(url)) return make_str("");
 
     /* Write body to temp file */
     char req_path[] = "/tmp/eigen_http_XXXXXX";
@@ -220,13 +225,17 @@ Value* builtin_http_post(Value *arg) {
     fclose(reqf);
 
     /* Build argv array for curl — no shell interpolation */
-    /* Max 64 args: curl -s --max-time 15 [-H "k: v"]... -d @file url */
-    char *argv[64];
+    /* Max 96 args: curl -s --max-time 15 --proto ... [-H "k: v"]... -d @file -- url */
+    char *argv[96];
     int argc = 0;
     argv[argc++] = "curl";
     argv[argc++] = "-s";
     argv[argc++] = "--max-time";
     argv[argc++] = "15";
+    argv[argc++] = "--proto";
+    argv[argc++] = "=http,https";
+    argv[argc++] = "--proto-redir";
+    argv[argc++] = "=http,https";
 
     /* Parse headers JSON and add -H flags */
     char header_bufs[32][256]; /* up to 32 headers */
@@ -234,7 +243,7 @@ Value* builtin_http_post(Value *arg) {
     int jpos = 0;
     Value *hdr_obj = eigs_json_parse_value(headers_json, &jpos);
     if (hdr_obj && hdr_obj->type == VAL_LIST) {
-        for (int i = 0; i + 1 < hdr_obj->data.list.count && hdr_count < 32 && argc < 60; i += 2) {
+        for (int i = 0; i + 1 < hdr_obj->data.list.count && hdr_count < 32 && argc < 90; i += 2) {
             char *hk = value_to_string(hdr_obj->data.list.items[i]);
             char *hv = value_to_string(hdr_obj->data.list.items[i + 1]);
             snprintf(header_bufs[hdr_count], sizeof(header_bufs[0]), "%s: %s", hk, hv);
@@ -249,6 +258,7 @@ Value* builtin_http_post(Value *arg) {
     snprintf(data_arg, sizeof(data_arg), "@%s", req_path);
     argv[argc++] = "-d";
     argv[argc++] = data_arg;
+    argv[argc++] = "--";
     argv[argc++] = (char *)url;
     argv[argc] = NULL;
 
@@ -368,22 +378,41 @@ static void send_404(int fd, const char *path) {
 
 #define HTTP_MAX_STATIC_SIZE (64 * 1024 * 1024)  /* 64 MB cap for static files */
 
-static void send_file(int fd, const char *filepath) {
-    /* Check file size before reading to prevent memory exhaustion */
-    FILE *sf = fopen(filepath, "rb");
-    if (sf) {
-        fseek(sf, 0, SEEK_END);
-        long fsize = ftell(sf);
-        fclose(sf);
-        if (fsize < 0 || fsize > HTTP_MAX_STATIC_SIZE) {
-            send_response(fd, 413, "Payload Too Large", "text/plain", "File too large", 14);
-            return;
-        }
+static void send_open_file(int fd, int file_fd, const char *filepath) {
+    struct stat st;
+    if (fstat(file_fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+        send_404(fd, filepath);
+        return;
+    }
+    if (st.st_size < 0 || st.st_size > HTTP_MAX_STATIC_SIZE) {
+        send_response(fd, 413, "Payload Too Large", "text/plain", "File too large", 14);
+        return;
+    }
+    if (lseek(file_fd, 0, SEEK_SET) < 0) {
+        send_404(fd, filepath);
+        return;
     }
 
-    long size = 0;
-    char *data = read_file_util(filepath, &size);
-    if (!data) {
+    size_t size = (size_t)st.st_size;
+    char *data = xmalloc(size + 1);
+    size_t total = 0;
+    while (total < size) {
+        ssize_t n = read(file_fd, data + total, size - total);
+        if (n <= 0) {
+            free(data);
+            send_404(fd, filepath);
+            return;
+        }
+        total += (size_t)n;
+    }
+    data[size] = '\0';
+    send_response(fd, 200, "OK", get_content_type(filepath), data, (long)size);
+    free(data);
+}
+
+static void send_file(int fd, const char *filepath) {
+    int file_fd = open(filepath, O_RDONLY | O_CLOEXEC);
+    if (file_fd < 0) {
         char cwd[512];
         if (getcwd(cwd, sizeof(cwd))) {
             printf("[send_file] FAIL: '%s' not found (cwd=%s)\n", filepath, cwd);
@@ -394,8 +423,50 @@ static void send_file(int fd, const char *filepath) {
         send_404(fd, filepath);
         return;
     }
-    send_response(fd, 200, "OK", get_content_type(filepath), data, size);
-    free(data);
+    send_open_file(fd, file_fd, filepath);
+    close(file_fd);
+}
+
+static int path_is_under_root(const char *path, const char *root) {
+    size_t root_len = strlen(root);
+    return strncmp(path, root, root_len) == 0 &&
+           (path[root_len] == '/' || path[root_len] == '\0');
+}
+
+static int open_static_file_confined(const char *static_dir, const char *rel,
+                                     char *resolved_path, size_t resolved_cap,
+                                     int *out_fd) {
+    char filepath[4096];
+    snprintf(filepath, sizeof(filepath), "%s/%s", static_dir, rel);
+
+    char *real_root = realpath(static_dir, NULL);
+    if (!real_root) return 0;
+
+    int file_fd = open(filepath, O_RDONLY | O_CLOEXEC);
+    if (file_fd < 0) {
+        free(real_root);
+        return 0;
+    }
+
+    char fd_link[64];
+    snprintf(fd_link, sizeof(fd_link), "/proc/self/fd/%d", file_fd);
+    ssize_t n = readlink(fd_link, resolved_path, resolved_cap - 1);
+    if (n < 0 || (size_t)n >= resolved_cap) {
+        close(file_fd);
+        free(real_root);
+        return -1;
+    }
+    resolved_path[n] = '\0';
+
+    int confined = path_is_under_root(resolved_path, real_root);
+    free(real_root);
+    if (!confined) {
+        close(file_fd);
+        return -1;
+    }
+
+    *out_fd = file_fd;
+    return 1;
 }
 
 static void generate_session_id(char *buf, int len) {
@@ -516,38 +587,28 @@ static void handle_request(int fd) {
         /* Match prefix only at a path-segment boundary (followed by '/' or end of string) */
         if (strncmp(path, g_server.static_prefix, pfx_len) == 0 &&
             (path[pfx_len] == '/' || path[pfx_len] == '\0')) {
-        char filepath[4096];
         const char *rel = path + strlen(g_server.static_prefix);
         if (rel[0] == '/') rel++;
         if (rel[0] == '/') {
             send_response(fd, 403, "Forbidden", "text/plain", "Forbidden", 9);
             goto done;
         }
-        snprintf(filepath, sizeof(filepath), "%s/%s", g_server.static_dir, rel);
 
-        /* Confine to static_dir via realpath — normalises ``..``, follows
-         * symlinks, and rejects anything resolving outside the configured
-         * root. Missing files fall through to a plain 404. */
-        char *real_file = realpath(filepath, NULL);
-        char *real_root = realpath(g_server.static_dir, NULL);
-        if (!real_file || !real_root) {
-            free(real_file); free(real_root);
+        char resolved_path[4096];
+        int static_fd = -1;
+        int open_status = open_static_file_confined(g_server.static_dir, rel,
+                                                    resolved_path, sizeof(resolved_path),
+                                                    &static_fd);
+        if (open_status == 0) {
             send_404(fd, path);
             goto done;
         }
-        size_t root_len = strlen(real_root);
-        int confined = strncmp(real_file, real_root, root_len) == 0
-                       && (real_file[root_len] == '/' || real_file[root_len] == '\0');
-        /* Copy resolved path before freeing — serve the canonical path
-         * to close the TOCTOU window between check and open. */
-        char resolved_path[4096];
-        snprintf(resolved_path, sizeof(resolved_path), "%s", real_file);
-        free(real_file); free(real_root);
-        if (!confined) {
+        if (open_status < 0) {
             send_response(fd, 403, "Forbidden", "text/plain", "Forbidden", 9);
             goto done;
         }
-        send_file(fd, resolved_path);
+        send_open_file(fd, static_fd, resolved_path);
+        close(static_fd);
         goto done;
     }}
 

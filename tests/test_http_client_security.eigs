@@ -1,0 +1,16 @@
+# HTTP client URL safety tests. These avoid network access by using inputs
+# that were previously handled locally by curl.
+
+load_file of "lib/http.eigs"
+
+bad_file is http_get of "file:///etc/hostname"
+assert of [bad_file[0] == -1, "HCS01 http_get rejects file:// URLs"]
+assert of [bad_file[1] == "", "HCS02 rejected file:// body is empty"]
+
+bad_option is http_get of "--version"
+assert of [bad_option[0] == -1, "HCS03 http_get rejects curl-option URLs"]
+
+bad_post is http_post_json of ["--version", "{}"]
+assert of [bad_post[0] == -1, "HCS04 http_post_json rejects curl-option URLs"]
+
+print of "All http client security tests passed"

@@ -9,6 +9,47 @@ TransformerModel g_model = {0};
 
 static void model_free_allocations(TransformerModel *model);
 
+static Value* model_load_status_json(const char *path) {
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append_fmt(&sb,
+        "{\"status\": \"loaded\", \"vocab_size\": %d, \"n_layers\": %d, "
+        "\"d_model\": %d, \"d_ff\": %d, \"path\": ",
+        g_model.config.vocab_size, g_model.config.n_layers,
+        g_model.config.d_model, g_model.config.d_ff);
+    eigs_json_escape_string(&sb, path);
+    strbuf_append_char(&sb, '}');
+    Value *result = make_str(sb.data);
+    strbuf_free(&sb);
+    return result;
+}
+
+static Value* model_save_status_json(const char *path) {
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append(&sb, "{\"status\": \"saved\", \"path\": ");
+    eigs_json_escape_string(&sb, path);
+    strbuf_append_fmt(&sb, ", \"model_age\": %d, \"training_samples\": %d}",
+                      g_model_age, g_training_samples);
+    Value *result = make_str(sb.data);
+    strbuf_free(&sb);
+    return result;
+}
+
+static Value* model_save_binary_status_json(const char *path) {
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append(&sb, "{\"status\": \"saved\", \"format\": \"eigen\", \"path\": ");
+    eigs_json_escape_string(&sb, path);
+    strbuf_append_fmt(&sb,
+        ", \"model_age\": %d, \"training_samples\": %d, \"has_observer\": %s}",
+        g_model_age, g_training_samples,
+        g_model.observer.data ? "true" : "false");
+    Value *result = make_str(sb.data);
+    strbuf_free(&sb);
+    return result;
+}
+
 static void json_skip_ws(const char **p) {
     while (**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') (*p)++;
 }
@@ -472,11 +513,7 @@ Value* builtin_eigen_model_load(Value *arg) {
     int result = load_model_weights(path, &g_model);
 
     if (result == 0) {
-        char buf[1024];
-        snprintf(buf, sizeof(buf),
-            "{\"status\": \"loaded\", \"vocab_size\": %d, \"n_layers\": %d, \"d_model\": %d, \"d_ff\": %d, \"path\": \"%s\"}",
-            g_model.config.vocab_size, g_model.config.n_layers, g_model.config.d_model, g_model.config.d_ff, path);
-        return make_str(buf);
+        return model_load_status_json(path);
     } else {
         return make_str("{\"status\": \"error\", \"error\": \"Failed to load model weights\"}");
     }
@@ -1136,13 +1173,7 @@ Value* builtin_eigen_model_save_binary(Value *arg) {
 
     int result = save_model_eigen(path, &g_model);
     if (result == 0) {
-        char buf[512];
-        snprintf(buf, sizeof(buf),
-            "{\"status\": \"saved\", \"format\": \"eigen\", \"path\": \"%s\", "
-            "\"model_age\": %d, \"training_samples\": %d, \"has_observer\": %s}",
-            path, g_model_age, g_training_samples,
-            g_model.observer.data ? "true" : "false");
-        return make_str(buf);
+        return model_save_binary_status_json(path);
     }
     return make_str("{\"status\": \"error\", \"error\": \"Failed to save .eigen checkpoint\"}");
 }
@@ -1219,11 +1250,7 @@ Value* builtin_model_save_weights(Value *arg) {
 
     int result = save_model_weights(path, &g_model);
     if (result == 0) {
-        char buf[512];
-        snprintf(buf, sizeof(buf),
-            "{\"status\": \"saved\", \"path\": \"%s\", \"model_age\": %d, \"training_samples\": %d}",
-            path, g_model_age, g_training_samples);
-        return make_str(buf);
+        return model_save_status_json(path);
     }
     return make_str("{\"status\": \"error\", \"error\": \"Failed to save model\"}");
 }

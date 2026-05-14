@@ -28,10 +28,25 @@ assert of [j == "[]", "DB04 db_query_json on bad table returns '[]'"]
 j_bad is db_query_json of 42
 assert of [j_bad == "[]", "DB05 db_query_json non-string returns '[]'"]
 
+# ---- Parameterized SELECT forms.
+# Without a live DB these should keep the same safe empty result. With a live
+# DB they prove SELECT helpers route params through PQexecParams.
+v_param is db_query_value of ["SELECT $1::text", "safe-param"]
+if (contains of [conn, "connected"]) == 1:
+    assert of [v_param == "safe-param", "DB06 db_query_value supports params"]
+else:
+    assert of [v_param == "", "DB06 db_query_value param form is safe without DB"]
+
+j_param is db_query_json of ["SELECT $1::text AS value", "safe-json"]
+if (contains of [conn, "connected"]) == 1:
+    assert of [(contains of [j_param, "safe-json"]) == 1, "DB07 db_query_json supports params"]
+else:
+    assert of [j_param == "[]", "DB07 db_query_json param form is safe without DB"]
+
 # ---- db_execute: null/bad arg returns 'error' or 'no_db'
 # (Depends on whether a connection happens to be active in the env.)
 e is db_execute of null
 is_safe is ((e == "error") or (e == "no_db"))
-assert of [is_safe == 1, "DB06 db_execute null returns 'error' or 'no_db'"]
+assert of [is_safe == 1, "DB08 db_execute null returns 'error' or 'no_db'"]
 
 print of "All db tests passed"

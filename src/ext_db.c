@@ -8,6 +8,48 @@
 
 PGconn *g_db_conn = NULL;
 
+#define DB_MAX_PARAMS 16
+
+static int db_build_query(Value *arg, const char **sql, int *nparams,
+                          const char **params, char numbuf[DB_MAX_PARAMS][64]) {
+    if (arg && arg->type == VAL_STR) {
+        *sql = arg->data.str;
+        *nparams = 0;
+        return 1;
+    }
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1 ||
+        arg->data.list.items[0]->type != VAL_STR) {
+        return 0;
+    }
+
+    *sql = arg->data.list.items[0]->data.str;
+    *nparams = arg->data.list.count - 1;
+    if (*nparams > DB_MAX_PARAMS) *nparams = DB_MAX_PARAMS;
+    for (int i = 0; i < *nparams; i++) {
+        Value *v = arg->data.list.items[i + 1];
+        if (v->type == VAL_STR) {
+            params[i] = v->data.str;
+        } else if (v->type == VAL_NUM) {
+            snprintf(numbuf[i], 64, "%g", v->data.num);
+            params[i] = numbuf[i];
+        } else {
+            params[i] = "";
+        }
+    }
+    return 1;
+}
+
+static PGresult* db_exec_from_arg(Value *arg) {
+    const char *sql = "";
+    const char *params[DB_MAX_PARAMS];
+    char numbuf[DB_MAX_PARAMS][64];
+    int nparams = 0;
+
+    if (!db_build_query(arg, &sql, &nparams, params, numbuf)) return NULL;
+    if (nparams == 0) return PQexec(g_db_conn, sql);
+    return PQexecParams(g_db_conn, sql, nparams, NULL, params, NULL, NULL, 0);
+}
+
 Value* builtin_db_connect(Value *arg) {
     (void)arg;
     const char *url = getenv("DATABASE_URL");
@@ -43,10 +85,12 @@ Value* builtin_db_connect(Value *arg) {
 Value* builtin_db_query_value(Value *arg) {
     /* Run a SQL query and return the value from row 0 col 0 as a string.
      * Usage: db_query_value of "SELECT COUNT(*) FROM table"
+     *    or: db_query_value of ["SELECT name FROM t WHERE id=$1", id]
      * Returns "" if no DB, query fails, or no rows. */
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    if (!arg || (arg->type != VAL_STR && arg->type != VAL_LIST)) return make_str("");
     if (!g_db_conn || PQstatus(g_db_conn) != CONNECTION_OK) return make_str("");
-    PGresult *res = PQexec(g_db_conn, arg->data.str);
+    PGresult *res = db_exec_from_arg(arg);
+    if (!res) return make_str("");
     if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
         PQclear(res);
         return make_str("");
@@ -62,36 +106,8 @@ Value* builtin_db_execute(Value *arg) {
      * Usage: db_execute of "INSERT INTO ..." (no params)
      *    or: db_execute of ["INSERT INTO t (a) VALUES ($1)", param1] */
     if (!g_db_conn || PQstatus(g_db_conn) != CONNECTION_OK) return make_str("no_db");
-    PGresult *res = NULL;
-
-    if (arg && arg->type == VAL_STR) {
-        res = PQexec(g_db_conn, arg->data.str);
-    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        const char *sql = "";
-        if (arg->data.list.items[0]->type == VAL_STR) sql = arg->data.list.items[0]->data.str;
-        int nparams = arg->data.list.count - 1;
-        if (nparams == 0) {
-            res = PQexec(g_db_conn, sql);
-        } else {
-            const char *params[16];
-            char numbuf[16][64];
-            if (nparams > 16) nparams = 16;
-            for (int i = 0; i < nparams; i++) {
-                Value *v = arg->data.list.items[i + 1];
-                if (v->type == VAL_STR) {
-                    params[i] = v->data.str;
-                } else if (v->type == VAL_NUM) {
-                    snprintf(numbuf[i], sizeof(numbuf[i]), "%g", v->data.num);
-                    params[i] = numbuf[i];
-                } else {
-                    params[i] = "";
-                }
-            }
-            res = PQexecParams(g_db_conn, sql, nparams, NULL, params, NULL, NULL, 0);
-        }
-    } else {
-        return make_str("error");
-    }
+    PGresult *res = db_exec_from_arg(arg);
+    if (!res) return make_str("error");
 
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK || PQresultStatus(res) == PGRES_TUPLES_OK);
     PQclear(res);
@@ -101,10 +117,12 @@ Value* builtin_db_execute(Value *arg) {
 Value* builtin_db_query_json(Value *arg) {
     /* Run SQL and return all rows as a JSON array of objects.
      * Usage: db_query_json of "SELECT id, name FROM table"
+     *    or: db_query_json of ["SELECT id, name FROM table WHERE id=$1", id]
      * Returns "[]" if no DB, error, or no rows. */
-    if (!arg || arg->type != VAL_STR) return make_str("[]");
+    if (!arg || (arg->type != VAL_STR && arg->type != VAL_LIST)) return make_str("[]");
     if (!g_db_conn || PQstatus(g_db_conn) != CONNECTION_OK) return make_str("[]");
-    PGresult *res = PQexec(g_db_conn, arg->data.str);
+    PGresult *res = db_exec_from_arg(arg);
+    if (!res) return make_str("[]");
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         PQclear(res);
         return make_str("[]");

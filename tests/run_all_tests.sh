@@ -955,6 +955,36 @@ else
 fi
 echo ""
 
+# [43c] Auth stdlib bearer parsing
+echo "[43c/47] Auth Stdlib (4 checks)"
+AUTH_OUTPUT=$(./eigenscript ../tests/test_auth.eigs 2>&1)
+if echo "$AUTH_OUTPUT" | grep -q "All auth tests passed"; then
+    TOTAL=$((TOTAL + 4))
+    PASS=$((PASS + 4))
+    echo "  PASS: all 4 auth checks"
+else
+    TOTAL=$((TOTAL + 4))
+    FAIL=$((FAIL + 4))
+    echo "  FAIL: auth tests"
+    echo "$AUTH_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
+# [43d] HTTP client URL safety
+echo "[43d/47] HTTP Client Security (4 checks)"
+HCS_OUTPUT=$(./eigenscript ../tests/test_http_client_security.eigs 2>&1)
+if echo "$HCS_OUTPUT" | grep -q "All http client security tests passed"; then
+    TOTAL=$((TOTAL + 4))
+    PASS=$((PASS + 4))
+    echo "  PASS: all 4 HTTP client security checks"
+else
+    TOTAL=$((TOTAL + 4))
+    FAIL=$((FAIL + 4))
+    echo "  FAIL: HTTP client security tests"
+    echo "$HCS_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [44] HTTP extension builtins (probe-gated)
 HTTP_PROBE_FILE=$(mktemp /tmp/eigs_http_probe_XXXXXX.eigs)
 cat > "$HTTP_PROBE_FILE" <<'PROBE'
@@ -965,15 +995,15 @@ HTTP_PROBE_OUT=$(./eigenscript "$HTTP_PROBE_FILE" 2>&1)
 rm -f "$HTTP_PROBE_FILE"
 
 if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[44/47] HTTP Builtins (13 checks)"
+    echo "[44/47] HTTP Builtins (15 checks)"
     HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1)
     if echo "$HTTP_OUTPUT" | grep -q "All http tests passed"; then
-        TOTAL=$((TOTAL + 13))
-        PASS=$((PASS + 13))
-        echo "  PASS: all 13 HTTP builtin checks"
+        TOTAL=$((TOTAL + 15))
+        PASS=$((PASS + 15))
+        echo "  PASS: all 15 HTTP builtin checks"
     else
-        TOTAL=$((TOTAL + 13))
-        FAIL=$((FAIL + 13))
+        TOTAL=$((TOTAL + 15))
+        FAIL=$((FAIL + 15))
         echo "  FAIL: HTTP builtin tests"
         echo "$HTTP_OUTPUT" | grep -iE "assert|error" | head -5
     fi
@@ -1009,15 +1039,15 @@ DB_PROBE_OUT=$(./eigenscript "$DB_PROBE_FILE" 2>&1)
 rm -f "$DB_PROBE_FILE"
 
 if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[46/47] DB Builtins (6 checks)"
+    echo "[46/47] DB Builtins (8 checks)"
     DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1)
     if echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
-        TOTAL=$((TOTAL + 6))
-        PASS=$((PASS + 6))
-        echo "  PASS: all 6 DB builtin checks"
+        TOTAL=$((TOTAL + 8))
+        PASS=$((PASS + 8))
+        echo "  PASS: all 8 DB builtin checks"
     else
-        TOTAL=$((TOTAL + 6))
-        FAIL=$((FAIL + 6))
+        TOTAL=$((TOTAL + 8))
+        FAIL=$((FAIL + 8))
         echo "  FAIL: DB builtin tests"
         echo "$DB_OUTPUT" | grep -iE "assert|error" | head -5
     fi
@@ -1036,7 +1066,7 @@ MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
 rm -f "$MODEL_PROBE_FILE"
 
 if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[47/47] Model Save/Load Roundtrip (14 checks)"
+    echo "[47/47] Model Save/Load Roundtrip (16 checks)"
     MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
     MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
     MRT_FAIL=$(echo "$MRT_OUTPUT" | grep -c "FAIL:" || true)

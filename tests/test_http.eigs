@@ -53,4 +53,10 @@ assert of [p_bad2 == "", "HTTP12 http_post too-few-elements returns empty string
 p_bad3 is http_post of ["", "{}", "body"]
 assert of [p_bad3 == "", "HTTP13 http_post empty URL returns empty string"]
 
+p_bad4 is http_post of ["--version", "{}", "body"]
+assert of [p_bad4 == "", "HTTP14 http_post rejects curl-option URL"]
+
+p_bad5 is http_post of ["file:///etc/hostname", "{}", "body"]
+assert of [p_bad5 == "", "HTTP15 http_post rejects non-HTTP URL"]
+
 print of "All http tests passed"

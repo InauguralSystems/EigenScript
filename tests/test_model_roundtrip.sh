@@ -22,8 +22,10 @@ fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 SRC_MODEL=/tmp/eigs_mrt_src.json
 DST_MODEL=/tmp/eigs_mrt_dst.json
 DST_EIGEN=/tmp/eigs_mrt_dst.eigen
+QUOTE_MODEL='/tmp/eigs_mrt_quote_"_dst.json'
+QUOTE_EIGEN='/tmp/eigs_mrt_quote_"_dst.eigen'
 
-cleanup() { rm -f "$SRC_MODEL" "$DST_MODEL" "$DST_EIGEN" /tmp/eigs_mrt_*.log /tmp/eigs_mrt_*.eigs; }
+cleanup() { rm -f "$SRC_MODEL" "$DST_MODEL" "$DST_EIGEN" "$QUOTE_MODEL" "$QUOTE_EIGEN" /tmp/eigs_mrt_*.log /tmp/eigs_mrt_*.eigs; }
 trap cleanup EXIT
 
 # ---- Step 1: generate tiny model ----
@@ -41,6 +43,10 @@ fi
 
 # ---- Step 2: load and save ----
 SCRIPT=/tmp/eigs_mrt_roundtrip.eigs
+QUOTE_MODEL_EIGS=${QUOTE_MODEL//\\/\\\\}
+QUOTE_MODEL_EIGS=${QUOTE_MODEL_EIGS//\"/\\\"}
+QUOTE_EIGEN_EIGS=${QUOTE_EIGEN//\\/\\\\}
+QUOTE_EIGEN_EIGS=${QUOTE_EIGEN_EIGS//\"/\\\"}
 cat > "$SCRIPT" <<EIGS
 r is eigen_model_load of "$SRC_MODEL"
 print of "LOAD:"
@@ -53,6 +59,12 @@ print of s
 b is eigen_model_save_binary of "$DST_EIGEN"
 print of "SAVE_BIN:"
 print of b
+sq is model_save_weights of "$QUOTE_MODEL_EIGS"
+print of "SAVE_QUOTED:"
+print of sq
+bq is eigen_model_save_binary of "$QUOTE_EIGEN_EIGS"
+print of "SAVE_BIN_QUOTED:"
+print of bq
 print of "BIN_INFO:"
 print of (eigen_checkpoint_info of "$DST_EIGEN")
 EIGS
@@ -62,6 +74,8 @@ LOADED=$(echo "$OUT" | grep -A1 '^LOAD:$' | tail -1)
 INFO=$(echo "$OUT" | grep -A1 '^INFO_BEFORE:$' | tail -1)
 SAVE_STATUS=$(echo "$OUT" | grep -A1 '^SAVE:$' | tail -1)
 SAVE_BIN_STATUS=$(echo "$OUT" | grep -A1 '^SAVE_BIN:$' | tail -1)
+SAVE_QUOTED_STATUS=$(echo "$OUT" | grep -A1 '^SAVE_QUOTED:$' | tail -1)
+SAVE_BIN_QUOTED_STATUS=$(echo "$OUT" | grep -A1 '^SAVE_BIN_QUOTED:$' | tail -1)
 BIN_INFO=$(echo "$OUT" | grep -A1 '^BIN_INFO:$' | tail -1)
 
 if [ "$LOADED" = "1" ]; then
@@ -98,6 +112,20 @@ if [ -s "$DST_EIGEN" ]; then
     ok "MRT05c binary .eigen file is non-empty"
 else
     fail "MRT05c binary file empty/missing"
+fi
+
+if printf '%s\n' "$SAVE_QUOTED_STATUS" | python3 -m json.tool >/dev/null 2>&1 &&
+   echo "$SAVE_QUOTED_STATUS" | grep -q 'eigs_mrt_quote_\\"_dst.json'; then
+    ok "MRT05q model_save_weights escapes quoted path in JSON"
+else
+    fail "MRT05q quoted path JSON" "got '$SAVE_QUOTED_STATUS'"
+fi
+
+if printf '%s\n' "$SAVE_BIN_QUOTED_STATUS" | python3 -m json.tool >/dev/null 2>&1 &&
+   echo "$SAVE_BIN_QUOTED_STATUS" | grep -q 'eigs_mrt_quote_\\"_dst.eigen'; then
+    ok "MRT05r eigen_model_save_binary escapes quoted path in JSON"
+else
+    fail "MRT05r quoted binary path JSON" "got '$SAVE_BIN_QUOTED_STATUS'"
 fi
 
 if echo "$BIN_INFO" | grep -q '"format": "eigen"' && echo "$BIN_INFO" | grep -q '"vocab_size": 8' && echo "$BIN_INFO" | grep -q '"d_model": 4'; then

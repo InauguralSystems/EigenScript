@@ -1,0 +1,27 @@
+# Auth stdlib tests. The HTTP header builtin is stubbed so this works in
+# minimal builds as well as full HTTP builds.
+
+load_file of "lib/auth.eigs"
+
+_test_headers is ""
+define http_request_headers(_x) as:
+    return _test_headers
+
+_auth_token is "eigen_test"
+
+_test_headers is (exec_capture of ["printf", "Authorization: Bearer eigen_test\\r\\n"])[1]
+assert of [(require_auth of null) == "", "AUTH01 require_auth accepts CRLF bearer header"]
+
+_test_headers is (exec_capture of ["printf", "authorization: bearer eigen_test\\r\\n"])[1]
+ok_json is auth_check of null
+assert of [(contains of [ok_json, "\"status\": \"ok\""]) == 1, "AUTH02 auth_check accepts case-insensitive bearer header"]
+
+_test_headers is (exec_capture of ["printf", "Authorization: Bearer wrong\\r\\n"])[1]
+bad_json is require_auth of null
+assert of [(contains of [bad_json, "invalid or missing token"]) == 1, "AUTH03 require_auth rejects wrong bearer token"]
+
+_auth_token is ""
+missing_json is require_auth of null
+assert of [(contains of [missing_json, "not authenticated"]) == 1, "AUTH04 require_auth rejects missing session token"]
+
+print of "All auth tests passed"

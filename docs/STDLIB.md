@@ -357,6 +357,7 @@ Levels: debug < info < warn < error < silent. Default: info.
 ### lib/http.eigs — HTTP Client and Server Helpers
 
 Requires full build for server builtins. Client uses `exec_capture` + `curl`.
+Client helpers only allow `http://` and `https://` URLs; rejected URLs return `[-1, ""]`.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
