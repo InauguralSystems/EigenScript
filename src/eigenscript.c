@@ -149,6 +149,19 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
 static __thread Value *g_num_freelist = NULL;
 static __thread int g_num_freelist_count = 0;
 
+#define ENV_FREELIST_CAP 1024
+#define ENV_FREELIST_MAX_BINDINGS 64
+static __thread Env *g_env_freelist = NULL;
+static __thread int g_env_freelist_count = 0;
+
+#define ENV_NAME_INTERN_BUCKETS 4096
+typedef struct EnvNameIntern {
+    char *name;
+    uint32_t hash;
+    struct EnvNameIntern *next;
+} EnvNameIntern;
+static __thread EnvNameIntern *g_env_name_interns[ENV_NAME_INTERN_BUCKETS];
+
 /* (debug counters removed) */
 
 /* Refcount-aware teardown. Called by val_decref when refcount hits 0.
@@ -578,17 +591,40 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
     return -1;
 }
 
+static char *env_intern_name(const char *name) {
+    uint32_t h = env_hash_name(name);
+    int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
+    for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
+        if (it->hash == h && strcmp(it->name, name) == 0)
+            return it->name;
+    }
+    EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
+    it->name = xstrdup(name);
+    it->hash = h;
+    it->next = g_env_name_interns[bucket];
+    g_env_name_interns[bucket] = it;
+    return it->name;
+}
+
 Env* env_new(Env *parent) {
-    Env *e = xcalloc(1, sizeof(Env));
+    Env *e = NULL;
+    if (g_env_freelist) {
+        e = g_env_freelist;
+        g_env_freelist = e->parent;
+        g_env_freelist_count--;
+        e->count = 0;
+        memset(e->hash.hashes, 0, (e->hash.mask + 1) * sizeof(uint32_t));
+    } else {
+        e = xcalloc(1, sizeof(Env));
+        e->capacity = ENV_INIT_CAP;
+        e->names  = xcalloc(ENV_INIT_CAP, sizeof(char *));
+        e->values = xcalloc(ENV_INIT_CAP, sizeof(Value *));
+        env_hash_init(&e->hash, ENV_HASH_INIT_CAP);
+    }
     e->parent = parent;
-    e->count = 0;
-    e->capacity = ENV_INIT_CAP;
     e->heap_allocated = 1;
     e->captured = 0;
     e->env_refcount = 0;
-    e->names  = xcalloc(ENV_INIT_CAP, sizeof(char *));
-    e->values = xcalloc(ENV_INIT_CAP, sizeof(Value *));
-    env_hash_init(&e->hash, ENV_HASH_INIT_CAP);
     return e;
 }
 
@@ -650,9 +686,7 @@ void env_set_local(Env *env, const char *name, Value *val) {
         }
         env->capacity = new_cap;
     }
-    char *name_copy = xstrdup(name);
-    if (!env->heap_allocated) arena_track_string(name_copy);
-    env->names[env->count] = name_copy;
+    env->names[env->count] = env_intern_name(name);
     Value *promoted = promote_if_arena(val);
     env->values[env->count] = promoted;
     if (promoted == val) val_incref(val);
@@ -669,9 +703,19 @@ void env_free(Env *env) {
     if (!env || !env->heap_allocated) return;
     if (env->captured && __atomic_load_n(&env->env_refcount, __ATOMIC_ACQUIRE) > 0) return;
     for (int i = 0; i < env->count; i++) {
-        free(env->names[i]);
         if (env->values[i] && !env->values[i]->arena)
             val_decref(env->values[i]);
+    }
+    if (env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
+        g_env_freelist_count < ENV_FREELIST_CAP) {
+        env->count = 0;
+        env->captured = 0;
+        env->env_refcount = 0;
+        memset(env->hash.hashes, 0, (env->hash.mask + 1) * sizeof(uint32_t));
+        env->parent = g_env_freelist;
+        g_env_freelist = env;
+        g_env_freelist_count++;
+        return;
     }
     free(env->names);
     free(env->values);
@@ -683,7 +727,6 @@ void env_free(Env *env) {
 void env_clear(Env *env) {
     if (!env) return;
     for (int i = 0; i < env->count; i++) {
-        free(env->names[i]);
         if (env->values[i] && !env->values[i]->arena)
             val_decref(env->values[i]);
     }

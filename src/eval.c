@@ -226,6 +226,8 @@ static int expr_result_is_owned(ASTNode *node) {
         case AST_LAMBDA:
         case AST_IF:
         case AST_LOOP:
+        case AST_FOR:
+        case AST_MATCH:
         case AST_BLOCK:
         case AST_UNOBSERVED:
             return 1;
@@ -866,11 +868,20 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             return make_null();
         }
         Value *result = make_null();
+        ASTNode *last_body_stmt = node->data.forloop.body_count > 0
+                                  ? node->data.forloop.body[node->data.forloop.body_count - 1]
+                                  : NULL;
+        int have_body_result = 0;
         int iter_count = (iter->type == VAL_BUFFER)
                          ? iter->data.buffer.count
                          : iter->data.list.count;
         Env *loop_env = env_new(env);
         for (int i = 0; i < iter_count; i++) {
+            if (have_body_result) {
+                release_eval_temp(last_body_stmt, result);
+                result = make_null();
+                have_body_result = 0;
+            }
             if (loop_env->captured) {
                 loop_env = env_new(env);
             } else if (i > 0) {
@@ -884,9 +895,12 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 val_decref(elem);
             result = eval_block(node->data.forloop.body, node->data.forloop.body_count, loop_env);
             if (g_returning) { env_free(loop_env); release_eval_temp(node->data.forloop.iter, iter); return result; }
+            have_body_result = 1;
             if (g_breaking) { g_breaking = 0; break; }
             if (g_continuing) { g_continuing = 0; }
         }
+        if (have_body_result)
+            own_block_result_if_needed(node->data.forloop.body, node->data.forloop.body_count, result);
         env_free(loop_env);
         release_eval_temp(node->data.forloop.iter, iter);
         return result;
@@ -910,7 +924,11 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             ASTNode *pattern = node->data.match.patterns[i];
             if (!pattern) {
                 /* Wildcard _ — always matches */
-                return eval_block(node->data.match.bodies[i], node->data.match.body_counts[i], env);
+                Value *result = eval_block(node->data.match.bodies[i], node->data.match.body_counts[i], env);
+                if (!g_returning && !g_breaking && !g_continuing)
+                    own_block_result_if_needed(node->data.match.bodies[i], node->data.match.body_counts[i], result);
+                release_eval_temp(node->data.match.expr, val);
+                return result;
             }
             Value *pat_val = eval_node(pattern, env);
             /* Compare: numbers, strings, or null */
@@ -924,14 +942,16 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
             else if (val->type == pat_val->type)
                 matches = (val == pat_val); /* identity for other types */
             if (matches) {
-                val_decref(pat_val);
-                return eval_block(node->data.match.bodies[i], node->data.match.body_counts[i], env);
+                release_eval_temp(pattern, pat_val);
+                Value *result = eval_block(node->data.match.bodies[i], node->data.match.body_counts[i], env);
+                if (!g_returning && !g_breaking && !g_continuing)
+                    own_block_result_if_needed(node->data.match.bodies[i], node->data.match.body_counts[i], result);
+                release_eval_temp(node->data.match.expr, val);
+                return result;
             }
-            /* Decref non-matching pattern values (literals always allocate fresh) */
-            ASTType pt = pattern->type;
-            if (pt == AST_NUM || pt == AST_STR || pt == AST_BINOP || pt == AST_UNARY)
-                val_decref(pat_val);
+            release_eval_temp(pattern, pat_val);
         }
+        release_eval_temp(node->data.match.expr, val);
         return make_null(); /* no match */
     }
 
