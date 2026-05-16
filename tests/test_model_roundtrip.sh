@@ -20,12 +20,13 @@ ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
 SRC_MODEL=/tmp/eigs_mrt_src.json
+WIDE_MODEL=/tmp/eigs_mrt_wide_vocab.json
 DST_MODEL=/tmp/eigs_mrt_dst.json
 DST_EIGEN=/tmp/eigs_mrt_dst.eigen
 QUOTE_MODEL='/tmp/eigs_mrt_quote_"_dst.json'
 QUOTE_EIGEN='/tmp/eigs_mrt_quote_"_dst.eigen'
 
-cleanup() { rm -f "$SRC_MODEL" "$DST_MODEL" "$DST_EIGEN" "$QUOTE_MODEL" "$QUOTE_EIGEN" /tmp/eigs_mrt_*.log /tmp/eigs_mrt_*.eigs; }
+cleanup() { rm -f "$SRC_MODEL" "$WIDE_MODEL" "$DST_MODEL" "$DST_EIGEN" "$QUOTE_MODEL" "$QUOTE_EIGEN" /tmp/eigs_mrt_*.log /tmp/eigs_mrt_*.eigs; }
 trap cleanup EXIT
 
 # ---- Step 1: generate tiny model ----
@@ -88,6 +89,31 @@ if echo "$INFO" | grep -q '"vocab_size": 8' && echo "$INFO" | grep -q '"d_model"
     ok "MRT03 model_info reports vocab=8 d_model=4"
 else
     fail "MRT03 model_info" "got '$INFO'"
+fi
+
+# iLambdaAi uses a 118-token EigenScript vocabulary. Keep this above the
+# original 64-token ceiling so model config validation does not regress.
+WIDE_GEN=/tmp/eigs_mrt_wide_gen.eigs
+sed 's/^vocab is 8$/vocab is 118/' "$TESTS_DIR/gen_tiny_model.eigs" > "$WIDE_GEN"
+if "$EIGS" "$WIDE_GEN" > "$WIDE_MODEL" 2>/tmp/eigs_mrt_wide_gen.log; then
+    WIDE_SCRIPT=/tmp/eigs_mrt_wide_load.eigs
+    cat > "$WIDE_SCRIPT" <<EIGS
+r is eigen_model_load of "$WIDE_MODEL"
+print of "WIDE_LOAD:"
+print of (eigen_model_loaded of null)
+print of "WIDE_INFO:"
+print of (eigen_model_info of null)
+EIGS
+    WIDE_OUT=$("$EIGS" "$WIDE_SCRIPT" 2>&1)
+    WIDE_LOADED=$(echo "$WIDE_OUT" | grep -A1 '^WIDE_LOAD:$' | tail -1)
+    WIDE_INFO=$(echo "$WIDE_OUT" | grep -A1 '^WIDE_INFO:$' | tail -1)
+    if [ "$WIDE_LOADED" = "1" ] && echo "$WIDE_INFO" | grep -q '"vocab_size": 118'; then
+        ok "MRT03b wide vocab model loads"
+    else
+        fail "MRT03b wide vocab load" "loaded='$WIDE_LOADED' info='$WIDE_INFO'"
+    fi
+else
+    fail "MRT03b wide vocab generator" "see /tmp/eigs_mrt_wide_gen.log"
 fi
 
 if echo "$SAVE_STATUS" | grep -q '"status": "saved"'; then

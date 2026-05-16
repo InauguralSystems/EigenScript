@@ -332,6 +332,7 @@ ASTNode** clone_ast_array(ASTNode **nodes, int count);
 void free_ast(ASTNode *node);
 Value* eval_node(ASTNode *node, Env *env);
 Value* eval_block(ASTNode **stmts, int count, Env *env);
+int eval_result_is_owned(ASTNode *node);
 
 int is_truthy(Value *v);
 char* value_to_string(Value *v);
@@ -345,6 +346,7 @@ void register_hash_builtins(Env *env);
 void eigenscript_set_args(int argc, char **argv);
 extern Env *g_global_env;
 extern __thread Env *g_load_env;  /* scope for load_file; NULL = g_global_env */
+extern __thread Env *g_builtin_call_env;  /* dynamic caller scope for env-aware builtins */
 
 /* ---- Utilities used across modules ---- */
 

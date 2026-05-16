@@ -698,15 +698,15 @@ fi
 echo ""
 
 # [26] Eval builtin
-echo "[26/27] Eval Builtin (6 checks)"
+echo "[26/27] Eval Builtin (8 checks)"
 EV_OUTPUT=$(./eigenscript ../tests/test_eval.eigs 2>&1)
 if echo "$EV_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 6))
-    PASS=$((PASS + 6))
-    echo "  PASS: all 6 eval checks"
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 eval checks"
 else
-    TOTAL=$((TOTAL + 6))
-    FAIL=$((FAIL + 6))
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
     echo "  FAIL: eval tests"
     echo "$EV_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
@@ -1066,7 +1066,7 @@ MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
 rm -f "$MODEL_PROBE_FILE"
 
 if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[47/47] Model Save/Load Roundtrip (16 checks)"
+    echo "[47/47] Model Save/Load Roundtrip (17 checks)"
     MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
     MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
     MRT_FAIL=$(echo "$MRT_OUTPUT" | grep -c "FAIL:" || true)
@@ -1265,15 +1265,15 @@ fi
 echo ""
 
 # [57] Coverage v2 — close gcov gaps in eval/builtins/eigenscript/ext_store
-echo "[57] Coverage V2 (110 checks)"
+echo "[57] Coverage V2 (118 checks)"
 CV2_OUTPUT=$(./eigenscript ../tests/test_coverage_v2.eigs 2>&1)
 if echo "$CV2_OUTPUT" | grep -q "All coverage-v2 tests passed"; then
-    TOTAL=$((TOTAL + 110))
-    PASS=$((PASS + 110))
-    echo "  PASS: all 110 coverage-v2 checks"
+    TOTAL=$((TOTAL + 118))
+    PASS=$((PASS + 118))
+    echo "  PASS: all 118 coverage-v2 checks"
 else
-    TOTAL=$((TOTAL + 110))
-    FAIL=$((FAIL + 110))
+    TOTAL=$((TOTAL + 118))
+    FAIL=$((FAIL + 118))
     echo "  FAIL: coverage-v2 tests"
     echo "$CV2_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi

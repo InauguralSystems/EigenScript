@@ -445,4 +445,27 @@ assert of [(type of my_fn) == "fn", "CV2-109 type of fn"]
 s_bi is str of print
 assert of [s_bi == "<builtin>", "CV2-110 str of builtin"]
 
+# ================================================================
+# BUILTINS_TENSOR.C: matrix/vector broadcasting for neural biases
+# ================================================================
+mat_b is [[1, 2, 3], [4, 5, 6]]
+row_bias is [10, 20, 30]
+row_added is add of [mat_b, row_bias]
+assert of [row_added[0][0] == 11, "CV2-111 matrix + row-vector first"]
+assert of [row_added[1][2] == 36, "CV2-112 matrix + row-vector last"]
+left_row_added is add of [row_bias, mat_b]
+assert of [left_row_added[1][1] == 25, "CV2-113 row-vector + matrix"]
+row_sub is subtract of [mat_b, row_bias]
+assert of [row_sub[0][1] == -18, "CV2-114 matrix - row-vector"]
+
+col_bias is [100, 200]
+col_added is add of [mat_b, col_bias]
+assert of [col_added[0][2] == 103, "CV2-115 matrix + column-vector row 0"]
+assert of [col_added[1][0] == 204, "CV2-116 matrix + column-vector row 1"]
+
+batched is matmul of [[[1, 1, 1], [2, 2, 2]], [[1, 0], [0, 1], [1, 1]]]
+batched_bias is add of [batched, [10, 20]]
+assert of [batched_bias[0][0] == 12, "CV2-117 batched matmul bias first"]
+assert of [batched_bias[1][1] == 24, "CV2-118 batched matmul bias last"]
+
 print of "All coverage-v2 tests passed"

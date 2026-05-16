@@ -22,6 +22,19 @@ assert_eq of [eval_z, 99, "eval via f-string"]
 result is eval of "1 + 2 + 3"
 assert_eq of [result, 6, "eval returns value"]
 
+# Eval inside a function uses that function's scope, not the top-level global.
+define eval_scoped_runner() as:
+    eval of "eval_scoped_tmp is 123"
+    return eval_scoped_tmp
+
+assert_eq of [eval_scoped_runner of null, 123, "eval uses caller scope"]
+caught_scope is 0
+try:
+    eval_scoped_tmp
+catch err:
+    caught_scope is 1
+assert_eq of [caught_scope, 1, "eval function local does not leak global"]
+
 # Eval error caught by try/catch
 caught is ""
 try:

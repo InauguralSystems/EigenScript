@@ -12,7 +12,7 @@
 
 #define MAX_LAYERS 8
 #define MAX_SEQ_LEN 128
-#define VOCAB_SIZE 64
+#define VOCAB_SIZE 256
 #define MAX_D_MODEL 128
 #define MAX_D_FF 512
 

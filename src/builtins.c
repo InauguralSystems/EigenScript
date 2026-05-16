@@ -2298,7 +2298,13 @@ Value* builtin_eval(Value *arg) {
     }
     g_parse_errors = saved_errors;
 
-    Value *result = eval_node(ast, g_global_env);
+    Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
+    ASTNode *last = ast;
+    if (ast && ast->type == AST_PROGRAM && ast->data.program.count > 0)
+        last = ast->data.program.stmts[ast->data.program.count - 1];
+    Value *result = eval_node(ast, target);
+    if (result && !eval_result_is_owned(last))
+        val_incref(result);
     free_tokenlist(&tl);
     return result ? result : make_null();
 }

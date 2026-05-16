@@ -141,6 +141,8 @@ static double op_div(double a, double b) { return (b == 0.0) ? 0.0 : num_guard(a
 static double op_pow(double a, double b) { return num_guard(pow(a, b)); }
 
 static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
+    if (!a || !b) return make_num(0.0);
+
     /* scalar op scalar */
     if (a->type == VAL_NUM && b->type == VAL_NUM)
         return make_num(fn(a->data.num, b->data.num));
@@ -159,8 +161,62 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
         return out;
     }
 
-    /* list op list (element-wise, matching shapes) */
+    /* Matrix/vector broadcasting:
+     *   matrix(rows x cols) op vector(cols) -> vector applied to every row
+     *   matrix(rows x cols) op vector(rows) -> scalar per row
+     * Row-vector bias takes priority for square matrices, matching neural
+     * layer convention: add of [batch @ weights, bias]. */
     if (a->type == VAL_LIST && b->type == VAL_LIST) {
+        int a_is_matrix = a->data.list.count > 0 && a->data.list.items[0]->type == VAL_LIST;
+        int b_is_matrix = b->data.list.count > 0 && b->data.list.items[0]->type == VAL_LIST;
+
+        if (a_is_matrix && !b_is_matrix) {
+            int rows = a->data.list.count;
+            int cols = a->data.list.items[0]->data.list.count;
+            if (b->data.list.count == cols) {
+                Value *out = make_list(rows);
+                for (int i = 0; i < rows; i++) {
+                    Value *row = tensor_elementwise(a->data.list.items[i], b, fn);
+                    list_append(out, row);
+                    val_decref(row);
+                }
+                return out;
+            }
+            if (b->data.list.count == rows) {
+                Value *out = make_list(rows);
+                for (int i = 0; i < rows; i++) {
+                    Value *row = tensor_elementwise(a->data.list.items[i], b->data.list.items[i], fn);
+                    list_append(out, row);
+                    val_decref(row);
+                }
+                return out;
+            }
+        }
+
+        if (!a_is_matrix && b_is_matrix) {
+            int rows = b->data.list.count;
+            int cols = b->data.list.items[0]->data.list.count;
+            if (a->data.list.count == cols) {
+                Value *out = make_list(rows);
+                for (int i = 0; i < rows; i++) {
+                    Value *row = tensor_elementwise(a, b->data.list.items[i], fn);
+                    list_append(out, row);
+                    val_decref(row);
+                }
+                return out;
+            }
+            if (a->data.list.count == rows) {
+                Value *out = make_list(rows);
+                for (int i = 0; i < rows; i++) {
+                    Value *row = tensor_elementwise(a->data.list.items[i], b->data.list.items[i], fn);
+                    list_append(out, row);
+                    val_decref(row);
+                }
+                return out;
+            }
+        }
+
+        /* list op list (element-wise, matching shapes) */
         int n = a->data.list.count < b->data.list.count ? a->data.list.count : b->data.list.count;
         Value *out = make_list(n);
         for (int i = 0; i < n; i++)

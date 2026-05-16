@@ -126,6 +126,7 @@ static void mark_observer_dirty(Value *val, Value *old) {
 #define EIGS_MAX_EVAL_DEPTH 500
 static __thread int g_eval_depth = 0;
 __thread Value *g_last_observer = NULL;
+__thread Env *g_builtin_call_env = NULL;
 
 /* Unobserved-block depth. Nonzero means assignments inside this region
  * skip update_observer and attempt in-place numeric mutation. The
@@ -236,6 +237,10 @@ static int expr_result_is_owned(ASTNode *node) {
         default:
             return 0;
     }
+}
+
+int eval_result_is_owned(ASTNode *node) {
+    return expr_result_is_owned(node);
 }
 
 static int list_contains_value(Value *list, Value *needle) {
@@ -699,7 +704,10 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         if (left_val->type == VAL_BUILTIN) {
             int scratch_depth = use_scratch ? g_scratch_depth - 1 : -1;
             int builtin_consumes_arg = (left_val->data.builtin == builtin_free_val);
+            Env *saved_builtin_call_env = g_builtin_call_env;
+            g_builtin_call_env = env;
             Value *result = left_val->data.builtin(right_val);
+            g_builtin_call_env = saved_builtin_call_env;
             if (use_scratch)
                 result = materialize_scratch_result(result, scratch_depth);
             else

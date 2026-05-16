@@ -279,6 +279,9 @@ code is "x is 10\nprint of x"
 eval of code
 ```
 
+Evaluated code runs in the caller's current scope. At top level this is the
+global scope; inside a function, new names stay in that function's scope.
+
 ## Modules (load_file)
 
 ```eigenscript
