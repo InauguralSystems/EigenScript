@@ -48,6 +48,7 @@ static const char *builtin_docs[][2] = {
     {"sin", "sin of n -- sine"},
     {"cos", "cos of n -- cosine"},
     {"split", "split of [string, delimiter] -- split string into list"},
+    {"scan_ints", "scan_ints of text or [text, comment_marker] -- scan whitespace-delimited signed integers"},
     {"join", "join of [list, separator] -- join list into string"},
     {"trim", "trim of string -- strip whitespace"},
     {"contains", "contains of [string, substring] -- 1 if found"},

@@ -26,6 +26,26 @@ assert of [(index_of of ["hello world", "world"]) == 6, "IO1 found"]
 assert of [(index_of of ["hello world", "xyz"]) == -1, "IO2 not found"]
 assert of [(index_of of ["hello", "h"]) == 0, "IO3 at start"]
 
+# ---- scan_ints ----
+ints is scan_ints of "p cnf 3 4\n1 -2 0\nbad +7 -x 8.5 9\n"
+assert of [(len of ints) == 7, "SI1 count valid integer tokens"]
+assert of [ints[0] == 3, "SI2 first header count"]
+assert of [ints[1] == 4, "SI3 second header count"]
+assert of [ints[2] == 1, "SI4 positive literal"]
+assert of [ints[3] == -2, "SI5 negative literal"]
+assert of [ints[4] == 0, "SI6 zero literal"]
+assert of [ints[5] == 7, "SI7 plus sign"]
+assert of [ints[6] == 9, "SI8 skips malformed decimals and suffixes"]
+
+dimacs_ints is scan_ints of ["c comment 99\n  c indented comment -4\np cnf 2 2\n1 0\n-2 0\n", "c"]
+assert of [(len of dimacs_ints) == 6, "SI9 comment-line skip count"]
+assert of [dimacs_ints[0] == 2, "SI10 header var count after comments"]
+assert of [dimacs_ints[1] == 2, "SI11 header clause count after comments"]
+assert of [dimacs_ints[2] == 1, "SI12 first clause lit"]
+assert of [dimacs_ints[3] == 0, "SI13 first clause end"]
+assert of [dimacs_ints[4] == -2, "SI14 second clause lit"]
+assert of [dimacs_ints[5] == 0, "SI15 second clause end"]
+
 # ---- sin/cos/tan ----
 p is pi of null
 assert of [p > 3.14, "PI1 pi > 3.14"]

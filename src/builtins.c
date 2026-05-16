@@ -891,6 +891,80 @@ Value* builtin_split(Value *arg) {
     return list;
 }
 
+/* scan_ints of text
+ * scan_ints of [text, comment_marker]
+ *
+ * Scans whitespace-delimited signed integer tokens directly in C and returns
+ * numeric values. Non-integer tokens are skipped. If comment_marker is a
+ * non-empty string, lines whose first non-whitespace character matches its
+ * first byte are skipped. */
+Value* builtin_scan_ints(Value *arg) {
+    const char *str = NULL;
+    char comment_marker = '\0';
+
+    if (arg && arg->type == VAL_STR) {
+        str = arg->data.str;
+    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
+        Value *text_val = arg->data.list.items[0];
+        if (text_val && text_val->type == VAL_STR) str = text_val->data.str;
+        if (arg->data.list.count >= 2) {
+            Value *comment_val = arg->data.list.items[1];
+            if (comment_val && comment_val->type == VAL_STR && comment_val->data.str[0])
+                comment_marker = comment_val->data.str[0];
+        }
+    }
+
+    Value *out = make_list(128);
+    if (!str) return out;
+
+    const char *p = str;
+    int line_leading = 1;
+    while (*p) {
+        unsigned char ch = (unsigned char)*p;
+        if (isspace(ch)) {
+            if (*p == '\n') line_leading = 1;
+            p++;
+            continue;
+        }
+
+        if (comment_marker && line_leading && *p == comment_marker) {
+            while (*p && *p != '\n') p++;
+            continue;
+        }
+
+        line_leading = 0;
+        const char *start = p;
+        int neg = 0;
+        if (*p == '-' || *p == '+') {
+            neg = (*p == '-');
+            p++;
+        }
+
+        int digits = 0;
+        double value = 0.0;
+        while (*p && isdigit((unsigned char)*p)) {
+            value = value * 10.0 + (double)(*p - '0');
+            p++;
+            digits++;
+        }
+
+        int valid = digits > 0;
+        while (*p && !isspace((unsigned char)*p)) {
+            valid = 0;
+            p++;
+        }
+
+        if (valid) {
+            if (neg) value = -value;
+            list_append(out, make_num(value));
+        } else if (p == start) {
+            p++;
+        }
+    }
+
+    return out;
+}
+
 Value* builtin_trim(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
     const char *s = arg->data.str;
@@ -3021,6 +3095,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "contains", make_builtin(builtin_contains));
     env_set_local(env, "starts_with", make_builtin(builtin_starts_with));
     env_set_local(env, "split", make_builtin(builtin_split));
+    env_set_local(env, "scan_ints", make_builtin(builtin_scan_ints));
     env_set_local(env, "trim", make_builtin(builtin_trim));
     env_set_local(env, "str_replace", make_builtin(builtin_str_replace));
     env_set_local(env, "regex_match", make_builtin(builtin_match));

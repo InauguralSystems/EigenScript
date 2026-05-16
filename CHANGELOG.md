@@ -50,6 +50,9 @@ All notable changes to EigenScript are documented here.
 
 ### Builtins
 - `sign_extend of [val, bits]` — sign-extend a value from a given bit width
+- `scan_ints of text` / `scan_ints of [text, comment_marker]` — C-backed scan
+  of whitespace-delimited signed integer tokens, optionally skipping comment
+  lines
 - `sort of list` — in-place qsort on numeric lists
 - `read_bytes_buf of path` — read binary file as VAL_BUFFER (zero per-element alloc)
 - `gfx_fb of [buf, w, h, x, y, scale]` — blit a buffer as a scaled texture

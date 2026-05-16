@@ -86,7 +86,7 @@
             "name": "keyword.other.predicate.eigenscript"
         },
         "builtin-function": {
-            "match": "\\b(print|len|append|type|range|str|num|keys|values|has_key|dict_set|floor|ceil|round|abs|min|max|sqrt|sin|cos|split|join|trim|contains|substr|index_of|str_replace|read_text|write_text|file_exists|json_encode|json_decode|spawn|thread_join|channel|send|recv|store_open|store_put|store_get|store_query|store_close|assert|observe|report|sort|reverse|map|filter|reduce|exec|exit|time|sleep|random|input|eval)\\b",
+            "match": "\\b(print|len|append|type|range|str|num|keys|values|has_key|dict_set|floor|ceil|round|abs|min|max|sqrt|sin|cos|split|scan_ints|join|trim|contains|substr|index_of|str_replace|read_text|write_text|file_exists|json_encode|json_decode|spawn|thread_join|channel|send|recv|store_open|store_put|store_get|store_query|store_close|assert|observe|report|sort|reverse|map|filter|reduce|exec|exit|time|sleep|random|input|eval)\\b",
             "name": "support.function.builtin.eigenscript"
         },
         "constant": {

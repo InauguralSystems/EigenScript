@@ -77,7 +77,7 @@ static const char *BUILTINS[] = {
     "print", "len", "str", "num", "type", "append", "keys", "values",
     "has_key", "dict_set", "set_at", "remove_at", "range", "abs",
     "floor", "ceil", "round", "sqrt", "pow", "min", "max", "sum",
-    "sort", "reverse", "join", "split", "trim", "upper", "lower",
+    "sort", "reverse", "join", "split", "scan_ints", "trim", "upper", "lower",
     "contains", "starts_with", "ends_with", "replace", "index_of",
     "slice", "read_text", "write_text", "append_text", "file_exists",
     "delete_file", "list_dir", "make_dir", "env_get", "env_set",
