@@ -965,6 +965,88 @@ Value* builtin_scan_ints(Value *arg) {
     return out;
 }
 
+/* scan_tokens of text
+ * scan_tokens of [text, comment_marker]
+ *
+ * Scans whitespace-delimited tokens directly in C and returns rows of
+ * [token_text, line, col, start_offset, end_offset]. Lines are 1-based,
+ * columns and offsets are 0-based, and end_offset is exclusive. If
+ * comment_marker is non-empty, lines whose first non-whitespace character
+ * matches its first byte are skipped. */
+Value* builtin_scan_tokens(Value *arg) {
+    const char *str = NULL;
+    char comment_marker = '\0';
+
+    if (arg && arg->type == VAL_STR) {
+        str = arg->data.str;
+    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
+        Value *text_val = arg->data.list.items[0];
+        if (text_val && text_val->type == VAL_STR) str = text_val->data.str;
+        if (arg->data.list.count >= 2) {
+            Value *comment_val = arg->data.list.items[1];
+            if (comment_val && comment_val->type == VAL_STR && comment_val->data.str[0])
+                comment_marker = comment_val->data.str[0];
+        }
+    }
+
+    Value *out = make_list(128);
+    if (!str) return out;
+
+    const char *base = str;
+    const char *p = str;
+    int line = 1;
+    int col = 0;
+    int line_leading = 1;
+
+    while (*p) {
+        unsigned char ch = (unsigned char)*p;
+        if (isspace(ch)) {
+            if (*p == '\n') {
+                line++;
+                col = 0;
+                line_leading = 1;
+            } else {
+                col++;
+            }
+            p++;
+            continue;
+        }
+
+        if (comment_marker && line_leading && *p == comment_marker) {
+            while (*p && *p != '\n') {
+                p++;
+                col++;
+            }
+            continue;
+        }
+
+        line_leading = 0;
+        const char *start = p;
+        int token_line = line;
+        int token_col = col;
+        while (*p && !isspace((unsigned char)*p)) {
+            p++;
+            col++;
+        }
+
+        size_t len = (size_t)(p - start);
+        char *token = xmalloc(len + 1);
+        memcpy(token, start, len);
+        token[len] = '\0';
+
+        Value *row = make_list(5);
+        list_append(row, make_str(token));
+        list_append(row, make_num((double)token_line));
+        list_append(row, make_num((double)token_col));
+        list_append(row, make_num((double)(start - base)));
+        list_append(row, make_num((double)(p - base)));
+        list_append(out, row);
+        free(token);
+    }
+
+    return out;
+}
+
 Value* builtin_trim(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
     const char *s = arg->data.str;
@@ -3105,6 +3187,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "starts_with", make_builtin(builtin_starts_with));
     env_set_local(env, "split", make_builtin(builtin_split));
     env_set_local(env, "scan_ints", make_builtin(builtin_scan_ints));
+    env_set_local(env, "scan_tokens", make_builtin(builtin_scan_tokens));
     env_set_local(env, "trim", make_builtin(builtin_trim));
     env_set_local(env, "str_replace", make_builtin(builtin_str_replace));
     env_set_local(env, "regex_match", make_builtin(builtin_match));

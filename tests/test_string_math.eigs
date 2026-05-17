@@ -46,6 +46,17 @@ assert of [dimacs_ints[3] == 0, "SI13 first clause end"]
 assert of [dimacs_ints[4] == -2, "SI14 second clause lit"]
 assert of [dimacs_ints[5] == 0, "SI15 second clause end"]
 
+# ---- scan_tokens ----
+tokens is scan_tokens of ["c skip 99\np cnf 2 2\n1 0\n  -2 0\n", "c"]
+assert of [(len of tokens) == 8, "ST1 comment-line skip token count"]
+assert of [tokens[0][0] == "p", "ST2 first token text"]
+assert of [tokens[0][1] == 2, "ST3 first token line"]
+assert of [tokens[0][2] == 0, "ST4 first token col"]
+assert of [tokens[6][0] == "-2", "ST5 signed token text"]
+assert of [tokens[6][1] == 4, "ST6 signed token line"]
+assert of [tokens[6][2] == 2, "ST7 signed token col"]
+assert of [(substr of ["c skip 99\np cnf 2 2\n1 0\n  -2 0\n", tokens[6][3], tokens[6][4] - tokens[6][3]]) == "-2", "ST8 offsets slice token"]
+
 # ---- sin/cos/tan ----
 p is pi of null
 assert of [p > 3.14, "PI1 pi > 3.14"]

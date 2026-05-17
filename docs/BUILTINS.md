@@ -64,6 +64,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `substr` | `substr of [s, start, length]` | Extract substring |
 | `split` | `split of [s, delim]` | Split string by delimiter into list |
 | `scan_ints` | `scan_ints of s` or `scan_ints of [s, comment_marker]` | C-backed scan of whitespace-delimited signed integer tokens, optionally skipping comment lines |
+| `scan_tokens` | `scan_tokens of s` or `scan_tokens of [s, comment_marker]` | C-backed scan of whitespace-delimited token rows `[text, line, col, start, end]` |
 | `trim` | `trim of s` | Strip leading/trailing whitespace |
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new |
 | `chr` | `chr of code` | Convert ASCII code to single character |
