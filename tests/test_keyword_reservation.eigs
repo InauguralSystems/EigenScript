@@ -1,5 +1,5 @@
 print of "=== KEYWORD RESERVATION TEST ==="
-print of "Confirms all 12 reserved words are first-class citizens"
+print of "Confirms reserved words are first-class citizens"
 print of ""
 
 print of "--- Interrogatives as expressions ---"
@@ -60,6 +60,16 @@ dd is diverging
 ee is equilibrium
 print of ("converged=" + cc + " stable=" + ss + " improving=" + ii)
 print of ("oscillating=" + oo + " diverging=" + dd + " equilibrium=" + ee)
+
+print of ""
+print of "--- Local assignment keyword ---"
+kw_local_outer is 1
+define kw_local_test as:
+    local kw_local_outer is 2
+    return kw_local_outer
+assert of [kw_local_test of null == 2, "local keyword binds current scope"]
+assert of [kw_local_outer == 1, "local keyword does not mutate parent"]
+print of "local: YES"
 
 print of ""
 print of "=== KEYWORD RESERVATION COMPLETE ==="

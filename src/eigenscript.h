@@ -67,6 +67,7 @@ typedef enum {
     TOK_TRY, TOK_CATCH, TOK_BREAK, TOK_CONTINUE, TOK_IMPORT,
     TOK_MATCH, TOK_CASE,
     TOK_UNOBSERVED,
+    TOK_LOCAL,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
     TOK_LT, TOK_GT, TOK_LE, TOK_GE, TOK_EQ, TOK_NE, TOK_ASSIGN,
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACKET, TOK_RBRACKET,
@@ -121,7 +122,7 @@ struct ASTNode {
         struct { char *name; } ident;
         struct { char op[4]; ASTNode *left; ASTNode *right; } binop;
         struct { char op[4]; ASTNode *operand; } unary;
-        struct { char *name; ASTNode *expr; } assign;
+        struct { char *name; ASTNode *expr; int local_only; } assign;
         struct { ASTNode *left; ASTNode *right; } relation;
         struct { ASTNode *cond; ASTNode **if_body; int if_count; ASTNode **else_body; int else_count; } cond;
         struct { ASTNode *cond; ASTNode **body; int body_count; } loop;
@@ -316,6 +317,7 @@ void env_set_local(Env *env, const char *name, Value *val);
 uint32_t env_name_hash(const char *name);
 void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val);
 Value* env_get_hashed(Env *env, const char *name, uint32_t h);
+Value* env_get_local_hashed(Env *env, const char *name, uint32_t h);
 void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);

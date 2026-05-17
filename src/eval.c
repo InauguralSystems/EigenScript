@@ -263,9 +263,12 @@ static Value *own_builtin_result(Value *result, Value *arg, ASTNode *arg_expr) {
     return result;
 }
 
-static void env_set_eval_result(Env *env, const char *name, uint32_t name_hash, Value *val, ASTNode *expr) {
+static void env_set_eval_result(Env *env, const char *name, uint32_t name_hash, Value *val, ASTNode *expr, int local_only) {
     int release_temp = expr_result_is_owned(expr);
-    env_set_hashed(env, name, name_hash, val);
+    if (local_only)
+        env_set_local_hashed(env, name, name_hash, val);
+    else
+        env_set_hashed(env, name, name_hash, val);
     if (release_temp)
         val_decref(val);
 }
@@ -449,7 +452,10 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
         /* Fast path: mutate existing NUM slot in-place when RHS is a
          * pure numeric expression.  Avoids make_num allocation entirely.
          * Inside unobserved blocks, also skip observer tracking. */
-        Value *old = env_get_hashed(env, node->data.assign.name, node->name_hash);
+        int local_only = node->data.assign.local_only;
+        Value *old = local_only
+            ? env_get_local_hashed(env, node->data.assign.name, node->name_hash)
+            : env_get_hashed(env, node->data.assign.name, node->name_hash);
         if (old && old->type == VAL_NUM && !old->arena && old->refcount <= 1) {
             double result;
             if (eval_num_fast(node->data.assign.expr, env, &result)) {
@@ -484,13 +490,15 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 recycle_intermediate(val);
                 return old;
             }
-            env_set_eval_result(env, node->data.assign.name, node->name_hash, val, node->data.assign.expr);
+            env_set_eval_result(env, node->data.assign.name, node->name_hash, val, node->data.assign.expr, local_only);
             return val;
         }
         Value *val = eval_node(node->data.assign.expr, env);
-        old = env_get_hashed(env, node->data.assign.name, node->name_hash);
+        old = local_only
+            ? env_get_local_hashed(env, node->data.assign.name, node->name_hash)
+            : env_get_hashed(env, node->data.assign.name, node->name_hash);
         mark_observer_dirty(val, old);
-        env_set_eval_result(env, node->data.assign.name, node->name_hash, val, node->data.assign.expr);
+        env_set_eval_result(env, node->data.assign.name, node->name_hash, val, node->data.assign.expr, local_only);
         g_last_observer = val;
         return val;
     }

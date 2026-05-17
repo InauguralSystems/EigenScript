@@ -40,7 +40,7 @@ escape      = '\n' | '\t' | '\\' | '\"' | '\{' | '\}'
 ```
 is  of  define  as  if  elif  else  loop  while  for  in
 return  and  or  not  null  try  catch  break  continue  import
-match  case  unobserved
+match  case  unobserved  local
 ```
 
 ### Interrogatives
@@ -97,6 +97,7 @@ statement   = define_stmt
             | break_stmt
             | continue_stmt
             | dot_assign_stmt
+            | local_assign_stmt
             | assign_stmt
             | expression
 
@@ -129,6 +130,8 @@ break_stmt  = 'break'
 continue_stmt = 'continue'
 
 dot_assign_stmt = postfix '.' IDENT 'is' expression
+
+local_assign_stmt = 'local' IDENT 'is' expression
 
 assign_stmt = IDENT 'is' expression
 
@@ -227,6 +230,8 @@ From lowest to highest precedence:
 
 - **Assignment** (`is`) is outward-mutable: if the name exists in a parent
   scope, it updates that binding. If not found, it creates a new local.
+- **Local assignment** (`local name is expr`) always creates or updates the
+  binding in the current evaluator scope only.
 - **Function definition** (`define`) always creates a local binding.
 - **Function call** (`fn of arg`) passes a single value. Multiple arguments
   are passed as a list: `fn of [a, b, c]`.

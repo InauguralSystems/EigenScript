@@ -251,6 +251,7 @@ ASTNode *clone_ast(ASTNode *node) {
         case AST_ASSIGN:
             n->data.assign.name = xstrdup(node->data.assign.name ? node->data.assign.name : "");
             n->data.assign.expr = clone_ast(node->data.assign.expr);
+            n->data.assign.local_only = node->data.assign.local_only;
             break;
         case AST_RELATION:
             n->data.relation.left = clone_ast(node->data.relation.left);
@@ -1229,6 +1230,22 @@ static ASTNode* parse_statement(Parser *p) {
         n->data.assign.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         set_name_hash(n, n->data.assign.name);
         n->data.assign.expr = expr;
+        return n;
+    }
+
+    if (t->type == TOK_LOCAL) {
+        Token *local_tok = p_advance(p);
+        Token *name_tok = p_cur(p);
+        p_expect(p, TOK_IDENT);
+        p_expect(p, TOK_IS);
+        ASTNode *expr = parse_expression(p);
+        p_match(p, TOK_NEWLINE);
+
+        ASTNode *n = make_node_col(AST_ASSIGN, local_tok->line, local_tok->col);
+        n->data.assign.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
+        n->data.assign.expr = expr;
+        n->data.assign.local_only = 1;
+        set_name_hash(n, n->data.assign.name);
         return n;
     }
 

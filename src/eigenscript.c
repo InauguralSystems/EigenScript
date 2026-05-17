@@ -66,6 +66,7 @@ const char* tok_type_name(TokType t) {
         case TOK_IN: return "'in'";
         case TOK_NULL: return "'null'";
         case TOK_UNOBSERVED: return "'unobserved'";
+        case TOK_LOCAL: return "'local'";
         case TOK_PLUS: return "'+'";
         case TOK_MINUS: return "'-'";
         case TOK_STAR: return "'*'";
@@ -100,6 +101,12 @@ const char* tok_type_name(TokType t) {
         case TOK_CASE: return "'case'";
         case TOK_PIPE: return "'|>'";
         case TOK_ARROW: return "'=>'";
+        case TOK_AMP: return "'&'";
+        case TOK_BITOR: return "'|'";
+        case TOK_CARET: return "'^'";
+        case TOK_SHL: return "'<<'";
+        case TOK_SHR: return "'>>'";
+        case TOK_TILDE: return "'~'";
         case TOK_PLUS_EQ: return "'+='";
         case TOK_MINUS_EQ: return "'-='";
         case TOK_STAR_EQ: return "'*='";
@@ -769,6 +776,14 @@ Value* env_get_hashed(Env *env, const char *name, uint32_t h) {
         if (idx >= 0) return e->values[idx];
         e = e->parent;
     }
+    return NULL;
+}
+
+Value* env_get_local_hashed(Env *env, const char *name, uint32_t h) {
+    if (!env) return NULL;
+    if (h == 0) h = env_hash_name(name);
+    int idx = env_hash_find(&env->hash, name, h, env->names);
+    if (idx >= 0) return env->values[idx];
     return NULL;
 }
 

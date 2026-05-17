@@ -12,6 +12,21 @@ name is "hello"
 data is [1, 2, 3, 4, 5]
 ```
 
+Use `local name is expr` when a binding must be created or updated only in
+the current evaluator scope, even if a parent scope already has a name with
+the same identifier. It does not create a new block scope for `if` or `loop`;
+it binds whichever environment is active for that statement.
+
+```eigenscript
+name is "outer"
+define example as:
+    local name is "inner"
+    return name
+
+result is example of null   # "inner"
+name                         # still "outer"
+```
+
 ### Numeric Semantics
 
 Numbers are finite by construction. EigenScript does not expose `NaN` or

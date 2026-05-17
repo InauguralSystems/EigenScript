@@ -2271,14 +2271,23 @@ Value* builtin_token_name(Value *arg) {
         "FOR", "IN", "NULL",
         "WHAT", "WHO", "WHEN", "WHERE", "WHY", "HOW",
         "CONVERGED", "STABLE", "IMPROVING", "OSCILLATING", "DIVERGING", "EQUILIBRIUM",
+        "TRY", "CATCH", "BREAK", "CONTINUE", "IMPORT",
+        "MATCH", "CASE",
+        "UNOBSERVED",
+        "LOCAL",
         "+", "-", "*", "/", "%",
         "<", ">", "<=", ">=", "==", "!=", "=",
         "(", ")", "[", "]",
         ",", ":", ".",
+        "{", "}",
+        "|>", "=>",
+        "&", "|", "^", "<<", ">>", "~",
+        "+=", "-=", "*=", "/=", "%=",
+        "&=", "|=", "^=", "<<=", ">>=",
         "NEWLINE", "INDENT", "DEDENT",
         "EOF"
     };
-    if (id >= 0 && id < 54) return make_str(names[id]);
+    if (id >= 0 && id < (int)(sizeof(names) / sizeof(names[0]))) return make_str(names[id]);
     return make_str("?");
 }
 

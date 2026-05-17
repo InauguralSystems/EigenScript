@@ -70,7 +70,7 @@
             }
         },
         "keyword-control": {
-            "match": "\\b(is|of|define|as|if|else|elif|loop|while|for|in|return|try|catch|break|continue|import|match|case|unobserved)\\b",
+            "match": "\\b(is|of|define|as|if|else|elif|loop|while|for|in|return|try|catch|break|continue|import|match|case|unobserved|local)\\b",
             "name": "keyword.control.eigenscript"
         },
         "keyword-operator": {

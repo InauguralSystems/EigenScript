@@ -44,6 +44,37 @@ assert of [result == "inner", "SS4 function sees its own assignment"]
 # env_set walks up — it finds 'outer' in parent and mutates it.
 assert of [outer == "inner", "SS5 function assignment mutates enclosing scope"]
 
+# --- Explicit local binding shadows instead of mutating outer ---
+local_outer is "outer"
+define local_shadow_test as:
+    local local_outer is "inner"
+    return local_outer
+
+local_result is local_shadow_test of null
+assert of [local_result == "inner", "SS5A local binding is visible in current scope"]
+assert of [local_outer == "outer", "SS5B local binding does not mutate enclosing scope"]
+
+# --- Local binding updates only the current scope ---
+define local_update_test as:
+    local counter is 1
+    local counter is counter + 1
+    return counter
+
+assert of [local_update_test of null == 2, "SS5C local binding updates current scope"]
+
+# --- Local binding uses the active scope; if does not create one ---
+block_shadow is 10
+if 1:
+    local block_shadow is 20
+assert of [block_shadow == 20, "SS5D local binding in if uses surrounding scope"]
+
+# --- Local binding in a child environment does not overwrite parent ---
+loop_shadow is 10
+for shadow_iter in [1]:
+    local loop_shadow is 20
+    assert of [loop_shadow == 20, "SS5E loop-local binding shadows parent"]
+assert of [loop_shadow == 10, "SS5F loop-local binding does not leak"]
+
 # --- Function parameter shadows outer variable ---
 param_val is "original"
 define param_shadow(param_val) as:

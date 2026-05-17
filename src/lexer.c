@@ -63,6 +63,7 @@ static TokType keyword_type(const char *word) {
         if (strcmp(word, "improving") == 0) return TOK_IMPROVING;
         break;
     case 'l':
+        if (strcmp(word, "local") == 0) return TOK_LOCAL;
         if (strcmp(word, "loop") == 0) return TOK_LOOP;
         break;
     case 'm':
@@ -422,4 +423,3 @@ TokenList tokenize(const char *source) {
     g_tokenize_depth--;
     return tl;
 }
-

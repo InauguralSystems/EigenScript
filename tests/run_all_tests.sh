@@ -115,7 +115,7 @@ else
 fi
 echo ""
 
-echo "[4/15] Keyword Reservation (12 first-class citizens)"
+echo "[4/15] Keyword Reservation"
 OUTPUT=$(./eigenscript ../tests/test_keyword_reservation.eigs 2>&1)
 check "what is keyword" "$(echo "$OUTPUT" | grep -A1 '^what:' | tail -1)" "42"
 check "who is keyword" "$(echo "$OUTPUT" | grep -A1 '^who:' | tail -1)" "x"
