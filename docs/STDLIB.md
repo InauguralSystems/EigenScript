@@ -103,6 +103,25 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 | `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
 | `text_builder_clear` | `text_builder_clear of builder` | Empty a builder for reuse |
 
+### lib/int_vector.eigs - Fixed-Size Integer Vectors
+
+`int_vector` functions return EigenScript buffers, so vectors support direct
+indexing (`vec[i]`), indexed assignment (`vec[i] is value`), `len`, and
+iteration.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `int_vector_new` | `int_vector_new of count` | Create a zero-filled integer vector |
+| `int_vector_filled` | `int_vector_filled of [count, value]` | Create an integer vector filled with one value |
+| `int_vector_fill` | `int_vector_fill of [vec, value]` | Overwrite every slot with one value |
+| `int_vector_from_list` | `int_vector_from_list of list` | Convert a numeric list to an integer vector |
+| `int_vector_to_list` | `int_vector_to_list of vec` | Convert an integer vector to a list |
+| `int_vector_clone` | `int_vector_clone of vec` | Copy a vector into a new buffer |
+| `int_vector_copy` | `int_vector_copy of [src, src_off, dst, dst_off, count]` | Copy a range between vectors |
+| `int_vector_len` | `int_vector_len of vec` | Return vector length |
+| `int_vector_get` | `int_vector_get of [vec, index]` | Explicit indexed read |
+| `int_vector_set` | `int_vector_set of [vec, index, value]` | Explicit indexed write |
+
 ### lib/sanitize.eigs — Text Validation
 
 | Function | Signature | Description |
