@@ -2,10 +2,12 @@
 # - math.eigs dot: bounds-safe on mismatched lengths
 # - test.eigs assert_near: rejects non-numeric operands
 # - template.eigs render: no template-injection from variable values
+# - text_builder.eigs: shared buffered text assembly
 
 load_file of "lib/math.eigs"
 load_file of "lib/test.eigs"
 load_file of "lib/template.eigs"
+load_file of "lib/text_builder.eigs"
 
 # --- math.dot bounds ---
 assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
@@ -54,5 +56,24 @@ assert of [r3 == "{{missing}} remains", "SF10 template unknown placeholder"]
 # Unterminated placeholder is emitted verbatim.
 r4 is render of ["prefix {{forever", [["forever", "nope"]]]
 assert of [r4 == "prefix {{forever", "SF11 template unterminated placeholder"]
+
+builder is text_builder_new of null
+assert of [(text_builder_part_count of builder) == 0, "SF12 text_builder starts empty"]
+text_builder_append of [builder, "p cnf "]
+text_builder_append of [builder, 3]
+text_builder_extend of [builder, [" ", 2]]
+assert of [(text_builder_part_count of builder) == 4, "SF13 text_builder part count"]
+line_prefix is text_builder_to_string of builder
+assert of [line_prefix == "p cnf 3 2", "SF14 text_builder append and extend"]
+text_builder_append_line of [builder, ""]
+text_builder_append_line of [builder, "1 -2 0"]
+text_builder_append_line of [builder, "3 0"]
+dimacs_text is text_builder_to_string of builder
+assert of [dimacs_text == "p cnf 3 2\n1 -2 0\n3 0\n", "SF15 text_builder line assembly"]
+text_builder_clear of builder
+assert of [(text_builder_part_count of builder) == 0, "SF16 text_builder clear count"]
+assert of [(text_builder_to_string of builder) == "", "SF17 text_builder clear render"]
+text_builder_append_line of [builder, "reuse"]
+assert of [(text_builder_to_string of builder) == "reuse\n", "SF18 text_builder reuse"]
 
 print of "All stdlib-fix tests passed"

@@ -1,0 +1,52 @@
+# ============================================================
+# Text Builder Library — buffered text assembly
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/text_builder.eigs"
+#
+#   b is text_builder_new of null
+#   text_builder_append of [b, "hello"]
+#   text_builder_append_line of [b, " world"]
+#   out is text_builder_to_string of b
+
+# ---- text_builder_new: create a mutable builder ----
+# text_builder_new of null -> builder
+define text_builder_new() as:
+    return {"parts": []}
+
+# ---- text_builder_append: append one value as text ----
+# text_builder_append of [builder, value] -> builder
+define text_builder_append(builder, value) as:
+    append of [builder.parts, str of value]
+    return builder
+
+# ---- text_builder_append_line: append one value and a newline ----
+# text_builder_append_line of [builder, value] -> builder
+define text_builder_append_line(builder, value) as:
+    append of [builder.parts, str of value]
+    append of [builder.parts, "\n"]
+    return builder
+
+# ---- text_builder_extend: append each item in a list ----
+# text_builder_extend of [builder, values] -> builder
+define text_builder_extend(builder, values) as:
+    for value in values:
+        append of [builder.parts, str of value]
+    return builder
+
+# ---- text_builder_part_count: number of buffered pieces ----
+# text_builder_part_count of builder -> count
+define text_builder_part_count(builder) as:
+    return len of builder.parts
+
+# ---- text_builder_clear: empty a builder for reuse ----
+# text_builder_clear of builder -> builder
+define text_builder_clear(builder) as:
+    builder.parts is []
+    return builder
+
+# ---- text_builder_to_string: render buffered text ----
+# text_builder_to_string of builder -> string
+define text_builder_to_string(builder) as:
+    return join of [builder.parts, ""]

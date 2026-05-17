@@ -172,6 +172,7 @@ Pure EigenScript libraries under `lib/`:
 | `lib/math.eigs` | `abs`, `max_val`, `min_val`, `clamp`, `lerp`, `dot` |
 | `lib/list.eigs` | `map`, `filter`, `reduce`, `reverse`, `zip`, `flatten` |
 | `lib/string.eigs` | `join`, `repeat`, `pad_left` |
+| `lib/text_builder.eigs` | `text_builder_new`, `text_builder_append`, `text_builder_append_line`, `text_builder_to_string` |
 | `lib/observer.eigs` | `is_converged`, `is_stable`, `entropy_of`, `track_regimes`, `snapshot` |
 | `lib/tensor.eigs` | `xavier_init`, `he_init`, `linear`, `mse_loss`, `cross_entropy_loss`, `accuracy` |
 | `lib/io.eigs` | `read_lines`, `write_lines`, `read_csv`, `write_csv`, `slurp` |

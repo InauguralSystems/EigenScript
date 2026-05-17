@@ -88,6 +88,17 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 | `repeat` | `repeat of [string, count]` | Repeat string n times |
 | `pad_left` | `pad_left of [string, width, char]` | Left-pad to width |
 
+### lib/text_builder.eigs — Buffered Text Assembly
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `text_builder_new` | `text_builder_new of null` | Create a mutable text builder |
+| `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
+| `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
+| `text_builder_extend` | `text_builder_extend of [builder, values]` | Append each item in a list |
+| `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
+| `text_builder_clear` | `text_builder_clear of builder` | Empty a builder for reuse |
+
 ### lib/sanitize.eigs — Text Validation
 
 | Function | Signature | Description |
