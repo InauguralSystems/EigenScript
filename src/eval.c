@@ -66,6 +66,7 @@ static double compute_entropy_impl(Value *v, int depth) {
         case VAL_BUILTIN: return 0.0;
         case VAL_JSON_RAW: return 0.0;
         case VAL_BUFFER: return log2(v->data.buffer.count + 1);
+        case VAL_TEXT_BUILDER: return log2((double)v->data.text_builder.len + 1.0);
     }
     return 0.0;
 }
@@ -1320,6 +1321,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 if (target->type == VAL_STR) return make_num((double)strlen(target->data.str));
                 if (target->type == VAL_LIST) return make_num((double)target->data.list.count);
                 if (target->type == VAL_BUFFER) return make_num((double)target->data.buffer.count);
+                if (target->type == VAL_TEXT_BUILDER) return make_num((double)target->data.text_builder.len);
                 return make_num(0.0);
             case 1:
                 if (node->data.interrogate.expr->type == AST_IDENT)
@@ -1328,6 +1330,7 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 if (target->type == VAL_STR) return make_str("string");
                 if (target->type == VAL_LIST) return make_str("list");
                 if (target->type == VAL_BUFFER) return make_str("buffer");
+                if (target->type == VAL_TEXT_BUILDER) return make_str("text_builder");
                 return make_str("unknown");
             case 2:
                 return make_num((double)target->obs_age);

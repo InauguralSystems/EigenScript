@@ -132,6 +132,7 @@ const char* val_type_name(ValType t) {
         case VAL_JSON_RAW: return "json_raw";
         case VAL_DICT: return "dict";
         case VAL_BUFFER: return "buffer";
+        case VAL_TEXT_BUILDER: return "text_builder";
         default: return "?";
     }
 }
@@ -231,6 +232,9 @@ void free_value(Value *v) {
             break;
         case VAL_BUFFER:
             free(v->data.buffer.data);
+            break;
+        case VAL_TEXT_BUILDER:
+            free(v->data.text_builder.data);
             break;
         default:
             break;
@@ -348,6 +352,19 @@ Value* make_list(int capacity) {
     v->data.list.count = 0;
     v->refcount = 1;
     v->arena = from_arena;
+    return v;
+}
+
+Value* make_text_builder(void) {
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_TEXT_BUILDER;
+    v->data.text_builder.cap = 256;
+    v->data.text_builder.data = xmalloc(v->data.text_builder.cap);
+    v->data.text_builder.data[0] = '\0';
+    v->data.text_builder.len = 0;
+    v->data.text_builder.parts = 0;
+    v->refcount = 1;
+    v->arena = 0;
     return v;
 }
 
@@ -493,6 +510,7 @@ int is_truthy(Value *v) {
         case VAL_JSON_RAW: return v->data.str && v->data.str[0] != '\0';
         case VAL_DICT: return v->data.dict.count > 0;
         case VAL_BUFFER: return v->data.buffer.count > 0;
+        case VAL_TEXT_BUILDER: return v->data.text_builder.len > 0;
     }
     return 0;
 }
@@ -558,6 +576,8 @@ char* value_to_string(Value *v) {
         case VAL_BUFFER:
             snprintf(buf, sizeof(buf), "<buffer:%d>", v->data.buffer.count);
             return xstrdup(buf);
+        case VAL_TEXT_BUILDER:
+            return xstrdup(v->data.text_builder.data ? v->data.text_builder.data : "");
     }
     return xstrdup("?");
 }

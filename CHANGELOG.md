@@ -55,6 +55,10 @@ All notable changes to EigenScript are documented here.
   lines
 - `scan_int_tokens of text` / `scan_int_tokens of [text, comment_marker]` —
   C-backed token spans with signed-integer classification and value metadata
+- `text_builder_new`, `text_builder_append`, `text_builder_append_line`,
+  `text_builder_extend`, `text_builder_part_count`, `text_builder_clear`,
+  and `text_builder_to_string` — native growable text builder builtins used by
+  `lib/text_builder.eigs`
 - `sort of list` — in-place qsort on numeric lists
 - `read_bytes_buf of path` — read binary file as VAL_BUFFER (zero per-element alloc)
 - `gfx_fb of [buf, w, h, x, y, scale]` — blit a buffer as a scaled texture

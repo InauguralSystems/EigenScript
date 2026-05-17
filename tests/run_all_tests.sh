@@ -911,15 +911,15 @@ fi
 echo ""
 
 # [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
-echo "[42d/47] Stdlib Fixes (36 checks)"
+echo "[42d/47] Stdlib Fixes (40 checks)"
 SF_OUTPUT=$(./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1)
 if echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
-    TOTAL=$((TOTAL + 36))
-    PASS=$((PASS + 36))
-    echo "  PASS: all 36 stdlib-fix checks"
+    TOTAL=$((TOTAL + 40))
+    PASS=$((PASS + 40))
+    echo "  PASS: all 40 stdlib-fix checks"
 else
-    TOTAL=$((TOTAL + 36))
-    FAIL=$((FAIL + 36))
+    TOTAL=$((TOTAL + 40))
+    FAIL=$((FAIL + 40))
     echo "  FAIL: stdlib-fix tests"
     echo "$SF_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi

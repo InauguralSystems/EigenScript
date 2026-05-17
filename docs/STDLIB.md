@@ -94,12 +94,17 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 
 ### lib/text_builder.eigs — Buffered Text Assembly
 
+`text_builder_*` functions are root-backed builtins exposed through this
+load-compatible stdlib module. Builders use a native growable text buffer while
+keeping the original stdlib API.
+
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `text_builder_new` | `text_builder_new of null` | Create a mutable text builder |
+| `text_builder_new` | `text_builder_new of null` | Create a native mutable text builder |
 | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
 | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
 | `text_builder_extend` | `text_builder_extend of [builder, values]` | Append each item in a list |
+| `text_builder_part_count` | `text_builder_part_count of builder` | Count appended parts |
 | `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
 | `text_builder_clear` | `text_builder_clear of builder` | Empty a builder for reuse |
 

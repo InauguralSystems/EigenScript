@@ -1,6 +1,6 @@
 /*
  * EigenScript built-in functions.
- * All 119 language builtins plus the registration table.
+ * Core language builtins plus the registration table.
  * Extension builtins (HTTP, DB, model) live in ext_*.c and model_*.c.
  */
 
@@ -259,6 +259,96 @@ Value* builtin_join(Value *arg) {
     return v;
 }
 
+static void text_builder_reserve(Value *builder, size_t extra) {
+    size_t need = builder->data.text_builder.len + extra + 1;
+    if (need <= builder->data.text_builder.cap) return;
+    size_t cap = builder->data.text_builder.cap ? builder->data.text_builder.cap : 256;
+    while (cap < need) {
+        if (cap > ((size_t)-1) / 2) {
+            cap = need;
+            break;
+        }
+        cap *= 2;
+    }
+    builder->data.text_builder.data = xrealloc(builder->data.text_builder.data, cap);
+    builder->data.text_builder.cap = cap;
+}
+
+static void text_builder_append_raw(Value *builder, const char *s, int count_part) {
+    if (!builder || builder->type != VAL_TEXT_BUILDER || !s) return;
+    size_t n = strlen(s);
+    text_builder_reserve(builder, n);
+    memcpy(builder->data.text_builder.data + builder->data.text_builder.len, s, n);
+    builder->data.text_builder.len += n;
+    builder->data.text_builder.data[builder->data.text_builder.len] = '\0';
+    if (count_part) builder->data.text_builder.parts += 1;
+}
+
+static void text_builder_append_value(Value *builder, Value *value) {
+    if (!builder || builder->type != VAL_TEXT_BUILDER) return;
+    if (value && value->type == VAL_STR) {
+        text_builder_append_raw(builder, value->data.str, 1);
+        return;
+    }
+    if (value && value->type == VAL_TEXT_BUILDER) {
+        text_builder_append_raw(builder, value->data.text_builder.data, 1);
+        return;
+    }
+    char *s = value_to_string(value);
+    text_builder_append_raw(builder, s, 1);
+    free(s);
+}
+
+Value* builtin_text_builder_new(Value *arg) {
+    (void)arg;
+    return make_text_builder();
+}
+
+Value* builtin_text_builder_append(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    Value *builder = arg->data.list.items[0];
+    if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
+    text_builder_append_value(builder, arg->data.list.items[1]);
+    return builder;
+}
+
+Value* builtin_text_builder_append_line(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    Value *builder = arg->data.list.items[0];
+    if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
+    text_builder_append_value(builder, arg->data.list.items[1]);
+    text_builder_append_raw(builder, "\n", 1);
+    return builder;
+}
+
+Value* builtin_text_builder_extend(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    Value *builder = arg->data.list.items[0];
+    Value *values = arg->data.list.items[1];
+    if (!builder || builder->type != VAL_TEXT_BUILDER || !values || values->type != VAL_LIST) return make_null();
+    for (int i = 0; i < values->data.list.count; i++)
+        text_builder_append_value(builder, values->data.list.items[i]);
+    return builder;
+}
+
+Value* builtin_text_builder_part_count(Value *arg) {
+    if (!arg || arg->type != VAL_TEXT_BUILDER) return make_num(0);
+    return make_num(arg->data.text_builder.parts);
+}
+
+Value* builtin_text_builder_clear(Value *arg) {
+    if (!arg || arg->type != VAL_TEXT_BUILDER) return make_null();
+    arg->data.text_builder.len = 0;
+    arg->data.text_builder.parts = 0;
+    if (arg->data.text_builder.data) arg->data.text_builder.data[0] = '\0';
+    return arg;
+}
+
+Value* builtin_text_builder_to_string(Value *arg) {
+    if (!arg || arg->type != VAL_TEXT_BUILDER) return make_str("");
+    return make_str(arg->data.text_builder.data ? arg->data.text_builder.data : "");
+}
+
 /* ==== Bitwise operations ====
  * Semantics: operate on 32-bit two's-complement ints. Shift amounts are
  * masked to [0,31] so large/negative shifts are defined behavior, not UB.
@@ -335,6 +425,8 @@ Value* builtin_len(Value *arg) {
         return make_num(arg->data.dict.count);
     if (arg->type == VAL_BUFFER)
         return make_num(arg->data.buffer.count);
+    if (arg->type == VAL_TEXT_BUILDER)
+        return make_num((double)arg->data.text_builder.len);
     return make_num(0);
 }
 
@@ -533,6 +625,7 @@ Value* builtin_type(Value *arg) {
         case VAL_JSON_RAW: return make_str("json_raw");
         case VAL_DICT: return make_str("dict");
         case VAL_BUFFER: return make_str("buffer");
+        case VAL_TEXT_BUILDER: return make_str("text_builder");
     }
     return make_str("none");
 }
@@ -569,6 +662,10 @@ static void eigs_json_encode_value(Value *v, strbuf *out) {
                 }
             }
             strbuf_append_char(out, '"');
+            break;
+        }
+        case VAL_TEXT_BUILDER: {
+            eigs_json_escape_string(out, v->data.text_builder.data ? v->data.text_builder.data : "");
             break;
         }
         case VAL_LIST: {
@@ -3245,6 +3342,13 @@ void register_builtins(Env *env) {
     env_set_local(env, "monotonic_ns", make_builtin(builtin_monotonic_ns));
     env_set_local(env, "monotonic_ms", make_builtin(builtin_monotonic_ms));
     env_set_local(env, "join", make_builtin(builtin_join));
+    env_set_local(env, "text_builder_new", make_builtin(builtin_text_builder_new));
+    env_set_local(env, "text_builder_append", make_builtin(builtin_text_builder_append));
+    env_set_local(env, "text_builder_append_line", make_builtin(builtin_text_builder_append_line));
+    env_set_local(env, "text_builder_extend", make_builtin(builtin_text_builder_extend));
+    env_set_local(env, "text_builder_part_count", make_builtin(builtin_text_builder_part_count));
+    env_set_local(env, "text_builder_clear", make_builtin(builtin_text_builder_clear));
+    env_set_local(env, "text_builder_to_string", make_builtin(builtin_text_builder_to_string));
     env_set_local(env, "bit_and", make_builtin(builtin_bit_and));
     env_set_local(env, "bit_or", make_builtin(builtin_bit_or));
     env_set_local(env, "bit_xor", make_builtin(builtin_bit_xor));

@@ -70,6 +70,13 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new |
 | `chr` | `chr of code` | Convert ASCII code to single character |
 | `join` | `join of [list, sep]` | Concatenate list elements with separator (C-backed, O(n)) |
+| `text_builder_new` | `text_builder_new of null` | Create a native growable text builder |
+| `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
+| `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
+| `text_builder_extend` | `text_builder_extend of [builder, values]` | Append each item in a list |
+| `text_builder_part_count` | `text_builder_part_count of builder` | Count appended parts |
+| `text_builder_clear` | `text_builder_clear of builder` | Empty a builder for reuse |
+| `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
 
 ### Regex
 
