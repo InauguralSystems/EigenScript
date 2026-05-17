@@ -58,6 +58,10 @@ All notable changes to EigenScript are documented here.
 - `gfx_fb of [buf, w, h, x, y, scale]` — blit a buffer as a scaled texture
 - `ppu_render_frame of [mem_buf, fb_buf]` — full Game Boy PPU rendering in C
 
+### Standard Library
+- `lib/int_vector.eigs` wraps root buffers as fixed-size integer vectors for
+  solver-style dense integer state, with direct indexing and copy helpers.
+
 ### Hardening
 - Finite-number invariant: numeric construction, scalar arithmetic, tensor
   arithmetic, math builtins, and numeric fast paths now prevent `NaN`/`Inf`

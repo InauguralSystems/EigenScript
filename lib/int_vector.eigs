@@ -1,0 +1,82 @@
+# ============================================================
+# Integer Vector Library - fixed-size integer buffers
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/int_vector.eigs"
+#
+#   levels is int_vector_filled of [nvars + 1, 0]
+#   levels[var_id] is decision_level
+#
+# Integer vectors are backed by EigenScript buffers. They support direct
+# indexing, indexed assignment, len, and iteration.
+
+# ---- int_vector_new: create a zero-filled vector ----
+# int_vector_new of count -> buffer
+define int_vector_new(count) as:
+    return buffer of (floor of count)
+
+# ---- int_vector_filled: create a vector with all slots set ----
+# int_vector_filled of [count, value] -> buffer
+define int_vector_filled(count, value) as:
+    vec is buffer of (floor of count)
+    fill_value is floor of value
+    for i in range of (len of vec):
+        vec[i] is fill_value
+    return vec
+
+# ---- int_vector_fill: overwrite every slot with one value ----
+# int_vector_fill of [vec, value] -> vec
+define int_vector_fill(vec, value) as:
+    fill_value is floor of value
+    for i in range of (len of vec):
+        vec[i] is fill_value
+    return vec
+
+# ---- int_vector_from_list: convert a list to an integer vector ----
+# int_vector_from_list of values -> buffer
+define int_vector_from_list(values) as:
+    vec is buffer of (len of values)
+    for i in range of (len of values):
+        vec[i] is floor of values[i]
+    return vec
+
+# ---- int_vector_to_list: convert an integer vector to a list ----
+# int_vector_to_list of vec -> list
+define int_vector_to_list(vec) as:
+    out is []
+    for i in range of (len of vec):
+        append of [out, floor of vec[i]]
+    return out
+
+# ---- int_vector_clone: copy a vector into a new buffer ----
+# int_vector_clone of vec -> buffer
+define int_vector_clone(vec) as:
+    out is buffer of (len of vec)
+    count is len of vec
+    if count > 0:
+        buf_copy of [vec, 0, out, 0, count]
+    return out
+
+# ---- int_vector_copy: copy a range between integer vectors ----
+# int_vector_copy of [src, src_off, dst, dst_off, count] -> dst
+define int_vector_copy(src, src_off, dst, dst_off, count) as:
+    if count > 0:
+        buf_copy of [src, floor of src_off, dst, floor of dst_off, floor of count]
+    return dst
+
+# ---- int_vector_len: return vector length ----
+# int_vector_len of vec -> count
+define int_vector_len(vec) as:
+    return len of vec
+
+# ---- int_vector_get: explicit indexed read wrapper ----
+# int_vector_get of [vec, index] -> value
+define int_vector_get(vec, index) as:
+    return floor of vec[floor of index]
+
+# ---- int_vector_set: explicit indexed write wrapper ----
+# int_vector_set of [vec, index, value] -> vec
+define int_vector_set(vec, index, value) as:
+    vec[floor of index] is floor of value
+    return vec
