@@ -1049,25 +1049,13 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
     case AST_IMPORT: {
         /* import math → loads lib/math.eigs into a dict namespace */
         const char *name = node->data.import.module_name;
-        char path[4096];
+        char request[4096];
+        char path[8192];
 
-        /* Try: lib/NAME.eigs relative to cwd, then script dir, then system lib */
-        snprintf(path, sizeof(path), "lib/%.1024s.eigs", name);
-        if (access(path, F_OK) != 0) {
-            snprintf(path, sizeof(path), "%.2048s/lib/%.1024s.eigs", g_script_dir, name);
-            if (access(path, F_OK) != 0) {
-                snprintf(path, sizeof(path), "%.2048s/../lib/%.1024s.eigs", g_script_dir, name);
-                if (access(path, F_OK) != 0) {
-                    /* System stdlib: ~/.local/lib/eigenscript/ */
-                    const char *home = getenv("HOME");
-                    if (home)
-                        snprintf(path, sizeof(path), "%.2048s/.local/lib/eigenscript/%.1024s.eigs", home, name);
-                    if (!home || access(path, F_OK) != 0) {
-                        runtime_error(node->line, "import: module '%s' not found", name);
-                        return make_null();
-                    }
-                }
-            }
+        snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
+        if (!resolve_eigenscript_file(request, path, sizeof(path))) {
+            runtime_error(node->line, "import: module '%s' not found", name);
+            return make_null();
         }
 
         /* Load and execute in an isolated env (parent = global for builtins) */

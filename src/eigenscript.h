@@ -353,6 +353,7 @@ extern __thread Env *g_builtin_call_env;  /* dynamic caller scope for env-aware 
 /* ---- Utilities used across modules ---- */
 
 char* read_file_util(const char *path, long *out_size);
+int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap);
 Value* eigs_json_parse_value(const char *s, int *pos);
 
 /* ---- Control flow (return statement) ---- */
@@ -367,6 +368,7 @@ extern __thread int g_breaking;
 extern __thread int g_continuing;
 extern __thread Value *g_last_observer;
 extern char g_script_dir[4096];
+extern char g_exe_dir[4096];
 
 /* ---- Observer thresholds (tunable via set_observer_thresholds) ---- */
 extern __thread double g_obs_dh_zero;   /* |dH| < this → "zero change" (default 0.001) */

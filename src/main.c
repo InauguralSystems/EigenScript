@@ -13,6 +13,7 @@ void register_gfx_builtins(Env *env);
 Env *g_global_env = NULL;
 __thread Env *g_load_env = NULL;
 char g_script_dir[4096] = ".";
+char g_exe_dir[4096] = ".";
 
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
@@ -125,7 +126,37 @@ static void eigenscript_repl(Env *env) {
 
 /* ---- Main ---- */
 
+static void set_exe_dir(const char *argv0) {
+    char exe_path[4096];
+    ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (n > 0 && n < (ssize_t)sizeof(exe_path)) {
+        exe_path[n] = '\0';
+    } else if (argv0 && strchr(argv0, '/')) {
+        strncpy(exe_path, argv0, sizeof(exe_path) - 1);
+        exe_path[sizeof(exe_path) - 1] = '\0';
+    } else {
+        memcpy(g_exe_dir, ".", 2);
+        return;
+    }
+
+    const char *last_slash = strrchr(exe_path, '/');
+    if (!last_slash) {
+        memcpy(g_exe_dir, ".", 2);
+        return;
+    }
+    int dir_len = (int)(last_slash - exe_path);
+    if (dir_len <= 0) {
+        memcpy(g_exe_dir, "/", 2);
+        return;
+    }
+    if (dir_len >= (int)sizeof(g_exe_dir)) dir_len = sizeof(g_exe_dir) - 1;
+    memcpy(g_exe_dir, exe_path, dir_len);
+    g_exe_dir[dir_len] = '\0';
+}
+
 int main(int argc, char **argv) {
+    set_exe_dir(argc > 0 ? argv[0] : NULL);
+
     if (argc >= 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
         printf("%s\n", EIGENSCRIPT_VERSION);
         return 0;

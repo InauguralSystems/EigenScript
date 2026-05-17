@@ -398,9 +398,11 @@ Features:
 
 ### Runtime
 - **System stdlib resolution**: `load_file` and `import` now search
-  `~/.local/lib/eigenscript/` as fallback after CWD and script-relative
-  paths. `make install` copies `lib/*.eigs` to this directory. External
-  projects (Tidepool, iLambdaAi) can use stdlib without copying files.
+  executable-relative stdlib paths and `~/.local/lib/eigenscript/` as fallback
+  after CWD and script-relative paths. Source-tree binaries can find
+  `../lib/*.eigs`, installed binaries can find `../lib/eigenscript/*.eigs`, and
+  `make install` still copies `lib/*.eigs` to the user-local directory.
+  External projects (Tidepool, iLambdaAi) can use stdlib without copying files.
 
 ### Documentation
 - Gap analysis for real-world program classes (CLI tools, web servers,

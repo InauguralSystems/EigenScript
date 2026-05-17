@@ -1925,44 +1925,67 @@ char* read_file_util(const char *path, long *out_size) {
     return buf;
 }
 
+static int try_resolve_path(const char *candidate, char *resolved, size_t resolved_cap) {
+    if (!candidate || access(candidate, F_OK) != 0) return 0;
+    snprintf(resolved, resolved_cap, "%s", candidate);
+    return 1;
+}
+
+int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap) {
+    char candidate[8192];
+
+    if (!path || !resolved || resolved_cap == 0) return 0;
+
+    if (path[0] == '/') {
+        return try_resolve_path(path, resolved, resolved_cap);
+    }
+
+    if (try_resolve_path(path, resolved, resolved_cap)) return 1;
+
+    snprintf(candidate, sizeof(candidate), "%.4000s/%.4000s", g_script_dir, path);
+    if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+
+    snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", g_script_dir, path);
+    if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+
+    snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", g_exe_dir, path);
+    if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+
+    snprintf(candidate, sizeof(candidate), "%.4000s/../lib/eigenscript/%.4000s", g_exe_dir, path);
+    if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+
+    if (strncmp(path, "lib/", 4) == 0) {
+        snprintf(candidate, sizeof(candidate), "%.4000s/../lib/eigenscript/%.4000s", g_exe_dir, path + 4);
+        if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+    }
+
+    const char *home = getenv("HOME");
+    if (home) {
+        snprintf(candidate, sizeof(candidate), "%.2000s/.local/lib/eigenscript/%.4000s", home, path);
+        if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+
+        if (strncmp(path, "lib/", 4) == 0) {
+            snprintf(candidate, sizeof(candidate), "%.2000s/.local/lib/eigenscript/%.4000s", home, path + 4);
+            if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+        }
+    }
+
+    return 0;
+}
+
 Value* builtin_load_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
         fprintf(stderr, "load_file: requires a string path argument\n");
         return make_null();
     }
+    char resolved[8192];
     const char *path = arg->data.str;
     long size = 0;
-    char *source = read_file_util(path, &size);
+    char *source = NULL;
 
-    /* Fallback: try relative to script directory, then its parent */
-    char resolved[8192];
-    if (!source && path[0] != '/') {
-        snprintf(resolved, sizeof(resolved), "%.4000s/%.4000s", g_script_dir, path);
-        source = read_file_util(resolved, &size);
-        if (source) path = resolved;
-    }
-    if (!source && path[0] != '/') {
-        snprintf(resolved, sizeof(resolved), "%.4000s/../%.4000s", g_script_dir, path);
-        source = read_file_util(resolved, &size);
-        if (source) path = resolved;
-    }
-    /* Fallback: system stdlib at ~/.local/lib/eigenscript/ */
-    if (!source && path[0] != '/') {
-        const char *home = getenv("HOME");
-        if (home) {
-            snprintf(resolved, sizeof(resolved), "%.2000s/.local/lib/eigenscript/%.4000s", home, path);
-            source = read_file_util(resolved, &size);
-            if (source) path = resolved;
-        }
-    }
-    /* Also try stripping "lib/" prefix for import-style loads */
-    if (!source && path[0] != '/' && strncmp(path, "lib/", 4) == 0) {
-        const char *home = getenv("HOME");
-        if (home) {
-            snprintf(resolved, sizeof(resolved), "%.2000s/.local/lib/eigenscript/%.4000s", home, path + 4);
-            source = read_file_util(resolved, &size);
-            if (source) path = resolved;
-        }
+    if (resolve_eigenscript_file(arg->data.str, resolved, sizeof(resolved))) {
+        path = resolved;
+        source = read_file_util(path, &size);
     }
 
     if (!source) {

@@ -925,6 +925,33 @@ else
 fi
 echo ""
 
+# [42e] Executable-relative stdlib resolution from external projects
+echo "[42e/47] Executable-Relative Stdlib (1 check)"
+EXT_HOME=$(mktemp -d /tmp/eigs_ext_home_XXXXXX)
+EXT_DIR=$(mktemp -d /tmp/eigs_ext_project_XXXXXX)
+EXT_SCRIPT="$EXT_DIR/external_stdlib.eigs"
+EIGENSCRIPT_EXE="$PWD/eigenscript"
+cat > "$EXT_SCRIPT" <<'PROBE'
+load_file of "lib/text_builder.eigs"
+b is text_builder_new of null
+text_builder_append_line of [b, "external stdlib ok"]
+print of (text_builder_to_string of b)
+PROBE
+EXT_STATUS=0
+EXT_OUTPUT=$(cd "$EXT_DIR" && HOME="$EXT_HOME" "$EIGENSCRIPT_EXE" "$EXT_SCRIPT" 2>&1) || EXT_STATUS=$?
+rm -rf "$EXT_HOME" "$EXT_DIR"
+if [ "$EXT_STATUS" -eq 0 ] && echo "$EXT_OUTPUT" | grep -q "external stdlib ok"; then
+    TOTAL=$((TOTAL + 1))
+    PASS=$((PASS + 1))
+    echo "  PASS: executable-relative stdlib load"
+else
+    TOTAL=$((TOTAL + 1))
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: executable-relative stdlib load"
+    echo "$EXT_OUTPUT" | grep -iE "load_file|assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [43] Extra error-path coverage (always runs)
 echo "[43/47] Error-Path Extras (24 checks)"
 EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1)

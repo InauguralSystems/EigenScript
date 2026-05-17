@@ -14,9 +14,13 @@ Path resolution order:
 1. Relative to the **current working directory**
 2. Relative to the **script file's directory**
 3. Relative to the **script file's parent directory**
+4. Relative to the **EigenScript executable's parent directory**
+5. Relative to the installed stdlib beside the executable
+6. Relative to `~/.local/lib/eigenscript`
 
 This means `load_file of "lib/math.eigs"` works whether you run the
-script from the project root or from any other directory.
+script from the project root, from an external project while using a source
+tree binary, or from an installed binary.
 
 ## Calling Convention
 

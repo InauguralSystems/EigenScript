@@ -313,9 +313,14 @@ For non-absolute paths, `load_file` searches (in order):
 1. The path as given, relative to the current working directory.
 2. `<script_dir>/<path>` — relative to the script being executed.
 3. `<script_dir>/../<path>` — relative to the script's parent directory.
+4. `<executable_dir>/../<path>` — relative to the EigenScript binary.
+5. `<executable_dir>/../lib/eigenscript/<path>` — installed stdlib layout.
+6. `~/.local/lib/eigenscript/<path>` — user-local stdlib fallback.
 
 The third step is what lets a script in `examples/` pick up `lib/foo.eigs`
-without the caller having to `cd` to the repository root. `..` segments
+without the caller having to `cd` to the repository root. The executable
+relative steps let external projects use the source-tree or installed stdlib
+without copying `lib/*.eigs` into each project. `..` segments
 embedded in the `load_file` argument itself are resolved by the OS
 normally — there is no sandbox, so a script can read any file the
 invoking user can read.
