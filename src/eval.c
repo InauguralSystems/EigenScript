@@ -740,10 +740,24 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                 int bound = left_val->data.fn.param_count;
                 if (bound > right_val->data.list.count)
                     bound = right_val->data.list.count;
-                for (int pi = 0; pi < bound; pi++) {
-                    env_set_local_hashed(call_env, left_val->data.fn.params[pi], left_val->data.fn.param_hashes[pi], right_val->data.list.items[pi]);
-                    if (use_scratch)
-                        release_eval_temp(rhs->data.list.elems[pi], scratch_eval_items[pi]);
+                if (bound <= 4) {
+                    /* Fast path: direct array write, skip hash table */
+                    for (int pi = 0; pi < bound; pi++) {
+                        call_env->names[pi] = env_intern_name(left_val->data.fn.params[pi]);
+                        Value *arg = right_val->data.list.items[pi];
+                        Value *promoted = promote_if_arena(arg);
+                        call_env->values[pi] = promoted;
+                        if (promoted == arg) val_incref(arg);
+                        if (use_scratch)
+                            release_eval_temp(rhs->data.list.elems[pi], scratch_eval_items[pi]);
+                    }
+                    call_env->count = bound;
+                } else {
+                    for (int pi = 0; pi < bound; pi++) {
+                        env_set_local_hashed(call_env, left_val->data.fn.params[pi], left_val->data.fn.param_hashes[pi], right_val->data.list.items[pi]);
+                        if (use_scratch)
+                            release_eval_temp(rhs->data.list.elems[pi], scratch_eval_items[pi]);
+                    }
                 }
                 if (use_scratch) {
                     for (int pi = bound; pi < right_val->data.list.count; pi++)
@@ -764,7 +778,14 @@ static Value* eval_node_impl(ASTNode *node, Env *env) {
                     scratch_list_end();
                     right_val = heap_list;
                 }
-                env_set_local_hashed(call_env, left_val->data.fn.params[0], left_val->data.fn.param_hashes[0], right_val);
+                /* Single param: direct array write, skip hash table */
+                call_env->names[0] = env_intern_name(left_val->data.fn.params[0]);
+                {
+                    Value *promoted = promote_if_arena(right_val);
+                    call_env->values[0] = promoted;
+                    if (promoted == right_val) val_incref(right_val);
+                }
+                call_env->count = 1;
                 if (!use_scratch)
                     release_eval_temp(rhs, right_val);
                 else

@@ -637,7 +637,7 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
     return -1;
 }
 
-static char *env_intern_name(const char *name) {
+char *env_intern_name(const char *name) {
     uint32_t h = env_hash_name(name);
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
     for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
@@ -659,7 +659,8 @@ Env* env_new(Env *parent) {
         g_env_freelist = e->parent;
         g_env_freelist_count--;
         e->count = 0;
-        memset(e->hash.hashes, 0, (e->hash.mask + 1) * sizeof(uint32_t));
+        if (e->hash_dirty)
+            memset(e->hash.hashes, 0, (e->hash.mask + 1) * sizeof(uint32_t));
     } else {
         e = xcalloc(1, sizeof(Env));
         e->capacity = ENV_INIT_CAP;
@@ -671,6 +672,7 @@ Env* env_new(Env *parent) {
     e->heap_allocated = 1;
     e->captured = 0;
     e->env_refcount = 0;
+    e->hash_dirty = 0;
     return e;
 }
 
@@ -678,6 +680,11 @@ void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;
     while (e) {
+        if (!e->hash_dirty && e->count > 0) {
+            for (int i = 0; i < e->count; i++)
+                env_hash_insert(&e->hash, env_hash_name(e->names[i]), i);
+            e->hash_dirty = 1;
+        }
         int idx = env_hash_find(&e->hash, name, h, e->names);
         if (idx >= 0) {
             Value *promoted = promote_if_arena(val);
@@ -702,6 +709,11 @@ void env_set(Env *env, const char *name, Value *val) {
 
 void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     if (h == 0) h = env_hash_name(name);
+    if (!env->hash_dirty && env->count > 0) {
+        for (int i = 0; i < env->count; i++)
+            env_hash_insert(&env->hash, env_hash_name(env->names[i]), i);
+        env->hash_dirty = 1;
+    }
     int idx = env_hash_find(&env->hash, name, h, env->names);
     if (idx >= 0) {
         Value *promoted = promote_if_arena(val);
@@ -747,6 +759,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         env_hash_rebuild(&env->hash, env->names, env->count);
     else
         env_hash_insert(&env->hash, h, env->count - 1);
+    env->hash_dirty = 1;
 }
 
 void env_set_local(Env *env, const char *name, Value *val) {
@@ -765,7 +778,7 @@ void env_free(Env *env) {
         env->count = 0;
         env->captured = 0;
         env->env_refcount = 0;
-        memset(env->hash.hashes, 0, (env->hash.mask + 1) * sizeof(uint32_t));
+        /* hash_dirty persists — env_new checks it on reuse */
         env->parent = g_env_freelist;
         g_env_freelist = env;
         g_env_freelist_count++;
@@ -785,15 +798,25 @@ void env_clear(Env *env) {
             val_decref(env->values[i]);
     }
     env->count = 0;
-    memset(env->hash.hashes, 0, (env->hash.mask + 1) * sizeof(uint32_t));
+    if (env->hash_dirty) {
+        memset(env->hash.hashes, 0, (env->hash.mask + 1) * sizeof(uint32_t));
+        env->hash_dirty = 0;
+    }
 }
 
 Value* env_get_hashed(Env *env, const char *name, uint32_t h) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;
     while (e) {
-        int idx = env_hash_find(&e->hash, name, h, e->names);
-        if (idx >= 0) return e->values[idx];
+        if (!e->hash_dirty && e->count > 0 && e->count <= 4) {
+            for (int i = 0; i < e->count; i++)
+                if (e->names[i] == name) return e->values[i];
+            for (int i = 0; i < e->count; i++)
+                if (strcmp(e->names[i], name) == 0) return e->values[i];
+        } else {
+            int idx = env_hash_find(&e->hash, name, h, e->names);
+            if (idx >= 0) return e->values[idx];
+        }
         e = e->parent;
     }
     return NULL;
@@ -801,6 +824,13 @@ Value* env_get_hashed(Env *env, const char *name, uint32_t h) {
 
 Value* env_get_local_hashed(Env *env, const char *name, uint32_t h) {
     if (!env) return NULL;
+    if (!env->hash_dirty && env->count > 0 && env->count <= 4) {
+        for (int i = 0; i < env->count; i++)
+            if (env->names[i] == name) return env->values[i];
+        for (int i = 0; i < env->count; i++)
+            if (strcmp(env->names[i], name) == 0) return env->values[i];
+        return NULL;
+    }
     if (h == 0) h = env_hash_name(name);
     int idx = env_hash_find(&env->hash, name, h, env->names);
     if (idx >= 0) return env->values[idx];

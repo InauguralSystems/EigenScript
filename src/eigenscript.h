@@ -176,6 +176,7 @@ struct Env {
     int captured;
     int env_refcount;   /* number of closures referencing this env */
     EnvHash hash;
+    unsigned char hash_dirty; /* 1 if hash table has been written to */
 };
 
 struct Value {
@@ -281,6 +282,7 @@ Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 Value* dict_get(Value *dict, const char *key);
 void list_append(Value *list, Value *item);
+char *env_intern_name(const char *name);
 Value* call_eigs_fn(Value *fn, Value *arg);
 void free_value(Value *v);
 
