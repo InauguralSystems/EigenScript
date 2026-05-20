@@ -174,16 +174,10 @@ static void compile_node(Compiler *c, ASTNode *node) {
         break;
 
     case AST_IDENT: {
-        /* Try local resolution first, fall back to dynamic name lookup */
-        uint32_t h = node->name_hash;
-        if (h == 0) h = env_hash_name(node->data.ident.name);
-        int slot = resolve_local(c, node->data.ident.name, h);
-        if (slot >= 0) {
-            emit_op_u16(c, OP_GET_LOCAL, (uint16_t)slot, node->line);
-        } else {
-            int idx = add_string_constant(c, node->data.ident.name);
-            emit_op_u16(c, OP_GET_NAME, (uint16_t)idx, node->line);
-        }
+        /* All variable access goes through Env for now (correctness first).
+         * TODO: optimize known locals to OP_GET_LOCAL stack slots. */
+        int idx = add_string_constant(c, node->data.ident.name);
+        emit_op_u16(c, OP_GET_NAME, (uint16_t)idx, node->line);
         break;
     }
 
@@ -193,23 +187,13 @@ static void compile_node(Compiler *c, ASTNode *node) {
         uint32_t h = node->name_hash;
         if (h == 0) h = env_hash_name(name);
 
-        if (node->data.assign.local_only) {
-            /* local x is expr — always current scope */
-            int slot = resolve_local(c, name, h);
-            if (slot < 0) slot = add_local(c, name, h);
-            if (slot >= 0) {
-                emit_op_u16(c, OP_SET_LOCAL, (uint16_t)slot, node->line);
-            } else {
-                int idx = add_string_constant(c, name);
+        /* All assignments go through Env for now (correctness first).
+         * TODO: optimize known locals to OP_SET_LOCAL stack slots. */
+        {
+            int idx = add_string_constant(c, name);
+            if (node->data.assign.local_only) {
                 emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
-            }
-        } else {
-            /* x is expr — outward assignment */
-            int slot = resolve_local(c, name, h);
-            if (slot >= 0) {
-                emit_op_u16(c, OP_SET_LOCAL, (uint16_t)slot, node->line);
             } else {
-                int idx = add_string_constant(c, name);
                 emit_op_u16(c, OP_SET_NAME, (uint16_t)idx, node->line);
             }
         }
@@ -275,11 +259,10 @@ static void compile_node(Compiler *c, ASTNode *node) {
     case AST_IF: {
         compile_node(c, node->data.cond.cond);
         int else_jump = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
-        emit(c, OP_POP, node->line);
+        /* condition was popped by JUMP_IF_FALSE */
         compile_block(c, node->data.cond.if_body, node->data.cond.if_count);
         int end_jump = emit_jump(c, OP_JUMP, node->line);
         patch_jump(c, else_jump);
-        emit(c, OP_POP, node->line);
         if (node->data.cond.else_body && node->data.cond.else_count > 0) {
             compile_block(c, node->data.cond.else_body, node->data.cond.else_count);
         } else {
@@ -303,16 +286,15 @@ static void compile_node(Compiler *c, ASTNode *node) {
 
         compile_node(c, node->data.loop.cond);
         int exit_jump = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
-        emit(c, OP_POP, node->line);
+        /* condition popped by JUMP_IF_FALSE */
 
         compile_block(c, node->data.loop.body, node->data.loop.body_count);
-        emit(c, OP_POP, node->line);
+        emit(c, OP_POP, node->line); /* discard body result before next iteration */
 
         emit_loop(c, loop_start, node->line);
 
         patch_jump(c, exit_jump);
-        emit(c, OP_POP, node->line);
-        emit(c, OP_NULL, node->line);
+        emit(c, OP_NULL, node->line); /* loop result when condition is false */
 
         /* Patch break jumps */
         if (lp) {
@@ -339,17 +321,15 @@ static void compile_node(Compiler *c, ASTNode *node) {
 
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
 
-        /* Bind loop variable */
-        const char *var = node->data.forloop.var;
-        uint32_t h = env_hash_name(var);
-        begin_scope(c);
-        int slot = add_local(c, var, h);
-        if (slot >= 0)
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)slot, node->line);
+        /* Bind loop variable via Env (ITER_NEXT pushed element on stack) */
+        {
+            int var_idx = add_string_constant(c, node->data.forloop.var);
+            emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)var_idx, node->line);
+            emit(c, OP_POP, node->line); /* pop the element from stack */
+        }
 
         compile_block(c, node->data.forloop.body, node->data.forloop.body_count);
-        emit(c, OP_POP, node->line);
-        end_scope(c, node->line);
+        emit(c, OP_POP, node->line); /* discard body result */
 
         emit_loop(c, loop_start, node->line);
 
