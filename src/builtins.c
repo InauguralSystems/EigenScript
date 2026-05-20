@@ -3394,6 +3394,13 @@ Value* builtin_dispatch(Value *arg) {
         if (fn->data.fn.param_count > 0) {
             env_set_local(call_env, fn->data.fn.params[0], fn_arg);
         }
+        if (fn->data.fn.body_count == -1) {
+            /* Bytecode function */
+            EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
+            Value *result = vm_execute(fn_chunk, call_env);
+            env_free(call_env);
+            return result ? result : make_null();
+        }
         g_returning = 0;
         g_return_val = NULL;
         Value *result = eval_block(fn->data.fn.body, fn->data.fn.body_count, call_env);
