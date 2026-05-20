@@ -272,7 +272,8 @@ int main(int argc, char **argv) {
     EigsChunk *script_chunk = compile_ast(ast, global);
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);
-    chunk_free(script_chunk);
+    /* Don't free chunk — closures/functions may still reference nested chunks.
+     * Process is exiting anyway. TODO: refcount chunks. */
 
     free_ast(ast);
     free_tokenlist(&tl);

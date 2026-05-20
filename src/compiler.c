@@ -604,13 +604,13 @@ static void compile_node(Compiler *c, ASTNode *node) {
             compile_node(c, pattern);
             emit(c, OP_EQ, node->line);
             int next_case = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
-            emit(c, OP_POP, node->line); /* pop comparison result */
-            emit(c, OP_POP, node->line); /* pop match expr */
+            /* JUMP_IF_FALSE popped the comparison result. Match expr dup is still on stack. */
+            emit(c, OP_POP, node->line); /* pop match expr dup */
             compile_block(c, node->data.match.bodies[i], node->data.match.body_counts[i]);
             if (end_count < 256)
                 end_jumps[end_count++] = emit_jump(c, OP_JUMP, node->line);
             patch_jump(c, next_case);
-            emit(c, OP_POP, node->line); /* pop comparison result */
+            /* JUMP_IF_FALSE already popped comparison result. DUP'd match expr still on stack for next case. */
         }
         /* No match — pop expr, push null */
         emit(c, OP_POP, node->line);

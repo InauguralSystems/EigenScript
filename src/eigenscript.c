@@ -216,9 +216,13 @@ void free_value(Value *v) {
                 free(v->data.fn.params[i]);
             free(v->data.fn.params);
             free(v->data.fn.param_hashes);
-            for (int i = 0; i < v->data.fn.body_count; i++)
-                free_ast(v->data.fn.body[i]);
-            free(v->data.fn.body);
+            if (v->data.fn.body_count != -1) {
+                /* AST-based function — free body nodes */
+                for (int i = 0; i < v->data.fn.body_count; i++)
+                    free_ast(v->data.fn.body[i]);
+                free(v->data.fn.body);
+            }
+            /* body_count == -1 means bytecode fn: body is a chunk ptr, not owned here */
             {
                 Env *clo = v->data.fn.closure;
                 v->data.fn.closure = NULL;  /* break cycle before decrement */

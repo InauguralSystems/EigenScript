@@ -159,7 +159,18 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
         [OP_LINE] = &&lbl_LINE, [OP_WIDE] = &&lbl_WIDE,
     };
-    #define DISPATCH() goto *dispatch_table[*ip++]
+    #define CHECK_ERROR() do { \
+        if (g_has_error && frame->is_try && frame->catch_ip) { \
+            g_has_error = 0; \
+            g_try_depth--; \
+            frame->is_try = 0; \
+            while (g_vm.sp > frame->catch_bp) val_decref(vm_pop()); \
+            vm_push(make_str(g_error_msg)); \
+            ip = frame->catch_ip; \
+            frame->catch_ip = NULL; \
+        } \
+    } while(0)
+    #define DISPATCH() do { CHECK_ERROR(); goto *dispatch_table[*ip++]; } while(0)
     #define CASE(op) lbl_##op
 #else
     /* Switch-based fallback */
@@ -375,8 +386,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         const char *name = chunk->constants[idx]->data.str;
         uint32_t h = env_hash_name(name);
         Value *v = env_get_hashed(frame->env, name, h);
-        if (!v) v = make_null();
-        else val_incref(v);
+        if (!v) {
+            runtime_error(current_line, "undefined variable '%s'", name);
+            v = make_null();
+        } else {
+            val_incref(v);
+        }
         vm_push(v);
         DISPATCH();
     }
@@ -511,9 +526,18 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             else val_incref(result);
             vm_push(result);
 
-            /* Check for errors from builtins */
-            if (g_has_error && g_try_depth > 0) {
-                /* TODO: unwind to try-catch handler */
+            /* Check for errors */
+            if (g_has_error && frame->is_try && frame->catch_ip) {
+                g_has_error = 0;
+                g_try_depth--;
+                frame->is_try = 0;
+                /* Restore stack to try entry point */
+                while (g_vm.sp > frame->catch_bp)
+                    val_decref(vm_pop());
+                /* Push error message for catch block */
+                vm_push(make_str(g_error_msg));
+                ip = frame->catch_ip;
+                frame->catch_ip = NULL;
             }
             DISPATCH();
         }
@@ -681,6 +705,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (i >= 0 && i < target->data.list.count) {
                 result = target->data.list.items[i];
                 val_incref(result);
+            } else {
+                runtime_error(current_line, "index %d out of bounds (list length %d)", i, target->data.list.count);
             }
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             Value *v = dict_get(target, idx->data.str);
@@ -805,16 +831,17 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     CASE(TRY_BEGIN): {
         uint16_t catch_offset = read_u16(ip); ip += 2;
         g_try_depth++;
-        /* Save catch target — for now, simple flag-based */
-        /* TODO: proper exception handler stack */
-        ip += catch_offset; /* Skip past try body to catch on error */
-        ip -= catch_offset; /* Actually, we run the try body first */
-        /* The compiler handles this via jump patching */
+        /* Save error handler: catch target IP and stack depth */
+        frame->is_try = 1;
+        frame->catch_ip = ip + catch_offset;
+        frame->catch_bp = g_vm.sp;
         DISPATCH();
     }
 
     CASE(TRY_END): {
         g_try_depth--;
+        frame->is_try = 0;
+        frame->catch_ip = NULL;
         DISPATCH();
     }
 
