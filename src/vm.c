@@ -929,11 +929,69 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(IMPORT): {
         uint16_t idx = read_u16(ip); ip += 2;
-        /* For now, delegate to the existing import machinery */
         const char *name = chunk->constants[idx]->data.str;
-        /* TODO: implement import in VM */
-        (void)name;
-        vm_push(make_null());
+
+        char request[4096];
+        char path_buf[8192];
+        snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
+
+        extern int resolve_eigenscript_file(const char *name, char *out, size_t outlen);
+        extern char *read_file_util(const char *path, long *size);
+        extern __thread int g_parse_errors;
+        extern __thread Env *g_load_env;
+        extern Env *g_global_env;
+        extern TokenList tokenize(const char *source);
+        extern ASTNode *parse(TokenList *tl);
+        extern void free_tokenlist(TokenList *tl);
+        extern void free_ast(ASTNode *ast);
+
+        if (!resolve_eigenscript_file(request, path_buf, sizeof(path_buf))) {
+            runtime_error(current_line, "import: module '%s' not found", name);
+            vm_push(make_null());
+            DISPATCH();
+        }
+
+        long src_size = 0;
+        char *source = read_file_util(path_buf, &src_size);
+        if (!source) {
+            runtime_error(current_line, "import: cannot read '%s'", name);
+            vm_push(make_null());
+            DISPATCH();
+        }
+
+        Env *mod_env = env_new(g_global_env);
+        int saved_errors = g_parse_errors;
+        g_parse_errors = 0;
+        TokenList tl = tokenize(source);
+        ASTNode *ast = parse(&tl);
+        if (g_parse_errors > 0) {
+            g_parse_errors = saved_errors;
+            free_tokenlist(&tl);
+            free(source);
+            runtime_error(current_line, "import: parse errors in '%s'", name);
+            vm_push(make_null());
+            DISPATCH();
+        }
+        g_parse_errors = saved_errors;
+
+        Env *saved_load = g_load_env;
+        g_load_env = mod_env;
+        EigsChunk *mod_chunk = compile_ast(ast, mod_env);
+        Value *mod_result = vm_execute(mod_chunk, mod_env);
+        if (mod_result) val_decref(mod_result);
+        g_load_env = saved_load;
+        free_ast(ast);
+        free_tokenlist(&tl);
+        free(source);
+
+        /* Collect module bindings into dict */
+        /* mod_env has bindings from module execution */
+        Value *mod_dict = make_dict(mod_env->count);
+        for (int mi = 0; mi < mod_env->count; mi++) {
+            if (mod_env->names[mi][0] == '_') continue;
+            dict_set(mod_dict, mod_env->names[mi], mod_env->values[mi]);
+        }
+        vm_push(mod_dict);
         DISPATCH();
     }
 
