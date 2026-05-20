@@ -1424,6 +1424,21 @@ else
 fi
 echo ""
 
+# [66] list_remove_at builtin
+echo "[66] List Remove At (8 checks)"
+LRA_OUTPUT=$(./eigenscript ../tests/test_list_remove_at.eigs 2>&1)
+if echo "$LRA_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 list_remove_at checks"
+else
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
+    echo "  FAIL: list_remove_at tests"
+    echo "$LRA_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [65] sort_by builtin
 echo "[65] Sort By (9 checks)"
 SBY_OUTPUT=$(./eigenscript ../tests/test_sort_by.eigs 2>&1)

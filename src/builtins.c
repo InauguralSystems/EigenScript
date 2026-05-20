@@ -3289,6 +3289,25 @@ Value* builtin_list_truncate(Value *arg) {
     return list;
 }
 
+/* list_remove_at of [list, index] — remove element at index, shift tail down.
+ * Out-of-bounds index is a no-op. Returns the list. */
+Value* builtin_list_remove_at(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    Value *list = arg->data.list.items[0];
+    Value *idx_val = arg->data.list.items[1];
+    if (!list || list->type != VAL_LIST) return make_null();
+    if (!idx_val || idx_val->type != VAL_NUM) return list;
+    int idx = (int)idx_val->data.num;
+    if (idx < 0 || idx >= list->data.list.count) return list;
+    val_decref(list->data.list.items[idx]);
+    int tail = list->data.list.count - idx - 1;
+    if (tail > 0)
+        memmove(&list->data.list.items[idx], &list->data.list.items[idx + 1],
+                tail * sizeof(Value *));
+    list->data.list.count--;
+    return list;
+}
+
 /* sort_by of [list, key_fn] — sort list by numeric keys from key_fn.
  * Evaluates key_fn once per element, then qsorts by key (ascending).
  * Stable tiebreak by original index. Returns a NEW sorted list. */
@@ -3563,6 +3582,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "sign_extend", make_builtin(builtin_sign_extend));
     env_set_local(env, "sort", make_builtin(builtin_sort));
     env_set_local(env, "list_truncate", make_builtin(builtin_list_truncate));
+    env_set_local(env, "list_remove_at", make_builtin(builtin_list_remove_at));
     env_set_local(env, "sort_by", make_builtin(builtin_sort_by));
     env_set_local(env, "close_channel", make_builtin(builtin_close_channel));
     env_set_local(env, "channel_closed", make_builtin(builtin_channel_closed));

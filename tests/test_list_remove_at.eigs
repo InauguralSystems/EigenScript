@@ -1,0 +1,64 @@
+checks is 0
+passed is 0
+
+# T1: remove middle element
+a is [1, 2, 3, 4, 5]
+list_remove_at of [a, 2]
+checks += 1
+if (len of a) == 4 and a[0] == 1 and a[1] == 2 and a[2] == 4 and a[3] == 5:
+    passed += 1
+
+# T2: remove first element
+b is [10, 20, 30]
+list_remove_at of [b, 0]
+checks += 1
+if (len of b) == 2 and b[0] == 20 and b[1] == 30:
+    passed += 1
+
+# T3: remove last element
+c is [10, 20, 30]
+list_remove_at of [c, 2]
+checks += 1
+if (len of c) == 2 and c[0] == 10 and c[1] == 20:
+    passed += 1
+
+# T4: out-of-bounds negative — no-op
+d is [1, 2, 3]
+list_remove_at of [d, -1]
+checks += 1
+if (len of d) == 3:
+    passed += 1
+
+# T5: out-of-bounds too large — no-op
+e is [1, 2, 3]
+list_remove_at of [e, 5]
+checks += 1
+if (len of e) == 3:
+    passed += 1
+
+# T6: remove from single-element list
+f is [42]
+list_remove_at of [f, 0]
+checks += 1
+if (len of f) == 0:
+    passed += 1
+
+# T7: append after remove
+g is [1, 2, 3, 4]
+list_remove_at of [g, 1]
+append of [g, 99]
+checks += 1
+if (len of g) == 4 and g[2] == 4 and g[3] == 99:
+    passed += 1
+
+# T8: returns the list
+h is [1, 2, 3]
+result is list_remove_at of [h, 1]
+checks += 1
+if (len of result) == 2 and result[0] == 1 and result[1] == 3:
+    passed += 1
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

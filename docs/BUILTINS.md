@@ -50,6 +50,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
 | `sort` | `sort of list` | Sort list in-place by numeric value (qsort). Returns the list |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
+| `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
 | `sort_by` | `sort_by of [list, key_fn]` | Sort list by numeric keys from key_fn (qsort, O(n log n), stable). Returns a new sorted list |
 
 ### Strings
