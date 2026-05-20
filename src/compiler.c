@@ -38,16 +38,110 @@ typedef struct Compiler {
     LoopCtx           loops[MAX_LOOP_DEPTH];
     int               loop_depth;
     Env              *env;          /* for resolving globals at compile time */
+    int               stack_depth;  /* tracked stack depth for validation */
+    int               max_stack;    /* high-water mark */
 } Compiler;
 
 /* ---- Forward declarations ---- */
 static void compile_node(Compiler *c, ASTNode *node);
 static void compile_block(Compiler *c, ASTNode **stmts, int count);
 
+/* ---- Stack depth tracking ---- */
+
+static void adjust_stack(Compiler *c, int delta) {
+    c->stack_depth += delta;
+    if (c->stack_depth > c->max_stack)
+        c->max_stack = c->stack_depth;
+    if (c->stack_depth < 0) {
+        fprintf(stderr, "[compiler] stack underflow at bytecode offset %d (depth=%d)\n",
+                c->chunk->code_len, c->stack_depth);
+        c->stack_depth = 0;
+    }
+}
+
 /* ---- Emit helpers ---- */
+
+/* Stack effect of each opcode */
+static int op_stack_effect(uint8_t op) {
+    switch (op) {
+    /* Push 1 */
+    case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
+    case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
+        return 1;
+    /* Pop 1 */
+    case OP_POP:
+        return -1;
+    /* Pop 2, push 1 = net -1 */
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
+    case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
+    case OP_INDEX_GET:
+        return -1;
+    /* Pop 1, push 1 = net 0 */
+    case OP_NEG: case OP_NOT: case OP_BNOT:
+    case OP_INTERROGATE:
+        return 0;
+    /* SET: peek, no change */
+    case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_OBSERVE_ASSIGN:
+        return 0;
+    /* Jumps: conditional pops 1, unconditional 0, peek 0 */
+    case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
+        return -1;
+    case OP_JUMP: case OP_JUMP_BACK:
+    case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
+        return 0;
+    /* Dot: pop target push result = 0 */
+    case OP_DOT_GET:
+        return 0;
+    /* Dot set: pop value, pop target, push value = -1 */
+    case OP_DOT_SET:
+        return -1;
+    /* Index set: pop value, pop index, pop target, push value = -2 */
+    case OP_INDEX_SET:
+        return -2;
+    /* Return: special */
+    case OP_RETURN: case OP_RETURN_NULL:
+        return 0;
+    /* Loop env: no stack change */
+    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END:
+        return 0;
+    /* Iterator: SETUP pops iterable pushes state = 0; NEXT pushes elem = +1 */
+    case OP_ITER_SETUP:
+        return 0;
+    case OP_ITER_NEXT:
+        return 1; /* on non-exit path */
+    /* Try: no stack change */
+    case OP_TRY_BEGIN: case OP_TRY_END:
+        return 0;
+    /* Observer blocks: no stack change */
+    case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+        return 0;
+    /* Line: no stack change */
+    case OP_LINE:
+        return 0;
+    /* Break/continue: no stack change (compiler emits as jumps) */
+    case OP_BREAK: case OP_CONTINUE:
+        return 0;
+    /* Closure: pushes 1 */
+    case OP_CLOSURE:
+        return 1;
+    /* LISTCOMP_APPEND: pops 1 */
+    case OP_LISTCOMP_APPEND:
+        return -1;
+    /* IMPORT: pushes 1 */
+    case OP_IMPORT:
+        return 1;
+    /* CALL, LIST, DICT: dynamic — handled separately */
+    default:
+        return 0;
+    }
+}
 
 static void emit(Compiler *c, uint8_t op, int line) {
     chunk_emit(c->chunk, op, line);
+    adjust_stack(c, op_stack_effect(op));
 }
 
 static void emit_u16(Compiler *c, uint16_t val, int line) {
@@ -55,12 +149,38 @@ static void emit_u16(Compiler *c, uint16_t val, int line) {
 }
 
 static void emit_op_u16(Compiler *c, uint8_t op, uint16_t arg, int line) {
-    emit(c, op, line);
-    emit_u16(c, arg, line);
+    chunk_emit(c->chunk, op, line);
+    chunk_emit_u16(c->chunk, arg, line);
+    adjust_stack(c, op_stack_effect(op));
+}
+
+static void emit_call(Compiler *c, uint16_t argc, int line) {
+    chunk_emit(c->chunk, OP_CALL, line);
+    chunk_emit_u16(c->chunk, argc, line);
+    /* CALL pops fn + argc args, pushes result = -(argc+1) + 1 = -argc */
+    adjust_stack(c, -(int)argc);
+}
+
+static void emit_list(Compiler *c, uint16_t count, int line) {
+    chunk_emit(c->chunk, OP_LIST, line);
+    chunk_emit_u16(c->chunk, count, line);
+    /* LIST pops count items, pushes list = -(count) + 1 = -(count-1) */
+    adjust_stack(c, -(int)count + 1);
+}
+
+static void emit_dict(Compiler *c, uint16_t count, int line) {
+    chunk_emit(c->chunk, OP_DICT, line);
+    chunk_emit_u16(c->chunk, count, line);
+    /* DICT pops count*2 items (keys+values), pushes dict */
+    adjust_stack(c, -(int)count * 2 + 1);
 }
 
 static int emit_jump(Compiler *c, uint8_t op, int line) {
-    return chunk_emit_jump(c->chunk, op, line);
+    chunk_emit(c->chunk, op, line);
+    adjust_stack(c, op_stack_effect(op));
+    int patch = c->chunk->code_len;
+    chunk_emit_u16(c->chunk, 0xFFFF, line);
+    return patch;
 }
 
 static void patch_jump(Compiler *c, int offset) {
@@ -68,9 +188,9 @@ static void patch_jump(Compiler *c, int offset) {
 }
 
 static void emit_loop(Compiler *c, int loop_start, int line) {
-    emit(c, OP_JUMP_BACK, line);
+    chunk_emit(c->chunk, OP_JUMP_BACK, line);
     int offset = c->chunk->code_len - loop_start + 2;
-    emit_u16(c, (uint16_t)offset, line);
+    chunk_emit_u16(c->chunk, (uint16_t)offset, line);
 }
 
 /* ---- Constant helpers ---- */
@@ -259,16 +379,25 @@ static void compile_node(Compiler *c, ASTNode *node) {
     case AST_IF: {
         compile_node(c, node->data.cond.cond);
         int else_jump = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
-        /* condition was popped by JUMP_IF_FALSE */
+        /* condition was popped by JUMP_IF_FALSE. Save depth for else branch. */
+        int depth_after_cond = c->stack_depth;
         compile_block(c, node->data.cond.if_body, node->data.cond.if_count);
         int end_jump = emit_jump(c, OP_JUMP, node->line);
+        int depth_after_if = c->stack_depth;
+        /* Reset depth to what it would be on the false branch */
         patch_jump(c, else_jump);
+        c->stack_depth = depth_after_cond;
         if (node->data.cond.else_body && node->data.cond.else_count > 0) {
             compile_block(c, node->data.cond.else_body, node->data.cond.else_count);
         } else {
             emit(c, OP_NULL, node->line);
         }
         patch_jump(c, end_jump);
+        /* Both branches should end at the same depth */
+        if (c->stack_depth != depth_after_if) {
+            fprintf(stderr, "[compiler] if/else stack mismatch: if=%d else=%d at line %d\n",
+                    depth_after_if, c->stack_depth, node->line);
+        }
         break;
     }
 
@@ -284,6 +413,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         int loop_start = c->chunk->code_len;
         if (lp) lp->continue_target = loop_start;
 
+        int depth_at_loop = c->stack_depth;
         compile_node(c, node->data.loop.cond);
         int exit_jump = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
         /* condition popped by JUMP_IF_FALSE */
@@ -291,9 +421,13 @@ static void compile_node(Compiler *c, ASTNode *node) {
         compile_block(c, node->data.loop.body, node->data.loop.body_count);
         emit(c, OP_POP, node->line); /* discard body result before next iteration */
 
+        /* Reset depth to loop start for back-edge */
+        c->stack_depth = depth_at_loop;
         emit_loop(c, loop_start, node->line);
 
+        /* Exit path: condition was false */
         patch_jump(c, exit_jump);
+        c->stack_depth = depth_at_loop; /* JIF popped condition */
         emit(c, OP_NULL, node->line); /* loop result when condition is false */
 
         /* Patch break jumps */
@@ -316,12 +450,14 @@ static void compile_node(Compiler *c, ASTNode *node) {
             lp->scope_depth = c->scope_depth;
         }
 
+        int depth_before_loop = c->stack_depth;
         int loop_start = c->chunk->code_len;
         if (lp) lp->continue_target = loop_start;
 
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
+        /* ITER_NEXT pushes element on non-exit (+1) */
 
-        /* Create fresh loop env (or reuse if not captured) */
+        /* Create fresh loop env */
         emit(c, OP_LOOP_ENV_FRESH, node->line);
 
         /* Bind loop variable via Env (ITER_NEXT pushed element on stack) */
@@ -337,11 +473,15 @@ static void compile_node(Compiler *c, ASTNode *node) {
         /* Restore parent env */
         emit(c, OP_LOOP_ENV_END, node->line);
 
+        /* Reset depth for back-edge (same as loop start) */
+        c->stack_depth = depth_before_loop;
         emit_loop(c, loop_start, node->line);
 
+        /* Exit path: ITER_NEXT jumped here, no element pushed */
         patch_jump(c, exit_jump);
+        c->stack_depth = depth_before_loop; /* iterator state still on stack */
         emit(c, OP_POP, node->line); /* pop iterator state */
-        emit(c, OP_NULL, node->line);
+        emit(c, OP_NULL, node->line); /* for-loop result */
 
         if (lp) {
             for (int i = 0; i < lp->break_count; i++)
@@ -352,6 +492,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
     }
 
     case AST_BREAK: {
+        emit(c, OP_NULL, node->line); /* dummy value for stack balance */
         if (c->loop_depth > 0) {
             LoopCtx *lp = &c->loops[c->loop_depth - 1];
             if (lp->break_count < MAX_BREAK_JUMPS) {
@@ -362,6 +503,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
     }
 
     case AST_CONTINUE: {
+        emit(c, OP_NULL, node->line); /* dummy value for stack balance */
         if (c->loop_depth > 0) {
             LoopCtx *lp = &c->loops[c->loop_depth - 1];
             emit_loop(c, lp->continue_target, node->line);
@@ -451,11 +593,11 @@ static void compile_node(Compiler *c, ASTNode *node) {
             /* Multi-arg: compile each element as separate stack value */
             for (int i = 0; i < arg_node->data.list.count; i++)
                 compile_node(c, arg_node->data.list.elems[i]);
-            emit_op_u16(c, OP_CALL, (uint16_t)arg_node->data.list.count, node->line);
+            emit_call(c, (uint16_t)arg_node->data.list.count, node->line);
         } else {
             /* Single arg */
             compile_node(c, arg_node);
-            emit_op_u16(c, OP_CALL, 1, node->line);
+            emit_call(c, 1, node->line);
         }
         break;
     }
@@ -465,7 +607,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
     case AST_LIST: {
         for (int i = 0; i < node->data.list.count; i++)
             compile_node(c, node->data.list.elems[i]);
-        emit_op_u16(c, OP_LIST, (uint16_t)node->data.list.count, node->line);
+        emit_list(c, (uint16_t)node->data.list.count, node->line);
         break;
     }
 
@@ -474,7 +616,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
             compile_node(c, node->data.dict.keys[i]);
             compile_node(c, node->data.dict.vals[i]);
         }
-        emit_op_u16(c, OP_DICT, (uint16_t)node->data.dict.count, node->line);
+        emit_dict(c, (uint16_t)node->data.dict.count, node->line);
         break;
     }
 
@@ -650,7 +792,14 @@ static void compile_block(Compiler *c, ASTNode **stmts, int count) {
         return;
     }
     for (int i = 0; i < count; i++) {
+        int depth_before = c->stack_depth;
         compile_node(c, stmts[i]);
+        int depth_after = c->stack_depth;
+        if (depth_after != depth_before + 1) {
+            fprintf(stderr, "[compiler] stmt %d/%d at line %d: expected stack +1, got %+d (depth %d->%d)\n",
+                    i + 1, count, stmts[i]->line,
+                    depth_after - depth_before, depth_before, depth_after);
+        }
         if (i + 1 < count)
             emit(c, OP_POP, stmts[i]->line);
     }
