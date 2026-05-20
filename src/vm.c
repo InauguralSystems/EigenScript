@@ -501,6 +501,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(CALL): {
         uint16_t argc = read_u16(ip); ip += 2;
+        if (g_vm.sp < (int)argc + 1) {
+            vm_push(make_null());
+            DISPATCH();
+        }
         Value *fn_val = g_vm.stack[g_vm.sp - 1 - argc];
 
         if (fn_val->type == VAL_BUILTIN) {
@@ -645,7 +649,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     }
 
     CASE(RETURN): {
-        Value *result = vm_pop();
+        Value *result;
+        if (g_vm.sp > frame->bp) {
+            result = vm_pop();
+        } else {
+            result = make_null();
+        }
         /* Clean up stack back to frame base */
         while (g_vm.sp > frame->bp) {
             val_decref(vm_pop());
