@@ -492,22 +492,24 @@ static void compile_node(Compiler *c, ASTNode *node) {
     }
 
     case AST_BREAK: {
-        emit(c, OP_NULL, node->line); /* dummy value for stack balance */
         if (c->loop_depth > 0) {
             LoopCtx *lp = &c->loops[c->loop_depth - 1];
             if (lp->break_count < MAX_BREAK_JUMPS) {
                 lp->break_jumps[lp->break_count++] = emit_jump(c, OP_JUMP, node->line);
             }
         }
+        /* Pretend we pushed +1 for stack accounting (dead code follows) */
+        adjust_stack(c, 1);
         break;
     }
 
     case AST_CONTINUE: {
-        emit(c, OP_NULL, node->line); /* dummy value for stack balance */
         if (c->loop_depth > 0) {
             LoopCtx *lp = &c->loops[c->loop_depth - 1];
             emit_loop(c, lp->continue_target, node->line);
         }
+        /* Pretend we pushed +1 for stack accounting (dead code follows) */
+        adjust_stack(c, 1);
         break;
     }
 
