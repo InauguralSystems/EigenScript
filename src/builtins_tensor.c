@@ -487,9 +487,10 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
     if (fn->data.fn.param_count > 1 && arg && arg->type == VAL_LIST) {
         for (int pi = 0; pi < fn->data.fn.param_count && pi < arg->data.list.count; pi++)
             env_set_local(call_env, fn->data.fn.params[pi], arg->data.list.items[pi]);
-    } else {
+    } else if (fn->data.fn.param_count == 1) {
         env_set_local(call_env, fn->data.fn.params[0], arg);
     }
+    /* param_count == 0: no params to bind */
     if (fn->data.fn.body_count == -1) {
         /* Bytecode function */
         EigsChunk *chunk = (EigsChunk *)fn->data.fn.body;
