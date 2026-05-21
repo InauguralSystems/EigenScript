@@ -109,6 +109,7 @@ typedef enum {
     OP_LISTCOMP_APPEND, /* append TOS to accumulator */
     OP_LINE,            /* [line:16] update current line number */
     OP_WIDE,            /* next operand is 32-bit */
+    OP_DISPATCH,        /* pop arg, key, table; call table[key](arg) inline */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

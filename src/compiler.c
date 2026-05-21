@@ -134,6 +134,9 @@ static int op_stack_effect(uint8_t op) {
     /* IMPORT: pushes 1 */
     case OP_IMPORT:
         return 1;
+    /* DISPATCH: pop 3 (table, key, arg), push 1 = -2 */
+    case OP_DISPATCH:
+        return -2;
     /* CALL, LIST, DICT: dynamic — handled separately */
     default:
         return 0;
@@ -642,6 +645,18 @@ static void compile_node(Compiler *c, ASTNode *node) {
         /* Function call: f of [a, b] or f of arg */
         ASTNode *fn_node = node->data.relation.left;
         ASTNode *arg_node = node->data.relation.right;
+
+        /* Optimize: dispatch of [table, key, arg] → OP_DISPATCH */
+        if (fn_node && fn_node->type == AST_IDENT &&
+            strcmp(fn_node->data.ident.name, "dispatch") == 0 &&
+            arg_node && arg_node->type == AST_LIST &&
+            arg_node->data.list.count == 3) {
+            compile_node(c, arg_node->data.list.elems[0]); /* table */
+            compile_node(c, arg_node->data.list.elems[1]); /* key */
+            compile_node(c, arg_node->data.list.elems[2]); /* arg */
+            emit(c, OP_DISPATCH, node->line);
+            break;
+        }
 
         compile_node(c, fn_node);
 

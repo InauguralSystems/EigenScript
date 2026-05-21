@@ -174,6 +174,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
         [OP_LINE] = &&lbl_LINE, [OP_WIDE] = &&lbl_WIDE,
+        [OP_DISPATCH] = &&lbl_DISPATCH,
     };
     #define CHECK_ERROR() do { \
         if (g_has_error && frame->try_count > 0) { \
@@ -1144,6 +1145,84 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t line = read_u16(ip); ip += 2;
         current_line = line;
         g_vm.current_line = line;
+        DISPATCH();
+    }
+
+    CASE(DISPATCH): {
+        /* Native dispatch: pop arg, key, table; call table[key](arg) inline.
+         * Replaces builtin_dispatch to avoid re-entrant vm_execute calls. */
+        Value *arg = vm_pop();
+        Value *key_val = vm_pop();
+        Value *table = vm_pop();
+
+        if (!table || table->type != VAL_LIST ||
+            !key_val || key_val->type != VAL_NUM) {
+            val_decref(arg); val_decref(key_val); val_decref(table);
+            vm_push(make_null());
+            DISPATCH();
+        }
+
+        int key = (int)key_val->data.num;
+        val_decref(key_val);
+
+        if (key < 0 || key >= table->data.list.count) {
+            val_decref(arg); val_decref(table);
+            vm_push(make_null());
+            DISPATCH();
+        }
+
+        Value *fn = table->data.list.items[key];
+
+        if (fn && fn->type == VAL_BUILTIN) {
+            val_incref(arg);
+            Env *saved = g_builtin_call_env;
+            g_builtin_call_env = frame->env;
+            Value *result = fn->data.builtin(arg);
+            g_builtin_call_env = saved;
+            if (result != arg) val_decref(arg);
+            if (!result) result = make_null();
+            else if (result != arg) val_incref(result);
+            val_decref(table);
+            vm_push(result);
+            CHECK_ERROR();
+            DISPATCH();
+        }
+
+        if (fn && fn->type == VAL_FN && fn->data.fn.body_count == -1) {
+            /* Bytecode function — push frame inline (no re-entry) */
+            EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
+            Env *call_env = env_new(fn->data.fn.closure);
+            if (fn->data.fn.param_count > 0)
+                env_set_local(call_env, fn->data.fn.params[0], arg);
+            val_decref(arg);
+            val_decref(table);
+
+            frame->ip = ip;
+            if (g_vm.frame_count >= VM_FRAMES_MAX) {
+                runtime_error(current_line, "call stack overflow");
+                env_free(call_env);
+                vm_push(make_null());
+                DISPATCH();
+            }
+            frame = &g_vm.frames[g_vm.frame_count++];
+            frame->chunk = fn_chunk;
+            frame->ip = fn_chunk->code;
+            frame->bp = g_vm.sp;
+            frame->env = call_env;
+            frame->fn_env = call_env;
+            frame->closure_val = fn;
+            frame->owns_env = 1;
+            frame->is_try = 0;
+            frame->try_count = 0;
+
+            ip = frame->ip;
+            chunk = fn_chunk;
+            DISPATCH();
+        }
+
+        /* Not callable */
+        val_decref(arg); val_decref(table);
+        vm_push(make_null());
         DISPATCH();
     }
 
