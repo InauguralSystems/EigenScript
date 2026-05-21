@@ -2,51 +2,18 @@
 
 Current version: **0.11.0**
 
-## Completed Sprint: Language Completeness (0.11.0)
+## Next: Performance (0.12.0)
 
-Goal: fix all remaining test failures, make the bytecode VM fully
-compatible with the tree-walker's behavior, improve error handling.
+Based on gprof profiling of DMG (500K cycles):
+- 72% vm_run dispatch, 6.5% env_hash_find, 5% env_set_local_hashed,
+  3.6% env_free, 2.2% make_num. 60K re-entrant vm_execute calls.
 
-### Week 1: Error handling & try/catch
-
-- [ ] Fix try/catch type error and nested re-throw (2 failures)
-- [ ] Fix error propagation across function calls (test_error_propagation)
-- [ ] Fix error message content matching (test_error_extra)
-- [ ] Fix import error handling (test_import_errors, 2 failures)
-- [ ] Fix GC error-path behavioral differences (test_gc, 14/34)
-- [ ] Fix /dev/null stdin handling (test_file_io, 1 failure)
-
-### Week 2: Segfaults & deep recursion
-
-- [ ] Fix test_coverage_v2 crash (large test suite, likely deep recursion or stack overflow in computation)
-- [ ] Fix test_geometry crash (geometry library, likely recursive algorithm)
-- [ ] Investigate and fix the recursion_guard test
-- [ ] Chunk reference counting (closures hold refs to compiled chunks that are currently leaked)
-
-### Week 3: Observer & correctness
-
-- [ ] Fix observer interaction: observation age tracking (test_observer_interactions)
-- [ ] Fix tensor observer edge case (test_coverage_gaps CG48)
-- [ ] Fix softmax length check (test_softmax_guard)
-- [ ] Fix closure with break escaping caller loop (test_control_flow_interactions CF20)
-- [ ] Fix STEM library failures (test_lab, test_linalg — 1 each)
-
-### Week 4: Polish & release
-
-- [ ] Run full test suite through the test runner (not just individual files)
-- [ ] Verify EigenMiniSat, DMG, EigenGauntlet all pass
-- [ ] Update test count in docs (was 1030, now should reflect bytecode VM)
-- [ ] Performance comparison: bytecode VM vs tree-walker baseline
-- [ ] Release 0.11.0
-
-## After 0.11.0
-
-### Performance (0.12.0)
-
-- [ ] Dict field inline caching (OP_DOT_GET with cached slot offset)
+- [ ] Eliminate dispatch builtin re-entry (60K vm_execute calls → use OP_CALL directly)
 - [ ] Extend GET_LOCAL/SET_LOCAL to all local variables (not just params)
-- [ ] In-place numeric mutation in SET_LOCAL/SET_NAME for refcount-1 values
-- [ ] Benchmark DMG target: 1+ MHz (currently 0.16 MHz)
+- [ ] Reduce env_free churn from LOOP_ENV_FRESH (3.9M frees per 500K cycles)
+- [ ] In-place numeric mutation for refcount-1 values (3.7M make_num calls)
+- [ ] Dict field inline caching (OP_DOT_GET with cached slot offset)
+- [ ] Benchmark DMG target: 0.5+ MHz (currently 0.177 MHz)
 
 ### Language features (0.13.0)
 
