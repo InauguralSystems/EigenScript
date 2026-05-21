@@ -596,20 +596,18 @@ Value* builtin_numerical_grad(Value *arg) {
         for (int i = 0; i < len; i++) {
             Value *orig = param->data.list.items[i];
             double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
-            /* Perturb +eps */
-            Value *pp = make_num_permanent(old_val + eps);
+            val_incref(orig);
+            Value *pp = make_num(old_val + eps); val_incref(pp);
             param->data.list.items[i] = pp;
             Value *loss_plus = call_eigs_fn(loss_fn, make_null());
             double lp = (loss_plus && loss_plus->type == VAL_NUM) ? loss_plus->data.num : 0.0;
-            /* Perturb -eps */
-            Value *pm = make_num_permanent(old_val - eps);
+            Value *pm = make_num(old_val - eps); val_incref(pm);
             param->data.list.items[i] = pm;
+            val_decref(pp);
             Value *loss_minus = call_eigs_fn(loss_fn, make_null());
             double lm = (loss_minus && loss_minus->type == VAL_NUM) ? loss_minus->data.num : 0.0;
-            /* Restore original Value pointer (preserves observer state) */
             param->data.list.items[i] = orig;
-            free(pp);
-            free(pm);
+            val_decref(pm);
             /* Central difference */
             list_append(grad, make_num((lp - lm) / (2.0 * eps)));
         }
@@ -627,20 +625,18 @@ Value* builtin_numerical_grad(Value *arg) {
         for (int c = 0; c < cols; c++) {
             Value *orig = row->data.list.items[c];
             double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
-            /* Perturb +eps */
-            Value *pp = make_num_permanent(old_val + eps);
+            val_incref(orig);
+            Value *pp = make_num(old_val + eps); val_incref(pp);
             row->data.list.items[c] = pp;
             Value *loss_plus = call_eigs_fn(loss_fn, make_null());
             double lp = (loss_plus && loss_plus->type == VAL_NUM) ? loss_plus->data.num : 0.0;
-            /* Perturb -eps */
-            Value *pm = make_num_permanent(old_val - eps);
+            Value *pm = make_num(old_val - eps); val_incref(pm);
             row->data.list.items[c] = pm;
+            val_decref(pp);
             Value *loss_minus = call_eigs_fn(loss_fn, make_null());
             double lm = (loss_minus && loss_minus->type == VAL_NUM) ? loss_minus->data.num : 0.0;
-            /* Restore original Value pointer (preserves observer state) */
             row->data.list.items[c] = orig;
-            free(pp);
-            free(pm);
+            val_decref(pm);
             list_append(grad_row, make_num((lp - lm) / (2.0 * eps)));
         }
         list_append(grad, grad_row);
@@ -732,22 +728,15 @@ Value* builtin_numerical_grad_rows(Value *arg) {
         Value *grad_row = grad->data.list.items[r];
 
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
-            Value *orig = row->data.list.items[c];
-            double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
-            /* +eps */
-            Value *perturb_plus = make_num_permanent(old_val + eps);
-            row->data.list.items[c] = perturb_plus;
+            Value *cell = row->data.list.items[c];
+            double old_val = (cell->type == VAL_NUM) ? cell->data.num : 0.0;
+            cell->data.num = old_val + eps;
             Value *lp = call_eigs_fn(loss_fn, make_null());
             double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
-            /* -eps */
-            Value *perturb_minus = make_num_permanent(old_val - eps);
-            row->data.list.items[c] = perturb_minus;
+            cell->data.num = old_val - eps;
             Value *lm = call_eigs_fn(loss_fn, make_null());
             double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
-            /* restore original Value pointer (preserves observer state) */
-            row->data.list.items[c] = orig;
-            free(perturb_plus);
-            free(perturb_minus);
+            cell->data.num = old_val;
             /* gradient */
             grad_row->data.list.items[c] = make_num((loss_plus - loss_minus) / (2.0 * eps));
         }
@@ -830,20 +819,23 @@ Value* builtin_numerical_grad_cols(Value *arg) {
 
             Value *orig = row->data.list.items[col];
             double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
+            val_incref(orig);
             /* +eps */
-            Value *perturb_plus = make_num_permanent(old_val + eps);
-            row->data.list.items[col] = perturb_plus;
+            Value *pp = make_num(old_val + eps);
+            val_incref(pp);
+            row->data.list.items[col] = pp;
             Value *lp = call_eigs_fn(loss_fn, make_null());
             double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
             /* -eps */
-            Value *perturb_minus = make_num_permanent(old_val - eps);
-            row->data.list.items[col] = perturb_minus;
+            Value *pm = make_num(old_val - eps);
+            val_incref(pm);
+            row->data.list.items[col] = pm;
+            val_decref(pp);
             Value *lm = call_eigs_fn(loss_fn, make_null());
             double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
-            /* restore original Value pointer (preserves observer state) */
+            /* restore */
             row->data.list.items[col] = orig;
-            free(perturb_plus);
-            free(perturb_minus);
+            val_decref(pm);
             /* gradient */
             grad->data.list.items[r]->data.list.items[col] = make_num((loss_plus - loss_minus) / (2.0 * eps));
         }
