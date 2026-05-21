@@ -243,7 +243,19 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         } else if (a->type == VAL_STR && b->type == VAL_NUM) {
             char buf[64]; snprintf(buf, sizeof(buf), "%s%.14g", a->data.str, b->data.num);
             vm_push(make_str(buf));
+        } else if (a->type == VAL_STR || b->type == VAL_STR) {
+            /* String + non-string: convert non-string to string */
+            extern char* value_to_string(Value *v);
+            char *sa = (a->type == VAL_STR) ? strdup(a->data.str) : value_to_string(a);
+            char *sb = (b->type == VAL_STR) ? strdup(b->data.str) : value_to_string(b);
+            int la = strlen(sa), lb = strlen(sb);
+            char *s = malloc(la + lb + 1);
+            memcpy(s, sa, la); memcpy(s + la, sb, lb); s[la + lb] = 0;
+            vm_push(make_str(s));
+            free(sa); free(sb); free(s);
         } else {
+            runtime_error(current_line, "cannot apply '+' to %s and %s",
+                val_type_name(a->type), val_type_name(b->type));
             vm_push(make_null());
         }
         val_decref(a); val_decref(b);
@@ -271,7 +283,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_NUM && b->type == VAL_NUM) {
             if (b->data.num == 0.0) {
-                runtime_error(current_line, "division by zero");
+                fprintf(stderr, "Warning line %d: division by zero\n", current_line);
                 vm_push(make_num(0));
             } else {
                 vm_push(make_num(num_guard(a->data.num / b->data.num)));
@@ -559,9 +571,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             Value *result = fn_val->data.builtin(arg);
             g_builtin_call_env = saved;
 
-            if (!consumes_arg) val_decref(arg);
+            if (!consumes_arg && result != arg) val_decref(arg);
             if (!result) result = make_null();
-            else val_incref(result);
+            else if (result != arg) val_incref(result);
+            /* If result == arg, the arg's refcount transfers to the result */
             vm_push(result);
 
             /* Check for errors from builtins */
