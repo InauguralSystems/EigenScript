@@ -793,7 +793,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(GET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
-        const char *name = chunk->constants[idx]->data.str;
+        const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
         int found = 0;
@@ -810,7 +810,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(SET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
-        const char *name = chunk->constants[idx]->data.str;
+        const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
@@ -820,7 +820,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(SET_NAME_LOCAL): {
         uint16_t idx = read_u16(ip); ip += 2;
-        const char *name = chunk->constants[idx]->data.str;
+        const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
@@ -1276,7 +1276,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(DOT_GET): {
         uint16_t idx = read_u16(ip); ip += 2;
-        const char *key = chunk->constants[idx]->data.str;
+        const char *key = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
         Value *target = vm_pop();
@@ -1305,7 +1305,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(DOT_SET): {
         uint16_t idx = read_u16(ip); ip += 2;
-        const char *key = chunk->constants[idx]->data.str;
+        const char *key = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
         Value *val = vm_pop(); Value *target = vm_pop();
@@ -1330,7 +1330,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         Env *e = frame->fn_env;
         Value *target = vm_local_lift(e, slot);
         if (target && target->type == VAL_DICT) {
-            const char *key = chunk->constants[name_idx]->data.str;
+            const char *key = chunk->const_interns[name_idx];
             uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
             if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
             Value *v = dict_get_cached(target, key, h);
@@ -1347,7 +1347,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 vm_push_slot(slot_null());
             }
         } else if (target && target->type != VAL_NULL) {
-            const char *key = chunk->constants[name_idx]->data.str;
+            const char *key = chunk->const_interns[name_idx];
             runtime_error(current_line, "cannot access field '%s' on %s",
                 key, val_type_name(target->type));
             vm_push_slot(slot_null());
@@ -1364,7 +1364,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         Env *e = frame->fn_env;
         Value *target = vm_local_lift(e, slot);
         if (target && target->type == VAL_DICT) {
-            const char *key = chunk->constants[name_idx]->data.str;
+            const char *key = chunk->const_interns[name_idx];
             uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
             if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
             EigsSlot tos = g_vm.stack[g_vm.sp - 1];
@@ -1375,7 +1375,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             Value *val = vm_slot_lift(g_vm.sp - 1);
             dict_set_cached(target, key, h, val);
         } else if (target && target->type != VAL_NULL) {
-            const char *key = chunk->constants[name_idx]->data.str;
+            const char *key = chunk->const_interns[name_idx];
             runtime_error(current_line, "cannot set field '%s' on %s",
                 key, val_type_name(target->type));
         }
@@ -1453,7 +1453,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (i < target->data.list.count) {
                 Value *dict = target->data.list.items[i];
                 if (dict && dict->type == VAL_DICT) {
-                    const char *key = chunk->constants[name_idx]->data.str;
+                    const char *key = chunk->const_interns[name_idx];
                     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
                     if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
                     Value *v = dict_get_cached(dict, key, h);
@@ -1469,7 +1469,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                         DISPATCH();
                     }
                 } else if (dict && dict->type != VAL_NULL) {
-                    const char *key = chunk->constants[name_idx]->data.str;
+                    const char *key = chunk->const_interns[name_idx];
                     runtime_error(current_line, "cannot access field '%s' on %s",
                         key, val_type_name(dict->type));
                 }
@@ -1497,7 +1497,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (i < target->data.list.count) {
                 Value *dict = target->data.list.items[i];
                 if (dict && dict->type == VAL_DICT) {
-                    const char *key = chunk->constants[name_idx]->data.str;
+                    const char *key = chunk->const_interns[name_idx];
                     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
                     if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
                     /* Immediate-num + exclusive-num-slot fast path:
@@ -1511,7 +1511,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     Value *val = vm_slot_lift(g_vm.sp - 1);
                     dict_set_cached(dict, key, h, val);
                 } else if (dict && dict->type != VAL_NULL) {
-                    const char *key = chunk->constants[name_idx]->data.str;
+                    const char *key = chunk->const_interns[name_idx];
                     runtime_error(current_line, "cannot assign field '%s' on %s",
                         key, val_type_name(dict->type));
                 }
@@ -1644,7 +1644,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 v = slot_as_ptr(s);
             }
             if (v) {
-                const char *name = chunk->constants[name_idx]->data.str;
+                const char *name = chunk->const_interns[name_idx];
                 uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
                 if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
                 Value *prev = env_get_hashed(frame->env, name, h);
@@ -1706,7 +1706,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t name_idx = read_u16(ip); ip += 2;
         Value *v = vm_pop();
         Value *result = make_null();
-        const char *name = chunk->constants[name_idx]->data.str;
+        const char *name = chunk->const_interns[name_idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
         switch (kind) {
@@ -1796,7 +1796,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(IMPORT): {
         uint16_t idx = read_u16(ip); ip += 2;
-        const char *name = chunk->constants[idx]->data.str;
+        const char *name = chunk->const_interns[idx];
 
         char request[4096];
         char path_buf[8192];

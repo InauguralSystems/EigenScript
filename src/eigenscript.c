@@ -805,20 +805,28 @@ static void env_hash_rebuild(EnvHash *ht, char **names, int count) {
 }
 
 /* Lookup name in hash table. Returns index into names/values or -1.
- * Slot is "occupied" iff its generation matches the table's current gen. */
+ * Slot is "occupied" iff its generation matches the table's current gen.
+ *
+ * Fast path: when both the lookup name and stored name come from the
+ * intern pool (env_intern_name), they're pointer-equal on match — no
+ * strcmp needed. Falls back to strcmp for callers (e.g. dict.keys)
+ * whose keys aren't routed through the intern pool. */
 static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char **names) {
     if (!ht->generations) return -1;
     int slot = h & ht->mask;
     uint32_t gen = ht->generation;
     while (ht->generations[slot] == gen) {
-        if (ht->hashes[slot] == h && strcmp(names[ht->indices[slot]], name) == 0)
-            return ht->indices[slot];
+        if (ht->hashes[slot] == h) {
+            const char *stored = names[ht->indices[slot]];
+            if (stored == name || strcmp(stored, name) == 0)
+                return ht->indices[slot];
+        }
         slot = (slot + 1) & ht->mask;
     }
     return -1;
 }
 
-static char *env_intern_name(const char *name) {
+char *env_intern_name(const char *name) {
     uint32_t h = env_hash_name(name);
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
     for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
