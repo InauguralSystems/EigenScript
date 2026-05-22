@@ -70,6 +70,35 @@ extern Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
 extern void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 extern int env_hash_find_dict(Value *dict, const char *key, uint32_t h);
 extern int env_get_assign_count(Env *env, const char *name, uint32_t h);
+extern void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
+
+/* Inline fast-path for binding a single param into a fresh call env.
+ * Caller guarantees `env->count == slot_idx` and `env->capacity > slot_idx`
+ * (true for fresh envs from env_new — capacity is ENV_INIT_CAP = 16).
+ * Skips capacity check, env_hash_find, env_hash_rebuild. */
+static inline void vm_bind_fresh_param(Env *env, int slot_idx,
+                                       const char *interned, uint32_t h,
+                                       EigsSlot s) {
+    env->names[slot_idx] = (char *)interned;
+    EigsSlot stored = s;
+    if (__builtin_expect(slot_is_ptr(s), 0)) {
+        Value *v = slot_as_ptr(s);
+        if (__builtin_expect(v && v->arena, 0)) {
+            Value *promoted = promote_if_arena(v);
+            if (promoted && promoted != v) {
+                stored = slot_from_value(promoted);
+                goto _bind_store;
+            }
+        }
+    }
+    slot_incref(s);
+_bind_store:
+    env->values[slot_idx] = stored;
+    if (env->assign_counts) env->assign_counts[slot_idx] = 1;
+    env->count = slot_idx + 1;
+    env->binding_version++;
+    env_hash_insert(&env->hash, h, slot_idx);
+}
 
 /* ---- Dict field inline cache ---- */
 #define DICT_CACHE_SIZE 128
@@ -1059,14 +1088,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             } else if (param_count == 1) {
                 uint32_t ph = phashes ? phashes[0] : env_hash_name(fn_val->data.fn.params[0]);
                 if (argc == 1) {
-                    env_bind_fresh_param_slot(call_env,
+                    vm_bind_fresh_param(call_env, 0,
                         fn_val->data.fn.params[0], ph,
                         g_vm.stack[g_vm.sp - 1]);
                 } else {
                     Value *arg_list = make_list(argc);
                     for (int i = 0; i < argc; i++)
                         list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
-                    env_bind_fresh_param_slot(call_env,
+                    vm_bind_fresh_param(call_env, 0,
                         fn_val->data.fn.params[0], ph,
                         slot_from_heap(arg_list));
                     val_decref(arg_list);
@@ -2032,7 +2061,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (fn->data.fn.param_count > 0) {
                 uint32_t ph = fn->data.fn.param_hashes ? fn->data.fn.param_hashes[0]
                                                        : env_hash_name(fn->data.fn.params[0]);
-                env_bind_fresh_param_slot(call_env,
+                vm_bind_fresh_param(call_env, 0,
                     fn->data.fn.params[0], ph, arg_s);
             } else {
                 slot_decref(arg_s);

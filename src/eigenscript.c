@@ -143,7 +143,7 @@ const char* val_type_name(ValType t) {
 /* Forward declarations for hash helpers (used by dict and env). */
 uint32_t env_hash_name(const char *name);
 static void env_hash_init(EnvHash *ht, int cap);
-static void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
+void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
 static void env_hash_rebuild(EnvHash *ht, char **names, int count);
 static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char **names);
 
@@ -781,7 +781,7 @@ static void env_hash_init(EnvHash *ht, int cap) {
     for (int i = 0; i < cap; i++) ht->indices[i] = -1;
 }
 
-static void env_hash_insert(EnvHash *ht, uint32_t h, int idx) {
+void env_hash_insert(EnvHash *ht, uint32_t h, int idx) {
     int slot = h & ht->mask;
     uint32_t gen = ht->generation;
     while (ht->generations[slot] == gen) {
