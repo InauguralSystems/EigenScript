@@ -184,15 +184,37 @@ static inline Value *vm_pop(void) {
     return slot_bridge_unwrap(g_vm.stack[--g_vm.sp]);
 }
 
+/* Lift a stack slot: if it holds an immediate (number / null / bool),
+ * materialize a heap Value with refcount=1 AND overwrite the slot so the
+ * lifted Value becomes the slot's owned reference. Heap/tracked slots
+ * are returned as-is.
+ *
+ * This is the critical primitive that lets immediates flow safely:
+ * peek-then-store sequences that previously double-allocated (one fresh
+ * Value per peek) now share a single heap Value held by the slot. The
+ * slot's eventual pop / decref releases the only reference. */
+static inline Value *vm_slot_lift(int idx) {
+    EigsSlot s = g_vm.stack[idx];
+    if (slot_is_ptr(s)) return slot_as_ptr(s);
+    Value *v;
+    if (slot_is_num(s))       v = make_num(s.d);
+    else if (slot_is_null(s)) v = make_null();
+    else if (slot_is_bool(s)) v = make_num(slot_as_bool(s) ? 1.0 : 0.0);
+    else                      v = make_null();
+    g_vm.stack[idx] = slot_from_heap(v);
+    return v;
+}
+
 static inline Value *vm_peek(int distance) {
-    return slot_bridge_unwrap(g_vm.stack[g_vm.sp - 1 - distance]);
+    return vm_slot_lift(g_vm.sp - 1 - distance);
 }
 
 /* Direct-stack-access bridge macros. Most opcodes still touch the
- * stack as if it were a Value*[]; these wrap each access through
- * slot_bridge_unwrap / slot_bridge_wrap so the underlying EigsSlot
- * storage remains hidden until per-opcode rewrites land in B-3+. */
-#define STK_AS_VAL(i)       slot_bridge_unwrap(g_vm.stack[i])
+ * stack as if it were a Value*[]; STK_AS_VAL routes through
+ * vm_slot_lift so any immediate is materialized into the slot itself
+ * (not freshly allocated per access). STK_PUT_VAL overwrites the slot
+ * with a freshly wrapped Value*. */
+#define STK_AS_VAL(i)       vm_slot_lift((i))
 #define STK_PUT_VAL(i, v)   (g_vm.stack[i] = slot_bridge_wrap(v))
 
 /* Raw slot push: bypasses slot_bridge_wrap, used by opcodes that emit
@@ -344,24 +366,29 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     CASE(CONST): {
         uint16_t idx = read_u16(ip); ip += 2;
         Value *v = chunk->constants[idx];
-        val_incref(v);
-        vm_push(v);
+        /* Numeric constants without observer state ship as immediates —
+         * skips an incref/decref pair on every push/pop. */
+        if (v->type == VAL_NUM && v->obs_age == 0) {
+            vm_push_slot(slot_from_num(v->data.num));
+        } else {
+            val_incref(v);
+            vm_push(v);
+        }
         DISPATCH();
     }
 
     CASE(NULL): {
-        vm_push(make_null());
+        vm_push_slot(slot_null());
         DISPATCH();
     }
 
     CASE(NUM_ZERO): {
-        /* Push a fresh num(0) — likely to be consumed by arithmetic and reused */
-        vm_push(make_num(0.0));
+        vm_push_slot(slot_from_num(0.0));
         DISPATCH();
     }
 
     CASE(NUM_ONE): {
-        vm_push(make_num(1.0));
+        vm_push_slot(slot_from_num(1.0));
         DISPATCH();
     }
 
@@ -404,7 +431,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             } \
         } \
         slot_decref(_as); slot_decref(_bs); \
-        g_vm.stack[g_vm.sp - 2] = slot_from_heap(make_num(_r)); \
+        g_vm.stack[g_vm.sp - 2] = slot_from_num(_r); \
         g_vm.sp--; \
         DISPATCH(); \
     } \
@@ -528,12 +555,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); } \
             } \
             slot_decref(_as); slot_decref(_bs); \
-            g_vm.stack[g_vm.sp - 2] = slot_from_heap(make_num(_r)); \
+            g_vm.stack[g_vm.sp - 2] = slot_from_num(_r); \
             g_vm.sp--; \
             DISPATCH(); \
         } \
         slot_decref(_as); slot_decref(_bs); \
-        g_vm.stack[g_vm.sp - 2] = slot_from_heap(make_num(0)); \
+        g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
         g_vm.sp--; \
         DISPATCH(); \
     }
@@ -555,12 +582,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (NUM_REUSE(v)) { v->data.num = -d; DISPATCH(); }
             }
             slot_decref(s);
-            g_vm.stack[g_vm.sp - 1] = slot_from_heap(make_num(-d));
+            g_vm.stack[g_vm.sp - 1] = slot_from_num(-d);
             DISPATCH();
         }
         runtime_error(current_line, "cannot negate non-numeric");
         slot_decref(s);
-        g_vm.stack[g_vm.sp - 1] = slot_from_heap(make_num(0));
+        g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
         DISPATCH();
     }
 
@@ -568,7 +595,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
         int t = slot_truthy(s);
         slot_decref(s);
-        g_vm.stack[g_vm.sp - 1] = slot_from_heap(make_num(t ? 0.0 : 1.0));
+        g_vm.stack[g_vm.sp - 1] = slot_from_num(t ? 0.0 : 1.0);
         DISPATCH();
     }
 
@@ -582,11 +609,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (NUM_REUSE(v)) { v->data.num = r; DISPATCH(); }
             }
             slot_decref(s);
-            g_vm.stack[g_vm.sp - 1] = slot_from_heap(make_num(r));
+            g_vm.stack[g_vm.sp - 1] = slot_from_num(r);
             DISPATCH();
         }
         slot_decref(s);
-        g_vm.stack[g_vm.sp - 1] = slot_from_heap(make_num(0));
+        g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
         DISPATCH();
     }
 
@@ -607,7 +634,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); }
             }
             slot_decref(_as); slot_decref(_bs);
-            g_vm.stack[g_vm.sp - 2] = slot_from_heap(make_num(_r));
+            g_vm.stack[g_vm.sp - 2] = slot_from_num(_r);
             g_vm.sp--;
             DISPATCH();
         }
@@ -636,7 +663,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); }
             }
             slot_decref(_as); slot_decref(_bs);
-            g_vm.stack[g_vm.sp - 2] = slot_from_heap(make_num(_r));
+            g_vm.stack[g_vm.sp - 2] = slot_from_num(_r);
             g_vm.sp--;
             DISPATCH();
         }
@@ -666,12 +693,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); } \
             } \
             slot_decref(_as); slot_decref(_bs); \
-            g_vm.stack[g_vm.sp - 2] = slot_from_heap(make_num(_r)); \
+            g_vm.stack[g_vm.sp - 2] = slot_from_num(_r); \
             g_vm.sp--; \
             DISPATCH(); \
         } \
         slot_decref(_as); slot_decref(_bs); \
-        g_vm.stack[g_vm.sp - 2] = slot_from_heap(make_num(0)); \
+        g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
         g_vm.sp--; \
         DISPATCH(); \
     }
@@ -689,10 +716,18 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
             Value *v = e->values[slot];
-            if (v) { val_incref(v); vm_push(v); }
-            else vm_push(make_null());
+            if (v) {
+                if (v->type == VAL_NUM && v->obs_age == 0) {
+                    vm_push_slot(slot_from_num(v->data.num));
+                } else {
+                    val_incref(v);
+                    vm_push(v);
+                }
+            } else {
+                vm_push_slot(slot_null());
+            }
         } else {
-            vm_push(make_null());
+            vm_push_slot(slot_null());
         }
         DISPATCH();
     }
@@ -718,11 +753,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         Value *v = env_get_hashed(frame->env, name, h);
         if (!v) {
             runtime_error(current_line, "undefined variable '%s'", name);
-            v = make_null();
+            vm_push_slot(slot_null());
+        } else if (v->type == VAL_NUM && v->obs_age == 0) {
+            vm_push_slot(slot_from_num(v->data.num));
         } else {
             val_incref(v);
+            vm_push(v);
         }
-        vm_push(v);
         DISPATCH();
     }
 
@@ -788,13 +825,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(JUMP_IF_FALSE_PEEK): {
         uint16_t offset = read_u16(ip); ip += 2;
-        if (!is_truthy(vm_peek(0))) ip += offset;
+        if (!slot_truthy(g_vm.stack[g_vm.sp - 1])) ip += offset;
         DISPATCH();
     }
 
     CASE(JUMP_IF_TRUE_PEEK): {
         uint16_t offset = read_u16(ip); ip += 2;
-        if (is_truthy(vm_peek(0))) ip += offset;
+        if (slot_truthy(g_vm.stack[g_vm.sp - 1])) ip += offset;
         DISPATCH();
     }
 
@@ -877,9 +914,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             Value *result = fn_val->data.builtin(arg);
             g_builtin_call_env = saved;
 
-            if (!consumes_arg && result != arg) val_decref(arg);
             if (!result) result = make_null();
             else if (result != arg) val_incref(result);
+            /* Decref arg *after* incref'ing result, in case the builtin
+             * returns a borrowed pointer into arg (e.g., coalesce returns
+             * a list item). Otherwise the arg-free cascades through list
+             * items and frees result before the incref. */
+            if (!consumes_arg && result != arg) val_decref(arg);
             /* If result == arg, the arg's refcount transfers to the result */
             vm_push(result);
 
@@ -1146,19 +1187,31 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t name_idx = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *target = ((int)slot < e->count) ? e->values[slot] : NULL;
-        Value *result = make_null();
         if (target && target->type == VAL_DICT) {
             const char *key = chunk->constants[name_idx]->data.str;
             uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
             if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
             Value *v = dict_get_cached(target, key, h);
-            if (v) { result = v; val_incref(result); }
+            if (v) {
+                /* Hot DMG path: untracked VAL_NUM field -> push immediate,
+                 * skipping the incref/decref pair on every register read. */
+                if (v->type == VAL_NUM && v->obs_age == 0) {
+                    vm_push_slot(slot_from_num(v->data.num));
+                } else {
+                    val_incref(v);
+                    vm_push(v);
+                }
+            } else {
+                vm_push_slot(slot_null());
+            }
         } else if (target && target->type != VAL_NULL) {
             const char *key = chunk->constants[name_idx]->data.str;
             runtime_error(current_line, "cannot access field '%s' on %s",
                 key, val_type_name(target->type));
+            vm_push_slot(slot_null());
+        } else {
+            vm_push_slot(slot_null());
         }
-        vm_push(result);
         DISPATCH();
     }
 
@@ -1233,7 +1286,6 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t name_idx = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *target = ((int)slot < e->count) ? e->values[slot] : NULL;
-        Value *result = make_null();
         int i = (int)list_idx;
         if (target && target->type == VAL_LIST) {
             if (i < target->data.list.count) {
@@ -1243,7 +1295,17 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
                     if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
                     Value *v = dict_get_cached(dict, key, h);
-                    if (v) { result = v; val_incref(result); }
+                    if (v) {
+                        /* Hot DMG path: register dict[field] returning a
+                         * plain VAL_NUM -> push immediate. */
+                        if (v->type == VAL_NUM && v->obs_age == 0) {
+                            vm_push_slot(slot_from_num(v->data.num));
+                        } else {
+                            val_incref(v);
+                            vm_push(v);
+                        }
+                        DISPATCH();
+                    }
                 } else if (dict && dict->type != VAL_NULL) {
                     const char *key = chunk->constants[name_idx]->data.str;
                     runtime_error(current_line, "cannot access field '%s' on %s",
@@ -1256,7 +1318,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         } else if (target && target->type != VAL_NULL) {
             runtime_error(current_line, "cannot index %s", val_type_name(target->type));
         }
-        vm_push(result);
+        vm_push_slot(slot_null());
         DISPATCH();
     }
 
