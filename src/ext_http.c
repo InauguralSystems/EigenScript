@@ -629,7 +629,9 @@ static void handle_request(int fd) {
                     TokenList auth_tl = tokenize("require_auth of null");
                     ASTNode *auth_ast = parse(&auth_tl);
                     Env *auth_env = env_new(g_server.global_env);
-                    Value *auth_result = eval_node(auth_ast, auth_env);
+                    EigsChunk *auth_chunk = compile_ast(auth_ast, auth_env);
+                    Value *auth_result = vm_execute(auth_chunk, auth_env);
+                    chunk_free(auth_chunk);
                     env_free(auth_env);
                     char *auth_str = value_to_string(auth_result);
                     if (auth_str[0] != '\0') {
@@ -645,7 +647,9 @@ static void handle_request(int fd) {
                 TokenList tl = tokenize(r->payload);
                 ASTNode *ast = parse(&tl);
                 Env *req_env = env_new(g_server.global_env);
-                Value *result = eval_node(ast, req_env);
+                EigsChunk *req_chunk = compile_ast(ast, req_env);
+                Value *result = vm_execute(req_chunk, req_env);
+                chunk_free(req_chunk);
                 char *result_str = value_to_string(result);
                 env_free(req_env);
 

@@ -7,6 +7,7 @@
 #define EXT_HTTP_INTERNAL_H
 
 #include "eigenscript.h"
+#include "vm.h"
 
 #define MAX_ROUTES 256
 

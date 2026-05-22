@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")/src"
 
 VERSION=$(cat ../VERSION)
-SOURCES="eigenscript.c lexer.c parser.c eval.c builtins.c builtins_tensor.c hash.c arena.c strbuf.c ext_store.c fmt.c lint.c main.c"
+SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c main.c"
 
 if [ "$1" = "full" ]; then
     # Full build: all extensions. Requires libpq-dev.
