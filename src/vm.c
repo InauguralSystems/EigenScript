@@ -1060,18 +1060,42 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     }
 
     CASE(LOCAL_IDX_GET): {
-        /* Fused GET_LOCAL + CONST(int) + INDEX_GET: push local[slot][idx] */
+        /* Fused GET_LOCAL + CONST(int) + INDEX_GET: push local[slot][idx].
+         * Error semantics must match unfused INDEX_GET (vm.c:916): out-of-range
+         * and wrong-type indexing raise runtime errors so try/catch can trap them. */
         uint16_t slot = read_u16(ip); ip += 2;
         uint16_t idx = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *target = (slot < (uint16_t)e->count) ? e->values[slot] : NULL;
         Value *result = make_null();
         if (target) {
-            if (target->type == VAL_LIST && idx < (uint16_t)target->data.list.count) {
-                result = target->data.list.items[idx];
-                val_incref(result);
-            } else if (target->type == VAL_BUFFER && idx < (uint16_t)target->data.buffer.count) {
-                result = make_num(target->data.buffer.data[idx]);
+            int i = (int)idx;
+            if (target->type == VAL_LIST) {
+                if (i < target->data.list.count) {
+                    result = target->data.list.items[i];
+                    val_incref(result);
+                } else {
+                    runtime_error(current_line, "index %d out of range (list length %d)",
+                                  i, target->data.list.count);
+                }
+            } else if (target->type == VAL_BUFFER) {
+                if (i < target->data.buffer.count) {
+                    result = make_num(target->data.buffer.data[i]);
+                } else {
+                    runtime_error(current_line, "buffer index %d out of range (length %d)",
+                                  i, target->data.buffer.count);
+                }
+            } else if (target->type == VAL_STR) {
+                int len = (int)strlen(target->data.str);
+                if (i < len) {
+                    char buf[2] = { target->data.str[i], 0 };
+                    result = make_str(buf);
+                } else {
+                    runtime_error(current_line, "string index %d out of range (length %d)",
+                                  i, len);
+                }
+            } else if (target->type != VAL_NULL) {
+                runtime_error(current_line, "cannot index %s", val_type_name(target->type));
             }
         }
         vm_push(result);
