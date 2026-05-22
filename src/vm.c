@@ -644,17 +644,27 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(JUMP_IF_FALSE): {
         uint16_t offset = read_u16(ip); ip += 2;
-        Value *v = vm_pop();
-        if (!is_truthy(v)) ip += offset;
-        val_decref(v);
+        Value *v = g_vm.stack[--g_vm.sp];
+        if (v->type == VAL_NUM) {
+            if (v->data.num == 0.0) ip += offset;
+            if (NUM_REUSE(v)) free_value(v); else val_decref(v);
+        } else {
+            if (!is_truthy(v)) ip += offset;
+            val_decref(v);
+        }
         DISPATCH();
     }
 
     CASE(JUMP_IF_TRUE): {
         uint16_t offset = read_u16(ip); ip += 2;
-        Value *v = vm_pop();
-        if (is_truthy(v)) ip += offset;
-        val_decref(v);
+        Value *v = g_vm.stack[--g_vm.sp];
+        if (v->type == VAL_NUM) {
+            if (v->data.num != 0.0) ip += offset;
+            if (NUM_REUSE(v)) free_value(v); else val_decref(v);
+        } else {
+            if (is_truthy(v)) ip += offset;
+            val_decref(v);
+        }
         DISPATCH();
     }
 
@@ -673,8 +683,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     /* ---- Stack ---- */
 
     CASE(POP): {
-        Value *v = vm_pop();
-        val_decref(v);
+        Value *v = g_vm.stack[--g_vm.sp];
+        if (v && !v->arena) {
+            if (__atomic_sub_fetch(&v->refcount, 1, __ATOMIC_ACQ_REL) <= 0)
+                free_value(v);
+        }
         DISPATCH();
     }
 
