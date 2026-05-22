@@ -844,27 +844,17 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(JUMP_IF_FALSE): {
         uint16_t offset = read_u16(ip); ip += 2;
-        Value *v = STK_AS_VAL(--g_vm.sp);
-        if (v->type == VAL_NUM) {
-            if (v->data.num == 0.0) ip += offset;
-            if (NUM_REUSE(v)) free_value(v); else val_decref(v);
-        } else {
-            if (!is_truthy(v)) ip += offset;
-            val_decref(v);
-        }
+        EigsSlot s = g_vm.stack[--g_vm.sp];
+        if (!slot_truthy(s)) ip += offset;
+        slot_decref(s);
         DISPATCH();
     }
 
     CASE(JUMP_IF_TRUE): {
         uint16_t offset = read_u16(ip); ip += 2;
-        Value *v = STK_AS_VAL(--g_vm.sp);
-        if (v->type == VAL_NUM) {
-            if (v->data.num != 0.0) ip += offset;
-            if (NUM_REUSE(v)) free_value(v); else val_decref(v);
-        } else {
-            if (is_truthy(v)) ip += offset;
-            val_decref(v);
-        }
+        EigsSlot s = g_vm.stack[--g_vm.sp];
+        if (slot_truthy(s)) ip += offset;
+        slot_decref(s);
         DISPATCH();
     }
 
@@ -888,17 +878,17 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     }
 
     CASE(DUP): {
-        Value *v = vm_peek(0);
-        val_incref(v);
-        vm_push(v);
+        EigsSlot s = g_vm.stack[g_vm.sp - 1];
+        slot_incref(s);
+        vm_push_slot(s);
         DISPATCH();
     }
 
     CASE(DUP2): {
-        Value *b = vm_peek(0);
-        Value *a = vm_peek(1);
-        val_incref(a); val_incref(b);
-        vm_push(a); vm_push(b);
+        EigsSlot a = g_vm.stack[g_vm.sp - 2];
+        EigsSlot b = g_vm.stack[g_vm.sp - 1];
+        slot_incref(a); slot_incref(b);
+        vm_push_slot(a); vm_push_slot(b);
         DISPATCH();
     }
 
