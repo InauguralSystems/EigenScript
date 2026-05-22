@@ -2928,6 +2928,8 @@ static void *thread_entry(void *arg) {
         g_return_val = NULL;
         if (fn->data.fn.body_count == -1) {
             EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
+            if (fn_chunk->local_count > fn->data.fn.param_count)
+                env_reserve_slots(call_env, fn_chunk->local_count);
             result = vm_execute(fn_chunk, call_env);
         } else {
             /* AST-based function — should not happen after bytecode migration */
@@ -3400,6 +3402,8 @@ Value* builtin_dispatch(Value *arg) {
         if (fn->data.fn.body_count == -1) {
             /* Bytecode function */
             EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
+            if (fn_chunk->local_count > fn->data.fn.param_count)
+                env_reserve_slots(call_env, fn_chunk->local_count);
             Value *result = vm_execute(fn_chunk, call_env);
             env_free(call_env);
             return result ? result : make_null();

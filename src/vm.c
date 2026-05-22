@@ -52,6 +52,7 @@ extern void dict_set(Value *dict, const char *key, Value *val);
 extern Value* dict_get(Value *dict, const char *key);
 extern Env* env_new(Env *parent);
 extern void env_free(Env *env);
+extern void env_reserve_slots(Env *env, int total);
 extern void env_set_local(Env *env, const char *name, Value *val);
 extern void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val);
 extern void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
@@ -170,6 +171,12 @@ static Value *make_iter_state(Value *iterable) {
 
 static Value *vm_run(EigsChunk *chunk, Env *env) {
     int base_frame = g_vm.frame_count; /* track entry point for re-entrant returns */
+    /* Module-level slot promotion (Part B): if the module chunk allocated slots
+     * past env->count at compile time, reserve them now so OP_SET_LOCAL has
+     * a place to write. Slot indices in bytecode are absolute env positions. */
+    if (base_frame == 0 && chunk->local_count > env->count) {
+        env_reserve_slots(env, chunk->local_count);
+    }
     CallFrame *frame = &g_vm.frames[g_vm.frame_count++];
     frame->chunk = chunk;
     frame->ip = chunk->code;
@@ -782,6 +789,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     val_decref(arg_list);
                 }
             }
+
+            /* Pre-allocate slots for non-captured locals (compiler-assigned slots
+             * beyond param_count). OP_SET_LOCAL writes directly into these. */
+            if (fn_chunk->local_count > param_count)
+                env_reserve_slots(call_env, fn_chunk->local_count);
 
             /* Pop args + fn from stack */
             for (int i = 0; i < argc; i++)
@@ -1509,6 +1521,9 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             Env *call_env = env_new(fn->data.fn.closure);
             if (fn->data.fn.param_count > 0)
                 env_set_local(call_env, fn->data.fn.params[0], arg);
+            /* Pre-allocate slots for non-captured locals */
+            if (fn_chunk->local_count > fn->data.fn.param_count)
+                env_reserve_slots(call_env, fn_chunk->local_count);
             val_decref(arg);
             val_decref(table);
 

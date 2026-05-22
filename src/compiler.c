@@ -29,6 +29,14 @@ typedef struct {
     int scope_depth;
 } LoopCtx;
 
+/* Dynamic set of name pointers used for escape analysis & module-name tracking.
+ * Strings are NOT owned (point into AST nodes); only the array is malloc'd. */
+typedef struct {
+    const char **names;
+    int          count;
+    int          cap;
+} NameSet;
+
 typedef struct Compiler {
     EigsChunk        *chunk;
     struct Compiler  *enclosing;
@@ -41,7 +49,38 @@ typedef struct Compiler {
     int               stack_depth;  /* tracked stack depth for validation */
     int               max_stack;    /* high-water mark */
     int               param_count;  /* number of function params (for local opt) */
+    NameSet           captured;     /* names captured by nested closures (slow path) */
+    NameSet           interrogated; /* names used in `who/when is x` (slow path for assign_counts) */
+    NameSet          *module_names; /* root-compiler-owned: names defined at module scope */
+    NameSet           module_slot_names; /* root-compiler-owned: names promoted to module slots */
+    ASTNode          *root_ast;     /* root-compiler-owned: full AST for escape analysis */
 } Compiler;
+
+int g_compile_module_slots = 0;
+
+/* ---- NameSet helpers ---- */
+
+static int name_set_has(const NameSet *s, const char *name) {
+    if (!s) return 0;
+    for (int i = 0; i < s->count; i++)
+        if (s->names[i] == name || strcmp(s->names[i], name) == 0) return 1;
+    return 0;
+}
+
+static void name_set_add(NameSet *s, const char *name) {
+    if (!name || name_set_has(s, name)) return;
+    if (s->count >= s->cap) {
+        s->cap = s->cap ? s->cap * 2 : 8;
+        s->names = realloc(s->names, s->cap * sizeof(const char *));
+    }
+    s->names[s->count++] = name;
+}
+
+static void name_set_free(NameSet *s) {
+    free(s->names);
+    s->names = NULL;
+    s->count = s->cap = 0;
+}
 
 /* ---- Forward declarations ---- */
 static void compile_node(Compiler *c, ASTNode *node);
@@ -321,6 +360,530 @@ static uint8_t binop_to_opcode(const char *op) {
     return 0;
 }
 
+/* ---- AST walkers for escape analysis ---- */
+
+/* Forward decl */
+static void collect_referenced_names(ASTNode *node, NameSet *out);
+
+/* Like collect_referenced_names, but skips the subtree rooted at `skip` (pointer
+ * comparison). Used by module-slot escape analysis to find names referenced
+ * OUTSIDE a particular unobserved block. */
+static void collect_referenced_names_skip(ASTNode *node, ASTNode *skip, NameSet *out) {
+    if (!node || node == skip) return;
+    switch (node->type) {
+    case AST_IDENT:
+        name_set_add(out, node->data.ident.name);
+        break;
+    case AST_ASSIGN:
+        name_set_add(out, node->data.assign.name);
+        collect_referenced_names_skip(node->data.assign.expr, skip, out);
+        break;
+    case AST_BINOP:
+        collect_referenced_names_skip(node->data.binop.left, skip, out);
+        collect_referenced_names_skip(node->data.binop.right, skip, out);
+        break;
+    case AST_UNARY:
+        collect_referenced_names_skip(node->data.unary.operand, skip, out);
+        break;
+    case AST_RELATION:
+        collect_referenced_names_skip(node->data.relation.left, skip, out);
+        collect_referenced_names_skip(node->data.relation.right, skip, out);
+        break;
+    case AST_IF:
+        collect_referenced_names_skip(node->data.cond.cond, skip, out);
+        for (int i = 0; i < node->data.cond.if_count; i++)
+            collect_referenced_names_skip(node->data.cond.if_body[i], skip, out);
+        for (int i = 0; i < node->data.cond.else_count; i++)
+            collect_referenced_names_skip(node->data.cond.else_body[i], skip, out);
+        break;
+    case AST_LOOP:
+        collect_referenced_names_skip(node->data.loop.cond, skip, out);
+        for (int i = 0; i < node->data.loop.body_count; i++)
+            collect_referenced_names_skip(node->data.loop.body[i], skip, out);
+        break;
+    case AST_RETURN:
+        collect_referenced_names_skip(node->data.ret.expr, skip, out);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < node->data.block.count; i++)
+            collect_referenced_names_skip(node->data.block.stmts[i], skip, out);
+        break;
+    case AST_LIST:
+        for (int i = 0; i < node->data.list.count; i++)
+            collect_referenced_names_skip(node->data.list.elems[i], skip, out);
+        break;
+    case AST_INDEX:
+        collect_referenced_names_skip(node->data.index.target, skip, out);
+        collect_referenced_names_skip(node->data.index.index, skip, out);
+        break;
+    case AST_LISTCOMP:
+        collect_referenced_names_skip(node->data.listcomp.expr, skip, out);
+        collect_referenced_names_skip(node->data.listcomp.iter, skip, out);
+        collect_referenced_names_skip(node->data.listcomp.filter, skip, out);
+        break;
+    case AST_FOR:
+        name_set_add(out, node->data.forloop.var);
+        collect_referenced_names_skip(node->data.forloop.iter, skip, out);
+        for (int i = 0; i < node->data.forloop.body_count; i++)
+            collect_referenced_names_skip(node->data.forloop.body[i], skip, out);
+        break;
+    case AST_FUNC:
+        name_set_add(out, node->data.func.name);
+        for (int i = 0; i < node->data.func.body_count; i++)
+            collect_referenced_names_skip(node->data.func.body[i], skip, out);
+        break;
+    case AST_LAMBDA:
+        collect_referenced_names_skip(node->data.lambda.body, skip, out);
+        break;
+    case AST_INTERROGATE:
+        collect_referenced_names_skip(node->data.interrogate.expr, skip, out);
+        break;
+    case AST_TRY:
+        for (int i = 0; i < node->data.trycatch.try_count; i++)
+            collect_referenced_names_skip(node->data.trycatch.try_body[i], skip, out);
+        if (node->data.trycatch.err_name) name_set_add(out, node->data.trycatch.err_name);
+        for (int i = 0; i < node->data.trycatch.catch_count; i++)
+            collect_referenced_names_skip(node->data.trycatch.catch_body[i], skip, out);
+        break;
+    case AST_DICT:
+        for (int i = 0; i < node->data.dict.count; i++) {
+            collect_referenced_names_skip(node->data.dict.keys[i], skip, out);
+            collect_referenced_names_skip(node->data.dict.vals[i], skip, out);
+        }
+        break;
+    case AST_DOT:
+        collect_referenced_names_skip(node->data.dot.target, skip, out);
+        break;
+    case AST_DOT_ASSIGN:
+        collect_referenced_names_skip(node->data.dot_assign.target, skip, out);
+        collect_referenced_names_skip(node->data.dot_assign.expr, skip, out);
+        break;
+    case AST_INDEX_ASSIGN:
+        collect_referenced_names_skip(node->data.index_assign.target, skip, out);
+        collect_referenced_names_skip(node->data.index_assign.index, skip, out);
+        collect_referenced_names_skip(node->data.index_assign.expr, skip, out);
+        break;
+    case AST_MATCH:
+        collect_referenced_names_skip(node->data.match.expr, skip, out);
+        for (int i = 0; i < node->data.match.case_count; i++) {
+            collect_referenced_names_skip(node->data.match.patterns[i], skip, out);
+            for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                collect_referenced_names_skip(node->data.match.bodies[i][j], skip, out);
+        }
+        break;
+    case AST_PROGRAM:
+        for (int i = 0; i < node->data.program.count; i++)
+            collect_referenced_names_skip(node->data.program.stmts[i], skip, out);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Collect every identifier referenced anywhere in a subtree (transitively, including
+ * inside nested closures). Used to determine which outer names a closure captures.
+ * Does NOT track shadowing by deeper nested locals — conservative over-collection. */
+static void collect_referenced_names(ASTNode *node, NameSet *out) {
+    if (!node) return;
+    switch (node->type) {
+    case AST_IDENT:
+        name_set_add(out, node->data.ident.name);
+        break;
+    case AST_ASSIGN:
+        name_set_add(out, node->data.assign.name);
+        collect_referenced_names(node->data.assign.expr, out);
+        break;
+    case AST_BINOP:
+        collect_referenced_names(node->data.binop.left, out);
+        collect_referenced_names(node->data.binop.right, out);
+        break;
+    case AST_UNARY:
+        collect_referenced_names(node->data.unary.operand, out);
+        break;
+    case AST_RELATION:
+        collect_referenced_names(node->data.relation.left, out);
+        collect_referenced_names(node->data.relation.right, out);
+        break;
+    case AST_IF:
+        collect_referenced_names(node->data.cond.cond, out);
+        for (int i = 0; i < node->data.cond.if_count; i++)
+            collect_referenced_names(node->data.cond.if_body[i], out);
+        for (int i = 0; i < node->data.cond.else_count; i++)
+            collect_referenced_names(node->data.cond.else_body[i], out);
+        break;
+    case AST_LOOP:
+        collect_referenced_names(node->data.loop.cond, out);
+        for (int i = 0; i < node->data.loop.body_count; i++)
+            collect_referenced_names(node->data.loop.body[i], out);
+        break;
+    case AST_RETURN:
+        collect_referenced_names(node->data.ret.expr, out);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < node->data.block.count; i++)
+            collect_referenced_names(node->data.block.stmts[i], out);
+        break;
+    case AST_LIST:
+        for (int i = 0; i < node->data.list.count; i++)
+            collect_referenced_names(node->data.list.elems[i], out);
+        break;
+    case AST_INDEX:
+        collect_referenced_names(node->data.index.target, out);
+        collect_referenced_names(node->data.index.index, out);
+        break;
+    case AST_LISTCOMP:
+        collect_referenced_names(node->data.listcomp.expr, out);
+        collect_referenced_names(node->data.listcomp.iter, out);
+        collect_referenced_names(node->data.listcomp.filter, out);
+        break;
+    case AST_FOR:
+        name_set_add(out, node->data.forloop.var);
+        collect_referenced_names(node->data.forloop.iter, out);
+        for (int i = 0; i < node->data.forloop.body_count; i++)
+            collect_referenced_names(node->data.forloop.body[i], out);
+        break;
+    case AST_FUNC:
+        /* Nested function — recurse into its body. The function's own name and
+         * params will be filtered out by the caller when needed. */
+        name_set_add(out, node->data.func.name);
+        for (int i = 0; i < node->data.func.body_count; i++)
+            collect_referenced_names(node->data.func.body[i], out);
+        break;
+    case AST_LAMBDA:
+        collect_referenced_names(node->data.lambda.body, out);
+        break;
+    case AST_INTERROGATE:
+        collect_referenced_names(node->data.interrogate.expr, out);
+        break;
+    case AST_PREDICATE:
+        /* PREDICATE uses similar shape to relation/interrogate; descend on whatever lives in it */
+        break;
+    case AST_TRY:
+        for (int i = 0; i < node->data.trycatch.try_count; i++)
+            collect_referenced_names(node->data.trycatch.try_body[i], out);
+        if (node->data.trycatch.err_name) name_set_add(out, node->data.trycatch.err_name);
+        for (int i = 0; i < node->data.trycatch.catch_count; i++)
+            collect_referenced_names(node->data.trycatch.catch_body[i], out);
+        break;
+    case AST_DICT:
+        for (int i = 0; i < node->data.dict.count; i++) {
+            collect_referenced_names(node->data.dict.keys[i], out);
+            collect_referenced_names(node->data.dict.vals[i], out);
+        }
+        break;
+    case AST_DOT:
+        collect_referenced_names(node->data.dot.target, out);
+        break;
+    case AST_DOT_ASSIGN:
+        collect_referenced_names(node->data.dot_assign.target, out);
+        collect_referenced_names(node->data.dot_assign.expr, out);
+        break;
+    case AST_INDEX_ASSIGN:
+        collect_referenced_names(node->data.index_assign.target, out);
+        collect_referenced_names(node->data.index_assign.index, out);
+        collect_referenced_names(node->data.index_assign.expr, out);
+        break;
+    case AST_MATCH:
+        collect_referenced_names(node->data.match.expr, out);
+        for (int i = 0; i < node->data.match.case_count; i++) {
+            collect_referenced_names(node->data.match.patterns[i], out);
+            for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                collect_referenced_names(node->data.match.bodies[i][j], out);
+        }
+        break;
+    case AST_PROGRAM:
+        for (int i = 0; i < node->data.program.count; i++)
+            collect_referenced_names(node->data.program.stmts[i], out);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Walk a function body looking for nested closures. For each one found,
+ * collect names it references that aren't its own params — those are captures
+ * of our scope. Used so the outer function can mark matching locals as captured. */
+static void scan_for_captures(ASTNode *node, NameSet *out) {
+    if (!node) return;
+    switch (node->type) {
+    case AST_FUNC: {
+        NameSet inner = {0};
+        for (int i = 0; i < node->data.func.body_count; i++)
+            collect_referenced_names(node->data.func.body[i], &inner);
+        /* Filter out the closure's own params */
+        for (int i = 0; i < inner.count; i++) {
+            int shadowed = 0;
+            for (int j = 0; j < node->data.func.param_count; j++) {
+                if (strcmp(inner.names[i], node->data.func.params[j]) == 0) {
+                    shadowed = 1; break;
+                }
+            }
+            if (!shadowed) name_set_add(out, inner.names[i]);
+        }
+        name_set_free(&inner);
+        break;
+    }
+    case AST_LAMBDA: {
+        NameSet inner = {0};
+        collect_referenced_names(node->data.lambda.body, &inner);
+        for (int i = 0; i < inner.count; i++) {
+            int shadowed = 0;
+            for (int j = 0; j < node->data.lambda.param_count; j++) {
+                if (strcmp(inner.names[i], node->data.lambda.params[j]) == 0) {
+                    shadowed = 1; break;
+                }
+            }
+            if (!shadowed) name_set_add(out, inner.names[i]);
+        }
+        name_set_free(&inner);
+        break;
+    }
+    /* Descend through control flow / blocks to find nested closures */
+    case AST_IF:
+        for (int i = 0; i < node->data.cond.if_count; i++)
+            scan_for_captures(node->data.cond.if_body[i], out);
+        for (int i = 0; i < node->data.cond.else_count; i++)
+            scan_for_captures(node->data.cond.else_body[i], out);
+        break;
+    case AST_LOOP:
+        for (int i = 0; i < node->data.loop.body_count; i++)
+            scan_for_captures(node->data.loop.body[i], out);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < node->data.block.count; i++)
+            scan_for_captures(node->data.block.stmts[i], out);
+        break;
+    case AST_FOR:
+        for (int i = 0; i < node->data.forloop.body_count; i++)
+            scan_for_captures(node->data.forloop.body[i], out);
+        break;
+    case AST_TRY:
+        for (int i = 0; i < node->data.trycatch.try_count; i++)
+            scan_for_captures(node->data.trycatch.try_body[i], out);
+        for (int i = 0; i < node->data.trycatch.catch_count; i++)
+            scan_for_captures(node->data.trycatch.catch_body[i], out);
+        break;
+    case AST_MATCH:
+        for (int i = 0; i < node->data.match.case_count; i++)
+            for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                scan_for_captures(node->data.match.bodies[i][j], out);
+        break;
+    /* Expressions that may contain lambdas */
+    case AST_BINOP:
+        scan_for_captures(node->data.binop.left, out);
+        scan_for_captures(node->data.binop.right, out);
+        break;
+    case AST_UNARY:
+        scan_for_captures(node->data.unary.operand, out);
+        break;
+    case AST_RELATION:
+        scan_for_captures(node->data.relation.left, out);
+        scan_for_captures(node->data.relation.right, out);
+        break;
+    case AST_ASSIGN:
+        scan_for_captures(node->data.assign.expr, out);
+        break;
+    case AST_RETURN:
+        scan_for_captures(node->data.ret.expr, out);
+        break;
+    case AST_LIST:
+        for (int i = 0; i < node->data.list.count; i++)
+            scan_for_captures(node->data.list.elems[i], out);
+        break;
+    case AST_INDEX:
+        scan_for_captures(node->data.index.target, out);
+        scan_for_captures(node->data.index.index, out);
+        break;
+    case AST_LISTCOMP:
+        scan_for_captures(node->data.listcomp.expr, out);
+        scan_for_captures(node->data.listcomp.iter, out);
+        scan_for_captures(node->data.listcomp.filter, out);
+        break;
+    case AST_DICT:
+        for (int i = 0; i < node->data.dict.count; i++) {
+            scan_for_captures(node->data.dict.keys[i], out);
+            scan_for_captures(node->data.dict.vals[i], out);
+        }
+        break;
+    case AST_DOT:
+        scan_for_captures(node->data.dot.target, out);
+        break;
+    case AST_DOT_ASSIGN:
+        scan_for_captures(node->data.dot_assign.target, out);
+        scan_for_captures(node->data.dot_assign.expr, out);
+        break;
+    case AST_INDEX_ASSIGN:
+        scan_for_captures(node->data.index_assign.target, out);
+        scan_for_captures(node->data.index_assign.index, out);
+        scan_for_captures(node->data.index_assign.expr, out);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Walk a function body collecting names that appear in `who is x` or `when is x`
+ * interrogations. These need the slow path so env assign_counts stays consistent. */
+static void scan_for_interrogated(ASTNode *node, NameSet *out) {
+    if (!node) return;
+    switch (node->type) {
+    case AST_INTERROGATE:
+        if (node->data.interrogate.expr &&
+            node->data.interrogate.expr->type == AST_IDENT) {
+            name_set_add(out, node->data.interrogate.expr->data.ident.name);
+        }
+        scan_for_interrogated(node->data.interrogate.expr, out);
+        break;
+    case AST_BINOP:
+        scan_for_interrogated(node->data.binop.left, out);
+        scan_for_interrogated(node->data.binop.right, out);
+        break;
+    case AST_UNARY:
+        scan_for_interrogated(node->data.unary.operand, out);
+        break;
+    case AST_RELATION:
+        scan_for_interrogated(node->data.relation.left, out);
+        scan_for_interrogated(node->data.relation.right, out);
+        break;
+    case AST_ASSIGN:
+        scan_for_interrogated(node->data.assign.expr, out);
+        break;
+    case AST_IF:
+        scan_for_interrogated(node->data.cond.cond, out);
+        for (int i = 0; i < node->data.cond.if_count; i++)
+            scan_for_interrogated(node->data.cond.if_body[i], out);
+        for (int i = 0; i < node->data.cond.else_count; i++)
+            scan_for_interrogated(node->data.cond.else_body[i], out);
+        break;
+    case AST_LOOP:
+        scan_for_interrogated(node->data.loop.cond, out);
+        for (int i = 0; i < node->data.loop.body_count; i++)
+            scan_for_interrogated(node->data.loop.body[i], out);
+        break;
+    case AST_RETURN:
+        scan_for_interrogated(node->data.ret.expr, out);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < node->data.block.count; i++)
+            scan_for_interrogated(node->data.block.stmts[i], out);
+        break;
+    case AST_LIST:
+        for (int i = 0; i < node->data.list.count; i++)
+            scan_for_interrogated(node->data.list.elems[i], out);
+        break;
+    case AST_INDEX:
+        scan_for_interrogated(node->data.index.target, out);
+        scan_for_interrogated(node->data.index.index, out);
+        break;
+    case AST_FOR:
+        scan_for_interrogated(node->data.forloop.iter, out);
+        for (int i = 0; i < node->data.forloop.body_count; i++)
+            scan_for_interrogated(node->data.forloop.body[i], out);
+        break;
+    case AST_TRY:
+        for (int i = 0; i < node->data.trycatch.try_count; i++)
+            scan_for_interrogated(node->data.trycatch.try_body[i], out);
+        for (int i = 0; i < node->data.trycatch.catch_count; i++)
+            scan_for_interrogated(node->data.trycatch.catch_body[i], out);
+        break;
+    case AST_DICT:
+        for (int i = 0; i < node->data.dict.count; i++) {
+            scan_for_interrogated(node->data.dict.keys[i], out);
+            scan_for_interrogated(node->data.dict.vals[i], out);
+        }
+        break;
+    case AST_DOT:
+        scan_for_interrogated(node->data.dot.target, out);
+        break;
+    case AST_DOT_ASSIGN:
+        scan_for_interrogated(node->data.dot_assign.target, out);
+        scan_for_interrogated(node->data.dot_assign.expr, out);
+        break;
+    case AST_INDEX_ASSIGN:
+        scan_for_interrogated(node->data.index_assign.target, out);
+        scan_for_interrogated(node->data.index_assign.index, out);
+        scan_for_interrogated(node->data.index_assign.expr, out);
+        break;
+    case AST_MATCH:
+        scan_for_interrogated(node->data.match.expr, out);
+        for (int i = 0; i < node->data.match.case_count; i++)
+            for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                scan_for_interrogated(node->data.match.bodies[i][j], out);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Collect module-level names (functions defined, top-level assignments).
+ * Stops at function/lambda boundaries — those introduce their own scope.
+ * Used to decide whether an assignment inside a function is updating a global
+ * (slow name path) vs creating a fresh local (fast slot path). */
+static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out);
+static void collect_module_names_walk(ASTNode *node, NameSet *out) {
+    if (!node) return;
+    switch (node->type) {
+    case AST_ASSIGN:
+        name_set_add(out, node->data.assign.name);
+        break;
+    case AST_FUNC:
+        name_set_add(out, node->data.func.name);
+        /* Don't descend into function body */
+        break;
+    case AST_IF:
+        collect_module_names_block(node->data.cond.if_body, node->data.cond.if_count, out);
+        collect_module_names_block(node->data.cond.else_body, node->data.cond.else_count, out);
+        break;
+    case AST_LOOP:
+        collect_module_names_block(node->data.loop.body, node->data.loop.body_count, out);
+        break;
+    case AST_FOR:
+        name_set_add(out, node->data.forloop.var);
+        collect_module_names_block(node->data.forloop.body, node->data.forloop.body_count, out);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        collect_module_names_block(node->data.block.stmts, node->data.block.count, out);
+        break;
+    case AST_TRY:
+        collect_module_names_block(node->data.trycatch.try_body, node->data.trycatch.try_count, out);
+        if (node->data.trycatch.err_name) name_set_add(out, node->data.trycatch.err_name);
+        collect_module_names_block(node->data.trycatch.catch_body, node->data.trycatch.catch_count, out);
+        break;
+    case AST_MATCH:
+        for (int i = 0; i < node->data.match.case_count; i++)
+            collect_module_names_block(node->data.match.bodies[i], node->data.match.body_counts[i], out);
+        break;
+    case AST_PROGRAM:
+        collect_module_names_block(node->data.program.stmts, node->data.program.count, out);
+        break;
+    default:
+        break;
+    }
+}
+static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out) {
+    for (int i = 0; i < count; i++) collect_module_names_walk(stmts[i], out);
+}
+
+/* Find the root compiler in the enclosing chain */
+static Compiler *root_compiler(Compiler *c) {
+    while (c->enclosing) c = c->enclosing;
+    return c;
+}
+
+/* Is this name visible in an enclosing function's locals/params? */
+static int name_in_enclosing(Compiler *c, const char *name) {
+    for (Compiler *e = c->enclosing; e && e->enclosing; e = e->enclosing) {
+        for (int i = 0; i < e->local_count; i++)
+            if (strcmp(e->locals[i].name, name) == 0) return 1;
+    }
+    return 0;
+}
+
 /* ---- AST compilation ---- */
 
 static void compile_node(Compiler *c, ASTNode *node) {
@@ -358,6 +921,14 @@ static void compile_node(Compiler *c, ASTNode *node) {
                 emit_op_u16(c, OP_GET_LOCAL, (uint16_t)slot, node->line);
                 break;
             }
+        } else if (name_set_has(&c->module_slot_names, node->data.ident.name)) {
+            uint32_t h = node->name_hash;
+            if (h == 0) h = env_hash_name(node->data.ident.name);
+            int slot = resolve_local(c, node->data.ident.name, h);
+            if (slot >= 0) {
+                emit_op_u16(c, OP_GET_LOCAL, (uint16_t)slot, node->line);
+                break;
+            }
         }
         int idx = add_string_constant(c, node->data.ident.name);
         emit_op_u16(c, OP_GET_NAME, (uint16_t)idx, node->line);
@@ -378,18 +949,45 @@ static void compile_node(Compiler *c, ASTNode *node) {
 
         if (c->enclosing) {
             int slot = resolve_local(c, name, h);
-            if (slot >= 0 && slot < c->param_count) {
-                /* Known param — safe to use SET_LOCAL */
+            if (slot >= 0) {
+                /* Already a known local (param or previously-assigned non-captured local) */
                 emit_op_u16(c, OP_SET_LOCAL, (uint16_t)slot, node->line);
-            } else if (node->data.assign.local_only) {
-                int idx = add_string_constant(c, name);
-                emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
             } else {
-                int idx = add_string_constant(c, name);
-                emit_op_u16(c, OP_SET_NAME, (uint16_t)idx, node->line);
+                /* Decide: is this a fresh local (fast slot path) or an update to
+                 * an outer/global name (slow name path)? */
+                int captured     = name_set_has(&c->captured, name);
+                int interrogated = name_set_has(&c->interrogated, name);
+                int in_outer     = name_in_enclosing(c, name);
+                int in_module    = c->module_names && name_set_has(c->module_names, name);
+                int in_globals   = c->env && env_get_hashed(c->env, name, h) != NULL;
+
+                int local_eligible = !captured && !interrogated && !in_outer && !in_module && !in_globals;
+
+                if (local_eligible) {
+                    int new_slot = add_local(c, name, h);
+                    if (new_slot >= 0) {
+                        emit_op_u16(c, OP_SET_LOCAL, (uint16_t)new_slot, node->line);
+                    } else {
+                        int idx = add_string_constant(c, name);
+                        emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
+                    }
+                } else if (node->data.assign.local_only || captured || interrogated) {
+                    int idx = add_string_constant(c, name);
+                    emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
+                } else {
+                    int idx = add_string_constant(c, name);
+                    emit_op_u16(c, OP_SET_NAME, (uint16_t)idx, node->line);
+                }
             }
         } else {
-            /* Module level — always use name-based */
+            /* Module level — slot promotion if eligible (Part B), else name-based */
+            if (name_set_has(&c->module_slot_names, name)) {
+                int slot = resolve_local(c, name, h);
+                if (slot >= 0) {
+                    emit_op_u16(c, OP_SET_LOCAL, (uint16_t)slot, node->line);
+                    break;
+                }
+            }
             int idx = add_string_constant(c, name);
             if (node->data.assign.local_only) {
                 emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
@@ -627,6 +1225,23 @@ static void compile_node(Compiler *c, ASTNode *node) {
         fn_compiler.enclosing = c;
         fn_compiler.env = c->env;
         fn_compiler.param_count = node->data.func.param_count;
+        fn_compiler.module_names = c->module_names;
+
+        /* Escape analysis: find names captured by nested closures + names that
+         * are interrogated (who/when is x). These stay on the slow name path. */
+        for (int i = 0; i < node->data.func.body_count; i++) {
+            scan_for_captures(node->data.func.body[i], &fn_compiler.captured);
+            scan_for_interrogated(node->data.func.body[i], &fn_compiler.interrogated);
+        }
+        /* Function's own params are never "captured by themselves" */
+        for (int i = 0; i < node->data.func.param_count; i++) {
+            for (int j = 0; j < fn_compiler.captured.count; j++) {
+                if (strcmp(fn_compiler.captured.names[j], node->data.func.params[i]) == 0) {
+                    fn_compiler.captured.names[j] = fn_compiler.captured.names[--fn_compiler.captured.count];
+                    break;
+                }
+            }
+        }
 
         /* Store param names in chunk AND add as compiler locals.
          * Params are at env slots 0..param_count-1, bound by OP_CALL. */
@@ -642,6 +1257,20 @@ static void compile_node(Compiler *c, ASTNode *node) {
 
         /* Ensure function always returns */
         emit(&fn_compiler, OP_RETURN_NULL, node->line);
+
+        /* Writeback: extend chunk->local_count to include any non-param locals
+         * the compiler added via add_local during body compilation. The VM uses
+         * this to pre-allocate env slots at call time so OP_SET_LOCAL writes land. */
+        if (fn_compiler.local_count > fn_chunk->local_count) {
+            int new_total = fn_compiler.local_count;
+            fn_chunk->local_names = realloc(fn_chunk->local_names, new_total * sizeof(char *));
+            for (int i = fn_chunk->local_count; i < new_total; i++)
+                fn_chunk->local_names[i] = strdup(fn_compiler.locals[i].name);
+            fn_chunk->local_count = new_total;
+        }
+
+        name_set_free(&fn_compiler.captured);
+        name_set_free(&fn_compiler.interrogated);
 
         int fn_idx = chunk_add_function(c->chunk, fn_chunk);
         emit_op_u16(c, OP_CLOSURE, (uint16_t)fn_idx, node->line);
@@ -662,6 +1291,18 @@ static void compile_node(Compiler *c, ASTNode *node) {
         fn_compiler.enclosing = c;
         fn_compiler.env = c->env;
         fn_compiler.param_count = node->data.lambda.param_count;
+        fn_compiler.module_names = c->module_names;
+
+        scan_for_captures(node->data.lambda.body, &fn_compiler.captured);
+        scan_for_interrogated(node->data.lambda.body, &fn_compiler.interrogated);
+        for (int i = 0; i < node->data.lambda.param_count; i++) {
+            for (int j = 0; j < fn_compiler.captured.count; j++) {
+                if (strcmp(fn_compiler.captured.names[j], node->data.lambda.params[i]) == 0) {
+                    fn_compiler.captured.names[j] = fn_compiler.captured.names[--fn_compiler.captured.count];
+                    break;
+                }
+            }
+        }
 
         fn_chunk->local_names = xcalloc(node->data.lambda.param_count, sizeof(char *));
         fn_chunk->local_count = node->data.lambda.param_count;
@@ -674,6 +1315,17 @@ static void compile_node(Compiler *c, ASTNode *node) {
         /* Lambda body is a single expression — compile and return it */
         compile_node(&fn_compiler, node->data.lambda.body);
         emit(&fn_compiler, OP_RETURN, node->line);
+
+        if (fn_compiler.local_count > fn_chunk->local_count) {
+            int new_total = fn_compiler.local_count;
+            fn_chunk->local_names = realloc(fn_chunk->local_names, new_total * sizeof(char *));
+            for (int i = fn_chunk->local_count; i < new_total; i++)
+                fn_chunk->local_names[i] = strdup(fn_compiler.locals[i].name);
+            fn_chunk->local_count = new_total;
+        }
+
+        name_set_free(&fn_compiler.captured);
+        name_set_free(&fn_compiler.interrogated);
 
         int fn_idx = chunk_add_function(c->chunk, fn_chunk);
         emit_op_u16(c, OP_CLOSURE, (uint16_t)fn_idx, node->line);
@@ -948,6 +1600,41 @@ static void compile_node(Compiler *c, ASTNode *node) {
     }
 
     case AST_UNOBSERVED: {
+        /* Module-level slot promotion (Part B): if we're at module scope and
+         * the optimization is enabled, find names assigned inside this block
+         * that never escape it, and promote them to frame slots. */
+        if (g_compile_module_slots && !c->enclosing && c->root_ast) {
+            NameSet assigned = {0};
+            NameSet outside  = {0};
+            NameSet captured_here = {0};
+            NameSet interrogated_here = {0};
+
+            for (int i = 0; i < node->data.block.count; i++)
+                collect_module_names_walk(node->data.block.stmts[i], &assigned);
+            collect_referenced_names_skip(c->root_ast, node, &outside);
+            for (int i = 0; i < node->data.block.count; i++) {
+                scan_for_captures(node->data.block.stmts[i], &captured_here);
+                scan_for_interrogated(node->data.block.stmts[i], &interrogated_here);
+            }
+
+            for (int i = 0; i < assigned.count; i++) {
+                const char *nm = assigned.names[i];
+                if (name_set_has(&outside, nm)) continue;
+                if (name_set_has(&captured_here, nm)) continue;
+                if (name_set_has(&interrogated_here, nm)) continue;
+                if (name_set_has(&c->module_slot_names, nm)) continue; /* already promoted */
+                uint32_t h = env_hash_name(nm);
+                if (c->env && env_get_hashed(c->env, nm, h)) continue;
+                if (resolve_local(c, nm, h) >= 0) continue;
+                int slot = add_local(c, nm, h);
+                if (slot >= 0) name_set_add(&c->module_slot_names, nm);
+            }
+
+            name_set_free(&assigned);
+            name_set_free(&outside);
+            name_set_free(&captured_here);
+            name_set_free(&interrogated_here);
+        }
         emit(c, OP_UNOBSERVED_BEGIN, node->line);
         /* Unobserved block body is stored as block.stmts */
         compile_block(c, node->data.block.stmts, node->data.block.count);
@@ -1036,9 +1723,32 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env) {
     memset(&compiler, 0, sizeof(compiler));
     compiler.chunk = chunk;
     compiler.env = env;
+    compiler.root_ast = ast;
+
+    /* Pre-pass: collect names defined at module scope so function bodies can
+     * distinguish "update a global" (slow name path) from "fresh local" (fast slot). */
+    NameSet module_names = {0};
+    if (ast) collect_module_names_walk(ast, &module_names);
+    compiler.module_names = &module_names;
+
+    /* For module-level slot promotion: seed local_count past existing env entries
+     * so SET_LOCAL slot indices don't collide with builtins/globals already there. */
+    int slot_base = 0;
+    if (g_compile_module_slots && env) {
+        slot_base = env->count;
+        compiler.local_count = slot_base;
+    }
 
     compile_node(&compiler, ast);
     emit(&compiler, OP_RETURN, ast ? ast->line : 0);
 
+    /* If any module slots were promoted, write back the total local_count so the
+     * VM knows to reserve env slots at module run-time. */
+    if (g_compile_module_slots && compiler.local_count > slot_base) {
+        chunk->local_count = compiler.local_count;
+    }
+
+    name_set_free(&module_names);
+    name_set_free(&compiler.module_slot_names);
     return chunk;
 }

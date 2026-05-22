@@ -881,6 +881,45 @@ void env_free(Env *env) {
     free(env);
 }
 
+void env_reserve_slots(Env *env, int total) {
+    if (!env || total <= env->count) return;
+    /* Grow capacity if needed. Mirrors env_set_local_hashed's grow path
+     * for heap_allocated envs. Call-time envs are always heap-allocated
+     * (env_new sets heap_allocated=1). */
+    if (total > env->capacity) {
+        int new_cap = env->capacity ? env->capacity : ENV_INIT_CAP;
+        while (new_cap < total) new_cap *= 2;
+        size_t nsz = new_cap * sizeof(char *);
+        size_t vsz = new_cap * sizeof(Value *);
+        if (env->heap_allocated) {
+            env->names  = realloc(env->names,  nsz);
+            env->values = realloc(env->values, vsz);
+            env->assign_counts = realloc(env->assign_counts, new_cap * sizeof(int));
+            if (!env->names || !env->values || !env->assign_counts) {
+                fprintf(stderr, "Out of memory growing env\n");
+                exit(1);
+            }
+        } else {
+            char **nn  = arena_alloc(nsz);
+            Value **nv = arena_alloc(vsz);
+            memcpy(nn, env->names,  env->count * sizeof(char *));
+            memcpy(nv, env->values, env->count * sizeof(Value *));
+            env->names  = nn;
+            env->values = nv;
+        }
+        env->capacity = new_cap;
+    }
+    /* Zero new slots: names NULL, values NULL, assign_counts 0.
+     * Non-captured local slots aren't hash-inserted — they're addressed
+     * purely by slot index via OP_GET_LOCAL/OP_SET_LOCAL. */
+    for (int i = env->count; i < total; i++) {
+        env->names[i]  = NULL;
+        env->values[i] = NULL;
+        if (env->assign_counts) env->assign_counts[i] = 0;
+    }
+    env->count = total;
+}
+
 void env_clear(Env *env) {
     if (!env) return;
     for (int i = 0; i < env->count; i++) {

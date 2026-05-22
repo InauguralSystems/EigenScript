@@ -269,7 +269,10 @@ int main(int argc, char **argv) {
         free(source);
         return 1;
     }
+    g_compile_module_slots = 1;
     EigsChunk *script_chunk = compile_ast(ast, global);
+    g_compile_module_slots = 0;
+    if (getenv("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);
     /* Don't free chunk — closures/functions may still reference nested chunks.

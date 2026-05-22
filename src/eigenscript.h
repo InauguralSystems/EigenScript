@@ -328,6 +328,14 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
 void env_free(Env *env);
 void env_clear(Env *env);
+/* Reserve env slots up to `total` (used at function call to pre-allocate
+ * non-captured local slots; OP_SET_LOCAL writes directly to slot indices). */
+void env_reserve_slots(Env *env, int total);
+
+/* Enable module-level slot promotion (Part B optimization).
+ * Off by default. Set to 1 only for the main script chunk; load_file and REPL
+ * leave it off so cross-chunk env lookups continue to work. */
+extern int g_compile_module_slots;
 
 /* ---- Parser / Evaluator ---- */
 
