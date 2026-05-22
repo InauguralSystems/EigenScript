@@ -345,6 +345,11 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
  * incref's internally, *_get returns a slot the caller must slot_decref. */
 void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
+/* Same as env_set_local_hashed_slot, but `interned` must come from
+ * env_intern_name() so it can be stored directly without re-interning.
+ * VM uses this with chunk->const_interns[idx] in the hot SET_NAME paths. */
+void env_set_local_pre_interned_slot(Env *env, const char *interned,
+                                     uint32_t h, EigsSlot s);
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found);
 /* Direct slot store with arena promotion; used by VM inline-cache fast paths
  * after the slot index has been resolved out-of-band. Caller must update

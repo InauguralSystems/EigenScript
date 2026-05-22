@@ -863,7 +863,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             DISPATCH();
         }
         /* Not found anywhere — create in starting env, then populate IC. */
-        env_set_local_hashed_slot(start, name, h, s);
+        env_set_local_pre_interned_slot(start, name, h, s);
         Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (t2 == start) {
             ic->starting_env = start;
@@ -891,7 +891,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-        env_set_local_hashed_slot(start, name, h, s);
+        env_set_local_pre_interned_slot(start, name, h, s);
         int slot_idx, depth;
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (target == start) {

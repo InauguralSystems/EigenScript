@@ -977,9 +977,10 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
     env_set_local_hashed_slot(env, name, h, s);
 }
 
-void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
-    if (h == 0) h = env_hash_name(name);
-    int idx = env_hash_find(&env->hash, name, h, env->names);
+/* Core local-set implementation: caller has already interned `name`. */
+void env_set_local_pre_interned_slot(Env *env, const char *interned,
+                                     uint32_t h, EigsSlot s) {
+    int idx = env_hash_find(&env->hash, interned, h, env->names);
     if (idx >= 0) {
         env_store_slot(env, idx, s);
         if (env->assign_counts) env->assign_counts[idx]++;
@@ -1007,7 +1008,7 @@ void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot 
         }
         env->capacity = new_cap;
     }
-    env->names[env->count] = env_intern_name(name);
+    env->names[env->count] = (char*)interned;
     EigsSlot stored = s;
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
@@ -1029,6 +1030,11 @@ store:
         env_hash_rebuild(&env->hash, env->names, env->count);
     else
         env_hash_insert(&env->hash, h, env->count - 1);
+}
+
+void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
+    if (h == 0) h = env_hash_name(name);
+    env_set_local_pre_interned_slot(env, env_intern_name(name), h, s);
 }
 
 /* Walk the env chain for `name`. On hit, returns target env, slot index in
