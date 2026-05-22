@@ -2,6 +2,47 @@
 
 All notable changes to EigenScript are documented here.
 
+## [0.11.1] — 2026-05-21
+
+### Performance (DMG benchmark: 0.318 → 0.384 MHz, +21%)
+- **In-place numeric mutation**: arithmetic ops reuse refcount-1 Values
+  instead of allocating via make_num.
+- **Dict field inline cache**: 128-entry direct-mapped cache for
+  DOT_GET/DOT_SET (99.99% hit rate on DMG workload).
+- **Superinstructions**: LOCAL_DOT_GET/SET, LOCAL_IDX_GET,
+  LOCAL_IDX_DOT_GET/SET fuse 2-4 dispatches into one.
+- **Stack-top arithmetic**: ARITH_FAST macro operates directly on
+  stack[] without push/pop for num+num fast path.
+- **JUMP_IF_FALSE/TRUE**: inlined numeric check bypasses is_truthy().
+- **POP**: inlined val_decref avoids function call.
+
+### Bug Fixes (Audit)
+- **Break in for-loops**: emit LOOP_ENV_END before break jump to
+  prevent env leak and stack corruption.
+- **Observer `who is x`**: returns binding name ("x") instead of type
+  name ("number"). New OP_INTERROGATE_NAMED opcode.
+- **Observer `when is x`**: returns assignment count via per-slot
+  assign_counts[] in Env. Tracks increments across env_set.
+- **Compound assignment `a[f()] += x`**: index expression now evaluated
+  exactly once via new OP_DUP2 opcode + compiler bytecode lowering.
+- **Bitwise precedence**: comparison RHS now parses bitwise operators
+  (`1 == 1 | 0` works).
+- **Dict non-string keys**: runtime error instead of silent collapse
+  to "?" key.
+- **Postfix after grouping**: `(expr).field` and `(expr)[idx]` both
+  parse correctly.
+- **Dedent validation**: mismatched indentation levels now produce
+  syntax errors.
+- **Superinstruction error semantics**: LOCAL_DOT_GET/SET emit proper
+  runtime_error for non-dict targets (was silently returning null).
+
+### New Opcodes
+- `OP_DUP2` — duplicate top two stack values
+- `OP_INTERROGATE_NAMED` — who/when with binding name operand
+- `OP_LOCAL_DOT_GET`, `OP_LOCAL_DOT_SET` — fused local.field access
+- `OP_LOCAL_IDX_GET` — fused local[const] access
+- `OP_LOCAL_IDX_DOT_GET`, `OP_LOCAL_IDX_DOT_SET` — fused local[n].field
+
 ## [0.11.0] — 2026-05-21
 
 ### Bytecode VM Completeness

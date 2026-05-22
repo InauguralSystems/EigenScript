@@ -23,7 +23,7 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds a ~204K minimal binary and installs it to `~/.local/bin/eigenscript`.
+This builds a ~312K minimal binary and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
 Run `./install.sh full` to also build the optional HTTP/DB/model binary
