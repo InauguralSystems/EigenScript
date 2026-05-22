@@ -47,6 +47,25 @@ typedef struct Compiler {
 static void compile_node(Compiler *c, ASTNode *node);
 static void compile_block(Compiler *c, ASTNode **stmts, int count);
 
+/* Check if an AST block contains any closure definitions (func/lambda).
+ * If so, the loop needs per-iteration envs for correct capture semantics. */
+static int block_has_closure(ASTNode **stmts, int count) {
+    for (int i = 0; i < count; i++) {
+        if (!stmts[i]) continue;
+        if (stmts[i]->type == AST_FUNC || stmts[i]->type == AST_LAMBDA)
+            return 1;
+        /* Recurse into control flow */
+        if (stmts[i]->type == AST_IF) {
+            if (block_has_closure(stmts[i]->data.cond.if_body, stmts[i]->data.cond.if_count))
+                return 1;
+            if (stmts[i]->data.cond.else_body &&
+                block_has_closure(stmts[i]->data.cond.else_body, stmts[i]->data.cond.else_count))
+                return 1;
+        }
+    }
+    return 0;
+}
+
 /* ---- Stack depth tracking ---- */
 
 static void adjust_stack(Compiler *c, int delta) {
@@ -537,8 +556,10 @@ static void compile_node(Compiler *c, ASTNode *node) {
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
         /* ITER_NEXT pushes element on non-exit (+1) */
 
-        /* Create fresh loop env */
-        emit(c, OP_LOOP_ENV_FRESH, node->line);
+        /* Create fresh loop env only if loop body has closures */
+        int needs_loop_env = block_has_closure(node->data.forloop.body, node->data.forloop.body_count);
+        if (needs_loop_env)
+            emit(c, OP_LOOP_ENV_FRESH, node->line);
 
         /* Bind loop variable via Env (ITER_NEXT pushed element on stack) */
         {
@@ -551,7 +572,8 @@ static void compile_node(Compiler *c, ASTNode *node) {
         emit(c, OP_POP, node->line); /* discard body result */
 
         /* Restore parent env */
-        emit(c, OP_LOOP_ENV_END, node->line);
+        if (needs_loop_env)
+            emit(c, OP_LOOP_ENV_END, node->line);
 
         /* Reset depth for back-edge (same as loop start) */
         c->stack_depth = depth_before_loop;
