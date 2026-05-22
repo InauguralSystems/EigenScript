@@ -1212,6 +1212,50 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     }
 
     CASE(INDEX_SET): {
+        /* Slot-aware fast paths: a buffer or list write of an immediate-num
+         * value to an immediate-num index never materializes either side. */
+        EigsSlot val_s = g_vm.stack[g_vm.sp - 1];
+        EigsSlot idx_s = g_vm.stack[g_vm.sp - 2];
+        EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
+        if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
+            Value *target = slot_as_ptr(tgt_s);
+            int i = (int)idx_s.d;
+            if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
+                if (i >= 0 && i < target->data.buffer.count) {
+                    target->data.buffer.data[i] = (int)val_s.d;
+                } else {
+                    runtime_error(current_line, "buffer index %d out of range (length %d)",
+                                  i, target->data.buffer.count);
+                }
+                g_vm.sp -= 2;  /* keep val on TOS */
+                g_vm.stack[g_vm.sp - 1] = val_s;
+                slot_decref(idx_s);
+                slot_decref(tgt_s);
+                DISPATCH();
+            }
+            if (target->type == VAL_LIST && slot_is_num(val_s)) {
+                if (i >= 0 && i < target->data.list.count) {
+                    Value *existing = target->data.list.items[i];
+                    /* In-place mutate when slot is an exclusive untracked VAL_NUM. */
+                    if (existing && existing->type == VAL_NUM &&
+                        existing->refcount == 1 && existing->obs_age == 0 &&
+                        !existing->arena) {
+                        existing->data.num = val_s.d;
+                    } else {
+                        val_decref(existing);
+                        target->data.list.items[i] = make_num(val_s.d);
+                    }
+                } else {
+                    runtime_error(current_line, "index %d out of range (list length %d)",
+                                  i, target->data.list.count);
+                }
+                g_vm.sp -= 2;
+                g_vm.stack[g_vm.sp - 1] = val_s;
+                slot_decref(idx_s);
+                slot_decref(tgt_s);
+                DISPATCH();
+            }
+        }
         Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i = (int)idx->data.num;
