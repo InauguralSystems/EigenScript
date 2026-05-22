@@ -1341,38 +1341,53 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t idx = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *target = vm_local_lift(e, slot);
-        Value *result = make_null();
         if (target) {
             int i = (int)idx;
-            if (target->type == VAL_LIST) {
-                if (i < target->data.list.count) {
-                    result = target->data.list.items[i];
-                    val_incref(result);
-                } else {
-                    runtime_error(current_line, "index %d out of range (list length %d)",
-                                  i, target->data.list.count);
-                }
-            } else if (target->type == VAL_BUFFER) {
+            if (target->type == VAL_BUFFER) {
+                /* DMG hot path: mem[addr] — emit immediate, skip make_num. */
                 if (i < target->data.buffer.count) {
-                    result = make_num(target->data.buffer.data[i]);
+                    vm_push_slot(slot_from_num(target->data.buffer.data[i]));
                 } else {
                     runtime_error(current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
+                    vm_push_slot(slot_null());
                 }
-            } else if (target->type == VAL_STR) {
+                DISPATCH();
+            }
+            if (target->type == VAL_LIST) {
+                if (i < target->data.list.count) {
+                    Value *item = target->data.list.items[i];
+                    /* Plain VAL_NUM -> immediate; skip incref/decref pair. */
+                    if (item && item->type == VAL_NUM && item->obs_age == 0) {
+                        vm_push_slot(slot_from_num(item->data.num));
+                    } else {
+                        val_incref(item);
+                        vm_push(item);
+                    }
+                } else {
+                    runtime_error(current_line, "index %d out of range (list length %d)",
+                                  i, target->data.list.count);
+                    vm_push_slot(slot_null());
+                }
+                DISPATCH();
+            }
+            if (target->type == VAL_STR) {
                 int len = (int)strlen(target->data.str);
                 if (i < len) {
                     char buf[2] = { target->data.str[i], 0 };
-                    result = make_str(buf);
+                    vm_push(make_str(buf));
                 } else {
                     runtime_error(current_line, "string index %d out of range (length %d)",
                                   i, len);
+                    vm_push_slot(slot_null());
                 }
-            } else if (target->type != VAL_NULL) {
+                DISPATCH();
+            }
+            if (target->type != VAL_NULL) {
                 runtime_error(current_line, "cannot index %s", val_type_name(target->type));
             }
         }
-        vm_push(result);
+        vm_push_slot(slot_null());
         DISPATCH();
     }
 
@@ -1499,9 +1514,15 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 elem = iterable->data.list.items[idx];
                 val_incref(elem);
             }
-            /* Update index */
-            val_decref(state->data.list.items[1]);
-            state->data.list.items[1] = make_num(idx + 1);
+            /* Update index — mutate in place when the existing slot is
+             * an exclusive plain VAL_NUM (avoids per-iter make_num/free). */
+            Value *idx_v = state->data.list.items[1];
+            if (NUM_REUSE(idx_v) && idx_v->obs_age == 0) {
+                idx_v->data.num = (double)(idx + 1);
+            } else {
+                val_decref(idx_v);
+                state->data.list.items[1] = make_num(idx + 1);
+            }
             vm_push(elem);
         }
         DISPATCH();
