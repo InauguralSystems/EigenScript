@@ -118,6 +118,7 @@ typedef enum {
     OP_LOCAL_IDX_GET,   /* [slot:16][idx:16] push local[slot][idx] */
     OP_LOCAL_IDX_DOT_GET, /* [slot:16][idx:16][name_idx:16] push local[slot][idx].name */
     OP_LOCAL_IDX_DOT_SET, /* [slot:16][idx:16][name_idx:16] local[slot][idx].name = TOS */
+    OP_INTERROGATE_NAMED, /* [kind:16][name_idx:16] interrogate with known binding name */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

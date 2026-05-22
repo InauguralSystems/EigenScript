@@ -68,6 +68,7 @@ extern const char* val_type_name(ValType t);
 extern Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
 extern void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 extern int env_hash_find_dict(Value *dict, const char *key, uint32_t h);
+extern int env_get_assign_count(Env *env, const char *name, uint32_t h);
 
 /* ---- Dict field inline cache ---- */
 #define DICT_CACHE_SIZE 128
@@ -230,6 +231,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_LOCAL_IDX_GET] = &&lbl_LOCAL_IDX_GET,
         [OP_LOCAL_IDX_DOT_GET] = &&lbl_LOCAL_IDX_DOT_GET,
         [OP_LOCAL_IDX_DOT_SET] = &&lbl_LOCAL_IDX_DOT_SET,
+        [OP_INTERROGATE_NAMED] = &&lbl_INTERROGATE_NAMED,
     };
     #define CHECK_ERROR() do { \
         if (g_has_error && frame->try_count > 0) { \
@@ -1248,6 +1250,27 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (v && v->last_entropy > 0)
                 result = make_num(1.0 - v->entropy / v->last_entropy);
             else result = make_num(1.0);
+            break;
+        }
+        val_decref(v);
+        vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(INTERROGATE_NAMED): {
+        uint16_t kind = read_u16(ip); ip += 2;
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        Value *v = vm_pop();
+        Value *result = make_null();
+        const char *name = chunk->constants[name_idx]->data.str;
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        switch (kind) {
+        case 1: /* who — return binding name */
+            result = make_str(name);
+            break;
+        case 2: /* when — return assignment count */
+            result = make_num(env_get_assign_count(frame->env, name, h));
             break;
         }
         val_decref(v);

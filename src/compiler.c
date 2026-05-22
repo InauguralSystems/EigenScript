@@ -132,6 +132,8 @@ static int op_stack_effect(uint8_t op) {
         return 1;
     case OP_LOCAL_IDX_DOT_SET:  /* peek TOS, write = 0 */
         return 0;
+    case OP_INTERROGATE_NAMED:  /* pop 1, push 1 = 0 */
+        return 0;
     /* Index set: pop value, pop index, pop target, push value = -2 */
     case OP_INDEX_SET:
         return -2;
@@ -933,7 +935,14 @@ static void compile_node(Compiler *c, ASTNode *node) {
 
     case AST_INTERROGATE: {
         compile_node(c, node->data.interrogate.expr);
-        emit_op_u16(c, OP_INTERROGATE, (uint16_t)node->data.interrogate.kind, node->line);
+        int kind = node->data.interrogate.kind;
+        if ((kind == 1 || kind == 2) && node->data.interrogate.expr->type == AST_IDENT) {
+            /* who/when with known binding name: emit name index */
+            int name_idx = add_string_constant(c, node->data.interrogate.expr->data.ident.name);
+            emit_op_u16_u16(c, OP_INTERROGATE_NAMED, (uint16_t)kind, (uint16_t)name_idx, node->line);
+        } else {
+            emit_op_u16(c, OP_INTERROGATE, (uint16_t)kind, node->line);
+        }
         break;
     }
 

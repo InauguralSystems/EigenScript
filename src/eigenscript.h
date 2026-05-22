@@ -169,6 +169,7 @@ typedef struct {
 struct Env {
     char **names;
     Value **values;
+    int *assign_counts; /* per-slot assignment counter for 'when is' */
     int count;
     int capacity;
     Env *parent;

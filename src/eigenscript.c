@@ -747,6 +747,7 @@ Env* env_new(Env *parent) {
         e->capacity = ENV_INIT_CAP;
         e->names  = xcalloc(ENV_INIT_CAP, sizeof(char *));
         e->values = xcalloc(ENV_INIT_CAP, sizeof(Value *));
+        e->assign_counts = xcalloc(ENV_INIT_CAP, sizeof(int));
         env_hash_init(&e->hash, ENV_HASH_INIT_CAP);
     }
     e->parent = parent;
@@ -771,6 +772,7 @@ void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val) {
                 val_decref(e->values[idx]);
                 e->values[idx] = val;
             }
+            if (e->assign_counts) e->assign_counts[idx]++;
             return;
         }
         e = e->parent;
@@ -795,6 +797,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
             val_decref(env->values[idx]);
             env->values[idx] = val;
         }
+        if (env->assign_counts) env->assign_counts[idx]++;
         return;
     }
     if (env->count >= env->capacity) {
@@ -811,6 +814,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         } else {
             env->names  = realloc(env->names, nsz);
             env->values = realloc(env->values, vsz);
+            env->assign_counts = realloc(env->assign_counts, new_cap * sizeof(int));
             if (!env->names || !env->values) {
                 fprintf(stderr, "Out of memory growing env\n");
                 exit(1);
@@ -821,6 +825,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     env->names[env->count] = env_intern_name(name);
     Value *promoted = promote_if_arena(val);
     env->values[env->count] = promoted;
+    if (env->assign_counts) env->assign_counts[env->count] = 1;
     if (promoted == val) val_incref(val);
     env->count++;
 
@@ -829,6 +834,17 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         env_hash_rebuild(&env->hash, env->names, env->count);
     else
         env_hash_insert(&env->hash, h, env->count - 1);
+}
+
+int env_get_assign_count(Env *env, const char *name, uint32_t h) {
+    if (h == 0) h = env_hash_name(name);
+    Env *e = env;
+    while (e) {
+        int idx = env_hash_find(&e->hash, name, h, e->names);
+        if (idx >= 0) return e->assign_counts ? e->assign_counts[idx] : 0;
+        e = e->parent;
+    }
+    return 0;
 }
 
 void env_set_local(Env *env, const char *name, Value *val) {
