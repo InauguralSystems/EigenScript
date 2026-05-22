@@ -131,6 +131,23 @@ typedef enum {
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
+/* ---- Inline cache for env name resolution ----
+ * One entry per string constant, populated lazily by GET_NAME/SET_NAME/
+ * SET_NAME_LOCAL on cache miss. Validates via:
+ *   - starting_env identity (the frame's env at lookup time)
+ *   - starting_env->binding_version unchanged (no shadow added)
+ *   - target env (frame->env or frame->env->parent) binding_version
+ *     unchanged (target hasn't been freed/recycled/cleared)
+ * Restricted to walk_depth 0 or 1 — deeper resolutions fall through to
+ * the normal chain walk so we don't have to validate intermediate envs. */
+typedef struct {
+    struct Env *starting_env; /* NULL = empty entry */
+    uint32_t starting_ver;
+    uint32_t target_ver;
+    int      slot_idx;
+    uint8_t  walk_depth;      /* 0 = local, 1 = parent */
+} EnvIC;
+
 /* ---- Bytecode Chunk ---- */
 typedef struct EigsChunk {
     uint8_t *code;              /* bytecode array */
@@ -140,6 +157,7 @@ typedef struct EigsChunk {
     Value  **constants;         /* constant pool */
     uint32_t *const_hashes;     /* cached hashes for string constants */
     char    **const_interns;    /* interned pointers for string constants (NULL for non-str) */
+    EnvIC   *env_ic;            /* IC entry per string constant (zeroed = empty) */
     int      const_count;
     int      const_cap;
 

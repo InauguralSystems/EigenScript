@@ -18,6 +18,7 @@ EigsChunk *chunk_new(const char *name) {
     c->constants = xcalloc(c->const_cap, sizeof(Value *));
     c->const_hashes = xcalloc(c->const_cap, sizeof(uint32_t));
     c->const_interns = xcalloc(c->const_cap, sizeof(char *));
+    c->env_ic = xcalloc(c->const_cap, sizeof(EnvIC));
     c->lines_cap = 256;
     c->lines = xcalloc(c->lines_cap, sizeof(int));
     c->fn_cap = 8;
@@ -34,6 +35,7 @@ void chunk_free(EigsChunk *chunk) {
     free(chunk->constants);
     free(chunk->const_hashes);
     free(chunk->const_interns);
+    free(chunk->env_ic);
     free(chunk->lines);
     for (int i = 0; i < chunk->fn_count; i++)
         chunk_free(chunk->functions[i]);
@@ -109,10 +111,14 @@ int chunk_add_constant(EigsChunk *chunk, Value *val) {
                                       chunk->const_cap * sizeof(uint32_t));
         chunk->const_interns = realloc(chunk->const_interns,
                                        chunk->const_cap * sizeof(char *));
+        chunk->env_ic = realloc(chunk->env_ic,
+                                chunk->const_cap * sizeof(EnvIC));
         memset(chunk->const_hashes + old_cap, 0,
                (chunk->const_cap - old_cap) * sizeof(uint32_t));
         memset(chunk->const_interns + old_cap, 0,
                (chunk->const_cap - old_cap) * sizeof(char *));
+        memset(chunk->env_ic + old_cap, 0,
+               (chunk->const_cap - old_cap) * sizeof(EnvIC));
     }
     val_incref(val);
     chunk->constants[chunk->const_count] = val;

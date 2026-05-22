@@ -929,6 +929,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     env->values[env->count] = slot_from_value(promoted);
     if (env->assign_counts) env->assign_counts[env->count] = 1;
     env->count++;
+    env->binding_version++;
 
     /* Insert into hash; rebuild if load factor > 70% */
     if (env->count * 10 > (env->hash.mask + 1) * 7)
@@ -942,7 +943,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
  * Promotion: an arena-tracked pointer slot is materialized to heap via
  * slot_to_value + promote_if_arena to preserve the existing arena-safety
  * contract that env never holds arena Values across arena reset. */
-static void env_store_slot(Env *env, int idx, EigsSlot s) {
+void env_store_slot(Env *env, int idx, EigsSlot s) {
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
         if (v && v->arena) {
@@ -1023,10 +1024,32 @@ store:
     env->values[env->count] = stored;
     if (env->assign_counts) env->assign_counts[env->count] = 1;
     env->count++;
+    env->binding_version++;
     if (env->count * 10 > (env->hash.mask + 1) * 7)
         env_hash_rebuild(&env->hash, env->names, env->count);
     else
         env_hash_insert(&env->hash, h, env->count - 1);
+}
+
+/* Walk the env chain for `name`. On hit, returns target env, slot index in
+ * that env, and depth (0 = starting env, 1 = parent, ...). On miss, returns
+ * NULL. Used by VM IC populate path so we don't re-walk to discover depth. */
+Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
+                       int *out_slot, int *out_depth) {
+    if (h == 0) h = env_hash_name(name);
+    Env *e = start;
+    int depth = 0;
+    while (e) {
+        int idx = env_hash_find(&e->hash, name, h, e->names);
+        if (idx >= 0) {
+            if (out_slot)  *out_slot  = idx;
+            if (out_depth) *out_depth = depth;
+            return e;
+        }
+        e = e->parent;
+        depth++;
+    }
+    return NULL;
 }
 
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found) {
@@ -1070,6 +1093,7 @@ void env_free(Env *env) {
         env->count = 0;
         env->captured = 0;
         env->env_refcount = 0;
+        env->binding_version++; /* invalidate VM inline caches */
         /* O(1) invalidation: bump generation. On wrap, fall back to a
          * full reset (every ~4 billion env reuses on this thread). */
         if (++env->hash.generation == 0) {
@@ -1135,6 +1159,7 @@ void env_clear(Env *env) {
         slot_decref(env->values[i]);
     }
     env->count = 0;
+    env->binding_version++;
     if (++env->hash.generation == 0) {
         memset(env->hash.generations, 0,
                (env->hash.mask + 1) * sizeof(uint32_t));

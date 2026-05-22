@@ -793,38 +793,114 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(GET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
+        EnvIC *ic = &chunk->env_ic[idx];
+        Env *start = frame->env;
+        /* IC fast path: same starting env, both starting and target env
+         * binding_version unmoved since cache population. walk_depth ∈ {0,1}. */
+        if (__builtin_expect(ic->starting_env == start &&
+                             ic->starting_ver == start->binding_version, 1)) {
+            Env *target = ic->walk_depth ? start->parent : start;
+            if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+                EigsSlot s = target->values[ic->slot_idx];
+                slot_incref(s);
+                vm_push_slot(s);
+                DISPATCH();
+            }
+        }
+        /* Slow path: chain walk; populate IC if depth ≤ 1. */
         const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-        int found = 0;
-        EigsSlot s = env_get_hashed_slot(frame->env, name, h, &found);
-        if (!found) {
+        int slot_idx, depth;
+        Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
+        if (!target) {
             runtime_error(current_line, "undefined variable '%s'", name);
             vm_push_slot(slot_null());
-        } else {
-            slot_incref(s);
-            vm_push_slot(s);
+            DISPATCH();
         }
+        if (depth <= 1) {
+            ic->starting_env = start;
+            ic->starting_ver = start->binding_version;
+            ic->target_ver   = target->binding_version;
+            ic->slot_idx     = slot_idx;
+            ic->walk_depth   = (uint8_t)depth;
+        }
+        EigsSlot s = target->values[slot_idx];
+        slot_incref(s);
+        vm_push_slot(s);
         DISPATCH();
     }
 
     CASE(SET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
+        EnvIC *ic = &chunk->env_ic[idx];
+        Env *start = frame->env;
+        EigsSlot s = g_vm.stack[g_vm.sp - 1];
+        if (__builtin_expect(ic->starting_env == start &&
+                             ic->starting_ver == start->binding_version, 1)) {
+            Env *target = ic->walk_depth ? start->parent : start;
+            if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+                env_store_slot(target, ic->slot_idx, s);
+                if (target->assign_counts) target->assign_counts[ic->slot_idx]++;
+                DISPATCH();
+            }
+        }
         const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-        EigsSlot s = g_vm.stack[g_vm.sp - 1];
-        env_set_hashed_slot(frame->env, name, h, s);
+        int slot_idx, depth;
+        Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
+        if (target) {
+            env_store_slot(target, slot_idx, s);
+            if (target->assign_counts) target->assign_counts[slot_idx]++;
+            if (depth <= 1) {
+                ic->starting_env = start;
+                ic->starting_ver = start->binding_version;
+                ic->target_ver   = target->binding_version;
+                ic->slot_idx     = slot_idx;
+                ic->walk_depth   = (uint8_t)depth;
+            }
+            DISPATCH();
+        }
+        /* Not found anywhere — create in starting env, then populate IC. */
+        env_set_local_hashed_slot(start, name, h, s);
+        Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
+        if (t2 == start) {
+            ic->starting_env = start;
+            ic->starting_ver = start->binding_version;
+            ic->target_ver   = start->binding_version;
+            ic->slot_idx     = slot_idx;
+            ic->walk_depth   = 0;
+        }
         DISPATCH();
     }
 
     CASE(SET_NAME_LOCAL): {
         uint16_t idx = read_u16(ip); ip += 2;
+        EnvIC *ic = &chunk->env_ic[idx];
+        Env *start = frame->env;
+        EigsSlot s = g_vm.stack[g_vm.sp - 1];
+        if (__builtin_expect(ic->starting_env == start &&
+                             ic->starting_ver == start->binding_version &&
+                             ic->walk_depth == 0 &&
+                             ic->target_ver == start->binding_version, 1)) {
+            env_store_slot(start, ic->slot_idx, s);
+            if (start->assign_counts) start->assign_counts[ic->slot_idx]++;
+            DISPATCH();
+        }
         const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-        EigsSlot s = g_vm.stack[g_vm.sp - 1];
-        env_set_local_hashed_slot(frame->env, name, h, s);
+        env_set_local_hashed_slot(start, name, h, s);
+        int slot_idx, depth;
+        Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
+        if (target == start) {
+            ic->starting_env = start;
+            ic->starting_ver = start->binding_version;
+            ic->target_ver   = start->binding_version;
+            ic->slot_idx     = slot_idx;
+            ic->walk_depth   = 0;
+        }
         DISPATCH();
     }
 

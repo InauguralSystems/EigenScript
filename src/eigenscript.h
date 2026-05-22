@@ -186,6 +186,8 @@ struct Env {
     int heap_allocated;
     int captured;
     int env_refcount;   /* number of closures referencing this env */
+    uint32_t binding_version; /* bumped on every new-binding add or env recycle;
+                               * used by VM inline caches to detect shadowing */
     EnvHash hash;
 };
 
@@ -344,6 +346,14 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
 void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found);
+/* Direct slot store with arena promotion; used by VM inline-cache fast paths
+ * after the slot index has been resolved out-of-band. Caller must update
+ * binding_version/assign_counts as appropriate. */
+void env_store_slot(Env *env, int idx, EigsSlot s);
+/* Walk env chain for `name`. Returns target env on hit (with *out_slot and
+ * *out_depth populated), NULL on miss. Depth 0 = start env, 1 = parent, etc. */
+Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
+                       int *out_slot, int *out_depth);
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
 void env_free(Env *env);
