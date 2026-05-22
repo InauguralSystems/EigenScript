@@ -17,6 +17,12 @@
  * this stub is unreachable. */
 void eigs_jit_get_layout(EigsJitLayout *out) { (void)out; }
 
+/* Stage 4c references &free_value as an immediate in the decref emitter,
+ * so the linker needs a definition even though the smoke path never
+ * invokes the emitter. Stub returns void. */
+typedef struct Value Value;
+void free_value(Value *v) { (void)v; }
+
 static int run_case(int64_t expected) {
     EigsJitCache *jc = jit_cache_new(1);
     if (!jc) {
