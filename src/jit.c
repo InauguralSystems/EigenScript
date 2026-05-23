@@ -330,6 +330,19 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 5; ops++; non_line_ops++;
             last_push_immediate = 0;
+        } else if (op == OP_LOCAL_DOT_GET) {
+            /* Stage 4m: 5-byte op [op][slot:16][name_idx:16]. Helper needs
+             * chunk pointer for const_interns/const_hashes lookup — same
+             * shape as OP_GET_NAME. */
+            if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
+                                           ((uint16_t)chunk->code[i + 4] << 8));
+            if (!chunk->const_interns || name_idx >= chunk->const_count) {
+                *stop_op = op; *stop_offset = i; break;
+            }
+            i += 5; ops++; non_line_ops++;
+            *has_bail_op = 1;
+            last_push_immediate = 0;
         } else if (op == OP_SET_LOCAL) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
@@ -688,6 +701,12 @@ static uint8_t *emit_mov_imm32_edi(uint8_t *w, uint32_t imm) {
     return emit_u32(w, imm);
 }
 
+/* mov $imm32, %edx  (5 bytes) — pass a 32-bit immediate as 3rd helper arg. */
+static uint8_t *emit_mov_imm32_edx(uint8_t *w, uint32_t imm) {
+    *w++ = 0xBA;
+    return emit_u32(w, imm);
+}
+
 /* mov $imm32, %r13d  (6 bytes) — set advance tracker. */
 static uint8_t *emit_mov_imm32_r13d(uint8_t *w, uint32_t imm) {
     *w++ = 0x41; *w++ = 0xBD;
@@ -1036,11 +1055,19 @@ static uint8_t *emit_conditional_decref_rsi(uint8_t *w, int *bail) {
 }
 #endif
 
+/* Tiered-JIT hotness threshold. Chunks with fewer than this many frame
+ * entries stay interpreted; only chunks that prove hot earn a native
+ * thunk. Pays for the helper-call prologue overhead on cold chunks (a
+ * neutral-or-negative trade per Stage 4l+4m measurements) without
+ * starving the hot-path chunks that dominate frame entries. */
+#define EIGS_JIT_HOTNESS_THRESHOLD 50
+
 void jit_try_compile_chunk(struct EigsChunk *chunk) {
     if (!chunk) return;
     if (chunk->jit_state != 0) return;
-    g_jit_scanned_chunks++;
     jit_register_chunk(chunk);
+    if (chunk->exec_count < EIGS_JIT_HOTNESS_THRESHOLD) return;
+    g_jit_scanned_chunks++;
 #if !defined(__x86_64__)
     chunk->jit_state = 1;
     chunk->jit_code = NULL;
@@ -1283,6 +1310,25 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
             w = emit_mov_imm32_esi(w, (uint32_t)idx);
             w = emit_push_rcx(w);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_local_idx_get);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 5;
+        } else if (op == OP_LOCAL_DOT_GET) {
+            /* Stage 4m: out-of-line call to
+             *   jit_helper_local_dot_get(chunk, slot, name_idx).
+             * chunk arrives in %rdi via %r14 (has_bail_op forces load);
+             * slot in %esi, name_idx in %edx. Same sp sync/reload as 4k/4l. */
+            uint16_t slot = (uint16_t)(chunk->code[i + 1] |
+                                       ((uint16_t)chunk->code[i + 2] << 8));
+            uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
+                                           ((uint16_t)chunk->code[i + 4] << 8));
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_mov_r14_rdi(w);
+            w = emit_mov_imm32_esi(w, (uint32_t)slot);
+            w = emit_mov_imm32_edx(w, (uint32_t)name_idx);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_local_dot_get);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);

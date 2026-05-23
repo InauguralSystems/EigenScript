@@ -448,6 +448,44 @@ void jit_helper_local_idx_get(int slot, int idx) {
     vm_push_slot(slot_null());
 }
 
+/* JIT Stage 4m: out-of-line helper for OP_LOCAL_DOT_GET.
+ *
+ * Mirrors CASE(LOCAL_DOT_GET) — looks up local[slot], dict-gets the
+ * named field, pushes via immediate-num peephole when possible. Needs
+ * chunk for const_interns / const_hashes (same as GET_NAME). */
+void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    Env *e = frame->fn_env;
+    Value *target = vm_local_lift(e, (uint16_t)slot);
+    if (target && target->type == VAL_DICT) {
+        const char *key = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) {
+            h = env_hash_name(key);
+            if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
+        }
+        Value *v = dict_get_cached(target, key, h);
+        if (v) {
+            if (v->type == VAL_NUM && v->obs_age == 0) {
+                vm_push_slot(slot_from_num(v->data.num));
+            } else {
+                val_incref(v);
+                vm_push(v);
+            }
+        } else {
+            vm_push_slot(slot_null());
+        }
+        return;
+    }
+    if (target && target->type != VAL_NULL) {
+        const char *key = chunk->const_interns[name_idx];
+        runtime_error(g_vm.current_line,
+            "cannot access field '%s' on %s",
+            key, val_type_name(target->type));
+    }
+    vm_push_slot(slot_null());
+}
+
 void eigs_jit_get_layout(EigsJitLayout *out) {
     void *tp;
     __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));

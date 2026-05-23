@@ -116,4 +116,8 @@ void jit_helper_get_name(struct EigsChunk *chunk, int idx);
  * VAL_BUFFER/VAL_LIST/VAL_STR dispatch in CASE(LOCAL_IDX_GET). */
 void jit_helper_local_idx_get(int slot, int idx);
 
+/* Stage 4m: out-of-line helper for OP_LOCAL_DOT_GET. Needs chunk for
+ * const_interns / const_hashes — same shape as jit_helper_get_name. */
+void jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx);
+
 #endif /* EIGS_JIT_H */
