@@ -2,6 +2,7 @@
 #include "eigenscript.h"
 #include "vm.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,7 +208,8 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 1; ops++; non_line_ops++;
             last_push_immediate = 0;
         } else if (op == OP_ADD || op == OP_SUB ||
-                   op == OP_MUL || op == OP_DIV) {
+                   op == OP_MUL || op == OP_DIV ||
+                   op == OP_MOD) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             /* Result type at runtime is num (when not bailed), so
@@ -273,15 +275,19 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
  *   prologue 23 (always) + 35 (env-cache when needs_env_cache) +
  *                          17 (advance tracker init when has_bail_op) +
  *   epilogue 10 (always) +  7 (advance writeback when has_bail_op) +
- *   128 bytes/op worst case + 7 bytes/op advance update when
+ *   192 bytes/op worst case + 7 bytes/op advance update when
  *   has_bail_op. The caller advances frame->ip by chunk->jit_advance,
  *   which is initialized at compile time to the full prefix but may be
- *   overwritten by the thunk on bail. */
+ *   overwritten by the thunk on bail.
+ *
+ * The 192-byte budget covers OP_MOD (load + 2 type checks + zero-check
+ * + xmm setup + push/movabs/call/pop + extract + overflow check + store
+ * ≈ 150 bytes). Smaller ops use a fraction of the slack. */
 static size_t jit_estimate_size(int prefix, int needs_env_cache,
                                 int has_bail_op) {
     return 25 + (needs_env_cache ? 35 : 0) + (has_bail_op ? 17 : 0) +
            10 + (has_bail_op ? 11 : 0) +
-           (size_t)prefix * (128 + (has_bail_op ? 6 : 0));
+           (size_t)prefix * (192 + (has_bail_op ? 6 : 0));
 }
 
 /* ---- x86-64 encoding helpers ---- */
@@ -772,6 +778,25 @@ static uint8_t *emit_btr_63_rdx(uint8_t *w) {
     *w++ = 0x48; *w++ = 0x0F; *w++ = 0xBA; *w++ = 0xF2; *w++ = 0x3F;
     return w;
 }
+/* btr $63, %rsi  (5 bytes: 48 0F BA F6 3F) — clear sign bit of %rsi. */
+static uint8_t *emit_btr_63_rsi(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x0F; *w++ = 0xBA; *w++ = 0xF6; *w++ = 0x3F;
+    return w;
+}
+/* test %rsi, %rsi  (3 bytes: 48 85 F6) — ZF=1 iff %rsi == 0. */
+static uint8_t *emit_test_rsi_rsi(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x85; *w++ = 0xF6; return w;
+}
+/* movq %rdx, %xmm0  (5 bytes: 66 48 0F 6E C2) — int64-to-double-bits
+ * transfer used to set up the dividend (a) for fmod(a, b). */
+static uint8_t *emit_movq_rdx_xmm0(uint8_t *w) {
+    *w++ = 0x66; *w++ = 0x48; *w++ = 0x0F; *w++ = 0x6E; *w++ = 0xC2; return w;
+}
+/* movq %rax, %xmm1  (5 bytes: 66 48 0F 6E C8) — set up the divisor (b)
+ * for fmod(a, b). */
+static uint8_t *emit_movq_rax_xmm1(uint8_t *w) {
+    *w++ = 0x66; *w++ = 0x48; *w++ = 0x0F; *w++ = 0x6E; *w++ = 0xC8; return w;
+}
 
 /* cmp %rsi, %rdx  (3 bytes: 48 39 F2) */
 static uint8_t *emit_cmp_rsi_rdx(uint8_t *w) {
@@ -1114,6 +1139,54 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
                 JIT_BAIL_AND_RETURN();
             }
             i += 3;
+        } else if (op == OP_MOD) {
+            /* fmod-based modulo. Diverges from add/sub/mul/div: a libm
+             * call replaces the single SSE op, the divisor needs an
+             * explicit zero check (the VM falls into the slow-path
+             * error arm on b==0), and the call site needs to align
+             * %rsp to 16. Four bail slots: two type checks, one zero
+             * check, one overflow check on the result. */
+            if (bail_count + 4 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
+            uint8_t *p_b, *p_a, *p_z, *p_ov;
+            /* %rax = b, %rdx = a. */
+            w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
+            w = emit_load_stack_to_rdx(w, g_layout.off_stack - 16);
+            w = emit_immediate_num_check_rax(w, &p_b);
+            bail_patches[bail_count++] = p_b;
+            w = emit_immediate_num_check_rdx(w, &p_a);
+            bail_patches[bail_count++] = p_a;
+            /* Divisor zero check. The VM compares `b->data.num != 0.0`,
+             * which under IEEE-754 treats +0.0 and -0.0 as equal — so
+             * we must also bail when b == -0.0 (bits = 0x8000…0).
+             * Strategy: copy b's bits to %rsi (dead scratch after the
+             * type checks), clear the sign bit, test for zero. */
+            w = emit_mov_rax_rsi(w);
+            w = emit_btr_63_rsi(w);
+            w = emit_test_rsi_rsi(w);
+            w = emit_je_rel32(w, &p_z);
+            bail_patches[bail_count++] = p_z;
+            /* fmod(a, b) takes args in %xmm0, %xmm1. Set xmm0 = a
+             * (from %rdx) and xmm1 = b (from %rax). */
+            w = emit_movq_rdx_xmm0(w);
+            w = emit_movq_rax_xmm1(w);
+            /* Align %rsp from 8-mod-16 to 0-mod-16 by saving the sp
+             * cache. movabs+call is the same indirect-call pattern
+             * used for free_value. */
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&fmod);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            /* Result in %xmm0 → %rax → overflow check (catches NaN /
+             * ±Inf, including fmod(±Inf, x) = NaN propagation). */
+            w = emit_movq_xmm0_rax(w);
+            w = emit_overflow_check_rax(w, max_normal_bits, &p_ov);
+            bail_patches[bail_count++] = p_ov;
+            w = emit_store_rax_at_disp_stack(w, g_layout.off_stack - 16);
+            w = emit_dec_ecx(w);
+            i += 1;
         } else if (op == OP_ADD || op == OP_SUB ||
                    op == OP_MUL || op == OP_DIV) {
             /* Reserve patch slots: two type checks + one overflow check.
