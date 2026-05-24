@@ -26,6 +26,12 @@ __thread int g_has_error = 0;
 __thread int g_breaking = 0;
 __thread int g_continuing = 0;
 
+/* Multi-thread mode flag. Set to 1 by builtin_spawn before pthread_create
+ * (and never reset). When 0, refcount sites use plain ++/-- instead of
+ * __atomic_*_fetch — saves ~20 cycles per LOCK-prefixed RMW on x86.
+ * Most workloads (DMG, MiniSat, Tidepool, REPL) never spawn. */
+int g_vm_multithreaded = 0;
+
 /* Set runtime error — captured by try/catch, or printed to stderr.
  * Inside try blocks, the error is silently captured.
  * Outside try blocks, it also prints to stderr. */
@@ -305,7 +311,12 @@ void free_value(Value *v) {
                 Env *clo = v->data.fn.closure;
                 v->data.fn.closure = NULL;  /* break cycle before decrement */
                 if (clo) {
-                    if (__atomic_sub_fetch(&clo->env_refcount, 1, __ATOMIC_ACQ_REL) <= 0 && clo->captured) {
+                    int newrc;
+                    if (__builtin_expect(g_vm_multithreaded, 0))
+                        newrc = __atomic_sub_fetch(&clo->env_refcount, 1, __ATOMIC_ACQ_REL);
+                    else
+                        newrc = --clo->env_refcount;
+                    if (newrc <= 0 && clo->captured) {
                         clo->captured = 0;
                         env_free(clo);
                     }
@@ -550,7 +561,12 @@ Value* make_fn(const char *name, char **params, int param_count, ASTNode **body,
     v->data.fn.body = clone_ast_array(body, body_count);
     v->data.fn.body_count = body_count;
     v->data.fn.closure = closure;
-    if (closure) __atomic_add_fetch(&closure->env_refcount, 1, __ATOMIC_RELAXED);
+    if (closure) {
+        if (__builtin_expect(g_vm_multithreaded, 0))
+            __atomic_add_fetch(&closure->env_refcount, 1, __ATOMIC_RELAXED);
+        else
+            closure->env_refcount++;
+    }
     v->refcount = 1;
     v->arena = 0;
     return v;
@@ -1134,7 +1150,12 @@ void env_set_local(Env *env, const char *name, Value *val) {
 
 void env_free(Env *env) {
     if (!env || !env->heap_allocated) return;
-    if (env->captured && __atomic_load_n(&env->env_refcount, __ATOMIC_ACQUIRE) > 0) return;
+    if (env->captured) {
+        int rc = __builtin_expect(g_vm_multithreaded, 0)
+            ? __atomic_load_n(&env->env_refcount, __ATOMIC_ACQUIRE)
+            : env->env_refcount;
+        if (rc > 0) return;
+    }
     for (int i = 0; i < env->count; i++) {
         slot_decref(env->values[i]);
     }

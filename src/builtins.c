@@ -2969,6 +2969,9 @@ Value* builtin_spawn(Value *arg) {
     h->done = 0;
     int hid = handle_register(h, HANDLE_THREAD);
     if (hid < 0) { free(h); val_decref(arg); return make_null(); }
+    /* Flip refcounts to atomic mode before any new thread can observe
+     * a Value. pthread_create supplies the full barrier. */
+    g_vm_multithreaded = 1;
     pthread_create(&h->tid, NULL, thread_entry, h);
     Value *d = make_dict(8);
     dict_set(d, "_handle_id", make_num((double)hid));

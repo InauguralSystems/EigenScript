@@ -77,6 +77,15 @@ static inline EigsSlot slot_true(void)               { EigsSlot s; s.u = SLOT_TR
 static inline EigsSlot slot_false(void)              { EigsSlot s; s.u = SLOT_FALSE_BITS; return s; }
 static inline EigsSlot slot_from_bool(int b)         { EigsSlot s; s.u = TAG_BOOL | (b ? 1ULL : 0ULL); return s; }
 
+/* Single-thread refcount gate: see eigenscript.h for the full doc. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern int g_vm_multithreaded;
+#ifdef __cplusplus
+}
+#endif
+
 /* Refcount fast path:
  *   immediate (number / null / bool) -> no-op
  *   heap or tracked pointer          -> existing atomic refcount
@@ -87,7 +96,12 @@ static inline void slot_incref(EigsSlot s) {
         uint64_t tag = s.u & SLOT_TAG_MASK;
         if (tag == TAG_HEAP || tag == TAG_TRACKED) {
             Value *v = (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK);
-            if (!v->arena) __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
+            if (!v->arena) {
+                if (__builtin_expect(g_vm_multithreaded, 0))
+                    __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
+                else
+                    v->refcount++;
+            }
         }
     }
 }
@@ -98,9 +112,12 @@ static inline void slot_decref(EigsSlot s) {
         if (tag == TAG_HEAP || tag == TAG_TRACKED) {
             Value *v = (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK);
             if (!v->arena) {
-                if (__atomic_sub_fetch(&v->refcount, 1, __ATOMIC_ACQ_REL) <= 0) {
-                    free_value(v);
-                }
+                int newrc;
+                if (__builtin_expect(g_vm_multithreaded, 0))
+                    newrc = __atomic_sub_fetch(&v->refcount, 1, __ATOMIC_ACQ_REL);
+                else
+                    newrc = --v->refcount;
+                if (newrc <= 0) free_value(v);
             }
         }
     }

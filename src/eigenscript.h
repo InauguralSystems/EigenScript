@@ -315,14 +315,30 @@ static inline double num_guard(double x) {
     return x;
 }
 
+/* Set to 1 by builtin_spawn before pthread_create, then stays 1. Single-
+ * threaded scripts (the common case — DMG, MiniSat, Tidepool, REPL) keep
+ * it at 0, which lets val_incref/decref, slot_incref/decref, and
+ * env_refcount sites skip the LOCK-prefixed atomic RMW (mandatory on x86
+ * for any __atomic_*_fetch). The branch is well-predicted to false until
+ * spawn() fires. */
+extern int g_vm_multithreaded;
+
 static inline void val_incref(Value *v) {
-    if (v && !v->arena) __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
+    if (v && !v->arena) {
+        if (__builtin_expect(g_vm_multithreaded, 0))
+            __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
+        else
+            v->refcount++;
+    }
 }
 static inline void val_decref(Value *v) {
     if (v && !v->arena) {
-        if (__atomic_sub_fetch(&v->refcount, 1, __ATOMIC_ACQ_REL) <= 0) {
-            free_value(v);
-        }
+        int newrc;
+        if (__builtin_expect(g_vm_multithreaded, 0))
+            newrc = __atomic_sub_fetch(&v->refcount, 1, __ATOMIC_ACQ_REL);
+        else
+            newrc = --v->refcount;
+        if (newrc <= 0) free_value(v);
     }
 }
 

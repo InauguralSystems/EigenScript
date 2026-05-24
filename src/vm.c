@@ -1184,7 +1184,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         }
         /* Mark env as captured so it survives after this frame returns */
         frame->env->captured = 1;
-        __atomic_add_fetch(&frame->env->env_refcount, 1, __ATOMIC_RELAXED);
+        if (__builtin_expect(g_vm_multithreaded, 0))
+            __atomic_add_fetch(&frame->env->env_refcount, 1, __ATOMIC_RELAXED);
+        else
+            frame->env->env_refcount++;
         Value *fn = make_fn(fn_chunk->name, params, fn_chunk->param_count,
                             NULL, 0, frame->env);
         /* Store the chunk pointer in the fn — we repurpose body_count as a flag */
