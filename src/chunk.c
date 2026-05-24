@@ -24,6 +24,7 @@ EigsChunk *chunk_new(const char *name) {
     c->fn_cap = 8;
     c->functions = xcalloc(c->fn_cap, sizeof(EigsChunk *));
     c->name = name ? strdup(name) : strdup("<module>");
+    c->jit_stop_op = OP_COUNT;  /* sentinel: scan never ran */
     return c;
 }
 

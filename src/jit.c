@@ -199,12 +199,20 @@ void jit_module_shutdown(void) {
             uint64_t total_exec = 0;
             for (int i = 0; i < g_chunks_count; i++)
                 total_exec += g_chunks[i]->exec_count;
+            /* Static native-byte coverage diagnostic: each chunk entry
+             * executes some prefix of its bytecode natively (if compiled)
+             * and the remainder interpreted. Aggregating exec_count *
+             * jit_advance vs exec_count * code_len tells us roughly what
+             * fraction of executed bytecode bytes are native — and thus
+             * whether extending the JIT prefix further would still pay. */
+            uint64_t bytes_native = 0, bytes_total = 0;
+            uint64_t bytes_native_top = 0, bytes_total_top = 0;
             fprintf(stderr, "\n=== Hot chunks (top %d of %d) ===\n",
                     top, g_chunks_count);
             fprintf(stderr, "total chunk entries: %" PRIu64 "\n", total_exec);
             fprintf(stderr,
-                "%-28s %12s  %3s  %s\n",
-                "chunk", "exec", "jit", "pct");
+                "%-28s %12s  %3s  %6s  %5s %5s %6s  %s\n",
+                "chunk", "exec", "jit", "pct", "adv", "len", "nat%", "stop");
             for (int a = 0; a < top; a++) {
                 struct EigsChunk *c = g_chunks[order[a]];
                 if (c->exec_count == 0) break;
@@ -214,10 +222,37 @@ void jit_module_shutdown(void) {
                 double pct = total_exec
                     ? (100.0 * (double)c->exec_count / (double)total_exec)
                     : 0.0;
-                fprintf(stderr, "%-28s %12" PRIu64 "  %s  %5.1f%%\n",
+                int adv = (c->jit_state == 2) ? c->jit_advance : 0;
+                int len = c->code_len;
+                double nat = len ? (100.0 * (double)adv / (double)len) : 0.0;
+                const char *stop_name = (c->jit_stop_op == OP_COUNT)
+                    ? "<end>" : op_name(c->jit_stop_op);
+                fprintf(stderr,
+                        "%-28s %12" PRIu64 "  %s  %5.1f%%  %5d %5d %5.1f%%  %s\n",
                         c->name ? c->name : "<anon>",
-                        c->exec_count, jstate, pct);
+                        c->exec_count, jstate, pct, adv, len, nat, stop_name);
+                bytes_native_top += c->exec_count * (uint64_t)adv;
+                bytes_total_top  += c->exec_count * (uint64_t)len;
             }
+            for (int i = 0; i < g_chunks_count; i++) {
+                struct EigsChunk *c = g_chunks[i];
+                int adv = (c->jit_state == 2) ? c->jit_advance : 0;
+                bytes_native += c->exec_count * (uint64_t)adv;
+                bytes_total  += c->exec_count * (uint64_t)c->code_len;
+            }
+            double nat_share_top = bytes_total_top
+                ? 100.0 * (double)bytes_native_top / (double)bytes_total_top
+                : 0.0;
+            double nat_share_all = bytes_total
+                ? 100.0 * (double)bytes_native / (double)bytes_total
+                : 0.0;
+            fprintf(stderr,
+                "native-byte share (top %d hot): %.1f%%   "
+                "(all %d chunks): %.1f%%\n",
+                top, nat_share_top, g_chunks_count, nat_share_all);
+            fprintf(stderr,
+                "  bytes native: %" PRIu64 " / total: %" PRIu64 "\n",
+                bytes_native, bytes_total);
             free(order);
         }
     }
@@ -1081,6 +1116,7 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
     int stop_offset = 0;
     int prefix = jit_supported_prefix(chunk, &needs_env_cache, &has_bail_op,
                                       &stop_op, &stop_offset);
+    chunk->jit_stop_op = stop_op;
     /* Every scanned chunk contributes one stop_op tally, whether it
      * ultimately compiles or not. Compiled chunks also bump
      * g_jit_compiled_count, so total_stops - compiled = bailouts. */
