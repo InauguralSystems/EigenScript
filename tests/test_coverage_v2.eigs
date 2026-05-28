@@ -394,6 +394,23 @@ unobserved:
     assert of [lr == 0.1, "CV2-101 eval_num_fast dot access"]
 
 # ================================================================
+# COMPILER.C: for-loop iter var bound correctly inside unobserved
+# (regression: 0.11.x slot-promotion stole iter writes from env)
+# ================================================================
+unobserved:
+    sum_j is 0
+    for j in range of 5:
+        sum_j is sum_j + j
+assert of [sum_j == 10, "CV2-101b for iter var bound in unobserved"]
+
+unobserved:
+    iter_sum is 0
+    for i in range of 3:
+        for k in range of 2:
+            iter_sum is iter_sum + i * 10 + k
+assert of [iter_sum == 63, "CV2-101c nested for in unobserved"]
+
+# ================================================================
 # EVAL.C: interrogative who on non-ident (returns type name)
 # ================================================================
 who_n is who is 42

@@ -843,7 +843,9 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
         collect_module_names_block(node->data.loop.body, node->data.loop.body_count, out);
         break;
     case AST_FOR:
-        name_set_add(out, node->data.forloop.var);
+        /* Don't add forloop.var: AST_FOR binds it via OP_SET_NAME_LOCAL
+         * (env-based), so promoting it to a frame slot leaves the slot null
+         * while writes go to env — every read returns null. */
         collect_module_names_block(node->data.forloop.body, node->data.forloop.body_count, out);
         break;
     case AST_BLOCK:
