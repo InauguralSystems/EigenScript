@@ -312,11 +312,18 @@ static void ensure_layout(void) {
  *                              slot_decref is a no-op. GET_LOCAL/DUP/
  *                              DUP2/SET_LOCAL/ADD/SUB break the chain.
  */
+/* entry_offset: starting byte offset within chunk->code at which the
+ * thunk will begin execution. 0 for the existing from-zero compile;
+ * non-zero is the OSR entry point (Phase 2+). The returned `last_good`
+ * is still an *absolute* bytecode offset (one past the last good op).
+ * The "no prefix" sentinel remains a literal 0 return — callers that
+ * support entry_offset > 0 must additionally check `prefix > entry_offset`. */
 static int jit_supported_prefix(const struct EigsChunk *chunk,
+                                int entry_offset,
                                 int *needs_env_cache, int *has_bail_op,
                                 uint8_t *stop_op, int *stop_offset) {
-    int i = 0, ops = 0, non_line_ops = 0;
-    int last_good = 0;
+    int i = entry_offset, ops = 0, non_line_ops = 0;
+    int last_good = entry_offset;
     int last_push_immediate = 0;
     *needs_env_cache = 0;
     *has_bail_op = 0;
@@ -1172,11 +1179,21 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
 #else
     ensure_layout();
 
+    /* Phase 1 of OSR refactor: parameterize the scanner and emitter on
+     * `entry_offset` — the bytecode offset at which the thunk begins
+     * execution. The from-zero entry point hardcodes 0 here; the future
+     * OSR entry point (jit_try_compile_chunk_osr) will pass a non-zero
+     * loop-header offset. With entry_offset == 0 the compiler folds all
+     * `(x - entry_offset)` arithmetic to `x`, leaving emitted bytes
+     * byte-identical to the pre-refactor thunk. */
+    const int entry_offset = 0;
+
     int needs_env_cache = 0;
     int has_bail_op = 0;
     uint8_t stop_op = OP_COUNT;
     int stop_offset = 0;
-    int prefix = jit_supported_prefix(chunk, &needs_env_cache, &has_bail_op,
+    int prefix = jit_supported_prefix(chunk, entry_offset,
+                                      &needs_env_cache, &has_bail_op,
                                       &stop_op, &stop_offset);
     chunk->jit_stop_op = stop_op;
     /* Every scanned chunk contributes one stop_op tally, whether it
@@ -1308,7 +1325,7 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
     }
 
     /* Body: inline native code per opcode. */
-    int i = 0;
+    int i = entry_offset;
     while (i < prefix) {
         uint8_t op = chunk->code[i];
         /* Record the native entry point for this bytecode byte so that
@@ -1768,7 +1785,10 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
                                       ((uint16_t)chunk->code[i + 2] << 8));
             int target = (op == OP_JUMP) ? (i + 3 + (int)off)
                                          : (i + 3 - (int)off);
-            w = emit_mov_imm32_r13d(w, (uint32_t)target);
+            /* r13d holds "bytes to advance from frame->ip on exit", and
+             * frame->ip sits at entry_offset when the thunk is invoked.
+             * The subtraction folds to identity when entry_offset == 0. */
+            w = emit_mov_imm32_r13d(w, (uint32_t)(target - entry_offset));
             uint8_t *patch;
             w = emit_jmp_rel32(w, &patch);
             pending[pending_count].target = target;
@@ -1831,8 +1851,8 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
                 /* Take when ZF=0; skip taken-arm when ZF=1. */
                 w = emit_je_rel32(w, &skip_patch);
             }
-            /* Taken arm. */
-            w = emit_mov_imm32_r13d(w, (uint32_t)target);
+            /* Taken arm. Same entry-relative encoding as OP_JUMP above. */
+            w = emit_mov_imm32_r13d(w, (uint32_t)(target - entry_offset));
             uint8_t *jump_patch;
             w = emit_jmp_rel32(w, &jump_patch);
             pending[pending_count].target = target;
@@ -1860,7 +1880,7 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
          * loops back — emitting another writeback would either be dead
          * code or worse, clobber the target-correct advance value. */
         if (has_bail_op && !skip_post_op_advance) {
-            w = emit_mov_imm32_r13d(w, (uint32_t)i);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i - entry_offset));
         }
     }
 
@@ -1923,7 +1943,10 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
     free(byte_to_native);
     chunk->jit_state = 2;
     chunk->jit_code = code;
-    chunk->jit_advance = prefix;
+    /* Default advance — number of bytes to advance frame->ip from its
+     * entry position (entry_offset) if the thunk runs to completion
+     * without writing r13d. For entry_offset == 0 this is just `prefix`. */
+    chunk->jit_advance = prefix - entry_offset;
     g_jit_compiled_chunks++;
     g_jit_compiled_count++;
     if (getenv("EIGS_JIT_DEBUG")) {
