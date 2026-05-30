@@ -441,6 +441,29 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             if (!last_push_immediate) { *stop_op = op; *stop_offset = i; break; }
             i += 1; ops++; non_line_ops++;
             last_push_immediate = 0;
+        } else if (op == OP_OBSERVE_ASSIGN) {
+            /* Stage 4o: 3-byte op [op][name_idx:16]. Helper needs
+             * chunk->const_interns (const_hashes may be NULL — helper
+             * fills lazily). Forces has_bail_op=1 so %r14=chunk is set
+             * in the prologue, same as OP_GET_NAME. The helper may
+             * mutate stack[sp-1] (immediate-num → tracked ptr), so any
+             * subsequent OP_POP cannot use the immediate peephole. */
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
+                                           ((uint16_t)chunk->code[i + 2] << 8));
+            if (!chunk->const_interns || name_idx >= chunk->const_count) {
+                *stop_op = op; *stop_offset = i; break;
+            }
+            i += 3; ops++; non_line_ops++;
+            *has_bail_op = 1;
+            last_push_immediate = 0;
+        } else if (op == OP_OBSERVE_ASSIGN_LOCAL) {
+            /* Stage 4o: 3-byte op [op][slot:16]. Helper reads prior
+             * value directly from frame->fn_env->values[slot] — no
+             * chunk pointer needed, so no has_bail_op tax. */
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 3; ops++; non_line_ops++;
+            last_push_immediate = 0;
         } else if (op == OP_LINE) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++;
@@ -1376,6 +1399,39 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             i += 5;
+        } else if (op == OP_OBSERVE_ASSIGN) {
+            /* Stage 4o: out-of-line call to
+             *   jit_helper_observe_assign(chunk, name_idx).
+             * chunk arrives via %r14 (has_bail_op forces load). Helper
+             * reads g_vm.stack[sp-1] — sync %ecx → g_vm.sp before call.
+             * Helper does not change sp; reload %ecx after for safety
+             * (matches existing helper pattern, ~1 load). */
+            uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
+                                           ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_mov_r14_rdi(w);
+            w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_observe_assign);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 3;
+        } else if (op == OP_OBSERVE_ASSIGN_LOCAL) {
+            /* Stage 4o: out-of-line call to
+             *   jit_helper_observe_assign_local(slot).
+             * No chunk needed; slot in %edi. Same sp sync/reload as
+             * OBSERVE_ASSIGN. */
+            uint16_t slot = (uint16_t)(chunk->code[i + 1] |
+                                       ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_mov_imm32_edi(w, (uint32_t)slot);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_observe_assign_local);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 3;
         } else if (op == OP_DUP) {
             /* %rax = stack[sp-1] */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);

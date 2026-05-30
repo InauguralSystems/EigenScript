@@ -120,4 +120,13 @@ void jit_helper_local_idx_get(int slot, int idx);
  * const_interns / const_hashes — same shape as jit_helper_get_name. */
 void jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx);
 
+/* Stage 4o: out-of-line helpers for OP_OBSERVE_ASSIGN /
+ * OP_OBSERVE_ASSIGN_LOCAL. Both update observer history on the value
+ * at g_vm.stack[sp-1] (possibly promoting an immediate-num). They do
+ * not change sp. The OBSERVE_ASSIGN variant needs chunk for const_interns
+ * / const_hashes; OBSERVE_ASSIGN_LOCAL reads the prior value from
+ * frame->fn_env->values[slot] directly. */
+void jit_helper_observe_assign(struct EigsChunk *chunk, int name_idx);
+void jit_helper_observe_assign_local(int slot);
+
 #endif /* EIGS_JIT_H */

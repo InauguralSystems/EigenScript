@@ -489,6 +489,82 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
     vm_push_slot(slot_null());
 }
 
+/* JIT Stage 4o: out-of-line helpers for OP_OBSERVE_ASSIGN /
+ * OP_OBSERVE_ASSIGN_LOCAL. Both mirror their CASE bodies below: read
+ * (and possibly promote) g_vm.stack[g_vm.sp - 1], wire observer history
+ * from the prior binding, set g_last_observer.
+ *
+ * Helpers do not push or pop — sp count is unchanged across the call.
+ * They DO mutate the top slot when promoting an immediate-num to a
+ * tracked Value, so the JIT emitter must sync %ecx → g_vm.sp before
+ * the call (the helper reads g_vm.stack[g_vm.sp - 1]). After return
+ * the JIT scanner sets last_push_immediate = 0 to mark the slot as
+ * possibly-pointer for subsequent peepholes.
+ *
+ * No runtime_error paths — these helpers never set g_vm.had_error. */
+void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
+    if (g_unobserved_depth != 0) return;
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    EigsSlot s = g_vm.stack[g_vm.sp - 1];
+    Value *v = NULL;
+    if (slot_is_num(s)) {
+        v = make_tracked_num(s.d);
+        g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
+    } else if (slot_is_ptr(s)) {
+        v = slot_as_ptr(s);
+    }
+    if (v) {
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) {
+            h = env_hash_name(name);
+            if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
+        }
+        Value *prev = env_get_hashed(frame->env, name, h);
+        if (prev && prev != v) {
+            observer_ensure_fresh(prev);
+            v->last_entropy = prev->last_entropy;
+            v->entropy = prev->entropy;
+            v->obs_age = prev->obs_age;
+            v->dH = prev->dH;
+            v->prev_dH = prev->prev_dH;
+        }
+        v->dirty = 1;
+        g_last_observer = v;
+    }
+}
+
+void jit_helper_observe_assign_local(int slot) {
+    if (g_unobserved_depth != 0) return;
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    EigsSlot s = g_vm.stack[g_vm.sp - 1];
+    Value *v = NULL;
+    if (slot_is_num(s)) {
+        v = make_tracked_num(s.d);
+        g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
+    } else if (slot_is_ptr(s)) {
+        v = slot_as_ptr(s);
+    }
+    if (v) {
+        Env *e = frame->fn_env;
+        Value *prev = NULL;
+        if (e && slot < e->count) {
+            EigsSlot ps = e->values[slot];
+            if (slot_is_ptr(ps)) prev = slot_as_ptr(ps);
+        }
+        if (prev && prev != v) {
+            observer_ensure_fresh(prev);
+            v->last_entropy = prev->last_entropy;
+            v->entropy = prev->entropy;
+            v->obs_age = prev->obs_age;
+            v->dH = prev->dH;
+            v->prev_dH = prev->prev_dH;
+        }
+        v->dirty = 1;
+        g_last_observer = v;
+    }
+}
+
 void eigs_jit_get_layout(EigsJitLayout *out) {
     void *tp;
     __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));
