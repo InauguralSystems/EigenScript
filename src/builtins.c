@@ -3293,6 +3293,156 @@ Value* builtin_nearest_in_range(Value *arg) {
     return result;
 }
 
+/* nearest_in_range_all of [entities, range, world_w, world_h, px_key?, py_key?, active_key?]
+   Batched form: for every entity i in entities, return the nearest active
+   entity (including i itself, mirroring single-call semantics) within range.
+   Returns a list of len(entities) results; each is {index,dist,dx,dy} or null.
+
+   Why this exists: the per-entity nearest_in_range pattern walks the list of
+   entity dicts O(n) times per simulation step, paying the dict pointer-chase
+   per scalar field on every visit. Batching extracts (px,py,active) into
+   parallel double arrays once, then runs the O(n^2) scan over a flat SoA
+   layout that fits L1 (24 bytes/entity ≈ 18KB at n=768). The expensive part
+   becomes pure arithmetic on contiguous doubles instead of cache-missing
+   pointer chases through 6-key dicts. */
+Value* builtin_nearest_in_range_all(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
+        runtime_error(0, "nearest_in_range_all requires [entities, range, world_w, world_h]");
+        return make_null();
+    }
+    Value *entities = arg->data.list.items[0];
+    if (!entities || entities->type != VAL_LIST) return make_null();
+    double range = arg->data.list.items[1]->data.num;
+    double ww = arg->data.list.items[2]->data.num;
+    double wh = arg->data.list.items[3]->data.num;
+    const char *px_key = "px", *py_key = "py", *active_key = "active";
+    if (arg->data.list.count >= 5 && arg->data.list.items[4]->type == VAL_STR)
+        px_key = arg->data.list.items[4]->data.str;
+    if (arg->data.list.count >= 6 && arg->data.list.items[5]->type == VAL_STR)
+        py_key = arg->data.list.items[5]->data.str;
+    if (arg->data.list.count >= 7 && arg->data.list.items[6]->type == VAL_STR)
+        active_key = arg->data.list.items[6]->data.str;
+
+    int n = entities->data.list.count;
+    double range_sq = range * range;
+    double hw = ww * 0.5, hh = wh * 0.5;
+
+    if (n <= 0) return make_list(0);
+
+    /* SoA arrays — one entry per original position, valid[] indicates
+     * whether the dict at that index produced usable numeric coords. */
+    double *px_arr = xmalloc_array(n, sizeof(double));
+    double *py_arr = xmalloc_array(n, sizeof(double));
+    char *active_arr = xmalloc_array(n, sizeof(char));
+    char *valid_arr = xmalloc_array(n, sizeof(char));
+
+    char *iactive = env_intern_name(active_key);
+    char *ipx = env_intern_name(px_key);
+    char *ipy = env_intern_name(py_key);
+    uint32_t h_active = env_hash_name(iactive);
+    uint32_t h_px = env_hash_name(ipx);
+    uint32_t h_py = env_hash_name(ipy);
+    int hint_active = -1, hint_px = -1, hint_py = -1;
+
+    enum { PFDIST = 8 };
+    for (int i = 0; i < n; i++) {
+        if (i + PFDIST < n)
+            __builtin_prefetch(entities->data.list.items[i + PFDIST], 0, 1);
+        Value *e = entities->data.list.items[i];
+        if (!e || e->type != VAL_DICT) {
+            valid_arr[i] = 0;
+            active_arr[i] = 0;
+            continue;
+        }
+        char **keys = e->data.dict.keys;
+        Value **vals = e->data.dict.vals;
+        int kcount = e->data.dict.count;
+
+        Value *av;
+        if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
+            av = vals[hint_active];
+        } else {
+            int idx = env_hash_find_dict(e, iactive, h_active);
+            if (idx >= 0 && hint_active < 0) hint_active = idx;
+            av = (idx >= 0) ? vals[idx] : NULL;
+        }
+        /* active default: 1 (matches single-call behavior where missing/non-num
+         * is treated as active). Explicit 0/non-1 value flips to inactive. */
+        active_arr[i] = (av && av->type == VAL_NUM && av->data.num != 1.0) ? 0 : 1;
+
+        Value *ex;
+        if (hint_px >= 0 && hint_px < kcount && keys[hint_px] == ipx) {
+            ex = vals[hint_px];
+        } else {
+            int idx = env_hash_find_dict(e, ipx, h_px);
+            if (idx >= 0 && hint_px < 0) hint_px = idx;
+            ex = (idx >= 0) ? vals[idx] : NULL;
+        }
+        Value *ey;
+        if (hint_py >= 0 && hint_py < kcount && keys[hint_py] == ipy) {
+            ey = vals[hint_py];
+        } else {
+            int idx = env_hash_find_dict(e, ipy, h_py);
+            if (idx >= 0 && hint_py < 0) hint_py = idx;
+            ey = (idx >= 0) ? vals[idx] : NULL;
+        }
+        if (!ex || !ey || ex->type != VAL_NUM || ey->type != VAL_NUM) {
+            valid_arr[i] = 0;
+            continue;
+        }
+        px_arr[i] = ex->data.num;
+        py_arr[i] = ey->data.num;
+        valid_arr[i] = 1;
+    }
+
+    Value *result = make_list(n);
+
+    for (int i = 0; i < n; i++) {
+        if (!valid_arr[i]) {
+            list_append(result, make_null());
+            continue;
+        }
+        double pi_x = px_arr[i];
+        double pi_y = py_arr[i];
+        double best_sq = range_sq;
+        int best_idx = -1;
+        double best_dx = 0, best_dy = 0;
+
+        /* Tight SoA inner loop — pure double arithmetic, no pointer chasing.
+         * At n=768 the three input arrays total ~14KB, comfortably in L1. */
+        for (int j = 0; j < n; j++) {
+            if (!valid_arr[j] || !active_arr[j]) continue;
+            double dx = px_arr[j] - pi_x;
+            double dy = py_arr[j] - pi_y;
+            if (dx > hw) dx -= ww; else if (dx < -hw) dx += ww;
+            if (dy > hh) dy -= wh; else if (dy < -hh) dy += wh;
+            double dsq = dx * dx + dy * dy;
+            if (dsq < best_sq) {
+                best_sq = dsq;
+                best_idx = j;
+                best_dx = dx;
+                best_dy = dy;
+            }
+        }
+        if (best_idx < 0) {
+            list_append(result, make_null());
+        } else {
+            Value *r = make_dict(8);
+            dict_set(r, "index", make_num(best_idx));
+            dict_set(r, "dist", make_num(sqrt(best_sq)));
+            dict_set(r, "dx", make_num(best_dx));
+            dict_set(r, "dy", make_num(best_dy));
+            list_append(result, r);
+        }
+    }
+
+    free(px_arr);
+    free(py_arr);
+    free(active_arr);
+    free(valid_arr);
+    return result;
+}
+
 /* dispatch of [table, key, arg] — O(1) function dispatch.
    table: list of functions (or null for unused slots).
    key: integer index into the table.
@@ -3693,6 +3843,7 @@ void register_builtins(Env *env) {
     env_set_local(env, "recv", make_builtin(builtin_recv));
     env_set_local(env, "try_recv", make_builtin(builtin_try_recv));
     env_set_local(env, "nearest_in_range", make_builtin(builtin_nearest_in_range));
+    env_set_local(env, "nearest_in_range_all", make_builtin(builtin_nearest_in_range_all));
     env_set_local(env, "dispatch", make_builtin(builtin_dispatch));
     env_set_local(env, "fill", make_builtin(builtin_fill));
     env_set_local(env, "buffer", make_builtin(builtin_buffer));
