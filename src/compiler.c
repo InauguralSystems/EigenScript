@@ -878,11 +878,21 @@ static Compiler *root_compiler(Compiler *c) {
     return c;
 }
 
-/* Is this name visible in an enclosing function's locals/params? */
+/* Is this name visible in an enclosing function's locals/params?
+ * Checks three places per enclosing compiler:
+ *   - locals[]: names that the enclosing function chose to put on slot-path.
+ *   - captured: names referenced by inner closures of the enclosing function
+ *     (kept on name-path because the inner closure escapes).
+ *   - interrogated: names subject to WHAT/WHO/WHY queries (also name-path).
+ * Missing the latter two caused #130: a write like `val is val + 1` inside
+ * an inner closure was mis-classified as a fresh local because the outer
+ * `val` lives in the env (name-path), not in e->locals[]. */
 static int name_in_enclosing(Compiler *c, const char *name) {
     for (Compiler *e = c->enclosing; e && e->enclosing; e = e->enclosing) {
         for (int i = 0; i < e->local_count; i++)
             if (strcmp(e->locals[i].name, name) == 0) return 1;
+        if (name_set_has(&e->captured, name)) return 1;
+        if (name_set_has(&e->interrogated, name)) return 1;
     }
     return 0;
 }

@@ -727,6 +727,21 @@ else
 fi
 echo ""
 
+# [27b] Closure mutation (hard mode — regression coverage for #130)
+echo "[27b/27] Closure Mutation (14 checks)"
+CM_OUTPUT=$(./eigenscript ../tests/test_closure_mutation.eigs 2>&1)
+if echo "$CM_OUTPUT" | grep -q "closure mutation: all passed"; then
+    TOTAL=$((TOTAL + 14))
+    PASS=$((PASS + 14))
+    echo "  PASS: all 14 closure mutation checks"
+else
+    TOTAL=$((TOTAL + 14))
+    FAIL=$((FAIL + 14))
+    echo "  FAIL: closure mutation tests"
+    echo "$CM_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
 # [29] Break and continue
 echo "[29/31] Break & Continue (9 checks)"
 BC_OUTPUT=$(./eigenscript ../tests/test_break_continue.eigs 2>&1)
