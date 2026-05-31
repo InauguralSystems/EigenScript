@@ -746,7 +746,8 @@ void jit_helper_index_get(void) {
 void eigs_jit_get_layout(EigsJitLayout *out) {
     void *tp;
     __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));
-    out->g_vm_tpoff          = (long)((char *)&g_vm - (char *)tp);
+    out->g_vm_tpoff               = (long)((char *)&g_vm - (char *)tp);
+    out->g_unobserved_depth_tpoff = (long)((char *)&g_unobserved_depth - (char *)tp);
     out->off_sp              = (int)offsetof(VM, sp);
     out->off_stack           = (int)offsetof(VM, stack);
     out->off_frame_count     = (int)offsetof(VM, frame_count);

@@ -105,7 +105,8 @@ void jit_register_chunk(struct EigsChunk *chunk);
  * it to inline native loads/stores against g_vm without going through
  * helper functions. */
 typedef struct {
-    long g_vm_tpoff;       /* &g_vm - %fs:0, signed bytes */
+    long g_vm_tpoff;                /* &g_vm - %fs:0, signed bytes */
+    long g_unobserved_depth_tpoff;  /* &g_unobserved_depth - %fs:0 */
     int  off_sp;
     int  off_stack;
     int  off_frame_count;

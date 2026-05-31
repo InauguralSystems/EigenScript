@@ -497,6 +497,11 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * chunk pointer needed, so no has_bail_op tax. */
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
+        } else if (op == OP_UNOBSERVED_BEGIN || op == OP_UNOBSERVED_END) {
+            /* Stage 4q-e: 1-byte ops, just inc/dec a TLS counter. Emitted
+             * inline as 9-byte FS-prefixed inc/dec dword [disp32] — no
+             * call, no bail, no sp/env interaction. */
+            i += 1; ops++; non_line_ops++;
         } else if (op == OP_LINE) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++;
@@ -540,6 +545,20 @@ static uint8_t *emit_load_fs_zero_rbx(uint8_t *w) {
     *w++ = 0x64; *w++ = 0x48; *w++ = 0x8B;
     *w++ = 0x1C; *w++ = 0x25;
     return emit_u32(w, 0);
+}
+
+/* incl %fs:(disp32)  — atomic-safe-on-single-thread inc of TLS i32 (9 bytes).
+ * Encoding: 64 (FS prefix) ff /0 04 25 disp32. */
+static uint8_t *emit_incl_fs_disp32(uint8_t *w, int32_t disp) {
+    *w++ = 0x64; *w++ = 0xFF; *w++ = 0x04; *w++ = 0x25;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+/* decl %fs:(disp32)  — symmetric to emit_incl_fs_disp32 (9 bytes).
+ * Encoding: 64 ff /1 04 25 disp32. */
+static uint8_t *emit_decl_fs_disp32(uint8_t *w, int32_t disp) {
+    *w++ = 0x64; *w++ = 0xFF; *w++ = 0x0C; *w++ = 0x25;
+    return emit_u32(w, (uint32_t)disp);
 }
 
 /* lea disp32(%rbx), %rbx  — %rbx += disp32 (7 bytes) */
@@ -1565,6 +1584,18 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             i += 3;
+        } else if (op == OP_UNOBSERVED_BEGIN) {
+            /* Stage 4q-e: inline `g_unobserved_depth++` as a single
+             * FS-prefixed `inc dword [tpoff]`. No stack interaction,
+             * no env, no bail. */
+            w = emit_incl_fs_disp32(w,
+                (int32_t)g_layout.g_unobserved_depth_tpoff);
+            i += 1;
+        } else if (op == OP_UNOBSERVED_END) {
+            /* Stage 4q-e: symmetric `g_unobserved_depth--`. */
+            w = emit_decl_fs_disp32(w,
+                (int32_t)g_layout.g_unobserved_depth_tpoff);
+            i += 1;
         } else if (op == OP_DUP) {
             /* %rax = stack[sp-1] */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
