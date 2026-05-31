@@ -157,12 +157,35 @@ void jit_module_shutdown(void) {
         fprintf(stderr, "total bailouts:  %u\n",
                 total_stops - g_jit_compiled_count);
         fprintf(stderr, "  stop_at_zero:  %u\n", g_jit_stop_at_zero);
-        fprintf(stderr, "\nstop opcode histogram:\n");
+        /* Split: terminators (RETURN/RETURN_NULL/<end>) are scanner
+         * successes — the chunk fit. Bailouts are real blockers — the
+         * next opcode to chain to widen native coverage. % for bailouts
+         * is computed against bailout total, not total_stops, so the
+         * relative magnitudes are decision-grade. */
+        uint32_t bailout_total =
+            total_stops - g_jit_stop_counts[OP_RETURN]
+                        - g_jit_stop_counts[OP_RETURN_NULL]
+                        - g_jit_stop_counts[OP_COUNT];
+        fprintf(stderr, "\nstop opcode histogram (terminators):\n");
+        for (int op = 0; op < 256; op++) {
+            int is_term = (op == OP_RETURN || op == OP_RETURN_NULL ||
+                           op == OP_COUNT);
+            if (!is_term || !g_jit_stop_counts[op]) continue;
+            uint32_t c = g_jit_stop_counts[op];
+            double pct = total_stops ? (100.0 * c / total_stops) : 0.0;
+            const char *name = (op == OP_COUNT) ? "OP_<end-of-chunk>"
+                                                : op_name((uint8_t)op);
+            fprintf(stderr, "  %6u  %-22s (%.1f%%)\n", c, name, pct);
+        }
+        fprintf(stderr, "\nstop opcode histogram (bailouts, %% of %u):\n",
+                bailout_total);
         /* Selection sort by count, descending. ~256 entries, one-shot. */
         int order[256];
         int order_n = 0;
         for (int i = 0; i < 256; i++) {
-            if (g_jit_stop_counts[i]) order[order_n++] = i;
+            int is_term = (i == OP_RETURN || i == OP_RETURN_NULL ||
+                           i == OP_COUNT);
+            if (!is_term && g_jit_stop_counts[i]) order[order_n++] = i;
         }
         for (int a = 0; a < order_n; a++) {
             int best = a;
@@ -175,10 +198,9 @@ void jit_module_shutdown(void) {
         for (int a = 0; a < order_n; a++) {
             int op = order[a];
             uint32_t c = g_jit_stop_counts[op];
-            double pct = total_stops ? (100.0 * c / total_stops) : 0.0;
-            const char *name = (op == OP_COUNT) ? "OP_<end-of-chunk>"
-                                                : op_name((uint8_t)op);
-            fprintf(stderr, "  %6u  %-22s (%.1f%%)\n", c, name, pct);
+            double pct = bailout_total ? (100.0 * c / bailout_total) : 0.0;
+            fprintf(stderr, "  %6u  %-22s (%.1f%%)\n",
+                    c, op_name((uint8_t)op), pct);
         }
     }
     if (getenv("EIGS_JIT_HOT") && g_chunks_count > 0) {
@@ -528,7 +550,12 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * has_bail_op=1 to enable the per-op r13d advance writeback
              * machinery (the epilogue branch on has_bail_op). We also
              * stop the scan here — bytes after RETURN are unreachable
-             * within this thunk, mirroring how OP_JUMP terminates. */
+             * within this thunk, mirroring how OP_JUMP terminates.
+             *
+             * Stage 4u: record stop_op = OP_RETURN before break so the
+             * histogram distinguishes RETURN-terminated prefixes from
+             * scanner-walked-off-end (which keeps stop_op = OP_COUNT). */
+            *stop_op = op; *stop_offset = i;
             i += 1; ops++; non_line_ops++;
             last_good = i;
             *has_bail_op = 1;
@@ -538,7 +565,10 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * but pushes slot_null() rather than the TOS. The DMG hot
              * dump showed this as the #2 single-op blocker (16.5% of
              * stops), affecting write_r8 / cpu_mem_write / alu_xor /
-             * push16 / set_hl. */
+             * push16 / set_hl.
+             *
+             * Stage 4u: same stop_op fix as OP_RETURN. */
+            *stop_op = op; *stop_offset = i;
             i += 1; ops++; non_line_ops++;
             last_good = i;
             *has_bail_op = 1;
@@ -1348,6 +1378,22 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 "JIT bail: chunk='%s' stop_op=%s at offset %d (prefix=0 ops)\n",
                 chunk->name ? chunk->name : "<anon>",
                 op_name(stop_op), stop_offset);
+    }
+    /* EIGS_JIT_DUMP_PREFIX="name" dumps full bytecode + the prefix
+     * scanner's stop point for chunks matching `name`. Use to see
+     * exactly what op the scanner ran into for a partially-compiled
+     * hot chunk (e.g. mem_read at 44/1240 bytes). */
+    {
+        const char *want = getenv("EIGS_JIT_DUMP_PREFIX");
+        if (want && chunk->name && strcmp(want, chunk->name) == 0) {
+            fprintf(stderr,
+                    "=== JIT prefix dump: chunk='%s' len=%d prefix=%d "
+                    "stop_op=%s stop_offset=%d ===\n",
+                    chunk->name, chunk->code_len, prefix,
+                    (stop_op == OP_COUNT) ? "<end>" : op_name(stop_op),
+                    stop_offset);
+            chunk_disassemble(chunk, chunk->name);
+        }
     }
     /* "Didn't compile any ops" sentinel. For the from-zero call this
      * matches `prefix == 0`; for OSR (entry_offset > 0) the scanner
