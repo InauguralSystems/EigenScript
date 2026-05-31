@@ -214,6 +214,21 @@ void jit_module_shutdown(void) {
                 "%-28s %12s  %3s  %6s  %5s %5s %6s  %4s  %3s %5s %5s  %s\n",
                 "chunk", "exec", "jit", "pct", "adv", "len", "nat%", "bked",
                 "osr", "oadv", "oent", "stop");
+            /* jit_advance == -1 is the Stage 4s OP_RETURN sentinel: the
+             * thunk executed a full return, so coverage is "all of the
+             * reachable straight-line code from byte 0" — treat it as
+             * full-len for both display and aggregate purposes. Without
+             * this normalization a -1 reads as a negative percentage in
+             * the per-chunk row AND drags the aggregate share down by
+             * exec_count bytes per RETURN-terminated hit. */
+            #define JIT_EFFECTIVE_ADV(c) \
+                ((c)->jit_state == 2 \
+                    ? ((c)->jit_advance == -1 ? (c)->code_len : (c)->jit_advance) \
+                    : 0)
+            #define JIT_OSR_EFFECTIVE_ADV(c) \
+                ((c)->jit_osr_state == 2 \
+                    ? ((c)->jit_osr_advance == -1 ? (c)->code_len : (c)->jit_osr_advance) \
+                    : 0)
             for (int a = 0; a < top; a++) {
                 struct EigsChunk *c = g_chunks[order[a]];
                 if (c->exec_count == 0) break;
@@ -226,27 +241,38 @@ void jit_module_shutdown(void) {
                 double pct = total_exec
                     ? (100.0 * (double)c->exec_count / (double)total_exec)
                     : 0.0;
-                int adv = (c->jit_state == 2) ? c->jit_advance : 0;
-                int oadv = (c->jit_osr_state == 2) ? c->jit_osr_advance : 0;
+                int adv  = JIT_EFFECTIVE_ADV(c);
+                int oadv = JIT_OSR_EFFECTIVE_ADV(c);
                 int oent = (c->jit_osr_state != 0) ? c->jit_osr_entry_offset : 0;
                 int len = c->code_len;
                 double nat = len ? (100.0 * (double)adv / (double)len) : 0.0;
                 const char *stop_name = (c->jit_stop_op == OP_COUNT)
                     ? "<end>" : op_name(c->jit_stop_op);
+                /* Display the raw jit_advance with a 'R' tag when it's
+                 * the RETURN sentinel, so the reader can distinguish
+                 * "compiled to end of straight-line" from "compiled
+                 * through a full return". */
+                char adv_buf[16];
+                if (c->jit_state == 2 && c->jit_advance == -1)
+                    snprintf(adv_buf, sizeof adv_buf, "RET");
+                else
+                    snprintf(adv_buf, sizeof adv_buf, "%d", adv);
                 fprintf(stderr,
-                        "%-28s %12" PRIu64 "  %s  %5.1f%%  %5d %5d %5.1f%%  %4u  %s %5d %5d  %s\n",
+                        "%-28s %12" PRIu64 "  %s  %5.1f%%  %5s %5d %5.1f%%  %4u  %s %5d %5d  %s\n",
                         c->name ? c->name : "<anon>",
-                        c->exec_count, jstate, pct, adv, len, nat,
+                        c->exec_count, jstate, pct, adv_buf, len, nat,
                         c->back_edge_count, ostate, oadv, oent, stop_name);
                 bytes_native_top += c->exec_count * (uint64_t)adv;
                 bytes_total_top  += c->exec_count * (uint64_t)len;
             }
             for (int i = 0; i < g_chunks_count; i++) {
                 struct EigsChunk *c = g_chunks[i];
-                int adv = (c->jit_state == 2) ? c->jit_advance : 0;
+                int adv = JIT_EFFECTIVE_ADV(c);
                 bytes_native += c->exec_count * (uint64_t)adv;
                 bytes_total  += c->exec_count * (uint64_t)c->code_len;
             }
+            #undef JIT_EFFECTIVE_ADV
+            #undef JIT_OSR_EFFECTIVE_ADV
             double nat_share_top = bytes_total_top
                 ? 100.0 * (double)bytes_native_top / (double)bytes_total_top
                 : 0.0;
@@ -503,6 +529,16 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * machinery (the epilogue branch on has_bail_op). We also
              * stop the scan here — bytes after RETURN are unreachable
              * within this thunk, mirroring how OP_JUMP terminates. */
+            i += 1; ops++; non_line_ops++;
+            last_good = i;
+            *has_bail_op = 1;
+            break;
+        } else if (op == OP_RETURN_NULL) {
+            /* Stage 4t: 1-byte op, same sentinel pattern as OP_RETURN
+             * but pushes slot_null() rather than the TOS. The DMG hot
+             * dump showed this as the #2 single-op blocker (16.5% of
+             * stops), affecting write_r8 / cpu_mem_write / alu_xor /
+             * push16 / set_hl. */
             i += 1; ops++; non_line_ops++;
             last_good = i;
             *has_bail_op = 1;
@@ -2165,6 +2201,21 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_return);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            skip_post_op_advance = 1;
+            i += 1;
+        } else if (op == OP_RETURN_NULL) {
+            /* Stage 4t: OP_RETURN_NULL — same call sequence as OP_RETURN
+             * but routes to the null-pushing helper. The -1 sentinel
+             * still lands in chunk->jit_advance and vm_run's post-thunk
+             * code does the same frame/ip resync (or top-level return
+             * via slot_null → make_null). */
+            w = emit_mov_imm32_r13d(w, (uint32_t)-1);
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_return_null);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);

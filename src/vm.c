@@ -871,6 +871,23 @@ void jit_helper_return(void) {
     g_vm.stack[g_vm.sp++] = result_s;
 }
 
+/* JIT Stage 4t: out-of-line helper for OP_RETURN_NULL. Same shape as
+ * jit_helper_return but never reads from the stack — always pushes
+ * slot_null() onto the caller. Used by chunks whose final op is the
+ * explicit-null return emitted by the compiler when a function falls
+ * off the end with no explicit return value. Carries the same
+ * jit_advance = -1 sentinel via the emitter's pre-set %r13d. */
+void jit_helper_return_null(void) {
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    while (g_vm.sp > frame->bp)
+        slot_decref(g_vm.stack[--g_vm.sp]);
+    if (frame->owns_env) env_free(frame->env);
+    g_loop_stall_count = frame->saved_stall_count;
+    g_loop_iterations  = frame->saved_loop_iter;
+    g_vm.frame_count--;
+    g_vm.stack[g_vm.sp++] = slot_null();
+}
+
 void eigs_jit_get_layout(EigsJitLayout *out) {
     void *tp;
     __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));

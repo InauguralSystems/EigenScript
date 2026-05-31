@@ -187,4 +187,10 @@ int jit_helper_call(int argc);
  * top-of-stack as Value* when g_vm.frame_count <= base_frame). */
 void jit_helper_return(void);
 
+/* Stage 4t: out-of-line helper for OP_RETURN_NULL. Same shape as
+ * jit_helper_return but skips the TOS-pop — always pushes slot_null().
+ * The JIT-emitted call site uses the same jit_advance = -1 sentinel
+ * pattern as OP_RETURN. */
+void jit_helper_return_null(void);
+
 #endif /* EIGS_JIT_H */
