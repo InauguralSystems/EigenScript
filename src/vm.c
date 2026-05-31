@@ -782,6 +782,54 @@ void jit_helper_index_get(void) {
     vm_push(result);
 }
 
+/* JIT Stage 4r: out-of-line helper for OP_CALL — builtin-only fast path.
+ *
+ * Mirrors the VAL_BUILTIN branch of CASE(CALL) (vm.c around line 1587).
+ * Returns:
+ *   0 — builtin called, args+fn consumed from g_vm.stack, result pushed.
+ *       g_has_error may be set if the builtin failed; the caller's
+ *       subsequent dispatch handles it (CHECK_ERROR / try-catch). State
+ *       on the stack is still consistent (vm_push(result) ran with
+ *       result = make_null() on failure).
+ *   1 — fn at g_vm.stack[sp-1-argc] is not a builtin, or sp underflow.
+ *       Helper has NOT touched the stack; caller should bail to the
+ *       interpreter so it re-executes OP_CALL with full semantics.
+ *
+ * Helper reads and writes g_vm.sp directly; the JIT emitter syncs
+ * %ecx → g_vm.sp before the call and reloads after. */
+int jit_helper_call(int argc) {
+    if (g_vm.sp < argc + 1) return 1;
+    Value *fn_val = STK_AS_VAL(g_vm.sp - 1 - argc);
+    if (fn_val->type != VAL_BUILTIN) return 1;
+
+    Value *arg;
+    if (argc == 1) {
+        arg = STK_AS_VAL(g_vm.sp - 1);
+        val_incref(arg);
+    } else {
+        arg = make_list(argc);
+        for (int i = 0; i < argc; i++) {
+            list_append(arg, STK_AS_VAL(g_vm.sp - argc + i));
+        }
+    }
+    for (int i = 0; i < argc; i++)
+        slot_decref(g_vm.stack[--g_vm.sp]);
+    slot_decref(g_vm.stack[--g_vm.sp]); /* fn */
+
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    Env *saved = g_builtin_call_env;
+    g_builtin_call_env = frame->env;
+    int consumes_arg = (fn_val->data.builtin == builtin_free_val);
+    Value *result = fn_val->data.builtin(arg);
+    g_builtin_call_env = saved;
+
+    if (!result) result = make_null();
+    else if (result != arg) val_incref(result);
+    if (!consumes_arg && result != arg) val_decref(arg);
+    vm_push(result);
+    return 0;
+}
+
 void eigs_jit_get_layout(EigsJitLayout *out) {
     void *tp;
     __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));

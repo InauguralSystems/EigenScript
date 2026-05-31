@@ -170,4 +170,11 @@ int jit_helper_iter_next(void);
  * must sync %ecx → g_vm.sp before the call and reload after. */
 void jit_helper_index_get(void);
 
+/* Stage 4r: out-of-line helper for OP_CALL — builtin-only fast path.
+ * Returns 0 if a VAL_BUILTIN was called (args+fn consumed, result
+ * pushed) and 1 if the fn slot was anything else (helper made no
+ * changes; caller bails so the interpreter re-executes OP_CALL).
+ * Reads/writes g_vm.sp directly. */
+int jit_helper_call(int argc);
+
 #endif /* EIGS_JIT_H */

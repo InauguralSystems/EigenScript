@@ -481,6 +481,16 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * type is opaque to the scanner. */
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
+        } else if (op == OP_CALL) {
+            /* Stage 4r: 3-byte op [op][argc:16]. Helper handles the
+             * VAL_BUILTIN case inline; for VAL_FN / VAL_CLOSURE / non-
+             * callable, the helper returns 1 without touching the stack
+             * and the emitter bails via the standard pre-set %r13d =
+             * op_start pattern so the interpreter re-executes the call.
+             * has_bail_op=1 because we need the bail-back-to-CALL path. */
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 3; ops++; non_line_ops++;
+            *has_bail_op = 1;
         } else if (op == OP_POP) {
             /* Always supported — emitter picks the path via its local
              * `last_imm` tracker (peephole `dec %ecx` when the prior
@@ -2071,6 +2081,47 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             i += 1;
+        } else if (op == OP_CALL) {
+            /* Stage 4r: OP_CALL with builtin-only fast path via helper.
+             *
+             *   mov $op_start - entry_offset, %r13d   ; pre-set bail advance
+             *   mov %ecx -> g_vm.sp                    ; sync sp cache
+             *   mov $argc, %edi                        ; arg to helper
+             *   push %rcx                              ; align 8 -> 0 mod 16
+             *   movabs &jit_helper_call, %rax
+             *   call %rax                              ; eax = 0 (continue) / 1 (bail)
+             *   pop %rcx                               ; (junk, will be reloaded)
+             *   mov g_vm.sp -> %ecx                    ; reload (helper may have pushed)
+             *   test %eax, %eax
+             *   jne -> epilogue                        ; bail; r13d already at op_start
+             *
+             * On success (eax==0) the loop-tail post-op writeback at
+             * the bottom of this body overwrites %r13d with i (=
+             * op_start + 3), so the resume-after-thunk path lands past
+             * this CALL. On bail, the existing pre-set %r13d carries
+             * the interpreter back to OP_CALL itself.
+             *
+             * r13 is callee-saved in SysV, so the pre-set survives the
+             * helper call. */
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
+            uint16_t argc = (uint16_t)(chunk->code[i + 1] |
+                                       ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_imm32_r13d(w, (uint32_t)(op_start - entry_offset));
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_mov_imm32_edi(w, (uint32_t)argc);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_call);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_test_rax_rax(w);
+            uint8_t *p_bail;
+            w = emit_jne_rel32(w, &p_bail);
+            bail_patches[bail_count++] = p_bail;
+            i += 3;
         } else if (op == OP_POP) {
             if (last_imm) {
                 /* Peephole: prior op pushed an immediate, whose slot_decref
