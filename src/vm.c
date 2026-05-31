@@ -489,6 +489,45 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
     vm_push_slot(slot_null());
 }
 
+/* JIT Stage 4q-f: out-of-line helper for OP_DOT_GET.
+ *
+ * Mirrors CASE(DOT_GET): pops target from g_vm.stack (sp -= 1),
+ * pushes target.name (sp += 1) — net sp change zero. Reads chunk for
+ * const_interns / const_hashes (lazy hash fill matches the
+ * interpreter). The JIT site must sync %ecx → g_vm.sp before the call
+ * and reload after; sp is unchanged on return but reload keeps the
+ * cache honest in case the helper internals ever change. */
+void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
+    const char *key = chunk->const_interns[name_idx];
+    uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+    if (h == 0) {
+        h = env_hash_name(key);
+        if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
+    }
+    Value *target = vm_pop();
+    if (target->type == VAL_DICT) {
+        Value *v = dict_get_cached(target, key, h);
+        if (v) {
+            if (v->type == VAL_NUM && v->obs_age == 0) {
+                double n = v->data.num;
+                val_decref(target);
+                vm_push_slot(slot_from_num(n));
+                return;
+            }
+            val_incref(v);
+            val_decref(target);
+            vm_push(v);
+            return;
+        }
+    } else if (target->type != VAL_NULL) {
+        runtime_error(g_vm.current_line,
+            "cannot access field '%s' on %s",
+            key, val_type_name(target->type));
+    }
+    val_decref(target);
+    vm_push_slot(slot_null());
+}
+
 /* JIT Stage 4q-d: out-of-line helper for OP_LOCAL_DOT_SET.
  *
  * Mirrors CASE(LOCAL_DOT_SET): local[slot].name = TOS, with TOS
