@@ -396,9 +396,28 @@ static void compound_to_op(TokType t, char op[4]) {
 static ASTNode* parse_expression(Parser *p);
 static ASTNode* parse_statement(Parser *p);
 
+/* Recursion-depth guard for the recursive-descent parser. Nested expressions
+ * (parens, lists, dicts, call args) and nested blocks each add a C-recursion
+ * level; without a bound, deeply nested source — e.g. via `eval` of untrusted
+ * input — would exhaust the C stack and crash. 256 levels is far beyond any
+ * human-written program. */
+#define PARSE_MAX_DEPTH 256
+static __thread int g_parse_depth = 0;
+
 static ASTNode** parse_block(Parser *p, int *count) {
     ASTNode **stmts = xmalloc_array(MAX_STMTS, sizeof(ASTNode*));
     *count = 0;
+
+    /* Nested blocks recurse (parse_block -> parse_statement -> parse_block);
+     * bound the depth to keep deeply nested source from exhausting the C
+     * stack. Shares the counter with parse_expression. */
+    if (g_parse_depth >= PARSE_MAX_DEPTH) {
+        fprintf(stderr, "Parse error line %d: block nesting too deep\n",
+                p_cur(p)->line);
+        g_parse_errors++;
+        return stmts;
+    }
+    g_parse_depth++;
 
     p_expect(p, TOK_INDENT);
     p_skip_newlines(p);
@@ -419,6 +438,7 @@ static ASTNode** parse_block(Parser *p, int *count) {
 
     if (p_cur(p)->type == TOK_DEDENT) p_advance(p);
 
+    g_parse_depth--;
     return stmts;
 }
 
@@ -928,7 +948,16 @@ static ASTNode* parse_pipe(Parser *p) {
 }
 
 static ASTNode* parse_expression(Parser *p) {
-    return parse_pipe(p);
+    if (g_parse_depth >= PARSE_MAX_DEPTH) {
+        fprintf(stderr, "Parse error line %d: expression nesting too deep\n",
+                p_cur(p)->line);
+        g_parse_errors++;
+        return make_node(AST_NULL, p_cur(p)->line);
+    }
+    g_parse_depth++;
+    ASTNode *r = parse_pipe(p);
+    g_parse_depth--;
+    return r;
 }
 
 static ASTNode* parse_statement(Parser *p) {
@@ -1264,6 +1293,7 @@ ASTNode* parse(TokenList *tl) {
     Parser p;
     p.tl = tl;
     p.pos = 0;
+    g_parse_depth = 0;  /* reset depth guard for this parse */
 
     ASTNode **stmts = xmalloc_array(MAX_STMTS, sizeof(ASTNode*));
     int count = 0;

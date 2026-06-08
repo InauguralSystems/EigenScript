@@ -369,6 +369,17 @@ else
 fi
 echo ""
 
+echo "[Security Hardening] (6 checks)"
+SH_OUTPUT=$(./eigenscript ../tests/test_security_hardening.eigs 2>&1)
+TOTAL=$((TOTAL + 6))
+if echo "$SH_OUTPUT" | grep -q "All tests passed"; then
+    echo "  PASS: secure_equals + parser depth guard"; PASS=$((PASS + 6))
+else
+    echo "  FAIL: security-hardening (possible crash/regression)"; FAIL=$((FAIL + 6))
+    echo "$SH_OUTPUT" | grep -iE "ASSERT" | head -5
+fi
+echo ""
+
 echo "[JSON Depth / DoS guard] (3 checks)"
 JD_OUTPUT=$(./eigenscript ../tests/test_json_depth.eigs 2>&1)
 TOTAL=$((TOTAL + 3))

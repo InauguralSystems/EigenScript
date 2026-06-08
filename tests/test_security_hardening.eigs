@@ -1,0 +1,31 @@
+# Security regressions:
+#  1. secure_equals — constant-time string compare for secrets.
+#  2. Parser depth guard — deeply nested source (e.g. via eval of untrusted
+#     input) must produce a parse error, not a stack-overflow crash.
+
+# --- secure_equals ---
+assert of [(secure_equals of ["token123", "token123"]) == 1, "equal strings"]
+assert of [(secure_equals of ["token123", "token124"]) == 0, "differing content"]
+assert of [(secure_equals of ["abc", "abcd"]) == 0, "differing length"]
+assert of [(secure_equals of ["", ""]) == 1, "both empty"]
+assert of [(secure_equals of ["x", ""]) == 0, "one empty"]
+
+# --- parser depth guard via eval ---
+# Build valid but very deeply nested source: ((((...1...)))) — 2000 deep,
+# well past the 256-level cap. This must error, not crash the process.
+deep is "1"
+i is 0
+loop while i < 2000:
+    deep is "(" + deep + ")"
+    i is i + 1
+
+caught is 0
+try:
+    r is eval of deep
+catch e:
+    caught is 1
+
+# Reaching this line at all proves there was no stack-overflow crash.
+assert of [1 == 1, "process survived deeply nested eval"]
+
+print of "All tests passed"

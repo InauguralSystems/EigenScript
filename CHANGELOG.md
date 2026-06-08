@@ -5,6 +5,19 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Security
+- **Bounded parser recursion depth (stack-exhaustion guard).** The
+  recursive-descent parser had no bound on expression nesting, so deeply
+  nested source — e.g. `eval` of untrusted input like `((((…))))` — could
+  exhaust the C stack and crash. Added a 256-level cap (shared by nested
+  expressions and blocks); over-deep source now produces a parse error
+  instead of a crash. (Block nesting was already capped at 64 by the
+  lexer's indent limit; this closes the expression side.)
+- **Constant-time secret comparison (`secure_equals` builtin).** Added
+  `secure_equals of [a, b]`, which compares two strings without
+  short-circuiting on the first differing byte, and switched `lib/auth.eigs`
+  to use it for password and bearer-token checks so comparison timing can't
+  leak how many leading bytes matched. Regression:
+  `tests/test_security_hardening.eigs`.
 - **Bounded JSON nesting depth (stack-exhaustion DoS fix).** The recursive
   JSON parser (`eigs_json_parse_value` → array/object) had no depth limit,
   so deeply nested input like `[[[[…]]]]` exhausted the C stack and crashed

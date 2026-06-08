@@ -27,7 +27,8 @@ define auth_login(password) as:
     admin_pw is env_get of "ADMIN_PASSWORD"
     if admin_pw == "":
         return json_build of ["error", "ADMIN_PASSWORD not set"]
-    if password != admin_pw:
+    # constant-time compare so timing can't leak how much of the password matched
+    if (secure_equals of [password, admin_pw]) == 0:
         return json_build of ["error", "invalid password"]
     _auth_token is "eigen_" + (random_hex of 32)
     return json_build of ["status", "ok", "token", _auth_token]
@@ -52,7 +53,7 @@ define auth_check(_x) as:
         return json_build of ["status", "error", "error", "not logged in"]
     headers is http_request_headers of null
     bearer is _extract_bearer of headers
-    if bearer == _auth_token:
+    if secure_equals of [bearer, _auth_token]:
         return json_build of ["status", "ok"]
     return json_build of ["status", "error", "error", "invalid token"]
 
