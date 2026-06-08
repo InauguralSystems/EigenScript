@@ -1,0 +1,212 @@
+# test_stem_accuracy.eigs — known-answer audit of the STEM libraries.
+# Each check compares a library function against a textbook value.
+# A failure here means either the library is wrong OR the expected value is.
+
+load_file of "lib/physics.eigs"
+load_file of "lib/chemistry.eigs"
+load_file of "lib/biology.eigs"
+load_file of "lib/engineering.eigs"
+load_file of "lib/geometry.eigs"
+load_file of "lib/linalg.eigs"
+load_file of "lib/calculus.eigs"
+load_file of "lib/probability.eigs"
+load_file of "lib/stats.eigs"
+load_file of "lib/numerics.eigs"
+load_file of "lib/optimize.eigs"
+
+pass_count is 0
+fail_count is 0
+
+# relative tolerance 1e-4, absolute floor 1e-9 (for near-zero / tiny constants)
+define approx(actual, expected, label) as:
+    scale is expected
+    if scale < 0:
+        scale is 0 - scale
+    tol is scale * 0.0001
+    if tol < 0.000000001:
+        tol is 0.000000001
+    diff is actual - expected
+    if diff < 0:
+        diff is 0 - diff
+    if diff <= tol:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of f"FAIL {label}: got {actual}, want {expected}"
+
+define exact(actual, expected, label) as:
+    if actual == expected:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of f"FAIL {label}: got {actual}, want {expected}"
+
+# explicit absolute tolerance — for iterative methods that self-stop near
+# (but not exactly at) the true answer via their own convergence criterion
+define near_tol(actual, expected, tol, label) as:
+    diff is actual - expected
+    if diff < 0:
+        diff is 0 - diff
+    if diff <= tol:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of f"FAIL {label}: got {actual}, want {expected} (tol {tol})"
+
+PI is 3.141592653589793
+
+# ---------------- PHYSICS ----------------
+exact of [displacement of [0, 10, 2], 20, "displacement"]
+exact of [final_velocity of [0, 10, 2], 20, "final_velocity"]
+approx of [projectile_range of [10, PI / 4], 100 / 9.80665, "projectile_range 45deg"]
+exact of [spring_force of [100, 0.1], 0 - 10, "spring_force (Hooke -kx)"]
+approx of [centripetal_acceleration of [10, 5], 20, "centripetal_accel"]
+exact of [momentum of [2, 3], 6, "momentum"]
+exact of [impulse of [5, 2], 10, "impulse"]
+exact of [kinetic_energy of [2, 3], 9, "kinetic_energy"]
+approx of [potential_energy_gravity of [2, 10], 2 * 9.80665 * 10, "PE gravity"]
+approx of [potential_energy_spring of [100, 0.1], 0.5, "PE spring"]
+approx of [work of [10, 5, 0], 50, "work angle 0"]
+exact of [power_from_work of [100, 4], 25, "power_from_work"]
+exact of [wave_speed of [10, 3], 30, "wave_speed"]
+exact of [period of 4, 0.25, "period"]
+exact of [frequency of 0.25, 4, "frequency"]
+approx of [pendulum_period of 1, 2 * PI * (sqrt of (1 / 9.80665)), "pendulum_period"]
+approx of [carnot_efficiency of [400, 300], 0.25, "carnot_efficiency"]
+exact of [heat_transfer of [2, 100, 5], 1000, "heat_transfer"]
+exact of [ohms_law_current of [10, 2], 5, "ohms current"]
+exact of [ohms_law_voltage of [5, 2], 10, "ohms voltage"]
+exact of [resistor_power of [2, 3], 12, "resistor_power"]
+exact of [series_resistance of [1, 2, 3], 6, "series_resistance"]
+approx of [parallel_resistance of [2, 2], 1, "parallel_resistance"]
+approx of [thin_lens of [10, 20], 20, "thin_lens"]
+exact of [magnification of [20, 20], 0 - 1, "magnification"]
+approx of [decay_constant of 10, (log of 2) / 10, "decay_constant"]
+approx of [half_life_remaining of [100, 10, 10], 50, "half_life_remaining"]
+approx of [gravitational_force of [1, 1, 1], 6.6743e-11, "gravitational_force"]
+approx of [lorentz_factor of 0, 1, "lorentz_factor v=0"]
+
+# ---------------- CHEMISTRY ----------------
+approx of [molecular_weight of "H2O", 18.015, "MW H2O"]
+approx of [molecular_weight of "CO2", 44.009, "MW CO2"]
+approx of [molecular_weight of "NaCl", 58.44, "MW NaCl"]
+exact of [moles_to_grams of [2, 18], 36, "moles_to_grams"]
+exact of [grams_to_moles of [36, 18], 2, "grams_to_moles"]
+approx of [molarity of [2, 4], 0.5, "molarity"]
+approx of [dilution of [2, 1, 4], 0.5, "dilution C1V1/V2"]
+approx of [boyles_law of [1, 2, 4], 0.5, "boyles_law"]
+approx of [charles_law of [1, 300, 600], 2, "charles_law"]
+approx of [ph of 0.001, 3, "ph"]
+approx of [poh of 0.001, 3, "poh"]
+approx of [ph_to_concentration of 3, 0.001, "ph_to_concentration"]
+approx of [gibbs_free_energy of [100, 300, 0.1], 70, "gibbs_free_energy"]
+approx of [mass_percent of [10, 100], 10, "mass_percent"]
+exact of [ppm of [1, 1000000], 1, "ppm"]
+approx of [ideal_gas_pressure of [1, 273.15, 0.022414], 101327, "ideal_gas_pressure ~1atm"]
+
+# ---------------- BIOLOGY ----------------
+exact of [exponential_growth of [100, 0.1, 0], 100, "exp_growth t=0"]
+approx of [doubling_time of 0.1, (log of 2) / 0.1, "doubling_time"]
+approx of [gc_content of "GGCC", 1, "gc_content all GC"]
+approx of [gc_content of "ATGC", 0.5, "gc_content half"]
+exact of [complement of "ATGC", "TACG", "dna complement"]
+approx of [michaelis_menten of [10, 5, 5], 5, "michaelis_menten"]
+
+# ---------------- ENGINEERING (unit conversions) ----------------
+exact of [celsius_to_fahrenheit of 100, 212, "C->F"]
+exact of [fahrenheit_to_celsius of 32, 0, "F->C"]
+approx of [celsius_to_kelvin of 0, 273.15, "C->K"]
+approx of [meters_to_feet of 1, 3.28084, "m->ft"]
+approx of [miles_to_km of 1, 1.609344, "mi->km"]
+approx of [kg_to_lbs of 1, 2.2046226, "kg->lbs"]
+approx of [atm_to_pascal of 1, 101325, "atm->Pa"]
+approx of [calories_to_joules of 1, 4.184, "cal->J"]
+approx of [kwh_to_joules of 1, 3600000, "kWh->J"]
+approx of [db_from_amplitude of 10, 20, "dB from amplitude 10"]
+approx of [moment_of_inertia_rect of [2, 3], 4.5, "I rect bh^3/12"]
+approx of [moment_of_inertia_circle of 1, PI / 4, "I circle"]
+exact of [factor_of_safety of [100, 20], 5, "factor_of_safety"]
+approx of [voltage_divider of [10, 1, 1], 5, "voltage_divider"]
+approx of [power_factor of [80, 100], 0.8, "power_factor"]
+
+# ---------------- GEOMETRY ----------------
+approx of [circle_area of 2, 4 * PI, "circle_area r=2"]
+approx of [circle_circumference of 2, 4 * PI, "circle_circumference"]
+approx of [sphere_volume of 3, (4 / 3) * PI * 27, "sphere_volume"]
+approx of [sphere_surface_area of 3, 4 * PI * 9, "sphere_surface_area"]
+approx of [cylinder_volume of [1, 2], 2 * PI, "cylinder_volume"]
+approx of [cone_volume of [1, 3], PI, "cone_volume"]
+approx of [ellipse_area of [2, 3], 6 * PI, "ellipse_area"]
+approx of [segment_length of [[0, 0], [3, 4]], 5, "segment_length 3-4-5"]
+approx of [triangle_area of [[0, 0], [4, 0], [0, 3]], 6, "triangle_area"]
+approx of [polygon_area of [[0, 0], [2, 0], [2, 2], [0, 2]], 4, "polygon_area square"]
+approx of [polygon_perimeter of [[0, 0], [2, 0], [2, 2], [0, 2]], 8, "polygon_perimeter"]
+
+# ---------------- LINEAR ALGEBRA ----------------
+exact of [mat_det of [[1, 2], [3, 4]], 0 - 2, "mat_det 2x2"]
+exact of [mat_trace of [[1, 2], [3, 4]], 5, "mat_trace"]
+exact of [vec_dot of [[1, 2, 3], [4, 5, 6]], 32, "vec_dot"]
+approx of [vec_norm of [3, 4], 5, "vec_norm"]
+xprod is vec_cross of [[1, 0, 0], [0, 1, 0]]
+exact of [xprod[2], 1, "vec_cross z"]
+exact of [xprod[0], 0, "vec_cross x"]
+sol is solve_linear of [[[2, 0], [0, 2]], [4, 6]]
+approx of [sol[0], 2, "solve_linear x"]
+approx of [sol[1], 3, "solve_linear y"]
+
+# ---------------- CALCULUS ----------------
+approx of [derivative of [(x) => x * x, 3, 0.0001], 6, "derivative x^2"]
+approx of [second_derivative of [(x) => x * x, 5, 0.001], 2, "second_derivative x^2"]
+approx of [integrate_trapezoidal of [(x) => x * x, 0, 1, 1000], 1 / 3, "trapezoidal x^2"]
+approx of [integrate_simpson of [(x) => x * x, 0, 1, 100], 1 / 3, "simpson x^2"]
+approx of [integrate_midpoint of [(x) => x * x, 0, 1, 1000], 1 / 3, "midpoint x^2"]
+approx of [bisection of [(x) => x * x - 2, 1, 2, 0.000001], 1.41421356, "bisection sqrt2"]
+approx of [newton_raphson of [(x) => x * x - 2, (x) => 2 * x, 1, 0.000001, 50], 1.41421356, "newton sqrt2"]
+approx of [secant_method of [(x) => x * x - 2, 1, 2, 0.000001, 50], 1.41421356, "secant sqrt2"]
+approx of [taylor_exp of [1, 20], 2.718281828, "taylor_exp(1)=e"]
+approx of [taylor_sin of [0, 10], 0, "taylor_sin(0)"]
+approx of [taylor_cos of [0, 10], 1, "taylor_cos(0)"]
+approx of [linear_interpolation of [0, 0, 2, 10, 1], 5, "linear_interp midpoint"]
+
+# ---------------- PROBABILITY ----------------
+exact of [factorial of 5, 120, "factorial 5"]
+exact of [combinations of [10, 3], 120, "C(10,3)"]
+exact of [permutations of [5, 2], 20, "P(5,2)"]
+approx of [binomial_pmf of [10, 5, 0.5], 0.24609375, "binomial_pmf"]
+approx of [poisson_pmf of [0, 1], 0.36787944, "poisson_pmf"]
+approx of [normal_pdf of [0, 0, 1], 0.39894228, "normal_pdf"]
+approx of [normal_cdf_approx of 0, 0.5, "normal_cdf(0)"]
+approx of [exponential_cdf of [1, 1], 1 - (exp of (0 - 1)), "exponential_cdf"]
+approx of [uniform_pdf of [0.5, 0, 1], 1, "uniform_pdf"]
+approx of [uniform_cdf of [0.5, 0, 1], 0.5, "uniform_cdf"]
+approx of [expected_value of [[1, 2, 3], [0.2, 0.3, 0.5]], 2.3, "expected_value"]
+
+# ---------------- STATISTICS ----------------
+approx of [mean of [1, 2, 3, 4], 2.5, "mean"]
+approx of [median of [1, 2, 3, 4, 5], 3, "median odd"]
+approx of [median of [1, 2, 3, 4], 2.5, "median even"]
+exact of [mode of [1, 2, 2, 3], 2, "mode"]
+approx of [variance of [2, 4, 4, 4, 5, 5, 7, 9], 4, "variance (population)"]
+approx of [std_dev of [2, 4, 4, 4, 5, 5, 7, 9], 2, "std_dev (population)"]
+approx of [variance_sample of [2, 4, 4, 4, 5, 5, 7, 9], 32 / 7, "variance_sample (Bessel)"]
+approx of [std_dev_sample of [2, 4, 4, 4, 5, 5, 7, 9], sqrt of (32 / 7), "std_dev_sample"]
+approx of [range_of of [1, 5, 3], 4, "range"]
+approx of [correlation of [[1, 2, 3], [2, 4, 6]], 1, "correlation perfect"]
+approx of [covariance of [[1, 2, 3], [1, 2, 3]], variance of [1, 2, 3], "covariance=var"]
+
+# ---------------- NUMERICS (return rich result dicts) ----------------
+pit is power_iteration of [[[2, 0], [0, 1]], 100]
+approx of [pit.eigenvalue, 2, "power_iteration dominant eig"]
+# Newton iteration for sqrt(2) as a fixed point: g(x) = (x + 2/x)/2
+fp is fixed_point of [(x) => (x + 2 / x) / 2, 1, 100]
+approx of [fp.x, 1.41421356, "fixed_point sqrt2"]
+
+# ---------------- OPTIMIZE (return rich result dicts) ----------------
+gs is golden_section of [(x) => (x - 2) * (x - 2), 0, 5, 100]
+approx of [gs.x, 2, "golden_section min"]
+gd is gradient_descent of [(x) => (x - 3) * (x - 3), 0, 0.1, 200]
+near_tol of [gd.x, 3, 0.05, "gradient_descent min"]
+
+print of f"STEM accuracy: {pass_count}/{pass_count + fail_count} passed"
+if fail_count == 0:
+    print of "All STEM accuracy checks passed"

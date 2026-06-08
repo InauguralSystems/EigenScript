@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`tests/test_stem_accuracy.eigs`** — a 123-check known-answer audit of
+  the STEM libraries (physics, chemistry, biology, engineering, geometry,
+  linalg, calculus, probability, stats, numerics, optimize) against
+  textbook values. Every check passes: e.g. `gravitational_force` matches
+  the 2019 CODATA G, `normal_pdf(0,0,1)` matches 1/√(2π) to 16 digits,
+  `rk4` lands on e, Simpson/trapezoidal/midpoint integration and Newton/
+  secant/bisection root-finding all hit their analytic answers.
+- **`variance_sample` / `std_dev_sample`** in `lib/stats.eigs` — sample
+  variance/standard deviation with Bessel's correction (÷N−1). The
+  existing `variance`/`std_dev` remain **population** statistics (÷N); the
+  difference is now documented in the source and both forms are tested.
+
 ### Changed (behavior change)
 - **`==` / `!=` are now structural for collections.** Lists and dicts
   previously compared by reference identity, so `[1,2] == [1,2]` was

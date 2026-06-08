@@ -79,6 +79,8 @@ define mode(vals) as:
     return ukeys[best_idx]
 
 # variance: population variance
+# variance: POPULATION variance (divides by N). For a sample drawn from a
+# larger population, use variance_sample (divides by N-1, Bessel's correction).
 define variance(vals) as:
     n is len of vals
     if n == 0:
@@ -90,9 +92,26 @@ define variance(vals) as:
         total is total + diff * diff
     return total / n
 
-# std_dev: population standard deviation
+# variance_sample: sample variance with Bessel's correction (divides by N-1).
+# This is the unbiased estimator of a population's variance from a sample.
+define variance_sample(vals) as:
+    n is len of vals
+    if n < 2:
+        return 0
+    m is mean of vals
+    total is 0
+    for i in range of n:
+        diff is vals[i] - m
+        total is total + diff * diff
+    return total / (n - 1)
+
+# std_dev: population standard deviation (sqrt of population variance)
 define std_dev(vals) as:
     return sqrt of (variance of vals)
+
+# std_dev_sample: sample standard deviation (sqrt of sample variance)
+define std_dev_sample(vals) as:
+    return sqrt of (variance_sample of vals)
 
 # range_of: max - min
 define range_of(vals) as:
