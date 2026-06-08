@@ -71,6 +71,31 @@ division by zero, which yields 0) are not errors and do not stop execution.
 **Status:** Enforced — `tests/test_number_format.eigs`,
 `tests/test_numeric_guard.eigs`.
 
+## Strings
+
+**Promise:** A string is a sequence of **bytes**, not Unicode codepoints.
+- `len` returns the **byte** count (`len of "café"` is 5, not 4).
+- Indexing `s[i]` returns the one-byte string at byte offset `i`; all string
+  builtins (`split`, `index_of`, `substr`, `contains`, `upper`/`lower`, …)
+  operate bytewise. A multi-byte UTF-8 sequence is therefore split by
+  byte-offset operations — this is the documented consequence of the byte
+  model, not a bug.
+- Strings are immutable; comparison (`==`, `<`) is bytewise.
+- String literals support the escapes `\n \t \\ \"`. There is no `\0`,
+  `\xNN`, or `\u{…}` escape, so a string cannot embed a NUL or an arbitrary
+  byte from source (only the raw bytes present in the source file flow
+  through). An embedded NUL, if one ever arrived from file/buffer input,
+  would truncate the string at that byte.
+
+Unicode-correct length, indexing, and iteration are intentionally **out of
+core scope**: they are an O(n) walk or a per-string index cache, a poor trade
+for the runtime's targets. They may be added later as **opt-in helpers**
+(e.g. `utf8_len`, `utf8_chars`) — purely additive, so this promise does not
+foreclose them.
+
+**Status:** Enforced — `builtin_len` (byte count) and the string index paths
+in `builtins.c` / `vm.c`.
+
 ## Bitwise — `&` `|` `^` `<<` `>>` `~`
 
 **Promise:** Bitwise operators (and the `bit_and` / `bit_or` / `bit_xor` /
@@ -173,15 +198,36 @@ unary and `of` are right-associative.
 
 **Promise (decision):** An index must be an integer in `[0, length)`.
 - Out-of-range indices (including negative) raise a runtime error.
-- Non-integer indices are an error.
-- From-the-end indexing (`a[-1]`) and slicing (`a[1:3]`) are **not** part
-  of the language today; they are tracked on the roadmap as one coherent
-  addition.
+- A non-integer index **raises** (`a[1.5]` → error). Integer-valued doubles
+  are accepted (`a[2.0]` works), since EigenScript has a single number type;
+  but a fractional value is never silently truncated. Because `/` always
+  yields a double, a division-derived index must be collapsed explicitly —
+  `a[floor of (lo + hi) / 2]` — which keeps the rounding decision in the
+  programmer's hands. A value that is fractional only through float drift
+  (`2.9999998`) also raises, surfacing the sloppy arithmetic rather than
+  mis-indexing.
 
-**Status:** Partially enforced. Out-of-range and negative indices raise
-correctly (no out-of-bounds access). **Planned:** non-integer indices
-currently truncate toward zero (`a[1.9]` → `a[1]`) instead of raising;
-tightening that to an error is pending.
+**Status:** Enforced — `tests/test_trycatch.eigs`; `vm_index_is_int` guards
+every dynamic index site in `OP_INDEX_GET`/`OP_INDEX_SET` and
+`jit_helper_index_get` in `vm.c`.
+
+**Reserved (not yet implemented): negative indexing and slicing.** The
+`a[-1]` and `a[start:end]` syntax is reserved for one coherent future
+addition; today `a[-1]` raises (out of range) and `a[1:3]` is a parse error.
+When it lands, the committed design is:
+- **Negative indices** count from the end (`a[-1]` is the last element),
+  resolved to `len + i` *before* any bounds check.
+- **Slices** are half-open `a[start:end)`, with defaults `a[start:]`
+  (end = len), `a[:end]` (start = 0), `a[:]` (the whole sequence).
+- **Slice bounds are positions between elements**, so the valid range is
+  `0 <= start <= end <= len` (note `<=` on the upper end): `a[len:]` and
+  `a[start:len]` are legal and yield an empty slice — even though the bare
+  index `a[len]` raises.
+- **Out-of-range slice bounds raise** (they do not clamp), consistent with
+  the single-index rule and with Rust/Go; only the coercion-happy languages
+  (Python/JS) clamp. Write `min of [end, len of a]` for explicit clamping.
+- Once negative indexing lands, negatives resolve to absolute positions
+  first, then the `0 <= start <= end <= len` check applies.
 
 **Dict access — missing key returns `null` (deliberate, not an error).**
 A missing dict key (`d["k"]`) or field (`d.k`) evaluates to `null`, on

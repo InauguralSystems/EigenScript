@@ -19,7 +19,9 @@ Based on gprof profiling of DMG (500K cycles):
 
 - [ ] Destructuring assignment (`[a, b] is [1, 2]`)
 - [ ] Streaming subprocess I/O (stdin pipe, unbuffered stdout)
-- [ ] String slicing (`s[1:3]`)
+- [ ] Negative indexing + slicing (`a[-1]`, `s[1:3]`) — one coherent addition;
+      committed semantics (from-end, half-open `[start:end)`, raise on OOB bounds)
+      reserved in `docs/LANGUAGE_CONTRACT.md`
 - [ ] Default parameter values
 
 ### Ecosystem
