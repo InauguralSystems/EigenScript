@@ -354,7 +354,8 @@ Value* builtin_text_builder_to_string(Value *arg) {
 /* ==== Bitwise operations ====
  * Semantics: operate on 32-bit two's-complement ints. Shift amounts are
  * masked to [0,31] so large/negative shifts are defined behavior, not UB.
- * Non-numeric args yield 0. */
+ * Non-numeric args raise a runtime error (consistent with the strict error
+ * model used by the arithmetic operators and the '& | ^ << >> ~' operators). */
 
 static int bit_pair(Value *arg, uint32_t *a_out, uint32_t *b_out) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return 0;
@@ -368,37 +369,37 @@ static int bit_pair(Value *arg, uint32_t *a_out, uint32_t *b_out) {
 
 Value* builtin_bit_and(Value *arg) {
     uint32_t a, b;
-    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_and expects [number, number]"); return make_null(); }
     return make_num((double)(int32_t)(a & b));
 }
 
 Value* builtin_bit_or(Value *arg) {
     uint32_t a, b;
-    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_or expects [number, number]"); return make_null(); }
     return make_num((double)(int32_t)(a | b));
 }
 
 Value* builtin_bit_xor(Value *arg) {
     uint32_t a, b;
-    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_xor expects [number, number]"); return make_null(); }
     return make_num((double)(int32_t)(a ^ b));
 }
 
 Value* builtin_bit_not(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    if (!arg || arg->type != VAL_NUM) { runtime_error(0, "bit_not expects a number"); return make_null(); }
     uint32_t a = (uint32_t)(int32_t)arg->data.num;
     return make_num((double)(int32_t)(~a));
 }
 
 Value* builtin_bit_shift_left(Value *arg) {
     uint32_t a, b;
-    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_shl expects [number, number]"); return make_null(); }
     return make_num((double)(int32_t)(a << (b & 31)));
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
     uint32_t a, b;
-    if (!bit_pair(arg, &a, &b)) return make_num(0);
+    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_shr expects [number, number]"); return make_null(); }
     return make_num((double)(a >> (b & 31)));
 }
 

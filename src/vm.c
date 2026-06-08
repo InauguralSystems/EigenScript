@@ -1266,7 +1266,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         DISPATCH();
     }
 
-#define INT_BINOP(NAME, OP) \
+#define INT_BINOP(NAME, OP, OPNAME) \
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
@@ -1286,17 +1286,25 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             g_vm.sp--; \
             DISPATCH(); \
         } \
-        slot_decref(_as); slot_decref(_bs); \
+        /* Mixed/non-numeric: error rather than silently returning 0, \
+         * matching the arithmetic operators and the strict error model. \
+         * Capture type names before decref (cf. NUM_CMP above). */ \
+        { \
+            const char *_tna = slot_type_name(_as), *_tnb = slot_type_name(_bs); \
+            slot_decref(_as); slot_decref(_bs); \
+            runtime_error(current_line, "cannot apply '%s' to %s and %s", \
+                OPNAME, _tna, _tnb); \
+        } \
         g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
         g_vm.sp--; \
         DISPATCH(); \
     }
 
-    INT_BINOP(BAND, &)
-    INT_BINOP(BOR, |)
-    INT_BINOP(BXOR, ^)
-    INT_BINOP(SHL, <<)
-    INT_BINOP(SHR, >>)
+    INT_BINOP(BAND, &, "&")
+    INT_BINOP(BOR, |, "|")
+    INT_BINOP(BXOR, ^, "^")
+    INT_BINOP(SHL, <<, "<<")
+    INT_BINOP(SHR, >>, ">>")
 
     /* ---- Unary ---- */
 
@@ -1339,7 +1347,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             g_vm.stack[g_vm.sp - 1] = slot_from_num(r);
             DISPATCH();
         }
-        slot_decref(s);
+        {
+            const char *_tn = slot_type_name(s);
+            slot_decref(s);
+            runtime_error(current_line, "cannot apply '~' to %s", _tn);
+        }
         g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
         DISPATCH();
     }

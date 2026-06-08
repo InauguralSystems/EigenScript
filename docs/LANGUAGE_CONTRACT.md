@@ -71,6 +71,20 @@ division by zero, which yields 0) are not errors and do not stop execution.
 **Status:** Enforced — `tests/test_number_format.eigs`,
 `tests/test_numeric_guard.eigs`.
 
+## Bitwise — `&` `|` `^` `<<` `>>` `~`
+
+**Promise:** Bitwise operators (and the `bit_and` / `bit_or` / `bit_xor` /
+`bit_not` / `bit_shl` / `bit_shr` builtins) operate on 32-bit two's-complement
+integers; operands are truncated toward zero to `int32`. Shift amounts are
+masked to `[0,31]`, so large or negative shifts are defined, not UB.
+Non-numeric operands **raise** a runtime error — they are not silently
+treated as `0`. This is the same strict error model the arithmetic operators
+use; it makes the **Errors** promise ("type-mismatched operator … raises")
+hold for *every* operator with no exceptions.
+
+**Status:** Enforced — `tests/test_bitwise.eigs`, `INT_BINOP` / `CASE(BNOT)`
+in `vm.c`, `bit_*` builtins in `builtins.c`.
+
 ## Truthiness
 
 **Promise:** Falsy values are `0`, `""`, `[]`, `{}`, and `null`. Everything
@@ -168,6 +182,17 @@ unary and `of` are right-associative.
 correctly (no out-of-bounds access). **Planned:** non-integer indices
 currently truncate toward zero (`a[1.9]` → `a[1]`) instead of raising;
 tightening that to an error is pending.
+
+**Dict access — missing key returns `null` (deliberate, not an error).**
+A missing dict key (`d["k"]`) or field (`d.k`) evaluates to `null`, on
+purpose: a missing key is a *lookup miss*, not a logic error. This is
+distinct from out-of-range **list** indexing, which raises — an out-of-range
+list index is a logic error. Both forms of dict access (`d.k` and `d["k"]`)
+agree. Use `has_key of [d, "k"]` to test membership when `null` is itself a
+valid stored value.
+
+**Status:** Enforced — `tests/test_dict.eigs`, `OP_DOT_GET` /
+`OP_INDEX_GET` in `vm.c`.
 
 ## Statistics convention (library)
 

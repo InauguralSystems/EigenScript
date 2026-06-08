@@ -37,9 +37,56 @@ assert_eq of [bit_shl of [1, 32], 1, "SHL 1 << 32 masks to << 0"]
 assert_eq of [bit_shl of [1, 33], 2, "SHL 1 << 33 masks to << 1"]
 assert_eq of [bit_shr of [8, 35], 1, "SHR 8 >> 35 masks to >> 3"]
 
-# Type safety — non-numeric args return 0 instead of UB
-assert_eq of [bit_and of ["abc", 5], 0, "AND string arg returns 0"]
-assert_eq of [bit_or of [null, 5], 0, "OR null arg returns 0"]
-assert_eq of [bit_shl of [[1,2], 4], 0, "SHL list arg returns 0"]
+# Type safety — non-numeric args raise (strict error model, not UB, not 0).
+# Builtins:
+caught_and is ""
+try:
+    x is bit_and of ["abc", 5]
+catch err:
+    caught_and is err
+assert_true of [contains of [caught_and, "bit_and"], "bit_and string arg raises"]
+
+caught_or is ""
+try:
+    x is bit_or of [null, 5]
+catch err:
+    caught_or is err
+assert_true of [contains of [caught_or, "bit_or"], "bit_or null arg raises"]
+
+caught_shl is ""
+try:
+    x is bit_shl of [[1,2], 4]
+catch err:
+    caught_shl is err
+assert_true of [contains of [caught_shl, "bit_shl"], "bit_shl list arg raises"]
+
+caught_not is ""
+try:
+    x is bit_not of "abc"
+catch err:
+    caught_not is err
+assert_true of [contains of [caught_not, "bit_not"], "bit_not string arg raises"]
+
+# Operators:
+caught_op_and is ""
+try:
+    x is "a" & 1
+catch err:
+    caught_op_and is err
+assert_true of [contains of [caught_op_and, "cannot apply"], "& string operand raises"]
+
+caught_op_shl is ""
+try:
+    x is null << 2
+catch err:
+    caught_op_shl is err
+assert_true of [contains of [caught_op_shl, "cannot apply"], "<< null operand raises"]
+
+caught_op_not is ""
+try:
+    x is ~null
+catch err:
+    caught_op_not is err
+assert_true of [contains of [caught_op_not, "cannot apply"], "~ null operand raises"]
 
 test_summary of null
