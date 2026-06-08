@@ -978,6 +978,14 @@ static int vm_handler_in_range(int base) {
     return 0;
 }
 
+/* Type name for a stack slot, for error diagnostics. Returns a static
+ * string (safe to hold across a decref). */
+static const char *slot_type_name(EigsSlot s) {
+    if (slot_is_null(s)) return "none";
+    if (slot_is_ptr(s)) { Value *v = slot_as_ptr(s); return v ? val_type_name(v->type) : "none"; }
+    return "num"; /* immediate double / bool */
+}
+
 static Value *vm_run(EigsChunk *chunk, Env *env) {
     int base_frame = g_vm.frame_count; /* track entry point for re-entrant returns */
     /* Module-level slot promotion (Part B) AND nested entries from builtins
@@ -1182,14 +1190,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             Value *r = make_str(s);
             free(s);
             vm_push(r);
-        } else if (a->type == VAL_NUM && b->type == VAL_STR) {
-            char buf[64]; snprintf(buf, sizeof(buf), "%.14g%s", a->data.num, b->data.str);
-            vm_push(make_str(buf));
-        } else if (a->type == VAL_STR && b->type == VAL_NUM) {
-            char buf[64]; snprintf(buf, sizeof(buf), "%s%.14g", a->data.str, b->data.num);
-            vm_push(make_str(buf));
         } else if (a->type == VAL_STR || b->type == VAL_STR) {
-            /* String + non-string: convert non-string to string */
+            /* String + non-string: stringify the non-string via the shared
+             * formatter so numbers round-trip (the old %.14g path truncated,
+             * inconsistent with value_to_string). */
             extern char* value_to_string(Value *v);
             char *sa = (a->type == VAL_STR) ? strdup(a->data.str) : value_to_string(a);
             char *sb = (b->type == VAL_STR) ? strdup(b->data.str) : value_to_string(b);
@@ -1398,7 +1402,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         DISPATCH();
     }
 
-#define NUM_CMP(NAME, OP) \
+#define NUM_CMP(NAME, OP, OPNAME) \
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
@@ -1430,16 +1434,24 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 DISPATCH(); \
             } \
         } \
-        slot_decref(_as); slot_decref(_bs); \
+        /* Mixed/uncomparable types: error rather than silently returning \
+         * false (e.g. "3" < 4 used to be 0). Capture type names before \
+         * decref. ==/!= keep cross-type "not equal"; only ordering errors. */ \
+        { \
+            const char *_tna = slot_type_name(_as), *_tnb = slot_type_name(_bs); \
+            slot_decref(_as); slot_decref(_bs); \
+            runtime_error(current_line, "cannot compare %s and %s with '%s'", \
+                _tna, _tnb, OPNAME); \
+        } \
         g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
         g_vm.sp--; \
         DISPATCH(); \
     }
 
-    NUM_CMP(LT, <)
-    NUM_CMP(GT, >)
-    NUM_CMP(LE, <=)
-    NUM_CMP(GE, >=)
+    NUM_CMP(LT, <, "<")
+    NUM_CMP(GT, >, ">")
+    NUM_CMP(LE, <=, "<=")
+    NUM_CMP(GE, >=, ">=")
 
     /* ---- Variables ---- */
 

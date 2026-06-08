@@ -369,6 +369,17 @@ else
 fi
 echo ""
 
+echo "[Coercion] (16 checks)"
+CO_OUTPUT=$(./eigenscript ../tests/test_coercion.eigs 2>&1)
+TOTAL=$((TOTAL + 16))
+if echo "$CO_OUTPUT" | grep -q "All tests passed"; then
+    echo "  PASS: all 16 coercion checks"; PASS=$((PASS + 16))
+else
+    echo "  FAIL: coercion"; FAIL=$((FAIL + 16))
+    echo "$CO_OUTPUT" | grep -iE "ASSERT|error" | head -5
+fi
+echo ""
+
 echo "[12/15] Type Labels (4 checks)"
 TY_OUTPUT=$(./eigenscript ../tests/test_type.eigs 2>&1)
 

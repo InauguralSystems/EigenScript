@@ -1,0 +1,41 @@
+# Type coercion policy (pre-v1 semantics pass).
+#   +          num+num adds; any operand a string concatenates (numbers
+#              stringify through the round-trip formatter)
+#   < > <= >=  same-type only (num/num or str/str); mixed types raise
+#   == !=      never coerce; cross-type compares are simply not-equal
+
+# Arithmetic / concatenation
+assert of [(2 + 3) == 5, "num + num adds"]
+assert of [("a" + "b") == "ab", "str + str concatenates"]
+assert of [("n=" + 42) == "n=42", "str + num concatenates"]
+assert of [(7 + "x") == "7x", "num + str concatenates"]
+assert of [("v=" + (1 / 2)) == "v=0.5", "concatenated number round-trips"]
+
+# Ordering: same-type works
+assert of [(2 < 5) == 1, "num < num"]
+assert of [(5 > 2) == 1, "num > num"]
+assert of [("a" < "b") == 1, "str < str"]
+assert of [("b" >= "a") == 1, "str >= str"]
+
+# Ordering: mixed types raise (not a silent false)
+ord_caught is 0
+try:
+    bad is "3" < 4
+catch e:
+    ord_caught is 1
+assert of [ord_caught == 1, "mixed ordering raises"]
+
+ord2_caught is 0
+try:
+    bad2 is 5 > "x"
+catch e:
+    ord2_caught is 1
+assert of [ord2_caught == 1, "mixed ordering raises (other direction)"]
+
+# Equality: cross-type is safely not-equal, never an error
+assert of [("3" == 3) == 0, "str vs num not equal"]
+assert of [(3 == 3) == 1, "num == num"]
+assert of [([1] == 1) == 0, "list vs num not equal"]
+assert of [("3" != 3) == 1, "str != num true"]
+
+print of "All tests passed"
