@@ -93,7 +93,7 @@ check of ["50 iterations of inline (make_nums)[1] == 1000", sum == 1000]
 
 # ---- Summary ----
 total is pass_count + fail_count
-print of ("Index-after-call Tests: " + pass_count + "/" + total + " passed")
+print of f"Index-after-call Tests: {pass_count}/{total} passed"
 if fail_count == 0:
     print of "All tests passed"
 else:

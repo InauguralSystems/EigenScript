@@ -1190,21 +1190,17 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             Value *r = make_str(s);
             free(s);
             vm_push(r);
-        } else if (a->type == VAL_STR || b->type == VAL_STR) {
-            /* String + non-string: stringify the non-string via the shared
-             * formatter so numbers round-trip (the old %.14g path truncated,
-             * inconsistent with value_to_string). */
-            extern char* value_to_string(Value *v);
-            char *sa = (a->type == VAL_STR) ? strdup(a->data.str) : value_to_string(a);
-            char *sb = (b->type == VAL_STR) ? strdup(b->data.str) : value_to_string(b);
-            int la = strlen(sa), lb = strlen(sb);
-            char *s = malloc(la + lb + 1);
-            memcpy(s, sa, la); memcpy(s + la, sb, lb); s[la + lb] = 0;
-            vm_push(make_str(s));
-            free(sa); free(sb); free(s);
         } else {
-            runtime_error(current_line, "cannot apply '+' to %s and %s",
-                val_type_name(a->type), val_type_name(b->type));
+            /* Strict: + adds two numbers or concatenates two strings; it does
+             * not coerce across types ("3" + 4 was a footgun). For mixed
+             * concatenation use an f-string — f"{a}{b}" — or str of. */
+            const char *ta = val_type_name(a->type), *tb = val_type_name(b->type);
+            if ((a->type == VAL_STR) != (b->type == VAL_STR))
+                runtime_error(current_line,
+                    "cannot apply '+' to %s and %s (use an f-string or 'str of' to concatenate)",
+                    ta, tb);
+            else
+                runtime_error(current_line, "cannot apply '+' to %s and %s", ta, tb);
             vm_push(make_null());
         }
         val_decref(a); val_decref(b);

@@ -234,13 +234,13 @@ This works for factory patterns, callbacks, and higher-order programming.
 **Arithmetic:** `+`, `-`, `*`, `/`, `%`
 **Comparison:** `==`, `!=`, `<`, `>`, `<=`, `>=`
 **Logical:** `and`, `or`, `not`
-**String:** `+` (concatenation when either side is a string)
+**String:** `+` (concatenation when *both* sides are strings)
 
 ### Type rules
 
-- **`+`** adds two numbers, and concatenates if *either* operand is a
-  string — the non-string side is stringified (numbers print in full
-  precision): `"n=" + 42` → `"n=42"`.
+- **`+`** adds two numbers or concatenates two strings. It does **not**
+  coerce across types — `"n=" + 42` raises. To build text from mixed
+  types use an f-string (`f"n={count}"`) or `str of`.
 - **Ordering** (`<`, `>`, `<=`, `>=`) requires both operands to be the
   same comparable type (number/number or string/string). Comparing mixed
   types (e.g. `"3" < 4`) raises a runtime error rather than silently

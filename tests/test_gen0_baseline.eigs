@@ -168,7 +168,7 @@ print of ""
 print of "--- T23: Mixed Types ---"
 num is 42
 label is "value is "
-output is label + num
+output is f"{label}{num}"
 print of output
 print of "EXPECT: value is 42"
 

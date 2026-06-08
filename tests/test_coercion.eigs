@@ -1,15 +1,31 @@
-# Type coercion policy (pre-v1 semantics pass).
-#   +          num+num adds; any operand a string concatenates (numbers
-#              stringify through the round-trip formatter)
+# Type coercion policy (pre-v1 semantics pass) — strict, no cross-type coercion.
+#   +          num+num adds; str+str concatenates; mixed types raise
 #   < > <= >=  same-type only (num/num or str/str); mixed types raise
 #   == !=      never coerce; cross-type compares are simply not-equal
+# To mix types in text, use an f-string: f"{a}{b}".
 
 # Arithmetic / concatenation
 assert of [(2 + 3) == 5, "num + num adds"]
 assert of [("a" + "b") == "ab", "str + str concatenates"]
-assert of [("n=" + 42) == "n=42", "str + num concatenates"]
-assert of [(7 + "x") == "7x", "num + str concatenates"]
-assert of [("v=" + (1 / 2)) == "v=0.5", "concatenated number round-trips"]
+
+# + does not coerce across types: mixed str/num raises
+add_caught is 0
+try:
+    bad_add is "n=" + 42
+catch e:
+    add_caught is 1
+assert of [add_caught == 1, "str + num raises (no silent coercion)"]
+
+add2_caught is 0
+try:
+    bad_add2 is 7 + "x"
+catch e:
+    add2_caught is 1
+assert of [add2_caught == 1, "num + str raises"]
+
+# the strict-safe way to mix types in text is an f-string
+assert of [f"n={42}" == "n=42", "f-string mixes types"]
+assert of [f"v={1 / 2}" == "v=0.5", "f-string number round-trips"]
 
 # Ordering: same-type works
 assert of [(2 < 5) == 1, "num < num"]

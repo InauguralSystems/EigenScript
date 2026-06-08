@@ -29,14 +29,14 @@ All notable changes to EigenScript are documented here.
   or string/string) and raise a runtime error otherwise (catchable with
   `try`/`catch`). Equality (`==`/`!=`) is unchanged: it never coerces and
   cross-type compares are simply not-equal, never an error.
-- **`+` stringifies numbers through the round-trip formatter.** Number↔
-  string concatenation (`"x = " + (1/3)`) used a separate `%.14g` path
-  that truncated; it now uses the same shortest-round-trip formatter as
-  everything else. `+` still concatenates when either operand is a string
-  and adds when both are numbers (unchanged). `of` precedence
-  (`len of xs - 1` parses as `(len of xs) - 1`) is documented in
-  docs/SYNTAX.md, not changed — the two natural readings conflict, and the
-  current rule matches the common idiom.
+- **`+` no longer coerces across types.** It adds two numbers or
+  concatenates two strings; a mixed operand (`"n=" + 42`, `7 + "x"`) now
+  raises instead of silently stringifying (`"3" + 4` used to be `"34"`).
+  Use an f-string — `f"n={count}"` — or `str of` to mix types in text.
+  (The old coercion path also truncated numbers via `%.14g`; that's moot
+  now.) `of` precedence (`len of xs - 1` parses as `(len of xs) - 1`) is
+  documented in docs/SYNTAX.md, not changed — the two natural readings
+  conflict, and the current rule matches the common idiom.
 - **Builtin argument errors now raise instead of warning and returning
   `null`.** `EigenStore` builtins (`store_open`/`put`/`get`/`delete`/
   `query`/`count`/`update`/`collections`/`drop`/`close`), `json_decode`,

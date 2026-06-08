@@ -58,8 +58,8 @@ ii is improving
 oo is oscillating
 dd is diverging
 ee is equilibrium
-print of ("converged=" + cc + " stable=" + ss + " improving=" + ii)
-print of ("oscillating=" + oo + " diverging=" + dd + " equilibrium=" + ee)
+print of f"converged={cc} stable={ss} improving={ii}"
+print of f"oscillating={oo} diverging={dd} equilibrium={ee}"
 
 print of ""
 print of "--- Local assignment keyword ---"

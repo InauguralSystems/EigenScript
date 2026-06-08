@@ -96,14 +96,14 @@ check of ["GC9 val_type_name dict in error", caught_dict == 1]
 # 4) value_to_string for BUILTIN (line 404)
 # ----------------------------------------------------------------
 
-builtin_str is "" + print
+builtin_str is str of print
 check of ["GC10 value_to_string builtin", builtin_str == "<builtin>"]
 
 # ----------------------------------------------------------------
 # 5) value_to_string for dict with string value (line 396)
 # ----------------------------------------------------------------
 d3 is {"name": "alice"}
-d3_str is "" + d3
+d3_str is str of d3
 check of ["GC11 dict to_string with str val", d3_str == "{\"name\": \"alice\"}"]
 
 # ----------------------------------------------------------------
@@ -284,7 +284,7 @@ check of ["GC33 numeric assignment does not mutate aliased binding",
 # Summary
 # ----------------------------------------------------------------
 total is pass_count + fail_count
-print of ("GC Tests: " + pass_count + "/" + total + " passed")
+print of f"GC Tests: {pass_count}/{total} passed"
 if fail_count == 0:
     print of "All gc tests passed"
 else:
