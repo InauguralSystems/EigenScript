@@ -43,6 +43,11 @@ void runtime_error(int line, const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(tmp, sizeof(tmp), fmt, args);
     va_end(args);
+    /* Tolerate a trailing newline in the format (some call sites carried one
+     * over from fprintf): the "Error line N:" frame and the stderr write add
+     * their own, and a trailing \n would also leak into a caught error's text. */
+    size_t _tl = strlen(tmp);
+    if (_tl > 0 && tmp[_tl - 1] == '\n') tmp[_tl - 1] = '\0';
     snprintf(g_error_msg, sizeof(g_error_msg), "Error line %d: %s", line, tmp);
     g_has_error = 1;
     if (g_try_depth == 0) {

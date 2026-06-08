@@ -435,6 +435,12 @@ extern __thread Env *g_builtin_call_env;  /* dynamic caller scope for env-aware 
 
 /* ---- Utilities used across modules ---- */
 
+/* Raise a recoverable runtime error: sets the error flag (caught by an
+ * enclosing try, otherwise fatal — the VM unwinds) and prints to stderr
+ * when uncaught. Declared here so extension TUs (ext_store, etc.) can route
+ * argument/operation failures through the same strict channel as the VM. */
+void runtime_error(int line, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 char* read_file_util(const char *path, long *out_size);
 int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap);
 Value* eigs_json_parse_value(const char *s, int *pos);

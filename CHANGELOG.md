@@ -21,6 +21,21 @@ All notable changes to EigenScript are documented here.
   Exact integers up to 2^53 still print without a decimal point. See
   `tests/test_number_format.eigs`.
 
+### Changed (behavior change), continued
+- **Builtin argument errors now raise instead of warning and returning
+  `null`.** `EigenStore` builtins (`store_open`/`put`/`get`/`delete`/
+  `query`/`count`/`update`/`collections`/`drop`/`close`), `json_decode`,
+  and `load_file` previously printed an `Error:`/`Type error:` line to
+  stderr and returned `null` on bad input, so a misuse silently produced
+  `null` and the program continued. They now route through the same
+  `runtime_error` channel as the rest of the VM — caught by an enclosing
+  `try`, otherwise fatal. Non-error outcomes are unchanged: a `store_get`
+  miss still returns `null`, a `store_delete` of a missing key still
+  returns `0`. (`runtime_error` is now declared in `eigenscript.h` and
+  strips a trailing newline so caught messages are clean.) Remaining
+  lenient spots, left for a follow-up: a file-open failure in the stream
+  builtins, and the optional model extension.
+
 ### Fixed (behavior change)
 - **Uncaught runtime errors are now fatal and set a non-zero exit code.**
   Previously an uncaught error (undefined variable, index out of range,

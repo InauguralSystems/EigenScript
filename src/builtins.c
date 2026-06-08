@@ -842,7 +842,7 @@ Value* eigs_json_parse_value(const char *s, int *pos) {
 
 Value* builtin_json_decode(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
-        fprintf(stderr, "Type error: json_decode requires a string, got %s\n",
+        runtime_error(0, "json_decode requires a string, got %s",
                 arg ? val_type_name(arg->type) : "null");
         return make_null();
     }
@@ -2243,7 +2243,7 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
 
 Value* builtin_load_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
-        fprintf(stderr, "load_file: requires a string path argument\n");
+        runtime_error(0, "load_file requires a string path argument");
         return make_null();
     }
     char resolved[8192];

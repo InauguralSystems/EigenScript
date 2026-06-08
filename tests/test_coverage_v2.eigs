@@ -1,6 +1,17 @@
 # test_coverage_v2.eigs — Close coverage gaps found via gcov analysis
 # Targets uncovered paths in eval.c, builtins.c, eigenscript.c, ext_store.c
 
+# Strict model: builtins raise on bad arguments. expect_error exercises an
+# error branch and asserts it was raised (caught), letting the script
+# continue. (thunk takes one arg so it can be called as `thunk of null`.)
+define expect_error(thunk, label) as:
+    caught is 0
+    try:
+        ignored is thunk of null
+    catch e:
+        caught is 1
+    assert of [caught == 1, label]
+
 # ================================================================
 # EVAL.C GAPS
 # ================================================================
@@ -217,57 +228,30 @@ assert of [(len of obs) == 4, "CV2-61 observe list has 4 elements"]
 # EXT_STORE.C GAPS — error paths
 # ================================================================
 
-# --- store_close with bad arg ---
-sc_bad is store_close of 42
-assert of [(type of sc_bad) == "none", "CV2-62 store_close bad arg"]
+# --- store builtins reject bad args (strict model: they raise) ---
+expect_error of [() => store_close of 42, "CV2-62 store_close bad arg raises"]
+expect_error of [() => store_put of null, "CV2-63 store_put null arg raises"]
+expect_error of [() => store_put of [42, "coll", {"a": 1}], "CV2-64 store_put bad handle raises"]
 
-# --- store_put with bad args ---
-sp_bad1 is store_put of null
-assert of [(type of sp_bad1) == "none", "CV2-63 store_put null arg"]
-
-sp_bad2 is store_put of [42, "coll", {"a": 1}]
-assert of [(type of sp_bad2) == "none", "CV2-64 store_put bad handle"]
-
-# --- store_put non-dict record ---
 tmp_store is store_open of "/tmp/eigs_cv2_test.db"
-sp_bad3 is store_put of [tmp_store, "coll", "not_a_dict"]
-assert of [(type of sp_bad3) == "none", "CV2-65 store_put non-dict record"]
+expect_error of [() => store_put of [tmp_store, "coll", "not_a_dict"], "CV2-65 store_put non-dict record raises"]
+expect_error of [() => store_get of null, "CV2-66 store_get null arg raises"]
 
-# --- store_get with bad args ---
-sg_bad1 is store_get of null
-assert of [(type of sg_bad1) == "none", "CV2-66 store_get null arg"]
-
-# --- store_get with numeric key ---
+# store_get with a valid handle but a missing key is NOT an error: returns null
 sg_nk is store_get of [tmp_store, "coll", 999]
 assert of [(type of sg_nk) == "none", "CV2-67 store_get numeric key miss"]
 
-# --- store_delete with bad args ---
-sd_bad1 is store_delete of null
-assert of [sd_bad1 == 0, "CV2-68 store_delete null arg"]
+expect_error of [() => store_delete of null, "CV2-68 store_delete null arg raises"]
 
-# --- store_delete with numeric key ---
+# store_delete of a missing key is not an error: returns 0
 sd_nk is store_delete of [tmp_store, "coll", 123]
 assert of [sd_nk == 0, "CV2-69 store_delete numeric key"]
 
-# --- store_query with bad args ---
-sq_bad1 is store_query of null
-assert of [(len of sq_bad1) == 0, "CV2-70 store_query null arg"]
-
-# --- store_count with bad args ---
-scn_bad is store_count of null
-assert of [scn_bad == 0, "CV2-71 store_count null arg"]
-
-# --- store_update with bad args ---
-su_bad is store_update of null
-assert of [su_bad == 0, "CV2-72 store_update null arg"]
-
-# --- store_collections with bad arg ---
-scol_bad is store_collections of 42
-assert of [(len of scol_bad) == 0, "CV2-73 store_collections bad arg"]
-
-# --- store_drop with bad args ---
-sdrop_bad is store_drop of null
-assert of [sdrop_bad == 0, "CV2-74 store_drop null arg"]
+expect_error of [() => store_query of null, "CV2-70 store_query null arg raises"]
+expect_error of [() => store_count of null, "CV2-71 store_count null arg raises"]
+expect_error of [() => store_update of null, "CV2-72 store_update null arg raises"]
+expect_error of [() => store_collections of 42, "CV2-73 store_collections bad arg raises"]
+expect_error of [() => store_drop of null, "CV2-74 store_drop null arg raises"]
 
 # --- Store: put then get, verifying JSON round-trip through store ---
 rec is {"name": "test", "value": 42}
@@ -309,9 +293,8 @@ store_put of [tmp_store, "todrop", {"x": 1}]
 drp is store_drop of [tmp_store, "todrop"]
 assert of [drp == 1, "CV2-85 store_drop success"]
 
-# --- Store: open with bad arg ---
-so_bad is store_open of 42
-assert of [(type of so_bad) == "none", "CV2-86 store_open bad arg"]
+# --- Store: open with bad arg (raises) ---
+expect_error of [() => store_open of 42, "CV2-86 store_open bad arg raises"]
 
 # Clean up
 store_close of tmp_store
@@ -338,9 +321,8 @@ else:
     td_result is 0
 assert of [td_result == 1, "CV2-88 is_truthy dict"]
 
-# --- json_decode non-string arg error path ---
-jd_bad is json_decode of 42
-assert of [1 == 1, "CV2-89 json_decode non-string handled"]
+# --- json_decode non-string arg error path (raises) ---
+expect_error of [() => json_decode of 42, "CV2-89 json_decode non-string raises"]
 
 # --- json_encode with %.15g path (non-integer float) ---
 je_float is json_encode of 3.141592653589793
