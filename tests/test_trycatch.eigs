@@ -65,4 +65,32 @@ catch e:
 after is after + 1
 assert_eq of [after, 3, "continues after try/catch"]
 
+# Non-integer index raises (integer-valued doubles still work)
+nums is [10, 20, 30]
+assert_eq of [nums[2.0], 30, "integer-valued float index ok"]
+
+caught_frac is ""
+try:
+    x is nums[1.5]
+catch e:
+    caught_frac is e
+assert_true of [contains of [caught_frac, "integer"], "fractional list index raises"]
+
+caught_sfrac is ""
+try:
+    x is "abc"[1.5]
+catch e:
+    caught_sfrac is e
+assert_true of [contains of [caught_sfrac, "integer"], "fractional string index raises"]
+
+caught_setfrac is ""
+try:
+    nums[0.5] is 99
+catch e:
+    caught_setfrac is e
+assert_true of [contains of [caught_setfrac, "integer"], "fractional index assignment raises"]
+
+# floor is the explicit escape hatch for division-derived indices
+assert_eq of [nums[floor of (5 / 2)], 30, "floor of (5/2) indexes element 2"]
+
 test_summary of null
