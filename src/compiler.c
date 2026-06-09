@@ -87,25 +87,6 @@ static void name_set_free(NameSet *s) {
 static void compile_node(Compiler *c, ASTNode *node);
 static void compile_block(Compiler *c, ASTNode **stmts, int count);
 
-/* Check if an AST block contains any closure definitions (func/lambda).
- * If so, the loop needs per-iteration envs for correct capture semantics. */
-static int block_has_closure(ASTNode **stmts, int count) {
-    for (int i = 0; i < count; i++) {
-        if (!stmts[i]) continue;
-        if (stmts[i]->type == AST_FUNC || stmts[i]->type == AST_LAMBDA)
-            return 1;
-        /* Recurse into control flow */
-        if (stmts[i]->type == AST_IF) {
-            if (block_has_closure(stmts[i]->data.cond.if_body, stmts[i]->data.cond.if_count))
-                return 1;
-            if (stmts[i]->data.cond.else_body &&
-                block_has_closure(stmts[i]->data.cond.else_body, stmts[i]->data.cond.else_count))
-                return 1;
-        }
-    }
-    return 0;
-}
-
 /* ---- Stack depth tracking ---- */
 
 static void adjust_stack(Compiler *c, int delta) {
@@ -224,10 +205,6 @@ static void emit(Compiler *c, uint8_t op, int line) {
     adjust_stack(c, op_stack_effect(op));
 }
 
-static void emit_u16(Compiler *c, uint16_t val, int line) {
-    chunk_emit_u16(c->chunk, val, line);
-}
-
 static void emit_op_u16(Compiler *c, uint8_t op, uint16_t arg, int line) {
     chunk_emit(c->chunk, op, line);
     chunk_emit_u16(c->chunk, arg, line);
@@ -324,20 +301,6 @@ static int add_local(Compiler *c, const char *name, uint32_t hash) {
     c->locals[slot].captured = 0;
     c->local_count++;
     return slot;
-}
-
-static void begin_scope(Compiler *c) {
-    c->scope_depth++;
-}
-
-static void end_scope(Compiler *c, int line) {
-    (void)line;
-    /* Locals are in Env slots, not on the VM stack — just remove from tracking */
-    while (c->local_count > 0 &&
-           c->locals[c->local_count - 1].depth >= c->scope_depth) {
-        c->local_count--;
-    }
-    c->scope_depth--;
 }
 
 /* ---- Binary operator mapping ---- */
@@ -871,12 +834,6 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
 }
 static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out) {
     for (int i = 0; i < count; i++) collect_module_names_walk(stmts[i], out);
-}
-
-/* Find the root compiler in the enclosing chain */
-static Compiler *root_compiler(Compiler *c) {
-    while (c->enclosing) c = c->enclosing;
-    return c;
 }
 
 /* Is this name visible in an enclosing function's locals/params?

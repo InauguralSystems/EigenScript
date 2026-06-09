@@ -23,7 +23,7 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds a ~328K minimal binary and installs it to `~/.local/bin/eigenscript`.
+This builds a ~420K minimal binary and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
 Run `./install.sh full` to also build the optional HTTP/DB/model binary
@@ -266,7 +266,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # 831/831 (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 1257/1257 (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ## Documentation
@@ -281,7 +281,7 @@ cd tests
 
 ```bash
 make                  # build
-make test             # build and run 832 tests
+make test             # build and run 1257 tests
 make gfx              # build with SDL2 graphics (UI toolkit, games)
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts

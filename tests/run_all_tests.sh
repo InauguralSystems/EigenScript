@@ -1606,6 +1606,25 @@ else
 fi
 echo ""
 
+# [69] ASan leak guard for the builtin-return ref protocol (regression of 2f1e993).
+# Skips cleanly if ASan unavailable, so this is safe on CI runners without it.
+echo "[69] Leak Guard (ASan, builtin ref protocol)"
+LG_OUTPUT=$(bash "$TESTS_DIR/test_leak_guard.sh" 2>&1)
+LG_PASS=$(echo "$LG_OUTPUT" | grep -c "PASS:" || true)
+LG_FAIL=$(echo "$LG_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + LG_PASS + LG_FAIL))
+PASS=$((PASS + LG_PASS))
+FAIL=$((FAIL + LG_FAIL))
+if echo "$LG_OUTPUT" | grep -q "skipped"; then
+    echo "  SKIP: AddressSanitizer not available — leak guard skipped"
+elif [ "$LG_FAIL" -gt 0 ]; then
+    echo "  FAIL: $LG_FAIL leak-guard check(s) failed"
+    echo "$LG_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $LG_PASS leak-guard checks"
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 echo "============================================"

@@ -1,19 +1,23 @@
 # Roadmap
 
-Current version: **0.11.0**
+Current version: **0.11.4**
 
 ## Next: Performance (0.12.0)
 
-Based on gprof profiling of DMG (500K cycles):
-- 72% vm_run dispatch, 6.5% env_hash_find, 5% env_set_local_hashed,
-  3.6% env_free, 2.2% make_num. 60K re-entrant vm_execute calls.
+Interpreter is near its ceiling. Profile (gprof, 500K cycles, post-0.11.4):
+- 69.3% vm_run dispatch (structural, needs JIT to eliminate)
+- 5.3% env_free, 5.3% env_set_hashed, 4.0% env_hash_find,
+  4.0% dict_set_cached, 2.7% make_num.
 
-- [ ] Eliminate dispatch builtin re-entry (60K vm_execute calls → use OP_CALL directly)
-- [ ] Extend GET_LOCAL/SET_LOCAL to all local variables (not just params)
-- [ ] Reduce env_free churn from LOOP_ENV_FRESH (3.9M frees per 500K cycles)
-- [ ] In-place numeric mutation for refcount-1 values (3.7M make_num calls)
-- [ ] Dict field inline caching (OP_DOT_GET with cached slot offset)
-- [ ] Benchmark DMG target: 0.5+ MHz (currently 0.177 MHz)
+DMG benchmark: ~1.094 MHz on cpu_instrs (target 4.19 MHz — 3.8x gap;
+was 8.8x at 0.11.2).
+
+- [ ] Copy-and-patch JIT — template native code gen for hot functions;
+      eliminates dispatch overhead. Expected 5-10x on hot paths.
+- [ ] NaN-boxing — encode numbers directly in 64-bit slots; prerequisite
+      for efficient JIT. Eliminates make_num + num refcount traffic.
+- [ ] Extend GET_LOCAL/SET_LOCAL to all local variables (closure-safe)
+- [ ] Reduce env_free churn from LOOP_ENV_FRESH
 
 ### Language features (0.13.0)
 
@@ -38,6 +42,24 @@ Based on gprof profiling of DMG (500K cycles):
 - [ ] Public release
 
 ## Completed
+
+### 0.11.4 (2026-05-23)
+
+- [x] Dict-key interning + pointer-equality short-circuit in dict inline cache
+- [x] PGO build target (`make pgo`)
+- [x] Builtin ref-protocol fix — direct-borrow scan replaces unconditional
+      compensating incref at CALL/JIT-helper/OP_DISPATCH sites; stops the
+      fresh-builtin-return leak (range, make_str, keys, …)
+
+### 0.11.0 → 0.11.2
+
+- [x] Eliminate dispatch builtin re-entry (OP_DISPATCH inlines without re-entry)
+- [x] In-place numeric mutation for refcount-1 values (NUM_REUSE)
+- [x] Dict field inline caching (128-entry direct-mapped, 99.99% hit rate)
+- [x] Stack-top arithmetic (ARITH_FAST) + inlined JUMP_IF/POP
+- [x] Superinstructions: LOCAL_DOT_GET/SET, LOCAL_IDX_GET, LOCAL_IDX_DOT_GET/SET
+- [x] Bytecode bring-up complete — eval.c deleted, VM is sole engine
+- [x] Hit DMG 0.5+ MHz target (1.094 MHz at 0.11.4)
 
 ### 0.10.0 (2026-05-21)
 
