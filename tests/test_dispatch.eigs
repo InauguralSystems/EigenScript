@@ -1,0 +1,74 @@
+# test_dispatch.eigs — OP_DISPATCH key handling.
+#
+# Regression for boxed-VAL_NUM keys silently returning null (introduced
+# by the 2026-05-22 slot-direct OP_DISPATCH refactor, which assumed keys
+# are always immediate-num and dropped the slow path — exposed by DMG's
+# per-instruction `dispatch of [_op_table, op, _exec_ctx]` where `op`
+# comes from a fetch8 call). Also pins the float-discipline promise on
+# the dispatch key.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+define f0(x) as:
+    return 10
+
+define f1(x) as:
+    return 20
+
+define f2(x) as:
+    return 30
+
+define get_key() as:
+    return 1
+
+t is [f0, f1, f2]
+
+# Literal key — the original happy path.
+check of ["literal key 0", (dispatch of [t, 0, null]) == 10]
+check of ["literal key 2", (dispatch of [t, 2, null]) == 30]
+
+# Key from fn return — the regression.
+k is get_key of null
+check of ["fn-return key", (dispatch of [t, k, null]) == 20]
+
+# Key from arithmetic — same regression shape.
+k2 is 0 + 1
+check of ["arithmetic key", (dispatch of [t, k2, null]) == 20]
+
+# Key inside a function body (DMG's actual pattern).
+define inner() as:
+    op is get_key of null
+    return dispatch of [t, op, null]
+check of ["fn-body key", (inner of null) == 20]
+
+# Integer-valued double accepted (single-number-type consistency).
+check of ["int-valued double key", (dispatch of [t, 1.0, null]) == 20]
+
+# Fractional key raises (float-index discipline extends to dispatch).
+caught_frac is ""
+try:
+    x is dispatch of [t, 1.5, null]
+catch e:
+    caught_frac is e
+check of ["fractional key raises", contains of [caught_frac, "integer"]]
+
+# Out-of-range / non-list table still silently nulls (unchanged behavior).
+check of ["OOB key silently null", (dispatch of [t, 99, null]) == null]
+check of ["negative key silently null", (dispatch of [t, -1, null]) == null]
+
+total is pass_count + fail_count
+print of f"Dispatch Tests: {pass_count}/{total} passed"
+if fail_count == 0:
+    print of "All tests passed"
+else:
+    assert of [0, "Some dispatch tests failed"]

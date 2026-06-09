@@ -1591,6 +1591,21 @@ else
 fi
 echo ""
 
+# [68] OP_DISPATCH key handling (boxed-num regression + float-discipline)
+echo "[68] Dispatch (9 checks)"
+DISP_OUTPUT=$(./eigenscript ../tests/test_dispatch.eigs 2>&1)
+if echo "$DISP_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 9))
+    PASS=$((PASS + 9))
+    echo "  PASS: all 9 dispatch checks"
+else
+    TOTAL=$((TOTAL + 9))
+    FAIL=$((FAIL + 9))
+    echo "  FAIL: dispatch tests"
+    echo "$DISP_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 echo "============================================"

@@ -2931,21 +2931,43 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(DISPATCH): {
         /* Native dispatch: stack [table, key, arg] -> table[key](arg).
-         * Slot-aware: key is an immediate-num; never materialize. Table
-         * and arg are heap pointers in practice (list + ctx). */
+         * Key may be an immediate-num slot (literal key) or a boxed
+         * VAL_NUM (key sourced from a fn return, arithmetic, variable
+         * read — DMG's per-instruction `op` path). Table and arg are
+         * heap pointers in practice (list + ctx). */
         EigsSlot arg_s   = g_vm.stack[g_vm.sp - 1];
         EigsSlot key_s   = g_vm.stack[g_vm.sp - 2];
         EigsSlot table_s = g_vm.stack[g_vm.sp - 3];
         g_vm.sp -= 3;
 
-        if (!slot_is_num(key_s) || !slot_is_ptr(table_s)) {
+        double key_d;
+        if (slot_is_num(key_s)) {
+            key_d = key_s.d;
+        } else if (slot_is_ptr(key_s) && slot_as_ptr(key_s)
+                   && slot_as_ptr(key_s)->type == VAL_NUM) {
+            key_d = slot_as_ptr(key_s)->data.num;
+        } else {
             slot_decref(arg_s); slot_decref(key_s); slot_decref(table_s);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        slot_decref(key_s);
+
+        if (!slot_is_ptr(table_s)) {
+            slot_decref(arg_s); slot_decref(table_s);
             vm_push_slot(slot_null());
             DISPATCH();
         }
 
         Value *table = slot_as_ptr(table_s);
-        int key = (int)key_s.d;
+        int key;
+        if (!vm_index_is_int(key_d, &key)) {
+            slot_decref(arg_s); slot_decref(table_s);
+            runtime_error(current_line,
+                "dispatch key must be an integer, got %g", key_d);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
 
         if (table->type != VAL_LIST ||
             key < 0 || key >= table->data.list.count) {
