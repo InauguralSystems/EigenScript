@@ -207,9 +207,6 @@ int main(int argc, char **argv) {
         g_server.route_count = 0;
         g_server.static_prefix = NULL;
         g_server.static_dir = NULL;
-        g_server.request_body = NULL;
-        g_server.session_id = NULL;
-        g_server.request_headers = NULL;
 #endif
 #if EIGENSCRIPT_EXT_GFX
         register_gfx_builtins(global);
@@ -253,9 +250,6 @@ int main(int argc, char **argv) {
     g_server.route_count = 0;
     g_server.static_prefix = NULL;
     g_server.static_dir = NULL;
-    g_server.request_body = NULL;
-    g_server.session_id = NULL;
-    g_server.request_headers = NULL;
 #endif
 #if EIGENSCRIPT_EXT_GFX
     register_gfx_builtins(global);

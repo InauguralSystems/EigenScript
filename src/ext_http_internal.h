@@ -25,9 +25,6 @@ typedef struct {
     char *static_prefix;
     char *static_dir;
     Env *global_env;
-    char *request_body;
-    char *session_id;
-    char *request_headers;
     int early_bind_fd;
     char *cors_origin;  /* NULL = no CORS headers, "*" = wildcard */
 } Server;

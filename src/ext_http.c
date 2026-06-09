@@ -19,6 +19,21 @@ static volatile int g_init_complete = 0;
 static pthread_t g_health_tid;
 static int g_health_thread_active = 0;
 
+/* Per-request state. Lives in TLS so concurrent connection threads do not
+ * trample each other; each handler thread sets these once at the top of
+ * handle_request and reads them via the http_request_* builtins. */
+static __thread const char *tls_request_body = NULL;
+static __thread const char *tls_request_headers = NULL;
+static __thread const char *tls_session_id = NULL;
+/* Set when serving a HEAD request — send_response writes the header but
+ * skips the body. */
+static __thread int tls_suppress_body = 0;
+
+/* Concurrent connection cap. Each accepted connection runs in a detached
+ * pthread; once g_conn_count reaches the cap we shed load with a 503. */
+#define HTTP_MAX_CONCURRENT_CONNS 256
+static volatile int g_conn_count = 0;
+
 /* Maximum allowed request body in bytes. Default 16 MiB; override via
  * EIGS_HTTP_MAX_BODY env var. Initialised lazily on first request. */
 #define EIGS_HTTP_DEFAULT_MAX_BODY (16L * 1024L * 1024L)
@@ -187,15 +202,15 @@ Value* builtin_http_serve(Value *arg) {
 
 Value* builtin_http_request_body(Value *arg) {
     (void)arg;
-    if (g_server.request_body)
-        return make_str(g_server.request_body);
+    if (tls_request_body)
+        return make_str(tls_request_body);
     return make_str("{}");
 }
 
 Value* builtin_http_session_id(Value *arg) {
     (void)arg;
-    if (g_server.session_id)
-        return make_str(g_server.session_id);
+    if (tls_session_id)
+        return make_str(tls_session_id);
     return make_str("anonymous");
 }
 
@@ -301,8 +316,8 @@ Value* builtin_http_post(Value *arg) {
 
 Value* builtin_http_request_headers(Value *arg) {
     (void)arg;
-    if (g_server.request_headers)
-        return make_str(g_server.request_headers);
+    if (tls_request_headers)
+        return make_str(tls_request_headers);
     return make_str("");
 }
 
@@ -357,6 +372,9 @@ static void send_response(int fd, int status, const char *status_text,
     }
 
     if (write(fd, header, hlen) <= 0) return;
+    /* HEAD requests want headers but no body. Caller flips tls_suppress_body
+     * before invoking send_response so existing call sites need no change. */
+    if (tls_suppress_body) return;
     if (body && body_len > 0) {
         long sent = 0;
         while (sent < body_len) {
@@ -518,7 +536,19 @@ static void handle_request(int fd) {
             size_t new_cap = cap * 2;
             size_t hard_cap = (size_t)max_body + 65536;
             if (new_cap > hard_cap) new_cap = hard_cap;
-            if (new_cap == cap) break; /* already at ceiling */
+            if (new_cap == cap) {
+                /* Already at ceiling. If we still have not seen the header
+                 * terminator, the headers themselves exceeded our budget —
+                 * answer 431 instead of letting sscanf parse a truncated
+                 * prefix as a "valid" request. */
+                if (header_end < 0) {
+                    const char *m = "Headers too large";
+                    send_response(fd, 431, "Request Header Fields Too Large",
+                                  "text/plain", m, (long)strlen(m));
+                    free(reqbuf); close(fd); return;
+                }
+                break;
+            }
             reqbuf = xrealloc_array(reqbuf, new_cap, 1);
             cap = new_cap;
         }
@@ -544,10 +574,13 @@ static void handle_request(int fd) {
                 char *clend = NULL;
                 long content_length = strtol(cl + 15, &clend, 10);
                 if (clend == cl + 15 || content_length < 0 || content_length > max_body) {
-                    /* Malformed or oversized Content-Length — close. */
-                    free(reqbuf);
-                    close(fd);
-                    return;
+                    /* Malformed or oversized Content-Length — answer 400 so
+                     * the client sees a real error instead of hanging until
+                     * the per-connection deadline. */
+                    const char *m = "Invalid Content-Length";
+                    send_response(fd, 400, "Bad Request", "text/plain",
+                                  m, (long)strlen(m));
+                    free(reqbuf); close(fd); return;
                 }
                 int body_received = total - header_end;
                 if (body_received >= content_length) break;
@@ -566,21 +599,61 @@ static void handle_request(int fd) {
         free(reqbuf); close(fd); return;
     }
 
+    /* Validate HTTP version: must start with "HTTP/" followed by digit. The
+     * previous code accepted anything (e.g. "HTTP/junk") because sscanf only
+     * checks length. Strict here keeps downgrade/parser games out. */
+    if (strncmp(version, "HTTP/", 5) != 0 ||
+        !isdigit((unsigned char)version[5])) {
+        send_response(fd, 400, "Bad Request", "text/plain", "Invalid HTTP version", 20);
+        free(reqbuf); close(fd); return;
+    }
+
     char *body = NULL;
     if (header_end > 0 && header_end < total) {
         body = reqbuf + header_end;
     }
 
     if (strcmp(method, "OPTIONS") == 0) {
-        send_response(fd, 200, "OK", "text/plain", "", 0);
+        /* Proper preflight: advertise the methods this server handles and
+         * mirror CORS headers when configured. 204 No Content is the more
+         * RFC-correct reply for an empty-body preflight. */
+        char hbuf[512];
+        int hl;
+        if (g_server.cors_origin) {
+            hl = snprintf(hbuf, sizeof(hbuf),
+                "HTTP/1.1 204 No Content\r\n"
+                "Allow: GET, HEAD, OPTIONS\r\n"
+                "Access-Control-Allow-Origin: %s\r\n"
+                "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n"
+                "Access-Control-Allow-Headers: Content-Type\r\n"
+                "Cache-Control: no-cache\r\n"
+                "Connection: close\r\n"
+                "\r\n", g_server.cors_origin);
+        } else {
+            hl = snprintf(hbuf, sizeof(hbuf),
+                "HTTP/1.1 204 No Content\r\n"
+                "Allow: GET, HEAD, OPTIONS\r\n"
+                "Cache-Control: no-cache\r\n"
+                "Connection: close\r\n"
+                "\r\n");
+        }
+        ssize_t bw = write(fd, hbuf, hl);
+        (void)bw;
         goto done;
+    }
+
+    /* HEAD: route as if it were GET, but suppress the body in send_response. */
+    int is_head = (strcmp(method, "HEAD") == 0);
+    if (is_head) {
+        memcpy(method, "GET", 4);
+        tls_suppress_body = 1;
     }
 
     char sess_id[64];
     generate_session_id(sess_id, sizeof(sess_id));
-    g_server.session_id = sess_id;
-    g_server.request_body = body ? body : "";
-    g_server.request_headers = reqbuf;
+    tls_session_id = sess_id;
+    tls_request_body = body ? body : "";
+    tls_request_headers = reqbuf;
 
     if (g_server.static_prefix) {
         size_t pfx_len = strlen(g_server.static_prefix);
@@ -671,10 +744,23 @@ static void handle_request(int fd) {
 
     send_404(fd, path);
 done:
-    g_server.request_body = NULL;
-    g_server.request_headers = NULL;
+    tls_request_body = NULL;
+    tls_request_headers = NULL;
+    tls_session_id = NULL;
+    tls_suppress_body = 0;
     free(reqbuf);
     close(fd);
+}
+
+/* Detached worker thread: owns the client fd, runs the request, decrements
+ * the live-connection counter on exit. The accept loop hands ownership of
+ * the malloc'd int* and never touches it again. */
+static void *http_conn_thread(void *arg) {
+    int fd = *(int *)arg;
+    free(arg);
+    handle_request(fd);
+    __atomic_sub_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
+    return NULL;
 }
 
 void http_serve_blocking(int port) {
@@ -734,6 +820,12 @@ void http_serve_blocking(int port) {
 
     signal(SIGPIPE, SIG_IGN);
 
+    pthread_attr_t worker_attr;
+    pthread_attr_init(&worker_attr);
+    pthread_attr_setdetachstate(&worker_attr, PTHREAD_CREATE_DETACHED);
+    /* Keep default stack size — VM TLS sits off-stack so workers are not
+     * stack-heavy, and shrinking the default tripped EINVAL on glibc here. */
+
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
@@ -750,7 +842,32 @@ void http_serve_blocking(int port) {
         setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-        handle_request(client_fd);
+        /* Load-shed: when over the connection cap, send 503 and move on so
+         * one slow client cannot stall the whole listener. */
+        int cur = __atomic_load_n(&g_conn_count, __ATOMIC_RELAXED);
+        if (cur >= HTTP_MAX_CONCURRENT_CONNS) {
+            const char *busy =
+                "HTTP/1.1 503 Service Unavailable\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: 11\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "Overloaded\n";
+            ssize_t bw = write(client_fd, busy, strlen(busy));
+            (void)bw;
+            close(client_fd);
+            continue;
+        }
+
+        int *fdp = xmalloc(sizeof(int));
+        *fdp = client_fd;
+        pthread_t tid;
+        __atomic_add_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
+        if (pthread_create(&tid, &worker_attr, http_conn_thread, fdp) != 0) {
+            __atomic_sub_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
+            free(fdp);
+            close(client_fd);
+        }
     }
 }
 

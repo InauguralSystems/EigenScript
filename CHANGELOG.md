@@ -4,6 +4,62 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.11.6] — 2026-06-09
+
+### Fixed (HTTP server availability + protocol hygiene)
+
+Surfaced by attacking the EigenScript HTTP runtime locally against the
+landing site at `eigen-site/`. Code review and the existing test harness
+both missed these — the underlying defects were architectural (single
+accept loop) or in branches the test suite never exercised (HEAD, bad
+versions, oversized headers).
+
+- **Single-threaded accept → trivial slowloris DoS.** `http_serve_blocking`
+  ran `handle_request` synchronously on the accept thread, so one client
+  that opened a TCP connection and sent a partial header line wedged
+  every subsequent request until the per-connection deadline expired.
+  200 such connections from one host took the site offline. Accepts now
+  hand each connection to a detached pthread; the request-state globals
+  (`request_body`, `request_headers`, `session_id`, plus a new HEAD
+  body-suppression flag) moved to `__thread` storage so workers don't
+  trample each other. Concurrency is capped at 256 active connections;
+  past that the listener sheds load with `503 Service Unavailable`
+  instead of queueing. Regression: `tests/test_http_server.sh` HS13
+  (16 slow conns served + GET still completes in <1.5 s).
+- **HEAD requests returned 404.** Only GET routes were registered, so
+  `HEAD /` fell through to the not-found path even when `GET /` existed.
+  HEAD now reroutes to the GET handler and `send_response` skips the
+  body via a TLS suppression flag, so callers get correct headers and
+  Content-Length with an empty body. Regression: HS10.
+- **HTTP version was unvalidated.** `sscanf` read the third token of the
+  request line without checking it, so `GET / HTTP/junk` was served as
+  200 OK. Now strictly requires `HTTP/<digit>`; everything else gets a
+  400. Regression: HS11.
+- **OPTIONS preflight returned 200 with empty body and no Allow header.**
+  Any client probing methods got a content-free 200 instead of a proper
+  preflight. Now answers 204 No Content with `Allow: GET, HEAD, OPTIONS`
+  and mirrors CORS headers when `http_cors` is configured. Regression:
+  HS07/HS07b.
+- **Negative / oversized Content-Length hung the connection.** The old
+  guard `free(reqbuf); close(fd)` silently dropped the request, so the
+  client waited until its own timeout (or, with worse luck, until the
+  30 s per-connection deadline). Now answers `400 Bad Request` with a
+  reason string so misbehaving clients see a real error. Regression:
+  HS08.
+- **Oversized headers were silently truncated to 200 OK.** When the
+  request-buffer ceiling (`max_body + 64 KiB`) was hit *before* finding
+  `\r\n\r\n`, the read loop broke out and `sscanf` happily parsed the
+  request line from whatever prefix had arrived — so a 17 MiB X-Big
+  header value yielded a 200 instead of 431. Now answers `431 Request
+  Header Fields Too Large` whenever the buffer caps with `header_end`
+  still unset. Regression: HS12.
+
+### Removed (struct hygiene)
+- Removed `request_body`, `request_headers`, `session_id` from the
+  `Server` struct in `ext_http_internal.h` (and their two zero-inits in
+  `main.c`). These fields are now thread-local per the threading fix,
+  so the struct slots were dead.
+
 ## [0.11.5] — 2026-06-09
 
 ### Fixed (memory safety)

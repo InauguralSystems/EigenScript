@@ -136,13 +136,18 @@ else
     echo "  SKIP: HS06b (could not create symlink)"
 fi
 
-# ---- CORS headers on OPTIONS ----
-STATUS=$(curl -s --max-time 2 -X OPTIONS -o /dev/null -w "%{http_code}" \
-         "http://127.0.0.1:$PORT/ping")
-if [ "$STATUS" = "200" ]; then
-    ok "HS07 OPTIONS preflight returns 200"
+# ---- OPTIONS preflight: 204 + Allow header ----
+HDRS=$(curl -s --max-time 2 -X OPTIONS -D - -o /dev/null "http://127.0.0.1:$PORT/ping")
+STATUS=$(echo "$HDRS" | head -1 | awk '{print $2}')
+if [ "$STATUS" = "204" ]; then
+    ok "HS07 OPTIONS preflight returns 204"
 else
     fail "HS07 OPTIONS preflight" "status=$STATUS"
+fi
+if echo "$HDRS" | grep -qi "^Allow:.*GET.*HEAD.*OPTIONS"; then
+    ok "HS07b OPTIONS advertises Allow: GET, HEAD, OPTIONS"
+else
+    fail "HS07b OPTIONS Allow header" "headers=$(echo "$HDRS" | tr -d '\r' | head -5 | tr '\n' '|')"
 fi
 
 # ---- Negative Content-Length rejected (regression) ----
@@ -159,10 +164,10 @@ if command -v timeout >/dev/null 2>&1; then
         cat <&3
         exec 3<&-
     " 2>/dev/null || true)
-    if [ -z "$CL_RESP" ]; then
-        ok "HS08 negative Content-Length: server closes (no response)"
+    if echo "$CL_RESP" | head -1 | grep -q "400"; then
+        ok "HS08 negative Content-Length: server replies 400"
     else
-        fail "HS08 negative Content-Length: server responded" "got $(echo "$CL_RESP" | head -1)"
+        fail "HS08 negative Content-Length: expected 400" "got '$(echo "$CL_RESP" | head -1)'"
     fi
 
     # Sanity: the server must still be alive after the malformed request.
@@ -174,6 +179,85 @@ if command -v timeout >/dev/null 2>&1; then
     fi
 else
     echo "  SKIP: HS08/HS09 (timeout not available)"
+fi
+
+# ---- HEAD routed as GET, no body ----
+HDRS=$(curl -s --max-time 2 -I "http://127.0.0.1:$PORT/ping")
+STATUS=$(echo "$HDRS" | head -1 | awk '{print $2}')
+BODY_LEN=$(curl -s --max-time 2 -I "http://127.0.0.1:$PORT/ping" \
+           | tr -d '\r' | awk '/^Content-Length:/{print $2}')
+HEAD_BODY=$(curl -s --max-time 2 -I "http://127.0.0.1:$PORT/ping" \
+            | awk 'flag{print} /^\r?$/{flag=1}')
+if [ "$STATUS" = "200" ] && [ "$BODY_LEN" = "4" ] && [ -z "$HEAD_BODY" ]; then
+    ok "HS10 HEAD /ping returns 200 with Content-Length:4 and no body"
+else
+    fail "HS10 HEAD /ping" "status=$STATUS cl=$BODY_LEN body_present=$([ -n "$HEAD_BODY" ] && echo yes || echo no)"
+fi
+
+# ---- Invalid HTTP version rejected ----
+if command -v timeout >/dev/null 2>&1; then
+    BAD_VER=$(timeout 2 bash -c "
+        exec 3<>/dev/tcp/127.0.0.1/$PORT
+        printf 'GET /ping HTTP/junk\r\nHost: x\r\nConnection: close\r\n\r\n' >&3
+        cat <&3
+        exec 3<&-
+    " 2>/dev/null || true)
+    if echo "$BAD_VER" | head -1 | grep -q "400"; then
+        ok "HS11 malformed HTTP version returns 400"
+    else
+        fail "HS11 malformed HTTP version" "got '$(echo "$BAD_VER" | head -1)'"
+    fi
+fi
+
+# ---- Oversized headers -> 431 ----
+# Send a single header value of 17 MiB; with default max_body=16 MiB the
+# header budget caps at ~16 MiB and the server should answer 431, not 200.
+if command -v timeout >/dev/null 2>&1; then
+    BIG_HDR=$(timeout 8 bash -c "
+        exec 3<>/dev/tcp/127.0.0.1/$PORT
+        printf 'GET /ping HTTP/1.1\r\nHost: x\r\nX-Big: ' >&3
+        head -c 17000000 /dev/zero | tr '\0' 'A' >&3
+        printf '\r\n\r\n' >&3
+        cat <&3
+        exec 3<&-
+    " 2>/dev/null || true)
+    if echo "$BIG_HDR" | head -1 | grep -q "431"; then
+        ok "HS12 oversized headers return 431"
+    else
+        fail "HS12 oversized headers" "got '$(echo "$BIG_HDR" | head -1)'"
+    fi
+fi
+
+# ---- Concurrent slow conns must not starve a fresh GET ----
+# Open 16 partial-header connections (no terminator), then issue a GET; if
+# the server is single-threaded the GET hangs until the first slow conn
+# times out (~5s). With per-conn threads the GET returns in well under 1s.
+if command -v timeout >/dev/null 2>&1; then
+    SLOW_PIDS=()
+    for _ in $(seq 1 16); do
+        ( timeout 8 bash -c "
+            exec 3<>/dev/tcp/127.0.0.1/$PORT
+            printf 'GET /ping HTTP/1.1\r\nHost: x\r\n' >&3
+            sleep 6
+            exec 3<&-
+        " ) > /dev/null 2>&1 &
+        SLOW_PIDS+=($!)
+    done
+    sleep 0.3
+    T0=$(date +%s%N)
+    RESP=$(curl -s --max-time 3 "http://127.0.0.1:$PORT/ping")
+    T1=$(date +%s%N)
+    ELAPSED_MS=$(( (T1 - T0) / 1000000 ))
+    if [ "$RESP" = "pong" ] && [ "$ELAPSED_MS" -lt 1500 ]; then
+        ok "HS13 GET served in ${ELAPSED_MS}ms during 16 slow conns"
+    else
+        fail "HS13 GET starved by slow conns" "resp='$RESP' elapsed=${ELAPSED_MS}ms"
+    fi
+    # Reap only the slow-conn subshells — bare `wait` would also block on
+    # the server PID, which never exits on its own.
+    for p in "${SLOW_PIDS[@]}"; do
+        wait "$p" 2>/dev/null || true
+    done
 fi
 
 # ---- Summary ----
