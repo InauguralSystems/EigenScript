@@ -1373,6 +1373,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                  uint8_t *out_stop_op) {
     g_jit_scanned_chunks++;
 #if !defined(__x86_64__)
+    (void)chunk;
     (void)entry_offset; (void)advance_field_offset; (void)out_advance;
     (void)out_stop_op;
     *out_state = 1;

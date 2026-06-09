@@ -984,6 +984,12 @@ void jit_helper_return_null(void) {
 }
 
 void eigs_jit_get_layout(EigsJitLayout *out) {
+#if defined(__x86_64__)
+    /* The %fs:0 read materializes the thread pointer so the JIT can encode
+     * TLS-relative offsets to g_vm/g_unobserved_depth. Only used on x86-64;
+     * on other arches the JIT codegen path is compiled out entirely
+     * (see `#if defined(__x86_64__)` in jit.c), so this function exists
+     * only to satisfy the link — body collapses to a zero-fill. */
     void *tp;
     __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));
     out->g_vm_tpoff               = (long)((char *)&g_vm - (char *)tp);
@@ -998,6 +1004,9 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->sizeof_callframe    = (int)sizeof(CallFrame);
     out->off_env_values      = (int)offsetof(Env, values);
     out->off_env_count       = (int)offsetof(Env, count);
+#else
+    (void)out;
+#endif
 }
 
 /* ---- Main execution loop ---- */
