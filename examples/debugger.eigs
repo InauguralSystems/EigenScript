@@ -45,6 +45,38 @@ _dbg_scroll_y is 0
 _dbg_entropy_history is []
 _dbg_status is "Ready"
 
+# ---- Step-back history ----------------------------------------------------
+# Each entry: {"line": <int>, "snap": {<name>: <val>, ...}}.
+# View cursor: -1 = live (latest); otherwise an index into _dbg_history.
+# Resuming with F5/F9/F10 always returns to live.
+_dbg_history is []
+_dbg_view_cursor is -1
+HISTORY_CAP is 10000
+
+# Walk the meta-circular env chain and flatten to a name→value dict.
+# Inner scopes shadow outer, so the first time we see a name wins.
+# Functions (list starting with "__eigen_fn__") are skipped — they
+# dominate the env and obscure the actual user state.
+define _capture_env_snapshot(env) as:
+    snap is {}
+    e is env
+    loop while e != null:
+        bindings is e[0]
+        for i in range of (len of bindings):
+            b is bindings[i]
+            name is b[0]
+            if (has_key of [snap, name]) == 0:
+                val is b[1]
+                skip is 0
+                if (type of val) == "list":
+                    if (len of val) >= 1:
+                        if val[0] == "__eigen_fn__":
+                            skip is 1
+                if skip == 0:
+                    dict_set of [snap, name, val]
+        e is e[1]
+    return snap
+
 # ---- Debug hook -----------------------------------------------------------
 define _debug_hook(info) as:
     node is info[0]
@@ -55,6 +87,14 @@ define _debug_hook(info) as:
 
     # Collect entropy snapshot for chart
     _snapshot_entropy of env
+
+    # Capture (line, env-snapshot) for step-back history. A new live step
+    # always resets the view cursor — historical view is one-shot.
+    snap is _capture_env_snapshot of env
+    append of [_dbg_history, {"line": line, "snap": snap}]
+    if (len of _dbg_history) > HISTORY_CAP:
+        list_remove_at of [_dbg_history, 0]
+    _dbg_view_cursor is -1
 
     # Decide whether to pause
     should_pause is 0
@@ -131,6 +171,7 @@ define _on_run(w) as:
     if _dbg_running == 0:
         _dbg_step_mode is 0
         _dbg_paused is 0
+        _dbg_view_cursor is -1
         _dbg_running is 1
         _start_debug of null
 
@@ -138,28 +179,60 @@ define _on_step(w) as:
     if _dbg_running == 1:
         if _dbg_paused == 1:
             _dbg_step_mode is 1
+            _dbg_view_cursor is -1
             _dbg_paused is 0
     else:
         _dbg_step_mode is 1
+        _dbg_view_cursor is -1
         _dbg_running is 1
         _start_debug of null
 
 define _on_continue(w) as:
     _dbg_step_mode is 0
+    _dbg_view_cursor is -1
     _dbg_paused is 0
 
 define _on_stop(w) as:
     _dbg_running is 0
     _dbg_paused is 0
 
+# Step back through captured history. Only meaningful when paused inside
+# the debug hook; the cursor walks backward through _dbg_history without
+# affecting execution. Clamped at the oldest captured step.
+define _on_back(w) as:
+    if _dbg_paused == 1:
+        n is len of _dbg_history
+        if n > 0:
+            if _dbg_view_cursor < 0:
+                _dbg_view_cursor is n - 2
+            elif _dbg_view_cursor > 0:
+                _dbg_view_cursor is _dbg_view_cursor - 1
+            if _dbg_view_cursor < 0:
+                _dbg_view_cursor is 0
+
+# Step forward through captured history. Reaching the end snaps back to
+# live mode (cursor=-1) so the inspector shows the current paused state.
+define _on_forward(w) as:
+    if _dbg_paused == 1:
+        n is len of _dbg_history
+        if _dbg_view_cursor >= 0:
+            if _dbg_view_cursor < n - 1:
+                _dbg_view_cursor is _dbg_view_cursor + 1
+            else:
+                _dbg_view_cursor is -1
+
 _btn_run is ui.button of ["btn_run", 0, 0, 60, 28, "Run F5", _on_run]
 _btn_step is ui.button of ["btn_step", 0, 0, 72, 28, "Step F10", _on_step]
 _btn_cont is ui.button of ["btn_cont", 0, 0, 68, 28, "Cont F9", _on_continue]
+_btn_back is ui.button of ["btn_back", 0, 0, 68, 28, "Back F8", _on_back]
+_btn_fwd is ui.button of ["btn_fwd", 0, 0, 68, 28, "Fwd F11", _on_forward]
 _btn_stop is ui.button of ["btn_stop", 0, 0, 60, 28, "Stop", _on_stop]
 
 ui.add_child of [_toolbar, _btn_run]
 ui.add_child of [_toolbar, _btn_step]
 ui.add_child of [_toolbar, _btn_cont]
+ui.add_child of [_toolbar, _btn_back]
+ui.add_child of [_toolbar, _btn_fwd]
 ui.add_child of [_toolbar, _btn_stop]
 
 # ---- Main split: source (left) + inspector (right) -----------------------
@@ -181,6 +254,16 @@ define _paint_source(widget, ax, ay) as:
     gutter_w is 50
     visible_lines is floor of (widget.h / line_h) + 1
 
+    # Highlight either the live paused line or the historical line under
+    # the step-back cursor. Historical view uses a cooler hue to make the
+    # distinction obvious.
+    highlight_line is _dbg_current_line
+    history_view is 0
+    if _dbg_view_cursor >= 0:
+        if _dbg_view_cursor < (len of _dbg_history):
+            highlight_line is _dbg_history[_dbg_view_cursor]["line"]
+            history_view is 1
+
     for i in range of (len of _dbg_lines):
         ly is ay + (i * line_h) - _dbg_scroll_y
         if (ly + line_h) < ay:
@@ -189,9 +272,12 @@ define _paint_source(widget, ax, ay) as:
             continue
         line_num is i + 1
 
-        # Current line highlight
-        if line_num == _dbg_current_line:
-            gfx_rect of [ax + gutter_w, ly, widget.w - gutter_w, line_h, 60, 55, 25]
+        # Current/history line highlight
+        if line_num == highlight_line:
+            if history_view == 1:
+                gfx_rect of [ax + gutter_w, ly, widget.w - gutter_w, line_h, 25, 45, 70]
+            else:
+                gfx_rect of [ax + gutter_w, ly, widget.w - gutter_w, line_h, 60, 55, 25]
 
         # Breakpoint marker (red circle in gutter)
         bp_key is str of line_num
@@ -199,9 +285,12 @@ define _paint_source(widget, ax, ay) as:
             if _dbg_breakpoints[bp_key] == 1:
                 gfx_circle of [ax + 12, ly + 9, 5, 200, 50, 50]
 
-        # Current line arrow
-        if line_num == _dbg_current_line:
-            gfx_rect of [ax + 22, ly + 6, 8, 6, 80, 220, 80]
+        # Current line arrow — green for live, light blue for history
+        if line_num == highlight_line:
+            if history_view == 1:
+                gfx_rect of [ax + 22, ly + 6, 8, 6, 100, 180, 230]
+            else:
+                gfx_rect of [ax + 22, ly + 6, 8, 6, 80, 220, 80]
 
         # Line number
         ln_str is str of line_num
@@ -306,9 +395,26 @@ ui.add_child of [_root, _bottom]
 
 # ---- Variable table update ------------------------------------------------
 define _update_var_table() as:
-    if _dbg_current_env == null:
-        return null
     rows is []
+    # History view: replay the snapshot under the cursor.
+    if _dbg_view_cursor >= 0:
+        if _dbg_view_cursor < (len of _dbg_history):
+            entry is _dbg_history[_dbg_view_cursor]
+            snap is entry["snap"]
+            names is keys of snap
+            for i in range of (len of names):
+                name is names[i]
+                val is snap[name]
+                val_str is str of val
+                if (len of val_str) > 20:
+                    val_str is substr of [val_str, 0, 20]
+                row is [name, val_str, type of val, "", "", "", "history"]
+                append of [rows, row]
+            _var_table.rows is rows
+            return null
+    if _dbg_current_env == null:
+        _var_table.rows is rows
+        return null
     env is _dbg_current_env
     loop while env != null:
         bindings is env[0]
@@ -353,7 +459,15 @@ define _update_var_table() as:
 # ---- Render helper --------------------------------------------------------
 define _dbg_full_render() as:
     _update_var_table of null
-    _status_label.text is _dbg_status
+    # When the step-back cursor is engaged, override the status so the
+    # historical line and step index are visible at a glance.
+    status_txt is _dbg_status
+    if _dbg_view_cursor >= 0:
+        if _dbg_view_cursor < (len of _dbg_history):
+            entry is _dbg_history[_dbg_view_cursor]
+            hl is entry["line"]
+            status_txt is f"History step {_dbg_view_cursor + 1}/{len of _dbg_history} — line {hl}"
+    _status_label.text is status_txt
     gfx_clear of [22, 22, 32]
     ui.render of [_root, 0, 0]
     gfx_present of null
@@ -413,6 +527,10 @@ define _handle_key(ev) as:
         _on_step of null
     elif ev.key == "f9":
         _on_continue of null
+    elif ev.key == "f8":
+        _on_back of null
+    elif ev.key == "f11":
+        _on_forward of null
     elif ev.key == "escape":
         if _dbg_running == 1:
             _on_stop of null
