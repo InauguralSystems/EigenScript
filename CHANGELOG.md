@@ -4,6 +4,109 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.11.7] — 2026-06-09
+
+A trace + time-travel release. The interpreter learns to remember its
+own past — both at the language level (interrogatives that query prior
+state) and at the runtime level (a recordable, replayable tape of every
+nondeterministic input). The graphical debugger gains step-back.
+
+### Added — Temporal interrogatives
+
+- **`prev of x`** — value of `x` immediately before its most recent
+  assign. Parsed with the `of` connector (vs. `is` for what/who/when),
+  encoded as interrogative kind 6. Backed by a process-wide prev-table
+  keyed by interned-name pointer (open-addressing, fibonacci-hashed),
+  populated on every `OP_GSET`. Cost per assign: one cache line + a
+  pointer compare. Works whether or not `EIGS_TRACE` is set — this is
+  language surface, not debug-only.
+- **`at <expr>` qualifier** — any interrogative can be temporally
+  qualified: `what is x at 42`, `prev of x at L`, `when is x at L`,
+  `who is x at L`. Walks per-name history (line-stamped, append-only)
+  backward to the last assign with line ≤ L. The line operand is a
+  full expression; `at` is a soft keyword that falls back to `IDENT`
+  outside interrogative position. Lib/example collisions (`prev` as
+  a variable in `lib/eigen.eigs`, `examples/invariant_decomposition.eigs`)
+  renamed to `prior` to make the keyword unambiguous.
+
+### Added — Execution trace tape
+
+`EIGS_TRACE=<path>` opens a text tape and records three event kinds:
+
+- `L <line>` — source-line events from `OP_LINE` (adjacent duplicates
+  with no A/N in between are deduped — the compiler emits per-statement
+  LINEs and bare repeats are noise).
+- `A <name>=<value>` — name-keyed assignment deltas.
+- `N <fn>=<value>` — nondeterministic builtin returns (random,
+  monotonic_*, env_get, read_*, random_hex, http_post, …).
+
+Full-fidelity nondet writer: per-record byte budget of 64 KiB, recursive
+emission of lists/dicts/buffers, strings escape `\"`, `\\`, `\n`, `\r`,
+`\xNN`, truncation marker on overflow so partial records remain visually
+parseable. Disabled cost is one predicted-not-taken load + branch at each
+hook site.
+
+### Added — HTTP nondet capture
+
+The HTTP extension's request/response surface is nondeterministic from
+the script's perspective. Wrapped returns in `ext_http.c` for:
+
+- `http_post` (success + 7 error paths)
+- `http_request_body`, `http_session_id`, `http_request_headers`
+  (TLS-state-or-default returns)
+
+Every call lands on the tape as an `N` record, making HTTP-driven
+EigenScript runs reproducible.
+
+### Added — Deterministic replay
+
+`EIGS_REPLAY=<path>` opens a previously-recorded tape and serves the
+`N` records to nondet builtins in order. Subsequent runs produce
+byte-identical output: same random sequence, same monotonic_ns
+timestamps, same HTTP responses. Implementation:
+
+- Streaming reader skips `L` and `A` records, parses the next `N`
+  value (num/null/bool/string today; lists/dicts return null so the
+  builtin falls back to the live source — future work).
+- Tape exhaustion gracefully switches off replay; remaining calls hit
+  the real source.
+- Name mismatches log a warning and use the recorded value anyway
+  (lenient Phase 3.0 policy — strict ordering is the contract, names
+  are for human-readable debug).
+- `TRACE_NONDET_RET` centralized in `trace.h` so the replay short-circuit
+  applies uniformly to every nondet builtin; three duplicate copies in
+  `builtins.c`, `builtins_tensor.c`, `ext_http.c` removed.
+
+### Added — `state_at(line)` builtin
+
+Returns a dict of every tracked binding's value at or before `line`.
+Walks the prev-table's per-name history with backward linear scan —
+the existing history records `(line, value)` on every assign, so no
+separate snapshot data structures were needed. Periodic snapshot
+caching deferred until the linear scan is a profiled bottleneck.
+
+### Added — Debugger step-back UI
+
+`examples/debugger.eigs` gains F8/F11 history navigation while paused:
+
+- The debug hook captures `(line, env-snapshot)` on every statement.
+  Snapshots flatten the meta-circular env chain into a `{name: value}`
+  dict (inner shadows outer; fn-shaped values skipped). FIFO-capped
+  at 10 000 steps.
+- F8 walks the view cursor backward; F11 forward; the cursor snaps
+  back to live (-1) at the end or when execution resumes (F5/F9/F10).
+- Inspector reads from the snapshot; source view highlights the
+  historical line in cool blue (vs. live yellow); status bar switches
+  to `History step K/N — line L`. Toolbar gains `Back F8` / `Fwd F11`.
+- Trace machinery is not wired in here: it tracks host-VM globals,
+  and the meta-circular interpreter has its own env dict. Snapshotting
+  in the hook is the layer that actually owns the data.
+
+### Suite
+
+1257/1257 base, 15/15 HTTP, all three build variants (default, http+model,
+gfx) green.
+
 ## [0.11.6] — 2026-06-09
 
 ### Fixed (HTTP server availability + protocol hygiene)
