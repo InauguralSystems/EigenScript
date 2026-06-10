@@ -127,7 +127,8 @@ typedef struct {
     int  off_dcache_dict;
     int  off_dcache_hash;
     int  off_dcache_index;
-    int  dcache_mask;
+    int  dcache_mask;               /* Stage 5h: SET mask (sets - 1) */
+    int  dcache_ways;               /* Stage 5h: 2-way associative */
 } EigsJitLayout;
 
 void eigs_jit_get_layout(EigsJitLayout *out);

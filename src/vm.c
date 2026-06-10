@@ -102,9 +102,22 @@ _bind_store:
     env_hash_insert(&env->hash, h, slot_idx);
 }
 
-/* ---- Dict field inline cache ---- */
-#define DICT_CACHE_SIZE 128
-#define DICT_CACHE_MASK (DICT_CACHE_SIZE - 1)
+/* ---- Dict field inline cache ----
+ *
+ * Stage 5h: 2-way set-associative (64 sets × 2 ways = the same 128
+ * entries). Direct mapping had a pathological mode the DMG register
+ * file hit dead-on: two hot keys on the SAME dict whose hashes collide
+ * mod the set count evict each other on every access ("pc"/"cycles"
+ * alternated, costing a full hash walk twice per emulated step). Ways
+ * are adjacent entries; insertion shifts way0 → way1 and writes the
+ * new entry to way... way1 → way0 order below keeps the most recent
+ * insert in way1 and its predecessor in way0, so an alternating pair
+ * settles with one key per way and both hit. The JIT's inline probe
+ * (emit_dict_cache_probe) checks both ways with no swapping, so a
+ * settled pair stays settled. */
+#define DICT_CACHE_SETS 64
+#define DICT_CACHE_SET_MASK (DICT_CACHE_SETS - 1)
+#define DICT_CACHE_WAYS 2
 
 typedef struct {
     Value   *dict;      /* dict identity (pointer) */
@@ -112,28 +125,45 @@ typedef struct {
     int      index;     /* slot index in dict arrays */
 } DictCacheEntry;
 
-static __thread DictCacheEntry g_dict_cache[DICT_CACHE_SIZE];
+static __thread DictCacheEntry g_dict_cache[DICT_CACHE_SETS * DICT_CACHE_WAYS];
+
+/* Probe both ways of the set for (dict, hash). Returns the matching
+ * entry or NULL. No MRU swapping — see the header comment. */
+static inline DictCacheEntry *dict_cache_probe(Value *dict, uint32_t h) {
+    int set = ((int)(h ^ (uint32_t)(uintptr_t)dict) & DICT_CACHE_SET_MASK)
+              * DICT_CACHE_WAYS;
+    DictCacheEntry *ce = &g_dict_cache[set];
+    if (ce[0].dict == dict && ce[0].hash == h) return &ce[0];
+    if (ce[1].dict == dict && ce[1].hash == h) return &ce[1];
+    return NULL;
+}
+
+static inline void dict_cache_insert(Value *dict, uint32_t h, int idx) {
+    int set = ((int)(h ^ (uint32_t)(uintptr_t)dict) & DICT_CACHE_SET_MASK)
+              * DICT_CACHE_WAYS;
+    DictCacheEntry *ce = &g_dict_cache[set];
+    ce[0] = ce[1];               /* previous insert survives in way0 */
+    ce[1].dict = dict; ce[1].hash = h; ce[1].index = idx;
+}
 
 static inline Value *dict_get_cached(Value *dict, const char *key, uint32_t h) {
-    int ci = (h ^ (uint32_t)(uintptr_t)dict) & DICT_CACHE_MASK;
-    DictCacheEntry *ce = &g_dict_cache[ci];
-    if (ce->dict == dict && ce->hash == h && ce->index < dict->data.dict.count) {
+    DictCacheEntry *ce = dict_cache_probe(dict, h);
+    if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0)
             return dict->data.dict.vals[ce->index];
     }
     int idx = env_hash_find_dict(dict, key, h);
     if (idx >= 0) {
-        ce->dict = dict; ce->hash = h; ce->index = idx;
+        dict_cache_insert(dict, h, idx);
         return dict->data.dict.vals[idx];
     }
     return NULL;
 }
 
 static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Value *val) {
-    int ci = (h ^ (uint32_t)(uintptr_t)dict) & DICT_CACHE_MASK;
-    DictCacheEntry *ce = &g_dict_cache[ci];
-    if (ce->dict == dict && ce->hash == h && ce->index < dict->data.dict.count) {
+    DictCacheEntry *ce = dict_cache_probe(dict, h);
+    if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Cache hit — update in place */
@@ -159,9 +189,8 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
  * 1 if the in-place fast path fired; 0 means the caller must materialize
  * and call dict_set_cached. */
 static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) {
-    int ci = (h ^ (uint32_t)(uintptr_t)dict) & DICT_CACHE_MASK;
-    DictCacheEntry *ce = &g_dict_cache[ci];
-    if (ce->dict == dict && ce->hash == h && ce->index < dict->data.dict.count) {
+    DictCacheEntry *ce = dict_cache_probe(dict, h);
+    if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             Value *existing = dict->data.dict.vals[ce->index];
@@ -684,6 +713,24 @@ void jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
     if (h == 0) {
         h = env_hash_name(key);
         if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
+    }
+    /* Slot fast path (mirrors CASE(LOCAL_DOT_SET)): an immediate-num
+     * write into an exclusive untracked num field mutates in place —
+     * no make_num, no refcount churn. Was 2 make_num + 1.5 free_value
+     * per DMG step via the vm_pop materialization below. */
+    EigsSlot val_s = g_vm.stack[g_vm.sp - 1];
+    EigsSlot tgt_s = g_vm.stack[g_vm.sp - 2];
+    if (slot_is_num(val_s) && slot_is_ptr(tgt_s)) {
+        Value *target = slot_as_ptr(tgt_s);
+        if (target->type == VAL_DICT &&
+            dict_set_cached_immediate(target, key, h, val_s.d)) {
+            /* Same net stack effect as the slow path: pop val + target,
+             * push val (val is immediate — no refcount sides). */
+            g_vm.sp -= 1;
+            g_vm.stack[g_vm.sp - 1] = val_s;
+            slot_decref(tgt_s);
+            return;
+        }
     }
     Value *val = vm_pop(); Value *target = vm_pop();
     if (target->type == VAL_DICT)
@@ -1436,7 +1483,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_dcache_dict     = (int)offsetof(DictCacheEntry, dict);
     out->off_dcache_hash     = (int)offsetof(DictCacheEntry, hash);
     out->off_dcache_index    = (int)offsetof(DictCacheEntry, index);
-    out->dcache_mask         = DICT_CACHE_MASK;
+    out->dcache_mask         = DICT_CACHE_SET_MASK;
+    out->dcache_ways         = DICT_CACHE_WAYS;
 #else
     (void)out;
 #endif
@@ -2840,6 +2888,23 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         const char *key = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
+        /* Slot fast path — see jit_helper_dot_set (and LOCAL_DOT_SET):
+         * immediate-num write into an exclusive untracked num field
+         * mutates in place, skipping the vm_pop materialization. */
+        {
+            EigsSlot val_s = g_vm.stack[g_vm.sp - 1];
+            EigsSlot tgt_s = g_vm.stack[g_vm.sp - 2];
+            if (slot_is_num(val_s) && slot_is_ptr(tgt_s)) {
+                Value *t = slot_as_ptr(tgt_s);
+                if (t->type == VAL_DICT &&
+                    dict_set_cached_immediate(t, key, h, val_s.d)) {
+                    g_vm.sp -= 1;
+                    g_vm.stack[g_vm.sp - 1] = val_s;
+                    slot_decref(tgt_s);
+                    DISPATCH();
+                }
+            }
+        }
         Value *val = vm_pop(); Value *target = vm_pop();
         if (target->type == VAL_DICT)
             dict_set_cached(target, key, h, val);

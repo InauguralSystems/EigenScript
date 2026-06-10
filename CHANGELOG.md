@@ -4,6 +4,30 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance — Stage 5h: DOT_SET immediate fast path + 2-way dict cache
+
+bench_dmg_shape 156 → ~118 ms (−24%); cumulative for the 0.12.0 JIT
+work, 239 → 118 ms (2.0×). Both fixes came straight out of the
+post-5f/5g profile and help the interpreter as well as the JIT
+(EIGS_JIT_OFF dmg: 230 → 213 ms):
+
+- **DOT_SET immediate fast path.** `jit_helper_dot_set` and
+  CASE(DOT_SET) now take the `dict_set_cached_immediate` route that
+  LOCAL_DOT_SET has had since 0.11: an immediate-num write into an
+  exclusive untracked num field mutates `data.num` in place. The old
+  path materialized every value through `vm_pop` — 2 `make_num` +
+  ~1.5 `free_value` per DMG step on `ctx.cycles is …` / `ctx.pc is …`
+  (999k of the profile's 1.0M make_num calls).
+- **2-way set-associative dict cache** (64 sets × 2 ways; same 128
+  entries). Direct mapping had a pathological mode the DMG register
+  file hit dead-on: two hot keys on the SAME dict whose hashes collide
+  mod the set count ("pc"/"cycles") evicted each other on every
+  access — 500k full hash walks per run through the dot_get helpers.
+  Insertion shifts the previous insert to way 0, so an alternating
+  pair settles with one key per way; the Stage 5d inline probe checks
+  both ways (no swapping) so a settled pair stays settled in native
+  code too.
+
 ### Performance — JIT Stage 5f/5g: native calls + per-loop OSR slots
 
 bench_dmg_shape 212 → ~156 ms (−27%); the JIT now beats the

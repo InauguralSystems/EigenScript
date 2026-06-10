@@ -1576,6 +1576,18 @@ static uint8_t *emit_cmpl_0_mem_rax(uint8_t *w) {
 static uint8_t *emit_je_rel8(uint8_t *w, uint8_t **patch) {
     *w++ = 0x74; *patch = w; *w++ = 0x00; return w;
 }
+/* jmp rel8 (2 bytes) */
+static uint8_t *emit_jmp_rel8(uint8_t *w, uint8_t **patch) {
+    *w++ = 0xEB; *patch = w; *w++ = 0x00; return w;
+}
+/* add $16, %rsi  (4 bytes) — step to dict-cache way 1. */
+static uint8_t *emit_add_16_rsi(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x83; *w++ = 0xC6; *w++ = 0x10; return w;
+}
+/* shl $5, %rax  (4 bytes) — set index → byte offset, 2×16-byte ways. */
+static uint8_t *emit_shl_5_rax(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0xC1; *w++ = 0xE0; *w++ = 0x05; return w;
+}
 
 /* ---- Stage 5d: dict-cache inline encodings ---- */
 
@@ -1590,10 +1602,6 @@ static uint8_t *emit_xor_imm32_eax(uint8_t *w, uint32_t imm) {
 /* and $imm32, %eax  (5 bytes) */
 static uint8_t *emit_and_imm32_eax(uint8_t *w, uint32_t imm) {
     *w++ = 0x25; return emit_u32(w, imm);
-}
-/* shl $4, %rax  (4 bytes) — index → byte offset, sizeof(entry)==16. */
-static uint8_t *emit_shl_4_rax(uint8_t *w) {
-    *w++ = 0x48; *w++ = 0xC1; *w++ = 0xE0; *w++ = 0x04; return w;
 }
 /* lea disp32(%rbx, %rax, 1), %rsi  (8 bytes) — dict-cache entry addr;
  * disp = g_dict_cache_tpoff - g_vm_tpoff since %rbx = tls + g_vm_tpoff. */
@@ -1705,13 +1713,31 @@ static uint8_t *emit_dict_cache_probe(uint8_t *w, uint16_t slot,
     w = emit_mov_edi_eax(w);
     w = emit_xor_imm32_eax(w, h);
     w = emit_and_imm32_eax(w, (uint32_t)g_layout.dcache_mask);
-    w = emit_shl_4_rax(w);
+    w = emit_shl_5_rax(w);
     w = emit_lea_rbx_rax_to_rsi(w,
             (int32_t)(g_layout.g_dict_cache_tpoff - g_layout.g_vm_tpoff));
-    w = emit_cmp_rdi_disp32_rsi(w, g_layout.off_dcache_dict);
-    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
-    w = emit_cmpl_imm32_disp32_rsi(w, g_layout.off_dcache_hash, h);
-    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    /* Stage 5h: 2-way probe. Way 0 mismatch falls through to way 1;
+     * way 1 mismatch goes to the helper (which inserts via the C-side
+     * LRU shift, so a settled alternating pair hits both ways here). */
+    {
+        uint8_t *try1_a, *try1_b, *hit_p;
+        w = emit_cmp_rdi_disp32_rsi(w, g_layout.off_dcache_dict);
+        w = emit_jnz_rel8(w, &try1_a);
+        uint8_t *try1_a_after = w;
+        w = emit_cmpl_imm32_disp32_rsi(w, g_layout.off_dcache_hash, h);
+        w = emit_jnz_rel8(w, &try1_b);
+        uint8_t *try1_b_after = w;
+        w = emit_jmp_rel8(w, &hit_p);
+        uint8_t *hit_after = w;
+        *try1_a = (uint8_t)(w - try1_a_after);
+        *try1_b = (uint8_t)(w - try1_b_after);
+        w = emit_add_16_rsi(w);
+        w = emit_cmp_rdi_disp32_rsi(w, g_layout.off_dcache_dict);
+        w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+        w = emit_cmpl_imm32_disp32_rsi(w, g_layout.off_dcache_hash, h);
+        w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+        *hit_p = (uint8_t)(w - hit_after);
+    }
     w = emit_mov_disp32_rsi_to_edx(w, g_layout.off_dcache_index);
     w = emit_cmp_disp32_rdi_edx(w, (int32_t)offsetof(Value, data.dict.count));
     w = emit_jge_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
@@ -2512,7 +2538,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *done_p = NULL;
             /* Defensive: the shl $4 in the probe hard-codes the entry
              * size; fall back to helper-only emission if it ever moves. */
-            if (g_layout.sizeof_dcache_entry == 16) {
+            if (g_layout.sizeof_dcache_entry == 16 && g_layout.dcache_ways == 2) {
                 w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
                 /* v must be an untracked VAL_NUM for the immediate push. */
                 w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, type),
@@ -2625,7 +2651,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *slow_p[13];
             int slow_n = 0;
             uint8_t *done_p = NULL;
-            if (g_layout.sizeof_dcache_entry == 16) {
+            if (g_layout.sizeof_dcache_entry == 16 && g_layout.dcache_ways == 2) {
                 w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
                 /* existing field: exclusive untracked num. */
                 w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, type),

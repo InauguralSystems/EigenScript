@@ -65,6 +65,13 @@ DMG benchmark: **target met** — ~5 MHz on cpu_instrs at 0.11.8
       Plus OP_DOT_SET coverage (last unsupported op in the DMG loop).
       bench_dmg_shape 212→156 ms (−27%); JIT now ~33% faster than
       EIGS_JIT_OFF on it (previously near parity).
+- [x] **Stage 5h — DOT_SET immediate fast path + 2-way dict cache.**
+      Post-5f/5g profile fixes: DOT_SET now mutates exclusive untracked
+      num fields in place (was 2 make_num/step via vm_pop
+      materialization), and the dict field cache is 2-way
+      set-associative (the DMG "pc"/"cycles" pair collided in the
+      direct map and evicted each other every step). dmg 156→118 ms;
+      interpreter (EIGS_JIT_OFF) 230→213 ms.
 - [ ] NaN-boxing for container storage — stack and env slots are
       already EigsSlot/NaN-boxed; list items and dict values are still
       `Value**`, so every list/dict number write round-trips through
