@@ -1,0 +1,13 @@
+b is buffer of 1024
+l is [0, 0, 0, 0]
+define fill(n) as:
+    k is 0
+    loop while k < 100000:
+        b[k % 1024] is k
+        l[k % 4] is k
+        k is k + 1
+    return k
+t0 is monotonic_ms of null
+r is fill of null
+t1 is monotonic_ms of null
+print of f"idxset 100k buffer+list writes: {t1 - t0}ms r={r} b0={b[0]} l3={l[3]}"

@@ -28,16 +28,14 @@ the repo):
 DMG benchmark: ~1.094 MHz on cpu_instrs at 0.11.4 (target 4.19 MHz);
 re-measure with the ROM workload before starting the next item.
 
-- [ ] Copy-and-patch JIT — inline the hot fast paths. Coverage is no
-      longer the bottleneck: with Stage 4v/4w/4x (INDEX_SET,
-      LOOP_STALL_CHECK, the SET name family) whole loops compile to
-      single thunks with zero bailouts, but timings are flat — helper
-      calls cost roughly what dispatch did. The win now is emitting the
-      EnvIC fast path of GET_NAME/SET_NAME (env-pointer compare,
-      version compare, slot load/store) and the buffer INDEX_SET fast
-      path as native templates, falling back to the helpers only on IC
-      miss. Measure with EIGS_JIT_STOPS=0-bailout workloads
-      (tests/bench_dmg_shape.eigs, /tmp-style fn-local write loops).
+- [ ] **JIT Stage 5 — inline the hot fast paths.** Coverage is done
+      (Stage 4v/4w/4x: whole loops compile to single thunks, zero
+      bailouts) but timings are flat: helper-call ABI costs what
+      dispatch did. Emit the buffer-INDEX_SET and GET_NAME/SET_NAME
+      EnvIC fast paths as native templates with helper fallback on
+      guard failure. Full implementation spec — emitter architecture,
+      register conventions, ordered sub-stages, measurement protocol,
+      validation gates — in `docs/JIT_STAGE5_INLINE_IC.md`.
 - [ ] NaN-boxing — encode numbers directly in 64-bit slots; prerequisite
       for efficient JIT. Eliminates make_num + num refcount traffic.
 - [ ] Extend GET_LOCAL/SET_LOCAL to all local variables (closure-safe)
