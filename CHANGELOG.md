@@ -4,6 +4,43 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance — JIT Stage 5e: tracked-num operands in arith/compare
+
+Fixes the "observed counter permanently bails native code" class found
+in 5d validation, with the mechanism now precisely diagnosed: it is
+CASE(SET_LOCAL)'s in-place branch — a counter assigned once while
+observed (`k is 0` before an `unobserved:` block) becomes a tracked
+Value, and every later unobserved `SET_LOCAL` of an immediate mutates
+that Value in place, so the env slot stays a tracked pointer forever
+and every native arith/compare touching it bailed, every iteration.
+
+- ADD/SUB/MUL/DIV/MOD and all six comparisons now accept heap/tracked
+  `VAL_NUM` operands via a shared loader: immediate → as before;
+  pointer → tag/type guards, `refcount >= 2` (rc==1 routes to the
+  interpreter so its NUM_REUSE in-place branch keeps observer-value
+  identity exact), then `data.num` through the pointer.
+- Operand stack refs drop at commit: a's slot is captured before the
+  result store overwrites it; b's slot memory sits just above the new
+  TOS. A branched commit on the OR of both operands' tag bits
+  (snapshotted in %r8 before the loaders) keeps the imm/imm path at
+  its pre-5e two-instruction cost (~3% residual on pure-immediate
+  loops from the snapshot+test, traded for the class win).
+- Per-op bail trampolines: each template's many guards share one
+  rel32 hop to the epilogue, so the 256-slot patch budget now scales
+  to arbitrarily arith-dense chunks.
+- The JIT SET_LOCAL template now mirrors the interpreter's in-place
+  branch exactly (imm TOS over an exclusive untracked num rewrites
+  data.num). This is correctness, not just speed: the swap path would
+  free a Value that `g_last_observer` can still point at — the
+  interpreter never frees it in this situation precisely because of
+  that branch.
+
+Poisoned-counter dict loop 141→105 ms (−26%); bench_idxset 24.6→22.2
+ms (−10%, its `fill` counter was poisoned); observed buffer-fill probe
+−13%. bench_dmg_shape is now capped by user-fn OP_CALL bails forcing
+an interpreted tail every iteration — recorded in ROADMAP.md as the
+next JIT item.
+
 ### Performance — JIT Stage 5d: inline dict-dot fast paths
 
 `LOCAL_DOT_GET` / `LOCAL_DOT_SET` (the `c.a is c.a + 1` shape — DMG

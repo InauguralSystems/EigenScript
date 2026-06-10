@@ -41,18 +41,27 @@ DMG benchmark: **target met** — ~5 MHz on cpu_instrs at 0.11.8
       cache-hit paths emit inline (baked hash, interned-key pointer
       equality, in-place num mutate); helper fallback repopulates the
       dict cache. Isolated dict-RMW loop −31% (65→45 ms).
-- [ ] **Tracked-num operands in JIT arith/compare templates.** Found
-      validating 5d: one observed assignment (e.g. `k is 0` before an
-      `unobserved:` block) promotes the value to a TRACKED num, and
-      NUM_REUSE in-place arithmetic keeps that same Value forever — so
-      native arith/compare guard-fails on it every iteration and the
-      loop body runs interpreted. This caps bench_dmg_shape's
-      top-level loop (`steps`/`pc` are tracked) and any observed-setup
-      → hot-loop program. Fix: arith/compare templates accept
-      TAG_TRACKED operands by reading `data.num` through the pointer;
-      the result/write side must preserve observer semantics
-      (NUM_REUSE mutation vs fresh immediate — decide per the
-      interpreter's exact behavior).
+- [x] **JIT Stage 5e — tracked-num operands in arith/compare
+      templates.** Root cause refined: CASE(SET_LOCAL)'s in-place
+      branch mutates an observed-then-unobserved counter's tracked
+      Value forever (pointer identity preserved by design — and
+      g_last_observer may alias it), so native arith/compare bailed on
+      it every iteration. ADD/SUB/MUL/DIV/MOD and all six comparisons
+      now accept heap/tracked VAL_NUM operands (refcount ≥ 2; rc==1
+      routes to the interpreter so NUM_REUSE keeps its in-place
+      semantics), with post-commit operand decrefs and a branched
+      commit that keeps the imm/imm path at pre-5e cost. The JIT
+      SET_LOCAL template gained the interpreter's exact in-place
+      branch (required: the swap path would free a Value
+      g_last_observer can still point at). Poisoned-counter loop
+      −26% (141→105 ms); bench_idxset −10% (24.6→22.2 ms).
+- [ ] **VAL_FN calls inside thunks.** The remaining bench_dmg_shape
+      cap: `handler of ctx` makes OP_CALL bail (helper handles
+      builtins only), and the interpreter then runs the REST of the
+      loop iteration before the back-edge re-enters the OSR thunk —
+      so every iteration is part native, part interpreted. Needs
+      native frame push/handoff for VAL_FN/VAL_CLOSURE targets, or a
+      thunk-resume point after the call.
 - [ ] NaN-boxing for container storage — stack and env slots are
       already EigsSlot/NaN-boxed; list items and dict values are still
       `Value**`, so every list/dict number write round-trips through

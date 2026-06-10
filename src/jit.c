@@ -537,12 +537,16 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
                    op == OP_MOD) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
+            /* Stage 5e: the tracked-operand loaders + commit decrefs
+             * grow these 1-byte ops well past the per-byte budget. */
+            *extra_size += 320;
             /* Result type at runtime is num (when not bailed), so
              * subsequent OP_POP is still a no-op-decref. */
         } else if (op == OP_EQ || op == OP_NE || op == OP_LT ||
                    op == OP_GT || op == OP_LE || op == OP_GE) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
+            *extra_size += 320;   /* Stage 5e loaders + decrefs */
             /* Result is bit-exact 0.0 or 1.0 (an immediate-num), so
              * OP_POP after a comparison remains a no-op peephole. */
         } else if (op == OP_BAND || op == OP_BOR || op == OP_BXOR ||
@@ -1707,6 +1711,170 @@ static uint8_t *emit_dict_cache_probe(uint8_t *w, uint16_t slot,
     return w;
 }
 
+/* ---- Stage 5e: tracked-num operand encodings ---- */
+
+/* jl rel32  (6 bytes): 0F 8C — refcount < 2 → NUM_REUSE territory. */
+static uint8_t *emit_jl_rel32(uint8_t *w, uint8_t **patch) {
+    *w++ = 0x0F; *w++ = 0x8C; *patch = w;
+    *w++ = 0; *w++ = 0; *w++ = 0; *w++ = 0;
+    return w;
+}
+/* jb rel32  (6 bytes): 0F 82. */
+static uint8_t *emit_jb_rel32(uint8_t *w, uint8_t **patch) {
+    *w++ = 0x0F; *w++ = 0x82; *patch = w;
+    *w++ = 0; *w++ = 0; *w++ = 0; *w++ = 0;
+    return w;
+}
+/* mov %rdx, %rdi  (3 bytes) */
+static uint8_t *emit_mov_rdx_rdi(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x89; *w++ = 0xD7; return w;
+}
+/* or %rsi, %rdx  (3 bytes) — rdx |= rsi. */
+static uint8_t *emit_or_rsi_rdx(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x09; *w++ = 0xF2; return w;
+}
+/* mov %rax, %r8  (3 bytes) */
+static uint8_t *emit_mov_rax_r8(uint8_t *w) {
+    *w++ = 0x49; *w++ = 0x89; *w++ = 0xC0; return w;
+}
+/* or %rdx, %r8  (3 bytes) — r8 |= rdx. */
+static uint8_t *emit_or_rdx_r8(uint8_t *w) {
+    *w++ = 0x49; *w++ = 0x09; *w++ = 0xD0; return w;
+}
+/* mov %r8, %rdx  (3 bytes) */
+static uint8_t *emit_mov_r8_rdx(uint8_t *w) {
+    *w++ = 0x4C; *w++ = 0x89; *w++ = 0xC2; return w;
+}
+/* mov %rax, disp32(%rdi)  (7 bytes) — SET_LOCAL in-place data.num. */
+static uint8_t *emit_mov_rax_to_disp32_rdi(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x89; *w++ = 0x87;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* mov disp32(%rdi), %rdx  (7 bytes) — tracked operand data.num → %rdx. */
+static uint8_t *emit_mov_disp32_rdi_to_rdx(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x8B; *w++ = 0x97;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+/* Stage 5e: numeric-operand loader for the arith/compare templates.
+ *
+ * Accepts what the interpreter's slot_as_double accepts MINUS the
+ * NUM_REUSE candidates: an immediate double, or a heap/tracked pointer
+ * to a VAL_NUM with refcount >= 2 (refcount 1 would make the
+ * interpreter's NUM_REUSE in-place branch fire, so it routes to the
+ * interpreter to keep observer-value identity semantics exact).
+ *
+ * is_b != 0: operand slot in %rax → bits stay in %rax, value → %xmm0.
+ * is_b == 0: operand slot in %rdx → bits stay in %rdx, value → %xmm1.
+ * Guard-failure jumps append rel32 patch sites to lp[] (4 per call);
+ * the caller routes them to its per-op bail trampoline. Clobbers
+ * %rsi/%rdi. Sets *abort on rel8 overflow (caller abandons compile). */
+static uint8_t *emit_load_numeric_operand(uint8_t *w, int is_b,
+                                          uint8_t **lp, int *lp_n,
+                                          int *abort_flag) {
+    w = is_b ? emit_mov_rax_rsi(w) : emit_mov_rdx_rsi(w);
+    w = emit_shr_48_rsi(w);
+    w = emit_cmp_imm32_esi(w, 0xFFF8);
+    uint8_t *imm_jb;
+    w = emit_jb_rel8(w, &imm_jb);
+    uint8_t *imm_after = w;
+    /* Tag 0xFFF8-0xFFFA (null/bool/SMI-reserved): not numeric. */
+    w = emit_cmp_imm32_esi(w, 0xFFFB);
+    w = emit_jb_rel32(w, &lp[*lp_n]); (*lp_n)++;
+    /* Tag 0xFFFD+ (reserved/sentinel): not a pointer we may chase. */
+    w = emit_cmp_imm32_esi(w, 0xFFFD);
+    w = emit_jae_rel32(w, &lp[*lp_n]); (*lp_n)++;
+    /* Heap or tracked pointer: must be a non-REUSE VAL_NUM. */
+    w = is_b ? emit_mov_rax_rdi(w) : emit_mov_rdx_rdi(w);
+    w = emit_shl_16_rdi(w);
+    w = emit_shr_16_rdi(w);
+    w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
+                                   (uint32_t)VAL_NUM);
+    w = emit_jne_rel32(w, &lp[*lp_n]); (*lp_n)++;
+    w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 2);
+    w = emit_jl_rel32(w, &lp[*lp_n]); (*lp_n)++;
+    w = is_b ? emit_mov_disp32_rdi_to_rax(w, (int32_t)offsetof(Value, data.num))
+             : emit_mov_disp32_rdi_to_rdx(w, (int32_t)offsetof(Value, data.num));
+    /* .imm: bits (immediate or loaded data.num) → xmm. */
+    {
+        int rel = (int)(w - imm_after);
+        if (rel > 127) { *abort_flag = 1; return w; }
+        *imm_jb = (uint8_t)rel;
+    }
+    w = is_b ? emit_movq_rax_xmm0(w) : emit_movq_rdx_xmm1(w);
+    return w;
+}
+
+/* Stage 5e: operand decref for the 2-pop/1-push templates. Must run
+ * AFTER the result store at stack[sp-2] and the sp decrement. The a
+ * slot is overwritten by the store, so the caller captures it into
+ * %rsi beforehand and calls this once; b's slot memory sits just above
+ * the new TOS (old sp-1 == new sp) untouched, so it reloads here.
+ *
+ * Fast exit: OR the two slots' bits — a pointer tag (>= 0xFFFB) in
+ * either operand keeps the high 16 bits >= 0xFFFB in the OR, so a
+ * single compare skips both decrefs on the (overwhelmingly common)
+ * imm/imm path. False positives (e.g. bool|smi tags OR-ing up to
+ * 0xFFFB) just run the per-slot decrefs, which handle every tag
+ * correctly. */
+static uint8_t *emit_decref_binop_operands(uint8_t *w, int32_t off_stack,
+                                           int *abort_flag) {
+    w = emit_load_stack_to_rax(w, off_stack);          /* b at new sp */
+    w = emit_mov_rax_rdx(w);
+    w = emit_or_rsi_rdx(w);                            /* rdx = a|b bits */
+    w = emit_shr_48_rdx(w);
+    w = emit_cmp_imm32_edx(w, 0xFFFB);
+    uint8_t *skip_p;
+    w = emit_jb_rel32(w, &skip_p);
+    w = emit_conditional_decref_rsi(w, abort_flag);    /* a (pre-captured) */
+    if (*abort_flag) return w;
+    w = emit_load_stack_to_rax(w, off_stack);          /* b again (decref a
+                                                        * may call free_value,
+                                                        * clobbering %rax) */
+    w = emit_mov_rax_rsi(w);
+    w = emit_conditional_decref_rsi(w, abort_flag);    /* b */
+    patch_rel32(skip_p, w);
+    return w;
+}
+
+/* Stage 5e: branched commit for ADD/SUB/MUL/DIV and the comparisons.
+ * Result bits in %rax; operand slots still on the stack. %r8 holds the
+ * OR of both operand slots' bits, snapshotted by the caller BEFORE the
+ * loaders overwrote %rax/%rdx (it survives — nothing between load and
+ * commit makes a call in these templates). When the OR's tag stays
+ * below 0xFFFB neither operand is a pointer, so the commit is the
+ * pre-5e two-instruction store+dec; otherwise capture a's slot before
+ * the store overwrites it and decref both. False positives (bool|smi
+ * tags OR-ing up to a pointer tag) just take the slow branch, whose
+ * per-slot decrefs handle every tag correctly. */
+static uint8_t *emit_commit_binop(uint8_t *w, int32_t off_stack,
+                                  int *abort_flag) {
+    w = emit_mov_r8_rdx(w);
+    w = emit_shr_48_rdx(w);
+    w = emit_cmp_imm32_edx(w, 0xFFFB);
+    uint8_t *fast_p;
+    w = emit_jb_rel32(w, &fast_p);
+    /* Slow: a pointer operand needs its stack ref dropped. */
+    w = emit_load_stack_to_rdx(w, off_stack - 16);     /* a slot */
+    w = emit_mov_rdx_rsi(w);
+    w = emit_store_rax_at_disp_stack(w, off_stack - 16);
+    w = emit_dec_ecx(w);
+    w = emit_conditional_decref_rsi(w, abort_flag);    /* a */
+    if (*abort_flag) return w;
+    w = emit_load_stack_to_rax(w, off_stack);          /* b at new sp */
+    w = emit_mov_rax_rsi(w);
+    w = emit_conditional_decref_rsi(w, abort_flag);    /* b */
+    if (*abort_flag) return w;
+    uint8_t *done_p;
+    w = emit_jmp_rel32(w, &done_p);
+    /* Fast: both immediates — identical to the pre-5e commit. */
+    patch_rel32(fast_p, w);
+    w = emit_store_rax_at_disp_stack(w, off_stack - 16);
+    w = emit_dec_ecx(w);
+    patch_rel32(done_p, w);
+    return w;
+}
+
 /* Inline decref of the Value* in %rdi: skip when arena-owned,
  * `lock subl` otherwise, call free_value when the count reaches zero.
  * Tail of emit_conditional_decref_rsi without the slot tag check —
@@ -2537,16 +2705,66 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_inc_ecx(w);
             i += 1;
         } else if (op == OP_SET_LOCAL) {
+            /* Stage 5e: mirror CASE(SET_LOCAL) exactly, including its
+             * in-place branch — writing an immediate into a slot whose
+             * existing Value is an exclusive non-observed VAL_NUM
+             * rewrites data.num instead of swapping pointers. This is
+             * load-bearing beyond speed: the observer's g_last_observer
+             * can point at that Value, and the swap path would free it
+             * (the interpreter never does in this situation, because
+             * its in-place branch keeps it alive). Layout:
+             *   tos imm?         no  → .swap
+             *   old slot ptr?    no  → .plain   (imm/sentinel old:
+             *                                    incref+decref both no-op)
+             *   old is VAL_NUM && rc==1 && obs_age==0 && !arena?
+             *                    no  → .swap
+             *   in-place: old->data.num = tos bits; → .done
+             *   .plain: values[slot] = tos; → .done
+             *   .swap:  values[slot] = tos; incref tos; decref old
+             *   .done:                                            */
             uint16_t slot = (uint16_t)(chunk->code[i + 1] |
                                        ((uint16_t)chunk->code[i + 2] << 8));
             int32_t off = (int32_t)slot * 8;
+            uint8_t *swap_p[5], *plain_p[2], *done_p[2];
+            int swap_n = 0, plain_n = 0, done_n = 0;
             /* %rax = stack[sp-1]   (tos, stays on stack) */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
-            /* %rsi = old values[slot]  (decref later) */
+            /* %rsi = old values[slot] */
             w = emit_mov_disp32_r12_to_rsi(w, off);
-            /* values[slot] = tos */
+            /* tos immediate? */
+            w = emit_mov_rax_rdx(w);
+            w = emit_shr_48_rdx(w);
+            w = emit_cmp_imm32_edx(w, 0xFFF8);
+            w = emit_jae_rel32(w, &swap_p[swap_n]); swap_n++;
+            /* old slot a heap/tracked pointer? */
+            w = emit_mov_rsi_rdx(w);
+            w = emit_shr_48_rdx(w);
+            w = emit_cmp_imm32_edx(w, 0xFFFB);
+            w = emit_jb_rel32(w, &plain_p[plain_n]); plain_n++;
+            w = emit_cmp_imm32_edx(w, 0xFFFD);
+            w = emit_jae_rel32(w, &plain_p[plain_n]); plain_n++;
+            w = emit_mov_rsi_rdi(w);
+            w = emit_shl_16_rdi(w);
+            w = emit_shr_16_rdi(w);
+            w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
+                                           (uint32_t)VAL_NUM);
+            w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
+            w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 1);
+            w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
+            w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, obs_age), 0);
+            w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
+            w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
+            w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
+            /* in-place: existing->data.num = tos bits. */
+            w = emit_mov_rax_to_disp32_rdi(w, (int32_t)offsetof(Value, data.num));
+            w = emit_jmp_rel32(w, &done_p[done_n]); done_n++;
+            /* .plain: store only (both refcount sides are no-ops). */
+            for (int k = 0; k < plain_n; k++) patch_rel32(plain_p[k], w);
             w = emit_mov_rax_to_disp32_r12(w, off);
-            /* Incref new (%rax). */
+            w = emit_jmp_rel32(w, &done_p[done_n]); done_n++;
+            /* .swap: full pointer swap. */
+            for (int k = 0; k < swap_n; k++) patch_rel32(swap_p[k], w);
+            w = emit_mov_rax_to_disp32_r12(w, off);
             int bail = 0;
             w = emit_conditional_incref_rax(w, &bail);
             if (bail) {
@@ -2558,6 +2776,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (bail) {
                 JIT_BAIL_AND_RETURN();
             }
+            /* .done: */
+            for (int k = 0; k < done_n; k++) patch_rel32(done_p[k], w);
             i += 3;
         } else if (op == OP_MOD) {
             /* fmod-based modulo. Diverges from add/sub/mul/div: a libm
@@ -2566,35 +2786,45 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * error arm on b==0), and the call site needs to align
              * %rsp to 16. Four bail slots: two type checks, one zero
              * check, one overflow check on the result. */
-            if (bail_count + 4 > (int)(sizeof bail_patches /
+            if (bail_count + 1 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
-            uint8_t *p_b, *p_a, *p_z, *p_ov;
-            /* %rax = b, %rdx = a. */
+            uint8_t *lp[12];
+            int lp_n = 0, ab = 0;
+            /* %rax = b, %rdx = a. Stage 5e: loaders accept tracked
+             * operands and leave the double BITS in rax/rdx either way
+             * (their xmm0/xmm1 writes are recomputed below in fmod's
+             * argument order). */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
             w = emit_load_stack_to_rdx(w, g_layout.off_stack - 16);
-            w = emit_immediate_num_check_rax(w, &p_b);
-            bail_patches[bail_count++] = p_b;
-            w = emit_immediate_num_check_rdx(w, &p_a);
-            bail_patches[bail_count++] = p_a;
+            w = emit_load_numeric_operand(w, 1, lp, &lp_n, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
+            w = emit_load_numeric_operand(w, 0, lp, &lp_n, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
             /* Divisor zero check. The VM compares `b->data.num != 0.0`,
              * which under IEEE-754 treats +0.0 and -0.0 as equal — so
              * we must also bail when b == -0.0 (bits = 0x8000…0).
              * Strategy: copy b's bits to %rsi (dead scratch after the
-             * type checks), clear the sign bit, test for zero. */
+             * loaders), clear the sign bit, test for zero. */
             w = emit_mov_rax_rsi(w);
             w = emit_btr_63_rsi(w);
             w = emit_test_rsi_rsi(w);
-            w = emit_je_rel32(w, &p_z);
-            bail_patches[bail_count++] = p_z;
+            w = emit_je_rel32(w, &lp[lp_n]);
+            lp_n++;
             /* fmod(a, b) takes args in %xmm0, %xmm1. Set xmm0 = a
              * (from %rdx) and xmm1 = b (from %rax). */
             w = emit_movq_rdx_xmm0(w);
             w = emit_movq_rax_xmm1(w);
             /* Align %rsp from 8-mod-16 to 0-mod-16 by saving the sp
              * cache. movabs+call is the same indirect-call pattern
-             * used for free_value. */
+             * used for free_value. The call clobbers caller-saved
+             * registers, but the operand SLOTS still live in stack
+             * memory — the commit below reloads them from there. */
             w = emit_push_rcx(w);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&fmod);
             w = emit_call_rax(w);
@@ -2602,33 +2832,62 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* Result in %xmm0 → %rax → overflow check (catches NaN /
              * ±Inf, including fmod(±Inf, x) = NaN propagation). */
             w = emit_movq_xmm0_rax(w);
-            w = emit_overflow_check_rax(w, max_normal_bits, &p_ov);
-            bail_patches[bail_count++] = p_ov;
+            w = emit_overflow_check_rax(w, max_normal_bits, &lp[lp_n]);
+            lp_n++;
+            /* Commit: capture a's slot, store result, dec sp, decref
+             * both operand slots (imm = no-op). */
+            w = emit_load_stack_to_rdx(w, g_layout.off_stack - 16);
+            w = emit_mov_rdx_rsi(w);
             w = emit_store_rax_at_disp_stack(w, g_layout.off_stack - 16);
             w = emit_dec_ecx(w);
+            w = emit_decref_binop_operands(w, g_layout.off_stack, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
+            {
+                uint8_t *skip;
+                w = emit_jmp_rel32(w, &skip);
+                for (int k = 0; k < lp_n; k++) patch_rel32(lp[k], w);
+                uint8_t *tramp;
+                w = emit_jmp_rel32(w, &tramp);
+                bail_patches[bail_count++] = tramp;
+                patch_rel32(skip, w);
+            }
             i += 1;
         } else if (op == OP_ADD || op == OP_SUB ||
                    op == OP_MUL || op == OP_DIV) {
-            /* Reserve patch slots: two type checks + one overflow check.
-             * Bail-out budget headroom enforced statically (256 slots
-             * vs prefix * 3 ≥ 3 * 128 = 384 worst case theoretical, but
-             * in practice prefix * 3 ≪ 256 for compiled chunks). */
-            if (bail_count + 3 > (int)(sizeof bail_patches /
+            /* Stage 5e: operands may be immediates OR heap/tracked
+             * VAL_NUM pointers with refcount >= 2 (the loader bails
+             * the rc==1 case so the interpreter's NUM_REUSE branch
+             * keeps its in-place semantics). All guard failures route
+             * through one per-op trampoline so the epilogue patch
+             * budget stays one slot per op. Commit replicates
+             * ARITH_FAST's non-REUSE tail: decref both operand slots,
+             * store the result as an immediate. The a slot is captured
+             * into %rsi before the store overwrites it; b's slot
+             * memory sits just above the new TOS, reloaded by
+             * emit_decref_binop_operands. */
+            if (bail_count + 1 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
-            uint8_t *p_b, *p_a, *p_ov;
-            /* %rax = stack[sp-1] = b ; %rdx = stack[sp-2] = a */
+            uint8_t *lp[12];
+            int lp_n = 0, ab = 0;
+            /* %rax = stack[sp-1] = b ; %rdx = stack[sp-2] = a.
+             * %r8 = a|b bits, snapshotted for the branched commit. */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
             w = emit_load_stack_to_rdx(w, g_layout.off_stack - 16);
-            /* Both must be immediate-num (upper 16 bits < 0xFFF8). */
-            w = emit_immediate_num_check_rax(w, &p_b);
-            bail_patches[bail_count++] = p_b;
-            w = emit_immediate_num_check_rdx(w, &p_a);
-            bail_patches[bail_count++] = p_a;
-            /* Move into XMM: xmm0 = b, xmm1 = a. */
-            w = emit_movq_rax_xmm0(w);
-            w = emit_movq_rdx_xmm1(w);
+            w = emit_mov_rax_r8(w);
+            w = emit_or_rdx_r8(w);
+            /* xmm0 = b, xmm1 = a (immediate or via data.num). */
+            w = emit_load_numeric_operand(w, 1, lp, &lp_n, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
+            w = emit_load_numeric_operand(w, 0, lp, &lp_n, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
             /* xmm1 = xmm1 OP xmm0 (a OP b). divsd by-zero produces
              * ±Inf or NaN — the overflow check below catches both, so
              * we don't need a separate divisor check. */
@@ -2643,42 +2902,63 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* |result| > 1e308 → bail (catches NaN, ±Inf, num_guard
              * clamp boundary). Stack is still untouched here, so bail
              * leaves the operands in place for the slow path. */
-            w = emit_overflow_check_rax(w, max_normal_bits, &p_ov);
-            bail_patches[bail_count++] = p_ov;
-            /* Commit: store result at stack[sp-2], dec sp. */
-            w = emit_store_rax_at_disp_stack(w, g_layout.off_stack - 16);
-            w = emit_dec_ecx(w);
+            w = emit_overflow_check_rax(w, max_normal_bits, &lp[lp_n]);
+            lp_n++;
+            w = emit_commit_binop(w, g_layout.off_stack, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
+            /* Per-op bail trampoline: local guards land here, one
+             * rel32 hop to the shared epilogue. */
+            {
+                uint8_t *skip;
+                w = emit_jmp_rel32(w, &skip);
+                for (int k = 0; k < lp_n; k++) patch_rel32(lp[k], w);
+                uint8_t *tramp;
+                w = emit_jmp_rel32(w, &tramp);
+                bail_patches[bail_count++] = tramp;
+                patch_rel32(skip, w);
+            }
             i += 1;
         } else if (op == OP_EQ || op == OP_NE || op == OP_LT ||
                    op == OP_GT || op == OP_LE || op == OP_GE) {
-            /* Two type-check bail slots; no overflow check (result is
-             * bounded to {0.0, 1.0}). */
-            if (bail_count + 2 > (int)(sizeof bail_patches /
+            /* Stage 5e: tracked/heap VAL_NUM operands accepted via the
+             * shared loader (rc==1 bails — NUM_CMP/EQ/NE all have the
+             * same NUM_REUSE branch as ARITH_FAST). One trampoline
+             * slot. NaN inputs would give incorrect comparison results
+             * (PF=1 makes setcc paths fire), but num_guard prevents
+             * NaN from reaching a stack slot in normal operation — so
+             * we accept the same input-NaN imprecision as ADD/SUB do. */
+            if (bail_count + 1 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
-            uint8_t *p_b, *p_a;
-            /* Load both, type-check (immediate-num). NaN inputs would
-             * give incorrect comparison results (PF=1 makes setcc
-             * paths fire), but num_guard prevents NaN from reaching a
-             * stack slot in normal operation — so we accept the same
-             * input-NaN imprecision as ADD/SUB do. */
+            uint8_t *lp[10];
+            int lp_n = 0, ab = 0;
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
             w = emit_load_stack_to_rdx(w, g_layout.off_stack - 16);
-            w = emit_immediate_num_check_rax(w, &p_b);
-            bail_patches[bail_count++] = p_b;
-            w = emit_immediate_num_check_rdx(w, &p_a);
-            bail_patches[bail_count++] = p_a;
-            /* Move operands into xmm regs, then materialize the cmov
-             * operands (%rax=0.0 bits, %rdx=1.0 bits) BEFORE ucomisd.
-             * The materialization uses `xor %rax,%rax` which clobbers
-             * ZF, so it must come before the comparison — otherwise
-             * cmove would always fire (ZF=1 from the xor). movabs
-             * does not touch flags, and movq/ucomisd between the xor
-             * and cmovcc are the only flag-affecting ops left in this
-             * sequence — ucomisd's flags are exactly what cmovcc sees. */
-            w = emit_movq_rax_xmm0(w);   /* xmm0 = b */
-            w = emit_movq_rdx_xmm1(w);   /* xmm1 = a */
+            /* %r8 = a|b bits for the branched commit. */
+            w = emit_mov_rax_r8(w);
+            w = emit_or_rdx_r8(w);
+            /* xmm0 = b, xmm1 = a (immediate or via data.num). */
+            w = emit_load_numeric_operand(w, 1, lp, &lp_n, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
+            w = emit_load_numeric_operand(w, 0, lp, &lp_n, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
+            /* Materialize the cmov operands (%rax=0.0 bits, %rdx=1.0
+             * bits) BEFORE ucomisd. The materialization uses
+             * `xor %rax,%rax` which clobbers ZF, so it must come before
+             * the comparison — otherwise cmove would always fire
+             * (ZF=1 from the xor). movabs does not touch flags, and
+             * ucomisd between the xor and cmovcc is the only
+             * flag-affecting op left — its flags are exactly what
+             * cmovcc sees. The operand bit registers are dead here
+             * (values live in xmm; slots reload from the stack at
+             * commit). */
             w = emit_xor_rax_rax(w);     /* rax = 0.0 bits */
             {
                 uint64_t one_bits;
@@ -2698,9 +2978,19 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             default:    cc_byte = 0x43; break; /* OP_GE → cmovae */
             }
             w = emit_cmovcc_rdx_rax(w, cc_byte);
-            /* Commit: store result at stack[sp-2], dec sp. */
-            w = emit_store_rax_at_disp_stack(w, g_layout.off_stack - 16);
-            w = emit_dec_ecx(w);
+            w = emit_commit_binop(w, g_layout.off_stack, &ab);
+            if (ab) {
+                JIT_BAIL_AND_RETURN();
+            }
+            {
+                uint8_t *skip;
+                w = emit_jmp_rel32(w, &skip);
+                for (int k = 0; k < lp_n; k++) patch_rel32(lp[k], w);
+                uint8_t *tramp;
+                w = emit_jmp_rel32(w, &tramp);
+                bail_patches[bail_count++] = tramp;
+                patch_rel32(skip, w);
+            }
             i += 1;
         } else if (op == OP_BAND || op == OP_BOR || op == OP_BXOR ||
                    op == OP_SHL || op == OP_SHR) {
