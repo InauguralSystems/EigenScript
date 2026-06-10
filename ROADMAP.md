@@ -25,8 +25,10 @@ the repo):
   `env_set_local`/`slot_from_value` 0.57M, `env_hash_find` 1.3M) and
   `make_num` traffic (2.1M calls).
 
-DMG benchmark: ~1.094 MHz on cpu_instrs at 0.11.4 (target 4.19 MHz);
-re-measure with the ROM workload before starting the next item.
+DMG benchmark: **target met** — ~5 MHz on cpu_instrs at 0.11.8
+(5.11 MHz over 5M cycles, 4.80 MHz sustained over 30M; target was
+4.19 MHz real-hardware speed; was 1.094 MHz at 0.11.4). Remaining
+0.12.0 items are for headroom and for non-DMG workloads.
 
 - [x] **JIT Stage 5 — inline the hot fast paths.** Buffer-INDEX_SET
       and GET_NAME/SET name EnvIC fast paths now emit as native
