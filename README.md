@@ -276,6 +276,7 @@ cd tests
 - [docs/BUILTINS.md](docs/BUILTINS.md) — 150+ builtin functions (130 core + 20 extensions)
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
+- [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
 
 ## Build from Source
 

@@ -158,6 +158,17 @@ Six keywords for querying a value's observer state. Zero cost when unused.
 | `why` | `why is x` | dH (rate of change) |
 | `how` | `how is x` | Stability score (0 = unstable, 1 = stable) |
 
+### Temporal
+
+Query a binding's assignment history. Always on for top-level bindings;
+`null` on a miss. See [SYNTAX.md](SYNTAX.md) and [TRACE.md](TRACE.md).
+
+| Name | Syntax | Returns |
+|------|--------|---------|
+| `prev` | `prev of x` | Value of `x` just before its most recent assignment |
+| `at` | `what is x at L` | Last value bound at or before line `L` (also `who`/`when`/`prev`) |
+| `state_at` | `state_at of line` | Dict of every tracked binding's value at or before `line` |
+
 ## Observer
 
 | Name | Signature | Description |
@@ -234,6 +245,14 @@ producing tensors too large to materialise in memory.
 | `monotonic_ns` | `monotonic_ns of null` | Nanoseconds from `CLOCK_MONOTONIC` (jump-free) |
 | `monotonic_ms` | `monotonic_ms of null` | Milliseconds from `CLOCK_MONOTONIC` |
 | `usleep` | `usleep of microseconds` | Pause execution |
+
+## Trace & Replay
+
+Nondeterministic builtins (`random*`, `monotonic_*`, `env_get`,
+`read_*`, HTTP request/response accessors) are recorded to a tape when
+`EIGS_TRACE=<path>` is set, and served back from a recorded tape when
+`EIGS_REPLAY=<path>` is set — subsequent runs produce byte-identical
+output. Full tape format and replay semantics: [TRACE.md](TRACE.md).
 
 ## Terminal
 

@@ -4,6 +4,26 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Replay of container values.** `parse_value` in `src/trace.c` rewritten
+  as a recursive-descent cursor parser; nondet returns that are lists,
+  dicts, or buffers now round-trip through `EIGS_REPLAY` instead of
+  falling through to the live source (closes the "containers return null"
+  caveat from 0.11.7). Buffer serialization gains a leading `b` so
+  `b[1,2,3]` disambiguates from a list `[1,2,3]`. Regression:
+  `tests/test_replay.sh` — list (`read_bytes`), buffer (`read_bytes_buf`),
+  dict (handcrafted `N` record), and nested list-of-dicts-and-buffer;
+  each case mutates the underlying file between record and replay to
+  prove the value comes from the tape.
+
+### Documentation
+- Documented the 0.11.7 reversibility surface: temporal interrogatives
+  (`prev of`, `at`) in SYNTAX.md and GRAMMAR.md, `state_at` in
+  BUILTINS.md, and a new docs/TRACE.md covering the `EIGS_TRACE` /
+  `EIGS_REPLAY` tape format and replay semantics.
+- Folded an orphaned `[Unreleased]` section (between 0.10.0 and 0.9.3.4)
+  into the 0.10.0 entry it shipped with.
+
 ## [0.11.7] — 2026-06-09
 
 A trace + time-travel release. The interpreter learns to remember its
@@ -521,14 +541,6 @@ versions, oversized headers).
   after 100 iterations of `|dH| < threshold`. Sets `__loop_exit__` and
   `__loop_iterations__` env variables.
 
-### Builtins
-- `list_truncate of [list, new_len]` — in-place O(1) list shrink.
-- `list_remove_at of [list, index]` — in-place element removal with memmove.
-- `sort_by of [list, key_fn]` — C-backed O(n log n) qsort with key function
-  (replaces O(n²) pure-EigenScript insertion sort in lib/sort.eigs).
-
-## [Unreleased]
-
 ### Language
 - **Compound assignment operators**: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`,
   `|=`, `^=`, `<<=`, `>>=`. Desugared in the parser to existing AST nodes.
@@ -573,6 +585,10 @@ versions, oversized headers).
   `arena_destroy` frees all arena blocks at program exit.
 
 ### Builtins
+- `list_truncate of [list, new_len]` — in-place O(1) list shrink.
+- `list_remove_at of [list, index]` — in-place element removal with memmove.
+- `sort_by of [list, key_fn]` — C-backed O(n log n) qsort with key function
+  (replaces O(n²) pure-EigenScript insertion sort in lib/sort.eigs).
 - `sign_extend of [val, bits]` — sign-extend a value from a given bit width
 - `scan_ints of text` / `scan_ints of [text, comment_marker]` — C-backed scan
   of whitespace-delimited signed integer tokens, optionally skipping comment

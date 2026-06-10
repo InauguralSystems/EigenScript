@@ -49,6 +49,18 @@ match  case  unobserved  local
 what  who  when  where  why  how
 ```
 
+### Temporal Interrogatives (soft keywords)
+
+```
+prev  at
+```
+
+`prev` and `at` are soft keywords: they act as keywords only in
+interrogative position (`prev of x`, `... at <expr>`) and fall back to
+ordinary identifiers everywhere else. The six question words above are
+soft in the same way — `what` not followed by `is` parses as an
+identifier.
+
 ### Observer Predicates
 
 ```
@@ -203,11 +215,20 @@ dict_entry   = expression ':' expression
 ### Interrogatives and Predicates
 
 ```
-interrogative = ( 'what' | 'who' | 'when' | 'where' | 'why' | 'how' ) 'is' expression
+interrogative = ( 'what' | 'who' | 'when' | 'where' | 'why' | 'how' ) 'is' expression [ 'at' expression ]
+              | 'prev' 'of' expression [ 'at' expression ]
 
 predicate     = 'converged' | 'stable' | 'improving'
               | 'oscillating' | 'diverging' | 'equilibrium'
 ```
+
+The `at` qualifier pins the query to a source line: the answer is the
+last value bound to the name at or before that line. The line operand
+is a full expression. `prev of x` returns the value bound to `x` just
+before its most recent assignment; it requires a named binding, so only
+identifier operands are meaningful. Both temporal forms query the
+per-name assignment history (top-level bindings) and evaluate to `null`
+on a miss.
 
 ## Operator Precedence Table
 

@@ -383,6 +383,57 @@ print of (when is loss)    # 3 — three assignments
 Use interrogatives for debugging, convergence detection, or understanding
 runtime behavior without writing logging code.
 
+### Temporal Interrogatives — Ask About the Past
+
+Two forms reach backward through a variable's assignment history.
+Both work on top-level (global) bindings, are always on — no
+environment variable or debug build required — and return `null`
+on a miss rather than erroring.
+
+**`prev of x`** — the value `x` held immediately before its most
+recent assignment:
+
+```eigenscript
+loss is 100.0
+loss is 80.0
+print of (prev of loss)    # 100 — the value before the latest assign
+```
+
+Returns `null` when `x` has been assigned fewer than two times. Note
+the connector: `prev` uses `of` (like a function call), while the six
+observer interrogatives use `is`.
+
+**`at <expr>` qualifier** — any value-returning interrogative can be
+pinned to a source line. The operand is a full expression evaluated at
+query time; the answer is the last value bound at or before that line:
+
+```eigenscript
+x is 1        # line 1
+x is 2        # line 2
+x is 3        # line 3
+
+print of (what is x at 2)    # 2
+print of (prev of x at 3)    # value before the assign at/before line 3
+print of (when is x at 2)    # assignment count up to line 2
+print of (who is x at 2)     # "x"
+```
+
+`what`, `who`, `when`, and `prev` support `at`; `where`/`why`/`how`
+(entropy-derived) do not. Queries before the first assignment to the
+name return `null`.
+
+**`state_at of line`** — the whole-program version: returns a dict
+mapping every tracked binding to the value it held at or before `line`
+(names not yet assigned by then are omitted). See
+[BUILTINS.md](BUILTINS.md).
+
+`prev`, and `at` inside an interrogative, are soft keywords — outside
+these positions they parse as ordinary identifiers, so existing code
+using them as variable names keeps working.
+
+For recording full execution traces and replaying nondeterministic
+runs deterministically, see [TRACE.md](TRACE.md).
+
 ## Observer Semantics
 
 The observer system classifies value trajectories automatically:
