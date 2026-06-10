@@ -102,6 +102,90 @@ _bind_store:
     env_hash_insert(&env->hash, h, slot_idx);
 }
 
+/* ---- Stage 5i: per-chunk call-env recycling ----
+ *
+ * Post-5h profile: with everything else native or cached, the top
+ * remaining DMG cost was the per-call env round-trip — env_new, one
+ * env_hash_insert per param, binding_version++, env_reserve_slots, and
+ * env_free, once per handler call. A function chunk's env layout is
+ * fixed (same param names → same slots → same hashes), so a dead call
+ * env can be parked on the chunk and the next call rebinds the param
+ * slots in place: no allocation, no hash work, no version bump — which
+ * also keeps every EnvIC aimed at the env valid across calls.
+ *
+ * Park requirements (vm_park_call_env):
+ *   - single-threaded (chunks are shared across spawn threads);
+ *   - frame->env == frame->fn_env (never park a loop-scope child);
+ *   - not captured by a closure, env_refcount == 0;
+ *   - count == max(param_count, local_count): a binding created
+ *     mid-call (e.g. SET_NAME_LOCAL of a new name, __loop_exit__)
+ *     must NOT resolve in the next invocation, and an underfed call
+ *     (argc < param_count) leaves params unhashed — both park-reject.
+ * Parked slots are dropped to slot_null (no value pinning) with
+ * assign_counts zeroed; param names/hash/binding_version survive.
+ *
+ * Take requirements (at the call sites): cache occupied, parent
+ * matches the callee's closure env (pointer compare only — safe even
+ * if the old parent was freed and recycled, since equality means the
+ * chain goes through the live env the callee actually closes over),
+ * and the call fully binds the params (argc >= param_count, or
+ * param_count <= 1 where the single slot is always bound). */
+static inline void env_rebind_param_slot(Env *env, int slot, EigsSlot s) {
+    /* Parked slot holds slot_null — no decref of the old value. Same
+     * incref/arena-promotion contract as env_bind_fresh_param_slot. */
+    EigsSlot stored = s;
+    if (__builtin_expect(slot_is_ptr(s), 0)) {
+        Value *v = slot_as_ptr(s);
+        if (__builtin_expect(v && v->arena, 0)) {
+            Value *promoted = promote_if_arena(v);
+            if (promoted && promoted != v) {
+                stored = slot_from_value(promoted);
+                goto _rebind_store;
+            }
+        }
+    }
+    slot_incref(s);
+_rebind_store:
+    env->values[slot] = stored;
+    if (env->assign_counts) env->assign_counts[slot] = 1;
+}
+
+static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
+    if (g_vm_multithreaded) return 0;
+    if (chunk->env_cache) return 0;          /* taken (recursion) */
+    if (env->captured || env->env_refcount > 0) return 0;
+    int expected = chunk->local_count > chunk->param_count
+                 ? chunk->local_count : chunk->param_count;
+    if (env->count != expected) return 0;
+    /* Every param must be name-bound, or the recycled env would
+     * resolve params by slot but not by name. A single-arg OP_DISPATCH
+     * to a multi-param fn binds only param 0 (slots 1+ come from
+     * env_reserve_slots, nameless) — reject those. */
+    for (int i = 0; i < chunk->param_count; i++)
+        if (!env->names[i]) return 0;
+    for (int i = 0; i < env->count; i++) {
+        slot_decref(env->values[i]);
+        env->values[i] = slot_null();
+        if (env->assign_counts) env->assign_counts[i] = 0;
+    }
+    chunk->env_cache = env;
+    return 1;
+}
+
+/* Take side, shared by CASE(CALL), jit_helper_call, and CASE(DISPATCH).
+ * Returns the recycled env (param slots null, ready for
+ * env_rebind_param_slot) or NULL → caller runs the fresh env_new path. */
+static inline Env *vm_take_call_env(EigsChunk *fn_chunk, Env *closure,
+                                    int param_count, int argc) {
+    Env *e = fn_chunk->env_cache;
+    if (e && !g_vm_multithreaded && e->parent == closure &&
+        (param_count <= 1 || argc >= param_count)) {
+        fn_chunk->env_cache = NULL;
+        return e;
+    }
+    return NULL;
+}
+
 /* ---- Dict field inline cache ----
  *
  * Stage 5h: 2-way set-associative (64 sets × 2 ways = the same 128
@@ -1267,9 +1351,32 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
 
         int caller_idx = g_vm.frame_count - 1;
 
-        /* Frame push — CASE(CALL)'s VAL_FN path verbatim. */
-        Env *call_env = env_new(fn_val->data.fn.closure);
+        /* Frame push — CASE(CALL)'s VAL_FN path verbatim, including
+         * the Stage 5i recycled-env fast path. */
         int param_count = fn_val->data.fn.param_count;
+        Env *call_env = vm_take_call_env(fn_chunk,
+                                         fn_val->data.fn.closure,
+                                         param_count, argc);
+        if (call_env) {
+            if (param_count > 1) {
+                for (int i = 0; i < param_count; i++)
+                    env_rebind_param_slot(call_env, i,
+                        g_vm.stack[g_vm.sp - argc + i]);
+            } else if (param_count == 1) {
+                if (argc == 1) {
+                    env_rebind_param_slot(call_env, 0,
+                        g_vm.stack[g_vm.sp - 1]);
+                } else {
+                    Value *arg_list = make_list(argc);
+                    for (int i = 0; i < argc; i++)
+                        list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
+                    env_rebind_param_slot(call_env, 0,
+                        slot_from_heap(arg_list));
+                    val_decref(arg_list);
+                }
+            }
+        } else {
+        call_env = env_new(fn_val->data.fn.closure);
         uint32_t *phashes = fn_val->data.fn.param_hashes;
         if (param_count > 1 && argc > 0) {
             int bound = param_count < argc ? param_count : argc;
@@ -1299,6 +1406,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         }
         if (fn_chunk->local_count > param_count)
             env_reserve_slots(call_env, fn_chunk->local_count);
+        }
         for (int i = 0; i < argc; i++)
             slot_decref(g_vm.stack[--g_vm.sp]);
         slot_decref(g_vm.stack[--g_vm.sp]); /* fn */
@@ -1425,7 +1533,12 @@ void jit_helper_return(void) {
     }
     while (g_vm.sp > frame->bp)
         slot_decref(g_vm.stack[--g_vm.sp]);
-    if (frame->owns_env) env_free(frame->env);
+    if (frame->owns_env) {
+        /* Stage 5i: park for recycling when eligible. */
+        if (frame->env != frame->fn_env ||
+            !vm_park_call_env(frame->chunk, frame->env))
+            env_free(frame->env);
+    }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
     /* The frame's chunk ref is NOT dropped here: the thunk epilogue still
@@ -1449,7 +1562,12 @@ void jit_helper_return_null(void) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     while (g_vm.sp > frame->bp)
         slot_decref(g_vm.stack[--g_vm.sp]);
-    if (frame->owns_env) env_free(frame->env);
+    if (frame->owns_env) {
+        /* Stage 5i: park for recycling when eligible. */
+        if (frame->env != frame->fn_env ||
+            !vm_park_call_env(frame->chunk, frame->env))
+            env_free(frame->env);
+    }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
     /* Chunk ref deferred to vm_run's -1 handler (see jit_helper_return). */
@@ -2449,9 +2567,33 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             /* Bytecode function — non-recursive call.
              * Push new frame and continue dispatch loop. */
             EigsChunk *fn_chunk = (EigsChunk *)fn_val->data.fn.body;
-            Env *call_env = env_new(fn_val->data.fn.closure);
-
             int param_count = fn_val->data.fn.param_count;
+            /* Stage 5i: recycle the chunk's parked call env when the
+             * shape matches; param slots rebind in place. */
+            Env *call_env = vm_take_call_env(fn_chunk,
+                                             fn_val->data.fn.closure,
+                                             param_count, (int)argc);
+            if (call_env) {
+                if (param_count > 1) {
+                    for (int i = 0; i < param_count; i++)
+                        env_rebind_param_slot(call_env, i,
+                            g_vm.stack[g_vm.sp - argc + i]);
+                } else if (param_count == 1) {
+                    if (argc == 1) {
+                        env_rebind_param_slot(call_env, 0,
+                            g_vm.stack[g_vm.sp - 1]);
+                    } else {
+                        Value *arg_list = make_list(argc);
+                        for (int i = 0; i < argc; i++)
+                            list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
+                        env_rebind_param_slot(call_env, 0,
+                            slot_from_heap(arg_list));
+                        val_decref(arg_list);
+                    }
+                }
+            } else {
+            call_env = env_new(fn_val->data.fn.closure);
+
             uint32_t *phashes = fn_val->data.fn.param_hashes;
             if (param_count > 1 && argc > 0) {
                 int bound = param_count < (int)argc ? param_count : (int)argc;
@@ -2482,6 +2624,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
              * beyond param_count). OP_SET_LOCAL writes directly into these. */
             if (fn_chunk->local_count > param_count)
                 env_reserve_slots(call_env, fn_chunk->local_count);
+            }
 
             /* Pop args + fn from stack (slot-direct; immediates never
              * round-trip through make_num + free_value). */
@@ -2599,7 +2742,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         }
         while (g_vm.sp > frame->bp)
             slot_decref(g_vm.stack[--g_vm.sp]);
-        if (frame->owns_env) env_free(frame->env);
+        if (frame->owns_env) {
+            /* Stage 5i: park for recycling when eligible (never a
+             * loop-scope child env), else free as before. */
+            if (frame->env != frame->fn_env ||
+                !vm_park_call_env(frame->chunk, frame->env))
+                env_free(frame->env);
+        }
         /* Restore loop-stall globals saved on entry (scoped per call frame). */
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
@@ -2624,7 +2773,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     CASE(RETURN_NULL): {
         while (g_vm.sp > frame->bp)
             slot_decref(g_vm.stack[--g_vm.sp]);
-        if (frame->owns_env) env_free(frame->env);
+        if (frame->owns_env) {
+            /* Stage 5i: park for recycling when eligible (never a
+             * loop-scope child env), else free as before. */
+            if (frame->env != frame->fn_env ||
+                !vm_park_call_env(frame->chunk, frame->env))
+                env_free(frame->env);
+        }
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
         chunk_decref(frame->chunk);   /* frame's ref */
@@ -3644,9 +3799,20 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
         if (fn && fn->type == VAL_FN && fn->data.fn.body_count == -1) {
             /* Bytecode function — push frame inline (no re-entry).
-             * Bind the single param directly from the slot (no boxing). */
+             * Bind the single param directly from the slot (no boxing).
+             * Stage 5i: single-arg dispatch, so only param_count <= 1
+             * callees pass the take gate (fully-bound requirement). */
             EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
-            Env *call_env = env_new(fn->data.fn.closure);
+            Env *call_env = vm_take_call_env(fn_chunk, fn->data.fn.closure,
+                                             fn->data.fn.param_count, 1);
+            if (call_env) {
+                if (fn->data.fn.param_count > 0) {
+                    env_rebind_param_slot(call_env, 0, arg_s);
+                } else {
+                    slot_decref(arg_s);
+                }
+            } else {
+            call_env = env_new(fn->data.fn.closure);
             if (fn->data.fn.param_count > 0) {
                 uint32_t ph = fn->data.fn.param_hashes ? fn->data.fn.param_hashes[0]
                                                        : env_hash_name(fn->data.fn.params[0]);
@@ -3658,6 +3824,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             /* Pre-allocate slots for non-captured locals */
             if (fn_chunk->local_count > fn->data.fn.param_count)
                 env_reserve_slots(call_env, fn_chunk->local_count);
+            }
             slot_decref(table_s);
 
             frame->ip = ip;

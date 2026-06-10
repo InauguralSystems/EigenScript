@@ -79,10 +79,14 @@ DOT_SET/dict fixes); what remains is per-call env churn — env_new,
 env_free, env_hash_insert, and vm_bind_fresh_param each run once per
 step (one per handler call), plus chunk_incref/decref per frame.
 
-- [ ] **Per-call env churn** — now the top remaining DMG cost: every
-      VAL_FN call does env_new + param bind + hash insert + env_free.
-      Candidate: recycle call envs per chunk (param layout is fixed),
-      or a frame-local env representation for non-capturing functions.
+- [x] **Stage 5i — per-chunk call-env recycling.** A returned call env
+      parks on its chunk (values nulled; param names/hash/version
+      kept) and the next call rebinds params in place — EnvICs stay
+      valid across calls. Guarded: single-threaded, non-captured,
+      fully-bound params, layout-exact count. env_new on
+      bench_dmg_shape: 500k → 9 per run; trivial-call probe −26%
+      (147→109 ms), recursive fib −17%; dmg itself ~−2% (env work was
+      a thin time slice despite dominating call counts).
 - [ ] NaN-boxing for container storage — stack and env slots are
       already EigsSlot/NaN-boxed; list items and dict values are still
       `Value**`. The DMG-shaped make_num churn is gone post-5h (writes
