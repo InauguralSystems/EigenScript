@@ -1289,6 +1289,12 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->sizeof_callframe    = (int)sizeof(CallFrame);
     out->off_env_values      = (int)offsetof(Env, values);
     out->off_env_count       = (int)offsetof(Env, count);
+    out->g_dict_cache_tpoff  = (long)((char *)&g_dict_cache[0] - (char *)tp);
+    out->sizeof_dcache_entry = (int)sizeof(DictCacheEntry);
+    out->off_dcache_dict     = (int)offsetof(DictCacheEntry, dict);
+    out->off_dcache_hash     = (int)offsetof(DictCacheEntry, hash);
+    out->off_dcache_index    = (int)offsetof(DictCacheEntry, index);
+    out->dcache_mask         = DICT_CACHE_MASK;
 #else
     (void)out;
 #endif

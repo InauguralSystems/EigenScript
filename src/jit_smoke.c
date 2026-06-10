@@ -27,6 +27,12 @@ void free_value(Value *v) { (void)v; }
  * inline trace gate. Lives in trace.c in the real binary. */
 int g_trace_hist = 0;
 
+/* Stage 5d computes the dict-cache hash at compile time via
+ * env_hash_name (eigenscript.c). The smoke binary never reaches the
+ * LOCAL_DOT emitters, but the linker needs a definition. */
+#include <stdint.h>
+uint32_t env_hash_name(const char *name) { (void)name; return 0; }
+
 /* Diagnostic histogram in jit_module_shutdown references op_name from
  * chunk.c. The smoke binary never triggers the histogram path because
  * EIGS_JIT_STOPS is not set, but the linker still needs a definition. */

@@ -4,6 +4,46 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance — JIT Stage 5d: inline dict-dot fast paths
+
+`LOCAL_DOT_GET` / `LOCAL_DOT_SET` (the `c.a is c.a + 1` shape — DMG
+register access) now inline their hot paths in thunks instead of
+paying the helper-call ABI:
+
+- shared probe: fn_env slot is a heap `VAL_DICT`, dict-cache entry
+  match (`(h ^ ptr) & mask` with the hash baked at compile time, the
+  TLS cache reached via the g_vm tpoff delta), interned-key pointer
+  equality;
+- GET pushes `v->data.num`'s raw bits when the field is an untracked
+  num — that IS the immediate slot encoding, so no refcounts and no
+  allocation;
+- SET mirrors `dict_set_cached_immediate`: in-place `data.num`
+  overwrite when the existing field is an exclusive untracked num and
+  TOS is an immediate.
+
+Cache misses, strcmp-equal keys, non-num/observed fields, and non-dict
+targets fall back to the Stage 4m/4q-d helpers, which repopulate the
+dict cache for the next iteration. New `EigsJitLayout` fields expose
+the vm.c-private dict cache (tpoff, entry size/offsets, mask).
+
+Isolated dict-RMW loop (2M iterations, fully unobserved): 65 → 45 ms
+(−31%). Suite green, zero JIT bailouts on the benchmarks.
+
+### Found — observer-tracked numbers permanently bail native code
+
+Diagnosed while validating 5d: a variable assigned even once while
+observed (e.g. `k is 0` before an `unobserved:` block) is promoted to
+a TRACKED-num Value, and the interpreter's NUM_REUSE in-place
+arithmetic keeps that same tracked Value alive forever — so every
+native arith/compare touching it guard-fails, every iteration. The
+thunk enters, bails at the first comparison, and the loop body runs
+interpreted. This is the structural cap on `bench_dmg_shape`'s
+top-level loop (`steps`, `pc` are tracked) and likely on any
+"setup, then hot loop" program. Recorded in ROADMAP.md as the next
+JIT item: tracked-num operand support in the arith/compare templates
+(read `data.num` through the pointer; the write side must respect
+observer semantics).
+
 ### Performance — JIT Stage 5: inline fast paths (5a/5b/5c)
 
 The Stage 4 coverage chain left hot loops compiling to single thunks

@@ -37,6 +37,22 @@ DMG benchmark: **target met** — ~5 MHz on cpu_instrs at 0.11.8
       `__loop_iterations__` update. bench_dmg_shape 239→218 ms,
       bench_idxset 29.7→24.6 ms; isolation probes 2.8–3.4×. Spec in
       `docs/JIT_STAGE5_INLINE_IC.md` (status updated in place).
+- [x] **JIT Stage 5d — inline dict-dot fast paths.** LOCAL_DOT_GET/SET
+      cache-hit paths emit inline (baked hash, interned-key pointer
+      equality, in-place num mutate); helper fallback repopulates the
+      dict cache. Isolated dict-RMW loop −31% (65→45 ms).
+- [ ] **Tracked-num operands in JIT arith/compare templates.** Found
+      validating 5d: one observed assignment (e.g. `k is 0` before an
+      `unobserved:` block) promotes the value to a TRACKED num, and
+      NUM_REUSE in-place arithmetic keeps that same Value forever — so
+      native arith/compare guard-fails on it every iteration and the
+      loop body runs interpreted. This caps bench_dmg_shape's
+      top-level loop (`steps`/`pc` are tracked) and any observed-setup
+      → hot-loop program. Fix: arith/compare templates accept
+      TAG_TRACKED operands by reading `data.num` through the pointer;
+      the result/write side must preserve observer semantics
+      (NUM_REUSE mutation vs fresh immediate — decide per the
+      interpreter's exact behavior).
 - [ ] NaN-boxing for container storage — stack and env slots are
       already EigsSlot/NaN-boxed; list items and dict values are still
       `Value**`, so every list/dict number write round-trips through

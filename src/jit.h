@@ -118,6 +118,15 @@ typedef struct {
     int  sizeof_callframe;
     int  off_env_values;
     int  off_env_count;
+    /* Stage 5d: dict field inline cache (vm.c-private DictCacheEntry,
+     * static __thread g_dict_cache[]) so LOCAL_DOT_GET/SET can inline
+     * the cache-hit path. */
+    long g_dict_cache_tpoff;        /* &g_dict_cache[0] - %fs:0 */
+    int  sizeof_dcache_entry;
+    int  off_dcache_dict;
+    int  off_dcache_hash;
+    int  off_dcache_index;
+    int  dcache_mask;
 } EigsJitLayout;
 
 void eigs_jit_get_layout(EigsJitLayout *out);

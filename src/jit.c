@@ -473,7 +473,8 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         } else if (op == OP_LOCAL_DOT_GET) {
             /* Stage 4m: 5-byte op [op][slot:16][name_idx:16]. Helper needs
              * chunk pointer for const_interns/const_hashes lookup — same
-             * shape as OP_GET_NAME. */
+             * shape as OP_GET_NAME. Stage 5d: the dict-cache-hit fast
+             * path inlines via %r12 (fn_env values), so needs_env_cache. */
             if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
                                            ((uint16_t)chunk->code[i + 4] << 8));
@@ -482,6 +483,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             }
             i += 5; ops++; non_line_ops++;
             *has_bail_op = 1;
+            *needs_env_cache = 1;
         } else if (op == OP_LOCAL_IDX_DOT_GET) {
             /* Stage 4v: 7-byte op [op][slot:16][list_idx:16][name_idx:16].
              * Helper needs chunk pointer (const_interns/const_hashes) —
@@ -521,6 +523,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             }
             i += 5; ops++; non_line_ops++;
             *has_bail_op = 1;
+            *needs_env_cache = 1;   /* Stage 5d inline fast path */
         } else if (op == OP_SET_LOCAL) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
@@ -1554,6 +1557,156 @@ static uint8_t *emit_je_rel8(uint8_t *w, uint8_t **patch) {
     *w++ = 0x74; *patch = w; *w++ = 0x00; return w;
 }
 
+/* ---- Stage 5d: dict-cache inline encodings ---- */
+
+/* mov %edi, %eax  (2 bytes) — low 32 bits of the dict pointer. */
+static uint8_t *emit_mov_edi_eax(uint8_t *w) {
+    *w++ = 0x89; *w++ = 0xF8; return w;
+}
+/* xor $imm32, %eax  (5 bytes) */
+static uint8_t *emit_xor_imm32_eax(uint8_t *w, uint32_t imm) {
+    *w++ = 0x35; return emit_u32(w, imm);
+}
+/* and $imm32, %eax  (5 bytes) */
+static uint8_t *emit_and_imm32_eax(uint8_t *w, uint32_t imm) {
+    *w++ = 0x25; return emit_u32(w, imm);
+}
+/* shl $4, %rax  (4 bytes) — index → byte offset, sizeof(entry)==16. */
+static uint8_t *emit_shl_4_rax(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0xC1; *w++ = 0xE0; *w++ = 0x04; return w;
+}
+/* lea disp32(%rbx, %rax, 1), %rsi  (8 bytes) — dict-cache entry addr;
+ * disp = g_dict_cache_tpoff - g_vm_tpoff since %rbx = tls + g_vm_tpoff. */
+static uint8_t *emit_lea_rbx_rax_to_rsi(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x8D; *w++ = 0xB4; *w++ = 0x03;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* cmp %rdi, disp32(%rsi)  (7 bytes) — ce->dict == dict. */
+static uint8_t *emit_cmp_rdi_disp32_rsi(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x39; *w++ = 0xBE;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* cmpl $imm32, disp32(%rsi)  (10 bytes) — ce->hash check. */
+static uint8_t *emit_cmpl_imm32_disp32_rsi(uint8_t *w, int32_t disp,
+                                           uint32_t imm) {
+    *w++ = 0x81; *w++ = 0xBE;
+    w = emit_u32(w, (uint32_t)disp);
+    return emit_u32(w, imm);
+}
+/* mov disp32(%rsi), %edx  (6 bytes) — ce->index. */
+static uint8_t *emit_mov_disp32_rsi_to_edx(uint8_t *w, int32_t disp) {
+    *w++ = 0x8B; *w++ = 0x96;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* cmp disp32(%rdi), %edx  (6 bytes) — edx - dict->count, signed. */
+static uint8_t *emit_cmp_disp32_rdi_edx(uint8_t *w, int32_t disp) {
+    *w++ = 0x3B; *w++ = 0x97;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* jge rel32  (6 bytes): 0F 8D — index >= count → miss. */
+static uint8_t *emit_jge_rel32(uint8_t *w, uint8_t **patch) {
+    *w++ = 0x0F; *w++ = 0x8D; *patch = w;
+    *w++ = 0; *w++ = 0; *w++ = 0; *w++ = 0;
+    return w;
+}
+/* mov disp32(%rdi), %rax  (7 bytes) — keys/vals array base. */
+static uint8_t *emit_mov_disp32_rdi_to_rax(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x8B; *w++ = 0x87;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* mov (%rax, %rdx, 8), %rax  (4 bytes) — keys[i] / vals[i]. */
+static uint8_t *emit_mov_rax_rdx8_to_rax(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x8B; *w++ = 0x04; *w++ = 0xD0; return w;
+}
+/* cmp %rsi, %rax  (3 bytes) — interned-key pointer equality. */
+static uint8_t *emit_cmp_rsi_rax(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x39; *w++ = 0xF0; return w;
+}
+/* cmpl $imm32, disp32(%rax)  (10 bytes) — Value type/refcount/obs_age. */
+static uint8_t *emit_cmpl_imm32_disp32_rax(uint8_t *w, int32_t disp,
+                                           uint32_t imm) {
+    *w++ = 0x81; *w++ = 0xB8;
+    w = emit_u32(w, (uint32_t)disp);
+    return emit_u32(w, imm);
+}
+/* testb $1, disp32(%rax)  (7 bytes) — arena flag. */
+static uint8_t *emit_testb_1_disp32_rax(uint8_t *w, int32_t disp) {
+    *w++ = 0xF6; *w++ = 0x80;
+    w = emit_u32(w, (uint32_t)disp);
+    *w++ = 0x01;
+    return w;
+}
+/* mov disp32(%rax), %rax  (7 bytes) — load data.num bits (== the
+ * immediate slot encoding for an untracked number). */
+static uint8_t *emit_mov_disp32_rax_to_rax(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x8B; *w++ = 0x80;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* mov %rdx, disp32(%rax)  (7 bytes) — store data.num bits in place. */
+static uint8_t *emit_mov_rdx_to_disp32_rax(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x89; *w++ = 0x90;
+    return emit_u32(w, (uint32_t)disp);
+}
+/* mov disp32(%r12), %rdi  (9 bytes) — fn_env values[slot] → %rdi. */
+static uint8_t *emit_mov_disp32_r12_to_rdi(uint8_t *w, int32_t disp) {
+    *w++ = 0x49; *w++ = 0x8B; *w++ = 0xBC; *w++ = 0x24;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+/* Stage 5d: shared dict-cache-hit guard prefix for LOCAL_DOT_GET/SET.
+ *
+ * Mirrors vm_local_lift + the dict_get_cached hit test:
+ *   slot = fn_env->values[slot]            (%r12 env cache)
+ *   slot is heap ptr && target->type == VAL_DICT
+ *   ce = &g_dict_cache[(h ^ (u32)target) & mask]
+ *   ce->dict == target && ce->hash == h && ce->index < count
+ *   keys[ce->index] == key                 (interned pointer equality;
+ *                                           strcmp-equal goes to helper)
+ *   vals[ce->index] != NULL
+ *
+ * On success: %rdi = dict Value*, %rdx = entry index, %rax =
+ * vals[index]. `h` and `key` are compile-time constants. Guard-failure
+ * jumps append to slow_p[] (7 entries). The dict cache is TLS in vm.c;
+ * its entry address derives from %rbx (= tls + g_vm_tpoff) plus the
+ * tpoff delta. */
+static uint8_t *emit_dict_cache_probe(uint8_t *w, uint16_t slot,
+                                      uint32_t h, const char *key,
+                                      uint8_t **slow_p, int *slow_n) {
+    w = emit_mov_disp32_r12_to_rdi(w, (int32_t)slot * 8);
+    w = emit_mov_rdi_rsi(w);
+    w = emit_shr_48_rsi(w);
+    w = emit_cmp_imm32_esi(w, 0xFFFB);
+    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    w = emit_shl_16_rdi(w);
+    w = emit_shr_16_rdi(w);
+    w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
+                                   (uint32_t)VAL_DICT);
+    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    w = emit_mov_edi_eax(w);
+    w = emit_xor_imm32_eax(w, h);
+    w = emit_and_imm32_eax(w, (uint32_t)g_layout.dcache_mask);
+    w = emit_shl_4_rax(w);
+    w = emit_lea_rbx_rax_to_rsi(w,
+            (int32_t)(g_layout.g_dict_cache_tpoff - g_layout.g_vm_tpoff));
+    w = emit_cmp_rdi_disp32_rsi(w, g_layout.off_dcache_dict);
+    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    w = emit_cmpl_imm32_disp32_rsi(w, g_layout.off_dcache_hash, h);
+    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    w = emit_mov_disp32_rsi_to_edx(w, g_layout.off_dcache_index);
+    w = emit_cmp_disp32_rdi_edx(w, (int32_t)offsetof(Value, data.dict.count));
+    w = emit_jge_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    w = emit_mov_disp32_rdi_to_rax(w, (int32_t)offsetof(Value, data.dict.keys));
+    w = emit_mov_rax_rdx8_to_rax(w);
+    w = emit_movabs_rsi(w, (uint64_t)(uintptr_t)key);
+    w = emit_cmp_rsi_rax(w);
+    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    w = emit_mov_disp32_rdi_to_rax(w, (int32_t)offsetof(Value, data.dict.vals));
+    w = emit_mov_rax_rdx8_to_rax(w);
+    w = emit_test_rax_rax(w);
+    w = emit_je_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    return w;
+}
+
 /* Inline decref of the Value* in %rdi: skip when arena-owned,
  * `lock subl` otherwise, call free_value when the count reaches zero.
  * Tail of emit_conditional_decref_rsi without the slot tag check —
@@ -2147,14 +2300,48 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             i += 5;
         } else if (op == OP_LOCAL_DOT_GET) {
-            /* Stage 4m: out-of-line call to
-             *   jit_helper_local_dot_get(chunk, slot, name_idx).
-             * chunk arrives in %rdi via %r14 (has_bail_op forces load);
-             * slot in %esi, name_idx in %edx. Same sp sync/reload as 4k/4l. */
+            /* Stage 5d: inline the dict-cache-hit + untracked-num path
+             * of CASE(LOCAL_DOT_GET); anything else (immediate/non-dict
+             * local, cache miss, strcmp-equal key, non-num or observed
+             * field) routes to the Stage 4m helper, which repopulates
+             * the dict cache so the next iteration hits inline. The hit
+             * path pushes v->data.num's raw bits — for an untracked
+             * number that IS the immediate slot encoding, so there is
+             * no incref/decref or allocation. Guards precede all
+             * mutation (the fast path mutates nothing but the stack). */
             uint16_t slot = (uint16_t)(chunk->code[i + 1] |
                                        ((uint16_t)chunk->code[i + 2] << 8));
             uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
                                            ((uint16_t)chunk->code[i + 4] << 8));
+            const char *key = chunk->const_interns[name_idx];
+            uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+            if (h == 0) {
+                h = env_hash_name(key);
+                if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
+            }
+            uint8_t *slow_p[10];
+            int slow_n = 0;
+            uint8_t *done_p = NULL;
+            /* Defensive: the shl $4 in the probe hard-codes the entry
+             * size; fall back to helper-only emission if it ever moves. */
+            if (g_layout.sizeof_dcache_entry == 16) {
+                w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
+                /* v must be an untracked VAL_NUM for the immediate push. */
+                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, type),
+                                               (uint32_t)VAL_NUM);
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, obs_age), 0);
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+                w = emit_mov_disp32_rax_to_rax(w, (int32_t)offsetof(Value, data.num));
+                w = emit_store_rax_at_stack(w, g_layout.off_stack);
+                w = emit_inc_ecx(w);
+                w = emit_jmp_rel32(w, &done_p);
+                for (int k = 0; k < slow_n; k++) patch_rel32(slow_p[k], w);
+            }
+            /* Slow path / fallback: Stage 4m out-of-line call to
+             *   jit_helper_local_dot_get(chunk, slot, name_idx).
+             * chunk arrives in %rdi via %r14 (has_bail_op forces load);
+             * slot in %esi, name_idx in %edx. Same sp sync/reload as 4k/4l. */
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)slot);
@@ -2164,6 +2351,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            if (done_p) patch_rel32(done_p, w);
             i += 5;
         } else if (op == OP_LOCAL_IDX_DOT_GET) {
             /* Stage 4v: out-of-line call to
@@ -2210,17 +2398,55 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             i += 3;
         } else if (op == OP_LOCAL_DOT_SET) {
-            /* Stage 4q-d: out-of-line call to
+            /* Stage 5d: inline the dict_set_cached_immediate path of
+             * CASE(LOCAL_DOT_SET) — cache hit where the existing field
+             * is an exclusive untracked VAL_NUM (type num, refcount 1,
+             * obs_age 0, non-arena) and the incoming TOS is an
+             * immediate num: mutate data.num in place. No refcounts, no
+             * allocation, sp and TOS untouched. Everything else (cache
+             * miss, shared/observed/non-num field, heap TOS, non-dict
+             * target) routes to the Stage 4q-d helper. Guards precede
+             * the single mutating store. */
+            uint16_t slot = (uint16_t)(chunk->code[i + 1] |
+                                       ((uint16_t)chunk->code[i + 2] << 8));
+            uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
+                                           ((uint16_t)chunk->code[i + 4] << 8));
+            const char *key = chunk->const_interns[name_idx];
+            uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+            if (h == 0) {
+                h = env_hash_name(key);
+                if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
+            }
+            uint8_t *slow_p[13];
+            int slow_n = 0;
+            uint8_t *done_p = NULL;
+            if (g_layout.sizeof_dcache_entry == 16) {
+                w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
+                /* existing field: exclusive untracked num. */
+                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, type),
+                                               (uint32_t)VAL_NUM);
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, refcount), 1);
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, obs_age), 0);
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+                w = emit_testb_1_disp32_rax(w, (int32_t)offsetof(Value, arena));
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+                /* TOS must be an immediate num. */
+                w = emit_load_stack_to_rdx(w, g_layout.off_stack - 8);
+                w = emit_immediate_num_check_rdx(w, &slow_p[slow_n]); slow_n++;
+                /* existing->data.num = tos.d (raw bits). */
+                w = emit_mov_rdx_to_disp32_rax(w, (int32_t)offsetof(Value, data.num));
+                w = emit_jmp_rel32(w, &done_p);
+                for (int k = 0; k < slow_n; k++) patch_rel32(slow_p[k], w);
+            }
+            /* Slow path / fallback: Stage 4q-d out-of-line call to
              *   jit_helper_local_dot_set(chunk, slot, name_idx).
              * Mirrors LOCAL_DOT_GET wire-up: chunk via %r14, slot in
              * %esi, name_idx in %edx. Helper reads g_vm.stack[sp-1] —
              * sync %ecx → g_vm.sp before call. sp is unchanged on
              * return; reload %ecx for safety (matches existing pattern,
              * keeps the cache in sync if helper internals ever change). */
-            uint16_t slot = (uint16_t)(chunk->code[i + 1] |
-                                       ((uint16_t)chunk->code[i + 2] << 8));
-            uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
-                                           ((uint16_t)chunk->code[i + 4] << 8));
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)slot);
@@ -2230,6 +2456,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            if (done_p) patch_rel32(done_p, w);
             i += 5;
         } else if (op == OP_OBSERVE_ASSIGN) {
             /* Stage 4o: out-of-line call to
