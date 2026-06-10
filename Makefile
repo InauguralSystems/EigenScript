@@ -99,11 +99,10 @@ jit-smoke:
 	/tmp/jit_smoke
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
-# use-after-free, buffer overflow, and undefined behavior that the
-# normal -O2 build silently tolerates. ~2x slower; for testing only.
-# Run the suite against it with leak detection off (there is an
-# intentional don't-free-at-exit baseline):
-#   make asan && cd tests && ASAN_OPTIONS=detect_leaks=0 bash run_all_tests.sh
+# use-after-free, buffer overflow, leaks, and undefined behavior that
+# the normal -O2 build silently tolerates. ~2x slower; for testing only.
+# The full suite runs leak-clean, so leave leak detection on:
+#   make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
 asan:
 	$(CC) -fsanitize=address,undefined -g -O1 -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \

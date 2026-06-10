@@ -1296,13 +1296,13 @@ Value* builtin_native_train_step(Value *arg) {
 }
 
 void register_model_builtins(Env *env) {
-    env_set_local(env, "eigen_model_loaded", make_builtin(builtin_eigen_model_loaded));
-    env_set_local(env, "eigen_generate", make_builtin(builtin_eigen_generate));
-    env_set_local(env, "eigen_model_info", make_builtin(builtin_eigen_model_info));
-    env_set_local(env, "native_train_step_builtin", make_builtin(builtin_native_train_step));
-    env_set_local(env, "model_save_weights", make_builtin(builtin_model_save_weights));
-    env_set_local(env, "eigen_model_load", make_builtin(builtin_eigen_model_load));
-    env_set_local(env, "model_load_weights", make_builtin(builtin_eigen_model_load));
-    env_set_local(env, "eigen_model_save_binary", make_builtin(builtin_eigen_model_save_binary));
-    env_set_local(env, "eigen_checkpoint_info", make_builtin(builtin_eigen_checkpoint_info));
+    env_set_local_owned(env, "eigen_model_loaded", make_builtin(builtin_eigen_model_loaded));
+    env_set_local_owned(env, "eigen_generate", make_builtin(builtin_eigen_generate));
+    env_set_local_owned(env, "eigen_model_info", make_builtin(builtin_eigen_model_info));
+    env_set_local_owned(env, "native_train_step_builtin", make_builtin(builtin_native_train_step));
+    env_set_local_owned(env, "model_save_weights", make_builtin(builtin_model_save_weights));
+    env_set_local_owned(env, "eigen_model_load", make_builtin(builtin_eigen_model_load));
+    env_set_local_owned(env, "model_load_weights", make_builtin(builtin_eigen_model_load));
+    env_set_local_owned(env, "eigen_model_save_binary", make_builtin(builtin_eigen_model_save_binary));
+    env_set_local_owned(env, "eigen_checkpoint_info", make_builtin(builtin_eigen_checkpoint_info));
 }

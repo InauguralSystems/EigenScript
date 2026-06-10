@@ -355,9 +355,9 @@ Value* builtin_hmac_sha256(Value *arg) {
  * ================================================================ */
 
 void register_hash_builtins(Env *env) {
-    env_set_local(env, "sha256",      make_builtin(builtin_sha256));
-    env_set_local(env, "md5",         make_builtin(builtin_md5));
-    env_set_local(env, "sha256_file", make_builtin(builtin_sha256_file));
-    env_set_local(env, "md5_file",    make_builtin(builtin_md5_file));
-    env_set_local(env, "hmac_sha256", make_builtin(builtin_hmac_sha256));
+    env_set_local_owned(env, "sha256",      make_builtin(builtin_sha256));
+    env_set_local_owned(env, "md5",         make_builtin(builtin_md5));
+    env_set_local_owned(env, "sha256_file", make_builtin(builtin_sha256_file));
+    env_set_local_owned(env, "md5_file",    make_builtin(builtin_md5_file));
+    env_set_local_owned(env, "hmac_sha256", make_builtin(builtin_hmac_sha256));
 }

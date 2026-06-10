@@ -62,10 +62,10 @@ jobs:
 
       - name: Run full suite under sanitizers
         env:
-          # Leak detection is off here: there is an intentional
-          # don't-free-at-exit baseline, and per-iteration leaks are already
-          # guarded by tests/test_leak_guard.sh. This job targets memory
-          # corruption and undefined behavior, which must always be zero.
-          ASAN_OPTIONS: detect_leaks=0
+          # Leak detection is ON: the whole suite runs leak-clean since the
+          # exit-time teardown + birth-ref adoption fixes, so any new leak —
+          # per-iteration or shutdown — fails this job. Memory corruption
+          # and undefined behavior must also be zero (halt_on_error).
+          ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: cd tests && bash run_all_tests.sh

@@ -4,6 +4,52 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed — memory: the suite now runs leak-clean under ASan
+
+Chased the "intentional don't-free-at-exit baseline" and found it was
+hiding real per-call leaks and one use-after-free. Every script the
+suite runs — all 1279 checks, all 28 example smokes — now exits with
+zero ASan leak reports, and CI's sanitizer job runs with
+`detect_leaks=1` so any new leak fails the build.
+
+- **Use-after-free: REPL functions died with their chunk.** The REPL
+  freed each line's compiled chunk after execution, but fn values hold
+  bare pointers into the chunk's nested function chunks — defining a
+  function on one REPL line and calling it on a later line read freed
+  memory (release builds survived by luck). Chunks that define
+  functions are now intentionally retained (same policy as the script
+  path's existing chunk TODO); function-less chunks are freed.
+- **Stranded birth refs at every adopting store.** `env_set_local`,
+  `list_append`, and `dict_set` all incref internally, so the
+  ubiquitous `store(make_value(...))` idiom left every stored fresh
+  value at refcount 2 with one owner — unfreeable by any teardown. New
+  adopting helpers `env_set_local_owned` / `list_append_owned` /
+  `dict_set_owned` consume the birth ref; 245 builtin registrations,
+  67 list appends, and 49 dict stores converted. Recurring-leak
+  call sites fixed along the way: `json_decode` (whole parse tree,
+  per call), `json_path` (root tree, per call), `observe` (report
+  string), `sort_by` (key results), `args`, `random_normal` (rows),
+  `tensor` element-wise/unary/zeros builders, the `numerical_grad`
+  family (probe values double-ref'd, loss results never released,
+  zero placeholders overwritten without release), closure param
+  temporaries (one strdup'd array per closure creation), per-env
+  `assign_counts` (every env teardown), and the REPL's per-line AST
+  and result values. `try_parse`/`eval` now free their ASTs.
+- **Global env teardown at exit.** `env_free` is refcount-honest and
+  no-ops while closures hold the env — at exit that leaked the whole
+  global scope (191 builtins minimum) because top-level fns live in
+  the env they capture. New `env_destroy_final` breaks the cycle
+  reentrancy-safely; main tears down trace → env → arena in that
+  order on both the script and REPL paths.
+- **Replay no longer performs the live work it discards.** Builtins
+  that did real I/O before their tape hook (`read_bytes`,
+  `read_bytes_buf`, `read_text`, `random_normal`, `http_post`) ran
+  that work under `EIGS_REPLAY` and leaked the abandoned live value —
+  `http_post` even issued the real network request. New
+  `TRACE_NONDET_TAKE`/`TRACE_NONDET_RECORD` pair consumes the call's
+  N record up front (exactly one record per call, ordering contract
+  intact) and skips the live path entirely.
+
 ### Added
 - **Line-floor index for backward temporal queries** (the deferred
   Phase 4 snapshot cache). Each name's assignment history now carries

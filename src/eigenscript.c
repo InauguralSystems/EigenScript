@@ -638,6 +638,15 @@ void dict_set(Value *dict, const char *key, Value *val) {
     dict_set_hashed(dict, key, env_hash_name(key), val);
 }
 
+/* Adopting setter: dict_set increfs internally, so passing a freshly
+ * made value directly strands its birth ref (one leaked Value per
+ * call). This consumes the birth ref — use it whenever the caller
+ * does not keep its own pointer to the value. */
+void dict_set_owned(Value *dict, const char *key, Value *val) {
+    dict_set(dict, key, val);
+    val_decref(val);
+}
+
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
     if (!dict || dict->type != VAL_DICT) return NULL;
     if (h == 0) h = env_hash_name(key);
@@ -690,6 +699,15 @@ void list_append(Value *list, Value *item) {
     }
     list->data.list.items[list->data.list.count++] = item;
     val_incref(item);
+}
+
+/* Adopting append: list_append increfs internally, so appending a
+ * freshly made value directly strands its birth ref (one leaked Value
+ * per element). This consumes the birth ref — use it whenever the
+ * caller does not keep its own pointer to the item. */
+void list_append_owned(Value *list, Value *item) {
+    list_append(list, item);
+    val_decref(item);
 }
 
 int is_truthy(Value *v) {
@@ -1228,6 +1246,16 @@ void env_set_local(Env *env, const char *name, Value *val) {
     env_set_local_hashed(env, name, env_hash_name(name), val);
 }
 
+/* Adopting setter for registration code. env_set_local increfs the
+ * value internally, so passing a freshly made value directly strands
+ * its birth ref — every builtin used to sit at refcount 2 with a
+ * single owner, unfreeable by any teardown. This consumes the birth
+ * ref so the env holds the only reference. */
+void env_set_local_owned(Env *env, const char *name, Value *val) {
+    env_set_local(env, name, val);
+    val_decref(val);
+}
+
 void env_free(Env *env) {
     if (!env || !env->heap_allocated) return;
     if (env->captured) {
@@ -1259,6 +1287,39 @@ void env_free(Env *env) {
     }
     free(env->names);
     free(env->values);
+    free(env->assign_counts);
+    free(env->hash.hashes);
+    free(env->hash.indices);
+    free(env->hash.generations);
+    free(env);
+}
+
+/* Shutdown-only teardown for the global env.
+ *
+ * env_free is refcount-honest: it no-ops while closures still hold the
+ * env (env_refcount > 0). At process exit that politeness leaks the
+ * whole global scope whenever a script defined a function, because the
+ * fn value lives *in* the env that it captures — a cycle nothing else
+ * breaks. Force the issue: detach the slot array first so reentrant
+ * env_free calls (a dying closure decrementing env_refcount mid-loop)
+ * see an empty env, pin env_refcount high so those calls cannot free
+ * the struct under us, then decref every binding and free the arrays
+ * unconditionally. Only call this when nothing will touch the env
+ * again — i.e. immediately before exit, after trace_shutdown has
+ * dropped its own value refs. */
+void env_destroy_final(Env *env) {
+    if (!env || !env->heap_allocated) return;
+    EigsSlot *vals = env->values;
+    int count = env->count;
+    env->values = NULL;
+    env->count = 0;
+    env->captured = 1;
+    env->env_refcount = 1 << 30;
+    for (int i = 0; i < count; i++)
+        slot_decref(vals[i]);
+    free(vals);
+    free(env->names);
+    free(env->assign_counts);
     free(env->hash.hashes);
     free(env->hash.indices);
     free(env->hash.generations);

@@ -230,22 +230,23 @@ static int http_url_is_allowed(const char *url) {
 }
 
 Value* builtin_http_post(Value *arg) {
+    TRACE_NONDET_TAKE("http_post");
     /* http_post of [url, headers_json, body_string] -> response body string
      * Uses fork/execvp to invoke curl — no shell involved, no injection risk. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3)
-        TRACE_NONDET_RET("http_post", make_str(""));
+        TRACE_NONDET_RECORD("http_post", make_str(""));
     const char *url = "", *headers_json = "", *body = "";
     if (arg->data.list.items[0]->type == VAL_STR) url = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_STR) headers_json = arg->data.list.items[1]->data.str;
     if (arg->data.list.items[2]->type == VAL_STR) body = arg->data.list.items[2]->data.str;
-    if (!http_url_is_allowed(url)) TRACE_NONDET_RET("http_post", make_str(""));
+    if (!http_url_is_allowed(url)) TRACE_NONDET_RECORD("http_post", make_str(""));
 
     /* Write body to temp file */
     char req_path[] = "/tmp/eigen_http_XXXXXX";
     int req_fd = mkstemp(req_path);
-    if (req_fd < 0) TRACE_NONDET_RET("http_post", make_str(""));
+    if (req_fd < 0) TRACE_NONDET_RECORD("http_post", make_str(""));
     FILE *reqf = fdopen(req_fd, "w");
-    if (!reqf) { close(req_fd); unlink(req_path); TRACE_NONDET_RET("http_post", make_str("")); }
+    if (!reqf) { close(req_fd); unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
     fprintf(reqf, "%s", body);
     fclose(reqf);
 
@@ -289,10 +290,10 @@ Value* builtin_http_post(Value *arg) {
 
     /* Fork and exec curl, capture stdout via pipe */
     int pipefd[2];
-    if (pipe(pipefd) < 0) { unlink(req_path); TRACE_NONDET_RET("http_post", make_str("")); }
+    if (pipe(pipefd) < 0) { unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
 
     pid_t pid = fork();
-    if (pid < 0) { close(pipefd[0]); close(pipefd[1]); unlink(req_path); TRACE_NONDET_RET("http_post", make_str("")); }
+    if (pid < 0) { close(pipefd[0]); close(pipefd[1]); unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
 
     if (pid == 0) {
         /* Child: redirect stdout to pipe, close stderr */
@@ -321,7 +322,7 @@ Value* builtin_http_post(Value *arg) {
     waitpid(pid, &status, 0);
     unlink(req_path);
 
-    TRACE_NONDET_RET("http_post", make_str(buf));
+    TRACE_NONDET_RECORD("http_post", make_str(buf));
 }
 
 Value* builtin_http_request_headers(Value *arg) {
@@ -911,14 +912,14 @@ static Value* builtin_http_cors(Value *arg) {
 }
 
 void register_http_builtins(Env *env) {
-    env_set_local(env, "http_route", make_builtin(builtin_http_route));
-    env_set_local(env, "http_route_authed", make_builtin(builtin_http_route_authed));
-    env_set_local(env, "http_static", make_builtin(builtin_http_static));
-    env_set_local(env, "http_early_bind", make_builtin(builtin_http_early_bind));
-    env_set_local(env, "http_serve", make_builtin(builtin_http_serve));
-    env_set_local(env, "http_request_body", make_builtin(builtin_http_request_body));
-    env_set_local(env, "http_session_id", make_builtin(builtin_http_session_id));
-    env_set_local(env, "http_post", make_builtin(builtin_http_post));
-    env_set_local(env, "http_request_headers", make_builtin(builtin_http_request_headers));
-    env_set_local(env, "http_cors", make_builtin(builtin_http_cors));
+    env_set_local_owned(env, "http_route", make_builtin(builtin_http_route));
+    env_set_local_owned(env, "http_route_authed", make_builtin(builtin_http_route_authed));
+    env_set_local_owned(env, "http_static", make_builtin(builtin_http_static));
+    env_set_local_owned(env, "http_early_bind", make_builtin(builtin_http_early_bind));
+    env_set_local_owned(env, "http_serve", make_builtin(builtin_http_serve));
+    env_set_local_owned(env, "http_request_body", make_builtin(builtin_http_request_body));
+    env_set_local_owned(env, "http_session_id", make_builtin(builtin_http_session_id));
+    env_set_local_owned(env, "http_post", make_builtin(builtin_http_post));
+    env_set_local_owned(env, "http_request_headers", make_builtin(builtin_http_request_headers));
+    env_set_local_owned(env, "http_cors", make_builtin(builtin_http_cors));
 }

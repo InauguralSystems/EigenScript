@@ -102,8 +102,8 @@ static Value* flat_to_tensor_2d(double *data, int rows, int cols) {
     for (int r = 0; r < rows; r++) {
         Value *row = make_list(cols);
         for (int c = 0; c < cols; c++)
-            list_append(row, make_num(data[r * cols + c]));
-        list_append(outer, row);
+            list_append_owned(row, make_num(data[r * cols + c]));
+        list_append_owned(outer, row);
     }
     return outer;
 }
@@ -112,7 +112,7 @@ static Value* flat_to_tensor_2d(double *data, int rows, int cols) {
 static Value* flat_to_tensor_1d(double *data, int len) {
     Value *out = make_list(len);
     for (int i = 0; i < len; i++)
-        list_append(out, make_num(data[i]));
+        list_append_owned(out, make_num(data[i]));
     return out;
 }
 
@@ -155,13 +155,13 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     if (a->type == VAL_NUM && b->type == VAL_LIST) {
         Value *out = make_list(b->data.list.count);
         for (int i = 0; i < b->data.list.count; i++)
-            list_append(out, tensor_elementwise(a, b->data.list.items[i], fn));
+            list_append_owned(out, tensor_elementwise(a, b->data.list.items[i], fn));
         return out;
     }
     if (a->type == VAL_LIST && b->type == VAL_NUM) {
         Value *out = make_list(a->data.list.count);
         for (int i = 0; i < a->data.list.count; i++)
-            list_append(out, tensor_elementwise(a->data.list.items[i], b, fn));
+            list_append_owned(out, tensor_elementwise(a->data.list.items[i], b, fn));
         return out;
     }
 
@@ -224,7 +224,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
         int n = a->data.list.count < b->data.list.count ? a->data.list.count : b->data.list.count;
         Value *out = make_list(n);
         for (int i = 0; i < n; i++)
-            list_append(out, tensor_elementwise(a->data.list.items[i], b->data.list.items[i], fn));
+            list_append_owned(out, tensor_elementwise(a->data.list.items[i], b->data.list.items[i], fn));
         return out;
     }
     return make_num(0.0);
@@ -267,7 +267,7 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     if (v->type == VAL_LIST) {
         Value *out = make_list(v->data.list.count);
         for (int i = 0; i < v->data.list.count; i++)
-            list_append(out, tensor_unary(v->data.list.items[i], fn));
+            list_append_owned(out, tensor_unary(v->data.list.items[i], fn));
         return out;
     }
     return make_num(0.0);
@@ -415,7 +415,7 @@ Value* builtin_tensor_zeros(Value *arg) {
     if (arg->type == VAL_NUM) {
         int n = (int)arg->data.num;
         Value *out = make_list(n);
-        for (int i = 0; i < n; i++) list_append(out, make_num(0.0));
+        for (int i = 0; i < n; i++) list_append_owned(out, make_num(0.0));
         return out;
     }
     /* zeros of [rows, cols] → 2D */
@@ -427,8 +427,8 @@ Value* builtin_tensor_zeros(Value *arg) {
         Value *outer = make_list(rows);
         for (int r = 0; r < rows; r++) {
             Value *row = make_list(cols);
-            for (int c = 0; c < cols; c++) list_append(row, make_num(0.0));
-            list_append(outer, row);
+            for (int c = 0; c < cols; c++) list_append_owned(row, make_num(0.0));
+            list_append_owned(outer, row);
         }
         return outer;
     }
@@ -442,7 +442,7 @@ Value* builtin_tensor_zeros_like(Value *arg) {
     if (arg->type == VAL_LIST) {
         Value *out = make_list(arg->data.list.count);
         for (int i = 0; i < arg->data.list.count; i++)
-            list_append(out, builtin_tensor_zeros_like(arg->data.list.items[i]));
+            list_append_owned(out, builtin_tensor_zeros_like(arg->data.list.items[i]));
         return out;
     }
     return make_num(0.0);
@@ -465,10 +465,10 @@ Value* builtin_tensor_gather(Value *arg) {
             if (indices->data.list.items[i]->type == VAL_NUM)
                 idx = (int)indices->data.list.items[i]->data.num;
             if (row->type == VAL_LIST && idx >= 0 && idx < row->data.list.count)
-                list_append(out, make_num(row->data.list.items[idx]->type == VAL_NUM
+                list_append_owned(out, make_num(row->data.list.items[idx]->type == VAL_NUM
                     ? row->data.list.items[idx]->data.num : 0.0));
             else
-                list_append(out, make_num(0.0));
+                list_append_owned(out, make_num(0.0));
         }
         return out;
     }
@@ -509,7 +509,8 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
 /* ==== BUILTIN: random_normal ==== */
 /* random_normal of [rows, cols, scale] → 2D, or random_normal of [len, scale] → 1D */
 Value* builtin_random_normal(Value *arg) {
-    if (!arg || arg->type != VAL_LIST) TRACE_NONDET_RET("random_normal", make_null());
+    TRACE_NONDET_TAKE("random_normal");
+    if (!arg || arg->type != VAL_LIST) TRACE_NONDET_RECORD("random_normal", make_null());
     int argc = arg->data.list.count;
     if (argc == 3) {
         /* 2D: [rows, cols, scale] */
@@ -524,11 +525,11 @@ Value* builtin_random_normal(Value *arg) {
                 double u1 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
                 double u2 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
                 double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
-                list_append(row, make_num(z * scale));
+                list_append_owned(row, make_num(z * scale));
             }
-            list_append(outer, row);
+            list_append_owned(outer, row);
         }
-        TRACE_NONDET_RET("random_normal", outer);
+        TRACE_NONDET_RECORD("random_normal", outer);
     }
     if (argc == 2) {
         /* 1D: [len, scale] */
@@ -539,11 +540,11 @@ Value* builtin_random_normal(Value *arg) {
             double u1 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
             double u2 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
             double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
-            list_append(out, make_num(z * scale));
+            list_append_owned(out, make_num(z * scale));
         }
-        TRACE_NONDET_RET("random_normal", out);
+        TRACE_NONDET_RECORD("random_normal", out);
     }
-    TRACE_NONDET_RET("random_normal", make_null());
+    TRACE_NONDET_RECORD("random_normal", make_null());
 }
 
 /* ==== BUILTIN: shape ==== */
@@ -557,20 +558,20 @@ Value* builtin_tensor_shape(Value *arg) {
     if (arg->type != VAL_LIST) return make_null();
     if (arg->data.list.count == 0) {
         Value *out = make_list(1);
-        list_append(out, make_num(0));
+        list_append_owned(out, make_num(0));
         return out;
     }
     Value *first = arg->data.list.items[0];
     if (first->type == VAL_LIST) {
         /* 2D */
         Value *out = make_list(2);
-        list_append(out, make_num(arg->data.list.count));
-        list_append(out, make_num(first->data.list.count));
+        list_append_owned(out, make_num(arg->data.list.count));
+        list_append_owned(out, make_num(first->data.list.count));
         return out;
     }
     /* 1D */
     Value *out = make_list(1);
-    list_append(out, make_num(arg->data.list.count));
+    list_append_owned(out, make_num(arg->data.list.count));
     return out;
 }
 
@@ -588,6 +589,7 @@ Value* builtin_numerical_grad(Value *arg) {
     if (eps <= 0) eps = 0.001;
 
     if (param->type != VAL_LIST) return make_null();
+    Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Check if 1D or 2D */
     int is_2d = (param->data.list.count > 0 && param->data.list.items[0]->type == VAL_LIST);
@@ -599,21 +601,25 @@ Value* builtin_numerical_grad(Value *arg) {
         for (int i = 0; i < len; i++) {
             Value *orig = param->data.list.items[i];
             double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
-            val_incref(orig);
-            Value *pp = make_num(old_val + eps); val_incref(pp);
+            val_incref(orig);   /* guard while displaced from its slot */
+            Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             param->data.list.items[i] = pp;
-            Value *loss_plus = call_eigs_fn(loss_fn, make_null());
+            Value *loss_plus = call_eigs_fn(loss_fn, nul);
             double lp = (loss_plus && loss_plus->type == VAL_NUM) ? loss_plus->data.num : 0.0;
-            Value *pm = make_num(old_val - eps); val_incref(pm);
+            if (loss_plus) val_decref(loss_plus);
+            Value *pm = make_num(old_val - eps);
             param->data.list.items[i] = pm;
             val_decref(pp);
-            Value *loss_minus = call_eigs_fn(loss_fn, make_null());
+            Value *loss_minus = call_eigs_fn(loss_fn, nul);
             double lm = (loss_minus && loss_minus->type == VAL_NUM) ? loss_minus->data.num : 0.0;
+            if (loss_minus) val_decref(loss_minus);
             param->data.list.items[i] = orig;
+            val_decref(orig);   /* drop the guard */
             val_decref(pm);
             /* Central difference */
-            list_append(grad, make_num((lp - lm) / (2.0 * eps)));
+            list_append_owned(grad, make_num((lp - lm) / (2.0 * eps)));
         }
+        val_decref(nul);
         return grad;
     }
 
@@ -622,28 +628,32 @@ Value* builtin_numerical_grad(Value *arg) {
     Value *grad = make_list(rows);
     for (int r = 0; r < rows; r++) {
         Value *row = param->data.list.items[r];
-        if (!row || row->type != VAL_LIST) { list_append(grad, make_list(0)); continue; }
+        if (!row || row->type != VAL_LIST) { list_append_owned(grad, make_list(0)); continue; }
         int cols = row->data.list.count;
         Value *grad_row = make_list(cols);
         for (int c = 0; c < cols; c++) {
             Value *orig = row->data.list.items[c];
             double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
-            val_incref(orig);
-            Value *pp = make_num(old_val + eps); val_incref(pp);
+            val_incref(orig);   /* guard while displaced from its slot */
+            Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             row->data.list.items[c] = pp;
-            Value *loss_plus = call_eigs_fn(loss_fn, make_null());
+            Value *loss_plus = call_eigs_fn(loss_fn, nul);
             double lp = (loss_plus && loss_plus->type == VAL_NUM) ? loss_plus->data.num : 0.0;
-            Value *pm = make_num(old_val - eps); val_incref(pm);
+            if (loss_plus) val_decref(loss_plus);
+            Value *pm = make_num(old_val - eps);
             row->data.list.items[c] = pm;
             val_decref(pp);
-            Value *loss_minus = call_eigs_fn(loss_fn, make_null());
+            Value *loss_minus = call_eigs_fn(loss_fn, nul);
             double lm = (loss_minus && loss_minus->type == VAL_NUM) ? loss_minus->data.num : 0.0;
+            if (loss_minus) val_decref(loss_minus);
             row->data.list.items[c] = orig;
+            val_decref(orig);   /* drop the guard */
             val_decref(pm);
-            list_append(grad_row, make_num((lp - lm) / (2.0 * eps)));
+            list_append_owned(grad_row, make_num((lp - lm) / (2.0 * eps)));
         }
-        list_append(grad, grad_row);
+        list_append_owned(grad, grad_row);
     }
+    val_decref(nul);
     return grad;
 }
 
@@ -710,14 +720,15 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     int rows = matrix->data.list.count;
     if (rows == 0 || matrix->data.list.items[0]->type != VAL_LIST) return make_null();
     int cols = matrix->data.list.items[0]->data.list.count;
+    Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Build zero gradient matrix */
     Value *grad = make_list(rows);
     for (int r = 0; r < rows; r++) {
         Value *grow = make_list(cols);
         for (int c = 0; c < cols; c++)
-            list_append(grow, make_num(0.0));
-        list_append(grad, grow);
+            list_append_owned(grow, make_num(0.0));
+        list_append_owned(grad, grow);
     }
 
     /* Only compute gradients for specified rows */
@@ -734,16 +745,20 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             Value *cell = row->data.list.items[c];
             double old_val = (cell->type == VAL_NUM) ? cell->data.num : 0.0;
             cell->data.num = old_val + eps;
-            Value *lp = call_eigs_fn(loss_fn, make_null());
+            Value *lp = call_eigs_fn(loss_fn, nul);
             double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
+            if (lp) val_decref(lp);
             cell->data.num = old_val - eps;
-            Value *lm = call_eigs_fn(loss_fn, make_null());
+            Value *lm = call_eigs_fn(loss_fn, nul);
             double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
+            if (lm) val_decref(lm);
             cell->data.num = old_val;
-            /* gradient */
+            /* gradient — release the zero placeholder this slot held */
+            val_decref(grad_row->data.list.items[c]);
             grad_row->data.list.items[c] = make_num((loss_plus - loss_minus) / (2.0 * eps));
         }
     }
+    val_decref(nul);
     return grad;
 }
 
@@ -800,14 +815,15 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     int rows = matrix->data.list.count;
     if (rows == 0 || matrix->data.list.items[0]->type != VAL_LIST) return make_null();
     int cols = matrix->data.list.items[0]->data.list.count;
+    Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Build zero gradient matrix */
     Value *grad = make_list(rows);
     for (int r = 0; r < rows; r++) {
         Value *grow = make_list(cols);
         for (int c = 0; c < cols; c++)
-            list_append(grow, make_num(0.0));
-        list_append(grad, grow);
+            list_append_owned(grow, make_num(0.0));
+        list_append_owned(grad, grow);
     }
 
     /* Only compute gradients for specified columns, across all rows */
@@ -822,27 +838,30 @@ Value* builtin_numerical_grad_cols(Value *arg) {
 
             Value *orig = row->data.list.items[col];
             double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
-            val_incref(orig);
+            val_incref(orig);   /* guard while displaced from its slot */
             /* +eps */
-            Value *pp = make_num(old_val + eps);
-            val_incref(pp);
+            Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             row->data.list.items[col] = pp;
-            Value *lp = call_eigs_fn(loss_fn, make_null());
+            Value *lp = call_eigs_fn(loss_fn, nul);
             double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
+            if (lp) val_decref(lp);
             /* -eps */
             Value *pm = make_num(old_val - eps);
-            val_incref(pm);
             row->data.list.items[col] = pm;
             val_decref(pp);
-            Value *lm = call_eigs_fn(loss_fn, make_null());
+            Value *lm = call_eigs_fn(loss_fn, nul);
             double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
+            if (lm) val_decref(lm);
             /* restore */
             row->data.list.items[col] = orig;
+            val_decref(orig);   /* drop the guard */
             val_decref(pm);
-            /* gradient */
+            /* gradient — release the zero placeholder this slot held */
+            val_decref(grad->data.list.items[r]->data.list.items[col]);
             grad->data.list.items[r]->data.list.items[col] = make_num((loss_plus - loss_minus) / (2.0 * eps));
         }
     }
+    val_decref(nul);
     return grad;
 }
 

@@ -405,52 +405,52 @@ Value* builtin_gfx_poll(Value *arg) {
     Value *d = make_dict(4);
     switch (ev.type) {
         case MY_SDL_QUIT_EVENT:
-            dict_set(d, "type", make_str("quit"));
+            dict_set_owned(d, "type", make_str("quit"));
             break;
         case MY_SDL_KEYDOWN:
-            dict_set(d, "type", make_str("keydown"));
-            dict_set(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
-            dict_set(d, "scancode", make_num(ev.key.keysym.scancode));
-            dict_set(d, "shift", make_num((ev.key.keysym.mod & 0x03) ? 1 : 0));
-            dict_set(d, "ctrl", make_num((ev.key.keysym.mod & 0xC0) ? 1 : 0));
-            dict_set(d, "alt", make_num((ev.key.keysym.mod & 0x300) ? 1 : 0));
+            dict_set_owned(d, "type", make_str("keydown"));
+            dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
+            dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
+            dict_set_owned(d, "shift", make_num((ev.key.keysym.mod & 0x03) ? 1 : 0));
+            dict_set_owned(d, "ctrl", make_num((ev.key.keysym.mod & 0xC0) ? 1 : 0));
+            dict_set_owned(d, "alt", make_num((ev.key.keysym.mod & 0x300) ? 1 : 0));
             break;
         case MY_SDL_KEYUP:
-            dict_set(d, "type", make_str("keyup"));
-            dict_set(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
-            dict_set(d, "scancode", make_num(ev.key.keysym.scancode));
-            dict_set(d, "shift", make_num((ev.key.keysym.mod & 0x03) ? 1 : 0));
-            dict_set(d, "ctrl", make_num((ev.key.keysym.mod & 0xC0) ? 1 : 0));
-            dict_set(d, "alt", make_num((ev.key.keysym.mod & 0x300) ? 1 : 0));
+            dict_set_owned(d, "type", make_str("keyup"));
+            dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
+            dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
+            dict_set_owned(d, "shift", make_num((ev.key.keysym.mod & 0x03) ? 1 : 0));
+            dict_set_owned(d, "ctrl", make_num((ev.key.keysym.mod & 0xC0) ? 1 : 0));
+            dict_set_owned(d, "alt", make_num((ev.key.keysym.mod & 0x300) ? 1 : 0));
             break;
         case MY_SDL_MOUSEMOTION:
-            dict_set(d, "type", make_str("mousemove"));
-            dict_set(d, "x", make_num(ev.motion.x));
-            dict_set(d, "y", make_num(ev.motion.y));
+            dict_set_owned(d, "type", make_str("mousemove"));
+            dict_set_owned(d, "x", make_num(ev.motion.x));
+            dict_set_owned(d, "y", make_num(ev.motion.y));
             break;
         case MY_SDL_MOUSEBUTTONDOWN:
-            dict_set(d, "type", make_str("mousedown"));
-            dict_set(d, "button", make_num(ev.button.button));
-            dict_set(d, "x", make_num(ev.button.x));
-            dict_set(d, "y", make_num(ev.button.y));
+            dict_set_owned(d, "type", make_str("mousedown"));
+            dict_set_owned(d, "button", make_num(ev.button.button));
+            dict_set_owned(d, "x", make_num(ev.button.x));
+            dict_set_owned(d, "y", make_num(ev.button.y));
             break;
         case MY_SDL_MOUSEBUTTONUP:
-            dict_set(d, "type", make_str("mouseup"));
-            dict_set(d, "button", make_num(ev.button.button));
-            dict_set(d, "x", make_num(ev.button.x));
-            dict_set(d, "y", make_num(ev.button.y));
+            dict_set_owned(d, "type", make_str("mouseup"));
+            dict_set_owned(d, "button", make_num(ev.button.button));
+            dict_set_owned(d, "x", make_num(ev.button.x));
+            dict_set_owned(d, "y", make_num(ev.button.y));
             break;
         case MY_SDL_MOUSEWHEEL:
-            dict_set(d, "type", make_str("wheel"));
-            dict_set(d, "x", make_num(ev.wheel.x));
-            dict_set(d, "y", make_num(ev.wheel.y));
+            dict_set_owned(d, "type", make_str("wheel"));
+            dict_set_owned(d, "x", make_num(ev.wheel.x));
+            dict_set_owned(d, "y", make_num(ev.wheel.y));
             break;
         case MY_SDL_WINDOWEVENT:
             /* SDL_WINDOWEVENT_RESIZED = 6 */
             if (ev.window.event == 6) {
-                dict_set(d, "type", make_str("resize"));
-                dict_set(d, "w", make_num(ev.window.data1));
-                dict_set(d, "h", make_num(ev.window.data2));
+                dict_set_owned(d, "type", make_str("resize"));
+                dict_set_owned(d, "w", make_num(ev.window.data1));
+                dict_set_owned(d, "h", make_num(ev.window.data2));
             } else {
                 return make_null();
             }
@@ -710,7 +710,7 @@ Value* builtin_audio_sine(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = sin(2.0 * M_PI * freq * t) * amp;
-        list_append(list, make_num(s));
+        list_append_owned(list, make_num(s));
     }
     return list;
 }
@@ -729,7 +729,7 @@ Value* builtin_audio_saw(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = 2.0 * (t * freq - floor(t * freq + 0.5)) * amp;
-        list_append(list, make_num(s));
+        list_append_owned(list, make_num(s));
     }
     return list;
 }
@@ -748,7 +748,7 @@ Value* builtin_audio_square(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = (sin(2.0 * M_PI * freq * t) >= 0 ? 1.0 : -1.0) * amp;
-        list_append(list, make_num(s));
+        list_append_owned(list, make_num(s));
     }
     return list;
 }
@@ -778,7 +778,7 @@ Value* builtin_audio_sweep(Value *arg) {
             s = sin(2.0 * M_PI * phase) * amp;
         else
             s = (2.0 * phase - 1.0) * amp;
-        list_append(list, make_num(s));
+        list_append_owned(list, make_num(s));
     }
     return list;
 }
@@ -795,7 +795,7 @@ Value* builtin_audio_noise(Value *arg) {
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
         double s = ((double)rand() / RAND_MAX * 2.0 - 1.0) * amp;
-        list_append(list, make_num(s));
+        list_append_owned(list, make_num(s));
     }
     return list;
 }
@@ -815,7 +815,7 @@ Value* builtin_audio_mix(Value *arg) {
         double mixed = sa + sb;
         if (mixed > 1.0) mixed = 1.0;
         if (mixed < -1.0) mixed = -1.0;
-        list_append(out, make_num(mixed));
+        list_append_owned(out, make_num(mixed));
     }
     return out;
 }
@@ -834,7 +834,7 @@ Value* builtin_audio_gain(Value *arg) {
         s *= vol;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
-        list_append(out, make_num(s));
+        list_append_owned(out, make_num(s));
     }
     return out;
 }
@@ -878,7 +878,7 @@ Value* builtin_audio_envelope(Value *arg) {
         }
         double s = (samples->data.list.items[i]->type == VAL_NUM) ? samples->data.list.items[i]->data.num : 0;
         s *= env;
-        list_append(out, make_num(s));
+        list_append_owned(out, make_num(s));
     }
     return out;
 }
@@ -1133,39 +1133,39 @@ Value* builtin_ppu_render_frame(Value *arg) {
 }
 
 void register_gfx_builtins(Env *env) {
-    env_set_local(env, "gfx_open", make_builtin(builtin_gfx_open));
-    env_set_local(env, "gfx_close", make_builtin(builtin_gfx_close));
-    env_set_local(env, "gfx_clear", make_builtin(builtin_gfx_clear));
-    env_set_local(env, "gfx_rect", make_builtin(builtin_gfx_rect));
-    env_set_local(env, "gfx_line", make_builtin(builtin_gfx_line));
-    env_set_local(env, "gfx_point", make_builtin(builtin_gfx_point));
-    env_set_local(env, "gfx_circle", make_builtin(builtin_gfx_circle));
-    env_set_local(env, "gfx_rrect", make_builtin(builtin_gfx_rrect));
-    env_set_local(env, "gfx_clip", make_builtin(builtin_gfx_clip));
-    env_set_local(env, "gfx_present", make_builtin(builtin_gfx_present));
-    env_set_local(env, "gfx_poll", make_builtin(builtin_gfx_poll));
-    env_set_local(env, "gfx_ticks", make_builtin(builtin_gfx_ticks));
-    env_set_local(env, "gfx_delay", make_builtin(builtin_gfx_delay));
-    env_set_local(env, "gfx_title", make_builtin(builtin_gfx_title));
-    env_set_local(env, "gfx_text", make_builtin(builtin_gfx_text));
-    env_set_local(env, "gfx_fb", make_builtin(builtin_gfx_fb));
-    env_set_local(env, "ppu_render_frame", make_builtin(builtin_ppu_render_frame));
+    env_set_local_owned(env, "gfx_open", make_builtin(builtin_gfx_open));
+    env_set_local_owned(env, "gfx_close", make_builtin(builtin_gfx_close));
+    env_set_local_owned(env, "gfx_clear", make_builtin(builtin_gfx_clear));
+    env_set_local_owned(env, "gfx_rect", make_builtin(builtin_gfx_rect));
+    env_set_local_owned(env, "gfx_line", make_builtin(builtin_gfx_line));
+    env_set_local_owned(env, "gfx_point", make_builtin(builtin_gfx_point));
+    env_set_local_owned(env, "gfx_circle", make_builtin(builtin_gfx_circle));
+    env_set_local_owned(env, "gfx_rrect", make_builtin(builtin_gfx_rrect));
+    env_set_local_owned(env, "gfx_clip", make_builtin(builtin_gfx_clip));
+    env_set_local_owned(env, "gfx_present", make_builtin(builtin_gfx_present));
+    env_set_local_owned(env, "gfx_poll", make_builtin(builtin_gfx_poll));
+    env_set_local_owned(env, "gfx_ticks", make_builtin(builtin_gfx_ticks));
+    env_set_local_owned(env, "gfx_delay", make_builtin(builtin_gfx_delay));
+    env_set_local_owned(env, "gfx_title", make_builtin(builtin_gfx_title));
+    env_set_local_owned(env, "gfx_text", make_builtin(builtin_gfx_text));
+    env_set_local_owned(env, "gfx_fb", make_builtin(builtin_gfx_fb));
+    env_set_local_owned(env, "ppu_render_frame", make_builtin(builtin_ppu_render_frame));
 
     /* Audio builtins */
-    env_set_local(env, "audio_open", make_builtin(builtin_audio_open));
-    env_set_local(env, "audio_close", make_builtin(builtin_audio_close));
-    env_set_local(env, "audio_pause", make_builtin(builtin_audio_pause));
-    env_set_local(env, "audio_play", make_builtin(builtin_audio_play));
-    env_set_local(env, "audio_queue_size", make_builtin(builtin_audio_queue_size));
-    env_set_local(env, "audio_clear", make_builtin(builtin_audio_clear));
-    env_set_local(env, "audio_sine", make_builtin(builtin_audio_sine));
-    env_set_local(env, "audio_saw", make_builtin(builtin_audio_saw));
-    env_set_local(env, "audio_square", make_builtin(builtin_audio_square));
-    env_set_local(env, "audio_sweep", make_builtin(builtin_audio_sweep));
-    env_set_local(env, "audio_noise", make_builtin(builtin_audio_noise));
-    env_set_local(env, "audio_mix", make_builtin(builtin_audio_mix));
-    env_set_local(env, "audio_gain", make_builtin(builtin_audio_gain));
-    env_set_local(env, "audio_envelope", make_builtin(builtin_audio_envelope));
+    env_set_local_owned(env, "audio_open", make_builtin(builtin_audio_open));
+    env_set_local_owned(env, "audio_close", make_builtin(builtin_audio_close));
+    env_set_local_owned(env, "audio_pause", make_builtin(builtin_audio_pause));
+    env_set_local_owned(env, "audio_play", make_builtin(builtin_audio_play));
+    env_set_local_owned(env, "audio_queue_size", make_builtin(builtin_audio_queue_size));
+    env_set_local_owned(env, "audio_clear", make_builtin(builtin_audio_clear));
+    env_set_local_owned(env, "audio_sine", make_builtin(builtin_audio_sine));
+    env_set_local_owned(env, "audio_saw", make_builtin(builtin_audio_saw));
+    env_set_local_owned(env, "audio_square", make_builtin(builtin_audio_square));
+    env_set_local_owned(env, "audio_sweep", make_builtin(builtin_audio_sweep));
+    env_set_local_owned(env, "audio_noise", make_builtin(builtin_audio_noise));
+    env_set_local_owned(env, "audio_mix", make_builtin(builtin_audio_mix));
+    env_set_local_owned(env, "audio_gain", make_builtin(builtin_audio_gain));
+    env_set_local_owned(env, "audio_envelope", make_builtin(builtin_audio_envelope));
 }
 
 #endif /* EIGENSCRIPT_EXT_GFX */
