@@ -64,6 +64,8 @@ void jit_helper_observe_assign_local(int slot) {
  * jit_emit_const_return, which emits none of those opcodes, so the stubs
  * are unreachable. */
 int jit_helper_iter_next(void) { return 1; }
+void jit_helper_index_set(void) {}
+int jit_helper_loop_stall_check(void) { return 1; }
 void jit_helper_index_get(void) { }
 void jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx) {
     (void)chunk; (void)slot; (void)name_idx;

@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance — JIT coverage: INDEX_SET + LOOP_STALL_CHECK (Stage 4v/4w)
+
+Driven by the EIGS_JIT_STOPS bailout histogram on the new DMG-shaped
+benchmark: INDEX_SET was the only bailout opcode, and LOOP_STALL_CHECK
+surfaced next (every observed `while` loop carries one per iteration).
+Both now compile into thunks via out-of-line helpers — INDEX_SET on
+the INDEX_GET ABI (full opcode semantics in the helper, no bail path),
+LOOP_STALL_CHECK on the ITER_NEXT shape (helper returns the exit flag,
+emitter conditional-jumps to the exit target). No measurable benchmark
+delta on its own: thunks now stop at the name-op family (SET_NAME /
+SET_NAME_LOCAL and their inline caches), which is the next stage and
+where the accumulated coverage should pay off. jit_smoke gains stubs.
+
 ### Performance — temporal history is now compile-gated
 
 Profiling a DMG-shaped dispatch workload (new

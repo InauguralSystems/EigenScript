@@ -768,6 +768,129 @@ static inline int vm_index_is_int(double d, int *out) {
  * The JIT-emitted call site syncs %ecx → g_vm.sp before the call
  * (helper reads sp), then reloads %ecx ← g_vm.sp after (helper
  * mutates sp net -1). */
+/* Stage 4w: out-of-line helper for OP_LOOP_STALL_CHECK. Mirrors the
+ * interpreter case minus the jump: returns 1 when the loop should exit
+ * (observer stalled 100 iterations, or the absolute iteration cap) so
+ * the emitter can conditional-jump to the exit target, ITER_NEXT-style.
+ * This was the #1 thunk blocker after INDEX_SET: every observed while
+ * loop carries one of these per iteration. */
+int jit_helper_loop_stall_check(void) {
+    g_loop_iterations++;
+    int should_exit = 0;
+    if (g_unobserved_depth == 0) {
+        Value *obs = g_last_observer;
+        if (obs) observer_ensure_fresh(obs);
+        if (obs && fabs(obs->dH) < g_obs_dh_zero && obs->entropy >= g_obs_h_low) {
+            g_loop_stall_count++;
+            if (g_loop_stall_count >= 100) {
+                g_loop_exit_reason = "stalled";
+                should_exit = 1;
+            }
+        } else {
+            g_loop_stall_count = 0;
+        }
+    }
+    if (g_loop_iterations >= 100000000) {
+        g_loop_exit_reason = "limit";
+        should_exit = 1;
+    }
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    {
+        Value *iter_val = make_num(g_loop_iterations);
+        env_set_local(frame->env, "__loop_iterations__", iter_val);
+        val_decref(iter_val);
+    }
+    if (should_exit) {
+        Value *exit_val = make_str(g_loop_exit_reason);
+        env_set_local(frame->env, "__loop_exit__", exit_val);
+        val_decref(exit_val);
+        g_loop_stall_count = 0;
+        g_loop_iterations = 0;
+        g_loop_exit_reason = "normal";
+        return 1;
+    }
+    return 0;
+}
+
+/* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
+ * target), pushes val back (net sp -2). Full opcode semantics including
+ * the slot fast paths, so the emitter never bails; errors go through
+ * runtime_error and are picked up by CHECK_ERROR after the thunk. The
+ * EIGS_JIT_STOPS histogram on the DMG-shaped workload showed INDEX_SET
+ * as the only remaining bailout opcode. */
+void jit_helper_index_set(void) {
+    EigsSlot val_s = g_vm.stack[g_vm.sp - 1];
+    EigsSlot idx_s = g_vm.stack[g_vm.sp - 2];
+    EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
+    if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
+        Value *target = slot_as_ptr(tgt_s);
+        int i, _ok = vm_index_is_int(idx_s.d, &i);
+        if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
+            if (_ok && i >= 0 && i < target->data.buffer.count) {
+                target->data.buffer.data[i] = (int)val_s.d;
+            } else {
+                if (!_ok) runtime_error(g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                else runtime_error(g_vm.current_line, "buffer index %d out of range (length %d)",
+                              i, target->data.buffer.count);
+            }
+            g_vm.sp -= 2;  /* keep val on TOS */
+            g_vm.stack[g_vm.sp - 1] = val_s;
+            slot_decref(idx_s);
+            slot_decref(tgt_s);
+            return;
+        }
+        if (target->type == VAL_LIST && slot_is_num(val_s)) {
+            if (_ok && i >= 0 && i < target->data.list.count) {
+                Value *existing = target->data.list.items[i];
+                if (existing && existing->type == VAL_NUM &&
+                    existing->refcount == 1 && existing->obs_age == 0 &&
+                    !existing->arena) {
+                    existing->data.num = val_s.d;
+                } else {
+                    val_decref(existing);
+                    target->data.list.items[i] = make_num(val_s.d);
+                }
+            } else {
+                if (!_ok) runtime_error(g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                else runtime_error(g_vm.current_line, "index %d out of range (list length %d)",
+                              i, target->data.list.count);
+            }
+            g_vm.sp -= 2;
+            g_vm.stack[g_vm.sp - 1] = val_s;
+            slot_decref(idx_s);
+            slot_decref(tgt_s);
+            return;
+        }
+    }
+    Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
+    if (target->type == VAL_LIST && idx->type == VAL_NUM) {
+        int i;
+        if (!vm_index_is_int(idx->data.num, &i)) {
+            runtime_error(g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+        } else if (i >= 0 && i < target->data.list.count) {
+            val_incref(val);
+            val_decref(target->data.list.items[i]);
+            target->data.list.items[i] = val;
+        } else {
+            runtime_error(g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+        }
+    } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
+        int i;
+        if (!vm_index_is_int(idx->data.num, &i)) {
+            runtime_error(g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+        } else if (i >= 0 && i < target->data.buffer.count && val->type == VAL_NUM)
+            target->data.buffer.data[i] = (int)val->data.num;
+        else if (i < 0 || i >= target->data.buffer.count)
+            runtime_error(g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+    } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
+        dict_set(target, idx->data.str, val);
+    } else if (target->type != VAL_NULL) {
+        runtime_error(g_vm.current_line, "cannot index %s for assignment", val_type_name(target->type));
+    }
+    val_decref(target); val_decref(idx);
+    vm_push(val);
+}
+
 void jit_helper_index_get(void) {
     EigsSlot idx_s = g_vm.stack[g_vm.sp - 1];
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 2];

@@ -557,6 +557,21 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * type is opaque to the scanner. */
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
+        } else if (op == OP_INDEX_SET) {
+            /* Stage 4v: 1-byte op. Helper pops 3 (val, idx, target) and
+             * pushes val back (net sp -2); full opcode semantics live in
+             * the helper, so no bail path. Same error/CHECK_ERROR story
+             * as INDEX_GET. Pushed value type is opaque. */
+            i += 1; ops++; non_line_ops++;
+            *has_bail_op = 1;
+        } else if (op == OP_LOOP_STALL_CHECK) {
+            /* Stage 4w: 3-byte op [op][exit_offset:16]. Helper returns
+             * 1 when the loop must exit (stall / iteration cap); the
+             * emitter conditional-jumps to the exit target — exactly
+             * the ITER_NEXT shape. Stack untouched. */
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 3; ops++; non_line_ops++;
+            *has_bail_op = 1;
         } else if (op == OP_CALL) {
             /* Stage 4r: 3-byte op [op][argc:16]. Helper handles the
              * VAL_BUILTIN case inline; for VAL_FN / VAL_CLOSURE / non-
@@ -2243,6 +2258,48 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             i += 1;
+        } else if (op == OP_INDEX_SET) {
+            /* Stage 4v: INDEX_SET via helper call — same ABI as
+             * INDEX_GET (sync sp, aligned call, reload sp; no return
+             * value to test). */
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_index_set);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 1;
+        } else if (op == OP_LOOP_STALL_CHECK) {
+            /* Stage 4w: LOOP_STALL_CHECK via helper — ITER_NEXT call
+             * shape: sync sp, aligned call, reload sp, test eax,
+             * conditional jump to the exit target via pending patch. */
+            if (pending_count + 1 > (int)(sizeof pending /
+                                          sizeof pending[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
+            uint16_t off = (uint16_t)(chunk->code[i + 1] |
+                                      ((uint16_t)chunk->code[i + 2] << 8));
+            int target = i + 3 + (int)off;
+
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_stall_check);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_test_rax_rax(w);
+
+            uint8_t *skip_patch;
+            /* Take when ZF=0 (exit, eax != 0); skip when ZF=1. */
+            w = emit_je_rel32(w, &skip_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(target - entry_offset));
+            uint8_t *jump_patch;
+            w = emit_jmp_rel32(w, &jump_patch);
+            pending[pending_count].target = target;
+            pending[pending_count].patch = jump_patch;
+            pending_count++;
+            patch_rel32(skip_patch, w);
+            i += 3;
         } else if (op == OP_CALL) {
             /* Stage 4r: OP_CALL with builtin-only fast path via helper.
              *

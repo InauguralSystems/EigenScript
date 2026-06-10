@@ -178,6 +178,8 @@ int jit_helper_iter_next(void);
  * runtime_error to preserve interpreter semantics). The JIT site
  * must sync %ecx → g_vm.sp before the call and reload after. */
 void jit_helper_index_get(void);
+void jit_helper_index_set(void);
+int  jit_helper_loop_stall_check(void);
 
 /* Stage 4r: out-of-line helper for OP_CALL — builtin-only fast path.
  * Returns 0 if a VAL_BUILTIN was called (args+fn consumed, result
