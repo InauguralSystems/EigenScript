@@ -311,7 +311,10 @@ void free_value(Value *v) {
                     free_ast(v->data.fn.body[i]);
                 free(v->data.fn.body);
             }
-            /* body_count == -1 means bytecode fn: body is a chunk ptr, not owned here */
+            /* body_count == -1 means bytecode fn: body is a chunk ptr;
+             * this fn holds a ref on it (taken in OP_CLOSURE). */
+            if (v->data.fn.body_count == -1)
+                chunk_decref((struct EigsChunk *)v->data.fn.body);
             {
                 Env *clo = v->data.fn.closure;
                 v->data.fn.closure = NULL;  /* break cycle before decrement */

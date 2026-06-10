@@ -2301,8 +2301,7 @@ Value* builtin_load_file(Value *arg) {
     Env *target = g_load_env ? g_load_env : g_global_env;
     EigsChunk *lf_chunk = compile_ast(ast, target);
     Value *result = vm_execute(lf_chunk, target);
-    /* Don't free chunk — closures may still reference nested function chunks.
-     * TODO: reference-count chunks so they're freed when all closures are gone. */
+    chunk_free(lf_chunk);   /* creator ref; loaded fns hold their own */
     free_ast(ast);
     free(source);
     free_tokenlist(&tl);
@@ -2844,10 +2843,9 @@ Value* builtin_eval(Value *arg) {
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
     EigsChunk *ev_chunk = compile_ast(ast, target);
     Value *result = vm_execute(ev_chunk, target);
-    /* Function values hold bare pointers into nested fn chunks, so only
-     * function-less chunks can be freed (same policy as the REPL). */
-    if (ev_chunk->fn_count == 0)
-        chunk_free(ev_chunk);
+    /* Chunks are refcounted: drop the creator ref; fn values keep their
+     * nested chunks alive. */
+    chunk_free(ev_chunk);
     free_tokenlist(&tl);
     /* Fn bodies are cloned or compiled into chunks — AST is safe to free. */
     free_ast(ast);

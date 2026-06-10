@@ -134,6 +134,21 @@ void jit_register_chunk(struct EigsChunk *chunk) {
     g_chunks[g_chunks_count++] = chunk;
 }
 
+/* Called from chunk_decref when a chunk dies, so the hotness registry
+ * (and its EIGS_JIT_HOT shutdown dump) never dereferences a freed chunk.
+ * The registry is thread-local; a chunk registered on one thread and
+ * freed on another stays in the registering thread's array — that only
+ * matters for the debug dump, and only main's registry is dumped. */
+void jit_unregister_chunk(struct EigsChunk *chunk) {
+    if (!chunk) return;
+    for (int i = 0; i < g_chunks_count; i++) {
+        if (g_chunks[i] == chunk) {
+            g_chunks[i] = g_chunks[--g_chunks_count];
+            return;
+        }
+    }
+}
+
 void jit_module_init(void) {
     /* Defer cache creation until the first compile request. */
 }

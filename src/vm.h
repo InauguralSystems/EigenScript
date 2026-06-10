@@ -153,6 +153,13 @@ typedef struct {
 
 /* ---- Bytecode Chunk ---- */
 typedef struct EigsChunk {
+    /* Lifetime: 1 creator ref (compile_ast caller, or the parent chunk's
+     * functions[] slot for nested chunks) + 1 per live VAL_FN pointing at
+     * this chunk (taken in OP_CLOSURE) + 1 per active call frame running
+     * it. Atomic when g_vm_multithreaded, plain otherwise — same policy
+     * as Value/env refcounts. */
+    int      refcount;
+
     uint8_t *code;              /* bytecode array */
     int      code_len;
     int      code_cap;
@@ -268,7 +275,9 @@ typedef struct {
 
 /* Chunk lifecycle */
 EigsChunk *chunk_new(const char *name);
-void       chunk_free(EigsChunk *chunk);
+void       chunk_free(EigsChunk *chunk);   /* alias of chunk_decref */
+void       chunk_incref(EigsChunk *chunk);
+void       chunk_decref(EigsChunk *chunk);
 int        chunk_add_constant(EigsChunk *chunk, Value *val);
 void       chunk_emit(EigsChunk *chunk, uint8_t byte, int line);
 void       chunk_emit_u16(EigsChunk *chunk, uint16_t val, int line);

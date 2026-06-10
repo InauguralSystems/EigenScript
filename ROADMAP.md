@@ -1,6 +1,13 @@
 # Roadmap
 
-Current version: **0.11.4**
+Current version: **0.11.8**
+
+Recently shipped (0.11.5–0.11.8): cross-platform CI + sanitizer matrix,
+HTTP server hardening (threaded accept, protocol hygiene), execution
+trace tape + deterministic replay (`EIGS_TRACE`/`EIGS_REPLAY`), temporal
+interrogatives (`prev of`, `at`, `state_at` + line-floor index),
+debugger step-back, leak-clean suite under ASan (enforced in CI), and
+refcounted bytecode chunks.
 
 ## Next: Performance (0.12.0)
 

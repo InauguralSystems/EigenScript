@@ -4,6 +4,34 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.11.8] — 2026-06-10
+
+A reversibility-hardening + memory-correctness release: `state_at`
+gets its Phase 4 snapshot cache, container values replay from tape,
+the entire suite runs leak-clean under AddressSanitizer (now enforced
+in CI), and bytecode chunks are reference-counted — closing the last
+deliberate leak and a REPL use-after-free.
+
+### Added — chunk refcounting
+
+Bytecode chunks now carry a refcount: one creator ref (the
+`compile_ast` caller, or the parent chunk's `functions[]` slot for
+nested chunks), one per live `VAL_FN` (taken in `OP_CLOSURE`, dropped
+in `free_val`), and one per active call frame (so a function whose
+last value ref dies mid-call cannot have its code freed under it; the
+fn value was already popped and decref'd before frame push). JIT
+return thunks write `chunk->jit_advance` *after* `jit_helper_return`
+runs, so the popped frame's chunk ref is released in vm_run's post-
+thunk sentinel handler rather than the helper. The JIT hotness
+registry drops its bare pointer via `jit_unregister_chunk` when a
+chunk dies.
+
+Consequences: the script path, REPL, `eval`, `load_file`, and
+`import` now free their chunks unconditionally (`import` previously
+leaked its module chunk entirely); the REPL/`eval` fn-defining-chunk
+retention workaround is gone; atomics gate on `g_vm_multithreaded`
+like every other refcount.
+
 ### Fixed — memory: the suite now runs leak-clean under ASan
 
 Chased the "intentional don't-free-at-exit baseline" and found it was

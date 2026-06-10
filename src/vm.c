@@ -959,6 +959,9 @@ void jit_helper_return(void) {
     if (frame->owns_env) env_free(frame->env);
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    /* The frame's chunk ref is NOT dropped here: the thunk epilogue still
+     * writes chunk->jit_advance after we return. vm_run's -1 sentinel
+     * handler drops it. */
     g_vm.frame_count--;
     /* Push result onto whatever is now the current top frame's slice.
      * For a top-level return (frame_count became 0 or fell below
@@ -980,6 +983,7 @@ void jit_helper_return_null(void) {
     if (frame->owns_env) env_free(frame->env);
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    /* Chunk ref deferred to vm_run's -1 handler (see jit_helper_return). */
     g_vm.frame_count--;
     g_vm.stack[g_vm.sp++] = slot_null();
 }
@@ -1043,6 +1047,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     }
     CallFrame *frame = &g_vm.frames[g_vm.frame_count++];
     frame->chunk = chunk;
+    chunk_incref(chunk);   /* frame's ref — released when this frame pops */
     frame->ip = chunk->code;
     frame->bp = g_vm.sp;
     frame->env = env;
@@ -1767,7 +1772,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (chunk->jit_osr_advance == -1) {
                 /* Stage 4s: OSR thunk hit OP_RETURN. Same shape as the
                  * OP_CALL hook: result already on caller's stack, frame
-                 * popped. Resync, or return to C if below base_frame. */
+                 * popped. Resync, or return to C if below base_frame.
+                 * The popped frame's chunk ref is ours to drop (deferred
+                 * past the epilogue's jit_osr_advance write). */
+                chunk_decref(chunk);
                 if (g_vm.frame_count <= base_frame) {
                     EigsSlot result_s = g_vm.stack[--g_vm.sp];
                     if (slot_is_num(result_s))  return make_num(result_s.d);
@@ -1858,6 +1866,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             frame->env->env_refcount++;
         Value *fn = make_fn(fn_chunk->name, params, fn_chunk->param_count,
                             NULL, 0, frame->env);
+        chunk_incref(fn_chunk);   /* the VAL_FN's ref; dropped in free_val */
         /* make_fn interned its own copies — the temp array and its
          * strdups are ours to free, else every closure creation leaks
          * its param names. */
@@ -1992,6 +2001,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             }
             frame = &g_vm.frames[g_vm.frame_count++];
             frame->chunk = fn_chunk;
+            chunk_incref(fn_chunk);   /* frame's ref — the fn value popped
+                                       * above may die mid-call */
             frame->ip = fn_chunk->code;
             frame->bp = g_vm.sp;
             frame->env = call_env;
@@ -2025,6 +2036,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (fn_chunk->jit_code) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
+                    /* jit_helper_return popped fn_chunk's frame but left
+                     * its chunk ref to us — the thunk epilogue writes
+                     * fn_chunk->jit_advance after the helper returns, so
+                     * the helper itself must not free the chunk. */
+                    chunk_decref(fn_chunk);
                     if (g_vm.frame_count <= base_frame) {
                         EigsSlot result_s = g_vm.stack[--g_vm.sp];
                         if (slot_is_num(result_s))  return make_num(result_s.d);
@@ -2080,6 +2096,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         /* Restore loop-stall globals saved on entry (scoped per call frame). */
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        chunk_decref(frame->chunk);   /* frame's ref; this chunk's code is
+                                       * not read again below */
         g_vm.frame_count--;
         if (g_vm.frame_count <= base_frame) {
             /* Return to C: transfer slot's owned ref into a Value*.
@@ -2102,6 +2120,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (frame->owns_env) env_free(frame->env);
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        chunk_decref(frame->chunk);   /* frame's ref */
         g_vm.frame_count--;
         if (g_vm.frame_count <= base_frame) return make_null();
         frame = &g_vm.frames[g_vm.frame_count - 1];
@@ -2968,6 +2987,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         EigsChunk *mod_chunk = compile_ast(ast, mod_env);
         Value *mod_result = vm_execute(mod_chunk, mod_env);
         if (mod_result) val_decref(mod_result);
+        chunk_free(mod_chunk);   /* creator ref; module fns hold their own */
         g_load_env = saved_load;
         free_ast(ast);
         free_tokenlist(&tl);
@@ -3125,6 +3145,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             }
             frame = &g_vm.frames[g_vm.frame_count++];
             frame->chunk = fn_chunk;
+            chunk_incref(fn_chunk);   /* frame's ref */
             frame->ip = fn_chunk->code;
             frame->bp = g_vm.sp;
             frame->env = call_env;
@@ -3140,7 +3161,9 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (fn_chunk->jit_code) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
-                    /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook. */
+                    /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.
+                     * Popped frame's chunk ref is ours to drop. */
+                    chunk_decref(fn_chunk);
                     if (g_vm.frame_count <= base_frame) {
                         EigsSlot result_s = g_vm.stack[--g_vm.sp];
                         if (slot_is_num(result_s))  return make_num(result_s.d);
@@ -3183,6 +3206,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 #endif
 
     /* Should not reach here */
+    chunk_decref(g_vm.frames[g_vm.frame_count - 1].chunk);
     g_vm.frame_count--;
     return make_null();
 
@@ -3199,6 +3223,7 @@ vm_error_halt:
         if (f->owns_env) env_free(f->env);
         g_loop_stall_count = f->saved_stall_count;
         g_loop_iterations  = f->saved_loop_iter;
+        chunk_decref(f->chunk);   /* frame's ref */
         g_vm.frame_count--;
     }
     return make_null();

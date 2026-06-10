@@ -112,13 +112,9 @@ static void eigenscript_repl(Env *env) {
         g_has_error = 0;   /* don't carry a prior line's error into this one */
         EigsChunk *repl_chunk = compile_ast(ast, env);
         Value *result = vm_execute(repl_chunk, env);
-        /* Function values hold bare pointers into the chunk's nested fn
-         * chunks (no chunk refcounting yet — same TODO as the script
-         * path). Freeing a chunk that defined functions is a
-         * use-after-free on the next call of that function, so only
-         * function-less chunks are freed here. */
-        if (repl_chunk->fn_count == 0)
-            chunk_free(repl_chunk);
+        /* Chunks are refcounted: drop the creator ref. Functions defined
+         * on this line hold their own refs on their nested chunks. */
+        chunk_free(repl_chunk);
 
         /* Print non-null results */
         if (result && result->type != VAL_NULL) {
@@ -290,8 +286,10 @@ int main(int argc, char **argv) {
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */
     int exit_code = g_has_error ? 1 : 0;
-    /* Don't free chunk — closures/functions may still reference nested chunks.
-     * Process is exiting anyway. TODO: refcount chunks. */
+    /* Chunks are refcounted: this drops the creator ref. Nested fn chunks
+     * referenced by live closures survive until those values die (during
+     * env_destroy_final below). */
+    chunk_free(script_chunk);
 
     free_ast(ast);
     free_tokenlist(&tl);

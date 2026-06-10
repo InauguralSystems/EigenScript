@@ -96,6 +96,7 @@ int eigs_jit_get_osr_threshold(void);
  * EIGS_JIT_HOT=1. Idempotent. Called from vm_run on top-level entry
  * and from jit_try_compile_chunk on every first JIT visit. */
 void jit_register_chunk(struct EigsChunk *chunk);
+void jit_unregister_chunk(struct EigsChunk *chunk);
 
 /* ---- Stage 3b inline-emit layout descriptor ----
  *

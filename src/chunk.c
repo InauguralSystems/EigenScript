@@ -4,6 +4,7 @@
 
 #include "eigenscript.h"
 #include "vm.h"
+#include "jit.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,11 +27,27 @@ EigsChunk *chunk_new(const char *name) {
     c->name = name ? strdup(name) : strdup("<module>");
     c->jit_stop_op = OP_COUNT;  /* sentinel: scan never ran */
     c->jit_osr_stop_op = OP_COUNT;
+    c->refcount = 1;            /* creator's ref */
     return c;
 }
 
-void chunk_free(EigsChunk *chunk) {
+void chunk_incref(EigsChunk *chunk) {
     if (!chunk) return;
+    if (__builtin_expect(g_vm_multithreaded, 0))
+        __atomic_add_fetch(&chunk->refcount, 1, __ATOMIC_RELAXED);
+    else
+        chunk->refcount++;
+}
+
+void chunk_decref(EigsChunk *chunk) {
+    if (!chunk) return;
+    int rc;
+    if (__builtin_expect(g_vm_multithreaded, 0))
+        rc = __atomic_sub_fetch(&chunk->refcount, 1, __ATOMIC_ACQ_REL);
+    else
+        rc = --chunk->refcount;
+    if (rc > 0) return;
+    jit_unregister_chunk(chunk);   /* drop the hotness registry's bare ptr */
     free(chunk->code);
     for (int i = 0; i < chunk->const_count; i++)
         val_decref(chunk->constants[i]);
@@ -40,13 +57,18 @@ void chunk_free(EigsChunk *chunk) {
     free(chunk->env_ic);
     free(chunk->lines);
     for (int i = 0; i < chunk->fn_count; i++)
-        chunk_free(chunk->functions[i]);
+        chunk_decref(chunk->functions[i]);   /* release creator refs */
     free(chunk->functions);
     for (int i = 0; i < chunk->local_count; i++)
         free(chunk->local_names[i]);
     free(chunk->local_names);
     free(chunk->name);
     free(chunk);
+}
+
+/* Kept as the public "release the creator's ref" entry point. */
+void chunk_free(EigsChunk *chunk) {
+    chunk_decref(chunk);
 }
 
 /* ---- Emit helpers ---- */

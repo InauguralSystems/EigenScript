@@ -297,6 +297,12 @@ void dict_set_owned(Value *dict, const char *key, Value *val);
 Value* dict_get(Value *dict, const char *key);
 void list_append(Value *list, Value *item);
 void list_append_owned(Value *list, Value *item);
+
+/* Bytecode chunk refcounting (full type + API in vm.h). free_val drops a
+ * VAL_FN's chunk ref without needing the chunk layout. */
+struct EigsChunk;
+void chunk_incref(struct EigsChunk *chunk);
+void chunk_decref(struct EigsChunk *chunk);
 Value* call_eigs_fn(Value *fn, Value *arg);
 uint32_t env_hash_name(const char *name);
 char    *env_intern_name(const char *name);
