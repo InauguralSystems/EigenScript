@@ -86,10 +86,13 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
  * are omitted. Result is a fresh VAL_DICT owned by the caller; returns
  * NULL only on allocation failure.
  *
- * Cost is O(N · H) where N = distinct names and H = avg history depth —
- * each name does a backward linear scan through its own history. Periodic
- * snapshot caching (the original Phase 4 spec) is deferred until a real
- * debugger workflow shows this scan is the bottleneck. */
+ * Cost is O(N · (H/64 + 64)) where N = distinct names and H = avg history
+ * depth: each name's backward walk consults a periodic line-floor index
+ * (min line stamp per 64-entry segment) that skips whole segments which
+ * cannot contain a hit, then scans at most one segment linearly. Histories
+ * dominated by loop re-assigns — the debugger-scrub worst case — skip in
+ * O(H/64). If the index allocation ever fails the name falls back to the
+ * plain O(H) backward scan. */
 struct Value *trace_state_at(int line);
 
 /* Phase 3 — replay.

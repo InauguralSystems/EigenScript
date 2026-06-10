@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Line-floor index for backward temporal queries** (the deferred
+  Phase 4 snapshot cache). Each name's assignment history now carries
+  a periodic index: the minimum line stamp per 64-entry segment.
+  `state_at(line)` and the `at <line>` interrogative qualifier skip
+  whole segments whose floor exceeds the query line — the loop-heavy
+  worst case (deep histories stamped with the same few lines, i.e. a
+  debugger scrubbing the timeline) drops from O(H) to O(H/64 + 64)
+  per name. Measured: 200 `state_at` queries against 200 000-entry
+  histories went from 58 ms to 1.1 ms (~50×). Overhead is one `int`
+  per 64 history entries and an O(1) min-update per assign; if the
+  index allocation ever fails the name falls back to the plain linear
+  scan. Regression: `tests/test_temporal.eigs` ([70], 18 checks) —
+  first suite coverage for `prev of` / `at` / `state_at`, including
+  a 300-assign loop history that crosses several index segments.
 - **Replay of container values.** `parse_value` in `src/trace.c` rewritten
   as a recursive-descent cursor parser; nondet returns that are lists,
   dicts, or buffers now round-trip through `EIGS_REPLAY` instead of

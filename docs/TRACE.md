@@ -97,10 +97,14 @@ in-run time travel.
 - History tracks top-level (global) bindings — the same assignments
   that produce `A` records when tracing is on.
 - `state_at of line` walks every tracked name's history backward and
-  returns a dict of each binding's value at or before `line`. Cost is
-  O(names x avg history depth) per call — a backward linear scan per
-  name. Snapshot caching is deferred until a real workflow shows the
-  scan is a bottleneck.
+  returns a dict of each binding's value at or before `line`.
+- Backward queries (`at`, `state_at`) are pruned by a periodic
+  line-floor index: each 64-entry segment of a name's history caches
+  its minimum line stamp, so segments that cannot contain a hit are
+  skipped in one compare. Loop-heavy histories — thousands of assigns
+  stamped with the same few lines, the debugger-scrub worst case —
+  resolve in O(history/64) instead of O(history). The index adds one
+  `int` per 64 history entries and an O(1) min-update per assign.
 - Per-assign cost of the history: one cache line + a pointer compare.
 
 Language-level syntax and examples: [SYNTAX.md](SYNTAX.md),
