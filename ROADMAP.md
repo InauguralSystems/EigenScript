@@ -72,14 +72,23 @@ DMG benchmark: **target met** — ~5 MHz on cpu_instrs at 0.11.8
       set-associative (the DMG "pc"/"cycles" pair collided in the
       direct map and evicted each other every step). dmg 156→118 ms;
       interpreter (EIGS_JIT_OFF) 230→213 ms.
+Post-Stage-5h profile (gprof call counts, bench_dmg_shape, per 500k
+steps): make_num collapsed 2.1M → 16k and free_value 765k → 16k (the
+DOT_SET/dict fixes); what remains is per-call env churn — env_new,
+env_free, env_hash_insert, and vm_bind_fresh_param each run once per
+step (one per handler call), plus chunk_incref/decref per frame.
+
+- [ ] **Per-call env churn** — now the top remaining DMG cost: every
+      VAL_FN call does env_new + param bind + hash insert + env_free.
+      Candidate: recycle call envs per chunk (param layout is fixed),
+      or a frame-local env representation for non-capturing functions.
 - [ ] NaN-boxing for container storage — stack and env slots are
       already EigsSlot/NaN-boxed; list items and dict values are still
-      `Value**`, so every list/dict number write round-trips through
-      make_num + refcounts (2.1M make_num calls in the DMG profile).
-      Encode immediates directly in list/dict storage. Big surface
+      `Value**`. The DMG-shaped make_num churn is gone post-5h (writes
+      mutate in place); this now mainly buys allocation-free list/dict
+      construction and reads for non-num or shared values. Big surface
       (every `data.list.items` / `data.dict.vals` touch site).
 - [ ] Extend GET_LOCAL/SET_LOCAL to all local variables (closure-safe)
-- [ ] Reduce env_free churn from LOOP_ENV_FRESH
 
 ### Language features (0.13.0)
 

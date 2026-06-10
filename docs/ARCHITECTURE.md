@@ -15,8 +15,16 @@ src/
 ├── parser.c               # Recursive-descent parser → AST
 ├── compiler.c             # AST → bytecode compiler
 ├── vm.h                   # Opcode enum, chunk/frame/VM structs
-├── vm.c                   # Bytecode VM execution loop (computed-goto dispatch)
+├── vm.c                   # Bytecode VM execution loop (computed-goto dispatch) + JIT helpers
+├── jit.h                  # JIT public API, layout descriptor, helper prototypes
+├── jit.c                  # x86-64 template JIT: scanner, emitter, code cache
+├── jit_smoke.c            # Standalone emitter smoke test (make jit-smoke)
 ├── chunk.c                # Bytecode container, constant pool, disassembler
+├── trace.h / trace.c      # Execution trace tape, deterministic replay
+├── hash.c                 # Hashing builtins (SHA-256, MD5, HMAC)
+├── fmt.c                  # Code formatter
+├── lint.c                 # Linter
+├── eigenlsp.c             # Language server (standalone binary)
 ├── builtins.c             # Core builtins (I/O, collections, string, bitwise, ...)
 ├── builtins_tensor.c      # Tensor math, gradients, SGD
 ├── builtins_internal.h    # Cross-TU prototypes for tensor builtins
@@ -48,7 +56,9 @@ Source code (.eigs)
     │
     ▼
   VM             vm_execute() → computed-goto dispatch loop → values
-    │
+    │            │
+    │            ▼
+    │          JIT (x86-64)   hot chunks/loops → native thunks
     ▼
   Observer       track entropy, dH, trajectory per variable
 ```
@@ -109,6 +119,39 @@ Key design decisions:
   and `fn_env` (the function's original env, used by
   `OP_GET_LOCAL`/`OP_SET_LOCAL` to avoid slot collision with
   loop variables).
+
+### JIT (x86-64)
+
+A template JIT (`jit.c`) compiles hot bytecode into native thunks that
+operate directly on the VM's thread-local state. It is an x86-64-only
+tier — every other platform runs the computed-goto interpreter
+unchanged, and `EIGS_JIT_OFF=1` disables it for bisection.
+
+- **Gating.** Function chunks compile on entry once `exec_count` or
+  `back_edge_count` crosses a threshold. Loops inside chunks that are
+  never re-entered (one-shot module code) compile via on-stack
+  replacement: the `OP_JUMP_BACK` handler hands execution to a thunk
+  whose entry is the loop header. Each chunk has `jit_osr[4]` — one
+  OSR slot per hot loop header, so a setup loop cannot pin the slot a
+  hotter main loop needs.
+- **Templates with helper fallback.** The emitter inlines fast paths
+  (arithmetic and comparisons including tracked-num operands, EnvIC
+  name get/set, dict-field get/set through a 2-way set-associative
+  inline cache, buffer index writes) and guards each with checks that
+  jump to an out-of-line C helper replicating the interpreter case
+  verbatim. Anything unsupported ends the compiled prefix; the thunk
+  writes a byte-advance back to the chunk so the interpreter resumes
+  exactly where native execution stopped.
+- **Native calls.** A compiled `VAL_FN` callee is invoked directly
+  from the caller's thunk (`jit_helper_call` pushes the frame and runs
+  the callee's thunk); a callee that bails mid-body hands the whole
+  frame stack back to the interpreter via a `-2` advance sentinel with
+  every frame's ip left consistent.
+- **Diagnostics.** `EIGS_JIT_STOPS=1` (compile-stop histogram),
+  `EIGS_JIT_STATS=1`, `EIGS_JIT_HOT=1`, `EIGS_JIT_DEBUG=1`
+  (+`EIGS_JIT_DUMP_NATIVE=1` for hex dumps). History and design
+  records live in CHANGELOG.md (Stages 4–5h) and
+  `docs/JIT_STAGE5_INLINE_IC.md`.
 
 ### Observer
 
