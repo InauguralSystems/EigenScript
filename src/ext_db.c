@@ -154,10 +154,10 @@ Value* builtin_db_query_json(Value *arg) {
 }
 
 void register_db_builtins(Env *env) {
-    env_set_local(env, "db_connect", make_builtin(builtin_db_connect));
-    env_set_local(env, "db_query_value", make_builtin(builtin_db_query_value));
-    env_set_local(env, "db_execute", make_builtin(builtin_db_execute));
-    env_set_local(env, "db_query_json", make_builtin(builtin_db_query_json));
+    env_set_local_owned(env, "db_connect", make_builtin(builtin_db_connect));
+    env_set_local_owned(env, "db_query_value", make_builtin(builtin_db_query_value));
+    env_set_local_owned(env, "db_execute", make_builtin(builtin_db_execute));
+    env_set_local_owned(env, "db_query_json", make_builtin(builtin_db_query_json));
 }
 
 #endif /* EIGENSCRIPT_EXT_DB */

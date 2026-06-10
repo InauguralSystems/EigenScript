@@ -580,7 +580,7 @@ Value* builtin_eigen_generate(Value *arg) {
 
     Value *result = make_list(out_len);
     for (int i = 0; i < out_len; i++) {
-        list_append(result, make_num((double)output_ids[i]));
+        list_append_owned(result, make_num((double)output_ids[i]));
     }
     free(output_ids);
     return result;

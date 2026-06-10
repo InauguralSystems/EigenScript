@@ -61,15 +61,28 @@ typedef struct {
     EigsSlot value;
 } HistoryEntry;
 
+/* Phase 4 snapshot cache: a periodic line-floor index over the history.
+ * Segment k summarizes history[k<<HIST_SEG_SHIFT .. (k+1)<<HIST_SEG_SHIFT)
+ * as the minimum line stamp in that range. Backward queries skip whole
+ * segments whose floor exceeds the query line, turning the per-name scan
+ * from O(H) into O(H/SEG + SEG). 64 entries/segment keeps the index at
+ * ~1.5% of history size while bounding the residual scan at one segment. */
+#define HIST_SEG_SHIFT 6
+#define HIST_SEG       (1 << HIST_SEG_SHIFT)
+
 typedef struct {
     const char    *name;
     EigsSlot       prev;
     EigsSlot       current;
     uint8_t        has_current;
     uint8_t        has_prev;
+    uint8_t        seg_dead;    /* index alloc failed — it is stale; fall
+                                 * back to plain linear scan for this name */
     HistoryEntry  *history;     /* append-only, indexed by assign order */
     int            hist_count;
     int            hist_cap;
+    int           *seg_min;     /* per-segment minimum line stamp */
+    int            seg_cap;
 } PrevEntry;
 
 static PrevEntry *g_prev_tab = NULL;
@@ -150,9 +163,29 @@ static void prev_record_assign(const char *name, EigsSlot value) {
         e->hist_cap = new_cap;
     }
     slot_incref(value);
-    e->history[e->hist_count].line  = g_current_line;
-    e->history[e->hist_count].value = value;
+    int idx = e->hist_count;
+    e->history[idx].line  = g_current_line;
+    e->history[idx].value = value;
     e->hist_count++;
+
+    /* Maintain the periodic line-floor index. */
+    if (!e->seg_dead) {
+        int seg = idx >> HIST_SEG_SHIFT;
+        if (seg >= e->seg_cap) {
+            int nc = e->seg_cap ? e->seg_cap * 2 : 4;
+            int *ns = realloc(e->seg_min, (size_t)nc * sizeof(int));
+            if (!ns) {
+                e->seg_dead = 1;   /* keep history; queries go linear */
+            } else {
+                e->seg_min = ns;
+                e->seg_cap = nc;
+            }
+        }
+        if (!e->seg_dead) {
+            if ((idx & (HIST_SEG - 1)) == 0 || g_current_line < e->seg_min[seg])
+                e->seg_min[seg] = g_current_line;
+        }
+    }
 }
 
 int trace_query_prev(const char *interned_name, EigsSlot *out) {
@@ -168,9 +201,32 @@ int trace_query_prev(const char *interned_name, EigsSlot *out) {
  * the array is monotone-ish but not strictly sorted (a backward jump
  * could in principle re-execute earlier lines; the latest such write
  * is the answer, which is exactly what backward scan from the end
- * gives us). */
+ * gives us).
+ *
+ * The line-floor index prunes the walk: a segment whose minimum line
+ * stamp exceeds the query line cannot contain a hit, so it is skipped
+ * in one compare. When a segment's floor is ≤ the query line it holds
+ * at least one qualifying entry, and the backward scan inside it finds
+ * the latest one — which is the global answer, since all later segments
+ * were ruled out. Loop-heavy histories (many assigns stamped with the
+ * same few lines) skip in O(H/SEG); the residual scan is ≤ SEG entries. */
 static int find_hist_idx_at_or_before(PrevEntry *e, int line) {
-    for (int i = e->hist_count - 1; i >= 0; i--) {
+    int i = e->hist_count - 1;
+    if (e->seg_min && !e->seg_dead) {
+        while (i >= 0) {
+            int seg = i >> HIST_SEG_SHIFT;
+            int seg_start = seg << HIST_SEG_SHIFT;
+            if (e->seg_min[seg] > line) {
+                i = seg_start - 1;
+                continue;
+            }
+            for (; i >= seg_start; i--) {
+                if (e->history[i].line <= line) return i;
+            }
+        }
+        return -1;
+    }
+    for (; i >= 0; i--) {
         if (e->history[i].line <= line) return i;
     }
     return -1;
@@ -578,6 +634,7 @@ void trace_shutdown(void) {
             for (int j = 0; j < e->hist_count; j++)
                 slot_decref(e->history[j].value);
             free(e->history);
+            free(e->seg_min);
         }
         free(g_prev_tab);
         g_prev_tab = NULL;

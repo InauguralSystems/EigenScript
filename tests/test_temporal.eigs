@@ -1,0 +1,64 @@
+# test_temporal.eigs — temporal interrogatives + state_at.
+#
+# Covers `prev of x`, the `at <line>` qualifier, state_at(line), and
+# the periodic line-floor index in trace.c — deep loop histories must
+# skip segments and still answer early-line queries correctly.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+# ---- basics: a assigned at lines 20, 21, 22 ----
+a is 10
+a is 20
+a is 30
+
+check of ["prev of a", (prev of a) == 20]
+check of ["what at first", (what is a at 20) == 10]
+check of ["what at second", (what is a at 21) == 20]
+check of ["what at third", (what is a at 22) == 30]
+check of ["what at future line", (what is a at 9999) == 30]
+check of ["what before first assign", (what is a at 19) == null]
+check of ["who at", (who is a at 21) == "a"]
+check of ["when at", (when is a at 21) == 2]
+check of ["prev at", (prev of a at 22) == 20]
+
+b is 5
+check of ["prev single assign", (prev of b) == null]
+
+# ---- multi-name snapshot: m1@38, m2@39, m1@40 ----
+m1 is 1
+m2 is 2
+m1 is 3
+s is state_at of 39
+check of ["state_at m1", s["m1"] == 1]
+check of ["state_at m2", s["m2"] == 2]
+
+# ---- deep history: 300 loop assigns cross 4+ index segments ----
+x is 111
+k is 0
+loop while k < 300:
+    x is k
+    k is k + 1
+x is 999
+
+check of ["deep early", (what is x at 46) == 111]
+check of ["deep loop line", (what is x at 49) == 299]
+check of ["deep last", (what is x at 51) == 999]
+check of ["deep prev", (prev of x) == 299]
+check of ["deep when", (when is x at 49) == 301]
+sd is state_at of 46
+check of ["deep state_at early", sd["x"] == 111]
+
+if fail_count == 0:
+    print of "All tests passed"
+else:
+    print of fail_count

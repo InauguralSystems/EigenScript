@@ -293,8 +293,10 @@ Value* make_fn(const char *name, char **params, int param_count, ASTNode **body,
 Value* make_builtin(BuiltinFn fn);
 Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
+void dict_set_owned(Value *dict, const char *key, Value *val);
 Value* dict_get(Value *dict, const char *key);
 void list_append(Value *list, Value *item);
+void list_append_owned(Value *list, Value *item);
 Value* call_eigs_fn(Value *fn, Value *arg);
 uint32_t env_hash_name(const char *name);
 char    *env_intern_name(const char *name);
@@ -385,6 +387,8 @@ Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
 void env_free(Env *env);
+void env_destroy_final(Env *env);
+void env_set_local_owned(Env *env, const char *name, Value *val);
 void env_clear(Env *env);
 /* Reserve env slots up to `total` (used at function call to pre-allocate
  * non-captured local slots; OP_SET_LOCAL writes directly to slot indices). */

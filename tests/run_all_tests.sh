@@ -1622,6 +1622,22 @@ else
 fi
 echo ""
 
+# [70] Temporal interrogatives (prev of, at, state_at) + the line-floor
+# index in trace.c (deep loop histories must skip segments correctly).
+echo "[70] Temporal Interrogatives (18 checks)"
+TT_OUTPUT=$(./eigenscript ../tests/test_temporal.eigs 2>&1)
+if echo "$TT_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 18))
+    PASS=$((PASS + 18))
+    echo "  PASS: all 18 temporal checks"
+else
+    TOTAL=$((TOTAL + 18))
+    FAIL=$((FAIL + 18))
+    echo "  FAIL: temporal interrogative tests"
+    echo "$TT_OUTPUT" | grep -iE "FAIL|error" | head -5
+fi
+echo ""
+
 # [69] ASan leak guard for the builtin-return ref protocol (regression of 2f1e993).
 # Skips cleanly if ASan unavailable, so this is safe on CI runners without it.
 echo "[69] Leak Guard (ASan, builtin ref protocol)"

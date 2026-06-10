@@ -1858,6 +1858,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             frame->env->env_refcount++;
         Value *fn = make_fn(fn_chunk->name, params, fn_chunk->param_count,
                             NULL, 0, frame->env);
+        /* make_fn interned its own copies — the temp array and its
+         * strdups are ours to free, else every closure creation leaks
+         * its param names. */
+        if (params) {
+            for (int i = 0; i < fn_chunk->param_count; i++)
+                free(params[i]);
+            free(params);
+        }
         /* Store the chunk pointer in the fn — we repurpose body_count as a flag */
         fn->data.fn.body = (ASTNode **)fn_chunk; /* HACK: store chunk ptr */
         fn->data.fn.body_count = -1;             /* sentinel: -1 means bytecode fn */

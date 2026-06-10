@@ -519,9 +519,9 @@ Value* builtin_set_observer_thresholds(Value *arg) {
 Value* builtin_get_observer_thresholds(Value *arg) {
     (void)arg;
     Value *result = make_list(3);
-    list_append(result, make_num(g_obs_dh_zero));
-    list_append(result, make_num(g_obs_dh_small));
-    list_append(result, make_num(g_obs_h_low));
+    list_append_owned(result, make_num(g_obs_dh_zero));
+    list_append_owned(result, make_num(g_obs_dh_small));
+    list_append_owned(result, make_num(g_obs_h_low));
     return result;
 }
 
@@ -561,7 +561,7 @@ Value* builtin_keys(Value *arg) {
     if (arg->type == VAL_DICT) {
         Value *list = make_list(arg->data.dict.count);
         for (int i = 0; i < arg->data.dict.count; i++)
-            list_append(list, make_str(arg->data.dict.keys[i]));
+            list_append_owned(list, make_str(arg->data.dict.keys[i]));
         return list;
     }
     return make_list(0);
@@ -607,18 +607,18 @@ Value* builtin_dict_remove(Value *arg) {
 Value* builtin_observe(Value *arg) {
     Value *list = make_list(4);
     if (!arg) {
-        list_append(list, make_str("equilibrium"));
-        list_append(list, make_num(0.0));
-        list_append(list, make_num(0.0));
-        list_append(list, make_num(0.0));
+        list_append_owned(list, make_str("equilibrium"));
+        list_append_owned(list, make_num(0.0));
+        list_append_owned(list, make_num(0.0));
+        list_append_owned(list, make_num(0.0));
         return list;
     }
     observer_ensure_fresh(arg);
     Value *rep = builtin_report(arg);
-    list_append(list, rep);
-    list_append(list, make_num(arg->entropy));
-    list_append(list, make_num(arg->dH));
-    list_append(list, make_num(arg->prev_dH));
+    list_append_owned(list, rep);
+    list_append_owned(list, make_num(arg->entropy));
+    list_append_owned(list, make_num(arg->dH));
+    list_append_owned(list, make_num(arg->prev_dH));
     return list;
 }
 
@@ -808,7 +808,7 @@ static Value* eigs_json_parse_array(const char *s, int *pos) {
     while (s[*pos]) {
         eigs_json_skip_ws(s, pos);
         Value *val = eigs_json_parse_value(s, pos);
-        if (val) list_append(list, val);
+        if (val) list_append_owned(list, val);
         eigs_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
         if (s[*pos] == ']') { (*pos)++; break; }
@@ -830,7 +830,8 @@ static Value* eigs_json_parse_object(const char *s, int *pos) {
         if (s[*pos] == ':') (*pos)++;
         eigs_json_skip_ws(s, pos);
         Value *val = eigs_json_parse_value(s, pos);
-        dict_set(dict, key->data.str, val ? val : make_null());
+        dict_set_owned(dict, key->data.str, val ? val : make_null());
+        val_decref(key);   /* dict interns its own copy of the key */
         eigs_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
         if (s[*pos] == '}') { (*pos)++; break; }
@@ -1000,7 +1001,7 @@ Value* builtin_split(Value *arg) {
     Value *list = make_list(0);
     size_t dlen = strlen(delim);
     if (dlen == 0) {
-        list_append(list, make_str(str));
+        list_append_owned(list, make_str(str));
         return list;
     }
     const char *p = str;
@@ -1010,11 +1011,11 @@ Value* builtin_split(Value *arg) {
         char *seg = xmalloc(seg_len + 1);
         memcpy(seg, p, seg_len);
         seg[seg_len] = '\0';
-        list_append(list, make_str(seg));
+        list_append_owned(list, make_str(seg));
         free(seg);
         p = found + dlen;
     }
-    list_append(list, make_str(p));
+    list_append_owned(list, make_str(p));
     return list;
 }
 
@@ -1083,7 +1084,7 @@ Value* builtin_scan_ints(Value *arg) {
 
         if (valid) {
             if (neg) value = -value;
-            list_append(out, make_num(value));
+            list_append_owned(out, make_num(value));
         } else if (p == start) {
             p++;
         }
@@ -1185,11 +1186,11 @@ Value* builtin_scan_tokens(Value *arg) {
         token[len] = '\0';
 
         Value *row = make_list(5);
-        list_append(row, make_str(token));
-        list_append(row, make_num((double)token_line));
-        list_append(row, make_num((double)token_col));
-        list_append(row, make_num((double)(start - base)));
-        list_append(row, make_num((double)(p - base)));
+        list_append_owned(row, make_str(token));
+        list_append_owned(row, make_num((double)token_line));
+        list_append_owned(row, make_num((double)token_col));
+        list_append_owned(row, make_num((double)(start - base)));
+        list_append_owned(row, make_num((double)(p - base)));
         list_append(out, row);
         free(token);
     }
@@ -1270,13 +1271,13 @@ Value* builtin_scan_int_tokens(Value *arg) {
         int is_int = scan_integer_token_value(start, len, &int_value);
 
         Value *row = make_list(7);
-        list_append(row, make_str(token));
-        list_append(row, make_num((double)token_line));
-        list_append(row, make_num((double)token_col));
-        list_append(row, make_num((double)(start - base)));
-        list_append(row, make_num((double)(p - base)));
-        list_append(row, make_num((double)is_int));
-        list_append(row, make_num(int_value));
+        list_append_owned(row, make_str(token));
+        list_append_owned(row, make_num((double)token_line));
+        list_append_owned(row, make_num((double)token_col));
+        list_append_owned(row, make_num((double)(start - base)));
+        list_append_owned(row, make_num((double)(p - base)));
+        list_append_owned(row, make_num((double)is_int));
+        list_append_owned(row, make_num(int_value));
         list_append(out, row);
         free(token);
     }
@@ -1353,7 +1354,7 @@ Value* builtin_match(Value *arg) {
         char *buf = xmalloc(len + 1);
         memcpy(buf, str + matches[i].rm_so, len);
         buf[len] = '\0';
-        list_append(result, make_str(buf));
+        list_append_owned(result, make_str(buf));
         free(buf);
     }
     regfree(&re);
@@ -1380,7 +1381,7 @@ Value* builtin_match_all(Value *arg) {
         char *buf = xmalloc(len + 1);
         memcpy(buf, p + m[0].rm_so, len);
         buf[len] = '\0';
-        list_append(result, make_str(buf));
+        list_append_owned(result, make_str(buf));
         free(buf);
         p += m[0].rm_eo;
         if (len == 0) p++; /* avoid infinite loop on zero-length match */
@@ -1702,7 +1703,7 @@ Value* builtin_args(Value *arg) {
     Value *list = make_list(g_argc > 2 ? g_argc - 2 : 0);
     /* g_argv[0] = eigenscript, g_argv[1] = script.eigs, g_argv[2..] = user args */
     for (int i = 2; i < g_argc; i++) {
-        list_append(list, make_str(g_argv[i]));
+        list_append_owned(list, make_str(g_argv[i]));
     }
     return list;
 }
@@ -1797,7 +1798,7 @@ Value* builtin_ls(Value *arg) {
     struct dirent *entry;
     while ((entry = readdir(d))) {
         if (entry->d_name[0] == '.') continue;
-        list_append(list, make_str(entry->d_name));
+        list_append_owned(list, make_str(entry->d_name));
     }
     closedir(d);
     return list;
@@ -2104,9 +2105,9 @@ Value* builtin_build_corpus(Value *arg) {
 
     /* Return [stream_length, distinct_identifiers, files_found] */
     Value *result = make_list(3);
-    list_append(result, make_num(stream_pos));
-    list_append(result, make_num(n_idents));
-    list_append(result, make_num(files_found));
+    list_append_owned(result, make_num(stream_pos));
+    list_append_owned(result, make_num(n_idents));
+    list_append_owned(result, make_num(files_found));
     return result;
 }
 
@@ -2140,8 +2141,9 @@ Value* builtin_json_path(Value *arg) {
     if (arg->data.list.items[1]->type == VAL_STR) path = arg->data.list.items[1]->data.str;
 
     int pos = 0;
-    Value *current = eigs_json_parse_value(json_str, &pos);
-    if (!current) return make_str("");
+    Value *root = eigs_json_parse_value(json_str, &pos);
+    if (!root) return make_str("");
+    Value *current = root;   /* walks borrowed children of root */
 
     char path_copy[1024];
     strncpy(path_copy, path, sizeof(path_copy) - 1);
@@ -2152,7 +2154,7 @@ Value* builtin_json_path(Value *arg) {
     while (segment && current) {
         if (current->type == VAL_DICT) {
             current = dict_get(current, segment);
-            if (!current) return make_str("");
+            if (!current) { val_decref(root); return make_str(""); }
         } else if (current->type == VAL_LIST) {
             /* Array — try numeric index */
             char *endp;
@@ -2163,21 +2165,25 @@ Value* builtin_json_path(Value *arg) {
                 if (idx >= 0 && idx < current->data.list.count) {
                     current = current->data.list.items[idx];
                 } else {
-                    return make_str("");
+                    val_decref(root); return make_str("");
                 }
             } else {
                 /* String key: treat as object lookup */
                 current = json_obj_get(current, segment);
-                if (!current) return make_str("");
+                if (!current) { val_decref(root); return make_str(""); }
             }
         } else {
-            return make_str("");
+            val_decref(root); return make_str("");
         }
         segment = strtok_r(NULL, ".", &saveptr);
     }
 
-    if (!current) return make_str("");
-    if (current->type == VAL_STR) return make_str(current->data.str);
+    if (!current) { val_decref(root); return make_str(""); }
+    if (current->type == VAL_STR) {
+        Value *r = make_str(current->data.str);
+        val_decref(root);
+        return r;
+    }
     if (current->type == VAL_NUM) {
         char buf[64];
         double d = current->data.num;
@@ -2185,15 +2191,17 @@ Value* builtin_json_path(Value *arg) {
             snprintf(buf, sizeof(buf), "%d", (int)d);
         else
             snprintf(buf, sizeof(buf), "%.6f", d);
+        val_decref(root);
         return make_str(buf);
     }
-    if (current->type == VAL_NULL) return make_str("");
+    if (current->type == VAL_NULL) { val_decref(root); return make_str(""); }
     /* For complex types, json_encode them */
     strbuf out;
     strbuf_init(&out);
     eigs_json_encode_value(current, &out);
     Value *r = make_str(out.data);
     strbuf_free(&out);
+    val_decref(root);
     return r;
 }
 
@@ -2327,42 +2335,44 @@ Value* builtin_env_get(Value *arg) {
 /* read_text of "path" → file contents as string, or "" on failure. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("read_bytes", make_null());
+    TRACE_NONDET_TAKE("read_bytes");
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_bytes", make_null());
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) TRACE_NONDET_RET("read_bytes", make_null());
+    if (!f) TRACE_NONDET_RECORD("read_bytes", make_null());
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
         fclose(f);
-        TRACE_NONDET_RET("read_bytes", make_null());
+        TRACE_NONDET_RECORD("read_bytes", make_null());
     }
     unsigned char *buf = xmalloc(len);
-    if (!buf) { fclose(f); TRACE_NONDET_RET("read_bytes", make_null()); }
+    if (!buf) { fclose(f); TRACE_NONDET_RECORD("read_bytes", make_null()); }
     size_t nread = fread(buf, 1, len, f);
     fclose(f);
     Value *result = make_list((int)nread);
     for (size_t i = 0; i < nread; i++)
-        list_append(result, make_num((double)buf[i]));
+        list_append_owned(result, make_num((double)buf[i]));
     free(buf);
-    TRACE_NONDET_RET("read_bytes", result);
+    TRACE_NONDET_RECORD("read_bytes", result);
 }
 
 /* read_bytes_buf of path — read binary file, return VAL_BUFFER of byte values.
  * Zero per-element allocation; O(1) indexed access. */
 Value* builtin_read_bytes_buf(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("read_bytes_buf", make_null());
+    TRACE_NONDET_TAKE("read_bytes_buf");
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_bytes_buf", make_null());
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) TRACE_NONDET_RET("read_bytes_buf", make_null());
+    if (!f) TRACE_NONDET_RECORD("read_bytes_buf", make_null());
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
         fclose(f);
-        TRACE_NONDET_RET("read_bytes_buf", make_null());
+        TRACE_NONDET_RECORD("read_bytes_buf", make_null());
     }
     unsigned char *buf = xmalloc(len);
-    if (!buf) { fclose(f); TRACE_NONDET_RET("read_bytes_buf", make_null()); }
+    if (!buf) { fclose(f); TRACE_NONDET_RECORD("read_bytes_buf", make_null()); }
     size_t nread = fread(buf, 1, len, f);
     fclose(f);
     Value *v = xcalloc(1, sizeof(Value));
@@ -2373,28 +2383,29 @@ Value* builtin_read_bytes_buf(Value *arg) {
     for (size_t i = 0; i < nread; i++)
         v->data.buffer.data[i] = (double)buf[i];
     free(buf);
-    TRACE_NONDET_RET("read_bytes_buf", v);
+    TRACE_NONDET_RECORD("read_bytes_buf", v);
 }
 
 Value* builtin_read_text(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("read_text", make_str(""));
+    TRACE_NONDET_TAKE("read_text");
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_text", make_str(""));
     FILE *f = fopen(arg->data.str, "r");
-    if (!f) TRACE_NONDET_RET("read_text", make_str(""));
+    if (!f) TRACE_NONDET_RECORD("read_text", make_str(""));
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
         fclose(f);
-        TRACE_NONDET_RET("read_text", make_str(""));
+        TRACE_NONDET_RECORD("read_text", make_str(""));
     }
     char *buf = xmalloc(len + 1);
-    if (!buf) { fclose(f); TRACE_NONDET_RET("read_text", make_str("")); }
+    if (!buf) { fclose(f); TRACE_NONDET_RECORD("read_text", make_str("")); }
     size_t read = fread(buf, 1, len, f);
     fclose(f);
     buf[read] = '\0';
     Value *result = make_str(buf);
     free(buf);
-    TRACE_NONDET_RET("read_text", result);
+    TRACE_NONDET_RECORD("read_text", result);
 }
 
 /* ==== BUILTIN: write_text ==== */
@@ -2617,7 +2628,7 @@ Value* builtin_tokenize_ids(Value *arg) {
     TokenList tl = tokenize(src);
     Value *result = make_list(tl.count);
     for (int i = 0; i < tl.count; i++) {
-        list_append(result, make_num((double)tl.tokens[i].type));
+        list_append_owned(result, make_num((double)tl.tokens[i].type));
     }
     free_tokenlist(&tl);
     return result;
@@ -2639,7 +2650,7 @@ Value* builtin_tokenize_with_names(Value *arg) {
     char numbuf[64];
     for (int i = 0; i < tl.count; i++) {
         Value *pair = make_list(2);
-        list_append(pair, make_num((double)tl.tokens[i].type));
+        list_append_owned(pair, make_num((double)tl.tokens[i].type));
         const char *name = "";
         if (tl.tokens[i].type == TOK_IDENT && tl.tokens[i].str_val) {
             name = tl.tokens[i].str_val;
@@ -2654,7 +2665,7 @@ Value* builtin_tokenize_with_names(Value *arg) {
             }
             name = numbuf;
         }
-        list_append(pair, make_str(name)); /* make_str copies the string */
+        list_append_owned(pair, make_str(name)); /* make_str copies the string */
         list_append(result, pair);
     }
     free_tokenlist(&tl);
@@ -2803,8 +2814,9 @@ Value* builtin_try_parse(Value *arg) {
     int valid = (ast != NULL && ast->type == AST_PROGRAM
                  && ast->data.program.count > 0 && errors == 0) ? 1 : 0;
     free_tokenlist(&tl);
-    /* AST intentionally leaked — try_parse called rarely enough that this
-     * is acceptable, and free_ast has edge cases with partial parses. */
+    /* make_node zero-initializes children, so free_ast walks partial
+     * parses safely (NULL children are no-ops). */
+    free_ast(ast);
     return make_num(valid);
 }
 
@@ -2832,8 +2844,13 @@ Value* builtin_eval(Value *arg) {
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
     EigsChunk *ev_chunk = compile_ast(ast, target);
     Value *result = vm_execute(ev_chunk, target);
-    /* Don't free chunk — closures may reference nested function chunks */
+    /* Function values hold bare pointers into nested fn chunks, so only
+     * function-less chunks can be freed (same policy as the REPL). */
+    if (ev_chunk->fn_count == 0)
+        chunk_free(ev_chunk);
     free_tokenlist(&tl);
+    /* Fn bodies are cloned or compiled into chunks — AST is safe to free. */
+    free_ast(ast);
     return result ? result : make_null();
 }
 
@@ -3105,8 +3122,8 @@ Value* builtin_spawn(Value *arg) {
     g_vm_multithreaded = 1;
     pthread_create(&h->tid, NULL, thread_entry, h);
     Value *d = make_dict(8);
-    dict_set(d, "_handle_id", make_num((double)hid));
-    dict_set(d, "done", make_num(0));
+    dict_set_owned(d, "_handle_id", make_num((double)hid));
+    dict_set_owned(d, "done", make_num(0));
     return d;
 }
 
@@ -3159,7 +3176,7 @@ Value* builtin_channel(Value *arg) {
     int hid = handle_register(ch, HANDLE_CHANNEL);
     if (hid < 0) { free(ch); return make_null(); }
     Value *d = make_dict(8);
-    dict_set(d, "_channel_id", make_num((double)hid));
+    dict_set_owned(d, "_channel_id", make_num((double)hid));
     return d;
 }
 
@@ -3358,10 +3375,10 @@ Value* builtin_nearest_in_range(Value *arg) {
     }
     if (best_idx < 0) return make_null();
     Value *result = make_dict(8);
-    dict_set(result, "index", make_num(best_idx));
-    dict_set(result, "dist", make_num(sqrt(best_sq)));
-    dict_set(result, "dx", make_num(best_dx));
-    dict_set(result, "dy", make_num(best_dy));
+    dict_set_owned(result, "index", make_num(best_idx));
+    dict_set_owned(result, "dist", make_num(sqrt(best_sq)));
+    dict_set_owned(result, "dx", make_num(best_dx));
+    dict_set_owned(result, "dy", make_num(best_dy));
     return result;
 }
 
@@ -3471,7 +3488,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
 
     for (int i = 0; i < n; i++) {
         if (!valid_arr[i]) {
-            list_append(result, make_null());
+            list_append_owned(result, make_null());
             continue;
         }
         double pi_x = px_arr[i];
@@ -3497,13 +3514,13 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             }
         }
         if (best_idx < 0) {
-            list_append(result, make_null());
+            list_append_owned(result, make_null());
         } else {
             Value *r = make_dict(8);
-            dict_set(r, "index", make_num(best_idx));
-            dict_set(r, "dist", make_num(sqrt(best_sq)));
-            dict_set(r, "dx", make_num(best_dx));
-            dict_set(r, "dy", make_num(best_dy));
+            dict_set_owned(r, "index", make_num(best_idx));
+            dict_set_owned(r, "dist", make_num(sqrt(best_sq)));
+            dict_set_owned(r, "dx", make_num(best_dx));
+            dict_set_owned(r, "dy", make_num(best_dy));
             list_append(result, r);
         }
     }
@@ -3677,6 +3694,7 @@ Value* builtin_sort_by(Value *arg) {
         Value *kv = call_eigs_fn(key_fn, list->data.list.items[i]);
         pairs[i].key = (kv && kv->type == VAL_NUM) ? kv->data.num : 0.0;
         pairs[i].index = i;
+        if (kv) val_decref(kv);
     }
     qsort(pairs, n, sizeof(SortByPair), sort_by_pair_cmp);
     Value *result = make_list(n);
@@ -3754,186 +3772,186 @@ Value* builtin_dispatch(Value *arg) {
 
 void register_builtins(Env *env) {
     /* ---- Core language builtins (always available) ---- */
-    env_set_local(env, "print", make_builtin(builtin_print));
-    env_set_local(env, "write", make_builtin(builtin_write));
-    env_set_local(env, "flush", make_builtin(builtin_flush));
-    env_set_local(env, "raw_key", make_builtin(builtin_raw_key));
-    env_set_local(env, "usleep", make_builtin(builtin_usleep));
-    env_set_local(env, "monotonic_ns", make_builtin(builtin_monotonic_ns));
-    env_set_local(env, "monotonic_ms", make_builtin(builtin_monotonic_ms));
-    env_set_local(env, "join", make_builtin(builtin_join));
-    env_set_local(env, "text_builder_new", make_builtin(builtin_text_builder_new));
-    env_set_local(env, "text_builder_append", make_builtin(builtin_text_builder_append));
-    env_set_local(env, "text_builder_append_line", make_builtin(builtin_text_builder_append_line));
-    env_set_local(env, "text_builder_extend", make_builtin(builtin_text_builder_extend));
-    env_set_local(env, "text_builder_part_count", make_builtin(builtin_text_builder_part_count));
-    env_set_local(env, "text_builder_clear", make_builtin(builtin_text_builder_clear));
-    env_set_local(env, "text_builder_to_string", make_builtin(builtin_text_builder_to_string));
-    env_set_local(env, "bit_and", make_builtin(builtin_bit_and));
-    env_set_local(env, "bit_or", make_builtin(builtin_bit_or));
-    env_set_local(env, "bit_xor", make_builtin(builtin_bit_xor));
-    env_set_local(env, "bit_not", make_builtin(builtin_bit_not));
-    env_set_local(env, "bit_shl", make_builtin(builtin_bit_shift_left));
-    env_set_local(env, "bit_shr", make_builtin(builtin_bit_shift_right));
-    env_set_local(env, "screen_put", make_builtin(builtin_screen_put));
-    env_set_local(env, "screen_clear", make_builtin(builtin_screen_clear));
-    env_set_local(env, "screen_end", make_builtin(builtin_screen_end));
-    env_set_local(env, "screen_render", make_builtin(builtin_screen_render));
-    env_set_local(env, "len", make_builtin(builtin_len));
-    env_set_local(env, "str", make_builtin(builtin_str));
-    env_set_local(env, "num", make_builtin(builtin_num));
-    env_set_local(env, "append", make_builtin(builtin_append));
-    env_set_local(env, "report", make_builtin(builtin_report));
-    env_set_local(env, "set_observer_thresholds", make_builtin(builtin_set_observer_thresholds));
-    env_set_local(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
-    env_set_local(env, "assert", make_builtin(builtin_assert));
-    env_set_local(env, "throw", make_builtin(builtin_throw));
-    env_set_local(env, "keys", make_builtin(builtin_keys));
-    env_set_local(env, "values", make_builtin(builtin_values));
-    env_set_local(env, "has_key", make_builtin(builtin_has_key));
-    env_set_local(env, "dict_set", make_builtin(builtin_dict_set));
-    env_set_local(env, "dict_remove", make_builtin(builtin_dict_remove));
-    env_set_local(env, "observe", make_builtin(builtin_observe));
-    env_set_local(env, "type", make_builtin(builtin_type));
-    env_set_local(env, "json_encode", make_builtin(builtin_json_encode));
-    env_set_local(env, "json_decode", make_builtin(builtin_json_decode));
-    env_set_local(env, "coalesce", make_builtin(builtin_coalesce));
-    env_set_local(env, "json_build", make_builtin(builtin_json_build));
-    env_set_local(env, "json_raw", make_builtin(builtin_json_raw));
-    env_set_local(env, "json_path", make_builtin(builtin_json_path));
-    env_set_local(env, "str_lower", make_builtin(builtin_str_lower));
-    env_set_local(env, "str_upper", make_builtin(builtin_str_upper));
-    env_set_local(env, "char_at", make_builtin(builtin_char_at));
-    env_set_local(env, "ends_with", make_builtin(builtin_ends_with));
-    env_set_local(env, "substr", make_builtin(builtin_substr));
-    env_set_local(env, "index_of", make_builtin(builtin_index_of));
-    env_set_local(env, "sin", make_builtin(builtin_sin));
-    env_set_local(env, "cos", make_builtin(builtin_cos));
-    env_set_local(env, "tan", make_builtin(builtin_tan));
-    env_set_local(env, "asin", make_builtin(builtin_asin));
-    env_set_local(env, "acos", make_builtin(builtin_acos));
-    env_set_local(env, "atan", make_builtin(builtin_atan));
-    env_set_local(env, "atan2", make_builtin(builtin_atan2));
-    env_set_local(env, "floor", make_builtin(builtin_floor));
-    env_set_local(env, "ceil", make_builtin(builtin_ceil));
-    env_set_local(env, "round", make_builtin(builtin_round));
-    env_set_local(env, "abs", make_builtin(builtin_abs));
-    env_set_local(env, "min", make_builtin(builtin_min));
-    env_set_local(env, "max", make_builtin(builtin_max));
-    env_set_local(env, "pi", make_builtin(builtin_pi));
-    env_set_local(env, "random", make_builtin(builtin_random));
-    env_set_local(env, "random_int", make_builtin(builtin_random_int));
-    env_set_local(env, "seed_random", make_builtin(builtin_seed_random));
-    env_set_local(env, "args", make_builtin(builtin_args));
-    env_set_local(env, "path_join", make_builtin(builtin_path_join));
-    env_set_local(env, "path_dir", make_builtin(builtin_path_dir));
-    env_set_local(env, "path_base", make_builtin(builtin_path_base));
-    env_set_local(env, "path_ext", make_builtin(builtin_path_ext));
-    env_set_local(env, "mkdir", make_builtin(builtin_mkdir));
-    env_set_local(env, "ls", make_builtin(builtin_ls));
-    env_set_local(env, "getcwd", make_builtin(builtin_getcwd));
-    env_set_local(env, "chdir", make_builtin(builtin_chdir));
-    env_set_local(env, "mktemp", make_builtin(builtin_mktemp));
-    env_set_local(env, "rm", make_builtin(builtin_rm));
-    env_set_local(env, "free_val", make_builtin(builtin_free_val));
-    env_set_local(env, "stream_open", make_builtin(builtin_stream_open));
-    env_set_local(env, "stream_write", make_builtin(builtin_stream_write));
-    env_set_local(env, "stream_close", make_builtin(builtin_stream_close));
-    env_set_local(env, "build_corpus", make_builtin(builtin_build_corpus));
-    env_set_local(env, "contains", make_builtin(builtin_contains));
-    env_set_local(env, "starts_with", make_builtin(builtin_starts_with));
-    env_set_local(env, "split", make_builtin(builtin_split));
-    env_set_local(env, "scan_ints", make_builtin(builtin_scan_ints));
-    env_set_local(env, "scan_tokens", make_builtin(builtin_scan_tokens));
-    env_set_local(env, "scan_int_tokens", make_builtin(builtin_scan_int_tokens));
-    env_set_local(env, "trim", make_builtin(builtin_trim));
-    env_set_local(env, "str_replace", make_builtin(builtin_str_replace));
-    env_set_local(env, "regex_match", make_builtin(builtin_match));
-    env_set_local(env, "regex_find", make_builtin(builtin_match_all));
-    env_set_local(env, "regex_replace", make_builtin(builtin_regex_replace));
-    env_set_local(env, "load_file", make_builtin(builtin_load_file));
-    env_set_local(env, "file_exists", make_builtin(builtin_file_exists));
-    env_set_local(env, "env_get", make_builtin(builtin_env_get));
-    env_set_local(env, "read_bytes", make_builtin(builtin_read_bytes));
-    env_set_local(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
-    env_set_local(env, "read_text", make_builtin(builtin_read_text));
-    env_set_local(env, "write_text", make_builtin(builtin_write_text));
-    env_set_local(env, "exec_capture", make_builtin(builtin_exec_capture));
+    env_set_local_owned(env, "print", make_builtin(builtin_print));
+    env_set_local_owned(env, "write", make_builtin(builtin_write));
+    env_set_local_owned(env, "flush", make_builtin(builtin_flush));
+    env_set_local_owned(env, "raw_key", make_builtin(builtin_raw_key));
+    env_set_local_owned(env, "usleep", make_builtin(builtin_usleep));
+    env_set_local_owned(env, "monotonic_ns", make_builtin(builtin_monotonic_ns));
+    env_set_local_owned(env, "monotonic_ms", make_builtin(builtin_monotonic_ms));
+    env_set_local_owned(env, "join", make_builtin(builtin_join));
+    env_set_local_owned(env, "text_builder_new", make_builtin(builtin_text_builder_new));
+    env_set_local_owned(env, "text_builder_append", make_builtin(builtin_text_builder_append));
+    env_set_local_owned(env, "text_builder_append_line", make_builtin(builtin_text_builder_append_line));
+    env_set_local_owned(env, "text_builder_extend", make_builtin(builtin_text_builder_extend));
+    env_set_local_owned(env, "text_builder_part_count", make_builtin(builtin_text_builder_part_count));
+    env_set_local_owned(env, "text_builder_clear", make_builtin(builtin_text_builder_clear));
+    env_set_local_owned(env, "text_builder_to_string", make_builtin(builtin_text_builder_to_string));
+    env_set_local_owned(env, "bit_and", make_builtin(builtin_bit_and));
+    env_set_local_owned(env, "bit_or", make_builtin(builtin_bit_or));
+    env_set_local_owned(env, "bit_xor", make_builtin(builtin_bit_xor));
+    env_set_local_owned(env, "bit_not", make_builtin(builtin_bit_not));
+    env_set_local_owned(env, "bit_shl", make_builtin(builtin_bit_shift_left));
+    env_set_local_owned(env, "bit_shr", make_builtin(builtin_bit_shift_right));
+    env_set_local_owned(env, "screen_put", make_builtin(builtin_screen_put));
+    env_set_local_owned(env, "screen_clear", make_builtin(builtin_screen_clear));
+    env_set_local_owned(env, "screen_end", make_builtin(builtin_screen_end));
+    env_set_local_owned(env, "screen_render", make_builtin(builtin_screen_render));
+    env_set_local_owned(env, "len", make_builtin(builtin_len));
+    env_set_local_owned(env, "str", make_builtin(builtin_str));
+    env_set_local_owned(env, "num", make_builtin(builtin_num));
+    env_set_local_owned(env, "append", make_builtin(builtin_append));
+    env_set_local_owned(env, "report", make_builtin(builtin_report));
+    env_set_local_owned(env, "set_observer_thresholds", make_builtin(builtin_set_observer_thresholds));
+    env_set_local_owned(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
+    env_set_local_owned(env, "assert", make_builtin(builtin_assert));
+    env_set_local_owned(env, "throw", make_builtin(builtin_throw));
+    env_set_local_owned(env, "keys", make_builtin(builtin_keys));
+    env_set_local_owned(env, "values", make_builtin(builtin_values));
+    env_set_local_owned(env, "has_key", make_builtin(builtin_has_key));
+    env_set_local_owned(env, "dict_set", make_builtin(builtin_dict_set));
+    env_set_local_owned(env, "dict_remove", make_builtin(builtin_dict_remove));
+    env_set_local_owned(env, "observe", make_builtin(builtin_observe));
+    env_set_local_owned(env, "type", make_builtin(builtin_type));
+    env_set_local_owned(env, "json_encode", make_builtin(builtin_json_encode));
+    env_set_local_owned(env, "json_decode", make_builtin(builtin_json_decode));
+    env_set_local_owned(env, "coalesce", make_builtin(builtin_coalesce));
+    env_set_local_owned(env, "json_build", make_builtin(builtin_json_build));
+    env_set_local_owned(env, "json_raw", make_builtin(builtin_json_raw));
+    env_set_local_owned(env, "json_path", make_builtin(builtin_json_path));
+    env_set_local_owned(env, "str_lower", make_builtin(builtin_str_lower));
+    env_set_local_owned(env, "str_upper", make_builtin(builtin_str_upper));
+    env_set_local_owned(env, "char_at", make_builtin(builtin_char_at));
+    env_set_local_owned(env, "ends_with", make_builtin(builtin_ends_with));
+    env_set_local_owned(env, "substr", make_builtin(builtin_substr));
+    env_set_local_owned(env, "index_of", make_builtin(builtin_index_of));
+    env_set_local_owned(env, "sin", make_builtin(builtin_sin));
+    env_set_local_owned(env, "cos", make_builtin(builtin_cos));
+    env_set_local_owned(env, "tan", make_builtin(builtin_tan));
+    env_set_local_owned(env, "asin", make_builtin(builtin_asin));
+    env_set_local_owned(env, "acos", make_builtin(builtin_acos));
+    env_set_local_owned(env, "atan", make_builtin(builtin_atan));
+    env_set_local_owned(env, "atan2", make_builtin(builtin_atan2));
+    env_set_local_owned(env, "floor", make_builtin(builtin_floor));
+    env_set_local_owned(env, "ceil", make_builtin(builtin_ceil));
+    env_set_local_owned(env, "round", make_builtin(builtin_round));
+    env_set_local_owned(env, "abs", make_builtin(builtin_abs));
+    env_set_local_owned(env, "min", make_builtin(builtin_min));
+    env_set_local_owned(env, "max", make_builtin(builtin_max));
+    env_set_local_owned(env, "pi", make_builtin(builtin_pi));
+    env_set_local_owned(env, "random", make_builtin(builtin_random));
+    env_set_local_owned(env, "random_int", make_builtin(builtin_random_int));
+    env_set_local_owned(env, "seed_random", make_builtin(builtin_seed_random));
+    env_set_local_owned(env, "args", make_builtin(builtin_args));
+    env_set_local_owned(env, "path_join", make_builtin(builtin_path_join));
+    env_set_local_owned(env, "path_dir", make_builtin(builtin_path_dir));
+    env_set_local_owned(env, "path_base", make_builtin(builtin_path_base));
+    env_set_local_owned(env, "path_ext", make_builtin(builtin_path_ext));
+    env_set_local_owned(env, "mkdir", make_builtin(builtin_mkdir));
+    env_set_local_owned(env, "ls", make_builtin(builtin_ls));
+    env_set_local_owned(env, "getcwd", make_builtin(builtin_getcwd));
+    env_set_local_owned(env, "chdir", make_builtin(builtin_chdir));
+    env_set_local_owned(env, "mktemp", make_builtin(builtin_mktemp));
+    env_set_local_owned(env, "rm", make_builtin(builtin_rm));
+    env_set_local_owned(env, "free_val", make_builtin(builtin_free_val));
+    env_set_local_owned(env, "stream_open", make_builtin(builtin_stream_open));
+    env_set_local_owned(env, "stream_write", make_builtin(builtin_stream_write));
+    env_set_local_owned(env, "stream_close", make_builtin(builtin_stream_close));
+    env_set_local_owned(env, "build_corpus", make_builtin(builtin_build_corpus));
+    env_set_local_owned(env, "contains", make_builtin(builtin_contains));
+    env_set_local_owned(env, "starts_with", make_builtin(builtin_starts_with));
+    env_set_local_owned(env, "split", make_builtin(builtin_split));
+    env_set_local_owned(env, "scan_ints", make_builtin(builtin_scan_ints));
+    env_set_local_owned(env, "scan_tokens", make_builtin(builtin_scan_tokens));
+    env_set_local_owned(env, "scan_int_tokens", make_builtin(builtin_scan_int_tokens));
+    env_set_local_owned(env, "trim", make_builtin(builtin_trim));
+    env_set_local_owned(env, "str_replace", make_builtin(builtin_str_replace));
+    env_set_local_owned(env, "regex_match", make_builtin(builtin_match));
+    env_set_local_owned(env, "regex_find", make_builtin(builtin_match_all));
+    env_set_local_owned(env, "regex_replace", make_builtin(builtin_regex_replace));
+    env_set_local_owned(env, "load_file", make_builtin(builtin_load_file));
+    env_set_local_owned(env, "file_exists", make_builtin(builtin_file_exists));
+    env_set_local_owned(env, "env_get", make_builtin(builtin_env_get));
+    env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
+    env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
+    env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));
+    env_set_local_owned(env, "write_text", make_builtin(builtin_write_text));
+    env_set_local_owned(env, "exec_capture", make_builtin(builtin_exec_capture));
 
     /* ---- Tensor / math stdlib (always available) ---- */
-    env_set_local(env, "matmul", make_builtin(builtin_tensor_matmul));
-    env_set_local(env, "add", make_builtin(builtin_tensor_add));
-    env_set_local(env, "subtract", make_builtin(builtin_tensor_subtract));
-    env_set_local(env, "multiply", make_builtin(builtin_tensor_multiply));
-    env_set_local(env, "divide", make_builtin(builtin_tensor_divide));
-    env_set_local(env, "pow", make_builtin(builtin_tensor_pow));
-    env_set_local(env, "sqrt", make_builtin(builtin_tensor_sqrt));
-    env_set_local(env, "exp", make_builtin(builtin_tensor_exp));
-    env_set_local(env, "log", make_builtin(builtin_tensor_log));
-    env_set_local(env, "negative", make_builtin(builtin_tensor_negative));
-    env_set_local(env, "softmax", make_builtin(builtin_tensor_softmax));
-    env_set_local(env, "log_softmax", make_builtin(builtin_tensor_log_softmax));
-    env_set_local(env, "relu", make_builtin(builtin_tensor_relu));
-    env_set_local(env, "leaky_relu", make_builtin(builtin_tensor_leaky_relu));
-    env_set_local(env, "mean", make_builtin(builtin_tensor_mean));
-    env_set_local(env, "sum", make_builtin(builtin_tensor_sum));
-    env_set_local(env, "zeros", make_builtin(builtin_tensor_zeros));
-    env_set_local(env, "zeros_like", make_builtin(builtin_tensor_zeros_like));
-    env_set_local(env, "gather", make_builtin(builtin_tensor_gather));
-    env_set_local(env, "set_at", make_builtin(builtin_set_at));
-    env_set_local(env, "get_at", make_builtin(builtin_get_at));
-    env_set_local(env, "random_normal", make_builtin(builtin_random_normal));
-    env_set_local(env, "shape", make_builtin(builtin_tensor_shape));
-    env_set_local(env, "numerical_grad", make_builtin(builtin_numerical_grad));
-    env_set_local(env, "numerical_grad_rows", make_builtin(builtin_numerical_grad_rows));
-    env_set_local(env, "sgd_update", make_builtin(builtin_sgd_update));
-    env_set_local(env, "sgd_update_rows", make_builtin(builtin_sgd_update_rows));
-    env_set_local(env, "numerical_grad_cols", make_builtin(builtin_numerical_grad_cols));
-    env_set_local(env, "sgd_update_cols", make_builtin(builtin_sgd_update_cols));
-    env_set_local(env, "tokenize_ids", make_builtin(builtin_tokenize_ids));
-    env_set_local(env, "tokenize_with_names", make_builtin(builtin_tokenize_with_names));
-    env_set_local(env, "token_name", make_builtin(builtin_token_name));
-    env_set_local(env, "chr", make_builtin(builtin_chr));
-    env_set_local(env, "ord", make_builtin(builtin_ord));
-    env_set_local(env, "random_hex", make_builtin(builtin_random_hex));
-    env_set_local(env, "state_at", make_builtin(builtin_state_at));
-    env_set_local(env, "secure_equals", make_builtin(builtin_secure_equals));
-    env_set_local(env, "try_parse", make_builtin(builtin_try_parse));
-    env_set_local(env, "eval", make_builtin(builtin_eval));
-    env_set_local(env, "tensor_save", make_builtin(builtin_tensor_save));
-    env_set_local(env, "tensor_load", make_builtin(builtin_tensor_load));
-    env_set_local(env, "copy_into", make_builtin(builtin_copy_into));
-    env_set_local(env, "num_copy", make_builtin(builtin_num_copy));
-    env_set_local(env, "concat", make_builtin(builtin_concat));
-    env_set_local(env, "range", make_builtin(builtin_range));
-    env_set_local(env, "arena_mark", make_builtin(builtin_arena_mark));
-    env_set_local(env, "arena_reset", make_builtin(builtin_arena_reset));
-    env_set_local(env, "arena_stats", make_builtin(builtin_arena_stats));
+    env_set_local_owned(env, "matmul", make_builtin(builtin_tensor_matmul));
+    env_set_local_owned(env, "add", make_builtin(builtin_tensor_add));
+    env_set_local_owned(env, "subtract", make_builtin(builtin_tensor_subtract));
+    env_set_local_owned(env, "multiply", make_builtin(builtin_tensor_multiply));
+    env_set_local_owned(env, "divide", make_builtin(builtin_tensor_divide));
+    env_set_local_owned(env, "pow", make_builtin(builtin_tensor_pow));
+    env_set_local_owned(env, "sqrt", make_builtin(builtin_tensor_sqrt));
+    env_set_local_owned(env, "exp", make_builtin(builtin_tensor_exp));
+    env_set_local_owned(env, "log", make_builtin(builtin_tensor_log));
+    env_set_local_owned(env, "negative", make_builtin(builtin_tensor_negative));
+    env_set_local_owned(env, "softmax", make_builtin(builtin_tensor_softmax));
+    env_set_local_owned(env, "log_softmax", make_builtin(builtin_tensor_log_softmax));
+    env_set_local_owned(env, "relu", make_builtin(builtin_tensor_relu));
+    env_set_local_owned(env, "leaky_relu", make_builtin(builtin_tensor_leaky_relu));
+    env_set_local_owned(env, "mean", make_builtin(builtin_tensor_mean));
+    env_set_local_owned(env, "sum", make_builtin(builtin_tensor_sum));
+    env_set_local_owned(env, "zeros", make_builtin(builtin_tensor_zeros));
+    env_set_local_owned(env, "zeros_like", make_builtin(builtin_tensor_zeros_like));
+    env_set_local_owned(env, "gather", make_builtin(builtin_tensor_gather));
+    env_set_local_owned(env, "set_at", make_builtin(builtin_set_at));
+    env_set_local_owned(env, "get_at", make_builtin(builtin_get_at));
+    env_set_local_owned(env, "random_normal", make_builtin(builtin_random_normal));
+    env_set_local_owned(env, "shape", make_builtin(builtin_tensor_shape));
+    env_set_local_owned(env, "numerical_grad", make_builtin(builtin_numerical_grad));
+    env_set_local_owned(env, "numerical_grad_rows", make_builtin(builtin_numerical_grad_rows));
+    env_set_local_owned(env, "sgd_update", make_builtin(builtin_sgd_update));
+    env_set_local_owned(env, "sgd_update_rows", make_builtin(builtin_sgd_update_rows));
+    env_set_local_owned(env, "numerical_grad_cols", make_builtin(builtin_numerical_grad_cols));
+    env_set_local_owned(env, "sgd_update_cols", make_builtin(builtin_sgd_update_cols));
+    env_set_local_owned(env, "tokenize_ids", make_builtin(builtin_tokenize_ids));
+    env_set_local_owned(env, "tokenize_with_names", make_builtin(builtin_tokenize_with_names));
+    env_set_local_owned(env, "token_name", make_builtin(builtin_token_name));
+    env_set_local_owned(env, "chr", make_builtin(builtin_chr));
+    env_set_local_owned(env, "ord", make_builtin(builtin_ord));
+    env_set_local_owned(env, "random_hex", make_builtin(builtin_random_hex));
+    env_set_local_owned(env, "state_at", make_builtin(builtin_state_at));
+    env_set_local_owned(env, "secure_equals", make_builtin(builtin_secure_equals));
+    env_set_local_owned(env, "try_parse", make_builtin(builtin_try_parse));
+    env_set_local_owned(env, "eval", make_builtin(builtin_eval));
+    env_set_local_owned(env, "tensor_save", make_builtin(builtin_tensor_save));
+    env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));
+    env_set_local_owned(env, "copy_into", make_builtin(builtin_copy_into));
+    env_set_local_owned(env, "num_copy", make_builtin(builtin_num_copy));
+    env_set_local_owned(env, "concat", make_builtin(builtin_concat));
+    env_set_local_owned(env, "range", make_builtin(builtin_range));
+    env_set_local_owned(env, "arena_mark", make_builtin(builtin_arena_mark));
+    env_set_local_owned(env, "arena_reset", make_builtin(builtin_arena_reset));
+    env_set_local_owned(env, "arena_stats", make_builtin(builtin_arena_stats));
 
     /* ---- Concurrency builtins ---- */
-    env_set_local(env, "spawn", make_builtin(builtin_spawn));
-    env_set_local(env, "thread_join", make_builtin(builtin_thread_join));
-    env_set_local(env, "channel", make_builtin(builtin_channel));
-    env_set_local(env, "send", make_builtin(builtin_send));
-    env_set_local(env, "recv", make_builtin(builtin_recv));
-    env_set_local(env, "try_recv", make_builtin(builtin_try_recv));
-    env_set_local(env, "nearest_in_range", make_builtin(builtin_nearest_in_range));
-    env_set_local(env, "nearest_in_range_all", make_builtin(builtin_nearest_in_range_all));
-    env_set_local(env, "dispatch", make_builtin(builtin_dispatch));
-    env_set_local(env, "fill", make_builtin(builtin_fill));
-    env_set_local(env, "buffer", make_builtin(builtin_buffer));
-    env_set_local(env, "buf_get", make_builtin(builtin_buf_get));
-    env_set_local(env, "buf_set", make_builtin(builtin_buf_set));
-    env_set_local(env, "buf_len", make_builtin(builtin_buf_len));
-    env_set_local(env, "buf_from_list", make_builtin(builtin_buf_from_list));
-    env_set_local(env, "buf_copy", make_builtin(builtin_buf_copy));
-    env_set_local(env, "sign_extend", make_builtin(builtin_sign_extend));
-    env_set_local(env, "sort", make_builtin(builtin_sort));
-    env_set_local(env, "list_truncate", make_builtin(builtin_list_truncate));
-    env_set_local(env, "list_remove_at", make_builtin(builtin_list_remove_at));
-    env_set_local(env, "sort_by", make_builtin(builtin_sort_by));
-    env_set_local(env, "close_channel", make_builtin(builtin_close_channel));
-    env_set_local(env, "channel_closed", make_builtin(builtin_channel_closed));
+    env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));
+    env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
+    env_set_local_owned(env, "channel", make_builtin(builtin_channel));
+    env_set_local_owned(env, "send", make_builtin(builtin_send));
+    env_set_local_owned(env, "recv", make_builtin(builtin_recv));
+    env_set_local_owned(env, "try_recv", make_builtin(builtin_try_recv));
+    env_set_local_owned(env, "nearest_in_range", make_builtin(builtin_nearest_in_range));
+    env_set_local_owned(env, "nearest_in_range_all", make_builtin(builtin_nearest_in_range_all));
+    env_set_local_owned(env, "dispatch", make_builtin(builtin_dispatch));
+    env_set_local_owned(env, "fill", make_builtin(builtin_fill));
+    env_set_local_owned(env, "buffer", make_builtin(builtin_buffer));
+    env_set_local_owned(env, "buf_get", make_builtin(builtin_buf_get));
+    env_set_local_owned(env, "buf_set", make_builtin(builtin_buf_set));
+    env_set_local_owned(env, "buf_len", make_builtin(builtin_buf_len));
+    env_set_local_owned(env, "buf_from_list", make_builtin(builtin_buf_from_list));
+    env_set_local_owned(env, "buf_copy", make_builtin(builtin_buf_copy));
+    env_set_local_owned(env, "sign_extend", make_builtin(builtin_sign_extend));
+    env_set_local_owned(env, "sort", make_builtin(builtin_sort));
+    env_set_local_owned(env, "list_truncate", make_builtin(builtin_list_truncate));
+    env_set_local_owned(env, "list_remove_at", make_builtin(builtin_list_remove_at));
+    env_set_local_owned(env, "sort_by", make_builtin(builtin_sort_by));
+    env_set_local_owned(env, "close_channel", make_builtin(builtin_close_channel));
+    env_set_local_owned(env, "channel_closed", make_builtin(builtin_channel_closed));
 
     /* ---- Hash builtins (sha256, md5, hmac) ---- */
     register_hash_builtins(env);

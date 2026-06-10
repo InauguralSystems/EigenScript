@@ -674,8 +674,8 @@ static Value* builtin_store_open(Value *arg) {
         return make_null();
     }
     Value *handle = make_dict(8);
-    dict_set(handle, "_store_id", make_num((double)hid));
-    dict_set(handle, "_type", make_str("eigenstore"));
+    dict_set_owned(handle, "_store_id", make_num((double)hid));
+    dict_set_owned(handle, "_type", make_str("eigenstore"));
     return handle;
 }
 
@@ -697,7 +697,7 @@ static Value* builtin_store_close(Value *arg) {
     free(store);
     /* Invalidate handle */
     if (arg && arg->type == VAL_DICT) {
-        dict_set(arg, "_store_id", make_null());
+        dict_set_owned(arg, "_store_id", make_null());
     }
     return make_null();
 }
@@ -731,8 +731,8 @@ static Value* builtin_store_put(Value *arg) {
         root_page = store_alloc_page(store);
         next_id = 1;
         col_info = make_dict(4);
-        dict_set(col_info, "root", make_num(root_page));
-        dict_set(col_info, "next_id", make_num(next_id));
+        dict_set_owned(col_info, "root", make_num(root_page));
+        dict_set_owned(col_info, "next_id", make_num(next_id));
         dict_set(store->catalog, collection, col_info);
         store->dirty = 1;
 
@@ -759,12 +759,12 @@ static Value* builtin_store_put(Value *arg) {
     } else {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", next_id);
         next_id++;
-        dict_set(col_info, "next_id", make_num(next_id));
+        dict_set_owned(col_info, "next_id", make_num(next_id));
         store->dirty = 1;
     }
 
     /* Set _id on record */
-    dict_set(record, "_id", make_str(key_buf));
+    dict_set_owned(record, "_id", make_str(key_buf));
 
     /* Serialize record to JSON */
     char *json = store_dict_to_json(record);
@@ -1072,7 +1072,7 @@ static Value* builtin_store_update(Value *arg) {
     } else {
         return make_num(0);
     }
-    dict_set(record, "_id", make_str(key_buf));
+    dict_set_owned(record, "_id", make_str(key_buf));
 
     /* Put new record */
     Value *put_args = make_list(3);
@@ -1092,7 +1092,7 @@ static Value* builtin_store_collections(Value *arg) {
     }
     Value *list = make_list(store->catalog->data.dict.count);
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
-        list_append(list, make_str(store->catalog->data.dict.keys[i]));
+        list_append_owned(list, make_str(store->catalog->data.dict.keys[i]));
     }
     return list;
 }
@@ -1149,14 +1149,14 @@ static Value* builtin_store_drop(Value *arg) {
  * ================================================================ */
 
 void register_store_builtins(Env *env) {
-    env_set_local(env, "store_open",        make_builtin(builtin_store_open));
-    env_set_local(env, "store_close",       make_builtin(builtin_store_close));
-    env_set_local(env, "store_put",         make_builtin(builtin_store_put));
-    env_set_local(env, "store_get",         make_builtin(builtin_store_get));
-    env_set_local(env, "store_delete",      make_builtin(builtin_store_delete));
-    env_set_local(env, "store_query",       make_builtin(builtin_store_query));
-    env_set_local(env, "store_count",       make_builtin(builtin_store_count));
-    env_set_local(env, "store_update",      make_builtin(builtin_store_update));
-    env_set_local(env, "store_collections", make_builtin(builtin_store_collections));
-    env_set_local(env, "store_drop",        make_builtin(builtin_store_drop));
+    env_set_local_owned(env, "store_open",        make_builtin(builtin_store_open));
+    env_set_local_owned(env, "store_close",       make_builtin(builtin_store_close));
+    env_set_local_owned(env, "store_put",         make_builtin(builtin_store_put));
+    env_set_local_owned(env, "store_get",         make_builtin(builtin_store_get));
+    env_set_local_owned(env, "store_delete",      make_builtin(builtin_store_delete));
+    env_set_local_owned(env, "store_query",       make_builtin(builtin_store_query));
+    env_set_local_owned(env, "store_count",       make_builtin(builtin_store_count));
+    env_set_local_owned(env, "store_update",      make_builtin(builtin_store_update));
+    env_set_local_owned(env, "store_collections", make_builtin(builtin_store_collections));
+    env_set_local_owned(env, "store_drop",        make_builtin(builtin_store_drop));
 }

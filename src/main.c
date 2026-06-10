@@ -112,7 +112,13 @@ static void eigenscript_repl(Env *env) {
         g_has_error = 0;   /* don't carry a prior line's error into this one */
         EigsChunk *repl_chunk = compile_ast(ast, env);
         Value *result = vm_execute(repl_chunk, env);
-        chunk_free(repl_chunk);
+        /* Function values hold bare pointers into the chunk's nested fn
+         * chunks (no chunk refcounting yet — same TODO as the script
+         * path). Freeing a chunk that defined functions is a
+         * use-after-free on the next call of that function, so only
+         * function-less chunks are freed here. */
+        if (repl_chunk->fn_count == 0)
+            chunk_free(repl_chunk);
 
         /* Print non-null results */
         if (result && result->type != VAL_NULL) {
@@ -120,9 +126,12 @@ static void eigenscript_repl(Env *env) {
             printf("=> %s\n", s);
             free(s);
         }
+        if (result) val_decref(result);
 
         free_tokenlist(&tl);
-        /* Don't free AST — function defs hold pointers into it */
+        /* Function bodies are cloned (AST fns) or compiled into chunks
+         * (bytecode fns), so the per-line AST is safe to free. */
+        free_ast(ast);
         input.len = 0;
         input.data[0] = '\0';
     }
@@ -217,6 +226,10 @@ int main(int argc, char **argv) {
         register_store_builtins(global);
 
         eigenscript_repl(global);
+        trace_shutdown();
+        env_destroy_final(global);
+        g_global_env = NULL;
+        arena_destroy();
         return 0;
     }
 
@@ -283,6 +296,13 @@ int main(int argc, char **argv) {
     free_ast(ast);
     free_tokenlist(&tl);
     free(source);
+    /* Teardown order matters: the trace prev-table holds refs to values
+     * whose death can touch their closure env, so it must drain before
+     * the global env is destroyed. The atexit-registered trace_shutdown
+     * then no-ops. */
+    trace_shutdown();
+    env_destroy_final(global);
+    g_global_env = NULL;
     arena_destroy();
     return exit_code;
 }

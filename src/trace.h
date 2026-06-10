@@ -86,10 +86,13 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
  * are omitted. Result is a fresh VAL_DICT owned by the caller; returns
  * NULL only on allocation failure.
  *
- * Cost is O(N · H) where N = distinct names and H = avg history depth —
- * each name does a backward linear scan through its own history. Periodic
- * snapshot caching (the original Phase 4 spec) is deferred until a real
- * debugger workflow shows this scan is the bottleneck. */
+ * Cost is O(N · (H/64 + 64)) where N = distinct names and H = avg history
+ * depth: each name's backward walk consults a periodic line-floor index
+ * (min line stamp per 64-entry segment) that skips whole segments which
+ * cannot contain a hit, then scans at most one segment linearly. Histories
+ * dominated by loop re-assigns — the debugger-scrub worst case — skip in
+ * O(H/64). If the index allocation ever fails the name falls back to the
+ * plain O(H) backward scan. */
 struct Value *trace_state_at(int line);
 
 /* Phase 3 — replay.
@@ -126,6 +129,31 @@ int trace_replay_take(const char *fn, struct Value **out);
         trace_replay_take((name), &_tr_v))                           \
         return _tr_v;                                                \
     _tr_v = (expr);                                                  \
+    if (__builtin_expect(g_trace_enabled, 0))                        \
+        trace_nondet_value((name), _tr_v);                           \
+    return _tr_v;                                                    \
+} while (0)
+
+/* Early-take / record-only pair, for builtins whose live path does real
+ * work (file reads, network requests, bulk value construction) before
+ * the return value exists. TRACE_NONDET_RET alone is wrong there: under
+ * replay the live work still runs — wasted I/O, real side effects, and
+ * an abandoned (leaked) live value.
+ *
+ * Usage: TRACE_NONDET_TAKE(name) as the function's first statement,
+ * then TRACE_NONDET_RECORD(name, expr) at every return. TAKE consumes
+ * this call's N record and short-circuits; RECORD never takes, so the
+ * record cannot be consumed twice. Exactly one record per call either
+ * way, preserving the strict-ordering contract. */
+#define TRACE_NONDET_TAKE(name) do {                                 \
+    Value *_tr_take;                                                 \
+    if (__builtin_expect(g_replay_enabled, 0) &&                     \
+        trace_replay_take((name), &_tr_take))                        \
+        return _tr_take;                                             \
+} while (0)
+
+#define TRACE_NONDET_RECORD(name, expr) do {                         \
+    Value *_tr_v = (expr);                                           \
     if (__builtin_expect(g_trace_enabled, 0))                        \
         trace_nondet_value((name), _tr_v);                           \
     return _tr_v;                                                    \
