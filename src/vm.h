@@ -249,6 +249,18 @@ typedef struct EigsChunk {
      * still trips correctly because exec_count or saturation crosses
      * the threshold long before. */
     uint32_t back_edge_count;
+
+    /* Stage 5i: parked call env for recycling. After a call returns,
+     * its env can be parked here (values dropped to null; param names,
+     * hash entries, and binding_version kept) and the next call to
+     * this chunk rebinds the param slots in place — skipping env_new,
+     * per-param hash inserts, and the version bump, which also keeps
+     * every EnvIC aimed at this env hot across calls. Only envs whose
+     * count matches the compiler-known layout are parked (a binding
+     * created mid-call must not resolve in the next invocation), only
+     * when not captured by a closure, and only single-threaded.
+     * Owned by the chunk; released in chunk_decref's destructor. */
+    struct Env *env_cache;
 } EigsChunk;
 
 /* ---- Call Frame ---- */

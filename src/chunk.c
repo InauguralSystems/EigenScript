@@ -56,6 +56,9 @@ void chunk_decref(EigsChunk *chunk) {
     free(chunk->const_hashes);
     free(chunk->const_interns);
     free(chunk->env_ic);
+    /* Stage 5i: release the parked call env (not captured, refcount 0,
+     * all slots already null — env_free recycles or frees it). */
+    env_free(chunk->env_cache);
     free(chunk->lines);
     for (int i = 0; i < chunk->fn_count; i++)
         chunk_decref(chunk->functions[i]);   /* release creator refs */

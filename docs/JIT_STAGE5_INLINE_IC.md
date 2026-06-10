@@ -1,12 +1,46 @@
 # JIT Stage 5 — inline the hot fast paths (implementation spec)
 
-Status: **implemented** (5a, 5b, and the 5c env-write fix — see
-CHANGELOG "JIT Stage 5: inline fast paths"). 5c was implemented as a
-semantics-preserving (env, binding_version, slot) write cache rather
-than the set-on-exit-only variant: tests read `__loop_iterations__`
-and the cache captures the same win without changing mid-loop
-visibility. Prerequisite (done): Stages 4v/4w/4x give whole-loop
-thunk coverage with zero bailouts on the benchmark workloads.
+Status: **implemented and extended** — 5a/5b shipped as specified; 5c
+shipped as a semantics-preserving (env, binding_version, slot) write
+cache rather than the set-on-exit-only variant (tests read
+`__loop_iterations__` mid-loop). The work then continued well past
+this spec; see CHANGELOG.md entries "Stage 5" through "Stage 5h" for
+the design record of: 5d (inline dict-dot fast paths), 5e (tracked-num
+operands in arith/compare + the SET_LOCAL in-place branch), 5f (native
+VAL_FN calls inside thunks), 5g (per-loop OSR slots), 5h (DOT_SET
+in-place write + 2-way dict cache). Cumulative: bench_dmg_shape
+239 → ~118 ms (2.0×).
+
+## As-built deltas (read alongside the spec below)
+
+The spec body is kept as written for the 5a–5c design rationale; the
+emitter has since grown. What changed relative to the text below:
+
+- **Register table**: add `%r15` = `&g_vm.frames[frame_count-1]`,
+  loaded when the scanner sets `needs_frame_cache` (GET_NAME/SET name
+  family use it for `frame->env`). It is pushed TWICE in the prologue
+  to keep the body's `%rsp ≡ 8 (mod 16)` call-alignment invariant.
+  When both caches are wanted, `%r12` derives from `%r15`.
+- **Advance sentinels**: `-1` (RETURN) is joined by `-2` (Stage 5f
+  deep bail — a native callee bailed mid-body; `jit_helper_call` left
+  every frame ip consistent; vm_run resyncs without any decref).
+- **OSR**: `chunk->jit_osr_*` scalars became `chunk->jit_osr[4]` — one
+  slot per hot loop header (Stage 5g), selected by the JUMP_BACK
+  handler's scan.
+- **Dict cache**: 2-way set-associative since Stage 5h (64 sets × 2
+  ways); the inline probe checks both ways. `EigsJitLayout` gained the
+  dict-cache fields plus `dcache_mask` (a SET mask) and `dcache_ways`.
+- **Operand loaders**: arith/compare templates accept heap/tracked
+  VAL_NUM operands with `refcount >= 2` (rc==1 bails so the
+  interpreter's NUM_REUSE branch keeps value-identity semantics);
+  multi-guard ops route all guard failures through one per-op bail
+  trampoline so the 256-slot patch budget scales.
+- **Line-number references** in the spec body have drifted; use grep
+  anchors (`emit_dict_cache_probe`, `jit_supported_prefix`,
+  `jit_helper_call`) rather than the quoted offsets.
+
+Prerequisite (done): Stages 4v/4w/4x give whole-loop thunk coverage
+with zero bailouts on the benchmark workloads.
 
 ## Why
 

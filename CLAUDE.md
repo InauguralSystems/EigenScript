@@ -53,18 +53,54 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   explicitly (see suite check [71]).
 - **New JIT helpers need stubs in `src/jit_smoke.c`** or `make
   jit-smoke` fails to link.
+- **JIT emitter invariants** (`src/jit.c`): the scanner and the
+  emitter's `last_imm` switch move in lockstep; thunk bodies run at
+  `%rsp ≡ 8 (mod 16)`, so every external call is wrapped in
+  `push %rcx`/`pop %rcx` (and callee-saved pushes in the prologue stay
+  even in number — `%r15` is pushed twice for this). Registers:
+  `%rbx`=&g_vm, `%ecx`=sp cache, `%r12`=fn_env values
+  (`needs_env_cache`), `%r13d`=advance, `%r14`=chunk (`has_bail_op`),
+  `%r15`=&frames[fc-1] (`needs_frame_cache`).
+- **jit_advance sentinels**: `-1` = thunk ran a full RETURN (vm_run
+  resyncs and drops the popped frame's chunk ref); `-2` = deep bail
+  from a native callee (`jit_helper_call` already left every frame's
+  ip consistent — resync only, NO decref). All three thunk-invocation
+  sites in vm_run (OSR, CALL, DISPATCH) must handle both.
+- **Inline JIT fast paths must mirror interpreter REUSE branches
+  exactly.** CASE(SET_LOCAL)'s in-place mutation of an exclusive
+  untracked num is load-bearing: `g_last_observer` may alias that
+  Value, and a swap+decref would free it. Same family: NUM_REUSE in
+  arith (JIT bails rc==1 operands to the interpreter on purpose).
+- **Inline-vs-measure trap**: EIGS_JIT_STOPS counts *compile-time*
+  scan stops only. A loop that never gets a thunk (OSR slot taken,
+  chunk never re-entered) or a thunk that guard-bails every iteration
+  shows zero bailouts while running interpreted. When a JIT change
+  measures flat, disassemble the live thunk (`EIGS_JIT_DEBUG=1
+  EIGS_JIT_DUMP_NATIVE=1` + `objdump -D -b binary -m i386:x86-64`)
+  and check the advance value it exits with.
 - Nondet builtins use `TRACE_NONDET_RET`, or the
   `TRACE_NONDET_TAKE`/`TRACE_NONDET_RECORD` pair when the builtin does
   real work (I/O, network, bulk construction) before its return value
   exists — never let replay run the live side effects.
 - The Makefile `asan` target compiles with `EIGENSCRIPT_EXT_HTTP=0`;
   if you touch `ext_http.c`, compile-check with `make http`.
+- `make test` must run with stdin available or redirected from
+  /dev/null — `test_terminal.eigs` blocks forever reading a pipe that
+  never EOFs (e.g. backgrounded runs).
 
 ## Current focus: 0.12.0 performance
 
-JIT opcode *coverage* is done (Stage 4v/4w/4x): hot loops compile to
-single thunks with zero bailouts, but timings are flat because
-out-of-line helper calls cost about what computed-goto dispatch did.
-**The next stage is inlining the hot fast paths as native templates**
-— full implementation spec in `docs/JIT_STAGE5_INLINE_IC.md`. Read it
-before touching `src/jit.c`.
+Stage 5 (a–h) is fully shipped: inline fast paths (INDEX_SET, EnvIC
+name get/set, dict-dot via 2-way inline cache, tracked-num
+arith/compare operands), native VAL_FN calls inside thunks, per-loop
+OSR slots (`jit_osr[4]`), and the DOT_SET in-place write. Cumulative:
+`bench_dmg_shape` 239 → ~118 ms (2.0×); the JIT beats `EIGS_JIT_OFF`
+by ~45% on it. Design record: CHANGELOG.md (Stages 5–5h) +
+`docs/JIT_STAGE5_INLINE_IC.md` (spec + as-built deltas).
+
+Remaining 0.12.0 items (ROADMAP.md): NaN-boxing for *container*
+storage (list items / dict values are still `Value**`; stack and env
+slots are already EigsSlot), extending GET_LOCAL/SET_LOCAL to all
+locals, and per-call env churn (`env_new`/`env_free` per call — now
+the likely top DMG cost). Re-profile before picking: every stage this
+cycle changed the profile shape.

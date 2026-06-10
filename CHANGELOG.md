@@ -4,6 +4,34 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance — Stage 5i: per-chunk call-env recycling
+
+A function chunk's env layout is fixed (same param names → same slots
+→ same hashes), so a dead call env can be parked on its chunk and the
+next call rebinds the param slots in place — no env_new, no per-param
+env_hash_insert, no binding_version bump, which also keeps every EnvIC
+aimed at the env valid across calls. On bench_dmg_shape, env_new
+dropped 500k → 9 per run.
+
+Park gates (any failure falls back to env_free, which keeps its own
+freelist): single-threaded only (chunks are shared across spawn
+threads); never a loop-scope child env (frame->env must equal
+fn_env); not captured by a closure; count must equal the
+compiler-known layout — a binding created mid-call (e.g. a new
+SET_NAME_LOCAL name, `__loop_exit__`) must NOT resolve in the next
+invocation, and an underfed call leaves params unhashed; every param
+slot must be name-bound (a single-arg OP_DISPATCH to a multi-param fn
+binds only param 0). Take gates: cache parent matches the callee's
+closure env and the call fully binds the params. Parked slots are
+dropped to null (no value pinning) with assign_counts cleared.
+
+Numbers: 2M-trivial-call probe 147 → 109 ms (−26%), recursive fib(25)
+23.5 → 19.4 ms (−17%), bench_dmg_shape ~118 → ~116 ms (small — the
+per-call env work was a thin time slice there despite dominating the
+call counts). All four return paths (interpreter RETURN/RETURN_NULL,
+jit_helper_return/_null) park; all three call sites (CASE(CALL),
+jit_helper_call, CASE(DISPATCH)) take.
+
 ### Performance — Stage 5h: DOT_SET immediate fast path + 2-way dict cache
 
 bench_dmg_shape 156 → ~118 ms (−24%); cumulative for the 0.12.0 JIT
