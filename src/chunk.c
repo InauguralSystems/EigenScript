@@ -59,9 +59,13 @@ void chunk_decref(EigsChunk *chunk) {
     for (int i = 0; i < chunk->fn_count; i++)
         chunk_decref(chunk->functions[i]);   /* release creator refs */
     free(chunk->functions);
-    for (int i = 0; i < chunk->local_count; i++)
-        free(chunk->local_names[i]);
-    free(chunk->local_names);
+    /* Module chunks can carry promoted local slots (local_count > 0)
+     * without a local_names array — only fn/lambda chunks build one. */
+    if (chunk->local_names) {
+        for (int i = 0; i < chunk->local_count; i++)
+            free(chunk->local_names[i]);
+        free(chunk->local_names);
+    }
     free(chunk->name);
     free(chunk);
 }

@@ -1533,7 +1533,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(SET_LOCAL): {
         uint16_t slot = read_u16(ip); ip += 2;
-        if (__builtin_expect(g_trace_enabled, 0)) {
+        if (__builtin_expect(g_trace_hist, 0)) {
             const char *nm = (slot < (uint16_t)chunk->local_count && chunk->local_names)
                 ? chunk->local_names[slot] : NULL;
             trace_assign(nm, g_vm.stack[g_vm.sp - 1]);
@@ -1605,7 +1605,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(SET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
-        if (__builtin_expect(g_trace_enabled, 0)) {
+        if (__builtin_expect(g_trace_hist, 0)) {
             trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
         }
         EnvIC *ic = &chunk->env_ic[idx];
@@ -1654,7 +1654,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(SET_NAME_LOCAL): {
         uint16_t idx = read_u16(ip); ip += 2;
-        if (__builtin_expect(g_trace_enabled, 0)) {
+        if (__builtin_expect(g_trace_hist, 0)) {
             trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
         }
         EnvIC *ic = &chunk->env_ic[idx];
@@ -1693,7 +1693,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
          * unobserved+for+interrogated accumulator otherwise wrote to the
          * per-iteration loop env and the outer binding never moved). */
         uint16_t idx = read_u16(ip); ip += 2;
-        if (__builtin_expect(g_trace_enabled, 0)) {
+        if (__builtin_expect(g_trace_hist, 0)) {
             trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
         }
         EnvIC *ic = &chunk->env_ic[idx];
@@ -3035,6 +3035,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t line = read_u16(ip); ip += 2;
         current_line = line;
         g_vm.current_line = line;
+        /* History stamping needs the current line whether or not a tape
+         * is open — a plain global store is far cheaper than the call
+         * (17.8M calls per 500k DMG-shaped steps before this change). */
+        g_trace_current_line = line;
         if (__builtin_expect(g_trace_enabled, 0)) trace_line(line);
         DISPATCH();
     }

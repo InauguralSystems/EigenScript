@@ -27,6 +27,21 @@ typedef union { double d; uint64_t u; } EigsSlot;
  * costs one load + one branch. */
 extern int g_trace_enabled;
 
+/* 1 when assignment history must be recorded: set by the compiler when
+ * it sees `prev of`, any `at <expr>` qualifier, or a reference to the
+ * `state_at` builtin — and by trace_init when EIGS_TRACE opens a tape.
+ * The per-assign history append (prev-table, line stamps, the tape's A
+ * records) gates on this, so programs that never ask temporal questions
+ * pay nothing per assign. Profiling the DMG-shaped dispatch workload
+ * showed the always-on variant cost ~17.8M trace_line + 2.5M
+ * trace_assign calls per 500k interpreted steps (~1/3 of runtime). */
+extern int g_trace_hist;
+
+/* Source line currently being executed. Written directly by OP_LINE
+ * (an unconditional global store — cheaper than a call), read by
+ * trace_assign to stamp history entries and by the tape writer. */
+extern int g_trace_current_line;
+
 /* 1 when the compiler has seen a `where`/`why`/`how ... at <line>`
  * interrogative anywhere in the program. Gates observer-state capture
  * in the assignment history: stamping entropy/dH per assign forces

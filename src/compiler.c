@@ -890,6 +890,13 @@ static void compile_node(Compiler *c, ASTNode *node) {
         break;
 
     case AST_IDENT: {
+        /* A reference to the state_at builtin means assignment history
+         * will be queried at runtime — enable recording. (Aliasing that
+         * hides the name — dict lookups, eval-built strings — won't be
+         * seen; recording then starts at the aliasing program's own
+         * temporal queries, or never. Documented in TRACE.md.) */
+        if (strcmp(node->data.ident.name, "state_at") == 0)
+            g_trace_hist = 1;
         /* Try local slot resolution for params (fast path) */
         if (c->enclosing) {
             uint32_t h = node->name_hash;
@@ -1637,6 +1644,11 @@ static void compile_node(Compiler *c, ASTNode *node) {
         int kind = node->data.interrogate.kind;
         ASTNode *expr = node->data.interrogate.expr;
         ASTNode *at_expr = node->data.interrogate.at_expr;
+
+        /* `prev of x` and every `at <line>` form answer from the
+         * per-assign history — enable recording. */
+        if (kind == 6 || at_expr)
+            g_trace_hist = 1;
 
         if (at_expr && expr && expr->type == AST_IDENT) {
             /* `<kw> is x at <expr>` — operand value is not needed; only

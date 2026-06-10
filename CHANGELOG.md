@@ -4,6 +4,37 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance — temporal history is now compile-gated
+
+Profiling a DMG-shaped dispatch workload (new
+`tests/bench_dmg_shape.eigs`, 500k dispatch-table steps) showed the
+0.11.7 reversibility machinery running unconditionally: 17.8M
+`trace_line` and 2.5M `trace_assign` calls — roughly a third of
+runtime — whether or not the program ever asked a temporal question.
+
+- **`g_trace_hist`**: per-assign history recording (prev-table, line
+  stamps, tape `A` records) now gates on a compiler-set flag, enabled
+  by `prev of`, any `at <expr>` qualifier, a `state_at` reference, or
+  an open `EIGS_TRACE` tape. `OP_LINE` stores the current line as a
+  plain global write instead of a call. Programs with no temporal
+  queries also stop accumulating history memory entirely.
+- Measured: dmg-shape 295 → 243 ms (−18%); for-loop 50k −32%;
+  while 100k −23%; listcomp 20k −57%; observe 10k −44%.
+- Post-fix profile for the 0.12.0 push: ~65% vm_run dispatch, then
+  env churn (2.58M `env_free`/run ≈ one per call) and `make_num`
+  (2.1M). Recorded in ROADMAP.md.
+
+### Fixed
+- **Exit-time segfault when a top-level `unobserved` block promoted
+  module slots.** Module chunks carry promoted `local_count` slots
+  without a `local_names` array (only fn/lambda chunks build one);
+  `chunk_free`'s name loop dereferenced NULL. Latent since the loop
+  was written — exposed the moment script chunks became freeable
+  (0.11.8 chunk refcounting), and invisible to the suite because the
+  crash lands *after* correct output and most checks ignore exit
+  codes. New suite check [71] runs a promoting script and asserts
+  rc=0.
+
 ### Added — temporal interrogatives complete the matrix
 
 - **`where`/`why`/`how ... at <line>`** — the observer-derived

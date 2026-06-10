@@ -100,6 +100,17 @@ in-run time travel.
 
 - History tracks top-level (global) bindings — the same assignments
   that produce `A` records when tracing is on.
+- Recording is compile-gated: the compiler enables it when the program
+  contains `prev of`, any `at <expr>` qualifier, or a reference to
+  `state_at` (and `EIGS_TRACE` enables it unconditionally). Programs
+  with no temporal queries pay nothing per assign — profiling showed
+  the previous always-on recording cost roughly a third of a
+  dispatch-heavy workload's runtime. Since a program cannot observe
+  history without containing a query, the gate is invisible — with one
+  edge: code compiled mid-run (`eval`, REPL) that introduces the
+  *first* temporal query starts recording at that point, so assigns
+  executed earlier are not visible to it. Aliasing `state_at` through
+  a dict or eval-built string also hides it from the compiler's scan.
 - When the compiled program contains a `where`/`why`/`how ... at`
   query, each history entry also stamps an observer snapshot
   (entropy, dH) at assign time, so the observer-derived

@@ -40,6 +40,8 @@
 int g_trace_enabled = 0;
 int g_replay_enabled = 0;
 int g_trace_obs_hist = 0;
+int g_trace_hist = 0;
+int g_trace_current_line = 0;
 
 /* ----- Phase 3.0a: prev-value table.
  *
@@ -107,10 +109,8 @@ static PrevEntry *g_prev_tab = NULL;
 static int        g_prev_cap = 0;   /* power of two */
 static int        g_prev_count = 0;
 
-/* Line currently being executed by the VM. Updated by trace_line; used
- * by trace_assign to stamp each history entry. Starts at 0 — assignments
- * before the first OP_LINE (rare; usually pre-main setup) land at 0. */
-static int        g_current_line = 0;
+/* g_trace_current_line (exported, see trace.h) replaces the old static
+ * line cache: OP_LINE stores it directly instead of paying a call. */
 
 #define PREV_INIT_CAP 16
 #define PREV_LOAD_NUM 3            /* grow when count*4 >= cap*3  (~75%) */
@@ -182,7 +182,7 @@ static void prev_record_assign(const char *name, EigsSlot value) {
     }
     slot_incref(value);
     int idx = e->hist_count;
-    e->history[idx].line  = g_current_line;
+    e->history[idx].line  = g_trace_current_line;
     e->history[idx].value = value;
     e->hist_count++;
 
@@ -200,8 +200,8 @@ static void prev_record_assign(const char *name, EigsSlot value) {
             }
         }
         if (!e->seg_dead) {
-            if ((idx & (HIST_SEG - 1)) == 0 || g_current_line < e->seg_min[seg])
-                e->seg_min[seg] = g_current_line;
+            if ((idx & (HIST_SEG - 1)) == 0 || g_trace_current_line < e->seg_min[seg])
+                e->seg_min[seg] = g_trace_current_line;
         }
     }
 
@@ -372,12 +372,12 @@ void trace_init(void) {
     if (g_trace_initialized) return;
     g_trace_initialized = 1;
 
-    /* g_trace_enabled gates the VM hook sites for both the file-tape
-     * AND the prev-value map. Prev tracking is a language feature
-     * (`prev of x` must work without EIGS_TRACE), so the gate is on
-     * unconditionally. The file output is then separately gated on
-     * g_trace_fp inside the writers. */
-    g_trace_enabled = 1;
+    /* g_trace_enabled now means "a tape is open" (it used to be set
+     * unconditionally so the prev-table worked; that made every program
+     * pay history-recording costs — see g_trace_hist in trace.h). The
+     * compiler turns on g_trace_hist when the program actually contains
+     * a temporal query; a tape implies full recording, so set both
+     * below once the tape opens. */
 
     /* Phase 3 — if EIGS_REPLAY is set, open that tape for streaming reads.
      * Done first so trace_init can succeed even if EIGS_TRACE is unset. */
@@ -393,6 +393,8 @@ void trace_init(void) {
         return;
     }
     setvbuf(g_trace_fp, NULL, _IOFBF, 64 * 1024);
+    g_trace_enabled = 1;
+    g_trace_hist = 1;
 }
 
 /* ----- Phase 3: replay reader.
@@ -724,10 +726,8 @@ void trace_shutdown(void) {
 }
 
 void trace_line(int line) {
-    /* Cache outside the fp gate — `at <line>` history stamping needs
-     * the current line regardless of whether the tape is open. */
-    g_current_line = line;
-
+    /* OP_LINE stores g_trace_current_line directly; this function is
+     * only called when a tape is open (g_trace_enabled). */
     if (!g_trace_fp) return;
     if (line == g_last_line && !g_line_dirty) return;
     fprintf(g_trace_fp, "L %d\n", line);

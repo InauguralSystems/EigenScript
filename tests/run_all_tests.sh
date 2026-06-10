@@ -1638,6 +1638,24 @@ else
 fi
 echo ""
 
+# [71] Module-chunk teardown with promoted slots. Top-level `unobserved`
+# blocks promote non-escaping names to module-chunk local slots without a
+# local_names array; freeing the script chunk used to segfault at exit
+# (after correct output — so this check must verify the exit code, which
+# most suite checks don't).
+echo "[71] Module Promotion Teardown (1 check)"
+MP_OUTPUT=$(./eigenscript ../tests/test_module_promotion_exit.eigs 2>&1)
+MP_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$MP_RC" = "0" ] && [ "$MP_OUTPUT" = "ok" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: promoted-slot module chunk frees cleanly (rc=0)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: module promotion teardown (rc=$MP_RC out='$MP_OUTPUT')"
+fi
+echo ""
+
 # [69] ASan leak guard for the builtin-return ref protocol (regression of 2f1e993).
 # Skips cleanly if ASan unavailable, so this is safe on CI runners without it.
 echo "[69] Leak Guard (ASan, builtin ref protocol)"

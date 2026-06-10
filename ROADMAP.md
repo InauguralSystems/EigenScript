@@ -11,13 +11,22 @@ refcounted bytecode chunks.
 
 ## Next: Performance (0.12.0)
 
-Interpreter is near its ceiling. Profile (gprof, 500K cycles, post-0.11.4):
-- 69.3% vm_run dispatch (structural, needs JIT to eliminate)
-- 5.3% env_free, 5.3% env_set_hashed, 4.0% env_hash_find,
-  4.0% dict_set_cached, 2.7% make_num.
+Fresh profile (gprof, post-0.11.8, `tests/bench_dmg_shape.eigs` —
+500k dispatch-table steps; the DMG ROM workload itself lives outside
+the repo):
 
-DMG benchmark: ~1.094 MHz on cpu_instrs (target 4.19 MHz — 3.8x gap;
-was 8.8x at 0.11.2).
+- First finding (fixed): the 0.11.7 reversibility machinery ran
+  unconditionally — 17.8M `trace_line` + 2.5M `trace_assign` calls per
+  500k steps, ~1/3 of runtime. History recording is now compile-gated
+  (`g_trace_hist`); the workload dropped 295 → 243 ms and the
+  micro-benches 20–57%.
+- Post-fix profile: ~65% vm_run dispatch (structural — JIT territory),
+  then env churn (`env_free` 2.58M calls ≈ one per fn call,
+  `env_set_local`/`slot_from_value` 0.57M, `env_hash_find` 1.3M) and
+  `make_num` traffic (2.1M calls).
+
+DMG benchmark: ~1.094 MHz on cpu_instrs at 0.11.4 (target 4.19 MHz);
+re-measure with the ROM workload before starting the next item.
 
 - [ ] Copy-and-patch JIT — template native code gen for hot functions;
       eliminates dispatch overhead. Expected 5-10x on hot paths.
