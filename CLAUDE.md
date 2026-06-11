@@ -18,7 +18,13 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 
 - The suite must pass **both** release and ASan with leaks on:
   `make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh`
-  CI enforces `detect_leaks=1`; any new leak fails the build.
+  CI enforces `detect_leaks=1`. Known limit: a fn bound by `define`
+  inside the env it captures is an env↔fn refcount cycle the runtime
+  can't reclaim, so closure-heavy tests exit nonzero on a LeakSanitizer
+  report after fully correct output. The runner's `rc_ok` tolerates
+  exactly that case and tallies it in the final summary ("NOTE: N test
+  program(s)..."); any other nonzero exit — crash, assert, UBSan — fails.
+  Watch that tally: a jump means a new leak.
 - `make asan` overwrites `src/eigenscript` — rebuild with `make`
   before timing anything.
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
@@ -48,9 +54,11 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 - **`tests/test_temporal.eigs` is line-number-sensitive** — its `at`
   queries hardcode line numbers. Append only before the final if/else,
   and re-verify the `grep -n` markers in the file.
-- **Suite checks mostly grep output and ignore exit codes** — a crash
-  *after* correct output passes. For teardown/exit bugs, assert `rc=0`
-  explicitly (see suite check [71]).
+- **Suite sections now gate on exit codes too** (`rc_ok` in
+  run_all_tests.sh): marker-grep alone used to let a crash *after*
+  correct output pass. New .eigs sections should use `check_eigs_suite`
+  (rc + marker). The one tolerated nonzero exit is a LeakSanitizer
+  report (known closure-cycle leaks — see the ASan bullet above).
 - **New JIT helpers need stubs in `src/jit_smoke.c`** or `make
   jit-smoke` fails to link.
 - **JIT emitter invariants** (`src/jit.c`): the scanner and the

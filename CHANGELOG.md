@@ -6,6 +6,48 @@ All notable changes to EigenScript are documented here.
 
 A language-features release.
 
+### Testing & CI — coverage-gap closure
+
+A gcov pass over the suite (`docs/TEST_COVERAGE_ANALYSIS.md`) drove a
+round of test, runner, build, and runtime fixes:
+
+- **Lambda closures no longer leak their defining env.** `OP_CLOSURE`
+  bumped `env_refcount` *and* `make_fn` took the fn's own ref — the
+  extra count had no owner, so a call env that created any closure
+  could never drop to zero. A fn returned as a lambda (no self-binding)
+  now frees its env when the last fn ref dies. The remaining known leak
+  is the env↔fn cycle of `define`-bound closures (`define inner` lives
+  *in* the env that `inner` captures) — refcounting alone cannot
+  reclaim it; the suite runner tolerates LeakSanitizer-only nonzero
+  exits and tallies them in the final summary.
+- **Suite sections gate on exit codes** (`rc_ok` / `check_eigs_suite`
+  in `run_all_tests.sh`): a crash after correct output now fails the
+  section instead of slipping past the marker grep (previously only
+  check [71] asserted rc).
+- **Wired in orphaned tests**: `test_fmt.sh` (14 checks) and
+  `test_lint.sh` (10, plus a cwd-bitrot fix) — fmt.c/lint.c were at 0%
+  line coverage; 28 orphaned `.eigs` suites ([85]); compound
+  dot-assignment (`d.k += v`, `items[i].f += v`) which had zero
+  coverage of its clone_ast desugaring.
+- **New suites**: `test_jit_paths.eigs` ([82], checksummed coverage of
+  the Stage-5 fused opcodes, inline-IC slow paths, OSR, and JIT
+  helpers, with an EIGS_JIT_STATS gate so it can't silently pass
+  interpreted), `test_walker_matrix.eigs` ([83], closure capture per
+  AST node kind — the #156 bug class), `test_builtin_indirect.eigs`
+  ([84], lowered-opcode vs C-builtin agreement for `dispatch` and the
+  bench-only buffer builtins).
+- **CI**: new `extensions` job builds `make http` and runs the suite
+  against it (the probe-gated HTTP/model sections never executed in CI
+  before), compile-checks `make gfx` and the LSP, and runs
+  `make jit-smoke`.
+- **`make lsp` fixed**: the hand-picked source list predated the
+  bytecode VM (80 unresolved symbols); it now links the full runtime
+  minus `main.c`, with the missing `g_exe_dir` / `g_load_env`
+  definitions added to `eigenlsp.c`.
+- `make_fn` dropped its dead `body`/`body_count` params (AST bodies
+  died with the tree-walking evaluator); `clone_ast` survives as the
+  parser-internal compound-dot-assign desugar helper.
+
 ### Fixes
 
 - **#159 — `proc_read_buf` for binary-safe child stdout; `proc_read_line`

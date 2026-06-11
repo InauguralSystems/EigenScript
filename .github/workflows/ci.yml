@@ -43,6 +43,36 @@ jobs:
       - name: Run test suite
         run: cd tests && bash run_all_tests.sh
 
+  # Build the http+model variant and run the suite against it: the suite's
+  # probe-gated sections ([44]-[45] HTTP, [47] model roundtrip/overflow,
+  # transformer smoke) silently skip on the minimal build, so without this
+  # job ~5000 lines of extension C never execute in CI. Also compile-check
+  # the gfx variant and the LSP (both bitrot invisibly otherwise — the LSP
+  # had, for months) and run the standalone JIT emitter smoke tests.
+  extensions:
+    name: extensions (http+model suite; gfx/lsp/jit-smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: JIT emitter smoke tests
+        run: make jit-smoke
+
+      - name: Build http+model variant
+        run: make http
+
+      - name: Run full suite against http+model build
+        run: cd tests && bash run_all_tests.sh
+
+      - name: Compile-check gfx variant
+        run: make gfx
+
+      - name: Compile-check LSP
+        run: make lsp
+
   # Run the entire suite under AddressSanitizer + UndefinedBehaviorSanitizer.
   # This is the net that catches use-after-free, buffer overflow, and UB that
   # the normal -O2 build silently tolerates (the kind of bug that passes every
