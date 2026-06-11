@@ -51,22 +51,6 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 - **Suite checks mostly grep output and ignore exit codes** — a crash
   *after* correct output passes. For teardown/exit bugs, assert `rc=0`
   explicitly (see suite check [71]).
-- **New AST node → audit every pre-pass walker, not just the compile
-  switch.** `src/compiler.c` has five walkers
-  (`collect_referenced_names` / `_skip`, `scan_for_captures`,
-  `scan_for_interrogated`, `collect_module_names_walk`) that all
-  default-break. A new node type that doesn't reach them silently
-  breaks closure capture, module-name registration, and temporal
-  slot-vs-env placement (issue #156: `AST_SLICE` +
-  `AST_LIST_PATTERN_ASSIGN` were missed; closures that touched an
-  outer local only via a slice slot-promoted the outer to `null`).
-- **`frame->call_argc` must be set on every frame push.** The frames
-  array is reused storage; an uninitialized slot reads whatever the
-  last occupant left. `vm_run`'s base frame (issue #155) used to
-  miss this, and `OP_DEFAULT_PARAM` would fire defaults over slots
-  the C caller (spawn / `call_eigs_fn` / dispatch / HTTP) had already
-  bound. Three in-VM sites also set it explicitly:
-  `jit_helper_call`, `OP_CALL`, `OP_DISPATCH`.
 - **New JIT helpers need stubs in `src/jit_smoke.c`** or `make
   jit-smoke` fails to link.
 - **JIT emitter invariants** (`src/jit.c`): the scanner and the
@@ -154,15 +138,15 @@ all closed; GAP-002 infinite loop and GAP-003 per-channel volume
 still open.
 
 A post-merge review of the 0.13.0 run filed issues #148–#159 (all
-repro'd against HEAD; suites still pass 1467/1467 release + ASan
-because none are crashes). Fix before tagging 0.13.0 — the two
-wrong-answer bugs first: **#155** (`call_argc` uninitialized on
-vm_run base frames; spawn/sort_by/dispatch/http calls let defaults
-clobber explicit args) and **#156** (pre-pass walkers don't know
-AST_SLICE/AST_LIST_PATTERN_ASSIGN; closure capture and module
-globals silently break). Then #148/#149/#150 (proc replay, missing
-O_CLOEXEC, SIGPIPE leak into exec_capture children); the rest are
-small or docs.
+repro'd against HEAD; suites still pass because none are crashes).
+The two wrong-answer bugs are now fixed: **#155** (`call_argc`
+uninitialized on vm_run base frames; spawn/sort_by/dispatch/http
+defaults clobbered explicit args) and **#156** (pre-pass walkers
+didn't know AST_SLICE / AST_LIST_PATTERN_ASSIGN; closure capture
+and module globals silently broke). Remaining before tagging
+0.13.0: #148/#149/#150 (proc replay, missing O_CLOEXEC, SIGPIPE
+leak into exec_capture children) first; the rest are small or
+docs.
 
 Perf carryover from 0.12.0 (ROADMAP.md): NaN-boxing for *container*
 storage (list items / dict values are still `Value**`; stack and env
