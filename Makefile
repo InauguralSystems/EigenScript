@@ -12,9 +12,10 @@ FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c \
 
 PREFIX  := $(HOME)/.local
 
-LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c \
-               $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c \
-               $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c
+# The LSP links the whole runtime (minus main.c): eigenscript.c calls into
+# the VM/compiler/trace layers, so a hand-picked subset bitrots every time
+# the runtime grows (it had, silently — nothing built this target in CI).
+LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
 .PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke asan pgo

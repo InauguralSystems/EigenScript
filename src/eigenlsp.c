@@ -13,6 +13,8 @@
 /* ---- Globals required by linker (from eigenscript.c / main.c) ---- */
 Env *g_global_env = NULL;
 char g_script_dir[4096] = ".";
+char g_exe_dir[4096] = ".";
+__thread Env *g_load_env = NULL;
 
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "0.9.0"
