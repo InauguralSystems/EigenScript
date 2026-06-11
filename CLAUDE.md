@@ -81,9 +81,34 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 - Nondet builtins use `TRACE_NONDET_RET`, or the
   `TRACE_NONDET_TAKE`/`TRACE_NONDET_RECORD` pair when the builtin does
   real work (I/O, network, bulk construction) before its return value
-  exists — never let replay run the live side effects.
+  exists — never let replay run the live side effects. Known holes
+  (issue #148): `proc_*`, `exec_capture`, `recv`/`try_recv`/
+  `recv_timeout` are all unwrapped — replay of a proc program forks
+  real children (verified).
+- **New AST node → update all five compiler pre-pass walkers**, not
+  just the compile switch: `collect_referenced_names_skip`,
+  `collect_referenced_names`, `scan_for_captures`,
+  `scan_for_interrogated`, `collect_module_names_walk`. They
+  `default: break` on unknown nodes, which silently breaks closure
+  capture and module-name collection for names reachable only through
+  the new node (issue #156 — AST_SLICE/AST_LIST_PATTERN_ASSIGN bit
+  exactly this way).
+- **New CallFrame field → initialize every frame-init site**, not just
+  OP_CALL/OP_DISPATCH/jit_helper_call. vm_run's base-frame setup and
+  the direct `vm_execute` entry paths (`thread_entry` in builtins.c,
+  `call_eigs_fn` in builtins_tensor.c, the `dispatch` builtin,
+  ext_http handlers) reuse stale frame storage — `call_argc` missed
+  there and defaults clobbered explicit spawn args (issue #155).
+- **`f of [x]` does not spread** — the compiler spreads literal list
+  args only at `count > 1`, so a 1-element list binds the *whole list*
+  to the first param. For 1-arg calls to multi-param (incl. defaulted)
+  functions use `f of (x)`. This breaks the obvious recursive form
+  `fib of [n - 1]` the moment a defaulted param is added (issue #153).
 - The Makefile `asan` target compiles with `EIGENSCRIPT_EXT_HTTP=0`;
-  if you touch `ext_http.c`, compile-check with `make http`.
+  if you touch `ext_http.c`, compile-check with `make http`. Same for
+  `ext_gfx.c` — it's in **no** default build; compile-check with
+  `make gfx`. All variants land on `src/eigenscript`, so never rebuild
+  one while a suite run against another is in flight.
 - `make test` must run with stdin available or redirected from
   /dev/null — `test_terminal.eigs` blocks forever reading a pipe that
   never EOFs (e.g. backgrounded runs).
@@ -111,6 +136,17 @@ multiple positional args, and finite-count `audio_play_loop` (gfx).
 Tidepool downstream: GAP-001 / GAP-002 finite / GAP-005 / GAP-006
 all closed; GAP-002 infinite loop and GAP-003 per-channel volume
 still open.
+
+A post-merge review of the 0.13.0 run filed issues #148–#159 (all
+repro'd against HEAD; suites still pass 1467/1467 release + ASan
+because none are crashes). Fix before tagging 0.13.0 — the two
+wrong-answer bugs first: **#155** (`call_argc` uninitialized on
+vm_run base frames; spawn/sort_by/dispatch/http calls let defaults
+clobber explicit args) and **#156** (pre-pass walkers don't know
+AST_SLICE/AST_LIST_PATTERN_ASSIGN; closure capture and module
+globals silently break). Then #148/#149/#150 (proc replay, missing
+O_CLOEXEC, SIGPIPE leak into exec_capture children); the rest are
+small or docs.
 
 Perf carryover from 0.12.0 (ROADMAP.md): NaN-boxing for *container*
 storage (list items / dict values are still `Value**`; stack and env
