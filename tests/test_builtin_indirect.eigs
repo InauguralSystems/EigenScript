@@ -1,0 +1,132 @@
+# test_builtin_indirect.eigs — direct vs indirect calls to builtins
+# that the compiler lowers to dedicated opcodes (or that were only ever
+# exercised by benchmarks).
+#
+# `dispatch of [t, k, ctx]` with a literal 3-list lowers to OP_DISPATCH;
+# the C builtin_dispatch only runs through an indirect reference
+# (alias / pipe / table). Any semantic divergence between the opcode and
+# the builtin fallback is invisible unless both paths are asserted to
+# agree — that's the #155/#158 bug class. Same shadow pattern applies to
+# the buffer builtins the DMG benches use (fill, buf_*, ord,
+# sign_extend), which until this file had no suite coverage at all.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+# ----------------------------------------------------------------
+# dispatch: lowered opcode vs builtin fallback must agree.
+# ----------------------------------------------------------------
+define h0(c) as:
+    return 10 + c
+define h1(c) as:
+    return 20 + c
+table is [h0, h1]
+
+direct0 is dispatch of [table, 0, 5]
+direct1 is dispatch of [table, 1, 5]
+check of ["dispatch direct k=0", direct0 == 15]
+check of ["dispatch direct k=1", direct1 == 25]
+
+dsp is dispatch
+indirect0 is dsp of [table, 0, 5]
+indirect1 is dsp of [table, 1, 5]
+check of ["dispatch indirect agrees k=0", indirect0 == direct0]
+check of ["dispatch indirect agrees k=1", indirect1 == direct1]
+
+# Out-of-range key: both paths return null.
+check of ["dispatch direct OOR null", (dispatch of [table, 9, 5]) == null]
+check of ["dispatch indirect OOR null", (dsp of [table, 9, 5]) == null]
+check of ["dispatch direct neg null", (dispatch of [table, 0 - 1, 5]) == null]
+check of ["dispatch indirect neg null", (dsp of [table, 0 - 1, 5]) == null]
+
+# Non-literal table arg (variable holding the 3-list) — exercises
+# whichever path the compiler picks for a non-literal arg shape.
+packed is [table, 1, 7]
+check of ["dispatch packed arg", (dispatch of packed) == 27]
+check of ["dispatch packed indirect", (dsp of packed) == 27]
+
+# ----------------------------------------------------------------
+# fill
+# ----------------------------------------------------------------
+fa is fill of [4, 9]
+check of ["fill direct len", (len of fa) == 4]
+check of ["fill direct value", fa[3] == 9]
+filler is fill
+fb is filler of [4, 9]
+check of ["fill indirect agrees", (fb[0] == fa[0]) and ((len of fb) == (len of fa))]
+fz is fill of [0, 1]
+check of ["fill zero count", (len of fz) == 0]
+fneg is fill of [0 - 3, 1]
+check of ["fill negative count clamps", (len of fneg) == 0]
+
+# ----------------------------------------------------------------
+# buf_from_list / buf_get / buf_len
+# ----------------------------------------------------------------
+b is buf_from_list of [1.5, 2.5, 3.5]
+check of ["buf_from_list type", (type of b) == "buffer"]
+check of ["buf_len direct", (buf_len of b) == 3]
+check of ["buf_get direct", (buf_get of [b, 1]) == 2.5]
+check of ["buf_get OOR returns 0", (buf_get of [b, 99]) == 0]
+check of ["buf_get neg returns 0", (buf_get of [b, 0 - 1]) == 0]
+
+bfl is buf_from_list
+bget is buf_get
+blen is buf_len
+b2 is bfl of [1.5, 2.5, 3.5]
+check of ["buf_from_list indirect", (blen of b2) == 3]
+check of ["buf_get indirect agrees", (bget of [b2, 1]) == (buf_get of [b, 1])]
+check of ["buf_len on non-buffer", (buf_len of [1, 2]) == 2 or (buf_len of "x") == 0]
+
+# ----------------------------------------------------------------
+# ord
+# ----------------------------------------------------------------
+check of ["ord direct", (ord of "A") == 65]
+check of ["ord empty string", (ord of "") == (0 - 1)]
+ordf is ord
+check of ["ord indirect agrees", (ordf of "A") == (ord of "A")]
+
+# ----------------------------------------------------------------
+# sign_extend
+# ----------------------------------------------------------------
+check of ["sign_extend 8-bit negative", (sign_extend of [200, 8]) == (0 - 56)]
+check of ["sign_extend 8-bit positive", (sign_extend of [100, 8]) == 100]
+check of ["sign_extend bits=0 passthrough", (sign_extend of [200, 0]) == 200]
+sxt is sign_extend
+check of ["sign_extend indirect agrees", (sxt of [200, 8]) == (sign_extend of [200, 8])]
+
+# ----------------------------------------------------------------
+# nearest_in_range / nearest_in_range_all
+# ----------------------------------------------------------------
+ents is [{"px": 10, "py": 10, "active": 1}, {"px": 50, "py": 50, "active": 1}, {"px": 12, "py": 11, "active": 1}]
+nr is nearest_in_range of [ents, 11, 11, 100, 1000, 1000]
+check of ["nearest_in_range hit index", nr.index == 2]
+check of ["nearest_in_range dist", nr.dist == 1]
+nmiss is nearest_in_range of [ents, 900, 900, 5, 1000, 1000]
+check of ["nearest_in_range miss is null", nmiss == null]
+# inactive entities are skipped
+ents2 is [{"px": 10, "py": 10, "active": 0}, {"px": 20, "py": 10, "active": 1}]
+nr2 is nearest_in_range of [ents2, 10, 10, 100, 1000, 1000]
+check of ["nearest_in_range skips inactive", nr2.index == 1]
+
+nall is nearest_in_range_all of [ents, 100, 1000, 1000]
+check of ["nearest_in_range_all length", (len of nall) == 3]
+# per docs each entity's nearest (including itself) — self at dist 0
+first is nall[0]
+check of ["nearest_in_range_all self", first.dist == 0]
+
+nirf is nearest_in_range
+nr3 is nirf of [ents, 11, 11, 100, 1000, 1000]
+check of ["nearest_in_range indirect agrees", nr3.index == nr.index]
+
+print of f"builtin indirect: {pass_count} passed, {fail_count} failed"
+if fail_count == 0:
+    print of "All tests passed"

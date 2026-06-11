@@ -62,4 +62,40 @@ assert_eq of [matrix[0][1], 77, "double index assign"]
 matrix[1][0] is matrix[0][0] + matrix[0][1]
 assert_eq of [matrix[1][0], 78, "index assign with expr"]
 
+
+# Compound dot-assignment (desugars via clone_ast of the dot target:
+# obj.f += e  →  obj.f is obj.f + e — until these checks, that
+# desugaring path had zero suite coverage)
+cd is {"k": 10}
+cd.k += 5
+assert_eq of [cd.k, 15, "dot +="]
+cd.k -= 3
+assert_eq of [cd.k, 12, "dot -="]
+cd.k *= 4
+assert_eq of [cd.k, 48, "dot *="]
+cd.k /= 2
+assert_eq of [cd.k, 24, "dot /="]
+
+cb is {"v": 6}
+cb.v <<= 2
+assert_eq of [cb.v, 24, "dot <<="]
+cb.v |= 1
+assert_eq of [cb.v, 25, "dot |="]
+cb.v &= 28
+assert_eq of [cb.v, 24, "dot &="]
+cb.v ^= 5
+assert_eq of [cb.v, 29, "dot ^="]
+cb.v >>= 2
+assert_eq of [cb.v, 7, "dot >>="]
+
+# Compound on an indexed dot target (clones an AST_INDEX subtree)
+citems is [{"f": 1}, {"f": 2}]
+citems[1].f += 10
+assert_eq of [citems[1].f, 12, "indexed dot +="]
+
+# Compound on a nested dot target (clones an AST_DOT subtree)
+cnest is {"inner": {"n": 5}}
+cnest.inner.n += 1
+assert_eq of [cnest.inner.n, 6, "nested dot +="]
+
 test_summary of null

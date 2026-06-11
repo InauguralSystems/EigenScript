@@ -10,6 +10,22 @@ cd "$(dirname "$0")/../src" || { echo "cannot cd to src"; exit 1; }
 PASS=0
 FAIL=0
 TOTAL=0
+LEAKED=0
+
+# Exit-code gate for .eigs test programs. rc=0 passes. A nonzero rc whose
+# output carries a LeakSanitizer report is tolerated with a warning tally:
+# closure-defining call envs sit in an env<->fn refcount cycle the runtime
+# cannot reclaim (see docs/TEST_COVERAGE_ANALYSIS.md), so under
+# ASAN_OPTIONS=detect_leaks=1 those tests exit nonzero after fully correct
+# output. Everything else nonzero — crashes, asserts, UBSan — fails.
+rc_ok() {
+    [ "$1" = "0" ] && return 0
+    if echo "$2" | grep -q "LeakSanitizer: detected memory leaks"; then
+        LEAKED=$((LEAKED + 1))
+        return 0
+    fi
+    return 1
+}
 
 check() {
     TOTAL=$((TOTAL + 1))
@@ -44,6 +60,28 @@ check_numeric() {
     else
         echo "  FAIL: $test_name ($actual not in [$min, $max])"
         FAIL=$((FAIL + 1))
+    fi
+}
+
+# Run a self-checking .eigs suite file. Passes only if the process exits 0
+# AND prints the given marker — a crash after correct output (the bug class
+# of suite check [71]) fails here instead of slipping through. `count` is
+# the number of checks the file runs internally, for the tally.
+check_eigs_suite() {
+    TOTAL=$((TOTAL + $4))
+    local test_name="$1"
+    local file="$2"
+    local marker="$3"
+    local count="$4"
+    local out rc
+    out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
+    if rc_ok "$rc" "$out" && echo "$out" | grep -q "$marker"; then
+        PASS=$((PASS + count))
+        echo "  PASS: $test_name"
+    else
+        FAIL=$((FAIL + count))
+        echo "  FAIL: $test_name (rc=$rc)"
+        echo "$out" | grep -iE "FAIL|MISMATCH|assert|error" | head -5
     fi
 }
 
@@ -756,8 +794,8 @@ echo ""
 
 # [22] F-string interpolation
 echo "[22/27] F-String Interpolation (9 checks)"
-FS_OUTPUT=$(./eigenscript ../tests/test_fstrings.eigs 2>&1)
-if echo "$FS_OUTPUT" | grep -q "All tests passed"; then
+FS_OUTPUT=$(./eigenscript ../tests/test_fstrings.eigs 2>&1); FS_OUTPUT_RC=$?
+if rc_ok "$FS_OUTPUT_RC" "$FS_OUTPUT" && echo "$FS_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
     PASS=$((PASS + 9))
     echo "  PASS: all 9 f-string checks"
@@ -771,8 +809,8 @@ echo ""
 
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
-NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1)
-if echo "$NP_OUTPUT" | grep -q "All tests passed"; then
+NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
+if rc_ok "$NP_OUTPUT_RC" "$NP_OUTPUT" && echo "$NP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
     PASS=$((PASS + 9))
     echo "  PASS: all 9 named param checks"
@@ -786,8 +824,8 @@ echo ""
 
 # [24] Try/catch and throw
 echo "[24/27] Try/Catch & Throw (8 checks)"
-TC_OUTPUT=$(./eigenscript ../tests/test_trycatch.eigs 2>&1)
-if echo "$TC_OUTPUT" | grep -q "All tests passed"; then
+TC_OUTPUT=$(./eigenscript ../tests/test_trycatch.eigs 2>&1); TC_OUTPUT_RC=$?
+if rc_ok "$TC_OUTPUT_RC" "$TC_OUTPUT" && echo "$TC_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
     PASS=$((PASS + 8))
     echo "  PASS: all 8 try/catch checks"
@@ -801,8 +839,8 @@ echo ""
 
 # [25] Dictionaries
 echo "[25/27] Dictionaries (21 checks)"
-DI_OUTPUT=$(./eigenscript ../tests/test_dict.eigs 2>&1)
-if echo "$DI_OUTPUT" | grep -q "All tests passed"; then
+DI_OUTPUT=$(./eigenscript ../tests/test_dict.eigs 2>&1); DI_OUTPUT_RC=$?
+if rc_ok "$DI_OUTPUT_RC" "$DI_OUTPUT" && echo "$DI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 21))
     PASS=$((PASS + 21))
     echo "  PASS: all 21 dict checks"
@@ -816,8 +854,8 @@ echo ""
 
 # [26] Eval builtin
 echo "[26/27] Eval Builtin (8 checks)"
-EV_OUTPUT=$(./eigenscript ../tests/test_eval.eigs 2>&1)
-if echo "$EV_OUTPUT" | grep -q "All tests passed"; then
+EV_OUTPUT=$(./eigenscript ../tests/test_eval.eigs 2>&1); EV_OUTPUT_RC=$?
+if rc_ok "$EV_OUTPUT_RC" "$EV_OUTPUT" && echo "$EV_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
     PASS=$((PASS + 8))
     echo "  PASS: all 8 eval checks"
@@ -831,8 +869,8 @@ echo ""
 
 # [27] Closures
 echo "[27/27] Closures (10 checks)"
-CL_OUTPUT=$(./eigenscript ../tests/test_closures.eigs 2>&1)
-if echo "$CL_OUTPUT" | grep -q "All tests passed"; then
+CL_OUTPUT=$(./eigenscript ../tests/test_closures.eigs 2>&1); CL_OUTPUT_RC=$?
+if rc_ok "$CL_OUTPUT_RC" "$CL_OUTPUT" && echo "$CL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 10))
     PASS=$((PASS + 10))
     echo "  PASS: all 10 closure checks"
@@ -846,8 +884,8 @@ echo ""
 
 # [27b] Closure mutation (hard mode — regression coverage for #130)
 echo "[27b/27] Closure Mutation (14 checks)"
-CM_OUTPUT=$(./eigenscript ../tests/test_closure_mutation.eigs 2>&1)
-if echo "$CM_OUTPUT" | grep -q "closure mutation: all passed"; then
+CM_OUTPUT=$(./eigenscript ../tests/test_closure_mutation.eigs 2>&1); CM_OUTPUT_RC=$?
+if rc_ok "$CM_OUTPUT_RC" "$CM_OUTPUT" && echo "$CM_OUTPUT" | grep -q "closure mutation: all passed"; then
     TOTAL=$((TOTAL + 14))
     PASS=$((PASS + 14))
     echo "  PASS: all 14 closure mutation checks"
@@ -861,8 +899,8 @@ echo ""
 
 # [29] Break and continue
 echo "[29/31] Break & Continue (9 checks)"
-BC_OUTPUT=$(./eigenscript ../tests/test_break_continue.eigs 2>&1)
-if echo "$BC_OUTPUT" | grep -q "All tests passed"; then
+BC_OUTPUT=$(./eigenscript ../tests/test_break_continue.eigs 2>&1); BC_OUTPUT_RC=$?
+if rc_ok "$BC_OUTPUT_RC" "$BC_OUTPUT" && echo "$BC_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
     PASS=$((PASS + 9))
     echo "  PASS: all 9 break/continue checks"
@@ -874,16 +912,16 @@ else
 fi
 echo ""
 
-# [30] Dot-assignment
-echo "[30/31] Dot-Assignment (15 checks)"
-DA_OUTPUT=$(./eigenscript ../tests/test_dot_assign.eigs 2>&1)
-if echo "$DA_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 15))
-    PASS=$((PASS + 15))
-    echo "  PASS: all 15 dot-assign checks"
+# [30] Dot-assignment (incl. compound `obj.f += e` desugaring/clone_ast)
+echo "[30/31] Dot-Assignment (26 checks)"
+DA_OUTPUT=$(./eigenscript ../tests/test_dot_assign.eigs 2>&1); DA_OUTPUT_RC=$?
+if rc_ok "$DA_OUTPUT_RC" "$DA_OUTPUT" && echo "$DA_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 26))
+    PASS=$((PASS + 26))
+    echo "  PASS: all 26 dot-assign checks"
 else
-    TOTAL=$((TOTAL + 15))
-    FAIL=$((FAIL + 15))
+    TOTAL=$((TOTAL + 26))
+    FAIL=$((FAIL + 26))
     echo "  FAIL: dot-assign tests"
     echo "$DA_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
@@ -891,8 +929,8 @@ echo ""
 
 # [31] Multiline collections
 echo "[31/31] Multiline Collections (12 checks)"
-ML_OUTPUT=$(./eigenscript ../tests/test_multiline.eigs 2>&1)
-if echo "$ML_OUTPUT" | grep -q "All tests passed"; then
+ML_OUTPUT=$(./eigenscript ../tests/test_multiline.eigs 2>&1); ML_OUTPUT_RC=$?
+if rc_ok "$ML_OUTPUT_RC" "$ML_OUTPUT" && echo "$ML_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 12))
     PASS=$((PASS + 12))
     echo "  PASS: all 12 multiline checks"
@@ -906,8 +944,8 @@ echo ""
 
 # [33] Misc builtins
 echo "[33/33] Misc Builtins (30 checks)"
-MB_OUTPUT=$(./eigenscript ../tests/test_misc_builtins.eigs 2>&1)
-if echo "$MB_OUTPUT" | grep -q "All tests passed"; then
+MB_OUTPUT=$(./eigenscript ../tests/test_misc_builtins.eigs 2>&1); MB_OUTPUT_RC=$?
+if rc_ok "$MB_OUTPUT_RC" "$MB_OUTPUT" && echo "$MB_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 30))
     PASS=$((PASS + 30))
     echo "  PASS: all 30 misc builtin checks"
@@ -921,8 +959,8 @@ echo ""
 
 # [35] Regex builtins
 echo "[35/36] Regex (15 checks)"
-RX_OUTPUT=$(./eigenscript ../tests/test_regex.eigs 2>&1)
-if echo "$RX_OUTPUT" | grep -q "All tests passed"; then
+RX_OUTPUT=$(./eigenscript ../tests/test_regex.eigs 2>&1); RX_OUTPUT_RC=$?
+if rc_ok "$RX_OUTPUT_RC" "$RX_OUTPUT" && echo "$RX_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 15))
     PASS=$((PASS + 15))
     echo "  PASS: all 15 regex checks"
@@ -936,8 +974,8 @@ echo ""
 
 # [36] Import system
 echo "[36/36] Import System (12 checks)"
-IM_OUTPUT=$(./eigenscript ../tests/test_import.eigs 2>&1)
-if echo "$IM_OUTPUT" | grep -q "All tests passed"; then
+IM_OUTPUT=$(./eigenscript ../tests/test_import.eigs 2>&1); IM_OUTPUT_RC=$?
+if rc_ok "$IM_OUTPUT_RC" "$IM_OUTPUT" && echo "$IM_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 12))
     PASS=$((PASS + 12))
     echo "  PASS: all 12 import checks"
@@ -951,8 +989,8 @@ echo ""
 
 # [38] Pattern matching
 echo "[38/38] Pattern Matching (12 checks)"
-PM_OUTPUT=$(./eigenscript ../tests/test_match.eigs 2>&1)
-if echo "$PM_OUTPUT" | grep -q "All tests passed"; then
+PM_OUTPUT=$(./eigenscript ../tests/test_match.eigs 2>&1); PM_OUTPUT_RC=$?
+if rc_ok "$PM_OUTPUT_RC" "$PM_OUTPUT" && echo "$PM_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 12))
     PASS=$((PASS + 12))
     echo "  PASS: all 12 match checks"
@@ -966,8 +1004,8 @@ echo ""
 
 # [40] Pipe operator and lambdas
 echo "[40/40] Pipe & Lambda (15 checks)"
-PL_OUTPUT=$(./eigenscript ../tests/test_pipe_lambda.eigs 2>&1)
-if echo "$PL_OUTPUT" | grep -q "All tests passed"; then
+PL_OUTPUT=$(./eigenscript ../tests/test_pipe_lambda.eigs 2>&1); PL_OUTPUT_RC=$?
+if rc_ok "$PL_OUTPUT_RC" "$PL_OUTPUT" && echo "$PL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 15))
     PASS=$((PASS + 15))
     echo "  PASS: all 15 pipe/lambda checks"
@@ -983,8 +1021,8 @@ echo ""
 #      random_hex/chdir/free_val, cold tensor ops, streams, grad/sgd
 #      rows & cols variants, tokenize_with_names, json_raw, 2D get/set_at)
 echo "[41/47] Coverage-Gap Builtins (93 checks)"
-CG_OUTPUT=$(./eigenscript ../tests/test_coverage_gaps.eigs 2>&1)
-if echo "$CG_OUTPUT" | grep -q "All coverage-gap tests passed"; then
+CG_OUTPUT=$(./eigenscript ../tests/test_coverage_gaps.eigs 2>&1); CG_OUTPUT_RC=$?
+if rc_ok "$CG_OUTPUT_RC" "$CG_OUTPUT" && echo "$CG_OUTPUT" | grep -q "All coverage-gap tests passed"; then
     TOTAL=$((TOTAL + 93))
     PASS=$((PASS + 93))
     echo "  PASS: all 93 coverage-gap checks"
@@ -1030,8 +1068,8 @@ echo ""
 
 # [42b] Softmax numerical guard (always runs — uses core tensor builtins)
 echo "[42b/47] Softmax Guard (7 checks)"
-SG_OUTPUT=$(./eigenscript ../tests/test_softmax_guard.eigs 2>&1)
-if echo "$SG_OUTPUT" | grep -q "All softmax-guard tests passed"; then
+SG_OUTPUT=$(./eigenscript ../tests/test_softmax_guard.eigs 2>&1); SG_OUTPUT_RC=$?
+if rc_ok "$SG_OUTPUT_RC" "$SG_OUTPUT" && echo "$SG_OUTPUT" | grep -q "All softmax-guard tests passed"; then
     TOTAL=$((TOTAL + 7))
     PASS=$((PASS + 7))
     echo "  PASS: all 7 softmax-guard checks"
@@ -1045,8 +1083,8 @@ echo ""
 
 # [42c] General finite-number guard (scalar, tensor, literals, conversions)
 echo "[42c/47] Numeric Guard (19 checks)"
-NG_OUTPUT=$(./eigenscript ../tests/test_numeric_guard.eigs 2>&1)
-if echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
+NG_OUTPUT=$(./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
+if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
     TOTAL=$((TOTAL + 19))
     PASS=$((PASS + 19))
     echo "  PASS: all 19 numeric-guard checks"
@@ -1060,8 +1098,8 @@ echo ""
 
 # [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
 echo "[42d/47] Stdlib Fixes (40 checks)"
-SF_OUTPUT=$(./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1)
-if echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
+SF_OUTPUT=$(./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
+if rc_ok "$SF_OUTPUT_RC" "$SF_OUTPUT" && echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
     TOTAL=$((TOTAL + 40))
     PASS=$((PASS + 40))
     echo "  PASS: all 40 stdlib-fix checks"
@@ -1102,8 +1140,8 @@ echo ""
 
 # [43] Extra error-path coverage (always runs)
 echo "[43/47] Error-Path Extras (24 checks)"
-EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1)
-if echo "$EE_OUTPUT" | grep -q "All error_extra tests passed"; then
+EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1); EE_OUTPUT_RC=$?
+if rc_ok "$EE_OUTPUT_RC" "$EE_OUTPUT" && echo "$EE_OUTPUT" | grep -q "All error_extra tests passed"; then
     TOTAL=$((TOTAL + 24))
     PASS=$((PASS + 24))
     echo "  PASS: all 24 error-path checks"
@@ -1117,8 +1155,8 @@ echo ""
 
 # [43b] Eval-recursion-depth guard (runaway recursion → runtime error)
 echo "[43b/47] Recursion Guard (4 checks)"
-RG_OUTPUT=$(./eigenscript ../tests/test_recursion_guard.eigs 2>&1)
-if echo "$RG_OUTPUT" | grep -q "All recursion-guard tests passed"; then
+RG_OUTPUT=$(./eigenscript ../tests/test_recursion_guard.eigs 2>&1); RG_OUTPUT_RC=$?
+if rc_ok "$RG_OUTPUT_RC" "$RG_OUTPUT" && echo "$RG_OUTPUT" | grep -q "All recursion-guard tests passed"; then
     TOTAL=$((TOTAL + 4))
     PASS=$((PASS + 4))
     echo "  PASS: all 4 recursion-guard checks"
@@ -1132,8 +1170,8 @@ echo ""
 
 # [43c] Auth stdlib bearer parsing
 echo "[43c/47] Auth Stdlib (4 checks)"
-AUTH_OUTPUT=$(./eigenscript ../tests/test_auth.eigs 2>&1)
-if echo "$AUTH_OUTPUT" | grep -q "All auth tests passed"; then
+AUTH_OUTPUT=$(./eigenscript ../tests/test_auth.eigs 2>&1); AUTH_OUTPUT_RC=$?
+if rc_ok "$AUTH_OUTPUT_RC" "$AUTH_OUTPUT" && echo "$AUTH_OUTPUT" | grep -q "All auth tests passed"; then
     TOTAL=$((TOTAL + 4))
     PASS=$((PASS + 4))
     echo "  PASS: all 4 auth checks"
@@ -1147,8 +1185,8 @@ echo ""
 
 # [43d] HTTP client URL safety
 echo "[43d/47] HTTP Client Security (4 checks)"
-HCS_OUTPUT=$(./eigenscript ../tests/test_http_client_security.eigs 2>&1)
-if echo "$HCS_OUTPUT" | grep -q "All http client security tests passed"; then
+HCS_OUTPUT=$(./eigenscript ../tests/test_http_client_security.eigs 2>&1); HCS_OUTPUT_RC=$?
+if rc_ok "$HCS_OUTPUT_RC" "$HCS_OUTPUT" && echo "$HCS_OUTPUT" | grep -q "All http client security tests passed"; then
     TOTAL=$((TOTAL + 4))
     PASS=$((PASS + 4))
     echo "  PASS: all 4 HTTP client security checks"
@@ -1171,8 +1209,8 @@ rm -f "$HTTP_PROBE_FILE"
 
 if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     echo "[44/47] HTTP Builtins (15 checks)"
-    HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1)
-    if echo "$HTTP_OUTPUT" | grep -q "All http tests passed"; then
+    HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1); HTTP_OUTPUT_RC=$?
+    if rc_ok "$HTTP_OUTPUT_RC" "$HTTP_OUTPUT" && echo "$HTTP_OUTPUT" | grep -q "All http tests passed"; then
         TOTAL=$((TOTAL + 15))
         PASS=$((PASS + 15))
         echo "  PASS: all 15 HTTP builtin checks"
@@ -1215,8 +1253,8 @@ rm -f "$DB_PROBE_FILE"
 
 if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
     echo "[46/47] DB Builtins (8 checks)"
-    DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1)
-    if echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
+    DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1); DB_OUTPUT_RC=$?
+    if rc_ok "$DB_OUTPUT_RC" "$DB_OUTPUT" && echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
         TOTAL=$((TOTAL + 8))
         PASS=$((PASS + 8))
         echo "  PASS: all 8 DB builtin checks"
@@ -1320,8 +1358,8 @@ echo ""
 
 # I/O builtins + join + refcount GC
 echo "[49] I/O Builtins & GC (16 checks)"
-IO_OUTPUT=$(./eigenscript ../tests/test_io_builtins.eigs 2>&1)
-if echo "$IO_OUTPUT" | grep -q "All tests passed"; then
+IO_OUTPUT=$(./eigenscript ../tests/test_io_builtins.eigs 2>&1); IO_OUTPUT_RC=$?
+if rc_ok "$IO_OUTPUT_RC" "$IO_OUTPUT" && echo "$IO_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 16))
     PASS=$((PASS + 16))
     echo "  PASS: all 16 I/O + GC checks"
@@ -1335,8 +1373,8 @@ echo ""
 
 # [50] Bitwise operations
 echo "[50] Bitwise Operations (22 checks)"
-BW_OUTPUT=$(./eigenscript ../tests/test_bitwise.eigs 2>&1)
-if echo "$BW_OUTPUT" | grep -q "All tests passed"; then
+BW_OUTPUT=$(./eigenscript ../tests/test_bitwise.eigs 2>&1); BW_OUTPUT_RC=$?
+if rc_ok "$BW_OUTPUT_RC" "$BW_OUTPUT" && echo "$BW_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 22))
     PASS=$((PASS + 22))
     echo "  PASS: all 22 bitwise checks"
@@ -1350,8 +1388,8 @@ echo ""
 
 # [51] Unobserved block
 echo "[51] Unobserved Block (8 checks)"
-UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1)
-if echo "$UN_OUTPUT" | grep -q "All tests passed"; then
+UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?
+if rc_ok "$UN_OUTPUT_RC" "$UN_OUTPUT" && echo "$UN_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
     PASS=$((PASS + 8))
     echo "  PASS: all 8 unobserved checks"
@@ -1365,8 +1403,8 @@ echo ""
 
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O (12 checks)"
-SI_OUTPUT=$(./eigenscript ../tests/test_stream_io.eigs 2>&1)
-if echo "$SI_OUTPUT" | grep -q "All tests passed"; then
+SI_OUTPUT=$(./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
+if rc_ok "$SI_OUTPUT_RC" "$SI_OUTPUT" && echo "$SI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 12))
     PASS=$((PASS + 12))
     echo "  PASS: all 12 stream I/O checks"
@@ -1380,8 +1418,8 @@ echo ""
 
 # [53] Monotonic timers
 echo "[53] Monotonic Timers (6 checks)"
-MT_OUTPUT=$(./eigenscript ../tests/test_monotonic_timers.eigs 2>&1)
-if echo "$MT_OUTPUT" | grep -q "All tests passed"; then
+MT_OUTPUT=$(./eigenscript ../tests/test_monotonic_timers.eigs 2>&1); MT_OUTPUT_RC=$?
+if rc_ok "$MT_OUTPUT_RC" "$MT_OUTPUT" && echo "$MT_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 6))
     PASS=$((PASS + 6))
     echo "  PASS: all 6 monotonic timer checks"
@@ -1411,8 +1449,8 @@ echo ""
 
 # [56] EigenStore embedded database
 echo "[56] EigenStore Database (14 checks)"
-ST_OUTPUT=$(./eigenscript ../tests/test_store.eigs 2>&1)
-if echo "$ST_OUTPUT" | grep -q "All tests passed"; then
+ST_OUTPUT=$(./eigenscript ../tests/test_store.eigs 2>&1); ST_OUTPUT_RC=$?
+if rc_ok "$ST_OUTPUT_RC" "$ST_OUTPUT" && echo "$ST_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 14))
     PASS=$((PASS + 14))
     echo "  PASS: all 14 store checks"
@@ -1426,8 +1464,8 @@ echo ""
 
 # [58] GC / free_value paths and misc coverage gaps
 echo "[58] GC & Free Paths (34 checks)"
-GC_OUTPUT=$(./eigenscript ../tests/test_gc.eigs 2>&1)
-if echo "$GC_OUTPUT" | grep -q "All gc tests passed"; then
+GC_OUTPUT=$(./eigenscript ../tests/test_gc.eigs 2>&1); GC_OUTPUT_RC=$?
+if rc_ok "$GC_OUTPUT_RC" "$GC_OUTPUT" && echo "$GC_OUTPUT" | grep -q "All gc tests passed"; then
     TOTAL=$((TOTAL + 34))
     PASS=$((PASS + 34))
     echo "  PASS: all 34 GC/free checks"
@@ -1441,8 +1479,8 @@ echo ""
 
 # [57] Coverage v2 — close gcov gaps in eval/builtins/eigenscript/ext_store
 echo "[57] Coverage V2 (118 checks)"
-CV2_OUTPUT=$(./eigenscript ../tests/test_coverage_v2.eigs 2>&1)
-if echo "$CV2_OUTPUT" | grep -q "All coverage-v2 tests passed"; then
+CV2_OUTPUT=$(./eigenscript ../tests/test_coverage_v2.eigs 2>&1); CV2_OUTPUT_RC=$?
+if rc_ok "$CV2_OUTPUT_RC" "$CV2_OUTPUT" && echo "$CV2_OUTPUT" | grep -q "All coverage-v2 tests passed"; then
     TOTAL=$((TOTAL + 118))
     PASS=$((PASS + 118))
     echo "  PASS: all 118 coverage-v2 checks"
@@ -1471,8 +1509,8 @@ echo ""
 
 # [59] Import error paths (not-found, parse-errors)
 echo "[59] Import Error Paths (6 checks)"
-IE_OUTPUT=$(./eigenscript ../tests/test_import_errors.eigs 2>&1)
-if echo "$IE_OUTPUT" | grep -q "All tests passed"; then
+IE_OUTPUT=$(./eigenscript ../tests/test_import_errors.eigs 2>&1); IE_OUTPUT_RC=$?
+if rc_ok "$IE_OUTPUT_RC" "$IE_OUTPUT" && echo "$IE_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 6))
     PASS=$((PASS + 6))
     echo "  PASS: all 6 import-error checks"
@@ -1486,8 +1524,8 @@ echo ""
 
 # [60] Terminal builtins (screen_clear, screen_put, screen_end, screen_render, raw_key)
 echo "[60] Terminal Builtins (10 checks)"
-TM_OUTPUT=$(./eigenscript ../tests/test_terminal.eigs 2>&1)
-if echo "$TM_OUTPUT" | grep -q "All tests passed"; then
+TM_OUTPUT=$(./eigenscript ../tests/test_terminal.eigs 2>&1); TM_OUTPUT_RC=$?
+if rc_ok "$TM_OUTPUT_RC" "$TM_OUTPUT" && echo "$TM_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 10))
     PASS=$((PASS + 10))
     echo "  PASS: all 10 terminal builtin checks"
@@ -1501,8 +1539,8 @@ echo ""
 
 # [61] Hash builtins (SHA-256, MD5, HMAC-SHA256)
 echo "[61] Hash Builtins (14 checks)"
-HA_OUTPUT=$(./eigenscript ../tests/test_hash.eigs 2>&1)
-if echo "$HA_OUTPUT" | grep -q "All tests passed"; then
+HA_OUTPUT=$(./eigenscript ../tests/test_hash.eigs 2>&1); HA_OUTPUT_RC=$?
+if rc_ok "$HA_OUTPUT_RC" "$HA_OUTPUT" && echo "$HA_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 14))
     PASS=$((PASS + 14))
     echo "  PASS: all 14 hash checks"
@@ -1516,8 +1554,8 @@ echo ""
 
 # [63] UI toolkit unit tests (headless, stubs gfx)
 echo "[63] UI Toolkit (81 checks)"
-UI_OUTPUT=$(./eigenscript ../tests/test_ui.eigs 2>&1)
-if echo "$UI_OUTPUT" | grep -q "All tests passed"; then
+UI_OUTPUT=$(./eigenscript ../tests/test_ui.eigs 2>&1); UI_OUTPUT_RC=$?
+if rc_ok "$UI_OUTPUT_RC" "$UI_OUTPUT" && echo "$UI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 81))
     PASS=$((PASS + 81))
     echo "  PASS: all 81 UI toolkit checks"
@@ -1540,8 +1578,8 @@ rm -f "$AUDIO_PROBE_FILE"
 
 if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
     echo "[62] Audio Synthesis (24 checks)"
-    AU_OUTPUT=$(./eigenscript ../tests/test_audio.eigs 2>&1)
-    if echo "$AU_OUTPUT" | grep -q "All tests passed"; then
+    AU_OUTPUT=$(./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
+    if rc_ok "$AU_OUTPUT_RC" "$AU_OUTPUT" && echo "$AU_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + 24))
         PASS=$((PASS + 24))
         echo "  PASS: all 24 audio checks"
@@ -1559,8 +1597,8 @@ fi
 
 # [64] list_truncate builtin
 echo "[64] List Truncate (9 checks)"
-LT_OUTPUT=$(./eigenscript ../tests/test_list_truncate.eigs 2>&1)
-if echo "$LT_OUTPUT" | grep -q "All tests passed"; then
+LT_OUTPUT=$(./eigenscript ../tests/test_list_truncate.eigs 2>&1); LT_OUTPUT_RC=$?
+if rc_ok "$LT_OUTPUT_RC" "$LT_OUTPUT" && echo "$LT_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
     PASS=$((PASS + 9))
     echo "  PASS: all 9 list_truncate checks"
@@ -1574,8 +1612,8 @@ echo ""
 
 # [66] list_remove_at builtin
 echo "[66] List Remove At (8 checks)"
-LRA_OUTPUT=$(./eigenscript ../tests/test_list_remove_at.eigs 2>&1)
-if echo "$LRA_OUTPUT" | grep -q "All tests passed"; then
+LRA_OUTPUT=$(./eigenscript ../tests/test_list_remove_at.eigs 2>&1); LRA_OUTPUT_RC=$?
+if rc_ok "$LRA_OUTPUT_RC" "$LRA_OUTPUT" && echo "$LRA_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
     PASS=$((PASS + 8))
     echo "  PASS: all 8 list_remove_at checks"
@@ -1589,8 +1627,8 @@ echo ""
 
 # [65] sort_by builtin
 echo "[65] Sort By (9 checks)"
-SBY_OUTPUT=$(./eigenscript ../tests/test_sort_by.eigs 2>&1)
-if echo "$SBY_OUTPUT" | grep -q "All tests passed"; then
+SBY_OUTPUT=$(./eigenscript ../tests/test_sort_by.eigs 2>&1); SBY_OUTPUT_RC=$?
+if rc_ok "$SBY_OUTPUT_RC" "$SBY_OUTPUT" && echo "$SBY_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
     PASS=$((PASS + 9))
     echo "  PASS: all 9 sort_by checks"
@@ -1604,8 +1642,8 @@ echo ""
 
 # [67] Index-after-call regression (gap #2: use-after-free in OP_INDEX_GET fast path)
 echo "[67] Index After Call (21 checks)"
-IAC_OUTPUT=$(./eigenscript ../tests/test_index_after_call.eigs 2>&1)
-if echo "$IAC_OUTPUT" | grep -q "All tests passed"; then
+IAC_OUTPUT=$(./eigenscript ../tests/test_index_after_call.eigs 2>&1); IAC_OUTPUT_RC=$?
+if rc_ok "$IAC_OUTPUT_RC" "$IAC_OUTPUT" && echo "$IAC_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 21))
     PASS=$((PASS + 21))
     echo "  PASS: all 21 index-after-call checks"
@@ -1619,8 +1657,8 @@ echo ""
 
 # [68] OP_DISPATCH key handling (boxed-num regression + float-discipline)
 echo "[68] Dispatch (9 checks)"
-DISP_OUTPUT=$(./eigenscript ../tests/test_dispatch.eigs 2>&1)
-if echo "$DISP_OUTPUT" | grep -q "All tests passed"; then
+DISP_OUTPUT=$(./eigenscript ../tests/test_dispatch.eigs 2>&1); DISP_OUTPUT_RC=$?
+if rc_ok "$DISP_OUTPUT_RC" "$DISP_OUTPUT" && echo "$DISP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
     PASS=$((PASS + 9))
     echo "  PASS: all 9 dispatch checks"
@@ -1635,8 +1673,8 @@ echo ""
 # [70] Temporal interrogatives (prev of, at, state_at) + the line-floor
 # index in trace.c (deep loop histories must skip segments correctly).
 echo "[70] Temporal Interrogatives (23 checks)"
-TT_OUTPUT=$(./eigenscript ../tests/test_temporal.eigs 2>&1)
-if echo "$TT_OUTPUT" | grep -q "All tests passed"; then
+TT_OUTPUT=$(./eigenscript ../tests/test_temporal.eigs 2>&1); TT_OUTPUT_RC=$?
+if rc_ok "$TT_OUTPUT_RC" "$TT_OUTPUT" && echo "$TT_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 23))
     PASS=$((PASS + 23))
     echo "  PASS: all 23 temporal checks"
@@ -1650,8 +1688,8 @@ echo ""
 
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
-SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1)
-if echo "$SP_OUTPUT" | grep -q "All tests passed"; then
+SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?
+if rc_ok "$SP_OUTPUT_RC" "$SP_OUTPUT" && echo "$SP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 22))
     PASS=$((PASS + 22))
     echo "  PASS: all 22 spawn-args checks"
@@ -1665,8 +1703,8 @@ echo ""
 
 # [77] Non-blocking channel recv (0.13.0).
 echo "[77] Non-blocking Channel Recv (29 checks)"
-CNB_OUTPUT=$(./eigenscript ../tests/test_channel_nb.eigs 2>&1)
-if echo "$CNB_OUTPUT" | grep -q "All tests passed"; then
+CNB_OUTPUT=$(./eigenscript ../tests/test_channel_nb.eigs 2>&1); CNB_OUTPUT_RC=$?
+if rc_ok "$CNB_OUTPUT_RC" "$CNB_OUTPUT" && echo "$CNB_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 29))
     PASS=$((PASS + 29))
     echo "  PASS: all 29 channel-nb checks"
@@ -1680,8 +1718,8 @@ echo ""
 
 # [76] Slicing (0.13.0).
 echo "[76] Slicing (48 checks)"
-SL_OUTPUT=$(./eigenscript ../tests/test_slicing.eigs 2>&1)
-if echo "$SL_OUTPUT" | grep -q "All tests passed"; then
+SL_OUTPUT=$(./eigenscript ../tests/test_slicing.eigs 2>&1); SL_OUTPUT_RC=$?
+if rc_ok "$SL_OUTPUT_RC" "$SL_OUTPUT" && echo "$SL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 48))
     PASS=$((PASS + 48))
     echo "  PASS: all 48 slicing checks"
@@ -1695,8 +1733,8 @@ echo ""
 
 # [75] Streaming subprocess I/O (0.13.0).
 echo "[75] Streaming Subprocess I/O (39 checks)"
-PS_OUTPUT=$(./eigenscript ../tests/test_proc_stream.eigs 2>&1)
-if echo "$PS_OUTPUT" | grep -q "All tests passed"; then
+PS_OUTPUT=$(./eigenscript ../tests/test_proc_stream.eigs 2>&1); PS_OUTPUT_RC=$?
+if rc_ok "$PS_OUTPUT_RC" "$PS_OUTPUT" && echo "$PS_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 39))
     PASS=$((PASS + 39))
     echo "  PASS: all 39 proc-stream checks"
@@ -1710,8 +1748,8 @@ echo ""
 
 # [74] Destructuring assignment (0.13.0).
 echo "[74] Destructuring (28 checks)"
-DS_OUTPUT=$(./eigenscript ../tests/test_destructuring.eigs 2>&1)
-if echo "$DS_OUTPUT" | grep -q "All tests passed"; then
+DS_OUTPUT=$(./eigenscript ../tests/test_destructuring.eigs 2>&1); DS_OUTPUT_RC=$?
+if rc_ok "$DS_OUTPUT_RC" "$DS_OUTPUT" && echo "$DS_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 28))
     PASS=$((PASS + 28))
     echo "  PASS: all 28 destructuring checks"
@@ -1725,8 +1763,8 @@ echo ""
 
 # [73] Negative indexing (0.13.0).
 echo "[73] Negative Indexing (19 checks)"
-NI_OUTPUT=$(./eigenscript ../tests/test_negative_index.eigs 2>&1)
-if echo "$NI_OUTPUT" | grep -q "All tests passed"; then
+NI_OUTPUT=$(./eigenscript ../tests/test_negative_index.eigs 2>&1); NI_OUTPUT_RC=$?
+if rc_ok "$NI_OUTPUT_RC" "$NI_OUTPUT" && echo "$NI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 19))
     PASS=$((PASS + 19))
     echo "  PASS: all 19 negative-index checks"
@@ -1740,8 +1778,8 @@ echo ""
 
 # [72] Default parameter values (0.13.0).
 echo "[72] Default Parameters (28 checks)"
-DP_OUTPUT=$(./eigenscript ../tests/test_default_params.eigs 2>&1)
-if echo "$DP_OUTPUT" | grep -q "All tests passed"; then
+DP_OUTPUT=$(./eigenscript ../tests/test_default_params.eigs 2>&1); DP_OUTPUT_RC=$?
+if rc_ok "$DP_OUTPUT_RC" "$DP_OUTPUT" && echo "$DP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 28))
     PASS=$((PASS + 28))
     echo "  PASS: all 28 default-param checks"
@@ -1790,8 +1828,121 @@ else
 fi
 echo ""
 
+# [80] Formatter (--fmt) — exercises fmt.c, which had zero suite coverage.
+echo "[80] Formatter (14 checks)"
+FMT_OUTPUT=$(bash "$TESTS_DIR/test_fmt.sh" </dev/null 2>&1)
+FMT_PASS=$(echo "$FMT_OUTPUT" | grep -c "PASS:" || true)
+FMT_FAIL=$(echo "$FMT_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + FMT_PASS + FMT_FAIL))
+PASS=$((PASS + FMT_PASS))
+FAIL=$((FAIL + FMT_FAIL))
+if [ "$FMT_FAIL" -gt 0 ]; then
+    echo "  FAIL: $FMT_FAIL formatter check(s) failed"
+    echo "$FMT_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $FMT_PASS formatter checks"
+fi
+echo ""
+
+# [81] Linter (--lint) — exercises lint.c, which had zero suite coverage.
+echo "[81] Linter (10 checks)"
+LINT_OUTPUT=$(bash "$TESTS_DIR/test_lint.sh" </dev/null 2>&1)
+LINT_PASS=$(echo "$LINT_OUTPUT" | grep -c "PASS:" || true)
+LINT_FAIL=$(echo "$LINT_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + LINT_PASS + LINT_FAIL))
+PASS=$((PASS + LINT_PASS))
+FAIL=$((FAIL + LINT_FAIL))
+if [ "$LINT_FAIL" -gt 0 ]; then
+    echo "  FAIL: $LINT_FAIL linter check(s) failed"
+    echo "$LINT_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $LINT_PASS linter checks"
+fi
+echo ""
+
+# [82] JIT fast paths — checksummed correctness for the fused opcodes,
+# inline ICs, iter/native-call helpers, and OSR that only fire on hot
+# benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert
+# (on x86-64) that thunks really compiled — a regression that quietly
+# disables the JIT must not let this section pass interpreted.
+echo "[82] JIT Fast Paths (19 checks + thunk gate)"
+JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
+TOTAL=$((TOTAL + 19))
+if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
+    PASS=$((PASS + 19))
+    echo "  PASS: all 19 JIT fast-path checks"
+else
+    FAIL=$((FAIL + 19))
+    echo "  FAIL: JIT fast-path tests (rc=$JPATH_RC)"
+    echo "$JPATH_OUTPUT" | grep -iE "FAIL|error" | head -5
+fi
+TOTAL=$((TOTAL + 1))
+if [ "$(uname -m)" = "x86_64" ]; then
+    if echo "$JPATH_OUTPUT" | grep -qE "\[jit\] scanned=[0-9]+ compiled=[1-9]"; then
+        PASS=$((PASS + 1))
+        echo "  PASS: JIT thunks compiled (fast paths ran native)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: no JIT thunks compiled — fast paths ran interpreted"
+    fi
+else
+    PASS=$((PASS + 1))
+    echo "  SKIP: thunk gate (non-x86-64: interpreter fallback expected)"
+fi
+echo ""
+
+# [83] Walker capture matrix — closure capture of names reachable only
+# through each AST node kind (the issue-#156 bug class: a pre-pass walker
+# that doesn't know a node silently breaks capture).
+echo "[83] Walker Capture Matrix (27 checks)"
+check_eigs_suite "all 27 walker-matrix capture checks" test_walker_matrix.eigs "All tests passed" 27
+
+# [84] Builtin direct-vs-indirect — builtins shadowed by compiler
+# lowerings (dispatch → OP_DISPATCH) and bench-only buffer builtins;
+# asserts the C fallback agrees with the lowered opcode.
+echo "[84] Builtin Direct-vs-Indirect (37 checks)"
+check_eigs_suite "all 37 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 37
+
+# [85] Reinstated suites — these .eigs files existed but were never
+# referenced by this runner, so editing them did nothing. Each runs as
+# one suite-level check: exit 0 + its own pass marker.
+echo "[85] Reinstated Suites (28 checks)"
+check_eigs_suite "break scope" test_break_scope.eigs "break scope: all passed" 1
+check_eigs_suite "control flow interactions" test_control_flow_interactions.eigs "control flow interactions: all passed" 1
+check_eigs_suite "copy_into negative offset" test_copy_into_neg.eigs "PASS: copy_into negative offset" 1
+check_eigs_suite "deep nesting" test_deep_nest.eigs "PASS: deep nesting no crash" 1
+check_eigs_suite "error propagation" test_error_propagation.eigs "error propagation: all passed" 1
+check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
+check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
+check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
+check_eigs_suite "observer interactions" test_observer_interactions.eigs "observer interactions: all passed" 1
+check_eigs_suite "scope semantics" test_scope_semantics.eigs "scope semantics: all passed" 1
+check_eigs_suite "split empty" test_split_empty.eigs "split empty: all passed" 1
+check_eigs_suite "split hard" test_split_hard.eigs "split hard: all passed" 1
+check_eigs_suite "tensor overflow guard" test_tensor_overflow.eigs "PASS: tensor overflow guard" 1
+check_eigs_suite "lab" test_lab.eigs "All tests passed." 1
+check_eigs_suite "data" test_data.eigs "All tests passed." 1
+check_eigs_suite "experiment" test_experiment.eigs "All tests passed." 1
+check_eigs_suite "numerics" test_numerics.eigs "All tests passed." 1
+check_eigs_suite "optimize" test_optimize.eigs "All tests passed." 1
+check_eigs_suite "simulation" test_simulation.eigs "All tests passed." 1
+check_eigs_suite "linalg" test_linalg.eigs "All tests passed." 1
+check_eigs_suite "probability" test_probability.eigs "All tests passed." 1
+check_eigs_suite "biology" test_biology.eigs "All tests passed." 1
+check_eigs_suite "calculus" test_calculus.eigs "All tests passed." 1
+check_eigs_suite "chemistry" test_chemistry.eigs "All tests passed." 1
+check_eigs_suite "earth science" test_earth_science.eigs "All tests passed." 1
+check_eigs_suite "engineering" test_engineering.eigs "All tests passed." 1
+check_eigs_suite "geometry" test_geometry.eigs "All tests passed." 1
+check_eigs_suite "physics" test_physics.eigs "All tests passed." 1
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
+if [ "$LEAKED" -gt 0 ]; then
+    echo "  NOTE: $LEAKED test program(s) exited nonzero on LeakSanitizer"
+    echo "  reports (known closure-cycle env leaks; counted as passes)."
+fi
 echo "============================================"
 
 if [ "$FAIL" -gt 0 ]; then

@@ -1,0 +1,320 @@
+# test_walker_matrix.eigs — closure-capture matrix over AST node kinds.
+#
+# Defense for the issue-#156 bug class: the compiler's pre-pass walkers
+# (collect_referenced_names / scan_for_captures / ...) `default: break`
+# on unknown node kinds, so a walker that doesn't know a node silently
+# breaks closure capture for names reachable ONLY through that node.
+# Each factory below hides the captured name inside exactly one
+# construct; if a walker misses that construct, the closure sees an
+# undefined/null name and the checksum fails.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+define double_it(x) as:
+    return x * 2
+
+# --- if condition -------------------------------------------------
+define mk_if as:
+    secret is 7
+    define inner as:
+        if secret > 5:
+            return 1
+        return 0
+    return inner
+f is mk_if of null
+check of ["capture in if condition", (f of null) == 1]
+
+# --- elif condition ------------------------------------------------
+define mk_elif as:
+    secret is 7
+    define inner(x) as:
+        if x == 0:
+            return 0
+        elif secret == 7:
+            return 2
+        return 1
+    return inner
+f is mk_elif of null
+check of ["capture in elif condition", (f of 3) == 2]
+
+# --- while condition ----------------------------------------------
+define mk_while as:
+    secret is 4
+    define inner as:
+        k is 0
+        loop while k < secret:
+            k is k + 1
+        return k
+    return inner
+f is mk_while of null
+check of ["capture in while condition", (f of null) == 4]
+
+# --- for iterable + for body ----------------------------------------
+define mk_for as:
+    secret_list is [1, 2, 3]
+    secret_add is 10
+    define inner as:
+        s is 0
+        for v in secret_list:
+            s is s + v + secret_add
+        return s
+    return inner
+f is mk_for of null
+check of ["capture in for iterable/body", (f of null) == 36]
+
+# --- match subject ---------------------------------------------------
+define mk_match_subj as:
+    secret is 42
+    define inner as:
+        r is 0
+        match secret:
+            case 42:
+                r is 1
+            case _:
+                r is 2
+        return r
+    return inner
+f is mk_match_subj of null
+check of ["capture in match subject", (f of null) == 1]
+
+# --- match case pattern ----------------------------------------------
+define mk_match_pat as:
+    secret is 9
+    define inner(x) as:
+        r is 0
+        match x:
+            case secret:
+                r is 1
+            case _:
+                r is 2
+        return r
+    return inner
+f is mk_match_pat of null
+check of ["capture in match pattern", (f of 9) == 1]
+
+# --- match case body --------------------------------------------------
+define mk_match_body as:
+    secret is 33
+    define inner(x) as:
+        r is 0
+        match x:
+            case 1:
+                r is secret
+            case _:
+                r is 0
+        return r
+    return inner
+f is mk_match_body of null
+check of ["capture in match body", (f of 1) == 33]
+
+# --- lambda body -------------------------------------------------------
+define mk_lambda as:
+    secret is 5
+    define inner as:
+        g is (x) => x + secret
+        return g of 1
+    return inner
+f is mk_lambda of null
+check of ["capture in lambda body", (f of null) == 6]
+
+# --- dict literal value -------------------------------------------------
+define mk_dict as:
+    secret is 11
+    define inner as:
+        d is {"v": secret}
+        return d.v
+    return inner
+f is mk_dict of null
+check of ["capture in dict literal", (f of null) == 11]
+
+# --- list literal element -------------------------------------------------
+define mk_list as:
+    secret is 13
+    define inner as:
+        xs is [secret]
+        return xs[0]
+    return inner
+f is mk_list of null
+check of ["capture in list literal", (f of null) == 13]
+
+# --- index expression -------------------------------------------------
+define mk_index_expr as:
+    secret is 2
+    define inner as:
+        xs is [10, 20, 30]
+        return xs[secret]
+    return inner
+f is mk_index_expr of null
+check of ["capture in index expr", (f of null) == 30]
+
+# --- index target (captured list, indexed) -----------------------------
+define mk_index_target as:
+    secret_list is [5, 6, 7]
+    define inner as:
+        return secret_list[1]
+    return inner
+f is mk_index_target of null
+check of ["capture as index target", (f of null) == 6]
+
+# --- index assignment: target, index, and value --------------------------
+define mk_index_assign as:
+    secret_list is [0, 0, 0]
+    secret_idx is 1
+    secret_val is 99
+    define inner as:
+        secret_list[secret_idx] is secret_val
+        return secret_list[1]
+    return inner
+f is mk_index_assign of null
+check of ["capture in index assign", (f of null) == 99]
+
+# --- dot assignment: target and value -------------------------------------
+define mk_dot_assign as:
+    secret_dict is {"k": 0}
+    secret_val is 77
+    define inner as:
+        secret_dict.k is secret_val
+        return secret_dict.k
+    return inner
+f is mk_dot_assign of null
+check of ["capture in dot assign", (f of null) == 77]
+
+# --- dot get -----------------------------------------------------------
+define mk_dot_get as:
+    secret_dict is {"k": 21}
+    define inner as:
+        return secret_dict.k
+    return inner
+f is mk_dot_get of null
+check of ["capture in dot get", (f of null) == 21]
+
+# --- slice bounds (AST_SLICE — the #156 regression) -----------------------
+define mk_slice as:
+    secret_lo is 1
+    secret_hi is 3
+    define inner as:
+        xs is [9, 8, 7, 6]
+        ys is xs[secret_lo:secret_hi]
+        return ys[0] + ys[1]
+    return inner
+f is mk_slice of null
+check of ["capture in slice bounds", (f of null) == 15]
+
+# --- sliced target captured ------------------------------------------------
+define mk_slice_target as:
+    secret_list is [4, 5, 6, 7]
+    define inner as:
+        ys is secret_list[2:]
+        return ys[0]
+    return inner
+f is mk_slice_target of null
+check of ["capture as slice target", (f of null) == 6]
+
+# --- destructuring RHS (AST_LIST_PATTERN_ASSIGN — the #156 regression) -----
+define mk_destructure as:
+    secret_pair is [3, 4]
+    define inner as:
+        [a, b] is secret_pair
+        return a * 10 + b
+    return inner
+f is mk_destructure of null
+check of ["capture in destructure RHS", (f of null) == 34]
+
+# --- f-string interpolation -------------------------------------------------
+define mk_fstring as:
+    secret is 8
+    define inner as:
+        return f"v={secret}"
+    return inner
+f is mk_fstring of null
+check of ["capture in f-string", (f of null) == "v=8"]
+
+# --- unary operand -----------------------------------------------------------
+define mk_unary as:
+    secret is 6
+    define inner as:
+        return -secret
+    return inner
+f is mk_unary of null
+check of ["capture in unary", (f of null) == (0 - 6)]
+
+# --- interrogative (what is) ---------------------------------------------------
+define mk_interrogate as:
+    secret is 14
+    define inner as:
+        v is what is secret
+        return v
+    return inner
+f is mk_interrogate of null
+check of ["capture in interrogative", (f of null) == 14]
+
+# --- try body / catch body -----------------------------------------------------
+define mk_try as:
+    secret is 17
+    secret_fallback is 18
+    define inner(mode) as:
+        r is 0
+        try:
+            if mode == 1:
+                r is undefined_name_to_throw
+            else:
+                r is secret
+        catch e:
+            r is secret_fallback
+        return r
+    return inner
+f is mk_try of null
+check of ["capture in try body", (f of 0) == 17]
+check of ["capture in catch body", (f of 1) == 18]
+
+# --- return expression ------------------------------------------------------------
+define mk_return as:
+    secret is 19
+    define inner as:
+        return secret
+    return inner
+f is mk_return of null
+check of ["capture in return", (f of null) == 19]
+
+# --- pipe operand --------------------------------------------------------------------
+define mk_pipe as:
+    secret is 21
+    define inner as:
+        return secret |> double_it
+    return inner
+f is mk_pipe of null
+check of ["capture in pipe LHS", (f of null) == 42]
+
+# --- nested define (two levels deep) ---------------------------------------------------
+define mk_nested as:
+    secret is 23
+    define mid as:
+        define deep as:
+            return secret
+        return deep of null
+    return mid
+f is mk_nested of null
+check of ["capture through nested define", (f of null) == 23]
+
+# --- call argument ----------------------------------------------------------------------
+define mk_callarg as:
+    secret is 12
+    define inner as:
+        return double_it of secret
+    return inner
+f is mk_callarg of null
+check of ["capture in call argument", (f of null) == 24]
+
+print of f"walker matrix: {pass_count} passed, {fail_count} failed"
+if fail_count == 0:
+    print of "All tests passed"

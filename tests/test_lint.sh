@@ -127,7 +127,7 @@ check_not_contains "_prefixed param no warning" "$OUTPUT" "unused parameter '_un
 rm -f "$TMPFILE"
 
 # --- Lint on a real stdlib file ---
-OUTPUT=$($EIGS --lint examples/hello.eigs 2>&1 || true)
+OUTPUT=$($EIGS --lint "$TESTS_DIR/../examples/hello.eigs" 2>&1 || true)
 check_contains "hello.eigs clean" "$OUTPUT" "no issues found"
 
 echo ""

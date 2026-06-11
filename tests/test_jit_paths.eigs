@@ -1,0 +1,294 @@
+# test_jit_paths.eigs — correctness coverage for the JIT fast paths and
+# fused opcodes that only fire on hot, benchmark-shaped code.
+#
+# Until now these paths (OP_LOCAL_IDX_DOT_GET/SET, the INDEX_SET inline
+# write, dict-dot ICs, jit_helper_iter_next, native VAL_FN calls inside
+# thunks, OSR) were exercised only by manually-run benchmarks. Every
+# section here runs its loop hot enough to cross the JIT thresholds
+# (entry=50 calls, iter=500 cumulative, OSR=5000 back-edges) and asserts
+# an exact checksum, so a miscompiled fast path fails loudly instead of
+# only showing up as a wrong DMG frame.
+#
+# The suite runs this file with EIGS_JIT_STATS=1 and (on x86-64) asserts
+# compiled > 0, so it cannot silently pass interpreted.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+# ----------------------------------------------------------------
+# 1) Fused local[const].field get/set (OP_LOCAL_IDX_DOT_GET/SET).
+#    The DMG hot path: a fn-local list of register dicts mutated as
+#    regs[0].a, regs[1].b. 80 iterations/call x 60 calls crosses both
+#    the entry and cumulative-iteration thresholds.
+# ----------------------------------------------------------------
+define fused_regs(seed) as:
+    regs is [{"a": seed, "b": 0}, {"a": 0, "b": 0}]
+    k is 0
+    loop while k < 80:
+        regs[0].a is regs[0].a + 1
+        regs[1].b is regs[1].b + regs[0].a
+        regs[1].a is regs[0].a & 255
+        k is k + 1
+    return regs[1].b + regs[1].a
+
+# 80 calls x 80 iterations: the chunk's from-zero thunk stops at the
+# dict/list literals, so the fused ops only run natively via the loop's
+# OSR thunk — 6400 cumulative back-edges crosses the 5000 OSR threshold.
+fr_total is 0
+n is 0
+loop while n < 80:
+    fr_total is fr_total + (fused_regs of (n % 4))
+    n is n + 1
+# per call with seed s: regs[1].b = 80s + 3240, regs[1].a = s + 80,
+# so 81s + 3320; seeds cycle 0..3, 20 calls each: 20*(81*6 + 4*3320)
+check of ["fused local[idx].field checksum", fr_total == 275320]
+
+# ----------------------------------------------------------------
+# 2) Dict-dot get/set through the 2-way inline cache (bench_dmg_shape
+#    op-handler shape: mutate fields of a dict parameter).
+# ----------------------------------------------------------------
+define op_inc(c) as:
+    c.a is c.a + 1
+    c.cycles is c.cycles + 4
+    return 4
+
+define op_mix(c) as:
+    c.b is (c.b ^ c.a) & 255
+    c.cycles is c.cycles + 8
+    return 8
+
+ctx is {"a": 0, "b": 0, "cycles": 0}
+n is 0
+unobserved:
+    loop while n < 600:
+        r1 is op_inc of ctx
+        r2 is op_mix of ctx
+        n is n + 1
+check of ["dict-dot IC a", ctx.a == 600]
+check of ["dict-dot IC cycles", ctx.cycles == 7200]
+check of ["dict-dot IC b", ctx.b == 88]
+
+# Polymorphic dict shapes through the same hot accessor: the 2-way
+# inline cache must miss, exercising the jit_helper_dot_get/dot_set
+# out-of-line fallbacks with identical semantics.
+define poly_bump(c) as:
+    c.v is c.v + 1
+    return c.v
+
+pa is {"v": 0}
+pb is {"pad1": 0, "v": 100}
+pc_d is {"pad1": 0, "pad2": 0, "v": 200}
+pd is {"pad1": 0, "pad2": 0, "pad3": 0, "v": 300}
+n is 0
+unobserved:
+    loop while n < 200:
+        r1 is poly_bump of pa
+        r2 is poly_bump of pb
+        r3 is poly_bump of pc_d
+        r4 is poly_bump of pd
+        n is n + 1
+check of ["poly dot IC a", pa.v == 200]
+check of ["poly dot IC b", pb.v == 300]
+check of ["poly dot IC c", pc_d.v == 400]
+check of ["poly dot IC d", pd.v == 500]
+
+# Dot access on a *global* dict inside a hot fn: the target isn't a
+# resolvable local slot, so this compiles to plain OP_DOT_GET/DOT_SET —
+# in a thunk those are the jit_helper_dot_get/dot_set out-of-line calls.
+gdict is {"v": 0, "tag": ""}
+define bump_global(amount) as:
+    k is 0
+    loop while k < 50:
+        gdict.v is gdict.v + amount
+        k is k + 1
+    return gdict.v
+
+n is 0
+loop while n < 60:
+    r is bump_global of 1
+    n is n + 1
+check of ["global dict dot in thunk", gdict.v == 3000]
+
+# Non-num stores through local dot: the inline LOCAL_DOT_SET fast path
+# only handles in-place num writes, so a string store takes the
+# jit_helper_local_dot_set slow path every iteration.
+define tag_local(t) as:
+    d is {"name": ""}
+    k is 0
+    loop while k < 80:
+        d.name is t + "!"
+        k is k + 1
+    return d.name
+
+n is 0
+last_tag is ""
+loop while n < 80:
+    last_tag is tag_local of "z"
+    n is n + 1
+check of ["local dot string store slow path", last_tag == "z!"]
+
+# Num store into a dict slot currently holding a string: the inline
+# LOCAL_DOT_SET fast path guards on the existing value being an
+# exclusive num, so the first store of each call is a guard miss into
+# jit_helper_local_dot_set; subsequent iterations re-take the fast path.
+define renum(d2) as:
+    k is 0
+    loop while k < 60:
+        d2.x is k
+        k is k + 1
+    return d2.x
+
+rd is {"x": "start"}
+n is 0
+rlast is 0
+loop while n < 80:
+    rd.x is "again"
+    rlast is renum of rd
+    n is n + 1
+check of ["local dot guard-miss store", rlast == 59]
+
+# ----------------------------------------------------------------
+# 3) Buffer + list index writes in a fn-local loop (bench_idxset
+#    shape: INDEX_SET inline fast path), plus the helper slow path
+#    via non-num stores into list slots.
+# ----------------------------------------------------------------
+buf is buffer of 256
+lst is [0, 0, 0, 0]
+define idx_fill(base) as:
+    k is 0
+    loop while k < 100:
+        buf[(base + k) % 256] is k
+        lst[k % 4] is k
+        k is k + 1
+    return lst[3]
+
+n is 0
+acc is 0
+loop while n < 60:
+    acc is acc + (idx_fill of n)
+    n is n + 1
+check of ["idx fill list tail", acc == 60 * 99]
+# Last call ran with base=59, so its final write was buf[(59+99)%256]=99.
+check of ["idx fill buffer", buf[158] == 99]
+
+# Slow path: storing strings (non-num) into list slots in a hot fn.
+strs is ["", "", "", ""]
+define str_fill(tag) as:
+    k is 0
+    loop while k < 60:
+        strs[k % 4] is tag + "!"
+        k is k + 1
+    return strs[1]
+
+n is 0
+last is ""
+loop while n < 60:
+    last is str_fill of "t"
+    n is n + 1
+check of ["index_set non-num slow path", last == "t!"]
+
+# ----------------------------------------------------------------
+# 4) for-in iteration in a hot function (jit_helper_iter_next),
+#    over both a list and a buffer.
+# ----------------------------------------------------------------
+xs is [1, 2, 3, 4, 5, 6, 7, 8]
+bxs is buffer of 8
+k is 0
+loop while k < 8:
+    bxs[k] is k * 2
+    k is k + 1
+
+define sum_list(dummy) as:
+    s is 0
+    for v in xs:
+        s is s + v
+    return s
+
+define sum_buf(dummy) as:
+    s is 0
+    for v in bxs:
+        s is s + v
+    return s
+
+n is 0
+sl is 0
+sb is 0
+loop while n < 80:
+    sl is sl + (sum_list of null)
+    sb is sb + (sum_buf of null)
+    n is n + 1
+check of ["for-in list in thunk", sl == 80 * 36]
+check of ["for-in buffer in thunk", sb == 80 * 56]
+
+# ----------------------------------------------------------------
+# 5) Native VAL_FN call inside a thunk (hot fn calling another fn).
+# ----------------------------------------------------------------
+define leaf(x) as:
+    return x * 2 + 1
+
+define trunk(x) as:
+    s is 0
+    k is 0
+    loop while k < 40:
+        s is s + (leaf of k)
+        k is k + 1
+    return s + x
+
+n is 0
+nc is 0
+loop while n < 60:
+    nc is nc + (trunk of n)
+    n is n + 1
+# sum_{k=0..39}(2k+1) = 1600; plus n each call: 60*1600 + 1770
+check of ["native call in thunk", nc == 97770]
+
+# ----------------------------------------------------------------
+# 6) OSR: a single long-running loop (>5000 back-edges) inside one
+#    call gets a per-loop OSR thunk mid-flight.
+# ----------------------------------------------------------------
+define osr_loop(dummy) as:
+    s is 0
+    k is 0
+    loop while k < 7000:
+        s is s + (k & 7)
+        k is k + 1
+    return s
+
+osr_r is osr_loop of null
+# 7000/8 = 875 full cycles of 0..7 (sum 28)
+check of ["OSR long loop checksum", osr_r == 875 * 28]
+
+# ----------------------------------------------------------------
+# 7) Error semantics from hot code: an out-of-range index raised
+#    inside a previously-JIT-compiled fn must still be catchable
+#    with the interpreter's message/behavior.
+# ----------------------------------------------------------------
+define maybe_oob(i) as:
+    small is [10, 20]
+    return small[i]
+
+n is 0
+loop while n < 60:
+    r is maybe_oob of (n % 2)
+    n is n + 1
+
+caught is 0
+try:
+    r is maybe_oob of 5
+catch e:
+    caught is 1
+check of ["hot fn OOB still raises catchably", caught == 1]
+
+# ----------------------------------------------------------------
+print of f"jit paths: {pass_count} passed, {fail_count} failed"
+if fail_count == 0:
+    print of "All tests passed"
