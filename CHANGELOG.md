@@ -8,6 +8,23 @@ A language-features release.
 
 ### Fixes
 
+- **#153 — docs: contract spells out the `f of [x]` non-spread rule.**
+  `docs/LANGUAGE_CONTRACT.md` previously promised "if `f` has two or
+  more parameters and `X` is a list, the elements are spread", which
+  read like a length-agnostic rule. The compiler only spreads literal
+  lists at `count > 1` (`src/compiler.c` call lowering), so `f of [x]`
+  always binds the one-element list as a single argument regardless of
+  callee arity. With 0.13.0 default parameters, "call a defaulted
+  multi-param fn with one arg" became a mainstream pattern and started
+  hitting this surprise — notably the recursive form `fib of [n - 1]`
+  the moment you add a defaulted `memo`. Fix: the call-spread section
+  now states "literal list of length ≥ 2 spreads; length-1 binds the
+  whole list", and the default-params section calls out the footgun
+  with the `fib` example and the `f of (x)` paren-form workaround.
+  Behavior unchanged; this is a docs-only sharpening. Regression in
+  `tests/test_call_semantics.eigs` (8 → 12 checks): pin down the
+  multi-param + 1-elem-list, paren-form spread, default-fires-with-paren,
+  and `fib of (n - 1)` recursion shape.
 - **#152 — `audio_play_loop` hard caps loops + clip-aware byte budget.**
   `builtin_audio_play_loop` cast its `double` loops argument to `int`
   without bounds-checking; NaN, `+inf`, or any value above `INT_MAX` was

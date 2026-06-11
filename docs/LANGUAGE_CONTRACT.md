@@ -152,14 +152,21 @@ unobservable. To get an independent copy, copy explicitly.
 ## Function calls & argument unpacking
 
 **Promise:** `f of X` calls `f` with argument `X`.
-- If `f` has **two or more** parameters and `X` is a list, the list's
-  elements are spread across the parameters in order. Extra elements are
-  ignored; missing parameters are `null`.
+- If `X` is a **literal list of length ≥ 2**, the elements are spread
+  across the callee's parameters in order. Extra elements are ignored;
+  missing parameters are `null`. So `momentum of [2, 3]` passes
+  `m=2, v=3`.
+- A **literal list of length 1** is *not* spread — `f of [x]` binds
+  the one-element list `[x]` as a single argument, regardless of the
+  callee's arity. (See the default-params footgun below.)
 - If `f` has **exactly one** parameter, the *entire* argument binds to it —
-  a list is **not** spread. So `mean of [1,2,3,4]` passes the whole list,
-  while `momentum of [2,3]` passes `m=2, v=3`.
-- To pass a single scalar to a one-parameter function, pass it directly:
-  `frequency of 0.25` (not `frequency of [0.25]`, which binds the list).
+  a list is **not** spread. So `mean of [1,2,3,4]` passes the whole list.
+- An empty literal list `f of []` is a **zero-arg call**, so a function
+  with all-default params runs every default.
+- To pass a single scalar to a multi-param (or any) function, use the
+  parenthesized form: `f of (x)` is always a one-argument call binding
+  `x` to the first parameter (later params take defaults or `null`).
+  `f of x` is the same one-argument form when `x` isn't a list literal.
 
 **Status:** Enforced — `tests/test_call_semantics.eigs`.
 
@@ -181,6 +188,14 @@ unobservable. To get an independent copy, copy explicitly.
   with zero args (since `f of null` would bind `null`).
 - Lambdas (`(x) -> expr`, `lambda` blocks) do **not** support
   defaults.
+- **Footgun (issue #153):** `f of [x]` does *not* spread to a
+  multi-param defaulted function. Per the call-spread rule above, a
+  length-1 literal list binds as one argument, so `f` receives the list
+  `[x]` as its first param — defaults can then fail or surprise
+  (e.g. `define fib(n, memo is 0)` with `fib of [n - 1]` binds
+  `n = [n - 1]`, then `n < 2` raises "compare list and num").
+  Use the parenthesized form `f of (x)` for the one-arg case:
+  `fib of (n - 1)` binds `n = n - 1` and lets `memo` default.
 
 **Status:** Enforced — `tests/test_default_params.eigs`.
 
