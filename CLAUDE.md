@@ -139,7 +139,7 @@ still open.
 
 A post-merge review of the 0.13.0 run filed issues #148–#159 (all
 repro'd against HEAD; suites still pass because none are crashes).
-Six fixed so far: **#155** (`call_argc` uninitialized on vm_run
+Seven fixed so far: **#155** (`call_argc` uninitialized on vm_run
 base frames; spawn/sort_by/dispatch/http defaults clobbered explicit
 args), **#156** (pre-pass walkers didn't know AST_SLICE /
 AST_LIST_PATTERN_ASSIGN; closure capture and module globals silently
@@ -151,8 +151,11 @@ child resets `SIGPIPE` to `SIG_DFL` so `yes | head -1` and similar
 inherited-`SIG_IGN` hang patterns drain instead of hanging), **#151**
 (`recv_timeout` clamps ms before the `(long)` cast — NaN/+inf/huge
 no longer produce UB or spurious deadlines; channel condvars now use
-`CLOCK_MONOTONIC`). Remaining before tagging 0.13.0: small/docs
-issues #152–#154 and #157–#159.
+`CLOCK_MONOTONIC`), **#152** (`audio_play_loop` rejects NaN /
+out-of-range / >10000 loops before the `(int)` cast, plus a 256 MiB
+byte-budget gate so a modest loop count over a multi-second clip
+can't queue gigabytes into SDL in one call). Remaining before tagging
+0.13.0: small/docs issues #153–#154 and #157–#159.
 
 Perf carryover from 0.12.0 (ROADMAP.md): NaN-boxing for *container*
 storage (list items / dict values are still `Value**`; stack and env

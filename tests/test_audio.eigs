@@ -67,10 +67,23 @@ if ok != 0:
     assert_eq of [audio_play_loop of [short_clip, -1], 0, "loops=-1 (infinite) reserved"]
     assert_eq of [audio_play_loop of [short_clip, "many"], 0, "non-number loops rejected"]
     assert_eq of [audio_play_loop of [[], 5], 0, "empty samples rejected"]
+    # #152: hard ceiling at 10000 loops rejects huge counts (and prevents
+    # the (int) cast UB that hit at INT_MAX+ and unbounded SDL queue growth).
+    assert_eq of [audio_play_loop of [short_clip, 10001], 0, "loops>10000 rejected (#152 hard cap)"]
+    assert_eq of [audio_play_loop of [short_clip, 1e20], 0, "loops huge double rejected (#152 cast UB)"]
+    # 256 MiB byte budget rejects modest loops on a huge clip.
+    big_clip is audio_sine of [220, 5, 0.5]
+    assert_eq of [audio_play_loop of [big_clip, 800], 0, "byte-budget rejects 800 loops of 5s clip (#152)"]
+    # Loops at the very edge still succeed.
+    assert_eq of [audio_play_loop of [short_clip, 10000], 4410000, "loops=10000 at the ceiling still queues (#152)"]
     audio_clear of null
     audio_close of null
 else:
     # No audio device — skip the play_loop checks, leave the count consistent.
+    assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
+    assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
+    assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
+    assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
     assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
     assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
     assert_eq of [1, 1, "audio_play_loop skipped (no device)"]

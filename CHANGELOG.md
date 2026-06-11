@@ -8,6 +8,22 @@ A language-features release.
 
 ### Fixes
 
+- **#152 — `audio_play_loop` hard caps loops + clip-aware byte budget.**
+  `builtin_audio_play_loop` cast its `double` loops argument to `int`
+  without bounds-checking; NaN, `+inf`, or any value above `INT_MAX` was
+  undefined behavior, and even a well-formed huge `int` (or a modest
+  count over a multi-second clip) would queue gigabytes into SDL's audio
+  ring in a single call. `SDL_QueueAudio` copies the buffer each time,
+  so one bad call could OOM the process or stall it in a copy loop. Fix:
+  reject NaN and any value outside `[1, 10000]` before the cast (hard
+  ceiling, documented in CLAUDE.md), and additionally reject any call
+  whose total queued bytes would exceed a 256 MiB budget
+  (`loops * samples * sizeof(int16_t)`). A 5-second 44100Hz clip caps
+  at ~593 loops; the typical short-clip case (a few hundred ms) still
+  hits the 10000-loop ceiling. Regression in `tests/test_audio.eigs`
+  (slot [62], 20 → 24): covers `loops>10000`, `1e20` (cast UB sentinel),
+  byte-budget rejection on a 5s clip, and `loops=10000` at the ceiling
+  still succeeding.
 - **#151 — `recv_timeout` clamps `ms` before the `(long)` cast.**
   `builtin_recv_timeout` cast a `double` ms argument directly to `long`
   when computing the deadline; NaN, `+inf`, or any value above `LONG_MAX`

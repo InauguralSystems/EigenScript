@@ -697,10 +697,15 @@ Value* builtin_audio_play_loop(Value *arg) {
     Value *loops_v = arg->data.list.items[1];
     if (samples->type != VAL_LIST || loops_v->type != VAL_NUM)
         return make_num(0);
-    int loops = (int)loops_v->data.num;
-    if (loops < 1) return make_num(0);
+    /* #152: NaN/>INT_MAX cast is UB; cap dodges gigabyte SDL queue copies. */
+    double loops_d = loops_v->data.num;
+    if (isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0)
+        return make_num(0);
+    int loops = (int)loops_d;
     int n = samples->data.list.count;
     if (n == 0) return make_num(0);
+    if ((double)loops * (double)n * (double)sizeof(int16_t) > 256.0 * 1024.0 * 1024.0)
+        return make_num(0);
 
     int16_t *buf = xmalloc_array(n, sizeof(int16_t));
     for (int i = 0; i < n; i++) {
