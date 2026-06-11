@@ -3451,16 +3451,29 @@ static Channel* get_channel(Value *v) {
     return (Channel*)handle_lookup((int)cv->data.num, HANDLE_CHANNEL);
 }
 
+/* On Linux (and most other POSIX targets) use CLOCK_MONOTONIC for the
+ * channel condvars so recv_timeout's deadline is immune to wall-clock
+ * steps (NTP, settimeofday). macOS does not expose
+ * pthread_condattr_setclock — its pthread_cond_timedwait is hard-wired
+ * to CLOCK_REALTIME — so on Apple we keep the platform default and
+ * read the deadline base from the matching clock in recv_timeout. The
+ * NTP-immunity hardening from #151 is Linux-only; macOS preserves
+ * pre-#151 behavior with no functional regression. */
+#if defined(__APPLE__)
+#  define EIGS_CHANNEL_CLOCK CLOCK_REALTIME
+#else
+#  define EIGS_CHANNEL_CLOCK CLOCK_MONOTONIC
+#endif
+
 Value* builtin_channel(Value *arg) {
     (void)arg;
     Channel *ch = xcalloc(1, sizeof(Channel));
     pthread_mutex_init(&ch->mutex, NULL);
-    /* Use CLOCK_MONOTONIC for the condvars so recv_timeout's deadline is
-     * immune to wall-clock steps (NTP, settimeofday). Matches the monotonic
-     * discipline exec_capture uses for its own poll timeout. (#151 hardening) */
     pthread_condattr_t cattr;
     pthread_condattr_init(&cattr);
+#if !defined(__APPLE__)
     pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
+#endif
     pthread_cond_init(&ch->not_empty, &cattr);
     pthread_cond_init(&ch->not_full,  &cattr);
     pthread_condattr_destroy(&cattr);
@@ -3576,7 +3589,7 @@ Value* builtin_recv_timeout(Value *arg) {
     else if (ms > 3.15e10) ms = 3.15e10;
 
     struct timespec deadline;
-    clock_gettime(CLOCK_MONOTONIC, &deadline);
+    clock_gettime(EIGS_CHANNEL_CLOCK, &deadline);
     long whole_ms = (long)ms;
     long extra_ns = (long)((ms - (double)whole_ms) * 1e6);
     deadline.tv_sec  += whole_ms / 1000;
