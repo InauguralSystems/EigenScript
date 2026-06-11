@@ -39,6 +39,9 @@ now beats `EIGS_JIT_OFF` by ~45% on it.
 - [x] Slicing (`a[start:end]`, lists/strings/buffers, half-open,
       negatives, strict bounds, independent copy) — shipped 0.13.0
 - [x] Default parameter values — shipped 0.13.0
+- [x] Non-blocking channel recv (`recv_timeout of [ch, ms]`, plus
+      suite coverage for the pre-existing `try_recv`) — shipped
+      0.13.0; fixes Tidepool GAP-005
 
 ### Downstream gaps feeding back
 
@@ -48,8 +51,8 @@ when picked up:
 - **Tidepool** (`InauguralSystems/Tidepool/GAPS.md`):
   GAP-001/002/003 audio (sweep, loop, per-channel volume),
   GAP-004 inner-loop function-call cost (partial mitigation via
-  v0.12.0 hoist sweep), GAP-005 non-blocking channel recv,
-  GAP-006 spawn-with-args.
+  v0.12.0 hoist sweep), GAP-006 spawn-with-args.
+  (GAP-005 non-blocking channel recv shipped 0.13.0.)
 - **EigenMiniSat** (`InauguralSystems/EigenMiniSat/GAPS.md`):
   open watchlist around CDCL hot-path inlining patterns.
 

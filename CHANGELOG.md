@@ -6,6 +6,33 @@ All notable changes to EigenScript are documented here.
 
 A language-features release.
 
+### Language — non-blocking channel recv (`recv_timeout`)
+
+`recv_timeout of [channel, ms]` joins `try_recv` as the second
+non-blocking option for game loops, UI threads, and any caller that
+can't afford `recv`'s unbounded park. Returns the value if one
+arrives — or is already buffered — before the deadline; returns
+`null` on timeout or on close-while-waiting. Fractional `ms` is
+honored (ns precision via `pthread_cond_timedwait` on
+`CLOCK_REALTIME`); negative `ms` degenerates to a `try_recv`.
+
+Wire-up: new `builtin_recv_timeout` in `src/builtins.c` next to
+`builtin_recv` / `builtin_try_recv`, registered alongside them in the
+builtins env. Deadline is computed by adding `ms` to a
+`clock_gettime(CLOCK_REALTIME, ...)` snapshot, then the existing
+`while (count == 0 && !closed && rc == 0)` drain pattern uses
+`pthread_cond_timedwait` instead of `pthread_cond_wait` — so it
+honors spurious wakeups, close broadcasts (channel's
+`pthread_cond_broadcast(&not_empty)` already wakes the waiter), and
+the deadline uniformly. No new state on the `Channel` struct.
+
+`try_recv` was already shipped earlier but had zero suite coverage;
+the new `tests/test_channel_nb.eigs` closes that hole alongside the
+`recv_timeout` paths (22 checks across empty / buffered / FIFO /
+post-close drain / negative-ms degeneration / cross-thread arrival /
+close-while-waiting / error paths; suite slot [77]). Fix for
+Tidepool `GAPS.md` GAP-005.
+
 ### Language — slicing
 
 `a[start:end]` is now a real expression form, half-open, with `[:]`,

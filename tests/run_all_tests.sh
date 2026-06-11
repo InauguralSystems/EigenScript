@@ -1638,6 +1638,21 @@ else
 fi
 echo ""
 
+# [77] Non-blocking channel recv (0.13.0).
+echo "[77] Non-blocking Channel Recv (22 checks)"
+CNB_OUTPUT=$(./eigenscript ../tests/test_channel_nb.eigs 2>&1)
+if echo "$CNB_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 22))
+    PASS=$((PASS + 22))
+    echo "  PASS: all 22 channel-nb checks"
+else
+    TOTAL=$((TOTAL + 22))
+    FAIL=$((FAIL + 22))
+    echo "  FAIL: channel-nb tests"
+    echo "$CNB_OUTPUT" | grep -iE "MISMATCH|FAIL|error" | head -5
+fi
+echo ""
+
 # [76] Slicing (0.13.0).
 echo "[76] Slicing (46 checks)"
 SL_OUTPUT=$(./eigenscript ../tests/test_slicing.eigs 2>&1)

@@ -3448,6 +3448,55 @@ Value* builtin_try_recv(Value *arg) {
     return val ? val : make_null();
 }
 
+/* recv_timeout of [channel, ms] — bounded wait. Returns the value if one
+ * arrives (or is already buffered) before the deadline, else null. ms is
+ * interpreted as milliseconds; fractional values are honored (ns precision
+ * on Linux). Negative ms degenerates to a try_recv. */
+Value* builtin_recv_timeout(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        runtime_error(0, "recv_timeout requires [channel, ms]");
+        return make_null();
+    }
+    Channel *ch = get_channel(arg->data.list.items[0]);
+    if (!ch) {
+        runtime_error(0, "recv_timeout: invalid channel");
+        return make_null();
+    }
+    Value *ms_v = arg->data.list.items[1];
+    if (ms_v->type != VAL_NUM) {
+        runtime_error(0, "recv_timeout: ms must be a number");
+        return make_null();
+    }
+    double ms = ms_v->data.num;
+    if (ms < 0) ms = 0;
+
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    long whole_ms = (long)ms;
+    long extra_ns = (long)((ms - (double)whole_ms) * 1e6);
+    deadline.tv_sec  += whole_ms / 1000;
+    deadline.tv_nsec += (whole_ms % 1000) * 1000000L + extra_ns;
+    if (deadline.tv_nsec >= 1000000000L) {
+        deadline.tv_sec  += deadline.tv_nsec / 1000000000L;
+        deadline.tv_nsec %= 1000000000L;
+    }
+
+    pthread_mutex_lock(&ch->mutex);
+    int rc = 0;
+    while (ch->count == 0 && !ch->closed && rc == 0) {
+        rc = pthread_cond_timedwait(&ch->not_empty, &ch->mutex, &deadline);
+    }
+    Value *val = NULL;
+    if (ch->count > 0) {
+        val = ch->buffer[ch->head];
+        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->count--;
+        pthread_cond_signal(&ch->not_full);
+    }
+    pthread_mutex_unlock(&ch->mutex);
+    return val ? val : make_null();
+}
+
 Value* builtin_close_channel(Value *arg) {
     Channel *ch = get_channel(arg);
     if (!ch) {
@@ -4139,6 +4188,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "send", make_builtin(builtin_send));
     env_set_local_owned(env, "recv", make_builtin(builtin_recv));
     env_set_local_owned(env, "try_recv", make_builtin(builtin_try_recv));
+    env_set_local_owned(env, "recv_timeout", make_builtin(builtin_recv_timeout));
     env_set_local_owned(env, "nearest_in_range", make_builtin(builtin_nearest_in_range));
     env_set_local_owned(env, "nearest_in_range_all", make_builtin(builtin_nearest_in_range_all));
     env_set_local_owned(env, "dispatch", make_builtin(builtin_dispatch));

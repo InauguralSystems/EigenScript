@@ -1,0 +1,124 @@
+# Non-blocking channel recv: try_recv + recv_timeout (0.13.0).
+checks is 0
+passed is 0
+
+define check(label, got, want) as:
+    checks is checks + 1
+    if got == want:
+        passed is passed + 1
+    else:
+        print of ("MISMATCH " + label + ": got=" + str of got + " want=" + str of want)
+
+# ---- try_recv ----
+ch is channel of null
+
+# 1. Empty channel returns null immediately.
+check of ["1a", try_recv of ch, null]
+
+# 2. After send, try_recv returns the value.
+send of [ch, 42]
+check of ["2a", try_recv of ch, 42]
+check of ["2b", try_recv of ch, null]
+
+# 3. FIFO order across multiple sends.
+send of [ch, 100]
+send of [ch, 200]
+send of [ch, 300]
+check of ["3a", try_recv of ch, 100]
+check of ["3b", try_recv of ch, 200]
+check of ["3c", try_recv of ch, 300]
+check of ["3d", try_recv of ch, null]
+
+# 4. After close on an empty channel, try_recv returns null.
+close_channel of ch
+check of ["4a", try_recv of ch, null]
+
+# 5. Buffered values are still drainable after close.
+ch_late is channel of null
+send of [ch_late, 1]
+send of [ch_late, 2]
+close_channel of ch_late
+check of ["5a", try_recv of ch_late, 1]
+check of ["5b", try_recv of ch_late, 2]
+check of ["5c", try_recv of ch_late, null]
+
+# ---- recv_timeout ----
+
+# 6. Empty channel + small timeout returns null after the deadline.
+ch2 is channel of null
+t0 is monotonic_ms of null
+v is recv_timeout of [ch2, 20]
+elapsed is monotonic_ms of null - t0
+check of ["6a", v, null]
+# Allow a generous floor — system load can stretch this.
+check of ["6b", elapsed >= 15, 1]
+
+# 7. Negative ms degenerates to try_recv.
+v is recv_timeout of [ch2, -1]
+check of ["7a", v, null]
+send of [ch2, 7]
+v is recv_timeout of [ch2, -1]
+check of ["7b", v, 7]
+
+# 8. Already-buffered value returns immediately.
+send of [ch2, 9]
+t0 is monotonic_ms of null
+v is recv_timeout of [ch2, 10000]
+elapsed is monotonic_ms of null - t0
+check of ["8a", v, 9]
+check of ["8b", elapsed < 100, 1]
+
+# 9. Value arriving from another thread before the deadline.
+ch3 is channel of null
+define producer() as:
+    usleep of 30000
+    send of [ch3, 77]
+spawn of producer
+t0 is monotonic_ms of null
+v is recv_timeout of [ch3, 2000]
+elapsed is monotonic_ms of null - t0
+check of ["9a", v, 77]
+check of ["9b", elapsed < 500, 1]
+
+# 10. Close while waiting unblocks recv_timeout (returns null, no buffered val).
+ch4 is channel of null
+define closer() as:
+    usleep of 30000
+    close_channel of ch4
+spawn of closer
+t0 is monotonic_ms of null
+v is recv_timeout of [ch4, 2000]
+elapsed is monotonic_ms of null - t0
+check of ["10a", v, null]
+check of ["10b", elapsed < 500, 1]
+
+# ---- Error paths ----
+
+# 11. recv_timeout with non-list arg raises.
+err is null
+try:
+    bad is recv_timeout of ch4
+catch e:
+    err is e
+checks is checks + 1
+if err != null:
+    passed is passed + 1
+else:
+    print of "MISMATCH 11a: expected error for non-list arg"
+
+# 12. recv_timeout with non-number ms raises.
+err is null
+try:
+    bad is recv_timeout of [ch4, "soon"]
+catch e:
+    err is e
+checks is checks + 1
+if err != null:
+    passed is passed + 1
+else:
+    print of "MISMATCH 12a: expected error for non-number ms"
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

@@ -455,6 +455,7 @@ Requires full build. Transformer model inference and training.
 | `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. |
 | `recv` | `recv of channel` | Receive a value from the channel. **Blocks** until a value is available or the channel is closed. |
 | `try_recv` | `try_recv of channel` | Non-blocking receive. Returns the value if available, `null` if the channel is empty. |
+| `recv_timeout` | `recv_timeout of [channel, ms]` | Bounded-wait receive. Returns the value if one arrives before `ms` milliseconds elapse, else `null`. A close while waiting also returns `null`. Fractional `ms` is honored (ns precision on Linux); negative `ms` degenerates to a `try_recv`. |
 | `close_channel` | `close_channel of channel` | Close the channel. Wakes all blocked senders/receivers. |
 | `channel_closed` | `channel_closed of channel` | Returns 1 if closed, 0 otherwise. |
 
