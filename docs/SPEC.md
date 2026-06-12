@@ -684,15 +684,86 @@ Error line 7: undefined variable 'undefined_name'
 execution continues
 ```
 
+`throw` preserves the thrown *value*: throw a dict (or list) and the
+catch variable binds it unchanged, so errors can carry data and be
+matched on fields. Runtime errors and thrown strings bind as strings.
+
+```eigenscript
+define validate(age) as:
+    if age < 0:
+        throw of {"kind": "validation", "field": "age", "got": age}
+    return age
+
+try:
+    v is validate of (0 - 5)
+catch e:
+    print of (type of e)
+    print of e.kind
+    print of e.got
+```
+```output
+dict
+validation
+-5
+```
+
+An *uncaught* error prints the error followed by a stack trace —
+every frame between the failure and the top level, innermost first —
+then exits with code 1:
+
+```eigenscript skip
+# uncaught: stderr shows
+#   Error line 6: index 99 out of range (list length 2)
+#     at inner (line 6)
+#     at middle (line 8)
+#     at <module> (line 9)
+```
+
 ## Modules
 
-`load_file of "path.eigs"` executes a file in the current scope (paths
-resolve relative to the script, then the standard-library directories).
-The standard library ships as `.eigs` modules under `lib/`.
+`import name` loads a module into a **namespace**: it executes
+`lib/name.eigs` (the standard library) or, failing that, `name.eigs`
+resolved relative to the script — and binds the module's top-level
+definitions as a dict named `name`. Nothing leaks into the global
+scope; names starting with `_` stay private to the module.
+
+```eigenscript
+import math
+print of (math.clamp of [15, 0, 10])
+print of (type of math)
+print of (abs of -10)
+```
+```output
+10
+dict
+10
+```
+
+A user module is just a file next to your script:
+
+```eigenscript
+write_text of ["spec_shapes.eigs", "PI is 3.14159\ndefine area(r) as:\n    return PI * r * r\n"]
+import spec_shapes
+print of spec_shapes.PI
+print of (spec_shapes.area of 2)
+rm of "spec_shapes.eigs"
+```
+```output
+3.14159
+12.56636
+```
+
+(In a project, the idiom is simply `import shapes` with `shapes.eigs`
+sitting next to `app.eigs`.)
+
+`load_file of "path.eigs"` is the older, non-namespaced form: it
+executes a file directly **in the current scope**. The standard
+library's helper modules (`lib/test.eigs`'s `assert_eq`, ...) are
+conventionally loaded this way.
 
 ```eigenscript skip
 load_file of "lib/test.eigs"     # assert_eq, test_summary, ...
-load_file of "mymodule.eigs"     # your own code
+load_file of "mymodule.eigs"     # definitions land in *your* scope
 ```
 
 ## Interrogatives: asking your code

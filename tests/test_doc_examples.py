@@ -78,9 +78,15 @@ def main():
                     tf.write(code)
                     tmp = tf.name
                 try:
-                    p = subprocess.run([EIGS, tmp], capture_output=True,
+                    # Run with cwd = the temp script's directory so
+                    # cwd-relative and script-relative paths coincide.
+                    # (On macOS the Python tempdir is /var/folders/...,
+                    # not /tmp — examples must not assume either.)
+                    p = subprocess.run([os.path.abspath(EIGS), tmp],
+                                       capture_output=True,
                                        text=True, timeout=20,
-                                       stdin=subprocess.DEVNULL)
+                                       stdin=subprocess.DEVNULL,
+                                       cwd=os.path.dirname(tmp))
                     got = norm(p.stdout)
                     want = norm(text)
                     # Mirror run_all_tests.sh's rc_ok: a nonzero exit whose

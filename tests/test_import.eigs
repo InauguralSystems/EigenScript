@@ -41,4 +41,23 @@ import format
 result is format.fmt_num of [3.14159, 2]
 assert_eq of [result, "3.14", "import format.fmt_num"]
 
+# --- User modules: when lib/<name>.eigs doesn't exist, import falls
+# back to <name>.eigs resolved relative to the script. Same namespacing.
+# (The suite runs from src/, so the script dir is ../tests.)
+write_text of ["../tests/tmp_user_module.eigs", "FACTOR is 7\ndefine scaled(x) as:\n    return x * FACTOR\n"]
+import tmp_user_module
+assert_eq of [type of tmp_user_module, "dict", "user module imports as dict"]
+assert_eq of [tmp_user_module.scaled of 6, 42, "user module function works"]
+assert_eq of [tmp_user_module.FACTOR, 7, "user module constant"]
+rm of "../tests/tmp_user_module.eigs"
+
+# Missing module raises a catchable error naming both tried paths.
+import_err is ""
+try:
+    import surely_does_not_exist_zz
+catch e:
+    import_err is e
+assert_true of [contains of [import_err, "not found"], "missing module raises"]
+assert_true of [contains of [import_err, "surely_does_not_exist_zz.eigs"], "error names tried path"]
+
 test_summary of null

@@ -2,6 +2,31 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Language — structured errors, stack traces, user modules
+
+- **`throw` preserves the thrown value.** `throw of {"kind": ..., ...}`
+  now binds the *dict* (or list, or any value) to the catch variable
+  instead of a stringified copy — errors can carry data and be matched
+  on fields. Thrown strings and runtime errors bind as strings, exactly
+  as before; a runtime error raised while a structured value is in
+  flight supersedes it. (`tests/test_trycatch.eigs` 13 → 23 checks.)
+- **Uncaught errors print a stack trace**: every frame between the
+  failure and the top level, innermost first, with function name and
+  line (`at inner (line 6)` / `at <module> (line 9)`), resolved from
+  each frame's saved ip via the chunk line tables. Applies to runtime
+  errors and uncaught `throw` alike; stderr-only, so program output
+  and the error-message contract are unchanged.
+- **`import` loads user modules.** When `lib/<name>.eigs` doesn't
+  exist, `import name` falls back to `<name>.eigs` resolved relative
+  to the script (then the other standard locations) — same namespaced
+  dict binding, nothing in global scope. The not-found error now names
+  both tried paths. (`tests/test_import.eigs` 12 → 17 checks.)
+- docs/SPEC.md: `import` documented for the first time (executed
+  examples, stdlib + user module), structured-throw and stack-trace
+  sections added; new `examples/errors/uncaught_with_trace.eigs`.
+
 ## [0.13.0] — unreleased
 
 A language-features release.

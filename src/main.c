@@ -286,6 +286,9 @@ int main(int argc, char **argv) {
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */
     int exit_code = g_has_error ? 1 : 0;
+    /* An uncaught `throw` leaves its structured payload stashed; release
+     * it so exit is leak-clean. */
+    eigs_clear_error_value();
     /* Chunks are refcounted: this drops the creator ref. Nested fn chunks
      * referenced by live closures survive until those values die (during
      * env_destroy_final below). */

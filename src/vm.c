@@ -29,6 +29,7 @@ extern __thread int g_returning;
 extern __thread int g_breaking;
 extern __thread int g_continuing;
 extern __thread char g_error_msg[4096];
+extern __thread Value *g_error_value;
 extern __thread int g_has_error;
 extern __thread int g_try_depth;
 extern __thread int g_unobserved_depth;
@@ -1641,6 +1642,43 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
  * runtime error has any catcher within *this* vm_run invocation; if not,
  * vm_run unwinds and returns with g_has_error still set so the C caller
  * (a re-entrant vm_run, or main) observes the failure. */
+/* Catch-binding: if `throw` stashed a structured error value (dict,
+ * list, ...), the catch variable binds that value — ownership of the
+ * stash's ref transfers to the stack. Plain runtime errors (and string
+ * throws, which also fill g_error_msg) bind the message string. */
+static Value *vm_take_error_value(void) {
+    if (g_error_value) {
+        Value *v = g_error_value;
+        g_error_value = NULL;
+        return v;
+    }
+    return make_str(g_error_msg);
+}
+
+/* Print the live call stack, innermost frame first. Called by
+ * runtime_error/builtin_throw for *uncaught* errors (g_try_depth == 0)
+ * so failures show where they happened, not just the innermost line.
+ * Frame lines come from the per-offset line table at each frame's
+ * saved ip; the innermost frame uses g_vm.current_line, which the
+ * dispatch loop keeps fresh. */
+void vm_print_stack_trace(FILE *out) {
+    if (g_vm.frame_count <= 0) return;
+    for (int i = g_vm.frame_count - 1; i >= 0; i--) {
+        CallFrame *f = &g_vm.frames[i];
+        const char *fname = (f->chunk && f->chunk->name) ? f->chunk->name : "?";
+        int line = 0;
+        if (i == g_vm.frame_count - 1) {
+            line = g_vm.current_line;
+        } else if (f->chunk && f->ip) {
+            long off = f->ip - f->chunk->code;
+            if (off > 0) off--;   /* ip points past the resume opcode */
+            if (off >= 0 && off < f->chunk->lines_len)
+                line = f->chunk->lines[off];
+        }
+        fprintf(out, "  at %s (line %d)\n", fname, line);
+    }
+}
+
 static int vm_handler_in_range(int base) {
     for (int i = g_vm.frame_count - 1; i >= base; i--)
         if (g_vm.frames[i].try_count > 0) return 1;
@@ -1755,7 +1793,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 int _catch_bp = frame->try_handlers[frame->try_count].catch_bp; \
                 frame->is_try = (frame->try_count > 0); \
                 while (g_vm.sp > _catch_bp) val_decref(vm_pop()); \
-                vm_push(make_str(g_error_msg)); \
+                vm_push(vm_take_error_value()); \
                 ip = _catch_ip; \
             } else if (!vm_handler_in_range(base_frame)) { \
                 /* Uncaught: no try anywhere in this vm_run's frames. Stop \
@@ -3851,9 +3889,16 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         extern void free_ast(ASTNode *ast);
 
         if (!resolve_eigenscript_file(request, path_buf, sizeof(path_buf))) {
-            runtime_error(current_line, "import: module '%s' not found", name);
-            vm_push(make_null());
-            DISPATCH();
+            /* Not a stdlib module — fall back to a user module:
+             * <name>.eigs resolved script-relative (and the other
+             * standard locations resolve_eigenscript_file tries). */
+            snprintf(request, sizeof(request), "%.1024s.eigs", name);
+            if (!resolve_eigenscript_file(request, path_buf, sizeof(path_buf))) {
+                runtime_error(current_line, "import: module '%s' not found "
+                              "(tried lib/%s.eigs and %s.eigs)", name, name, name);
+                vm_push(make_null());
+                DISPATCH();
+            }
         }
 
         long src_size = 0;
