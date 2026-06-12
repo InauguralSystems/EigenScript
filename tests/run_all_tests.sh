@@ -823,15 +823,15 @@ fi
 echo ""
 
 # [24] Try/catch and throw
-echo "[24/27] Try/Catch & Throw (8 checks)"
+echo "[24/27] Try/Catch & Throw (23 checks)"
 TC_OUTPUT=$(./eigenscript ../tests/test_trycatch.eigs 2>&1); TC_OUTPUT_RC=$?
 if rc_ok "$TC_OUTPUT_RC" "$TC_OUTPUT" && echo "$TC_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 8))
-    PASS=$((PASS + 8))
-    echo "  PASS: all 8 try/catch checks"
+    TOTAL=$((TOTAL + 23))
+    PASS=$((PASS + 23))
+    echo "  PASS: all 23 try/catch checks"
 else
-    TOTAL=$((TOTAL + 8))
-    FAIL=$((FAIL + 8))
+    TOTAL=$((TOTAL + 23))
+    FAIL=$((FAIL + 23))
     echo "  FAIL: try/catch tests"
     echo "$TC_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
@@ -973,15 +973,15 @@ fi
 echo ""
 
 # [36] Import system
-echo "[36/36] Import System (12 checks)"
+echo "[36/36] Import System (17 checks)"
 IM_OUTPUT=$(./eigenscript ../tests/test_import.eigs 2>&1); IM_OUTPUT_RC=$?
 if rc_ok "$IM_OUTPUT_RC" "$IM_OUTPUT" && echo "$IM_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 12))
-    PASS=$((PASS + 12))
-    echo "  PASS: all 12 import checks"
+    TOTAL=$((TOTAL + 17))
+    PASS=$((PASS + 17))
+    echo "  PASS: all 17 import checks"
 else
-    TOTAL=$((TOTAL + 12))
-    FAIL=$((FAIL + 12))
+    TOTAL=$((TOTAL + 17))
+    FAIL=$((FAIL + 17))
     echo "  FAIL: import tests"
     echo "$IM_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
@@ -2003,7 +2003,7 @@ echo ""
 
 # [90] Error examples — examples/errors/*.eigs must exit nonzero and
 # print their declared '# expect-error:' message.
-echo "[90] Error Examples (9 checks)"
+echo "[90] Error Examples (10 checks)"
 ERR_OUTPUT=$(bash "$TESTS_DIR/test_error_examples.sh" 2>&1)
 ERR_PASS=$(echo "$ERR_OUTPUT" | grep -c "  PASS:" || true)
 ERR_FAIL=$(echo "$ERR_OUTPUT" | grep -c "  FAIL:" || true)

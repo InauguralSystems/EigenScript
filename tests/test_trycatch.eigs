@@ -93,4 +93,56 @@ assert_true of [contains of [caught_setfrac, "integer"], "fractional index assig
 # floor is the explicit escape hatch for division-derived indices
 assert_eq of [nums[floor of (5 / 2)], 30, "floor of (5/2) indexes element 2"]
 
+# --- Structured throw: catch binds the thrown VALUE, not a stringified
+# copy. Strings keep their historical behavior; dicts/lists/nums come
+# through intact, so errors can carry data and be matched on fields.
+caught_dict is null
+try:
+    throw of {"kind": "validation", "field": "age", "got": 0 - 5}
+catch e:
+    caught_dict is e
+assert_eq of [type of caught_dict, "dict", "thrown dict binds as dict"]
+assert_eq of [caught_dict.kind, "validation", "thrown dict field kind"]
+assert_eq of [caught_dict.got, 0 - 5, "thrown dict numeric field"]
+
+caught_list is null
+try:
+    throw of [404, "not found"]
+catch e:
+    caught_list is e
+assert_eq of [type of caught_list, "list", "thrown list binds as list"]
+assert_eq of [caught_list[0], 404, "thrown list element"]
+
+caught_str is null
+try:
+    throw of "plain"
+catch e:
+    caught_str is e
+assert_eq of [type of caught_str, "str", "thrown string still binds as str"]
+assert_eq of [caught_str, "plain", "thrown string content unchanged"]
+
+# Re-throwing a structured error preserves it across handlers.
+rethrown is null
+try:
+    try:
+        throw of {"kind": "inner"}
+    catch first_err:
+        throw of first_err
+catch e2:
+    rethrown is e2
+assert_eq of [rethrown.kind, "inner", "rethrow preserves structure"]
+
+# A runtime error after a structured throw supersedes the stash:
+# catch must bind the runtime error's message string, not the old dict.
+superseded is null
+try:
+    try:
+        throw of {"kind": "stale"}
+    catch ignored:
+        x is undefined_variable_here
+catch e3:
+    superseded is e3
+assert_eq of [type of superseded, "str", "runtime error supersedes stale value"]
+assert_true of [contains of [superseded, "undefined variable"], "superseding message intact"]
+
 test_summary of null

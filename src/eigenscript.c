@@ -49,6 +49,23 @@ int g_vm_multithreaded = 0;
  * Outside try blocks, it also prints to stderr. */
 __thread int g_try_depth = 0;
 
+/* Structured error payload: set by `throw` so catch can bind the thrown
+ * value (dict/list/...) instead of a stringified copy. NULL for plain
+ * runtime errors. Owned ref; consumed by vm_take_error_value, cleared
+ * by eigs_clear_error_value on the uncaught path. */
+__thread Value *g_error_value = NULL;
+
+void eigs_clear_error_value(void) {
+    if (g_error_value) {
+        val_decref(g_error_value);
+        g_error_value = NULL;
+    }
+}
+
+/* Defined in vm.c; prints the live call stack for uncaught errors.
+ * Safe to call when no VM is active (it no-ops). */
+void vm_print_stack_trace(FILE *out);
+
 void runtime_error(int line, const char *fmt, ...) {
     char tmp[3900];
     va_list args;
@@ -62,8 +79,10 @@ void runtime_error(int line, const char *fmt, ...) {
     if (_tl > 0 && tmp[_tl - 1] == '\n') tmp[_tl - 1] = '\0';
     snprintf(g_error_msg, sizeof(g_error_msg), "Error line %d: %s", line, tmp);
     g_has_error = 1;
+    eigs_clear_error_value();   /* a new error supersedes any thrown value */
     if (g_try_depth == 0) {
         fprintf(stderr, "%s\n", g_error_msg);
+        vm_print_stack_trace(stderr);
     }
 }
 

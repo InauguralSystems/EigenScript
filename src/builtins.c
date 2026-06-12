@@ -545,11 +545,20 @@ Value* builtin_assert(Value *arg) {
 }
 
 Value* builtin_throw(Value *arg) {
+    /* g_error_msg always carries the stringified form (uncaught
+     * printing, traces); g_error_value preserves the thrown value
+     * itself so `catch e` binds a dict/list/... unchanged. */
     char *msg = value_to_string(arg);
     snprintf(g_error_msg, sizeof(g_error_msg), "%s", msg);
     g_has_error = 1;
+    eigs_clear_error_value();
+    if (arg) {
+        val_incref(arg);
+        g_error_value = arg;
+    }
     if (g_try_depth == 0) {
         fprintf(stderr, "%s\n", g_error_msg);
+        vm_print_stack_trace(stderr);
     }
     free(msg);
     return make_null();
@@ -3396,6 +3405,9 @@ static void *thread_entry(void *arg) {
         val_decref(bin_arg);
         if (h->result) val_incref(h->result);
     }
+    /* An uncaught throw on this thread leaves its structured payload in
+     * thread-local storage; release it before the thread exits. */
+    eigs_clear_error_value();
     h->done = 1;
     return NULL;
 }

@@ -464,6 +464,9 @@ extern __thread Value *g_return_val;
 extern __thread int g_returning;
 extern __thread int g_parse_errors;
 extern __thread char g_error_msg[4096];
+extern __thread Value *g_error_value;  /* thrown value for structured catch; see throw */
+void eigs_clear_error_value(void);
+void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
 extern __thread int g_first_error_line;     /* 1-based; 0 = none. Reset in tokenize(). */
 extern __thread char g_first_error_msg[256];
 void eigs_record_first_error(int line, const char *msg);
