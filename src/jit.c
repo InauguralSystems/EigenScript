@@ -1448,11 +1448,15 @@ static uint8_t *emit_cvttsd2si_xmm0_r8d(uint8_t *w) {
 static uint8_t *emit_cvtsi2sd_r8d_xmm1(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x41; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC8; return w;
 }
-/* cvttsd2si %xmm0, %edx  (4 bytes) — 32-bit, mirrors `(int)val_s.d`. */
+/* cvttsd2si %xmm0, %edx  (4 bytes) — 32-bit, mirrors `(int)val_s.d`.
+ * No longer used by OP_INDEX_SET (buffer stores keep the raw double now)
+ * but kept for future int-conversion fast paths. */
+__attribute__((unused))
 static uint8_t *emit_cvttsd2si_xmm0_edx(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2C; *w++ = 0xD0; return w;
 }
 /* cvtsi2sd %edx, %xmm0  (4 bytes) — 32-bit source. */
+__attribute__((unused))
 static uint8_t *emit_cvtsi2sd_edx_xmm0(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC2; return w;
 }
@@ -3354,10 +3358,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* val slot → %rax; must be an immediate num. */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
             w = emit_immediate_num_check_rax(w, &slow_p[slow_n]); slow_n++;
-            /* Commit: data[i] = (double)(int)val. */
+            /* Commit: data[i] = val — the raw double, matching the
+             * interpreter and buf_set. (This used to round-trip through
+             * cvttsd2si/cvtsi2sd, silently truncating fractional stores
+             * to ints while buf_set kept them; both interpreter arms
+             * carried the same (int) cast. Fixed together.) */
             w = emit_movq_rax_xmm0(w);
-            w = emit_cvttsd2si_xmm0_edx(w);
-            w = emit_cvtsi2sd_edx_xmm0(w);
             w = emit_mov_disp32_rdi_to_rsi(w, (int32_t)offsetof(Value, data.buffer.data));
             w = emit_movsd_xmm0_to_rsi_r8_8(w);
             /* Stack: val replaces tgt's slot, sp -= 2 (val stays TOS). */

@@ -177,6 +177,24 @@ loop while n < 60:
     acc is acc + (idx_fill of n)
     n is n + 1
 check of ["idx fill list tail", acc == 60 * 99]
+
+# Fractional stores through the hot inline INDEX_SET path must keep
+# the full double (the JIT used to round-trip through cvttsd2si,
+# truncating to int — divergent from buf_set and the double[] storage).
+fb is buffer of 8
+define frac_fill(base) as:
+    k is 0
+    loop while k < 80:
+        fb[k % 8] is base + (k % 8) + 0.5
+        k is k + 1
+    return fb[3]
+
+n is 0
+fsum is 0
+loop while n < 60:
+    fsum is fsum + (frac_fill of 0)
+    n is n + 1
+check of ["fractional store in thunk", fsum == 60 * 3.5]
 # Last call ran with base=59, so its final write was buf[(59+99)%256]=99.
 check of ["idx fill buffer", buf[158] == 99]
 

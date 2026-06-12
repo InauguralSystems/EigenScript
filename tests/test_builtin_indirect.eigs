@@ -86,6 +86,17 @@ check of ["buf_from_list indirect", (blen of b2) == 3]
 check of ["buf_get indirect agrees", (bget of [b2, 1]) == (buf_get of [b, 1])]
 check of ["buf_len on non-buffer", (buf_len of [1, 2]) == 2 or (buf_len of "x") == 0]
 
+# Index-assignment must store the full double, agreeing with buf_set.
+# (It used to truncate to int — `b[i] is 1.5` stored 1.0 while
+# `buf_set of [b, i, 1.5]` stored 1.5.)
+bfr is buffer of 2
+bfr[0] is 1.5
+buf_set of [bfr, 1, 1.5]
+check of ["index-assign keeps fraction", bfr[0] == 1.5]
+check of ["index-assign agrees with buf_set", bfr[0] == bfr[1]]
+bfr[0] is 0 - 2.25
+check of ["negative fraction kept", bfr[0] == (0 - 2.25)]
+
 # ----------------------------------------------------------------
 # ord
 # ----------------------------------------------------------------

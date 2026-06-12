@@ -1869,14 +1869,14 @@ echo ""
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert
 # (on x86-64) that thunks really compiled — a regression that quietly
 # disables the JIT must not let this section pass interpreted.
-echo "[82] JIT Fast Paths (21 checks + thunk gate)"
+echo "[82] JIT Fast Paths (22 checks + thunk gate)"
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
-TOTAL=$((TOTAL + 21))
+TOTAL=$((TOTAL + 22))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
-    PASS=$((PASS + 21))
-    echo "  PASS: all 21 JIT fast-path checks"
+    PASS=$((PASS + 22))
+    echo "  PASS: all 22 JIT fast-path checks"
 else
-    FAIL=$((FAIL + 21))
+    FAIL=$((FAIL + 22))
     echo "  FAIL: JIT fast-path tests (rc=$JPATH_RC)"
     echo "$JPATH_OUTPUT" | grep -iE "FAIL|error" | head -5
 fi
@@ -1904,8 +1904,8 @@ check_eigs_suite "all 27 walker-matrix capture checks" test_walker_matrix.eigs "
 # [84] Builtin direct-vs-indirect — builtins shadowed by compiler
 # lowerings (dispatch → OP_DISPATCH) and bench-only buffer builtins;
 # asserts the C fallback agrees with the lowered opcode.
-echo "[84] Builtin Direct-vs-Indirect (37 checks)"
-check_eigs_suite "all 37 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 37
+echo "[84] Builtin Direct-vs-Indirect (40 checks)"
+check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
 
 # [85] Reinstated suites — these .eigs files existed but were never
 # referenced by this runner, so editing them did nothing. Each runs as
@@ -1976,6 +1976,45 @@ else
     else
         echo "  PASS: all $LSP_PASS LSP checks"
     fi
+fi
+echo ""
+
+# [89] Executable documentation — every eigenscript/output block pair in
+# docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
+# the spec cannot drift from the implementation. Skips without python3.
+echo "[89] Doc Examples (SPEC.md + COMPARISON.md)"
+if command -v python3 >/dev/null 2>&1; then
+    DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" "$TESTS_DIR/../docs/SPEC.md" "$TESTS_DIR/../docs/COMPARISON.md" 2>&1)
+    DOC_PASS=$(echo "$DOC_OUTPUT" | grep -c "  PASS:" || true)
+    DOC_FAIL=$(echo "$DOC_OUTPUT" | grep -c "  FAIL:" || true)
+    TOTAL=$((TOTAL + DOC_PASS + DOC_FAIL))
+    PASS=$((PASS + DOC_PASS))
+    FAIL=$((FAIL + DOC_FAIL))
+    if [ "$DOC_FAIL" -gt 0 ]; then
+        echo "  FAIL: $DOC_FAIL doc example(s) diverge from the implementation"
+        echo "$DOC_OUTPUT" | grep -A8 "FAIL:" | head -20
+    else
+        echo "  PASS: all $DOC_PASS doc examples match"
+    fi
+else
+    echo "  SKIP: python3 not available"
+fi
+echo ""
+
+# [90] Error examples — examples/errors/*.eigs must exit nonzero and
+# print their declared '# expect-error:' message.
+echo "[90] Error Examples (9 checks)"
+ERR_OUTPUT=$(bash "$TESTS_DIR/test_error_examples.sh" 2>&1)
+ERR_PASS=$(echo "$ERR_OUTPUT" | grep -c "  PASS:" || true)
+ERR_FAIL=$(echo "$ERR_OUTPUT" | grep -c "  FAIL:" || true)
+TOTAL=$((TOTAL + ERR_PASS + ERR_FAIL))
+PASS=$((PASS + ERR_PASS))
+FAIL=$((FAIL + ERR_FAIL))
+if [ "$ERR_FAIL" -gt 0 ]; then
+    echo "  FAIL: $ERR_FAIL error example(s)"
+    echo "$ERR_OUTPUT" | grep -A3 "FAIL:" | head -12
+else
+    echo "  PASS: all $ERR_PASS error examples fail as documented"
 fi
 echo ""
 

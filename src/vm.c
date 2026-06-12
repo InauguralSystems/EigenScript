@@ -1153,7 +1153,7 @@ void jit_helper_index_set(void) {
         int i, _ok = vm_index_is_int(idx_s.d, &i);
         if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                target->data.buffer.data[i] = (int)val_s.d;
+                target->data.buffer.data[i] = val_s.d;
             } else {
                 if (!_ok) runtime_error(g_vm.current_line, "index must be an integer, got %g", idx_s.d);
                 else runtime_error(g_vm.current_line, "buffer index %d out of range (length %d)",
@@ -1207,7 +1207,7 @@ void jit_helper_index_set(void) {
         } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
             runtime_error(g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else if (val->type == VAL_NUM) {
-            target->data.buffer.data[i] = (int)val->data.num;
+            target->data.buffer.data[i] = val->data.num;
         }
     } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
         dict_set(target, idx->data.str, val);
@@ -2993,7 +2993,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             int i, _ok = vm_index_is_int(idx_s.d, &i);
             if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                    target->data.buffer.data[i] = (int)val_s.d;
+                    target->data.buffer.data[i] = val_s.d;
                 } else {
                     if (!_ok) runtime_error(current_line, "index must be an integer, got %g", idx_s.d);
                     else runtime_error(current_line, "buffer index %d out of range (length %d)",
@@ -3048,7 +3048,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
                 runtime_error(current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
             } else if (val->type == VAL_NUM) {
-                target->data.buffer.data[i] = (int)val->data.num;
+                target->data.buffer.data[i] = val->data.num;
             }
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             dict_set(target, idx->data.str, val);
