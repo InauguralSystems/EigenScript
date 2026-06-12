@@ -183,11 +183,37 @@ detect_leaks=1 (the leak tally — currently 13, spawn-thread programs +
 pre-existing non-closure shapes — is the gate; a jump means a new
 leak, and section [87] must stay strictly leak-clean).
 
-Open items, in rough priority:
-- **`make lsp` fails on macOS runners** (skipped cleanly by the suite;
-  add the compile check to the macOS CI leg to surface the error).
-- Windows port (runtime is POSIX-only), package/dependency story,
-  ARM64 JIT (Apple Silicon runs interpreter-only).
+Open items, in rough priority (current goal: be a *good MIT-licensed
+language* — the legal/hygiene side is done; the gaps are distribution,
+portability, and the ecosystem story):
+
+1. **Distribution** — highest value-per-effort, no runtime changes:
+   macOS release binaries (x86_64 + arm64; arm64 is interpreter-only
+   until the ARM64 JIT exists) added to the Release workflow, then a
+   Homebrew tap/formula. Follow-ons: Docker image, AUR, asdf/mise
+   plugin. Release assets already carry sha256 digests; a CHECKSUMS
+   file / artifact attestation is the next trust step.
+2. **Package/dependency story** for EigenScript code itself: `import`
+   resolves lib/ + script-relative only — no third-party dependency
+   mechanism, no versioning, no lockfile convention. The biggest gap
+   between "neat project" and "usable language"; needs a design pass
+   before code.
+3. **Stability contract**: pre-1.0 with no stated compat policy. Write
+   the paragraph (SPEC.md or README): what's frozen, what may break
+   before 1.0, how deprecations work. The executable spec (suite [89])
+   is already the enforcement mechanism.
+4. **`make lsp` fails on macOS runners** (skipped cleanly by the suite;
+   add the compile check to the macOS CI leg to surface the error).
+5. **Windows port** (runtime is POSIX-only) and **ARM64 JIT** (Apple
+   Silicon runs interpreter-only) — the two real porting projects.
+6. **Trust/identity follow-ons**: OSS-Fuzz enrollment (fuzz harness
+   already exists — natural fit), OpenSSF Best Practices badge,
+   upstream a Linguist grammar (editors/vscode has the TextMate
+   grammar ready; Linguist has usage-volume requirements, so this
+   waits on adoption — `.gitattributes` maps `.eigs` to Python as the
+   stopgap). A browser playground via a WASM interpreter-only build
+   (JIT compiled out — the build flags already support that shape) is
+   the highest-leverage adoption item when the time comes.
 - Perf carryover from 0.12.0 (ROADMAP.md): NaN-boxing for *container*
   storage, extending GET_LOCAL/SET_LOCAL to all locals, per-call env
   churn. Re-profile before picking: every stage last cycle moved the
