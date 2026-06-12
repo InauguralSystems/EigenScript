@@ -73,6 +73,50 @@ jobs:
       - name: Compile-check LSP
         run: make lsp
 
+      # 44 deterministic adversarial inputs against the ASan-instrumented
+      # stdin harness (same compile→vm pipeline as main.c). Seconds to run;
+      # any exit other than 0/1 is a crash.
+      - name: Fuzz smoke (ASan harness, curated corpus)
+        run: make fuzz && bash fuzz/run_fuzz.sh
+
+  # Build the `full` variant (http+model+db) against a real PostgreSQL
+  # service container and run the suite with DATABASE_URL set. Without
+  # this, ext_db.c never executes anywhere: the suite's DB section [46]
+  # is probe-gated on the build, and test_db.eigs's live-path checks
+  # (DB09-DB15: CREATE/INSERT/SELECT/query_json round-trip) additionally
+  # gate on an actual connection.
+  database:
+    name: db extension (postgres service)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eigs
+          POSTGRES_PASSWORD: eigs_test
+          POSTGRES_DB: eigs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eigs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC + libpq
+        run: sudo apt-get update && sudo apt-get install -y gcc libpq-dev
+
+      - name: Build full variant (http+model+db)
+        run: make full
+
+      - name: Run full suite with live DATABASE_URL
+        env:
+          DATABASE_URL: postgres://eigs:eigs_test@localhost:5432/eigs_test
+        run: cd tests && bash run_all_tests.sh
+
   # Run the entire suite under AddressSanitizer + UndefinedBehaviorSanitizer.
   # This is the net that catches use-after-free, buffer overflow, and UB that
   # the normal -O2 build silently tolerates (the kind of bug that passes every

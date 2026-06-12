@@ -76,4 +76,43 @@ special is {"key with spaces": "value\twith\ttabs"}
 sp_rt is json_decode of json_encode of special
 assert of [type of sp_rt == "dict", "JH31 special chars round-trip type"]
 
+# --- Direct backslash escapes in json_decode (the non-\u branches) ---
+# \n \r \t \/ \\ \" each have their own case in eigs_json_parse_string;
+# none were exercised before — only \uXXXX was.
+esc_n is json_decode of "{\"s\": \"a\\nb\"}"
+assert of [esc_n.s == "a\nb", "JH32 backslash-n is newline"]
+assert of [len of esc_n.s == 3, "JH33 \\n is one char"]
+
+esc_t is json_decode of "{\"s\": \"a\\tb\"}"
+assert of [esc_t.s == "a\tb", "JH34 backslash-t is tab"]
+
+esc_r is json_decode of "{\"s\": \"a\\rb\"}"
+assert of [len of esc_r.s == 3, "JH35 backslash-r is one char"]
+
+esc_slash is json_decode of "{\"s\": \"a\\/b\"}"
+assert of [esc_slash.s == "a/b", "JH36 backslash-slash is slash"]
+
+esc_back is json_decode of "{\"s\": \"a\\\\b\"}"
+assert of [esc_back.s == "a\\b", "JH37 backslash-backslash is one backslash"]
+assert of [len of esc_back.s == 3, "JH38 escaped backslash is one char"]
+
+esc_quote is json_decode of "{\"s\": \"a\\\"b\"}"
+assert of [esc_quote.s == "a\"b", "JH39 backslash-quote is quote"]
+
+# --- \uXXXX multi-byte UTF-8 (2-byte and 3-byte encode branches) ---
+# Only the cp<0x80 (1-byte) branch ran before. café: é = U+00E9 → 2 bytes.
+two_byte is json_decode of "{\"s\": \"caf\\u00e9\"}"
+assert of [len of two_byte.s == 5, "JH40 \\u00e9 encodes to 2 UTF-8 bytes"]
+
+# Euro sign U+20AC → 3 bytes.
+three_byte is json_decode of "{\"s\": \"\\u20ac\"}"
+assert of [len of three_byte.s == 3, "JH41 \\u20ac encodes to 3 UTF-8 bytes"]
+
+three_mid is json_decode of "{\"s\": \"x\\u20acy\"}"
+assert of [len of three_mid.s == 5, "JH42 3-byte cp surrounded by ASCII"]
+
+# --- Unknown escape: default branch passes the char through verbatim ---
+unknown_esc is json_decode of "{\"s\": \"a\\qb\"}"
+assert of [unknown_esc.s == "aqb", "JH43 unknown escape drops backslash"]
+
 print of "json hard: all passed"

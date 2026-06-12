@@ -49,4 +49,29 @@ e is db_execute of null
 is_safe is ((e == "error") or (e == "no_db"))
 assert of [is_safe == 1, "DB08 db_execute null returns 'error' or 'no_db'"]
 
+# ---- Live-DB table round-trip (runs only with a real connection — the
+# CI postgres service container provides one via DATABASE_URL). Covers
+# db_execute's COMMAND_OK path, parameterized INSERT, multi-row
+# db_query_json assembly, and db_query_value over a real table.
+if (contains of [conn, "connected"]) == 1:
+    db_execute of "DROP TABLE IF EXISTS eigs_ci_smoke"
+    c1 is db_execute of "CREATE TABLE eigs_ci_smoke (id INT, name TEXT)"
+    assert of [c1 == "ok", "DB09 CREATE TABLE returns ok"]
+    i1 is db_execute of ["INSERT INTO eigs_ci_smoke VALUES ($1, $2)", 1, "alpha"]
+    assert of [i1 == "ok", "DB10 parameterized INSERT returns ok"]
+    db_execute of ["INSERT INTO eigs_ci_smoke VALUES ($1, $2)", 2, "beta"]
+    n is db_query_value of "SELECT COUNT(*) FROM eigs_ci_smoke"
+    assert of [n == "2", "DB11 COUNT over real table"]
+    one is db_query_value of ["SELECT name FROM eigs_ci_smoke WHERE id = $1", 2]
+    assert of [one == "beta", "DB12 parameterized SELECT value"]
+    rows is db_query_json of "SELECT id, name FROM eigs_ci_smoke ORDER BY id"
+    decoded is json_decode of rows
+    assert of [(len of decoded) == 2, "DB13 query_json returns both rows"]
+    assert of [decoded[0].name == "alpha", "DB14 query_json field value"]
+    bad is db_execute of "THIS IS NOT SQL"
+    assert of [bad == "error", "DB15 malformed SQL returns error"]
+    db_execute of "DROP TABLE eigs_ci_smoke"
+else:
+    print of "live-DB checks skipped (no connection)"
+
 print of "All db tests passed"

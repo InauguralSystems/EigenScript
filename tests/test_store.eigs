@@ -72,7 +72,54 @@ store_put of [db2, "logs", {"msg": "test"}]
 cols3 is store_collections of db2
 assert_eq of [len of cols3, 2, "multiple collections"]
 
+# List-valued fields — exercises store_json_encode's VAL_LIST branch on
+# write and store_json_parse_array on read-back. No prior test stored a
+# record containing a list, so the array parser was at 0%.
+lk is store_put of [db2, "items", {"name": "Carol", "tags": ["red", "green", "blue"], "scores": [10, 20, 30], "empty": []}]
+li is store_get of [db2, "items", lk]
+assert_eq of [type of li.tags, "list", "list field decodes as list"]
+assert_eq of [len of li.tags, 3, "list field length"]
+assert_eq of [li.tags[0], "red", "list string element"]
+assert_eq of [li.tags[2], "blue", "list last element"]
+assert_eq of [li.scores[1], 20, "numeric list element"]
+assert_eq of [len of li.empty, 0, "empty list field round-trips"]
+
+# Nested list survives a close/reopen too (parsed from disk, not cache).
 store_close of db2
+db3 is store_open of "/tmp/test_eigenstore.db"
+li2 is store_get of [db3, "items", lk]
+assert_eq of [len of li2.tags, 3, "list field persists across reopen"]
+assert_eq of [li2.scores[2], 30, "numeric list persists"]
+store_close of db3
+
+# --- Corruption recovery: store_open rejects invalid files cleanly ---
+# Each malformed file drives a different store_read_header reject branch;
+# all must return null (and the runtime error is catchable, not a crash).
+define open_status(path) as:
+    status is "opened"
+    try:
+        h is store_open of path
+        if h == null:
+            status is "null"
+    catch e:
+        status is "caught"
+    return status
+
+# Too short to hold a 64-byte header → fread fails.
+write_text of ["/tmp/eigs_store_short.db", "tiny"]
+assert of [(open_status of "/tmp/eigs_store_short.db") != "opened", "short file rejected"]
+
+# Right size, wrong magic (not 'EIGS').
+write_text of ["/tmp/eigs_store_badmagic.db", "NOTMAGIC_padded_out_to_more_than_sixty_four_bytes_xxxxxxxxxxxxxxxxxx"]
+assert of [(open_status of "/tmp/eigs_store_badmagic.db") != "opened", "bad magic rejected"]
+
+# Valid 'EIGS' magic but garbage version field.
+write_text of ["/tmp/eigs_store_badver.db", "EIGSwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"]
+assert of [(open_status of "/tmp/eigs_store_badver.db") != "opened", "bad version rejected"]
+
+rm of "/tmp/eigs_store_short.db"
+rm of "/tmp/eigs_store_badmagic.db"
+rm of "/tmp/eigs_store_badver.db"
 
 # Clean up
 rm of "/tmp/test_eigenstore.db"

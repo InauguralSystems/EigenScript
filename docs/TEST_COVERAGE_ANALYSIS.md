@@ -169,3 +169,110 @@ Release: 1666/1666. ASan+UBSan (`detect_leaks=1`,
 `halt_on_error=1`): 1666/1666 with 26 tallied leak-exits. http+model
 build: 1713/1713. `make jit-smoke`, `make gfx`, `make lsp`: build
 clean.
+
+---
+
+# Round 2 (same release): the residual-gaps list, closed
+
+Everything tagged "Remaining" above, plus the CI execution gaps. New
+measured coverage where re-measured (minimal build, full suite):
+
+| File | Round 1 | Round 2 | Lines |
+|---|---|---|---|
+| lexer.c | 71.2% | **92.2%** | 423 |
+| builtins.c | 85.8% | **91.5%** | 2875 |
+| ext_store.c | 82.0% | 82.8% | 771 |
+| vm.c | 80.2% | 81.3% | 2356 |
+| lint.c | 49.7% | **80.6%** | 509 |
+| eigenscript.c | 74.7% | 74.9% | 978 |
+
+## Corpus builder — DONE
+
+New `tests/test_corpus.eigs` (section [86], 25 checks):
+`build_corpus` 3-pass builder end-to-end (return triple, stream file,
+vocab JSON structure incl. `base_names[]` — which walks
+`tok_base_string` for every base TokType, the lexer's big jump —
+structural ids, determinism, missing-file tolerance, top_n clamping,
+the optional identifier-histogram output with its descending sort, and
+bad-arg nulls).
+
+## ext_store — DONE
+
+`test_store.eigs` 14 → 22 checks: list-valued record fields
+(`store_json_encode` VAL_LIST branch on write, `store_json_parse_array`
+— previously 0% — on read-back, incl. across a close/reopen so it
+parses from disk), and three `store_read_header` corruption rejects
+(short file, bad magic, bad version), all required to fail cleanly
+(null/catchable, no crash).
+
+## JSON escapes — DONE
+
+`test_json_hard.eigs` JH32–JH43: the direct `\n \r \t \/ \\ \"`
+branches (only `\uXXXX` ran before), the 2-byte and 3-byte UTF-8
+encodings of `\uXXXX` (only ASCII ran before), and the unknown-escape
+pass-through default.
+
+## Last 0% JIT helper — DONE
+
+`jit_helper_set_fn_name_local` 0% → 69%: `test_jit_paths.eigs` section
+8 (19 → 21 checks) assigns to an *interrogated* name and a
+*closure-captured* name in hot loops — both compile to
+OP_SET_FN_NAME_LOCAL, and each call's fresh env misses the EnvIC
+starting_env guard into the helper. (The captured variant adds one
+define-closure, so the ASan leak tally is now 27.)
+
+## Linter — DONE (80.6%)
+
+`test_lint.sh` 10 → 13: the fn-definition builtin-shadow rule (only
+assignment-shadow was tested), unreachable-after-return inside a
+function body, and a feature-rich *clean* file (dicts, lambdas, list
+comprehensions, match, try/catch, pipes, nested dot/index) that walks
+every AST case in the lint collectors. Finding: the empty-block rules
+(`empty if/loop/for/function/try/catch block`) and
+`'x is ...' in condition` are **dead code** — the parser rejects
+comment-only blocks and `is` inside conditions before the linter ever
+runs. They're the bulk of the remaining ~20%; a future cleanup could
+delete them.
+
+## Fuzz harness — FIXED + IN CI
+
+`make fuzz` had bitrotted exactly like the LSP: FUZZ_SOURCES was a
+pre-VM hand-picked list and `fuzz_stdin.c` called the deleted
+tree-walker `eval_node`. It now links the full runtime minus main.c
+and drives the real pipeline (tokenize → parse → compile_ast →
+vm_execute) — the layers it previously skipped are where the memory
+bugs live. All 44 curated adversarial cases pass under ASan, and the
+extensions CI job runs it on every push.
+
+## ext_db — EXECUTES IN CI (was: never executed anywhere)
+
+New `database` CI job: postgres:16 service container, `make full`
+(libpq), full suite with `DATABASE_URL` set. `test_db.eigs` gained
+DB09–DB15: a real table round-trip (CREATE / parameterized INSERT /
+COUNT / parameterized SELECT / multi-row `db_query_json` / malformed
+SQL → "error"), gated on a live connection so the section stays green
+without one. Verified locally against a real postgres: 1766/1766 with
+the live path active.
+
+## Still open after round 2
+
+- **The closure-cycle leak** (env↔fn from `define`-bound closures) —
+  the one item on this list that is runtime engineering, not tests.
+  Leak tally: 27 under ASan, 0 under release.
+- eigenscript.c's last ~25%: `tok_type_name`'s parse-error message
+  table (one line per token kind) and legacy env API variants
+  (`env_set_hashed`, `env_set_hashed_slot`, `env_get_local_hashed`
+  grow paths) that the bytecode VM no longer calls — likely dead-code
+  cleanup, not test targets.
+- Dead lint rules (above) — delete rather than test.
+- gfx/audio still compile-only in CI (needs SDL on the runner);
+  macOS leg still runs no sanitizers; no `coverage-http` target to
+  measure extension-file coverage.
+- LSP behavioral tests (JSON-RPC handlers) — still only a compile
+  check.
+
+## Suite state (round 2)
+
+Release: 1704/1704. ASan+UBSan (`detect_leaks=1`,
+`halt_on_error=1`): 1704/1704 with 27 tallied leak-exits. Full build
+(http+model+db) with live postgres: 1766/1766. `make fuzz`: 44/44.

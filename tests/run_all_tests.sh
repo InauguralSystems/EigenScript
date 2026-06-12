@@ -1252,12 +1252,16 @@ DB_PROBE_OUT=$(./eigenscript "$DB_PROBE_FILE" 2>&1)
 rm -f "$DB_PROBE_FILE"
 
 if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[46/47] DB Builtins (8 checks)"
+    echo "[46/47] DB Builtins (8 checks + 7 live-DB when connected)"
     DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1); DB_OUTPUT_RC=$?
     if rc_ok "$DB_OUTPUT_RC" "$DB_OUTPUT" && echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
         TOTAL=$((TOTAL + 8))
         PASS=$((PASS + 8))
-        echo "  PASS: all 8 DB builtin checks"
+        if echo "$DB_OUTPUT" | grep -q "live-DB checks skipped"; then
+            echo "  PASS: all 8 DB builtin checks (live-DB checks skipped: no connection)"
+        else
+            echo "  PASS: all 8 DB builtin checks + 7 live-DB round-trip checks"
+        fi
     else
         TOTAL=$((TOTAL + 8))
         FAIL=$((FAIL + 8))
@@ -1448,15 +1452,15 @@ fi
 echo ""
 
 # [56] EigenStore embedded database
-echo "[56] EigenStore Database (14 checks)"
+echo "[56] EigenStore Database (22 checks)"
 ST_OUTPUT=$(./eigenscript ../tests/test_store.eigs 2>&1); ST_OUTPUT_RC=$?
 if rc_ok "$ST_OUTPUT_RC" "$ST_OUTPUT" && echo "$ST_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 14))
-    PASS=$((PASS + 14))
-    echo "  PASS: all 14 store checks"
+    TOTAL=$((TOTAL + 22))
+    PASS=$((PASS + 22))
+    echo "  PASS: all 22 store checks"
 else
-    TOTAL=$((TOTAL + 14))
-    FAIL=$((FAIL + 14))
+    TOTAL=$((TOTAL + 22))
+    FAIL=$((FAIL + 22))
     echo "  FAIL: store tests"
     echo "$ST_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
@@ -1845,7 +1849,7 @@ fi
 echo ""
 
 # [81] Linter (--lint) — exercises lint.c, which had zero suite coverage.
-echo "[81] Linter (10 checks)"
+echo "[81] Linter (13 checks)"
 LINT_OUTPUT=$(bash "$TESTS_DIR/test_lint.sh" </dev/null 2>&1)
 LINT_PASS=$(echo "$LINT_OUTPUT" | grep -c "PASS:" || true)
 LINT_FAIL=$(echo "$LINT_OUTPUT" | grep -c "FAIL:" || true)
@@ -1865,14 +1869,14 @@ echo ""
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert
 # (on x86-64) that thunks really compiled — a regression that quietly
 # disables the JIT must not let this section pass interpreted.
-echo "[82] JIT Fast Paths (19 checks + thunk gate)"
+echo "[82] JIT Fast Paths (21 checks + thunk gate)"
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
-TOTAL=$((TOTAL + 19))
+TOTAL=$((TOTAL + 21))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
-    PASS=$((PASS + 19))
-    echo "  PASS: all 19 JIT fast-path checks"
+    PASS=$((PASS + 21))
+    echo "  PASS: all 21 JIT fast-path checks"
 else
-    FAIL=$((FAIL + 19))
+    FAIL=$((FAIL + 21))
     echo "  FAIL: JIT fast-path tests (rc=$JPATH_RC)"
     echo "$JPATH_OUTPUT" | grep -iE "FAIL|error" | head -5
 fi
@@ -1935,6 +1939,12 @@ check_eigs_suite "earth science" test_earth_science.eigs "All tests passed." 1
 check_eigs_suite "engineering" test_engineering.eigs "All tests passed." 1
 check_eigs_suite "geometry" test_geometry.eigs "All tests passed." 1
 check_eigs_suite "physics" test_physics.eigs "All tests passed." 1
+echo ""
+
+# [86] Corpus builder — build_corpus + the tok_base_string detokenizer
+# table (both 0% before: nothing in the suite ever built a corpus).
+echo "[86] Corpus Builder (25 checks)"
+check_eigs_suite "all 25 corpus-builder checks" test_corpus.eigs "All tests passed" 25
 echo ""
 
 echo "============================================"

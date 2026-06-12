@@ -48,6 +48,35 @@ round of test, runner, build, and runtime fixes:
   died with the tree-walking evaluator); `clone_ast` survives as the
   parser-internal compound-dot-assign desugar helper.
 
+Round 2 (residual gaps from `docs/TEST_COVERAGE_ANALYSIS.md`):
+
+- **`make fuzz` fixed** — same bitrot as the LSP: FUZZ_SOURCES predated
+  the bytecode VM and the harness called the deleted `eval_node`. It
+  now links the full runtime minus main.c and drives tokenize → parse
+  → compile_ast → vm_execute; 44 curated adversarial cases run under
+  ASan in the `extensions` CI job on every push.
+- **ext_db executes in CI** — new `database` job: postgres:16 service
+  container, `make full`, suite with `DATABASE_URL`. `test_db.eigs`
+  gained a live-connection-gated table round-trip (DB09–DB15:
+  CREATE / parameterized INSERT / COUNT / parameterized SELECT /
+  multi-row `db_query_json` / malformed-SQL error).
+- **New suites/checks**: `test_corpus.eigs` ([86], 25 checks —
+  `build_corpus` + the `tok_base_string` detokenizer table, both 0%
+  before; lexer.c 71→92%), ext_store list-valued fields +
+  corrupt-header rejects (`store_json_parse_array` was 0%;
+  test_store 14→22), JSON escape branches JH32–JH43 (`\n \r \t \/ \\`
+  + multi-byte `\uXXXX`, only ASCII `\u` ran before), lint
+  fn-def-shadow / fn-unreachable / feature-rich-clean-walk
+  (lint.c 50→81%), and hot interrogated/captured-name assignment in
+  `test_jit_paths.eigs` (`jit_helper_set_fn_name_local`, the last 0%
+  JIT helper, → 69%).
+- Findings for future cleanup: the lint empty-block and
+  is-in-condition rules are unreachable (parser rejects those inputs
+  first), and eigenscript.c's residual ~25% is mostly `tok_type_name`
+  plus legacy env API variants the VM no longer calls.
+- Suite: 1704 checks (release + ASan; 27 tallied closure-cycle
+  leak-exits), 1766 on the full build with live postgres.
+
 ### Fixes
 
 - **#159 — `proc_read_buf` for binary-safe child stdout; `proc_read_line`

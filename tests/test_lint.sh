@@ -126,6 +126,93 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "_prefixed param no warning" "$OUTPUT" "unused parameter '_unused'"
 rm -f "$TMPFILE"
 
+# --- Builtin shadowing via function DEFINITION (distinct from assignment) ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define len() as:
+    return 0
+print of (len of null)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "fn-def builtin shadow" "$OUTPUT" "'len' is a builtin — function definition shadows it"
+rm -f "$TMPFILE"
+
+# --- Unreachable code inside a function, after an unconditional return ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define f(x) as:
+    if x > 0:
+        return 1
+    return 2
+    print of "dead"
+print of (f of 5)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "func unreachable after return" "$OUTPUT" "unreachable code after return"
+rm -f "$TMPFILE"
+
+# --- Feature-rich CLEAN file: walks every AST node kind through the lint
+#     collectors (collect_refs / collect_assigns / check_builtin_shadow /
+#     check_dup_keys / check_unused_params) without tripping a warning.
+#     The small per-rule files above only exercise a few node types each.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define transform(items, factor) as:
+    total is 0
+    for it in items:
+        total is total + (it * factor)
+    return total
+
+define classify(n) as:
+    label is "?"
+    if n > 10:
+        label is "big"
+    elif n > 5:
+        label is "mid"
+    else:
+        label is "small"
+    return label
+
+define safe_div(a, b) as:
+    result is 0
+    try:
+        result is a / b
+    catch e:
+        result is 0 - 1
+    return result
+
+config is {"scale": 2, "names": ["a", "b"], "nested": {"k": 1}}
+doubler is (x) => x * 2
+nums is [1, 2, 3, 4, 5]
+squares is [v * v for v in nums]
+total is transform of [nums, config.scale]
+piped is total |> doubler
+tag is classify of 7
+dq is safe_div of [10, 2]
+first_name is config.names[0]
+deep is config.nested.k
+m is "y"
+matched is "none"
+match m:
+    case "x":
+        matched is "ex"
+    case "y":
+        matched is "why"
+    case _:
+        matched is "other"
+print of total
+print of piped
+print of tag
+print of dq
+print of squares[0]
+print of first_name
+print of deep
+print of matched
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "feature-rich file lints clean" "$OUTPUT" "no issues found"
+rm -f "$TMPFILE"
+
 # --- Lint on a real stdlib file ---
 OUTPUT=$($EIGS --lint "$TESTS_DIR/../examples/hello.eigs" 2>&1 || true)
 check_contains "hello.eigs clean" "$OUTPUT" "no issues found"

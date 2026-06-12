@@ -163,7 +163,10 @@ coverage: coverage-clean
 	@echo "Per-file .gcov reports written to $(SRC_DIR)/*.gcov"
 	@echo "Run 'make coverage-clean' to remove coverage artifacts."
 
-FUZZ_SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/strbuf.c
+# Like the LSP, the fuzz harness links the whole runtime minus main.c —
+# the old hand-picked subset bitrotted when the bytecode VM replaced the
+# tree-walking evaluator (eval_node), leaving `make fuzz` unbuildable.
+FUZZ_SOURCES := $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 
 fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
 	$(CC) -g -fsanitize=address,undefined -o fuzz/fuzz_stdin \

@@ -1,0 +1,84 @@
+# test_corpus.eigs — coverage for build_corpus (the 3-pass C corpus
+# builder for model training) and the tok_base_string detokenizer table
+# it emits. Both were at 0% line coverage: nothing in the suite called
+# build_corpus, so 163 lines of builder plus the ~85-entry base-token
+# placeholder table never ran.
+#
+# build_corpus of [file_list, top_n, stream_path, vocab_path, idents_path?]
+#   writes a binary token stream + an identifier-vocab JSON (+ optional
+#   identifier histogram), and returns [stream_len, distinct_idents,
+#   files_found].
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+# --- Two small source files to build a corpus from ---
+write_text of ["/tmp/eigs_corpus_a.eigs", "x is 5\ny is x + 1\nprint of y\n"]
+write_text of ["/tmp/eigs_corpus_b.eigs", "define foo(n) as:\n    return n * 2\nresult is foo of 21\nprint of result\n"]
+files is ["/tmp/eigs_corpus_a.eigs", "/tmp/eigs_corpus_b.eigs"]
+
+r is build_corpus of [files, 8, "/tmp/eigs_corpus.bin", "/tmp/eigs_corpus_vocab.json"]
+check of ["returns a 3-list", (type of r) == "list" and (len of r) == 3]
+check of ["stream length positive", r[0] > 0]
+check of ["distinct idents positive", r[1] > 0]
+check of ["both files found", r[2] == 2]
+
+# Stream file written and non-empty (2 bytes per uint16 token).
+check of ["stream file exists", file_exists of "/tmp/eigs_corpus.bin"]
+
+# --- Vocab JSON structure (exercises tok_base_string for every base id) ---
+vocab_text is read_text of "/tmp/eigs_corpus_vocab.json"
+v is json_decode of vocab_text
+check of ["vocab has first_ident_id", contains of [vocab_text, "first_ident_id"]]
+check of ["base_vocab == first_ident_id", v.base_vocab == v.first_ident_id]
+check of ["base_names length == base_vocab", (len of v.base_names) == v.base_vocab]
+check of ["ext_vocab_size = base + top", v.ext_vocab_size == (v.base_vocab + v.top_n)]
+# Structural ids the detokenizer special-cases.
+check of ["structural newline present", v.structural_ids.newline >= 0]
+check of ["structural eof present", v.structural_ids.eof >= 0]
+check of ["ident_fallback present", v.structural_ids.ident_fallback >= 0]
+# base_names[] are the tok_base_string placeholders — a few known ones.
+check of ["base name 0 is number placeholder", v.base_names[0] == "0 "]
+
+# --- Determinism: same inputs → same return ---
+r2 is build_corpus of [files, 8, "/tmp/eigs_corpus2.bin", "/tmp/eigs_corpus_vocab2.json"]
+check of ["deterministic stream len", r2[0] == r[0]]
+check of ["deterministic distinct", r2[1] == r[1]]
+
+# --- Missing file in the list: files_found drops, no crash ---
+rm is build_corpus of [["/tmp/eigs_corpus_a.eigs", "/tmp/eigs_does_not_exist.eigs"], 4, "/tmp/eigs_corpus_m.bin", "/tmp/eigs_corpus_mv.json"]
+check of ["missing file counted out", rm[2] == 1]
+check of ["partial corpus still builds", rm[0] > 0]
+
+# --- top_n larger than distinct idents clamps (actual_top <= distinct) ---
+vm is json_decode of (read_text of "/tmp/eigs_corpus_mv.json")
+check of ["top_n clamps to available", vm.top_n <= rm[1]]
+
+# --- Optional 5th arg: identifier histogram JSON ---
+rh is build_corpus of [files, 8, "/tmp/eigs_corpus_h.bin", "/tmp/eigs_corpus_hv.json", "/tmp/eigs_corpus_hist.json"]
+hist is json_decode of (read_text of "/tmp/eigs_corpus_hist.json")
+check of ["histogram n_idents matches distinct", hist.n_idents == rh[1]]
+check of ["histogram entries match n_idents", (len of hist.entries) == hist.n_idents]
+check of ["histogram entry is [name, count]", (len of hist.entries[0]) == 2]
+# Sorted descending by count: first entry's count >= last entry's count.
+first_count is hist.entries[0][1]
+last_count is hist.entries[(len of hist.entries) - 1][1]
+check of ["histogram sorted descending", first_count >= last_count]
+
+# --- Bad args return null ---
+check of ["non-list arg returns null", (build_corpus of 5) == null]
+check of ["too-few args returns null", (build_corpus of [files, 8]) == null]
+check of ["non-num top_n returns null", (build_corpus of [files, "x", "/tmp/a.bin", "/tmp/b.json"]) == null]
+
+print of f"corpus: {pass_count} passed, {fail_count} failed"
+if fail_count == 0:
+    print of "All tests passed"
