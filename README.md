@@ -5,8 +5,8 @@
 <p align="center">
   <a href="https://github.com/InauguralSystems/EigenScript/actions/workflows/ci.yml"><img src="https://github.com/InauguralSystems/EigenScript/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/InauguralSystems/EigenScript/releases/latest"><img src="https://img.shields.io/github/v/release/InauguralSystems/EigenScript" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/InauguralSystems/EigenScript" alt="License"></a>
-  <a href="https://github.com/InauguralSystems/EigenScript/stargazers"><img src="https://img.shields.io/github/stars/InauguralSystems/EigenScript" alt="Stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+  <a href="https://github.com/InauguralSystems/EigenScript/stargazers"><img src="https://img.shields.io/github/stars/InauguralSystems/EigenScript?cacheSeconds=3600" alt="Stars"></a>
 </p>
 
 # EigenScript
