@@ -1,0 +1,90 @@
+# test_closure_cycles.eigs — functional correctness of every closure /
+# value cycle shape. The env<->fn cycles here are a KNOWN, accumulating
+# memory leak (see docs/CLOSURE_CYCLE_GC.md) the runtime cannot yet
+# reclaim; this test locks that the shapes keep computing the RIGHT
+# VALUES, and that the leaking vs. non-leaking boundary doesn't shift
+# toward use-after-free. Under ASan it is one of the tolerated
+# leak-exits tallied by run_all_tests.sh's rc_ok.
+#
+# NB: a no-parameter `define` has an implicit parameter `n` — never name
+# a captured mutable variable `n` or the implicit param shadows it.
+
+load_file of "lib/test.eigs"
+
+# --- Direct closure cycle: E binds `inner`, `inner` captures E ---
+define outer as:
+    x is 5
+    define inner as:
+        return x + 1
+    return inner
+f is outer of null
+assert_eq of [f of null, 6, "direct closure cycle returns captured value"]
+
+# --- List of closures returned (env<->fn cycle, container is an extra holder) ---
+define make_ops as:
+    s is 7
+    add is (a) => a + s
+    mul is (a) => a * s
+    return [add, mul]
+ops is make_ops of null
+assert_eq of [ops[0] of 3, 10, "list-closure 0 captures s"]
+assert_eq of [ops[1] of 3, 21, "list-closure 1 captures s"]
+
+# --- Mutable counter closure (captured var written across calls) ---
+define make_counter as:
+    val is 0
+    define step as:
+        val is val + 1
+        return val
+    return step
+c1 is make_counter of null
+assert_eq of [c1 of null, 1, "counter first"]
+assert_eq of [c1 of null, 2, "counter second"]
+c2 is make_counter of null
+assert_eq of [c2 of null, 1, "second counter independent"]
+assert_eq of [c1 of null, 3, "first counter unaffected by second"]
+
+# --- Many distinct closures (the accumulating case) still compute right ---
+total is 0
+i is 0
+loop while i < 50:
+    ctr is make_counter of null
+    total is total + (ctr of null) + (ctr of null)
+    i is i + 1
+assert_eq of [total, 150, "50 independent counters each yield 1+2"]
+
+# --- Dispatch table of closures (created once — the safe, bounded form) ---
+define build_table as:
+    base is 100
+    h0 is (a) => base + a
+    h1 is (a) => base - a
+    return [h0, h1]
+tbl is build_table of null
+assert_eq of [dispatch of [tbl, 0, 5], 105, "dispatch closure 0"]
+assert_eq of [dispatch of [tbl, 1, 5], 95, "dispatch closure 1"]
+
+# --- Clean (non-leaking) invariant: self-referential container ---
+# These must stay reclaimable; if they start leaking, the ASan tally jumps.
+selflist is [1, 2]
+append of [selflist, selflist]
+assert_eq of [len of selflist, 3, "self-referential list length"]
+assert_eq of [selflist[0], 1, "self-referential list element"]
+
+selfdict is {"k": 1}
+selfdict.self is selfdict
+assert_eq of [selfdict.k, 1, "self-referential dict value"]
+
+# --- Clean invariant: mutual recursion that does not escape ---
+define parity as:
+    define is_even(m) as:
+        if m == 0:
+            return 1
+        return is_odd of (m - 1)
+    define is_odd(m) as:
+        if m == 0:
+            return 0
+        return is_even of (m - 1)
+    return is_even of 8
+assert_eq of [parity of null, 1, "non-escaping mutual recursion result"]
+
+test_summary of null

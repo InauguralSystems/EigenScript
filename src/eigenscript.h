@@ -464,6 +464,9 @@ extern __thread Value *g_return_val;
 extern __thread int g_returning;
 extern __thread int g_parse_errors;
 extern __thread char g_error_msg[4096];
+extern __thread int g_first_error_line;     /* 1-based; 0 = none. Reset in tokenize(). */
+extern __thread char g_first_error_msg[256];
+void eigs_record_first_error(int line, const char *msg);
 extern __thread int g_has_error;
 extern __thread int g_breaking;
 extern __thread int g_continuing;

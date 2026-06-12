@@ -211,6 +211,15 @@ TokenList tokenize(const char *source) {
     tl.tokens = xmalloc_array(tl.capacity, sizeof(Token));
     tl.count = 0;
 
+    /* Start of a fresh tokenize+parse pass (tokenize always runs first):
+     * clear the captured first error so a consumer like the LSP sees only
+     * this document's diagnostic. Nested f-string tokenization bumps
+     * g_tokenize_depth, so only reset at the outermost pass. */
+    if (g_tokenize_depth == 0) {
+        g_first_error_line = 0;
+        g_first_error_msg[0] = '\0';
+    }
+
     if (g_tokenize_depth >= MAX_TOKENIZE_DEPTH) {
         fprintf(stderr, "Error: f-string nesting too deep (max %d levels)\n", MAX_TOKENIZE_DEPTH);
         g_parse_errors++;
@@ -264,6 +273,7 @@ TokenList tokenize(const char *source) {
                 }
                 if (spaces != indent_stack[indent_top]) {
                     fprintf(stderr, "Syntax error line %d: indentation does not match any outer level\n", line);
+                    eigs_record_first_error(line, "indentation does not match any outer level");
                     g_parse_errors++;
                 }
             }
@@ -419,6 +429,7 @@ TokenList tokenize(const char *source) {
             if (*p == '"') { p++; col++; }
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated string\n", line);
+                eigs_record_first_error(line, "unterminated string");
                 g_parse_errors++;
             }
             tok_add(&tl, TOK_STR, 0, buf.data, line, tok_col);
@@ -517,6 +528,11 @@ TokenList tokenize(const char *source) {
                 break;
             case '~': tok_add(&tl, TOK_TILDE, 0, NULL, line, tok_col); p++; col++; break;
             default:
+                {
+                    char m[64];
+                    snprintf(m, sizeof(m), "unexpected character '%c'", *p);
+                    eigs_record_first_error(line, m);
+                }
                 fprintf(stderr, "Syntax error line %d: unexpected character '%c'\n", line, *p);
                 g_parse_errors++;
                 p++; col++;

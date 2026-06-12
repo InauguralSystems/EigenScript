@@ -1941,10 +1941,42 @@ check_eigs_suite "geometry" test_geometry.eigs "All tests passed." 1
 check_eigs_suite "physics" test_physics.eigs "All tests passed." 1
 echo ""
 
+# [87] Closure-cycle shapes — functional correctness of every env<->fn
+# and value cycle (a KNOWN accumulating leak the runtime can't reclaim;
+# see docs/CLOSURE_CYCLE_GC.md). Locks that the shapes compute correctly
+# and that the non-leaking invariants (self-ref containers, non-escaping
+# recursion) hold. Tolerated leak-exit under ASan (counted by rc_ok).
+echo "[87] Closure Cycle Shapes (14 checks)"
+check_eigs_suite "all 14 closure-cycle checks" test_closure_cycles.eigs "All tests passed" 14
+echo ""
+
 # [86] Corpus builder — build_corpus + the tok_base_string detokenizer
 # table (both 0% before: nothing in the suite ever built a corpus).
 echo "[86] Corpus Builder (25 checks)"
 check_eigs_suite "all 25 corpus-builder checks" test_corpus.eigs "All tests passed" 25
+echo ""
+
+# [88] LSP behavioral tests — drive src/eigenlsp over real JSON-RPC and
+# assert initialize/diagnostics/completion/hover/definition/references/
+# shutdown. The LSP was previously only compile-checked. Skips cleanly
+# without python3 or the eigenlsp build.
+echo "[88] LSP Behavioral (23 checks)"
+LSP_OUTPUT=$(bash "$TESTS_DIR/test_lsp.sh" 2>&1)
+if echo "$LSP_OUTPUT" | grep -q "SKIP:"; then
+    echo "$LSP_OUTPUT" | grep "SKIP:"
+else
+    LSP_PASS=$(echo "$LSP_OUTPUT" | grep -c "PASS:" || true)
+    LSP_FAIL=$(echo "$LSP_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + LSP_PASS + LSP_FAIL))
+    PASS=$((PASS + LSP_PASS))
+    FAIL=$((FAIL + LSP_FAIL))
+    if [ "$LSP_FAIL" -gt 0 ]; then
+        echo "  FAIL: $LSP_FAIL LSP check(s) failed"
+        echo "$LSP_OUTPUT" | grep "FAIL:" | head -5
+    else
+        echo "  PASS: all $LSP_PASS LSP checks"
+    fi
+fi
 echo ""
 
 echo "============================================"

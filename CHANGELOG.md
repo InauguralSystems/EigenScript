@@ -6,6 +6,47 @@ All notable changes to EigenScript are documented here.
 
 A language-features release.
 
+### LSP — parse-error diagnostics now actually appear
+
+The language server advertised `publishDiagnostics` but never sent a
+non-empty one: `send_diagnostics` gated on `g_error_msg`, which the
+parser/lexer never populate on a syntax error (they only print to
+stderr). So the editor's headline feature — red squiggles on bad
+syntax — was dead. The lexer/parser now record the first syntax error
+of each tokenize+parse pass (line + message) via a new additive
+`eigs_record_first_error` hook — reset at the top of `tokenize()`,
+captured at the common sites (unexpected character, unterminated
+string, indentation mismatch, `expected X got Y`) — and the LSP turns
+it into a diagnostic at the correct 0-based line. The CLI's stderr
+output is byte-for-byte unchanged (the capture is purely additive).
+New `tests/test_lsp.py` / `test_lsp.sh` (suite section [88], 23 checks)
+drive the server over real Content-Length-framed JSON-RPC and assert
+initialize capabilities, the now-working diagnostics (clean → none;
+syntax errors → right line + message; `didChange` clears them),
+completion, hover, definition, references, and `shutdown`/`exit` — the
+LSP was previously only compile-checked.
+
+### Closure-cycle leak — investigated; scoped as a reviewed project
+
+A captured `Env` and the closure bound within it form a refcount cycle
+the runtime can't reclaim. Confirmed it **accumulates** (~12
+allocations per escaping closure; 500 → ~6,000 leaked), correcting
+earlier text that implied a bounded exit-time blip. Investigated all
+three fix options and recorded why none is a safe drive-by patch
+(`docs/CLOSURE_CYCLE_GC.md`): weak self-binding either way introduces
+use-after-free (non-escaping recursion / escaping returns), and a
+collector is blocked by `Env` having no uniform refcount (trial
+deletion) or needing intrusive all-objects registries plus complete
+root enumeration (mark-sweep) — a change whose failure mode is memory
+corruption, so it belongs in a dedicated reviewed effort, not here.
+`tests/test_closure_cycles.eigs` (section [87], 14 checks) pins the
+functional correctness of every cycle shape and the non-leaking
+invariants (self-referential containers, non-escaping recursion stay
+clean) so a regression toward UAF or a wider leak is caught. The
+re-examined "dead code" candidates (`tok_type_name`, uncalled `env_*`
+helpers, unreachable lint rules) are defensive or public-header API —
+left in place rather than churned to game a coverage number.
+
 ### Testing & CI — coverage-gap closure
 
 A gcov pass over the suite (`docs/TEST_COVERAGE_ANALYSIS.md`) drove a

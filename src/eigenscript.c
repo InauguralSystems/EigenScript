@@ -22,6 +22,18 @@ __thread Value *g_return_val = NULL;
 __thread int g_returning = 0;
 __thread int g_parse_errors = 0;
 __thread char g_error_msg[4096] = "";
+/* First syntax/parse error of the current tokenize+parse pass, captured
+ * for consumers that can't see the parser's stderr (the LSP, which turns
+ * it into a publishDiagnostics squiggle). Reset at the top of tokenize().
+ * g_first_error_line is 1-based and 0 when no error has been recorded. */
+__thread int g_first_error_line = 0;
+__thread char g_first_error_msg[256] = "";
+
+void eigs_record_first_error(int line, const char *msg) {
+    if (g_first_error_line) return;   /* keep only the first */
+    g_first_error_line = line;
+    snprintf(g_first_error_msg, sizeof(g_first_error_msg), "%s", msg ? msg : "syntax error");
+}
 __thread int g_has_error = 0;
 __thread int g_breaking = 0;
 __thread int g_continuing = 0;

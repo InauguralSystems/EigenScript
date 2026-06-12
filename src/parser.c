@@ -46,6 +46,12 @@ static void p_expect(Parser *p, TokType type) {
                 p_cur(p)->line, tok_type_name(type), tok_type_name(p_cur(p)->type));
         if (p_cur(p)->str_val) fprintf(stderr, " ('%s')", p_cur(p)->str_val);
         fprintf(stderr, "\n");
+        {
+            char m[160];
+            snprintf(m, sizeof(m), "expected %s, got %s",
+                     tok_type_name(type), tok_type_name(p_cur(p)->type));
+            eigs_record_first_error(p_cur(p)->line, m);
+        }
         g_parse_errors++;
     }
     p_advance(p);

@@ -258,18 +258,34 @@ the live path active.
 
 - **The closure-cycle leak** (env↔fn from `define`-bound closures) —
   the one item on this list that is runtime engineering, not tests.
-  Leak tally: 27 under ASan, 0 under release.
-- eigenscript.c's last ~25%: `tok_type_name`'s parse-error message
-  table (one line per token kind) and legacy env API variants
-  (`env_set_hashed`, `env_set_hashed_slot`, `env_get_local_hashed`
-  grow paths) that the bytecode VM no longer calls — likely dead-code
-  cleanup, not test targets.
-- Dead lint rules (above) — delete rather than test.
+  **Investigated in round 3 (`docs/CLOSURE_CYCLE_GC.md`): it
+  *accumulates* — ~12 allocations per escaping closure (500 → ~6,000
+  leaked allocations), not the bounded exit-time blip earlier text
+  implied.** The cheap fixes (weak self-binding either way) each
+  introduce use-after-free, and a correct collector is blocked by
+  `Env` having no uniform refcount (trial deletion) or needing an
+  intrusive all-objects registry + complete root set (mark-sweep) — a
+  reviewed project, not a patch, because its failure mode is memory
+  corruption. `tests/test_closure_cycles.eigs` (section [87]) now pins
+  the functional correctness of every cycle shape and the non-leaking
+  invariants. Leak tally: 28 under ASan (the +1 is that new section),
+  0 under release.
+- eigenscript.c's last ~25%: re-examined in round 3 and **not a
+  cleanup target after all** — `tok_type_name` is a complete,
+  defensive token→string switch (every case is wanted the moment that
+  token appears in a parse error), and the uncalled `env_*` helpers
+  (`env_set`, `env_set_hashed`, `env_set_hashed_slot`,
+  `env_get_local_hashed`, `env_get_hashed_slot`, `env_clear`) are
+  public-header API. Deleting either to lift a coverage % would be
+  gaming the metric / risking an embedder, not a correctness fix.
+- Lint empty-block / `is`-in-condition rules: confirmed unreachable
+  (the parser rejects those inputs first), but they're harmless
+  defensive code — same reasoning, leave them.
 - gfx/audio still compile-only in CI (needs SDL on the runner);
   macOS leg still runs no sanitizers; no `coverage-http` target to
   measure extension-file coverage.
-- LSP behavioral tests (JSON-RPC handlers) — still only a compile
-  check.
+- LSP behavioral tests (JSON-RPC handlers) — addressed in round 3
+  (`tests/test_lsp.sh`).
 
 ## Suite state (round 2)
 

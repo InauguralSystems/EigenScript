@@ -723,19 +723,23 @@ static void send_diagnostics(Document *doc) {
     json_escape_to(&sb, doc->uri);
     strbuf_append(&sb, ",\"diagnostics\":[");
 
-    if (g_parse_errors > 0 && g_error_msg[0]) {
-        /* Extract line from error message if possible */
-        int err_line = 0;
-        const char *lp = strstr(g_error_msg, "line ");
-        if (lp) err_line = atoi(lp + 5);
-        if (err_line > 0) err_line--;  /* convert to 0-based */
+    /* Surface the first syntax error of the analyze pass as a squiggle.
+     * The parser/lexer only print to stderr (invisible to the editor);
+     * eigs_record_first_error captures the line + message for us. The
+     * old code keyed off g_error_msg, which the parser never sets on a
+     * syntax error, so diagnostics never appeared. */
+    if (g_parse_errors > 0 && g_first_error_line > 0) {
+        int err_line = g_first_error_line - 1;  /* 1-based → 0-based */
+        char full[320];
+        snprintf(full, sizeof(full), "syntax error: %s",
+                 g_first_error_msg[0] ? g_first_error_msg : "invalid syntax");
 
         strbuf_append(&sb, "{\"range\":{\"start\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
         strbuf_append(&sb, ",\"character\":0},\"end\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
         strbuf_append(&sb, ",\"character\":1000}},\"severity\":1,\"source\":\"eigenscript\",\"message\":");
-        json_escape_to(&sb, g_error_msg);
+        json_escape_to(&sb, full);
         strbuf_append_char(&sb, '}');
     }
 
