@@ -763,6 +763,14 @@ flattening symlinks and `..` segments. The other steps in the resolver
 chain (cwd, exe-relative, `$HOME/.local/lib/eigenscript`) are
 unchanged.
 
+Project-local dependencies live under `eigs_modules/<name>/<name>.eigs`
+at the project root (any directory containing `eigs.json`). The
+resolver walks upward from the importing file's directory checking
+each level for `eigs_modules/<name>/<name>.eigs`; once it finds
+`eigs.json` it halts (the project root is the top of the walk). This
+is the runtime hook for the `--pkg` tool; a hand-curated
+`eigs_modules/` works today.
+
 A module's body executes **once** per program. Repeated `import name`s
 (directly, or transitively through a diamond like `a → c, b → c`) bind
 the same dict and reuse the same module state — top-level side effects

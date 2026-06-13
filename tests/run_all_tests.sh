@@ -2071,6 +2071,26 @@ else
 fi
 echo ""
 
+echo "[93] eigs_modules Resolver (2 checks)"
+# Phase 0c: `import name` looks up eigs_modules/<name>/<name>.eigs by
+# walking upward from the importing file's directory until it hits the
+# project root (a directory containing eigs.json). Both the find and
+# the project-root halt are exercised.
+TOTAL=$((TOTAL + 2))
+EM_OUT=$(EIGENSCRIPT="./eigenscript" bash "$TESTS_DIR/test_eigs_modules_resolve.sh" 2>&1); EM_RC=$?
+if [ "$EM_RC" = "0" ] \
+   && echo "$EM_OUT" | grep -q "PASS: eigs_modules walk-up finds project-root package" \
+   && echo "$EM_OUT" | grep -q "PASS: eigs.json halts the walk"; then
+    echo "  PASS: walk-up resolves project-root package"
+    echo "  PASS: eigs.json halts the walk"
+    PASS=$((PASS + 2))
+else
+    echo "  FAIL: eigs_modules resolver"
+    echo "$EM_OUT" | head -10
+    FAIL=$((FAIL + 2))
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then

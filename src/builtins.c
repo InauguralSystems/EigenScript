@@ -2243,6 +2243,46 @@ static int try_resolve_path(const char *candidate, char *resolved, size_t resolv
     return 1;
 }
 
+/* Phase 0c: walk from `base` upward looking for
+ *   <dir>/eigs_modules/<name>/<name>.eigs
+ * at each level. Stop at the project root (a directory containing
+ * eigs.json) — its eigs_modules/ is checked once, then we don't go
+ * higher. Only fires for bare `<name>.eigs` requests (no slashes); the
+ * resolver's existing chain still handles paths with directory
+ * components. Bounded to 64 levels for safety. */
+static int try_eigs_modules_walk(const char *base, const char *path,
+                                  char *resolved, size_t resolved_cap) {
+    if (!base || !base[0] || !path) return 0;
+    if (strchr(path, '/')) return 0;
+    size_t plen = strlen(path);
+    if (plen < 6 || strcmp(path + plen - 5, ".eigs") != 0) return 0;
+    if (plen - 5 >= 512) return 0;
+
+    char name[512];
+    memcpy(name, path, plen - 5);
+    name[plen - 5] = '\0';
+
+    char cur[4096];
+    snprintf(cur, sizeof(cur), "%s", base);
+
+    for (int i = 0; i < 64; i++) {
+        char candidate[8192];
+        snprintf(candidate, sizeof(candidate),
+                 "%.3000s/eigs_modules/%.500s/%.500s.eigs",
+                 cur, name, name);
+        if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+
+        char marker[4400];
+        snprintf(marker, sizeof(marker), "%.4000s/eigs.json", cur);
+        if (access(marker, F_OK) == 0) return 0;
+
+        char *slash = strrchr(cur, '/');
+        if (!slash || slash == cur) return 0;
+        *slash = '\0';
+    }
+    return 0;
+}
+
 int resolve_eigenscript_file_from(const char *base, const char *path,
                                    char *resolved, size_t resolved_cap) {
     char candidate[8192];
@@ -2255,6 +2295,8 @@ int resolve_eigenscript_file_from(const char *base, const char *path,
     }
 
     if (try_resolve_path(path, resolved, resolved_cap)) return 1;
+
+    if (try_eigs_modules_walk(base, path, resolved, resolved_cap)) return 1;
 
     snprintf(candidate, sizeof(candidate), "%.4000s/%.4000s", base, path);
     if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;

@@ -4,7 +4,24 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-### Modules — import cache + per-file resolution (package design Phase 0a/b)
+### Modules — import cache + per-file resolution + eigs_modules/ (package design Phase 0a/b/c)
+
+- **`import name` now searches `eigs_modules/<name>/<name>.eigs`,
+  walking upward from the importing file's directory to the project
+  root** (a directory containing `eigs.json`, checked once and then
+  the walk halts). Only fires for bare `<name>.eigs` requests, so
+  paths with directory components fall through the existing chain
+  unchanged. Walks are bounded to 64 levels. This is the runtime hook
+  for the `eigs_modules/` layout that the future `--pkg` tool will
+  populate; the resolver gains the lookup now so a hand-curated
+  `eigs_modules/` works today.
+- **Resolver ordering.** Within the `import` resolver chain, the
+  package step sits between the cwd-relative check and the
+  importer-dir (`base`) check, so a packaged dep wins over a
+  loose file next to the importer. Stdlib and `eigs_modules/` may
+  collide on a name; the future `--pkg add` tool will reject collisions
+  at install time per the design.
+
 
 - **`import` now caches the resolved module.** The first import of a
   module executes its body; subsequent imports of the same resolved
