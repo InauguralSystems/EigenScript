@@ -4,6 +4,18 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Package starter — `eigs-package-template` (package design Phase 1 wrap)
+
+- **New repo: [InauguralSystems/eigs-package-template](
+  https://github.com/InauguralSystems/eigs-package-template).** A
+  forkable starting point for an EigenScript package: `eigs.json` +
+  `<name>.eigs` at the root, MIT license, a smoke test that stages
+  the package into `eigs_modules/<name>/` and imports it the way a
+  consumer would, and a CI workflow that builds EigenScript from
+  source. Tagged `v0.1.0` to demonstrate the semver workflow.
+- The Phase 1 design called for this; it lands as a sibling repo
+  rather than docs in this tree so authors `gh repo fork` it.
+
 ### Package tool — `--pkg verify` + `--pkg update` (package design Phase 1c)
 
 - **`--pkg verify`** re-checks every installed dep against the lockfile.

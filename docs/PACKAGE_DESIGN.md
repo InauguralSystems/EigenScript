@@ -152,8 +152,9 @@ trace/replay machinery entirely.
 - **Phase 0 — runtime prerequisites** (small, independently valuable):
   module cache; per-file resolution base; the `eigs_modules/` resolver
   step. Each lands with SPEC.md examples and suite sections.
-- **Phase 1 — the tool**: `--pkg` with add/install/verify/list,
-  manifest + lockfile, docs page, and a `eigs-package-template` repo
+- **Phase 1 — the tool**: `--pkg` with add/install/verify/list/update,
+  manifest + lockfile, docs page, and a [eigs-package-template](
+  https://github.com/InauguralSystems/eigs-package-template) repo
   showing layout + semver tagging.
 - **Phase 2 — ecosystem**: naming/versioning guidance in CONTRIBUTING,
   an awesome-eigenscript index (a list, not a registry), and — once
