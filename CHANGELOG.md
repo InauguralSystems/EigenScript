@@ -4,7 +4,7 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-### Modules — import cache (package design Phase 0a)
+### Modules — import cache + per-file resolution (package design Phase 0a/b)
 
 - **`import` now caches the resolved module.** The first import of a
   module executes its body; subsequent imports of the same resolved
@@ -15,11 +15,22 @@ All notable changes to EigenScript are documented here.
   `realpath`-canonicalized resolved path so different relative routes
   to the same file hit the same entry. Cleared in `gc_collect_at_exit`
   before the global-scope snapshot.
+- **`import` inside a module resolves relative to *that module's*
+  directory.** Previously every nested import searched from the main
+  script's directory, so a submodule couldn't reliably reach its own
+  peers. Now the resolver's script-relative step anchors at the
+  importing file's own directory (derived from its `realpath`-
+  canonicalized absolute path, so symlinks and `..` segments are
+  flattened). The other steps in the chain (cwd, exe-relative, stdlib
+  `$HOME/.local/lib/eigenscript`) are unchanged.
 - **Observable behavior change.** Programs that relied on per-import
   re-execution of side-effecting modules will see one execution
-  instead. The dict shape, member names, and binding semantics are
-  unchanged. This is the runtime prerequisite for the package design
-  (docs/PACKAGE_DESIGN.md) and is documented in SPEC.md — Modules.
+  instead. Programs that worked around the main-script-relative
+  resolver by placing submodule peers next to the entry point can now
+  colocate them with their importer. The dict shape, member names, and
+  binding semantics are unchanged. This is the runtime prerequisite
+  for the package design (docs/PACKAGE_DESIGN.md) and is documented in
+  SPEC.md — Modules.
 
 ### Runtime — small perf wins (issue #174)
 

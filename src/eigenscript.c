@@ -40,6 +40,10 @@ __thread int g_has_error = 0;
 __thread int g_breaking = 0;
 __thread int g_continuing = 0;
 
+/* Per-import resolution base (Phase 0b). Empty string means "fall back
+ * to g_script_dir". OP_IMPORT saves/restores around module body. */
+__thread char g_import_resolve_dir[4096] = "";
+
 /* Multi-thread mode flag. Set to 1 by builtin_spawn before pthread_create
  * (and never reset). When 0, refcount sites use plain ++/-- instead of
  * __atomic_*_fetch — saves ~20 cycles per LOCK-prefixed RMW on x86.

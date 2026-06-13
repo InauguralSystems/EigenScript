@@ -485,6 +485,11 @@ void runtime_error(int line, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 char* read_file_util(const char *path, long *out_size);
 int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap);
+/* Same chain, but the "script-relative" and "../" steps anchor at
+ * `base` instead of `g_script_dir`. Used by OP_IMPORT to resolve a
+ * module's own imports relative to that module's directory. */
+int resolve_eigenscript_file_from(const char *base, const char *path,
+                                   char *resolved, size_t resolved_cap);
 Value* eigs_json_parse_value(const char *s, int *pos);
 
 /* ---- Control flow (return statement) ---- */
@@ -506,6 +511,14 @@ extern __thread int g_continuing;
 extern __thread Value *g_last_observer;
 extern char g_script_dir[4096];
 extern char g_exe_dir[4096];
+
+/* Per-import resolution base (Phase 0b). Empty by default — the chain
+ * falls back to `g_script_dir`. OP_IMPORT saves/restores this around
+ * each module body so an `import` inside a module resolves relative to
+ * *that* module's directory, not the main script's. `load_file` keeps
+ * main-script-relative semantics — it calls `resolve_eigenscript_file`
+ * directly, which always anchors at `g_script_dir`. */
+extern __thread char g_import_resolve_dir[4096];
 
 /* ---- Module cache (Phase 0a of the package design) ---- */
 /* Hit: out_dict gets a new counted ref (caller decrefs). Miss: out_dict

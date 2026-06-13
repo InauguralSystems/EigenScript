@@ -3893,7 +3893,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         char path_buf[8192];
         snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
 
-        extern int resolve_eigenscript_file(const char *name, char *out, size_t outlen);
+        extern int resolve_eigenscript_file_from(const char *base, const char *name,
+                                                  char *out, size_t outlen);
         extern char *read_file_util(const char *path, long *size);
         extern __thread int g_parse_errors;
         extern __thread Env *g_load_env;
@@ -3903,12 +3904,22 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         extern void free_tokenlist(TokenList *tl);
         extern void free_ast(ASTNode *ast);
 
-        if (!resolve_eigenscript_file(request, path_buf, sizeof(path_buf))) {
+        /* Per-file resolution base (Phase 0b): an `import` inside a
+         * module anchors at *that* module's directory, not the main
+         * script's. `g_import_resolve_dir` is empty at the main-script
+         * level, in which case the chain falls back to g_script_dir. */
+        const char *resolve_base = g_import_resolve_dir[0]
+                                       ? g_import_resolve_dir
+                                       : g_script_dir;
+
+        if (!resolve_eigenscript_file_from(resolve_base, request,
+                                            path_buf, sizeof(path_buf))) {
             /* Not a stdlib module — fall back to a user module:
-             * <name>.eigs resolved script-relative (and the other
-             * standard locations resolve_eigenscript_file tries). */
+             * <name>.eigs resolved against the per-file resolve base
+             * (and the other standard locations the chain tries). */
             snprintf(request, sizeof(request), "%.1024s.eigs", name);
-            if (!resolve_eigenscript_file(request, path_buf, sizeof(path_buf))) {
+            if (!resolve_eigenscript_file_from(resolve_base, request,
+                                                path_buf, sizeof(path_buf))) {
                 runtime_error(current_line, "import: module '%s' not found "
                               "(tried lib/%s.eigs and %s.eigs)", name, name, name);
                 vm_push(make_null());
@@ -3959,11 +3970,32 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
         Env *saved_load = g_load_env;
         g_load_env = mod_env;
+
+        /* Anchor nested imports at this module's directory. dirname()
+         * derived from the canonicalized abs_path so the per-module
+         * resolve dir survives symlinks and `..` segments. */
+        char saved_resolve_dir[sizeof(g_import_resolve_dir)];
+        memcpy(saved_resolve_dir, g_import_resolve_dir, sizeof(saved_resolve_dir));
+        const char *last_slash = strrchr(abs_path, '/');
+        if (last_slash && last_slash != abs_path) {
+            size_t dlen = (size_t)(last_slash - abs_path);
+            if (dlen >= sizeof(g_import_resolve_dir))
+                dlen = sizeof(g_import_resolve_dir) - 1;
+            memcpy(g_import_resolve_dir, abs_path, dlen);
+            g_import_resolve_dir[dlen] = '\0';
+        } else if (last_slash == abs_path) {
+            g_import_resolve_dir[0] = '/';
+            g_import_resolve_dir[1] = '\0';
+        } else {
+            g_import_resolve_dir[0] = '\0';
+        }
+
         EigsChunk *mod_chunk = compile_ast(ast, mod_env);
         Value *mod_result = vm_execute(mod_chunk, mod_env);
         if (mod_result) val_decref(mod_result);
         chunk_free(mod_chunk);   /* creator ref; module fns hold their own */
         g_load_env = saved_load;
+        memcpy(g_import_resolve_dir, saved_resolve_dir, sizeof(saved_resolve_dir));
         free_ast(ast);
         free_tokenlist(&tl);
         free(source);

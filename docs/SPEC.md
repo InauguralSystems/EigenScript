@@ -756,6 +756,13 @@ rm of "spec_shapes.eigs"
 (In a project, the idiom is simply `import shapes` with `shapes.eigs`
 sitting next to `app.eigs`.)
 
+An `import` inside a module resolves relative to *that module's* own
+directory, not the main script's. A submodule can safely
+`import its_peer` and the peer is looked up next to the importer,
+flattening symlinks and `..` segments. The other steps in the resolver
+chain (cwd, exe-relative, `$HOME/.local/lib/eigenscript`) are
+unchanged.
+
 A module's body executes **once** per program. Repeated `import name`s
 (directly, or transitively through a diamond like `a → c, b → c`) bind
 the same dict and reuse the same module state — top-level side effects

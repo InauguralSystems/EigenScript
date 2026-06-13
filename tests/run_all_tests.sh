@@ -2054,6 +2054,23 @@ else
 fi
 echo ""
 
+echo "[92] Module Resolve Base (1 check)"
+# Phase 0b: an `import` inside a module resolves relative to *that
+# module's* directory, not the main script's. Shell-driven because
+# `import` only takes bare identifiers — we need a HOME-override +
+# symlink dance to put a "wrapper" module in a subdir whose peer.eigs
+# is reachable only if resolution anchors at the wrapper's own dir.
+TOTAL=$((TOTAL + 1))
+if EIGENSCRIPT="./eigenscript" bash "$TESTS_DIR/test_module_resolve_base.sh" >/dev/null 2>&1; then
+    echo "  PASS: nested import anchors at module dir"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: module resolve base"
+    EIGENSCRIPT="./eigenscript" bash "$TESTS_DIR/test_module_resolve_base.sh" 2>&1 | head -10
+    FAIL=$((FAIL + 1))
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then

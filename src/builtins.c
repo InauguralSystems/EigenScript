@@ -2243,10 +2243,12 @@ static int try_resolve_path(const char *candidate, char *resolved, size_t resolv
     return 1;
 }
 
-int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap) {
+int resolve_eigenscript_file_from(const char *base, const char *path,
+                                   char *resolved, size_t resolved_cap) {
     char candidate[8192];
 
     if (!path || !resolved || resolved_cap == 0) return 0;
+    if (!base || !base[0]) base = g_script_dir;
 
     if (path[0] == '/') {
         return try_resolve_path(path, resolved, resolved_cap);
@@ -2254,10 +2256,10 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
 
     if (try_resolve_path(path, resolved, resolved_cap)) return 1;
 
-    snprintf(candidate, sizeof(candidate), "%.4000s/%.4000s", g_script_dir, path);
+    snprintf(candidate, sizeof(candidate), "%.4000s/%.4000s", base, path);
     if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
 
-    snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", g_script_dir, path);
+    snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", base, path);
     if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
 
     snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", g_exe_dir, path);
@@ -2283,6 +2285,10 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
     }
 
     return 0;
+}
+
+int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap) {
+    return resolve_eigenscript_file_from(g_script_dir, path, resolved, resolved_cap);
 }
 
 Value* builtin_load_file(Value *arg) {
