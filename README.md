@@ -8,6 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
   <a href="https://github.com/InauguralSystems/EigenScript/stargazers"><img src="https://img.shields.io/github/stars/InauguralSystems/EigenScript?cacheSeconds=3600" alt="Stars"></a>
   <a href="https://www.bestpractices.dev/projects/13187"><img src="https://www.bestpractices.dev/projects/13187/badge" alt="OpenSSF Best Practices"></a>
+  <a href="https://github.com/InauguralSystems/EigenScript/actions/workflows/codeql.yml"><img src="https://github.com/InauguralSystems/EigenScript/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
 </p>
 
 # EigenScript
