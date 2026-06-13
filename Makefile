@@ -190,5 +190,20 @@ fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
 fuzz-run: fuzz
 	@bash fuzz/run_fuzz.sh
 
+# libFuzzer harness — what OSS-Fuzz drives. The build flags here mirror
+# the OSS-Fuzz contract: $$CC=clang, $$CFLAGS gets the sanitizer choice,
+# $$LIB_FUZZING_ENGINE provides main(). Locally we just pass everything
+# explicitly so a clean clone can reproduce the OSS-Fuzz build.
+fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
+	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
+		-o fuzz/fuzz_eigenscript \
+		fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
+		-DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_VERSION='"fuzz"' \
+		-lm -lpthread
+	@echo "libFuzzer binary built. Run: ./fuzz/fuzz_eigenscript fuzz/corpus/ -max_len=4096 -timeout=5"
+
 version:
 	@echo $(VERSION)
