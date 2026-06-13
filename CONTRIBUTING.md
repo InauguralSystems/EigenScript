@@ -48,6 +48,55 @@ Two gates worth knowing before you push:
 - **Examples** — add to `examples/` with a comment header explaining what the example demonstrates.
 - **Documentation** — improvements to `docs/` or `README.md`.
 
+## Publishing a Package
+
+EigenScript packages are git repos with `eigs.json` (manifest) and
+`<name>.eigs` (entry point) at the root. Consumers run
+`eigenscript --pkg add <name> <git-url> <tag>` to clone them into
+`eigs_modules/<name>/`. See [docs/PACKAGE_DESIGN.md](docs/PACKAGE_DESIGN.md)
+for the design intent.
+
+**Start here**: fork [eigs-package-template](https://github.com/InauguralSystems/eigs-package-template).
+It has the layout, MIT license, smoke test, and CI workflow already
+wired up. The README walks through the rename.
+
+### Naming
+
+- **Lowercase identifiers, no hyphens.** A consumer writes
+  `import <name>`, and EigenScript identifiers can't contain `-`.
+  Underscores are fine; prefer one or two short words.
+- **Don't collide with the stdlib.** The resolver tries
+  `lib/<name>.eigs` first, so a stdlib module of the same name
+  shadows your package. Names like `json`, `math`, `os`, `string`
+  are reserved by convention even when not yet implemented.
+- **Repos are conventionally named `eigs-<name>`** (e.g.,
+  `eigs-vecmath`), but the consumer's `--pkg add <name> <url>`
+  determines the imported name — the repo name is a label, not a
+  rule.
+
+### Versioning
+
+- **Follow semver**: patch = bugfix; minor = additive surface change;
+  major = removed or repurposed surface. The lockfile pins a commit
+  SHA so existing consumers won't break on a tag move — but a moved
+  tag still breaks `--pkg add` for *new* consumers, and a tampered
+  tag is a security signal `--pkg verify` will catch. **Cut a new
+  tag rather than force-pushing an old one.**
+- **Top-level statements run once at import time** (cached after the
+  first importer). Side effects beyond binding names (network I/O,
+  file writes, etc.) at the top level are a footgun — keep them
+  inside `define`d functions the consumer chooses to call.
+- **Leading-underscore names are private** to the module: visible
+  inside the package's `.eigs` files, hidden from importers.
+
+### Getting your package listed
+
+Once your package has a tagged release and a green CI run, open a PR
+against [awesome-eigenscript](https://github.com/InauguralSystems/awesome-eigenscript)
+adding a one-line entry under the right category. This is a curated
+list, not a registry — there is no install-time lookup, so listing
+is purely for discoverability.
+
 ## Reporting Bugs
 
 Use the [bug report template](https://github.com/InauguralSystems/EigenScript/issues/new?template=bug_report.md) and include a minimal `.eigs` reproducer.

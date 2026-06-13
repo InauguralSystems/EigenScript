@@ -245,6 +245,32 @@ doubled is map of [[1,2,3], double]
 
 See [docs/STDLIB.md](docs/STDLIB.md) for the full library guide.
 
+## Packages
+
+Third-party packages are git repos consumable via the built-in
+package tool:
+
+```bash
+eigenscript --pkg add vecmath https://github.com/alice/eigs-vecmath v1.2.0
+eigenscript --pkg install      # reproduce eigs_modules/ from the lockfile
+eigenscript --pkg verify       # re-hash trees against the lockfile
+```
+
+`--pkg add` clones the repo into `eigs_modules/<name>/`, records the
+resolved commit in `eigs.lock.json`, and the consumer can then
+`import <name>`. No code from the dep runs at install time — only
+the `import` does. Force-pushed tags can't sneak a different tree
+past `--pkg install` (the lockfile pins a commit SHA, and `verify`
+catches working-tree tampering).
+
+- **[eigs-package-template](https://github.com/InauguralSystems/eigs-package-template)** —
+  forkable starting point for a new package
+- **[awesome-eigenscript](https://github.com/InauguralSystems/awesome-eigenscript)** —
+  curated index of community packages (a list, not a registry)
+- **[docs/PACKAGE_DESIGN.md](docs/PACKAGE_DESIGN.md)** — design intent;
+  **[CONTRIBUTING.md](CONTRIBUTING.md#publishing-a-package)** —
+  naming + semver guidance for publishers
+
 ## Examples
 
 Ordered as a learning path:

@@ -4,6 +4,20 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Package ecosystem — CONTRIBUTING section + awesome-eigenscript (package design Phase 2)
+
+- **CONTRIBUTING.md gains a "Publishing a Package" section.** Covers
+  naming (lowercase identifiers, no hyphens, stdlib name reservations),
+  semver discipline (cut new tags rather than force-pushing), the
+  privacy convention (leading underscore), the "no top-level side
+  effects" footgun, and where to list a published package.
+- **New repo: [InauguralSystems/awesome-eigenscript](
+  https://github.com/InauguralSystems/awesome-eigenscript).** Curated
+  index of packages, tools, learning resources, and editor integrations.
+  A list, not a registry — the package tool resolves packages by git
+  URL, so this index is purely for discoverability. PRs add one entry
+  per package; inclusion gated on tagged release + smoke test in CI.
+
 ### Package starter — `eigs-package-template` (package design Phase 1 wrap)
 
 - **New repo: [InauguralSystems/eigs-package-template](

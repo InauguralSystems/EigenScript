@@ -156,9 +156,11 @@ trace/replay machinery entirely.
   manifest + lockfile, docs page, and a [eigs-package-template](
   https://github.com/InauguralSystems/eigs-package-template) repo
   showing layout + semver tagging.
-- **Phase 2 — ecosystem**: naming/versioning guidance in CONTRIBUTING,
-  an awesome-eigenscript index (a list, not a registry), and — once
-  real packages exist — revisit version ranges, and attestation.
+- **Phase 2 — ecosystem**: naming/versioning guidance in
+  [CONTRIBUTING.md](../CONTRIBUTING.md#publishing-a-package), the
+  [awesome-eigenscript](https://github.com/InauguralSystems/awesome-eigenscript)
+  index (a list, not a registry), and — once real packages exist —
+  revisit version ranges, and attestation.
 
 ## Open questions
 
