@@ -4,6 +4,20 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Runtime — small perf wins (issue #174)
+
+- **Compiler dedups `OP_LINE` per basic block.** The compiler stamped a
+  fresh `OP_LINE` for every AST node, so `total is total + i` emitted
+  three back-to-back updates to the same line. Now `emit_line` skips
+  the write when the line hasn't moved, resetting at every basic-block
+  boundary (jump targets, loop tops, after `OP_CALL`/`OP_DISPATCH`, fn
+  entry) so the runtime `current_line` invariant never weakens. Bench:
+  `while 100k` 6.45 → 6.05 ms (~6% n=5 median, T3200).
+- **String concat allocates once.** `OP_ADD`'s string path went
+  `malloc → make_str (strdup) → free` — two allocations and a copy per
+  `+`. Now it `xmalloc`s the joined buffer directly and hands it to
+  `make_str_owned`. Bench: `strcat 2k` 9.6 → 8.79 ms (~8% n=5 median).
+
 ### Runtime — closure-cycle collector
 
 - **The env↔fn closure-cycle leak is fixed** (docs/CLOSURE_CYCLE_GC.md).

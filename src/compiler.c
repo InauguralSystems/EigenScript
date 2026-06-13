@@ -56,6 +56,10 @@ typedef struct Compiler {
     NameSet          *module_names; /* root-compiler-owned: names defined at module scope */
     NameSet           module_slot_names; /* root-compiler-owned: names promoted to module slots */
     ASTNode          *root_ast;     /* root-compiler-owned: full AST for escape analysis */
+    int               last_line;    /* #174: last OP_LINE value emitted; -1 = "next emit must
+                                     * stamp the line". Reset at every basic-block boundary
+                                     * (patch_jump targets, emit_loop, loop_start capture,
+                                     * after CALL/DISPATCH/RETURN, fn entry). */
 } Compiler;
 
 int g_compile_module_slots = 0;
@@ -239,6 +243,10 @@ static void emit_call(Compiler *c, uint16_t argc, int line) {
     chunk_emit_u16(c->chunk, argc, line);
     /* CALL pops fn + argc args, pushes result = -(argc+1) + 1 = -argc */
     adjust_stack(c, -(int)argc);
+    /* #174: the callee runs its own OP_LINE stream, leaving the VM's
+     * current_line on whatever it returned from. The next instruction
+     * here must restamp. */
+    c->last_line = -1;
 }
 
 static void emit_list(Compiler *c, uint16_t count, int line) {
@@ -265,12 +273,39 @@ static int emit_jump(Compiler *c, uint8_t op, int line) {
 
 static void patch_jump(Compiler *c, int offset) {
     chunk_patch_jump(c->chunk, offset);
+    /* #174: the next emit lands at the jump target — control may arrive
+     * from either fall-through or this jump, so the runtime current_line
+     * could be anything. Force the next OP_LINE through. */
+    c->last_line = -1;
 }
 
 static void emit_loop(Compiler *c, int loop_start, int line) {
     chunk_emit(c->chunk, OP_JUMP_BACK, line);
     int offset = c->chunk->code_len - loop_start + 2;
     chunk_emit_u16(c->chunk, (uint16_t)offset, line);
+    /* #174: the next emit is past the back-jump; the loop's exit edge
+     * lands either here (fall-through after a false condition) or via
+     * a patched forward jump. Both are merge points. */
+    c->last_line = -1;
+}
+
+/* #174: capture loop_start. The bytecode emitted next is a back-edge
+ * target, so future iterations re-enter with the previous iteration's
+ * current_line state. Reset so the first instruction at loop_start
+ * stamps the line. */
+static int capture_loop_start(Compiler *c) {
+    c->last_line = -1;
+    return c->chunk->code_len;
+}
+
+/* #174: dedup OP_LINE emission. Per-AST-node line stamps spammed the
+ * dispatch loop with redundant updates (most child nodes share their
+ * parent's line). Emit only when the line changes; reset at every
+ * basic-block boundary so we never *skip* a stamp the runtime needs. */
+static void emit_line(Compiler *c, int line) {
+    if (c->last_line == line) return;
+    emit_op_u16(c, OP_LINE, (uint16_t)line, line);
+    c->last_line = line;
 }
 
 /* ---- Constant helpers ---- */
@@ -984,7 +1019,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
 static void compile_node(Compiler *c, ASTNode *node) {
     if (!node) { emit(c, OP_NULL, 0); return; }
 
-    emit_op_u16(c, OP_LINE, (uint16_t)node->line, node->line);
+    emit_line(c, node->line);
 
     switch (node->type) {
 
@@ -1151,7 +1186,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
             lp->has_fresh_env = 0; /* while-loops don't allocate per-iter envs */
         }
 
-        int loop_start = c->chunk->code_len;
+        int loop_start = capture_loop_start(c);
         if (lp) lp->continue_target = loop_start;
 
         int depth_at_loop = c->stack_depth;
@@ -1250,7 +1285,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         }
 
         int depth_before_loop = c->stack_depth;
-        int loop_start = c->chunk->code_len;
+        int loop_start = capture_loop_start(c);
         if (lp) lp->continue_target = loop_start;
 
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
@@ -1344,6 +1379,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         fn_compiler.chunk = fn_chunk;
         fn_compiler.enclosing = c;
         fn_compiler.env = c->env;
+        fn_compiler.last_line = -1;  /* #174: force first OP_LINE in this chunk */
         fn_compiler.param_count = node->data.func.param_count;
         fn_compiler.module_names = c->module_names;
 
@@ -1434,6 +1470,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         fn_compiler.chunk = fn_chunk;
         fn_compiler.enclosing = c;
         fn_compiler.env = c->env;
+        fn_compiler.last_line = -1;  /* #174: force first OP_LINE in this chunk */
         fn_compiler.param_count = node->data.lambda.param_count;
         fn_compiler.module_names = c->module_names;
 
@@ -1500,6 +1537,8 @@ static void compile_node(Compiler *c, ASTNode *node) {
             compile_node(c, arg_node->data.list.elems[1]); /* key */
             compile_node(c, arg_node->data.list.elems[2]); /* arg */
             emit(c, OP_DISPATCH, node->line);
+            /* #174: dispatch invokes a callee — same reset as emit_call. */
+            c->last_line = -1;
             break;
         }
 
@@ -1679,7 +1718,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         compile_node(c, node->data.listcomp.iter);
         emit(c, OP_ITER_SETUP, node->line);
 
-        int loop_start = c->chunk->code_len;
+        int loop_start = capture_loop_start(c);
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
 
         /* Bind loop var via Env */
@@ -1901,6 +1940,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env) {
     memset(&compiler, 0, sizeof(compiler));
     compiler.chunk = chunk;
     compiler.env = env;
+    compiler.last_line = -1;  /* #174: force first OP_LINE at module entry */
     compiler.root_ast = ast;
 
     /* Pre-pass: collect names defined at module scope so function bodies can

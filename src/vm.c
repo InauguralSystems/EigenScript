@@ -1908,13 +1908,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             vm_push(make_num(r));
         } else if (a->type == VAL_STR && b->type == VAL_STR) {
             int la = strlen(a->data.str), lb = strlen(b->data.str);
-            char *s = malloc(la + lb + 1);
+            char *s = xmalloc((size_t)la + lb + 1);
             memcpy(s, a->data.str, la);
             memcpy(s + la, b->data.str, lb);
             s[la + lb] = 0;
-            Value *r = make_str(s);
-            free(s);
-            vm_push(r);
+            vm_push(make_str_owned(s));
         } else {
             /* Strict: + adds two numbers or concatenates two strings; it does
              * not coerce across types ("3" + 4 was a footgun). For mixed
