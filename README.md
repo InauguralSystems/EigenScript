@@ -340,6 +340,13 @@ JIT behavior, trace-tape format, extension builtins (`http`/`model`/
 `db`/`gfx`) — may change in any release. At 1.0 the documented surface
 freezes and semantic versioning applies from then on.
 
+## Contributing
+
+EigenScript is solo-maintained today and unpaid. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the build/test gates and how
+to file PRs, and [GOVERNANCE.md](GOVERNANCE.md) for how decisions
+get made and how contributors can earn commit access over time.
+
 ## Editor Support
 
 - **VS Code**: [`editors/vscode/`](editors/vscode/) — syntax

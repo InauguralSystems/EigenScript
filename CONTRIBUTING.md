@@ -111,6 +111,13 @@ of these subject prefixes:
 - `[PRESS]` Media, interviews, or public inquiries.
 - `[LEGAL]` Licensing or trademark questions.
 
+## Governance
+
+How decisions get made on the project, and how contributors can earn
+commit access over time, is described in
+[GOVERNANCE.md](GOVERNANCE.md). Short version: trust is earned by
+visible, sustained work; there is no application form.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
