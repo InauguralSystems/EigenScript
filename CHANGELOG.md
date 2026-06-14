@@ -2,6 +2,24 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Package tool — `<owner>/<name>` is now required
+
+- **`--pkg add` rejects bare package names.** Identifiers must be
+  `<owner>/<name>` (e.g. `alice/tensor`); `install`, `update`, and
+  `verify` also fail-fast on a manifest with bare-name dep keys.
+  Reserving the namespace at the manifest layer from day one
+  prevents a popularity spike from fragmenting it onto bare leaves;
+  bare-name retrofit would otherwise be unrecoverable since every
+  shipped lockfile would already have keys baked in. On-disk layout
+  and the user-facing `import <name>` form stay flat (the leaf, just
+  `<name>`) — two packages with the same leaf still can't coexist,
+  but disk-level nesting and scoped imports can land later without
+  breaking existing manifests. README, CONTRIBUTING, PACKAGE_DESIGN
+  updated; `tests/test_pkg_{fetch,verify_update,skeleton}.sh` cover
+  the new rejection paths.
+
 ## [0.14.2] — 2026-06-13
 
 ### Ship — macOS Intel binary, interpreter-only

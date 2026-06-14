@@ -135,12 +135,20 @@ subprocess/string/JSON APIs is a feature. It shells out to `git` (the
 one external requirement, tool-only) via the streaming `proc_*` API.
 
 ```
-eigenscript --pkg add <name> <git-url> [tag]   # manifest + fetch + lock
-eigenscript --pkg install                      # reproduce eigs_modules/ from lockfile
-eigenscript --pkg update [name]                # re-resolve tag → new commit, re-lock
-eigenscript --pkg verify                       # re-hash trees against lockfile
-eigenscript --pkg list                         # what's installed, from where
+eigenscript --pkg add <owner>/<name> <git-url> [tag]   # manifest + fetch + lock
+eigenscript --pkg install                              # reproduce eigs_modules/ from lockfile
+eigenscript --pkg update [<owner>/<name>]              # re-resolve tag → new commit, re-lock
+eigenscript --pkg verify                               # re-hash trees against lockfile
+eigenscript --pkg list                                 # what's installed, from where
 ```
+
+Package identifiers are namespaced `<owner>/<name>` from day one —
+bare names like `tensor` are reserved at the manifest and CLI layers
+so an early popularity spike can't fragment the namespace. The
+on-disk layout (`eigs_modules/<name>/`) and `import <name>` form
+stay flat for now: two packages sharing the leaf can't coexist in
+the same project yet, but disk-level nesting + scoped imports can
+land later without breaking any existing manifest.
 
 Install is `git clone --depth 1` + checkout + hash — nothing from the
 package is ever executed (goal 3). One caveat to respect: `proc_*` is

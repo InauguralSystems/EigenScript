@@ -39,10 +39,27 @@ git commit -q -m "initial"
 git tag v1.0.0
 SOURCE_URL="file://$TMP/source"
 
-# ---- add: clone, write manifest + lockfile ----
+# ---- bare names are rejected (namespace claim) ----
 mkdir -p "$TMP/project"
 cd "$TMP/project"
-ADD_OUT=$("$EIGS" --pkg add greeting "$SOURCE_URL" v1.0.0 2>&1)
+if "$EIGS" --pkg add greeting "$SOURCE_URL" v1.0.0 >/dev/null 2>&1; then
+    echo "  FAIL: --pkg add should reject bare name 'greeting'"
+    exit 1
+fi
+BARE_ERR=$("$EIGS" --pkg add greeting "$SOURCE_URL" v1.0.0 2>&1 || true)
+if ! echo "$BARE_ERR" | grep -q "<owner>/<name>"; then
+    echo "  FAIL: bare-name rejection should mention <owner>/<name>"
+    echo "$BARE_ERR"
+    exit 1
+fi
+if [ -f eigs.json ]; then
+    echo "  FAIL: rejected --pkg add should not write eigs.json"
+    exit 1
+fi
+echo "  PASS: --pkg add rejects bare names"
+
+# ---- add: clone, write manifest + lockfile ----
+ADD_OUT=$("$EIGS" --pkg add tester/greeting "$SOURCE_URL" v1.0.0 2>&1)
 if [ ! -f eigs.json ]; then
     echo "  FAIL: --pkg add did not write eigs.json"
     echo "$ADD_OUT"
@@ -59,7 +76,7 @@ if [ ! -f eigs_modules/greeting/greeting.eigs ]; then
     ls -la eigs_modules/greeting/ 2>&1 || true
     exit 1
 fi
-LOCK_COMMIT=$(python3 -c 'import json;print(json.load(open("eigs.lock.json"))["greeting"]["commit"])')
+LOCK_COMMIT=$(python3 -c 'import json;print(json.load(open("eigs.lock.json"))["tester/greeting"]["commit"])')
 ACTUAL_COMMIT=$(git -C eigs_modules/greeting rev-parse HEAD)
 if [ "$LOCK_COMMIT" != "$ACTUAL_COMMIT" ]; then
     echo "  FAIL: lock commit '$LOCK_COMMIT' != actual HEAD '$ACTUAL_COMMIT'"

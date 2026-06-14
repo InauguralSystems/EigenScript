@@ -2,19 +2,28 @@
 # Package tool — `eigenscript --pkg <subcommand>`
 # ============================================================
 #
-# Vendoring-first package manager: eigs_modules/<name>/<name>.eigs is
+# Vendoring-first package manager: eigs_modules/<leaf>/<leaf>.eigs is
 # a checked-out git tree at a pinned commit. Layout:
 #
-#   ./eigs.json        manifest (name, version, deps)
+#   ./eigs.json        manifest (name, version, deps keyed by <owner>/<name>)
 #   ./eigs.lock.json   resolved commit SHAs + content hashes
-#   ./eigs_modules/<name>/   one directory per dep, a git checkout
+#   ./eigs_modules/<leaf>/   one directory per dep, a git checkout
 #
 # Subcommands:
-#   --pkg add <name> <git-url> [tag]   add to manifest + clone + lock
-#   --pkg install                      reproduce eigs_modules/ from lock
-#   --pkg update [name]                re-resolve tag and re-lock
-#   --pkg verify                       re-hash trees against lock
-#   --pkg list                         print installed deps
+#   --pkg add <owner>/<name> <git-url> [tag]   add to manifest + clone + lock
+#   --pkg install                              reproduce eigs_modules/ from lock
+#   --pkg update [<owner>/<name>]              re-resolve tag and re-lock
+#   --pkg verify                               re-hash trees against lock
+#   --pkg list                                 print installed deps
+#
+# Naming: package identifiers are always namespaced — `<owner>/<name>`.
+# This reserves namespace at the manifest layer from day one (no land
+# rush on bare names like `tensor`). The on-disk dir and the user-
+# visible `import <name>` form stay flat (the leaf, just `<name>`) for
+# now: two packages sharing a leaf can't coexist yet, but disk-level
+# nesting + scoped imports can land later without breaking any
+# existing manifest. Names accept alphanumerics + `-`, `_`, `.`; neither
+# part may start with `-` or `.`, and `.`/`..` are reserved.
 #
 # Design intent:
 #   - The tool is the only thing that touches the network.
@@ -91,6 +100,81 @@ define git_worktree_clean(work_dir) as:
 define rmtree(path) as:
     exec_capture of ["rm", "-rf", path]
 
+# ---- Name validation -------------------------------------------------
+
+# Owner-or-name part: 1+ chars, no leading '-' or '.', only
+# alphanumerics + `-`, `_`, `.`. Reserved values: "." and "..".
+define is_valid_name_part(part) as:
+    n is len of part
+    if n == 0:
+        return 0
+    if part == "." or part == "..":
+        return 0
+    first is part[0]
+    if first == "-" or first == ".":
+        return 0
+    ok is 1
+    for i in range of n:
+        c is part[i]
+        c_ok is 0
+        if c >= "a" and c <= "z":
+            c_ok is 1
+        if c >= "A" and c <= "Z":
+            c_ok is 1
+        if c >= "0" and c <= "9":
+            c_ok is 1
+        if c == "-" or c == "_" or c == ".":
+            c_ok is 1
+        if c_ok == 0:
+            ok is 0
+            break
+    return ok
+
+# Returns "" if `name` is in valid <owner>/<name> form; otherwise a
+# human-readable error message ending with a period.
+define validate_pkg_name(name) as:
+    n is len of name
+    slash_idx is -1
+    multi is 0
+    for i in range of n:
+        if name[i] == "/":
+            if slash_idx == -1:
+                slash_idx is i
+            else:
+                multi is 1
+                break
+    if multi == 1:
+        return "package name must be <owner>/<name> (multiple '/' in '" + name + "')."
+    if slash_idx == -1:
+        return "package name must be <owner>/<name> — bare names like '" + name + "' are reserved. Use a namespace, e.g. 'alice/" + name + "'."
+    owner is name[0:slash_idx]
+    leaf is name[slash_idx + 1:n]
+    if (is_valid_name_part of owner) == 0:
+        return "invalid <owner> '" + owner + "' in '" + name + "' (alphanumerics + - _ ., not starting with - or .)."
+    if (is_valid_name_part of leaf) == 0:
+        return "invalid <name> '" + leaf + "' in '" + name + "' (alphanumerics + - _ ., not starting with - or .)."
+    return ""
+
+# Leaf portion of a validated <owner>/<name>. The on-disk dir
+# (eigs_modules/<leaf>) and the `import <leaf>` form both use this.
+define pkg_leaf(name) as:
+    n is len of name
+    leaf is name
+    for i in range of n:
+        if name[i] == "/":
+            leaf is name[i + 1:n]
+            break
+    return leaf
+
+# Validate every dep key in the manifest; throw on the first bad one
+# so install/update/verify fail fast before any side effect.
+define validate_manifest_names(names) as:
+    n is len of names
+    for i in range of n:
+        err is validate_pkg_name of names[i]
+        if err != "":
+            throw of f"manifest dep '{names[i]}': {err}"
+
 # ---- Manifest helpers ------------------------------------------------
 
 define read_manifest() as:
@@ -162,7 +246,7 @@ define cmd_list() as:
 # {"commit": sha, "tree": tree_sha} on success, {} on failure.
 define fetch_dep(name, git_url, tag) as:
     mkdir of MODULES_DIR
-    target is MODULES_DIR + "/" + name
+    target is MODULES_DIR + "/" + (pkg_leaf of name)
     rmtree of target
     ok is run_git of ["clone", "--depth", "1", "--branch", tag, git_url, target]
     if ok == 0:
@@ -179,9 +263,12 @@ define fetch_dep(name, git_url, tag) as:
 
 define cmd_add(arg_list) as:
     if (len of arg_list) < 2:
-        print of "Usage: eigenscript --pkg add <name> <git-url> [tag]"
+        print of "Usage: eigenscript --pkg add <owner>/<name> <git-url> [tag]"
         return 1
     name is arg_list[0]
+    err is validate_pkg_name of name
+    if err != "":
+        throw of f"--pkg add: {err}"
     git_url is arg_list[1]
     tag is "main"
     if (len of arg_list) >= 3:
@@ -224,6 +311,8 @@ define cmd_install() as:
         print of "No dependencies in eigs.json — nothing to install."
         return 0
 
+    validate_manifest_names of names
+
     lock is read_lockfile of null
     installed is 0
     for i in range of n:
@@ -232,7 +321,7 @@ define cmd_install() as:
         git_url is spec.git
         tag is spec.tag
 
-        target is MODULES_DIR + "/" + name
+        target is MODULES_DIR + "/" + (pkg_leaf of name)
         rmtree of target
         mkdir of MODULES_DIR
 
@@ -291,11 +380,13 @@ define cmd_verify() as:
         print of "No dependencies in eigs.json — nothing to verify."
         return 0
 
+    validate_manifest_names of names
+
     lock is read_lockfile of null
     failed is 0
     for i in range of n:
         name is names[i]
-        target is MODULES_DIR + "/" + name
+        target is MODULES_DIR + "/" + (pkg_leaf of name)
         if (has_key of [lock, name]) == 0:
             print of f"  MISSING LOCK: {name} (run --pkg install)"
             failed is failed + 1
@@ -352,6 +443,8 @@ define cmd_update(arg_list) as:
         print of "No dependencies in eigs.json — nothing to update."
         return 0
 
+    validate_manifest_names of names
+
     lock is read_lockfile of null
     updated is 0
     for i in range of n:
@@ -387,11 +480,13 @@ define print_usage() as:
     print of "Usage: eigenscript --pkg <subcommand> [args]"
     print of ""
     print of "Subcommands:"
-    print of "  add <name> <git-url> [tag]   add to manifest"
-    print of "  install                      reproduce eigs_modules/ from lock"
-    print of "  update [name]                re-resolve tag"
-    print of "  verify                       re-hash trees against lock"
-    print of "  list                         print installed deps"
+    print of "  add <owner>/<name> <git-url> [tag]   add to manifest"
+    print of "  install                              reproduce eigs_modules/ from lock"
+    print of "  update [<owner>/<name>]              re-resolve tag"
+    print of "  verify                               re-hash trees against lock"
+    print of "  list                                 print installed deps"
+    print of ""
+    print of "Package identifiers are <owner>/<name> (e.g. 'alice/tensor')."
 
 # ---- Dispatch --------------------------------------------------------
 

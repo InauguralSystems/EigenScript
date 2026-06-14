@@ -52,9 +52,9 @@ Two gates worth knowing before you push:
 
 EigenScript packages are git repos with `eigs.json` (manifest) and
 `<name>.eigs` (entry point) at the root. Consumers run
-`eigenscript --pkg add <name> <git-url> <tag>` to clone them into
-`eigs_modules/<name>/`. See [docs/PACKAGE_DESIGN.md](docs/PACKAGE_DESIGN.md)
-for the design intent.
+`eigenscript --pkg add <owner>/<name> <git-url> <tag>` to clone them
+into `eigs_modules/<name>/`. See
+[docs/PACKAGE_DESIGN.md](docs/PACKAGE_DESIGN.md) for the design intent.
 
 **Start here**: fork [eigs-package-template](https://github.com/InauguralSystems/eigs-package-template).
 It has the layout, MIT license, smoke test, and CI workflow already
@@ -62,17 +62,28 @@ wired up. The README walks through the rename.
 
 ### Naming
 
-- **Lowercase identifiers, no hyphens.** A consumer writes
-  `import <name>`, and EigenScript identifiers can't contain `-`.
-  Underscores are fine; prefer one or two short words.
+- **Identifiers are namespaced: `<owner>/<name>`.** The tool requires
+  this form at `--pkg add` time and at `install`/`update`/`verify`,
+  so the manifest key is always `alice/tensor`, not bare `tensor`.
+  Reserving the namespace at the manifest layer from day one prevents
+  a land rush on bare leaves once the ecosystem picks up. Convention
+  is to set `<owner>` to your GitHub org or user.
+- **Disk layout and imports stay flat (for now).** The leaf alone
+  decides `eigs_modules/<leaf>/<leaf>.eigs` and the user-facing
+  `import <leaf>` form, so two packages sharing a leaf can't yet
+  coexist in the same project. Disk-level nesting + scoped imports
+  can land later without breaking any existing manifest.
+- **Lowercase leaves, no hyphens.** A consumer writes `import <leaf>`,
+  and EigenScript identifiers can't contain `-`. Underscores are
+  fine; prefer one or two short words.
 - **Don't collide with the stdlib.** The resolver tries
-  `lib/<name>.eigs` first, so a stdlib module of the same name
+  `lib/<leaf>.eigs` first, so a stdlib module of the same name
   shadows your package. Names like `json`, `math`, `os`, `string`
   are reserved by convention even when not yet implemented.
-- **Repos are conventionally named `eigs-<name>`** (e.g.,
-  `eigs-vecmath`), but the consumer's `--pkg add <name> <url>`
-  determines the imported name — the repo name is a label, not a
-  rule.
+- **Repos are conventionally named `eigs-<leaf>`** (e.g.,
+  `eigs-vecmath`), but the consumer's
+  `--pkg add <owner>/<leaf> <url>` determines the imported name —
+  the repo name is a label, not a rule.
 
 ### Versioning
 

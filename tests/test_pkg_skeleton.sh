@@ -34,7 +34,7 @@ echo "  PASS: --pkg list reports no deps on a fresh dir"
 
 # ---- list reads a hand-written manifest (no network) ----
 cat > eigs.json <<'EOF'
-{"name":"smoke","version":"0.0.0","deps":{"vecmath":{"git":"https://example/vecmath","tag":"v1.0.0"}}}
+{"name":"smoke","version":"0.0.0","deps":{"tester/vecmath":{"git":"https://example/vecmath","tag":"v1.0.0"}}}
 EOF
 LIST_ONE=$("$EIGS" --pkg list 2>&1)
 if ! echo "$LIST_ONE" | grep -q "1 dependency"; then
@@ -42,7 +42,7 @@ if ! echo "$LIST_ONE" | grep -q "1 dependency"; then
     echo "$LIST_ONE"
     exit 1
 fi
-if ! echo "$LIST_ONE" | grep -q "vecmath  https://example/vecmath  v1.0.0"; then
+if ! echo "$LIST_ONE" | grep -q "tester/vecmath  https://example/vecmath  v1.0.0"; then
     echo "  FAIL: --pkg list missing dep line"
     echo "$LIST_ONE"
     exit 1
@@ -52,8 +52,8 @@ echo "  PASS: --pkg list reads manifest + formats dep line"
 # ---- pluralization ----
 cat > eigs.json <<'EOF'
 {"name":"smoke","version":"0.0.0","deps":{
-"vecmath":{"git":"https://example/vecmath","tag":"v1.0.0"},
-"greeting":{"git":"https://example/greeting","tag":"v0.2.0"}}}
+"tester/vecmath":{"git":"https://example/vecmath","tag":"v1.0.0"},
+"tester/greeting":{"git":"https://example/greeting","tag":"v0.2.0"}}}
 EOF
 LIST_TWO=$("$EIGS" --pkg list 2>&1)
 if ! echo "$LIST_TWO" | grep -q "2 dependencies"; then
@@ -62,6 +62,22 @@ if ! echo "$LIST_TWO" | grep -q "2 dependencies"; then
     exit 1
 fi
 echo "  PASS: --pkg list pluralizes the count"
+
+# ---- install/update/verify reject a hand-written bare-name manifest ----
+cat > eigs.json <<'EOF'
+{"name":"smoke","version":"0.0.0","deps":{"vecmath":{"git":"https://example/vecmath","tag":"v1.0.0"}}}
+EOF
+if "$EIGS" --pkg verify >/dev/null 2>&1; then
+    echo "  FAIL: verify should reject a bare-name manifest"
+    exit 1
+fi
+BARE_VERIFY=$("$EIGS" --pkg verify 2>&1 || true)
+if ! echo "$BARE_VERIFY" | grep -q "<owner>/<name>"; then
+    echo "  FAIL: verify on bare-name manifest should mention <owner>/<name>"
+    echo "$BARE_VERIFY"
+    exit 1
+fi
+echo "  PASS: --pkg verify rejects a bare-name manifest"
 
 # ---- bogus subcommand → nonzero exit ----
 if "$EIGS" --pkg bogus_subcmd >/dev/null 2>&1; then

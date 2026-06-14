@@ -35,7 +35,7 @@ SOURCE_URL="file://$TMP/source"
 
 mkdir -p "$TMP/project"
 cd "$TMP/project"
-"$EIGS" --pkg add greeting "$SOURCE_URL" v1.0.0 >/dev/null
+"$EIGS" --pkg add tester/greeting "$SOURCE_URL" v1.0.0 >/dev/null
 
 # ---- verify on clean install passes ----
 VERIFY_OUT=$("$EIGS" --pkg verify 2>&1)
@@ -87,7 +87,7 @@ fi
 echo "  PASS: --pkg update is a no-op when tag hasn't moved"
 
 # ---- update picks up a new commit at the tag ----
-OLD_COMMIT=$(python3 -c 'import json;print(json.load(open("eigs.lock.json"))["greeting"]["commit"])')
+OLD_COMMIT=$(python3 -c 'import json;print(json.load(open("eigs.lock.json"))["tester/greeting"]["commit"])')
 cd "$TMP/source"
 cat > greeting.eigs <<'EOF'
 greet is "hello from greeting v1 (revised)"
@@ -98,7 +98,7 @@ git tag -f v1.0.0
 
 cd "$TMP/project"
 UPDATE_OUT=$("$EIGS" --pkg update 2>&1)
-NEW_COMMIT=$(python3 -c 'import json;print(json.load(open("eigs.lock.json"))["greeting"]["commit"])')
+NEW_COMMIT=$(python3 -c 'import json;print(json.load(open("eigs.lock.json"))["tester/greeting"]["commit"])')
 if [ "$NEW_COMMIT" = "$OLD_COMMIT" ]; then
     echo "  FAIL: update should advance the lockfile commit"
     echo "$UPDATE_OUT"

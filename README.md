@@ -254,10 +254,16 @@ Third-party packages are git repos consumable via the built-in
 package tool:
 
 ```bash
-eigenscript --pkg add vecmath https://github.com/alice/eigs-vecmath v1.2.0
+eigenscript --pkg add alice/vecmath https://github.com/alice/eigs-vecmath v1.2.0
 eigenscript --pkg install      # reproduce eigs_modules/ from the lockfile
 eigenscript --pkg verify       # re-hash trees against the lockfile
 ```
+
+Package identifiers are `<owner>/<name>` from the start — bare names
+are reserved (the tool rejects them) so the namespace can't get
+fragmented by a popularity spike. The disk layout and the
+`import <name>` form stay flat (the leaf), so the example above is
+`import vecmath` in user code.
 
 `--pkg add` clones the repo into `eigs_modules/<name>/`, records the
 resolved commit in `eigs.lock.json`, and the consumer can then
