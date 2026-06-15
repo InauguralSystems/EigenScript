@@ -301,6 +301,7 @@ static inline Value *vm_local_lift(Env *e, uint16_t slot) {
 static void vm_init(void) {
     if (eigs_current->vm == NULL) {
         eigs_current->vm = xcalloc(1, sizeof(VM));
+        eigs_current->vm->owner = eigs_current;
         eigs_current->loop_exit_reason = "normal";
     }
 }
@@ -1613,18 +1614,22 @@ void jit_helper_return_null(void) {
     g_vm.stack[g_vm.sp++] = slot_null();
 }
 
+/* Helper called by the JIT prologue on platforms where the JIT can't
+ * encode TLS access directly — Darwin/Mach-O uses TLV descriptors
+ * (per-variable callable thunks), not the fixed-offset %fs:tpoff that
+ * Linux ELF uses. By going through this helper the compiler emits the
+ * platform-correct TLS sequence; the JIT just CALLs it and reads %rax.
+ * Used on Darwin x86_64; on Linux x86_64 the JIT keeps inlining
+ * `mov %fs:eigs_current_tpoff, %rbx` directly. */
+void *eigs_jit_load_eigs_current_addr(void) {
+    return (void *)&eigs_current;
+}
+
 void eigs_jit_get_layout(EigsJitLayout *out) {
 #if defined(__x86_64__)
-    /* The %fs:0 read materializes the thread pointer so the JIT can encode
-     * TLS-relative offsets to g_vm and eigs_current. Only used on x86-64;
-     * on other arches the JIT codegen path is compiled out entirely
-     * (see `#if defined(__x86_64__)` in jit.c), so this function exists
-     * only to satisfy the link — body collapses to a zero-fill. */
-    void *tp;
-    __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));
-    out->eigs_current_tpoff       = (long)((char *)&eigs_current - (char *)tp);
     out->off_thread_vm                = (int)offsetof(EigsThread, vm);
     out->off_thread_unobserved_depth  = (int)offsetof(EigsThread, unobserved_depth);
+    out->off_vm_owner                 = (int)offsetof(VM, owner);
     out->off_sp              = (int)offsetof(VM, sp);
     out->off_stack           = (int)offsetof(VM, stack);
     out->off_frame_count     = (int)offsetof(VM, frame_count);
@@ -1635,13 +1640,35 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->sizeof_callframe    = (int)sizeof(CallFrame);
     out->off_env_values      = (int)offsetof(Env, values);
     out->off_env_count       = (int)offsetof(Env, count);
-    out->g_dict_cache_tpoff  = (long)((char *)&g_dict_cache[0] - (char *)tp);
-    out->sizeof_dcache_entry = (int)sizeof(DictCacheEntry);
     out->off_dcache_dict     = (int)offsetof(DictCacheEntry, dict);
     out->off_dcache_hash     = (int)offsetof(DictCacheEntry, hash);
     out->off_dcache_index    = (int)offsetof(DictCacheEntry, index);
     out->dcache_mask         = DICT_CACHE_SET_MASK;
+#if defined(__APPLE__)
+    /* Mach-O __thread access goes through TLV descriptor calls, not a
+     * fixed %fs:tpoff offset. The JIT prologue reaches `eigs_current`
+     * via `eigs_jit_load_eigs_current_addr` instead of inline %fs read,
+     * so the tpoffs aren't needed (and aren't meaningful). The
+     * dict-cache inline probe is keyed on a separate TLS global with
+     * no relationship to eigs_current; zeroing dcache_ways routes
+     * LOCAL_DOT_GET/SET to the slow-path helper, so we don't have to
+     * teach the inline probe how to find &g_dict_cache[0] on Mach-O.
+     * Net: macOS x86_64 keeps the JIT for everything except the
+     * dict-field inline cache. */
+    out->eigs_current_tpoff  = 0;
+    out->g_dict_cache_tpoff  = 0;
+    out->sizeof_dcache_entry = 0;
+    out->dcache_ways         = 0;
+#else
+    {
+        void *tp;
+        __asm__ __volatile__("mov %%fs:0, %0" : "=r"(tp));
+        out->eigs_current_tpoff = (long)((char *)&eigs_current - (char *)tp);
+        out->g_dict_cache_tpoff = (long)((char *)&g_dict_cache[0] - (char *)tp);
+    }
+    out->sizeof_dcache_entry = (int)sizeof(DictCacheEntry);
     out->dcache_ways         = DICT_CACHE_WAYS;
+#endif
 #else
     (void)out;
 #endif

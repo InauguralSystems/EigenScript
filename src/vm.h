@@ -313,6 +313,12 @@ typedef struct VM {
     CallFrame  frames[VM_FRAMES_MAX];
     int        frame_count;
     int        current_line;
+    /* Back-pointer to the owning EigsThread, set in vm_init. Lets the
+     * JIT reach EigsThread fields (e.g. unobserved_depth) via a single
+     * `mov off_vm_owner(%rbx), %rax` instead of a TLS read at every
+     * mid-thunk access — and the same encoding works on both Linux ELF
+     * and Darwin/Mach-O (no platform-specific TLS sequence needed). */
+    struct EigsThread *owner;
 } VM;
 
 /* ---- Public API ---- */

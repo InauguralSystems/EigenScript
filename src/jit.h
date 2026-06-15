@@ -126,6 +126,10 @@ typedef struct {
     long eigs_current_tpoff;          /* &eigs_current - %fs:0 */
     int  off_thread_vm;               /* offsetof(EigsThread, vm) */
     int  off_thread_unobserved_depth; /* offsetof(EigsThread, unobserved_depth) */
+    int  off_vm_owner;                /* offsetof(VM, owner) — back-pointer
+                                       * to the owning EigsThread; lets the
+                                       * JIT reach EigsThread fields without
+                                       * a second TLS lookup mid-thunk. */
     int  off_sp;
     int  off_stack;
     int  off_frame_count;
@@ -149,6 +153,11 @@ typedef struct {
 } EigsJitLayout;
 
 void eigs_jit_get_layout(EigsJitLayout *out);
+
+/* Darwin/Mach-O TLV-aware helper for the JIT prologue. See vm.c for
+ * the full story. Linux x86_64 JIT thunks don't call this — they
+ * inline `mov %fs:eigs_current_tpoff, %rbx` directly. */
+void *eigs_jit_load_eigs_current_addr(void);
 
 /* Stage 4k: out-of-line helper invoked by JIT-emitted OP_GET_NAME
  * sites. Doing the IC walk inline would cost ~80 bytes of native

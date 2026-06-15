@@ -778,8 +778,16 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
 static size_t jit_estimate_size(int prefix, int needs_env_cache,
                                 int has_bail_op, int needs_frame_cache,
                                 int extra_size) {
-    return 25 + (needs_env_cache ? 35 : 0) + (has_bail_op ? 17 : 0) +
-           (needs_frame_cache ? 45 : 0) +
+    /* The macOS prologue replaces a 9-byte %fs read with a 17-byte
+     * push/movabs/call/pop/mov-to-rbx sequence (8 bytes wider) to
+     * route eigs_current through the TLV-aware helper. */
+#if defined(__APPLE__)
+    const int prologue_baseline = 25 + 8;
+#else
+    const int prologue_baseline = 25;
+#endif
+    return prologue_baseline + (needs_env_cache ? 35 : 0) +
+           (has_bail_op ? 17 : 0) + (needs_frame_cache ? 45 : 0) +
            10 + (has_bail_op ? 11 : 0) +
            (size_t)prefix * (192 + (has_bail_op ? 6 : 0)) +
            (size_t)extra_size;
@@ -801,21 +809,38 @@ static uint8_t *emit_load_fs_zero_rsi(uint8_t *w) {
     return emit_u32(w, 0);
 }
 
-/* mov %fs:disp32, %rax  (9 bytes) — load a TLS 64-bit value into %rax.
- * Used to materialize `eigs_current` so subsequent disp(%rax) accesses
- * reach EigsThread fields. Encoding: 64 (FS) 48 (REX.W) 8B 04 25 disp32. */
-static uint8_t *emit_mov_fs_disp32_to_rax(uint8_t *w, int32_t disp) {
-    *w++ = 0x64; *w++ = 0x48; *w++ = 0x8B; *w++ = 0x04; *w++ = 0x25;
-    return emit_u32(w, (uint32_t)disp);
-}
-
+#if !defined(__APPLE__)
 /* mov %fs:disp32, %rbx  (9 bytes) — load a TLS 64-bit value into %rbx.
- * Used in the prologue to materialize `eigs_current` so the follow-up
- * `mov off_thread_vm(%rbx), %rbx` resolves to the live VM ptr. */
+ * Used in the prologue (Linux only) to materialize `eigs_current` so
+ * the follow-up `mov off_thread_vm(%rbx), %rbx` resolves to the live
+ * VM ptr. On Darwin the prologue calls eigs_jit_load_eigs_current_addr
+ * instead. */
 static uint8_t *emit_mov_fs_disp32_to_rbx(uint8_t *w, int32_t disp) {
     *w++ = 0x64; *w++ = 0x48; *w++ = 0x8B; *w++ = 0x1C; *w++ = 0x25;
     return emit_u32(w, (uint32_t)disp);
 }
+#endif
+
+/* mov disp32(%rbx), %rax  (7 bytes) — load qword from VM[disp] into
+ * %rax. Used to chase `vm->owner` (the EigsThread back-pointer) so
+ * mid-thunk eigs_current accesses go through %rbx instead of a TLS
+ * read at every site; portable across Linux ELF and Darwin Mach-O.
+ * Encoding: 48 (REX.W) 8B (MOV r, r/m) 83 (ModR/M = 10 000 011,
+ * mod=disp32 rm=%rbx, reg=%rax) disp32. */
+static uint8_t *emit_mov_disp32_rbx_to_rax(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x8B; *w++ = 0x83;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+#if defined(__APPLE__)
+/* mov %rax, %rbx  (3 bytes) — used by the Darwin prologue to move
+ * `&eigs_current` (returned in %rax by the TLS-aware helper) into
+ * %rbx where the rest of the prologue expects it. Encoding:
+ * 48 (REX.W) 89 (MOV r/m, r) C3 (ModR/M = 11 000 011). */
+static uint8_t *emit_mov_rax_to_rbx(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x89; *w++ = 0xC3; return w;
+}
+#endif
 
 /* mov disp32(%rbx), %rbx  (7 bytes) — load qword from [rbx+disp32]
  * into %rbx. Encoding: 48 (REX.W) 8B 9B disp32. */
@@ -2255,8 +2280,22 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     }
     /* Phase 5: %rbx = &eigs_current->vm. Two-instruction TLS-then-deref
      * resolves the VM heap pointer that all subsequent disp(%rbx)
-     * accesses (sp, frames, ...) hang off. */
+     * accesses (sp, frames, ...) hang off. On Darwin/Mach-O the TLS
+     * load goes through `eigs_jit_load_eigs_current_addr` (TLV
+     * descriptor call); on Linux/ELF the inline %fs:tpoff read is
+     * still cheapest. */
+#if defined(__APPLE__)
+    /* push %rcx aligns %rsp to ≡ 0 (mod 16) for the CALL — %rcx isn't
+     * loaded with its sp-cache value until line 2261, so its prior
+     * contents are throwaway. */
+    w = emit_push_rcx(w);
+    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&eigs_jit_load_eigs_current_addr);
+    w = emit_call_rax(w);
+    w = emit_pop_rcx(w);
+    w = emit_mov_rax_to_rbx(w);
+#else
     w = emit_mov_fs_disp32_to_rbx(w, (int32_t)g_layout.eigs_current_tpoff);
+#endif
     w = emit_mov_disp32_rbx_to_rbx(w, g_layout.off_thread_vm);
     w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);         /* mov sp, %ecx */
     if (has_bail_op) {
@@ -2528,10 +2567,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *nb1_p;
             w = emit_je_rel8(w, &nb1_p);
             uint8_t *nb1_after = w;
-            /* eigs_current is TLS, unobserved_depth is on EigsThread.
-             * %rax is dead after the IC slot_idx extract above; safe to
-             * clobber as the eigs_current cache. */
-            w = emit_mov_fs_disp32_to_rax(w, (int32_t)g_layout.eigs_current_tpoff);
+            /* unobserved_depth lives on EigsThread; reach it via
+             * VM.owner (back-pointer set in vm_init). One 7-byte mov
+             * vs the original 9-byte `mov %fs:tpoff, %rax`, no
+             * platform-specific TLS encoding. */
+            w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
             w = emit_cmpl_0_disp32_rax(w, g_layout.off_thread_unobserved_depth);
             uint8_t *nb2_p;
             w = emit_jnz_rel8(w, &nb2_p);
@@ -2789,15 +2829,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             i += 3;
         } else if (op == OP_UNOBSERVED_BEGIN) {
             /* unobserved_depth now lives on EigsThread; reach it via
-             * eigs_current. Two-instruction sequence: load TLS pointer
-             * into %rax, then increment at struct offset. No stack
-             * interaction, no env, no bail. */
-            w = emit_mov_fs_disp32_to_rax(w, (int32_t)g_layout.eigs_current_tpoff);
+             * VM.owner (the back-pointer set in vm_init). Was a
+             * %fs:tpoff TLS read until the macOS port; the
+             * indirect-through-VM path is portable and one byte
+             * shorter (7 vs 9 bytes). */
+            w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
             w = emit_incl_disp32_rax(w, g_layout.off_thread_unobserved_depth);
             i += 1;
         } else if (op == OP_UNOBSERVED_END) {
-            /* Symmetric decrement through eigs_current. */
-            w = emit_mov_fs_disp32_to_rax(w, (int32_t)g_layout.eigs_current_tpoff);
+            /* Symmetric decrement through VM.owner. */
+            w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
             w = emit_decl_disp32_rax(w, g_layout.off_thread_unobserved_depth);
             i += 1;
         } else if (op == OP_DUP) {

@@ -17,6 +17,11 @@
  * this stub is unreachable. */
 void eigs_jit_get_layout(EigsJitLayout *out) { (void)out; }
 
+/* Darwin/Mach-O TLV-aware prologue helper. Same rationale as the
+ * layout stub above: never called by the smoke binary, exists only
+ * so the linker is satisfied. */
+void *eigs_jit_load_eigs_current_addr(void) { return NULL; }
+
 /* Phase 5: jit_module_shutdown reads eigs_current to decide whether
  * to flush stats — the smoke binary leaves it NULL so shutdown no-ops. */
 typedef struct EigsThread EigsThread;

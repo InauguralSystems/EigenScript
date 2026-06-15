@@ -1883,10 +1883,11 @@ else
     echo "$JPATH_OUTPUT" | grep -iE "FAIL|error" | head -5
 fi
 TOTAL=$((TOTAL + 1))
-# macos-x86_64 ships JIT-disabled at build time (see CHANGELOG [0.14.2]
-# / src/jit.c EIGENSCRIPT_JIT_FORCE_OFF); the binary is correct via
-# interpreter fallback, so treat it like the arm64 case.
-if [ "$(uname -m)" = "x86_64" ] && [ "$(uname -s)" != "Darwin" ]; then
+# macos-x86_64 now ships with the JIT enabled via the Mach-O TLV-aware
+# prologue (the dict-field inline cache stays off — slow-path helper
+# runs instead — but every other fast path emits). Same thunk-gate as
+# Linux x86_64.
+if [ "$(uname -m)" = "x86_64" ]; then
     if echo "$JPATH_OUTPUT" | grep -qE "\[jit\] scanned=[0-9]+ compiled=[1-9]"; then
         PASS=$((PASS + 1))
         echo "  PASS: JIT thunks compiled (fast paths ran native)"

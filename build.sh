@@ -11,14 +11,14 @@ VERSION=$(cat ../VERSION)
 CC="${CC:-gcc}"
 SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c main.c"
 
-# macOS Intel: ship interpreter-only. JIT thunks SIGSEGV on first entry
-# under macOS 15's hardened runtime even with MAP_JIT — root cause TBD,
-# see CHANGELOG [0.14.2]. macOS arm64 is already JIT-gated out (no ARM64
-# emitter yet), so this flag changes nothing there.
+# macOS Intel JIT: enabled via the Mach-O TLV-aware prologue (the JIT
+# now calls eigs_jit_load_eigs_current_addr instead of inlining %fs:
+# tpoff, which is Linux-ELF-only). The dict-field inline cache stays
+# off on Darwin — see eigs_jit_get_layout in vm.c — so LOCAL_DOT_GET
+# falls through to the slow-path helper. EIGENSCRIPT_JIT_FORCE_OFF
+# stays in jit.c as a kill switch for bisection (`./build.sh
+# JIT_FLAGS=-DEIGENSCRIPT_JIT_FORCE_OFF=1`).
 JIT_FLAGS=""
-if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "x86_64" ]; then
-    JIT_FLAGS="-DEIGENSCRIPT_JIT_FORCE_OFF=1"
-fi
 
 if [ "$1" = "full" ]; then
     # Full build: all extensions. Requires libpq-dev.
