@@ -55,13 +55,19 @@ r_sget  is http_route of ["GET", "/sget",  "code", "shared_get of \"k\""]
 r_sdict is http_route of ["GET", "/sdict", "code", "shared_set of [\"d\", {\"a\": 1, \"b\": [2, 3]}]\njson_encode of (shared_get of \"d\")"]
 r_sdel  is http_route of ["GET", "/sdel",  "code", "shared_set of [\"x\", 42]\nshared_delete of \"x\"\nshared_has of \"x\""]
 r_sclr  is http_route of ["GET", "/sclr",  "code", "shared_clear of null\nshared_set of [\"a\", 1]\nshared_set of [\"b\", 2]\nshared_size of null"]
+# Bounds: clear, build an 8 KiB string, attempt the set — should be
+# rejected (cap=4096 via env var); shared_has confirms nothing landed.
+r_sbig  is http_route of ["GET", "/sbig",  "code", "shared_clear of null\ns is \"x\"\ni is 0\nloop while i < 13:\n  s is s + s\n  i is i + 1\nshared_set of [\"big\", s]\nshared_has of \"big\""]
 
 # Serve forever.
 serve is http_serve of $PORT
 EIGS
 
-# Start the server in the background.
-"$EIGS" "$SRV" > /tmp/eigs_http_srv_$$.log 2>&1 &
+# Start the server in the background. The shared-store cap is squeezed
+# down to 4 KiB so the HS22 bounds test can write an 8 KiB value and see
+# it rejected; existing HS17–HS21 values are tens of bytes each, well
+# under the cap.
+EIGS_HTTP_SHARED_MAX_BYTES=4096 "$EIGS" "$SRV" > /tmp/eigs_http_srv_$$.log 2>&1 &
 SRV_PID=$!
 
 cleanup() {
@@ -385,6 +391,16 @@ if command -v timeout >/dev/null 2>&1; then
         fail "HS21 concurrent reads" "only $GOOD/32 returned 'hello'"
     fi
     rm -rf "$CONC_DIR"
+fi
+
+# ---- Shared-store: bounds (EIGS_HTTP_SHARED_MAX_BYTES) ----
+# /sbig writes an 8 KiB string under a 4 KiB cap; shared_set must
+# reject the write and leave the store unchanged.
+RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/sbig")
+if [ "$RESP" = "0" ]; then
+    ok "HS22 shared_set rejects writes past EIGS_HTTP_SHARED_MAX_BYTES"
+else
+    fail "HS22 shared store bounds" "got '$RESP' (expected 0)"
 fi
 
 # ---- Summary ----

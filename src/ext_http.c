@@ -347,7 +347,26 @@ Value* builtin_http_request_headers(Value *arg) {
  * on get — there's no live cross-state Value* pointer. pthread_mutex
  * guards every operation. Functions/builtins encode as "null", matching
  * json_encode semantics; don't try to share callable values.
+ *
+ * Size cap: total key + json bytes are bounded by EIGS_HTTP_SHARED_MAX_BYTES
+ * (default 64 MiB). shared_set rejects writes that would exceed the cap
+ * and returns null without mutating storage.
  * ================================================================ */
+
+#define EIGS_HTTP_SHARED_DEFAULT_MAX_BYTES (64L * 1024L * 1024L)
+static long g_shared_max_bytes = 0;
+
+static long shared_max_bytes(void) {
+    if (g_shared_max_bytes != 0) return g_shared_max_bytes;
+    const char *env = getenv("EIGS_HTTP_SHARED_MAX_BYTES");
+    if (env && *env) {
+        char *end = NULL;
+        long v = strtol(env, &end, 10);
+        if (end != env && v > 0) { g_shared_max_bytes = v; return v; }
+    }
+    g_shared_max_bytes = EIGS_HTTP_SHARED_DEFAULT_MAX_BYTES;
+    return g_shared_max_bytes;
+}
 
 static int shared_find(Server *s, const char *key) {
     for (int i = 0; i < s->shared_count; i++) {
@@ -365,8 +384,20 @@ Value* builtin_shared_set(Value *arg) {
     if (!s) return make_null();
 
     char *json = eigs_json_encode(val);
+    long new_json_len = (long)strlen(json);
+    long key_len = (long)strlen(key_v->data.str);
+    long cap = shared_max_bytes();
+
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, key_v->data.str);
+    long old_bytes = (idx >= 0) ? (long)strlen(s->shared[idx].json) : 0;
+    long delta = (idx >= 0) ? (new_json_len - old_bytes)
+                            : (key_len + new_json_len);
+    if (s->shared_bytes + delta > cap) {
+        pthread_mutex_unlock(&s->shared_mu);
+        free(json);
+        return make_null();  /* over cap — reject without mutating */
+    }
     if (idx >= 0) {
         free(s->shared[idx].json);
         s->shared[idx].json = json;
@@ -380,6 +411,7 @@ Value* builtin_shared_set(Value *arg) {
         s->shared[s->shared_count].json = json;
         s->shared_count++;
     }
+    s->shared_bytes += delta;
     pthread_mutex_unlock(&s->shared_mu);
     return make_null();
 }
@@ -417,6 +449,8 @@ Value* builtin_shared_delete(Value *arg) {
     int idx = shared_find(s, arg->data.str);
     int removed = 0;
     if (idx >= 0) {
+        s->shared_bytes -= (long)strlen(s->shared[idx].key);
+        s->shared_bytes -= (long)strlen(s->shared[idx].json);
         free(s->shared[idx].key);
         free(s->shared[idx].json);
         for (int i = idx + 1; i < s->shared_count; i++) {
@@ -462,6 +496,7 @@ Value* builtin_shared_clear(Value *arg) {
         free(s->shared[i].json);
     }
     s->shared_count = 0;
+    s->shared_bytes = 0;
     pthread_mutex_unlock(&s->shared_mu);
     return make_null();
 }

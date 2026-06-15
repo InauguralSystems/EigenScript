@@ -43,6 +43,7 @@ struct EigsHttpServer {
     SharedEntry *shared;
     int shared_count;
     int shared_cap;
+    long shared_bytes;          /* running sum of key + json string lengths */
     pthread_mutex_t shared_mu;
 };
 typedef struct EigsHttpServer Server;

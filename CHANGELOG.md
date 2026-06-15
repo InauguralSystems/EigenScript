@@ -4,6 +4,16 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### HTTP shared store: bounded by `EIGS_HTTP_SHARED_MAX_BYTES`
+
+- Total key + JSON-value bytes across the shared store are now capped
+  (default 64 MiB; override via env). `shared_set` rejects writes that
+  would push the total past the cap and returns `null` without mutating
+  storage — predictable refusal, no eviction.
+- HS22 in `tests/test_http_server.sh` verifies the cap: a server
+  launched with `EIGS_HTTP_SHARED_MAX_BYTES=4096` rejects an 8 KiB
+  write, and `shared_has` confirms the store stayed clean.
+
 ### HTTP shared store: cross-worker key/value primitive
 
 - **New builtins**: `shared_set(k,v)`, `shared_get(k)`, `shared_has(k)`,
