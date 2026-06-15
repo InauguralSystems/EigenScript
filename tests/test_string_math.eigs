@@ -1,5 +1,8 @@
 # Tests for string and math builtins
 
+# pad_right / pad_left live in the string stdlib, not as builtins
+load_file of "lib/string.eigs"
+
 # ---- str_upper ----
 assert of [(str_upper of "hello") == "HELLO", "SU1 basic upper"]
 assert of [(str_upper of "") == "", "SU2 empty string"]
@@ -25,6 +28,12 @@ assert of [(substr of ["hello", 10, 2]) == "", "SS3 past end"]
 assert of [(index_of of ["hello world", "world"]) == 6, "IO1 found"]
 assert of [(index_of of ["hello world", "xyz"]) == -1, "IO2 not found"]
 assert of [(index_of of ["hello", "h"]) == 0, "IO3 at start"]
+
+# ---- pad_right (lib/string.eigs) ----
+assert of [(pad_right of ["42", 6, "."]) == "42....", "PR1 pads on the right"]
+assert of [(pad_right of ["hello", 3, "."]) == "hello", "PR2 already wide enough"]
+assert of [(pad_right of ["", 3, "x"]) == "xxx", "PR3 empty string"]
+assert of [(pad_right of ["7", 4, "0"]) == "7000", "PR4 zero pad"]
 
 # ---- scan_ints ----
 ints is scan_ints of "p cnf 3 4\n1 -2 0\nbad +7 -x 8.5 9\n"

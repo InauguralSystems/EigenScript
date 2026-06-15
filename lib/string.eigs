@@ -8,6 +8,7 @@
 #   join of [["a","b","c"], ","]    # "a,b,c"
 #   repeat of ["ab", 3]            # "ababab"
 #   pad_left of ["42", 6, "0"]     # "000042"
+#   pad_right of ["42", 6, "0"]    # "420000"
 
 # ---- join: join list elements with separator ----
 # join of [list, separator] -> string
@@ -32,4 +33,11 @@ define repeat(s, count) as:
 define pad_left(s, width, ch) as:
     loop while (len of s) < width:
         s is ch + s
+    return s
+
+# ---- pad_right: right-pad string to width with character ----
+# pad_right of [string, width, pad_char] -> string
+define pad_right(s, width, ch) as:
+    loop while (len of s) < width:
+        s is s + ch
     return s
