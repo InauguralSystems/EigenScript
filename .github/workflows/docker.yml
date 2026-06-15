@@ -1,0 +1,71 @@
+name: Docker
+
+# Publish container images of the EigenScript runtime to GitHub Container
+# Registry. Two triggers:
+#   - push to main → tag `:edge` (rolling pre-release)
+#   - tag v*       → tags `:X.Y.Z`, `:X.Y`, and `:latest`
+#
+# Image only contains linux/amd64 for now; the JIT is x86_64-only and
+# Linux arm64 isn't covered by the existing release matrix. Add arm64
+# (interpreter-only) when there's demand — straightforward via buildx
+# emulation, just slower.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435  # v3.11.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f  # v5.8.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/eigenscript
+          tags: |
+            type=ref,event=branch,enable=${{ github.ref == 'refs/heads/main' }},suffix=,value=edge
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+
+      - name: Smoke-test the image
+        if: github.event_name != 'pull_request'
+        run: |
+          IMAGE="$(echo '${{ steps.meta.outputs.tags }}' | head -1)"
+          echo "Testing $IMAGE"
+          docker run --rm "$IMAGE" --version
+          echo 'print of "docker-ok"' > /tmp/hello.eigs
+          OUT=$(docker run --rm -v /tmp:/work -w /work "$IMAGE" hello.eigs)
+          test "$OUT" = "docker-ok" || { echo "smoke test failed: $OUT"; exit 1; }
+          echo "smoke test passed"

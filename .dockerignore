@@ -1,0 +1,12 @@
+.git
+.github
+docs
+editors
+examples
+fuzz
+tests
+web
+*.tar.gz
+*.zip
+src/eigenscript
+src/eigenlsp

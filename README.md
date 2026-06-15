@@ -39,6 +39,20 @@ Requires only `gcc` — no external dependencies.
 Run `./install.sh full` to also build the optional HTTP/DB/model binary
 (`eigenscript-full`); that path requires PostgreSQL development headers.
 
+**Homebrew** (macOS + Linux):
+
+```bash
+brew install InauguralSystems/eigenscript/eigenscript
+```
+
+**Docker** (linux/amd64):
+
+```bash
+docker run --rm -v "$PWD:/work" ghcr.io/inauguralsystems/eigenscript:latest program.eigs
+```
+
+Image tags: `:latest`, `:X.Y.Z`, `:X.Y`, `:X` for releases; `:edge` tracks `main`.
+
 ## Run
 
 ```bash
