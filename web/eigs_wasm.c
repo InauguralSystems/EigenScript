@@ -24,19 +24,17 @@
 #include "../src/vm.h"
 #include "../src/trace.h"
 
-Env *g_global_env = NULL;
-__thread Env *g_load_env = NULL;
-char g_script_dir[4096] = ".";
-char g_exe_dir[4096] = "/eigs";
-
 static int g_initialized = 0;
 
 static void ensure_init(void) {
     if (g_initialized) return;
     /* One EigsState/Thread for the lifetime of the playground module.
-     * arena_init runs inside eigs_thread_attach. */
+     * arena_init runs inside eigs_thread_attach. g_script_dir / g_exe_dir
+     * are EigsState bridge macros — write the playground defaults after
+     * attach. */
     EigsState *st = eigs_state_new();
     eigs_thread_attach(st);
+    memcpy(g_exe_dir, "/eigs", 6);
     trace_init();
     g_initialized = 1;
 }
