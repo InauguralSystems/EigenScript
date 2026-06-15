@@ -312,6 +312,9 @@ void vm_thread_destroy(EigsThread *th) {
     }
 }
 
+/* Phase 9: defined after g_loop_iter_cache below. */
+void vm_thread_reset_caches(void);
+
 /* ---- Bridge helpers (Phase B-1) ----
  *
  * The stack stores EigsSlot, but during the Phase B rollout most
@@ -1072,6 +1075,17 @@ typedef struct {
     int      slot;
 } LoopIterCache;
 static __thread LoopIterCache g_loop_iter_cache;
+
+/* Phase 9: zero the file-static __thread caches so a state reattach on
+ * the same OS thread can't witness a prior state's dict/env pointers.
+ * Called from eigs_thread_attach. The arrays stay __thread because the
+ * JIT inlines dict_cache via %fs:0+tpoff and the interpreter inlines
+ * loop_iter_cache on every iteration — moving onto EigsThread would
+ * cost an extra deref in both paths. */
+void vm_thread_reset_caches(void) {
+    memset(g_dict_cache, 0, sizeof(g_dict_cache));
+    memset(&g_loop_iter_cache, 0, sizeof(g_loop_iter_cache));
+}
 
 static void loop_iter_store(Env *env, double n) {
     LoopIterCache *c = &g_loop_iter_cache;

@@ -344,6 +344,13 @@ struct EigsState {
      * threaded states (the common case — DMG, MiniSat, Tidepool, REPL)
      * keep it at 0 and skip the atomic ~20-cycle penalty on x86. */
     int             multithreaded;
+    /* JIT tuning thresholds (entry / per-iter / OSR). Each state
+     * reads its own copy from EIGS_JIT_ENTRY_THRESHOLD /
+     * EIGS_JIT_ITER_THRESHOLD / EIGS_JIT_OSR_THRESHOLD at state_new,
+     * so two co-located embedded states can tune independently. */
+    int             jit_entry_threshold;
+    int             jit_iter_threshold;
+    int             jit_osr_threshold;
 };
 
 struct EigsThread {
@@ -488,6 +495,9 @@ extern __thread EigsThread *eigs_current;
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)
 #define g_native_call_depth   (eigs_current->native_call_depth)
+#define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
+#define g_iter_threshold      (eigs_current->state->jit_iter_threshold)
+#define g_osr_threshold       (eigs_current->state->jit_osr_threshold)
 
 /* Cycle collector floor: never collect more often than every 64 captured-
  * env registrations. State.c reads this when initializing EigsThread. */

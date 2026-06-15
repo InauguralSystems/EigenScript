@@ -2046,32 +2046,27 @@ static uint8_t *emit_decref_value_rdi(uint8_t *w, int *bail) {
  * in [200, 5000] — savings dwarf the 4500 extra interpreted iterations. */
 #define EIGS_JIT_OSR_THRESHOLD   5000
 
-static int g_entry_threshold = -1;
-static int g_iter_threshold  = -1;
-static int g_osr_threshold   = -1;
+/* g_entry/iter/osr_threshold now live on EigsState (Phase 9). Identifiers
+ * are bridge macros from eigenscript.h. Initialization moved out of the
+ * lazy load_thresholds path into jit_state_init_thresholds, called by
+ * eigs_state_new so the values are populated before any execution. */
+void jit_state_init_thresholds(EigsState *st) {
+    const char *e = getenv("EIGS_JIT_ENTRY_THRESHOLD");
+    st->jit_entry_threshold = e ? atoi(e) : EIGS_JIT_ENTRY_THRESHOLD;
+    if (st->jit_entry_threshold < 1) st->jit_entry_threshold = 1;
 
-static void load_thresholds(void) {
-    if (g_entry_threshold < 0) {
-        const char *e = getenv("EIGS_JIT_ENTRY_THRESHOLD");
-        g_entry_threshold = e ? atoi(e) : EIGS_JIT_ENTRY_THRESHOLD;
-        if (g_entry_threshold < 1) g_entry_threshold = 1;
-    }
-    if (g_iter_threshold < 0) {
-        const char *e = getenv("EIGS_JIT_ITER_THRESHOLD");
-        g_iter_threshold = e ? atoi(e) : EIGS_JIT_ITER_THRESHOLD;
-        if (g_iter_threshold < 1) g_iter_threshold = 1;
-    }
-    if (g_osr_threshold < 0) {
-        const char *e = getenv("EIGS_JIT_OSR_THRESHOLD");
-        g_osr_threshold = e ? atoi(e) : EIGS_JIT_OSR_THRESHOLD;
-        if (g_osr_threshold < 1) g_osr_threshold = 1;
-    }
+    e = getenv("EIGS_JIT_ITER_THRESHOLD");
+    st->jit_iter_threshold = e ? atoi(e) : EIGS_JIT_ITER_THRESHOLD;
+    if (st->jit_iter_threshold < 1) st->jit_iter_threshold = 1;
+
+    e = getenv("EIGS_JIT_OSR_THRESHOLD");
+    st->jit_osr_threshold = e ? atoi(e) : EIGS_JIT_OSR_THRESHOLD;
+    if (st->jit_osr_threshold < 1) st->jit_osr_threshold = 1;
 }
 
 /* Exposed so vm.c can read the OSR threshold once per thread on the
  * first back-edge rather than getenv-checking inside the hot loop. */
 int eigs_jit_get_osr_threshold(void) {
-    load_thresholds();
     return g_osr_threshold;
 }
 
@@ -3780,7 +3775,6 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
         return;
     }
     jit_register_chunk(chunk);
-    load_thresholds();
     if (chunk->exec_count   < (uint64_t)g_entry_threshold &&
         chunk->back_edge_count < (uint32_t)g_iter_threshold) return;
     jit_compile_to_thunk(chunk, 0,

@@ -343,4 +343,8 @@ Value     *vm_execute(EigsChunk *chunk, Env *env);
 struct EigsThread;
 void       vm_thread_destroy(struct EigsThread *th);
 
+/* Phase 9: zero the hot dict/loop-iter caches that stay __thread on
+ * this OS thread, so a state attach on a recycled thread starts clean. */
+void       vm_thread_reset_caches(void);
+
 #endif /* EIGENSCRIPT_VM_H */

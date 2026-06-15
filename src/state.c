@@ -20,6 +20,8 @@ EigsState *eigs_state_new(void) {
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
     st->exe_dir[0]    = '.'; st->exe_dir[1]    = '\0';
+    /* Phase 9: JIT tuning per state, read once from env at creation. */
+    jit_state_init_thresholds(st);
     return st;
 }
 
@@ -56,6 +58,12 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     /* Wire TLS before arena_init so its writes land in th->arena. */
     eigs_current = th;
     arena_init();
+
+    /* Phase 9: zero the hot __thread caches in vm.c so an attach on an
+     * OS thread that previously served another state doesn't see stale
+     * dict/env pointers. No-op on a fresh thread (the static __thread
+     * storage is already zero-initialized). */
+    vm_thread_reset_caches();
 
     pthread_mutex_lock(&st->threads_lock);
     th->next = st->threads;

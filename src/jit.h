@@ -93,6 +93,12 @@ void jit_module_shutdown(void);
  * eigs_thread_detach so the cache pages and registry array don't leak. */
 void jit_thread_destroy(EigsThread *th);
 
+/* Phase 9: read EIGS_JIT_{ENTRY,ITER,OSR}_THRESHOLD env vars and write
+ * the resolved values onto the state. Called by eigs_state_new so each
+ * embedded state captures its own tuning. */
+struct EigsState;
+void jit_state_init_thresholds(struct EigsState *st);
+
 /* OSR threshold accessor for vm.c. vm.c caches the result thread-local
  * on the first JUMP_BACK so the dispatch loop doesn't pay a getenv per
  * iteration. The value is honors-EIGS_JIT_OSR_THRESHOLD env var. */
