@@ -58,6 +58,8 @@ r_sclr  is http_route of ["GET", "/sclr",  "code", "shared_clear of null\nshared
 # Bounds: clear, build an 8 KiB string, attempt the set — should be
 # rejected (cap=4096 via env var); shared_has confirms nothing landed.
 r_sbig  is http_route of ["GET", "/sbig",  "code", "shared_clear of null\ns is \"x\"\ni is 0\nloop while i < 13:\n  s is s + s\n  i is i + 1\nshared_set of [\"big\", s]\nshared_has of \"big\""]
+# Atomic increment: single-lock RMW. Returns the new value.
+r_sinc  is http_route of ["GET", "/sinc",  "code", "shared_incr of [\"counter\", 1]"]
 
 # Serve forever.
 serve is http_serve of $PORT
@@ -401,6 +403,29 @@ if [ "$RESP" = "0" ]; then
     ok "HS22 shared_set rejects writes past EIGS_HTTP_SHARED_MAX_BYTES"
 else
     fail "HS22 shared store bounds" "got '$RESP' (expected 0)"
+fi
+
+# ---- Shared-store: atomic increment (single-lock RMW) ----
+# Fire 32 concurrent /sinc calls. Each one performs an atomic read-
+# modify-write under the mutex; no update should be lost. The 32
+# responses must contain every integer in 1..32, and the next call
+# must return 33.
+if command -v timeout >/dev/null 2>&1; then
+    CONC_DIR=$(mktemp -d /tmp/eigs_sinc_XXXXXX)
+    PIDS=()
+    for i in $(seq 1 32); do
+        ( curl -s --max-time 5 "http://127.0.0.1:$PORT/sinc" > "$CONC_DIR/r$i" 2>/dev/null ) &
+        PIDS+=($!)
+    done
+    for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
+    FINAL=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/sinc")
+    DISTINCT=$(sort -un "$CONC_DIR"/r* 2>/dev/null | wc -l)
+    if [ "$FINAL" = "33" ] && [ "$DISTINCT" = "32" ]; then
+        ok "HS23 32 concurrent shared_incr: final=33, all 32 slots distinct"
+    else
+        fail "HS23 shared_incr RMW" "final=$FINAL distinct=$DISTINCT/32"
+    fi
+    rm -rf "$CONC_DIR"
 fi
 
 # ---- Summary ----

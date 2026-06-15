@@ -416,6 +416,64 @@ Value* builtin_shared_set(Value *arg) {
     return make_null();
 }
 
+/* Single-lock RMW for numeric counters/gauges. Missing key is treated
+ * as 0 (so the first incr inserts the key with `delta` as its value);
+ * an existing non-numeric value is a usage error, returns null without
+ * mutating. Subject to the same byte cap as shared_set. Returns the new
+ * value on success, null on bad args / over-cap / type mismatch. */
+Value* builtin_shared_incr(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    Value *key_v = arg->data.list.items[0];
+    Value *delta_v = arg->data.list.items[1];
+    if (key_v->type != VAL_STR || delta_v->type != VAL_NUM) return make_null();
+    Server *s = eigs_http_active;
+    if (!s) return make_null();
+
+    double delta = delta_v->data.num;
+    long cap = shared_max_bytes();
+
+    pthread_mutex_lock(&s->shared_mu);
+    int idx = shared_find(s, key_v->data.str);
+    double cur = 0;
+    if (idx >= 0) {
+        int pos = 0;
+        Value *parsed = eigs_json_parse_value(s->shared[idx].json, &pos);
+        if (!parsed || parsed->type != VAL_NUM) {
+            pthread_mutex_unlock(&s->shared_mu);
+            return make_null();
+        }
+        cur = parsed->data.num;
+    }
+    double new_val = cur + delta;
+    char *new_json = eigs_json_encode(make_num(new_val));
+    long new_json_len = (long)strlen(new_json);
+    long key_len = (long)strlen(key_v->data.str);
+    long old_bytes = (idx >= 0) ? (long)strlen(s->shared[idx].json) : 0;
+    long delta_bytes = (idx >= 0) ? (new_json_len - old_bytes)
+                                  : (key_len + new_json_len);
+    if (s->shared_bytes + delta_bytes > cap) {
+        pthread_mutex_unlock(&s->shared_mu);
+        free(new_json);
+        return make_null();
+    }
+    if (idx >= 0) {
+        free(s->shared[idx].json);
+        s->shared[idx].json = new_json;
+    } else {
+        if (s->shared_count == s->shared_cap) {
+            int new_cap = s->shared_cap ? s->shared_cap * 2 : 16;
+            s->shared = xrealloc_array(s->shared, new_cap, sizeof(SharedEntry));
+            s->shared_cap = new_cap;
+        }
+        s->shared[s->shared_count].key = xstrdup(key_v->data.str);
+        s->shared[s->shared_count].json = new_json;
+        s->shared_count++;
+    }
+    s->shared_bytes += delta_bytes;
+    pthread_mutex_unlock(&s->shared_mu);
+    return make_num(new_val);
+}
+
 Value* builtin_shared_get(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
     Server *s = eigs_http_active;
@@ -1150,6 +1208,7 @@ void register_http_request_builtins(Env *env) {
     env_set_local_owned(env, "http_post", make_builtin(builtin_http_post));
     env_set_local_owned(env, "http_request_headers", make_builtin(builtin_http_request_headers));
     env_set_local_owned(env, "shared_set", make_builtin(builtin_shared_set));
+    env_set_local_owned(env, "shared_incr", make_builtin(builtin_shared_incr));
     env_set_local_owned(env, "shared_get", make_builtin(builtin_shared_get));
     env_set_local_owned(env, "shared_has", make_builtin(builtin_shared_has));
     env_set_local_owned(env, "shared_delete", make_builtin(builtin_shared_delete));

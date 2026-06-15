@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### HTTP shared store: `shared_incr(key, delta)` for atomic counters
+
+- New builtin `shared_incr of [key, delta]`. Single-lock read-modify-
+  write — reads current numeric value, adds `delta`, writes back, and
+  returns the new value, all under the existing shared-store mutex.
+  Missing key is treated as 0 (so the first call inserts the key);
+  an existing non-numeric value is a usage error and returns `null`
+  without mutating. Subject to the same byte cap as `shared_set`.
+- Closes the RMW gap the original `shared_set + shared_get` API had:
+  HS23 fires 32 concurrent `/sinc` calls and verifies that every
+  integer in 1..32 appears exactly once in the responses and the next
+  call returns 33. Holds under ASan slowdown too.
+
 ### HTTP shared store: bounded by `EIGS_HTTP_SHARED_MAX_BYTES`
 
 - Total key + JSON-value bytes across the shared store are now capped
