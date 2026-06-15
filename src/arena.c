@@ -7,7 +7,8 @@
 
 #include "eigenscript.h"
 
-__thread Arena g_arena = {0};
+/* g_arena is now a per-OS-thread Arena* set up by eigs_thread_attach.
+ * The TLS definition lives in state.c. */
 
 static void x_oom(size_t size) {
     fprintf(stderr, "eigenscript: out of memory (requested %zu bytes)\n", size);

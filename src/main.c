@@ -3,6 +3,7 @@
  */
 
 #include "eigenscript.h"
+#include "state.h"
 #include "vm.h"
 #include "trace.h"
 #if EIGENSCRIPT_EXT_HTTP
@@ -219,7 +220,8 @@ int main(int argc, char **argv) {
     if (argc < 2) {
         srand(time(NULL));
         eigenscript_set_args(argc, argv);
-        arena_init();
+        EigsState *eigs_st = eigs_state_new();
+        eigs_thread_attach(eigs_st);
 
         Env *global = env_new(NULL);
         register_builtins(global);
@@ -246,7 +248,8 @@ int main(int argc, char **argv) {
         gc_collect_at_exit(global);
         env_decref(global);
         g_global_env = NULL;
-        arena_destroy();
+        eigs_thread_detach();
+        eigs_state_destroy(eigs_st);
         return 0;
     }
 
@@ -272,7 +275,8 @@ int main(int argc, char **argv) {
 
     srand(time(NULL));
     eigenscript_set_args(argc, argv);
-    arena_init();
+    EigsState *eigs_st = eigs_state_new();
+    eigs_thread_attach(eigs_st);
 
     Env *global = env_new(NULL);
     register_builtins(global);
@@ -329,6 +333,7 @@ int main(int argc, char **argv) {
     gc_collect_at_exit(global);
     env_decref(global);
     g_global_env = NULL;
-    arena_destroy();
+    eigs_thread_detach();
+    eigs_state_destroy(eigs_st);
     return exit_code;
 }

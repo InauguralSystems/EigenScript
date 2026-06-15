@@ -249,7 +249,16 @@ typedef struct {
     int mark_fallback_count;
 } Arena;
 
-extern __thread Arena g_arena;
+/* Phase 1 of the multi-state refactor: g_arena now resolves through a
+ * per-OS-thread Arena* set up by eigs_thread_attach. Same indirection
+ * cost as the old __thread Arena (compiler folds the deref + field
+ * offset into one addressing mode). See state.h.
+ *
+ * The header doesn't pull state.h to avoid a circular include — the
+ * pointer declaration here is enough for the macro, and TUs that
+ * actually call attach/detach include state.h directly. */
+extern __thread Arena *eigs_arena_ptr;
+#define g_arena (*eigs_arena_ptr)
 
 /* ---- OOM-safe allocation wrappers ----
  * Abort with a diagnostic on allocation failure. Used by value constructors

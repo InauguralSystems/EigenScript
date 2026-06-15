@@ -9,7 +9,7 @@ VERSION=$(cat ../VERSION)
 # Compiler is overridable (e.g. CC=clang ./build.sh) so CI can exercise
 # more than one toolchain; defaults to gcc.
 CC="${CC:-gcc}"
-SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c main.c"
+SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c main.c"
 
 # macOS Intel: ship interpreter-only. JIT thunks SIGSEGV on first entry
 # under macOS 15's hardened runtime even with MAP_JIT — root cause TBD,

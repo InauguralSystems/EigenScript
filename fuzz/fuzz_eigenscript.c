@@ -16,6 +16,7 @@
  */
 
 #include "../src/eigenscript.h"
+#include "../src/state.h"
 #include "../src/vm.h"
 #include <fcntl.h>
 #include <stdint.h>
@@ -31,7 +32,9 @@ __thread Env *g_load_env = NULL;
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
     (void)argc; (void)argv;
     srand(0);
-    arena_init();
+    /* libFuzzer never exits cleanly between inputs, so the state and
+     * thread live for the process lifetime — no detach/destroy. */
+    eigs_thread_attach(eigs_state_new());
     Env *global = env_new(NULL);
     register_builtins(global);
     g_global_env = global;

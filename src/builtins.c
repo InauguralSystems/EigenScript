@@ -5,6 +5,7 @@
  */
 
 #include "eigenscript.h"
+#include "state.h"
 #include "vm.h"
 #include "builtins_internal.h"
 #include "trace.h"
@@ -3399,6 +3400,7 @@ typedef struct {
     Value **fn_args;       /* arg_count Value* — owned (incref'd by spawn) */
     int fn_arg_count;
     Env *parent_env;
+    EigsState *parent_state;  /* state the spawning thread is attached to */
     Value *result;
     volatile int done;
     pthread_t tid;
@@ -3406,7 +3408,10 @@ typedef struct {
 
 static void *thread_entry(void *arg) {
     ThreadHandle *h = (ThreadHandle *)arg;
-    arena_init();
+    /* Attach this OS thread to the parent's state. eigs_thread_attach
+     * runs arena_init internally, so the legacy arena_init call site
+     * has moved into the lifecycle. */
+    eigs_thread_attach(h->parent_state);
     Value *fn = h->fn;
     if (fn->type == VAL_FN) {
         Env *call_env = env_new(fn->data.fn.closure);
@@ -3457,6 +3462,10 @@ static void *thread_entry(void *arg) {
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
     h->done = 1;
+    /* Detach from the state — runs arena_destroy and clears TLS. The
+     * pre-existing tolerated leak on spawn-thread exits (gc_collect_
+     * cycles disabled once multithreaded) is unchanged. */
+    eigs_thread_detach();
     return NULL;
 }
 
@@ -3490,6 +3499,7 @@ Value* builtin_spawn(Value *arg) {
     h->fn_args = fn_args;
     h->fn_arg_count = fn_arg_count;
     h->parent_env = g_global_env;
+    h->parent_state = eigs_current_state();
     h->result = NULL;
     h->done = 0;
     int hid = handle_register(h, HANDLE_THREAD);

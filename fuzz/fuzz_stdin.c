@@ -14,6 +14,7 @@
  */
 
 #include "../src/eigenscript.h"
+#include "../src/state.h"
 #include "../src/vm.h"
 #include <string.h>
 #include <stdlib.h>
@@ -35,9 +36,9 @@ int main(void) {
     buf[total] = '\0';
     if (total == 0) return 0;
 
-    /* Init runtime */
+    /* Init runtime — process is single-shot, no detach/destroy. */
     srand(0);
-    arena_init();
+    eigs_thread_attach(eigs_state_new());
     Env *global = env_new(NULL);
     register_builtins(global);
     g_global_env = global;

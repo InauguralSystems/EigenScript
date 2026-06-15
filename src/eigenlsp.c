@@ -8,6 +8,7 @@
  */
 
 #include "eigenscript.h"
+#include "state.h"
 #include <pthread.h>
 
 /* ---- Globals required by linker (from eigenscript.c / main.c) ---- */
@@ -1203,7 +1204,8 @@ static void handle_message(const char *json) {
 
 int main(void) {
     fprintf(stderr, "[LSP] EigenScript Language Server %s starting\n", EIGENSCRIPT_VERSION);
-    arena_init();
+    EigsState *eigs_st = eigs_state_new();
+    eigs_thread_attach(eigs_st);
 
     while (1) {
         char *msg = lsp_read_message();
@@ -1213,5 +1215,7 @@ int main(void) {
     }
 
     fprintf(stderr, "[LSP] stdin closed, exiting\n");
+    eigs_thread_detach();
+    eigs_state_destroy(eigs_st);
     return 0;
 }
