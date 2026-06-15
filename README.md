@@ -280,6 +280,42 @@ catches working-tree tampering).
   **[CONTRIBUTING.md](CONTRIBUTING.md#publishing-a-package)** —
   naming + semver guidance for publishers
 
+## Embedding
+
+EigenScript can be embedded in a C/C++ host. The public API is in
+`src/eigs_embed.h` — opaque handles for the interpreter and per-thread
+context, REPL-style source eval, error retrieval, ref-counted value
+handles, and FFI registration for calling host functions from script:
+
+```c
+#include "eigs_embed.h"
+
+static EigsValue *host_add(EigsValue *arg) {
+    EigsValue *a = eigs_value_list_get(arg, 0);
+    EigsValue *b = eigs_value_list_get(arg, 1);
+    double sum = eigs_value_as_num(a) + eigs_value_as_num(b);
+    eigs_value_release(a);
+    eigs_value_release(b);
+    return eigs_value_new_num(sum);
+}
+
+int main(void) {
+    EigsState *st = eigs_open();
+    eigs_register_function("host_add", host_add);
+
+    EigsValue *r = eigs_eval_string("host_add of [3, 4]");
+    printf("%g\n", eigs_value_as_num(r));   /* 7 */
+    eigs_value_release(r);
+
+    eigs_close(st);
+}
+```
+
+The runtime is multi-state: a single process can host multiple `EigsState`
+instances concurrently, each with its own global env, JIT cache, module
+cache, and observer thresholds. The contract test in `src/embed_smoke.c`
+(run with `make embed-smoke`) is the worked example.
+
 ## Examples
 
 Ordered as a learning path:
@@ -329,6 +365,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — lexer → parser → bytecode VM → JIT internals
+- [docs/EMBEDDING.md](docs/EMBEDDING.md) — C embedding API reference (`eigs_embed.h`)
 - [examples/errors/](examples/errors/) — programs that fail on purpose,
   each with its expected error message (suite-verified)
 

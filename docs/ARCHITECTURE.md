@@ -5,6 +5,17 @@ written in C. The runtime is a single binary with no external dependencies
 (minimal build) or optional extensions for HTTP, PostgreSQL, SDL2 graphics,
 and transformer models (full build).
 
+The runtime is **multi-state**: a single process can host multiple
+interpreter instances concurrently. `EigsState` carries per-interpreter
+config (global env, JIT cache, module cache, observer thresholds, handle
+table); `EigsThread` carries per-OS-thread execution state (arena, error
+state, VM, freelists, recursion-depth guards). Hot fields are reached via
+`eigs_current->field` bridge macros so the common single-state path costs
+exactly one TLS load. The public embedding API (`src/eigs_embed.h`) wraps
+state/thread lifecycle, eval, error retrieval, globals access, value
+handles, and FFI registration behind opaque types for C/C++ host
+applications.
+
 ## Source Layout
 
 ```
@@ -19,6 +30,9 @@ src/
 ├── jit.h                  # JIT public API, layout descriptor, helper prototypes
 ├── jit.c                  # x86-64 template JIT: scanner, emitter, code cache
 ├── jit_smoke.c            # Standalone emitter smoke test (make jit-smoke)
+├── state.h / state.c      # EigsState (per-interpreter) + EigsThread (per-OS-thread)
+├── eigs_embed.h / eigs_embed.c  # Public embedding API: opaque handles, eval, FFI
+├── embed_smoke.c          # Standalone embedding smoke test (make embed-smoke)
 ├── chunk.c                # Bytecode container, constant pool, disassembler
 ├── trace.h / trace.c      # Execution trace tape, deterministic replay
 ├── hash.c                 # Hashing builtins (SHA-256, MD5, HMAC)

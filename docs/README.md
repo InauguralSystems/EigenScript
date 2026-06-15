@@ -31,6 +31,7 @@ WASM build, no install required.
 | document | what it answers |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Pipeline overview: lexer → parser → bytecode compiler → stack VM → copy-and-patch JIT. |
+| [EMBEDDING.md](EMBEDDING.md) | C embedding API (`src/eigs_embed.h`): lifecycle, eval, error retrieval, value handles, FFI. |
 | [JIT_STAGE5_INLINE_IC.md](JIT_STAGE5_INLINE_IC.md) | The JIT's inline fast paths and caches: design + as-built record. |
 | [CLOSURE_CYCLE_GC.md](CLOSURE_CYCLE_GC.md) | The closure-cycle collector: honest env refcounts, the registry/mark-sweep design as built, maintainer invariants, and what still leaks. |
 | [TEST_COVERAGE_ANALYSIS.md](TEST_COVERAGE_ANALYSIS.md) | The coverage program: findings → fixes → residual gaps, with measured numbers. |

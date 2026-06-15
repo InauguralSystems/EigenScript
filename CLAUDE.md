@@ -188,8 +188,31 @@ recv_timeout, multi-arg spawn) and the twelve post-merge fixes
   builds in the same run. Note: this remote environment's git proxy
   cannot push tags, and GITHUB_TOKEN-pushed tags don't retrigger
   workflows — hence the dispatch path.
+- **Embedding API + multi-state refactor (Unreleased)**:
+  `src/eigs_embed.h` is the public C surface for embedding the
+  runtime — lifecycle (`eigs_open`/`eigs_close` or finer-grained
+  `eigs_state_new`/`eigs_thread_attach`/`eigs_state_init_runtime`),
+  source eval (`eigs_eval_string`/`eigs_eval_file`, both REPL-style
+  so top-level names accumulate in the global env), error retrieval
+  (`eigs_last_error_message`/`eigs_has_error`/`eigs_clear_error`),
+  ref-counted `EigsValue` handles with num/string/list/dict
+  constructors and FFI registration (`eigs_register_function` uses
+  the existing `BuiltinFn` shape — single `EigsValue*` arg, `VAL_LIST`
+  for multi-arg calls). Smoke test: `make embed-smoke` (links the
+  runtime minus `main.c` the same way `make lsp`/`make fuzz` do).
+  Phase 10 of the multi-state refactor; Phases 1–9 lifted every
+  `__thread` global onto `EigsState` (per-interpreter: global env,
+  JIT cache, module cache, observer thresholds, handle table,
+  multithread flag) or `EigsThread` (per-OS-thread: arena, error
+  state, VM, JIT chunk registry, freelists/interns, recursion-depth
+  guards, cycle-collector registry). Hot fields keep
+  single-indirection cost via `eigs_current->field` bridge macros, so
+  internal TUs still write `g_arena`, `g_has_error`, etc. — the
+  embedding header is the only place that sees the opaque API. Two
+  interpreters can now run concurrently in the same process; the
+  internal handle/log of attached threads lives on the state.
 
-Suite: ~1832 checks; must pass release **and** ASan with
+Suite: ~1855 checks; must pass release **and** ASan with
 detect_leaks=1 (the leak tally — currently 13, spawn-thread programs +
 pre-existing non-closure shapes — is the gate; a jump means a new
 leak, and section [87] must stay strictly leak-clean).

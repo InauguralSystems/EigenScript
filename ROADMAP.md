@@ -72,7 +72,11 @@ when picked up:
 - [ ] Package manager / module registry
 - [ ] More STEM modules (graph theory, regression, numerical PDEs)
 - [ ] WASM compilation target
-- [ ] Foreign function interface (FFI) for calling C libraries
+- [ ] Foreign function interface for calling arbitrary C libraries
+      from script (libffi/libdl style — the *script → host* direction).
+      The *host → script* direction (C host embeds the runtime + can
+      register host functions callable from script) is live as of the
+      Phase 10 embedding API; see [docs/EMBEDDING.md](docs/EMBEDDING.md).
 - [ ] Crypto / HTTPS in-process (SHA hashes shipped 0.9.2; no AEAD, no TLS)
 - [ ] Raw TCP/UDP sockets
 - [ ] Additional DB drivers (SQLite, MySQL, NoSQL)
@@ -85,6 +89,28 @@ when picked up:
 - [ ] Public release
 
 ## Completed
+
+### Unreleased — multi-state refactor + embedding API
+
+- [x] **Multi-state refactor (Phases 1–9).** Every `__thread` global in
+      the runtime now lives on `EigsState` (per-interpreter: global env,
+      JIT cache, module cache, observer thresholds, handle table,
+      multithread flag, JIT tuning thresholds) or `EigsThread`
+      (per-OS-thread: arena, error state, VM, freelists, intern table,
+      recursion-depth guards, cycle-collector registry). Hot fields keep
+      single-indirection cost via `eigs_current->field` bridge macros, so
+      the common single-state path is unchanged. Two `EigsState`
+      instances can run concurrently in the same process with no shared
+      state.
+- [x] **Embedding API (Phase 10).** Public C surface in
+      `src/eigs_embed.h`: opaque `EigsState` / `EigsThread` / `EigsValue`
+      handles, lifecycle (`eigs_open` / `eigs_close` or finer-grained
+      `eigs_state_new` / `eigs_thread_attach` / `eigs_state_init_runtime`),
+      REPL-style source eval (`eigs_eval_string` / `eigs_eval_file`),
+      error retrieval, global env read/write, ref-counted value
+      constructors/accessors, and `eigs_register_function` for exposing
+      host C functions to script. Contract test in `src/embed_smoke.c`
+      (`make embed-smoke`). Reference: [docs/EMBEDDING.md](docs/EMBEDDING.md).
 
 ### 0.12.0 (2026-06-10)
 
