@@ -6,9 +6,6 @@
 #include "state.h"
 #include "vm.h"
 #include "trace.h"
-#if EIGENSCRIPT_EXT_HTTP
-#include "ext_http_internal.h"
-#endif
 #if EIGENSCRIPT_EXT_GFX
 void register_gfx_builtins(Env *env);
 #endif
@@ -233,12 +230,6 @@ int main(int argc, char **argv) {
         register_builtins(global);
         g_global_env = global;
 
-#if EIGENSCRIPT_EXT_HTTP
-        g_server.global_env = global;
-        g_server.route_count = 0;
-        g_server.static_prefix = NULL;
-        g_server.static_dir = NULL;
-#endif
 #if EIGENSCRIPT_EXT_GFX
         register_gfx_builtins(global);
 #endif
@@ -289,12 +280,6 @@ int main(int argc, char **argv) {
     register_builtins(global);
     g_global_env = global;
 
-#if EIGENSCRIPT_EXT_HTTP
-    g_server.global_env = global;
-    g_server.route_count = 0;
-    g_server.static_prefix = NULL;
-    g_server.static_dir = NULL;
-#endif
 #if EIGENSCRIPT_EXT_GFX
     register_gfx_builtins(global);
 #endif

@@ -23,7 +23,12 @@
  * HTTP GLOBALS
  * ================================================================ */
 
-Server g_server = {0};
+/* Per-thread pointer at the active state's server. Definition for the
+ * extern in ext_http_internal.h. Set by register_http_builtins on the
+ * main thread; http_conn_thread inherits the parent's pointer at spawn
+ * so worker threads (which don't attach an EigsThread) can still read
+ * route/static/CORS config. */
+__thread Server *eigs_http_active = NULL;
 static volatile int g_init_complete = 0;
 static pthread_t g_health_tid;
 static int g_health_thread_active = 0;
@@ -765,10 +770,19 @@ done:
 
 /* Detached worker thread: owns the client fd, runs the request, decrements
  * the live-connection counter on exit. The accept loop hands ownership of
- * the malloc'd int* and never touches it again. */
+ * the malloc'd ConnArg and never touches it again. The worker inherits
+ * eigs_http_active from the parent (set in ConnArg) so g_server bridges
+ * read the spawning state's server, not whichever happens to be in TLS. */
+typedef struct {
+    int fd;
+    Server *server;
+} ConnArg;
+
 static void *http_conn_thread(void *arg) {
-    int fd = *(int *)arg;
-    free(arg);
+    ConnArg *ca = arg;
+    int fd = ca->fd;
+    eigs_http_active = ca->server;
+    free(ca);
     handle_request(fd);
     __atomic_sub_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
     return NULL;
@@ -870,13 +884,14 @@ void http_serve_blocking(int port) {
             continue;
         }
 
-        int *fdp = xmalloc(sizeof(int));
-        *fdp = client_fd;
+        ConnArg *ca = xmalloc(sizeof(*ca));
+        ca->fd = client_fd;
+        ca->server = eigs_http_active;
         pthread_t tid;
         __atomic_add_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
-        if (pthread_create(&tid, &worker_attr, http_conn_thread, fdp) != 0) {
+        if (pthread_create(&tid, &worker_attr, http_conn_thread, ca) != 0) {
             __atomic_sub_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
-            free(fdp);
+            free(ca);
             close(client_fd);
         }
     }
@@ -912,6 +927,17 @@ static Value* builtin_http_cors(Value *arg) {
 }
 
 void register_http_builtins(Env *env) {
+    /* Lazily allocate the per-state Server on first registration and wire
+     * the active-pointer TLS for this thread. Idempotent: a second call
+     * (e.g. REPL re-registering after a reset) reuses the existing Server
+     * but resets the env binding to whatever the caller just built. */
+    EigsState *st = eigs_current->state;
+    if (!st->ext_http_server) {
+        st->ext_http_server = xcalloc(1, sizeof(Server));
+    }
+    eigs_http_active = st->ext_http_server;
+    g_server.global_env = env;
+
     env_set_local_owned(env, "http_route", make_builtin(builtin_http_route));
     env_set_local_owned(env, "http_route_authed", make_builtin(builtin_http_route_authed));
     env_set_local_owned(env, "http_static", make_builtin(builtin_http_static));
@@ -922,4 +948,28 @@ void register_http_builtins(Env *env) {
     env_set_local_owned(env, "http_post", make_builtin(builtin_http_post));
     env_set_local_owned(env, "http_request_headers", make_builtin(builtin_http_request_headers));
     env_set_local_owned(env, "http_cors", make_builtin(builtin_http_cors));
+}
+
+void ext_http_state_destroy(EigsState *st) {
+    if (!st) return;
+    Server *s = st->ext_http_server;
+    if (!s) return;
+    for (int i = 0; i < s->route_count; i++) {
+        free(s->routes[i].method);
+        free(s->routes[i].path);
+        free(s->routes[i].kind);
+        free(s->routes[i].payload);
+    }
+    free(s->static_prefix);
+    free(s->static_dir);
+    free(s->cors_origin);
+    /* global_env is aliased, not owned — env teardown happens in eigs_close
+     * before this runs. early_bind_fd is the listening socket; closed by
+     * http_serve_blocking on shutdown (or process exit). */
+    free(s);
+    st->ext_http_server = NULL;
+    /* Clear the main thread's active pointer if it pointed here. Worker
+     * threads die before the state does (http_serve returns or process
+     * exits), so theirs is already gone. */
+    if (eigs_http_active == s) eigs_http_active = NULL;
 }

@@ -271,6 +271,10 @@ typedef struct EigsThread EigsThread;
 struct VM;
 struct EigsJitCache;
 struct EigsChunk;
+/* Defined in ext_http_internal.h when EIGENSCRIPT_EXT_HTTP is built;
+ * forward-decl here so EigsState can carry an opaque pointer without
+ * the header (eigenscript.h is included by everything). */
+struct EigsHttpServer;
 
 /* Opaque-pointer handle table — one row per outstanding Store/Thread/
  * Channel resource. Sized per-state; index 0 reserved as invalid. */
@@ -351,6 +355,13 @@ struct EigsState {
     int             jit_entry_threshold;
     int             jit_iter_threshold;
     int             jit_osr_threshold;
+    /* ext_http per-interpreter server config (routes, static prefix,
+     * CORS, early-bind fd). Allocated by register_http_builtins on
+     * first registration; freed by ext_http_state_destroy at state
+     * teardown. NULL when EXT_HTTP isn't built or registration hasn't
+     * run yet. Carried as an opaque pointer so eigenscript.h stays
+     * independent of the ext_http internal layout. */
+    struct EigsHttpServer *ext_http_server;
 };
 
 struct EigsThread {

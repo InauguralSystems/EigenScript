@@ -8,9 +8,6 @@
 #include "vm.h"   /* EigsChunk layout: the cycle collector traverses
                    * fn -> chunk -> env_cache / functions[] edges */
 #include <pthread.h>
-#if EIGENSCRIPT_EXT_HTTP
-#include "ext_http_internal.h"
-#endif
 #if EIGENSCRIPT_EXT_DB
 #include "ext_db_internal.h"
 #endif

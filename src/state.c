@@ -6,6 +6,12 @@
 #include "vm.h"
 #include "jit.h"
 
+#if EIGENSCRIPT_EXT_HTTP
+/* Forward-declared here to avoid pulling ext_http_internal.h (and its
+ * pthread/socket includes) into core runtime TUs. Defined in ext_http.c. */
+extern void ext_http_state_destroy(EigsState *st);
+#endif
+
 __thread EigsThread *eigs_current = NULL;
 
 EigsState *eigs_state_new(void) {
@@ -32,6 +38,10 @@ void eigs_state_destroy(EigsState *st) {
                 "eigs_state_destroy: %s\n",
                 "thread(s) still attached on destroy");
     }
+#if EIGENSCRIPT_EXT_HTTP
+    /* No-op if the state never registered http builtins. */
+    ext_http_state_destroy(st);
+#endif
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);
