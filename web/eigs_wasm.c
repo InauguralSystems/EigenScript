@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "../src/eigenscript.h"
+#include "../src/state.h"
 #include "../src/vm.h"
 #include "../src/trace.h"
 
@@ -32,8 +33,11 @@ static int g_initialized = 0;
 
 static void ensure_init(void) {
     if (g_initialized) return;
+    /* One EigsState/Thread for the lifetime of the playground module.
+     * arena_init runs inside eigs_thread_attach. */
+    EigsState *st = eigs_state_new();
+    eigs_thread_attach(st);
     trace_init();
-    arena_init();
     g_initialized = 1;
 }
 
