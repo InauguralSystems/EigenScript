@@ -4,6 +4,27 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### HTTP `http_route_authed`: source-based auth via shared store
+
+- `http_route_authed`'s auth check now resolves the auth source from
+  `shared_get("require_auth")` first, with the legacy
+  `require_auth`-function fallback in the worker env preserved for
+  back-compat. When the shared key is a string, the worker tokenizes/
+  parses/compiles/executes it per request in a fresh env on top of
+  the worker's global. Empty `value_to_string` result = allow; any
+  non-empty result becomes the 401 body verbatim.
+- Closes the multi-state gap that broke `http_route_authed`: a
+  function value can't cross worker boundaries (each worker dies with
+  its arena), but a *string source* can — and re-evaluating it per
+  request reaches the same semantics. Hosts publish a session table
+  or token-validity flag via `shared_set` and write the auth check as
+  a small script that consults it.
+- Tests: HS24–HS26 in `tests/test_http_server.sh` — `/asetup` seeds
+  `require_auth` as the source `shared_get of "auth_msg"`; flipping
+  `auth_msg` between `""` and `"denied by test"` toggles 200/401, and
+  the message round-trips into the 401 body. HS26 proves the source
+  is re-evaluated per request, not cached at registration.
+
 ### HTTP shared store: `shared_incr(key, delta)` for atomic counters
 
 - New builtin `shared_incr of [key, delta]`. Single-lock read-modify-

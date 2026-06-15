@@ -60,6 +60,15 @@ r_sclr  is http_route of ["GET", "/sclr",  "code", "shared_clear of null\nshared
 r_sbig  is http_route of ["GET", "/sbig",  "code", "shared_clear of null\ns is \"x\"\ni is 0\nloop while i < 13:\n  s is s + s\n  i is i + 1\nshared_set of [\"big\", s]\nshared_has of \"big\""]
 # Atomic increment: single-lock RMW. Returns the new value.
 r_sinc  is http_route of ["GET", "/sinc",  "code", "shared_incr of [\"counter\", 1]"]
+# Source-based auth: the test drives this via /asetup, /aallow, /adeny.
+# /asetup writes require_auth as a script that just reads auth_msg —
+# empty allows, anything else becomes the 401 body.
+r_asetup is http_route of ["GET", "/asetup", "code", "shared_set of [\"require_auth\", \"shared_get of \\\\\"auth_msg\\\\\"\"]\nshared_set of [\"auth_msg\", \"\"]\n\"ok\""]
+r_aallow is http_route of ["GET", "/aallow", "code", "shared_set of [\"auth_msg\", \"\"]\n\"ok\""]
+r_adeny  is http_route of ["GET", "/adeny",  "code", "shared_set of [\"auth_msg\", \"denied by test\"]\n\"ok\""]
+r_acleanup is http_route of ["GET", "/acleanup", "code", "shared_delete of \"require_auth\"\nshared_delete of \"auth_msg\"\n\"ok\""]
+# The authed route itself: returns "top secret" iff auth passes.
+secret is http_route_authed of ["GET", "/secret", "code", "\"top secret\""]
 
 # Serve forever.
 serve is http_serve of $PORT
@@ -427,6 +436,51 @@ if command -v timeout >/dev/null 2>&1; then
     fi
     rm -rf "$CONC_DIR"
 fi
+
+# ---- Source-based auth via shared_set("require_auth", "<source>") ----
+# The auth source crosses worker boundaries as a string, not a function:
+# each worker tokenizes/compiles/runs it per authed request. Empty result
+# = allow; any non-empty value_to_string output becomes the 401 body.
+
+# Seed require_auth + auth_msg (initially "" = allow).
+curl -s --max-time 2 "http://127.0.0.1:$PORT/asetup" > /dev/null
+
+# Authed route returns the body when auth source evaluates to "".
+STATUS=$(curl -s --max-time 2 -o /tmp/eigs_auth_body_$$ -w "%{http_code}" "http://127.0.0.1:$PORT/secret")
+BODY=$(cat /tmp/eigs_auth_body_$$ 2>/dev/null)
+rm -f /tmp/eigs_auth_body_$$
+if [ "$STATUS" = "200" ] && [ "$BODY" = "top secret" ]; then
+    ok "HS24 http_route_authed allows when auth source returns empty string"
+else
+    fail "HS24 authed-route allow" "status=$STATUS body='$BODY'"
+fi
+
+# Flip auth_msg to a non-empty value — authed route must 401 with that body.
+curl -s --max-time 2 "http://127.0.0.1:$PORT/adeny" > /dev/null
+STATUS=$(curl -s --max-time 2 -o /tmp/eigs_auth_body_$$ -w "%{http_code}" "http://127.0.0.1:$PORT/secret")
+BODY=$(cat /tmp/eigs_auth_body_$$ 2>/dev/null)
+rm -f /tmp/eigs_auth_body_$$
+if [ "$STATUS" = "401" ] && [ "$BODY" = "denied by test" ]; then
+    ok "HS25 http_route_authed denies with 401 + auth source's message"
+else
+    fail "HS25 authed-route deny" "status=$STATUS body='$BODY'"
+fi
+
+# Flip back to allow — same authed route should 200 again. Proves the
+# auth source is re-evaluated per request, not cached at registration.
+curl -s --max-time 2 "http://127.0.0.1:$PORT/aallow" > /dev/null
+STATUS=$(curl -s --max-time 2 -o /tmp/eigs_auth_body_$$ -w "%{http_code}" "http://127.0.0.1:$PORT/secret")
+BODY=$(cat /tmp/eigs_auth_body_$$ 2>/dev/null)
+rm -f /tmp/eigs_auth_body_$$
+if [ "$STATUS" = "200" ] && [ "$BODY" = "top secret" ]; then
+    ok "HS26 auth source is re-evaluated per request (allow → deny → allow)"
+else
+    fail "HS26 auth re-evaluation" "status=$STATUS body='$BODY'"
+fi
+
+# Clean up the require_auth key so it doesn't bleed into later tests
+# that may rerun with a different cap.
+curl -s --max-time 2 "http://127.0.0.1:$PORT/acleanup" > /dev/null
 
 # ---- Summary ----
 echo ""

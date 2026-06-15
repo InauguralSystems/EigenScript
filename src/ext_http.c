@@ -937,19 +937,38 @@ static void handle_request(int fd) {
                  * startup-defined globals — concurrent requests don't race
                  * on script state and mutations don't leak across requests.
                  *
-                 * Route-level auth: require_auth is looked up in the worker
-                 * env too. http_route_authed users need require_auth to be
-                 * either self-contained in the route source or accessible
-                 * through a shared-state primitive (not yet built); until
-                 * then, authed routes 500 with "require_auth not defined". */
+                 * Route-level auth: the auth source is either a string
+                 * stashed at shared_get("require_auth") — the cross-worker
+                 * config path startup scripts use — or, as a legacy
+                 * fallback, a require_auth fn defined in the worker env
+                 * (only populated by future host setup; the default
+                 * worker env never has it). Empty result = allow; any
+                 * non-empty value_to_string output becomes the 401 body. */
                 if (r->requires_auth) {
-                    Value *auth_fn = env_get(g_global_env, "require_auth");
-                    if (!auth_fn || (auth_fn->type != VAL_FN && auth_fn->type != VAL_BUILTIN)) {
-                        send_response(fd, 500, "Internal Server Error", "application/json",
-                            "{\"error\": \"require_auth not defined or not callable\"}", 53);
-                        goto done;
+                    char *auth_src = NULL;
+                    Server *srv = eigs_http_active;
+                    if (srv) {
+                        pthread_mutex_lock(&srv->shared_mu);
+                        int idx = shared_find(srv, "require_auth");
+                        if (idx >= 0) {
+                            int jpos = 0;
+                            Value *parsed = eigs_json_parse_value(srv->shared[idx].json, &jpos);
+                            if (parsed && parsed->type == VAL_STR) {
+                                auth_src = xstrdup(parsed->data.str);
+                            }
+                        }
+                        pthread_mutex_unlock(&srv->shared_mu);
                     }
-                    TokenList auth_tl = tokenize("require_auth of null");
+                    if (!auth_src) {
+                        Value *auth_fn = env_get(g_global_env, "require_auth");
+                        if (!auth_fn || (auth_fn->type != VAL_FN && auth_fn->type != VAL_BUILTIN)) {
+                            send_response(fd, 500, "Internal Server Error", "application/json",
+                                "{\"error\": \"require_auth not defined or not callable\"}", 53);
+                            goto done;
+                        }
+                        auth_src = xstrdup("require_auth of null");
+                    }
+                    TokenList auth_tl = tokenize(auth_src);
                     ASTNode *auth_ast = parse(&auth_tl);
                     Env *auth_env = env_new(g_global_env);
                     EigsChunk *auth_chunk = compile_ast(auth_ast, auth_env);
@@ -957,15 +976,15 @@ static void handle_request(int fd) {
                     chunk_free(auth_chunk);
                     env_decref(auth_env);
                     char *auth_str = value_to_string(auth_result);
+                    free_tokenlist(&auth_tl);
+                    free(auth_src);
                     if (auth_str[0] != '\0') {
                         send_response(fd, 401, "Unauthorized", "application/json",
                                       auth_str, strlen(auth_str));
                         free(auth_str);
-                        free_tokenlist(&auth_tl);
                         goto done;
                     }
                     free(auth_str);
-                    free_tokenlist(&auth_tl);
                 }
                 TokenList tl = tokenize(r->payload);
                 ASTNode *ast = parse(&tl);
