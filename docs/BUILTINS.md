@@ -396,15 +396,67 @@ Requires full build. Provides an embedded HTTP server.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `http_route` | `http_route of [method, path, handler]` | Register route handler |
-| `http_route_authed` | `http_route_authed of [method, path, handler]` | Register authenticated route |
-| `http_static` | `http_static of [prefix, directory]` | Serve static files |
+| `http_route` | `http_route of [method, path, handler]` or `[method, path, "code", source]` | Register route handler (literal body or per-request `code` source) |
+| `http_route_authed` | `http_route_authed of [method, path, handler]` or `[method, path, "code", source]` | Register authenticated route; auth source published via `shared_set of ["require_auth", "<source>"]` |
+| `http_static` | `http_static of [prefix, directory]` | Serve static files (realpath-confined to `directory`) |
 | `http_early_bind` | `http_early_bind of null` | Pre-bind socket and start health thread |
 | `http_serve` | `http_serve of port` | Start blocking HTTP server |
 | `http_request_body` | `http_request_body of null` | Get current request body |
 | `http_session_id` | `http_session_id of null` | Get current session ID |
 | `http_post` | `http_post of [url, headers, body]` | HTTP POST via curl (no shell) |
 | `http_request_headers` | `http_request_headers of null` | Get current request headers |
+
+### Per-worker code routes
+
+A route declared as `[method, path, "code", source]` evaluates `source`
+in a fresh worker `EigsState` on every request — stdlib + the
+request-scoped HTTP builtins (`http_request_body`, `http_session_id`,
+`http_request_headers`, `http_post`, and the `shared_*` family below)
+are available; **startup-scope globals are not**. The final
+expression's value is sent as the response body. Per-worker isolation
+means concurrent requests don't race on script state and mutations
+don't leak across requests; cross-worker state goes through the
+shared store.
+
+### Shared store: cross-worker key/value primitive
+
+JSON-serialized map living on the `EigsHttpServer`, mutex-guarded.
+Values cross worker boundaries by being encoded on write and re-parsed
+on read into a value owned by the caller's state. Function values
+can't be stored (encoded as `null` per `json_encode`). Total bytes are
+bounded by `EIGS_HTTP_SHARED_MAX_BYTES` (default 64 MiB); over-cap
+writes return `null` without mutating.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `shared_set` | `shared_set of [key, value]` | Store `value` (JSON-encoded). Returns `null` if over byte cap. |
+| `shared_get` | `shared_get of key` | Return stored value (re-parsed) or `null` if absent. |
+| `shared_has` | `shared_has of key` | Return `1` if key present, else `0`. |
+| `shared_delete` | `shared_delete of key` | Remove key; return `1` if removed, `0` if absent. |
+| `shared_keys` | `shared_keys of null` | Return list of keys. |
+| `shared_size` | `shared_size of null` | Return current key count. |
+| `shared_clear` | `shared_clear of null` | Drop all entries. |
+| `shared_incr` | `shared_incr of [key, delta]` | Atomic single-lock read-modify-write. Missing key treated as `0`. Returns new value, or `null` if existing value is non-numeric. |
+
+Individual op atomicity is guaranteed by the mutex. For
+read-modify-write atomicity use `shared_incr`; `shared_get`+`shared_set`
+sequences can lose updates under concurrent writers.
+
+### Authenticated routes (`http_route_authed`)
+
+The auth source resolves from `shared_get of "require_auth"` first.
+When that key holds a string, the worker tokenizes/parses/compiles/
+executes it on every authed request in a fresh env layered on the
+worker global. Empty `value_to_string` result allows the request; any
+non-empty result becomes the `401 Unauthorized` response body
+verbatim. Hosts publish a session table or token-validity flag via
+`shared_set` and write the auth check as a small script that consults
+it. Re-evaluation happens per request, so flipping the shared state
+takes effect immediately.
+
+If the `require_auth` key is absent, the worker falls back to a
+`require_auth` *function* in the global env (legacy path; default
+worker envs don't populate it).
 
 ## Optional: Graphics (SDL2) Extension
 
