@@ -91,6 +91,7 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 | `join` | `join of [list, separator]` | Join elements with separator |
 | `repeat` | `repeat of [string, count]` | Repeat string n times |
 | `pad_left` | `pad_left of [string, width, char]` | Left-pad to width |
+| `pad_right` | `pad_right of [string, width, char]` | Right-pad to width |
 
 ### lib/text_builder.eigs — Buffered Text Assembly
 
