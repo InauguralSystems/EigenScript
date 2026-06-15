@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-06-15
+
 ### Fix — macOS Intel JIT enabled
 
 - **macos-x86_64 ships with the JIT live again.** The 0.14.2 holding
