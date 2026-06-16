@@ -149,4 +149,18 @@ assert of [(sign of -5) == -1, "SGN1 negative"]
 assert of [(sign of 0) == 0, "SGN2 zero"]
 assert of [(sign of 42) == 1, "SGN3 positive"]
 
+# ---- gcd / lcm (lib/math.eigs) ----
+assert of [(gcd of [12, 18]) == 6, "GCD1 shared factor"]
+assert of [(gcd of [18, 12]) == 6, "GCD2 order independence"]
+assert of [(gcd of [7, 13]) == 1, "GCD3 coprime"]
+assert of [(gcd of [0, 5]) == 5, "GCD4 zero a"]
+assert of [(gcd of [5, 0]) == 5, "GCD5 zero b"]
+assert of [(gcd of [-12, 18]) == 6, "GCD6 negative a"]
+assert of [(gcd of [100, 100]) == 100, "GCD7 equal inputs"]
+assert of [(lcm of [4, 6]) == 12, "LCM1 basic"]
+assert of [(lcm of [6, 4]) == 12, "LCM2 order independence"]
+assert of [(lcm of [0, 5]) == 0, "LCM3 zero input"]
+assert of [(lcm of [7, 13]) == 91, "LCM4 coprime"]
+assert of [(lcm of [3, 3]) == 3, "LCM5 equal inputs"]
+
 print of "All string_math tests passed"

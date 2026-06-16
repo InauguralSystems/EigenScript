@@ -54,6 +54,8 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `clamp` | `clamp of [value, lo, hi]` | Restrict to range |
 | `lerp` | `lerp of [a, b, t]` | Linear interpolation |
 | `dot` | `dot of [list_a, list_b]` | Dot product |
+| `gcd` | `gcd of [a, b]` | Greatest common divisor |
+| `lcm` | `lcm of [a, b]` | Least common multiple |
 
 ### lib/list.eigs — Functional List Operations
 
