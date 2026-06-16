@@ -64,6 +64,8 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `reverse` | `reverse of list` | Reverse a list |
 | `zip` | `zip of [list_a, list_b]` | Pair elements from two lists |
 | `flatten` | `flatten of list` | Flatten one level of nesting |
+| `take` | `take of [list, n]` | First n elements (clamps to length) |
+| `drop` | `drop of [list, n]` | All but the first n elements |
 
 Higher-order functions take EigenScript functions as arguments:
 

@@ -11,6 +11,8 @@
 #   reverse of [1, 2, 3]           # [3, 2, 1]
 #   zip of [[1,2,3], ["a","b","c"]] # [[1,"a"], [2,"b"], [3,"c"]]
 #   flatten of [[1,2], [3], [4,5]]  # [1, 2, 3, 4, 5]
+#   take of [[1,2,3,4,5], 2]        # [1, 2]
+#   drop of [[1,2,3,4,5], 2]        # [3, 4, 5]
 
 # ---- map: apply fn to each element, return new list ----
 # map of [list, fn] -> list
@@ -69,4 +71,30 @@ define flatten(items) as:
                 append of [result, item[j]]
         else:
             append of [result, item]
+    return result
+
+# ---- take: first n elements of a list ----
+# take of [list, n] -> list
+# If n >= length, returns the whole list. If n <= 0, returns [].
+define take(items, n) as:
+    result is []
+    size is len of items
+    if n > size:
+        n is size
+    for i in range of n:
+        append of [result, items[i]]
+    return result
+
+# ---- drop: all but the first n elements ----
+# drop of [list, n] -> list
+# If n >= length, returns []. If n <= 0, returns a copy.
+# NOTE: lib/store.eigs defines an unrelated drop(handle, collection).
+# These do not collide under namespaced `import` but would with load_file.
+define drop(items, n) as:
+    result is []
+    size is len of items
+    if n < 0:
+        n is 0
+    for i in range of (size - n):
+        append of [result, items[n + i]]
     return result
