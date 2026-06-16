@@ -325,6 +325,7 @@ TokenList tokenize(const char *source) {
                     switch (*p) {
                         case 'n': strbuf_append_char(&buf, '\n'); break;
                         case 't': strbuf_append_char(&buf, '\t'); break;
+                        case 'r': strbuf_append_char(&buf, '\r'); break;
                         case '\\': strbuf_append_char(&buf, '\\'); break;
                         case '"': strbuf_append_char(&buf, '"'); break;
                         default: strbuf_append_char(&buf, *p); break;
@@ -414,6 +415,7 @@ TokenList tokenize(const char *source) {
                     switch (*p) {
                         case 'n': strbuf_append_char(&buf, '\n'); break;
                         case 't': strbuf_append_char(&buf, '\t'); break;
+                        case 'r': strbuf_append_char(&buf, '\r'); break;
                         case '\\': strbuf_append_char(&buf, '\\'); break;
                         case '"': strbuf_append_char(&buf, '"'); break;
                         default: strbuf_append_char(&buf, *p); break;

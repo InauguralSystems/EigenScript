@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fix — `\r` is now a string-literal escape
+
+- **`"\r"` produces ASCII CR (0x0D) instead of the literal char `'r'`.**
+  The lexer's escape switches (regular `"..."` and f-strings `f"..."`,
+  `src/lexer.c`) only handled `\n`, `\t`, `\\`, and `\"`; `\r` fell to
+  the default branch, which dropped the backslash and kept `'r'`. Real
+  on-disk CRLF in files was always handled correctly by the C scanners
+  (`scan_ints`, `scan_int_tokens`, `scan_tokens`) because `isspace('\r')`
+  is true — the gap only bit anyone constructing CRLF test data inline.
+- **Behavior change for any program that wrote `"\r"` and expected `'r'`**
+  (unlikely; the escape was undocumented). To get a literal `'r'`,
+  remove the backslash.
+
 ### Fix — observer predicates honor the gray band (#187)
 
 - **`improving` / `diverging` now switch at `dh_small`, matching

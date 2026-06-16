@@ -130,4 +130,17 @@ assert of [(min of [7, 3]) == 3, "MN2 min reversed"]
 assert of [(max of [3, 7]) == 7, "MX1 max"]
 assert of [(max of [7, 3]) == 7, "MX2 max reversed"]
 
+# ---- string escape sequences ----
+# \r escapes to ASCII CR (0x0D). Before this fix, \r fell through the
+# lexer's default branch and produced the literal char 'r'. Real on-disk
+# CRLF in files was always handled correctly by the scanners; the gap
+# only bit anyone constructing CRLF test data inline.
+crlf is "a\r\nb"
+assert of [(len of crlf) == 4, "ESC1 \\r is one byte (a, CR, LF, b)"]
+assert of [(substr of [crlf, 1, 1]) != "r", "ESC2 \\r is not the literal char 'r'"]
+# Other escapes still work.
+assert of [(len of "a\nb") == 3, "ESC3 \\n still escapes to LF"]
+assert of [(len of "a\tb") == 3, "ESC4 \\t still escapes to TAB"]
+assert of [(len of "a\\b") == 3, "ESC5 \\\\ still escapes to backslash"]
+
 print of "All string_math tests passed"
