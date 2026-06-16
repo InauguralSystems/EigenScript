@@ -4,6 +4,23 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fix — observer predicates honor the gray band (#187)
+
+- **`improving` / `diverging` now switch at `dh_small`, matching
+  `report`.** Previously they switched at `dh_zero`, so in the gray
+  band (`dh_zero ≤ |dH| < dh_small`) the predicates collided with
+  `stable` (which already used `dh_small`) and disagreed with
+  `report of x`. A value parked at `dH = -0.005` with default
+  thresholds read as **both** `stable` and `improving` simultaneously
+  while `report` returned `"stable"`. The predicate family is now
+  internally consistent and agrees with `report` across the whole
+  range. `oscillating` is unchanged — it gates on `dh_zero` as a
+  deadband-escape test, not a direction verdict.
+- **Behavior change for documented predicates.** Programs reading
+  `improving` or `diverging` in the gray band will now see `0` where
+  they previously saw `1`. The `report` keyword, the predicate-vs-
+  report contract, and `stable` are unchanged.
+
 ## [0.15.2] — 2026-06-15
 
 ### Fix — macOS Intel JIT enabled

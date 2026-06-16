@@ -227,11 +227,6 @@ honor the model above. These are observations, not yet fixes.
   always `0` (or `1` when entropy is `0`). It does not currently provide
   the `0–1` gradient its name suggests. Treat it as not-yet-implemented.
 
-- **`report` and the bare predicates use different thresholds.** `report`
-  switches `improving`/`diverging` at `dh_small`; the predicates switch at
-  `dh_zero`. So `report of x` and `improving` can disagree in the gray
-  band. They should likely share one threshold.
-
 - **Observation is lazy, so trajectories are sampled at *reads*, not
   assignments.** Assignment only marks the value dirty; `where`/`why` are
   computed when you ask. Between two interrogations only the latest value

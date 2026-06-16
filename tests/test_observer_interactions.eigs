@@ -107,4 +107,38 @@ ob2 is null
 p is converged
 assert of [(p == 0) or (p == 1), "OI16 predicate after observed free"]
 
+# === REGRESSION FOR #187 ===
+# `report` switches improving/diverging at dh_small; the bare predicates
+# used to switch at dh_zero, so in the gray band (dh_zero < |dH| < dh_small)
+# `stable` and `improving` (or `diverging`) were both true at once, and
+# `report` disagreed with `improving`/`diverging`. The fix aligns the
+# direction predicates to dh_small; `oscillating` stays on dh_zero
+# (it's a deadband escape, not a direction verdict).
+saved2 is get_observer_thresholds of null
+# Widen so any nonzero dH lands in the gray band; allow stable to fire.
+set_observer_thresholds of [0.0000001, 1.0e9, 0.0000001]
+
+g is 100
+g is 200
+g is 300
+# Evaluate all four reads against g before any intervening assignment
+# repoints the last-observer alias.
+preds is [improving, diverging, stable, report of g]
+
+set_observer_thresholds of [saved2[0], saved2[1], saved2[2]]
+
+imp_g is preds[0]
+div_g is preds[1]
+stb_g is preds[2]
+rep_g is preds[3]
+
+# Mutual exclusion within {stable, improving, diverging}.
+assert of [not (stb_g == 1 and imp_g == 1), "OI17 stable + improving must not collide in gray band (#187)"]
+assert of [not (stb_g == 1 and div_g == 1), "OI18 stable + diverging must not collide in gray band (#187)"]
+
+# Predicates must agree with `report`.
+if rep_g == "stable":
+    assert of [imp_g == 0, "OI19 report=stable => improving=0 (#187)"]
+    assert of [div_g == 0, "OI20 report=stable => diverging=0 (#187)"]
+
 print of "observer interactions: all passed"
