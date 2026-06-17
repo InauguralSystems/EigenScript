@@ -571,10 +571,10 @@ Value* promote_if_arena(Value *v) {
         return h;
     }
     if (v->type == VAL_NULL) {
-        Value *h = xcalloc(1, sizeof(Value));
-        h->type = VAL_NULL;
-        h->refcount = 1;
-        return h;
+        /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1).
+         * Don't allocate a heap copy — incref/decref are already no-ops on it,
+         * and a heap VAL_NULL leaks via slot_bridge_wrap's pointer-drop. */
+        return v;
     }
     /* Lists, dicts, functions: leave as-is (complex deep copy).
      * Callers should avoid storing arena-allocated complex types. */
