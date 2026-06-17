@@ -331,7 +331,13 @@ void vm_thread_reset_caches(void);
  * disuse. */
 static inline EigsSlot slot_bridge_wrap(Value *v) {
     if (!v) return slot_null();
-    if (v->type == VAL_NULL) return slot_null();
+    if (v->type == VAL_NULL) {
+        /* Caller passes an owned ref. Slot-encoded null drops the pointer,
+         * so heap VAL_NULL (rare but possible — see promote_if_arena) must
+         * be decref'd here. Singleton/arena nulls no-op the decref. */
+        val_decref(v);
+        return slot_null();
+    }
     if (v->type == VAL_NUM && v->obs_age > 0) return slot_from_tracked(v);
     return slot_from_heap(v);
 }
