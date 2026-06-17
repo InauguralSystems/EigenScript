@@ -27,7 +27,14 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan pgo
+.PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan pgo print-%
+
+# Introspection helper: `make print-SOURCES` echoes a variable's value.
+# tests/test_leak_guard.sh derives its ASan build source list from the
+# canonical SOURCES via this target rather than hardcoding it (which drifted
+# silently across the 0.15.0 multi-state refactor — see #223).
+print-%:
+	@echo '$($*)'
 
 all: build
 
