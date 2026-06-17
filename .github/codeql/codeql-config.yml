@@ -1,0 +1,16 @@
+name: "EigenScript CodeQL config"
+
+# CodeQL runs the security-and-quality query pack (configured in
+# .github/workflows/codeql.yml). The only deviation from defaults is
+# below: src/arena.c is excluded because it is a pure utility-wrapper
+# TU (xmalloc/xcalloc/xstrdup/xfopen_write etc. — no business logic).
+# Dataflow that lands at a syscall inside a wrapper there is the SAME
+# dataflow that existed at the call site before the wrapper was
+# introduced — analyzing the wrapper just creates a duplicate alert
+# in addition to the one already attributed to the call site (e.g.
+# `cpp/path-injection` at trace.c:389 from the EIGS_TRACE env var).
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - src/arena.c
