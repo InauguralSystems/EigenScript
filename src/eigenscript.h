@@ -584,6 +584,7 @@ Value* make_str(const char *s);
 Value* make_str_owned(char *s);
 Value* make_null(void);
 Value* make_list(int capacity);
+Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
 Value* make_fn(const char *name, char **params, int param_count, Env *closure);
 Value* make_builtin(BuiltinFn fn);

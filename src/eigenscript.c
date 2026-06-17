@@ -625,6 +625,22 @@ Value* make_list(int capacity) {
     return v;
 }
 
+/* Heap-forced list — for VM-internal wrappers that must outlive an arena
+ * window. An arena list freezes val_decref into a no-op, so any heap items
+ * it incref'd via list_append are leaked when the arena is reclaimed.
+ * Used by the builtin-arg packing path: the wrapper holds incref'd args,
+ * and val_decref(arg) must actually walk and release them on return. */
+Value* make_list_heap(int capacity) {
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_LIST;
+    v->data.list.capacity = capacity < 8 ? 8 : capacity;
+    v->data.list.items = xcalloc(v->data.list.capacity, sizeof(Value*));
+    v->data.list.count = 0;
+    v->refcount = 1;
+    v->arena = 0;
+    return v;
+}
+
 Value* make_text_builder(void) {
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_TEXT_BUILDER;
