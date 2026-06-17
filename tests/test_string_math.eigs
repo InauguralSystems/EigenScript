@@ -143,4 +143,10 @@ assert of [(len of "a\nb") == 3, "ESC3 \\n still escapes to LF"]
 assert of [(len of "a\tb") == 3, "ESC4 \\t still escapes to TAB"]
 assert of [(len of "a\\b") == 3, "ESC5 \\\\ still escapes to backslash"]
 
+# ---- sign (lib/math.eigs) ----
+load_file of "lib/math.eigs"
+assert of [(sign of -5) == -1, "SGN1 negative"]
+assert of [(sign of 0) == 0, "SGN2 zero"]
+assert of [(sign of 42) == 1, "SGN3 positive"]
+
 print of "All string_math tests passed"

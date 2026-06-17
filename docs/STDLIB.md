@@ -48,6 +48,7 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `abs` | `abs of value` | Absolute value |
+| `sign` | `sign of value` | Returns -1, 0, or 1 |
 | `max_val` | `max_val of list` | Maximum element |
 | `min_val` | `min_val of list` | Minimum element |
 | `clamp` | `clamp of [value, lo, hi]` | Restrict to range |
