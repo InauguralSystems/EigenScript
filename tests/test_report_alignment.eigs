@@ -21,7 +21,16 @@ print of i2
 print of r2
 
 print of ""
-print of "--- RA3: Converged (low H basin, dH~0) ---"
+print of "--- RA3: Converged (low H basin, dH~0, full window) ---"
+z is 1000000
+z is 1000000
+z is 1000000
+z is 1000000
+z is 1000000
+z is 1000000
+z is 1000000
+z is 1000000
+z is 1000000
 z is 1000000
 z is 1000000
 c3 is converged

@@ -1,0 +1,71 @@
+print of "=== WINDOWED CONVERGED TEST ==="
+print of "Verifies converged requires a full N-step quiet window"
+print of ""
+
+print of "--- WC1: Short trajectory (< N) cannot converge ---"
+a is 1000000
+a is 1000000
+a is 1000000
+c1 is converged
+print of c1
+
+print of ""
+print of "--- WC2: Full N quiet assigns at low H -> converged ---"
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+b is 1000000
+c2 is converged
+print of c2
+
+print of ""
+print of "--- WC3: Single transient violation breaks convergence ---"
+c is 42
+c is 42
+c is 42
+c is 42
+c is 42
+c is 42
+c is 42
+c is 42
+c is 42
+c is 42
+c is 42
+c is 99999
+c3 is converged
+print of c3
+
+print of ""
+print of "--- WC4: Newton's sqrt of 2 reaches equilibrium, not converged ---"
+print of "(trajectory accumulates entropy from distinct intermediates, so dH~0 alone is not enough)"
+x is 2.0
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+x is (x + 2.0 / x) / 2
+c4 is converged
+e4 is equilibrium
+print of f"converged={c4} equilibrium={e4}"
+
+print of ""
+print of "=== WINDOWED CONVERGED COMPLETE ==="

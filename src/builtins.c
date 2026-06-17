@@ -474,7 +474,19 @@ Value* builtin_report(Value *arg) {
         return make_str("oscillating");
     if (dh > g_obs_dh_small) return make_str("diverging");
     if (dh < -g_obs_dh_small) return make_str("improving");
-    if (fabs(dh) < g_obs_dh_zero && h < g_obs_h_low) return make_str("converged");
+    /* Converged requires a full window of near-zero dH at low entropy —
+     * matches PREDICATE case 0 (vm.c). Without a full window, fall through
+     * to equilibrium / stable. */
+    if (fabs(dh) < g_obs_dh_zero && h < g_obs_h_low &&
+        observer_window_size(arg) >= OBSERVER_WINDOW_N) {
+        int all_quiet = 1;
+        for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+            if (fabs(observer_window_get(arg, i)) >= g_obs_dh_zero) {
+                all_quiet = 0; break;
+            }
+        }
+        if (all_quiet) return make_str("converged");
+    }
     if (fabs(dh) < g_obs_dh_zero) return make_str("equilibrium");
     if (fabs(dh) < g_obs_dh_small && h >= g_obs_h_low) return make_str("stable");
     return make_str("stable");

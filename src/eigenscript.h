@@ -221,10 +221,32 @@ struct Value {
     double last_entropy;
     int obs_age;
     double prev_dH;
+    /* Windowed observer history: ring buffer of recent dH values.
+     * NULL until second observation on a non-arena Value (allocated
+     * lazily in observer_window_push, eigenscript.c). Used by the
+     * windowed predicate implementations (converged/stable/improving/
+     * diverging/oscillating/equilibrium) to judge phase over a window
+     * instead of one frame. Arena Values never get a window — predicates
+     * fall back to "window empty" (false). */
+    double *dh_window;
+    uint8_t dh_window_head;   /* next slot to write (ring index) */
+    uint8_t dh_window_count;  /* current fill, 0..OBSERVER_WINDOW_N */
     int refcount;       /* reference counting GC: 0 = unmanaged, >0 = tracked */
     unsigned char arena; /* 1 if arena-allocated (don't free) */
     unsigned char dirty; /* 1 = observer entropy needs recomputation */
 };
+
+/* Window length for the per-Value dH ring buffer. Predicates require
+ * a full window (count == OBSERVER_WINDOW_N) for "converged"-class
+ * checks and a partial window (count >= 3) for trend-class checks. */
+#define OBSERVER_WINDOW_N 10
+
+/* Returns the current fill of v's dH window (0..OBSERVER_WINDOW_N). */
+size_t observer_window_size(const Value *v);
+
+/* Returns the dH at offset back from most recent (0 = most recent).
+ * Caller must ensure offset < observer_window_size(v). */
+double observer_window_get(const Value *v, size_t offset_back);
 
 /* ---- Arena allocator ---- */
 
