@@ -4,12 +4,14 @@
 # - template.eigs render: no template-injection from variable values
 # - text_builder.eigs: shared buffered text assembly
 # - int_vector.eigs: fixed-size integer vectors over buffers
+# - list.eigs take/drop: first-n / rest-of-n list slicing
 
 load_file of "lib/math.eigs"
 load_file of "lib/test.eigs"
 load_file of "lib/template.eigs"
 load_file of "lib/text_builder.eigs"
 load_file of "lib/int_vector.eigs"
+load_file of "lib/list.eigs"
 
 # --- math.dot bounds ---
 assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
@@ -117,5 +119,17 @@ assert of [as_list_ok, "SF38 int_vector_to_list"]
 assert of [(int_vector_len of dst) == 5, "SF39 int_vector_len"]
 int_vector_fill of [dst, 6.6]
 assert of [dst[4] == 6, "SF40 int_vector_fill"]
+
+# --- list.take ---
+assert of [(take of [[1, 2, 3, 4, 5], 2]) == [1, 2], "SF41 take normal"]
+assert of [(take of [[1, 2, 3], 0]) == [], "SF42 take zero"]
+assert of [(take of [[1, 2], 5]) == [1, 2], "SF43 take exceeds length"]
+assert of [(take of [[], 3]) == [], "SF44 take empty list"]
+
+# --- list.drop ---
+assert of [(drop of [[1, 2, 3, 4, 5], 2]) == [3, 4, 5], "SF45 drop normal"]
+assert of [(drop of [[1, 2, 3], 0]) == [1, 2, 3], "SF46 drop zero"]
+assert of [(drop of [[1, 2], 5]) == [], "SF47 drop exceeds length"]
+assert of [(drop of [[], 3]) == [], "SF48 drop empty list"]
 
 print of "All stdlib-fix tests passed"
