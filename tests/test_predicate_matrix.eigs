@@ -1,0 +1,153 @@
+# Predicate family regression matrix — pins the windowed-predicate semantics
+# specified in docs/PREDICATES.md (issue #200). Covers what
+# test_windowed_converged.eigs does not: the mutual-exclusion matrix for
+# stable/improving/diverging/oscillating/equilibrium, threshold-knob
+# transitions, the two documented co-fire edge cases, and Newton sqrt
+# correctness. Self-asserting: any failure aborts via `assert` (nonzero rc);
+# all-pass prints PREDICATE_MATRIX_ALL_PASS.
+#
+# Every signal for a trajectory is read inside ONE list literal so that
+# g_last_observer stays equal to the trajectory variable (each top-level
+# `x is ...` would otherwise repoint it). List index map:
+#   [0]=converged [1]=stable [2]=improving [3]=diverging
+#   [4]=oscillating [5]=equilibrium [6]=report
+# Thresholds (defaults): dh_zero=0.001 dh_small=0.01 h_low=0.1.
+# Entropy of a number x is H_binary(1/(1+|x|)) — peaks near |x|=1, ~0 for
+# large |x| — so trajectories are built from values with known entropy.
+
+print of "=== PREDICATE MATRIX (docs/PREDICATES.md) ==="
+
+define expect(tag, p, conv, stab, impr, div, osc, eq, rep) as:
+    assert of [p[0] == conv, f"{tag}: converged expected {conv} got {p[0]}"]
+    assert of [p[1] == stab, f"{tag}: stable expected {stab} got {p[1]}"]
+    assert of [p[2] == impr, f"{tag}: improving expected {impr} got {p[2]}"]
+    assert of [p[3] == div,  f"{tag}: diverging expected {div} got {p[3]}"]
+    assert of [p[4] == osc,  f"{tag}: oscillating expected {osc} got {p[4]}"]
+    assert of [p[5] == eq,   f"{tag}: equilibrium expected {eq} got {p[5]}"]
+    assert of [p[6] == rep,  f"{tag}: report expected {rep} got {p[6]}"]
+    print of f"  PASS: {tag}"
+
+# --- improving only: entropy falling fast (increasing |x|) ---
+a is 2.0
+a is 3.0
+a is 4.0
+a is 5.0
+a is 9.0
+a is 19.0
+a is 99.0
+pa is [converged, stable, improving, diverging, oscillating, equilibrium, report of a]
+expect of ["improving", pa, 0, 0, 1, 0, 0, 0, "improving"]
+
+# --- diverging only: entropy rising fast (decreasing |x| toward 1) ---
+b is 99.0
+b is 19.0
+b is 9.0
+b is 5.0
+b is 4.0
+b is 3.0
+b is 2.0
+pb is [converged, stable, improving, diverging, oscillating, equilibrium, report of b]
+expect of ["diverging", pb, 0, 0, 0, 1, 0, 0, "diverging"]
+
+# --- oscillating only: small-amplitude sign flip, |dH| in (dh_zero, dh_small) ---
+c is 70.0
+c is 75.0
+c is 70.0
+c is 75.0
+c is 70.0
+pc is [converged, stable, improving, diverging, oscillating, equilibrium, report of c]
+expect of ["oscillating", pc, 0, 0, 0, 0, 1, 0, "oscillating"]
+
+# --- stable only: small monotone entropy change at high entropy, no sign flip ---
+e is 50.0
+e is 55.0
+e is 60.0
+e is 65.0
+pe is [converged, stable, improving, diverging, oscillating, equilibrium, report of e]
+expect of ["stable", pe, 0, 1, 0, 0, 0, 0, "stable"]
+
+# --- equilibrium only: low-entropy value, SHORT window (< N) so not converged ---
+g is 1000000.0
+g is 1000000.0
+g is 1000000.0
+g is 1000000.0
+pg is [converged, stable, improving, diverging, oscillating, equilibrium, report of g]
+expect of ["equilibrium-only", pg, 0, 0, 0, 0, 0, 1, "equilibrium"]
+
+# --- converged: low-entropy value, FULL window (>= N=10). converged is a
+#     strict subset of equilibrium, so BOTH fire; report resolves to converged. ---
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+k is 1000000.0
+pk is [converged, stable, improving, diverging, oscillating, equilibrium, report of k]
+expect of ["converged", pk, 1, 0, 0, 0, 0, 1, "converged"]
+
+# --- EDGE: large-amplitude oscillation is NOT mutually exclusive — it co-fires
+#     diverging (the bare predicates overlap; only `report` disambiguates,
+#     resolving oscillating first). Pins the actual vm.c behavior. ---
+d is 2.0
+d is 10.0
+d is 2.0
+d is 10.0
+d is 2.0
+pd is [converged, stable, improving, diverging, oscillating, equilibrium, report of d]
+expect of ["osc-big-cofires-diverging", pd, 0, 0, 0, 1, 1, 0, "oscillating"]
+
+# --- EDGE: quiet (dH=0) at HIGH entropy co-fires stable + equilibrium; report
+#     resolves to equilibrium. (Not converged: entropy >= h_low.) ---
+h is 2.0
+h is 2.0
+h is 2.0
+h is 2.0
+ph is [converged, stable, improving, diverging, oscillating, equilibrium, report of h]
+expect of ["quiet-high-entropy", ph, 0, 1, 0, 0, 0, 1, "equilibrium"]
+
+# --- THRESHOLD KNOB: the small-amplitude oscillation (|dH|~0.0057) is
+#     `oscillating` at default thresholds, but raising dh_zero above |dH|
+#     reclassifies the SAME trajectory as `equilibrium`. ---
+t1 is 70.0
+t1 is 75.0
+t1 is 70.0
+t1 is 75.0
+t1 is 70.0
+td is [oscillating, equilibrium]
+assert of [td[0] == 1, f"threshold-default: oscillating expected 1 got {td[0]}"]
+assert of [td[1] == 0, f"threshold-default: equilibrium expected 0 got {td[1]}"]
+print of "  PASS: threshold-default (oscillating)"
+
+set_observer_thresholds of [0.01, 0.05, 0.5]
+t2 is 70.0
+t2 is 75.0
+t2 is 70.0
+t2 is 75.0
+t2 is 70.0
+tr is [oscillating, equilibrium]
+assert of [tr[0] == 0, f"threshold-raised: oscillating expected 0 got {tr[0]}"]
+assert of [tr[1] == 1, f"threshold-raised: equilibrium expected 1 got {tr[1]}"]
+print of "  PASS: threshold-raised dh_zero -> equilibrium"
+set_observer_thresholds of [0.001, 0.01, 0.1]
+
+# --- Newton sqrt correctness (independent of predicates): pin that the math
+#     still converges across magnitudes. |result^2 - n| < 1e-6 (two-sided). ---
+define check_sqrt(n) as:
+    r is sqrt of n
+    diff is r * r - n
+    assert of [diff < 0.000001, f"sqrt({n}): r^2-n too high ({diff})"]
+    assert of [diff > -0.000001, f"sqrt({n}): r^2-n too low ({diff})"]
+    print of f"  PASS: sqrt({n}) = {r}"
+
+check_sqrt of 2.0
+check_sqrt of 10.0
+check_sqrt of 100.0
+check_sqrt of 1000000.0
+check_sqrt of 0.000001
+
+print of "PREDICATE_MATRIX_ALL_PASS"
