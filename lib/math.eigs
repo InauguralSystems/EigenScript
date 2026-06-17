@@ -12,6 +12,8 @@
 #   clamp of [15, 0, 10]           # 10
 #   lerp of [0, 100, 0.25]         # 25
 #   dot of [[1,2,3], [4,5,6]]      # 32
+#   gcd of [12, 18]                 # 6
+#   lcm of [4, 6]                   # 12
 
 # ---- abs: absolute value ----
 # abs of value -> number
@@ -79,3 +81,29 @@ define dot(a, b) as:
     for i in range of n:
         result is result + a[i] * b[i]
     return result
+
+# ---- gcd: greatest common divisor (Euclid's algorithm) ----
+# gcd of [a, b] -> number
+# Always returns a non-negative result.
+define gcd(a, b) as:
+    if a < 0:
+        a is 0 - a
+    if b < 0:
+        b is 0 - b
+    loop while b > 0:
+        t is b
+        b is a % b
+        a is t
+    return a
+
+# ---- lcm: least common multiple ----
+# lcm of [a, b] -> number
+# Defined in terms of gcd. Returns 0 if either input is 0.
+define lcm(a, b) as:
+    if a == 0 or b == 0:
+        return 0
+    if a < 0:
+        a is 0 - a
+    if b < 0:
+        b is 0 - b
+    return (a / (gcd of [a, b])) * b
