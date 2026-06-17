@@ -39,13 +39,19 @@ rm -f /tmp/eigs_asan_probe
 ASAN_BIN=/tmp/eigs_leak_guard
 ASAN_LOG=/tmp/eigs_leak_guard.log
 
-# Build a minimal ASan binary mirroring build.sh flags. Exclude eigenlsp.c
-# (has its own main) and ext_* (need libpq/SDL2 etc.).
-cd "$SRC" || { echo "  FAIL: cannot cd to $SRC"; exit 1; }
-
-# Source list matches build.sh minimal exactly so we don't pick up
-# standalone tools (eigenlsp, jit_smoke) that define their own main().
-SRCS="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c eigs_embed.c main.c"
+# Build a minimal ASan binary mirroring build.sh flags. Derive the source
+# list from the Makefile's canonical SOURCES (via `make print-SOURCES`) rather
+# than hardcoding it — a hand-copied list drifts silently every time the
+# runtime grows (state.c/eigs_embed.c were missed across 0.15.0; see #223).
+# SOURCES is the minimal runtime + main.c: it already excludes ext_*/model_*
+# and the standalone-main tools (eigenlsp, jit_smoke) that define their own main().
+cd "$ROOT" || { echo "  FAIL: cannot cd to $ROOT"; exit 1; }
+SRCS=$(make -s print-SOURCES 2>/dev/null)
+if [ -z "$SRCS" ]; then
+    echo "  SKIP: could not read SOURCES from Makefile (make print-SOURCES empty)"
+    echo "Leak Guard: 0 passed, 0 failed (skipped)"
+    exit 0
+fi
 
 if ! gcc -O1 -g -fsanitize=address -fno-omit-frame-pointer \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
