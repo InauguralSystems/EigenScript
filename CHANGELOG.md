@@ -4,6 +4,33 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Change — `converged` is now a windowed predicate (#204)
+
+- **`converged` and `report of x == "converged"` now require a full
+  10-step quiet window.** The pointwise rule (`|dH| < dh_zero &&
+  entropy < h_low` on the current step alone) flagged any single-step
+  quiet as converged, which fires spuriously on iterative schemes
+  whose first quiet step is followed by more motion — Newton's method
+  early in the descent, gradient descent crossing a saddle, an SA
+  trajectory that happens to hold its energy for one step. The new
+  rule requires the most recent `OBSERVER_WINDOW_N = 10` `dH` values
+  to all be below `dh_zero` *and* current entropy below `h_low`. A
+  value observed fewer than `N` times can no longer report
+  `converged`; it reports `equilibrium` if `|dH| < dh_zero` or one
+  of the active-trajectory bands otherwise. See
+  [docs/PREDICATES.md](docs/PREDICATES.md) for the full spec.
+- **Behavior change for short trajectories.** Programs that relied on
+  `converged` firing after 1-2 assignments will now see `0` /
+  `equilibrium`. The fix is to either prime with more observations or
+  read `equilibrium` (which is still pointwise) for short runs. Loops
+  that watch `loop while not converged` may run more iterations
+  before exiting; ensure their `max_iter` cap is sufficient.
+- **Internal:** lazy `dh_window` ring buffer on each tracked Value;
+  allocation is gated on the compile-time observer-tracking flag, so
+  values that no predicate or interrogative reads pay nothing. Buffer
+  is moved (not copied) on `OBSERVE_ASSIGN` and freed before the
+  VAL_NUM freelist path. Spec: [docs/PREDICATES.md](docs/PREDICATES.md).
+
 ## [0.15.3] — 2026-06-16
 
 ### Fix — `\r` is now a string-literal escape

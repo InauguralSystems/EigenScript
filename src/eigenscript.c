@@ -239,6 +239,35 @@ static double compute_entropy_impl(Value *v, int depth) {
 
 double compute_entropy(Value *v) { return compute_entropy_impl(v, 0); }
 
+/* Push dh onto v's ring buffer, allocating it lazily on the first push.
+ * Arena Values skip windowing (their predicates fall back to count==0).
+ * Caller is update_observer; obs_age has just become >= 1 so we know
+ * this is a real delta, not the initial-observation no-op. */
+static void observer_window_push(Value *v, double dh) {
+    if (!v || v->arena) return;
+    if (!v->dh_window) {
+        v->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+        v->dh_window_head = 0;
+        v->dh_window_count = 0;
+    }
+    v->dh_window[v->dh_window_head] = dh;
+    v->dh_window_head = (uint8_t)((v->dh_window_head + 1) % OBSERVER_WINDOW_N);
+    if (v->dh_window_count < OBSERVER_WINDOW_N) v->dh_window_count++;
+}
+
+size_t observer_window_size(const Value *v) {
+    return v ? (size_t)v->dh_window_count : 0;
+}
+
+double observer_window_get(const Value *v, size_t offset_back) {
+    /* offset_back 0 = most recent. Caller must check size first. */
+    if (!v || !v->dh_window || offset_back >= v->dh_window_count) return 0.0;
+    /* head points at NEXT write slot; most-recent is head-1. */
+    int idx = (int)v->dh_window_head - 1 - (int)offset_back;
+    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    return v->dh_window[idx];
+}
+
 void update_observer(Value *v) {
     if (!v) return;
     double new_entropy = compute_entropy(v);
@@ -248,6 +277,7 @@ void update_observer(Value *v) {
         v->dH = 0;
     } else {
         v->dH = new_entropy - v->last_entropy;
+        observer_window_push(v, v->dH);
     }
     v->entropy = new_entropy;
     v->last_entropy = new_entropy;
@@ -321,6 +351,15 @@ void free_value(Value *v) {
      * loop-stall check / predicate / interrogative dereferenced; for
      * freelisted NUMs it silently read recycled data instead. */
     if (v == g_last_observer) g_last_observer = NULL;
+    /* Observer ring buffer is heap-allocated and outlives the Value's
+     * payload only when freelisting — free it before either path so we
+     * don't leak when a tracked NUM is recycled. */
+    if (v->dh_window) {
+        free(v->dh_window);
+        v->dh_window = NULL;
+        v->dh_window_head = 0;
+        v->dh_window_count = 0;
+    }
     if (v->type == VAL_NUM) {
         /* Route freed NUMs to freelist for reuse by make_num */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {

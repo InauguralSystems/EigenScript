@@ -251,7 +251,7 @@ HD_OUTPUT=$(./eigenscript ../tests/test_halting_descent.eigs 2>&1)
 
 HD_ITERS=$(echo "$HD_OUTPUT" | grep -A1 'HD1:' | tail -1)
 TOTAL=$((TOTAL + 1))
-if [ -n "$HD_ITERS" ] && [ "$HD_ITERS" -gt 0 ] 2>/dev/null && [ "$HD_ITERS" -lt 20 ] 2>/dev/null; then
+if [ -n "$HD_ITERS" ] && [ "$HD_ITERS" -gt 0 ] 2>/dev/null && [ "$HD_ITERS" -lt 50 ] 2>/dev/null; then
     echo "  PASS: HD1 loop terminated in $HD_ITERS iterations"
     PASS=$((PASS + 1))
 else
@@ -323,6 +323,18 @@ check "SB2 stable=0 (converged)" "$SB2_S" "0"
 
 SB2_R=$(echo "$SB_OUTPUT" | grep -A2 'SB2:' | tail -1)
 check "SB2 report=converged" "$SB2_R" "converged"
+echo ""
+
+echo "[8b] Windowed Converged (4 checks)"
+WC_OUTPUT=$(./eigenscript ../tests/test_windowed_converged.eigs 2>&1)
+WC1=$(echo "$WC_OUTPUT" | grep -A1 'WC1:' | tail -1)
+check "WC1 short trajectory cannot converge" "$WC1" "0"
+WC2=$(echo "$WC_OUTPUT" | grep -A1 'WC2:' | tail -1)
+check "WC2 full N quiet window converges" "$WC2" "1"
+WC3=$(echo "$WC_OUTPUT" | grep -A1 'WC3:' | tail -1)
+check "WC3 single transient breaks convergence" "$WC3" "0"
+WC4=$(echo "$WC_OUTPUT" | grep -A2 'WC4:' | tail -1)
+check "WC4 newton sqrt reaches equilibrium not converged" "$WC4" "converged=0 equilibrium=1"
 echo ""
 
 echo "[9/15] Assert (3 checks)"

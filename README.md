@@ -156,7 +156,9 @@ alerts, or debugging without writing logging code.
 > with no external goal — so the trajectory words don't always match a
 > naive "smaller is better" reading. The full model, including the
 > resolution knob (`set_observer_thresholds`), is in
-> [docs/OBSERVER.md](docs/OBSERVER.md).
+> [docs/OBSERVER.md](docs/OBSERVER.md); the precise predicate semantics
+> (what `converged` requires, how it differs from `equilibrium`, the
+> N-step window) are in [docs/PREDICATES.md](docs/PREDICATES.md).
 
 ### Don't Ask — `unobserved`
 

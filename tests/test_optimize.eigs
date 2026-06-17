@@ -54,7 +54,7 @@ print of ("  f: " + (str of result5.f))
 # ---- Genetic Algorithm: maximize -(x-7)^2 (max at x=7) ----
 print of "--- genetic_optimize on -(x-7)^2 ---"
 fit_fn is (x) => 0 - (x - 7) * (x - 7)
-result6 is genetic_optimize of [fit_fn, [0, 15], 30, 100]
+result6 is genetic_optimize of [fit_fn, [0, 15], 30, 80]
 assert_near of [result6.x, 7, 3, "ga finds x near 7"]
 print of ("  x: " + (str of result6.x))
 print of ("  fitness: " + (str of result6.fitness))

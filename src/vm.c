@@ -936,6 +936,16 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
             v->obs_age = prev->obs_age;
             v->dH = prev->dH;
             v->prev_dH = prev->prev_dH;
+            /* Move ring-buffer ownership: prev is about to be freed
+             * (or at least lose its observer alias). Free v's existing
+             * buffer if any, then transfer prev's. */
+            if (v->dh_window) free(v->dh_window);
+            v->dh_window = prev->dh_window;
+            v->dh_window_head = prev->dh_window_head;
+            v->dh_window_count = prev->dh_window_count;
+            prev->dh_window = NULL;
+            prev->dh_window_head = 0;
+            prev->dh_window_count = 0;
         }
         v->dirty = 1;
         g_last_observer = v;
@@ -967,6 +977,13 @@ void jit_helper_observe_assign_local(int slot) {
             v->obs_age = prev->obs_age;
             v->dH = prev->dH;
             v->prev_dH = prev->prev_dH;
+            if (v->dh_window) free(v->dh_window);
+            v->dh_window = prev->dh_window;
+            v->dh_window_head = prev->dh_window_head;
+            v->dh_window_count = prev->dh_window_count;
+            prev->dh_window = NULL;
+            prev->dh_window_head = 0;
+            prev->dh_window_count = 0;
         }
         v->dirty = 1;
         g_last_observer = v;
@@ -3549,6 +3566,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     v->obs_age = prev->obs_age;
                     v->dH = prev->dH;
                     v->prev_dH = prev->prev_dH;
+                    if (v->dh_window) free(v->dh_window);
+                    v->dh_window = prev->dh_window;
+                    v->dh_window_head = prev->dh_window_head;
+                    v->dh_window_count = prev->dh_window_count;
+                    prev->dh_window = NULL;
+                    prev->dh_window_head = 0;
+                    prev->dh_window_count = 0;
                 }
                 v->dirty = 1;
                 g_last_observer = v;
@@ -3589,6 +3613,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     v->obs_age = prev->obs_age;
                     v->dH = prev->dH;
                     v->prev_dH = prev->prev_dH;
+                    if (v->dh_window) free(v->dh_window);
+                    v->dh_window = prev->dh_window;
+                    v->dh_window_head = prev->dh_window_head;
+                    v->dh_window_count = prev->dh_window_count;
+                    prev->dh_window = NULL;
+                    prev->dh_window_head = 0;
+                    prev->dh_window_count = 0;
                 }
                 v->dirty = 1;
                 g_last_observer = v;
@@ -3862,7 +3893,23 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         double prev_dH = v ? v->prev_dH : 0;
         int result = 0;
         switch (kind) {
-        case 0: result = (fabs(dH) < g_obs_dh_zero && entropy < g_obs_h_low); break;
+        case 0: {
+            /* Windowed converged: every dH in the full window is near-zero
+             * AND entropy is low. Requires a complete window (count == N) so
+             * single-step or short trajectories never spuriously converge. */
+            int ok = 0;
+            if (v && observer_window_size(v) >= OBSERVER_WINDOW_N) {
+                ok = 1;
+                for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+                    if (fabs(observer_window_get(v, i)) >= g_obs_dh_zero) {
+                        ok = 0; break;
+                    }
+                }
+                if (ok && entropy >= g_obs_h_low) ok = 0;
+            }
+            result = ok;
+            break;
+        }
         case 1: result = (fabs(dH) < g_obs_dh_small && entropy >= g_obs_h_low &&
                           !(dH * prev_dH < 0 && fabs(dH) > g_obs_dh_zero)); break;
         case 2: result = (dH < -g_obs_dh_small); break;

@@ -14,7 +14,16 @@ print of where is x
 print of why is x
 
 print of ""
-print of "--- SB2: Converged is NOT stable ---"
+print of "--- SB2: Converged is NOT stable (needs full window) ---"
+y is 1000000
+y is 1000000
+y is 1000000
+y is 1000000
+y is 1000000
+y is 1000000
+y is 1000000
+y is 1000000
+y is 1000000
 y is 1000000
 y is 1000000
 
