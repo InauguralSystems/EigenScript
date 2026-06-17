@@ -46,6 +46,29 @@ char* xstrdup(const char *s) {
     return r;
 }
 
+FILE* xfopen_write(const char *path, const char *mode) {
+    /* Bare fopen("w"/"a") creates files with mode 0666 & ~umask; a permissive
+     * umask leaves the file world-writable (CodeQL cpp/world-writable-file-creation).
+     * Use explicit POSIX open + fdopen so the on-disk mode is pinned to 0644. */
+    if (!path || !mode) return NULL;
+    int has_w = 0, has_a = 0, plus = 0;
+    for (const char *p = mode; *p; p++) {
+        if (*p == 'w') has_w = 1;
+        else if (*p == 'a') has_a = 1;
+        else if (*p == '+') plus = 1;
+        /* 'b' is a POSIX no-op; other chars ignored */
+    }
+    int flags;
+    if (has_w) flags = (plus ? O_RDWR : O_WRONLY) | O_CREAT | O_TRUNC;
+    else if (has_a) flags = (plus ? O_RDWR : O_WRONLY) | O_CREAT | O_APPEND;
+    else return fopen(path, mode);  /* read-only or unknown — defer */
+    int fd = open(path, flags, 0644);
+    if (fd < 0) return NULL;
+    FILE *fp = fdopen(fd, mode);
+    if (!fp) { close(fd); return NULL; }
+    return fp;
+}
+
 void* xmalloc_array(size_t nmemb, size_t size) {
     size_t total = safe_size_mul(nmemb, size);
     if (total == SIZE_MAX) x_oom(SIZE_MAX);

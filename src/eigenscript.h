@@ -548,6 +548,11 @@ size_t safe_size_mul(size_t a, size_t b);
 void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);
 void* xrealloc_array(void *p, size_t nmemb, size_t size);
+/* fopen wrapper for any write mode ("w"/"wb"/"w+"/"a"/...). Pins the
+ * created file's mode to 0644 regardless of process umask, so a permissive
+ * umask cannot leave the file world-writable. Use for any newly-created
+ * file; read-only fopen("r") may call fopen directly. */
+FILE* xfopen_write(const char *path, const char *mode);
 
 /* ---- Growable string buffer ----
  * Heap-backed, doubling growth. Used to replace fixed MAX_STR stack

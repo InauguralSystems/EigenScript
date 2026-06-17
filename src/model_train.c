@@ -657,7 +657,7 @@ static void class_loss_open_if_needed(void) {
     if (g_class_loss_init || g_class_loss_inhibit) return;
     const char *path = getenv("EIGS_CLASS_LOSS_DUMP");
     if (!path || !*path) { g_class_loss_inhibit = 1; return; }
-    g_class_loss_fp = fopen(path, "w");
+    g_class_loss_fp = xfopen_write(path, "w");
     if (!g_class_loss_fp) {
         fprintf(stderr, "[class-loss-dump] failed to open %s\n", path);
         g_class_loss_inhibit = 1;
@@ -673,7 +673,7 @@ static void depth_loss_open_if_needed(void) {
     if (g_depth_loss_init || g_depth_loss_inhibit) return;
     const char *path = getenv("EIGS_DEPTH_LOSS_DUMP");
     if (!path || !*path) { g_depth_loss_inhibit = 1; return; }
-    g_depth_loss_fp = fopen(path, "w");
+    g_depth_loss_fp = xfopen_write(path, "w");
     if (!g_depth_loss_fp) {
         fprintf(stderr, "[depth-loss-dump] failed to open %s\n", path);
         g_depth_loss_inhibit = 1;
@@ -714,7 +714,7 @@ static void train_dump_open_if_needed(TransformerModel *model) {
     if (g_train_dump_init || g_train_dump_inhibit) return;
     const char *path = getenv("EIGS_TRAIN_DUMP");
     if (!path || !*path) { g_train_dump_inhibit = 1; return; }
-    g_train_dump_fp = fopen(path, "w");
+    g_train_dump_fp = xfopen_write(path, "w");
     if (!g_train_dump_fp) {
         fprintf(stderr, "[train-dump] failed to open %s\n", path);
         g_train_dump_inhibit = 1;

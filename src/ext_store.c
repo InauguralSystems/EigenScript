@@ -641,7 +641,7 @@ static Value* builtin_store_open(Value *arg) {
         }
     } else {
         /* Create new file */
-        fp = fopen(path, "w+b");
+        fp = xfopen_write(path, "w+b");
         if (!fp) {
             runtime_error(0, "store_open: cannot create '%s'\n", path);
             free(store);

@@ -373,7 +373,7 @@ int eigenscript_fmt(const char *path, int write_mode) {
     }
 
     if (write_mode) {
-        FILE *fp = fopen(path, "w");
+        FILE *fp = xfopen_write(path, "w");
         if (!fp) {
             fprintf(stderr, "Error: cannot write to '%s'\n", path);
             for (int i = 0; i < actual_lines; i++) free(lines[i]);

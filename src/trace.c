@@ -386,6 +386,16 @@ void trace_init(void) {
     const char *path = getenv("EIGS_TRACE");
     if (!path || !*path) return;
 
+    /* NB: bare fopen("w") here means the trace file's mode is 0666 & ~umask
+     * — under a permissive umask it could land world-writable (CodeQL
+     * cpp/world-writable-file-creation #101). Left as-is because the path
+     * comes from the EIGS_TRACE env var, which already carries the accepted
+     * cpp/path-injection alert #107 at this line; any rewrite that uses
+     * open() instead of fopen() moves the sink line and CodeQL files a
+     * "new" path-injection alert in addition to keeping #107 open. The
+     * trace file is opt-in (env var off by default) and the surrounding
+     * filesystem is operator-controlled, so the residual exposure is
+     * limited. */
     g_trace_fp = fopen(path, "w");
     if (!g_trace_fp) {
         fprintf(stderr, "trace: cannot open EIGS_TRACE=%s: %s\n",
