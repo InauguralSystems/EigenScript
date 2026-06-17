@@ -912,7 +912,7 @@ Value* builtin_tensor_save(Value *arg) {
     int ndim = tensor_dims(tensor, &rows, &cols);
     if (ndim == 0) return make_num(0);
 
-    FILE *f = fopen(path_val->data.str, "wb");
+    FILE *f = xfopen_write(path_val->data.str, "wb");
     if (!f) return make_num(0);
 
     uint32_t header[4] = { (uint32_t)ndim, (uint32_t)rows, (uint32_t)cols, 1 /* flags: has observer */ };

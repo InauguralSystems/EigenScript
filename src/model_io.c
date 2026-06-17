@@ -406,7 +406,7 @@ int save_model_weights(const char *path, TransformerModel *model) {
         }
     }
 
-    FILE *f = fopen(path, "w");
+    FILE *f = xfopen_write(path, "w");
     if (!f) return -1;
 
     const char *wf_tag = model->weight_format == WEIGHT_FORMAT_TERNARY
@@ -793,7 +793,7 @@ int save_model_eigen(const char *path, TransformerModel *model) {
         }
     }
 
-    FILE *f = fopen(path, "wb");
+    FILE *f = xfopen_write(path, "wb");
     if (!f) return -1;
 
     int has_observer = (model->observer.data != NULL && model->observer.total_elements > 0);

@@ -1696,7 +1696,7 @@ Value* builtin_stream_open(Value *arg) {
     if (!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM)
         return make_num(0);
     if (g_stream_file) { fclose(g_stream_file); g_stream_file = NULL; }
-    g_stream_file = fopen(path_val->data.str, "wb");
+    g_stream_file = xfopen_write(path_val->data.str, "wb");
     if (!g_stream_file) return make_num(0);
     uint32_t count = (uint32_t)count_val->data.num;
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
@@ -2013,7 +2013,7 @@ Value* builtin_build_corpus(Value *arg) {
     /* ---- Pass 3: re-tokenize and write binary stream ---- */
     int stream_size = total_tokens + files_found * 2; /* +2 EOF per file */
 
-    FILE *stream_file = fopen(stream_path_val->data.str, "wb");
+    FILE *stream_file = xfopen_write(stream_path_val->data.str, "wb");
     if (!stream_file) {
         fprintf(stderr, "Error: cannot open %s\n", stream_path_val->data.str);
         free(file_tok_counts); free(top_names); free(top_ids);
@@ -2071,7 +2071,7 @@ Value* builtin_build_corpus(Value *arg) {
      * and structural_ids{} (the IDs the detokenizer special-cases). Downstream
      * scripts read these instead of hardcoding TokType ordinals so the stream
      * and detokenizer stay aligned when the enum grows. */
-    FILE *vocab_file = fopen(vocab_path_val->data.str, "w");
+    FILE *vocab_file = xfopen_write(vocab_path_val->data.str, "w");
     if (vocab_file) {
         fprintf(vocab_file,
                 "{\"first_ident_id\": %d, \"ext_vocab_size\": %d, \"base_vocab\": %d, \"top_n\": %d",
@@ -2119,7 +2119,7 @@ Value* builtin_build_corpus(Value *arg) {
                 }
                 order[j+1] = key;
             }
-            FILE *hist_file = fopen(idents_path_val->data.str, "w");
+            FILE *hist_file = xfopen_write(idents_path_val->data.str, "w");
             if (hist_file) {
                 fprintf(hist_file, "{\"n_idents\": %d, \"entries\": [", n_idents);
                 for (int i = 0; i < n_idents; i++) {
@@ -2504,7 +2504,7 @@ Value* builtin_write_text(Value *arg) {
     if (!path_val || path_val->type != VAL_STR ||
         !text_val || text_val->type != VAL_STR)
         return make_num(0);
-    FILE *f = fopen(path_val->data.str, "w");
+    FILE *f = xfopen_write(path_val->data.str, "w");
     if (!f) return make_num(0);
     size_t len = strlen(text_val->data.str);
     size_t written = fwrite(text_val->data.str, 1, len, f);

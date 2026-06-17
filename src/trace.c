@@ -386,7 +386,7 @@ void trace_init(void) {
     const char *path = getenv("EIGS_TRACE");
     if (!path || !*path) return;
 
-    g_trace_fp = fopen(path, "w");
+    g_trace_fp = xfopen_write(path, "w");
     if (!g_trace_fp) {
         fprintf(stderr, "trace: cannot open EIGS_TRACE=%s: %s\n",
                 path, strerror(errno));
