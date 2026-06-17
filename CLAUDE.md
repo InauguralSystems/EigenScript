@@ -136,7 +136,19 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   /dev/null — `test_terminal.eigs` blocks forever reading a pipe that
   never EOFs (e.g. backgrounded runs).
 
-## Current state: 0.15.2 released; next up
+## Current state: 0.15.3 released; next up
+
+0.15.3 is a two-fix patch: the observer `improving`/`diverging`
+predicates now switch at `dh_small` (matching `report` and `stable`)
+instead of `dh_zero`, so in the gray band the predicate family is
+mutually exclusive and agrees with `report` (#187); and `\r` is now
+a string-literal escape for ASCII CR (0x0D) in both regular and
+f-strings (the lexer previously dropped the backslash and kept the
+literal `'r'`). Both are documented behavior changes — see CHANGELOG
+[0.15.3]. Real on-disk CRLF was always handled correctly by the C
+scanners; the `\r` gap only bit anyone constructing CRLF test data
+inline (which is exactly how a false "scanner bug" diagnosis ended
+up in EigenMiniSat's GAPS log; retracted upstream).
 
 0.15.2 re-enables the macOS Intel JIT — the 0.14.2 holding pattern
 (`EIGENSCRIPT_JIT_FORCE_OFF=1` on Darwin x86_64) is gone. The fix is

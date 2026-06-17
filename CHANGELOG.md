@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.15.3] — 2026-06-16
+
 ### Fix — `\r` is now a string-literal escape
 
 - **`"\r"` produces ASCII CR (0x0D) instead of the literal char `'r'`.**
