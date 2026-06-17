@@ -538,20 +538,29 @@ Value* builtin_get_observer_thresholds(Value *arg) {
 }
 
 Value* builtin_assert(Value *arg) {
+    /* Failure path raises a normal runtime error (g_has_error + g_error_msg)
+     * rather than exit(1); that lets vm_run unwind to main, which runs the
+     * standard teardown (env_decref, gc_collect_at_exit, chunk_free). Direct
+     * exit leaked the global env and every registered builtin. Side effect:
+     * assert failures are now catchable in `try`/`catch`, matching `throw`. */
     if (arg->type == VAL_LIST && arg->data.list.count >= 2) {
         Value *cond = arg->data.list.items[0];
         Value *msg = arg->data.list.items[1];
         if (!is_truthy(cond)) {
             char *msg_str = value_to_string(msg);
             fprintf(stderr, "ASSERT FAIL: %s\n", msg_str);
+            snprintf(g_error_msg, sizeof(g_error_msg), "ASSERT FAIL: %s", msg_str);
             free(msg_str);
-            exit(1);
+            g_has_error = 1;
+            eigs_clear_error_value();
         }
         return make_null();
     }
     if (!is_truthy(arg)) {
         fprintf(stderr, "ASSERT FAIL\n");
-        exit(1);
+        snprintf(g_error_msg, sizeof(g_error_msg), "ASSERT FAIL");
+        g_has_error = 1;
+        eigs_clear_error_value();
     }
     return make_null();
 }
