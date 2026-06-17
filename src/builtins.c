@@ -3200,6 +3200,10 @@ Value* builtin_eval(Value *arg) {
     if (g_parse_errors > 0 || !ast) {
         g_parse_errors = saved_errors;
         free_tokenlist(&tl);
+        /* parse always returns an AST_PROGRAM node even on partial parses;
+         * free it here so error paths don't leak (free_ast walks NULL
+         * children safely — see parse_check for the same pattern). */
+        free_ast(ast);
         runtime_error(0, "eval: parse error in code string");
         return make_null();
     }
