@@ -45,7 +45,7 @@ cd "$SRC" || { echo "  FAIL: cannot cd to $SRC"; exit 1; }
 
 # Source list matches build.sh minimal exactly so we don't pick up
 # standalone tools (eigenlsp, jit_smoke) that define their own main().
-SRCS="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c main.c"
+SRCS="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c eigs_embed.c main.c"
 
 if ! gcc -O1 -g -fsanitize=address -fno-omit-frame-pointer \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
