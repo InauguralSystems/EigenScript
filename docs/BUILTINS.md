@@ -30,7 +30,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `str` | `str of value` | Convert to string representation |
 | `num` | `num of value` | Convert to number (parse string or coerce) |
 | `type` | `type of value` | Return type name: "num", "str", "list", "fn", "builtin", "null" |
-| `assert` | `assert of [cond, msg]` | Exit with message if condition is false |
+| `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
 | `eval` | `eval of code_string` | Execute EigenScript code, return result |
 | `throw` | `throw of message` | Raise catchable error |

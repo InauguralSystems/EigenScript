@@ -4,6 +4,25 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Change — `assert` failures are now catchable (#220)
+
+- **`assert of [cond, msg]` and `assert of cond` no longer call
+  `exit(1)` on failure.** They set `g_has_error` + `g_error_msg` and
+  return null, exactly like `throw`, so `vm_run` unwinds through any
+  enclosing `try`/`catch` (catch binds the `"ASSERT FAIL: <msg>"`
+  string). An uncaught assert still prints `ASSERT FAIL: <msg>` to
+  stderr and exits non-zero — same observable behavior for scripts
+  that don't wrap asserts in `try`.
+- **Why the change:** `exit(1)` bypassed `main`'s teardown
+  (`env_decref` of the global scope, `gc_collect_at_exit`,
+  `chunk_free`), leaking every registered builtin + the global env +
+  the AST every time an assertion failed. ASan flagged 25 KB / 198
+  objects on `tests/test_assert_fail.eigs`. The runtime-error path is
+  the canonical leak-clean way to abort.
+- Programs that relied on assert being uncatchable (none known in
+  the suite or examples) should restructure to use a sentinel that
+  the catch handler rethrows, or fail the test by other means.
+
 ### Change — `converged` is now a windowed predicate (#204)
 
 - **`converged` and `report of x == "converged"` now require a full
