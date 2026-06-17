@@ -1525,7 +1525,10 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         arg = STK_AS_VAL(g_vm.sp - 1);
         val_incref(arg);
     } else {
-        arg = make_list(argc);
+        /* Wrapper must be heap: val_decref(arg) below has to actually
+         * release the list_append increfs on heap items, which an arena
+         * list silently swallows. */
+        arg = make_list_heap(argc);
         for (int i = 0; i < argc; i++) {
             list_append(arg, STK_AS_VAL(g_vm.sp - argc + i));
         }
@@ -2646,7 +2649,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 arg = STK_AS_VAL(g_vm.sp - 1);
                 val_incref(arg);
             } else {
-                arg = make_list(argc);
+                /* Heap-forced: see jit_helper_call wrapper rationale. */
+                arg = make_list_heap(argc);
                 for (int i = 0; i < argc; i++) {
                     list_append(arg, STK_AS_VAL(g_vm.sp - argc + i));
                 }
