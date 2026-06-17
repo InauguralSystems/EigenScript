@@ -337,6 +337,11 @@ WC4=$(echo "$WC_OUTPUT" | grep -A2 'WC4:' | tail -1)
 check "WC4 newton sqrt reaches equilibrium not converged" "$WC4" "converged=0 equilibrium=1"
 echo ""
 
+echo "[8c] Predicate Matrix (15 checks)"
+check_eigs_suite "predicate family matrix: mutual-exclusion + co-fire edges + threshold knob + newton sqrt" \
+    "test_predicate_matrix.eigs" "PREDICATE_MATRIX_ALL_PASS" 15
+echo ""
+
 echo "[9/15] Assert (3 checks)"
 AS_OUTPUT=$(./eigenscript ../tests/test_assert.eigs 2>&1)
 check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"
