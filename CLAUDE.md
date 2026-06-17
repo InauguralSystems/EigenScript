@@ -23,10 +23,13 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   (test_closure_cycles.eigs) is gated **strictly** leak-clean — a
   LeakSanitizer exit there is a collector regression. The runner's
   `rc_ok` still tolerates LeakSanitizer exits elsewhere and tallies them
-  ("NOTE: N test program(s)..."): currently 13, all spawn-thread
-  programs (collector off once multithreaded) plus pre-existing
-  non-closure shapes. Any other nonzero exit — crash, assert, UBSan —
-  fails. Watch that tally: a jump means a new leak.
+  ("NOTE: N test program(s)..."): currently 10 (down from 13 after
+  PRs #212/#213/#214/#220 plugged arena-window builtin-arg leaks,
+  heap-promoted VAL_NULL via slot encoding, eval's partial AST on
+  parse error, and `assert`'s exit(1)-bypassed teardown). Remaining
+  are spawn-thread programs (collector off once multithreaded) plus
+  pre-existing non-closure shapes. Any other nonzero exit — crash,
+  assert, UBSan — fails. Watch that tally: a jump means a new leak.
 - `make asan` overwrites `src/eigenscript` — rebuild with `make`
   before timing anything.
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
@@ -265,8 +268,8 @@ recv_timeout, multi-arg spawn) and the twelve post-merge fixes
   interpreters can now run concurrently in the same process; the
   internal handle/log of attached threads lives on the state.
 
-Suite: ~1855 checks; must pass release **and** ASan with
-detect_leaks=1 (the leak tally — currently 13, spawn-thread programs +
+Suite: ~1882 checks; must pass release **and** ASan with
+detect_leaks=1 (the leak tally — currently 10, spawn-thread programs +
 pre-existing non-closure shapes — is the gate; a jump means a new
 leak, and section [87] must stay strictly leak-clean).
 
