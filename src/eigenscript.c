@@ -308,6 +308,34 @@ int observer_improving(const Value *v) {
     return (sum < 0.0 && (size_t)(down * 5) >= cnt * 3) ? 1 : 0;
 }
 
+/* Windowed `diverging` (#208, docs/PREDICATES.md): the mirror of `improving` —
+ * information content RISING over the window, the value becoming *less*
+ * determined. Same hybrid, sign reversed:
+ *
+ *   count >= 3
+ *   AND sum(window) > 0          (NET entropy ascent — magnitude-aware)
+ *   AND up_fraction >= 0.6       (>=60% genuine ascent steps, dH > +dh_small)
+ *
+ * The sum>0 gate refuses to call a net-improving run diverging (the magnitude
+ * mirror of improving's anti-lie gate); the proportional vote tolerates noisy
+ * down-ticks; the dh_small threshold keeps a steady gray-band ascent reading
+ * `stable`, not `diverging`, honoring the #187 mutual-exclusivity contract. A
+ * sustained oscillation has neither a net trend nor a directional majority, so
+ * it no longer co-fires diverging the way the old pointwise `dH > dh_small`
+ * did. See observer_improving for the per-gate rationale. */
+int observer_diverging(const Value *v) {
+    size_t cnt = observer_window_size(v);
+    if (cnt < 3) return 0;
+    double sum = 0.0;
+    int up = 0;
+    for (size_t i = 0; i < cnt; i++) {
+        double w = observer_window_get(v, i);
+        sum += w;
+        if (w > g_obs_dh_small) up++;
+    }
+    return (sum > 0.0 && (size_t)(up * 5) >= cnt * 3) ? 1 : 0;
+}
+
 void update_observer(Value *v) {
     if (!v) return;
     double new_entropy = compute_entropy(v);

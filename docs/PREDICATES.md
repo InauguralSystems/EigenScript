@@ -78,7 +78,7 @@ The spec describes the **target** windowed semantics. Shipped state:
 | `stable` | ⏳ target | #205 |
 | `oscillating` | ⏳ target | #206 |
 | `improving` | ✅ shipped (`observer_improving`, `vm.c` kind 2 + report) | #207 (done) |
-| `diverging` | ⏳ target | #208 |
+| `diverging` | ✅ shipped (`observer_diverging`, `vm.c` kind 4 + report) | #208 (done) |
 | `equilibrium` | ⏳ target | #209 |
 
 Until a predicate's rewrite lands, the runtime evaluates the pointwise
@@ -216,7 +216,7 @@ under noise (#207).
 
 ### `diverging` (kind 4)
 
-Mirror of `improving` (target spec for #208):
+Mirror of `improving`:
 
 ```
 count >= 3
@@ -228,8 +228,8 @@ Information content rising over the window — the value becoming less
 determined — with the same magnitude gate and proportional vote, sign
 reversed. (EigenChat used an *asymmetric* threshold here — divergence
 required stronger evidence, 0.8 vs improving's 0.6, to avoid false alarms
-on a temporary setback. The C target keeps `VOTE = 0.6` for symmetry; revisit
-if divergence proves trigger-happy in practice.)
+on a temporary setback. The C implementation keeps `VOTE = 0.6` for symmetry;
+revisit if divergence proves trigger-happy in practice.)
 
 **Trace:** symmetric to `improving` with the sign of the net sum and the
 vote direction reversed.
@@ -278,13 +278,14 @@ exclusive within one observation:
   `down_fraction`/`up_fraction` of 0 — it can never be improving or
   diverging. This is the #187 contract enforced at the window level.
 
-> **Note (pre-rewrite):** while the five non-`converged` predicates are
-> still pointwise (see Implementation status), the bare predicates are
-> NOT fully mutually exclusive — a large-amplitude sign flip satisfies
-> both `oscillating` and `diverging`, and a quiet step at high entropy
-> satisfies both `stable` and `equilibrium`. `report of x` disambiguates
-> by priority order. `tests/test_predicate_matrix.eigs` pins this current
-> behavior; it is updated as each rewrite lands.
+> **Note (pre-rewrite):** `stable`, `oscillating`, and `equilibrium` are
+> still pointwise (see Implementation status), so some overlaps remain — a
+> quiet step at high entropy satisfies both `stable` and `equilibrium`.
+> (The old large-amplitude `oscillating`∧`diverging` overlap is now gone:
+> windowed `diverging` needs a net trend, which an oscillation lacks.)
+> `report of x` disambiguates by priority order.
+> `tests/test_predicate_matrix.eigs` pins the current behavior; it is
+> updated as each rewrite lands.
 
 ## The `report` builtin
 

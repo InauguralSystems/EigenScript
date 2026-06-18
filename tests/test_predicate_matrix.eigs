@@ -92,16 +92,18 @@ k is 1000000.0
 pk is [converged, stable, improving, diverging, oscillating, equilibrium, report of k]
 expect of ["converged", pk, 1, 0, 0, 0, 0, 1, "converged"]
 
-# --- EDGE: large-amplitude oscillation is NOT mutually exclusive — it co-fires
-#     diverging (the bare predicates overlap; only `report` disambiguates,
-#     resolving oscillating first). Pins the actual vm.c behavior. ---
+# --- EDGE: large-amplitude oscillation is `oscillating` only. Under the
+#     pointwise rule it ALSO co-fired diverging (last dH > dh_small); windowed
+#     diverging (#208) needs a NET ascent + a directional majority, which an
+#     oscillation has neither of, so the overlap is gone. `report` still
+#     resolves oscillating first. ---
 d is 2.0
 d is 10.0
 d is 2.0
 d is 10.0
 d is 2.0
 pd is [converged, stable, improving, diverging, oscillating, equilibrium, report of d]
-expect of ["osc-big-cofires-diverging", pd, 0, 0, 0, 1, 1, 0, "oscillating"]
+expect of ["osc-only (no longer co-fires diverging)", pd, 0, 0, 0, 0, 1, 0, "oscillating"]
 
 # --- EDGE: quiet (dH=0) at HIGH entropy co-fires stable + equilibrium; report
 #     resolves to equilibrium. (Not converged: entropy >= h_low.) ---
