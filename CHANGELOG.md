@@ -4,6 +4,26 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed — reference leaks in the `store` extension (ext_store.c)
+
+- **JSON parser** (`store_json_parse_object`/`_array`): every parsed object
+  key leaked a `VAL_STR` (the `key` Value was allocated only to read
+  `key->data.str`, then never freed), and parsed values were `dict_set`/
+  `list_append`'d (which incref) without releasing the parser's own ref.
+  Fixed via `dict_set_owned`/`list_append_owned` + freeing the key carrier;
+  error paths now free the partial dict/list/key too.
+- **Catalog lifecycle:** `store_close` (and the open error paths) called
+  `free(store)` without `val_decref`-ing `store->catalog`, leaking the whole
+  parsed catalog dict per store. Centralized in a new `store_free` helper;
+  the catalog-rewrite path now drops the old catalog before replacing it.
+- **Write path:** `store_put` increfs a new collection's `col_info` into the
+  catalog without adopting; `store_update` built arg-lists for internal
+  `store_delete`/`store_put` calls and ignored their return values, freeing
+  none. All now balanced.
+- Clears `test_store` and `test_handle_forge` under ASan; harness leak tally
+  **10 → 8**. (`test_lab` still leaks — a separate `lib/lab.eigs`
+  store-not-closed lifecycle bug, tracked as a follow-up.)
+
 ### Fixed — per-iteration leak in OSR-compiled observed-assign loops (#211)
 
 - **A hot loop that reassigns an *observed* variable in its body
