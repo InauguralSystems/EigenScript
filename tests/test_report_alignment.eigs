@@ -44,7 +44,11 @@ print of c3
 print of r3
 
 print of ""
-print of "--- RA4: Oscillating (sign change in dH) ---"
+print of "--- RA4: Oscillating (windowed #206: needs >=4 dH sign flips) ---"
+w is 1000000
+w is 0.5
+w is 1000000
+w is 0.5
 w is 1000000
 w is 0.5
 w is 1000000

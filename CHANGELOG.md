@@ -4,6 +4,29 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Change — `oscillating` is now a windowed predicate (#206)
+
+- **`oscillating` and `report of x == "oscillating"` now count sign flips
+  across the dH window instead of looking at the last two steps.** New
+  shared helper `observer_oscillating` (used by both the `PREDICATE` op kind
+  3 and the report builtin) is: `window_size >= 3` AND at least
+  `FLIPS = ceil(N/3) = 4` sign flips across the window, where a flip is an
+  adjacent dH pair with opposite signs whose magnitudes *both* clear
+  `dh_zero` (sub-noise wobble does not count).
+- **Deadband stays at `dh_zero`, not `dh_small`.** Unlike `improving` /
+  `diverging`, oscillating is a deadband-escape test, not a direction
+  verdict, so #187 deliberately left it on `dh_zero`: a gray-band
+  alternation (`dh_zero < |dH| < dh_small`) still reads `oscillating`.
+- **User-visible delta:** a single reversal (or one or two flips) in an
+  otherwise monotone trajectory no longer reads `oscillating` — sustained
+  back-and-forth now requires ≥ 4 flips, i.e. ≥ 5 observations / 4
+  alternating steps. The old pointwise rule fired on the first sign flip.
+- New tests: `tests/test_windowed_oscillating.eigs` (suite [8f], 8 checks:
+  large/gray-band alternation, the exactly-4-flips boundary, sub-threshold
+  flip counts, sub-noise wobble, monotone, single reversal, partial window).
+  The predicate matrix's oscillation cases and `test_report_alignment` RA4
+  were extended to sustained alternations (7 samples).
+
 ### Change — `diverging` is now a windowed predicate (#208)
 
 - **`diverging` and `report of x == "diverging"` now read the dH window

@@ -49,7 +49,12 @@ b is 2.0
 pb is [converged, stable, improving, diverging, oscillating, equilibrium, report of b]
 expect of ["diverging", pb, 0, 0, 0, 1, 0, 0, "diverging"]
 
-# --- oscillating only: small-amplitude sign flip, |dH| in (dh_zero, dh_small) ---
+# --- oscillating only: small-amplitude sign flips, |dH|~0.0057 in the gray band
+#     (dh_zero < |dH| < dh_small). Needs >=4 flips for windowed `oscillating`
+#     (#206), so 7 samples / 6 alternating dH. Gray-band amplitude keeps it out
+#     of improving/diverging (those gate at dh_small). ---
+c is 70.0
+c is 75.0
 c is 70.0
 c is 75.0
 c is 70.0
@@ -95,8 +100,11 @@ expect of ["converged", pk, 1, 0, 0, 0, 0, 1, "converged"]
 # --- EDGE: large-amplitude oscillation is `oscillating` only. Under the
 #     pointwise rule it ALSO co-fired diverging (last dH > dh_small); windowed
 #     diverging (#208) needs a NET ascent + a directional majority, which an
-#     oscillation has neither of, so the overlap is gone. `report` still
+#     oscillation has neither of, so the overlap is gone. Windowed oscillating
+#     (#206) needs >=4 flips, so 7 samples / 6 alternating dH. `report` still
 #     resolves oscillating first. ---
+d is 2.0
+d is 10.0
 d is 2.0
 d is 10.0
 d is 2.0
@@ -122,12 +130,16 @@ t1 is 75.0
 t1 is 70.0
 t1 is 75.0
 t1 is 70.0
+t1 is 75.0
+t1 is 70.0
 td is [oscillating, equilibrium]
 assert of [td[0] == 1, f"threshold-default: oscillating expected 1 got {td[0]}"]
 assert of [td[1] == 0, f"threshold-default: equilibrium expected 0 got {td[1]}"]
 print of "  PASS: threshold-default (oscillating)"
 
 set_observer_thresholds of [0.01, 0.05, 0.5]
+t2 is 70.0
+t2 is 75.0
 t2 is 70.0
 t2 is 75.0
 t2 is 70.0

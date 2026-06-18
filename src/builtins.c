@@ -469,9 +469,7 @@ Value* builtin_report(Value *arg) {
     observer_ensure_fresh(arg);
     double dh = arg->dH;
     double h = arg->entropy;
-    double prev_dh = arg->prev_dH;
-    if (prev_dh != 0.0 && dh * prev_dh < 0 && fabs(dh) > g_obs_dh_zero)
-        return make_str("oscillating");
+    if (observer_oscillating(arg)) return make_str("oscillating");  /* windowed (#206) */
     if (observer_diverging(arg)) return make_str("diverging");  /* windowed (#208) */
     if (observer_improving(arg)) return make_str("improving");  /* windowed (#207) */
     /* Converged requires a full window of near-zero dH at low entropy —

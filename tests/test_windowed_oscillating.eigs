@@ -1,0 +1,99 @@
+# Windowed `oscillating` (#206, docs/PREDICATES.md):
+#   oscillating = count >= 3
+#                 AND sign_flip_count(window) >= FLIPS   (FLIPS = ceil(N/3) = 4)
+# A sign flip is an adjacent dH pair with opposite signs whose magnitudes BOTH
+# clear dh_zero (sub-noise wobble does not count). Unlike improving/diverging
+# this gates at dh_zero, not dh_small — it is a deadband-escape test, not a
+# direction verdict (#187 left it on dh_zero). FLIPS=4 means a window needs >=5
+# samples / 4 alternating dH to ever fire: a single reversal is not oscillation.
+# Self-asserting; prints WINDOWED_OSCILLATING_ALL_PASS on success.
+
+print of "=== WINDOWED OSCILLATING (docs/PREDICATES.md, #206) ==="
+
+define want(tag, got, exp) as:
+    assert of [got == exp, f"{tag}: oscillating expected {exp} got {got}"]
+    print of f"  PASS: {tag} (oscillating={got})"
+
+# WO1: sustained large-amplitude alternation fires (6 dH, 5 flips)
+a is 2.0
+a is 10.0
+a is 2.0
+a is 10.0
+a is 2.0
+a is 10.0
+a is 2.0
+o1 is oscillating
+want of ["WO1 large-amplitude alternation fires", o1, 1]
+
+# WO2: gray-band alternation fires too — flips gate at dh_zero, so |dH|~0.0057
+#      (between dh_zero and dh_small) still counts.
+b is 70.0
+b is 75.0
+b is 70.0
+b is 75.0
+b is 70.0
+b is 75.0
+b is 70.0
+o2 is oscillating
+want of ["WO2 gray-band alternation fires", o2, 1]
+
+# WO3: exactly FLIPS=4 flips (5 dH, perfect alternation) — the boundary, fires
+c is 2.0
+c is 10.0
+c is 2.0
+c is 10.0
+c is 2.0
+c is 10.0
+o3 is oscillating
+want of ["WO3 exactly 4 flips fires", o3, 1]
+
+# WO4: only 3 flips (4 dH) — below threshold, does NOT fire
+d is 2.0
+d is 10.0
+d is 2.0
+d is 10.0
+d is 2.0
+o4 is oscillating
+want of ["WO4 only 3 flips does not fire", o4, 0]
+
+# WO5: sub-noise wobble — alternating but |dH|~1.5e-5 < dh_zero, so no flip
+#      counts. Stays out of `oscillating` (it reads equilibrium/converged-ish).
+e is 800.0
+e is 801.0
+e is 800.0
+e is 801.0
+e is 800.0
+e is 801.0
+e is 800.0
+o5 is oscillating
+want of ["WO5 sub-noise wobble does not fire", o5, 0]
+
+# WO6: monotone descent — no flips at all
+f is 3.0
+f is 5.0
+f is 9.0
+f is 19.0
+f is 99.0
+f is 499.0
+o6 is oscillating
+want of ["WO6 monotone does not fire", o6, 0]
+
+# WO7: one reversal then steady — a single flip is not oscillation
+g is 2.0
+g is 3.0
+g is 4.0
+g is 5.0
+g is 4.0
+g is 3.0
+g is 2.0
+o7 is oscillating
+want of ["WO7 one reversal does not fire", o7, 0]
+
+# WO8: fewer than 3 samples (count == 2) does not fire (partial-window rule)
+h is 2.0
+h is 10.0
+h is 2.0
+o8 is oscillating
+want of ["WO8 count < 3 does not fire", o8, 0]
+
+print of "WINDOWED_OSCILLATING_ALL_PASS"
