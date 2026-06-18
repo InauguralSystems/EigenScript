@@ -4,6 +4,16 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed — partial-AST leak on parse-error paths (main.c, vm.c import)
+
+- A program with a **parse error** leaked its partial AST: `parse` returns a
+  partial tree even on error, and the abort branches in `main` (top-level
+  run) and the `vm_run` `import` handler (a module that fails to parse) freed
+  the token list / source / env but not the AST. Both now `free_ast(ast)` on
+  the error path, matching the success path and the #214 `eval` fix.
+- Clears `test_import_errors` (and the previously-uncounted `examples/errors/*`
+  + `/tmp` parse-error programs); harness leak tally **6 → 5**.
+
 ### Fixed — container-builtin reference leaks (builtins.c)
 
 - Four builtins that build a fresh list/dict per element leaked it: the
