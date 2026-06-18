@@ -248,6 +248,11 @@ size_t observer_window_size(const Value *v);
  * Caller must ensure offset < observer_window_size(v). */
 double observer_window_get(const Value *v, size_t offset_back);
 
+/* Windowed `improving` predicate (#207): NET entropy descent (sum<0) over the
+ * window AND a sustained majority (>=60%) of genuine descent steps (dH <
+ * -dh_small, honoring the #187 gray band). Shared by vm.c and builtins.c. */
+int observer_improving(const Value *v);
+
 /* ---- Arena allocator ---- */
 
 #define ARENA_BLOCK_SIZE (16 * 1024 * 1024)

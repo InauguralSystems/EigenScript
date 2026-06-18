@@ -54,8 +54,8 @@ Override with `set_observer_thresholds of [dh_zero, dh_small, h_low]`.
 Two derived window constants (functions of `N = OBSERVER_WINDOW_N = 10`):
 
 ```
-K     = N / 4        = 2    max tolerated counter-direction "bounces" for improving/diverging
-FLIPS = ceil(N / 3)  = 4    min sign-flips in the window for oscillating
+VOTE  = 0.6                min fraction of genuine same-direction steps for improving/diverging
+FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating
 ```
 
 ## Partial-window rule (applies to all six)
@@ -77,7 +77,7 @@ The spec describes the **target** windowed semantics. Shipped state:
 | `converged` | ✅ shipped (`vm.c` kind 0) | #204 (done) |
 | `stable` | ⏳ target | #205 |
 | `oscillating` | ⏳ target | #206 |
-| `improving` | ⏳ target | #207 |
+| `improving` | ✅ shipped (`observer_improving`, `vm.c` kind 2 + report) | #207 (done) |
 | `diverging` | ⏳ target | #208 |
 | `equilibrium` | ⏳ target | #209 |
 
@@ -170,23 +170,45 @@ full-window one.
 
 ```
 count >= 3
-  AND entropy_now < entropy_oldest        (net descent over the window)
-  AND bounce_count < K                     (K = N/4; bounce = an up-tick, dH > dh_zero)
+  AND sum(window) < 0                      (NET entropy descent — magnitude-aware)
+  AND down_fraction >= VOTE                (VOTE = 0.6; a "down" step is dH < -dh_small)
 ```
 
+where `down_fraction = (# steps with dH < -dh_small) / count`, tested in
+integers as `down * 5 >= count * 3`.
+
 Information content is *falling over the window* — the value is becoming
-more determined — tolerating up to `K−1` counter-direction bounces so a
-single noisy tick does not drop the claim.
+more determined. The rule is a hybrid of two independent guards:
 
-**Trace** (`entropy_oldest` = entropy at the window's oldest sample):
+- **`sum(window) < 0`** is the magnitude-aware net test. The window's `dH`
+  values telescope to `entropy_now − entropy_oldest`, so `sum < 0` means
+  the value ends the window *more* determined than it began. A run that
+  ticks down on most steps but ends with *higher* entropy (a few large
+  up-ticks outweighing many small descents) is **not** improving.
+- **`down_fraction >= 0.6`** is the proportional vote: a sustained majority
+  of steps must be *genuine* descents (clearing the gray band at
+  `dh_small`). This tolerates noisy up-ticks without an absolute cap, and —
+  by using `dh_small`, not `dh_zero` — keeps a steady gray-band descent out
+  of `improving`: such a window has `down_fraction = 0` and reads `stable`,
+  honoring the #187 mutual-exclusivity contract.
 
-| step | window dH signs / entropy trend | bounces | improving |
-|------|----------------------------------|---------|-----------|
-| 3+ | steady descent, all dH < 0 | 0 | **`true`** |
-| 3+ | descent with 1 up-tick | 1 | **`true`** (1 < K=2) |
-| 3+ | descent with 3 up-ticks | 3 | `false` (≥ K) |
-| 3+ | net entropy_now ≥ entropy_oldest | — | `false` (no net descent) |
-| 2 | — | — | `false` (count < 3) |
+> **Design note.** This is a deliberate hybrid, not a port of an ancestor
+> rule. EigenChat's `TemporalLossState.is_improving` is a magnitude-blind
+> directional ratio vote (it reports "improving" even on a net-worsening
+> run); the legacy *language* predicate was pointwise (`radius decreasing`).
+> We take the ratio vote's noise tolerance and add the `sum < 0` magnitude
+> gate so a net-worsening trajectory is never called improving.
+
+**Trace** (`dh_small = 0.01`):
+
+| step | window | net sum | down/count | improving |
+|------|--------|---------|------------|-----------|
+| 3+ | steady descent, all dH < −dh_small | < 0 | 1.0 | **`true`** |
+| 3+ | descent with a couple of up-ticks, still 60%+ down | < 0 | ≥ 0.6 | **`true`** |
+| 3+ | most steps down but net entropy rose | ≥ 0 | — | `false` (sum ≥ 0) |
+| 3+ | net down but < 60% genuine descents | < 0 | < 0.6 | `false` (vote) |
+| 3+ | steady gray-band descent (|dH| < dh_small) | < 0 | 0.0 | `false` → `stable` |
+| 2 | — | — | — | `false` (count < 3) |
 
 **Pointwise behavior replaced:** `dH < -dh_small` — fired on a single
 negative tick and dropped the next frame if entropy bounced; flickered
@@ -194,19 +216,23 @@ under noise (#207).
 
 ### `diverging` (kind 4)
 
-Mirror of `improving`:
+Mirror of `improving` (target spec for #208):
 
 ```
 count >= 3
-  AND entropy_now > entropy_oldest        (net ascent over the window)
-  AND bounce_count < K                     (bounce here = a down-tick, dH < -dh_zero)
+  AND sum(window) > 0                      (NET entropy ascent — magnitude-aware)
+  AND up_fraction >= VOTE                  (a "up" step is dH > +dh_small)
 ```
 
 Information content rising over the window — the value becoming less
-determined — with the same bounce tolerance.
+determined — with the same magnitude gate and proportional vote, sign
+reversed. (EigenChat used an *asymmetric* threshold here — divergence
+required stronger evidence, 0.8 vs improving's 0.6, to avoid false alarms
+on a temporary setback. The C target keeps `VOTE = 0.6` for symmetry; revisit
+if divergence proves trigger-happy in practice.)
 
-**Trace:** symmetric to `improving` with the sign of the entropy trend and
-the bounce direction reversed.
+**Trace:** symmetric to `improving` with the sign of the net sum and the
+vote direction reversed.
 
 **Pointwise behavior replaced:** `dH > dh_small`.
 
@@ -247,8 +273,10 @@ exclusive within one observation:
   monotone net trend (improving/diverging) cannot have, and the `stable`
   no-consecutive-flips clause excludes it from the small-motion band.
 - `stable` requires every `|dH| < dh_small`; `improving`/`diverging`
-  require a net entropy trend over the window, which a uniformly
-  small-motion window does not produce.
+  require ≥ 60% of steps to *clear* `dh_small` in one direction, so a
+  uniformly small-motion (gray-band) window satisfies `stable` and has a
+  `down_fraction`/`up_fraction` of 0 — it can never be improving or
+  diverging. This is the #187 contract enforced at the window level.
 
 > **Note (pre-rewrite):** while the five non-`converged` predicates are
 > still pointwise (see Implementation status), the bare predicates are

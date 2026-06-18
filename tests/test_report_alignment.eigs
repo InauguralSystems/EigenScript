@@ -11,9 +11,11 @@ print of d1
 print of r1
 
 print of ""
-print of "--- RA2: Improving (primed, high H -> low H) ---"
+print of "--- RA2: Improving (windowed descent #207: needs count>=3) ---"
 y is 0.5
-y is 0.5
+y is 1.0
+y is 5.0
+y is 100.0
 y is 1000000
 i2 is improving
 r2 is report of y
