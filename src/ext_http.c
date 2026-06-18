@@ -978,6 +978,8 @@ static void handle_request(int fd) {
                     char *auth_str = value_to_string(auth_result);
                     free_tokenlist(&auth_tl);
                     free(auth_src);
+                    free_ast(auth_ast);  /* compile_ast does not own it */
+                    if (auth_result) val_decref(auth_result);  /* vm_execute returns an owned ref */
                     if (auth_str[0] != '\0') {
                         send_response(fd, 401, "Unauthorized", "application/json",
                                       auth_str, strlen(auth_str));
@@ -1001,6 +1003,8 @@ static void handle_request(int fd) {
                 send_response(fd, 200, "OK", ct, result_str, strlen(result_str));
                 free(result_str);
                 free_tokenlist(&tl);
+                free_ast(ast);  /* compile_ast does not own it */
+                if (result) val_decref(result);  /* vm_execute returns an owned ref */
             } else {
                 const char *ct = "application/json";
                 if (r->payload[0] != '{' && r->payload[0] != '[')
