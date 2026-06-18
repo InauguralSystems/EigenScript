@@ -4046,6 +4046,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         ASTNode *ast = parse(&tl);
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
+            free_ast(ast);  /* partial tree from the failed module parse (cf. #214) */
             free_tokenlist(&tl);
             free(source);
             env_decref(mod_env);

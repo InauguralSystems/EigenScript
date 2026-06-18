@@ -290,6 +290,7 @@ int main(int argc, char **argv) {
     ASTNode *ast = parse(&tl);
     if (g_parse_errors > 0) {
         fprintf(stderr, "%d parse error(s) — aborting\n", g_parse_errors);
+        free_ast(ast);  /* parse returns a partial tree on error; free it (cf. #214) */
         free(source);
         free_tokenlist(&tl);
         env_decref(global);
