@@ -253,6 +253,11 @@ double observer_window_get(const Value *v, size_t offset_back);
  * -dh_small, honoring the #187 gray band). Shared by vm.c and builtins.c. */
 int observer_improving(const Value *v);
 
+/* Windowed `diverging` predicate (#208): mirror of observer_improving — NET
+ * entropy ascent (sum>0) AND >=60% genuine ascent steps (dH > +dh_small).
+ * Shared by vm.c and builtins.c. */
+int observer_diverging(const Value *v);
+
 /* ---- Arena allocator ---- */
 
 #define ARENA_BLOCK_SIZE (16 * 1024 * 1024)

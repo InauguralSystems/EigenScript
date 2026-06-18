@@ -347,6 +347,11 @@ check_eigs_suite "windowed improving: net-descent + proportional vote + gray-ban
     "test_windowed_improving.eigs" "WINDOWED_IMPROVING_ALL_PASS" 8
 echo ""
 
+echo "[8e] Windowed Diverging (8 checks)"
+check_eigs_suite "windowed diverging: net-ascent + proportional vote + gray-band/sub-majority/partial-window" \
+    "test_windowed_diverging.eigs" "WINDOWED_DIVERGING_ALL_PASS" 8
+echo ""
+
 echo "[9/15] Assert (3 checks)"
 AS_OUTPUT=$(./eigenscript ../tests/test_assert.eigs 2>&1)
 check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"

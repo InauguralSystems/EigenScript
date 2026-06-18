@@ -4,6 +4,35 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Change — `diverging` is now a windowed predicate (#208)
+
+- **`diverging` and `report of x == "diverging"` now read the dH window
+  instead of the last step**, as the exact mirror of windowed `improving`
+  (#207). New shared helper `observer_diverging` (used by both the
+  `PREDICATE` op kind 4 and the report builtin) is:
+  - `window_size >= 3`;
+  - **`sum(window) > 0`** — net entropy *ascent* (magnitude-aware): a run
+    that ends *more* determined than it started is never `diverging`, even
+    if most steps ticked up;
+  - **`up_fraction >= 0.6`** — ≥60% of steps are genuine ascents
+    (`dH > +dh_small`), the proportional vote, with the `dh_small` threshold
+    keeping a gray-band ascent out of `diverging` (it reads `stable`,
+    honoring the #187 contract).
+- **Mutual-exclusivity win:** a large-amplitude oscillation no longer
+  co-fires `diverging`. The old pointwise rule (`dH > dh_small`) fired
+  whenever the *last* tick happened to be a large up-step, so an
+  oscillation read as both `oscillating` and `diverging`; the windowed rule
+  needs a net trend + directional majority, which an oscillation has
+  neither of. `report` still resolves `oscillating` first.
+- **User-visible delta:** a noisy ascent (net up, majority of steps
+  genuinely rising) reads `diverging`; a *net-improving* run, a *gray-band*
+  steady ascent, and a sustained *oscillation* do not; fewer than 3
+  observations never report `diverging`.
+- New tests: `tests/test_windowed_diverging.eigs` (suite [8e], 8 checks
+  mirroring [8d]). The predicate matrix's large-oscillation edge case now
+  asserts `diverging = 0`, and `test_report_alignment` RA1 was migrated to a
+  multi-step ascent.
+
 ### Change — `improving` is now a windowed predicate (#207)
 
 - **`improving` and `report of x == "improving"` now read the dH window

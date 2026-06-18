@@ -1,0 +1,100 @@
+# Windowed `diverging` (#208, docs/PREDICATES.md) — mirror of `improving`:
+#   diverging = count >= 3
+#               AND sum(window) > 0           (NET entropy ascent, magnitude-aware)
+#               AND up_fraction >= 0.6        (>=60% of steps are genuine ascents,
+#                                              an "up" step being dH > +dh_small)
+# The sum>0 gate refuses to call a net-improving run diverging; the proportional
+# vote tolerates noisy down-ticks; the dh_small threshold keeps a gray-band
+# ascent out of `diverging` (it reads `stable`) per the #187 contract. A
+# sustained oscillation has no net trend and no directional majority, so it does
+# NOT co-fire diverging (unlike the old pointwise rule).
+# Entropy of a number x is H_binary(1/(1+|x|)) — for |x|>1 it RISES as |x| falls
+# toward 1, so decreasing |x| (staying >1) is an entropy ascent. Self-asserting.
+
+print of "=== WINDOWED DIVERGING (docs/PREDICATES.md, #208) ==="
+
+define want(tag, got, exp) as:
+    assert of [got == exp, f"{tag}: diverging expected {exp} got {got}"]
+    print of f"  PASS: {tag} (diverging={got})"
+
+# WD1: monotone clean ascent fires (all steps big ascents, net up)
+a is 499.0
+a is 99.0
+a is 19.0
+a is 9.0
+a is 5.0
+a is 3.0
+d1 is diverging
+want of ["WD1 monotone clean ascent fires", d1, 1]
+
+# WD2: noisy ascent with down-ticks still fires — net up AND majority (4/6)
+#      genuine ascents. Proportional vote tolerates the bounces.
+b is 4000.0
+b is 60.0
+b is 200.0
+b is 9.0
+b is 40.0
+b is 5.0
+b is 3.0
+d2 is diverging
+want of ["WD2 noisy ascent, net+majority, fires", d2, 1]
+
+# WD3: net entropy FELL despite several ascent steps -> does NOT fire.
+#      Magnitude mirror of the anti-lie guard: most steps tick up but the value
+#      ends MORE determined than it started (sum <= 0).
+c is 1.6
+c is 2.2
+c is 6.0
+c is 5.0
+c is 4.0
+c is 3.0
+d3 is diverging
+want of ["WD3 net-down despite ascents does not fire", d3, 0]
+
+# WD4: steady ascent INSIDE the gray band (dh_zero <= |dH| < dh_small) does
+#      NOT fire — it reads `stable`. #187 mutual-exclusivity guard.
+e is 60.0
+e is 58.0
+e is 56.0
+e is 54.0
+e is 52.0
+e is 50.0
+d4 is diverging
+want of ["WD4 gray-band steady ascent does not fire", d4, 0]
+
+# WD5: net UP but only a MINORITY (2/5) of steps are genuine ascents -> does
+#      NOT fire. Proves the proportional vote gates independently of sum>0.
+f is 600.0
+f is 1500.0
+f is 4000.0
+f is 60.0
+f is 200.0
+f is 2.0
+d5 is diverging
+want of ["WD5 net-up but sub-majority does not fire", d5, 0]
+
+# WD6: flat sequence (all dH ~ 0) does not fire
+g is 5.0
+g is 5.0
+g is 5.0
+g is 5.0
+g is 5.0
+d6 is diverging
+want of ["WD6 flat does not fire", d6, 0]
+
+# WD7: slow descent (falling entropy, sum < 0) does not fire
+h is 25.0
+h is 40.0
+h is 60.0
+h is 99.0
+d7 is diverging
+want of ["WD7 slow descent does not fire", d7, 0]
+
+# WD8: fewer than 3 samples (count == 2) does not fire (partial-window rule)
+k is 9999.0
+k is 50.0
+k is 3.0
+d8 is diverging
+want of ["WD8 count < 3 does not fire", d8, 0]
+
+print of "WINDOWED_DIVERGING_ALL_PASS"

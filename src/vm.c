@@ -3924,7 +3924,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                           !(dH * prev_dH < 0 && fabs(dH) > g_obs_dh_zero)); break;
         case 2: result = observer_improving(v); break;  /* windowed (#207) */
         case 3: result = (dH * prev_dH < 0 && fabs(dH) > g_obs_dh_zero); break;
-        case 4: result = (dH > g_obs_dh_small); break;
+        case 4: result = observer_diverging(v); break;  /* windowed (#208) */
         case 5: result = (fabs(dH) < g_obs_dh_zero); break;
         }
         vm_push(make_num(result ? 1.0 : 0.0));
