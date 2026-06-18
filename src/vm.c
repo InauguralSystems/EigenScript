@@ -3898,9 +3898,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t kind = read_u16(ip); ip += 2;
         Value *v = g_last_observer;
         if (v) observer_ensure_fresh(v);
-        double dH = v ? v->dH : 0;
         double entropy = v ? v->entropy : 0;
-        double prev_dH = v ? v->prev_dH : 0;
         int result = 0;
         switch (kind) {
         case 0: {
@@ -3920,12 +3918,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             result = ok;
             break;
         }
-        case 1: result = (fabs(dH) < g_obs_dh_small && entropy >= g_obs_h_low &&
-                          !(dH * prev_dH < 0 && fabs(dH) > g_obs_dh_zero)); break;
+        case 1: result = observer_stable(v); break;  /* windowed (#205) */
         case 2: result = observer_improving(v); break;  /* windowed (#207) */
         case 3: result = observer_oscillating(v); break;  /* windowed (#206) */
         case 4: result = observer_diverging(v); break;  /* windowed (#208) */
-        case 5: result = (fabs(dH) < g_obs_dh_zero); break;
+        case 5: result = observer_equilibrium(v); break;  /* windowed (#209) */
         }
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();

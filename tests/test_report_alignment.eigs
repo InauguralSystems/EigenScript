@@ -58,7 +58,16 @@ print of o4
 print of r4
 
 print of ""
-print of "--- RA5: Equilibrium (dH~0, moderate H) ---"
+print of "--- RA5: Equilibrium (windowed #209: full window at rest, moderate H) ---"
+v is 42
+v is 42
+v is 42
+v is 42
+v is 42
+v is 42
+v is 42
+v is 42
+v is 42
 v is 42
 v is 42
 e5 is equilibrium

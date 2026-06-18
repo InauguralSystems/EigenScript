@@ -63,9 +63,10 @@ x is (x + 2.0 / x) / 2
 x is (x + 2.0 / x) / 2
 x is (x + 2.0 / x) / 2
 x is (x + 2.0 / x) / 2
-c4 is converged
-e4 is equilibrium
-print of f"converged={c4} equilibrium={e4}"
+# Read both predicates against x in one expression — a separate `c4 is converged`
+# would repoint the last-observer alias to c4 before `equilibrium` is read.
+r4 is [converged, equilibrium]
+print of f"converged={r4[0]} equilibrium={r4[1]}"
 
 print of ""
 print of "=== WINDOWED CONVERGED COMPLETE ==="

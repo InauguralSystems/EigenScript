@@ -116,10 +116,21 @@ assert of [(p == 0) or (p == 1), "OI16 predicate after observed free"]
 # (it's a deadband escape, not a direction verdict).
 saved2 is get_observer_thresholds of null
 # Widen so any nonzero dH lands in the gray band; allow stable to fire.
+# Windowed stable (#205) needs a FULL window (count==N), so drive g with a full
+# monotone window of gray-band steps: stable fires, improving/diverging cannot
+# (their "down"/"up" steps must clear dh_small=1e9, which nothing does here).
 set_observer_thresholds of [0.0000001, 1.0e9, 0.0000001]
 
 g is 100
+g is 120
+g is 140
+g is 160
+g is 180
 g is 200
+g is 220
+g is 240
+g is 260
+g is 280
 g is 300
 # Evaluate all four reads against g before any intervening assignment
 # repoints the last-observer alias.

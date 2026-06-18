@@ -1,0 +1,130 @@
+# Windowed `stable` (#205, docs/PREDICATES.md):
+#   stable = count == N (full window)
+#            AND every |dH| < dh_small
+#            AND entropy >= h_low
+#            AND no consecutive sign flips (adjacent opposite-sign pair, both
+#                magnitudes clearing dh_zero)
+# Small but nonzero motion at high information content, holding direction.
+# A full-window quiet HIGH-entropy value is both stable and equilibrium (report
+# resolves to equilibrium); a quiet LOW-entropy value is converged, not stable.
+# Self-asserting; prints WINDOWED_STABLE_ALL_PASS on success.
+
+print of "=== WINDOWED STABLE (docs/PREDICATES.md, #205) ==="
+
+define want(tag, got, exp) as:
+    assert of [got == exp, f"{tag}: stable expected {exp} got {got}"]
+    print of f"  PASS: {tag} (stable={got})"
+
+# WS1: full-window steady small drift at high entropy -> stable (mean > dh_zero
+#      so NOT equilibrium; gray-band steps so NOT improving/diverging)
+a is 30.0
+a is 32.0
+a is 34.0
+a is 36.0
+a is 38.0
+a is 40.0
+a is 42.0
+a is 44.0
+a is 46.0
+a is 48.0
+a is 50.0
+want of ["WS1 full-window drift fires", stable, 1]
+
+# WS2: full-window quiet at HIGH entropy -> stable (also equilibrium)
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+b is 2.0
+want of ["WS2 quiet high-entropy fires", stable, 1]
+
+# WS3: partial window (count == 9 < N) -> does NOT fire (full-window rule)
+c is 30.0
+c is 32.0
+c is 34.0
+c is 36.0
+c is 38.0
+c is 40.0
+c is 42.0
+c is 44.0
+c is 46.0
+c is 48.0
+want of ["WS3 partial window does not fire", stable, 0]
+
+# WS4: a single step exceeds dh_small -> does NOT fire
+d is 40.0
+d is 42.0
+d is 44.0
+d is 46.0
+d is 48.0
+d is 50.0
+d is 52.0
+d is 54.0
+d is 56.0
+d is 58.0
+d is 200.0
+want of ["WS4 step over dh_small does not fire", stable, 0]
+
+# WS5: full-window quiet at LOW entropy -> NOT stable (entropy < h_low; converged)
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+e is 1000000.0
+want of ["WS5 low-entropy quiet does not fire (converged)", stable, 0]
+
+# WS6: gray-band oscillation (consecutive sign flips) -> NOT stable
+f is 70.0
+f is 75.0
+f is 70.0
+f is 75.0
+f is 70.0
+f is 75.0
+f is 70.0
+f is 75.0
+f is 70.0
+f is 75.0
+f is 70.0
+want of ["WS6 oscillation does not fire", stable, 0]
+
+# WS7: quiet at entropy JUST ABOVE h_low (|x|=42, H~0.159) -> stable
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+g is 42.0
+want of ["WS7 quiet just above h_low fires", stable, 1]
+
+# WS8: quiet at entropy JUST BELOW h_low (|x|=100, H~0.080) -> NOT stable
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+want of ["WS8 quiet just below h_low does not fire", stable, 0]
+
+print of "WINDOWED_STABLE_ALL_PASS"

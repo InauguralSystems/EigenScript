@@ -263,6 +263,15 @@ int observer_diverging(const Value *v);
  * escape, stays on dh_zero per #187). Shared by vm.c and builtins.c. */
 int observer_oscillating(const Value *v);
 
+/* Windowed `equilibrium` predicate (#209): full window (count==N), zero-mean
+ * (|mean|<dh_zero) and low variance (<dh_zero^2). Shared by vm.c and builtins.c. */
+int observer_equilibrium(const Value *v);
+
+/* Windowed `stable` predicate (#205): full window, every |dH|<dh_small, entropy
+ * >= h_low, and no consecutive sign flips (both clearing dh_zero). Shared by
+ * vm.c and builtins.c. */
+int observer_stable(const Value *v);
+
 /* ---- Arena allocator ---- */
 
 #define ARENA_BLOCK_SIZE (16 * 1024 * 1024)
