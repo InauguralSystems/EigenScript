@@ -726,6 +726,15 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * in the prologue, same as OP_GET_NAME. The helper may
              * mutate stack[sp-1] (immediate-num → tracked ptr), so any
              * subsequent OP_POP cannot use the immediate peephole. */
+            /* #211: OSR loop-thunks (entry_offset > 0) leak a per-iteration
+             * Value when an observed variable is (re)assigned inside the loop
+             * and the prior binding is a heap pointer — the observe helper's
+             * pointer/alias path, driven from native OSR code, orphans a
+             * lifted slot that the post-thunk interpreter then leaks. The
+             * from-zero thunk path (entry_offset == 0) is leak-clean, so only
+             * OSR bails here; observed-assign loops fall back to the
+             * interpreter, which handles them correctly. */
+            if (entry_offset > 0) { *stop_op = op; *stop_offset = i; break; }
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
@@ -738,6 +747,8 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             /* Stage 4o: 3-byte op [op][slot:16]. Helper reads prior
              * value directly from frame->fn_env->values[slot] — no
              * chunk pointer needed, so no has_bail_op tax. */
+            /* #211: same OSR-only bail as OP_OBSERVE_ASSIGN above. */
+            if (entry_offset > 0) { *stop_op = op; *stop_offset = i; break; }
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
         } else if (op == OP_UNOBSERVED_BEGIN || op == OP_UNOBSERVED_END) {

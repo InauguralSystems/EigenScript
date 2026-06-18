@@ -4,7 +4,27 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-## [0.16.0] — 2026-06-18
+### Fixed — per-iteration leak in OSR-compiled observed-assign loops (#211)
+
+- **A hot loop that reassigns an *observed* variable in its body
+  (`loop while improving: x is refine(x)`, `genetic_optimize`, etc.) leaked
+  one `Value` per iteration once the loop got OSR-compiled.** The OSR
+  loop-thunk's observe-assign path, run from native code, orphaned a lifted
+  stack slot when the variable's prior binding was a heap pointer; the
+  interpreter later re-lifted and leaked it. The leak was data-dependent
+  (pointer rebinds leaked, number rebinds did not) and only surfaced past
+  enough iterations to OSR-compile — which is why #210's windowed
+  `converged` exposed it in `genetic_optimize` (it removed an early exit).
+- **Fix:** the OSR scanner (`src/jit.c`) now declines to compile a
+  loop-thunk through `OBSERVE_ASSIGN`/`OBSERVE_ASSIGN_LOCAL`; such loops run
+  in the interpreter, which is leak-clean. From-zero function thunks (also
+  leak-clean) are unaffected, as are all non-observed loops. Cost is ≈16% on
+  the narrow "observed variable reassigned in a hot OSR loop" pattern and 0%
+  elsewhere; the previously-faster path was leaking, so it was never correct.
+  A surgical emitter fix to recover that 16% is tracked as a follow-up.
+- Regression guard: `tests/test_optimize.eigs` runs `genetic_optimize` for
+  120 generations (was capped at 80 in #210 to dodge the leak); a
+  regression re-leaks under ASan and bumps the harness tally.
 
 The #202 windowed-predicate series: all six observer predicates
 (`converged`, `stable`, `oscillating`, `improving`, `diverging`,

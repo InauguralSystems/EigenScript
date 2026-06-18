@@ -52,9 +52,13 @@ print of ("  x: " + (str of result5.x))
 print of ("  f: " + (str of result5.f))
 
 # ---- Genetic Algorithm: maximize -(x-7)^2 (max at x=7) ----
+# 120 generations runs well past convergence — this is the #211 regression
+# guard: the per-iteration OSR observed-assign leak only surfaced once the GA
+# ran long enough (was capped at 80 in #210 to dodge it). Under ASan a
+# regression here re-leaks and bumps the harness tally.
 print of "--- genetic_optimize on -(x-7)^2 ---"
 fit_fn is (x) => 0 - (x - 7) * (x - 7)
-result6 is genetic_optimize of [fit_fn, [0, 15], 30, 80]
+result6 is genetic_optimize of [fit_fn, [0, 15], 30, 120]
 assert_near of [result6.x, 7, 3, "ga finds x near 7"]
 print of ("  x: " + (str of result6.x))
 print of ("  fitness: " + (str of result6.fitness))
