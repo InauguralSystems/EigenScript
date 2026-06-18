@@ -4,7 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-### Fixed — partial-AST leak on parse-error paths (main.c, vm.c import)
+### Fixed — per-request leaks in HTTP `code` routes (#236, ext_http.c)
+
+- The `code`-route handler parsed the route source per request but never
+  freed the resulting AST, never freed the parsed auth-source AST, and never
+  released the `Value` returned by `vm_execute` for either — so a
+  long-running server leaked the AST + chunk + result **on every request**
+  (and twice on authed routes). `compile_ast` does not take ownership and
+  `vm_execute` returns an owned ref; both route paths now `free_ast` and
+  `val_decref` like every other call site (`main`, `load_file`, `eval`).
+- Measured (release http, 2000 code-route requests): VmRSS growth **67 MB →
+  1.5 MB** (≈33 KB/request → flat). Verified via RSS rather than the ASan
+  suite because the blocking server has no clean-exit path and the http
+  integration suite is environment-flaky on the dev box (CI runs it).
 
 - A program with a **parse error** leaked its partial AST: `parse` returns a
   partial tree even on error, and the abort branches in `main` (top-level
