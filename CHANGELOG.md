@@ -186,6 +186,19 @@ predicates now read the dH window instead of the last step.
   is moved (not copied) on `OBSERVE_ASSIGN` and freed before the
   VAL_NUM freelist path. Spec: [docs/PREDICATES.md](docs/PREDICATES.md).
 
+### Fixed — memory-safety fixes since 0.15.3 (#212, #213, #214)
+
+- **#212** — the VM builtin-arg wrapper heap-forces its list, so heap items
+  stored in an arena-window container no longer leak their refs on arena
+  reset.
+- **#213** — `VAL_NULL` is no longer promoted to the heap (the singleton
+  stays immortal); `slot_bridge_wrap` releases the heap-null refs it drops
+  into the immediate-null slot encoding.
+- **#214** — `eval` frees the partial AST returned by `parse` on the
+  parse-error branch.
+
+Together these dropped the ASan harness leak tally from 13 to 10.
+
 ## [0.15.3] — 2026-06-16
 
 ### Fix — `\r` is now a string-literal escape
