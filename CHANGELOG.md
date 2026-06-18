@@ -4,6 +4,16 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-06-18
+
+The #202 windowed-predicate series: all six observer predicates
+(`converged`, `stable`, `oscillating`, `improving`, `diverging`,
+`equilibrium`) now read a window of the last N observations instead of the
+instantaneous `dH`, so they describe the recent trajectory and no longer
+flicker on a single noisy step. The bands form an explicit lattice
+(`converged ⊂ equilibrium`, high-entropy `equilibrium ⊂ stable`) and
+`report` resolves the most specific. See docs/PREDICATES.md.
+
 ### Change — `stable` and `equilibrium` are now windowed predicates (#205, #209)
 
 This completes the #202 windowed-predicate series: all six observer
