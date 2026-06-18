@@ -193,12 +193,12 @@ static Value* store_json_parse_array(const char *s, int *pos) {
     while (1) {
         store_json_skip_ws(s, pos);
         Value *val = store_json_parse_value(s, pos);
-        if (!val) return NULL;
-        list_append(list, val);
+        if (!val) { val_decref(list); return NULL; }
+        list_append_owned(list, val);  /* adopt: parser's ref transfers to list */
         store_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
         if (s[*pos] == ']') { (*pos)++; return list; }
-        return NULL;  /* expected , or ] */
+        val_decref(list); return NULL;  /* expected , or ] */
     }
 }
 
@@ -211,18 +211,23 @@ static Value* store_json_parse_object(const char *s, int *pos) {
     while (1) {
         store_json_skip_ws(s, pos);
         Value *key = store_json_parse_string(s, pos);
-        if (!key) return NULL;
+        if (!key) { val_decref(dict); return NULL; }
         store_json_skip_ws(s, pos);
-        if (s[*pos] != ':') return NULL;  /* require colon */
+        if (s[*pos] != ':') { val_decref(key); val_decref(dict); return NULL; }  /* require colon */
         (*pos)++;
         store_json_skip_ws(s, pos);
         Value *val = store_json_parse_value(s, pos);
-        if (!val) return NULL;
-        dict_set(dict, key->data.str, val);
+        if (!val) { val_decref(key); val_decref(dict); return NULL; }
+        /* dict_set_owned adopts val; dict interns its own copy of the key
+         * string (env_intern_name), so the parsed `key` Value is just a
+         * carrier and must be freed — this was the per-key leak (#211-adjacent
+         * JSON-parse leak; test_lab/store/handle_forge). */
+        dict_set_owned(dict, key->data.str, val);
+        val_decref(key);
         store_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
         if (s[*pos] == '}') { (*pos)++; return dict; }
-        return NULL;  /* expected , or } */
+        val_decref(dict); return NULL;  /* expected , or } */
     }
 }
 
@@ -611,6 +616,15 @@ static int page_data_used(Page *page) {
  * Builtins
  * ================================================================ */
 
+/* Free a Store and its one owned Value (the parsed catalog dict). Every
+ * free(store) must go through here — the catalog is a make_dict / decoded-JSON
+ * Value that leaks otherwise (test_store/lab/handle_forge). */
+static void store_free(Store *store) {
+    if (!store) return;
+    if (store->catalog) val_decref(store->catalog);
+    free(store);
+}
+
 /* store_open(path) -> handle dict */
 static Value* builtin_store_open(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
@@ -630,13 +644,13 @@ static Value* builtin_store_open(Value *arg) {
         if (store_read_header(store) != 0) {
             runtime_error(0, "store_open: invalid database file '%s'\n", path);
             fclose(fp);
-            free(store);
+            store_free(store);
             return make_null();
         }
         if (store_load_catalog(store) != 0) {
             runtime_error(0, "store_open: corrupt catalog in '%s'\n", path);
             fclose(fp);
-            free(store);
+            store_free(store);
             return make_null();
         }
     } else {
@@ -644,7 +658,7 @@ static Value* builtin_store_open(Value *arg) {
         fp = xfopen_write(path, "w+b");
         if (!fp) {
             runtime_error(0, "store_open: cannot create '%s'\n", path);
-            free(store);
+            store_free(store);
             return make_null();
         }
         store->fp = fp;
@@ -670,7 +684,7 @@ static Value* builtin_store_open(Value *arg) {
     int hid = handle_register(store, HANDLE_STORE);
     if (hid < 0) {
         fclose(store->fp);
-        free(store);
+        store_free(store);
         return make_null();
     }
     Value *handle = make_dict(8);
@@ -694,7 +708,7 @@ static Value* builtin_store_close(Value *arg) {
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
     fclose(store->fp);
-    free(store);
+    store_free(store);
     /* Invalidate handle */
     if (arg && arg->type == VAL_DICT) {
         dict_set_owned(arg, "_store_id", make_null());
@@ -733,7 +747,7 @@ static Value* builtin_store_put(Value *arg) {
         col_info = make_dict(4);
         dict_set_owned(col_info, "root", make_num(root_page));
         dict_set_owned(col_info, "next_id", make_num(next_id));
-        dict_set(store->catalog, collection, col_info);
+        dict_set_owned(store->catalog, collection, col_info);  /* adopt make_dict ref */
         store->dirty = 1;
 
         /* Initialize root page */
@@ -1000,7 +1014,7 @@ static Value* builtin_store_query(Value *arg) {
             json[rec.json_len] = '\0';
             Value *val = store_json_decode(json);
             free(json);
-            list_append(results, val);
+            if (val) list_append_owned(results, val);  /* adopt parser's ref */
         }
         pg = page.next_page; if (pg >= store->page_count) break;
     }
@@ -1053,14 +1067,20 @@ static Value* builtin_store_update(Value *arg) {
     Value *key_val = arg->data.list.items[2];
     Value *record = arg->data.list.items[3];
 
-    /* Delete old record */
+    /* Delete old record. del_args + del_result are owned here (this is a
+     * direct C call, not a VM call, so nothing else frees them). */
     Value *del_args = make_list(3);
     list_append(del_args, handle);
     list_append(del_args, col_val);
     list_append(del_args, key_val);
     Value *del_result = builtin_store_delete(del_args);
+    val_decref(del_args);
 
-    if (!del_result || del_result->data.num == 0) return make_num(0);
+    if (!del_result || del_result->data.num == 0) {
+        if (del_result) val_decref(del_result);
+        return make_num(0);
+    }
+    val_decref(del_result);
 
     /* Set _id on new record */
     char key_buf[STORE_MAX_KEY_LEN];
@@ -1074,12 +1094,14 @@ static Value* builtin_store_update(Value *arg) {
     }
     dict_set_owned(record, "_id", make_str(key_buf));
 
-    /* Put new record */
+    /* Put new record. Free the args list and store_put's returned key. */
     Value *put_args = make_list(3);
     list_append(put_args, handle);
     list_append(put_args, col_val);
     list_append(put_args, record);
-    builtin_store_put(put_args);
+    Value *put_result = builtin_store_put(put_args);
+    val_decref(put_args);
+    if (put_result) val_decref(put_result);
     return make_num(1);
 }
 
@@ -1138,6 +1160,7 @@ static Value* builtin_store_drop(Value *arg) {
                      store->catalog->data.dict.vals[i]);
         }
     }
+    val_decref(store->catalog);  /* drop the old catalog before replacing */
     store->catalog = new_catalog;
     store->dirty = 1;
     store_flush_catalog(store);
