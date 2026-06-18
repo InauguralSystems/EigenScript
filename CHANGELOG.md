@@ -4,6 +4,17 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed — container-builtin reference leaks (builtins.c)
+
+- Four builtins that build a fresh list/dict per element leaked it: the
+  *inner* fields were appended with `list_append_owned`/`dict_set_owned`,
+  but the *outer* append of the finished container used plain `list_append`
+  (which increfs), so the builtin's own ref was never released. Affected:
+  `scan_tokens`, `scan_int_tokens`, `tokenize_with_names`,
+  `nearest_in_range_all` — each `list_append(out, row)` → `list_append_owned`.
+- Clears `test_builtin_indirect` and `test_coverage_gaps` (and the
+  marker-only `test_string_math`); harness leak tally **8 → 6**.
+
 ### Fixed — reference leaks in the `store` extension (ext_store.c)
 
 - **JSON parser** (`store_json_parse_object`/`_array`): every parsed object
