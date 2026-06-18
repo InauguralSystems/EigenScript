@@ -4,6 +4,46 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Change — `improving` is now a windowed predicate (#207)
+
+- **`improving` and `report of x == "improving"` now read the dH window
+  instead of the last step.** The pointwise rule (`dH < -dh_small`) fired
+  on a single negative tick and dropped the claim the next frame if entropy
+  bounced — it flickered under noise, which is the wrong behavior for the
+  canonical `loop while improving` use. The windowed rule (shared helper
+  `observer_improving`, used by both the `PREDICATE` op and the report
+  builtin) is a hybrid of three independent tests:
+  - `window_size >= 3` (partial-window rule — no claim on < 3 samples);
+  - **`sum(window) < 0`** — the entropy fell on *net* over the window. This
+    is magnitude-aware: a trajectory that ends with *higher* entropy than it
+    started is never `improving`, even if most individual steps ticked down.
+  - **`down_fraction >= 0.6`** — at least 60% of the steps are *genuine*
+    descents, where a descent step is `dH < -dh_small`. The proportional
+    vote (rather than an absolute bounce cap) tolerates noisy up-ticks
+    without dropping a real descent; the `dh_small` threshold keeps a
+    gray-band descent out of `improving` (see below).
+- **This is a deliberate hybrid, not a restoration of any ancestor rule.**
+  The legacy EigenChat *language* predicate was pointwise (radius
+  decreasing), and its only *windowed* notion (`TemporalLossState`) was a
+  magnitude-blind directional ratio vote that reports "improving" even on a
+  net-worsening run. We keep that rule's noise tolerance (the proportional
+  vote) but add the `sum < 0` magnitude gate so a net-worsening trajectory
+  is never called improving.
+- **Honors the #187 gray band.** The descent threshold is `dh_small`, not
+  `dh_zero`, so a steady descent inside the gray band
+  (`dh_zero <= |dH| < dh_small`) reads `stable`, not `improving` — the
+  predicate family stays mutually exclusive and `improving` remains the
+  windowed generalization of the pointwise rule it replaced.
+- **User-visible delta:** a noisy descent (net down, majority of steps
+  genuinely descending) now reads `improving` where the first windowed cut
+  dropped it on a couple of bounces; a *net-worsening* run and a *gray-band*
+  steady descent both read `stable`/their true state rather than
+  `improving`; fewer than 3 observations never report `improving`.
+- New tests: `tests/test_windowed_improving.eigs` (suite [8d], 8 checks
+  covering monotone/noisy descent, net-up, gray-band, sub-majority, flat,
+  ascent, and partial window). The predicate matrix's "stable" canonical
+  case is a slow ascent so it stays stable-only under the new rule.
+
 ### Change — `assert` failures are now catchable (#220)
 
 - **`assert of [cond, msg]` and `assert of cond` no longer call

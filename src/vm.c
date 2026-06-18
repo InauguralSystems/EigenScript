@@ -3922,7 +3922,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         }
         case 1: result = (fabs(dH) < g_obs_dh_small && entropy >= g_obs_h_low &&
                           !(dH * prev_dH < 0 && fabs(dH) > g_obs_dh_zero)); break;
-        case 2: result = (dH < -g_obs_dh_small); break;
+        case 2: result = observer_improving(v); break;  /* windowed (#207) */
         case 3: result = (dH * prev_dH < 0 && fabs(dH) > g_obs_dh_zero); break;
         case 4: result = (dH > g_obs_dh_small); break;
         case 5: result = (fabs(dH) < g_obs_dh_zero); break;

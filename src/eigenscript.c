@@ -268,6 +268,46 @@ double observer_window_get(const Value *v, size_t offset_back) {
     return v->dh_window[idx];
 }
 
+/* Windowed `improving` (#207, docs/PREDICATES.md): the value is becoming more
+ * determined *over its recent history*, not on a single step. Replaces the old
+ * pointwise `dH < -dh_small`, which fired on one negative tick and dropped the
+ * next frame if entropy bounced. Shared by the PREDICATE op (vm.c) and the
+ * report builtin (builtins.c) so the two cannot drift.
+ *
+ *   count >= 3
+ *   AND sum(window) < 0          (NET entropy descent — magnitude-aware)
+ *   AND down_fraction >= 0.6     (a sustained majority of genuine descent
+ *                                 steps; a "down" step is dH < -dh_small)
+ *
+ * This is a deliberate hybrid, not a port of any single ancestor rule:
+ *  - The `sum < 0` gate is magnitude-aware: a trajectory whose entropy ends
+ *    HIGHER than it started is never "improving", even if most steps ticked
+ *    down. (EigenChat's TemporalLossState.is_improving counts step directions
+ *    only and so reports improvement on a net-worsening run — we don't.)
+ *  - The down_fraction vote (vs an absolute bounce cap) tolerates noise
+ *    proportionally, so a genuine noisy descent isn't dropped just because it
+ *    accrued a couple of up-ticks over a long window.
+ *  - The descent threshold is `dh_small`, NOT `dh_zero`: a steady descent
+ *    inside the gray band (dh_zero <= |dH| < dh_small) does NOT count as
+ *    improving — it reads `stable`, preserving the #187 mutual-exclusivity
+ *    contract and matching the pointwise rule this windowing replaced.
+ *
+ * down_fraction >= 0.6 is tested as `down * 5 >= cnt * 3` (0.6 = 3/5, exact in
+ * integers). Requiring >=2 genuine descent steps (cnt>=3) also keeps improving
+ * disjoint from converged, which needs every |dH| < dh_zero. */
+int observer_improving(const Value *v) {
+    size_t cnt = observer_window_size(v);
+    if (cnt < 3) return 0;
+    double sum = 0.0;
+    int down = 0;
+    for (size_t i = 0; i < cnt; i++) {
+        double w = observer_window_get(v, i);
+        sum += w;
+        if (w < -g_obs_dh_small) down++;
+    }
+    return (sum < 0.0 && (size_t)(down * 5) >= cnt * 3) ? 1 : 0;
+}
+
 void update_observer(Value *v) {
     if (!v) return;
     double new_entropy = compute_entropy(v);

@@ -58,11 +58,13 @@ c is 70.0
 pc is [converged, stable, improving, diverging, oscillating, equilibrium, report of c]
 expect of ["oscillating", pc, 0, 0, 0, 0, 1, 0, "oscillating"]
 
-# --- stable only: small monotone entropy change at high entropy, no sign flip ---
-e is 50.0
-e is 55.0
-e is 60.0
+# --- stable only: small entropy change at high entropy, no sign flip, and NO
+#     net descent (a slow ASCENT) so windowed `improving` (#207) does not also
+#     fire. A slow *descent* now reads as improving — see test_windowed_improving. ---
 e is 65.0
+e is 60.0
+e is 55.0
+e is 50.0
 pe is [converged, stable, improving, diverging, oscillating, equilibrium, report of e]
 expect of ["stable", pe, 0, 1, 0, 0, 0, 0, "stable"]
 

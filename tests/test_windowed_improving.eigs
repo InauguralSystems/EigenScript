@@ -1,0 +1,99 @@
+# Windowed `improving` (#207, docs/PREDICATES.md) — hybrid rule:
+#   improving = count >= 3
+#               AND sum(window) < 0           (NET entropy descent, magnitude-aware)
+#               AND down_fraction >= 0.6      (>=60% of steps are genuine descents,
+#                                              a "down" step being dH < -dh_small)
+# The sum<0 gate refuses to call a net-worsening run improving; the proportional
+# vote tolerates noisy bounces; the dh_small threshold keeps a gray-band descent
+# out of `improving` (it reads `stable`) per the #187 mutual-exclusivity contract.
+# Entropy of a number x is H_binary(1/(1+|x|)) — for |x|>1 it falls as |x| grows,
+# so increasing |x| is an entropy descent. Self-asserting; prints the marker.
+
+print of "=== WINDOWED IMPROVING (docs/PREDICATES.md, #207) ==="
+
+define want(tag, got, exp) as:
+    assert of [got == exp, f"{tag}: improving expected {exp} got {got}"]
+    print of f"  PASS: {tag} (improving={got})"
+
+# WI1: monotone clean descent fires (all steps big descents, net down)
+a is 3.0
+a is 5.0
+a is 9.0
+a is 19.0
+a is 99.0
+a is 499.0
+i1 is improving
+want of ["WI1 monotone clean descent fires", i1, 1]
+
+# WI2: noisy descent with bounces still fires — net down AND majority (4/6)
+#      genuine descents. The old absolute bounce cap rejected this; the
+#      proportional vote accepts it.
+b is 3.0
+b is 5.0
+b is 40.0
+b is 9.0
+b is 200.0
+b is 60.0
+b is 4000.0
+i2 is improving
+want of ["WI2 noisy descent, net+majority, fires", i2, 1]
+
+# WI3: net entropy ROSE despite several descent steps -> does NOT fire.
+#      Guards against the magnitude-blind failure: most steps tick down but the
+#      value ends LESS determined than it started (sum >= 0).
+c is 3.0
+c is 4.0
+c is 5.0
+c is 6.0
+c is 2.2
+c is 1.6
+i3 is improving
+want of ["WI3 net-up despite descents does not fire", i3, 0]
+
+# WI4: steady descent INSIDE the gray band (dh_zero <= |dH| < dh_small) does
+#      NOT fire — it reads `stable`. #187 mutual-exclusivity guard.
+d is 50.0
+d is 52.0
+d is 54.0
+d is 56.0
+d is 58.0
+d is 60.0
+i4 is improving
+want of ["WI4 gray-band steady descent does not fire", i4, 0]
+
+# WI5: net DOWN but only a MINORITY (2/5) of steps are genuine descents -> does
+#      NOT fire. Proves the proportional vote gates independently of sum<0.
+e is 2.0
+e is 200.0
+e is 60.0
+e is 4000.0
+e is 1500.0
+e is 600.0
+i5 is improving
+want of ["WI5 net-down but sub-majority does not fire", i5, 0]
+
+# WI6: flat sequence (all dH ~ 0) does not fire
+f is 5.0
+f is 5.0
+f is 5.0
+f is 5.0
+f is 5.0
+i6 is improving
+want of ["WI6 flat does not fire", i6, 0]
+
+# WI7: slow ascent (rising entropy, sum > 0) does not fire
+g is 99.0
+g is 60.0
+g is 40.0
+g is 25.0
+i7 is improving
+want of ["WI7 slow ascent does not fire", i7, 0]
+
+# WI8: fewer than 3 samples (count == 2) does not fire (partial-window rule)
+h is 3.0
+h is 50.0
+h is 9999.0
+i8 is improving
+want of ["WI8 count < 3 does not fire", i8, 0]
+
+print of "WINDOWED_IMPROVING_ALL_PASS"
