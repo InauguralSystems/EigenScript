@@ -336,6 +336,32 @@ int observer_diverging(const Value *v) {
     return (sum > 0.0 && (size_t)(up * 5) >= cnt * 3) ? 1 : 0;
 }
 
+/* Windowed `oscillating` (#206, docs/PREDICATES.md): sustained back-and-forth,
+ * not a single reversal.
+ *
+ *   count >= 3
+ *   AND sign_flip_count(window) >= FLIPS   (FLIPS = ceil(N/3) = 4 at N=10)
+ *
+ * A sign flip is an adjacent pair with opposite signs whose magnitudes BOTH
+ * clear dh_zero — sub-noise wobble does not count. Note this gates at dh_zero,
+ * NOT dh_small like improving/diverging: oscillating is a deadband-escape test,
+ * not a direction verdict, so #187 deliberately left it on dh_zero. Requiring
+ * FLIPS=4 flips means a window needs >=5 samples (4 adjacent pairs) to ever
+ * fire — a couple of reversals in an otherwise monotone trajectory do not. */
+int observer_oscillating(const Value *v) {
+    size_t cnt = observer_window_size(v);
+    if (cnt < 3) return 0;
+    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;   /* ceil(N/3) = 4 at N=10 */
+    int flips = 0;
+    for (size_t i = 0; i + 1 < cnt; i++) {
+        double a = observer_window_get(v, i);
+        double b = observer_window_get(v, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero)
+            flips++;
+    }
+    return (flips >= FLIPS) ? 1 : 0;
+}
+
 void update_observer(Value *v) {
     if (!v) return;
     double new_entropy = compute_entropy(v);

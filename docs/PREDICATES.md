@@ -76,7 +76,7 @@ The spec describes the **target** windowed semantics. Shipped state:
 |-----------|-----------|------------|
 | `converged` | ✅ shipped (`vm.c` kind 0) | #204 (done) |
 | `stable` | ⏳ target | #205 |
-| `oscillating` | ⏳ target | #206 |
+| `oscillating` | ✅ shipped (`observer_oscillating`, `vm.c` kind 3 + report) | #206 (done) |
 | `improving` | ✅ shipped (`observer_improving`, `vm.c` kind 2 + report) | #207 (done) |
 | `diverging` | ✅ shipped (`observer_diverging`, `vm.c` kind 4 + report) | #208 (done) |
 | `equilibrium` | ⏳ target | #209 |
@@ -278,13 +278,13 @@ exclusive within one observation:
   `down_fraction`/`up_fraction` of 0 — it can never be improving or
   diverging. This is the #187 contract enforced at the window level.
 
-> **Note (pre-rewrite):** `stable`, `oscillating`, and `equilibrium` are
-> still pointwise (see Implementation status), so some overlaps remain — a
-> quiet step at high entropy satisfies both `stable` and `equilibrium`.
-> (The old large-amplitude `oscillating`∧`diverging` overlap is now gone:
-> windowed `diverging` needs a net trend, which an oscillation lacks.)
-> `report of x` disambiguates by priority order.
-> `tests/test_predicate_matrix.eigs` pins the current behavior; it is
+> **Note (pre-rewrite):** `stable` and `equilibrium` are still pointwise
+> (see Implementation status), so one overlap remains — a quiet step at high
+> entropy satisfies both `stable` and `equilibrium`. (The old large-amplitude
+> `oscillating`∧`diverging` overlap is gone: windowed `diverging` needs a net
+> trend and windowed `oscillating` needs ≥ `FLIPS` flips, and an oscillation
+> has the latter but not the former.) `report of x` disambiguates by priority
+> order. `tests/test_predicate_matrix.eigs` pins the current behavior; it is
 > updated as each rewrite lands.
 
 ## The `report` builtin

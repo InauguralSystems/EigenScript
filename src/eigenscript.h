@@ -258,6 +258,11 @@ int observer_improving(const Value *v);
  * Shared by vm.c and builtins.c. */
 int observer_diverging(const Value *v);
 
+/* Windowed `oscillating` predicate (#206): >= ceil(N/3) = 4 dH sign flips
+ * across the window, each flip's two samples clearing dh_zero (deadband
+ * escape, stays on dh_zero per #187). Shared by vm.c and builtins.c. */
+int observer_oscillating(const Value *v);
+
 /* ---- Arena allocator ---- */
 
 #define ARENA_BLOCK_SIZE (16 * 1024 * 1024)
