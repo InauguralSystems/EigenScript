@@ -3,12 +3,22 @@ print of "--- HS1: Entropy-preserving at moderate H is NOT converged ---"
 
 x is 42
 x is 42
+x is 42
+x is 42
+x is 42
+x is 42
+x is 42
+x is 42
+x is 42
+x is 42
+x is 42
 
-c is converged
-e is equilibrium
+# Read both predicates against x in one expression — a separate `c is converged`
+# would repoint the last-observer alias to c before `equilibrium` is read.
+hs1 is [converged, equilibrium]
 
-print of c
-print of e
+print of hs1[0]
+print of hs1[1]
 
 print of ""
 print of "--- HS2: Stall is observable via interrogation ---"

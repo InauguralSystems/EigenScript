@@ -485,6 +485,15 @@ Value* builtin_report(Value *arg) {
         }
         if (all_quiet) return make_str("converged");
     }
+    if (observer_equilibrium(arg)) return make_str("equilibrium");  /* windowed (#209) */
+    if (observer_stable(arg)) return make_str("stable");            /* windowed (#205) */
+    /* Partial-window fallback: the windowed equilibrium/stable predicates need
+     * a full window (count == N), so for a not-yet-full window they are false
+     * and `report` would have nothing to say. Give an instantaneous best-effort
+     * label instead — report stays useful while observations accumulate. (This
+     * is the one place report can disagree with the bare predicates, and only
+     * for count < N, where the partial-window rule already makes every predicate
+     * false.) */
     if (fabs(dh) < g_obs_dh_zero) return make_str("equilibrium");
     if (fabs(dh) < g_obs_dh_small && h >= g_obs_h_low) return make_str("stable");
     return make_str("stable");

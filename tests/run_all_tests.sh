@@ -357,6 +357,16 @@ check_eigs_suite "windowed oscillating: flip-count threshold + dh_zero deadband 
     "test_windowed_oscillating.eigs" "WINDOWED_OSCILLATING_ALL_PASS" 8
 echo ""
 
+echo "[8g] Windowed Stable (8 checks)"
+check_eigs_suite "windowed stable: full-window small-motion + entropy floor + no-flips + h_low boundary" \
+    "test_windowed_stable.eigs" "WINDOWED_STABLE_ALL_PASS" 8
+echo ""
+
+echo "[8h] Windowed Equilibrium (8 checks)"
+check_eigs_suite "windowed equilibrium: full-window zero-mean low-variance + mean/variance gates + partial-window" \
+    "test_windowed_equilibrium.eigs" "WINDOWED_EQUILIBRIUM_ALL_PASS" 8
+echo ""
+
 echo "[9/15] Assert (3 checks)"
 AS_OUTPUT=$(./eigenscript ../tests/test_assert.eigs 2>&1)
 check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"

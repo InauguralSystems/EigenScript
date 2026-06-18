@@ -1,9 +1,17 @@
 print of "=== STABLE BAND TEST ==="
 
-print of "--- SB1: Stable is reachable (small drift, moderate H) ---"
+print of "--- SB1: Stable is reachable (full-window small drift, moderate H) ---"
+x is 30
+x is 32
+x is 34
+x is 36
+x is 38
+x is 40
 x is 42
-x is 43
 x is 44
+x is 46
+x is 48
+x is 50
 
 s1 is stable
 r1 is report of x

@@ -4,6 +4,40 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Change — `stable` and `equilibrium` are now windowed predicates (#205, #209)
+
+This completes the #202 windowed-predicate series: all six observer
+predicates now read the dH window instead of the last step.
+
+- **`equilibrium` (#209)** — new helper `observer_equilibrium`: full window
+  (`count == N`) AND `|mean(window)| < dh_zero` AND
+  `variance(window) < dh_zero²`. The value is at rest on average with
+  negligible spread, regardless of entropy.
+- **`stable` (#205)** — new helper `observer_stable`: full window AND every
+  `|dH| < dh_small` AND `entropy >= h_low` AND no consecutive sign flips
+  (adjacent opposite-sign pair both clearing `dh_zero`). Small but nonzero
+  motion at high information content, holding direction.
+- **The quiescent lattice is now explicit.** `converged ⊂ equilibrium`, and
+  a *high-entropy* `equilibrium ⊂ stable`. A full quiet window is therefore
+  `converged` (low entropy) or `equilibrium`+`stable` (high entropy);
+  `equilibrium` never fires alone, and `report` resolves to the most
+  specific band (`converged` then `equilibrium` then `stable`).
+- **User-visible delta:** both predicates now require a *full* window
+  (`count == N`) like `converged`, so a value at rest reports `stable` /
+  `equilibrium` only after N observations, not on the first quiet step. For
+  partial windows `report` falls back to an instantaneous best-effort label
+  (see docs/PREDICATES.md → The `report` builtin), so `report`-driven code
+  such as `lib/simulation.eigs` is unaffected.
+- New tests: `tests/test_windowed_stable.eigs` (suite [8g]) and
+  `tests/test_windowed_equilibrium.eigs` (suite [8h]), 8 checks each. The
+  predicate matrix's `stable`/`equilibrium`/`converged` cases, the
+  threshold-knob, and the `stable_band` / `halting_stall` /
+  `report_alignment` / `windowed_converged` tests were migrated to
+  full-window sequences. Two of those also surfaced (and now avoid) the
+  last-observer-alias gotcha: reading `c is converged` before
+  `e is equilibrium` repoints the alias, so both predicates are now read
+  against the value in a single list expression.
+
 ### Change — `oscillating` is now a windowed predicate (#206)
 
 - **`oscillating` and `report of x == "oscillating"` now count sign flips

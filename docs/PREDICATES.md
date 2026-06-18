@@ -70,20 +70,20 @@ which fired on the first step.
 
 ## Implementation status
 
-The spec describes the **target** windowed semantics. Shipped state:
+All six predicates are now windowed (the #202 series is complete):
 
 | Predicate | Windowed? | Tracked by |
 |-----------|-----------|------------|
 | `converged` | ✅ shipped (`vm.c` kind 0) | #204 (done) |
-| `stable` | ⏳ target | #205 |
+| `stable` | ✅ shipped (`observer_stable`, `vm.c` kind 1 + report) | #205 (done) |
 | `oscillating` | ✅ shipped (`observer_oscillating`, `vm.c` kind 3 + report) | #206 (done) |
 | `improving` | ✅ shipped (`observer_improving`, `vm.c` kind 2 + report) | #207 (done) |
 | `diverging` | ✅ shipped (`observer_diverging`, `vm.c` kind 4 + report) | #208 (done) |
-| `equilibrium` | ⏳ target | #209 |
+| `equilibrium` | ✅ shipped (`observer_equilibrium`, `vm.c` kind 5 + report) | #209 (done) |
 
-Until a predicate's rewrite lands, the runtime evaluates the pointwise
-body documented under "Pointwise behavior replaced". `report of x` follows
-the predicate implementations and is updated alongside them.
+`report of x` follows the same windowed helpers (see The `report` builtin).
+The "Pointwise behavior replaced" note under each predicate records the
+single-step rule that the windowed version superseded.
 
 ## The six predicates
 
@@ -262,46 +262,61 @@ otherwise monotone descent.
 
 ## Mutual exclusion
 
-Under the windowed semantics the bands are designed to be mutually
-exclusive within one observation:
+Under the windowed semantics the "active motion" bands —
+`improving`, `diverging`, `oscillating` — are mutually exclusive, and each
+is exclusive of the "at rest" bands. The three quiescent bands form an
+intentional subset lattice rather than disjoint sets; `report` resolves to
+the most specific via its priority order.
 
-- `converged` ⊂ `equilibrium` (every converged window is zero-mean and
-  low-variance; `report` resolves to `converged` when both hold).
 - `improving` and `diverging` require opposite net trends, so at most one
   fires.
 - `oscillating` requires ≥ `FLIPS` sign changes, which a window with a
-  monotone net trend (improving/diverging) cannot have, and the `stable`
-  no-consecutive-flips clause excludes it from the small-motion band.
+  monotone net trend (improving/diverging) cannot have.
 - `stable` requires every `|dH| < dh_small`; `improving`/`diverging`
   require ≥ 60% of steps to *clear* `dh_small` in one direction, so a
-  uniformly small-motion (gray-band) window satisfies `stable` and has a
-  `down_fraction`/`up_fraction` of 0 — it can never be improving or
-  diverging. This is the #187 contract enforced at the window level.
+  uniformly small-motion (gray-band) window is `stable` with a
+  `down_fraction`/`up_fraction` of 0 — never improving or diverging. This
+  is the #187 contract enforced at the window level. The `stable`
+  no-consecutive-flips clause likewise excludes `oscillating`.
+- **The quiescent lattice** (full-window, near-zero motion):
+  `converged ⊂ equilibrium`, and a *high-entropy* `equilibrium ⊂ stable`.
+  Concretely a full quiet window is exactly one of:
+  - **low entropy** → `converged` (and `equilibrium`; `report` →
+    `converged`);
+  - **high entropy** → `equilibrium` *and* `stable` (`report` →
+    `equilibrium`).
+  So `equilibrium` never fires alone — it is always accompanied by
+  `converged` (low H) or `stable` (high H). A `stable` window that is *not*
+  equilibrium is one with steady directional drift (mean `|dH| > dh_zero`):
+  moving a little, but settled.
 
-> **Note (pre-rewrite):** `stable` and `equilibrium` are still pointwise
-> (see Implementation status), so one overlap remains — a quiet step at high
-> entropy satisfies both `stable` and `equilibrium`. (The old large-amplitude
-> `oscillating`∧`diverging` overlap is gone: windowed `diverging` needs a net
-> trend and windowed `oscillating` needs ≥ `FLIPS` flips, and an oscillation
-> has the latter but not the former.) `report of x` disambiguates by priority
-> order. `tests/test_predicate_matrix.eigs` pins the current behavior; it is
-> updated as each rewrite lands.
+This makes `report`'s priority order load-bearing: `oscillating` →
+`diverging` → `improving` → `converged` → `equilibrium` → `stable` returns
+the most specific true band. `tests/test_predicate_matrix.eigs` pins the
+overlaps and the report resolution.
 
 ## The `report` builtin
 
 `report of x` (builtins.c:`builtin_report`) returns the first matching
-band, tested in priority order. The target order under windowed semantics:
+band, tested in priority order:
 
 1. `oscillating`
 2. `diverging`
 3. `improving`
 4. `converged`
 5. `equilibrium`
-6. `stable` (fallback)
+6. `stable`
 
-`report of x` and `if <predicate>:` are kept in lockstep so
-`report of x == "converged"` agrees with `if converged:` on the same
-value, and likewise as each band is rewritten.
+These all use the same windowed helpers as the predicates, so
+`report of x == "converged"` agrees with `if converged:` on the same value
+— **at a full window**. For a *partial* window (`count < N`), the
+full-window predicates (`converged`/`equilibrium`/`stable`) are all false
+by the partial-window rule, but `report` still needs to say something, so
+it falls back to an instantaneous best-effort label: `equilibrium` if the
+last `|dH| < dh_zero`, else `stable` if `|dH| < dh_small` at high entropy,
+else `stable`. This is the one place `report` can disagree with the bare
+predicates, and only while observations are still accumulating — by the
+time the window fills, the windowed helpers decide and the two agree.
 
 ## Canonical examples
 

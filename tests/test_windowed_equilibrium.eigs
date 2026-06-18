@@ -1,0 +1,127 @@
+# Windowed `equilibrium` (#209, docs/PREDICATES.md):
+#   equilibrium = count == N (full window)
+#                 AND |mean(window)| < dh_zero
+#                 AND variance(window) < dh_zero^2
+# The value is sitting still on average with negligible spread, regardless of
+# entropy. `converged` is the strict subset that also sits at low entropy; a
+# high-entropy equilibrium also reads `stable`. Self-asserting; prints marker.
+
+print of "=== WINDOWED EQUILIBRIUM (docs/PREDICATES.md, #209) ==="
+
+define want(tag, got, exp) as:
+    assert of [got == exp, f"{tag}: equilibrium expected {exp} got {got}"]
+    print of f"  PASS: {tag} (equilibrium={got})"
+
+# WE1: full-window quiet at HIGH entropy -> equilibrium (regardless of entropy)
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+a is 2.0
+want of ["WE1 quiet high-entropy fires", equilibrium, 1]
+
+# WE2: full-window quiet at LOW entropy -> equilibrium (converged is a subset)
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+b is 1000000.0
+want of ["WE2 quiet low-entropy fires (converged subset)", equilibrium, 1]
+
+# WE3: partial window (count == 9 < N) -> does NOT fire (full-window rule)
+c is 2.0
+c is 2.0
+c is 2.0
+c is 2.0
+c is 2.0
+c is 2.0
+c is 2.0
+c is 2.0
+c is 2.0
+c is 2.0
+want of ["WE3 partial window does not fire", equilibrium, 0]
+
+# WE4: steady drift, |mean| > dh_zero -> does NOT fire (not at rest on average)
+d is 30.0
+d is 32.0
+d is 34.0
+d is 36.0
+d is 38.0
+d is 40.0
+d is 42.0
+d is 44.0
+d is 46.0
+d is 48.0
+d is 50.0
+want of ["WE4 steady drift does not fire (mean)", equilibrium, 0]
+
+# WE5: large-amplitude oscillation -> zero-mean but variance too high -> NO
+e is 2.0
+e is 10.0
+e is 2.0
+e is 10.0
+e is 2.0
+e is 10.0
+e is 2.0
+e is 10.0
+e is 2.0
+e is 10.0
+e is 2.0
+want of ["WE5 large-amp oscillation does not fire (variance)", equilibrium, 0]
+
+# WE6: sub-dh_zero cancelling motion (|dH|~1.5e-5) -> zero-mean, low variance -> YES
+f is 800.0
+f is 801.0
+f is 800.0
+f is 801.0
+f is 800.0
+f is 801.0
+f is 800.0
+f is 801.0
+f is 800.0
+f is 801.0
+f is 800.0
+want of ["WE6 sub-noise cancellation fires", equilibrium, 1]
+
+# WE7: gray-band oscillation (|dH|~0.0057) -> zero-mean but variance over
+#      dh_zero^2 -> does NOT fire (variance gate, distinct from large amplitude)
+g is 70.0
+g is 75.0
+g is 70.0
+g is 75.0
+g is 70.0
+g is 75.0
+g is 70.0
+g is 75.0
+g is 70.0
+g is 75.0
+g is 70.0
+want of ["WE7 gray-band oscillation does not fire (variance)", equilibrium, 0]
+
+# WE8: quiet at moderate entropy (|x|=42) -> equilibrium (entropy-independent)
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+h is 42.0
+want of ["WE8 quiet moderate-entropy fires", equilibrium, 1]
+
+print of "WINDOWED_EQUILIBRIUM_ALL_PASS"

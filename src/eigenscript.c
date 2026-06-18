@@ -362,6 +362,62 @@ int observer_oscillating(const Value *v) {
     return (flips >= FLIPS) ? 1 : 0;
 }
 
+/* Windowed `equilibrium` (#209, docs/PREDICATES.md): the value is sitting still
+ * on average, regardless of entropy.
+ *
+ *   count == N
+ *   AND |mean(window)| < dh_zero
+ *   AND variance(window) < dh_zero^2
+ *
+ * Zero-mean with negligible spread. Unlike the trajectory predicates this needs
+ * a FULL window (count == N). `converged` is the strict subset that also sits
+ * in a low-entropy basin (entropy < h_low); a high-entropy value can be at
+ * equilibrium while still information-rich (and then also reads `stable`). */
+int observer_equilibrium(const Value *v) {
+    size_t cnt = observer_window_size(v);
+    if (cnt < OBSERVER_WINDOW_N) return 0;
+    double sum = 0.0;
+    for (size_t i = 0; i < cnt; i++) sum += observer_window_get(v, i);
+    double mean = sum / (double)cnt;
+    if (fabs(mean) >= g_obs_dh_zero) return 0;
+    double var = 0.0;
+    for (size_t i = 0; i < cnt; i++) {
+        double d = observer_window_get(v, i) - mean;
+        var += d * d;
+    }
+    var /= (double)cnt;
+    return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
+}
+
+/* Windowed `stable` (#205, docs/PREDICATES.md): small but nonzero motion at
+ * high information content, holding its direction.
+ *
+ *   count == N
+ *   AND every |dH| < dh_small
+ *   AND entropy >= h_low
+ *   AND no consecutive sign flips (no adjacent pair with opposite signs whose
+ *       magnitudes both clear dh_zero — that would be oscillation)
+ *
+ * The "doing a little, but settled and not bouncing" band. A full-window quiet
+ * high-entropy value is both `equilibrium` and `stable` (report resolves to
+ * `equilibrium` first); a low-entropy quiet value is `converged`, not `stable`,
+ * because the entropy >= h_low clause excludes it. */
+int observer_stable(const Value *v) {
+    size_t cnt = observer_window_size(v);
+    if (cnt < OBSERVER_WINDOW_N) return 0;
+    if (v->entropy < g_obs_h_low) return 0;
+    for (size_t i = 0; i < cnt; i++) {
+        if (fabs(observer_window_get(v, i)) >= g_obs_dh_small) return 0;
+    }
+    for (size_t i = 0; i + 1 < cnt; i++) {
+        double a = observer_window_get(v, i);
+        double b = observer_window_get(v, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero)
+            return 0;
+    }
+    return 1;
+}
+
 void update_observer(Value *v) {
     if (!v) return;
     double new_entropy = compute_entropy(v);

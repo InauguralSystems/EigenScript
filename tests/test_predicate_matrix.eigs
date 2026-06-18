@@ -63,23 +63,42 @@ c is 70.0
 pc is [converged, stable, improving, diverging, oscillating, equilibrium, report of c]
 expect of ["oscillating", pc, 0, 0, 0, 0, 1, 0, "oscillating"]
 
-# --- stable only: small entropy change at high entropy, no sign flip, and NO
-#     net descent (a slow ASCENT) so windowed `improving` (#207) does not also
-#     fire. A slow *descent* now reads as improving — see test_windowed_improving. ---
-e is 65.0
-e is 60.0
-e is 55.0
+# --- stable only (#205): FULL window of steady small drift at high entropy.
+#     Each |dH|~0.006 is in the gray band (< dh_small, > dh_zero), same sign, no
+#     flips -> stable. Mean ~0.006 > dh_zero so NOT equilibrium; gray-band steps
+#     are below dh_small so NOT improving/diverging. ---
+e is 30.0
+e is 32.0
+e is 34.0
+e is 36.0
+e is 38.0
+e is 40.0
+e is 42.0
+e is 44.0
+e is 46.0
+e is 48.0
 e is 50.0
 pe is [converged, stable, improving, diverging, oscillating, equilibrium, report of e]
 expect of ["stable", pe, 0, 1, 0, 0, 0, 0, "stable"]
 
-# --- equilibrium only: low-entropy value, SHORT window (< N) so not converged ---
-g is 1000000.0
-g is 1000000.0
-g is 1000000.0
-g is 1000000.0
+# --- equilibrium + stable (#209/#205): FULL window at rest, HIGH entropy.
+#     Zero-mean low-variance -> equilibrium; quiet + high entropy + no flips ->
+#     also stable. NOT converged (entropy >= h_low). Under windowing equilibrium
+#     never fires alone: a quiet window is converged (low H) or stable (high H).
+#     report resolves equilibrium before stable. ---
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
+g is 2.0
 pg is [converged, stable, improving, diverging, oscillating, equilibrium, report of g]
-expect of ["equilibrium-only", pg, 0, 0, 0, 0, 0, 1, "equilibrium"]
+expect of ["equilibrium+stable", pg, 0, 1, 0, 0, 0, 1, "equilibrium"]
 
 # --- converged: low-entropy value, FULL window (>= N=10). converged is a
 #     strict subset of equilibrium, so BOTH fire; report resolves to converged. ---
@@ -113,18 +132,31 @@ d is 2.0
 pd is [converged, stable, improving, diverging, oscillating, equilibrium, report of d]
 expect of ["osc-only (no longer co-fires diverging)", pd, 0, 0, 0, 0, 1, 0, "oscillating"]
 
-# --- EDGE: quiet (dH=0) at HIGH entropy co-fires stable + equilibrium; report
-#     resolves to equilibrium. (Not converged: entropy >= h_low.) ---
-h is 2.0
-h is 2.0
-h is 2.0
-h is 2.0
+# --- EDGE: converged at the entropy boundary. FULL window at rest with entropy
+#     JUST BELOW h_low (|x|=100 -> H~0.080 < 0.1) -> converged (and equilibrium,
+#     its superset). The h_low clause is the whole difference from `g` above
+#     (|x|=2, H~0.92): same quiet window, opposite verdict. report=converged. ---
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
+h is 100.0
 ph is [converged, stable, improving, diverging, oscillating, equilibrium, report of h]
-expect of ["quiet-high-entropy", ph, 0, 1, 0, 0, 0, 1, "equilibrium"]
+expect of ["converged-at-boundary", ph, 1, 0, 0, 0, 0, 1, "converged"]
 
 # --- THRESHOLD KNOB: the small-amplitude oscillation (|dH|~0.0057) is
 #     `oscillating` at default thresholds, but raising dh_zero above |dH|
 #     reclassifies the SAME trajectory as `equilibrium`. ---
+t1 is 70.0
+t1 is 75.0
+t1 is 70.0
+t1 is 75.0
 t1 is 70.0
 t1 is 75.0
 t1 is 70.0
@@ -138,6 +170,10 @@ assert of [td[1] == 0, f"threshold-default: equilibrium expected 0 got {td[1]}"]
 print of "  PASS: threshold-default (oscillating)"
 
 set_observer_thresholds of [0.01, 0.05, 0.5]
+t2 is 70.0
+t2 is 75.0
+t2 is 70.0
+t2 is 75.0
 t2 is 70.0
 t2 is 75.0
 t2 is 70.0
