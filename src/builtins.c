@@ -1237,7 +1237,7 @@ Value* builtin_scan_tokens(Value *arg) {
         list_append_owned(row, make_num((double)token_col));
         list_append_owned(row, make_num((double)(start - base)));
         list_append_owned(row, make_num((double)(p - base)));
-        list_append(out, row);
+        list_append_owned(out, row);  /* adopt the freshly-built row */
         free(token);
     }
 
@@ -1324,7 +1324,7 @@ Value* builtin_scan_int_tokens(Value *arg) {
         list_append_owned(row, make_num((double)(p - base)));
         list_append_owned(row, make_num((double)is_int));
         list_append_owned(row, make_num(int_value));
-        list_append(out, row);
+        list_append_owned(out, row);  /* adopt the freshly-built row */
         free(token);
     }
 
@@ -3046,7 +3046,7 @@ Value* builtin_tokenize_with_names(Value *arg) {
             name = numbuf;
         }
         list_append_owned(pair, make_str(name)); /* make_str copies the string */
-        list_append(result, pair);
+        list_append_owned(result, pair);  /* adopt the freshly-built pair */
     }
     free_tokenlist(&tl);
     return result;
@@ -4043,7 +4043,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             dict_set_owned(r, "dist", make_num(sqrt(best_sq)));
             dict_set_owned(r, "dx", make_num(best_dx));
             dict_set_owned(r, "dy", make_num(best_dy));
-            list_append(result, r);
+            list_append_owned(result, r);  /* adopt the freshly-built dict */
         }
     }
 
