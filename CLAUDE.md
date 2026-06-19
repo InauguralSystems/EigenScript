@@ -158,7 +158,39 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   /dev/null — `test_terminal.eigs` blocks forever reading a pipe that
   never EOFs (e.g. backgrounded runs).
 
-## Current state: 0.15.3 released; next up
+## Current state: 0.16.1 released; next up
+
+0.16.1 is a correctness-and-robustness patch on 0.16.0 (CHANGELOG
+[0.16.1]). It closes a remote, unauthenticated HTTP denial-of-service
+(the server SEGV'd on any request carrying a `Content-Length` header —
+`ext_http.c` called `strcasestr` without `_GNU_SOURCE`, so its `char*`
+return was implicitly declared `int` and truncated to 32 bits; #239),
+hard-errors that whole class in the build
+(`-Werror=implicit-function-declaration` in Makefile + build.sh; #240),
+and drives the ASan leak tally from 10 to 4 — the spawn-thread floor —
+across the runtime, HTTP `code` routes, container builtins, and the
+`store` extension (#233/#234/#235/#236/#237/#238). It also recovers the
+JIT/OSR acceleration that #211 had to forfeit: the real bug was the
+emitter's `OP_POP` `last_imm` peephole (`dec %ecx`, skip `slot_decref`
+when the prior op pushed an immediate) being unsound at a forward-jump
+merge — a conditional observed-assign (`if c: x is heap_val`) whose
+false arm pushes `NULL` and true arm leaves a heap pointer merges at a
+shared `POP`, and the `NULL` set `last_imm=1` so the merged `POP` skipped
+the decref on the pointer arm. Fix: reset `last_imm` at every
+forward-jump target; the #211 OSR bail is removed and observed-assign
+loops OSR-compile again (~34% recovered, #231). And a docs clarification:
+the implicit `n` parameter of a no-param `define` shadows an outer `n`
+like any parameter — not a bug (#241). Suite 1943/1943 release + ASan,
+leak tally 4. Homebrew tap tracks v0.16.1.
+
+0.16.0 is the #202 windowed-predicate series: all six observer
+predicates (`converged`, `stable`, `oscillating`, `improving`,
+`diverging`, `equilibrium`) now read a window of the last N observations
+instead of the instantaneous `dH`, so they describe the recent
+trajectory and don't flicker on one noisy step; the bands form an
+explicit lattice (`converged ⊂ equilibrium`, high-entropy
+`equilibrium ⊂ stable`) and `report` resolves the most specific. Plus
+catchable `assert` (#220). See docs/PREDICATES.md and CHANGELOG [0.16.0].
 
 0.15.3 is a two-fix patch: the observer `improving`/`diverging`
 predicates now switch at `dh_small` (matching `report` and `stable`)
