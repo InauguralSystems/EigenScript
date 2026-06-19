@@ -98,7 +98,14 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   even in number — `%r15` is pushed twice for this). Registers:
   `%rbx`=&g_vm, `%ecx`=sp cache, `%r12`=fn_env values
   (`needs_env_cache`), `%r13d`=advance, `%r14`=chunk (`has_bail_op`),
-  `%r15`=&frames[fc-1] (`needs_frame_cache`).
+  `%r15`=&frames[fc-1] (`needs_frame_cache`). The `last_imm` peephole
+  (OP_POP emits `dec %ecx` instead of load+conditional_decref when the
+  prior op pushed an immediate) is only valid for **straight-line** code;
+  it MUST be reset to 0 at every forward-jump target, else a control-flow
+  merge (e.g. an if-expression's false arm pushing NULL, true arm leaving
+  a heap value, both hitting a shared POP) makes the POP skip the decref
+  on the pointer path — one leak per taken iteration once OSR-compiled
+  (#231; was masked by #211's conservative observed-assign OSR bail).
 - **jit_advance sentinels**: `-1` = thunk ran a full RETURN (vm_run
   resyncs and drops the popped frame's chunk ref); `-2` = deep bail
   from a native callee (`jit_helper_call` already left every frame's
