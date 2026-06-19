@@ -1,0 +1,36 @@
+# rename / remove_file — file management primitives. rename is atomic on POSIX,
+# the basis for crash-safe log compaction (write a temp, then swap it in).
+
+load_file of "lib/test.eigs"
+
+A is "/tmp/eigs_rename_a.bin"
+B is "/tmp/eigs_rename_b.bin"
+
+# clean slate
+remove_file of A
+remove_file of B
+
+write_bytes of [A, [10, 20, 30], 0]
+assert_eq of [file_exists of A, 1, "source exists before rename"]
+
+# rename moves the bytes and removes the source
+assert_eq of [rename of [A, B], 1, "rename succeeds"]
+assert_eq of [file_exists of A, 0, "source gone after rename"]
+assert_eq of [file_exists of B, 1, "dest exists after rename"]
+assert_eq of [buf_get of [read_bytes_buf of B, 1], 20, "bytes preserved across rename"]
+
+# rename replaces an existing destination (atomic swap)
+write_bytes of [A, [99], 0]
+assert_eq of [rename of [A, B], 1, "rename over existing dest"]
+assert_eq of [buf_len of (read_bytes_buf of B), 1, "dest replaced, not appended"]
+assert_eq of [buf_get of [read_bytes_buf of B, 0], 99, "dest holds new content"]
+
+# remove_file deletes
+assert_eq of [remove_file of B, 1, "remove_file succeeds"]
+assert_eq of [file_exists of B, 0, "file gone after remove_file"]
+
+# failures return 0, not a crash
+assert_eq of [rename of ["/tmp/eigs_no_such_file_zzz", B], 0, "rename of missing -> 0"]
+assert_eq of [remove_file of "/tmp/eigs_no_such_file_zzz", 0, "remove missing -> 0"]
+
+test_summary of null

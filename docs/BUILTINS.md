@@ -125,6 +125,8 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Bulk copy between buffers |
 | `read_bytes_buf` | `read_bytes_buf of path` | Read binary file as buffer (10MB cap) |
 | `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written, 0 on failure. |
+| `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns 1/0. |
+| `remove_file` | `remove_file of path` | Delete a file. Returns 1/0. |
 
 ### Bytes ↔ values
 
