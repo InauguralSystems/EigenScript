@@ -2201,6 +2201,27 @@ else
 fi
 echo ""
 
+# ---- stdlib parse-check: every lib/*.eigs must parse clean ----
+# Regression guard for the keyword-shadow class: an identifier shadowing a
+# reserved keyword (lab.eigs's `stable`, functional.eigs's `when`) is a parse
+# error that load_file used to silently swallow, so a broken stdlib helper was
+# invisible. --lint parses without executing and prints "Parse error line" on a
+# genuine parse error (its nonzero exit also covers style warnings, so grep the
+# message rather than the exit code).
+echo "[stdlib] parse-check every lib/*.eigs (--lint, no execution)"
+for libf in ../lib/*.eigs; do
+    TOTAL=$((TOTAL + 1))
+    PC_OUT=$(./eigenscript --lint "$libf" 2>&1 | grep -iE 'Parse error line')
+    if [ -z "$PC_OUT" ]; then
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $(basename "$libf") has a parse error:"
+        printf '%s\n' "$PC_OUT" | head -3
+        FAIL=$((FAIL + 1))
+    fi
+done
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then
