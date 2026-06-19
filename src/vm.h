@@ -111,7 +111,8 @@ typedef enum {
     OP_PREDICATE,       /* [kind:8] push predicate result */
     OP_UNOBSERVED_BEGIN,/* increment g_unobserved_depth */
     OP_UNOBSERVED_END,  /* decrement g_unobserved_depth */
-    OP_LOOP_STALL_CHECK,/* [exit_offset:16] stall detection for observer loops */
+    OP_LOOP_STALL_CHECK,/* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */
+    OP_LOOP_CAP_CHECK,  /* [exit_offset:16] iteration cap ONLY (plain loops; no observer-stall) */
 
     /* Miscellaneous */
     OP_IMPORT,          /* [name_idx:16] import module, push dict */

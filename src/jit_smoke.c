@@ -86,6 +86,7 @@ void jit_helper_observe_assign_local(int slot) {
 int jit_helper_iter_next(void) { return 1; }
 void jit_helper_index_set(void) {}
 int jit_helper_loop_stall_check(void) { return 1; }
+int jit_helper_loop_cap_check(void) { return 1; }
 void jit_helper_set_name(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
