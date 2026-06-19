@@ -124,6 +124,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `buf_from_list` | `buf_from_list of list` | Convert numeric list to buffer |
 | `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Bulk copy between buffers |
 | `read_bytes_buf` | `read_bytes_buf of path` | Read binary file as buffer (10MB cap) |
+| `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written, 0 on failure. |
 
 ### Bytes ↔ values
 

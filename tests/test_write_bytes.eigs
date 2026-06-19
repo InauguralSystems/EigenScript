@@ -1,0 +1,37 @@
+# write_bytes — binary-clean file writes (append / truncate), the inverse of
+# read_bytes_buf. Surfaced by tidelog's append-only log; write_text could not
+# serve because it is truncate-mode and NUL-truncating.
+
+load_file of "lib/test.eigs"
+
+P is "/tmp/eigs_write_bytes_test.bin"
+
+# truncate-write a payload containing NUL and a high byte
+n is write_bytes of [P, [104, 105, 0, 66, 255], 0]
+assert_eq of [n, 5, "write_bytes returns byte count"]
+
+buf is read_bytes_buf of P
+assert_eq of [buf_len of buf, 5, "NUL byte does not truncate the file"]
+assert_eq of [buf_get of [buf, 2], 0, "NUL byte written verbatim"]
+assert_eq of [buf_get of [buf, 4], 255, "high byte written verbatim"]
+
+# append extends
+write_bytes of [P, [1, 2], 1]
+buf2 is read_bytes_buf of P
+assert_eq of [buf_len of buf2, 7, "append extends the file"]
+assert_eq of [buf_get of [buf2, 5], 1, "appended byte 0"]
+assert_eq of [buf_get of [buf2, 6], 2, "appended byte 1"]
+
+# append=0 truncates
+write_bytes of [P, [9], 0]
+assert_eq of [buf_len of (read_bytes_buf of P), 1, "append=0 truncates"]
+
+# buffer input accepted
+write_bytes of [P, buf_from_list of [7, 8, 9], 0]
+assert_eq of [buf_get of [read_bytes_buf of P, 1], 8, "buffer input written"]
+
+# empty write yields empty file
+write_bytes of [P, [], 0]
+assert_eq of [buf_len of (read_bytes_buf of P), 0, "empty write -> empty file"]
+
+test_summary of null
