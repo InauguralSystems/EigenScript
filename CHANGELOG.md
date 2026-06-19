@@ -4,6 +4,14 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.16.3] — 2026-06-19
+
+Makes observer-based loop-halting opt-in. An observed `loop while` no longer
+auto-halts on the global observer's convergence unless its condition is itself
+observer-based (references a predicate) — so plain loops can't be silently
+truncated by cross-talk from what their body, or a callee, happened to assign.
+Fixes undocumented behavior; the `loop while not converged` idiom is unchanged.
+
 ### Changed — observer loop-halting is now opt-in (compositional)
 
 - An observed `loop while` was auto-halted when the **global** last-observer
