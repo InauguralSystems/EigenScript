@@ -46,4 +46,27 @@ import _test_empty_tmp
 rm of empty_path
 assert_eq of [type of _test_empty_tmp, "dict", "import empty module returns dict"]
 
+# ---- Test 6: load_file surfaces a parse error instead of running a partial AST ----
+# Regression for the liferaft DST finding (F1): a parse error a module can't
+# parse — here an expression-rooted lvalue `(call).field is x`, which direct
+# execution rejects — was silently accepted under load_file and its effect
+# dropped. load_file now raises a catchable parse error, like eval and import.
+bad_lf_path is "../lib/_test_bad_loadfile_tmp.eigs"
+write_text of [bad_lf_path, "define mk as:\n    return {\"x\": 1}\n(mk of null).x is 99\n"]
+err_lf is ""
+try:
+    load_file of bad_lf_path
+catch e:
+    err_lf is e
+rm of bad_lf_path
+assert_true of [(len of err_lf) > 0, "load_file parse-error raises (not a silent no-op)"]
+assert_true of [contains of [err_lf, "parse error"], "load_file parse-error message contains 'parse error'"]
+
+# ---- Test 7: a clean load_file is unaffected ----
+ok_lf_path is "../lib/_test_ok_loadfile_tmp.eigs"
+write_text of [ok_lf_path, "_lf_ok_marker is 1234\n"]
+load_file of ok_lf_path
+rm of ok_lf_path
+assert_eq of [_lf_ok_marker, 1234, "clean load_file still executes normally"]
+
 test_summary of null

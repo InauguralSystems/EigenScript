@@ -214,15 +214,17 @@ define status(exp, variable) as:
     for i in range of (len of spikes):
         append of [outlier_vals, spikes[i].value]
 
-    # Stability: check if last 5 readings are stable
-    stable is 0
+    # Stability: check if last 5 readings are stable.
+    # (Local is named `stable_flag`, not `stable`: `stable` is a reserved
+    # observer-predicate keyword and cannot be used as an identifier.)
+    stable_flag is 0
     if n >= 5:
         last5 is []
         for i in range of 5:
             append of [last5, vals[n - 5 + i]]
         stable_check is is_measurement_stable of [last5, 3]
         if stable_check:
-            stable is 1
+            stable_flag is 1
 
     return {
         "n": n,
@@ -235,7 +237,7 @@ define status(exp, variable) as:
         "entropy": entropy,
         "dH": dH,
         "outliers": outlier_vals,
-        "stable": stable
+        "stable": stable_flag
     }
 
 define is_stable(exp, variable) as:

@@ -77,9 +77,13 @@ with `_` are private (omitted from the dict). Resolution order:
 script-relative and the other standard locations; the not-found error
 names both tried paths. `load_file of "path.eigs"` is the
 non-namespaced form: it executes the file directly in the current
-scope.
+scope. A **parse error** in a loaded file (via `import`, `load_file`, or
+`eval`) raises a catchable runtime error rather than silently executing a
+partial AST — consistent with the **Errors** promise.
 
-**Status:** Enforced — `tests/test_import.eigs` (stdlib + user modules,
+**Status:** Enforced — `tests/test_import.eigs`,
+`tests/test_import_errors.eigs` (parse-error surfacing for `import` /
+`load_file` / `eval`) (stdlib + user modules,
 namespacing, `_` privacy, missing-module error), docs/SPEC.md Modules
 examples (executed by the suite).
 

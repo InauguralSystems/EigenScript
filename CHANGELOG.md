@@ -4,6 +4,22 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed — `load_file` now surfaces parse errors instead of silently running a partial AST
+
+- `load_file` parsed the target file but never checked `g_parse_errors`, so a
+  file the parser couldn't fully accept was compiled and executed as a partial
+  (incorrect) AST with **no error** — a statement the parser rejected would
+  silently do nothing. Direct execution aborts on a parse error; `import` and
+  `eval` already raise; `load_file` was the one path that swallowed it. It now
+  raises a catchable runtime error (`load_file: parse error in '<path>'`),
+  matching `eval`/`import`. Found by the liferaft DST: an expression-rooted
+  lvalue (`(call).field is x`) — which direct execution rejects — was silently
+  accepted inside a `load_file`'d module, dropping the assignment.
+- Regression: `tests/test_import_errors.eigs` (a `load_file` of a file with an
+  expression-rooted-lvalue parse error raises and is catchable; a clean
+  `load_file` still executes normally). No change for any file that parses
+  cleanly (the entire stdlib and suite are unaffected).
+
 ## [0.16.1] — 2026-06-19
 
 A correctness-and-robustness patch on top of 0.16.0. It closes a remote,
