@@ -726,15 +726,14 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * in the prologue, same as OP_GET_NAME. The helper may
              * mutate stack[sp-1] (immediate-num → tracked ptr), so any
              * subsequent OP_POP cannot use the immediate peephole. */
-            /* #211: OSR loop-thunks (entry_offset > 0) leak a per-iteration
-             * Value when an observed variable is (re)assigned inside the loop
-             * and the prior binding is a heap pointer — the observe helper's
-             * pointer/alias path, driven from native OSR code, orphans a
-             * lifted slot that the post-thunk interpreter then leaks. The
-             * from-zero thunk path (entry_offset == 0) is leak-clean, so only
-             * OSR bails here; observed-assign loops fall back to the
-             * interpreter, which handles them correctly. */
-            if (entry_offset > 0) { *stop_op = op; *stop_offset = i; break; }
+            /* #211/#231: OSR-compiled observed-assign loops used to leak one
+             * Value per taken-branch iteration. #211 root-caused it to the
+             * OSR thunk and fixed it conservatively by bailing here when
+             * entry_offset > 0 (forfeiting JIT acceleration for the canonical
+             * `loop while improving: x is refine(x)` shape). #231 found the
+             * real cause — the OP_POP last_imm peephole was unsound at a
+             * forward-jump merge (see the emit loop) — and fixed it there, so
+             * this bail is removed and observed-assign loops OSR-compile again. */
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
@@ -747,8 +746,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             /* Stage 4o: 3-byte op [op][slot:16]. Helper reads prior
              * value directly from frame->fn_env->values[slot] — no
              * chunk pointer needed, so no has_bail_op tax. */
-            /* #211: same OSR-only bail as OP_OBSERVE_ASSIGN above. */
-            if (entry_offset > 0) { *stop_op = op; *stop_offset = i; break; }
+            /* #211/#231: OSR bail removed — see OP_OBSERVE_ASSIGN above. */
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
         } else if (op == OP_UNOBSERVED_BEGIN || op == OP_UNOBSERVED_END) {
@@ -2354,6 +2352,26 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
          * the start of the body (after env-cache setup), not at the
          * thunk prologue — re-running the prologue would clobber %rcx. */
         if (byte_to_native) byte_to_native[i] = (int)(w - code);
+        /* #231: the OP_POP `last_imm` peephole (`dec %ecx`, skipping the
+         * slot_decref) is only valid for straight-line code, where the
+         * textually-preceding op is the unique dynamic predecessor. At a
+         * forward-jump target that invariant breaks: a different control-
+         * flow edge can deliver a heap pointer to the merged slot even
+         * though the byte just before pushed an immediate. The canonical
+         * shape is an if-expression whose false arm pushes NULL and whose
+         * true arm leaves a heap value (`if c: x is heap_val`), both
+         * merging at a shared POP — the NULL sets last_imm=1, so the POP
+         * `dec %ecx`'s away the true arm's pointer ref without decref'ing
+         * (one leak per taken iteration; #211 saw this in OSR'd
+         * genetic_optimize). Reset last_imm at every forward-jump target
+         * so the merged POP uses the load+conditional_decref path. All
+         * forward jumps that target this offset were emitted earlier and
+         * are still resolvable in `pending` (resolved only after the loop),
+         * so a scan here sees them. Over-resetting is always safe:
+         * conditional_decref of an immediate slot is a no-op. */
+        for (int pj = 0; pj < pending_count; pj++) {
+            if (pending[pj].target == i) { last_imm = 0; break; }
+        }
         /* Unconditional jumps suppress the trailing `mov $i, %r13d`
          * advance writeback because the next bytes are unreachable. */
         int skip_post_op_advance = 0;

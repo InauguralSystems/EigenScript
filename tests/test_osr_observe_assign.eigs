@@ -1,0 +1,49 @@
+# #231 / #211: conditional observed-assign of a heap value inside an
+# OSR-compiled loop.
+#
+# `if cond: x is heap_value` compiles so the false arm pushes NULL and the
+# true arm leaves a heap pointer on the stack; both arms merge at a shared
+# POP. The JIT's OP_POP `last_imm` peephole (`dec %ecx`, no decref) is only
+# sound for straight-line code — at the merge the NULL sets last_imm=1, so a
+# regression POPs the true arm's pointer without decref'ing and leaks one ref
+# per taken iteration once the loop OSR-compiles. #211 worked around it by
+# refusing to OSR observed-assign loops; #231 fixed the peephole (reset
+# last_imm at forward-jump targets) and re-enabled OSR. This test must stay
+# leak-clean under ASan detect_leaks=1 (a regression bumps the harness tally),
+# and the result must match the interpreter.
+load_file of "lib/test.eigs"
+
+define run(rounds) as:
+    items is []
+    for i in range of 20:
+        v is (i + 1) * 1.0
+        append of [items, v]
+    total is 0
+    for k in range of rounds:
+        for i in range of 20:
+            a is items[i]
+            b is items[19]
+            pick is a
+            if i > 10:
+                pick is b
+            total is total + pick
+        # Rebuild items each round so the picked values are fresh heap
+        # objects (the leak only bites when the rebound value is a pointer).
+        new_items is []
+        for i in range of 20:
+            w is items[i] + 0.0
+            append of [new_items, w]
+        items is new_items
+    return total
+
+# 300 rounds * 20 inner iterations runs the inner loops well past the OSR
+# threshold. Per round: i=0..10 -> pick=items[i]=i+1 (sum 1..11 = 66);
+# i=11..19 -> pick=items[19]=20 (9 * 20 = 180); round total 246.
+# 300 rounds -> 73800.
+r1 is run of 300
+assert of [r1 == 73800, "OSR conditional observed-assign result correct"]
+
+r2 is run of 300
+assert of [r1 == r2, "OSR result is deterministic across repeated runs"]
+
+print of "osr observe-assign: all passed"
