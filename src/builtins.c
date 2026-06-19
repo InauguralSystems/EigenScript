@@ -4214,6 +4214,51 @@ Value* builtin_f64_from_bytes(Value *arg) {
     return make_num(d);
 }
 
+/* write_bytes of [path, data, append?] — write raw bytes to a file.
+ * `data` is a list of byte ints or a buffer (values taken mod 256). `append`
+ * (optional, default 0): 0 truncates the file, nonzero appends. Returns the
+ * number of bytes written, or 0 on failure. Unlike write_text this is
+ * binary-clean — NUL bytes are written verbatim, not treated as terminators —
+ * so it can carry CBOR / arbitrary binary. Surfaced by tidelog's append-only
+ * log (write_text is truncate-mode and NUL-truncating). */
+Value* builtin_write_bytes(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_num(0);
+    Value *path_val = arg->data.list.items[0];
+    Value *data = arg->data.list.items[1];
+    if (!path_val || path_val->type != VAL_STR) return make_num(0);
+    int append = 0;
+    if (arg->data.list.count >= 3 && arg->data.list.items[2] &&
+        arg->data.list.items[2]->type == VAL_NUM)
+        append = (arg->data.list.items[2]->data.num != 0.0);
+
+    int n = 0;
+    Value **items = NULL;
+    double *bufd = NULL;
+    if (data && data->type == VAL_LIST) {
+        n = data->data.list.count;
+        items = data->data.list.items;
+    } else if (data && data->type == VAL_BUFFER) {
+        n = data->data.buffer.count;
+        bufd = data->data.buffer.data;
+    } else {
+        return make_num(0);
+    }
+
+    unsigned char *out = xmalloc((size_t)(n > 0 ? n : 1));
+    for (int i = 0; i < n; i++) {
+        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
+                          : bufd[i];
+        out[i] = (unsigned char)((int)dv & 0xFF);
+    }
+    FILE *f = xfopen_write(path_val->data.str, append ? "ab" : "wb");
+    if (!f) { free(out); return make_num(0); }
+    size_t written = fwrite(out, 1, (size_t)n, f);
+    int close_ok = (fclose(f) == 0);
+    free(out);
+    return make_num((close_ok && written == (size_t)n) ? (double)written : 0);
+}
+
 /* buf_copy of [src, src_off, dst, dst_off, count] — bulk copy between buffers */
 Value* builtin_buf_copy(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_null();
@@ -4493,6 +4538,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
     env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));
     env_set_local_owned(env, "write_text", make_builtin(builtin_write_text));
+    env_set_local_owned(env, "write_bytes", make_builtin(builtin_write_bytes));
     env_set_local_owned(env, "exec_capture", make_builtin(builtin_exec_capture));
     env_set_local_owned(env, "proc_spawn", make_builtin(builtin_proc_spawn));
     env_set_local_owned(env, "proc_write", make_builtin(builtin_proc_write));

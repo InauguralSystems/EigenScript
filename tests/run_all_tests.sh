@@ -1981,6 +1981,7 @@ check_eigs_suite "deep nesting" test_deep_nest.eigs "PASS: deep nesting no crash
 check_eigs_suite "error propagation" test_error_propagation.eigs "error propagation: all passed" 1
 check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
+check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
 check_eigs_suite "observer interactions" test_observer_interactions.eigs "observer interactions: all passed" 1
