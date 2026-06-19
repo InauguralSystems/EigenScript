@@ -158,7 +158,34 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   /dev/null — `test_terminal.eigs` blocks forever reading a pipe that
   never EOFs (e.g. backgrounded runs).
 
-## Current state: 0.16.1 released; next up
+## Current state: 0.16.2 released; main has opt-in loop-halting; next up
+
+On main (unreleased): **observer loop-halting is now opt-in** (PR #247).
+Previously *every* observed `loop while` auto-halted when the GLOBAL
+last-observer showed convergence (`|dH| < dh_zero`, `entropy >= h_low`) for
+~100 iterations — including plain counting loops — so a loop's termination
+could be silently changed by what its body, or a function it called, last
+assigned (non-compositional cross-talk that truncated loops with no error;
+the `100` was a prototype constant that ossified). Now the convergence-halt
+is opt-in by the loop CONDITION: a predicate-based condition (`loop while
+not converged`) gets the observer-stall (`OP_LOOP_STALL_CHECK`); a plain
+condition gets a cap-only check (`OP_LOOP_CAP_CHECK` — the absolute
+iteration cap, the runaway guard, stays universal). The compiler classifies
+the condition once (`cond_is_observer_based`) and **encodes it in the
+opcode**, so the interpreter and JIT can never disagree on the
+classification. That classifier is load-bearing for correctness (not just
+perf) and is boundary-tested in `tests/test_loop_halting.sh`. Behavior
+change only for plain loops that were being silently halted — they now run
+to completion. Surfaced by the liferaft DST; cheap to fix precisely because
+the VM tier is the deliberate make-it-right phase.
+
+0.16.2 is a correctness patch on 0.16.1 (CHANGELOG [0.16.2]): `load_file`
+now surfaces parse errors instead of silently running a partial AST (#245),
+which immediately caught two latent stdlib bugs it had been masking — a
+reserved keyword used as a variable (`lib/lab.eigs`'s `stable`) and a
+reserved keyword used as a function name (`lib/functional.eigs`'s `when` →
+`apply_when`, #246) — plus a suite guard that parse-checks every
+`lib/*.eigs`.
 
 0.16.1 is a correctness-and-robustness patch on 0.16.0 (CHANGELOG
 [0.16.1]). It closes a remote, unauthenticated HTTP denial-of-service
