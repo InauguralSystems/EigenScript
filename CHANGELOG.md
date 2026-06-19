@@ -4,6 +4,27 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-06-19
+
+A correctness-and-robustness patch on top of 0.16.0. It closes a remote,
+unauthenticated HTTP denial-of-service (a `Content-Length` SEGV), drives the
+ASan leak tally from 10 down to 4 (the spawn-thread floor) across the runtime,
+HTTP, and `store` extensions, recovers the JIT/OSR acceleration that the #211
+leak fix had to give up (~34% on observed-assign hot loops), and hardens the
+build against the implicit-declaration pointer-truncation class that caused the
+DoS. No language-surface behavior changes versus 0.16.0.
+
+### Docs — the implicit `n` parameter shadows an outer `n` (#241)
+
+- A `define` with no parameter list gets one implicit parameter named `n`
+  (existing, documented behavior — `define double as: return n * 2`). #241
+  reported `n is expr` inside such a function failing to update an outer `n`
+  as a "name-dependent scope bug." It is not a bug: `n` is a bound parameter,
+  and parameters shadow outer bindings like any other name (`define g(x)` with
+  an outer `x` shadows it identically; `define g()` ≡ `define g(n)`). `SPEC.md`
+  now states this explicitly, with a runnable example; `test_scope_semantics`
+  pins it (SS7A–SS7F). Documentation only — no behavior change.
+
 ### Fixed — `lib/lab.eigs` leaked experiment store handles (#233)
 
 - `lab` functions assigned internal variables without `local`. Per the
@@ -104,27 +125,35 @@ All notable changes to EigenScript are documented here.
   **10 → 8**. (`test_lab` still leaks — a separate `lib/lab.eigs`
   store-not-closed lifecycle bug, tracked as a follow-up.)
 
-### Fixed — per-iteration leak in OSR-compiled observed-assign loops (#211)
+### Fixed — per-iteration leak in OSR-compiled observed-assign loops, and recovered their JIT coverage (#211, #231)
 
 - **A hot loop that reassigns an *observed* variable in its body
   (`loop while improving: x is refine(x)`, `genetic_optimize`, etc.) leaked
-  one `Value` per iteration once the loop got OSR-compiled.** The OSR
-  loop-thunk's observe-assign path, run from native code, orphaned a lifted
-  stack slot when the variable's prior binding was a heap pointer; the
-  interpreter later re-lifted and leaked it. The leak was data-dependent
-  (pointer rebinds leaked, number rebinds did not) and only surfaced past
-  enough iterations to OSR-compile — which is why #210's windowed
+  one `Value` per taken-branch iteration once the loop got OSR-compiled.**
+  Root cause: the JIT emitter's `OP_POP` `last_imm` peephole — emit `dec %ecx`
+  and skip `slot_decref` when the prior op pushed an immediate — is only sound
+  for straight-line code. A *conditional* observed-assign (`if c: x is val`)
+  compiles to an if-expression whose false arm pushes `NULL` and whose true
+  arm leaves a heap pointer, both merging at a shared `POP`; the `NULL` set
+  `last_imm=1`, so the merged `POP` dropped the true arm's pointer without
+  decref'ing. Data-dependent (pointer rebinds leaked, number rebinds did not,
+  through the *same* emitted code) and OSR-only — which is why #210's windowed
   `converged` exposed it in `genetic_optimize` (it removed an early exit).
-- **Fix:** the OSR scanner (`src/jit.c`) now declines to compile a
-  loop-thunk through `OBSERVE_ASSIGN`/`OBSERVE_ASSIGN_LOCAL`; such loops run
-  in the interpreter, which is leak-clean. From-zero function thunks (also
-  leak-clean) are unaffected, as are all non-observed loops. Cost is ≈16% on
-  the narrow "observed variable reassigned in a hot OSR loop" pattern and 0%
-  elsewhere; the previously-faster path was leaking, so it was never correct.
-  A surgical emitter fix to recover that 16% is tracked as a follow-up.
-- Regression guard: `tests/test_optimize.eigs` runs `genetic_optimize` for
-  120 generations (was capped at 80 in #210 to dodge the leak); a
-  regression re-leaks under ASan and bumps the harness tally.
+- **Fix:** reset `last_imm` at every forward-jump target so a control-flow
+  merge can no longer carry a stale immediate flag into the merged `POP`
+  (`src/jit.c`). #211 first shipped a conservative stop-gap — the OSR scanner
+  declined to compile loops through `OBSERVE_ASSIGN`/`OBSERVE_ASSIGN_LOCAL`,
+  costing ≈16–34% on observed-assign hot loops — and #231 replaced it with the
+  emitter fix and re-enabled OSR for those loops (n=5 microbench: ~34%
+  recovered; standard benches unaffected; JIT output identical to
+  `EIGS_JIT_OFF=1`).
+- Regression guards: `tests/test_optimize.eigs` runs `genetic_optimize` for
+  120 generations (was capped at 80 in #210 to dodge the leak), and
+  `tests/test_osr_observe_assign.eigs` pins the conditional-merge case (it
+  leaks 479 objects with the fix reverted). Both re-leak under ASan and bump
+  the harness tally on regression.
+
+## [0.16.0] — 2026-06-18
 
 The #202 windowed-predicate series: all six observer predicates
 (`converged`, `stable`, `oscillating`, `improving`, `diverging`,
