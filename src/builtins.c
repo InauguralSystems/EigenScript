@@ -4142,6 +4142,78 @@ Value* builtin_buf_from_list(Value *arg) {
     return v;
 }
 
+/* str_from_bytes of <list|buffer of byte ints> → string of those raw bytes.
+ * Reconstructs a native string from its bytes (the inverse of an `ord` loop),
+ * which `chr` cannot do for bytes >= 128 (chr treats its arg as a Unicode
+ * codepoint and emits UTF-8). EigenScript strings are NUL-terminated, so a 0
+ * byte ends the string; binary data that may contain NUL must stay in a buffer.
+ * Surfaced by tidelog's CBOR text-string decoder. */
+Value* builtin_str_from_bytes(Value *arg) {
+    int n = 0;
+    Value **items = NULL;
+    double *bufd = NULL;
+    if (arg && arg->type == VAL_LIST) {
+        n = arg->data.list.count;
+        items = arg->data.list.items;
+    } else if (arg && arg->type == VAL_BUFFER) {
+        n = arg->data.buffer.count;
+        bufd = arg->data.buffer.data;
+    } else {
+        return make_str("");
+    }
+    char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
+    int len = 0;
+    for (int i = 0; i < n; i++) {
+        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
+                          : bufd[i];
+        int b = (int)dv & 0xFF;
+        if (b == 0) break;            /* C-string terminates at NUL */
+        s[len++] = (char)b;
+    }
+    s[len] = '\0';
+    return make_str_owned(s);
+}
+
+/* f64_to_bytes of x → list of 8 ints: the big-endian IEEE-754 double encoding
+ * of x (CBOR major-type 7 / network byte order). Portable across endianness —
+ * the host bit pattern is captured via memcpy, then bytes are extracted with
+ * explicit shifts, yielding the standard IEEE-754 layout on any platform. */
+Value* builtin_f64_to_bytes(Value *arg) {
+    double d = (arg && arg->type == VAL_NUM) ? arg->data.num : 0.0;
+    uint64_t bits;
+    memcpy(&bits, &d, sizeof(bits));
+    Value *list = make_list(8);
+    for (int i = 0; i < 8; i++) {
+        int shift = 8 * (7 - i);
+        list_append_owned(list, make_num((double)((bits >> shift) & 0xFFu)));
+    }
+    return list;
+}
+
+/* f64_from_bytes of <list|buffer of 8 big-endian bytes> → the decoded double.
+ * Inverse of f64_to_bytes; reads exactly the first 8 bytes. */
+Value* builtin_f64_from_bytes(Value *arg) {
+    double bytes_in[8] = {0,0,0,0,0,0,0,0};
+    if (arg && arg->type == VAL_LIST) {
+        int n = arg->data.list.count;
+        for (int i = 0; i < 8 && i < n; i++)
+            if (arg->data.list.items[i] && arg->data.list.items[i]->type == VAL_NUM)
+                bytes_in[i] = arg->data.list.items[i]->data.num;
+    } else if (arg && arg->type == VAL_BUFFER) {
+        int n = arg->data.buffer.count;
+        for (int i = 0; i < 8 && i < n; i++)
+            bytes_in[i] = arg->data.buffer.data[i];
+    } else {
+        return make_num(0);
+    }
+    uint64_t bits = 0;
+    for (int i = 0; i < 8; i++)
+        bits = (bits << 8) | (uint64_t)((int)bytes_in[i] & 0xFF);
+    double d;
+    memcpy(&d, &bits, sizeof(d));
+    return make_num(d);
+}
+
 /* buf_copy of [src, src_off, dst, dst_off, count] — bulk copy between buffers */
 Value* builtin_buf_copy(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_null();
@@ -4497,6 +4569,9 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "buf_set", make_builtin(builtin_buf_set));
     env_set_local_owned(env, "buf_len", make_builtin(builtin_buf_len));
     env_set_local_owned(env, "buf_from_list", make_builtin(builtin_buf_from_list));
+    env_set_local_owned(env, "str_from_bytes", make_builtin(builtin_str_from_bytes));
+    env_set_local_owned(env, "f64_to_bytes", make_builtin(builtin_f64_to_bytes));
+    env_set_local_owned(env, "f64_from_bytes", make_builtin(builtin_f64_from_bytes));
     env_set_local_owned(env, "buf_copy", make_builtin(builtin_buf_copy));
     env_set_local_owned(env, "sign_extend", make_builtin(builtin_sign_extend));
     env_set_local_owned(env, "sort", make_builtin(builtin_sort));
