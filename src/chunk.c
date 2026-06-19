@@ -214,6 +214,7 @@ const char *op_name(uint8_t op) {
         [OP_UNOBSERVED_BEGIN] = "UNOBSERVED_BEGIN",
         [OP_UNOBSERVED_END] = "UNOBSERVED_END",
         [OP_LOOP_STALL_CHECK] = "LOOP_STALL_CHECK",
+        [OP_LOOP_CAP_CHECK] = "LOOP_CAP_CHECK",
         [OP_IMPORT] = "IMPORT", [OP_MATCH] = "MATCH",
         [OP_LISTCOMP_BEGIN] = "LISTCOMP_BEGIN",
         [OP_LISTCOMP_APPEND] = "LISTCOMP_APPEND",
@@ -247,7 +248,7 @@ static int op_has_u16(uint8_t op) {
     case OP_LIST: case OP_DICT:
     case OP_DOT_GET: case OP_DOT_SET:
     case OP_ITER_NEXT:
-    case OP_TRY_BEGIN: case OP_LOOP_STALL_CHECK:
+    case OP_TRY_BEGIN: case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_IMPORT: case OP_MATCH:
     case OP_LINE:

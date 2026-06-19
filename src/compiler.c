@@ -1016,6 +1016,32 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
 
 /* ---- AST compilation ---- */
 
+/* Observer loop-stall (auto-halt on convergence) is OPT-IN: a `loop while`
+ * gets it only when its condition is observer-based — i.e. references a bare
+ * predicate (converged/stable/improving/diverging/oscillating/equilibrium).
+ * This single classification is correctness-critical (see CHANGELOG / the
+ * loop-halting design): observer->plain misclassification silently drops the
+ * convergence backstop; plain->observer reintroduces the global-observer
+ * cross-talk false-halt. We deliberately bias toward "plain": recurse only
+ * through the boolean / comparison / unary structure of the condition; calls,
+ * lambdas, names, literals, indexing, etc. are opaque and contribute nothing
+ * (a predicate buried in a call argument won't enable halting — but also can't
+ * cause a false-halt). Runs once at compile time and is encoded in the emitted
+ * opcode (OP_LOOP_STALL_CHECK vs OP_LOOP_CAP_CHECK), so the interpreter and JIT
+ * can never disagree on the classification. */
+static int cond_is_observer_based(const ASTNode *n) {
+    if (!n) return 0;
+    switch (n->type) {
+        case AST_PREDICATE: return 1;
+        case AST_UNARY:    return cond_is_observer_based(n->data.unary.operand);
+        case AST_BINOP:    return cond_is_observer_based(n->data.binop.left) ||
+                                  cond_is_observer_based(n->data.binop.right);
+        case AST_RELATION: return cond_is_observer_based(n->data.relation.left) ||
+                                  cond_is_observer_based(n->data.relation.right);
+        default:           return 0;
+    }
+}
+
 static void compile_node(Compiler *c, ASTNode *node) {
     if (!node) { emit(c, OP_NULL, 0); return; }
 
@@ -1197,8 +1223,11 @@ static void compile_node(Compiler *c, ASTNode *node) {
         compile_block(c, node->data.loop.body, node->data.loop.body_count);
         emit(c, OP_POP, node->line); /* discard body result before next iteration */
 
-        /* Observer stall check — jump to exit if stalled */
-        int stall_jump = emit_jump(c, OP_LOOP_STALL_CHECK, node->line);
+        /* Loop check — observer stall+cap for observer-based conditions,
+         * cap-only for plain loops (opt-in halting; see cond_is_observer_based). */
+        int stall_op = cond_is_observer_based(node->data.loop.cond)
+                           ? OP_LOOP_STALL_CHECK : OP_LOOP_CAP_CHECK;
+        int stall_jump = emit_jump(c, stall_op, node->line);
 
         /* Reset depth to loop start for back-edge */
         c->stack_depth = depth_at_loop;

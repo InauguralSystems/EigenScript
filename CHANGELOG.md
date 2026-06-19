@@ -4,6 +4,31 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed — observer loop-halting is now opt-in (compositional)
+
+- An observed `loop while` was auto-halted when the **global** last-observer
+  showed convergence for ~100 iterations — for **every** `loop while`, including
+  plain counting loops that never mention a predicate. Because the watched
+  observer is global, a loop's termination could be changed by what its body, or
+  a function it called, happened to assign — non-local cross-talk that silently
+  truncated loops with no error. (Surfaced by the liferaft DST: a bounded
+  `loop while step < 1000` halted at step 146; the sim's outcome depended on
+  incidental surrounding assignments.)
+- Now the convergence-halt is **opt-in**: it applies only when the loop
+  **condition is observer-based** (references a predicate — `loop while not
+  converged`, etc.). A plain loop runs until its own condition is false. Both
+  keep the absolute iteration cap (the runaway-loop guard). The compiler
+  classifies the condition once and emits `OP_LOOP_STALL_CHECK` (observer-based)
+  or the new `OP_LOOP_CAP_CHECK` (plain); both the interpreter and the JIT key
+  off that compile-time opcode, so they can never disagree on the
+  classification.
+- `loop while not converged` and the existing halting tests are unchanged.
+  Behavior change only for plain `loop while` loops that were being silently
+  halted by observer cross-talk — those now run to completion.
+- Tests: `tests/test_loop_halting.sh` pins the classifier at the boundary
+  (predicate under `not`/`and`/`or` → observer-based; plain comparisons →
+  plain) and checks the interpreter and JIT agree. `docs/SPEC.md` updated.
+
 ## [0.16.2] — 2026-06-19
 
 A correctness patch. `load_file` no longer silently swallows parse errors — it

@@ -1174,6 +1174,31 @@ int jit_helper_loop_stall_check(void) {
     return 0;
 }
 
+/* Plain-loop variant of the above: the absolute iteration cap ONLY, never the
+ * observer stall. Mirrors CASE(LOOP_CAP_CHECK). The JIT emits a call to this
+ * (vs jit_helper_loop_stall_check) based purely on the opcode the compiler
+ * chose, so JIT and interpreter classification can never diverge. */
+int jit_helper_loop_cap_check(void) {
+    g_loop_iterations++;
+    int should_exit = 0;
+    if (g_loop_iterations >= 100000000) {
+        g_loop_exit_reason = "limit";
+        should_exit = 1;
+    }
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    loop_iter_store(frame->env, (double)g_loop_iterations);
+    if (should_exit) {
+        Value *exit_val = make_str(g_loop_exit_reason);
+        env_set_local(frame->env, "__loop_exit__", exit_val);
+        val_decref(exit_val);
+        g_loop_stall_count = 0;
+        g_loop_iterations = 0;
+        g_loop_exit_reason = "normal";
+        return 1;
+    }
+    return 0;
+}
+
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
  * target), pushes val back (net sp -2). Full opcode semantics including
  * the slot fast paths, so the emitter never bails; errors go through
@@ -1834,6 +1859,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_UNOBSERVED_BEGIN] = &&lbl_UNOBSERVED_BEGIN,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
         [OP_LOOP_STALL_CHECK] = &&lbl_LOOP_STALL_CHECK,
+        [OP_LOOP_CAP_CHECK] = &&lbl_LOOP_CAP_CHECK,
         [OP_IMPORT] = &&lbl_IMPORT, [OP_MATCH] = &&lbl_MATCH,
         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
@@ -3960,6 +3986,34 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             should_exit = 1;
         }
         /* Always expose iteration count */
+        loop_iter_store(frame->env, (double)g_loop_iterations);
+        if (should_exit) {
+            Value *exit_val = make_str(g_loop_exit_reason);
+            env_set_local(frame->env, "__loop_exit__", exit_val);
+            val_decref(exit_val);
+            g_loop_stall_count = 0;
+            g_loop_iterations = 0;
+            g_loop_exit_reason = "normal";
+            ip += exit_offset;
+        }
+        DISPATCH();
+    }
+
+    CASE(LOOP_CAP_CHECK): {
+        /* Plain-loop variant: the absolute iteration cap ONLY — NO observer
+         * stall. The compiler emits this for loops whose condition is not
+         * observer-based (no predicate), so a plain `loop while c:` terminates
+         * on its own condition and is never auto-halted by the global observer.
+         * Must stay byte-identical to LOOP_STALL_CHECK except the convergence
+         * block; both engines key off the opcode, set at compile time, so the
+         * interpreter and JIT can never disagree on the classification. */
+        uint16_t exit_offset = read_u16(ip); ip += 2;
+        g_loop_iterations++;
+        int should_exit = 0;
+        if (g_loop_iterations >= 100000000) {
+            g_loop_exit_reason = "limit";
+            should_exit = 1;
+        }
         loop_iter_store(frame->env, (double)g_loop_iterations);
         if (should_exit) {
             Value *exit_val = make_str(g_loop_exit_reason);

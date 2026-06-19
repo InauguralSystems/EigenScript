@@ -661,11 +661,12 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             *extra_size += 192;
-        } else if (op == OP_LOOP_STALL_CHECK) {
+        } else if (op == OP_LOOP_STALL_CHECK || op == OP_LOOP_CAP_CHECK) {
             /* Stage 4w: 3-byte op [op][exit_offset:16]. Helper returns
              * 1 when the loop must exit (stall / iteration cap); the
              * emitter conditional-jumps to the exit target — exactly
-             * the ITER_NEXT shape. Stack untouched. */
+             * the ITER_NEXT shape. Stack untouched. Both opcodes have the
+             * same shape; only the helper differs (cap vs stall+cap). */
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
@@ -3522,10 +3523,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             patch_rel32(done_p, w);
             i += 1;
-        } else if (op == OP_LOOP_STALL_CHECK) {
-            /* Stage 4w: LOOP_STALL_CHECK via helper — ITER_NEXT call
-             * shape: sync sp, aligned call, reload sp, test eax,
-             * conditional jump to the exit target via pending patch. */
+        } else if (op == OP_LOOP_STALL_CHECK || op == OP_LOOP_CAP_CHECK) {
+            /* Stage 4w: LOOP_STALL_CHECK / LOOP_CAP_CHECK via helper —
+             * ITER_NEXT call shape: sync sp, aligned call, reload sp, test
+             * eax, conditional jump to the exit target via pending patch.
+             * The helper is chosen by opcode (the compiler's classification),
+             * so JIT and interpreter agree by construction. */
             if (pending_count + 1 > (int)(sizeof pending /
                                           sizeof pending[0])) {
                 JIT_BAIL_AND_RETURN();
@@ -3533,10 +3536,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint16_t off = (uint16_t)(chunk->code[i + 1] |
                                       ((uint16_t)chunk->code[i + 2] << 8));
             int target = i + 3 + (int)off;
+            void *loop_helper = (op == OP_LOOP_STALL_CHECK)
+                                    ? (void *)&jit_helper_loop_stall_check
+                                    : (void *)&jit_helper_loop_cap_check;
 
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_stall_check);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)loop_helper);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);

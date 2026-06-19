@@ -1110,6 +1110,21 @@ else
 fi
 echo ""
 
+echo "[loop-halting] opt-in observer-stall classifier"
+LH_OUTPUT=$(bash "$TESTS_DIR/test_loop_halting.sh" 2>&1)
+LH_PASS=$(echo "$LH_OUTPUT" | grep -c "PASS:" || true)
+LH_FAIL=$(echo "$LH_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + LH_PASS + LH_FAIL))
+PASS=$((PASS + LH_PASS))
+FAIL=$((FAIL + LH_FAIL))
+if [ "$LH_FAIL" -gt 0 ]; then
+    echo "  FAIL: $LH_FAIL loop-halting check(s) failed"
+    echo "$LH_OUTPUT" | grep "FAIL:" | head -8
+else
+    echo "  PASS: all $LH_PASS loop-halting checks"
+fi
+echo ""
+
 # [42b] Softmax numerical guard (always runs — uses core tensor builtins)
 echo "[42b/47] Softmax Guard (7 checks)"
 SG_OUTPUT=$(./eigenscript ../tests/test_softmax_guard.eigs 2>&1); SG_OUTPUT_RC=$?
