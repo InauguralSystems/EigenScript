@@ -83,6 +83,38 @@ define param_shadow(param_val) as:
 assert of [param_shadow of "argument" == "argument", "SS6 param shadows outer"]
 assert of [param_val == "original", "SS7 outer unchanged after param shadow"]
 
+# --- Implicit `n` parameter shadows an outer `n` (issue #241) ---
+# A no-param define gets one implicit parameter named `n` (see SPEC.md).
+# It is a real parameter, so `n is expr` inside the body updates the
+# parameter, NOT an enclosing `n` — identical to any explicit param.
+n is 5
+define bump_implicit_n as:
+    n is 99
+    return n
+assert of [bump_implicit_n of 7 == 99, "SS7A implicit-n body sees its own assignment"]
+assert of [n == 5, "SS7B implicit-n param does not mutate outer n"]
+
+# The implicit parameter still binds the call argument as `n`.
+define echo_implicit_n as:
+    return n
+assert of [echo_implicit_n of 42 == 42, "SS7C implicit-n binds the call argument"]
+
+# Spelling the parameter explicitly as `n` is identical to the no-param form.
+m is 5
+define bump_explicit_n(n) as:
+    n is 99
+    return n
+assert of [bump_explicit_n of 7 == 99, "SS7D explicit-n param sees its own assignment"]
+assert of [m == 5, "SS7E unrelated outer var unchanged"]
+
+# Contrast: a name that is NOT a parameter follows the update-outer rule.
+free_name is 5
+define bump_free_name as:
+    free_name is 99
+    return free_name
+discard is bump_free_name of null
+assert of [free_name == 99, "SS7F non-param name updates the enclosing binding"]
+
 # === FOR-LOOP VARIABLE SCOPING ===
 
 # --- Loop variable is local to each iteration ---

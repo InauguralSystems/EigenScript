@@ -538,6 +538,27 @@ print of (double of 21)
 42
 ```
 
+Because `n` is a real parameter, it shadows any enclosing `n` — exactly
+as a named parameter shadows an outer binding of the same name. Assigning
+`n is expr` inside such a function updates the parameter, **not** an
+outer `n`; the update-outer scope rule (above) cannot reach a name that
+is already bound as a parameter. Give the function an explicit parameter
+list when you need `n` to follow the update-outer rule.
+
+```eigenscript
+define bump as:
+    n is 99
+    return n
+
+n is 5
+print of (bump of 7)
+print of n
+```
+```output
+99
+5
+```
+
 Recursion works as expected. Note the parenthesised recursive call —
 `fib of (m - 1)`, not `fib of [m - 1]`:
 
