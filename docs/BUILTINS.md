@@ -125,6 +125,17 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Bulk copy between buffers |
 | `read_bytes_buf` | `read_bytes_buf of path` | Read binary file as buffer (10MB cap) |
 
+### Bytes ↔ values
+
+For serialization: reconstruct strings/floats from raw bytes (the inverse of an
+`ord` loop / manual bit-packing), covering cases `chr` and 32-bit bitwise can't.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255). Unlike `chr` (which emits the UTF-8 of a *codepoint*), this writes the bytes verbatim, so it inverts an `ord`-over-bytes loop for any byte. Strings are NUL-terminated: a `0` byte ends the string — keep NUL-bearing binary in a buffer. |
+| `f64_to_bytes` | `f64_to_bytes of x` | List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). |
+| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. |
+
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
 compound assignment (`buf[i] += val`).
 

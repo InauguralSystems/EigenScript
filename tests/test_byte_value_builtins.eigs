@@ -1,0 +1,51 @@
+# str_from_bytes / f64_to_bytes / f64_from_bytes
+#
+# Byte<->value primitives for serialization. Surfaced by the tidelog CBOR
+# codec: chr cannot reconstruct bytes >= 128 (it emits UTF-8 of a codepoint),
+# and 32-bit bitwise cannot reach a double's 64-bit IEEE-754 layout.
+
+load_file of "lib/test.eigs"
+
+# ---- str_from_bytes ----
+assert_eq of [str_from_bytes of [72, 105], "Hi", "ascii bytes -> str"]
+# 0xC3 0xA9 is UTF-8 for é — chr(195)/chr(169) would NOT produce this.
+assert_eq of [str_from_bytes of [195, 169], "é", "high bytes -> utf8 str"]
+assert_eq of [str_from_bytes of [], "", "empty -> empty str"]
+# Inverts an ord-over-bytes loop for an arbitrary string.
+src is "héllo, wörld!"
+bytes is []
+for i in range of (len of src):
+    append of [bytes, ord of src[i]]
+assert_eq of [str_from_bytes of bytes, src, "ord-loop round-trip"]
+# Accepts a buffer too.
+buf is buffer of 3
+buf_set of [buf, 0, 67]
+buf_set of [buf, 1, 66]
+buf_set of [buf, 2, 65]
+assert_eq of [str_from_bytes of buf, "CBA", "buffer -> str"]
+# NUL terminates (strings are C-terminated; binary with NUL belongs in a buffer).
+assert_eq of [len of (str_from_bytes of [65, 0, 66]), 1, "NUL terminates str"]
+
+# ---- f64_to_bytes: big-endian IEEE-754, matches RFC 8949 Appendix A ----
+HEXD is ["0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f"]
+define _bh(x) as:
+    return HEXD[floor of (x / 16)] + HEXD[x % 16]
+define _hx(lst) as:
+    local r is ""
+    for i in range of (len of lst):
+        r is r + _bh of lst[i]
+    return r
+
+assert_eq of [_hx of (f64_to_bytes of 1.1), "3ff199999999999a", "f64 1.1 (RFC A.1)"]
+assert_eq of [_hx of (f64_to_bytes of 1.0), "3ff0000000000000", "f64 1.0"]
+assert_eq of [_hx of (f64_to_bytes of (0 - 4.1)), "c010666666666666", "f64 -4.1 (RFC)"]
+assert_eq of [len of (f64_to_bytes of 3.14), 8, "f64 emits 8 bytes"]
+
+# ---- f64_from_bytes: exact inverse, list or buffer ----
+for v in [0.0, 1.5, 3.141592653589793, 0 - 2.5, 1.0e300, 1.0e-300, 100000.125, 0 - 0.0]:
+    assert_eq of [f64_from_bytes of (f64_to_bytes of v), v, "f64 round-trip"]
+# buffer input
+fb is buf_from_list of (f64_to_bytes of 42.5)
+assert_eq of [f64_from_bytes of fb, 42.5, "f64_from_bytes from buffer"]
+
+test_summary of null
