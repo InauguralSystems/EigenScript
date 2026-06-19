@@ -4,6 +4,26 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed — HTTP server crash (SEGV) on any request with a Content-Length header
+
+- **Security/robustness:** the server segfaulted on any request carrying a
+  `Content-Length` header (a malformed `Content-Length: -1` was the repro) —
+  a remote, unauthenticated denial-of-service. Root cause: `ext_http.c` used
+  `strcasestr` (a GNU extension) without defining `_GNU_SOURCE`, so it was
+  implicitly declared as returning `int`. On 64-bit, its `char*` result was
+  truncated to 32 bits and sign-extended back, producing a corrupted pointer
+  (`0xffffffff……`) that the subsequent `strtol` dereferenced. Fixed by
+  defining `_GNU_SOURCE` before the includes so the real prototype is used.
+- The body-length validation logic was already correct (rejects negative /
+  oversized with 400) — it just never ran, because the corrupted pointer
+  crashed first. With the prototype fixed, `Content-Length: -1` now returns
+  400 and the server survives.
+- `tests/test_http_server.sh` goes from 9/28 to **28/28**. Swept the full
+  http build for other implicit declarations — none. (This was previously
+  mistaken for env flakiness; it was a real crash. The default
+  `run_all_tests.sh` skips the http suite when the binary lacks `http_route`,
+  so it went unnoticed.)
+
 ### Fixed — per-request leaks in HTTP `code` routes (#236, ext_http.c)
 
 - The `code`-route handler parsed the route source per request but never

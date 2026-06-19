@@ -4,6 +4,13 @@
  * Compiled only when EIGENSCRIPT_EXT_HTTP=1.
  */
 
+/* Must precede every include: exposes the strcasestr() prototype from
+ * <string.h>. Without it strcasestr is implicitly declared as returning int,
+ * so its 64-bit char* return is truncated to 32 bits and sign-extended — a
+ * corrupted pointer that segfaults the server on any request carrying a
+ * Content-Length header (a malformed `Content-Length: -1` was the repro). */
+#define _GNU_SOURCE
+
 #include "ext_http_internal.h"
 #include "state.h"
 #include "trace.h"
