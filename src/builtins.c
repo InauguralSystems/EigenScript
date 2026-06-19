@@ -2441,6 +2441,24 @@ Value* builtin_file_exists(Value *arg) {
     return make_num(0);
 }
 
+/* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
+ * atomic: a crash leaves either the old file or the new file fully in place,
+ * never a torn mix — the basis for crash-safe log compaction (write a new log to
+ * a temp file, then atomically swap it in). Returns 1 on success, 0 on failure. */
+Value* builtin_rename(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    Value *from = arg->data.list.items[0];
+    Value *to = arg->data.list.items[1];
+    if (!from || from->type != VAL_STR || !to || to->type != VAL_STR) return make_num(0);
+    return make_num(rename(from->data.str, to->data.str) == 0 ? 1 : 0);
+}
+
+/* remove_file of path — delete a file. Returns 1 on success, 0 on failure. */
+Value* builtin_remove_file(Value *arg) {
+    if (!arg || arg->type != VAL_STR) return make_num(0);
+    return make_num(remove(arg->data.str) == 0 ? 1 : 0);
+}
+
 Value* builtin_env_get(Value *arg) {
     if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("env_get", make_str(""));
     const char *val = getenv(arg->data.str);
@@ -4533,6 +4551,8 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "regex_replace", make_builtin(builtin_regex_replace));
     env_set_local_owned(env, "load_file", make_builtin(builtin_load_file));
     env_set_local_owned(env, "file_exists", make_builtin(builtin_file_exists));
+    env_set_local_owned(env, "rename", make_builtin(builtin_rename));
+    env_set_local_owned(env, "remove_file", make_builtin(builtin_remove_file));
     env_set_local_owned(env, "env_get", make_builtin(builtin_env_get));
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
