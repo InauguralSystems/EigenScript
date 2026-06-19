@@ -2390,8 +2390,31 @@ Value* builtin_load_file(Value *arg) {
         return make_null();
     }
     fprintf(stderr, "[load_file] Loading %s (%ld bytes)\n", path, size);
+
+    /* A parse error in the loaded file must surface, not be silently run as a
+     * partial/incorrect AST. Direct execution aborts on g_parse_errors; mirror
+     * that here (and match builtin_eval) by raising a catchable runtime error.
+     * Without this, malformed statements a module can't parse — e.g. an
+     * expression-rooted lvalue like `(call).field is x` — were silently accepted
+     * and their effect dropped (the load_file half of liferaft FINDINGS F1).
+     * Save/restore g_parse_errors so a recovered (try/catch'd) load doesn't
+     * perturb a caller's count. */
+    int saved_errors = g_parse_errors;
+    g_parse_errors = 0;
+
     TokenList tl = tokenize(source);
     ASTNode *ast = parse(&tl);
+
+    if (g_parse_errors > 0 || !ast) {
+        g_parse_errors = saved_errors;
+        free_ast(ast);
+        free_tokenlist(&tl);
+        free(source);
+        runtime_error(0, "load_file: parse error in '%s'", arg->data.str);
+        return make_null();
+    }
+    g_parse_errors = saved_errors;
+
     Env *target = g_load_env ? g_load_env : g_global_env;
     EigsChunk *lf_chunk = compile_ast(ast, target);
     Value *result = vm_execute(lf_chunk, target);

@@ -487,6 +487,16 @@ static ASTNode** parse_block(Parser *p, int *count) {
             stmts[(*count)++] = stmt;
         }
         if (p->pos == before) {
+            fprintf(stderr, "Parse error line %d: unexpected %s, cannot parse statement",
+                    p_cur(p)->line, tok_type_name(p_cur(p)->type));
+            if (p_cur(p)->str_val) fprintf(stderr, " ('%s')", p_cur(p)->str_val);
+            fprintf(stderr, "\n");
+            {
+                char m[160];
+                snprintf(m, sizeof(m), "unexpected %s, cannot parse statement",
+                         tok_type_name(p_cur(p)->type));
+                eigs_record_first_error(p_cur(p)->line, m);
+            }
             g_parse_errors++;
             p_advance(p);
         }
@@ -825,6 +835,16 @@ static ASTNode* parse_primary(Parser *p) {
 
     ASTNode *n = make_node(AST_NULL, p_cur(p)->line);
     if (t->type != TOK_EOF && t->type != TOK_NEWLINE && t->type != TOK_DEDENT) {
+        fprintf(stderr, "Parse error line %d: unexpected %s in expression",
+                t->line, tok_type_name(t->type));
+        if (t->str_val) fprintf(stderr, " ('%s')", t->str_val);
+        fprintf(stderr, "\n");
+        {
+            char m[160];
+            snprintf(m, sizeof(m), "unexpected %s in expression",
+                     tok_type_name(t->type));
+            eigs_record_first_error(t->line, m);
+        }
         g_parse_errors++;
         p_advance(p);
     }
