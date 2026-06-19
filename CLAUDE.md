@@ -23,7 +23,7 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   (test_closure_cycles.eigs) is gated **strictly** leak-clean — a
   LeakSanitizer exit there is a collector regression. The runner's
   `rc_ok` still tolerates LeakSanitizer exits elsewhere and tallies them
-  ("NOTE: N test program(s)..."): currently 5 (down from 13: PRs
+  ("NOTE: N test program(s)..."): currently 4 (down from 13: PRs
   #212/#213/#214/#220 plugged arena-window builtin-arg leaks,
   heap-promoted VAL_NULL via slot encoding, eval's partial AST on parse
   error, and `assert`'s exit(1)-bypassed teardown → 10; then the
@@ -35,9 +35,11 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   test_builtin_indirect + test_coverage_gaps → 6; then free_ast on the
   parse-error paths in main.c and the vm.c import handler — cleared
   test_import_errors and the examples/errors/* + /tmp parse-error programs
-  → 5). Remaining are spawn-thread programs (collector off once
-  multithreaded) and test_lab (a lib/lab.eigs store-not-closed lifecycle
-  leak, not a runtime bug, issue #233).
+  → 5; then lib/lab.eigs `load` made its internals `local` so they stop
+  clobbering caller variables (per the spec scope rule), plus a
+  close_experiment helper — cleared test_lab → 4 (#233)). The remaining 4
+  are all spawn-thread programs (the cycle collector is off once
+  multithreaded) — the floor without threaded GC.
   Any other nonzero exit — crash, assert, UBSan — fails. Watch that
   tally: a jump means a new leak.
 - `make asan` overwrites `src/eigenscript` — rebuild with `make`
@@ -279,7 +281,7 @@ recv_timeout, multi-arg spawn) and the twelve post-merge fixes
   internal handle/log of attached threads lives on the state.
 
 Suite: ~1882 checks; must pass release **and** ASan with
-detect_leaks=1 (the leak tally — currently 5, spawn-thread programs +
+detect_leaks=1 (the leak tally — currently 4, spawn-thread programs +
 pre-existing non-closure shapes — is the gate; a jump means a new
 leak, and section [87] must stay strictly leak-clean).
 

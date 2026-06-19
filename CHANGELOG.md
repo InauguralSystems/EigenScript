@@ -4,6 +4,22 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed — `lib/lab.eigs` leaked experiment store handles (#233)
+
+- `lab` functions assigned internal variables without `local`. Per the
+  documented scope rule (`name is expr` updates an enclosing binding of the
+  same name if one exists), `load`'s internal `exp`/`vals` **clobbered a
+  caller's same-named variables** — repointing the caller's experiment at
+  `load`'s store handle and orphaning the original, which then leaked
+  (uncloseable). `load` now declares all its internals `local`. Added a
+  `close_experiment(exp)` helper; `test_lab` closes both experiments.
+- Clears `test_lab` under ASan; harness leak tally **5 → 4**. The remaining
+  4 are all spawn-thread programs (cycle collector off once multithreaded) —
+  the floor without a threaded GC.
+- (Surfaced a separate VM bug while diagnosing: scope resolution is
+  name-dependent — `n` uniquely ignores the update-outer rule. Tracked as
+  #241.)
+
 ### Hardening — `-Werror=implicit-function-declaration`
 
 - Added `-Werror=implicit-function-declaration` to the build flags (Makefile

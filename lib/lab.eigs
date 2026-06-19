@@ -344,6 +344,13 @@ define tagged_groups(exp, variable) as:
 
 # ---- Experiment Persistence ----
 
+# Close an experiment's store handle. new_experiment/load each open a
+# long-lived store kept in exp.db; the caller must close it when done or the
+# handle (and its catalog) leaks. (list_experiments/delete_experiment manage
+# their own transient handles and close them internally.)
+define close_experiment(exp) as:
+    store_close of exp.db
+
 define save(exp) as:
     # Update stored metadata with current state
     meta is store_get of [exp.db, "experiments", exp.id]
@@ -355,16 +362,20 @@ define save(exp) as:
     return 1
 
 define load(name) as:
-    db is _ensure_db of null
+    # `local` on every internal binding: without it, `name is expr` updates an
+    # outer binding of the same name if one exists (docs/SPEC.md scope rules),
+    # so a caller variable named `exp`/`vals`/etc. would be silently clobbered
+    # — which orphaned the experiment's store handle and leaked it (#233).
+    local db is _ensure_db of null
     # Find experiment by name
-    all is store_query of [db, "experiments"]
-    meta is null
+    local all is store_query of [db, "experiments"]
+    local meta is null
     for i in range of (len of all):
         if all[i].name == name:
-            meta is all[i]
+            local meta is all[i]
     if meta == null:
         return null
-    exp is {
+    local exp is {
         "db": db,
         "id": meta._id,
         "name": meta.name,
@@ -375,11 +386,11 @@ define load(name) as:
     }
     # Reload in-memory caches from store
     for i in range of (len of exp.variables):
-        variable is exp.variables[i]
-        key is _tracker_key of [exp, variable]
-        collection is _collection_name of [exp, variable]
-        recs is store_query of [db, collection]
-        vals is []
+        local variable is exp.variables[i]
+        local key is _tracker_key of [exp, variable]
+        local collection is _collection_name of [exp, variable]
+        local recs is store_query of [db, collection]
+        local vals is []
         for j in range of (len of recs):
             append of [vals, recs[j].value]
         dict_set of [_variable_data, key, vals]

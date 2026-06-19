@@ -66,6 +66,10 @@ exp2 is load of "test_thermal"
 vals2 is values of [exp2, "temperature"]
 assert_eq of [len of vals2, 6, "data persists after reload"]
 
+# Close both experiment store handles (new_experiment + load each opened one)
+close_experiment of exp
+close_experiment of exp2
+
 # List experiments
 exps is list_experiments of null
 assert_true of [(len of exps) > 0, "experiment listed"]
