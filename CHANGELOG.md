@@ -4,6 +4,17 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Hardening — `-Werror=implicit-function-declaration`
+
+- Added `-Werror=implicit-function-declaration` to the build flags (Makefile
+  `CFLAGS` and `build.sh`). An implicitly-declared function is assumed to
+  return `int`, so a pointer-returning function compiled without its prototype
+  has its return truncated to 32 bits on 64-bit — a corrupted pointer that
+  crashes at runtime, layout-dependently. That class just caused a remote DoS
+  in the HTTP server (the `strcasestr`/`_GNU_SOURCE` SEGV) and slipped through
+  CI as a mere warning. It's now a hard build error. The buildable surface is
+  warning-clean, so this is a no-op today except as a regression gate.
+
 ### Fixed — HTTP server crash (SEGV) on any request with a Content-Length header
 
 - **Security/robustness:** the server segfaulted on any request carrying a

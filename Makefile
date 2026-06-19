@@ -1,6 +1,12 @@
 VERSION := $(shell cat VERSION)
 CC      := gcc
-CFLAGS  := -Wall -Wextra -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+# -Werror=implicit-function-declaration: an implicitly-declared function is
+# assumed to return int, so on 64-bit a pointer-returning libc/GNU function
+# (e.g. strcasestr without _GNU_SOURCE) has its return truncated to 32 bits —
+# a corrupted pointer that segfaults at runtime, layout-dependently (this hid
+# a remote-DoS in ext_http through CI; see #239). Make the whole class a hard
+# build error instead of an ignorable warning.
+CFLAGS  := -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 
 # RELRO/BIND_NOW are ELF concepts; macOS's ld64 rejects -z, and PIE is
 # already the default there. Without this split every Makefile link target
