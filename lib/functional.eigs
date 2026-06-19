@@ -71,9 +71,14 @@ define juxt(fns, val) as:
         append of [result, fns[i] of val]
     return result
 
-# ---- when: conditional application ----
-# when of [pred, fn, value] -> fn(value) if pred(value), else value
-define when(pred, fn, val) as:
+# ---- apply_when: conditional application ----
+# apply_when of [pred, fn, value] -> fn(value) if pred(value), else value
+# (Named apply_when, not `when`: `when` is a reserved interrogative keyword and
+# cannot be a function name. The old `when` never parsed — load_file swallowed
+# the error — so this is the first version that actually loads. See lab.eigs's
+# `stable` for the sibling case; both surfaced once load_file started reporting
+# parse errors.)
+define apply_when(pred, fn, val) as:
     if pred of val:
         return fn of val
     return val

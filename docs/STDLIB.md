@@ -279,7 +279,7 @@ print of (map_keys of m)                # ["lang", "version"]
 | `apply_all` | `apply_all of [fn_list, value]` | Apply each fn, collect results |
 | `juxt` | `juxt of [fn_list, value]` | Alias for apply_all |
 | `complement` | `complement of [pred, value]` | Negate predicate result |
-| `when` | `when of [pred, fn, value]` | Apply fn if pred is truthy |
+| `apply_when` | `apply_when of [pred, fn, value]` | Apply fn if pred is truthy |
 | `unless` | `unless of [pred, fn, value]` | Apply fn if pred is falsy |
 | `times` | `times of [count, fn]` | Call fn(i) for i in 0..count-1 |
 | `iterate` | `iterate of [fn, value, count]` | Apply fn n times |
