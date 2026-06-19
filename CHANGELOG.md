@@ -4,6 +4,14 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.16.2] — 2026-06-19
+
+A correctness patch. `load_file` no longer silently swallows parse errors — it
+raises them like `eval`/`import` do — and the two latent stdlib bugs that
+change immediately exposed (a function that never loaded, a variable that never
+took effect) are fixed, with a guard so the whole class stays visible. No
+behavior change for any file that already parsed cleanly.
+
 ### Fixed — `load_file` now surfaces parse errors instead of silently running a partial AST
 
 - `load_file` parsed the target file but never checked `g_parse_errors`, so a
@@ -19,6 +27,25 @@ All notable changes to EigenScript are documented here.
   expression-rooted-lvalue parse error raises and is catchable; a clean
   `load_file` still executes normally). No change for any file that parses
   cleanly (the entire stdlib and suite are unaffected).
+- Two silent `g_parse_errors++` sites in `parser.c` (unexpected token in
+  expression; statement that made no progress) now print
+  `Parse error line N: ...` with the token, like `p_expect` — the class was
+  hard to diagnose because these incremented the count with no message.
+
+### Fixed — stdlib `when` combinator never loaded; renamed to `apply_when`
+
+- With parse errors now visible, a sweep of the stdlib found
+  `lib/functional.eigs` defined a function named `when` — a reserved
+  interrogative keyword — so `define when(...)` never parsed. The `when`
+  combinator was documented in `docs/STDLIB.md` but callable nowhere (its
+  parse error was swallowed at `load_file` time). Renamed to **`apply_when`**;
+  `docs/STDLIB.md` updated. Sibling of `lib/lab.eigs`'s `stable` (a variable
+  shadowing the `stable` predicate keyword), fixed the same way. Both are
+  behavior-restoring: the helpers work for the first time.
+- Guard: `tests/run_all_tests.sh` now parse-checks every `lib/*.eigs` (via
+  `--lint`, which parses without executing), so any identifier shadowing a
+  reserved keyword — or any other stdlib parse error — fails the suite loudly
+  instead of being silently swallowed.
 
 ## [0.16.1] — 2026-06-19
 
