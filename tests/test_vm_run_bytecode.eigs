@@ -49,4 +49,11 @@ dbl_desc is [[GET_LOCAL,0,0, GET_LOCAL,0,0, ADD, RETURN, RETURN_NULL], [], [], 1
 mod_code is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, POP, GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN]
 assert_eq of [vm_run_bytecode of [mod_code, ["double", 21], [dbl_desc], 0, "<module>", []], 42, "nested function call"]
 
+# record_history toggles per-assignment history recording (for prev / at queries
+# in self-hosted programs) and returns the previous setting.
+record_history of 0
+assert_eq of [record_history of 1, 0, "record_history: was off -> returns 0"]
+assert_eq of [record_history of 1, 1, "record_history: now on -> returns 1"]
+record_history of 0
+
 test_summary of null
