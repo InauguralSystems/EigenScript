@@ -1,0 +1,40 @@
+# vm_run_bytecode — the self-hosting bootstrap bridge. Assemble a chunk from
+# EigenScript values (code bytes + constant pool) and run it on the C VM.
+# Opcodes/operands are exactly what compile_ast emits (16-bit operands are
+# little-endian); this is what an EigenScript-written compiler will produce.
+
+load_file of "lib/test.eigs"
+
+# Opcode numbers (src/vm.h enum order)
+CONST is 0
+ADD is 4
+GT is 20
+GET_NAME is 25
+JUMP_IF_FALSE is 31
+CALL is 39
+RETURN is 40
+
+# 2 + 3 -> 5
+assert_eq of [vm_run_bytecode of [[CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "arith add"]
+
+# string concat "a" + "b" -> "ab"
+assert_eq of [vm_run_bytecode of [[CONST,0,0, CONST,1,0, ADD, RETURN], ["a", "b"]], "ab", "string concat via ADD"]
+
+# comparison 10 > 3 -> 1
+assert_eq of [vm_run_bytecode of [[CONST,0,0, CONST,1,0, GT, RETURN], [10, 3]], 1, "comparison GT"]
+
+# builtin call: len of "hello" -> 5  (GET_NAME resolves "len" in the global env)
+assert_eq of [vm_run_bytecode of [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 5, "builtin call via GET_NAME+CALL"]
+
+# control flow: max(a, b) via JUMP_IF_FALSE (relative forward offset)
+#   CONST a; CONST b; GT; JUMP_IF_FALSE +4; CONST a; RETURN; CONST b; RETURN
+maxcode is [CONST,0,0, CONST,1,0, GT, JUMP_IF_FALSE,4,0, CONST,0,0, RETURN, CONST,1,0, RETURN]
+assert_eq of [vm_run_bytecode of [maxcode, [10, 3]], 10, "max(10,3) fall-through branch"]
+assert_eq of [vm_run_bytecode of [maxcode, [3, 10]], 10, "max(3,10) jump-taken branch"]
+assert_eq of [vm_run_bytecode of [maxcode, [7, 2]], 7, "max(7,2)"]
+
+# bad args degrade to null, not a crash
+assert_eq of [vm_run_bytecode of [42, []], null, "non-list code -> null"]
+assert_eq of [vm_run_bytecode of 5, null, "non-list arg -> null"]
+
+test_summary of null

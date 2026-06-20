@@ -128,6 +128,12 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns 1/0. |
 | `remove_file` | `remove_file of path` | Delete a file. Returns 1/0. |
 
+### Self-hosting
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `vm_run_bytecode` | `vm_run_bytecode of [code, constants]` | Assemble a chunk from a list of byte ints (`code`: opcodes + little-endian 16-bit operands) and a constant pool, then run it on the C VM and return the result. The bridge for an EigenScript-written compiler: emit bytecode as data, execute it on the same VM (and JIT) the C compiler's output uses. Caller supplies a well-formed chunk ending in `OP_RETURN`. |
+
 ### Bytes ↔ values
 
 For serialization: reconstruct strings/floats from raw bytes (the inverse of an
