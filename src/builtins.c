@@ -3278,6 +3278,46 @@ Value* builtin_eval(Value *arg) {
     return result ? result : make_null();
 }
 
+/* ==== BUILTIN: vm_run_bytecode ==== */
+/* vm_run_bytecode of [code, constants] — assemble a chunk from EigenScript
+ * values and run it on the C VM. `code` is a list of byte ints (opcodes +
+ * little-endian 16-bit operands); `constants` is the constant pool (numbers and
+ * strings; string constants double as names for GET_NAME/SET_NAME). Returns the
+ * chunk's result.
+ *
+ * This is the self-hosting bootstrap bridge: a compiler written in EigenScript
+ * emits bytecode as data, and this hands it to the same vm_execute the C
+ * compiler's output runs through — reusing the bytecode VM and its JIT. The
+ * caller is responsible for a well-formed chunk ending in OP_RETURN. Constant
+ * indices must match the code's references; chunk_add_constant dedups numbers
+ * and strings, which is consistent with how the C compiler builds its pool. */
+Value* builtin_vm_run_bytecode(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    Value *code = arg->data.list.items[0];
+    Value *consts = arg->data.list.items[1];
+    if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST)
+        return make_null();
+
+    EigsChunk *chunk = chunk_new("<bootstrap>");
+    for (int i = 0; i < code->data.list.count; i++) {
+        Value *b = code->data.list.items[i];
+        int byte = (b && b->type == VAL_NUM) ? ((int)b->data.num & 0xFF) : 0;
+        chunk_emit(chunk, (uint8_t)byte, 1);
+    }
+    for (int i = 0; i < consts->data.list.count; i++) {
+        if (consts->data.list.items[i])
+            chunk_add_constant(chunk, consts->data.list.items[i]);
+    }
+    /* The VM runs on its global value stack (bounded by VM_STACK_MAX), so
+     * max_stack is only a hint; set a comfortable value. */
+    chunk->max_stack = 64;
+
+    Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
+    Value *result = vm_execute(chunk, target);
+    chunk_free(chunk);
+    return result ? result : make_null();
+}
+
 /* ==== BUILTIN: tensor_save ==== */
 /* tensor_save of [tensor, path] — save 1D or 2D list to binary file.
  * Format: [uint32 ndim][uint32 rows][uint32 cols][uint32 flags]
@@ -4608,6 +4648,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "secure_equals", make_builtin(builtin_secure_equals));
     env_set_local_owned(env, "try_parse", make_builtin(builtin_try_parse));
     env_set_local_owned(env, "eval", make_builtin(builtin_eval));
+    env_set_local_owned(env, "vm_run_bytecode", make_builtin(builtin_vm_run_bytecode));
     env_set_local_owned(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));
     env_set_local_owned(env, "copy_into", make_builtin(builtin_copy_into));
