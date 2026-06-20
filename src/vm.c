@@ -465,6 +465,12 @@ static Value *make_iter_state(Value *iterable) {
  * g_vm fields without indirection through helper functions. */
 #include <stddef.h>
 
+/* Sandbox loop-iteration cap. 0 = use the default 100,000,000 (normal runs are
+ * unaffected); builtin_sandbox_run sets a low value to bound untrusted generated
+ * code, then restores it. Read by the LOOP_CAP/STALL checks (interp + JIT
+ * helpers). A plain process global: sandbox_run is synchronous. */
+int g_sandbox_loop_max = 0;
+
 /* JIT Stage 4k: out-of-line helper for OP_GET_NAME.
  *
  * Mirrors CASE(GET_NAME) below exactly — IC fast path then chain-walk
@@ -1156,7 +1162,7 @@ int jit_helper_loop_stall_check(void) {
             g_loop_stall_count = 0;
         }
     }
-    if (g_loop_iterations >= 100000000) {
+    if (g_loop_iterations >= (g_sandbox_loop_max ? g_sandbox_loop_max : 100000000)) {
         g_loop_exit_reason = "limit";
         should_exit = 1;
     }
@@ -1181,7 +1187,7 @@ int jit_helper_loop_stall_check(void) {
 int jit_helper_loop_cap_check(void) {
     g_loop_iterations++;
     int should_exit = 0;
-    if (g_loop_iterations >= 100000000) {
+    if (g_loop_iterations >= (g_sandbox_loop_max ? g_sandbox_loop_max : 100000000)) {
         g_loop_exit_reason = "limit";
         should_exit = 1;
     }
@@ -3981,7 +3987,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 g_loop_stall_count = 0;
             }
         }
-        if (g_loop_iterations >= 100000000) {
+        if (g_loop_iterations >= (g_sandbox_loop_max ? g_sandbox_loop_max : 100000000)) {
             g_loop_exit_reason = "limit";
             should_exit = 1;
         }
@@ -4010,7 +4016,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t exit_offset = read_u16(ip); ip += 2;
         g_loop_iterations++;
         int should_exit = 0;
-        if (g_loop_iterations >= 100000000) {
+        if (g_loop_iterations >= (g_sandbox_loop_max ? g_sandbox_loop_max : 100000000)) {
             g_loop_exit_reason = "limit";
             should_exit = 1;
         }

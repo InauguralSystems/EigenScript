@@ -3357,6 +3357,90 @@ Value* builtin_vm_run_bytecode(Value *arg) {
     return result ? result : make_null();
 }
 
+/* Stub bound (in the sandbox env) over every dangerous builtin name; calling it
+ * raises a catchable error so untrusted generated code can't touch the outside. */
+Value* builtin_sandbox_blocked(Value *arg) {
+    (void)arg;
+    runtime_error(0, "blocked in sandbox");
+    return make_null();
+}
+
+/* Names shadowed by the blocked stub inside a sandbox run: anything that writes,
+ * reads, or otherwise reaches outside the VM (file/process/network/db), executes
+ * code, or spawns threads. GET_NAME resolves the env chain with no global
+ * fallback, so a shadowed name in the sandbox env hides the real builtin; pure
+ * compute builtins (print, math, list/dict/string ops, gather/matmul, ...) fall
+ * through to the global env unchanged. */
+static const char *SANDBOX_DENY[] = {
+    "write", "write_text", "write_bytes", "stream_open", "stream_write",
+    "stream_close", "tensor_save", "tensor_load", "model_save_weights",
+    "model_load_weights", "eigen_model_load", "eigen_model_save_binary",
+    "read_text", "read_bytes", "read_bytes_buf", "file_exists", "md5_file",
+    "sha256_file", "ls", "rename", "remove_file", "mkdir", "rm",
+    "load_file", "eval", "vm_run_bytecode", "sandbox_run", "record_history",
+    "exec_capture", "proc_spawn", "proc_write", "proc_read", "proc_read_line",
+    "proc_read_buf", "proc_close", "proc_wait", "spawn", "thread_join",
+    "env_get", "http_post", "http_request_body", "http_request_headers",
+    "http_route", "http_route_authed", "http_serve", "http_session_id",
+    "http_static", "http_cors", "http_early_bind", "db_connect", "db_execute",
+    "db_query_json", "db_query_value",
+    NULL
+};
+
+/* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
+ * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
+ * builtins are shadowed by a blocked stub, and loops are capped at
+ * max_iterations (default 1,000,000) so runaway code can't hang. Runtime errors
+ * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
+ * "does it run?" rung for a self-hosted compiler validating generated code. */
+Value* builtin_sandbox_run(Value *arg) {
+    Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
+                  ? arg->data.list.items[0] : arg;
+    int max_iter = 1000000;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
+        arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM)
+        max_iter = (int)arg->data.list.items[1]->data.num;
+
+    EigsChunk *chunk = vm_build_chunk_desc(desc);
+    Value *out = make_dict(2);
+    if (!chunk) {
+        Value *zero = make_num(0);
+        dict_set(out, "ok", zero);   /* dict_set increfs; drop our ref */
+        val_decref(zero);
+        return out;
+    }
+
+    /* Restricted env: parent is the real global (so safe builtins resolve), but
+     * every dangerous name is shadowed by the blocked stub. */
+    Env *sbox = env_new(g_global_env);
+    Value *stub = make_builtin(builtin_sandbox_blocked);
+    for (int i = 0; SANDBOX_DENY[i]; i++)
+        env_set_local(sbox, SANDBOX_DENY[i], stub);
+    val_decref(stub);
+
+    int saved_max = g_sandbox_loop_max;
+    int saved_iters = g_loop_iterations;
+    g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
+    g_loop_iterations = 0;
+
+    Value *result = vm_execute(chunk, sbox);
+
+    int ok = g_has_error ? 0 : 1;
+    if (g_has_error) { g_has_error = 0; eigs_clear_error_value(); }
+
+    g_sandbox_loop_max = saved_max;
+    g_loop_iterations = saved_iters;
+
+    chunk_free(chunk);
+    env_decref(sbox);
+
+    Value *okv = make_num((double)ok);
+    dict_set(out, "ok", okv);   /* dict_set increfs; drop our ref */
+    val_decref(okv);
+    if (result) { dict_set(out, "result", result); val_decref(result); }
+    return out;
+}
+
 /* record_history of flag — enable (nonzero) or disable (0) per-assignment
  * history recording, which the temporal queries read: `prev of x` and
  * `<kw> is x at <line>` (value history via g_trace_hist) plus the observer-state
@@ -4704,6 +4788,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "eval", make_builtin(builtin_eval));
     env_set_local_owned(env, "vm_run_bytecode", make_builtin(builtin_vm_run_bytecode));
     env_set_local_owned(env, "record_history", make_builtin(builtin_record_history));
+    env_set_local_owned(env, "sandbox_run", make_builtin(builtin_sandbox_run));
     env_set_local_owned(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));
     env_set_local_owned(env, "copy_into", make_builtin(builtin_copy_into));
