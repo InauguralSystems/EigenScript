@@ -3357,6 +3357,21 @@ Value* builtin_vm_run_bytecode(Value *arg) {
     return result ? result : make_null();
 }
 
+/* record_history of flag — enable (nonzero) or disable (0) per-assignment
+ * history recording, which the temporal queries read: `prev of x` and
+ * `<kw> is x at <line>` (value history via g_trace_hist) plus the observer-state
+ * forms `where/why/how is x at <line>` (entropy/dH history via g_trace_obs_hist).
+ * Both are enabled together. The C compiler turns these on automatically when it
+ * compiles a temporal query; a self-hosted compiler (whose output runs via
+ * vm_run_bytecode) calls this to do the same. Returns the previous setting. */
+Value* builtin_record_history(Value *arg) {
+    int prev = g_trace_hist;
+    int on = (arg && arg->type == VAL_NUM) ? (arg->data.num != 0.0) : 0;
+    g_trace_hist = on ? 1 : 0;
+    g_trace_obs_hist = on ? 1 : 0;
+    return make_num((double)prev);
+}
+
 /* ==== BUILTIN: tensor_save ==== */
 /* tensor_save of [tensor, path] — save 1D or 2D list to binary file.
  * Format: [uint32 ndim][uint32 rows][uint32 cols][uint32 flags]
@@ -4688,6 +4703,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "try_parse", make_builtin(builtin_try_parse));
     env_set_local_owned(env, "eval", make_builtin(builtin_eval));
     env_set_local_owned(env, "vm_run_bytecode", make_builtin(builtin_vm_run_bytecode));
+    env_set_local_owned(env, "record_history", make_builtin(builtin_record_history));
     env_set_local_owned(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));
     env_set_local_owned(env, "copy_into", make_builtin(builtin_copy_into));
