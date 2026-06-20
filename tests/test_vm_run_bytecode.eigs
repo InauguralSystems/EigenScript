@@ -37,4 +37,16 @@ assert_eq of [vm_run_bytecode of [maxcode, [7, 2]], 7, "max(7,2)"]
 assert_eq of [vm_run_bytecode of [42, []], null, "non-list code -> null"]
 assert_eq of [vm_run_bytecode of 5, null, "non-list arg -> null"]
 
+# nested function chunk: define double(x) = x + x; double of 21 -> 42
+CLOSURE is 38
+SET_NAME_LOCAL is 27
+GET_LOCAL is 23
+RETURN_NULL is 41
+POP is 35
+# function body: GET_LOCAL 0; GET_LOCAL 0; ADD; RETURN; RETURN_NULL
+dbl_desc is [[GET_LOCAL,0,0, GET_LOCAL,0,0, ADD, RETURN, RETURN_NULL], [], [], 1, "double", ["x"]]
+# module: CLOSURE 0; SET_NAME_LOCAL 0("double"); POP; GET_NAME 0; CONST 1(21); CALL 1; RETURN
+mod_code is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, POP, GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN]
+assert_eq of [vm_run_bytecode of [mod_code, ["double", 21], [dbl_desc], 0, "<module>", []], 42, "nested function call"]
+
 test_summary of null

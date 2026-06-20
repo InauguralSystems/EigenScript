@@ -3279,39 +3279,78 @@ Value* builtin_eval(Value *arg) {
 }
 
 /* ==== BUILTIN: vm_run_bytecode ==== */
-/* vm_run_bytecode of [code, constants] — assemble a chunk from EigenScript
- * values and run it on the C VM. `code` is a list of byte ints (opcodes +
- * little-endian 16-bit operands); `constants` is the constant pool (numbers and
- * strings; string constants double as names for GET_NAME/SET_NAME). Returns the
- * chunk's result.
- *
- * This is the self-hosting bootstrap bridge: a compiler written in EigenScript
- * emits bytecode as data, and this hands it to the same vm_execute the C
- * compiler's output runs through — reusing the bytecode VM and its JIT. The
- * caller is responsible for a well-formed chunk ending in OP_RETURN. Constant
- * indices must match the code's references; chunk_add_constant dedups numbers
- * and strings, which is consistent with how the C compiler builds its pool. */
-Value* builtin_vm_run_bytecode(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *code = arg->data.list.items[0];
-    Value *consts = arg->data.list.items[1];
+/* Build an EigsChunk from a descriptor list, recursively for nested functions:
+ *   [ code, constants, functions?, param_count?, name?, local_names? ]
+ *   - code        : list of byte ints (opcodes + little-endian 16-bit operands)
+ *   - constants   : constant pool (numbers/strings; strings double as
+ *                   GET_NAME/SET_NAME names)
+ *   - functions   : (optional) list of descriptors for nested function chunks,
+ *                   referenced by OP_CLOSURE [fn_idx]
+ *   - param_count : (optional) number of leading local slots that are params
+ *   - name        : (optional) chunk/function name
+ *   - local_names : (optional) names for local slots in slot order; the count
+ *                   sizes the call frame, and the first param_count are the
+ *                   parameter names OP_CLOSURE binds.
+ * The 2-element form [code, constants] still works (a flat module chunk). */
+static EigsChunk *vm_build_chunk_desc(Value *desc) {
+    if (!desc || desc->type != VAL_LIST || desc->data.list.count < 2) return NULL;
+    Value **d = desc->data.list.items;
+    int n = desc->data.list.count;
+    Value *code = d[0], *consts = d[1];
     if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST)
-        return make_null();
+        return NULL;
 
-    EigsChunk *chunk = chunk_new("<bootstrap>");
+    const char *name = (n >= 5 && d[4] && d[4]->type == VAL_STR) ? d[4]->data.str
+                                                                 : "<bootstrap>";
+    EigsChunk *chunk = chunk_new(name);
+
     for (int i = 0; i < code->data.list.count; i++) {
         Value *b = code->data.list.items[i];
         int byte = (b && b->type == VAL_NUM) ? ((int)b->data.num & 0xFF) : 0;
         chunk_emit(chunk, (uint8_t)byte, 1);
     }
-    for (int i = 0; i < consts->data.list.count; i++) {
+    for (int i = 0; i < consts->data.list.count; i++)
         if (consts->data.list.items[i])
             chunk_add_constant(chunk, consts->data.list.items[i]);
-    }
-    /* The VM runs on its global value stack (bounded by VM_STACK_MAX), so
-     * max_stack is only a hint; set a comfortable value. */
-    chunk->max_stack = 64;
 
+    /* nested function chunks (creator ref transfers into functions[]) */
+    if (n >= 3 && d[2] && d[2]->type == VAL_LIST) {
+        for (int i = 0; i < d[2]->data.list.count; i++) {
+            EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i]);
+            if (fn) chunk_add_function(chunk, fn);
+        }
+    }
+
+    int param_count = (n >= 4 && d[3] && d[3]->type == VAL_NUM)
+                      ? (int)d[3]->data.num : 0;
+    chunk->param_count = param_count;
+    chunk->first_default = param_count;        /* no defaults */
+
+    /* local-slot names; local_count sizes the call frame (max with param_count) */
+    if (n >= 6 && d[5] && d[5]->type == VAL_LIST && d[5]->data.list.count > 0) {
+        int lc = d[5]->data.list.count;
+        chunk->local_names = xcalloc(lc, sizeof(char *));
+        for (int i = 0; i < lc; i++) {
+            Value *nm = d[5]->data.list.items[i];
+            chunk->local_names[i] = strdup((nm && nm->type == VAL_STR) ? nm->data.str : "");
+        }
+        chunk->local_count = lc;
+    }
+    /* The VM runs on its global value stack (VM_STACK_MAX), so max_stack is a
+     * hint only. */
+    chunk->max_stack = 64;
+    return chunk;
+}
+
+/* vm_run_bytecode of <chunk-descriptor> — assemble a chunk (and its nested
+ * function chunks) from EigenScript values and run it on the C VM. The
+ * self-hosting bootstrap bridge: a compiler written in EigenScript emits
+ * bytecode as data, and this hands it to the same vm_execute the C compiler's
+ * output runs through — reusing the bytecode VM and its JIT. The caller is
+ * responsible for a well-formed chunk ending in OP_RETURN. */
+Value* builtin_vm_run_bytecode(Value *arg) {
+    EigsChunk *chunk = vm_build_chunk_desc(arg);
+    if (!chunk) return make_null();
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
     Value *result = vm_execute(chunk, target);
     chunk_free(chunk);
