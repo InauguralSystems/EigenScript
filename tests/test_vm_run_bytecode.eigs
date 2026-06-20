@@ -56,4 +56,25 @@ assert_eq of [record_history of 1, 0, "record_history: was off -> returns 0"]
 assert_eq of [record_history of 1, 1, "record_history: now on -> returns 1"]
 record_history of 0
 
+# sandbox_run: safe code runs and returns {ok, result}. The arg is
+# [descriptor, max_iter] where descriptor is [code, constants].
+safe_desc is [[CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
+sr_safe is sandbox_run of [safe_desc, 100000]
+assert_eq of [sr_safe["ok"], 1, "sandbox: safe code ok"]
+assert_eq of [sr_safe["result"], 5, "sandbox: safe result"]
+
+# sandbox_run: a dangerous builtin (write_text) is shadowed -> blocked, ok=0,
+# and no file is written.
+remove_file of "/tmp/eigs_sandbox_breach"
+block_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["write_text", "/tmp/eigs_sandbox_breach"]]
+sr_block is sandbox_run of [block_desc, 100000]
+assert_eq of [sr_block["ok"], 0, "sandbox: dangerous builtin blocked"]
+assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", 0, "sandbox: nothing written"]
+
+# sandbox_run: a runaway loop is bounded by the iteration cap (returns, no hang).
+# NUM_ONE; JUMP_IF_FALSE +6; LOOP_CAP_CHECK +3; JUMP_BACK 10; RETURN_NULL
+loopcode is [3, 31,6,0, 63,3,0, 30,10,0, 41]
+sr_loop is sandbox_run of [[loopcode, []], 1000]
+assert_eq of [sr_loop["ok"], 1, "sandbox: runaway loop bounded (returned)"]
+
 test_summary of null
