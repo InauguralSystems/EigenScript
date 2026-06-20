@@ -132,7 +132,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `vm_run_bytecode` | `vm_run_bytecode of [code, constants]` | Assemble a chunk from a list of byte ints (`code`: opcodes + little-endian 16-bit operands) and a constant pool, then run it on the C VM and return the result. The bridge for an EigenScript-written compiler: emit bytecode as data, execute it on the same VM (and JIT) the C compiler's output uses. Caller supplies a well-formed chunk ending in `OP_RETURN`. |
+| `vm_run_bytecode` | `vm_run_bytecode of <descriptor>` | Assemble a chunk from a descriptor and run it on the C VM, returning the result. Descriptor: `[code, constants, functions?, param_count?, name?, local_names?]` — `code` is a list of byte ints (opcodes + little-endian 16-bit operands); `constants` is the pool; `functions` is a list of nested descriptors referenced by `OP_CLOSURE`; `local_names` (slot order) sizes the call frame and names parameters. The 2-element `[code, constants]` form is a flat module chunk. The bridge for an EigenScript-written compiler: emit bytecode as data, execute it on the same VM (and JIT) the C compiler's output uses. Caller supplies a well-formed chunk ending in `OP_RETURN`. |
 
 ### Bytes ↔ values
 
