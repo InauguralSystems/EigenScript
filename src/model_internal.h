@@ -16,7 +16,7 @@
  * output_proj, and the rest scale dynamically with cfg->vocab_size; this
  * only bounds probs_sorted[] (a stack scratch buffer) and the load-time
  * sanity check. 1024 leaves headroom for top_n sweeps up through ~900. */
-#define VOCAB_SIZE 1024
+#define VOCAB_SIZE 4096
 #define MAX_D_MODEL 128
 #define MAX_D_FF 512
 
