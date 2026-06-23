@@ -346,6 +346,117 @@ if converged:
     ...   # NO — count = 2 < N; partial-window rule returns false
 ```
 
+## Convergence loops in practice
+
+`loop while not converged` reads as the obvious convergence idiom, and it
+is correct — but only for a value that converges *gently and
+monotonically into a low-entropy basin*. Three consequences of the entropy
+model surprise real solvers (all surfaced building `dynamics`, the
+observer-heavy dynamical-systems lab that is the first heavy consumer of
+the windowed predicates; findings F-DYN-2 and F-DYN-6). Each trace below is
+runtime-verified.
+
+### Regime tracks per-step `dH`, not distance to the limit
+
+A predicate classifies the *trajectory* by `|dH|` against `dh_zero` /
+`dh_small`. A quantity that is still moving but observed in tiny per-step
+increments has `|dH| < dh_zero` and reads settled — `equilibrium` or even
+`converged` — while still far from its limit:
+
+```eigenscript
+x is 100.0
+for i in range of 20:
+    x is x * 0.999        # genuine motion, but each step is tiny
+report of x               # "converged"  — yet x is still ~98, not ~0
+```
+
+(At a partial window the same loop's first few steps report `equilibrium`
+via the instantaneous fallback; once the window fills it reads `converged`
+because `|x|≈98` is a low-entropy magnitude — see the next two sections.)
+
+The lesson is about **observation cadence**: observe at a rate matched to
+the dynamics, not once per micro-step. The robust pattern is to advance the
+system several substeps *unobserved* and observe the quantity once per
+frame, so each observed `dH` reflects a meaningful step (`dynamics/physics.eigs`
+runs its integrator this way).
+
+### Entropy peaks at `|value| = 1`, so a shrinking value can read `diverging`
+
+Entropy is the binary entropy of `p = 1/(1+|x|)`
+(`compute_entropy_impl`, eigenscript.c): it is **highest near `|x| = 1`**
+and falls toward 0 as `|x| → 0` or `|x| → ∞` (and is defined as exactly `0`
+at `|x| ∈ {0, 1}`). So a value decaying from a large magnitude *toward* 1
+has **rising** entropy — `dH > 0` — and reads `diverging`, not `improving`,
+even though it is "getting smaller":
+
+```eigenscript
+x is 100.0
+for i in range of 13:
+    x is x * 0.7          # 100 → ~1: entropy climbs 0.10 → ~1.0
+report of x               # "diverging"  (rising information content)
+```
+
+Do not equate "value decreasing" with `improving`/`converging`. The
+observer measures information content, not magnitude; "more determined"
+means lower entropy, which for `|x| > 1` means moving *away* from 1.
+
+### `converged` vs `equilibrium` depends on the settling magnitude
+
+`converged` is `equilibrium` (a zero-mean, low-variance window) **plus**
+`entropy < h_low`. So a settled value reads `converged` only if it also
+lands in a low-entropy basin. At the default `h_low = 0.1` that basin is
+roughly `|value| ≲ 0.013` or `|value| ≳ 74` (entropy crosses `h_low` near
+those magnitudes; the band scales with `h_low`), plus the exact points
+`0` and `1`. A value that settles anywhere in the broad mid-range
+(≈ `0.013`–`74`) has `entropy ≥ h_low` and reads `equilibrium`
+**forever — it never becomes `converged`**:
+
+```
+# fast monotone residual r ← r * 0.1, report per step:
+#   r ~ 1e-2 .. 1e-5   report=stable
+#   r ~ 1e-6 .. 1e-13  report=equilibrium     <- "settled" but not "converged"
+#   r ≲ 1e-14          report=converged        (only once it reaches the basin)
+```
+
+A residual driven all the way to ~0 does eventually read `converged`; one
+that settles at a small-but-not-tiny value (say `1e-2`) drops straight into
+`equilibrium` and stays there. Since a solver usually cannot predict which
+basin its residual lands in, **`loop while not converged` can silently run
+to the iteration cap on an already-solved system.**
+
+### Robust convergence-loop recipe
+
+Two adjustments make a convergence loop correct across solver families
+(`dynamics/solve.eigs` uses this for Jacobi, Gauss-Seidel, power iteration,
+and PageRank):
+
+1. **Settled = `converged` OR `equilibrium`** — which one fires depends on
+   the settling magnitude, which you usually can't predict.
+2. **Debounce** — require the settled reading to hold for several
+   consecutive observations. An oscillatory or overshooting trajectory
+   shows a transient `equilibrium`/`converged` reading mid-swing (and the
+   partial-window `report` falls back to an instantaneous label), so a
+   naive "stop on the first settled reading" quits early with the wrong
+   answer.
+
+```eigenscript
+settled_for is 0
+need is 5                          # debounce: require 5 consecutive settled reads
+loop while settled_for < need:
+    # advance the system, then observe the residual `r` LAST, immediately
+    # before the test — a bare predicate reads the most recently assigned
+    # top-level value, so any intervening assignment repoints it.
+    r is next_residual of state
+    if converged or equilibrium:
+        settled_for is settled_for + 1
+    else:
+        settled_for is 0
+```
+
+Use the bare `loop while not converged` only when you know the value
+converges gently and monotonically into a low-entropy basin; otherwise
+reach for the recipe above.
+
 ## Cost
 
 The `dh_window` costs one `xcalloc(N * sizeof(double))` (80 bytes at N=10)
@@ -365,3 +476,7 @@ freelist path so recycled numbers do not leak the buffer.
 - `tests/test_windowed_converged.eigs` — lock-in tests for windowed
   `converged`
 - `tests/test_report_alignment.eigs` — report-predicate agreement
+- [`InauguralSystems/dynamics`](https://github.com/InauguralSystems/dynamics)
+  — the consumer that surfaced the "Convergence loops in practice" guidance
+  (`solve.eigs`, `physics.eigs`; findings F-DYN-2 / F-DYN-6 in its
+  `FINDINGS.md`)
