@@ -41,3 +41,30 @@ define pad_right(s, width, ch) as:
     loop while (len of s) < width:
         s is s + ch
     return s
+
+# ---- capitalize: uppercase the first character, leave the rest ----
+# capitalize of string -> string
+# Empty string returns "" (no error).
+define capitalize(s) as:
+    if (len of s) == 0:
+        return ""
+    first is str_upper of (substr of [s, 0, 1])
+    rest is substr of [s, 1, (len of s) - 1]
+    return first + rest
+
+# ---- replace_all: replace every occurrence of `find` with `replacement` ----
+# replace_all of [string, find, replacement] -> string
+# Non-overlapping, left-to-right. The replacement is not re-scanned, so a
+# replacement containing `find` does not loop. An empty `find` returns the
+# source unchanged (documented choice — avoids ambiguous between-char inserts).
+define replace_all(s, find, repl) as:
+    if (len of find) == 0:
+        return s
+    result is ""
+    rest is s
+    idx is index_of of [rest, find]
+    loop while idx >= 0:
+        result is result + (substr of [rest, 0, idx]) + repl
+        rest is substr of [rest, idx + (len of find), (len of rest) - (idx + (len of find))]
+        idx is index_of of [rest, find]
+    return result + rest

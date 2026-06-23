@@ -98,3 +98,99 @@ define drop(items, n) as:
     for i in range of (size - n):
         append of [result, items[n + i]]
     return result
+
+# ---- any: does any element satisfy the predicate? (short-circuit) ----
+# any of [list, fn] -> 1 if fn is truthy for some element, else 0
+# Empty list -> 0.
+define any(items, fn) as:
+    for i in range of (len of items):
+        if fn of items[i]:
+            return 1
+    return 0
+
+# ---- all: do all elements satisfy the predicate? (short-circuit) ----
+# all of [list, fn] -> 1 if fn is truthy for every element, else 0
+# Empty list -> 1 (vacuous truth).
+define all(items, fn) as:
+    for i in range of (len of items):
+        if not (fn of items[i]):
+            return 0
+    return 1
+
+# ---- find_index: index of first element where fn is truthy ----
+# find_index of [list, fn] -> number (index, or -1 if none match)
+# The -1 no-match return matches the `index_of` builtin's convention.
+define find_index(items, fn) as:
+    for i in range of (len of items):
+        if fn of items[i]:
+            return i
+    return -1
+
+# ---- partition: split into [passing, failing] in one pass ----
+# partition of [list, fn] -> [passing, failing]
+define partition(items, fn) as:
+    passing is []
+    failing is []
+    for i in range of (len of items):
+        if fn of items[i]:
+            append of [passing, items[i]]
+        else:
+            append of [failing, items[i]]
+    return [passing, failing]
+
+# ---- group_by: bucket elements by an extracted key ----
+# group_by of [list, key_fn] -> dict (key -> list of elements)
+# Dict keys are strings, so the extracted key is stringified (str of key);
+# group `[1,2,3,4]` by `x % 2` buckets under "0"/"1". Insertion order within
+# each bucket is preserved.
+define group_by(items, key_fn) as:
+    result is {}
+    for i in range of (len of items):
+        item is items[i]
+        k is str of (key_fn of item)
+        if (has_key of [result, k]) == 1:
+            bucket is result[k]
+            append of [bucket, item]
+        else:
+            dict_set of [result, k, [item]]
+    return result
+
+# ---- deep_flatten: fully flatten nested lists (recursive) ----
+# deep_flatten of list -> list
+# Unlike `flatten` (one level only), this recurses into every nested list.
+# Chosen over a depth-parameterized `flatten_depth` to keep `flatten`'s
+# semantics untouched and avoid a second depth argument — the common need
+# is "fully flat", which this expresses directly.
+define deep_flatten(items) as:
+    result is []
+    for i in range of (len of items):
+        item is items[i]
+        if (type of item) == "list":
+            sub is deep_flatten of item
+            for j in range of (len of sub):
+                append of [result, sub[j]]
+        else:
+            append of [result, item]
+    return result
+
+# ---- count_of: occurrences of a value (== equality) ----
+# count_of of [list, val] -> number
+define count_of(items, val) as:
+    c is 0
+    for i in range of (len of items):
+        if items[i] == val:
+            c is c + 1
+    return c
+
+# ---- frequencies: distribution of values as a dict ----
+# frequencies of list -> dict (str of value -> count)
+# Dict keys are strings, so values are stringified (str of value).
+define frequencies(items) as:
+    result is {}
+    for i in range of (len of items):
+        k is str of items[i]
+        if (has_key of [result, k]) == 1:
+            dict_set of [result, k, result[k] + 1]
+        else:
+            dict_set of [result, k, 1]
+    return result

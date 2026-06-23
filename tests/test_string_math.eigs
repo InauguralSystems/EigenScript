@@ -163,4 +163,20 @@ assert of [(lcm of [0, 5]) == 0, "LCM3 zero input"]
 assert of [(lcm of [7, 13]) == 91, "LCM4 coprime"]
 assert of [(lcm of [3, 3]) == 3, "LCM5 equal inputs"]
 
+# ---- capitalize (lib/string.eigs) ----
+assert of [(capitalize of "hello") == "Hello", "CP1 normal word"]
+assert of [(capitalize of "") == "", "CP2 empty string returns empty"]
+assert of [(capitalize of "World") == "World", "CP3 already capitalized"]
+assert of [(capitalize of "a") == "A", "CP4 single char"]
+
+# ---- replace_all (lib/string.eigs) ----
+assert of [(replace_all of ["abcabc", "b", "X"]) == "aXcaXc", "RA1 multiple matches"]
+assert of [(replace_all of ["hello world", "world", "there"]) == "hello there", "RA2 single match"]
+assert of [(replace_all of ["abc", "z", "X"]) == "abc", "RA3 no match unchanged"]
+assert of [(replace_all of ["", "x", "y"]) == "", "RA4 empty source"]
+# Replacement contains `find` — must not recursively re-replace or it loops forever.
+assert of [(replace_all of ["a", "a", "aa"]) == "aa", "RA5 replacement contains find, no re-replace"]
+# Empty `find` returns the source unchanged (documented behavior).
+assert of [(replace_all of ["abc", "", "X"]) == "abc", "RA6 empty find returns source unchanged"]
+
 print of "All string_math tests passed"
