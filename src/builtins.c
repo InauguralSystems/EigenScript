@@ -3449,10 +3449,15 @@ Value* builtin_sandbox_run(Value *arg) {
  * compiles a temporal query; a self-hosted compiler (whose output runs via
  * vm_run_bytecode) calls this to do the same. Returns the previous setting. */
 Value* builtin_record_history(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) {
+        runtime_error(0, "record_history requires a number flag (nonzero=on, 0=off), got %s",
+                      arg ? val_type_name(arg->type) : "null");
+        return make_null();
+    }
     int prev = g_trace_hist;
-    int on = (arg && arg->type == VAL_NUM) ? (arg->data.num != 0.0) : 0;
-    g_trace_hist = on ? 1 : 0;
-    g_trace_obs_hist = on ? 1 : 0;
+    int on = (arg->data.num != 0.0) ? 1 : 0;
+    g_trace_hist = on;
+    g_trace_obs_hist = on;
     return make_num((double)prev);
 }
 

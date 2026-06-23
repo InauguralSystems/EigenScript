@@ -56,6 +56,23 @@ assert_eq of [record_history of 1, 0, "record_history: was off -> returns 0"]
 assert_eq of [record_history of 1, 1, "record_history: now on -> returns 1"]
 record_history of 0
 
+# A non-numeric flag raises rather than silently coercing to disable (#255):
+# silently turning history OFF on a bad arg made prev/at return null with no
+# error, hard to trace back to this call. Strict, like the rest of the runtime.
+rh_null_caught is 0
+try:
+    record_history of null
+catch e:
+    rh_null_caught is 1
+assert of [rh_null_caught == 1, "record_history: null flag raises (no silent disable)"]
+rh_str_caught is 0
+try:
+    record_history of "yes"
+catch e:
+    rh_str_caught is 1
+assert of [rh_str_caught == 1, "record_history: string flag raises (no silent disable)"]
+record_history of 0
+
 # sandbox_run: safe code runs and returns {ok, result}. The arg is
 # [descriptor, max_iter] where descriptor is [code, constants].
 safe_desc is [[CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
