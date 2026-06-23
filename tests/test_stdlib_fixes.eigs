@@ -132,4 +132,69 @@ assert of [(drop of [[1, 2, 3], 0]) == [1, 2, 3], "SF46 drop zero"]
 assert of [(drop of [[1, 2], 5]) == [], "SF47 drop exceeds length"]
 assert of [(drop of [[], 3]) == [], "SF48 drop empty list"]
 
+# --- list.any / list.all ---
+assert of [(any of [[0, 0, 3, 0], (x) => x > 0]) == 1, "SF49 any matches mid"]
+assert of [(any of [[5, 0, 0], (x) => x > 0]) == 1, "SF50 any short-circuits on first match"]
+assert of [(any of [[0, 0, 0], (x) => x > 0]) == 0, "SF51 any none match"]
+assert of [(any of [[], (x) => x > 0]) == 0, "SF52 any empty list is false"]
+assert of [(all of [[1, 2, 3], (x) => x > 0]) == 1, "SF53 all match"]
+assert of [(all of [[1, -1, 3], (x) => x > 0]) == 0, "SF54 all short-circuits on first fail"]
+assert of [(all of [[], (x) => x > 0]) == 1, "SF55 all empty list is vacuously true"]
+
+# --- list.find_index ---
+assert of [(find_index of [[10, 20, 30, 40], (x) => x > 25]) == 2, "SF56 find_index middle"]
+assert of [(find_index of [[5, 1, 2], (x) => x > 4]) == 0, "SF57 find_index at start"]
+assert of [(find_index of [[1, 2, 9], (x) => x > 4]) == 2, "SF58 find_index at end"]
+assert of [(find_index of [[1, 2, 3], (x) => x > 100]) == -1, "SF59 find_index no match"]
+assert of [(find_index of [[], (x) => 1]) == -1, "SF60 find_index empty list"]
+
+# --- list.partition ---
+assert of [(partition of [[1, 2, 3, 4, 5], (x) => x % 2 == 0]) == [[2, 4], [1, 3, 5]], "SF61 partition mixed"]
+assert of [(partition of [[1, 1, 1], (x) => x > 0]) == [[1, 1, 1], []], "SF62 partition all pass"]
+assert of [(partition of [[1, 1, 1], (x) => x > 5]) == [[], [1, 1, 1]], "SF63 partition all fail"]
+assert of [(partition of [[], (x) => 1]) == [[], []], "SF64 partition empty"]
+
+# --- list.group_by ---
+gb is group_by of [[1, 2, 3, 4], (x) => x % 2]
+assert of [(gb["0"]) == [2, 4] and (gb["1"]) == [1, 3], "SF65 group_by scalar keys (stringified)"]
+gb_one is group_by of [[1, 2, 3], (x) => 0]
+assert of [(gb_one["0"]) == [1, 2, 3], "SF66 group_by all-same-key one bucket"]
+assert of [(len of (keys of (group_by of [[], (x) => x]))) == 0, "SF67 group_by empty list -> empty dict"]
+gitems is [{"tag": "a", "v": 1}, {"tag": "b", "v": 2}, {"tag": "a", "v": 3}]
+gb_d is group_by of [gitems, (it) => it["tag"]]
+assert of [(len of gb_d["a"]) == 2 and (len of gb_d["b"]) == 1, "SF68 group_by dict key (single + multi buckets)"]
+assert of [(gb_d["a"][0])["v"] == 1 and (gb_d["a"][1])["v"] == 3, "SF69 group_by preserves insertion order"]
+
+# --- list.deep_flatten ---
+assert of [(deep_flatten of [[1, [2, 3]], [4]]) == [1, 2, 3, 4], "SF70 deep_flatten nested"]
+assert of [(deep_flatten of [1, [2, [3, [4]]]]) == [1, 2, 3, 4], "SF71 deep_flatten deeply nested"]
+assert of [(deep_flatten of [1, 2, 3]) == [1, 2, 3], "SF72 deep_flatten already flat"]
+assert of [(deep_flatten of [1, [2, 3], 4]) == [1, 2, 3, 4], "SF73 deep_flatten mixed level"]
+assert of [(deep_flatten of [[1, 2], [3]]) == [1, 2, 3], "SF74 deep_flatten single level"]
+assert of [(deep_flatten of []) == [], "SF75 deep_flatten empty"]
+
+# --- list.count_of / list.frequencies ---
+assert of [(count_of of [[1, 2, 2, 3, 2, 1], 2]) == 3, "SF76 count_of multiple"]
+assert of [(count_of of [["a", "b", "a"], "a"]) == 2, "SF77 count_of strings"]
+assert of [(count_of of [[1, 2, 3], 9]) == 0, "SF78 count_of absent"]
+assert of [(count_of of [[], 5]) == 0, "SF79 count_of empty"]
+assert of [(count_of of [[7], 7]) == 1, "SF80 count_of single element"]
+fr is frequencies of [1, 2, 2, 3, 2, 1]
+assert of [fr["1"] == 2 and fr["2"] == 3 and fr["3"] == 1, "SF81 frequencies distribution"]
+assert of [(has_key of [fr, "9"]) == 0, "SF82 frequencies omits absent values"]
+assert of [(len of (keys of (frequencies of []))) == 0, "SF83 frequencies empty -> empty dict"]
+fr_mixed is frequencies of ["a", 1, "a", 1, 1]
+assert of [fr_mixed["a"] == 2 and fr_mixed["1"] == 3, "SF84 frequencies mixed types"]
+
+# --- math.argmax / math.argmin ---
+assert of [(argmax of [3, 1, 4, 1, 5, 9, 2, 6]) == 5, "SF85 argmax middle"]
+assert of [(argmax of [9, 1, 2]) == 0, "SF86 argmax at start"]
+assert of [(argmax of [1, 2, 9]) == 2, "SF87 argmax at end"]
+assert of [(argmax of [5, 5, 5]) == 0, "SF88 argmax ties keep first index"]
+assert of [(argmax of [7]) == 0, "SF89 argmax single element"]
+assert of [(argmax of []) == -1, "SF90 argmax empty -> -1"]
+assert of [(argmin of [3, 1, 4, 1, 5, 9, 2, 6]) == 1, "SF91 argmin first min on tie"]
+assert of [(argmin of [-2, -5, -1]) == 1, "SF92 argmin negatives"]
+assert of [(argmin of []) == -1, "SF93 argmin empty -> -1"]
+
 print of "All stdlib-fix tests passed"

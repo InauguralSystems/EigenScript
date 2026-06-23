@@ -107,3 +107,31 @@ define lcm(a, b) as:
     if b < 0:
         b is 0 - b
     return (a / (gcd of [a, b])) * b
+
+# ---- argmax: index of the largest element ----
+# argmax of list -> int (index of max, -1 if empty)
+# On ties returns the first (leftmost) index — strict > only updates.
+define argmax(items) as:
+    if (len of items) == 0:
+        return -1
+    best_idx is 0
+    best_val is items[0]
+    for i in range of (len of items):
+        if items[i] > best_val:
+            best_val is items[i]
+            best_idx is i
+    return best_idx
+
+# ---- argmin: index of the smallest element ----
+# argmin of list -> int (index of min, -1 if empty)
+# On ties returns the first (leftmost) index — strict < only updates.
+define argmin(items) as:
+    if (len of items) == 0:
+        return -1
+    best_idx is 0
+    best_val is items[0]
+    for i in range of (len of items):
+        if items[i] < best_val:
+            best_val is items[i]
+            best_idx is i
+    return best_idx

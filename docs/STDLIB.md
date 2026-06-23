@@ -56,6 +56,8 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `dot` | `dot of [list_a, list_b]` | Dot product |
 | `gcd` | `gcd of [a, b]` | Greatest common divisor |
 | `lcm` | `lcm of [a, b]` | Least common multiple |
+| `argmax` | `argmax of list` | Index of the largest element (first on ties, -1 if empty) |
+| `argmin` | `argmin of list` | Index of the smallest element (first on ties, -1 if empty) |
 
 ### lib/list.eigs — Functional List Operations
 
@@ -69,6 +71,14 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `flatten` | `flatten of list` | Flatten one level of nesting |
 | `take` | `take of [list, n]` | First n elements (clamps to length) |
 | `drop` | `drop of [list, n]` | All but the first n elements |
+| `any` | `any of [list, fn]` | 1 if fn is truthy for some element, else 0 (empty: 0) |
+| `all` | `all of [list, fn]` | 1 if fn is truthy for every element, else 0 (empty: 1) |
+| `find_index` | `find_index of [list, fn]` | Index of first element where fn is truthy, or -1 |
+| `partition` | `partition of [list, fn]` | Split into `[passing, failing]` in one pass |
+| `group_by` | `group_by of [list, key_fn]` | Bucket elements into a dict by stringified key |
+| `deep_flatten` | `deep_flatten of list` | Fully flatten nested lists (recursive) |
+| `count_of` | `count_of of [list, val]` | Count occurrences of a value (`==` equality) |
+| `frequencies` | `frequencies of list` | Distribution of values as a dict (stringified keys) |
 
 Higher-order functions take EigenScript functions as arguments:
 
@@ -97,6 +107,8 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 | `repeat` | `repeat of [string, count]` | Repeat string n times |
 | `pad_left` | `pad_left of [string, width, char]` | Left-pad to width |
 | `pad_right` | `pad_right of [string, width, char]` | Right-pad to width |
+| `capitalize` | `capitalize of string` | Uppercase the first character, leave the rest |
+| `replace_all` | `replace_all of [string, find, replacement]` | Replace every occurrence of `find` |
 
 ### lib/text_builder.eigs — Buffered Text Assembly
 

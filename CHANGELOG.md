@@ -4,6 +4,23 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Stdlib gap-fill across `lib/list.eigs`, `lib/string.eigs`, and
+  `lib/math.eigs` — all pure EigenScript, no C:
+  - `list`: `any`/`all` (short-circuit predicate checks), `find_index`
+    (first index where a predicate holds, `-1` if none), `partition`
+    (`[passing, failing]` in one pass), `group_by` (bucket into a dict by a
+    stringified key), `deep_flatten` (full recursive flatten),
+    `count_of`/`frequencies` (occurrence count / full distribution dict).
+  - `string`: `capitalize` (uppercase the first character),
+    `replace_all` (replace every occurrence; non-overlapping, no
+    re-replacement of inserted text; empty `find` returns the source
+    unchanged).
+  - `math`: `argmax`/`argmin` (index of the largest/smallest element,
+    first index on ties, `-1` if empty).
+  - Closes the stdlib good-first-issue set (#181, #192–#199).
+
 ### Fixed
 
 - `record_history` now raises on a non-numeric flag instead of silently
