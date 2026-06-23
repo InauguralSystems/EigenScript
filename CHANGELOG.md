@@ -4,6 +4,17 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `record_history` now raises on a non-numeric flag instead of silently
+  coercing it to `0` (disable). Previously `record_history of null` (or a
+  string) turned per-assignment history recording **off** — the opposite of
+  the function's purpose — which then made `prev of x` and the `at`-temporal
+  queries return `null` with no error, hard to trace back to the call. It also
+  overrode the auto-enable the compiler performs for a temporal query. Now a
+  non-number flag errors, matching the strict-input direction of #245/#246.
+  (#255, found by the `dynamics` consumer as F-DYN-1.)
+
 ## [0.16.3] — 2026-06-19
 
 Makes observer-based loop-halting opt-in. An observed `loop while` no longer
