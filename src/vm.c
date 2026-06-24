@@ -3852,6 +3852,28 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             }
             break;
         }
+        case 3: case 4: case 5: {
+            /* #262 Phase-3 A: where/why/how on a bound name read the binding's
+             * SLOT trajectory (entropy / dH / 1 - entropy/last_entropy). Falls
+             * back to the Value's observer fields if the slot isn't populated
+             * yet, so the answer matches the value path. */
+            int oidx = -1, odepth = 0;
+            Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+            if (oe && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
+                const ObserverSlot *s = &oe->obs[oidx];
+                if (kind == 3)      result = make_num(s->entropy);
+                else if (kind == 4) result = make_num(s->dH);
+                else                result = make_num(s->last_entropy > 0
+                                            ? 1.0 - s->entropy / s->last_entropy : 1.0);
+            } else {
+                if (v) observer_ensure_fresh(v);
+                if (kind == 3)      result = make_num(v ? v->entropy : 0);
+                else if (kind == 4) result = make_num(v ? v->dH : 0);
+                else                result = make_num((v && v->last_entropy > 0)
+                                            ? 1.0 - v->entropy / v->last_entropy : 1.0);
+            }
+            break;
+        }
         }
         val_decref(v);
         vm_push(result);

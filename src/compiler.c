@@ -1858,8 +1858,18 @@ static void compile_node(Compiler *c, ASTNode *node) {
         }
 
         compile_node(c, expr);
-        if ((kind == 1 || kind == 2 || kind == 6) && expr->type == AST_IDENT) {
-            /* who/when/prev with known binding name: emit name index */
+        /* #262 Phase-3 A: where/why/how (3/4/5) on a bare ident also go named,
+         * so they read the binding's slot — but only under the compile-time
+         * flag, so flag-off bytecode is byte-identical. */
+        int named_obs = 0;
+        if (kind >= 3 && kind <= 5 && expr->type == AST_IDENT) {
+            static int io_flag = -1;
+            if (io_flag < 0) io_flag = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
+            named_obs = io_flag;
+        }
+        if (((kind == 1 || kind == 2 || kind == 6) || named_obs) && expr->type == AST_IDENT) {
+            /* who/when/prev (always) + where/why/how (flagged) with known
+             * binding name: emit name index */
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED, (uint16_t)kind, (uint16_t)name_idx, node->line);
         } else {
