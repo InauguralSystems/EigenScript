@@ -270,6 +270,13 @@ void observer_slot_reset(struct Env *e);
 void vm_obs_slot_dropped(struct Env *e);
 int  observer_slot_converged(const struct ObserverSlot *s);
 int  observer_slot_equilibrium(const struct ObserverSlot *s);
+int  observer_slot_improving(const struct ObserverSlot *s);
+int  observer_slot_diverging(const struct ObserverSlot *s);
+int  observer_slot_oscillating(const struct ObserverSlot *s);
+int  observer_slot_stable(const struct ObserverSlot *s);
+/* Classify a slot into a report band (mirrors builtin_report's priority).
+ * Returns a static string; NULL if the slot is unusable. */
+const char *observer_slot_report(const struct ObserverSlot *s);
 
 /* Returns the dH at offset back from most recent (0 = most recent).
  * Caller must ensure offset < observer_window_size(v). */
@@ -460,6 +467,11 @@ struct EigsThread {
      * suppresses assign-count bumps so observer interrogatives don't
      * count instrumentation traffic). */
     struct Value *last_observer;
+    /* #262 Phase-2: last observed binding as (env, slot) for slot-keyed
+     * observer reads. Per-thread, parallel to last_observer. idx < 0 = none.
+     * Behind EIGS_OBS_SHADOW. */
+    struct Env   *last_obs_slot_env;
+    int           last_obs_slot_idx;
     int           unobserved_depth;
     /* Dynamic caller scope for env-aware builtins (env_get/env_set
      * polymorphic dispatch needs to know "who called me"). */
@@ -540,6 +552,8 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
 #define g_last_observer     (eigs_current->last_observer)
+#define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
+#define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
 #define g_builtin_call_env  (eigs_current->builtin_call_env)
 #define g_vm                  (*eigs_current->vm)

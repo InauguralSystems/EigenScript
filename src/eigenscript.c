@@ -519,6 +519,75 @@ int observer_slot_equilibrium(const ObserverSlot *s) {
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
+/* Slot mirrors of the remaining four windowed predicates — identical logic to
+ * the observer_*(Value*) versions above, reading the slot's window/entropy. */
+int observer_slot_improving(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
+    if (cnt < 3) return 0;
+    double sum = 0.0; int down = 0;
+    for (size_t i = 0; i < cnt; i++) {
+        double w = observer_slot_window_get(s, i);
+        sum += w;
+        if (w < -g_obs_dh_small) down++;
+    }
+    return (sum < 0.0 && (size_t)(down * 5) >= cnt * 3) ? 1 : 0;
+}
+
+int observer_slot_diverging(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
+    if (cnt < 3) return 0;
+    double sum = 0.0; int up = 0;
+    for (size_t i = 0; i < cnt; i++) {
+        double w = observer_slot_window_get(s, i);
+        sum += w;
+        if (w > g_obs_dh_small) up++;
+    }
+    return (sum > 0.0 && (size_t)(up * 5) >= cnt * 3) ? 1 : 0;
+}
+
+int observer_slot_oscillating(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
+    if (cnt < 3) return 0;
+    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    int flips = 0;
+    for (size_t i = 0; i + 1 < cnt; i++) {
+        double a = observer_slot_window_get(s, i);
+        double b = observer_slot_window_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) flips++;
+    }
+    return (flips >= FLIPS) ? 1 : 0;
+}
+
+int observer_slot_stable(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
+    if (cnt < OBSERVER_WINDOW_N) return 0;
+    if (s->entropy < g_obs_h_low) return 0;
+    for (size_t i = 0; i < cnt; i++)
+        if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_small) return 0;
+    for (size_t i = 0; i + 1 < cnt; i++) {
+        double a = observer_slot_window_get(s, i);
+        double b = observer_slot_window_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
+    }
+    return 1;
+}
+
+/* Slot mirror of builtin_report — same priority order and partial-window
+ * fallback, reading the slot trajectory instead of a Value's. */
+const char *observer_slot_report(const ObserverSlot *s) {
+    if (!s) return NULL;
+    if (observer_slot_oscillating(s)) return "oscillating";
+    if (observer_slot_diverging(s))   return "diverging";
+    if (observer_slot_improving(s))   return "improving";
+    if (observer_slot_converged(s))   return "converged";
+    if (observer_slot_equilibrium(s)) return "equilibrium";
+    if (observer_slot_stable(s))      return "stable";
+    /* Partial-window best-effort label (mirrors builtin_report's tail). */
+    if (fabs(s->dH) < g_obs_dh_zero) return "equilibrium";
+    if (fabs(s->dH) < g_obs_dh_small && s->entropy >= g_obs_h_low) return "stable";
+    return "stable";
+}
+
 void observer_ensure_fresh(Value *v) {
     if (v && v->dirty) update_observer(v);
 }
