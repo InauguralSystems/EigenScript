@@ -3664,9 +3664,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 }
                 v->dirty = 1;
                 g_last_observer = v;
-                /* #262 Phase-1: a name-based observe is not slot-shadowed —
-                 * invalidate the slot override so the next predicate uses the
-                 * authoritative value path. */
+                /* Name-based observe is not slot-shadowed (yet) — invalidate
+                 * the slot override so the next predicate uses the value path.
+                 * Phase-3 measurement showed shadowing here works for every
+                 * predicate EXCEPT a 1-count first-assignment lag (the binding
+                 * is created by the upcoming SET_NAME and doesn't exist yet);
+                 * fixing that needs first-assignment coverage (post-set observe
+                 * or slot-promoting interrogated module vars), tracked for
+                 * Phase 3. */
                 if (obs_shadow_on()) g_last_obs_slot_idx = -1;
             }
         }
