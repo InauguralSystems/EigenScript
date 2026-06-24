@@ -399,11 +399,16 @@ means lower entropy, which for `|x| > 1` means moving *away* from 1.
 
 ### A fast residual settles at `equilibrium`, not `converged`
 
-`converged` is the strict band: the *whole* window must be simultaneously
-low-motion (every `|dH| < dh_zero`) **and** low-entropy. A residual that
-falls steeply does not satisfy it — its early steps carry high entropy and
-large `dH`, and by the time those age out of the window the loop has long
-since read `equilibrium` (zero-mean motion, entropy irrelevant). Real
+`converged` is the strict band — on top of `equilibrium`'s zero-mean motion
+it requires every `|dH| < dh_zero` *and* low entropy across the whole
+window. A value **held** at a low-entropy constant from the start reaches
+it (a value pinned at `0.0` for ten observations reports `converged`). But
+a residual that *decays* into rest does **not**: empirically it reads
+`equilibrium` and stays there — the real Gauss-Seidel residual below holds
+`equilibrium` even once `change == 0`, verified out to iteration 25, long
+after its window has gone quiet. The settling *history*, not just the final
+value, decides `converged` vs `equilibrium` — so for an iterative residual,
+do not wait for `converged`; treat `equilibrium` as settled too. Real
 Gauss-Seidel on a 3×3 system `Ax = b` (`dynamics/solve.eigs`):
 
 ```
@@ -418,8 +423,8 @@ Gauss-Seidel on a 3×3 system `Ax = b` (`dynamics/solve.eigs`):
 ```
 
 So `loop while not converged` here **never terminates** — it runs to the
-iteration cap on a system solved by iteration 8. The fix is not to wait for
-`converged`: treat `equilibrium` as settled too.
+iteration cap on a system solved by iteration 8 (the recipe below fixes
+this).
 
 ### An oscillatory residual flickers settled mid-swing
 
@@ -460,8 +465,8 @@ it is 0
 loop while hold < 3:                # require the settled reading to hold 3×
     # advance the system, then assign the residual you test (`change`) LAST,
     # immediately before `report` — a bare predicate / report reads the most
-    # recently assigned top-level value, so an intervening assignment repoints
-    # it (see "the last-observed alias").
+    # recently assigned top-level value (see Inputs: `g_last_observer`), so an
+    # intervening assignment repoints it.
     change is next_residual of state
     status is report of change
     if (settled of status) == 1:
