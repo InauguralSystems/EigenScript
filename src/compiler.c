@@ -135,6 +135,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
+    case OP_OBSERVE_NAME_POST:   /* #262 Phase-3: peeks TOS, no stack change */
         return 0;
     /* Jumps: conditional pops 1, unconditional 0, peek 0 */
     case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
@@ -1012,6 +1013,20 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
 
     emit_op_u16(c, obs_op, obs_arg, line);
     emit_op_u16(c, set_op, set_arg, line);
+
+    /* #262 Phase-3 (observe-at-SET): for a NAME binding, the OBSERVE_ASSIGN
+     * above ran before the binding existed, so its slot couldn't be observed
+     * on the first assignment. Re-observe AFTER the SET, when the binding is
+     * live, fixing the first-assignment lag. Only under the compile-time
+     * EIGS_OBS_SHADOW flag, so flag-off bytecode is byte-identical. Slot
+     * bindings (OBSERVE_ASSIGN_LOCAL) already observe from assignment 1 — their
+     * slots are pre-allocated — so they need no post-observe. */
+    if (obs_op == OP_OBSERVE_ASSIGN) {
+        static int obs_post_flag = -1;
+        if (obs_post_flag < 0) obs_post_flag = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
+        if (obs_post_flag)
+            emit_op_u16(c, OP_OBSERVE_NAME_POST, obs_arg, line);
+    }
 }
 
 /* ---- AST compilation ---- */

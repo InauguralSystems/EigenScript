@@ -109,6 +109,10 @@ typedef enum {
     OP_OBSERVE_ASSIGN_LOCAL, /* [slot:16] observer update; prev value lives in fn_env slot */
     OP_INTERROGATE,     /* [kind:8] pop target, push query result */
     OP_PREDICATE,       /* [kind:8] push predicate result */
+    OP_OBSERVE_NAME_POST,/* [name_idx:16] #262 Phase-3: slot-observe a name binding
+                          * AFTER its SET (binding now exists), fixing the
+                          * first-assignment lag. Emitted only under the
+                          * compile-time EIGS_OBS_SHADOW flag; peeks TOS. */
     OP_UNOBSERVED_BEGIN,/* increment g_unobserved_depth */
     OP_UNOBSERVED_END,  /* decrement g_unobserved_depth */
     OP_LOOP_STALL_CHECK,/* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */

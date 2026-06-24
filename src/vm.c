@@ -1895,6 +1895,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_OBSERVE_ASSIGN] = &&lbl_OBSERVE_ASSIGN,
         [OP_OBSERVE_ASSIGN_LOCAL] = &&lbl_OBSERVE_ASSIGN_LOCAL,
         [OP_INTERROGATE] = &&lbl_INTERROGATE, [OP_PREDICATE] = &&lbl_PREDICATE,
+        [OP_OBSERVE_NAME_POST] = &&lbl_OBSERVE_NAME_POST,
         [OP_UNOBSERVED_BEGIN] = &&lbl_UNOBSERVED_BEGIN,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
         [OP_LOOP_STALL_CHECK] = &&lbl_LOOP_STALL_CHECK,
@@ -3740,6 +3741,31 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     observer_slot_update(frame->fn_env, (int)slot, v);
                     g_last_obs_slot_env = frame->fn_env;
                     g_last_obs_slot_idx = (int)slot;
+                }
+            }
+        }
+        DISPATCH();
+    }
+
+    CASE(OBSERVE_NAME_POST): {
+        /* #262 Phase-3 observe-at-SET: the binding now exists (its SET ran),
+         * so resolve its owning env+slot and observe the slot from the value
+         * still on TOS (SET peeked, didn't pop). Fixes the first-assignment
+         * lag for name bindings. Emitted only under the compile-time flag. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        if (obs_shadow_on() && g_unobserved_depth == 0) {
+            EigsSlot s = g_vm.stack[g_vm.sp - 1];
+            Value *v = slot_is_ptr(s) ? slot_as_ptr(s) : NULL;
+            if (v) {
+                const char *name = chunk->const_interns[name_idx];
+                uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+                if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+                int oidx = -1, odepth = 0;
+                Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+                if (oe && oidx >= 0) {
+                    observer_slot_update(oe, oidx, v);
+                    g_last_obs_slot_env = oe;
+                    g_last_obs_slot_idx = oidx;
                 }
             }
         }
