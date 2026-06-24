@@ -1042,6 +1042,49 @@ void jit_helper_observe_assign_local(int slot) {
     }
 }
 
+/* #262 Phase-3 C.2: JIT helpers for the slot-keyed observer ops, so observer
+ * loops still JIT-compile under the default slot model. Mirror the interpreter
+ * CASE bodies. Stack contract matches the OBSERVE_ASSIGN helpers: the emitter
+ * syncs %ecx->g_vm.sp before the call and reloads after, so a helper that
+ * vm_push()es a result is reflected in the reloaded sp cache. */
+
+/* OP_REPORT_SLOT [slot] — pushes the band string for a local binding. A local
+ * slot always exists in the frame, so no chunk and no error path. */
+void jit_helper_report_slot(int slot) {
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    Env *e = frame->fn_env;
+    Value *result;
+    if (obs_shadow_on() && e && slot < e->obs_cap && e->obs[slot].used) {
+        result = make_str(observer_slot_report(&e->obs[slot]));
+    } else {
+        Value *v = (e && slot < e->count) ? slot_to_value(e->values[slot]) : NULL;
+        if (v) observer_ensure_fresh(v);
+        result = builtin_report(v);
+        if (v) val_decref(v);
+    }
+    vm_push(result);
+}
+
+/* OP_OBSERVE_NAME_POST [name_idx] — observe a name binding's slot from TOS
+ * after its SET. Peeks TOS; no stack change. Mirrors CASE(OBSERVE_NAME_POST). */
+void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
+    if (g_unobserved_depth != 0 || !obs_shadow_on()) return;
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    EigsSlot s = g_vm.stack[g_vm.sp - 1];
+    Value *v = slot_is_ptr(s) ? slot_as_ptr(s) : NULL;
+    if (!v) return;
+    const char *name = chunk->const_interns[name_idx];
+    uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+    if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+    int oidx = -1, odepth = 0;
+    Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+    if (oe && oidx >= 0) {
+        observer_slot_update(oe, oidx, v);
+        g_last_obs_slot_env = oe;
+        g_last_obs_slot_idx = oidx;
+    }
+}
+
 /* JIT Stage 4q-a: out-of-line helper for OP_ITER_NEXT.
  *
  * Mirrors CASE(ITER_NEXT) in vm_run, but without ip mutation — returns

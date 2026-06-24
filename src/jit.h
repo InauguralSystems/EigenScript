@@ -206,6 +206,10 @@ void jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx);
  * frame->fn_env->values[slot] directly. */
 void jit_helper_observe_assign(struct EigsChunk *chunk, int name_idx);
 void jit_helper_observe_assign_local(int slot);
+/* #262 Phase-3 C.2: slot-keyed observer ops. report_slot pushes a result;
+ * observe_name_post peeks TOS (no stack change). */
+void jit_helper_report_slot(int slot);
+void jit_helper_observe_name_post(struct EigsChunk *chunk, int name_idx);
 
 /* Stage 4q-a: out-of-line helper for OP_ITER_NEXT. Returns 1 if the
  * iterator at g_vm.stack[sp-1] is exhausted (no element pushed), 0 if

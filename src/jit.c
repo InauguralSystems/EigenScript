@@ -750,6 +750,23 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             /* #211/#231: OSR bail removed — see OP_OBSERVE_ASSIGN above. */
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
+        } else if (op == OP_REPORT_SLOT) {
+            /* #262 C.2: 3-byte [op][slot:16]. Helper reads frame->fn_env and
+             * pushes a result — emitter reloads %ecx from g_vm.sp after the
+             * call. No chunk (local slot always exists), so no has_bail_op. */
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 3; ops++; non_line_ops++;
+        } else if (op == OP_OBSERVE_NAME_POST) {
+            /* #262 C.2: 3-byte [op][name_idx:16]. Helper needs chunk->const_interns;
+             * has_bail_op forces %r14=chunk. Peeks TOS, no stack change. */
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            uint16_t np_idx = (uint16_t)(chunk->code[i + 1] |
+                                         ((uint16_t)chunk->code[i + 2] << 8));
+            if (!chunk->const_interns || np_idx >= chunk->const_count) {
+                *stop_op = op; *stop_offset = i; break;
+            }
+            i += 3; ops++; non_line_ops++;
+            *has_bail_op = 1;
         } else if (op == OP_UNOBSERVED_BEGIN || op == OP_UNOBSERVED_END) {
             /* Stage 4q-e: 1-byte ops, just inc/dec a TLS counter. Emitted
              * inline as 9-byte FS-prefixed inc/dec dword [disp32] — no
@@ -2853,6 +2870,35 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_imm32_edi(w, (uint32_t)slot);
             w = emit_push_rcx(w);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_observe_assign_local);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 3;
+        } else if (op == OP_REPORT_SLOT) {
+            /* #262 C.2: jit_helper_report_slot(slot) — pushes the band string.
+             * Sync sp before; the helper vm_push()es, so reload %ecx after to
+             * pick up the new sp. slot in %edi; no chunk. */
+            uint16_t slot = (uint16_t)(chunk->code[i + 1] |
+                                       ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_mov_imm32_edi(w, (uint32_t)slot);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_report_slot);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 3;
+        } else if (op == OP_OBSERVE_NAME_POST) {
+            /* #262 C.2: jit_helper_observe_name_post(chunk, name_idx). chunk via
+             * %r14 (has_bail_op); name_idx in %esi. Peeks TOS, no stack change;
+             * same sp sync/reload as OBSERVE_ASSIGN. */
+            uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
+                                           ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_mov_r14_rdi(w);
+            w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_observe_name_post);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
