@@ -949,15 +949,21 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
             v->dH = prev->dH;
             v->prev_dH = prev->prev_dH;
             /* Move ring-buffer ownership: prev is about to be freed
-             * (or at least lose its observer alias). Free v's existing
-             * buffer if any, then transfer prev's. */
-            if (v->dh_window) free(v->dh_window);
-            v->dh_window = prev->dh_window;
-            v->dh_window_head = prev->dh_window_head;
-            v->dh_window_count = prev->dh_window_count;
-            prev->dh_window = NULL;
-            prev->dh_window_head = 0;
-            prev->dh_window_count = 0;
+             * (or at least lose its observer alias). Transfer prev's
+             * buffer to v — but only if prev actually holds one. If prev
+             * has no window (e.g. an alias chain already migrated it onto
+             * v earlier in the same statement), do NOT free v's freshly
+             * received window and replace it with nothing — that resets
+             * the window every iteration so it never fills (issue #260). */
+            if (prev->dh_window) {
+                if (v->dh_window) free(v->dh_window);
+                v->dh_window = prev->dh_window;
+                v->dh_window_head = prev->dh_window_head;
+                v->dh_window_count = prev->dh_window_count;
+                prev->dh_window = NULL;
+                prev->dh_window_head = 0;
+                prev->dh_window_count = 0;
+            }
         }
         v->dirty = 1;
         g_last_observer = v;
@@ -989,13 +995,17 @@ void jit_helper_observe_assign_local(int slot) {
             v->obs_age = prev->obs_age;
             v->dH = prev->dH;
             v->prev_dH = prev->prev_dH;
-            if (v->dh_window) free(v->dh_window);
-            v->dh_window = prev->dh_window;
-            v->dh_window_head = prev->dh_window_head;
-            v->dh_window_count = prev->dh_window_count;
-            prev->dh_window = NULL;
-            prev->dh_window_head = 0;
-            prev->dh_window_count = 0;
+            /* Transfer prev's ring buffer to v only if prev holds one — see
+             * the guard rationale above / issue #260. */
+            if (prev->dh_window) {
+                if (v->dh_window) free(v->dh_window);
+                v->dh_window = prev->dh_window;
+                v->dh_window_head = prev->dh_window_head;
+                v->dh_window_count = prev->dh_window_count;
+                prev->dh_window = NULL;
+                prev->dh_window_head = 0;
+                prev->dh_window_count = 0;
+            }
         }
         v->dirty = 1;
         g_last_observer = v;
@@ -3608,13 +3618,26 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     v->obs_age = prev->obs_age;
                     v->dH = prev->dH;
                     v->prev_dH = prev->prev_dH;
-                    if (v->dh_window) free(v->dh_window);
-                    v->dh_window = prev->dh_window;
-                    v->dh_window_head = prev->dh_window_head;
-                    v->dh_window_count = prev->dh_window_count;
-                    prev->dh_window = NULL;
-                    prev->dh_window_head = 0;
-                    prev->dh_window_count = 0;
+                    /* Transfer the dH ring buffer from the old binding to the
+                     * new value — but only if `prev` actually holds one. When
+                     * an alias chain assigns the same value twice in a
+                     * statement (e.g. `nxt is b * 0.1` then `b is nxt`, where
+                     * `b` and `nxt` share a Value), the first migration has
+                     * already moved the window onto `v` and emptied `prev`;
+                     * a second migration with `prev->dh_window == NULL` must
+                     * NOT free `v`'s freshly-received window and replace it
+                     * with nothing — that resets the window every iteration so
+                     * it never fills and the predicates fall back to the
+                     * partial-window label (issue #260). */
+                    if (prev->dh_window) {
+                        if (v->dh_window) free(v->dh_window);
+                        v->dh_window = prev->dh_window;
+                        v->dh_window_head = prev->dh_window_head;
+                        v->dh_window_count = prev->dh_window_count;
+                        prev->dh_window = NULL;
+                        prev->dh_window_head = 0;
+                        prev->dh_window_count = 0;
+                    }
                 }
                 v->dirty = 1;
                 g_last_observer = v;
@@ -3655,13 +3678,26 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     v->obs_age = prev->obs_age;
                     v->dH = prev->dH;
                     v->prev_dH = prev->prev_dH;
-                    if (v->dh_window) free(v->dh_window);
-                    v->dh_window = prev->dh_window;
-                    v->dh_window_head = prev->dh_window_head;
-                    v->dh_window_count = prev->dh_window_count;
-                    prev->dh_window = NULL;
-                    prev->dh_window_head = 0;
-                    prev->dh_window_count = 0;
+                    /* Transfer the dH ring buffer from the old binding to the
+                     * new value — but only if `prev` actually holds one. When
+                     * an alias chain assigns the same value twice in a
+                     * statement (e.g. `nxt is b * 0.1` then `b is nxt`, where
+                     * `b` and `nxt` share a Value), the first migration has
+                     * already moved the window onto `v` and emptied `prev`;
+                     * a second migration with `prev->dh_window == NULL` must
+                     * NOT free `v`'s freshly-received window and replace it
+                     * with nothing — that resets the window every iteration so
+                     * it never fills and the predicates fall back to the
+                     * partial-window label (issue #260). */
+                    if (prev->dh_window) {
+                        if (v->dh_window) free(v->dh_window);
+                        v->dh_window = prev->dh_window;
+                        v->dh_window_head = prev->dh_window_head;
+                        v->dh_window_count = prev->dh_window_count;
+                        prev->dh_window = NULL;
+                        prev->dh_window_head = 0;
+                        prev->dh_window_count = 0;
+                    }
                 }
                 v->dirty = 1;
                 g_last_observer = v;

@@ -69,4 +69,19 @@ r4 is [converged, equilibrium]
 print of f"converged={r4[0]} equilibrium={r4[1]}"
 
 print of ""
+print of "--- WC5: rebind-from-temp loop converges like self-reference (issue #260) ---"
+# A convergence loop that assigns the iterate via a temp (`nx is w*0.1; w is nx`)
+# must accumulate the observer window exactly like in-place `w is w*0.1`. Before
+# the #260 fix the alias-chain double-migration freed the freshly-received window
+# every iteration, so it never filled and `converged` never fired (read back as
+# `equilibrium`). Read both predicates in one expression so the bare-predicate
+# last-observer alias stays on `w`.
+w is 1.0
+for iw in range of 21:
+    nx is w * 0.1
+    w is nx
+r5 is [converged, equilibrium]
+print of f"converged={r5[0]} equilibrium={r5[1]}"
+
+print of ""
 print of "=== WINDOWED CONVERGED COMPLETE ==="
