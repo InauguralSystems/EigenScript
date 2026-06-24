@@ -23,6 +23,7 @@ define gradient_descent(f, x0, lr, max_iter) as:
     best_loss is f of x
     history is []
     iters is 0
+    hold is 0          # debounce: require a settled reading to HOLD consecutively
 
     for i in range of max_iter:
         iters is iters + 1
@@ -38,15 +39,25 @@ define gradient_descent(f, x0, lr, max_iter) as:
             best_loss is loss
             best_x is x
 
+        # Settled = converged OR equilibrium, debounced: a single settled
+        # reading is not enough (the very first observation reads equilibrium —
+        # dH is 0 before the loss has a trajectory — and the loss can be
+        # momentarily flat mid-descent). Require it to hold for 3 consecutive
+        # iterations; any motion resets the count. See docs/PREDICATES.md
+        # "Convergence loops in practice".
         status is report of loss
         if status == "oscillating":
             lr is lr * 0.7
+            hold is 0
         elif status == "improving":
             lr is lr * 1.05
-        elif status == "converged":
-            break
-        elif status == "equilibrium":
-            break
+            hold is 0
+        elif status == "converged" or status == "equilibrium":
+            hold is hold + 1
+            if hold >= 3:
+                break
+        else:
+            hold is 0
 
     return {"x": best_x, "loss": best_loss, "iterations": iters, "history": history, "final_status": report of best_loss}
 
@@ -58,6 +69,7 @@ define gradient_descent_multi(f, x0, lr, max_iter) as:
 
     loss is f of x
     iters is 0
+    hold is 0          # debounce: require a settled reading to HOLD consecutively
 
     for iter_i in range of max_iter:
         iters is iters + 1
@@ -83,15 +95,20 @@ define gradient_descent_multi(f, x0, lr, max_iter) as:
 
         loss is f of x
 
+        # Settled = converged OR equilibrium, debounced (see gradient_descent).
         status is report of loss
         if status == "oscillating":
             lr is lr * 0.7
+            hold is 0
         elif status == "improving":
             lr is lr * 1.05
-        elif status == "converged":
-            break
-        elif status == "equilibrium":
-            break
+            hold is 0
+        elif status == "converged" or status == "equilibrium":
+            hold is hold + 1
+            if hold >= 3:
+                break
+        else:
+            hold is 0
 
     return {"x": x, "loss": loss, "iterations": iters, "status": report of loss}
 
