@@ -32,6 +32,29 @@ static inline int obs_shadow_on(void) {
     }
     return g_obs_shadow;
 }
+
+/* #262 Phase-3 D: read the last-observed trajectory (dH, entropy) for the
+ * observer loop-stall check. Prefers the slot model (the default); falls back
+ * to the global last-observer Value when the slot isn't populated (e.g. a
+ * module-scope observe not yet routed to a slot) or the value path is active
+ * (EIGS_OBS_SHADOW=0). Shared by the interpreter CASE(LOOP_STALL_CHECK) and
+ * jit_helper_loop_stall_check so the two can never disagree on loop
+ * classification (the same lockstep invariant the opcode encoding enforces).
+ * Returns 1 if (*dH, *ent) were filled. */
+static inline int obs_stall_trajectory(double *dH, double *ent) {
+    if (obs_shadow_on() && g_last_obs_slot_env &&
+        g_last_obs_slot_idx >= 0 &&
+        g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap &&
+        g_last_obs_slot_env->obs[g_last_obs_slot_idx].used) {
+        const ObserverSlot *s = &g_last_obs_slot_env->obs[g_last_obs_slot_idx];
+        *dH = s->dH; *ent = s->entropy;
+        return 1;
+    }
+    Value *obs = g_last_observer;
+    if (obs) observer_ensure_fresh(obs);
+    if (obs) { *dH = obs->dH; *ent = obs->entropy; return 1; }
+    return 0;
+}
 void vm_obs_slot_dropped(Env *e) {
     if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
 }
@@ -1233,9 +1256,9 @@ int jit_helper_loop_stall_check(void) {
     g_loop_iterations++;
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
-        Value *obs = g_last_observer;
-        if (obs) observer_ensure_fresh(obs);
-        if (obs && fabs(obs->dH) < g_obs_dh_zero && obs->entropy >= g_obs_h_low) {
+        double dH, ent;
+        if (obs_stall_trajectory(&dH, &ent)
+            && fabs(dH) < g_obs_dh_zero && ent >= g_obs_h_low) {
             g_loop_stall_count++;
             if (g_loop_stall_count >= 100) {
                 g_loop_exit_reason = "stalled";
@@ -4212,9 +4235,9 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         g_loop_iterations++;
         int should_exit = 0;
         if (g_unobserved_depth == 0) {
-            Value *obs = g_last_observer;
-            if (obs) observer_ensure_fresh(obs);
-            if (obs && fabs(obs->dH) < g_obs_dh_zero && obs->entropy >= g_obs_h_low) {
+            double dH, ent;
+            if (obs_stall_trajectory(&dH, &ent)
+                && fabs(dH) < g_obs_dh_zero && ent >= g_obs_h_low) {
                 g_loop_stall_count++;
                 if (g_loop_stall_count >= 100) {
                     g_loop_exit_reason = "stalled";
