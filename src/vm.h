@@ -154,6 +154,8 @@ typedef enum {
     OP_OBSERVE_NAME_POST,/* [name_idx:16] slot-observe a name binding AFTER its SET
                           * (binding now exists), fixing the first-assignment lag.
                           * Emitted only under compile-time EIGS_OBS_SHADOW; peeks TOS. */
+    OP_REPORT_NAME,     /* [name_idx:16] report of a non-local name: resolve (env,slot),
+                          * classify its slot. Compile-flag gated. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

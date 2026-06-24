@@ -1897,6 +1897,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_OBSERVE_ASSIGN_LOCAL] = &&lbl_OBSERVE_ASSIGN_LOCAL,
         [OP_INTERROGATE] = &&lbl_INTERROGATE, [OP_PREDICATE] = &&lbl_PREDICATE,
         [OP_REPORT_SLOT] = &&lbl_REPORT_SLOT,
+        [OP_REPORT_NAME] = &&lbl_REPORT_NAME,
         [OP_OBSERVE_NAME_POST] = &&lbl_OBSERVE_NAME_POST,
         [OP_UNOBSERVED_BEGIN] = &&lbl_UNOBSERVED_BEGIN,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
@@ -3757,6 +3758,34 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             result = make_str(observer_slot_report(&e->obs[slot]));
         } else {
             Value *v = (e && (int)slot < e->count) ? slot_to_value(e->values[slot]) : NULL;
+            if (v) observer_ensure_fresh(v);
+            result = builtin_report(v);
+            if (v) val_decref(v);
+        }
+        vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(REPORT_NAME): {
+        /* #262 Phase-3 B: report of a non-local name — resolve its (env, slot)
+         * and classify the slot, value-path fallback if the slot is empty.
+         * Undefined name behaves like GET_NAME: raise + push null. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        int oidx = -1, odepth = 0;
+        Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (!oe) {
+            runtime_error(current_line, "undefined variable '%s'", name);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        Value *result;
+        if (obs_shadow_on() && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
+            result = make_str(observer_slot_report(&oe->obs[oidx]));
+        } else {
+            Value *v = (oidx >= 0 && oidx < oe->count) ? slot_to_value(oe->values[oidx]) : NULL;
             if (v) observer_ensure_fresh(v);
             result = builtin_report(v);
             if (v) val_decref(v);
