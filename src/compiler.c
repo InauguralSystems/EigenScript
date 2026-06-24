@@ -125,6 +125,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
     case OP_REPORT_SLOT: case OP_REPORT_NAME:
+    case OP_OBSERVE_VALUE_SLOT: case OP_OBSERVE_VALUE_NAME:
         return 1;
     /* Push 2 */
     case OP_DUP2:
@@ -1591,6 +1592,20 @@ static void compile_node(Compiler *c, ASTNode *node) {
                 /* Phase-3 B: not a local — report the name's binding via its slot. */
                 int rnidx = add_string_constant(c, arg_node->data.ident.name);
                 emit_op_u16(c, OP_REPORT_NAME, (uint16_t)rnidx, node->line);
+                break;
+            }
+            /* #262 Phase-3 D: `observe of <ident>` reads the binding's slot
+             * trajectory, parallel to report — the value path no longer carries
+             * observer state on the Value object. Non-ident operands fall
+             * through to the builtin_observe call below. */
+            if (obs_emit_on() && fn_node && fn_node->type == AST_IDENT &&
+                strcmp(fn_node->data.ident.name, "observe") == 0 &&
+                arg_node && arg_node->type == AST_IDENT) {
+                uint32_t oh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
+                int oslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, oh) : -1;
+                if (oslot >= 0) { emit_op_u16(c, OP_OBSERVE_VALUE_SLOT, (uint16_t)oslot, node->line); break; }
+                int onidx = add_string_constant(c, arg_node->data.ident.name);
+                emit_op_u16(c, OP_OBSERVE_VALUE_NAME, (uint16_t)onidx, node->line);
                 break;
             }
         }

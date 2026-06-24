@@ -156,6 +156,10 @@ typedef enum {
                           * Emitted only under compile-time EIGS_OBS_SHADOW; peeks TOS. */
     OP_REPORT_NAME,     /* [name_idx:16] report of a non-local name: resolve (env,slot),
                           * classify its slot. Compile-flag gated. */
+    OP_OBSERVE_VALUE_SLOT, /* [slot:16] `observe of <local>`: [status,entropy,dH,prev_dH]
+                            * from the local's slot trajectory. Compile-flag gated. */
+    OP_OBSERVE_VALUE_NAME, /* [name_idx:16] `observe of <name>`: same, resolving the
+                            * binding's (env,slot). Compile-flag gated. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

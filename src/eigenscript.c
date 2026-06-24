@@ -191,17 +191,23 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
  * skipped — it gets reclaimed by arena_reset. */
 /* ---- Observer system (moved from eval.c) ---- */
 
+/* #262 Phase-3 D: scalar entropy of a number, factored out so the slot
+ * observer can update from a raw immediate double without materializing a
+ * Value (the default path no longer promotes observed nums to tracked
+ * pointers). Single source of truth for the VAL_NUM entropy formula. */
+static double entropy_of_num(double num) {
+    double x = fabs(num);
+    if (x == 0.0 || x == 1.0) return 0.0;
+    double p = 1.0 / (1.0 + x);
+    if (p <= 0.0 || p >= 1.0) return 0.0;
+    return -(p * log2(p) + (1.0-p) * log2(1.0-p));
+}
+
 static double compute_entropy_impl(Value *v, int depth) {
     if (!v || depth > 64) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
-        case VAL_NUM: {
-            double x = fabs(v->data.num);
-            if (x == 0.0 || x == 1.0) return 0.0;
-            double p = 1.0 / (1.0 + x);
-            if (p <= 0.0 || p >= 1.0) return 0.0;
-            return -(p * log2(p) + (1.0-p) * log2(1.0-p));
-        }
+        case VAL_NUM: return entropy_of_num(v->data.num);
         case VAL_STR: {
             if (!v->data.str || !v->data.str[0]) return 0.0;
             int freq[256] = {0};
@@ -463,7 +469,8 @@ static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back
     return s->dh_window[idx];
 }
 
-void observer_slot_update(Env *e, int idx, Value *newval) {
+/* Core: fold a precomputed entropy into binding slot `idx` of env `e`. */
+static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap) {
         int ncap = idx + 8;
@@ -474,7 +481,6 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
         e->obs_cap = ncap;
     }
     ObserverSlot *s = &e->obs[idx];
-    double new_entropy = compute_entropy(newval);
     s->prev_dH = s->dH;
     if (!s->used || s->obs_age == 0) {
         s->dH = 0;                 /* first observation of this binding */
@@ -486,6 +492,17 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
     s->last_entropy = new_entropy;
     s->obs_age++;
     s->used = 1;
+}
+
+void observer_slot_update(Env *e, int idx, Value *newval) {
+    observer_slot_update_e(e, idx, compute_entropy(newval));
+}
+
+/* #262 Phase-3 D: update a binding's observer slot from a raw immediate
+ * number, so the default path can observe without promoting the num to a
+ * tracked Value. Same trajectory math as observer_slot_update. */
+void observer_slot_update_num(Env *e, int idx, double num) {
+    observer_slot_update_e(e, idx, entropy_of_num(num));
 }
 
 void observer_slot_reset(Env *e) {
