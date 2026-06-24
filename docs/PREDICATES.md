@@ -346,6 +346,142 @@ if converged:
     ...   # NO — count = 2 < N; partial-window rule returns false
 ```
 
+## Convergence loops in practice
+
+`loop while not converged` reads as the obvious convergence idiom, and it
+is correct — but only for a value that converges *gently and
+monotonically*. Three properties of the entropy model surprise real solvers
+(all surfaced building `dynamics`, the observer-heavy dynamical-systems lab
+that is the first heavy consumer of the windowed predicates; findings
+F-DYN-2 and F-DYN-6). Every trace below is a real run.
+
+### Regime tracks per-step `dH`, not distance to the limit
+
+A predicate classifies the *trajectory* by `|dH|` against `dh_zero` /
+`dh_small`. A quantity that is still moving but observed in tiny per-step
+increments has `|dH| < dh_zero` and reads settled — `equilibrium` or even
+`converged` — while still far from its limit:
+
+```eigenscript
+x is 100.0
+for i in range of 20:
+    x is x * 0.999        # genuine motion, but each step is tiny
+report of x               # "converged"  — yet x is still ~98, not ~0
+```
+
+The lesson is about **observation cadence**: observe at a rate matched to
+the dynamics, not once per micro-step. The robust pattern is to advance the
+system several substeps *unobserved* and observe the quantity once per
+frame, so each observed `dH` reflects a meaningful step (`dynamics/physics.eigs`
+runs `SUB` integration substeps `unobserved`, then observes once per frame
+— without this, a damped oscillator, a diverging one, and a steady
+oscillation all read `equilibrium` alike).
+
+### Entropy peaks at `|value| = 1`, so a shrinking value can read `diverging`
+
+Entropy is the binary entropy of `p = 1/(1+|x|)`
+(`compute_entropy_impl`, eigenscript.c): it is **highest near `|x| = 1`**
+and falls toward 0 as `|x| → 0` or `|x| → ∞` (and is defined as exactly `0`
+at `|x| ∈ {0, 1}`). So a value decaying from a large magnitude *toward* 1
+has **rising** entropy — `dH > 0` — and reads `diverging`, not `improving`,
+even though it is "getting smaller":
+
+```eigenscript
+x is 100.0
+for i in range of 13:
+    x is x * 0.7          # 100 → ~1: entropy climbs 0.10 → ~1.0
+report of x               # "diverging"  (rising information content)
+```
+
+Do not equate "value decreasing" with `improving`/`converging`. The
+observer measures information content, not magnitude; "more determined"
+means lower entropy, which for `|x| > 1` means moving *away* from 1.
+
+### A fast residual settles at `equilibrium`, not `converged`
+
+`converged` is the strict band — on top of `equilibrium`'s zero-mean motion
+it requires every `|dH| < dh_zero` *and* low entropy across the whole
+window. A value **held** at a low-entropy constant from the start reaches
+it (a value pinned at `0.0` for ten observations reports `converged`). But
+a residual that *decays* into rest does **not**: empirically it reads
+`equilibrium` and stays there — the real Gauss-Seidel residual below holds
+`equilibrium` even once `change == 0`, verified out to iteration 25, long
+after its window has gone quiet. The settling *history*, not just the final
+value, decides `converged` vs `equilibrium` — so for an iterative residual,
+do not wait for `converged`; treat `equilibrium` as settled too. Real
+Gauss-Seidel on a 3×3 system `Ax = b` (`dynamics/solve.eigs`):
+
+```
+# observing the residual `change`, report per iteration:
+  iter 1   change=0.921875       report=stable
+  iter 4   change=0.00854…       report=stable
+  iter 7   change=1.67e-05       report=stable
+  iter 8   change=2.09e-06       report=equilibrium   <- solved (x ≈ [1,1,1])
+  iter 9+  change → 0            report=equilibrium   (stays equilibrium, even
+                                                       at change == 0 — never
+                                                       reaches "converged")
+```
+
+So `loop while not converged` here **never terminates** — it runs to the
+iteration cap on a system solved by iteration 8 (the recipe below fixes
+this).
+
+### An oscillatory residual flickers settled mid-swing
+
+A residual swinging toward its limit (PageRank power iteration) shows a
+*single* `equilibrium` reading mid-swing, well before it is actually
+settled. Real PageRank on a 3-node graph (`dynamics/solve.eigs`):
+
+```
+  iter 2   change=0.1667   report=equilibrium   <- transient! true answer
+                                                    is ~25 iters away
+  iter 4   change=0.0833   report=stable
+  iter 5   change=0.0417   report=stable
+  ...      (stable / equilibrium / improving alternate as it swings) ...
+  iter 27  change=4.07e-05 report=equilibrium   <- genuinely settled
+```
+
+A naive "stop on the first settled reading" quits at iteration 2 with
+`change ≈ 0.17` — completely wrong. The fix is to **debounce**: require the
+settled reading to *hold* for several consecutive iterations; a transient
+blip resets the count.
+
+### Robust convergence-loop recipe
+
+Combine the two fixes — settled = `converged` OR `equilibrium`, plus a hold
+counter. This is exactly what `dynamics/solve.eigs` uses across Jacobi,
+Gauss-Seidel, power iteration, and PageRank (`HOLD = 3`):
+
+```eigenscript
+define settled(status) as:
+    if status == "converged":
+        return 1
+    if status == "equilibrium":
+        return 1
+    return 0
+
+hold is 0
+it is 0
+loop while hold < 3:                # require the settled reading to hold 3×
+    # advance the system, then assign the residual you test (`change`) LAST,
+    # immediately before `report` — a bare predicate / report reads the most
+    # recently assigned top-level value (see Inputs: `g_last_observer`), so an
+    # intervening assignment repoints it.
+    change is next_residual of state
+    status is report of change
+    if (settled of status) == 1:
+        hold is hold + 1
+    else:
+        hold is 0
+    it is it + 1
+    if it >= max_iters:             # always keep an absolute cap as a backstop
+        hold is 3
+```
+
+Use the bare `loop while not converged` only for a value you know converges
+gently and monotonically; for any iterative residual, reach for the
+settled-plus-hold form above.
+
 ## Cost
 
 The `dh_window` costs one `xcalloc(N * sizeof(double))` (80 bytes at N=10)
@@ -365,3 +501,7 @@ freelist path so recycled numbers do not leak the buffer.
 - `tests/test_windowed_converged.eigs` — lock-in tests for windowed
   `converged`
 - `tests/test_report_alignment.eigs` — report-predicate agreement
+- [`InauguralSystems/dynamics`](https://github.com/InauguralSystems/dynamics)
+  — the consumer that surfaced the "Convergence loops in practice" guidance
+  (`solve.eigs`, `physics.eigs`; findings F-DYN-2 / F-DYN-6 in its
+  `FINDINGS.md`)
