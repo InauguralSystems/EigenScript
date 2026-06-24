@@ -20,6 +20,7 @@
  * object) and the bare predicates read that slot. The per-Value path stays
  * authoritative; a no-op when the flag is unset. The last-observed-slot
  * tracker (g_last_obs_slot_env/idx) lives on EigsThread (eigenscript.h). */
+Value* builtin_report(Value *arg);
 static int  g_obs_shadow = -1;
 static inline int obs_shadow_on(void) {
     if (g_obs_shadow < 0) g_obs_shadow = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
@@ -1895,6 +1896,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_OBSERVE_ASSIGN] = &&lbl_OBSERVE_ASSIGN,
         [OP_OBSERVE_ASSIGN_LOCAL] = &&lbl_OBSERVE_ASSIGN_LOCAL,
         [OP_INTERROGATE] = &&lbl_INTERROGATE, [OP_PREDICATE] = &&lbl_PREDICATE,
+        [OP_REPORT_SLOT] = &&lbl_REPORT_SLOT,
         [OP_OBSERVE_NAME_POST] = &&lbl_OBSERVE_NAME_POST,
         [OP_UNOBSERVED_BEGIN] = &&lbl_UNOBSERVED_BEGIN,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
@@ -3744,6 +3746,22 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 }
             }
         }
+        DISPATCH();
+    }
+
+    CASE(REPORT_SLOT): {
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        Value *result;
+        if (obs_shadow_on() && e && (int)slot < e->obs_cap && e->obs[slot].used) {
+            result = make_str(observer_slot_report(&e->obs[slot]));
+        } else {
+            Value *v = (e && (int)slot < e->count) ? slot_to_value(e->values[slot]) : NULL;
+            if (v) observer_ensure_fresh(v);
+            result = builtin_report(v);
+            if (v) val_decref(v);
+        }
+        vm_push(result);
         DISPATCH();
     }
 

@@ -114,6 +114,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
+    case OP_REPORT_SLOT:
         return 1;
     /* Push 2 */
     case OP_DUP2:
@@ -1571,6 +1572,18 @@ static void compile_node(Compiler *c, ASTNode *node) {
         /* Function call: f of [a, b] or f of arg */
         ASTNode *fn_node = node->data.relation.left;
         ASTNode *arg_node = node->data.relation.right;
+
+        {
+            static int rs_flag = -1;
+            if (rs_flag < 0) rs_flag = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
+            if (rs_flag && c->enclosing && fn_node && fn_node->type == AST_IDENT &&
+                strcmp(fn_node->data.ident.name, "report") == 0 &&
+                arg_node && arg_node->type == AST_IDENT) {
+                uint32_t rh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
+                int rslot = resolve_local(c, arg_node->data.ident.name, rh);
+                if (rslot >= 0) { emit_op_u16(c, OP_REPORT_SLOT, (uint16_t)rslot, node->line); break; }
+            }
+        }
 
         /* Optimize: dispatch of [table, key, arg] → OP_DISPATCH */
         if (fn_node && fn_node->type == AST_IDENT &&

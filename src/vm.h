@@ -109,10 +109,6 @@ typedef enum {
     OP_OBSERVE_ASSIGN_LOCAL, /* [slot:16] observer update; prev value lives in fn_env slot */
     OP_INTERROGATE,     /* [kind:8] pop target, push query result */
     OP_PREDICATE,       /* [kind:8] push predicate result */
-    OP_OBSERVE_NAME_POST,/* [name_idx:16] #262 Phase-3: slot-observe a name binding
-                          * AFTER its SET (binding now exists), fixing the
-                          * first-assignment lag. Emitted only under the
-                          * compile-time EIGS_OBS_SHADOW flag; peeks TOS. */
     OP_UNOBSERVED_BEGIN,/* increment g_unobserved_depth */
     OP_UNOBSERVED_END,  /* decrement g_unobserved_depth */
     OP_LOOP_STALL_CHECK,/* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */
@@ -148,6 +144,16 @@ typedef enum {
                          * Negatives resolve via +len before the 0<=start<=end<=len
                          * check; out-of-range raises. Same scanner-stop pattern as
                          * DESTRUCTURE_UNPACK — JIT bails to interpreter. */
+
+    /* #262 Phase-3 observer ops. Added at the END of the enum, NOT mid-list:
+     * hand-built / self-hosted-bridge bytecode hardcodes opcode NUMBERS
+     * (e.g. tests/test_vm_run_bytecode.eigs's `loopcode` uses 63 = LOOP_CAP_CHECK),
+     * so inserting an opcode anywhere before them shifts those numbers and
+     * misaligns the bytecode. New opcodes must always append here. */
+    OP_REPORT_SLOT,     /* [slot:16] report-of-local via slot trajectory (compile-flag gated) */
+    OP_OBSERVE_NAME_POST,/* [name_idx:16] slot-observe a name binding AFTER its SET
+                          * (binding now exists), fixing the first-assignment lag.
+                          * Emitted only under compile-time EIGS_OBS_SHADOW; peeks TOS. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
