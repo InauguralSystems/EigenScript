@@ -14,6 +14,24 @@
 #include <string.h>
 #include <math.h>
 
+/* #262 Phase-1 prototype: slot-keyed observer shadow. Off unless
+ * EIGS_OBS_SHADOW is set in the environment; -1 = not yet probed. When on,
+ * OBSERVE_ASSIGN_LOCAL also records the binding's trajectory on its env slot,
+ * and bare converged/equilibrium predicates read that slot. The per-Value
+ * path stays authoritative; this is a no-op when the flag is unset.
+ * NOTE: single file-static last-observer-slot — fine for the single-threaded
+ * validation runs; a real implementation would put this on EigsThread. */
+static int  g_obs_shadow = -1;
+static Env *g_last_obs_slot_env = NULL;
+static int  g_last_obs_slot_idx = -1;
+static inline int obs_shadow_on(void) {
+    if (g_obs_shadow < 0) g_obs_shadow = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
+    return g_obs_shadow;
+}
+void vm_obs_slot_dropped(Env *e) {
+    if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
+}
+
 /* Phase 5: VM execution state (g_vm), loop-stall accounting
  * (g_loop_stall_count, g_loop_iterations, g_loop_exit_reason),
  * control-flow / error-state globals (g_return_val, g_returning,
@@ -967,6 +985,7 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
         }
         v->dirty = 1;
         g_last_observer = v;
+        if (obs_shadow_on()) g_last_obs_slot_idx = -1;  /* #262 Phase-1: JIT path not shadowed */
     }
 }
 
@@ -1009,6 +1028,7 @@ void jit_helper_observe_assign_local(int slot) {
         }
         v->dirty = 1;
         g_last_observer = v;
+        if (obs_shadow_on()) g_last_obs_slot_idx = -1;  /* #262 Phase-1: JIT path not shadowed */
     }
 }
 
@@ -3641,6 +3661,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 }
                 v->dirty = 1;
                 g_last_observer = v;
+                /* #262 Phase-1: a name-based observe is not slot-shadowed —
+                 * invalidate the slot override so the next predicate uses the
+                 * authoritative value path. */
+                if (obs_shadow_on()) g_last_obs_slot_idx = -1;
             }
         }
         DISPATCH();
@@ -3701,6 +3725,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 }
                 v->dirty = 1;
                 g_last_observer = v;
+                /* #262 Phase-1 shadow: record the binding's trajectory on its
+                 * env slot, keyed by (fn_env, slot) — independent of which
+                 * Value object backs it. */
+                if (obs_shadow_on()) {
+                    observer_slot_update(frame->fn_env, (int)slot, v);
+                    g_last_obs_slot_env = frame->fn_env;
+                    g_last_obs_slot_idx = (int)slot;
+                }
             }
         }
         DISPATCH();
@@ -3991,6 +4023,17 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         case 3: result = observer_oscillating(v); break;  /* windowed (#206) */
         case 4: result = observer_diverging(v); break;  /* windowed (#208) */
         case 5: result = observer_equilibrium(v); break;  /* windowed (#209) */
+        }
+        /* #262 Phase-1: when the most recent observation was a slot-bound
+         * binding, read converged/equilibrium from its slot trajectory instead
+         * of the (possibly aliased) Value object. Only overrides those two
+         * bands; everything else still uses the authoritative value path. */
+        if (obs_shadow_on() && (kind == 0 || kind == 5) &&
+            g_last_obs_slot_idx >= 0 && g_last_obs_slot_env &&
+            g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap) {
+            const ObserverSlot *s = &g_last_obs_slot_env->obs[g_last_obs_slot_idx];
+            result = (kind == 0) ? observer_slot_converged(s)
+                                 : observer_slot_equilibrium(s);
         }
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();

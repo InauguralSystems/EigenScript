@@ -181,6 +181,19 @@ typedef struct {
     uint32_t  generation;   /* current generation; slot is occupied iff generations[i] == this */
 } EnvHash;
 
+/* #262 Phase-1 prototype: slot-keyed observer state. Mirrors the per-Value
+ * observer fields but keyed to a variable BINDING (env + slot index) instead
+ * of the recyclable Value object, so aliasing/temp-built iterates track their
+ * own trajectory. Shadow-written behind EIGS_OBS_SHADOW; the per-Value fields
+ * remain authoritative. See issue #262. */
+typedef struct ObserverSlot {
+    double  entropy, last_entropy, dH, prev_dH;
+    int     obs_age;
+    double *dh_window;          /* lazily allocated, OBSERVER_WINDOW_N doubles */
+    uint8_t dh_window_head, dh_window_count;
+    uint8_t used;               /* 1 once this slot has been observed */
+} ObserverSlot;
+
 struct Env {
     char **names;
     EigsSlot *values;   /* slot-typed bindings (immediates live in-place) */
@@ -202,6 +215,11 @@ struct Env {
     Env *gc_prev;
     unsigned char in_gc_list;
     EnvHash hash;
+    /* #262 Phase-1: self-managed slot-keyed observer array (own capacity,
+     * grown in observer_slot_update; freed/reset at env teardown/park). NULL
+     * until the first shadow observation under EIGS_OBS_SHADOW. */
+    struct ObserverSlot *obs;
+    int obs_cap;
 };
 
 struct Value {
@@ -243,6 +261,15 @@ struct Value {
 
 /* Returns the current fill of v's dH window (0..OBSERVER_WINDOW_N). */
 size_t observer_window_size(const Value *v);
+
+/* #262 Phase-1 prototype slot-keyed observer API (behind EIGS_OBS_SHADOW). */
+void observer_slot_update(struct Env *e, int idx, Value *newval);
+void observer_slot_reset(struct Env *e);
+/* Implemented in vm.c: drops the last-observed-slot tracker if it points at e
+ * (called from observer_slot_reset so a torn-down env can't be read stale). */
+void vm_obs_slot_dropped(struct Env *e);
+int  observer_slot_converged(const struct ObserverSlot *s);
+int  observer_slot_equilibrium(const struct ObserverSlot *s);
 
 /* Returns the dH at offset back from most recent (0 = most recent).
  * Caller must ensure offset < observer_window_size(v). */

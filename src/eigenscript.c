@@ -435,6 +435,90 @@ void update_observer(Value *v) {
     v->dirty = 0;
 }
 
+/* ===== #262 Phase-1 prototype: slot-keyed observer (behind EIGS_OBS_SHADOW) =====
+ *
+ * Mirrors update_observer / observer_window_push / the windowed converged &
+ * equilibrium predicates, but the trajectory state lives on a per-binding
+ * ObserverSlot (env + slot index) rather than on the recyclable Value object.
+ * Updated EAGERLY at assignment time (no dirty/lazy step): the variable's own
+ * value sequence is observed regardless of which Value object backs it, so an
+ * iterate built through aliasing temps tracks correctly. The per-Value path is
+ * untouched and stays authoritative; this runs only when the flag is set. */
+
+static void observer_slot_window_push(ObserverSlot *s, double dh) {
+    if (!s->dh_window) {
+        s->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+        s->dh_window_head = 0;
+        s->dh_window_count = 0;
+    }
+    s->dh_window[s->dh_window_head] = dh;
+    s->dh_window_head = (uint8_t)((s->dh_window_head + 1) % OBSERVER_WINDOW_N);
+    if (s->dh_window_count < OBSERVER_WINDOW_N) s->dh_window_count++;
+}
+
+static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back) {
+    if (!s->dh_window || offset_back >= s->dh_window_count) return 0.0;
+    int idx = (int)s->dh_window_head - 1 - (int)offset_back;
+    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    return s->dh_window[idx];
+}
+
+void observer_slot_update(Env *e, int idx, Value *newval) {
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap) {
+        int ncap = idx + 8;
+        ObserverSlot *no = realloc(e->obs, (size_t)ncap * sizeof(ObserverSlot));
+        if (!no) return;
+        memset(no + e->obs_cap, 0, (size_t)(ncap - e->obs_cap) * sizeof(ObserverSlot));
+        e->obs = no;
+        e->obs_cap = ncap;
+    }
+    ObserverSlot *s = &e->obs[idx];
+    double new_entropy = compute_entropy(newval);
+    s->prev_dH = s->dH;
+    if (!s->used || s->obs_age == 0) {
+        s->dH = 0;                 /* first observation of this binding */
+    } else {
+        s->dH = new_entropy - s->last_entropy;
+        observer_slot_window_push(s, s->dH);
+    }
+    s->entropy = new_entropy;
+    s->last_entropy = new_entropy;
+    s->obs_age++;
+    s->used = 1;
+}
+
+void observer_slot_reset(Env *e) {
+    if (!e || !e->obs) return;
+    vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
+    for (int i = 0; i < e->obs_cap; i++) free(e->obs[i].dh_window);
+    free(e->obs);
+    e->obs = NULL;
+    e->obs_cap = 0;
+}
+
+int observer_slot_converged(const ObserverSlot *s) {
+    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++)
+        if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
+    return (s->entropy < g_obs_h_low) ? 1 : 0;
+}
+
+int observer_slot_equilibrium(const ObserverSlot *s) {
+    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
+    double sum = 0.0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_window_get(s, i);
+    double mean = sum / (double)OBSERVER_WINDOW_N;
+    if (fabs(mean) >= g_obs_dh_zero) return 0;
+    double var = 0.0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+        double d = observer_slot_window_get(s, i) - mean;
+        var += d * d;
+    }
+    var /= (double)OBSERVER_WINDOW_N;
+    return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
+}
+
 void observer_ensure_fresh(Value *v) {
     if (v && v->dirty) update_observer(v);
 }
@@ -468,6 +552,7 @@ void eigs_thread_drain_caches(EigsThread *th) {
     Env *en = th->env_freelist;
     while (en) {
         Env *next = en->parent;
+        observer_slot_reset(en);   /* #262 Phase-1 (normally already reset on park) */
         free(en->names);
         free(en->values);
         free(en->assign_counts);
@@ -1532,6 +1617,9 @@ void env_decref(Env *env) {
         slot_decref(env->values[i]);
     }
     Env *parent = env->parent;
+    /* #262 Phase-1: drop slot-keyed observer state on both park and free so a
+     * recycled env never carries another binding's trajectory. */
+    observer_slot_reset(env);
     if (env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
         g_env_freelist_count < ENV_FREELIST_CAP) {
         env->count = 0;
@@ -1585,6 +1673,7 @@ void env_destroy_final(Env *env) {
     env->env_refcount = 1 << 30;
     for (int i = 0; i < count; i++)
         slot_decref(vals[i]);
+    observer_slot_reset(env);   /* #262 Phase-1 */
     free(vals);
     free(env->names);
     free(env->assign_counts);
