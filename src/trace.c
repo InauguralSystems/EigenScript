@@ -238,6 +238,31 @@ static void prev_record_assign(const char *name, EigsSlot value) {
     }
 }
 
+/* #262 Phase-3 D2: patch the observer snapshot for `name`'s most recent
+ * history entry from the slot-model trajectory. Called by OBSERVE_NAME_POST
+ * after the binding's slot is freshly updated, so `where/why/how is x at L`
+ * sources entropy/dH from the Env slot rather than the (Step-E-doomed) Value
+ * observer fields. The history entry and its parallel obs slot were created by
+ * the preceding prev_record_assign — the SET runs before OBSERVE_NAME_POST —
+ * so this overwrites a just-written (and, pre-flip, identical value-sourced)
+ * entry, or fills the valid=0 entry left once observed numbers become
+ * immediates. `name` must be the interned constant (pointer-keyed lookup).
+ * Gated by g_trace_obs_hist at the call site. */
+void trace_record_obs(const char *name, double entropy, double dH,
+                      double last_entropy) {
+    if (!g_prev_tab || !name) return;
+    PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
+    if (!e->name || e->hist_count == 0 || !e->obs) return;
+    int idx = e->hist_count - 1;
+    int oi = idx - e->obs_start;
+    if (oi < 0 || oi >= e->obs_cap) return;
+    ObsHistEntry *o = &e->obs[oi];
+    o->entropy = entropy;
+    o->dH = dH;
+    o->last_entropy = last_entropy;
+    o->valid = 1;
+}
+
 int trace_query_prev(const char *interned_name, EigsSlot *out) {
     if (!interned_name || !out || !g_prev_tab) return 0;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, interned_name);

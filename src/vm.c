@@ -1105,6 +1105,12 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
         observer_slot_update(oe, oidx, v);
         g_last_obs_slot_env = oe;
         g_last_obs_slot_idx = oidx;
+        /* #262 Phase-3 D2: slot-source the temporal snapshot — mirror of the
+         * interpreter CASE(OBSERVE_NAME_POST). */
+        if (__builtin_expect(g_trace_obs_hist, 0)) {
+            const ObserverSlot *os = &oe->obs[oidx];
+            trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
+        }
     }
 }
 
@@ -3885,6 +3891,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     observer_slot_update(oe, oidx, v);
                     g_last_obs_slot_env = oe;
                     g_last_obs_slot_idx = oidx;
+                    /* #262 Phase-3 D2: slot-source the temporal snapshot for
+                     * `where/why/how is name at L` (the binding's slot is now
+                     * fresh; its history entry was created by the SET's
+                     * trace_assign). */
+                    if (__builtin_expect(g_trace_obs_hist, 0)) {
+                        const ObserverSlot *os = &oe->obs[oidx];
+                        trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
+                    }
                 }
             }
         }

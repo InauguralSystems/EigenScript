@@ -11,3 +11,4 @@ EigenScript__observer_predicates	EigenScript	examples/observer_predicates.eigs	2
 EigenScript__numerical	EigenScript	examples/numerical.eigs	26d16af	demo
 EigenScript__idioms	EigenScript	examples/idioms.eigs	26d16af	demo
 EigenScript__structural_observer	EigenScript	examples/structural_observer.eigs	26d16af	demo
+ouroboros__temporal_obs	ouroboros	test/programs/temporal_obs.eigs	18829db	where-at,why-at,observer-temporal
