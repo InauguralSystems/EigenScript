@@ -1,0 +1,87 @@
+# Structural drill — observer predicates
+# Minimal patterns for converged, stable, improving, report, observe.
+# Every line parses. Every loop has a body.
+
+# ---- report ----
+x is 10.0
+status is report of x
+print of status
+
+y is 5.0
+y is 4.0
+y is 3.0
+print of (report of y)
+
+# ---- observe ----
+z is 1.0
+z is 0.5
+z is 0.25
+state is observe of z
+print of state
+
+# ---- loop while not converged (inside function for fresh scope) ----
+define shrink as:
+    sh_v is n
+    loop while not converged:
+        sh_v is sh_v * 0.9
+    return sh_v
+
+result is shrink of 100.0
+print of result
+
+# ---- Newton square root ----
+define sqrt_newton as:
+    sn_x is n * 1.0
+    sn_g is sn_x / 2.0
+    if sn_g < 1.0:
+        sn_g is 1.0
+    loop while not converged:
+        sn_g is (sn_g + sn_x / sn_g) / 2.0
+    return sn_g
+
+r is sqrt_newton of 16.0
+print of r
+
+# ---- Fixed point ----
+define fixed_point as:
+    fp_x is n * 1.0
+    loop while not converged:
+        fp_x is (fp_x + 1.0 / fp_x) / 2.0
+    return fp_x
+
+fp is fixed_point of 2.0
+print of fp
+
+# ---- Status-driven loop at top level ----
+value is 50.0
+status is "start"
+loop while status != "converged":
+    value is value * 0.85
+    status is report of value
+
+print of value
+
+# ---- Detect stable band ----
+signal is 80.0
+status is "start"
+found_stable is 0
+loop while status != "converged":
+    signal is signal * 0.9
+    status is report of signal
+    if status == "stable":
+        if found_stable == 0:
+            found_stable is 1
+
+print of signal
+
+# ---- Gradient descent with convergence ----
+define descend as:
+    dg_x is n * 1.0
+    dg_target is 3.0
+    loop while not converged:
+        dg_grad is 2.0 * (dg_x - dg_target)
+        dg_x is dg_x - 0.1 * dg_grad
+    return dg_x
+
+d is descend of 10.0
+print of d

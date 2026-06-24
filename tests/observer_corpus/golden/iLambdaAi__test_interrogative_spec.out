@@ -1,0 +1,56 @@
+=== INTERROGATIVE SPEC COMPLIANCE TEST ===
+Verifies each interrogative matches LLVM IR semantics
+
+--- WHAT: eigen_get_value() ---
+42
+EXPECT: 42
+
+--- WHAT: list length ---
+5
+EXPECT: 5
+
+--- WHAT: string length ---
+5
+EXPECT: 5
+
+--- WHAT: computed value ---
+42
+EXPECT: 42
+
+--- WHO: variable name ---
+myvar
+EXPECT: myvar
+
+--- WHO: different variable ---
+counter
+EXPECT: counter
+
+--- WHEN: temporal step ---
+1
+EXPECT: 1
+
+--- WHEN: after multiple assignments ---
+3
+EXPECT: 3
+
+--- WHERE: entropy (spatial) ---
+WHERE returns entropy (number >= 0):
+0.08013604733127525
+
+--- WHY: gradient (dH/dt) ---
+WHY returns gradient (number):
+0
+
+--- HOW: stability (0-1) ---
+HOW returns stability (0-1 range):
+0
+
+--- ARITHMETIC COMPOSITION ---
+Arithmetic on interrogatives works:
+101
+
+--- ASSIGNMENT THEN INTERROGATIVE ---
+256
+EXPECT: 256
+
+=== INTERROGATIVE SPEC COMPLETE ===

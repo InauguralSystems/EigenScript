@@ -1,0 +1,149 @@
+# Observer Predicates — converged, stable, improving, diverging
+# EigenScript classifies value trajectories automatically.
+# Use report of x to get the status, or check it in loop conditions.
+
+# ============================================================
+# 1. converged — value has stopped changing
+# ============================================================
+
+# Newton's method: the runtime decides when guess has converged.
+# Works inside a function because guess gets updated repeatedly.
+define sqrt as:
+    x is n * 1.0
+    guess is x / 2.0
+    if guess < 1.0:
+        guess is 1.0
+    loop while not converged:
+        guess is (guess + x / guess) / 2.0
+    return guess
+
+print of "--- converged as termination ---"
+print of ("sqrt(50) = " + (str of (sqrt of 50)))
+print of ("sqrt(0.01) = " + (str of (sqrt of 0.01)))
+
+# ============================================================
+# 2. report-driven loop — the idiomatic top-level pattern
+# ============================================================
+
+# At top level, use report of x to drive the loop.
+# This gives you access to all six trajectory states.
+print of ""
+print of "--- report-driven convergence ---"
+signal is 100.0
+decay is 0.92
+step is 0
+status is "start"
+
+loop while status != "converged":
+    signal is signal * decay
+    step is step + 1
+    status is report of signal
+    if (step % 10) == 0:
+        print of ("  step " + (str of step) + ": " + status + " signal=" + (str of signal))
+
+print of ("Converged at step " + (str of step) + " signal=" + (str of signal))
+
+# ============================================================
+# 3. stable as early detection
+# ============================================================
+
+# Detect when a decaying value enters the stable band.
+# stable != converged — stable means "still moving but slowly."
+print of ""
+print of "--- stable as early detection ---"
+value is 50.0
+step is 0
+found_stable is 0
+status is "start"
+
+loop while status != "converged":
+    value is value * 0.9
+    step is step + 1
+    status is report of value
+    if status == "stable":
+        if found_stable == 0:
+            print of ("Entered stable band at step " + (str of step) + " value=" + (str of value))
+            found_stable is 1
+
+print of ("Converged at step " + (str of step) + " value=" + (str of value))
+
+# ============================================================
+# 4. improving — entropy is decreasing
+# ============================================================
+
+# Multiplicative decay: the observer sees entropy decrease and reports "improving".
+# This is a natural trajectory that passes through improving on its way to converged.
+print of ""
+print of "--- improving as progress monitor ---"
+value is 80.0
+step is 0
+status is "start"
+
+loop while status != "converged":
+    value is value * 0.85
+    step is step + 1
+    status is report of value
+    if status == "improving":
+        if (step % 5) == 0:
+            print of ("  step " + (str of step) + ": improving, value=" + (str of value))
+    elif status == "stable":
+        if (step % 10) == 0:
+            print of ("  step " + (str of step) + ": stable, value=" + (str of value))
+
+print of ("Done at step " + (str of step) + " value=" + (str of value) + " status=" + status)
+
+# ============================================================
+# 5. Full regime tracking — watch all transitions
+# ============================================================
+
+print of ""
+print of "--- regime detection ---"
+loss is 50.0
+step is 0
+regime_changes is 0
+last_regime is "start"
+current_regime is "start"
+
+loop while current_regime != "converged":
+    loss is loss * 0.88
+    step is step + 1
+    current_regime is report of loss
+    if current_regime != last_regime:
+        print of ("Step " + (str of step) + ": " + last_regime + " -> " + current_regime)
+        last_regime is current_regime
+        regime_changes is regime_changes + 1
+    if step > 500:
+        current_regime is "converged"
+
+print of ("Total regime changes: " + (str of regime_changes))
+print of ("Final loss: " + (str of loss))
+
+# ============================================================
+# 6. oscillating — detect instability and react
+# ============================================================
+
+# An unstable learning rate causes the value to oscillate.
+# The runtime detects sign-flipping dH and reports "oscillating".
+# React by halving the learning rate until it stabilizes.
+print of ""
+print of "--- oscillating as instability detector ---"
+x is 0.5
+target is 5.0
+lr is 1.2
+step is 0
+adjustments is 0
+status is "start"
+
+loop while status != "converged":
+    grad is 2.0 * (x - target)
+    x is x - lr * grad
+    step is step + 1
+    status is report of x
+    if status == "oscillating":
+        lr is lr * 0.5
+        adjustments is adjustments + 1
+        print of ("  step " + (str of step) + ": oscillating! lr halved to " + (str of lr))
+    if step > 500:
+        status is "converged"
+
+print of ("Done at step " + (str of step) + " x=" + (str of x) + " lr=" + (str of lr) + " adjustments=" + (str of adjustments))
