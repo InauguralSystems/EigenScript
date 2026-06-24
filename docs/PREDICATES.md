@@ -350,11 +350,10 @@ if converged:
 
 `loop while not converged` reads as the obvious convergence idiom, and it
 is correct — but only for a value that converges *gently and
-monotonically into a low-entropy basin*. Three consequences of the entropy
-model surprise real solvers (all surfaced building `dynamics`, the
-observer-heavy dynamical-systems lab that is the first heavy consumer of
-the windowed predicates; findings F-DYN-2 and F-DYN-6). Each trace below is
-runtime-verified.
+monotonically*. Three properties of the entropy model surprise real solvers
+(all surfaced building `dynamics`, the observer-heavy dynamical-systems lab
+that is the first heavy consumer of the windowed predicates; findings
+F-DYN-2 and F-DYN-6). Every trace below is a real run.
 
 ### Regime tracks per-step `dH`, not distance to the limit
 
@@ -370,15 +369,13 @@ for i in range of 20:
 report of x               # "converged"  — yet x is still ~98, not ~0
 ```
 
-(At a partial window the same loop's first few steps report `equilibrium`
-via the instantaneous fallback; once the window fills it reads `converged`
-because `|x|≈98` is a low-entropy magnitude — see the next two sections.)
-
 The lesson is about **observation cadence**: observe at a rate matched to
 the dynamics, not once per micro-step. The robust pattern is to advance the
 system several substeps *unobserved* and observe the quantity once per
 frame, so each observed `dH` reflects a meaningful step (`dynamics/physics.eigs`
-runs its integrator this way).
+runs `SUB` integration substeps `unobserved`, then observes once per frame
+— without this, a damped oscillator, a diverging one, and a steady
+oscillation all read `equilibrium` alike).
 
 ### Entropy peaks at `|value| = 1`, so a shrinking value can read `diverging`
 
@@ -400,62 +397,85 @@ Do not equate "value decreasing" with `improving`/`converging`. The
 observer measures information content, not magnitude; "more determined"
 means lower entropy, which for `|x| > 1` means moving *away* from 1.
 
-### `converged` vs `equilibrium` depends on the settling magnitude
+### A fast residual settles at `equilibrium`, not `converged`
 
-`converged` is `equilibrium` (a zero-mean, low-variance window) **plus**
-`entropy < h_low`. So a settled value reads `converged` only if it also
-lands in a low-entropy basin. At the default `h_low = 0.1` that basin is
-roughly `|value| ≲ 0.013` or `|value| ≳ 74` (entropy crosses `h_low` near
-those magnitudes; the band scales with `h_low`), plus the exact points
-`0` and `1`. A value that settles anywhere in the broad mid-range
-(≈ `0.013`–`74`) has `entropy ≥ h_low` and reads `equilibrium`
-**forever — it never becomes `converged`**:
+`converged` is the strict band: the *whole* window must be simultaneously
+low-motion (every `|dH| < dh_zero`) **and** low-entropy. A residual that
+falls steeply does not satisfy it — its early steps carry high entropy and
+large `dH`, and by the time those age out of the window the loop has long
+since read `equilibrium` (zero-mean motion, entropy irrelevant). Real
+Gauss-Seidel on a 3×3 system `Ax = b` (`dynamics/solve.eigs`):
 
 ```
-# fast monotone residual r ← r * 0.1, report per step:
-#   r ~ 1e-2 .. 1e-5   report=stable
-#   r ~ 1e-6 .. 1e-13  report=equilibrium     <- "settled" but not "converged"
-#   r ≲ 1e-14          report=converged        (only once it reaches the basin)
+# observing the residual `change`, report per iteration:
+  iter 1   change=0.921875       report=stable
+  iter 4   change=0.00854…       report=stable
+  iter 7   change=1.67e-05       report=stable
+  iter 8   change=2.09e-06       report=equilibrium   <- solved (x ≈ [1,1,1])
+  iter 9+  change → 0            report=equilibrium   (stays equilibrium, even
+                                                       at change == 0 — never
+                                                       reaches "converged")
 ```
 
-A residual driven all the way to ~0 does eventually read `converged`; one
-that settles at a small-but-not-tiny value (say `1e-2`) drops straight into
-`equilibrium` and stays there. Since a solver usually cannot predict which
-basin its residual lands in, **`loop while not converged` can silently run
-to the iteration cap on an already-solved system.**
+So `loop while not converged` here **never terminates** — it runs to the
+iteration cap on a system solved by iteration 8. The fix is not to wait for
+`converged`: treat `equilibrium` as settled too.
+
+### An oscillatory residual flickers settled mid-swing
+
+A residual swinging toward its limit (PageRank power iteration) shows a
+*single* `equilibrium` reading mid-swing, well before it is actually
+settled. Real PageRank on a 3-node graph (`dynamics/solve.eigs`):
+
+```
+  iter 2   change=0.1667   report=equilibrium   <- transient! true answer
+                                                    is ~25 iters away
+  iter 4   change=0.0833   report=stable
+  iter 5   change=0.0417   report=stable
+  ...      (stable / equilibrium / improving alternate as it swings) ...
+  iter 27  change=4.07e-05 report=equilibrium   <- genuinely settled
+```
+
+A naive "stop on the first settled reading" quits at iteration 2 with
+`change ≈ 0.17` — completely wrong. The fix is to **debounce**: require the
+settled reading to *hold* for several consecutive iterations; a transient
+blip resets the count.
 
 ### Robust convergence-loop recipe
 
-Two adjustments make a convergence loop correct across solver families
-(`dynamics/solve.eigs` uses this for Jacobi, Gauss-Seidel, power iteration,
-and PageRank):
-
-1. **Settled = `converged` OR `equilibrium`** — which one fires depends on
-   the settling magnitude, which you usually can't predict.
-2. **Debounce** — require the settled reading to hold for several
-   consecutive observations. An oscillatory or overshooting trajectory
-   shows a transient `equilibrium`/`converged` reading mid-swing (and the
-   partial-window `report` falls back to an instantaneous label), so a
-   naive "stop on the first settled reading" quits early with the wrong
-   answer.
+Combine the two fixes — settled = `converged` OR `equilibrium`, plus a hold
+counter. This is exactly what `dynamics/solve.eigs` uses across Jacobi,
+Gauss-Seidel, power iteration, and PageRank (`HOLD = 3`):
 
 ```eigenscript
-settled_for is 0
-need is 5                          # debounce: require 5 consecutive settled reads
-loop while settled_for < need:
-    # advance the system, then observe the residual `r` LAST, immediately
-    # before the test — a bare predicate reads the most recently assigned
-    # top-level value, so any intervening assignment repoints it.
-    r is next_residual of state
-    if converged or equilibrium:
-        settled_for is settled_for + 1
+define settled(status) as:
+    if status == "converged":
+        return 1
+    if status == "equilibrium":
+        return 1
+    return 0
+
+hold is 0
+it is 0
+loop while hold < 3:                # require the settled reading to hold 3×
+    # advance the system, then assign the residual you test (`change`) LAST,
+    # immediately before `report` — a bare predicate / report reads the most
+    # recently assigned top-level value, so an intervening assignment repoints
+    # it (see "the last-observed alias").
+    change is next_residual of state
+    status is report of change
+    if (settled of status) == 1:
+        hold is hold + 1
     else:
-        settled_for is 0
+        hold is 0
+    it is it + 1
+    if it >= max_iters:             # always keep an absolute cap as a backstop
+        hold is 3
 ```
 
-Use the bare `loop while not converged` only when you know the value
-converges gently and monotonically into a low-entropy basin; otherwise
-reach for the recipe above.
+Use the bare `loop while not converged` only for a value you know converges
+gently and monotonically; for any iterative residual, reach for the
+settled-plus-hold form above.
 
 ## Cost
 
