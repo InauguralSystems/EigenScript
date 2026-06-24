@@ -23,7 +23,13 @@
 Value* builtin_report(Value *arg);
 static int  g_obs_shadow = -1;
 static inline int obs_shadow_on(void) {
-    if (g_obs_shadow < 0) g_obs_shadow = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
+    /* #262 Phase-3 C: the slot model is now the DEFAULT. EIGS_OBS_SHADOW=0 is
+     * the value-path escape hatch (kept while the value path is being deleted,
+     * D/E); anything else (unset or non-"0") means slot. */
+    if (g_obs_shadow < 0) {
+        const char *e = getenv("EIGS_OBS_SHADOW");
+        g_obs_shadow = (e && strcmp(e, "0") == 0) ? 0 : 1;
+    }
     return g_obs_shadow;
 }
 void vm_obs_slot_dropped(Env *e) {

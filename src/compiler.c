@@ -107,6 +107,16 @@ static void adjust_stack(Compiler *c, int delta) {
 
 /* ---- Emit helpers ---- */
 
+/* #262 Phase-3 C: emit the slot-keyed observer ops (REPORT_SLOT/REPORT_NAME/
+ * OBSERVE_NAME_POST/where-why-how INTERROGATE_NAMED) by DEFAULT. The slot model
+ * is authoritative; EIGS_OBS_SHADOW=0 is the value-path escape hatch kept while
+ * the value path is being removed. Must agree with vm.c's obs_shadow_on(). */
+static int obs_emit_on(void) {
+    static int v = -1;
+    if (v < 0) { const char *e = getenv("EIGS_OBS_SHADOW"); v = (e && strcmp(e, "0") == 0) ? 0 : 1; }
+    return v;
+}
+
 /* Stack effect of each opcode */
 static int op_stack_effect(uint8_t op) {
     switch (op) {
@@ -1023,9 +1033,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
      * bindings (OBSERVE_ASSIGN_LOCAL) already observe from assignment 1 — their
      * slots are pre-allocated — so they need no post-observe. */
     if (obs_op == OP_OBSERVE_ASSIGN) {
-        static int obs_post_flag = -1;
-        if (obs_post_flag < 0) obs_post_flag = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
-        if (obs_post_flag)
+        if (obs_emit_on())
             emit_op_u16(c, OP_OBSERVE_NAME_POST, obs_arg, line);
     }
 }
@@ -1574,9 +1582,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         ASTNode *arg_node = node->data.relation.right;
 
         {
-            static int rs_flag = -1;
-            if (rs_flag < 0) rs_flag = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
-            if (rs_flag && fn_node && fn_node->type == AST_IDENT &&
+            if (obs_emit_on() && fn_node && fn_node->type == AST_IDENT &&
                 strcmp(fn_node->data.ident.name, "report") == 0 &&
                 arg_node && arg_node->type == AST_IDENT) {
                 uint32_t rh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
@@ -1867,9 +1873,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
          * flag, so flag-off bytecode is byte-identical. */
         int named_obs = 0;
         if (kind >= 3 && kind <= 5 && expr->type == AST_IDENT) {
-            static int io_flag = -1;
-            if (io_flag < 0) io_flag = getenv("EIGS_OBS_SHADOW") ? 1 : 0;
-            named_obs = io_flag;
+            named_obs = obs_emit_on();
         }
         if (((kind == 1 || kind == 2 || kind == 6) || named_obs) && expr->type == AST_IDENT) {
             /* who/when/prev (always) + where/why/how (flagged) with known
