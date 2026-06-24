@@ -325,7 +325,7 @@ SB2_R=$(echo "$SB_OUTPUT" | grep -A2 'SB2:' | tail -1)
 check "SB2 report=converged" "$SB2_R" "converged"
 echo ""
 
-echo "[8b] Windowed Converged (4 checks)"
+echo "[8b] Windowed Converged (5 checks)"
 WC_OUTPUT=$(./eigenscript ../tests/test_windowed_converged.eigs 2>&1)
 WC1=$(echo "$WC_OUTPUT" | grep -A1 'WC1:' | tail -1)
 check "WC1 short trajectory cannot converge" "$WC1" "0"
@@ -335,6 +335,8 @@ WC3=$(echo "$WC_OUTPUT" | grep -A1 'WC3:' | tail -1)
 check "WC3 single transient breaks convergence" "$WC3" "0"
 WC4=$(echo "$WC_OUTPUT" | grep -A2 'WC4:' | tail -1)
 check "WC4 newton sqrt reaches equilibrium not converged" "$WC4" "converged=0 equilibrium=1"
+WC5=$(echo "$WC_OUTPUT" | grep -A1 'WC5:' | tail -1)
+check "WC5 rebind-from-temp loop converges (issue #260)" "$WC5" "converged=1 equilibrium=1"
 echo ""
 
 echo "[8c] Predicate Matrix (15 checks)"
