@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-06-25
+
 ### Added
 
 - Stdlib gap-fill across `lib/list.eigs`, `lib/string.eigs`, and
