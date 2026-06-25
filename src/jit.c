@@ -610,10 +610,37 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *has_bail_op = 1;
         } else if (op == OP_JUMP || op == OP_JUMP_BACK) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            /* #267: an OSR thunk (entry_offset > 0) is invoked at a hot loop
+             * header with the LIVE stack pointer. Its job is to accelerate
+             * THAT loop body — once the loop's own back-edge (a JUMP_BACK
+             * whose target == entry_offset) is emitted, the loop is complete
+             * and any further ops are the post-loop continuation. For an
+             * INNER loop that continuation is ENCLOSING-loop code, compiled
+             * against the enclosing loop's stack frame — but the OSR thunk
+             * entered mid-nest at the inner header, so running that code
+             * natively read the wrong (reserved-null / stale) stack slots and
+             * corrupted execution (forced-OSR EIGS_JIT_OSR_THRESHOLD=1,
+             * dynamics__solve.eigs: nondeterministic "cannot index num", a
+             * null INDEX_GET target). Confining each OSR thunk to its own
+             * loop body — the post-loop tail interprets — fixes it and is the
+             * correct OSR boundary anyway: every nested loop now gets its own
+             * tight thunk instead of one over-reaching inner thunk. The
+             * from-zero compile (entry_offset == 0) is unaffected: it enters
+             * at the function start where the stack frame matches the
+             * compiler's tracking, so its loops + tails stay in one thunk. */
+            int stop_after_backedge = 0;
+            if (op == OP_JUMP_BACK && entry_offset > 0) {
+                uint16_t boff = (uint16_t)(chunk->code[i + 1] |
+                                           ((uint16_t)chunk->code[i + 2] << 8));
+                if (i + 3 - (int)boff == entry_offset) stop_after_backedge = 1;
+            }
             i += 3; ops++; non_line_ops++;
             /* Uses r13d/r14 machinery to either chain into native code at
              * the target or bail with jit_advance = target. */
             *has_bail_op = 1;
+            if (stop_after_backedge) {
+                *stop_op = OP_JUMP_BACK; *stop_offset = i; break;
+            }
             /* Stack TOS at the jump target is whatever the predecessor
              * left — opaque to this scanner. */
         } else if (op == OP_JUMP_IF_FALSE || op == OP_JUMP_IF_TRUE) {
