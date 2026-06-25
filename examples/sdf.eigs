@@ -105,7 +105,7 @@ for row in range of r_height:
         if dist >= 19.9:
             line is line + " "
         else:
-            idx is (dist * (len of shades)) / 20
+            idx is floor of ((dist * (len of shades)) / 20)
             if idx < 0:
                 idx is 0
             if idx >= (len of shades):
