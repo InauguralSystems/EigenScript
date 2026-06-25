@@ -175,7 +175,7 @@ static int   g_mixer_open = 0;
 static void *g_music      = NULL;        /* current Mix_Music* */
 static int   (*p_Mix_Init)(int);
 static void  (*p_Mix_Quit)(void);
-static int   (*p_Mix_OpenAudio)(int, uint16_t, int, int);
+static int   (*p_Mix_OpenAudioDevice)(int, uint16_t, int, int, const char*, int);
 static void  (*p_Mix_CloseAudio)(void);
 static void *(*p_Mix_LoadMUS)(const char*);
 static void  (*p_Mix_FreeMusic)(void*);
@@ -196,7 +196,7 @@ static int load_sdl_mixer(void) {
     #define MLOAD(name) do { p_##name = dlsym(g_mixer_lib, #name); \
         if (!p_##name) { fprintf(stderr, "audio_music: missing %s\n", #name); ok = 0; } } while(0)
     MLOAD(Mix_Init); MLOAD(Mix_Quit);
-    MLOAD(Mix_OpenAudio); MLOAD(Mix_CloseAudio);
+    MLOAD(Mix_OpenAudioDevice); MLOAD(Mix_CloseAudio);
     MLOAD(Mix_LoadMUS); MLOAD(Mix_FreeMusic);
     MLOAD(Mix_PlayMusic); MLOAD(Mix_VolumeMusic); MLOAD(Mix_HaltMusic);
     #undef MLOAD
@@ -724,8 +724,10 @@ Value* builtin_audio_music_play(Value *arg) {
     if (!load_sdl_mixer()) return make_num(0);
     if (!g_mixer_open) {
         p_Mix_Init(MY_MIX_INIT_MP3);
-        if (p_Mix_OpenAudio(44100, MY_AUDIO_S16SYS, 2, 2048) < 0) {
-            fprintf(stderr, "audio_music: Mix_OpenAudio failed: %s\n",
+        /* Mix_OpenAudioDevice (not the legacy Mix_OpenAudio) so the music
+         * device coexists with the SFX device opened via SDL_OpenAudioDevice. */
+        if (p_Mix_OpenAudioDevice(44100, MY_AUDIO_S16SYS, 2, 2048, NULL, 0) < 0) {
+            fprintf(stderr, "audio_music: Mix_OpenAudioDevice failed: %s\n",
                     p_SDL_GetError ? p_SDL_GetError() : "?");
             return make_num(0);
         }
