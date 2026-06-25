@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.17.2] — 2026-06-25
+
 ### Fixed
 
 - **`spawn` now raises if the OS cannot create the thread** instead of
