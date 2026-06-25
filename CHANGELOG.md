@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-06-25
+
+### Fixed
+
+- The prebuilt **Linux release binary is now built on Ubuntu 22.04** (glibc
+  2.35) instead of `ubuntu-latest`. GitHub moved the `ubuntu-latest` runner
+  from 22.04 to 24.04 (glibc 2.39), which raised the v0.17.0
+  `eigenscript-linux-x86_64` binary's glibc floor to `GLIBC_2.38` — so it
+  failed with `GLIBC_2.38 not found` on Ubuntu 22.04 LTS (a current,
+  widely-deployed LTS). Building on 22.04 keeps the floor at glibc 2.35, so the
+  binary runs on 22.04 and every newer distro. Homebrew and source builds were
+  never affected (they compile against the local libc).
+
 ## [0.17.0] — 2026-06-25
 
 ### Added
