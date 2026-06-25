@@ -161,6 +161,49 @@ static int load_sdl2(void) {
     return 1;
 }
 
+/* ---- SDL_mixer (streaming background music) ----
+ * Loaded separately and lazily (only when audio_music_* is first used) so the
+ * core graphics binary keeps no hard dependency on libSDL2_mixer. Music plays
+ * on the mixer's own audio device, alongside the existing SFX sample queue
+ * (two SDL audio devices coexist; the OS mixes them). MP3 decode is provided
+ * by SDL_mixer via libmpg123. */
+#define MY_MIX_INIT_MP3    0x00000008
+#define MY_AUDIO_S16SYS    0x8010
+#define MY_MIX_MAX_VOLUME  128
+static void *g_mixer_lib  = NULL;
+static int   g_mixer_open = 0;
+static void *g_music      = NULL;        /* current Mix_Music* */
+static int   (*p_Mix_Init)(int);
+static void  (*p_Mix_Quit)(void);
+static int   (*p_Mix_OpenAudio)(int, uint16_t, int, int);
+static void  (*p_Mix_CloseAudio)(void);
+static void *(*p_Mix_LoadMUS)(const char*);
+static void  (*p_Mix_FreeMusic)(void*);
+static int   (*p_Mix_PlayMusic)(void*, int);
+static int   (*p_Mix_VolumeMusic)(int);
+static int   (*p_Mix_HaltMusic)(void);
+
+static int load_sdl_mixer(void) {
+    if (g_mixer_lib) return 1;
+    g_mixer_lib = dlopen("libSDL2_mixer-2.0.so.0", RTLD_LAZY);
+    if (!g_mixer_lib) g_mixer_lib = dlopen("libSDL2_mixer.so", RTLD_LAZY);
+    if (!g_mixer_lib) {
+        fprintf(stderr, "audio_music: cannot load libSDL2_mixer "
+                "(install libsdl2-mixer-2.0-0)\n");
+        return 0;
+    }
+    int ok = 1;
+    #define MLOAD(name) do { p_##name = dlsym(g_mixer_lib, #name); \
+        if (!p_##name) { fprintf(stderr, "audio_music: missing %s\n", #name); ok = 0; } } while(0)
+    MLOAD(Mix_Init); MLOAD(Mix_Quit);
+    MLOAD(Mix_OpenAudio); MLOAD(Mix_CloseAudio);
+    MLOAD(Mix_LoadMUS); MLOAD(Mix_FreeMusic);
+    MLOAD(Mix_PlayMusic); MLOAD(Mix_VolumeMusic); MLOAD(Mix_HaltMusic);
+    #undef MLOAD
+    if (!ok) { dlclose(g_mixer_lib); g_mixer_lib = NULL; return 0; }
+    return 1;
+}
+
 /* Scancode to key name — SDL2 scancodes */
 static const char* scancode_name(int sc) {
     switch (sc) {
@@ -662,6 +705,66 @@ Value* builtin_audio_pause(Value *arg) {
     if (!g_audio_device) return make_null();
     int pause = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 1;
     p_SDL_PauseAudioDevice(g_audio_device, pause);
+    return make_null();
+}
+
+/* audio_music_play of [path, loops] — stream a music file (mp3/ogg/wav) via
+ * SDL_mixer. loops: -1 = loop forever, 0 = play once, N = N+1 plays. Replaces
+ * any current track. Returns 1 on success, 0 on failure (missing mixer lib,
+ * unreadable/undecodable file, no audio device). */
+Value* builtin_audio_music_play(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1) return make_num(0);
+    Value *pv = arg->data.list.items[0];
+    if (pv->type != VAL_STR) return make_num(0);
+    const char *path = pv->data.str;
+    int loops = (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
+                ? (int)arg->data.list.items[1]->data.num : -1;
+    if (!load_sdl2()) return make_num(0);
+    p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
+    if (!load_sdl_mixer()) return make_num(0);
+    if (!g_mixer_open) {
+        p_Mix_Init(MY_MIX_INIT_MP3);
+        if (p_Mix_OpenAudio(44100, MY_AUDIO_S16SYS, 2, 2048) < 0) {
+            fprintf(stderr, "audio_music: Mix_OpenAudio failed: %s\n",
+                    p_SDL_GetError ? p_SDL_GetError() : "?");
+            return make_num(0);
+        }
+        g_mixer_open = 1;
+    }
+    if (g_music) { p_Mix_HaltMusic(); p_Mix_FreeMusic(g_music); g_music = NULL; }
+    g_music = p_Mix_LoadMUS(path);
+    if (!g_music) {
+        fprintf(stderr, "audio_music: cannot load '%s': %s\n", path,
+                p_SDL_GetError ? p_SDL_GetError() : "?");
+        return make_num(0);
+    }
+    if (p_Mix_PlayMusic(g_music, loops) < 0) {
+        fprintf(stderr, "audio_music: play failed: %s\n",
+                p_SDL_GetError ? p_SDL_GetError() : "?");
+        return make_num(0);
+    }
+    return make_num(1);
+}
+
+/* audio_music_volume of v — music volume 0..128 */
+Value* builtin_audio_music_volume(Value *arg) {
+    if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();
+    int v = 0;
+    if (arg && arg->type == VAL_NUM) v = (int)arg->data.num;
+    else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
+             && arg->data.list.items[0]->type == VAL_NUM)
+        v = (int)arg->data.list.items[0]->data.num;
+    if (v < 0) v = 0;
+    if (v > MY_MIX_MAX_VOLUME) v = MY_MIX_MAX_VOLUME;
+    p_Mix_VolumeMusic(v);
+    return make_null();
+}
+
+/* audio_music_stop of null — halt and free the current track. */
+Value* builtin_audio_music_stop(Value *arg) {
+    (void)arg;
+    if (g_mixer_open && p_Mix_HaltMusic) p_Mix_HaltMusic();
+    if (g_music && p_Mix_FreeMusic) { p_Mix_FreeMusic(g_music); g_music = NULL; }
     return make_null();
 }
 
@@ -1197,6 +1300,9 @@ void register_gfx_builtins(Env *env) {
     env_set_local_owned(env, "audio_pause", make_builtin(builtin_audio_pause));
     env_set_local_owned(env, "audio_play", make_builtin(builtin_audio_play));
     env_set_local_owned(env, "audio_play_loop", make_builtin(builtin_audio_play_loop));
+    env_set_local_owned(env, "audio_music_play", make_builtin(builtin_audio_music_play));
+    env_set_local_owned(env, "audio_music_volume", make_builtin(builtin_audio_music_volume));
+    env_set_local_owned(env, "audio_music_stop", make_builtin(builtin_audio_music_stop));
     env_set_local_owned(env, "audio_queue_size", make_builtin(builtin_audio_queue_size));
     env_set_local_owned(env, "audio_clear", make_builtin(builtin_audio_clear));
     env_set_local_owned(env, "audio_sine", make_builtin(builtin_audio_sine));

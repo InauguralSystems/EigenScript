@@ -4,6 +4,23 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-06-25
+
+### Added
+
+- **Streaming audio file playback (`audio_music_*`)** in the graphics
+  extension (`src/ext_gfx.c`), so a program can play a real music file
+  instead of only synthesized PCM samples. `audio_music_play of [path, loops]`
+  streams an mp3/ogg/wav via SDL_mixer (`loops` -1 = forever); `audio_music_volume
+  of v` (0–128) and `audio_music_stop of null` control it. Music plays on its
+  own audio device alongside the existing SFX sample queue (two SDL audio
+  devices coexist; the OS mixes them), so SFX are unaffected. SDL_mixer (and
+  its MP3 codec, libmpg123) is `dlopen`ed lazily — same pattern as SDL2 — so
+  the gfx binary keeps no hard link dependency and the headless build is
+  untouched. Surfaced by Tidepool needing background music (its audio was
+  sample-queue only). Build with `make gfx`; requires `libsdl2-mixer-2.0-0` at
+  runtime.
+
 ## [0.17.2] — 2026-06-25
 
 ### Fixed
