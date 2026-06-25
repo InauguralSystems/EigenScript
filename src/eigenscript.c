@@ -191,17 +191,23 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
  * skipped — it gets reclaimed by arena_reset. */
 /* ---- Observer system (moved from eval.c) ---- */
 
+/* #262 Phase-3 D: scalar entropy of a number, factored out so the slot
+ * observer can update from a raw immediate double without materializing a
+ * Value (the default path no longer promotes observed nums to tracked
+ * pointers). Single source of truth for the VAL_NUM entropy formula. */
+static double entropy_of_num(double num) {
+    double x = fabs(num);
+    if (x == 0.0 || x == 1.0) return 0.0;
+    double p = 1.0 / (1.0 + x);
+    if (p <= 0.0 || p >= 1.0) return 0.0;
+    return -(p * log2(p) + (1.0-p) * log2(1.0-p));
+}
+
 static double compute_entropy_impl(Value *v, int depth) {
     if (!v || depth > 64) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
-        case VAL_NUM: {
-            double x = fabs(v->data.num);
-            if (x == 0.0 || x == 1.0) return 0.0;
-            double p = 1.0 / (1.0 + x);
-            if (p <= 0.0 || p >= 1.0) return 0.0;
-            return -(p * log2(p) + (1.0-p) * log2(1.0-p));
-        }
+        case VAL_NUM: return entropy_of_num(v->data.num);
         case VAL_STR: {
             if (!v->data.str || !v->data.str[0]) return 0.0;
             int freq[256] = {0};
@@ -239,204 +245,168 @@ static double compute_entropy_impl(Value *v, int depth) {
 
 double compute_entropy(Value *v) { return compute_entropy_impl(v, 0); }
 
-/* Push dh onto v's ring buffer, allocating it lazily on the first push.
- * Arena Values skip windowing (their predicates fall back to count==0).
- * Caller is update_observer; obs_age has just become >= 1 so we know
- * this is a real delta, not the initial-observation no-op. */
-static void observer_window_push(Value *v, double dh) {
-    if (!v || v->arena) return;
-    if (!v->dh_window) {
-        v->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-        v->dh_window_head = 0;
-        v->dh_window_count = 0;
+
+/* ===== #262 slot-keyed observer (the only observer model) =====
+ *
+ * Observer trajectory state lives on a per-binding ObserverSlot (env + slot
+ * index), not on the recyclable Value object. Updated EAGERLY at assignment
+ * time (no dirty/lazy step): the variable's own value sequence is observed
+ * regardless of which Value object backs it, so an iterate built through
+ * aliasing temps tracks correctly. This is what fixed #262 — the value-path
+ * observer model (state on the Value) was removed in Step E. */
+
+static void observer_slot_window_push(ObserverSlot *s, double dh) {
+    if (!s->dh_window) {
+        s->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+        s->dh_window_head = 0;
+        s->dh_window_count = 0;
     }
-    v->dh_window[v->dh_window_head] = dh;
-    v->dh_window_head = (uint8_t)((v->dh_window_head + 1) % OBSERVER_WINDOW_N);
-    if (v->dh_window_count < OBSERVER_WINDOW_N) v->dh_window_count++;
+    s->dh_window[s->dh_window_head] = dh;
+    s->dh_window_head = (uint8_t)((s->dh_window_head + 1) % OBSERVER_WINDOW_N);
+    if (s->dh_window_count < OBSERVER_WINDOW_N) s->dh_window_count++;
 }
 
-size_t observer_window_size(const Value *v) {
-    return v ? (size_t)v->dh_window_count : 0;
-}
-
-double observer_window_get(const Value *v, size_t offset_back) {
-    /* offset_back 0 = most recent. Caller must check size first. */
-    if (!v || !v->dh_window || offset_back >= v->dh_window_count) return 0.0;
-    /* head points at NEXT write slot; most-recent is head-1. */
-    int idx = (int)v->dh_window_head - 1 - (int)offset_back;
+static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back) {
+    if (!s->dh_window || offset_back >= s->dh_window_count) return 0.0;
+    int idx = (int)s->dh_window_head - 1 - (int)offset_back;
     while (idx < 0) idx += OBSERVER_WINDOW_N;
-    return v->dh_window[idx];
+    return s->dh_window[idx];
 }
 
-/* Windowed `improving` (#207, docs/PREDICATES.md): the value is becoming more
- * determined *over its recent history*, not on a single step. Replaces the old
- * pointwise `dH < -dh_small`, which fired on one negative tick and dropped the
- * next frame if entropy bounced. Shared by the PREDICATE op (vm.c) and the
- * report builtin (builtins.c) so the two cannot drift.
- *
- *   count >= 3
- *   AND sum(window) < 0          (NET entropy descent — magnitude-aware)
- *   AND down_fraction >= 0.6     (a sustained majority of genuine descent
- *                                 steps; a "down" step is dH < -dh_small)
- *
- * This is a deliberate hybrid, not a port of any single ancestor rule:
- *  - The `sum < 0` gate is magnitude-aware: a trajectory whose entropy ends
- *    HIGHER than it started is never "improving", even if most steps ticked
- *    down. (EigenChat's TemporalLossState.is_improving counts step directions
- *    only and so reports improvement on a net-worsening run — we don't.)
- *  - The down_fraction vote (vs an absolute bounce cap) tolerates noise
- *    proportionally, so a genuine noisy descent isn't dropped just because it
- *    accrued a couple of up-ticks over a long window.
- *  - The descent threshold is `dh_small`, NOT `dh_zero`: a steady descent
- *    inside the gray band (dh_zero <= |dH| < dh_small) does NOT count as
- *    improving — it reads `stable`, preserving the #187 mutual-exclusivity
- *    contract and matching the pointwise rule this windowing replaced.
- *
- * down_fraction >= 0.6 is tested as `down * 5 >= cnt * 3` (0.6 = 3/5, exact in
- * integers). Requiring >=2 genuine descent steps (cnt>=3) also keeps improving
- * disjoint from converged, which needs every |dH| < dh_zero. */
-int observer_improving(const Value *v) {
-    size_t cnt = observer_window_size(v);
-    if (cnt < 3) return 0;
+/* Core: fold a precomputed entropy into binding slot `idx` of env `e`. */
+static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap) {
+        int ncap = idx + 8;
+        ObserverSlot *no = realloc(e->obs, (size_t)ncap * sizeof(ObserverSlot));
+        if (!no) return;
+        memset(no + e->obs_cap, 0, (size_t)(ncap - e->obs_cap) * sizeof(ObserverSlot));
+        e->obs = no;
+        e->obs_cap = ncap;
+    }
+    ObserverSlot *s = &e->obs[idx];
+    s->prev_dH = s->dH;
+    if (!s->used || s->obs_age == 0) {
+        s->dH = 0;                 /* first observation of this binding */
+    } else {
+        s->dH = new_entropy - s->last_entropy;
+        observer_slot_window_push(s, s->dH);
+    }
+    s->entropy = new_entropy;
+    s->last_entropy = new_entropy;
+    s->obs_age++;
+    s->used = 1;
+}
+
+void observer_slot_update(Env *e, int idx, Value *newval) {
+    observer_slot_update_e(e, idx, compute_entropy(newval));
+}
+
+/* #262 Phase-3 D: update a binding's observer slot from a raw immediate
+ * number, so the default path can observe without promoting the num to a
+ * tracked Value. Same trajectory math as observer_slot_update. */
+void observer_slot_update_num(Env *e, int idx, double num) {
+    observer_slot_update_e(e, idx, entropy_of_num(num));
+}
+
+void observer_slot_reset(Env *e) {
+    if (!e || !e->obs) return;
+    vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
+    for (int i = 0; i < e->obs_cap; i++) free(e->obs[i].dh_window);
+    free(e->obs);
+    e->obs = NULL;
+    e->obs_cap = 0;
+}
+
+int observer_slot_converged(const ObserverSlot *s) {
+    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++)
+        if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
+    return (s->entropy < g_obs_h_low) ? 1 : 0;
+}
+
+int observer_slot_equilibrium(const ObserverSlot *s) {
+    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
     double sum = 0.0;
-    int down = 0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_window_get(s, i);
+    double mean = sum / (double)OBSERVER_WINDOW_N;
+    if (fabs(mean) >= g_obs_dh_zero) return 0;
+    double var = 0.0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+        double d = observer_slot_window_get(s, i) - mean;
+        var += d * d;
+    }
+    var /= (double)OBSERVER_WINDOW_N;
+    return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
+}
+
+/* Slot mirrors of the remaining four windowed predicates — identical logic to
+ * the observer_*(Value*) versions above, reading the slot's window/entropy. */
+int observer_slot_improving(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
+    if (cnt < 3) return 0;
+    double sum = 0.0; int down = 0;
     for (size_t i = 0; i < cnt; i++) {
-        double w = observer_window_get(v, i);
+        double w = observer_slot_window_get(s, i);
         sum += w;
         if (w < -g_obs_dh_small) down++;
     }
     return (sum < 0.0 && (size_t)(down * 5) >= cnt * 3) ? 1 : 0;
 }
 
-/* Windowed `diverging` (#208, docs/PREDICATES.md): the mirror of `improving` —
- * information content RISING over the window, the value becoming *less*
- * determined. Same hybrid, sign reversed:
- *
- *   count >= 3
- *   AND sum(window) > 0          (NET entropy ascent — magnitude-aware)
- *   AND up_fraction >= 0.6       (>=60% genuine ascent steps, dH > +dh_small)
- *
- * The sum>0 gate refuses to call a net-improving run diverging (the magnitude
- * mirror of improving's anti-lie gate); the proportional vote tolerates noisy
- * down-ticks; the dh_small threshold keeps a steady gray-band ascent reading
- * `stable`, not `diverging`, honoring the #187 mutual-exclusivity contract. A
- * sustained oscillation has neither a net trend nor a directional majority, so
- * it no longer co-fires diverging the way the old pointwise `dH > dh_small`
- * did. See observer_improving for the per-gate rationale. */
-int observer_diverging(const Value *v) {
-    size_t cnt = observer_window_size(v);
+int observer_slot_diverging(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < 3) return 0;
-    double sum = 0.0;
-    int up = 0;
+    double sum = 0.0; int up = 0;
     for (size_t i = 0; i < cnt; i++) {
-        double w = observer_window_get(v, i);
+        double w = observer_slot_window_get(s, i);
         sum += w;
         if (w > g_obs_dh_small) up++;
     }
     return (sum > 0.0 && (size_t)(up * 5) >= cnt * 3) ? 1 : 0;
 }
 
-/* Windowed `oscillating` (#206, docs/PREDICATES.md): sustained back-and-forth,
- * not a single reversal.
- *
- *   count >= 3
- *   AND sign_flip_count(window) >= FLIPS   (FLIPS = ceil(N/3) = 4 at N=10)
- *
- * A sign flip is an adjacent pair with opposite signs whose magnitudes BOTH
- * clear dh_zero — sub-noise wobble does not count. Note this gates at dh_zero,
- * NOT dh_small like improving/diverging: oscillating is a deadband-escape test,
- * not a direction verdict, so #187 deliberately left it on dh_zero. Requiring
- * FLIPS=4 flips means a window needs >=5 samples (4 adjacent pairs) to ever
- * fire — a couple of reversals in an otherwise monotone trajectory do not. */
-int observer_oscillating(const Value *v) {
-    size_t cnt = observer_window_size(v);
+int observer_slot_oscillating(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < 3) return 0;
-    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;   /* ceil(N/3) = 4 at N=10 */
+    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
-        double a = observer_window_get(v, i);
-        double b = observer_window_get(v, i + 1);
-        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero)
-            flips++;
+        double a = observer_slot_window_get(s, i);
+        double b = observer_slot_window_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) flips++;
     }
     return (flips >= FLIPS) ? 1 : 0;
 }
 
-/* Windowed `equilibrium` (#209, docs/PREDICATES.md): the value is sitting still
- * on average, regardless of entropy.
- *
- *   count == N
- *   AND |mean(window)| < dh_zero
- *   AND variance(window) < dh_zero^2
- *
- * Zero-mean with negligible spread. Unlike the trajectory predicates this needs
- * a FULL window (count == N). `converged` is the strict subset that also sits
- * in a low-entropy basin (entropy < h_low); a high-entropy value can be at
- * equilibrium while still information-rich (and then also reads `stable`). */
-int observer_equilibrium(const Value *v) {
-    size_t cnt = observer_window_size(v);
+int observer_slot_stable(const ObserverSlot *s) {
+    size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < OBSERVER_WINDOW_N) return 0;
-    double sum = 0.0;
-    for (size_t i = 0; i < cnt; i++) sum += observer_window_get(v, i);
-    double mean = sum / (double)cnt;
-    if (fabs(mean) >= g_obs_dh_zero) return 0;
-    double var = 0.0;
-    for (size_t i = 0; i < cnt; i++) {
-        double d = observer_window_get(v, i) - mean;
-        var += d * d;
-    }
-    var /= (double)cnt;
-    return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
-}
-
-/* Windowed `stable` (#205, docs/PREDICATES.md): small but nonzero motion at
- * high information content, holding its direction.
- *
- *   count == N
- *   AND every |dH| < dh_small
- *   AND entropy >= h_low
- *   AND no consecutive sign flips (no adjacent pair with opposite signs whose
- *       magnitudes both clear dh_zero — that would be oscillation)
- *
- * The "doing a little, but settled and not bouncing" band. A full-window quiet
- * high-entropy value is both `equilibrium` and `stable` (report resolves to
- * `equilibrium` first); a low-entropy quiet value is `converged`, not `stable`,
- * because the entropy >= h_low clause excludes it. */
-int observer_stable(const Value *v) {
-    size_t cnt = observer_window_size(v);
-    if (cnt < OBSERVER_WINDOW_N) return 0;
-    if (v->entropy < g_obs_h_low) return 0;
-    for (size_t i = 0; i < cnt; i++) {
-        if (fabs(observer_window_get(v, i)) >= g_obs_dh_small) return 0;
-    }
+    if (s->entropy < g_obs_h_low) return 0;
+    for (size_t i = 0; i < cnt; i++)
+        if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_small) return 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
-        double a = observer_window_get(v, i);
-        double b = observer_window_get(v, i + 1);
-        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero)
-            return 0;
+        double a = observer_slot_window_get(s, i);
+        double b = observer_slot_window_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
     }
     return 1;
 }
 
-void update_observer(Value *v) {
-    if (!v) return;
-    double new_entropy = compute_entropy(v);
-    v->prev_dH = v->dH;
-    if (v->obs_age == 0) {
-        /* First observation — no delta yet */
-        v->dH = 0;
-    } else {
-        v->dH = new_entropy - v->last_entropy;
-        observer_window_push(v, v->dH);
-    }
-    v->entropy = new_entropy;
-    v->last_entropy = new_entropy;
-    v->obs_age++;
-    v->dirty = 0;
-}
-
-void observer_ensure_fresh(Value *v) {
-    if (v && v->dirty) update_observer(v);
+/* Slot mirror of builtin_report — same priority order and partial-window
+ * fallback, reading the slot trajectory instead of a Value's. */
+const char *observer_slot_report(const ObserverSlot *s) {
+    if (!s) return NULL;
+    if (observer_slot_oscillating(s)) return "oscillating";
+    if (observer_slot_diverging(s))   return "diverging";
+    if (observer_slot_improving(s))   return "improving";
+    if (observer_slot_converged(s))   return "converged";
+    if (observer_slot_equilibrium(s)) return "equilibrium";
+    if (observer_slot_stable(s))      return "stable";
+    /* Partial-window best-effort label (mirrors builtin_report's tail). */
+    if (fabs(s->dH) < g_obs_dh_zero) return "equilibrium";
+    if (fabs(s->dH) < g_obs_dh_small && s->entropy >= g_obs_h_low) return "stable";
+    return "stable";
 }
 
 /* g_last_observer, g_builtin_call_env, g_unobserved_depth are EigsThread
@@ -468,6 +438,7 @@ void eigs_thread_drain_caches(EigsThread *th) {
     Env *en = th->env_freelist;
     while (en) {
         Env *next = en->parent;
+        observer_slot_reset(en);   /* #262 Phase-1 (normally already reset on park) */
         free(en->names);
         free(en->values);
         free(en->assign_counts);
@@ -495,21 +466,6 @@ void eigs_thread_drain_caches(EigsThread *th) {
 
 void free_value(Value *v) {
     if (!v || v->arena) return;
-    /* The observer holds a borrowed alias, not a ref. Freeing the value
-     * it points at (e.g. `b is buffer of N` then `b is null` — the
-     * rebind drops the last ref) left a dangling pointer that the next
-     * loop-stall check / predicate / interrogative dereferenced; for
-     * freelisted NUMs it silently read recycled data instead. */
-    if (v == g_last_observer) g_last_observer = NULL;
-    /* Observer ring buffer is heap-allocated and outlives the Value's
-     * payload only when freelisting — free it before either path so we
-     * don't leak when a tracked NUM is recycled. */
-    if (v->dh_window) {
-        free(v->dh_window);
-        v->dh_window = NULL;
-        v->dh_window_head = 0;
-        v->dh_window_count = 0;
-    }
     if (v->type == VAL_NUM) {
         /* Route freed NUMs to freelist for reuse by make_num */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
@@ -622,32 +578,10 @@ static Value g_null_singleton;
 
 /* ---- NaN-boxing boundary shims ----
  *
- * make_tracked_num: heap-allocated VAL_NUM that survives arena reset.
- * Used when a previously-immediate slot must be promoted because the
- * binding becomes observer-tracked.
- */
-Value* make_tracked_num(double n) {
-    n = num_guard(n);
-    Value *v;
-    if (g_num_freelist) {
-        v = g_num_freelist;
-        memcpy(&g_num_freelist, &v->data, sizeof(Value *));
-        g_num_freelist_count--;
-        memset(v, 0, sizeof(Value));
-    } else {
-        v = xcalloc(1, sizeof(Value));
-    }
-    v->type = VAL_NUM;
-    v->data.num = n;
-    v->refcount = 1;
-    v->arena = 0;
-    return v;
-}
-
-/* slot_from_value: takes ownership of the input ref.
+ * slot_from_value: takes ownership of the input ref.
  *   - NULL or VAL_NULL singleton -> immediate null (input is borrowed)
- *   - VAL_NUM with no observer state -> immediate; input released
- *   - VAL_NUM with observer state -> TAG_TRACKED; ref transferred
+ *   - VAL_NUM -> immediate double; input released (#262 Step E: nums never
+ *     carry observer state, so there is no tracked-pointer case)
  *   - any other type -> TAG_HEAP; ref transferred
  *
  * Arena-allocated VAL_NUM cannot be tracked (it would die at arena
@@ -660,26 +594,12 @@ EigsSlot slot_from_value(Value *v) {
         return slot_null();
     }
     if (v->type == VAL_NUM) {
-        if (v->obs_age == 0 && !v->dirty
-            && v->entropy == 0.0 && v->dH == 0.0
-            && v->last_entropy == 0.0 && v->prev_dH == 0.0) {
-            double n = v->data.num;
-            val_decref(v);
-            return slot_from_num(n);
-        }
-        /* Observer-tracked number: must be heap so it survives arena reset. */
-        if (v->arena) {
-            Value *h = make_tracked_num(v->data.num);
-            h->entropy = v->entropy;
-            h->dH = v->dH;
-            h->last_entropy = v->last_entropy;
-            h->prev_dH = v->prev_dH;
-            h->obs_age = v->obs_age;
-            h->dirty = v->dirty;
-            /* arena copy: nothing to decref */
-            return slot_from_tracked(h);
-        }
-        return slot_from_tracked(v);
+        /* #262 Step E: a number never carries observer state (it lives on the
+         * Env slot), so every VAL_NUM ships as an immediate double. TAG_TRACKED
+         * is dead. */
+        double n = v->data.num;
+        val_decref(v);
+        return slot_from_num(n);
     }
     return slot_from_heap(v);
 }
@@ -693,7 +613,7 @@ Value* slot_to_value(EigsSlot s) {
     if (slot_is_num(s)) return make_num(s.d);
     if (slot_is_null(s)) return &g_null_singleton;
     if (slot_is_bool(s)) return make_num(slot_as_bool(s) ? 1.0 : 0.0);
-    if (slot_is_heap(s) || slot_is_tracked(s)) {
+    if (slot_is_heap(s)) {
         Value *v = slot_as_ptr(s);
         val_incref(v);
         return v;
@@ -705,13 +625,8 @@ Value* slot_to_value(EigsSlot s) {
 Value* promote_if_arena(Value *v) {
     if (!v || !v->arena) return v;
     if (v->type == VAL_NUM) {
-        Value *h = make_num_permanent(v->data.num);
-        h->entropy = v->entropy;
-        h->dH = v->dH;
-        h->last_entropy = v->last_entropy;
-        h->obs_age = v->obs_age;
-        h->prev_dH = v->prev_dH;
-        return h;
+        /* #262 Step E: no observer fields to carry across the promotion. */
+        return make_num_permanent(v->data.num);
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
         Value *h = xcalloc(1, sizeof(Value));
@@ -1532,6 +1447,9 @@ void env_decref(Env *env) {
         slot_decref(env->values[i]);
     }
     Env *parent = env->parent;
+    /* #262 Phase-1: drop slot-keyed observer state on both park and free so a
+     * recycled env never carries another binding's trajectory. */
+    observer_slot_reset(env);
     if (env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
         g_env_freelist_count < ENV_FREELIST_CAP) {
         env->count = 0;
@@ -1585,6 +1503,7 @@ void env_destroy_final(Env *env) {
     env->env_refcount = 1 << 30;
     for (int i = 0; i < count; i++)
         slot_decref(vals[i]);
+    observer_slot_reset(env);   /* #262 Phase-1 */
     free(vals);
     free(env->names);
     free(env->assign_counts);

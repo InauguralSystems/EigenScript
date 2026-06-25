@@ -2243,6 +2243,42 @@ for libf in ../lib/*.eigs; do
 done
 echo ""
 
+# [97] Example programs — every examples/*.eigs (and examples/stem/*.eigs)
+# must run to a clean exit. examples/errors/ is covered by [90]; the gfx
+# demos (gfx_* builtins) need `make gfx` and are skipped on the default build.
+# Each runs from its own directory (so relative paths resolve) with stdin
+# closed. rc_ok tolerates the spawn-thread LeakSanitizer floor; no non-gfx
+# example uses spawn, so this stays leak-clean.
+echo "[97] Example programs (examples/*.eigs; gfx demos skipped)"
+EX_PASS=0; EX_FAIL=0; EX_SKIP=0
+EIGS_ABS="$(pwd)/eigenscript"
+# GNU `timeout` is the runaway guard, but it isn't on a stock macOS (BSD
+# userland); fall back to gtimeout, or to no wrapper (the examples all
+# terminate quickly, so the guard is belt-and-suspenders).
+EX_TMO=""
+if command -v timeout >/dev/null 2>&1; then EX_TMO="timeout 60"
+elif command -v gtimeout >/dev/null 2>&1; then EX_TMO="gtimeout 60"; fi
+for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
+    if grep -q 'gfx_' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
+    EX_OUT=$( cd "$(dirname "$f")" && $EX_TMO "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
+    if rc_ok "$EX_RC" "$EX_OUT"; then
+        EX_PASS=$((EX_PASS + 1))
+    else
+        echo "  FAIL($EX_RC): $f"
+        printf '%s\n' "$EX_OUT" | tail -1 | sed 's/^/      /'
+        EX_FAIL=$((EX_FAIL + 1))
+    fi
+done
+TOTAL=$((TOTAL + EX_PASS + EX_FAIL))
+PASS=$((PASS + EX_PASS))
+FAIL=$((FAIL + EX_FAIL))
+if [ "$EX_FAIL" -gt 0 ]; then
+    echo "  FAIL: $EX_FAIL example(s) errored"
+else
+    echo "  PASS: all $EX_PASS example programs run clean ($EX_SKIP gfx skipped)"
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then

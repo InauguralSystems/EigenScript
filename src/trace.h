@@ -68,6 +68,14 @@ void trace_line(int line);
  * numbers verbatim; non-numerics get a type marker only. */
 void trace_assign(const char *name, EigsSlot value);
 
+/* #262 Phase-3 D2: overwrite the observer snapshot of `name`'s most recent
+ * history entry with slot-sourced entropy/dH/last_entropy. Called from
+ * OBSERVE_NAME_POST under g_trace_obs_hist so `where/why/how is x at L` reads
+ * the Env slot, decoupling the temporal feature from the Value observer
+ * fields. `name` must be the interned constant. */
+void trace_record_obs(const char *name, double entropy, double dH,
+                      double last_entropy);
+
 /* Forward decl; Value is fully defined in eigenscript.h. */
 struct Value;
 

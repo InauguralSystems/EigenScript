@@ -67,7 +67,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Build the Linux binary on the OLDEST supported LTS so its glibc
+          # floor stays low and the artifact runs on older distros. GitHub
+          # flipped `ubuntu-latest` 22.04 -> 24.04 (glibc 2.39), which raised
+          # the floor to GLIBC_2.38 and broke the binary on Ubuntu 22.04 LTS.
+          # 22.04 = glibc 2.35; the result runs on 22.04 and every newer distro.
+          - os: ubuntu-22.04
             label: linux-x86_64
           - os: macos-15-intel
             label: macos-x86_64
@@ -142,7 +147,7 @@ jobs:
         run: cp "${{ steps.attest.outputs.bundle-path }}" attestation.sigstore.json
 
       - name: Upload binaries to release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
           tag_name: ${{ needs.tag.outputs.tag }}
           files: |

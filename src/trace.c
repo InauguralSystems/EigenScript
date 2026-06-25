@@ -221,21 +221,39 @@ static void prev_record_assign(const char *name, EigsSlot value) {
                 if (no) { e->obs = no; e->obs_cap = nc; }
             }
             if (oi < e->obs_cap) {
-                ObsHistEntry *o = &e->obs[oi];
-                Value *v = (slot_is_tracked(value) || slot_is_heap(value))
-                         ? slot_as_ptr(value) : NULL;
-                if (v) {
-                    observer_ensure_fresh(v);
-                    o->entropy      = v->entropy;
-                    o->dH           = v->dH;
-                    o->last_entropy = v->last_entropy;
-                    o->valid        = 1;
-                } else {
-                    o->valid = 0;
-                }
+                /* #262 Step E: observer state lives on the Env slot, not the
+                 * Value — leave the snapshot empty here; OBSERVE_NAME_POST fills
+                 * it from the fresh slot via trace_record_obs (runs after the
+                 * SET that created this history entry). */
+                e->obs[oi].valid = 0;
             }
         }
     }
+}
+
+/* #262 Phase-3 D2: patch the observer snapshot for `name`'s most recent
+ * history entry from the slot-model trajectory. Called by OBSERVE_NAME_POST
+ * after the binding's slot is freshly updated, so `where/why/how is x at L`
+ * sources entropy/dH from the Env slot rather than the (Step-E-doomed) Value
+ * observer fields. The history entry and its parallel obs slot were created by
+ * the preceding prev_record_assign — the SET runs before OBSERVE_NAME_POST —
+ * so this overwrites a just-written (and, pre-flip, identical value-sourced)
+ * entry, or fills the valid=0 entry left once observed numbers become
+ * immediates. `name` must be the interned constant (pointer-keyed lookup).
+ * Gated by g_trace_obs_hist at the call site. */
+void trace_record_obs(const char *name, double entropy, double dH,
+                      double last_entropy) {
+    if (!g_prev_tab || !name) return;
+    PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
+    if (!e->name || e->hist_count == 0 || !e->obs) return;
+    int idx = e->hist_count - 1;
+    int oi = idx - e->obs_start;
+    if (oi < 0 || oi >= e->obs_cap) return;
+    ObsHistEntry *o = &e->obs[oi];
+    o->entropy = entropy;
+    o->dH = dH;
+    o->last_entropy = last_entropy;
+    o->valid = 1;
 }
 
 int trace_query_prev(const char *interned_name, EigsSlot *out) {
@@ -786,7 +804,7 @@ static void write_slot(EigsSlot s) {
     if (slot_is_num(s))  { fprintf(g_trace_fp, "%.17g", s.d); return; }
     if (slot_is_null(s)) { fputs("null", g_trace_fp); return; }
     if (slot_is_bool(s)) { fputs(slot_as_bool(s) ? "true" : "false", g_trace_fp); return; }
-    if (slot_is_tracked(s) || slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
+    if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
     fputs("<unknown>", g_trace_fp);
 }
 

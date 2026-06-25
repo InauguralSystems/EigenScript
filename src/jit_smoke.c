@@ -76,6 +76,11 @@ void jit_helper_observe_assign(struct EigsChunk *chunk, int name_idx) {
 void jit_helper_observe_assign_local(int slot) {
     (void)slot;
 }
+/* #262 Phase-3 C.2: slot-keyed observer op helpers (linker-immediate stubs). */
+void jit_helper_report_slot(int slot) { (void)slot; }
+void jit_helper_observe_name_post(struct EigsChunk *chunk, int name_idx) {
+    (void)chunk; (void)name_idx;
+}
 
 /* Stages 4q-a / 4q-c / 4q-d / 4q-f / 4v: same linker-immediate pattern —
  * jit.c references each helper as a call-site immediate from its emitter

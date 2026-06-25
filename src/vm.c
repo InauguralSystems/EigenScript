@@ -14,6 +14,37 @@
 #include <string.h>
 #include <math.h>
 
+/* #262 slot-keyed observer shadow. Off unless EIGS_OBS_SHADOW is set;
+ * -1 = not yet probed. When on, every observe site records the binding's
+ * trajectory on its env slot (keyed by env+index, independent of the Value
+ * object) and the bare predicates read that slot. The per-Value path stays
+ * authoritative; a no-op when the flag is unset. The last-observed-slot
+ * tracker (g_last_obs_slot_env/idx) lives on EigsThread (eigenscript.h). */
+Value* builtin_report(Value *arg);
+Value* builtin_observe(Value *arg);
+
+/* #262 Phase-3 D: read the last-observed trajectory (dH, entropy) for the
+ * observer loop-stall check. Prefers the slot model (the default); falls back
+ * to the global last-observer Value when the slot isn't populated (e.g. a
+ * the last-observed binding's slot). Shared by the interpreter
+ * CASE(LOOP_STALL_CHECK) and jit_helper_loop_stall_check so the two can never
+ * disagree on loop classification (the same lockstep invariant the opcode
+ * encoding enforces). Returns 1 if (*dH, *ent) were filled. */
+static inline int obs_stall_trajectory(double *dH, double *ent) {
+    if (g_last_obs_slot_env &&
+        g_last_obs_slot_idx >= 0 &&
+        g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap &&
+        g_last_obs_slot_env->obs[g_last_obs_slot_idx].used) {
+        const ObserverSlot *s = &g_last_obs_slot_env->obs[g_last_obs_slot_idx];
+        *dH = s->dH; *ent = s->entropy;
+        return 1;
+    }
+    return 0;
+}
+void vm_obs_slot_dropped(Env *e) {
+    if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
+}
+
 /* Phase 5: VM execution state (g_vm), loop-stall accounting
  * (g_loop_stall_count, g_loop_iterations, g_loop_exit_reason),
  * control-flow / error-state globals (g_return_val, g_returning,
@@ -270,7 +301,7 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
         if (stored == key || strcmp(stored, key) == 0) {
             Value *existing = dict->data.dict.vals[ce->index];
             if (existing && existing->type == VAL_NUM &&
-                existing->refcount == 1 && existing->obs_age == 0 &&
+                existing->refcount == 1 &&
                 !existing->arena) {
                 existing->data.num = num;
                 return 1;
@@ -338,7 +369,7 @@ static inline EigsSlot slot_bridge_wrap(Value *v) {
         val_decref(v);
         return slot_null();
     }
-    if (v->type == VAL_NUM && v->obs_age > 0) return slot_from_tracked(v);
+    /* #262 Step E: nums never carry observer state → never TAG_TRACKED. */
     return slot_from_heap(v);
 }
 
@@ -663,7 +694,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
         if (target->type == VAL_LIST) {
             if (i < target->data.list.count) {
                 Value *item = target->data.list.items[i];
-                if (item && item->type == VAL_NUM && item->obs_age == 0) {
+                if (item && item->type == VAL_NUM) {
                     vm_push_slot(slot_from_num(item->data.num));
                 } else {
                     val_incref(item);
@@ -716,7 +747,7 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
         }
         Value *v = dict_get_cached(target, key, h);
         if (v) {
-            if (v->type == VAL_NUM && v->obs_age == 0) {
+            if (v->type == VAL_NUM) {
                 vm_push_slot(slot_from_num(v->data.num));
             } else {
                 val_incref(v);
@@ -765,7 +796,7 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                 }
                 Value *v = dict_get_cached(dict, key, h);
                 if (v) {
-                    if (v->type == VAL_NUM && v->obs_age == 0) {
+                    if (v->type == VAL_NUM) {
                         vm_push_slot(slot_from_num(v->data.num));
                     } else {
                         val_incref(v);
@@ -853,7 +884,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
     if (target->type == VAL_DICT) {
         Value *v = dict_get_cached(target, key, h);
         if (v) {
-            if (v->type == VAL_NUM && v->obs_age == 0) {
+            if (v->type == VAL_NUM) {
                 double n = v->data.num;
                 val_decref(target);
                 vm_push_slot(slot_from_num(n));
@@ -923,92 +954,76 @@ void jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
  *
  * No runtime_error paths — these helpers never set g_vm.had_error. */
 void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
-    if (g_unobserved_depth != 0) return;
-    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
-    EigsSlot s = g_vm.stack[g_vm.sp - 1];
-    Value *v = NULL;
-    if (slot_is_num(s)) {
-        v = make_tracked_num(s.d);
-        g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
-    } else if (slot_is_ptr(s)) {
-        v = slot_as_ptr(s);
-    }
-    if (v) {
-        const char *name = chunk->const_interns[name_idx];
-        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
-        if (h == 0) {
-            h = env_hash_name(name);
-            if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
-        }
-        Value *prev = env_get_hashed(frame->env, name, h);
-        if (prev && prev != v) {
-            observer_ensure_fresh(prev);
-            v->last_entropy = prev->last_entropy;
-            v->entropy = prev->entropy;
-            v->obs_age = prev->obs_age;
-            v->dH = prev->dH;
-            v->prev_dH = prev->prev_dH;
-            /* Move ring-buffer ownership: prev is about to be freed
-             * (or at least lose its observer alias). Transfer prev's
-             * buffer to v — but only if prev actually holds one. If prev
-             * has no window (e.g. an alias chain already migrated it onto
-             * v earlier in the same statement), do NOT free v's freshly
-             * received window and replace it with nothing — that resets
-             * the window every iteration so it never fills (issue #260). */
-            if (prev->dh_window) {
-                if (v->dh_window) free(v->dh_window);
-                v->dh_window = prev->dh_window;
-                v->dh_window_head = prev->dh_window_head;
-                v->dh_window_count = prev->dh_window_count;
-                prev->dh_window = NULL;
-                prev->dh_window_head = 0;
-                prev->dh_window_count = 0;
-            }
-        }
-        v->dirty = 1;
-        g_last_observer = v;
-    }
+    /* #262 Phase-3/E — slot model: a name binding is observed by the
+     * OBSERVE_NAME_POST that runs after its SET (when the slot is live), so this
+     * pre-SET name hook does nothing. Kept as a no-op because the JIT emitter
+     * still emits a call for OP_OBSERVE_ASSIGN. */
+    (void)chunk; (void)name_idx;
 }
 
 void jit_helper_observe_assign_local(int slot) {
     if (g_unobserved_depth != 0) return;
+    /* #262 Phase-3/E — slot model: observe the persistent (fn_env, slot)
+     * trajectory directly from TOS. No promotion, no Value-side state, no window
+     * migration (the slot persists across assigns). */
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
-    Value *v = NULL;
+    Env *e = frame->fn_env;
     if (slot_is_num(s)) {
-        v = make_tracked_num(s.d);
-        g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
+        observer_slot_update_num(e, slot, s.d);
+        g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
     } else if (slot_is_ptr(s)) {
-        v = slot_as_ptr(s);
+        observer_slot_update(e, slot, slot_as_ptr(s));
+        g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
     }
-    if (v) {
-        Env *e = frame->fn_env;
-        Value *prev = NULL;
-        if (e && slot < e->count) {
-            EigsSlot ps = e->values[slot];
-            if (slot_is_ptr(ps)) prev = slot_as_ptr(ps);
+}
+
+/* #262 Phase-3 C.2: JIT helpers for the slot-keyed observer ops, so observer
+ * loops still JIT-compile under the default slot model. Mirror the interpreter
+ * CASE bodies. Stack contract matches the OBSERVE_ASSIGN helpers: the emitter
+ * syncs %ecx->g_vm.sp before the call and reloads after, so a helper that
+ * vm_push()es a result is reflected in the reloaded sp cache. */
+
+/* OP_REPORT_SLOT [slot] — pushes the band string for a local binding. A local
+ * slot always exists in the frame, so no chunk and no error path. */
+void jit_helper_report_slot(int slot) {
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    Env *e = frame->fn_env;
+    Value *result;
+    if (e && slot < e->obs_cap && e->obs[slot].used) {
+        result = make_str(observer_slot_report(&e->obs[slot]));
+    } else {
+        result = make_str("equilibrium");  /* unobserved binding — no trajectory */
+    }
+    vm_push(result);
+}
+
+/* OP_OBSERVE_NAME_POST [name_idx] — observe a name binding's slot from TOS
+ * after its SET. Peeks TOS; no stack change. Mirrors CASE(OBSERVE_NAME_POST). */
+void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
+    if (g_unobserved_depth != 0) return;
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    EigsSlot s = g_vm.stack[g_vm.sp - 1];
+    /* #262 Phase-3 D: TOS may be an immediate num (the default path no longer
+     * promotes observed names to tracked Values) or a heap value — observe the
+     * slot from whichever. Skip null/bool. */
+    if (!slot_is_num(s) && !slot_is_ptr(s)) return;
+    const char *name = chunk->const_interns[name_idx];
+    uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+    if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+    int oidx = -1, odepth = 0;
+    Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+    if (oe && oidx >= 0) {
+        if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
+        else observer_slot_update(oe, oidx, slot_as_ptr(s));
+        g_last_obs_slot_env = oe;
+        g_last_obs_slot_idx = oidx;
+        /* #262 Phase-3 D2: slot-source the temporal snapshot — mirror of the
+         * interpreter CASE(OBSERVE_NAME_POST). */
+        if (__builtin_expect(g_trace_obs_hist, 0)) {
+            const ObserverSlot *os = &oe->obs[oidx];
+            trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
         }
-        if (prev && prev != v) {
-            observer_ensure_fresh(prev);
-            v->last_entropy = prev->last_entropy;
-            v->entropy = prev->entropy;
-            v->obs_age = prev->obs_age;
-            v->dH = prev->dH;
-            v->prev_dH = prev->prev_dH;
-            /* Transfer prev's ring buffer to v only if prev holds one — see
-             * the guard rationale above / issue #260. */
-            if (prev->dh_window) {
-                if (v->dh_window) free(v->dh_window);
-                v->dh_window = prev->dh_window;
-                v->dh_window_head = prev->dh_window_head;
-                v->dh_window_count = prev->dh_window_count;
-                prev->dh_window = NULL;
-                prev->dh_window_head = 0;
-                prev->dh_window_count = 0;
-            }
-        }
-        v->dirty = 1;
-        g_last_observer = v;
     }
 }
 
@@ -1046,8 +1061,7 @@ int jit_helper_iter_next(void) {
     }
     /* In-place idx bump when the slot is an exclusive plain VAL_NUM
      * (matches the interpreter's NUM_REUSE fast path). */
-    if (idx_v->type == VAL_NUM && idx_v->refcount == 1 && !idx_v->arena &&
-        idx_v->obs_age == 0) {
+    if (idx_v->type == VAL_NUM && idx_v->refcount == 1 && !idx_v->arena) {
         idx_v->data.num = (double)(idx + 1);
     } else {
         val_decref(idx_v);
@@ -1160,9 +1174,9 @@ int jit_helper_loop_stall_check(void) {
     g_loop_iterations++;
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
-        Value *obs = g_last_observer;
-        if (obs) observer_ensure_fresh(obs);
-        if (obs && fabs(obs->dH) < g_obs_dh_zero && obs->entropy >= g_obs_h_low) {
+        double dH, ent;
+        if (obs_stall_trajectory(&dH, &ent)
+            && fabs(dH) < g_obs_dh_zero && ent >= g_obs_h_low) {
             g_loop_stall_count++;
             if (g_loop_stall_count >= 100) {
                 g_loop_exit_reason = "stalled";
@@ -1246,7 +1260,7 @@ void jit_helper_index_set(void) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 Value *existing = target->data.list.items[i];
                 if (existing && existing->type == VAL_NUM &&
-                    existing->refcount == 1 && existing->obs_age == 0 &&
+                    existing->refcount == 1 &&
                     !existing->arena) {
                     existing->data.num = val_s.d;
                 } else {
@@ -1305,7 +1319,7 @@ void jit_helper_index_get(void) {
         if (target->type == VAL_LIST) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 Value *r = target->data.list.items[i];
-                if (r && r->type == VAL_NUM && r->obs_age == 0) {
+                if (r && r->type == VAL_NUM) {
                     /* See CASE(INDEX_GET) for the use-after-free story —
                      * snapshot r->data.num before slot_decref(tgt_s)
                      * potentially frees r via the num freelist. */
@@ -1872,6 +1886,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_OBSERVE_ASSIGN] = &&lbl_OBSERVE_ASSIGN,
         [OP_OBSERVE_ASSIGN_LOCAL] = &&lbl_OBSERVE_ASSIGN_LOCAL,
         [OP_INTERROGATE] = &&lbl_INTERROGATE, [OP_PREDICATE] = &&lbl_PREDICATE,
+        [OP_REPORT_SLOT] = &&lbl_REPORT_SLOT,
+        [OP_REPORT_NAME] = &&lbl_REPORT_NAME,
+        [OP_OBSERVE_VALUE_SLOT] = &&lbl_OBSERVE_VALUE_SLOT,
+        [OP_OBSERVE_VALUE_NAME] = &&lbl_OBSERVE_VALUE_NAME,
+        [OP_OBSERVE_NAME_POST] = &&lbl_OBSERVE_NAME_POST,
         [OP_UNOBSERVED_BEGIN] = &&lbl_UNOBSERVED_BEGIN,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
         [OP_LOOP_STALL_CHECK] = &&lbl_LOOP_STALL_CHECK,
@@ -1931,7 +1950,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         Value *v = chunk->constants[idx];
         /* Numeric constants without observer state ship as immediates —
          * skips an incref/decref pair on every push/pop. */
-        if (v->type == VAL_NUM && v->obs_age == 0) {
+        if (v->type == VAL_NUM) {
             vm_push_slot(slot_from_num(v->data.num));
         } else {
             val_incref(v);
@@ -2320,11 +2339,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
              * the existing Value's data.num instead of swapping pointers. */
             if (slot_is_num(tos)) {
                 EigsSlot ex_s = e->values[slot];
-                if (slot_is_heap(ex_s) || slot_is_tracked(ex_s)) {
+                if (slot_is_heap(ex_s)) {
                     Value *existing = slot_as_ptr(ex_s);
                     if (existing && existing->type == VAL_NUM &&
-                        existing->refcount == 1 &&
-                        existing->obs_age == 0 && !existing->arena) {
+                        existing->refcount == 1 && !existing->arena) {
                         existing->data.num = tos.d;
                         DISPATCH();
                     }
@@ -3041,7 +3059,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (target->type == VAL_LIST) {
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                     Value *r = target->data.list.items[i];
-                    if (r && r->type == VAL_NUM && r->obs_age == 0) {
+                    if (r && r->type == VAL_NUM) {
                         /* Snapshot the double BEFORE decref'ing the list:
                          * if the stack slot was the sole owner, slot_decref
                          * frees the list and cascades into free_value(r),
@@ -3157,7 +3175,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     Value *existing = target->data.list.items[i];
                     /* In-place mutate when slot is an exclusive untracked VAL_NUM. */
                     if (existing && existing->type == VAL_NUM &&
-                        existing->refcount == 1 && existing->obs_age == 0 &&
+                        existing->refcount == 1 &&
                         !existing->arena) {
                         existing->data.num = val_s.d;
                     } else {
@@ -3218,7 +3236,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (target->type == VAL_DICT) {
             Value *v = dict_get_cached(target, key, h);
             if (v) {
-                if (v->type == VAL_NUM && v->obs_age == 0) {
+                if (v->type == VAL_NUM) {
                     double n = v->data.num;
                     val_decref(target);
                     vm_push_slot(slot_from_num(n));
@@ -3289,7 +3307,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (v) {
                 /* Hot DMG path: untracked VAL_NUM field -> push immediate,
                  * skipping the incref/decref pair on every register read. */
-                if (v->type == VAL_NUM && v->obs_age == 0) {
+                if (v->type == VAL_NUM) {
                     vm_push_slot(slot_from_num(v->data.num));
                 } else {
                     val_incref(v);
@@ -3359,7 +3377,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (i < target->data.list.count) {
                     Value *item = target->data.list.items[i];
                     /* Plain VAL_NUM -> immediate; skip incref/decref pair. */
-                    if (item && item->type == VAL_NUM && item->obs_age == 0) {
+                    if (item && item->type == VAL_NUM) {
                         vm_push_slot(slot_from_num(item->data.num));
                     } else {
                         val_incref(item);
@@ -3412,7 +3430,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     if (v) {
                         /* Hot DMG path: register dict[field] returning a
                          * plain VAL_NUM -> push immediate. */
-                        if (v->type == VAL_NUM && v->obs_age == 0) {
+                        if (v->type == VAL_NUM) {
                             vm_push_slot(slot_from_num(v->data.num));
                         } else {
                             val_incref(v);
@@ -3511,7 +3529,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             /* Update index — mutate in place when the existing slot is
              * an exclusive plain VAL_NUM (avoids per-iter make_num/free). */
             Value *idx_v = state->data.list.items[1];
-            if (NUM_REUSE(idx_v) && idx_v->obs_age == 0) {
+            if (NUM_REUSE(idx_v)) {
                 idx_v->data.num = (double)(idx + 1);
             } else {
                 val_decref(idx_v);
@@ -3591,58 +3609,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     /* ---- Observer ---- */
 
     CASE(OBSERVE_ASSIGN): {
-        uint16_t name_idx = read_u16(ip); ip += 2;
-        if (g_unobserved_depth == 0) {
-            /* Promote an immediate TOS to a tracked heap Value so the
-             * observer fields (entropy/dH/obs_age/dirty) live on the
-             * same object that SET_NAME will store in env. Without this
-             * promotion, each vm_peek of an immediate would materialize
-             * a fresh make_num and the observer state would be lost. */
-            EigsSlot s = g_vm.stack[g_vm.sp - 1];
-            Value *v = NULL;
-            if (slot_is_num(s)) {
-                v = make_tracked_num(s.d);
-                g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
-            } else if (slot_is_ptr(s)) {
-                v = slot_as_ptr(s);
-            }
-            if (v) {
-                const char *name = chunk->const_interns[name_idx];
-                uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
-                if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
-                Value *prev = env_get_hashed(frame->env, name, h);
-                if (prev && prev != v) {
-                    observer_ensure_fresh(prev);
-                    v->last_entropy = prev->last_entropy;
-                    v->entropy = prev->entropy;
-                    v->obs_age = prev->obs_age;
-                    v->dH = prev->dH;
-                    v->prev_dH = prev->prev_dH;
-                    /* Transfer the dH ring buffer from the old binding to the
-                     * new value — but only if `prev` actually holds one. When
-                     * an alias chain assigns the same value twice in a
-                     * statement (e.g. `nxt is b * 0.1` then `b is nxt`, where
-                     * `b` and `nxt` share a Value), the first migration has
-                     * already moved the window onto `v` and emptied `prev`;
-                     * a second migration with `prev->dh_window == NULL` must
-                     * NOT free `v`'s freshly-received window and replace it
-                     * with nothing — that resets the window every iteration so
-                     * it never fills and the predicates fall back to the
-                     * partial-window label (issue #260). */
-                    if (prev->dh_window) {
-                        if (v->dh_window) free(v->dh_window);
-                        v->dh_window = prev->dh_window;
-                        v->dh_window_head = prev->dh_window_head;
-                        v->dh_window_count = prev->dh_window_count;
-                        prev->dh_window = NULL;
-                        prev->dh_window_head = 0;
-                        prev->dh_window_count = 0;
-                    }
-                }
-                v->dirty = 1;
-                g_last_observer = v;
-            }
-        }
+        /* #262 Phase-3/E — slot model: a name binding is observed by the
+         * OBSERVE_NAME_POST emitted after the SET (when its slot is live), so
+         * this pre-SET name hook does nothing. (The opcode is still emitted by
+         * the compiler and ouroboros; kept as a no-op consumer.) */
+        ip += 2;  /* skip name_idx */
         DISPATCH();
     }
 
@@ -3656,51 +3627,134 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
          * (#129). */
         uint16_t slot = read_u16(ip); ip += 2;
         if (g_unobserved_depth == 0) {
+            /* #262 Phase-3/E — slot model: observe the binding's persistent
+             * (fn_env, slot) ObserverSlot directly from TOS. No promotion (the
+             * num stays immediate), no Value-side state, no window migration —
+             * the slot persists across assignments, which is the #262 fix. */
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
-            Value *v = NULL;
+            Env *e = frame->fn_env;
             if (slot_is_num(s)) {
-                v = make_tracked_num(s.d);
-                g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
+                observer_slot_update_num(e, (int)slot, s.d);
+                g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             } else if (slot_is_ptr(s)) {
-                v = slot_as_ptr(s);
+                observer_slot_update(e, (int)slot, slot_as_ptr(s));
+                g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             }
-            if (v) {
-                Env *e = frame->fn_env;
-                Value *prev = NULL;
-                if (e && (int)slot < e->count) {
-                    EigsSlot ps = e->values[slot];
-                    if (slot_is_ptr(ps)) prev = slot_as_ptr(ps);
-                }
-                if (prev && prev != v) {
-                    observer_ensure_fresh(prev);
-                    v->last_entropy = prev->last_entropy;
-                    v->entropy = prev->entropy;
-                    v->obs_age = prev->obs_age;
-                    v->dH = prev->dH;
-                    v->prev_dH = prev->prev_dH;
-                    /* Transfer the dH ring buffer from the old binding to the
-                     * new value — but only if `prev` actually holds one. When
-                     * an alias chain assigns the same value twice in a
-                     * statement (e.g. `nxt is b * 0.1` then `b is nxt`, where
-                     * `b` and `nxt` share a Value), the first migration has
-                     * already moved the window onto `v` and emptied `prev`;
-                     * a second migration with `prev->dh_window == NULL` must
-                     * NOT free `v`'s freshly-received window and replace it
-                     * with nothing — that resets the window every iteration so
-                     * it never fills and the predicates fall back to the
-                     * partial-window label (issue #260). */
-                    if (prev->dh_window) {
-                        if (v->dh_window) free(v->dh_window);
-                        v->dh_window = prev->dh_window;
-                        v->dh_window_head = prev->dh_window_head;
-                        v->dh_window_count = prev->dh_window_count;
-                        prev->dh_window = NULL;
-                        prev->dh_window_head = 0;
-                        prev->dh_window_count = 0;
+        }
+        DISPATCH();
+    }
+
+    CASE(REPORT_SLOT): {
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        Value *result;
+        if (e && (int)slot < e->obs_cap && e->obs[slot].used) {
+            result = make_str(observer_slot_report(&e->obs[slot]));
+        } else {
+            result = make_str("equilibrium");  /* unobserved binding */
+        }
+        vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(REPORT_NAME): {
+        /* #262 Phase-3 B: report of a non-local name — resolve its (env, slot)
+         * and classify the slot, value-path fallback if the slot is empty.
+         * Undefined name behaves like GET_NAME: raise + push null. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        int oidx = -1, odepth = 0;
+        Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (!oe) {
+            runtime_error(current_line, "undefined variable '%s'", name);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        Value *result;
+        if (oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
+            result = make_str(observer_slot_report(&oe->obs[oidx]));
+        } else {
+            result = make_str("equilibrium");  /* unobserved binding */
+        }
+        vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(OBSERVE_VALUE_SLOT): {
+        /* #262 Phase-3 D: `observe of <local>` → [status,entropy,dH,prev_dH]
+         * from the local's slot trajectory; no-observation tuple if unpopulated. */
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        if (e && (int)slot < e->obs_cap && e->obs[slot].used) {
+            const ObserverSlot *s = &e->obs[slot];
+            Value *list = make_list(4);
+            list_append_owned(list, make_str(observer_slot_report(s)));
+            list_append_owned(list, make_num(s->entropy));
+            list_append_owned(list, make_num(s->dH));
+            list_append_owned(list, make_num(s->prev_dH));
+            vm_push(list);
+        } else {
+            vm_push(builtin_observe(NULL));
+        }
+        DISPATCH();
+    }
+
+    CASE(OBSERVE_VALUE_NAME): {
+        /* #262 Phase-3 D: `observe of <name>` → slot trajectory of the resolved
+         * binding; no-observation tuple otherwise. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        int oidx = -1, odepth = 0;
+        Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (oe && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
+            const ObserverSlot *s = &oe->obs[oidx];
+            Value *list = make_list(4);
+            list_append_owned(list, make_str(observer_slot_report(s)));
+            list_append_owned(list, make_num(s->entropy));
+            list_append_owned(list, make_num(s->dH));
+            list_append_owned(list, make_num(s->prev_dH));
+            vm_push(list);
+        } else {
+            vm_push(builtin_observe(NULL));
+        }
+        DISPATCH();
+    }
+
+    CASE(OBSERVE_NAME_POST): {
+        /* #262 Phase-3 observe-at-SET: the binding now exists (its SET ran),
+         * so resolve its owning env+slot and observe the slot from the value
+         * still on TOS (SET peeked, didn't pop). Fixes the first-assignment
+         * lag for name bindings. Emitted only under the compile-time flag. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        if (g_unobserved_depth == 0) {
+            EigsSlot s = g_vm.stack[g_vm.sp - 1];
+            /* #262 Phase-3 D: TOS is now an immediate num for an observed name
+             * (default path no longer promotes), or a heap value. Observe the
+             * slot from whichever; skip null/bool. */
+            if (slot_is_num(s) || slot_is_ptr(s)) {
+                const char *name = chunk->const_interns[name_idx];
+                uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+                if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+                int oidx = -1, odepth = 0;
+                Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+                if (oe && oidx >= 0) {
+                    if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
+                    else observer_slot_update(oe, oidx, slot_as_ptr(s));
+                    g_last_obs_slot_env = oe;
+                    g_last_obs_slot_idx = oidx;
+                    /* #262 Phase-3 D2: slot-source the temporal snapshot for
+                     * `where/why/how is name at L` (the binding's slot is now
+                     * fresh; its history entry was created by the SET's
+                     * trace_assign). */
+                    if (__builtin_expect(g_trace_obs_hist, 0)) {
+                        const ObserverSlot *os = &oe->obs[oidx];
+                        trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
                     }
                 }
-                v->dirty = 1;
-                g_last_observer = v;
             }
         }
         DISPATCH();
@@ -3709,7 +3763,6 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     CASE(INTERROGATE): {
         uint16_t kind = read_u16(ip); ip += 2;
         Value *v = vm_pop();
-        if (v) observer_ensure_fresh(v);
         Value *result = make_null();
         switch (kind) {
         case 0: /* what */
@@ -3730,14 +3783,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 v->type == VAL_BUFFER ? "buffer" :
                 v->type == VAL_NULL ? "none" : "unknown");
             break;
-        case 2: /* when */ result = make_num(v ? v->obs_age : 0); break;
-        case 3: /* where */ result = make_num(v ? v->entropy : 0); break;
-        case 4: /* why */ result = make_num(v ? v->dH : 0); break;
-        case 5: /* how */
-            if (v && v->last_entropy > 0)
-                result = make_num(1.0 - v->entropy / v->last_entropy);
-            else result = make_num(1.0);
-            break;
+        /* #262 Step E: when/where/why/how on a value-based operand have no
+         * slot trajectory (observer state is binding-keyed). where/why/how on a
+         * bound ident go through INTERROGATE_NAMED; the bare value form reports
+         * the no-observation defaults. */
+        case 2: /* when */  result = make_num(0); break;
+        case 3: /* where */ result = make_num(0); break;
+        case 4: /* why */   result = make_num(0); break;
+        case 5: /* how */   result = make_num(1.0); break;
         }
         val_decref(v);
         vm_push(result);
@@ -3765,6 +3818,25 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 val_decref(result);
                 result = slot_to_value(prev_slot);
                 slot_decref(prev_slot);
+            }
+            break;
+        }
+        case 3: case 4: case 5: {
+            /* #262 Phase-3 A: where/why/how on a bound name read the binding's
+             * SLOT trajectory (entropy / dH / 1 - entropy/last_entropy). Falls
+             * back to the Value's observer fields if the slot isn't populated
+             * yet, so the answer matches the value path. */
+            int oidx = -1, odepth = 0;
+            Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+            if (oe && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
+                const ObserverSlot *s = &oe->obs[oidx];
+                if (kind == 3)      result = make_num(s->entropy);
+                else if (kind == 4) result = make_num(s->dH);
+                else                result = make_num(s->last_entropy > 0
+                                            ? 1.0 - s->entropy / s->last_entropy : 1.0);
+            } else {
+                /* #262 Step E: unobserved binding — no trajectory. */
+                result = make_num(kind == 5 ? 1.0 : 0.0);
             }
             break;
         }
@@ -3963,34 +4035,23 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     }
 
     CASE(PREDICATE): {
+        /* #262 Step E: bare predicate (converged/stable/...) reads the
+         * last-observed binding's SLOT trajectory. With observer state living
+         * only on the slot, an operand with no live slot has no trajectory →
+         * the predicate is false. */
         uint16_t kind = read_u16(ip); ip += 2;
-        Value *v = g_last_observer;
-        if (v) observer_ensure_fresh(v);
-        double entropy = v ? v->entropy : 0;
         int result = 0;
-        switch (kind) {
-        case 0: {
-            /* Windowed converged: every dH in the full window is near-zero
-             * AND entropy is low. Requires a complete window (count == N) so
-             * single-step or short trajectories never spuriously converge. */
-            int ok = 0;
-            if (v && observer_window_size(v) >= OBSERVER_WINDOW_N) {
-                ok = 1;
-                for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
-                    if (fabs(observer_window_get(v, i)) >= g_obs_dh_zero) {
-                        ok = 0; break;
-                    }
-                }
-                if (ok && entropy >= g_obs_h_low) ok = 0;
+        if (g_last_obs_slot_idx >= 0 && g_last_obs_slot_env &&
+            g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap) {
+            const ObserverSlot *s = &g_last_obs_slot_env->obs[g_last_obs_slot_idx];
+            switch (kind) {
+            case 0: result = observer_slot_converged(s);   break;
+            case 1: result = observer_slot_stable(s);      break;
+            case 2: result = observer_slot_improving(s);   break;
+            case 3: result = observer_slot_oscillating(s); break;
+            case 4: result = observer_slot_diverging(s);   break;
+            case 5: result = observer_slot_equilibrium(s); break;
             }
-            result = ok;
-            break;
-        }
-        case 1: result = observer_stable(v); break;  /* windowed (#205) */
-        case 2: result = observer_improving(v); break;  /* windowed (#207) */
-        case 3: result = observer_oscillating(v); break;  /* windowed (#206) */
-        case 4: result = observer_diverging(v); break;  /* windowed (#208) */
-        case 5: result = observer_equilibrium(v); break;  /* windowed (#209) */
         }
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
@@ -4011,9 +4072,9 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         g_loop_iterations++;
         int should_exit = 0;
         if (g_unobserved_depth == 0) {
-            Value *obs = g_last_observer;
-            if (obs) observer_ensure_fresh(obs);
-            if (obs && fabs(obs->dH) < g_obs_dh_zero && obs->entropy >= g_obs_h_low) {
+            double dH, ent;
+            if (obs_stall_trajectory(&dH, &ent)
+                && fabs(dH) < g_obs_dh_zero && ent >= g_obs_h_low) {
                 g_loop_stall_count++;
                 if (g_loop_stall_count >= 100) {
                     g_loop_exit_reason = "stalled";

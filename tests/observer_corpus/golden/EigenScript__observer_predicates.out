@@ -1,0 +1,56 @@
+--- converged as termination ---
+sqrt(50) = 7.0710678118654755
+sqrt(0.01) = 0.1
+
+--- report-driven convergence ---
+  step 10: stable signal=43.43884542236323
+  step 20: diverging signal=18.869332916279667
+  step 30: diverging signal=8.196620357733826
+  step 40: diverging signal=3.5605172470539532
+  step 50: diverging signal=1.5466475831843494
+  step 60: stable signal=0.6718458528881662
+  step 70: improving signal=0.2918420815126484
+  step 80: improving signal=0.12677283066568665
+  step 90: improving signal=0.05506865395042193
+  step 100: improving signal=0.023921187465699906
+  step 110: stable signal=0.010391087646419113
+  step 120: stable signal=0.004513768500430279
+  step 130: stable signal=0.0019607289216252324
+  step 140: equilibrium signal=0.0008517180054163542
+Converged at step 145 signal=0.0005613516003466767
+
+--- stable as early detection ---
+Entered stable band at step 1 value=45
+Converged at step 113 value=0.00033757756092487343
+
+--- improving as progress monitor ---
+  step 35: improving, value=0.2708646856494753
+  step 40: improving, value=0.12018409999131469
+  step 45: improving, value=0.053326323644177526
+  step 50: improving, value=0.023661173097015924
+  step 55: improving, value=0.010498588203128042
+  step 60: improving, value=0.0046582793594777405
+  step 70: stable, value=0.0009170959741498628
+Done at step 83 value=0.00011088194140174804 status=converged
+
+--- regime detection ---
+Step 1: start -> stable
+Step 3: stable -> diverging
+Step 34: diverging -> stable
+Step 38: stable -> improving
+Step 70: improving -> stable
+Step 88: stable -> equilibrium
+Step 97: equilibrium -> converged
+Total regime changes: 7
+Final loss: 0.00020596299710139924
+
+--- oscillating as instability detector ---
+  step 5: oscillating! lr halved to 0.6
+  step 6: oscillating! lr halved to 0.3
+  step 7: oscillating! lr halved to 0.15
+  step 8: oscillating! lr halved to 0.075
+  step 9: oscillating! lr halved to 0.0375
+  step 10: oscillating! lr halved to 0.01875
+  step 11: oscillating! lr halved to 0.009375
+  step 12: oscillating! lr halved to 0.0046875
+Done at step 501 x=4.989944084585771 lr=0.0046875 adjustments=8

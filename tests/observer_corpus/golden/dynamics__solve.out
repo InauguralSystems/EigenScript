@@ -1,0 +1,14 @@
+=== iterative solvers: the predicate as a loop condition ===
+every loop runs until `report of change` is settled and HOLDs — the observer,
+not a magnitude tolerance, decides when to stop. (iters include the hold)
+
+Jacobi        Ax=b -> [0.9999995231628418, 0.9999995231628418, 0.9999995231628418]
+              14 iters
+Gauss-Seidel  Ax=b -> [0.9999999953433871, 0.9999999976716936, 0.9999999994179234]
+              10 iters  (fresh values -> fewer than Jacobi)
+
+Power iteration dominant eigenvalue -> 2  (5 iters, expect ~2)
+
+PageRank stationary distribution -> [0.39998372395833337, 0.20001220703125, 0.4000040690104167]  (27 iters)
+
+DONE

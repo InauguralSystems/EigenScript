@@ -45,6 +45,18 @@ jobs:
       - name: Run test suite
         run: cd tests && bash run_all_tests.sh
 
+      # Cross-repo observer corpus (#262): real observer-using programs
+      # vendored from downstream consumers (dynamics solvers, iLambdaAi) plus
+      # this repo's examples, each pinned to a value-path golden. The unit
+      # suite proves the predicates in isolation; this guards that an observer
+      # (or any) change doesn't silently shift real consumer behavior —
+      # convergence loops, report-driven solvers, interrogative reads. Linux
+      # only: the goldens are float-formatted on Linux, so a macOS leg would
+      # diff on printf cosmetics, not behavior.
+      - name: Observer cross-repo corpus
+        if: runner.os == 'Linux'
+        run: bash tests/observer_corpus/run.sh
+
       # Linux LSP coverage lives in the extensions job; this leg exists
       # because the LSP build had macOS-only link failures nothing surfaced.
       - name: Compile-check LSP (macOS)

@@ -1,0 +1,12 @@
+=== STABLE BAND TEST ===
+--- SB1: Stable is reachable (small drift, moderate H) ---
+0
+stable
+0.15374218032876188
+-0.002748882576939643
+
+--- SB2: Converged is NOT stable ---
+0
+equilibrium
+
+=== STABLE BAND COMPLETE ===

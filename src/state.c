@@ -60,6 +60,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
     th->loop_exit_reason = "normal";
+    th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
 
     /* Cycle collector defaults — matches the old TLS initializers. */
     th->gc_enabled = 1;

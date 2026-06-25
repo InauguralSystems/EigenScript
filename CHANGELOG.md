@@ -4,6 +4,21 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-06-25
+
+### Fixed
+
+- The prebuilt **Linux release binary is now built on Ubuntu 22.04** (glibc
+  2.35) instead of `ubuntu-latest`. GitHub moved the `ubuntu-latest` runner
+  from 22.04 to 24.04 (glibc 2.39), which raised the v0.17.0
+  `eigenscript-linux-x86_64` binary's glibc floor to `GLIBC_2.38` — so it
+  failed with `GLIBC_2.38 not found` on Ubuntu 22.04 LTS (a current,
+  widely-deployed LTS). Building on 22.04 keeps the floor at glibc 2.35, so the
+  binary runs on 22.04 and every newer distro. Homebrew and source builds were
+  never affected (they compile against the local libc).
+
+## [0.17.0] — 2026-06-25
+
 ### Added
 
 - Stdlib gap-fill across `lib/list.eigs`, `lib/string.eigs`, and
@@ -20,6 +35,31 @@ All notable changes to EigenScript are documented here.
   - `math`: `argmax`/`argmin` (index of the largest/smallest element,
     first index on ties, `-1` if empty).
   - Closes the stdlib good-first-issue set (#181, #192–#199).
+
+### Changed
+
+- **Observer state is now keyed to the variable binding, not the Value
+  object** (#262). Each binding carries its own entropy/dH trajectory on a
+  per-`(env, slot)` `ObserverSlot`, observed eagerly at assignment. The old
+  model stored observer state on the recyclable, ref-shared `Value` object,
+  so a convergence iterate built through temporaries that alias the variable
+  (the normal solver shape — `cand is x*0.1; … ; x is cand`) never
+  accumulated a trajectory and `report`/`converged` stalled at the
+  partial-window `equilibrium` fallback even at rest. With slot-keying, such
+  loops converge correctly. Numbers are now always immediate doubles — they
+  never get heap-boxed to carry observer state — which also removes per-binding
+  observer allocations from the hot path.
+- Behavior delta at the edges: `report` / `observe` / bare `where`·`why`·`how`
+  applied to a **non-binding** expression (a computed value or an unobserved
+  parameter, which has no trajectory) now return the no-observation defaults
+  (`"equilibrium"` / `[…,0,0,0]` / `0`). The same interrogatives on a bound
+  name are unchanged — they read the binding's slot.
+
+### Removed
+
+- The `EIGS_OBS_SHADOW` value-path escape hatch and the entire value-path
+  observer machinery (the per-`Value` observer fields, the `TAG_TRACKED` slot
+  tag, `make_tracked_num`) — the slot model is the only observer model (#262).
 
 ### Fixed
 

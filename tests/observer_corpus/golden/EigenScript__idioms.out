@@ -1,0 +1,46 @@
+--- flag variable (no break) ---
+First negative: -3 at index 3
+
+--- conditional body (no continue) ---
+Sum of positives: 26 (5 values)
+
+--- non-fatal errors (no try/catch) ---
+  10 / 3 = 3.3333333333333335
+Warning: division by zero, returning 0
+  15 / 0 = 0
+  20 / 4 = 5
+Warning: division by zero, returning 0
+  0 / 0 = 0
+  100 / 7 = 14.285714285714286
+
+--- outward mutation ---
+After +1: 1
+After +5: 6
+After +3: 9
+Outer counter: 9
+
+--- scope collision (the hazard) ---
+BAD (function resets outer 'total'):
+  batch 0: batch_sum=30 total=60
+  batch 1: batch_sum=70 total=140
+  batch 2: batch_sum=110 total=220
+  final total=220 (expected 210)
+
+GOOD (prefixed 'cs_total' is safe):
+  batch 0: batch_sum=30 total=30
+  batch 1: batch_sum=70 total=100
+  batch 2: batch_sum=110 total=210
+  final total=210 (expected 210)
+
+--- calling conventions ---
+double of 7: 14
+lerp of [0, 100, 0.75]: 75
+timestamp of null: 1712419200
+
+--- early exit pattern ---
+bob: index 1
+diana: index 3
+frank: index -1
+
+--- convergence with safety limit ---
+Converged at step 219 x=0.0013227249887463285

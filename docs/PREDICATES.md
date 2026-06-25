@@ -327,7 +327,7 @@ x is 1000000
 for i in range of 12:
     x is 1000000   # same value 12 times → window fills with dH=0
 if converged:
-    ...   # YES — full quiet window AND low entropy (large magnitude)
+    print of "converged"   # YES — full quiet window AND low entropy (large magnitude)
 ```
 
 ### Newton's sqrt on an information-rich fixed point → `equilibrium`
@@ -343,7 +343,7 @@ reports `equilibrium`, not `converged`. See
 y is 0
 y is 0
 if converged:
-    ...   # NO — count = 2 < N; partial-window rule returns false
+    print of "converged"   # NO — count = 2 < N; partial-window rule returns false
 ```
 
 ## Convergence loops in practice

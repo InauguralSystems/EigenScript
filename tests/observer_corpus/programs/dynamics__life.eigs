@@ -1,0 +1,162 @@
+# life — Conway's Game of Life: the observer TEMPORAL showcase.
+#
+# Where physics.eigs shows the predicates on continuous trajectories, Life shows
+# the temporal surface (`prev` + signature history) doing what scalar predicates
+# CANNOT: a blinker and a block both have constant population, so `report of
+# population` calls them both "stable" — yet one oscillates (period 2) and one is
+# a still life. You can only tell them apart by comparing the board to its OWN
+# PAST. That is the temporal observer earning its place.
+#
+# We observe two quantities per generation:
+#   population        — the scalar the predicate is fooled by (constant for both)
+#   signature         — a position-sensitive board fingerprint; its history
+#                       reveals the true period
+#
+# Toroidal grid, B3/S23 rules. Runnable: `eigenscript life.eigs`.
+
+# One generation (toroidal wrap). board is a flat w*h list of 0/1.
+define step(board, w, h) as:
+    nb is zeros of (w * h)
+    r is 0
+    loop while r < h:
+        c is 0
+        loop while c < w:
+            cnt is 0
+            dr is 0 - 1
+            loop while dr <= 1:
+                dc is 0 - 1
+                loop while dc <= 1:
+                    if not (dr == 0 and dc == 0):
+                        rr is ((r + dr) + h) % h
+                        cc is ((c + dc) + w) % w
+                        cnt is cnt + board[rr * w + cc]
+                    dc is dc + 1
+                dr is dr + 1
+            alive is board[r * w + c]
+            newv is 0
+            if alive == 1:
+                if cnt == 2 or cnt == 3:
+                    newv is 1
+            else:
+                if cnt == 3:
+                    newv is 1
+            nb[r * w + c] is newv
+            c is c + 1
+        r is r + 1
+    return nb
+
+# Position-sensitive fingerprint: sum of (i+1)^2 over live cells. Distinguishes a
+# blinker's two phases (same population, same cell COUNT, different positions).
+define signature(board) as:
+    s is 0
+    i is 0
+    n is len of board
+    loop while i < n:
+        if board[i] == 1:
+            s is s + (i + 1) * (i + 1)
+        i is i + 1
+    return s
+
+define population(board) as:
+    s is 0
+    i is 0
+    n is len of board
+    loop while i < n:
+        s is s + board[i]
+        i is i + 1
+    return s
+
+define set_cell(board, w, r, c) as:
+    board[r * w + c] is 1
+    return board
+
+# Evolve `gens` generations. Observe population (scalar) and signature; classify
+# population with the predicate (`report of pop`, the fooled view) and recover the
+# true period from signature history. `prev of sig` showcases the 1-step temporal
+# op (still-life detection); deeper periods use the signature history list.
+# Returns [pop_regime, period, prev_still, final_pop].
+define analyze(board, w, h, gens) as:
+    sig is signature of board
+    pop is population of board
+    history is [sig]
+    period is 0
+    prev_still is 0
+    g is 0
+    loop while g < gens:
+        unobserved:
+            board is step of [board, w, h]
+        sig is signature of board
+        pop is population of board
+        if sig == (prev of sig):
+            prev_still is 1
+        append of [history, sig]
+        hl is len of history
+        p is 1
+        loop while p <= 8:
+            if (hl - 1 - p) >= 0:
+                if history[hl - 1 - p] == sig:
+                    if period == 0:
+                        period is p
+            p is p + 1
+        g is g + 1
+    return [report of pop, period, prev_still, pop]
+
+define reading(final_pop, period) as:
+    if final_pop == 0:
+        return "extinct"
+    if period >= 2:
+        return f"period-{period} oscillator"
+    if period == 1:
+        return "still life"
+    return "translating / chaotic"
+
+# ---- seeds (7x7 torus) ----
+W is 7
+define seed_blinker(w) as:
+    b is zeros of (w * w)
+    b is set_cell of [b, w, 3, 2]
+    b is set_cell of [b, w, 3, 3]
+    b is set_cell of [b, w, 3, 4]
+    return b
+define seed_block(w) as:
+    b is zeros of (w * w)
+    b is set_cell of [b, w, 2, 2]
+    b is set_cell of [b, w, 2, 3]
+    b is set_cell of [b, w, 3, 2]
+    b is set_cell of [b, w, 3, 3]
+    return b
+define seed_glider(w) as:
+    b is zeros of (w * w)
+    b is set_cell of [b, w, 0, 1]
+    b is set_cell of [b, w, 1, 2]
+    b is set_cell of [b, w, 2, 0]
+    b is set_cell of [b, w, 2, 1]
+    b is set_cell of [b, w, 2, 2]
+    return b
+define seed_single(w) as:
+    b is zeros of (w * w)
+    b is set_cell of [b, w, 3, 3]
+    return b
+
+# ---- demo ----
+print of "=== Conway's Life: scalar predicate vs temporal truth ==="
+print of "population is constant for both a blinker and a block, so report-of-population"
+print of "cannot tell them apart. Signature history (temporal) reveals the period."
+print of ""
+print of "  seed      population-regime   prev-still?   period   reading"
+cases is [["blinker", seed_blinker of W], ["block", seed_block of W], ["glider", seed_glider of W], ["single", seed_single of W]]
+for cse in cases:
+    name is cse[0]
+    board is cse[1]
+    rr is analyze of [board, W, W, 12]
+    ps is "N"
+    if rr[2] == 1:
+        ps is "Y"
+    print of f"  {name}\t{rr[0]}\t\t{ps}\t      {rr[1]}\t{reading of [rr[3], rr[1]]}"
+
+print of ""
+bl is analyze of [seed_blinker of W, W, W, 12]
+print of f"blinker and block both read population '{bl[0]}' yet are period-2 and"
+print of "period-1 — only the temporal signature, not the scalar predicate, separates them."
+print of ""
+print of "DONE"
