@@ -2252,9 +2252,15 @@ echo ""
 echo "[97] Example programs (examples/*.eigs; gfx demos skipped)"
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
+# GNU `timeout` is the runaway guard, but it isn't on a stock macOS (BSD
+# userland); fall back to gtimeout, or to no wrapper (the examples all
+# terminate quickly, so the guard is belt-and-suspenders).
+EX_TMO=""
+if command -v timeout >/dev/null 2>&1; then EX_TMO="timeout 60"
+elif command -v gtimeout >/dev/null 2>&1; then EX_TMO="gtimeout 60"; fi
 for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
     if grep -q 'gfx_' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
-    EX_OUT=$( cd "$(dirname "$f")" && timeout 60 "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
+    EX_OUT=$( cd "$(dirname "$f")" && $EX_TMO "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
     if rc_ok "$EX_RC" "$EX_OUT"; then
         EX_PASS=$((EX_PASS + 1))
     else
