@@ -1,0 +1,227 @@
+# solve — iterative solvers: the observer LOOP-IDIOM showcase.
+#
+# physics.eigs showcases the predicates on trajectories; life.eigs the temporal
+# surface. solve.eigs showcases the single most common observer idiom in real
+# code: the predicate AS A LOOP CONDITION — iterate until the observer says the
+# residual has settled, with NO hand-tuned magnitude tolerance. The runtime
+# decides "done".
+#
+# Each method observes its convergence scalar `change` and asks `report of change`.
+# A scalar is "settled" when the observer calls it `converged` (low entropy, stable)
+# or `equilibrium` (dH stopped) — which one fires depends on how fast the residual
+# fell. But a single settled reading is not enough: an oscillatory residual (e.g.
+# PageRank swinging toward its stationary point) shows a transient `equilibrium`
+# mid-swing. So we DEBOUNCE — require the settled reading to HOLD for several
+# consecutive iterations. Transient blips reset the count; real convergence holds.
+#
+# Same idiom, four solvers:
+#   jacobi / gauss_seidel   — relax a linear system Ax = b
+#   power_iter              — dominant eigenvalue / eigenvector
+#   pagerank                — power iteration on a stochastic link matrix
+#
+# Runnable: `eigenscript solve.eigs`.
+
+HOLD is 3
+
+define settled(status) as:
+    if status == "converged":
+        return 1
+    if status == "equilibrium":
+        return 1
+    return 0
+
+# Largest absolute component-wise difference between two vectors.
+define max_abs_diff(u, v) as:
+    n is len of u
+    m is 0.0
+    i is 0
+    loop while i < n:
+        d is u[i] - v[i]
+        if d < 0:
+            d is 0.0 - d
+        if d > m:
+            m is d
+        i is i + 1
+    return m
+
+define dot(u, v) as:
+    n is len of u
+    s is 0.0
+    i is 0
+    loop while i < n:
+        s is s + u[i] * v[i]
+        i is i + 1
+    return s
+
+# Jacobi relaxation: x_new[i] = (b[i] - sum_{j!=i} A[i][j] x[j]) / A[i][i],
+# all from the OLD iterate.
+define jacobi(a, b, maxit) as:
+    n is len of b
+    x is zeros of n
+    change is 1.0
+    it is 0
+    hold is 0
+    loop while hold < HOLD:
+        xn is zeros of n
+        i is 0
+        loop while i < n:
+            s is 0.0
+            j is 0
+            loop while j < n:
+                if j != i:
+                    s is s + (a[i])[j] * x[j]
+                j is j + 1
+            xn[i] is (b[i] - s) / (a[i])[i]
+            i is i + 1
+        change is max_abs_diff of [x, xn]
+        x is xn
+        it is it + 1
+        status is report of change
+        if (settled of status) == 1:
+            hold is hold + 1
+        else:
+            hold is 0
+        if it >= maxit:
+            hold is HOLD
+    return [x, it]
+
+# Gauss-Seidel: same recurrence but using the freshest x[j] in place — converges
+# in fewer iterations than Jacobi under the SAME loop idiom.
+define gauss_seidel(a, b, maxit) as:
+    n is len of b
+    x is zeros of n
+    change is 1.0
+    it is 0
+    hold is 0
+    loop while hold < HOLD:
+        mc is 0.0
+        i is 0
+        loop while i < n:
+            s is 0.0
+            j is 0
+            loop while j < n:
+                if j != i:
+                    s is s + (a[i])[j] * x[j]
+                j is j + 1
+            xi is (b[i] - s) / (a[i])[i]
+            d is xi - x[i]
+            if d < 0:
+                d is 0.0 - d
+            if d > mc:
+                mc is d
+            x[i] is xi
+            i is i + 1
+        change is mc
+        it is it + 1
+        status is report of change
+        if (settled of status) == 1:
+            hold is hold + 1
+        else:
+            hold is 0
+        if it >= maxit:
+            hold is HOLD
+    return [x, it]
+
+# Power iteration: x <- A x / ||A x||; the norm converges to the dominant
+# eigenvalue. Loop until the eigenvalue estimate has settled.
+define power_iter(a, maxit) as:
+    n is len of a
+    x is zeros of n
+    x[0] is 1.0
+    lam is 0.0
+    change is 1.0
+    it is 0
+    hold is 0
+    loop while hold < HOLD:
+        y is zeros of n
+        i is 0
+        loop while i < n:
+            y[i] is dot of [a[i], x]
+            i is i + 1
+        nrm is sqrt of (dot of [y, y])
+        i is 0
+        loop while i < n:
+            y[i] is y[i] / nrm
+            i is i + 1
+        x is y
+        change is nrm - lam
+        if change < 0:
+            change is 0.0 - change
+        lam is nrm
+        it is it + 1
+        status is report of change
+        if (settled of status) == 1:
+            hold is hold + 1
+        else:
+            hold is 0
+        if it >= maxit:
+            hold is HOLD
+    return [lam, it]
+
+# PageRank: power iteration on a column-stochastic link matrix m, L1-normalised
+# each step, converging to the stationary distribution. Its residual is
+# OSCILLATORY — the debounce is what stops it from quitting on a mid-swing blip.
+define pagerank(m, maxit) as:
+    n is len of m
+    r is zeros of n
+    i is 0
+    loop while i < n:
+        r[i] is 1.0 / n
+        i is i + 1
+    change is 1.0
+    it is 0
+    hold is 0
+    loop while hold < HOLD:
+        rn is zeros of n
+        i is 0
+        loop while i < n:
+            rn[i] is dot of [m[i], r]
+            i is i + 1
+        tot is 0.0
+        i is 0
+        loop while i < n:
+            tot is tot + rn[i]
+            i is i + 1
+        i is 0
+        loop while i < n:
+            rn[i] is rn[i] / tot
+            i is i + 1
+        change is max_abs_diff of [r, rn]
+        r is rn
+        it is it + 1
+        status is report of change
+        if (settled of status) == 1:
+            hold is hold + 1
+        else:
+            hold is 0
+        if it >= maxit:
+            hold is HOLD
+    return [r, it]
+
+# ---- demo ----
+print of "=== iterative solvers: the predicate as a loop condition ==="
+print of "every loop runs until `report of change` is settled and HOLDs — the observer,"
+print of "not a magnitude tolerance, decides when to stop. (iters include the hold)"
+print of ""
+
+A is [[4.0, -1.0, 0.0], [-1.0, 4.0, -1.0], [0.0, -1.0, 4.0]]
+bb is [3.0, 2.0, 3.0]
+rj is jacobi of [A, bb, 500]
+rg is gauss_seidel of [A, bb, 500]
+print of f"Jacobi        Ax=b -> {rj[0]}"
+print of f"              {rj[1]} iters"
+print of f"Gauss-Seidel  Ax=b -> {rg[0]}"
+print of f"              {rg[1]} iters  (fresh values -> fewer than Jacobi)"
+print of ""
+
+M is [[2.0, 0.0], [0.0, 1.0]]
+rp is power_iter of [M, 500]
+print of f"Power iteration dominant eigenvalue -> {rp[0]}  ({rp[1]} iters, expect ~2)"
+print of ""
+
+# 3-node graph 0->{1,2}, 1->{2}, 2->{0}; column-stochastic. True stationary [0.4,0.2,0.4].
+G is [[0.0, 0.0, 1.0], [0.5, 0.0, 0.0], [0.5, 1.0, 0.0]]
+rr is pagerank of [G, 500]
+print of f"PageRank stationary distribution -> {rr[0]}  ({rr[1]} iters)"
+print of ""
+print of "DONE"

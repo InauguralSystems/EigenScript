@@ -1,0 +1,14 @@
+=== Conway's Life: scalar predicate vs temporal truth ===
+population is constant for both a blinker and a block, so report-of-population
+cannot tell them apart. Signature history (temporal) reveals the period.
+
+  seed      population-regime   prev-still?   period   reading
+  blinker	equilibrium		N	      2	period-2 oscillator
+  block	equilibrium		Y	      1	still life
+  glider	equilibrium		N	      0	translating / chaotic
+  single	converged		Y	      1	extinct
+
+blinker and block both read population 'equilibrium' yet are period-2 and
+period-1 — only the temporal signature, not the scalar predicate, separates them.
+
+DONE

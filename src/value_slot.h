@@ -11,7 +11,7 @@
  *   0xFFF9 tag 1 : BOOL              (low bit = value)
  *   0xFFFA tag 2 : reserved (SMI)    (reserved for future small-int)
  *   0xFFFB tag 3 : HEAP pointer      (str/list/dict/fn/builtin/buffer/tb)
- *   0xFFFC tag 4 : TRACKED pointer   (number with observer history)
+ *   0xFFFC tag 4 : reserved          (#262 Step E: was TRACKED — removed)
  *   0xFFFD tag 5 : reserved
  *   0xFFFE tag 6 : reserved
  *   0xFFFF tag 7 : SENTINEL          (VM internal markers)
@@ -43,7 +43,6 @@ typedef union { double d; uint64_t u; } EigsSlot;
 
 #define TAG_BOOL           0xFFF9000000000000ULL
 #define TAG_HEAP           0xFFFB000000000000ULL
-#define TAG_TRACKED        0xFFFC000000000000ULL
 #define TAG_SENTINEL       0xFFFF000000000000ULL
 
 /* Predicates */
@@ -54,10 +53,10 @@ static inline int slot_is_num(EigsSlot s) {
 static inline int slot_is_null(EigsSlot s)    { return s.u == SLOT_NULL_BITS; }
 static inline int slot_is_bool(EigsSlot s)    { return (s.u & SLOT_TAG_MASK) == TAG_BOOL; }
 static inline int slot_is_heap(EigsSlot s)    { return (s.u & SLOT_TAG_MASK) == TAG_HEAP; }
-static inline int slot_is_tracked(EigsSlot s) { return (s.u & SLOT_TAG_MASK) == TAG_TRACKED; }
-static inline int slot_is_ptr(EigsSlot s)     { return (s.u & SLOT_TAG_MASK) >= TAG_HEAP
-                                                     && (s.u & SLOT_TAG_MASK) <= TAG_TRACKED; }
-static inline int slot_is_numeric(EigsSlot s) { return slot_is_num(s) || slot_is_tracked(s); }
+/* #262 Step E: TAG_TRACKED is gone — a number is always an immediate, never a
+ * heap-boxed observer-tracked Value. Heap is the only pointer tag. */
+static inline int slot_is_ptr(EigsSlot s)     { return (s.u & SLOT_TAG_MASK) == TAG_HEAP; }
+static inline int slot_is_numeric(EigsSlot s) { return slot_is_num(s); }
 
 /* Accessors (caller must check the predicate first) */
 
@@ -65,13 +64,11 @@ static inline double   slot_as_num(EigsSlot s)    { return s.d; }
 static inline int      slot_as_bool(EigsSlot s)   { return (int)(s.u & 1ULL); }
 static inline Value   *slot_as_ptr(EigsSlot s)    { return (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK); }
 #define slot_as_heap     slot_as_ptr
-#define slot_as_tracked  slot_as_ptr
 
 /* Constructors */
 
 static inline EigsSlot slot_from_num(double d)       { EigsSlot s; s.d = d;                                              return s; }
 static inline EigsSlot slot_from_heap(Value *v)      { EigsSlot s; s.u = TAG_HEAP    | ((uint64_t)(uintptr_t)v & SLOT_PAYLOAD_MASK); return s; }
-static inline EigsSlot slot_from_tracked(Value *v)   { EigsSlot s; s.u = TAG_TRACKED | ((uint64_t)(uintptr_t)v & SLOT_PAYLOAD_MASK); return s; }
 static inline EigsSlot slot_null(void)               { EigsSlot s; s.u = SLOT_NULL_BITS;  return s; }
 static inline EigsSlot slot_true(void)               { EigsSlot s; s.u = SLOT_TRUE_BITS;  return s; }
 static inline EigsSlot slot_false(void)              { EigsSlot s; s.u = SLOT_FALSE_BITS; return s; }
@@ -89,7 +86,7 @@ static inline EigsSlot slot_from_bool(int b)         { EigsSlot s; s.u = TAG_BOO
 static inline void slot_incref(EigsSlot s) {
     if ((s.u & SLOT_QNAN_MASK) == SLOT_QNAN_MASK) {
         uint64_t tag = s.u & SLOT_TAG_MASK;
-        if (tag == TAG_HEAP || tag == TAG_TRACKED) {
+        if (tag == TAG_HEAP) {
             Value *v = (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK);
             if (!v->arena) {
                 if (__builtin_expect(g_vm_multithreaded, 0))
@@ -104,7 +101,7 @@ static inline void slot_incref(EigsSlot s) {
 static inline void slot_decref(EigsSlot s) {
     if ((s.u & SLOT_QNAN_MASK) == SLOT_QNAN_MASK) {
         uint64_t tag = s.u & SLOT_TAG_MASK;
-        if (tag == TAG_HEAP || tag == TAG_TRACKED) {
+        if (tag == TAG_HEAP) {
             Value *v = (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK);
             if (!v->arena) {
                 int newrc;
@@ -132,21 +129,16 @@ static inline int slot_truthy_immediate(EigsSlot s, int *out_decided) {
 
 /* Boundary shims declared here, defined in eigenscript.c.
  *
- * slot_from_value:
- *   - VAL_NUM with no observer state (obs_age == 0, dirty == 0,
- *     entropy/dH all 0) and non-arena -> emit immediate, decref input.
- *   - VAL_NUM with observer state -> TAG_TRACKED pointer (incref).
+ * slot_from_value (takes ownership of the input ref):
+ *   - VAL_NUM -> immediate double, input decref'd (#262 Step E: numbers never
+ *     carry observer state, so there is no tracked-pointer case).
  *   - VAL_NULL -> SLOT_NULL (incref skipped; null is borrowed).
  *   - any heap type -> TAG_HEAP pointer (incref).
  *
  * slot_to_value:
  *   - immediate number/null/bool -> fresh Value via make_*.
- *   - heap or tracked -> return pointer, incref. */
+ *   - heap pointer -> return pointer, incref. */
 EigsSlot slot_from_value(Value *v);
 Value   *slot_to_value(EigsSlot s);
-
-/* Make a heap-allocated tracked number Value (drawn from g_num_freelist),
- * pre-populated with the provided double and zeroed observer fields. */
-Value *make_tracked_num(double n);
 
 #endif /* EIGENSCRIPT_VALUE_SLOT_H */

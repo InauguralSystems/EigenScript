@@ -1,0 +1,37 @@
+--- Newton's Method: Square Roots ---
+sqrt(2) = 1.414213562373095
+sqrt(9) = 3
+sqrt(144) = 12
+sqrt(2.5) = 1.5811388300841895
+
+--- Bisection Method: x^3 - x - 2 = 0 ---
+Root: 1.5213797068045678
+f(root) = 8.881784197001252e-16
+
+--- Fixed Point: cos(x) = x ---
+Fixed point: 0.7390851332151607
+Observer status: equilibrium
+
+--- Exponential Decay ---
+Step 5: value=44.37053125 status=diverging
+Step 10: value=19.68744043407226 status=diverging
+Step 15: value=8.735421910125167 status=diverging
+Step 20: value=3.8759531084514336 status=diverging
+Step 25: value=1.7197809852207897 status=diverging
+Step 30: value=0.7630759594789481 status=diverging
+Step 35: value=0.3385808570618439 status=improving
+Step 40: value=0.15023012498914326 status=improving
+Step 45: value=0.06665790455522187 status=improving
+Step 50: value=0.02957646637126989 status=improving
+Step 55: value=0.013123235253910044 status=improving
+Step 60: value=0.005822849199347172 status=improving
+Step 65: value=0.0025836291236367107 status=stable
+Step 70: value=0.0011463699676873278 status=stable
+Step 75: value=0.0005086504447533207 status=equilibrium
+Step 80: value=0.00022569090454253608 status=equilibrium
+Converged at step 84 with value 0.00011781206273935721
+
+--- Gradient Descent: minimize (x-3)^2 ---
+Minimum at x = 3.0000000000084173
+f(x) = 7.08503817880336e-23
+Status: equilibrium

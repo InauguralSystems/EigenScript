@@ -1,0 +1,14 @@
+program	repo	source_path	source_commit	features
+dynamics__solve	dynamics	solve.eigs	6282623	report,converged,equilibrium,debounce
+dynamics__physics	dynamics	physics.eigs	6282623	report,predicates,unobserved,prev
+dynamics__life	dynamics	life.eigs	6282623	prev,temporal,predicates
+iLambdaAi__test_report_alignment	iLambdaAi	eigenscript_native/tests/test_report_alignment.eigs	246bd9a	observer-test
+iLambdaAi__test_stable_band	iLambdaAi	eigenscript_native/tests/test_stable_band.eigs	246bd9a	observer-test
+iLambdaAi__test_halting_descent	iLambdaAi	eigenscript_native/tests/test_halting_descent.eigs	246bd9a	observer-test
+iLambdaAi__test_interrogative_spec	iLambdaAi	eigenscript_native/tests/test_interrogative_spec.eigs	246bd9a	observer-test
+EigenScript__observer	EigenScript	examples/observer.eigs	26d16af	demo
+EigenScript__observer_predicates	EigenScript	examples/observer_predicates.eigs	26d16af	demo
+EigenScript__numerical	EigenScript	examples/numerical.eigs	26d16af	demo
+EigenScript__idioms	EigenScript	examples/idioms.eigs	26d16af	demo
+EigenScript__structural_observer	EigenScript	examples/structural_observer.eigs	26d16af	demo
+ouroboros__temporal_obs	ouroboros	test/programs/temporal_obs.eigs	18829db	where-at,why-at,observer-temporal

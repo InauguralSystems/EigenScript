@@ -465,38 +465,13 @@ Value* builtin_append(Value *arg) {
 
 
 Value* builtin_report(Value *arg) {
-    if (!arg) return make_str("equilibrium");
-    observer_ensure_fresh(arg);
-    double dh = arg->dH;
-    double h = arg->entropy;
-    if (observer_oscillating(arg)) return make_str("oscillating");  /* windowed (#206) */
-    if (observer_diverging(arg)) return make_str("diverging");  /* windowed (#208) */
-    if (observer_improving(arg)) return make_str("improving");  /* windowed (#207) */
-    /* Converged requires a full window of near-zero dH at low entropy —
-     * matches PREDICATE case 0 (vm.c). Without a full window, fall through
-     * to equilibrium / stable. */
-    if (fabs(dh) < g_obs_dh_zero && h < g_obs_h_low &&
-        observer_window_size(arg) >= OBSERVER_WINDOW_N) {
-        int all_quiet = 1;
-        for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
-            if (fabs(observer_window_get(arg, i)) >= g_obs_dh_zero) {
-                all_quiet = 0; break;
-            }
-        }
-        if (all_quiet) return make_str("converged");
-    }
-    if (observer_equilibrium(arg)) return make_str("equilibrium");  /* windowed (#209) */
-    if (observer_stable(arg)) return make_str("stable");            /* windowed (#205) */
-    /* Partial-window fallback: the windowed equilibrium/stable predicates need
-     * a full window (count == N), so for a not-yet-full window they are false
-     * and `report` would have nothing to say. Give an instantaneous best-effort
-     * label instead — report stays useful while observations accumulate. (This
-     * is the one place report can disagree with the bare predicates, and only
-     * for count < N, where the partial-window rule already makes every predicate
-     * false.) */
-    if (fabs(dh) < g_obs_dh_zero) return make_str("equilibrium");
-    if (fabs(dh) < g_obs_dh_small && h >= g_obs_h_low) return make_str("stable");
-    return make_str("stable");
+    /* #262 Step E: observer trajectories live on the Env slot, never on the
+     * Value. `report of <ident>` is a slot-keyed special form (REPORT_SLOT/
+     * REPORT_NAME); this builtin is reached only for a value-based operand with
+     * no binding (a computed expr, or an unobserved param), which has no
+     * trajectory → the no-observation band, "equilibrium". */
+    (void)arg;
+    return make_str("equilibrium");
 }
 
 /* Set observer classification thresholds.
@@ -642,20 +617,15 @@ Value* builtin_dict_remove(Value *arg) {
 }
 
 Value* builtin_observe(Value *arg) {
+    /* #262 Step E: value-based fallback for `observe of <expr>` — no binding,
+     * no trajectory. `observe of <ident>` is the slot-keyed special form
+     * (OP_OBSERVE_VALUE_SLOT/NAME). Returns the no-observation tuple. */
+    (void)arg;
     Value *list = make_list(4);
-    if (!arg) {
-        list_append_owned(list, make_str("equilibrium"));
-        list_append_owned(list, make_num(0.0));
-        list_append_owned(list, make_num(0.0));
-        list_append_owned(list, make_num(0.0));
-        return list;
-    }
-    observer_ensure_fresh(arg);
-    Value *rep = builtin_report(arg);
-    list_append_owned(list, rep);
-    list_append_owned(list, make_num(arg->entropy));
-    list_append_owned(list, make_num(arg->dH));
-    list_append_owned(list, make_num(arg->prev_dH));
+    list_append_owned(list, make_str("equilibrium"));
+    list_append_owned(list, make_num(0.0));
+    list_append_owned(list, make_num(0.0));
+    list_append_owned(list, make_num(0.0));
     return list;
 }
 

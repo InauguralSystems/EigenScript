@@ -181,6 +181,18 @@ typedef struct {
     uint32_t  generation;   /* current generation; slot is occupied iff generations[i] == this */
 } EnvHash;
 
+/* #262: slot-keyed observer state — the ONLY observer model. Keyed to a
+ * variable BINDING (env + slot index), not the recyclable Value object, so
+ * aliasing/temp-built iterates track their own trajectory. The per-Value
+ * observer fields were removed in Step E. See issue #262. */
+typedef struct ObserverSlot {
+    double  entropy, last_entropy, dH, prev_dH;
+    int     obs_age;
+    double *dh_window;          /* lazily allocated, OBSERVER_WINDOW_N doubles */
+    uint8_t dh_window_head, dh_window_count;
+    uint8_t used;               /* 1 once this slot has been observed */
+} ObserverSlot;
+
 struct Env {
     char **names;
     EigsSlot *values;   /* slot-typed bindings (immediates live in-place) */
@@ -202,6 +214,11 @@ struct Env {
     Env *gc_prev;
     unsigned char in_gc_list;
     EnvHash hash;
+    /* #262 Phase-1: self-managed slot-keyed observer array (own capacity,
+     * grown in observer_slot_update; freed/reset at env teardown/park). NULL
+     * until the first shadow observation under EIGS_OBS_SHADOW. */
+    struct ObserverSlot *obs;
+    int obs_cap;
 };
 
 struct Value {
@@ -216,24 +233,11 @@ struct Value {
         struct { double *data; int count; } buffer;
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
-    double entropy;
-    double dH;
-    double last_entropy;
-    int obs_age;
-    double prev_dH;
-    /* Windowed observer history: ring buffer of recent dH values.
-     * NULL until second observation on a non-arena Value (allocated
-     * lazily in observer_window_push, eigenscript.c). Used by the
-     * windowed predicate implementations (converged/stable/improving/
-     * diverging/oscillating/equilibrium) to judge phase over a window
-     * instead of one frame. Arena Values never get a window — predicates
-     * fall back to "window empty" (false). */
-    double *dh_window;
-    uint8_t dh_window_head;   /* next slot to write (ring index) */
-    uint8_t dh_window_count;  /* current fill, 0..OBSERVER_WINDOW_N */
+    /* #262 Step E: observer state (entropy/dH/window/obs_age/dirty) lived here
+     * in the value-path model; it now lives only on the per-binding Env slot
+     * (ObserverSlot). The Value carries no observer state. */
     int refcount;       /* reference counting GC: 0 = unmanaged, >0 = tracked */
     unsigned char arena; /* 1 if arena-allocated (don't free) */
-    unsigned char dirty; /* 1 = observer entropy needs recomputation */
 };
 
 /* Window length for the per-Value dH ring buffer. Predicates require
@@ -243,6 +247,24 @@ struct Value {
 
 /* Returns the current fill of v's dH window (0..OBSERVER_WINDOW_N). */
 size_t observer_window_size(const Value *v);
+
+/* #262 Phase-1 prototype slot-keyed observer API (behind EIGS_OBS_SHADOW). */
+void observer_slot_update(struct Env *e, int idx, Value *newval);
+/* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
+void observer_slot_update_num(struct Env *e, int idx, double num);
+void observer_slot_reset(struct Env *e);
+/* Implemented in vm.c: drops the last-observed-slot tracker if it points at e
+ * (called from observer_slot_reset so a torn-down env can't be read stale). */
+void vm_obs_slot_dropped(struct Env *e);
+int  observer_slot_converged(const struct ObserverSlot *s);
+int  observer_slot_equilibrium(const struct ObserverSlot *s);
+int  observer_slot_improving(const struct ObserverSlot *s);
+int  observer_slot_diverging(const struct ObserverSlot *s);
+int  observer_slot_oscillating(const struct ObserverSlot *s);
+int  observer_slot_stable(const struct ObserverSlot *s);
+/* Classify a slot into a report band (mirrors builtin_report's priority).
+ * Returns a static string; NULL if the slot is unusable. */
+const char *observer_slot_report(const struct ObserverSlot *s);
 
 /* Returns the dH at offset back from most recent (0 = most recent).
  * Caller must ensure offset < observer_window_size(v). */
@@ -432,7 +454,11 @@ struct EigsThread {
      * scope depth (incremented on entry, decremented on exit; non-zero
      * suppresses assign-count bumps so observer interrogatives don't
      * count instrumentation traffic). */
-    struct Value *last_observer;
+    /* #262 Phase-2: last observed binding as (env, slot) for slot-keyed
+     * observer reads. Per-thread, parallel to last_observer. idx < 0 = none.
+     * Behind EIGS_OBS_SHADOW. */
+    struct Env   *last_obs_slot_env;
+    int           last_obs_slot_idx;
     int           unobserved_depth;
     /* Dynamic caller scope for env-aware builtins (env_get/env_set
      * polymorphic dispatch needs to know "who called me"). */
@@ -512,7 +538,8 @@ extern __thread EigsThread *eigs_current;
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
-#define g_last_observer     (eigs_current->last_observer)
+#define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
+#define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
 #define g_builtin_call_env  (eigs_current->builtin_call_env)
 #define g_vm                  (*eigs_current->vm)

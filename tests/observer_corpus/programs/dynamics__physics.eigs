@@ -1,0 +1,135 @@
+# physics — the damped-oscillator ζ-sweep: the observer predicate showcase.
+#
+# A unit oscillator  x'' = -x - 2ζ·x'  (mass=stiffness=1) is integrated with
+# semi-implicit Euler. We observe TWO quantities and ask the observer to
+# classify each trajectory:
+#
+#   energy  E = ½v² + ½x²   — the Lyapunov scalar → improving / converged
+#   displacement x          — the oscillation scalar → oscillating
+#
+# The damping ratio ζ sweeps the whole predicate space, and — the point — the
+# observer's verdict on the SAME system differs by what you observe:
+#   ζ in (0,1): energy CONVERGES while x OSCILLATES.
+#   ζ = 0:      energy is ~conserved (never converges) while x OSCILLATES.
+#   ζ >= 1:     both settle monotonically, no oscillation.
+#   ζ < 0:      energy GROWS (diverges).
+# The observer constitutes the measurement — the founding question, in physics.
+#
+# Observation cadence matters: entropy of a number is H(1/(1+|x|)) and the
+# predicates fire on dH vs dh_small=0.01 / dh_zero=0.001. Sampling every step
+# (DT=0.05) moves entropy less than dh_zero, so everything reads "equilibrium".
+# We therefore observe once per FRAME of SUB substeps (see FINDINGS.md F-DYN-3).
+#
+# We report the RAW regime flags each quantity passed through (oscillated /
+# converged / diverged) rather than one collapsed label — the honest observer
+# output, since a real trajectory legitimately visits several regimes.
+#
+# Runnable: `eigenscript physics.eigs` prints the regime spectrum.
+
+DT is 0.05
+SUB is 16
+
+# One integration substep of the damped oscillator. state is [x, v]; the outer
+# [state, zeta] list spreads to the two params, so state arrives as the [x,v] list.
+define step(state, zeta) as:
+    x is state[0]
+    v is state[1]
+    a is (0.0 - x) - 2.0 * zeta * v
+    v is v + a * DT
+    x is x + v * DT
+    return [x, v]
+
+# Total energy (kinetic + potential), the Lyapunov scalar. Takes the [x,v] state
+# list: `energy_of of state` passes a bare variable as one arg (only a literal
+# `[...]` at the call site spreads into separate params — see FINDINGS F-DYN-4).
+define energy_of(state) as:
+    x is state[0]
+    v is state[1]
+    return 0.5 * v * v + 0.5 * x * x
+
+# Run `frames` frames at damping `zeta`, observing energy AND displacement once
+# per frame, recording which regimes each quantity visits. Hot substeps run
+# `unobserved` (no observer tax); only per-frame macro-state is observed.
+# Returns [e_osc,e_conv,e_div, x_osc,x_conv,x_div, grew] (grew: final E > initial).
+define profile(zeta, frames) as:
+    state is [1.0, 0.0]
+    e0 is energy_of of state
+    energy is e0
+    x is state[0]
+    e_osc is 0
+    e_conv is 0
+    e_div is 0
+    x_osc is 0
+    x_conv is 0
+    x_div is 0
+    f is 0
+    loop while f < frames:
+        unobserved:
+            s is 0
+            loop while s < SUB:
+                state is step of [state, zeta]
+                s is s + 1
+        x is state[0]
+        energy is energy_of of state
+        er is report of energy
+        xr is report of x
+        if er == "oscillating":
+            e_osc is 1
+        if er == "converged":
+            e_conv is 1
+        if er == "diverging":
+            e_div is 1
+        if xr == "oscillating":
+            x_osc is 1
+        if xr == "converged":
+            x_conv is 1
+        if xr == "diverging":
+            x_div is 1
+        f is f + 1
+    grew is 0
+    if energy > e0:
+        grew is 1
+    return [e_osc, e_conv, e_div, x_osc, x_conv, x_div, grew]
+
+define yn(b) as:
+    if b == 1:
+        return "Y"
+    return "-"
+
+# Average velocity over the last frame, recovered from the observer's temporal
+# `prev` (the previous observed displacement) — finite difference, no stored v.
+define frame_velocity(zeta) as:
+    state is [1.0, 0.0]
+    x is state[0]
+    unobserved:
+        s is 0
+        loop while s < SUB:
+            state is step of [state, zeta]
+            s is s + 1
+    x is state[0]
+    return (x - (prev of x)) / (SUB * DT)
+
+# ---- demo ----
+print of "=== damped-oscillator zeta-sweep: observer regime spectrum ==="
+print of "observe ENERGY (Lyapunov) vs DISPLACEMENT (oscillation); flags = regime visited"
+print of ""
+print of "  zeta     | E:osc conv div grew | x:osc conv div | reading"
+for z in [-0.05, 0.0, 0.1, 0.4, 1.0, 2.0]:
+    p is profile of [z, 64]
+    reading is "settles"
+    if p[6] == 1:
+        reading is "DIVERGES (energy grew)"
+    elif p[3] == 1:
+        reading is "x OSCILLATES, energy settles"
+    e_line is f"E:{yn of p[0]} {yn of p[1]} {yn of p[2]} {yn of p[6]}"
+    x_line is f"x:{yn of p[3]} {yn of p[4]} {yn of p[5]}"
+    print of f"  {z}\t| {e_line}     | {x_line}      | {reading}"
+
+print of ""
+print of "the gem is the zeta=0 row: energy conserved -> never converges, while x"
+print of "oscillates. Same system, opposite verdict, set by what the observer watches."
+print of ""
+print of "--- temporal: avg velocity over first frame via (prev of x) ---"
+print of f"  zeta=0.1 frame-velocity = {frame_velocity of 0.1}"
+print of ""
+print of "DONE"

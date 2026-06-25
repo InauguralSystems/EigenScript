@@ -145,6 +145,22 @@ typedef enum {
                          * check; out-of-range raises. Same scanner-stop pattern as
                          * DESTRUCTURE_UNPACK — JIT bails to interpreter. */
 
+    /* #262 Phase-3 observer ops. Added at the END of the enum, NOT mid-list:
+     * hand-built / self-hosted-bridge bytecode hardcodes opcode NUMBERS
+     * (e.g. tests/test_vm_run_bytecode.eigs's `loopcode` uses 63 = LOOP_CAP_CHECK),
+     * so inserting an opcode anywhere before them shifts those numbers and
+     * misaligns the bytecode. New opcodes must always append here. */
+    OP_REPORT_SLOT,     /* [slot:16] report-of-local via slot trajectory (compile-flag gated) */
+    OP_OBSERVE_NAME_POST,/* [name_idx:16] slot-observe a name binding AFTER its SET
+                          * (binding now exists), fixing the first-assignment lag.
+                          * Emitted only under compile-time EIGS_OBS_SHADOW; peeks TOS. */
+    OP_REPORT_NAME,     /* [name_idx:16] report of a non-local name: resolve (env,slot),
+                          * classify its slot. Compile-flag gated. */
+    OP_OBSERVE_VALUE_SLOT, /* [slot:16] `observe of <local>`: [status,entropy,dH,prev_dH]
+                            * from the local's slot trajectory. Compile-flag gated. */
+    OP_OBSERVE_VALUE_NAME, /* [name_idx:16] `observe of <name>`: same, resolving the
+                            * binding's (env,slot). Compile-flag gated. */
+
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 

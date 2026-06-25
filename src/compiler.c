@@ -114,6 +114,8 @@ static int op_stack_effect(uint8_t op) {
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
+    case OP_REPORT_SLOT: case OP_REPORT_NAME:
+    case OP_OBSERVE_VALUE_SLOT: case OP_OBSERVE_VALUE_NAME:
         return 1;
     /* Push 2 */
     case OP_DUP2:
@@ -135,6 +137,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
+    case OP_OBSERVE_NAME_POST:   /* #262 Phase-3: peeks TOS, no stack change */
         return 0;
     /* Jumps: conditional pops 1, unconditional 0, peek 0 */
     case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
@@ -1012,6 +1015,17 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
 
     emit_op_u16(c, obs_op, obs_arg, line);
     emit_op_u16(c, set_op, set_arg, line);
+
+    /* #262 Phase-3 (observe-at-SET): for a NAME binding, the OBSERVE_ASSIGN
+     * above ran before the binding existed, so its slot couldn't be observed
+     * on the first assignment. Re-observe AFTER the SET, when the binding is
+     * live, fixing the first-assignment lag. Only under the compile-time
+     * EIGS_OBS_SHADOW flag, so flag-off bytecode is byte-identical. Slot
+     * bindings (OBSERVE_ASSIGN_LOCAL) already observe from assignment 1 — their
+     * slots are pre-allocated — so they need no post-observe. */
+    if (obs_op == OP_OBSERVE_ASSIGN) {
+        emit_op_u16(c, OP_OBSERVE_NAME_POST, obs_arg, line);
+    }
 }
 
 /* ---- AST compilation ---- */
@@ -1557,6 +1571,34 @@ static void compile_node(Compiler *c, ASTNode *node) {
         ASTNode *fn_node = node->data.relation.left;
         ASTNode *arg_node = node->data.relation.right;
 
+        {
+            if (fn_node && fn_node->type == AST_IDENT &&
+                strcmp(fn_node->data.ident.name, "report") == 0 &&
+                arg_node && arg_node->type == AST_IDENT) {
+                uint32_t rh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
+                int rslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, rh) : -1;
+                if (rslot >= 0) { emit_op_u16(c, OP_REPORT_SLOT, (uint16_t)rslot, node->line); break; }
+                /* Phase-3 B: not a local — report the name's binding via its slot. */
+                int rnidx = add_string_constant(c, arg_node->data.ident.name);
+                emit_op_u16(c, OP_REPORT_NAME, (uint16_t)rnidx, node->line);
+                break;
+            }
+            /* #262 Phase-3 D: `observe of <ident>` reads the binding's slot
+             * trajectory, parallel to report — the value path no longer carries
+             * observer state on the Value object. Non-ident operands fall
+             * through to the builtin_observe call below. */
+            if (fn_node && fn_node->type == AST_IDENT &&
+                strcmp(fn_node->data.ident.name, "observe") == 0 &&
+                arg_node && arg_node->type == AST_IDENT) {
+                uint32_t oh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
+                int oslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, oh) : -1;
+                if (oslot >= 0) { emit_op_u16(c, OP_OBSERVE_VALUE_SLOT, (uint16_t)oslot, node->line); break; }
+                int onidx = add_string_constant(c, arg_node->data.ident.name);
+                emit_op_u16(c, OP_OBSERVE_VALUE_NAME, (uint16_t)onidx, node->line);
+                break;
+            }
+        }
+
         /* Optimize: dispatch of [table, key, arg] → OP_DISPATCH */
         if (fn_node && fn_node->type == AST_IDENT &&
             strcmp(fn_node->data.ident.name, "dispatch") == 0 &&
@@ -1830,8 +1872,16 @@ static void compile_node(Compiler *c, ASTNode *node) {
         }
 
         compile_node(c, expr);
-        if ((kind == 1 || kind == 2 || kind == 6) && expr->type == AST_IDENT) {
-            /* who/when/prev with known binding name: emit name index */
+        /* #262 Phase-3 A: where/why/how (3/4/5) on a bare ident also go named,
+         * so they read the binding's slot — but only under the compile-time
+         * flag, so flag-off bytecode is byte-identical. */
+        int named_obs = 0;
+        if (kind >= 3 && kind <= 5 && expr->type == AST_IDENT) {
+            named_obs = 1;
+        }
+        if (((kind == 1 || kind == 2 || kind == 6) || named_obs) && expr->type == AST_IDENT) {
+            /* who/when/prev (always) + where/why/how (flagged) with known
+             * binding name: emit name index */
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED, (uint16_t)kind, (uint16_t)name_idx, node->line);
         } else {
