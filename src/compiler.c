@@ -107,14 +107,12 @@ static void adjust_stack(Compiler *c, int delta) {
 
 /* ---- Emit helpers ---- */
 
-/* #262 Phase-3 C: emit the slot-keyed observer ops (REPORT_SLOT/REPORT_NAME/
- * OBSERVE_NAME_POST/where-why-how INTERROGATE_NAMED) by DEFAULT. The slot model
- * is authoritative; EIGS_OBS_SHADOW=0 is the value-path escape hatch kept while
- * the value path is being removed. Must agree with vm.c's obs_shadow_on(). */
+/* #262 Step E: the slot-keyed observer ops (REPORT_SLOT, REPORT_NAME,
+ * OBSERVE_NAME_POST, OBSERVE_VALUE_SLOT/NAME, where-why-how INTERROGATE_NAMED)
+ * are always emitted — the value-path escape hatch is gone. Constant-1 shim
+ * retained so the emit guards keep their shape; folded away in a later cleanup. */
 static int obs_emit_on(void) {
-    static int v = -1;
-    if (v < 0) { const char *e = getenv("EIGS_OBS_SHADOW"); v = (e && strcmp(e, "0") == 0) ? 0 : 1; }
-    return v;
+    return 1;
 }
 
 /* Stack effect of each opcode */

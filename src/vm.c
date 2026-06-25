@@ -22,16 +22,12 @@
  * tracker (g_last_obs_slot_env/idx) lives on EigsThread (eigenscript.h). */
 Value* builtin_report(Value *arg);
 Value* builtin_observe(Value *arg);
-static int  g_obs_shadow = -1;
 static inline int obs_shadow_on(void) {
-    /* #262 Phase-3 C: the slot model is now the DEFAULT. EIGS_OBS_SHADOW=0 is
-     * the value-path escape hatch (kept while the value path is being deleted,
-     * D/E); anything else (unset or non-"0") means slot. */
-    if (g_obs_shadow < 0) {
-        const char *e = getenv("EIGS_OBS_SHADOW");
-        g_obs_shadow = (e && strcmp(e, "0") == 0) ? 0 : 1;
-    }
-    return g_obs_shadow;
+    /* #262 Step E: the slot model is the only observer model — the value-path
+     * escape hatch (EIGS_OBS_SHADOW=0) is gone. Retained as a constant-1 shim so
+     * the remaining `if (obs_shadow_on() && slot.used)` reader guards keep their
+     * shape; folded away in a later E cleanup. */
+    return 1;
 }
 
 /* #262 Phase-3 D: read the last-observed trajectory (dH, entropy) for the
@@ -969,112 +965,27 @@ void jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
  *
  * No runtime_error paths — these helpers never set g_vm.had_error. */
 void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
-    if (g_unobserved_depth != 0) return;
-    /* #262 Phase-3 D — slot model (default): name bindings are observed by the
-     * OBSERVE_NAME_POST that runs after the SET (when the binding's slot is
-     * live), so this pre-SET hook is a no-op. Only the value path needs to
-     * promote and carry observer state on the Value. */
-    if (obs_shadow_on()) return;
-    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
-    EigsSlot s = g_vm.stack[g_vm.sp - 1];
-    Value *v = NULL;
-    if (slot_is_num(s)) {
-        v = make_tracked_num(s.d);
-        g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
-    } else if (slot_is_ptr(s)) {
-        v = slot_as_ptr(s);
-    }
-    if (v) {
-        const char *name = chunk->const_interns[name_idx];
-        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
-        if (h == 0) {
-            h = env_hash_name(name);
-            if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
-        }
-        Value *prev = env_get_hashed(frame->env, name, h);
-        if (prev && prev != v) {
-            observer_ensure_fresh(prev);
-            v->last_entropy = prev->last_entropy;
-            v->entropy = prev->entropy;
-            v->obs_age = prev->obs_age;
-            v->dH = prev->dH;
-            v->prev_dH = prev->prev_dH;
-            /* Move ring-buffer ownership: prev is about to be freed
-             * (or at least lose its observer alias). Transfer prev's
-             * buffer to v — but only if prev actually holds one. If prev
-             * has no window (e.g. an alias chain already migrated it onto
-             * v earlier in the same statement), do NOT free v's freshly
-             * received window and replace it with nothing — that resets
-             * the window every iteration so it never fills (issue #260). */
-            if (prev->dh_window) {
-                if (v->dh_window) free(v->dh_window);
-                v->dh_window = prev->dh_window;
-                v->dh_window_head = prev->dh_window_head;
-                v->dh_window_count = prev->dh_window_count;
-                prev->dh_window = NULL;
-                prev->dh_window_head = 0;
-                prev->dh_window_count = 0;
-            }
-        }
-        v->dirty = 1;
-        g_last_observer = v;
-    }
+    /* #262 Phase-3/E — slot model: a name binding is observed by the
+     * OBSERVE_NAME_POST that runs after its SET (when the slot is live), so this
+     * pre-SET name hook does nothing. Kept as a no-op because the JIT emitter
+     * still emits a call for OP_OBSERVE_ASSIGN. */
+    (void)chunk; (void)name_idx;
 }
 
 void jit_helper_observe_assign_local(int slot) {
     if (g_unobserved_depth != 0) return;
+    /* #262 Phase-3/E — slot model: observe the persistent (fn_env, slot)
+     * trajectory directly from TOS. No promotion, no Value-side state, no window
+     * migration (the slot persists across assigns). */
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
-    if (obs_shadow_on()) {
-        /* #262 Phase-3 D — slot model (default): observe the persistent slot
-         * directly from TOS, no promotion / no window migration. Mirror of the
-         * interpreter CASE(OBSERVE_ASSIGN_LOCAL). */
-        Env *e = frame->fn_env;
-        if (slot_is_num(s)) {
-            observer_slot_update_num(e, slot, s.d);
-            g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
-        } else if (slot_is_ptr(s)) {
-            observer_slot_update(e, slot, slot_as_ptr(s));
-            g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
-        }
-        return;
-    }
-    /* value path (EIGS_OBS_SHADOW=0): promote + carry Value observer state. */
-    Value *v = NULL;
+    Env *e = frame->fn_env;
     if (slot_is_num(s)) {
-        v = make_tracked_num(s.d);
-        g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
+        observer_slot_update_num(e, slot, s.d);
+        g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
     } else if (slot_is_ptr(s)) {
-        v = slot_as_ptr(s);
-    }
-    if (v) {
-        Env *e = frame->fn_env;
-        Value *prev = NULL;
-        if (e && slot < e->count) {
-            EigsSlot ps = e->values[slot];
-            if (slot_is_ptr(ps)) prev = slot_as_ptr(ps);
-        }
-        if (prev && prev != v) {
-            observer_ensure_fresh(prev);
-            v->last_entropy = prev->last_entropy;
-            v->entropy = prev->entropy;
-            v->obs_age = prev->obs_age;
-            v->dH = prev->dH;
-            v->prev_dH = prev->prev_dH;
-            /* Transfer prev's ring buffer to v only if prev holds one — see
-             * the guard rationale above / issue #260. */
-            if (prev->dh_window) {
-                if (v->dh_window) free(v->dh_window);
-                v->dh_window = prev->dh_window;
-                v->dh_window_head = prev->dh_window_head;
-                v->dh_window_count = prev->dh_window_count;
-                prev->dh_window = NULL;
-                prev->dh_window_head = 0;
-                prev->dh_window_count = 0;
-            }
-        }
-        v->dirty = 1;
-        g_last_observer = v;
+        observer_slot_update(e, slot, slot_as_ptr(s));
+        g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
     }
 }
 
@@ -3714,63 +3625,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     /* ---- Observer ---- */
 
     CASE(OBSERVE_ASSIGN): {
-        uint16_t name_idx = read_u16(ip); ip += 2;
-        /* #262 Phase-3 D — slot model (default): a name binding is observed by
-         * the OBSERVE_NAME_POST emitted after the SET (when its slot is live),
-         * so this pre-SET hook does nothing on the default path. Only the value
-         * path (EIGS_OBS_SHADOW=0) promotes and carries observer state on the
-         * Value object. */
-        if (!obs_shadow_on() && g_unobserved_depth == 0) {
-            /* Promote an immediate TOS to a tracked heap Value so the
-             * observer fields (entropy/dH/obs_age/dirty) live on the
-             * same object that SET_NAME will store in env. Without this
-             * promotion, each vm_peek of an immediate would materialize
-             * a fresh make_num and the observer state would be lost. */
-            EigsSlot s = g_vm.stack[g_vm.sp - 1];
-            Value *v = NULL;
-            if (slot_is_num(s)) {
-                v = make_tracked_num(s.d);
-                g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
-            } else if (slot_is_ptr(s)) {
-                v = slot_as_ptr(s);
-            }
-            if (v) {
-                const char *name = chunk->const_interns[name_idx];
-                uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
-                if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
-                Value *prev = env_get_hashed(frame->env, name, h);
-                if (prev && prev != v) {
-                    observer_ensure_fresh(prev);
-                    v->last_entropy = prev->last_entropy;
-                    v->entropy = prev->entropy;
-                    v->obs_age = prev->obs_age;
-                    v->dH = prev->dH;
-                    v->prev_dH = prev->prev_dH;
-                    /* Transfer the dH ring buffer from the old binding to the
-                     * new value — but only if `prev` actually holds one. When
-                     * an alias chain assigns the same value twice in a
-                     * statement (e.g. `nxt is b * 0.1` then `b is nxt`, where
-                     * `b` and `nxt` share a Value), the first migration has
-                     * already moved the window onto `v` and emptied `prev`;
-                     * a second migration with `prev->dh_window == NULL` must
-                     * NOT free `v`'s freshly-received window and replace it
-                     * with nothing — that resets the window every iteration so
-                     * it never fills and the predicates fall back to the
-                     * partial-window label (issue #260). */
-                    if (prev->dh_window) {
-                        if (v->dh_window) free(v->dh_window);
-                        v->dh_window = prev->dh_window;
-                        v->dh_window_head = prev->dh_window_head;
-                        v->dh_window_count = prev->dh_window_count;
-                        prev->dh_window = NULL;
-                        prev->dh_window_head = 0;
-                        prev->dh_window_count = 0;
-                    }
-                }
-                v->dirty = 1;
-                g_last_observer = v;
-            }
-        }
+        /* #262 Phase-3/E — slot model: a name binding is observed by the
+         * OBSERVE_NAME_POST emitted after the SET (when its slot is live), so
+         * this pre-SET name hook does nothing. (The opcode is still emitted by
+         * the compiler and ouroboros; kept as a no-op consumer.) */
+        ip += 2;  /* skip name_idx */
         DISPATCH();
     }
 
@@ -3784,62 +3643,18 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
          * (#129). */
         uint16_t slot = read_u16(ip); ip += 2;
         if (g_unobserved_depth == 0) {
+            /* #262 Phase-3/E — slot model: observe the binding's persistent
+             * (fn_env, slot) ObserverSlot directly from TOS. No promotion (the
+             * num stays immediate), no Value-side state, no window migration —
+             * the slot persists across assignments, which is the #262 fix. */
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
-            if (obs_shadow_on()) {
-                /* #262 Phase-3 D — slot model (default): observe the binding's
-                 * persistent (fn_env, slot) ObserverSlot directly from TOS.
-                 * No promotion (the num stays an immediate), no Value-side
-                 * observer state, and no window migration — the slot persists
-                 * across assignments to the same binding, which is exactly the
-                 * fix #262 is about. */
-                Env *e = frame->fn_env;
-                if (slot_is_num(s)) {
-                    observer_slot_update_num(e, (int)slot, s.d);
-                    g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
-                } else if (slot_is_ptr(s)) {
-                    observer_slot_update(e, (int)slot, slot_as_ptr(s));
-                    g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
-                }
-            } else {
-                /* value path (EIGS_OBS_SHADOW=0): promote the num to a tracked
-                 * Value and carry observer state on it, migrating the dH window
-                 * from the prior binding. */
-                Value *v = NULL;
-                if (slot_is_num(s)) {
-                    v = make_tracked_num(s.d);
-                    g_vm.stack[g_vm.sp - 1] = slot_from_tracked(v);
-                } else if (slot_is_ptr(s)) {
-                    v = slot_as_ptr(s);
-                }
-                if (v) {
-                    Env *e = frame->fn_env;
-                    Value *prev = NULL;
-                    if (e && (int)slot < e->count) {
-                        EigsSlot ps = e->values[slot];
-                        if (slot_is_ptr(ps)) prev = slot_as_ptr(ps);
-                    }
-                    if (prev && prev != v) {
-                        observer_ensure_fresh(prev);
-                        v->last_entropy = prev->last_entropy;
-                        v->entropy = prev->entropy;
-                        v->obs_age = prev->obs_age;
-                        v->dH = prev->dH;
-                        v->prev_dH = prev->prev_dH;
-                        /* Window migration — guarded per #260 (see the JIT
-                         * helper for the alias-chain rationale). */
-                        if (prev->dh_window) {
-                            if (v->dh_window) free(v->dh_window);
-                            v->dh_window = prev->dh_window;
-                            v->dh_window_head = prev->dh_window_head;
-                            v->dh_window_count = prev->dh_window_count;
-                            prev->dh_window = NULL;
-                            prev->dh_window_head = 0;
-                            prev->dh_window_count = 0;
-                        }
-                    }
-                    v->dirty = 1;
-                    g_last_observer = v;
-                }
+            Env *e = frame->fn_env;
+            if (slot_is_num(s)) {
+                observer_slot_update_num(e, (int)slot, s.d);
+                g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
+            } else if (slot_is_ptr(s)) {
+                observer_slot_update(e, (int)slot, slot_as_ptr(s));
+                g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             }
         }
         DISPATCH();
