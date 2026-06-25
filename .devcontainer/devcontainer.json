@@ -1,0 +1,27 @@
+{
+  "name": "EigenScript",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/EigenScript",
+  "remoteUser": "root",
+
+  // Warm the build so the Codespace opens to a working binary, and prove the
+  // db sidecar is wired by running the full (http+model+db) variant's version.
+  "postCreateCommand": "CC=gcc ./build.sh && ./src/eigenscript --version",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "files.associations": { "*.eigs": "python" }
+      }
+    }
+  },
+
+  // x86-64 machine type so the __x86_64__-gated JIT is the path under test.
+  "hostRequirements": {
+    "cpus": 4
+  }
+}

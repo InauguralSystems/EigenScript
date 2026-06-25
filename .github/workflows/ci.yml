@@ -10,31 +10,72 @@ permissions:
   contents: read
 
 jobs:
-  # Build and run the full suite across operating systems and compilers.
-  # gcc and clang shake out different warnings and codegen; macOS exercises
-  # the non-x86 JIT fallback and the BSD/clang toolchain. fail-fast is off so
-  # one platform's failure doesn't hide the others' results.
-  build-and-test:
-    name: ${{ matrix.os }} / ${{ matrix.cc }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            cc: gcc
-          - os: ubuntu-latest
-            cc: clang
-          - os: macos-latest
-            cc: clang
-          - os: macos-15-intel
-            cc: clang
+  # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
+  # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
+  # via `container:`, so the environment Codespaces opens and the environment
+  # CI tests in are byte-for-byte the same toolchain — they cannot drift.
+  # gha-cached, so an unchanged Dockerfile rebuilds in seconds.
+  dev-image:
+    name: build dev/ci image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Install compiler (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.cc }}
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR requires a lowercase owner; compute the ref once and hand it to
+      # the downstream jobs through a job output.
+      - name: Compute image ref
+        id: ref
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "image=ghcr.io/${OWNER,,}/eigenscript-dev:ci-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push dev image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ref.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Linux build + full suite, inside the shared image, for gcc and clang.
+  # gcc and clang shake out different warnings and codegen.
+  build-and-test-linux:
+    name: linux / ${{ matrix.cc }}
+    needs: dev-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Build
         run: CC=${{ matrix.cc }} ./build.sh
@@ -49,34 +90,57 @@ jobs:
       # vendored from downstream consumers (dynamics solvers, iLambdaAi) plus
       # this repo's examples, each pinned to a value-path golden. The unit
       # suite proves the predicates in isolation; this guards that an observer
-      # (or any) change doesn't silently shift real consumer behavior —
-      # convergence loops, report-driven solvers, interrogative reads. Linux
-      # only: the goldens are float-formatted on Linux, so a macOS leg would
-      # diff on printf cosmetics, not behavior.
+      # (or any) change doesn't silently shift real consumer behavior. Linux
+      # only: the goldens are float-formatted on Linux.
       - name: Observer cross-repo corpus
-        if: runner.os == 'Linux'
         run: bash tests/observer_corpus/run.sh
+
+  # macOS exercises the BSD/clang toolchain and (on arm64) the non-x86 JIT
+  # fallback. Runs natively — a Linux container image can't host these.
+  build-and-test-macos:
+    name: macos / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Build
+        run: CC=clang ./build.sh
+
+      - name: Verify binary
+        run: ./src/eigenscript --version
+
+      - name: Run test suite
+        run: cd tests && bash run_all_tests.sh
 
       # Linux LSP coverage lives in the extensions job; this leg exists
       # because the LSP build had macOS-only link failures nothing surfaced.
       - name: Compile-check LSP (macOS)
-        if: runner.os == 'macOS'
-        run: make lsp CC=${{ matrix.cc }}
+        run: make lsp CC=clang
 
   # Build the http+model variant and run the suite against it: the suite's
   # probe-gated sections ([44]-[45] HTTP, [47] model roundtrip/overflow,
   # transformer smoke) silently skip on the minimal build, so without this
   # job ~5000 lines of extension C never execute in CI. Also compile-check
-  # the gfx variant and the LSP (both bitrot invisibly otherwise — the LSP
-  # had, for months) and run the standalone JIT emitter smoke tests.
+  # the gfx variant and the LSP (both bitrot invisibly otherwise) and run the
+  # standalone JIT emitter smoke tests.
   extensions:
     name: extensions (http+model suite; gfx/lsp/jit-smoke)
+    needs: dev-image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-
-      - name: Install GCC
-        run: sudo apt-get update && sudo apt-get install -y gcc
 
       - name: JIT emitter smoke tests
         run: make jit-smoke
@@ -94,29 +158,36 @@ jobs:
         run: make lsp
 
       # 44 deterministic adversarial inputs against the ASan-instrumented
-      # stdin harness (same compile→vm pipeline as main.c). Seconds to run;
+      # stdin harness (same compile->vm pipeline as main.c). Seconds to run;
       # any exit other than 0/1 is a crash.
       - name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
 
-  # Build the `full` variant (http+model+db) against a real PostgreSQL
-  # service container and run the suite with DATABASE_URL set. Without
-  # this, ext_db.c never executes anywhere: the suite's DB section [46]
-  # is probe-gated on the build, and test_db.eigs's live-path checks
-  # (DB09-DB15: CREATE/INSERT/SELECT/query_json round-trip) additionally
-  # gate on an actual connection.
+  # Build the `full` variant (http+model+db) against a real PostgreSQL service
+  # and run the suite with DATABASE_URL set. Without this, ext_db.c never
+  # executes anywhere: the suite's DB section [46] is probe-gated on the build,
+  # and test_db.eigs's live-path checks (DB09-DB15) additionally gate on an
+  # actual connection. When the job is containerized the service is reachable
+  # by its label (`db`), not localhost.
   database:
     name: db extension (postgres service)
+    needs: dev-image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     services:
-      postgres:
+      db:
         image: postgres:16
         env:
           POSTGRES_USER: eigs
           POSTGRES_PASSWORD: eigs_test
           POSTGRES_DB: eigs_test
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U eigs"
           --health-interval 5s
@@ -126,40 +197,40 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Install GCC + libpq
-        run: sudo apt-get update && sudo apt-get install -y gcc libpq-dev
-
       - name: Build full variant (http+model+db)
         run: make full
 
       - name: Run full suite with live DATABASE_URL
         env:
-          DATABASE_URL: postgres://eigs:eigs_test@localhost:5432/eigs_test
+          DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
         run: cd tests && bash run_all_tests.sh
 
   # Run the entire suite under AddressSanitizer + UndefinedBehaviorSanitizer.
-  # This is the net that catches use-after-free, buffer overflow, and UB that
-  # the normal -O2 build silently tolerates (the kind of bug that passes every
-  # functional test yet corrupts memory underneath). Per-iteration leak
-  # regressions are covered separately by tests/test_leak_guard.sh.
+  # The net that catches use-after-free, buffer overflow, and UB the normal
+  # -O2 build silently tolerates. Per-iteration leak regressions are covered
+  # separately by tests/test_leak_guard.sh.
   sanitizers:
     name: asan + ubsan (full suite)
+    needs: dev-image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-
-      - name: Install GCC
-        run: sudo apt-get update && sudo apt-get install -y gcc
 
       - name: Build with AddressSanitizer + UBSan
         run: make asan
 
       - name: Run full suite under sanitizers
         env:
-          # Leak detection is ON: the whole suite runs leak-clean since the
-          # exit-time teardown + birth-ref adoption fixes, so any new leak —
-          # per-iteration or shutdown — fails this job. Memory corruption
-          # and undefined behavior must also be zero (halt_on_error).
+          # Leak detection is ON: the suite runs leak-clean since the exit-time
+          # teardown + birth-ref adoption fixes, so any new leak fails this job.
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: cd tests && bash run_all_tests.sh
