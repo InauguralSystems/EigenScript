@@ -10,6 +10,7 @@
   <a href="https://www.bestpractices.dev/projects/13187"><img src="https://www.bestpractices.dev/projects/13187/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://github.com/InauguralSystems/EigenScript/actions/workflows/codeql.yml"><img src="https://github.com/InauguralSystems/EigenScript/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/InauguralSystems/EigenScript"><img src="https://api.securityscorecards.dev/projects/github.com/InauguralSystems/EigenScript/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://codespaces.new/InauguralSystems/EigenScript"><img src="https://github.com/codespaces/badge.svg" alt="Open in GitHub Codespaces" height="20"></a>
 </p>
 
 # EigenScript
@@ -431,3 +432,15 @@ make clean            # remove build artifacts
 Or use the shell scripts directly: `./build.sh` and `./install.sh`.
 
 The minimal binary is a single C program with no runtime dependencies.
+
+### Develop in a container
+
+A [devcontainer](.devcontainer/) provides the full toolchain (gcc, clang,
+`libpq-dev`, a PostgreSQL sidecar for the `ext_db` tests) with one click —
+**Code ▸ Codespaces ▸ Create**, or the badge above. It pins `linux/amd64` so
+the x86-64 JIT is exercised, not silently skipped. The same image backs CI's
+Linux legs (`ci.yml` runs them `container:`-side), so a green build in a
+Codespace and a green CI run can't drift.
+
+> Launching a Codespace bills to *your* account's free monthly hours — you can
+> open this org repo from a personal account without org Codespaces billing.
