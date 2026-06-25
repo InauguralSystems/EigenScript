@@ -107,14 +107,6 @@ static void adjust_stack(Compiler *c, int delta) {
 
 /* ---- Emit helpers ---- */
 
-/* #262 Step E: the slot-keyed observer ops (REPORT_SLOT, REPORT_NAME,
- * OBSERVE_NAME_POST, OBSERVE_VALUE_SLOT/NAME, where-why-how INTERROGATE_NAMED)
- * are always emitted — the value-path escape hatch is gone. Constant-1 shim
- * retained so the emit guards keep their shape; folded away in a later cleanup. */
-static int obs_emit_on(void) {
-    return 1;
-}
-
 /* Stack effect of each opcode */
 static int op_stack_effect(uint8_t op) {
     switch (op) {
@@ -1032,8 +1024,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
      * bindings (OBSERVE_ASSIGN_LOCAL) already observe from assignment 1 — their
      * slots are pre-allocated — so they need no post-observe. */
     if (obs_op == OP_OBSERVE_ASSIGN) {
-        if (obs_emit_on())
-            emit_op_u16(c, OP_OBSERVE_NAME_POST, obs_arg, line);
+        emit_op_u16(c, OP_OBSERVE_NAME_POST, obs_arg, line);
     }
 }
 
@@ -1581,7 +1572,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         ASTNode *arg_node = node->data.relation.right;
 
         {
-            if (obs_emit_on() && fn_node && fn_node->type == AST_IDENT &&
+            if (fn_node && fn_node->type == AST_IDENT &&
                 strcmp(fn_node->data.ident.name, "report") == 0 &&
                 arg_node && arg_node->type == AST_IDENT) {
                 uint32_t rh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
@@ -1596,7 +1587,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
              * trajectory, parallel to report — the value path no longer carries
              * observer state on the Value object. Non-ident operands fall
              * through to the builtin_observe call below. */
-            if (obs_emit_on() && fn_node && fn_node->type == AST_IDENT &&
+            if (fn_node && fn_node->type == AST_IDENT &&
                 strcmp(fn_node->data.ident.name, "observe") == 0 &&
                 arg_node && arg_node->type == AST_IDENT) {
                 uint32_t oh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
@@ -1886,7 +1877,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
          * flag, so flag-off bytecode is byte-identical. */
         int named_obs = 0;
         if (kind >= 3 && kind <= 5 && expr->type == AST_IDENT) {
-            named_obs = obs_emit_on();
+            named_obs = 1;
         }
         if (((kind == 1 || kind == 2 || kind == 6) || named_obs) && expr->type == AST_IDENT) {
             /* who/when/prev (always) + where/why/how (flagged) with known

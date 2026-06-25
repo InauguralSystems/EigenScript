@@ -181,11 +181,10 @@ typedef struct {
     uint32_t  generation;   /* current generation; slot is occupied iff generations[i] == this */
 } EnvHash;
 
-/* #262 Phase-1 prototype: slot-keyed observer state. Mirrors the per-Value
- * observer fields but keyed to a variable BINDING (env + slot index) instead
- * of the recyclable Value object, so aliasing/temp-built iterates track their
- * own trajectory. Shadow-written behind EIGS_OBS_SHADOW; the per-Value fields
- * remain authoritative. See issue #262. */
+/* #262: slot-keyed observer state — the ONLY observer model. Keyed to a
+ * variable BINDING (env + slot index), not the recyclable Value object, so
+ * aliasing/temp-built iterates track their own trajectory. The per-Value
+ * observer fields were removed in Step E. See issue #262. */
 typedef struct ObserverSlot {
     double  entropy, last_entropy, dH, prev_dH;
     int     obs_age;
@@ -234,24 +233,11 @@ struct Value {
         struct { double *data; int count; } buffer;
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
-    double entropy;
-    double dH;
-    double last_entropy;
-    int obs_age;
-    double prev_dH;
-    /* Windowed observer history: ring buffer of recent dH values.
-     * NULL until second observation on a non-arena Value (allocated
-     * lazily in observer_window_push, eigenscript.c). Used by the
-     * windowed predicate implementations (converged/stable/improving/
-     * diverging/oscillating/equilibrium) to judge phase over a window
-     * instead of one frame. Arena Values never get a window — predicates
-     * fall back to "window empty" (false). */
-    double *dh_window;
-    uint8_t dh_window_head;   /* next slot to write (ring index) */
-    uint8_t dh_window_count;  /* current fill, 0..OBSERVER_WINDOW_N */
+    /* #262 Step E: observer state (entropy/dH/window/obs_age/dirty) lived here
+     * in the value-path model; it now lives only on the per-binding Env slot
+     * (ObserverSlot). The Value carries no observer state. */
     int refcount;       /* reference counting GC: 0 = unmanaged, >0 = tracked */
     unsigned char arena; /* 1 if arena-allocated (don't free) */
-    unsigned char dirty; /* 1 = observer entropy needs recomputation */
 };
 
 /* Window length for the per-Value dH ring buffer. Predicates require
@@ -468,7 +454,6 @@ struct EigsThread {
      * scope depth (incremented on entry, decremented on exit; non-zero
      * suppresses assign-count bumps so observer interrogatives don't
      * count instrumentation traffic). */
-    struct Value *last_observer;
     /* #262 Phase-2: last observed binding as (env, slot) for slot-keyed
      * observer reads. Per-thread, parallel to last_observer. idx < 0 = none.
      * Behind EIGS_OBS_SHADOW. */
@@ -553,7 +538,6 @@ extern __thread EigsThread *eigs_current;
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
-#define g_last_observer     (eigs_current->last_observer)
 #define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)

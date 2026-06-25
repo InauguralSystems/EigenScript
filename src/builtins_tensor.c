@@ -927,65 +927,27 @@ Value* builtin_tensor_save(Value *arg) {
         free(flat);
     }
 
-    /* Write observer state for each element.
-     * Save last_entropy offset so that the first observation after load
-     * reproduces the correct dH. update_observer computes:
-     *   dH = new_entropy - last_entropy
-     * After load, the first observation recomputes entropy (same value).
-     * To get the saved dH back: set last_entropy = entropy - dH. */
-    if (ndim == 1) {
-        for (int i = 0; i < cols; i++) {
-            Value *v = tensor->data.list.items[i];
-            double obs[5] = { v->entropy, v->dH, v->entropy - v->dH, (double)v->obs_age, v->prev_dH };
-            fwrite(obs, sizeof(double), 5, f);
-        }
-    } else {
-        for (int r = 0; r < rows; r++) {
-            Value *row = tensor->data.list.items[r];
-            int rc = (row && row->type == VAL_LIST) ? row->data.list.count : 0;
-            for (int c = 0; c < cols; c++) {
-                if (c < rc) {
-                    Value *v = row->data.list.items[c];
-                    double obs[5] = { v->entropy, v->dH, v->entropy - v->dH, (double)v->obs_age, v->prev_dH };
-                    fwrite(obs, sizeof(double), 5, f);
-                } else {
-                    double obs[5] = {0, 0, 0, 0, 0};
-                    fwrite(obs, sizeof(double), 5, f);
-                }
-            }
-        }
+    /* #262 Step E: tensor elements are list items, not bindings, so they never
+     * carry observer state under the slot model. Keep the on-disk format (5
+     * observer doubles per element) for compatibility, but write zeros. */
+    {
+        double obs[5] = {0, 0, 0, 0, 0};
+        int n = (ndim == 1) ? cols : rows * cols;
+        for (int i = 0; i < n; i++) fwrite(obs, sizeof(double), 5, f);
     }
 
     fclose(f);
     return make_num(1);
 }
 
-/* Helper: restore observer state on a flat list of Values */
+/* #262 Step E: the on-disk observer block is read past (format compatibility)
+ * but no longer applied — Values carry no observer state under the slot model. */
 static void restore_observer_1d(Value *list, double *obs_data, int count) {
-    for (int i = 0; i < count && i < list->data.list.count; i++) {
-        Value *v = list->data.list.items[i];
-        v->entropy = obs_data[i * 5 + 0];
-        v->dH = obs_data[i * 5 + 1];
-        v->last_entropy = obs_data[i * 5 + 2];
-        v->obs_age = (int)obs_data[i * 5 + 3];
-        v->prev_dH = obs_data[i * 5 + 4];
-    }
+    (void)list; (void)obs_data; (void)count;
 }
 
 static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int cols) {
-    for (int r = 0; r < rows && r < tensor->data.list.count; r++) {
-        Value *row = tensor->data.list.items[r];
-        if (!row || row->type != VAL_LIST) continue;
-        for (int c = 0; c < cols && c < row->data.list.count; c++) {
-            int idx = r * cols + c;
-            Value *v = row->data.list.items[c];
-            v->entropy = obs_data[idx * 5 + 0];
-            v->dH = obs_data[idx * 5 + 1];
-            v->last_entropy = obs_data[idx * 5 + 2];
-            v->obs_age = (int)obs_data[idx * 5 + 3];
-            v->prev_dH = obs_data[idx * 5 + 4];
-        }
-    }
+    (void)tensor; (void)obs_data; (void)rows; (void)cols;
 }
 
 /* ==== BUILTIN: tensor_load ==== */

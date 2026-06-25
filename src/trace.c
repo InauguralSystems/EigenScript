@@ -221,18 +221,11 @@ static void prev_record_assign(const char *name, EigsSlot value) {
                 if (no) { e->obs = no; e->obs_cap = nc; }
             }
             if (oi < e->obs_cap) {
-                ObsHistEntry *o = &e->obs[oi];
-                Value *v = (slot_is_tracked(value) || slot_is_heap(value))
-                         ? slot_as_ptr(value) : NULL;
-                if (v) {
-                    observer_ensure_fresh(v);
-                    o->entropy      = v->entropy;
-                    o->dH           = v->dH;
-                    o->last_entropy = v->last_entropy;
-                    o->valid        = 1;
-                } else {
-                    o->valid = 0;
-                }
+                /* #262 Step E: observer state lives on the Env slot, not the
+                 * Value — leave the snapshot empty here; OBSERVE_NAME_POST fills
+                 * it from the fresh slot via trace_record_obs (runs after the
+                 * SET that created this history entry). */
+                e->obs[oi].valid = 0;
             }
         }
     }
@@ -811,7 +804,7 @@ static void write_slot(EigsSlot s) {
     if (slot_is_num(s))  { fprintf(g_trace_fp, "%.17g", s.d); return; }
     if (slot_is_null(s)) { fputs("null", g_trace_fp); return; }
     if (slot_is_bool(s)) { fputs(slot_as_bool(s) ? "true" : "false", g_trace_fp); return; }
-    if (slot_is_tracked(s) || slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
+    if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
     fputs("<unknown>", g_trace_fp);
 }
 

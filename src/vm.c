@@ -22,24 +22,16 @@
  * tracker (g_last_obs_slot_env/idx) lives on EigsThread (eigenscript.h). */
 Value* builtin_report(Value *arg);
 Value* builtin_observe(Value *arg);
-static inline int obs_shadow_on(void) {
-    /* #262 Step E: the slot model is the only observer model — the value-path
-     * escape hatch (EIGS_OBS_SHADOW=0) is gone. Retained as a constant-1 shim so
-     * the remaining `if (obs_shadow_on() && slot.used)` reader guards keep their
-     * shape; folded away in a later E cleanup. */
-    return 1;
-}
 
 /* #262 Phase-3 D: read the last-observed trajectory (dH, entropy) for the
  * observer loop-stall check. Prefers the slot model (the default); falls back
  * to the global last-observer Value when the slot isn't populated (e.g. a
- * module-scope observe not yet routed to a slot) or the value path is active
- * (EIGS_OBS_SHADOW=0). Shared by the interpreter CASE(LOOP_STALL_CHECK) and
- * jit_helper_loop_stall_check so the two can never disagree on loop
- * classification (the same lockstep invariant the opcode encoding enforces).
- * Returns 1 if (*dH, *ent) were filled. */
+ * the last-observed binding's slot). Shared by the interpreter
+ * CASE(LOOP_STALL_CHECK) and jit_helper_loop_stall_check so the two can never
+ * disagree on loop classification (the same lockstep invariant the opcode
+ * encoding enforces). Returns 1 if (*dH, *ent) were filled. */
 static inline int obs_stall_trajectory(double *dH, double *ent) {
-    if (obs_shadow_on() && g_last_obs_slot_env &&
+    if (g_last_obs_slot_env &&
         g_last_obs_slot_idx >= 0 &&
         g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap &&
         g_last_obs_slot_env->obs[g_last_obs_slot_idx].used) {
@@ -47,9 +39,6 @@ static inline int obs_stall_trajectory(double *dH, double *ent) {
         *dH = s->dH; *ent = s->entropy;
         return 1;
     }
-    Value *obs = g_last_observer;
-    if (obs) observer_ensure_fresh(obs);
-    if (obs) { *dH = obs->dH; *ent = obs->entropy; return 1; }
     return 0;
 }
 void vm_obs_slot_dropped(Env *e) {
@@ -312,7 +301,7 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
         if (stored == key || strcmp(stored, key) == 0) {
             Value *existing = dict->data.dict.vals[ce->index];
             if (existing && existing->type == VAL_NUM &&
-                existing->refcount == 1 && existing->obs_age == 0 &&
+                existing->refcount == 1 &&
                 !existing->arena) {
                 existing->data.num = num;
                 return 1;
@@ -380,7 +369,7 @@ static inline EigsSlot slot_bridge_wrap(Value *v) {
         val_decref(v);
         return slot_null();
     }
-    if (v->type == VAL_NUM && v->obs_age > 0) return slot_from_tracked(v);
+    /* #262 Step E: nums never carry observer state → never TAG_TRACKED. */
     return slot_from_heap(v);
 }
 
@@ -705,7 +694,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
         if (target->type == VAL_LIST) {
             if (i < target->data.list.count) {
                 Value *item = target->data.list.items[i];
-                if (item && item->type == VAL_NUM && item->obs_age == 0) {
+                if (item && item->type == VAL_NUM) {
                     vm_push_slot(slot_from_num(item->data.num));
                 } else {
                     val_incref(item);
@@ -758,7 +747,7 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
         }
         Value *v = dict_get_cached(target, key, h);
         if (v) {
-            if (v->type == VAL_NUM && v->obs_age == 0) {
+            if (v->type == VAL_NUM) {
                 vm_push_slot(slot_from_num(v->data.num));
             } else {
                 val_incref(v);
@@ -807,7 +796,7 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                 }
                 Value *v = dict_get_cached(dict, key, h);
                 if (v) {
-                    if (v->type == VAL_NUM && v->obs_age == 0) {
+                    if (v->type == VAL_NUM) {
                         vm_push_slot(slot_from_num(v->data.num));
                     } else {
                         val_incref(v);
@@ -895,7 +884,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
     if (target->type == VAL_DICT) {
         Value *v = dict_get_cached(target, key, h);
         if (v) {
-            if (v->type == VAL_NUM && v->obs_age == 0) {
+            if (v->type == VAL_NUM) {
                 double n = v->data.num;
                 val_decref(target);
                 vm_push_slot(slot_from_num(n));
@@ -1001,13 +990,10 @@ void jit_helper_report_slot(int slot) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *result;
-    if (obs_shadow_on() && e && slot < e->obs_cap && e->obs[slot].used) {
+    if (e && slot < e->obs_cap && e->obs[slot].used) {
         result = make_str(observer_slot_report(&e->obs[slot]));
     } else {
-        Value *v = (e && slot < e->count) ? slot_to_value(e->values[slot]) : NULL;
-        if (v) observer_ensure_fresh(v);
-        result = builtin_report(v);
-        if (v) val_decref(v);
+        result = make_str("equilibrium");  /* unobserved binding — no trajectory */
     }
     vm_push(result);
 }
@@ -1015,7 +1001,7 @@ void jit_helper_report_slot(int slot) {
 /* OP_OBSERVE_NAME_POST [name_idx] — observe a name binding's slot from TOS
  * after its SET. Peeks TOS; no stack change. Mirrors CASE(OBSERVE_NAME_POST). */
 void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
-    if (g_unobserved_depth != 0 || !obs_shadow_on()) return;
+    if (g_unobserved_depth != 0) return;
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     /* #262 Phase-3 D: TOS may be an immediate num (the default path no longer
@@ -1075,8 +1061,7 @@ int jit_helper_iter_next(void) {
     }
     /* In-place idx bump when the slot is an exclusive plain VAL_NUM
      * (matches the interpreter's NUM_REUSE fast path). */
-    if (idx_v->type == VAL_NUM && idx_v->refcount == 1 && !idx_v->arena &&
-        idx_v->obs_age == 0) {
+    if (idx_v->type == VAL_NUM && idx_v->refcount == 1 && !idx_v->arena) {
         idx_v->data.num = (double)(idx + 1);
     } else {
         val_decref(idx_v);
@@ -1275,7 +1260,7 @@ void jit_helper_index_set(void) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 Value *existing = target->data.list.items[i];
                 if (existing && existing->type == VAL_NUM &&
-                    existing->refcount == 1 && existing->obs_age == 0 &&
+                    existing->refcount == 1 &&
                     !existing->arena) {
                     existing->data.num = val_s.d;
                 } else {
@@ -1334,7 +1319,7 @@ void jit_helper_index_get(void) {
         if (target->type == VAL_LIST) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 Value *r = target->data.list.items[i];
-                if (r && r->type == VAL_NUM && r->obs_age == 0) {
+                if (r && r->type == VAL_NUM) {
                     /* See CASE(INDEX_GET) for the use-after-free story —
                      * snapshot r->data.num before slot_decref(tgt_s)
                      * potentially frees r via the num freelist. */
@@ -1965,7 +1950,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         Value *v = chunk->constants[idx];
         /* Numeric constants without observer state ship as immediates —
          * skips an incref/decref pair on every push/pop. */
-        if (v->type == VAL_NUM && v->obs_age == 0) {
+        if (v->type == VAL_NUM) {
             vm_push_slot(slot_from_num(v->data.num));
         } else {
             val_incref(v);
@@ -2354,11 +2339,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
              * the existing Value's data.num instead of swapping pointers. */
             if (slot_is_num(tos)) {
                 EigsSlot ex_s = e->values[slot];
-                if (slot_is_heap(ex_s) || slot_is_tracked(ex_s)) {
+                if (slot_is_heap(ex_s)) {
                     Value *existing = slot_as_ptr(ex_s);
                     if (existing && existing->type == VAL_NUM &&
-                        existing->refcount == 1 &&
-                        existing->obs_age == 0 && !existing->arena) {
+                        existing->refcount == 1 && !existing->arena) {
                         existing->data.num = tos.d;
                         DISPATCH();
                     }
@@ -3075,7 +3059,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (target->type == VAL_LIST) {
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                     Value *r = target->data.list.items[i];
-                    if (r && r->type == VAL_NUM && r->obs_age == 0) {
+                    if (r && r->type == VAL_NUM) {
                         /* Snapshot the double BEFORE decref'ing the list:
                          * if the stack slot was the sole owner, slot_decref
                          * frees the list and cascades into free_value(r),
@@ -3191,7 +3175,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     Value *existing = target->data.list.items[i];
                     /* In-place mutate when slot is an exclusive untracked VAL_NUM. */
                     if (existing && existing->type == VAL_NUM &&
-                        existing->refcount == 1 && existing->obs_age == 0 &&
+                        existing->refcount == 1 &&
                         !existing->arena) {
                         existing->data.num = val_s.d;
                     } else {
@@ -3252,7 +3236,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (target->type == VAL_DICT) {
             Value *v = dict_get_cached(target, key, h);
             if (v) {
-                if (v->type == VAL_NUM && v->obs_age == 0) {
+                if (v->type == VAL_NUM) {
                     double n = v->data.num;
                     val_decref(target);
                     vm_push_slot(slot_from_num(n));
@@ -3323,7 +3307,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (v) {
                 /* Hot DMG path: untracked VAL_NUM field -> push immediate,
                  * skipping the incref/decref pair on every register read. */
-                if (v->type == VAL_NUM && v->obs_age == 0) {
+                if (v->type == VAL_NUM) {
                     vm_push_slot(slot_from_num(v->data.num));
                 } else {
                     val_incref(v);
@@ -3393,7 +3377,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (i < target->data.list.count) {
                     Value *item = target->data.list.items[i];
                     /* Plain VAL_NUM -> immediate; skip incref/decref pair. */
-                    if (item && item->type == VAL_NUM && item->obs_age == 0) {
+                    if (item && item->type == VAL_NUM) {
                         vm_push_slot(slot_from_num(item->data.num));
                     } else {
                         val_incref(item);
@@ -3446,7 +3430,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     if (v) {
                         /* Hot DMG path: register dict[field] returning a
                          * plain VAL_NUM -> push immediate. */
-                        if (v->type == VAL_NUM && v->obs_age == 0) {
+                        if (v->type == VAL_NUM) {
                             vm_push_slot(slot_from_num(v->data.num));
                         } else {
                             val_incref(v);
@@ -3545,7 +3529,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             /* Update index — mutate in place when the existing slot is
              * an exclusive plain VAL_NUM (avoids per-iter make_num/free). */
             Value *idx_v = state->data.list.items[1];
-            if (NUM_REUSE(idx_v) && idx_v->obs_age == 0) {
+            if (NUM_REUSE(idx_v)) {
                 idx_v->data.num = (double)(idx + 1);
             } else {
                 val_decref(idx_v);
@@ -3664,13 +3648,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *result;
-        if (obs_shadow_on() && e && (int)slot < e->obs_cap && e->obs[slot].used) {
+        if (e && (int)slot < e->obs_cap && e->obs[slot].used) {
             result = make_str(observer_slot_report(&e->obs[slot]));
         } else {
-            Value *v = (e && (int)slot < e->count) ? slot_to_value(e->values[slot]) : NULL;
-            if (v) observer_ensure_fresh(v);
-            result = builtin_report(v);
-            if (v) val_decref(v);
+            result = make_str("equilibrium");  /* unobserved binding */
         }
         vm_push(result);
         DISPATCH();
@@ -3692,13 +3673,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             DISPATCH();
         }
         Value *result;
-        if (obs_shadow_on() && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
+        if (oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
             result = make_str(observer_slot_report(&oe->obs[oidx]));
         } else {
-            Value *v = (oidx >= 0 && oidx < oe->count) ? slot_to_value(oe->values[oidx]) : NULL;
-            if (v) observer_ensure_fresh(v);
-            result = builtin_report(v);
-            if (v) val_decref(v);
+            result = make_str("equilibrium");  /* unobserved binding */
         }
         vm_push(result);
         DISPATCH();
@@ -3706,11 +3684,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
     CASE(OBSERVE_VALUE_SLOT): {
         /* #262 Phase-3 D: `observe of <local>` → [status,entropy,dH,prev_dH]
-         * from the local's slot trajectory; value-path fallback for an
-         * unpopulated slot or EIGS_OBS_SHADOW=0. */
+         * from the local's slot trajectory; no-observation tuple if unpopulated. */
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
-        if (obs_shadow_on() && e && (int)slot < e->obs_cap && e->obs[slot].used) {
+        if (e && (int)slot < e->obs_cap && e->obs[slot].used) {
             const ObserverSlot *s = &e->obs[slot];
             Value *list = make_list(4);
             list_append_owned(list, make_str(observer_slot_report(s)));
@@ -3719,24 +3696,21 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             list_append_owned(list, make_num(s->prev_dH));
             vm_push(list);
         } else {
-            Value *v = (e && (int)slot < e->count) ? slot_to_value(e->values[slot]) : NULL;
-            Value *list = builtin_observe(v);
-            if (v) val_decref(v);
-            vm_push(list);
+            vm_push(builtin_observe(NULL));
         }
         DISPATCH();
     }
 
     CASE(OBSERVE_VALUE_NAME): {
         /* #262 Phase-3 D: `observe of <name>` → slot trajectory of the resolved
-         * binding; value-path fallback otherwise. */
+         * binding; no-observation tuple otherwise. */
         uint16_t name_idx = read_u16(ip); ip += 2;
         const char *name = chunk->const_interns[name_idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
-        if (oe && obs_shadow_on() && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
+        if (oe && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
             const ObserverSlot *s = &oe->obs[oidx];
             Value *list = make_list(4);
             list_append_owned(list, make_str(observer_slot_report(s)));
@@ -3745,10 +3719,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             list_append_owned(list, make_num(s->prev_dH));
             vm_push(list);
         } else {
-            Value *v = (oe && oidx >= 0 && oidx < oe->count) ? slot_to_value(oe->values[oidx]) : NULL;
-            Value *list = builtin_observe(v);
-            if (v) val_decref(v);
-            vm_push(list);
+            vm_push(builtin_observe(NULL));
         }
         DISPATCH();
     }
@@ -3759,7 +3730,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
          * still on TOS (SET peeked, didn't pop). Fixes the first-assignment
          * lag for name bindings. Emitted only under the compile-time flag. */
         uint16_t name_idx = read_u16(ip); ip += 2;
-        if (obs_shadow_on() && g_unobserved_depth == 0) {
+        if (g_unobserved_depth == 0) {
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             /* #262 Phase-3 D: TOS is now an immediate num for an observed name
              * (default path no longer promotes), or a heap value. Observe the
@@ -3792,7 +3763,6 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     CASE(INTERROGATE): {
         uint16_t kind = read_u16(ip); ip += 2;
         Value *v = vm_pop();
-        if (v) observer_ensure_fresh(v);
         Value *result = make_null();
         switch (kind) {
         case 0: /* what */
@@ -3813,14 +3783,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 v->type == VAL_BUFFER ? "buffer" :
                 v->type == VAL_NULL ? "none" : "unknown");
             break;
-        case 2: /* when */ result = make_num(v ? v->obs_age : 0); break;
-        case 3: /* where */ result = make_num(v ? v->entropy : 0); break;
-        case 4: /* why */ result = make_num(v ? v->dH : 0); break;
-        case 5: /* how */
-            if (v && v->last_entropy > 0)
-                result = make_num(1.0 - v->entropy / v->last_entropy);
-            else result = make_num(1.0);
-            break;
+        /* #262 Step E: when/where/why/how on a value-based operand have no
+         * slot trajectory (observer state is binding-keyed). where/why/how on a
+         * bound ident go through INTERROGATE_NAMED; the bare value form reports
+         * the no-observation defaults. */
+        case 2: /* when */  result = make_num(0); break;
+        case 3: /* where */ result = make_num(0); break;
+        case 4: /* why */   result = make_num(0); break;
+        case 5: /* how */   result = make_num(1.0); break;
         }
         val_decref(v);
         vm_push(result);
@@ -3865,11 +3835,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 else                result = make_num(s->last_entropy > 0
                                             ? 1.0 - s->entropy / s->last_entropy : 1.0);
             } else {
-                if (v) observer_ensure_fresh(v);
-                if (kind == 3)      result = make_num(v ? v->entropy : 0);
-                else if (kind == 4) result = make_num(v ? v->dH : 0);
-                else                result = make_num((v && v->last_entropy > 0)
-                                            ? 1.0 - v->entropy / v->last_entropy : 1.0);
+                /* #262 Step E: unobserved binding — no trajectory. */
+                result = make_num(kind == 5 ? 1.0 : 0.0);
             }
             break;
         }
@@ -4068,41 +4035,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     }
 
     CASE(PREDICATE): {
+        /* #262 Step E: bare predicate (converged/stable/...) reads the
+         * last-observed binding's SLOT trajectory. With observer state living
+         * only on the slot, an operand with no live slot has no trajectory →
+         * the predicate is false. */
         uint16_t kind = read_u16(ip); ip += 2;
-        Value *v = g_last_observer;
-        if (v) observer_ensure_fresh(v);
-        double entropy = v ? v->entropy : 0;
         int result = 0;
-        switch (kind) {
-        case 0: {
-            /* Windowed converged: every dH in the full window is near-zero
-             * AND entropy is low. Requires a complete window (count == N) so
-             * single-step or short trajectories never spuriously converge. */
-            int ok = 0;
-            if (v && observer_window_size(v) >= OBSERVER_WINDOW_N) {
-                ok = 1;
-                for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
-                    if (fabs(observer_window_get(v, i)) >= g_obs_dh_zero) {
-                        ok = 0; break;
-                    }
-                }
-                if (ok && entropy >= g_obs_h_low) ok = 0;
-            }
-            result = ok;
-            break;
-        }
-        case 1: result = observer_stable(v); break;  /* windowed (#205) */
-        case 2: result = observer_improving(v); break;  /* windowed (#207) */
-        case 3: result = observer_oscillating(v); break;  /* windowed (#206) */
-        case 4: result = observer_diverging(v); break;  /* windowed (#208) */
-        case 5: result = observer_equilibrium(v); break;  /* windowed (#209) */
-        }
-        /* #262 Phase-2: when the most recent observation was a slot-bound
-         * binding, read ALL six predicates from its slot trajectory instead of
-         * the (possibly aliased) Value object. The per-Value path above stays
-         * the default for unbound/expression operands. */
-        if (obs_shadow_on() &&
-            g_last_obs_slot_idx >= 0 && g_last_obs_slot_env &&
+        if (g_last_obs_slot_idx >= 0 && g_last_obs_slot_env &&
             g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap) {
             const ObserverSlot *s = &g_last_obs_slot_env->obs[g_last_obs_slot_idx];
             switch (kind) {
