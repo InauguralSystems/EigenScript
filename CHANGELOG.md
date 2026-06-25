@@ -4,6 +4,28 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **JIT/OSR: an on-stack-replacement thunk no longer over-reaches past its
+  own loop's back-edge into enclosing-loop code** (#267). An OSR thunk is
+  invoked at a hot loop header with the live stack pointer to accelerate that
+  loop body; the scanner, however, kept walking past the loop's own back-edge
+  into the post-loop continuation. For an *inner* loop that continuation is
+  the *enclosing* loop's body, compiled against the enclosing loop's stack
+  frame — but the thunk had entered mid-nest at the inner header, so running
+  that code natively read the wrong (reserved-null / stale) stack slots and
+  corrupted execution. It surfaced only under forced OSR
+  (`EIGS_JIT_OSR_THRESHOLD=1`) on nested-loop, index-heavy programs (e.g. the
+  dynamics lab's Gauss–Seidel solver) as a nondeterministic `cannot index
+  num` (a null `INDEX_GET` target), `index must be an integer`, or double
+  free; ASan was clean because the corruption stayed within the VM stack
+  bounds. The OSR prefix scanner now stops right after a loop's own back-edge
+  (`JUMP_BACK` whose target equals the OSR entry offset), confining each OSR
+  thunk to its hot loop body — which is the correct OSR boundary anyway, so
+  every nested loop now gets its own tight thunk instead of one over-reaching
+  inner thunk. The from-zero compile (entry offset 0) is unchanged: it enters
+  at the function start where the stack frame matches the compiler's tracking.
+
 ## [0.17.1] — 2026-06-25
 
 ### Fixed
