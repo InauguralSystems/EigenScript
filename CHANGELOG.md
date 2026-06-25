@@ -6,6 +6,20 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`spawn` now raises if the OS cannot create the thread** instead of
+  silently returning a live-looking handle for a thread that never ran (#269).
+  The
+  `pthread_create` return value was ignored, so under memory pressure (where
+  the new thread's stack allocation fails with `EAGAIN`/`ENOMEM`) the spawned
+  function simply never executed — and any sibling that depended on it ran on:
+  e.g. a thread meant to `close_channel` a channel another thread is waiting
+  on never closes it, so the waiter blocks until its timeout, which for a
+  large `recv_timeout` deadline is effectively forever. Surfaced as an
+  intermittent hang of `tests/test_channel_nb.eigs` under the ASan suite on a
+  4 GB host (ASan's overhead exhausted committable memory at thread-stack
+  allocation). `spawn` now cleans up the unstarted handle and raises
+  `spawn: could not create thread: <reason>`, turning a far-away hang into an
+  immediate, clear error at the spawn point.
 - **JIT/OSR: an on-stack-replacement thunk no longer over-reaches past its
   own loop's back-edge into enclosing-loop code** (#267). An OSR thunk is
   invoked at a hot loop header with the live stack pointer to accelerate that

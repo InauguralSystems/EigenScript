@@ -3753,7 +3753,26 @@ Value* builtin_spawn(Value *arg) {
      * keep the pre-collector leak behavior. */
     gc_disable_for_threads();
     g_vm_multithreaded = 1;
-    pthread_create(&h->tid, NULL, thread_entry, h);
+    int pc_rc = pthread_create(&h->tid, NULL, thread_entry, h);
+    if (pc_rc != 0) {
+        /* The thread never started. Returning a live-looking handle here
+         * silently strands any code that depends on the thread running —
+         * e.g. a sibling that waits on a channel the thread was meant to
+         * close, which then blocks until its (possibly enormous) timeout.
+         * Raise instead, so the failure surfaces at the spawn point rather
+         * than as a hang far away. Seen on a memory-constrained host where
+         * the new thread's stack allocation failed with EAGAIN/ENOMEM.
+         * thread_entry never ran, so unwind this thread's setup fully. */
+        handle_release(hid);
+        val_decref(h->fn);
+        if (h->fn_args) {
+            for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
+            free(h->fn_args);
+        }
+        free(h);
+        runtime_error(0, "spawn: could not create thread: %s", strerror(pc_rc));
+        return make_null();
+    }
     Value *d = make_dict(8);
     dict_set_owned(d, "_handle_id", make_num((double)hid));
     dict_set_owned(d, "done", make_num(0));
