@@ -1,0 +1,28 @@
+# Codespaces / devcontainer topology: the dev image plus a postgres sidecar,
+# so the `ext_db` extension (suite section [46], test_db.eigs DB09-DB15) is
+# reproducible in-container — the same shape as ci.yml's `database` leg.
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    # amd64 so the JIT is exercised even on an arm64 host machine type.
+    platform: linux/amd64
+    volumes:
+      - ..:/workspaces/EigenScript:cached
+    command: sleep infinity
+    environment:
+      # Host = the `db` service name; matches train-of-thought with the CI leg.
+      DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eigs
+      POSTGRES_PASSWORD: eigs_test
+      POSTGRES_DB: eigs_test
+    # No host port mapping needed: `app` reaches it over the compose network
+    # at db:5432, exactly as the containerized CI job reaches its service.
