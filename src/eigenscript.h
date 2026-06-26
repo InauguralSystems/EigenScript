@@ -253,6 +253,12 @@ void observer_slot_update(struct Env *e, int idx, Value *newval);
 /* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
 void observer_slot_update_num(struct Env *e, int idx, double num);
 void observer_slot_reset(struct Env *e);
+/* Observed-loop halting on an explicit env (no VM-frame dependency): one
+ * iteration of OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK. Returns 1 when the loop
+ * should exit (observer stalled 100 iters, or the absolute cap). Lets the AOT
+ * run the same halting as the interpreter/JIT. (vm.c) */
+int eigs_loop_stall_step(struct Env *e);
+int eigs_loop_cap_step(struct Env *e);
 /* Implemented in vm.c: drops the last-observed-slot tracker if it points at e
  * (called from observer_slot_reset so a torn-down env can't be read stale). */
 void vm_obs_slot_dropped(struct Env *e);
