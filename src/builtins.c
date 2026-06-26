@@ -4622,6 +4622,31 @@ Value* builtin_dispatch(Value *arg) {
     return make_null();
 }
 
+/* ==== association-unspecified reduction: dot ====
+ * `dot of [a, b]` = sum over i of a[i]*b[i] for two numeric buffers (length =
+ * the shorter of the two). SPEC: the summation ORDER / ASSOCIATION is
+ * UNSPECIFIED — callers must not depend on the exact low-bit rounding of the
+ * result. This is the deliberate opt-in that licenses a backend (e.g. the AOT
+ * native compiler) to REASSOCIATE the sum across SIMD lanes; programs that
+ * need a strict left-to-right reduction write the explicit `loop while`
+ * accumulation instead. no-NaN/Inf is preserved (num_guard at each step), so
+ * the result still respects EigenScript's no-NaN/Inf invariant. */
+static Value* builtin_dot(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_num(0);
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    if (!a || !b || a->type != VAL_BUFFER || b->type != VAL_BUFFER)
+        return make_num(0);
+    int n = a->data.buffer.count;
+    if (b->data.buffer.count < n) n = b->data.buffer.count;
+    double *ad = a->data.buffer.data, *bd = b->data.buffer.data;
+    double s = 0.0;
+    for (int i = 0; i < n; i++)
+        s = num_guard(s + num_guard(ad[i] * bd[i]));
+    return make_num(s);
+}
+
 void register_builtins(Env *env) {
     /* ---- Core language builtins (always available) ---- */
     env_set_local_owned(env, "print", make_builtin(builtin_print));
@@ -4741,6 +4766,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "proc_wait", make_builtin(builtin_proc_wait));
 
     /* ---- Tensor / math stdlib (always available) ---- */
+    env_set_local_owned(env, "dot", make_builtin(builtin_dot));
     env_set_local_owned(env, "matmul", make_builtin(builtin_tensor_matmul));
     env_set_local_owned(env, "add", make_builtin(builtin_tensor_add));
     env_set_local_owned(env, "subtract", make_builtin(builtin_tensor_subtract));

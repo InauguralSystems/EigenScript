@@ -562,6 +562,9 @@ check "AO3 tensor save/load roundtrip" "$AO3_V" "21"
 
 AO4_C=$(echo "$AO_OUTPUT" | grep -A1 'AO4:' | tail -1)
 check "AO4 num_copy new local survives reset" "$AO4_C" "99.5"
+
+check_eigs_suite "dot reduction builtin (vs explicit loop + edge cases)" \
+    "test_dot.eigs" "DOT_OK" 1
 echo ""
 
 echo "[15/15] try_parse Validation (11 checks)"

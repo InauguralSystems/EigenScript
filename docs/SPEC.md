@@ -967,6 +967,35 @@ print of s
 5.5
 ```
 
+### Reductions
+
+`dot of [a, b]` returns the sum over `i` of `a[i] * b[i]` for two numeric
+buffers (the length is the shorter of the two).
+
+```eigenscript
+a is buffer of 4
+b is buffer of 4
+a[0] is 1
+a[1] is 2
+a[2] is 3
+a[3] is 4
+b[0] is 0.5
+b[1] is 1.5
+b[2] is 2.5
+b[3] is 3.5
+print of (dot of [a, b])
+```
+```output
+25
+```
+
+The summation **order (association) is unspecified**: callers must not depend
+on the exact low-bit rounding of the result. This is a deliberate opt-in —
+it licenses an optimizing backend (such as the AOT native compiler) to
+reassociate the sum across SIMD lanes, which a strict left-to-right `loop
+while` accumulation forbids. The no-NaN/no-Inf invariant still holds. Write
+the explicit loop when you need a fixed reduction order.
+
 ## Evaluation model reference
 
 The facts that govern every program, in one place:
