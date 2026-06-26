@@ -396,16 +396,46 @@ Value* builtin_tensor_mean(Value *arg) {
 }
 
 /* ==== BUILTIN: sum ==== */
+/* sum / norm are association-unspecified reductions (see docs/SPEC.md
+ * "Reductions"): the summation order is not guaranteed, which lets an
+ * optimizing backend reassociate across SIMD lanes. no-NaN/Inf preserved. */
 Value* builtin_tensor_sum(Value *arg) {
+    if (arg && arg->type == VAL_BUFFER) {
+        double *d = arg->data.buffer.data;
+        int n = arg->data.buffer.count;
+        double s = 0.0;
+        for (int i = 0; i < n; i++) s = num_guard(s + d[i]);
+        return make_num(s);
+    }
     int total = tensor_total(arg);
     if (total == 0) return make_num(0.0);
     double *flat = xcalloc(total, sizeof(double));
     int idx = 0;
     tensor_flatten_recursive(arg, flat, &idx);
     double sum = 0.0;
-    for (int i = 0; i < total; i++) sum += flat[i];
+    for (int i = 0; i < total; i++) sum = num_guard(sum + flat[i]);
     free(flat);
     return make_num(sum);
+}
+
+/* norm of a → L2 (Euclidean) norm = sqrt(sum_i a[i]^2). Buffers and tensors. */
+Value* builtin_tensor_norm(Value *arg) {
+    if (arg && arg->type == VAL_BUFFER) {
+        double *d = arg->data.buffer.data;
+        int n = arg->data.buffer.count;
+        double s = 0.0;
+        for (int i = 0; i < n; i++) s = num_guard(s + num_guard(d[i] * d[i]));
+        return make_num(num_guard(sqrt(s)));
+    }
+    int total = tensor_total(arg);
+    if (total == 0) return make_num(0.0);
+    double *flat = xcalloc(total, sizeof(double));
+    int idx = 0;
+    tensor_flatten_recursive(arg, flat, &idx);
+    double s = 0.0;
+    for (int i = 0; i < total; i++) s = num_guard(s + num_guard(flat[i] * flat[i]));
+    free(flat);
+    return make_num(num_guard(sqrt(s)));
 }
 
 /* ==== BUILTIN: zeros ==== */

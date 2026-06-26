@@ -26,6 +26,7 @@ Value* builtin_tensor_relu(Value *arg);
 Value* builtin_tensor_leaky_relu(Value *arg);
 Value* builtin_tensor_mean(Value *arg);
 Value* builtin_tensor_sum(Value *arg);
+Value* builtin_tensor_norm(Value *arg);
 Value* builtin_tensor_zeros(Value *arg);
 Value* builtin_tensor_zeros_like(Value *arg);
 Value* builtin_tensor_gather(Value *arg);
