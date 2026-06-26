@@ -4,6 +4,17 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`dot` reduction builtin** — `dot of [a, b]` returns the sum over `i` of
+  `a[i] * b[i]` for two numeric buffers (length = the shorter of the two).
+  Its summation **association is unspecified by spec**: callers must not depend
+  on the exact low-bit rounding. This is a deliberate opt-in that licenses an
+  optimizing backend (the AOT native compiler) to reassociate the sum across
+  SIMD lanes — a speedup a strict left-to-right `loop while` accumulation
+  forbids, because FP addition is non-associative. The no-NaN/no-Inf invariant
+  still holds (`num_guard` at each step). See docs/SPEC.md "Reductions".
+
 ## [0.18.0] — 2026-06-25
 
 ### Added
