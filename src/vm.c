@@ -1170,7 +1170,12 @@ static void loop_iter_store(Env *env, double n) {
  * the emitter can conditional-jump to the exit target, ITER_NEXT-style.
  * This was the #1 thunk blocker after INDEX_SET: every observed while
  * loop carries one of these per iteration. */
-int jit_helper_loop_stall_check(void) {
+/* Env-explicit cores: the observed-loop stall/cap step on a given env, with no
+ * dependency on the VM frame stack — so the AOT (which has no VM frames) can run
+ * the exact same observer-loop halting as the interpreter and JIT. Exported via
+ * eigenscript.h. The jit_helper_* wrappers below feed them the current frame's
+ * env, so interpreter, JIT, and AOT share one implementation (no drift). */
+int eigs_loop_stall_step(Env *e) {
     g_loop_iterations++;
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
@@ -1190,11 +1195,10 @@ int jit_helper_loop_stall_check(void) {
         g_loop_exit_reason = "limit";
         should_exit = 1;
     }
-    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
-    loop_iter_store(frame->env, (double)g_loop_iterations);
+    loop_iter_store(e, (double)g_loop_iterations);
     if (should_exit) {
         Value *exit_val = make_str(g_loop_exit_reason);
-        env_set_local(frame->env, "__loop_exit__", exit_val);
+        env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
         g_loop_iterations = 0;
@@ -1204,22 +1208,17 @@ int jit_helper_loop_stall_check(void) {
     return 0;
 }
 
-/* Plain-loop variant of the above: the absolute iteration cap ONLY, never the
- * observer stall. Mirrors CASE(LOOP_CAP_CHECK). The JIT emits a call to this
- * (vs jit_helper_loop_stall_check) based purely on the opcode the compiler
- * chose, so JIT and interpreter classification can never diverge. */
-int jit_helper_loop_cap_check(void) {
+int eigs_loop_cap_step(Env *e) {
     g_loop_iterations++;
     int should_exit = 0;
     if (g_loop_iterations >= (g_sandbox_loop_max ? g_sandbox_loop_max : 100000000)) {
         g_loop_exit_reason = "limit";
         should_exit = 1;
     }
-    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
-    loop_iter_store(frame->env, (double)g_loop_iterations);
+    loop_iter_store(e, (double)g_loop_iterations);
     if (should_exit) {
         Value *exit_val = make_str(g_loop_exit_reason);
-        env_set_local(frame->env, "__loop_exit__", exit_val);
+        env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
         g_loop_iterations = 0;
@@ -1227,6 +1226,16 @@ int jit_helper_loop_cap_check(void) {
         return 1;
     }
     return 0;
+}
+
+/* Stage 4w out-of-line helpers for OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK:
+ * the current frame's env fed to the shared cores above (the JIT emits a call
+ * to one of these per observed-loop iteration). */
+int jit_helper_loop_stall_check(void) {
+    return eigs_loop_stall_step(g_vm.frames[g_vm.frame_count - 1].env);
+}
+int jit_helper_loop_cap_check(void) {
+    return eigs_loop_cap_step(g_vm.frames[g_vm.frame_count - 1].env);
 }
 
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
