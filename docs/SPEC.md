@@ -1014,6 +1014,40 @@ across SIMD lanes, which a strict left-to-right `loop while` accumulation
 forbids. The no-NaN/no-Inf invariant still holds. Write the explicit loop when
 you need a fixed reduction order.
 
+### Shaped buffers (tensors)
+
+A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
+[rows, cols]` allocates a `rows*cols` buffer with that shape, and `reshape of
+[buf, rows, cols]` shapes an existing flat buffer (the element count must
+match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
+when unshaped. Indexing stays flat (`buf[r*cols + c]`).
+
+The tensor builtins operate directly on the flat data — no per-call conversion.
+`matmul of [a, b]` multiplies two shaped buffers (a 1-D buffer is a row vector,
+so `matmul of [vec, mat]` returns a 1-D result); `add` and `relu` are
+elementwise. The result is identical to the nested-list tensor form, so storing
+weights as shaped buffers is purely a performance choice.
+
+```eigenscript
+w is buffer of [2, 2]
+w[0] is 1
+w[1] is 2
+w[2] is 3
+w[3] is 4
+x is buffer of 2
+x[0] is 1
+x[1] is 1
+y is matmul of [x, w]
+print of y[0]
+print of y[1]
+print of (shape of w)
+```
+```output
+4
+6
+[2, 2]
+```
+
 ## Evaluation model reference
 
 The facts that govern every program, in one place:

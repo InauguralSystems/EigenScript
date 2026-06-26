@@ -230,7 +230,7 @@ struct Value {
         struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; } fn;
         BuiltinFn builtin;
         struct { char **keys; Value **vals; int count; int capacity; EnvHash hash; } dict;
-        struct { double *data; int count; } buffer;
+        struct { double *data; int count; int rows, cols; } buffer;  /* rows==0 => unshaped 1-D (count is length); rows>0 => 2-D, rows*cols==count */
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
     /* #262 Step E: observer state (entropy/dH/window/obs_age/dirty) lived here

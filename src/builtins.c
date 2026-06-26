@@ -4276,6 +4276,25 @@ Value* builtin_nearest_in_range_all(Value *arg) {
 
 /* buffer of count — create a zero-filled numeric buffer */
 Value* builtin_buffer(Value *arg) {
+    /* buffer of [rows, cols] -> shaped 2-D buffer (flat double[rows*cols]) */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
+        arg->data.list.items[0]->type == VAL_NUM &&
+        arg->data.list.items[1]->type == VAL_NUM) {
+        int r = (int)arg->data.list.items[0]->data.num;
+        int c = (int)arg->data.list.items[1]->data.num;
+        if (r < 0) r = 0;
+        if (c < 0) c = 0;
+        long total = (long)r * (long)c;
+        if (total > 10000000) { r = 0; c = 0; total = 0; }
+        Value *v = xcalloc(1, sizeof(Value));
+        v->type = VAL_BUFFER;
+        v->data.buffer.count = (int)total;
+        v->data.buffer.rows = r;
+        v->data.buffer.cols = c;
+        v->data.buffer.data = xcalloc(total > 0 ? (size_t)total : 1, sizeof(double));
+        v->refcount = 1;
+        return v;
+    }
     int count = 0;
     if (arg && arg->type == VAL_NUM) count = (int)arg->data.num;
     if (count < 0) count = 0;
@@ -4284,6 +4303,28 @@ Value* builtin_buffer(Value *arg) {
     v->type = VAL_BUFFER;
     v->data.buffer.count = count;
     v->data.buffer.data = xcalloc(count, sizeof(double));
+    v->refcount = 1;
+    return v;
+}
+
+/* reshape of [buf, rows, cols] -> a shaped copy of the flat buffer (rows*cols
+ * must equal the element count). */
+Value* builtin_reshape(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    Value *b = arg->data.list.items[0];
+    if (b->type != VAL_BUFFER) return make_null();
+    if (arg->data.list.items[1]->type != VAL_NUM ||
+        arg->data.list.items[2]->type != VAL_NUM) return make_null();
+    int r = (int)arg->data.list.items[1]->data.num;
+    int c = (int)arg->data.list.items[2]->data.num;
+    if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_BUFFER;
+    v->data.buffer.count = b->data.buffer.count;
+    v->data.buffer.rows = r;
+    v->data.buffer.cols = c;
+    v->data.buffer.data = xcalloc(b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1, sizeof(double));
+    memcpy(v->data.buffer.data, b->data.buffer.data, (size_t)b->data.buffer.count * sizeof(double));
     v->refcount = 1;
     return v;
 }
@@ -4833,6 +4874,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "dispatch", make_builtin(builtin_dispatch));
     env_set_local_owned(env, "fill", make_builtin(builtin_fill));
     env_set_local_owned(env, "buffer", make_builtin(builtin_buffer));
+    env_set_local_owned(env, "reshape", make_builtin(builtin_reshape));
     env_set_local_owned(env, "buf_get", make_builtin(builtin_buf_get));
     env_set_local_owned(env, "buf_set", make_builtin(builtin_buf_set));
     env_set_local_owned(env, "buf_len", make_builtin(builtin_buf_len));

@@ -1,0 +1,63 @@
+# Flat-buffer tensors (shaped VAL_BUFFER) must match the nested-list tensor
+# path byte-for-byte: same ne_matmul_buf order, same num_guard elementwise.
+
+# --- nested-list path ---
+wl is [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+ol is [2.0, -1.0, 3.0]
+bl is [10.0, 20.0]
+ml is matmul of [ol, wl]
+nl_add is add of [ml, bl]
+nl_relu is relu of [[-1.0, 5.0, -3.0]]
+
+# --- shaped-buffer path, identical values ---
+ws is buffer of [3, 2]
+ws[0] is 1.0
+ws[1] is 2.0
+ws[2] is 3.0
+ws[3] is 4.0
+ws[4] is 5.0
+ws[5] is 6.0
+obs is buffer of 3
+obs[0] is 2.0
+obs[1] is -1.0
+obs[2] is 3.0
+bs is buffer of 2
+bs[0] is 10.0
+bs[1] is 20.0
+ms is matmul of [obs, ws]
+sb_add is add of [ms, bs]
+rin is buffer of 3
+rin[0] is -1.0
+rin[1] is 5.0
+rin[2] is -3.0
+sb_relu is relu of rin
+
+assert of [ms[0] == ml[0], "matmul[0] matches nested-list"]
+assert of [ms[1] == ml[1], "matmul[1] matches nested-list"]
+assert of [sb_add[0] == nl_add[0], "add[0] matches"]
+assert of [sb_add[1] == nl_add[1], "add[1] matches"]
+assert of [sb_relu[0] == nl_relu[0], "relu[0] matches"]
+assert of [sb_relu[1] == nl_relu[1], "relu[1] matches"]
+assert of [sb_relu[2] == nl_relu[2], "relu[2] matches"]
+
+# matmul of a 1-D buffer yields a 1-D result (rows==0)
+msh is shape of ms
+assert of [(len of msh) == 1, "matmul of 1-D buffer is 1-D"]
+
+# shape of a 2-D buffer is [rows, cols]
+wsh is shape of ws
+assert of [wsh[0] == 3, "shape rows == 3"]
+assert of [wsh[1] == 2, "shape cols == 2"]
+
+# reshape sets a 2-D shape on a flat buffer, preserving data
+flat is buffer of 6
+flat[0] is 7.0
+flat[5] is 9.0
+rs is reshape of [flat, 2, 3]
+rsh is shape of rs
+assert of [rsh[0] == 2, "reshape rows == 2"]
+assert of [rsh[1] == 3, "reshape cols == 3"]
+assert of [rs[0] == 7.0, "reshape preserves data[0]"]
+assert of [rs[5] == 9.0, "reshape preserves data[5]"]
+
+print of "PASS: flat-buffer tensors"
