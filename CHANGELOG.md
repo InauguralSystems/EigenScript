@@ -6,6 +6,22 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **Flat-buffer tensors (shaped `VAL_BUFFER`)** — a buffer now carries an
+  optional 2-D shape: `buffer of [rows, cols]` makes a flat `double[rows*cols]`
+  with that shape, and `reshape of [buf, rows, cols]` shapes an existing flat
+  buffer (element count must match). `shape of <buffer>` returns `[rows, cols]`
+  (or `[count]` when unshaped). The tensor builtins `matmul`/`add`/`relu` gain a
+  shaped-buffer fast path that computes directly on the flat `double[]` — no
+  per-call flatten/rebuild of nested lists — using the **same** kernels
+  (`ne_matmul_buf` i-k-j accumulation, `num_guard` elementwise), so results are
+  **byte-identical** to the nested-list tensor path. This eliminates the dominant
+  cost of nested-list neural inference (re-flattening constant weights every
+  call): a 3-layer MLP forward (433→64→32→6) is **~11× faster** with shaped-buffer
+  weights, the forward source unchanged. 1-D buffers (`rows==0`) are treated as
+  row vectors, so `matmul of [vec, mat]` yields a 1-D result. Back-compatible:
+  `buffer of N` and flat `b[k]` indexing are unchanged (shape is metadata read
+  only by the tensor ops).
+
 - **`norm` reduction builtin** — `norm of a` returns the L2 (Euclidean) norm
   `sqrt(sum_i a[i]*a[i])` of a buffer or tensor. Like `sum`/`dot` its summation
   association is unspecified (opt-in SIMD reassociation); no-NaN/Inf preserved.

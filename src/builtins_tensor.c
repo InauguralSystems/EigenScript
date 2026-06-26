@@ -46,6 +46,39 @@ static void ne_matmul_buf(
 }
 #endif
 
+/* ---- flat-buffer tensors -------------------------------------------------
+ * A VAL_BUFFER carries an optional 2-D shape (rows/cols; rows==0 => 1-D, length
+ * = count). The tensor builtins gain a fast path that computes directly on the
+ * flat double[] — no flatten/rebuild — eliminating F-OURO-15's flatten tax.
+ * Same kernels (ne_matmul_buf i-k-j, num_guard elementwise) so the result is
+ * byte-identical to the nested-list path. */
+static void buf_dims(Value *v, int *r, int *c) {
+    if (v->data.buffer.rows > 0) { *r = v->data.buffer.rows; *c = v->data.buffer.cols; }
+    else { *r = 1; *c = v->data.buffer.count; }   /* 1-D treated as a row vector */
+}
+static Value* make_shaped_buffer(int rows, int cols) {
+    int count = (rows > 0) ? rows * cols : cols;
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_BUFFER;
+    v->data.buffer.count = count;
+    v->data.buffer.rows = (rows > 0) ? rows : 0;
+    v->data.buffer.cols = (rows > 0) ? cols : 0;
+    v->data.buffer.data = xcalloc(count > 0 ? (size_t)count : 1, sizeof(double));
+    v->refcount = 1;
+    return v;
+}
+static Value* make_buffer_like(Value *a) {   /* same count + shape as a */
+    int n = a->data.buffer.count;
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_BUFFER;
+    v->data.buffer.count = n;
+    v->data.buffer.rows = a->data.buffer.rows;
+    v->data.buffer.cols = a->data.buffer.cols;
+    v->data.buffer.data = xcalloc(n > 0 ? (size_t)n : 1, sizeof(double));
+    v->refcount = 1;
+    return v;
+}
+
 
 /* ====================================================================
  * TENSOR SUBSTRATE BUILTINS
@@ -233,7 +266,17 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
 /* ==== BUILTIN: add ==== */
 Value* builtin_tensor_add(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    return tensor_elementwise(arg->data.list.items[0], arg->data.list.items[1], op_add);
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    /* flat-buffer fast path: same-shape elementwise, in place */
+    if (a->type == VAL_BUFFER && b->type == VAL_BUFFER &&
+        a->data.buffer.count == b->data.buffer.count) {
+        Value *res = make_buffer_like(a);
+        for (int i = 0; i < a->data.buffer.count; i++)
+            res->data.buffer.data[i] = op_add(a->data.buffer.data[i], b->data.buffer.data[i]);
+        return res;
+    }
+    return tensor_elementwise(a, b, op_add);
 }
 
 /* ==== BUILTIN: subtract ==== */
@@ -295,6 +338,17 @@ Value* builtin_tensor_matmul(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
+    /* flat-buffer fast path: compute in place, no flatten/rebuild */
+    if (a->type == VAL_BUFFER && b->type == VAL_BUFFER) {
+        int ar, ac, br, bc;
+        buf_dims(a, &ar, &ac); buf_dims(b, &br, &bc);
+        if (ac != br) return make_null();
+        /* a 1-D left operand yields a 1-D result (mirrors flat_to_tensor_1d) */
+        Value *res = (a->data.buffer.rows == 0) ? make_shaped_buffer(0, bc)
+                                                : make_shaped_buffer(ar, bc);
+        ne_matmul_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, bc, res->data.buffer.data);
+        return res;
+    }
     int ar, ac, br, bc;
     double *af = tensor_to_flat(a, &ar, &ac);
     double *bf = tensor_to_flat(b, &br, &bc);
@@ -351,6 +405,15 @@ Value* builtin_tensor_log_softmax(Value *arg) {
 /* ==== BUILTIN: relu ==== */
 /* relu of tensor → element-wise max(0, x). Works on 1D or 2D. */
 Value* builtin_tensor_relu(Value *arg) {
+    /* flat-buffer fast path: in-place clamp, shape preserved */
+    if (arg && arg->type == VAL_BUFFER) {
+        Value *res = make_buffer_like(arg);
+        for (int i = 0; i < arg->data.buffer.count; i++) {
+            double x = arg->data.buffer.data[i];
+            res->data.buffer.data[i] = (x < 0.0) ? 0.0 : x;
+        }
+        return res;
+    }
     int rows, cols;
     double *flat = tensor_to_flat(arg, &rows, &cols);
     if (!flat) return make_null();
@@ -584,6 +647,18 @@ Value* builtin_tensor_shape(Value *arg) {
     if (arg->type == VAL_NUM) {
         Value *out = make_list(0);
         return out; /* scalar: empty shape */
+    }
+    if (arg->type == VAL_BUFFER) {
+        /* shaped buffer -> [rows, cols]; unshaped -> [count] */
+        if (arg->data.buffer.rows > 0) {
+            Value *out = make_list(2);
+            list_append_owned(out, make_num(arg->data.buffer.rows));
+            list_append_owned(out, make_num(arg->data.buffer.cols));
+            return out;
+        }
+        Value *out = make_list(1);
+        list_append_owned(out, make_num(arg->data.buffer.count));
+        return out;
     }
     if (arg->type != VAL_LIST) return make_null();
     if (arg->data.list.count == 0) {
