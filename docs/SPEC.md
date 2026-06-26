@@ -969,6 +969,23 @@ print of s
 
 ### Reductions
 
+`sum of a` returns the total of a buffer's (or tensor's) elements, and
+`norm of a` returns the L2 (Euclidean) norm, `sqrt(sum_i a[i]*a[i])`.
+
+```eigenscript
+v is buffer of 4
+v[0] is 1
+v[1] is 2
+v[2] is 3
+v[3] is 4
+print of (sum of v)
+print of (norm of v)
+```
+```output
+10
+5.477225575051661
+```
+
 `dot of [a, b]` returns the sum over `i` of `a[i] * b[i]` for two numeric
 buffers (the length is the shorter of the two).
 
@@ -989,12 +1006,13 @@ print of (dot of [a, b])
 25
 ```
 
-The summation **order (association) is unspecified**: callers must not depend
-on the exact low-bit rounding of the result. This is a deliberate opt-in —
-it licenses an optimizing backend (such as the AOT native compiler) to
-reassociate the sum across SIMD lanes, which a strict left-to-right `loop
-while` accumulation forbids. The no-NaN/no-Inf invariant still holds. Write
-the explicit loop when you need a fixed reduction order.
+For all three reductions (`sum`, `norm`, `dot`) the summation **order
+(association) is unspecified**: callers must not depend on the exact low-bit
+rounding of the result. This is a deliberate opt-in — it licenses an
+optimizing backend (such as the AOT native compiler) to reassociate the sum
+across SIMD lanes, which a strict left-to-right `loop while` accumulation
+forbids. The no-NaN/no-Inf invariant still holds. Write the explicit loop when
+you need a fixed reduction order.
 
 ## Evaluation model reference
 

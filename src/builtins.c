@@ -4783,6 +4783,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "leaky_relu", make_builtin(builtin_tensor_leaky_relu));
     env_set_local_owned(env, "mean", make_builtin(builtin_tensor_mean));
     env_set_local_owned(env, "sum", make_builtin(builtin_tensor_sum));
+    env_set_local_owned(env, "norm", make_builtin(builtin_tensor_norm));
     env_set_local_owned(env, "zeros", make_builtin(builtin_tensor_zeros));
     env_set_local_owned(env, "zeros_like", make_builtin(builtin_tensor_zeros_like));
     env_set_local_owned(env, "gather", make_builtin(builtin_tensor_gather));

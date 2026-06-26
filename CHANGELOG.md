@@ -6,6 +6,20 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **`norm` reduction builtin** — `norm of a` returns the L2 (Euclidean) norm
+  `sqrt(sum_i a[i]*a[i])` of a buffer or tensor. Like `sum`/`dot` its summation
+  association is unspecified (opt-in SIMD reassociation); no-NaN/Inf preserved.
+
+### Fixed
+
+- **`sum` now works on buffers** — `sum of <buffer>` previously returned 0 (the
+  tensor flatten path only walked lists, silently skipping the `VAL_BUFFER`
+  numeric fast-path type). It now sums buffer elements directly. `sum`/`norm`
+  also apply `num_guard` per step (no-NaN/Inf invariant), and their summation
+  association is now documented as unspecified (see docs/SPEC.md "Reductions").
+
+### Added
+
 - **`dot` reduction builtin** — `dot of [a, b]` returns the sum over `i` of
   `a[i] * b[i]` for two numeric buffers (length = the shorter of the two).
   Its summation **association is unspecified by spec**: callers must not depend
