@@ -56,6 +56,25 @@ when picked up:
       attestations/signatures, a dependency-audit command, and
       yank/deprecation policy.
 - [ ] More STEM modules (graph theory, regression, numerical PDEs)
+- [ ] **Windows support** — not a non-goal, just not yet. The wall is
+      in the extensions, not the language core; planned as a ladder
+      (CI is the verification instrument — development is Linux-only):
+  - [x] Tier 0: WSL2 runs the Linux binary unchanged (works today;
+        the immediate answer for a Windows user).
+  - [ ] Tier 1 (the real target): native **headless interpreter**,
+        JIT-off, built with MinGW-w64, suite green on a `windows-latest`
+        CI leg. Shims needed: exe-path discovery (`readlink` →
+        `GetModuleFileNameA`, `main.c`) and `exec_capture` (`execvp` →
+        `CreateProcess`, `builtins.c`); pthread works under winpthreads.
+        This is the 80/20 for adoption — `eigenscript foo.eigs` on
+        Windows without WSL.
+  - [ ] Tier 2: JIT on Windows — port the copy-and-patch templates from
+        the System V AMD64 ABI to the Windows x64 ABI (different arg
+        registers + shadow space). Large; low priority (the VM is
+        correct without the JIT).
+  - [ ] Tier 3: extensions on Windows — HTTP server (Winsock +
+        `WSAStartup`) and gfx/SDL (`dlopen` → `LoadLibrary`). Per-file,
+        on demand.
 - [ ] WASM compilation target
 - [ ] Foreign function interface for calling arbitrary C libraries
       from script (libffi/libdl style — the *script → host* direction).
