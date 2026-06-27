@@ -1,16 +1,17 @@
 # Roadmap
 
-Current version: **0.12.0**
+Current version: **0.19.0**
 
-Recently shipped (0.12.0): JIT Stage 5 inline matrix (a–i) — buffer
-INDEX_SET, EnvIC name get/set, 2-way dict-dot cache, tracked-num
-arith/compare operands, native VAL_FN calls inside thunks, per-loop
-OSR slots, DOT_SET in-place write, per-chunk call-env recycling — plus
-temporal-trace compile gate (recording off unless the program uses
-`prev of`/`at`/`state_at`). `bench_dmg_shape` 239 → ~118 ms (2.0×); JIT
-now beats `EIGS_JIT_OFF` by ~45% on it.
+Recently shipped (0.19.0): flat-buffer tensors — a `VAL_BUFFER` now
+carries an optional 2-D shape (`buffer of [rows, cols]` / `reshape`),
+and `matmul`/`add`/`relu` compute directly on the flat `double[]` with
+no per-call flatten of nested-list weights, byte-identical to the
+nested-list path (3-layer MLP forward ~11× faster). Plus `dot`/`norm`
+reductions with spec-unspecified summation association (licenses the
+AOT backend to reassociate across SIMD lanes). Full per-version detail
+lives in [CHANGELOG.md](CHANGELOG.md) — this file is forward-looking.
 
-## Next (0.13.0)
+## Next
 
 ### Performance carryover
 
@@ -28,27 +29,6 @@ now beats `EIGS_JIT_OFF` by ~45% on it.
       likely top DMG cost post-5i for non-recyclable callsites.
       Re-profile before picking; the profile shape moved every stage
       this cycle.
-
-### Language features
-
-- [x] Destructuring assignment (`[a, b] is [1, 2]`) — shipped 0.13.0
-- [x] Streaming subprocess I/O (stdin pipe, unbuffered stdout) —
-      shipped 0.13.0 (`proc_spawn` / `proc_write` / `proc_read_line` /
-      `proc_read` / `proc_close` / `proc_wait`)
-- [x] Negative indexing (`a[-1]`) — shipped 0.13.0
-- [x] Slicing (`a[start:end]`, lists/strings/buffers, half-open,
-      negatives, strict bounds, independent copy) — shipped 0.13.0
-- [x] Default parameter values — shipped 0.13.0
-- [x] Non-blocking channel recv (`recv_timeout of [ch, ms]`, plus
-      suite coverage for the pre-existing `try_recv`) — shipped
-      0.13.0; fixes Tidepool GAP-005
-- [x] `spawn` with multiple args (`spawn of [fn, arg1, arg2, ...]`,
-      positional, missing params → null, extras ignored, args shared
-      by reference) — shipped 0.13.0; fixes Tidepool GAP-006
-- [x] `audio_play_loop of [samples, loops]` finite-count loop
-      playback — shipped 0.13.0; fixes Tidepool GAP-002 finite form
-      (infinite-loop variant deferred — needs a background refill
-      mechanism)
 
 ### Downstream gaps feeding back
 
@@ -69,7 +49,12 @@ when picked up:
 
 ### Ecosystem
 
-- [ ] Package manager / module registry
+- [~] Package manager — basic `--pkg` shipped (namespaced deps,
+      lockfile, commit/tree verify, install/update/verify; see README
+      and the implemented-behavior spec). Open: version
+      ranges/solver, a registry/index format, package
+      attestations/signatures, a dependency-audit command, and
+      yank/deprecation policy.
 - [ ] More STEM modules (graph theory, regression, numerical PDEs)
 - [ ] WASM compilation target
 - [ ] Foreign function interface for calling arbitrary C libraries
@@ -84,11 +69,57 @@ when picked up:
 
 ### Long-term
 
-- [ ] Self-hosting compiler (EigenScript written in EigenScript)
+- [x] Self-hosting compiler (EigenScript written in EigenScript) —
+      `ouroboros` reaches the bootstrap fixed point (front-end +
+      codegen self-host, byte-identical to the C VM). An AOT
+      native-compiler arc (transpile-to-C, VM as byte-exact oracle)
+      builds on it.
 - [ ] GitHub Linguist submission (requires 2K+ .eigs files across repos)
 - [ ] Public release
 
 ## Completed
+
+Condensed highlights; see [CHANGELOG.md](CHANGELOG.md) for the full
+per-version record.
+
+### 0.19.0 (2026-06-26) — flat-buffer tensors
+
+- [x] Shaped `VAL_BUFFER` (`buffer of [r, c]` / `reshape`); `matmul`/
+      `add`/`relu` compute on the flat `double[]`, byte-identical to
+      the nested-list path (3-layer MLP forward ~11×). `dot`/`norm`
+      reductions with spec-unspecified summation association.
+
+### 0.18.0 (2026-06-25)
+
+- [x] Streaming audio-file playback (`audio_music_*`) in the gfx
+      extension via lazily-`dlopen`ed SDL_mixer.
+
+### 0.17.0 → 0.17.2 (2026-06-25)
+
+- [x] Stdlib gap-fill (`any`/`all`/`find_index`/`partition`/`group_by`,
+      string/math helpers, pure EigenScript).
+- [x] `spawn` raises on OS thread-create failure instead of returning a
+      dead handle (#269); OSR thunk confined to its own loop back-edge
+      (#267); Linux release binary pinned to glibc 2.35 (Ubuntu 22.04).
+
+### 0.16.0 → 0.16.3 (2026-06-18 → 06-19)
+
+- [x] Windowed observer predicates (the #202 series): all six
+      predicates read a window of the last N observations.
+- [x] Leak campaign + HTTP DoS hardening + OSR perf (0.16.1);
+      `load_file` now raises parse errors + stdlib keyword sweep
+      (0.16.2); observer loop-halting made opt-in (0.16.3, #247).
+
+### 0.14.0 (2026-06-13) — trust/identity
+
+- [x] OpenSSF passing badge, CodeQL, Scorecard 7.5/10, Sigstore-signed
+      releases, OSS-Fuzz enrollment in flight.
+
+### 0.13.0 (2026-06-12) — language features
+
+- [x] Destructuring assignment, slicing + negative indexing, default
+      parameters, streaming subprocess I/O (`proc_*`), non-blocking
+      channel recv, multi-arg `spawn`, finite-count `audio_play_loop`.
 
 ### 0.15.0 (2026-06-15) — multi-state refactor + embedding API
 

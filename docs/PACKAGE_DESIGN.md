@@ -1,11 +1,16 @@
 # EigenScript packages — design proposal
 
-**Status: proposal, nothing implemented.** This is the design pass for
-the package/dependency story (the biggest gap between "neat project"
-and "usable language"). It exists to be argued with; the open questions
-at the bottom are real decisions, not rhetorical ones. Once any part of
-this ships, the shipped behavior moves into [SPEC.md](SPEC.md) and
-becomes subject to the stability contract.
+**Status: partially implemented — this is the forward-looking design
+pass; for what actually ships today see
+[PACKAGE_SPEC.md](PACKAGE_SPEC.md).** The core install/lock/verify flow
+landed (`eigenscript --pkg add/install/update/verify`: namespaced deps,
+an `eigs.json` manifest, a lockfile pinning commit SHAs, and
+tree-hash verification). This document is the broader design it grew
+from; the open questions at the bottom (version ranges/solver, a
+registry/index format, package signing, a dependency-audit command,
+yank/deprecation policy) are still real decisions, not rhetorical ones.
+As each part ships, the shipped behavior moves into
+[SPEC.md](SPEC.md) and becomes subject to the stability contract.
 
 ## Goals
 

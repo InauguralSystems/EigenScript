@@ -167,6 +167,27 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    /* --help is likewise pure; print usage and exit before touching state.
+     * Without this, `--help` falls through to the file path below and the
+     * runtime tries to read a file literally named "--help". */
+    if (argc >= 2 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
+        printf(
+            "EigenScript %s — a bytecode VM language with observers and temporal queries\n"
+            "\n"
+            "Usage:\n"
+            "  eigenscript <file.eigs> [args...]   run a script (args readable via `args of null`)\n"
+            "  eigenscript                         start the REPL\n"
+            "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
+            "  eigenscript --lint <file>           lint a source file (nonzero exit on warnings)\n"
+            "  eigenscript --pkg <cmd> [args...]   package manager (add/install/update/verify; see docs)\n"
+            "  eigenscript --version, -v           print the version and exit\n"
+            "  eigenscript --help, -h              print this help and exit\n"
+            "\n"
+            "Docs: https://github.com/InauguralSystems/EigenScript\n",
+            EIGENSCRIPT_VERSION);
+        return 0;
+    }
+
     /* --fmt is a pure source transformer; no VM, no arena, no state. */
     if (argc >= 2 && strcmp(argv[1], "--fmt") == 0) {
         if (argc < 3) {

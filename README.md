@@ -361,7 +361,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # 1,800+ checks (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 2,000+ checks (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ## Documentation

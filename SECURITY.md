@@ -55,8 +55,8 @@ Out of scope:
 
 | Version | Supported |
 |---------|-----------|
-| 0.13.x  | Yes      |
-| < 0.13  | No       |
+| 0.19.x  | Yes      |
+| < 0.19  | No       |
 
 ## Contact Routing
 
