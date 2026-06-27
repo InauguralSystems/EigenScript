@@ -4,8 +4,25 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Assignment statements were tagged with the *next* line.** The parser
+  built an `AST_ASSIGN` node for `name is expr` after consuming the
+  statement's trailing newline, so it took the following line's number —
+  offsetting every assignment by one for the linter, LSP go-to-definition,
+  document symbols, and diagnostics. Now taken from the name token. Surfaced
+  by wiring lint diagnostics into the LSP (the squiggle landed a line low).
+
 ### Added
 
+- **LSP: lint diagnostics + code actions.** With a document that parses, the
+  server now runs the linter and publishes each warning as a coded diagnostic
+  (severity 2, `code` = the #3 W-series), so the editor shows the same issues
+  as `--lint` — not just the first parse error (which now also carries
+  `code: E002`). `textDocument/codeAction` offers a quickfix for `W001`
+  (remove the unused-variable line); the handler recomputes diagnostics from
+  the AST and is structured to take more code→fix mappings. `lint.c` grew a
+  reusable `lint_collect(ast, …)` core (no I/O) shared by `--lint` and the LSP.
 - **LSP: document symbols, workspace symbols, formatting, and rename.** The
   language server (`src/eigenlsp`) now advertises and handles
   `textDocument/documentSymbol` (outline of functions, imports, and top-level

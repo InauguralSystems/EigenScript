@@ -889,6 +889,17 @@ void register_store_builtins(Env *env);
 /* ---- Formatter & Linter ---- */
 int eigenscript_fmt(const char *path, int write_mode);
 char* format_source_string(const char *source);  /* malloc'd; caller frees */
+
+/* Structured lint diagnostic (for non-CLI consumers like the LSP). */
+typedef struct {
+    int  line;             /* 1-based source line */
+    char code[8];          /* stable code, e.g. "W001" */
+    char severity[12];     /* "warning" / "error" */
+    char message[256];
+} LintDiag;
+/* Run all lint checks on an already-parsed AST; fill out[] (up to max),
+ * return the count. No I/O. Used by the LSP to publish diagnostics. */
+int lint_collect(ASTNode *ast, LintDiag *out, int max);
 int eigenscript_lint(const char *path, int json_mode);
 
 #endif /* EIGENSCRIPT_H */

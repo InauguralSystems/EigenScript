@@ -1502,7 +1502,11 @@ static ASTNode* parse_statement(Parser *p) {
             expr = binop;
         }
         p_match(p, TOK_NEWLINE);
-        ASTNode *n = make_node(AST_ASSIGN, p_cur(p)->line);
+        /* Line/col come from the name token — the statement's real start.
+         * Using p_cur here read the NEXT statement's line (p_match above
+         * already consumed this line's newline), offsetting every
+         * assignment by one for lint/LSP/go-to-definition. */
+        ASTNode *n = make_node_col(AST_ASSIGN, name_tok->line, name_tok->col);
         n->data.assign.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         set_name_hash(n, n->data.assign.name);
         n->data.assign.expr = expr;

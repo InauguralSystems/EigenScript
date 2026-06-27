@@ -639,6 +639,79 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
     }
 }
 
+/* Run every lint check on a parsed AST, filling ctx->warnings (sorted by
+ * line). Frees the transient assign/ref tracking it allocates; the caller
+ * owns ctx and reads ctx->warnings. Shared by the CLI and lint_collect. */
+static void lint_run_checks(ASTNode *ast, LintContext *ctx) {
+    check_empty_blocks(ast, ctx);
+    check_dup_keys(ast, ctx);
+    check_builtin_shadow(ast, ctx);
+    check_func_unreachable(ast, ctx);
+    check_is_conditions(ast, ctx);
+    check_unused_params(ast, ctx);
+
+    /* Collect assigns and refs for the unused-variable check. */
+    collect_assigns(ast, ctx);
+    collect_refs(ast, ctx);
+
+    /* Unused variables (top-level, conservative). Function-defined names
+     * are intentional exports — never flagged. */
+    int func_name_count = 0;
+    char *func_names[MAX_VARS];
+    if (ast && ast->type == AST_PROGRAM) {
+        for (int i = 0; i < ast->data.program.count; i++) {
+            ASTNode *s = ast->data.program.stmts[i];
+            if (s && s->type == AST_FUNC)
+                func_names[func_name_count++] = s->data.func.name;
+        }
+    }
+    for (int i = 0; i < ctx->assign_count; i++) {
+        const char *name = ctx->assigns[i];
+        if (name[0] == '_') continue;
+        if (is_builtin_name(name)) continue;
+        int is_func = 0;
+        for (int j = 0; j < func_name_count; j++) {
+            if (strcmp(func_names[j], name) == 0) { is_func = 1; break; }
+        }
+        if (is_func) continue;
+        if (!is_ref(ctx, name)) {
+            lint_warn(ctx, ctx->assign_lines[i], "W001", "unused variable '%s'", name);
+        }
+    }
+
+    /* Sort warnings by line number */
+    for (int i = 0; i < ctx->warning_count - 1; i++) {
+        for (int j = i + 1; j < ctx->warning_count; j++) {
+            if (ctx->warnings[j].line < ctx->warnings[i].line) {
+                LintWarning tmp = ctx->warnings[i];
+                ctx->warnings[i] = ctx->warnings[j];
+                ctx->warnings[j] = tmp;
+            }
+        }
+    }
+
+    /* Free the transient assign/ref tracking (warnings are kept). */
+    for (int i = 0; i < ctx->assign_count; i++) free(ctx->assigns[i]);
+    for (int i = 0; i < ctx->ref_count; i++) free(ctx->refs[i]);
+    ctx->assign_count = 0;
+    ctx->ref_count = 0;
+}
+
+/* Public structured-lint entry: run checks on an AST, copy diagnostics out. */
+int lint_collect(ASTNode *ast, LintDiag *out, int max) {
+    if (!ast || !out || max <= 0) return 0;
+    LintContext ctx = {0};
+    lint_run_checks(ast, &ctx);
+    int n = ctx.warning_count < max ? ctx.warning_count : max;
+    for (int i = 0; i < n; i++) {
+        out[i].line = ctx.warnings[i].line;
+        snprintf(out[i].code, sizeof(out[i].code), "%s", ctx.warnings[i].code);
+        snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
+        snprintf(out[i].message, sizeof(out[i].message), "%s", ctx.warnings[i].message);
+    }
+    return n;
+}
+
 /* ---- Main lint entry ---- */
 
 int eigenscript_lint(const char *path, int json_mode) {
@@ -684,57 +757,7 @@ int eigenscript_lint(const char *path, int json_mode) {
     }
 
     LintContext ctx = {0};
-
-    /* Run all checks */
-    check_empty_blocks(ast, &ctx);
-    check_dup_keys(ast, &ctx);
-    check_builtin_shadow(ast, &ctx);
-    check_func_unreachable(ast, &ctx);
-    check_is_conditions(ast, &ctx);
-    check_unused_params(ast, &ctx);
-
-    /* Collect assigns and refs for unused-variable check */
-    collect_assigns(ast, &ctx);
-    collect_refs(ast, &ctx);
-
-    /* Check unused variables (top-level only — conservative) */
-    /* Build set of function-defined names (these are intentional exports) */
-    int func_name_count = 0;
-    char *func_names[MAX_VARS];
-    if (ast && ast->type == AST_PROGRAM) {
-        for (int i = 0; i < ast->data.program.count; i++) {
-            ASTNode *s = ast->data.program.stmts[i];
-            if (s && s->type == AST_FUNC)
-                func_names[func_name_count++] = s->data.func.name;
-        }
-    }
-    for (int i = 0; i < ctx.assign_count; i++) {
-        const char *name = ctx.assigns[i];
-        /* Skip _ prefixed */
-        if (name[0] == '_') continue;
-        /* Skip builtins (already warned about shadow) */
-        if (is_builtin_name(name)) continue;
-        /* Skip function definitions — always intentional */
-        int is_func = 0;
-        for (int j = 0; j < func_name_count; j++) {
-            if (strcmp(func_names[j], name) == 0) { is_func = 1; break; }
-        }
-        if (is_func) continue;
-        if (!is_ref(&ctx, name)) {
-            lint_warn(&ctx, ctx.assign_lines[i], "W001", "unused variable '%s'", name);
-        }
-    }
-
-    /* Sort warnings by line number */
-    for (int i = 0; i < ctx.warning_count - 1; i++) {
-        for (int j = i + 1; j < ctx.warning_count; j++) {
-            if (ctx.warnings[j].line < ctx.warnings[i].line) {
-                LintWarning tmp = ctx.warnings[i];
-                ctx.warnings[i] = ctx.warnings[j];
-                ctx.warnings[j] = tmp;
-            }
-        }
-    }
+    lint_run_checks(ast, &ctx);
 
     /* Emit. JSON goes to stdout (machine-consumable, even when clean →
      * "[]"); human text goes to stderr as before, now with the [CODE]. */
@@ -760,10 +783,6 @@ int eigenscript_lint(const char *path, int json_mode) {
             fprintf(stderr, "%s: no issues found\n", path);
         }
     }
-
-    /* Cleanup */
-    for (int i = 0; i < ctx.assign_count; i++) free(ctx.assigns[i]);
-    for (int i = 0; i < ctx.ref_count; i++) free(ctx.refs[i]);
 
     free_ast(ast);
     free_tokenlist(&tl);

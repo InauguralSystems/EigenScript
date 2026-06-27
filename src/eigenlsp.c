@@ -708,7 +708,8 @@ static void handle_initialize(int id) {
                 "\"documentSymbolProvider\":true,"
                 "\"workspaceSymbolProvider\":true,"
                 "\"documentFormattingProvider\":true,"
-                "\"renameProvider\":true"
+                "\"renameProvider\":true,"
+                "\"codeActionProvider\":true"
             "},"
             "\"serverInfo\":{\"name\":\"eigenlsp\",\"version\":\"" EIGENSCRIPT_VERSION "\"}"
         "}"
@@ -737,9 +738,27 @@ static void send_diagnostics(Document *doc) {
         strbuf_append_fmt(&sb, "%d", err_line);
         strbuf_append(&sb, ",\"character\":0},\"end\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
-        strbuf_append(&sb, ",\"character\":1000}},\"severity\":1,\"source\":\"eigenscript\",\"message\":");
+        strbuf_append(&sb, ",\"character\":1000}},\"severity\":1,\"code\":\"E002\","
+                            "\"source\":\"eigenscript\",\"message\":");
         json_escape_to(&sb, full);
         strbuf_append_char(&sb, '}');
+    } else if (doc->ast) {
+        /* Parse OK → run the linter and publish each warning as a
+         * yellow squiggle carrying its stable code (#3 taxonomy), so the
+         * editor shows the same diagnostics as `--lint`. */
+        LintDiag diags[256];
+        int n = lint_collect(doc->ast, diags, 256);
+        for (int i = 0; i < n; i++) {
+            int ln = diags[i].line - 1;
+            if (ln < 0) ln = 0;
+            if (i > 0) strbuf_append_char(&sb, ',');
+            strbuf_append_fmt(&sb,
+                "{\"range\":{\"start\":{\"line\":%d,\"character\":0},"
+                "\"end\":{\"line\":%d,\"character\":1000}},\"severity\":2,\"code\":\"%s\","
+                "\"source\":\"eigenscript\",\"message\":", ln, ln, diags[i].code);
+            json_escape_to(&sb, diags[i].message);
+            strbuf_append_char(&sb, '}');
+        }
     }
 
     strbuf_append(&sb, "]}");
@@ -1347,6 +1366,79 @@ static void handle_workspace_symbol(int id, const char *params) {
     if (query) free(query);
 }
 
+/* ---- textDocument/codeAction: quickfixes keyed on lint codes ---- */
+static void handle_code_action(int id, const char *params) {
+    char *td = json_get_object(params, "textDocument");
+    char *range = json_get_object(params, "range");
+    if (!td || !range) {
+        lsp_response(id, "[]");
+        if (td) free(td);
+        if (range) free(range);
+        return;
+    }
+    char *uri = json_get_string(td, "uri");
+    free(td);
+    int start_line = -1, end_line = -1;
+    {
+        char *start = json_get_object(range, "start");
+        char *end = json_get_object(range, "end");
+        if (start) { start_line = json_get_int(start, "line"); free(start); }
+        if (end)   { end_line   = json_get_int(end, "line");   free(end); }
+        free(range);
+    }
+    if (end_line < start_line) end_line = start_line;
+    if (!uri) { lsp_response(id, "[]"); return; }
+    Document *doc = doc_find(uri);
+    if (!doc || !doc->ast) { free(uri); lsp_response(id, "[]"); return; }
+
+    /* Recompute diagnostics from the AST rather than parsing the client's
+     * context.diagnostics array — more robust, and the codes are ours. */
+    LintDiag diags[256];
+    int n = lint_collect(doc->ast, diags, 256);
+
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append_char(&sb, '[');
+    int first = 1;
+    for (int i = 0; i < n; i++) {
+        int ln = diags[i].line - 1;
+        if (ln < 0) ln = 0;
+        if (ln < start_line || ln > end_line) continue;
+        /* W001 unused variable → offer to delete the line. (Other codes
+         * can be added here as their fixes are designed.) */
+        if (strcmp(diags[i].code, "W001") != 0) continue;
+
+        char vname[128] = "";
+        const char *q1 = strchr(diags[i].message, '\'');
+        if (q1) {
+            const char *q2 = strchr(q1 + 1, '\'');
+            if (q2) {
+                int L = (int)(q2 - q1 - 1);
+                if (L > 0 && L < (int)sizeof(vname)) { memcpy(vname, q1 + 1, L); vname[L] = '\0'; }
+            }
+        }
+        char title[200];
+        if (vname[0]) snprintf(title, sizeof(title), "Remove unused variable '%s'", vname);
+        else snprintf(title, sizeof(title), "Remove unused variable");
+
+        if (!first) strbuf_append_char(&sb, ',');
+        first = 0;
+        strbuf_append(&sb, "{\"title\":");
+        json_escape_to(&sb, title);
+        strbuf_append(&sb, ",\"kind\":\"quickfix\",\"edit\":{\"changes\":{");
+        json_escape_to(&sb, doc->uri);
+        /* Delete the whole line: [ln,0]..[ln+1,0] → "" */
+        strbuf_append_fmt(&sb,
+            ":[{\"range\":{\"start\":{\"line\":%d,\"character\":0},"
+            "\"end\":{\"line\":%d,\"character\":0}},\"newText\":\"\"}]}}}",
+            ln, ln + 1);
+    }
+    strbuf_append_char(&sb, ']');
+    lsp_response(id, sb.data);
+    strbuf_free(&sb);
+    free(uri);
+}
+
 /* ================================================================
  * MESSAGE DISPATCH
  * ================================================================ */
@@ -1397,6 +1489,8 @@ static void handle_message(const char *json) {
         handle_formatting(id, params_str ? params_str : json);
     } else if (strcmp(method, "textDocument/rename") == 0) {
         handle_rename(id, params_str ? params_str : json);
+    } else if (strcmp(method, "textDocument/codeAction") == 0) {
+        handle_code_action(id, params_str ? params_str : json);
     } else {
         /* Unknown method */
         if (id >= 0) {

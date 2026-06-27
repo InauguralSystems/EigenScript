@@ -108,6 +108,7 @@ def main():
     check("advertises workspaceSymbolProvider", caps.get("workspaceSymbolProvider") is True)
     check("advertises documentFormattingProvider", caps.get("documentFormattingProvider") is True)
     check("advertises renameProvider", caps.get("renameProvider") is True)
+    check("advertises codeActionProvider", caps.get("codeActionProvider") is True)
     check("serverInfo name is eigenlsp",
           (init or {}).get("result", {}).get("serverInfo", {}).get("name") == "eigenlsp")
 
@@ -249,6 +250,36 @@ def main():
                         "newName": "nope"}}
     r = converse([INIT, did_open(rename_doc), rn_kw, SHUTDOWN, EXIT])
     check("rename refuses a non-user symbol (print)", (by_id(r, 10) or {}).get("result") is None)
+
+    # --- lint warnings surface as coded diagnostics (severity 2) ---
+    r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("lint warning surfaces as a diagnostic",
+          bool(d) and any(x.get("code") == "W001" for x in d))
+    check("lint diagnostic severity is warning (2)",
+          bool(d) and any(x.get("severity") == 2 for x in d))
+
+    # --- codeAction offers a quickfix for the W001 diagnostic ---
+    ca = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/codeAction",
+          "params": {"textDocument": {"uri": URI},
+                     "range": {"start": {"line": 0, "character": 0},
+                               "end": {"line": 0, "character": 0}},
+                     "context": {"diagnostics": []}}}
+    r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), ca, SHUTDOWN, EXIT])
+    res = (by_id(r, 11) or {}).get("result")
+    check("codeAction offers a quickfix for unused variable",
+          isinstance(res, list) and any(
+              a.get("kind") == "quickfix" and "Remove unused variable" in a.get("title", "")
+              for a in res))
+    action = res[0] if isinstance(res, list) and res else None
+    check("codeAction carries a WorkspaceEdit for the document",
+          isinstance(action, dict) and URI in action.get("edit", {}).get("changes", {}))
+
+    # --- codeAction on a clean line returns no fixes ---
+    ca2 = dict(ca); ca2 = json.loads(json.dumps(ca)); ca2["id"] = 12
+    ca2["params"]["range"] = {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 0}}
+    r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), ca2, SHUTDOWN, EXIT])
+    check("codeAction on a clean line is empty", (by_id(r, 12) or {}).get("result") == [])
 
     print("")
     print("Results: %d passed, %d failed" % (PASS, FAIL))
