@@ -16,10 +16,13 @@ All notable changes to EigenScript are documented here.
   only from its declaration onward, so a read *before* it resolves to the outer
   binding, and (d) **`for`-loop scopes** — a statement `for` introduces a scope
   for its loop variable and any `local` inside it (neither leaks out;
-  SS5E/SS5F/SS8), while `if`, `loop while`, and comprehensions are transparent
-  (their loop-vars/locals touch the surrounding scope, matching the runtime).
-  Positions still come from exact token spans. Verified by applying the
-  WorkspaceEdit and asserting the resulting source for each rule.
+  SS5E/SS5F/SS8) — but a `for`'s **iterable expression** (between `in` and the
+  body) is evaluated in the outer scope, so in `for i in i:` the second `i` is
+  the outer binding, not the loop variable. `if`, `loop while`, and
+  comprehensions are transparent (their loop-vars/locals touch the surrounding
+  scope, matching the runtime). Positions still come from exact token spans.
+  Verified by applying the WorkspaceEdit and asserting the resulting source for
+  each rule.
 - **LSP rename could corrupt source.** Reference positions came from AST node
   columns, but identifier (`AST_IDENT`) nodes were built with `make_node`,
   which zero-fills `col` — so every rename edit landed at column 0. Renaming

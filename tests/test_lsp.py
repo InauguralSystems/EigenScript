@@ -386,6 +386,26 @@ def main():
     check("rename loop variable scoped to the loop (outer i untouched)",
           applied == "i is 999\nfor k in [1, 2]:\n    print of k\nprint of i\n")
 
+    # --- scope-aware: a `for`'s iterable expression is the OUTER scope ---
+    # In `for i in i:` the second `i` is the outer list (evaluated before the
+    # loop binds), so the loop variable and the iterable are distinct bindings.
+    iter_doc = "i is [1, 2]\nfor i in i:\n    print of i\nprint of i[0]\n"
+    rni1 = {"jsonrpc": "2.0", "id": 21, "method": "textDocument/rename",
+            "params": {"textDocument": {"uri": URI}, "position": {"line": 1, "character": 4},
+                       "newName": "k"}}
+    r = converse([INIT, did_open(iter_doc), rni1, SHUTDOWN, EXIT])
+    applied = apply_rename(iter_doc, (by_id(r, 21) or {}).get("result"))
+    check("rename loop var leaves the iterable expression (outer) alone",
+          applied == "i is [1, 2]\nfor k in i:\n    print of k\nprint of i[0]\n")
+
+    rni2 = {"jsonrpc": "2.0", "id": 22, "method": "textDocument/rename",
+            "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
+                       "newName": "k"}}
+    r = converse([INIT, did_open(iter_doc), rni2, SHUTDOWN, EXIT])
+    applied = apply_rename(iter_doc, (by_id(r, 22) or {}).get("result"))
+    check("rename outer var hits the iterable expr, not the loop var/body",
+          applied == "k is [1, 2]\nfor i in k:\n    print of i\nprint of k[0]\n")
+
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},

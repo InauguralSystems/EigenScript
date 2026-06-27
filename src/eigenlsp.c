@@ -1286,8 +1286,12 @@ static void handle_formatting(int id, const char *params) {
  * ident's token. A reference at index i is bound by this scope's entry only
  * if from <= i. */
 typedef struct {
-    int tok_start;   /* index of the `define` token */
-    int tok_end;     /* one past the function's last body token */
+    int tok_start;   /* index of the `define`/`for` token */
+    int tok_end;     /* one past the scope's last body token */
+    int excl_lo, excl_hi;  /* a half-open token range NOT covered by this scope's
+                            * bindings — a `for` loop's iterable expression
+                            * (between `in` and the body), which is evaluated in
+                            * the OUTER scope. (-1,-1) = none. */
     struct { char name[48]; int from; } binds[MAX_SCOPE_BINDS];
     int bind_count;
 } FnScope;
@@ -1347,6 +1351,9 @@ static int build_scopes(Document *doc, FnScope *out, int max) {
         FnScope *s = &out[n];
         s->tok_start = i;
         s->bind_count = 0;
+        s->excl_lo = -1;
+        s->excl_hi = -1;
+        int in_idx = -1;
         if (t == TOK_DEFINE) {
             /* Params: IDENTs between the function name's '(' and ')'. */
             int j = i + 1, param_count = 0;
@@ -1363,12 +1370,15 @@ static int build_scopes(Document *doc, FnScope *out, int max) {
         } else {
             /* `for <var(s)> in ...` — the loop variable(s) are bound for the
              * whole loop body and do not leak out (SS5E/SS5F, SS8). */
-            for (int j = i + 1; j < count && tk[j].type != TOK_IN && tk[j].type != TOK_NEWLINE; j++)
+            int j = i + 1;
+            for (; j < count && tk[j].type != TOK_IN && tk[j].type != TOK_NEWLINE; j++)
                 if (tk[j].type == TOK_IDENT) scope_add_param(s, tk[j].str_val, i);
+            if (j < count && tk[j].type == TOK_IN) in_idx = j;
         }
         /* Body span: the first INDENT after the keyword, to its matching DEDENT. */
         int k = i, end = count;
         while (k < count && tk[k].type != TOK_INDENT) k++;
+        int body_start = k;  /* the INDENT index (or count if none) */
         if (k < count && tk[k].type == TOK_INDENT) {
             int depth = 0;
             for (; k < count; k++) {
@@ -1378,6 +1388,10 @@ static int build_scopes(Document *doc, FnScope *out, int max) {
             end = k;
         }
         s->tok_end = end;
+        /* A `for`'s iterable (between `in` and the body) is evaluated in the
+         * outer scope, so `for i in i:` reads the outer `i` — exclude it from
+         * the loop binding. */
+        if (t == TOK_FOR && in_idx >= 0) { s->excl_lo = in_idx + 1; s->excl_hi = body_start; }
         n++;
     }
     /* Attribute each `local <ident>` to the innermost scope that contains it
@@ -1400,6 +1414,7 @@ static void resolve_binding(FnScope *scopes, int n, int idx, const char *name,
     int best_scope = -1, best_from = -1, best_start = -1;
     for (int s = 0; s < n; s++) {
         if (!(idx >= scopes[s].tok_start && idx < scopes[s].tok_end)) continue;
+        if (idx >= scopes[s].excl_lo && idx < scopes[s].excl_hi) continue;  /* iterable expr */
         int from = -1;
         for (int b = 0; b < scopes[s].bind_count; b++)
             if (strcmp(scopes[s].binds[b].name, name) == 0 && scopes[s].binds[b].from <= idx)
