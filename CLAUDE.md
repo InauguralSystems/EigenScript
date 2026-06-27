@@ -363,7 +363,7 @@ portability, and the ecosystem story):
    as `attestation.sigstore.json`; verify with `gh attestation verify
    eigenscript-<label> --repo InauguralSystems/EigenScript`).
    **Homebrew tap** lives at github.com/InauguralSystems/homebrew-eigenscript —
-   tracks the latest release tag (v0.15.2 as of 2026-06-15). The old
+   tracks the latest release tag (v0.19.0 as of 2026-06-27). The old
    `inreplace` workaround for the GNU-ld-only `-z relro`/`-z now`
    LDFLAGS was dropped at v0.14.2 (Makefile gates them on Linux now,
    so the formula stays clean). Follow-ons: Docker image, AUR,
