@@ -109,6 +109,12 @@ def main():
     check("advertises documentFormattingProvider", caps.get("documentFormattingProvider") is True)
     check("advertises renameProvider", caps.get("renameProvider") is True)
     check("advertises codeActionProvider", caps.get("codeActionProvider") is True)
+    stp = caps.get("semanticTokensProvider")
+    check("advertises semanticTokensProvider (full)",
+          isinstance(stp, dict) and stp.get("full") is True)
+    legend = (stp or {}).get("legend", {}).get("tokenTypes", [])
+    check("semantic legend lists function/keyword/parameter",
+          all(k in legend for k in ("function", "keyword", "parameter")))
     check("serverInfo name is eigenlsp",
           (init or {}).get("result", {}).get("serverInfo", {}).get("name") == "eigenlsp")
 
@@ -280,6 +286,29 @@ def main():
     ca2["params"]["range"] = {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 0}}
     r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), ca2, SHUTDOWN, EXIT])
     check("codeAction on a clean line is empty", (by_id(r, 12) or {}).get("result") == [])
+
+    # --- semanticTokens: classified, delta-encoded token stream ---
+    st_doc = "define add(a, b) as:\n    return a + b\nsum is add of [1, 22]\n"
+    st = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/semanticTokens/full",
+          "params": {"textDocument": {"uri": URI}}}
+    r = converse([INIT, did_open(st_doc), st, SHUTDOWN, EXIT])
+    res = (by_id(r, 13) or {}).get("result")
+    data = res.get("data") if isinstance(res, dict) else None
+    check("semanticTokens returns data in 5-int records",
+          isinstance(data, list) and len(data) > 0 and len(data) % 5 == 0)
+    toks, ln, ch = [], 0, 0
+    if isinstance(data, list):
+        for i in range(0, len(data), 5):
+            dl, dc, L, ty, _mod = data[i:i + 5]
+            ln += dl
+            ch = (ch + dc) if dl == 0 else dc
+            toks.append((ln, ch, L, ty))
+    fi = legend.index("function") if "function" in legend else 1
+    ni = legend.index("number") if "number" in legend else 4
+    check("semanticTokens classifies the defined function (add)",
+          any(ty == fi for (_, _, _, ty) in toks))
+    check("semanticTokens carries accurate lengths (22 → len 2)",
+          any(ty == ni and L == 2 for (_, _, L, ty) in toks))
 
     print("")
     print("Results: %d passed, %d failed" % (PASS, FAIL))

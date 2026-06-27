@@ -15,6 +15,13 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **LSP: semantic tokens**, plus a `len` (source-span) field on every token.
+  `textDocument/semanticTokens/full` classifies the token stream — keywords,
+  numbers, strings, and (the part a TextMate grammar can't do) identifiers as
+  function / variable / parameter / namespace via the symbol table — and emits
+  the LSP delta-encoded array. The new `Token.len` (set in the lexer, exact for
+  every lexeme) also replaces `find_token_at`'s old "number length ≈ 4" guess,
+  tightening hover/definition hit-testing.
 - **LSP: lint diagnostics + code actions.** With a document that parses, the
   server now runs the linter and publishes each warning as a coded diagnostic
   (severity 2, `code` = the #3 W-series), so the editor shows the same issues

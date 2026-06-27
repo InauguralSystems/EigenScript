@@ -438,9 +438,10 @@ get made and how contributors can earn commit access over time.
   into `~/.vscode/extensions/` or package with `vsce`.
 - **Vim / Neovim**: [`editors/vim/`](editors/vim/) — copy into
   `~/.vim/` or `~/.config/nvim/`.
-- **Any LSP client**: `make lsp` builds `src/eigenlsp` (diagnostics,
-  completion, hover, go-to-definition, find-references, document &
-  workspace symbols, document formatting, and rename over stdio).
+- **Any LSP client**: `make lsp` builds `src/eigenlsp` (lint + syntax
+  diagnostics, completion, hover, go-to-definition, find-references,
+  document & workspace symbols, formatting, rename, code actions, and
+  semantic tokens over stdio).
 - On github.com, `.eigs` files render with Python highlighting (closest
   match) until a Linguist grammar is upstreamed.
 

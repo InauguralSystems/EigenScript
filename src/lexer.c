@@ -20,6 +20,10 @@ static void tok_add(TokenList *tl, TokType type, double num, const char *str, in
     t->str_val = str ? xstrdup(str) : NULL;
     t->line = line;
     t->col = col;
+    /* Default span: exact for str-valued tokens (identifiers, keywords);
+     * numbers and strings overwrite this with their true source length at
+     * the emission site, since their lexeme differs from str_val. */
+    t->len = str ? (int)strlen(str) : 1;
 }
 
 static TokType keyword_type(const char *word) {
@@ -406,6 +410,7 @@ TokenList tokenize(const char *source) {
         }
 
         if (*p == '"') {
+            const char *str_start = p;  /* includes the opening quote */
             p++; col++;
             strbuf buf;
             strbuf_init(&buf);
@@ -432,16 +437,19 @@ TokenList tokenize(const char *source) {
                 g_parse_errors++;
             }
             tok_add(&tl, TOK_STR, 0, buf.data, line, tok_col);
+            tl.tokens[tl.count - 1].len = (int)(p - str_start);  /* true source span */
             strbuf_free(&buf);
             continue;
         }
 
         if (isdigit(*p) || (*p == '.' && isdigit(*(p+1)))) {
             char *end;
+            const char *num_start = p;
             double num = strtod(p, &end);
             col += (int)(end - p);
             p = end;
             tok_add(&tl, TOK_NUM, num, NULL, line, tok_col);
+            tl.tokens[tl.count - 1].len = (int)(end - num_start);
             continue;
         }
 

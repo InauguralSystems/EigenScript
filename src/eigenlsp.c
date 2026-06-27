@@ -677,9 +677,7 @@ static Token* find_token_at(Document *doc, int line, int col) {
         if (t->type == TOK_EOF || t->type == TOK_NEWLINE ||
             t->type == TOK_INDENT || t->type == TOK_DEDENT) continue;
         if (t->line == target_line) {
-            int tok_len = 1;
-            if (t->str_val) tok_len = (int)strlen(t->str_val);
-            else if (t->type == TOK_NUM) tok_len = 4; /* approximate */
+            int tok_len = t->len > 0 ? t->len : 1;  /* accurate lexeme span */
             if (col >= t->col && col < t->col + tok_len + 1) {
                 return t;
             }
@@ -709,7 +707,10 @@ static void handle_initialize(int id) {
                 "\"workspaceSymbolProvider\":true,"
                 "\"documentFormattingProvider\":true,"
                 "\"renameProvider\":true,"
-                "\"codeActionProvider\":true"
+                "\"codeActionProvider\":true,"
+                "\"semanticTokensProvider\":{\"legend\":{\"tokenTypes\":"
+                    "[\"keyword\",\"function\",\"variable\",\"parameter\",\"number\",\"string\",\"namespace\"],"
+                    "\"tokenModifiers\":[]},\"full\":true}"
             "},"
             "\"serverInfo\":{\"name\":\"eigenlsp\",\"version\":\"" EIGENSCRIPT_VERSION "\"}"
         "}"
@@ -1439,6 +1440,76 @@ static void handle_code_action(int id, const char *params) {
     free(uri);
 }
 
+/* ---- textDocument/semanticTokens/full ----
+ * Legend (index → type): 0 keyword, 1 function, 2 variable, 3 parameter,
+ * 4 number, 5 string, 6 namespace. The value is in classifying identifiers
+ * as function/variable/parameter/namespace (which a TextMate grammar
+ * cannot) via the symbol table; keywords/numbers/strings round it out. */
+static int semantic_type_for(Document *doc, Token *t) {
+    switch (t->type) {
+        case TOK_NUM: return 4;
+        case TOK_STR: return 5;
+        case TOK_NEWLINE: case TOK_INDENT: case TOK_DEDENT: case TOK_EOF:
+            return -1;
+        default: break;
+    }
+    if (t->type == TOK_IDENT && t->str_val) {
+        for (int i = 0; builtin_docs[i][0]; i++)
+            if (strcmp(t->str_val, builtin_docs[i][0]) == 0) return 1;  /* builtin → function */
+        for (int i = 0; i < doc->symbol_count; i++) {
+            if (strcmp(t->str_val, doc->symbols[i].name) == 0) {
+                switch (doc->symbols[i].kind) {
+                    case SYM_FUNC:   return 1;
+                    case SYM_PARAM:  return 3;
+                    case SYM_IMPORT: return 6;
+                    case SYM_VAR:    return 2;
+                }
+            }
+        }
+        return 2;  /* unknown identifier → variable */
+    }
+    if (t->str_val) return 0;  /* remaining str-valued tokens are keywords */
+    return -1;                 /* operators / punctuation: left to the grammar */
+}
+
+static void handle_semantic_tokens(int id, const char *params) {
+    char *td = json_get_object(params, "textDocument");
+    if (!td) { lsp_response(id, "{\"data\":[]}"); return; }
+    char *uri = json_get_string(td, "uri");
+    free(td);
+    if (!uri) { lsp_response(id, "{\"data\":[]}"); return; }
+    Document *doc = doc_find(uri);
+    free(uri);
+    if (!doc) { lsp_response(id, "{\"data\":[]}"); return; }
+
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append(&sb, "{\"data\":[");
+    int prev_line = 0, prev_col = 0, first = 1;
+    for (int i = 0; i < doc->tokens.count; i++) {
+        Token *t = &doc->tokens.tokens[i];
+        int stype = semantic_type_for(doc, t);
+        if (stype < 0) continue;
+        int line0 = t->line - 1;
+        if (line0 < 0) continue;
+        int col = t->col;
+        int dline = line0 - prev_line;
+        int dchar = (dline == 0) ? col - prev_col : col;
+        /* Skip any out-of-order synthesized token (e.g. f-string desugar):
+         * the LSP delta encoding requires non-decreasing positions. */
+        if (dline < 0 || (dline == 0 && dchar < 0)) continue;
+        int len = t->len > 0 ? t->len : 1;
+        if (!first) strbuf_append_char(&sb, ',');
+        first = 0;
+        strbuf_append_fmt(&sb, "%d,%d,%d,%d,0", dline, dchar, len, stype);
+        prev_line = line0;
+        prev_col = col;
+    }
+    strbuf_append(&sb, "]}");
+    lsp_response(id, sb.data);
+    strbuf_free(&sb);
+}
+
 /* ================================================================
  * MESSAGE DISPATCH
  * ================================================================ */
@@ -1491,6 +1562,8 @@ static void handle_message(const char *json) {
         handle_rename(id, params_str ? params_str : json);
     } else if (strcmp(method, "textDocument/codeAction") == 0) {
         handle_code_action(id, params_str ? params_str : json);
+    } else if (strcmp(method, "textDocument/semanticTokens/full") == 0) {
+        handle_semantic_tokens(id, params_str ? params_str : json);
     } else {
         /* Unknown method */
         if (id >= 0) {

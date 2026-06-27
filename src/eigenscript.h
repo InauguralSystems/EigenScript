@@ -89,6 +89,7 @@ typedef struct {
     char *str_val;
     int line;
     int col;    /* 0-based column offset */
+    int len;    /* source lexeme length (for spans: semantic tokens, hover) */
 } Token;
 
 typedef struct {
