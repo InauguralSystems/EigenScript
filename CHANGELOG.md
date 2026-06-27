@@ -6,6 +6,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **HTTP routes ignored a request's query string for route identity.** The
+  request target was parsed whole into `path` (`ext_http.c`), so a route
+  registered as `/ping` returned 404 for `/ping?x=1` — both exact route
+  matching (`strcmp(r->path, path)`) and static-file serving compared against
+  the raw target including `?...`. The query string is request data, not part
+  of the route, so the target is now split at the first `?` before route and
+  static matching. The original request line stays intact in
+  `http_request_headers` (raw `reqbuf`), so scripts can still read the query
+  via `lib/http.eigs`'s `parse_query`. Covered by `test_http_server.sh` HS01b
+  (route + query) and HS05b (static file + query).
 - **LSP rename is now scope-correct, including EigenScript's subtler rules.**
   Rename resolves each occurrence to a binding identity — the innermost
   enclosing function that binds the name as a parameter or `local`, else the

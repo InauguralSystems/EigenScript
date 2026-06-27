@@ -112,6 +112,17 @@ else
     fail "HS01 GET /ping" "got '$RESP'"
 fi
 
+# ---- Query string is request data, not part of the route identity ----
+# A route on /ping must still match /ping?x=1 (regression: the request target
+# was matched whole, so any query string 404'd).
+STATUS=$(curl -s --max-time 2 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/ping?x=1&y=2")
+RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/ping?x=1&y=2")
+if [ "$STATUS" = "200" ] && [ "$RESP" = "pong" ]; then
+    ok "HS01b GET /ping?x=1 matches the /ping route (query ignored for routing)"
+else
+    fail "HS01b query-string routing" "status=$STATUS resp='$RESP'"
+fi
+
 # ---- Content-Type heuristic: JSON payload -> application/json ----
 CT=$(curl -s --max-time 2 -D - "http://127.0.0.1:$PORT/json" -o /dev/null \
      | grep -i "^content-type:" | tr -d '\r')
@@ -144,6 +155,14 @@ if echo "$RESP" | grep -q "static-file-marker-xyz"; then
     ok "HS05 static file served under /files"
 else
     fail "HS05 static file" "got '$RESP'"
+fi
+
+# ---- Static file serving tolerates a query string ----
+RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/files/hello.txt?v=2")
+if echo "$RESP" | grep -q "static-file-marker-xyz"; then
+    ok "HS05b static file served with a query string"
+else
+    fail "HS05b static file + query" "got '$RESP'"
 fi
 
 # ---- Path traversal rejected ----

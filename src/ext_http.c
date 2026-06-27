@@ -855,6 +855,14 @@ static void handle_request(int fd) {
         free(reqbuf); close(fd); return;
     }
 
+    /* Split off any query string: the request target's `?...` is request data,
+     * not part of the route identity (a route on /ping must match /ping?x=1).
+     * Route and static matching below use the path component only. The raw
+     * request line stays intact in reqbuf (http_request_headers), so a script
+     * can still read the query string from there (lib/http.eigs parse_query). */
+    char *qmark = strchr(path, '?');
+    if (qmark) *qmark = '\0';
+
     char *body = NULL;
     if (header_end > 0 && header_end < total) {
         body = reqbuf + header_end;
