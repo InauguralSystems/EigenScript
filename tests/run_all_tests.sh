@@ -1928,6 +1928,23 @@ else
 fi
 echo ""
 
+# [81b] Test runner (--test) + exe_path builtin — runs test_*.eigs files
+# in their own processes and reports pass/fail (human + --json).
+echo "[81b] Test runner (--test)"
+TRUN_OUTPUT=$(bash "$TESTS_DIR/test_test_runner.sh" </dev/null 2>&1)
+TRUN_PASS=$(echo "$TRUN_OUTPUT" | grep -c "PASS:" || true)
+TRUN_FAIL=$(echo "$TRUN_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + TRUN_PASS + TRUN_FAIL))
+PASS=$((PASS + TRUN_PASS))
+FAIL=$((FAIL + TRUN_FAIL))
+if [ "$TRUN_FAIL" -gt 0 ]; then
+    echo "  FAIL: $TRUN_FAIL test-runner check(s) failed"
+    echo "$TRUN_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $TRUN_PASS test-runner checks"
+fi
+echo ""
+
 # [82] JIT fast paths — checksummed correctness for the fused opcodes,
 # inline ICs, iter/native-call helpers, and OSR that only fire on hot
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert

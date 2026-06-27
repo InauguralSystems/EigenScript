@@ -179,6 +179,7 @@ int main(int argc, char **argv) {
             "  eigenscript                         start the REPL\n"
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
             "  eigenscript --lint [--json] <file>  lint a source file (--json for machine-readable diagnostics)\n"
+            "  eigenscript --test [paths...]       run test_*.eigs files (--json for machine-readable results)\n"
             "  eigenscript --pkg <cmd> [args...]   package manager (add/install/update/verify; see docs)\n"
             "  eigenscript --version, -v           print the version and exit\n"
             "  eigenscript --help, -h              print this help and exit\n"
@@ -246,6 +247,22 @@ int main(int argc, char **argv) {
             return 1;
         }
         argv[1] = pkg_path;
+        /* fall through to script execution */
+    }
+
+    /* --test flag: dispatch to lib/test_runner.eigs, same mechanism as
+     * --pkg. `args of null` gives the runner argv[2:] (the paths + --json).
+     * The runner re-invokes this interpreter (via exe_path) on each
+     * discovered test_*.eigs file. */
+    static char test_path[8192];
+    if (argc >= 2 && strcmp(argv[1], "--test") == 0) {
+        if (!resolve_eigenscript_file("lib/test_runner.eigs", test_path, sizeof(test_path))) {
+            fprintf(stderr, "Error: cannot locate lib/test_runner.eigs (stdlib not installed?)\n");
+            eigs_thread_detach();
+            eigs_state_destroy(eigs_st);
+            return 1;
+        }
+        argv[1] = test_path;
         /* fall through to script execution */
     }
 

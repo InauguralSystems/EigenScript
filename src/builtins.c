@@ -1828,6 +1828,23 @@ Value* builtin_getcwd(Value *arg) {
     return make_str("");
 }
 
+/* exe_path of null → absolute path of the running interpreter binary.
+ * Lets an EigenScript program re-invoke the same interpreter — e.g. a
+ * test runner spawning `exec_capture of [exe_path of null, testfile]`,
+ * which is more robust than assuming `eigenscript` is on PATH. Reads
+ * /proc/self/exe; falls back to argv[0]. */
+Value* builtin_exe_path(Value *arg) {
+    (void)arg;
+    char buf[4096];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n > 0 && n < (ssize_t)sizeof(buf)) {
+        buf[n] = '\0';
+        return make_str(buf);
+    }
+    if (g_argv && g_argc > 0 && g_argv[0]) return make_str(g_argv[0]);
+    return make_str("eigenscript");
+}
+
 /* chdir of "path" → 1 on success, 0 on failure */
 Value* builtin_chdir(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_num(0);
@@ -4768,6 +4785,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "mkdir", make_builtin(builtin_mkdir));
     env_set_local_owned(env, "ls", make_builtin(builtin_ls));
     env_set_local_owned(env, "getcwd", make_builtin(builtin_getcwd));
+    env_set_local_owned(env, "exe_path", make_builtin(builtin_exe_path));
     env_set_local_owned(env, "chdir", make_builtin(builtin_chdir));
     env_set_local_owned(env, "mktemp", make_builtin(builtin_mktemp));
     env_set_local_owned(env, "rm", make_builtin(builtin_rm));

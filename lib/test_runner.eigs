@@ -1,0 +1,157 @@
+# ============================================================
+# Test runner — `eigenscript --test [path...] [--json]`
+# ============================================================
+#
+# Discovers test_*.eigs files and runs each in its OWN interpreter
+# process, so every file gets fresh assertion counters (the lib/test.eigs
+# globals don't bleed between files). A test file PASSES iff it exits 0 —
+# the test_summary convention, which calls `assert` on failure and so
+# exits nonzero. If a file prints the lib/test.eigs summary line
+# ("Tests: N | Pass: P | Fail: F"), those assertion counts are parsed and
+# aggregated; otherwise pass/fail is decided by exit code alone.
+#
+# Discovery:
+#   eigenscript --test                 tests/ if it holds test_*.eigs, else cwd
+#   eigenscript --test <dir>           every test_*.eigs in <dir>
+#   eigenscript --test <file.eigs>     just that file
+#   ... any mix of dirs/files, plus --json for machine-readable output.
+#
+# Output: human text to stdout (per-file PASS/FAIL + a summary), or a JSON
+# object with --json. Exit code: 0 if every file passed, 1 otherwise.
+
+# ---- arg parsing ----
+argv is args of null
+json_mode is 0
+paths is []
+for a in argv:
+    if a == "--json":
+        json_mode is 1
+    else:
+        append of [paths, a]
+
+# ---- discovery ----
+define is_test_file(name) as:
+    return (starts_with of [name, "test_"]) and (ends_with of [name, ".eigs"])
+
+define discover_in_dir(dir) as:
+    out is []
+    names is sort of (ls of dir)
+    for nm in names:
+        if is_test_file of nm:
+            append of [out, path_join of [dir, nm]]
+    return out
+
+files is []
+if (len of paths) == 0:
+    in_tests is discover_in_dir of "tests"
+    if (len of in_tests) > 0:
+        files is in_tests
+    else:
+        files is discover_in_dir of "."
+else:
+    for p in paths:
+        if ends_with of [p, ".eigs"]:
+            append of [files, p]
+        else:
+            for f in (discover_in_dir of p):
+                append of [files, f]
+
+# ---- helpers ----
+
+# Integer following "<label>" on the test.eigs summary line, or -1 if the
+# program didn't print one (e.g. a non-test.eigs file, or one that crashed).
+define extract_count(output, label) as:
+    lines is split of [output, "\n"]
+    for ln in lines:
+        if contains of [ln, "Tests:"] and (contains of [ln, label]):
+            parts is split of [ln, "|"]
+            for part in parts:
+                if contains of [part, label]:
+                    kv is split of [part, ":"]
+                    if (len of kv) >= 2:
+                        return num of (trim of kv[1])
+    return 0 - 1
+
+# Escape a string as a JSON string literal (paths/messages are ASCII).
+define json_str(s) as:
+    out is str_replace of [s, "\\", "\\\\"]
+    out is str_replace of [out, "\"", "\\\""]
+    return "\"" + out + "\""
+
+# ---- run each file in its own process ----
+interp is exe_path of null
+results is []
+passed_files is 0
+asserts_pass is 0
+asserts_fail is 0
+
+for f in files:
+    r is exec_capture of [interp, f]
+    code is r[0]
+    output is r[1]
+    ok is 0
+    if code == 0:
+        ok is 1
+        passed_files is passed_files + 1
+    ap is extract_count of [output, "Pass:"]
+    af is extract_count of [output, "Fail:"]
+    if ap >= 0:
+        asserts_pass is asserts_pass + ap
+    if af >= 0:
+        asserts_fail is asserts_fail + af
+    rec is {"file": f, "ok": ok, "code": code, "ap": ap, "af": af, "output": output}
+    append of [results, rec]
+
+total_files is len of files
+failed_files is total_files - passed_files
+
+# ---- report ----
+if json_mode:
+    parts is []
+    for rec in results:
+        status is "fail"
+        if rec.ok == 1:
+            status is "pass"
+        item is "{" + (json_str of "file") + ":" + (json_str of rec.file)
+        item is item + "," + (json_str of "status") + ":" + (json_str of status)
+        item is item + "," + (json_str of "exit_code") + ":" + (str of rec.code)
+        item is item + "," + (json_str of "asserts_pass") + ":" + (str of rec.ap)
+        item is item + "," + (json_str of "asserts_fail") + ":" + (str of rec.af) + "}"
+        append of [parts, item]
+    body is join of [parts, ","]
+    out is "{" + (json_str of "files") + ":" + (str of total_files)
+    out is out + "," + (json_str of "passed") + ":" + (str of passed_files)
+    out is out + "," + (json_str of "failed") + ":" + (str of failed_files)
+    out is out + "," + (json_str of "asserts_pass") + ":" + (str of asserts_pass)
+    out is out + "," + (json_str of "asserts_fail") + ":" + (str of asserts_fail)
+    out is out + "," + (json_str of "results") + ":[" + body + "]}"
+    print of out
+else:
+    if total_files == 0:
+        print of "No test files found (looked for test_*.eigs)."
+    else:
+        print of ("Running " + (str of total_files) + " test file(s)...")
+        print of ""
+        for rec in results:
+            tag is "FAIL"
+            if rec.ok == 1:
+                tag is "PASS"
+            detail is ""
+            if rec.ap >= 0:
+                detail is "  (" + (str of rec.ap) + " pass, " + (str of rec.af) + " fail)"
+            elif rec.ok != 1:
+                detail is "  (exit " + (str of rec.code) + ")"
+            print of ("  " + tag + "  " + rec.file + detail)
+            if rec.ok != 1:
+                # show the failing file's captured output, indented
+                for ln in (split of [rec.output, "\n"]):
+                    if (len of (trim of ln)) > 0:
+                        print of ("        " + ln)
+        print of ""
+        print of ("Files: " + (str of total_files) + " | Passed: " + (str of passed_files) + " | Failed: " + (str of failed_files))
+        if (asserts_pass + asserts_fail) > 0:
+            print of ("Asserts: " + (str of asserts_pass) + " passed, " + (str of asserts_fail) + " failed")
+
+# ---- exit status: nonzero if any file failed ----
+if failed_files > 0:
+    assert of [0, (str of failed_files) + " test file(s) failed"]

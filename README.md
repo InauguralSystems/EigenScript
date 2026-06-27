@@ -364,6 +364,30 @@ cd tests
 ./run_all_tests.sh    # 2,000+ checks (minimal build; full build adds HTTP/DB/model suites)
 ```
 
+### Writing your own tests
+
+For your own projects, the `--test` runner is the convention. Write
+`test_*.eigs` files that use the assertion library and end with
+`test_summary`:
+
+```eigs
+load_file of "lib/test.eigs"
+assert_eq of [2 + 2, 4, "arith"]
+assert_true of [1 < 2, "ordering"]
+test_summary of null
+```
+
+```bash
+eigenscript --test                 # run every test_*.eigs in ./tests (or cwd)
+eigenscript --test path/to/dir     # run a specific directory
+eigenscript --test a.eigs b.eigs   # run specific files
+eigenscript --test --json          # machine-readable results (for CI)
+```
+
+Each file runs in its own interpreter process (isolated assertion
+state). A file passes iff it exits 0; the runner aggregates the per-file
+pass/fail counts and exits nonzero if any file failed.
+
 ## Documentation
 
 Full map: **[docs/README.md](docs/README.md)**. Highlights:

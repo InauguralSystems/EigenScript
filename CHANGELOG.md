@@ -4,6 +4,25 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **First-class test runner — `eigenscript --test [paths...]`.** Discovers
+  `test_*.eigs` files (in `./tests` by default, or in given dirs/files) and
+  runs each in its **own interpreter process**, so the `lib/test.eigs`
+  assertion counters never bleed between files. A file passes iff it exits 0
+  (the `test_summary` convention, which `assert`s on failure); the runner
+  parses each file's `Tests: N | Pass: P | Fail: F` line to aggregate
+  assertion counts, prints a per-file PASS/FAIL summary (showing a failing
+  file's captured output), and exits nonzero if any file failed. `--json`
+  emits a machine-readable result object for CI. The runner itself is written
+  in EigenScript (`lib/test_runner.eigs`), dispatched like `--pkg`.
+- **`exe_path of null` builtin** — returns the absolute path of the running
+  interpreter binary (via `/proc/self/exe`, with an `argv[0]` fallback). Lets
+  a script re-invoke the same interpreter without assuming `eigenscript` is on
+  `PATH`; the test runner uses it to launch each test file. Surfaced by
+  building `--test` — an EigenScript program previously had no way to find its
+  own interpreter.
+
 ## [0.19.0] - 2026-06-26
 
 ### Added

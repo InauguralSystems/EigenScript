@@ -235,6 +235,7 @@ Boolean keywords that check the most recently observed value:
 | `mkdir` | `mkdir of "path"` | Create directory (and parents). 1 on success, 0 on failure |
 | `ls` | `ls of "path"` | List directory contents as list of strings |
 | `getcwd` | `getcwd of null` | Current working directory as string |
+| `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH |
 | `chdir` | `chdir of "path"` | Change working directory. 1 on success, 0 on failure |
 | `mktemp` | `mktemp of null` | Create temporary file, return its path |
 | `rm` | `rm of "path"` | Remove a file. 1 on success, 0 on failure |
