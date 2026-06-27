@@ -152,6 +152,65 @@ Diagnostic messages use bracketed prefixes and are not errors:
 [load_file] Loading lib/math.eigs (1301 bytes)
 ```
 
+## Diagnostic codes
+
+Every diagnostic has a **stable code** so tools can match on it without
+substring-parsing the human message. The code namespace is a contract:
+a code's meaning never changes, and retired codes are not reused.
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `E000` | error | File cannot be read (lint). |
+| `E001` | error | Syntax error (tokenizer). |
+| `E002` | error | Parse error (parser). `--lint --json` reports the first one. |
+| `E100` | error | Uncaught runtime error (category code; see note below). |
+| `W001` | warning | Unused variable. |
+| `W002` | warning | Unused function parameter. |
+| `W003` | warning | Unreachable code after `return`. |
+| `W004` | warning | Empty `if` block. |
+| `W005` | warning | Empty loop block. |
+| `W006` | warning | Empty `for` block. |
+| `W007` | warning | Empty function body. |
+| `W008` | warning | Empty `try` block. |
+| `W009` | warning | Empty `catch` block. |
+| `W010` | warning | Duplicate dict key. |
+| `W011` | warning | `name is ...` used in a condition (likely meant `==`). |
+| `W012` | warning | Assignment shadows a builtin. |
+| `W013` | warning | Function definition shadows a builtin. |
+
+The human linter output carries the code inline:
+
+```
+$ eigenscript --lint app.eigs
+app.eigs:2: warning[W001]: unused variable 'temp'
+```
+
+## Machine-readable output (`--json`)
+
+`eigenscript --lint --json file.eigs` writes a JSON array of diagnostics
+to **stdout** (human text and the `--version`-style banner go to stderr,
+so `--lint --json 2>/dev/null` is pure JSON). Each element is:
+
+```json
+{"code": "W001", "severity": "warning", "line": 2,
+ "file": "app.eigs", "message": "unused variable 'temp'"}
+```
+
+- A clean file emits `[]` (and still exits 0).
+- A file that doesn't parse emits a single `E002` element built from the
+  first parse error (the same one the LSP surfaces), and exits 1.
+- Exit codes are unchanged from text mode: 0 if no diagnostics, 1 if any.
+
+The `--json` flag may appear before or after the path. Runtime errors are
+not part of `--lint` (it never executes the program).
+
+`E100` is the **category code** for an uncaught runtime error. It is
+deliberately *not* injected into the `Error line N: ...` text, because
+that exact string is also what a `try`/`catch` binds (see "What `catch`
+binds") — tagging it inline would change the bound value and break the
+stability contract. Tools map the `Error line N:` prefix to `E100`; the
+specific failure is in the message (see "Runtime Error Types").
+
 ## Editor diagnostics
 
 The LSP server (`make lsp` → `src/eigenlsp`) surfaces the first syntax

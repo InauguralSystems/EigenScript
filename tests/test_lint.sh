@@ -217,6 +217,53 @@ rm -f "$TMPFILE"
 OUTPUT=$($EIGS --lint "$TESTS_DIR/../examples/hello.eigs" 2>&1 || true)
 check_contains "hello.eigs clean" "$OUTPUT" "no issues found"
 
+# --- Diagnostic codes in human output ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+temp is 42
+print of "hi"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "human output carries [W001] code" "$OUTPUT" "warning\[W001\]"
+rm -f "$TMPFILE"
+
+# --- JSON mode: structured diagnostics on stdout ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+temp is 42
+len is 7
+print of "hi"
+EIGS
+# stdout only (2>/dev/null) must be valid JSON with both codes.
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_contains "json has W001" "$JSON" '"code":"W001"'
+check_contains "json has W012" "$JSON" '"code":"W012"'
+check_contains "json has severity" "$JSON" '"severity":"warning"'
+if echo "$JSON" | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null; then
+    check_contains "json parses (python)" "ok" "ok"
+else
+    check_contains "json parses (python)" "FAILED" "ok"
+fi
+# --json may also appear after the path.
+JSON2=$($EIGS --lint "$TMPFILE" --json 2>/dev/null || true)
+check_contains "json flag accepted after path" "$JSON2" '"code":"W001"'
+rm -f "$TMPFILE"
+
+# --- JSON mode: clean file is an empty array ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+echo 'print of "ok"' > "$TMPFILE"
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_contains "clean file json is []" "$JSON" '^\[\]$'
+rm -f "$TMPFILE"
+
+# --- JSON mode: parse error surfaces as E002 ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'if x > 0\n  print of x\n' > "$TMPFILE"
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_contains "parse error json has E002" "$JSON" '"code":"E002"'
+check_contains "parse error json has error severity" "$JSON" '"severity":"error"'
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

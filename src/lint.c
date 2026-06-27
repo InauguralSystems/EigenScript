@@ -10,6 +10,7 @@
 typedef struct {
     int line;
     char level[16];   /* "warning" or "error" */
+    char code[8];     /* stable diagnostic code, e.g. "W001" */
     char message[256];
 } LintWarning;
 
@@ -32,11 +33,28 @@ typedef struct {
     int builtin_count;
 } LintContext;
 
-static void lint_warn(LintContext *ctx, int line, const char *fmt, ...) {
+/* Escape a string for embedding in a JSON string literal (into a caller
+ * buffer). Handles the quote/backslash/control set; lint messages are ASCII. */
+static void json_escape(const char *s, char *out, size_t outsz) {
+    size_t o = 0;
+    for (size_t i = 0; s[i] && o + 2 < outsz; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\\') { out[o++] = '\\'; out[o++] = (char)c; }
+        else if (c == '\n') { out[o++] = '\\'; out[o++] = 'n'; }
+        else if (c == '\t') { out[o++] = '\\'; out[o++] = 't'; }
+        else if (c >= 0x20) { out[o++] = (char)c; }
+        /* other control chars are dropped */
+    }
+    out[o] = '\0';
+}
+
+static void lint_warn(LintContext *ctx, int line, const char *code,
+                      const char *fmt, ...) {
     if (ctx->warning_count >= MAX_LINT_WARNINGS) return;
     LintWarning *w = &ctx->warnings[ctx->warning_count++];
     w->line = line;
     memcpy(w->level, "warning", 8);
+    snprintf(w->code, sizeof(w->code), "%s", code);
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(w->message, sizeof(w->message), fmt, ap);
@@ -277,7 +295,7 @@ static void collect_assigns(ASTNode *node, LintContext *ctx) {
 static void check_unreachable(ASTNode **stmts, int count, LintContext *ctx) {
     for (int i = 0; i < count - 1; i++) {
         if (stmts[i]->type == AST_RETURN) {
-            lint_warn(ctx, stmts[i + 1]->line, "unreachable code after return");
+            lint_warn(ctx, stmts[i + 1]->line, "W003", "unreachable code after return");
             break; /* Only warn once per block */
         }
     }
@@ -290,7 +308,7 @@ static void check_empty_blocks(ASTNode *node, LintContext *ctx) {
     switch (node->type) {
         case AST_IF:
             if (node->data.cond.if_count == 0)
-                lint_warn(ctx, node->line, "empty if block");
+                lint_warn(ctx, node->line, "W004", "empty if block");
             if (node->data.cond.else_count == 0 && node->data.cond.if_count > 0) {
                 /* else block is optional, only warn if there IS an else but it's empty.
                  * We can't easily distinguish "no else" from "empty else" at AST level
@@ -303,27 +321,27 @@ static void check_empty_blocks(ASTNode *node, LintContext *ctx) {
             break;
         case AST_LOOP:
             if (node->data.loop.body_count == 0)
-                lint_warn(ctx, node->line, "empty loop block");
+                lint_warn(ctx, node->line, "W005", "empty loop block");
             for (int i = 0; i < node->data.loop.body_count; i++)
                 check_empty_blocks(node->data.loop.body[i], ctx);
             break;
         case AST_FOR:
             if (node->data.forloop.body_count == 0)
-                lint_warn(ctx, node->line, "empty for block");
+                lint_warn(ctx, node->line, "W006", "empty for block");
             for (int i = 0; i < node->data.forloop.body_count; i++)
                 check_empty_blocks(node->data.forloop.body[i], ctx);
             break;
         case AST_FUNC:
             if (node->data.func.body_count == 0)
-                lint_warn(ctx, node->line, "empty function body '%s'", node->data.func.name);
+                lint_warn(ctx, node->line, "W007", "empty function body '%s'", node->data.func.name);
             for (int i = 0; i < node->data.func.body_count; i++)
                 check_empty_blocks(node->data.func.body[i], ctx);
             break;
         case AST_TRY:
             if (node->data.trycatch.try_count == 0)
-                lint_warn(ctx, node->line, "empty try block");
+                lint_warn(ctx, node->line, "W008", "empty try block");
             if (node->data.trycatch.catch_count == 0)
-                lint_warn(ctx, node->line, "empty catch block");
+                lint_warn(ctx, node->line, "W009", "empty catch block");
             for (int i = 0; i < node->data.trycatch.try_count; i++)
                 check_empty_blocks(node->data.trycatch.try_body[i], ctx);
             for (int i = 0; i < node->data.trycatch.catch_count; i++)
@@ -350,7 +368,7 @@ static void check_dup_keys(ASTNode *node, LintContext *ctx) {
                 ASTNode *kj = node->data.dict.keys[j];
                 if (kj->type != AST_STR) continue;
                 if (strcmp(ki->data.str, kj->data.str) == 0) {
-                    lint_warn(ctx, kj->line, "duplicate dict key '%s'", ki->data.str);
+                    lint_warn(ctx, kj->line, "W010", "duplicate dict key '%s'", ki->data.str);
                 }
             }
         }
@@ -412,7 +430,7 @@ static void check_is_in_condition(ASTNode *cond, LintContext *ctx) {
     if (!cond) return;
     /* An AST_ASSIGN inside a condition means 'is' was used for comparison */
     if (cond->type == AST_ASSIGN) {
-        lint_warn(ctx, cond->line,
+        lint_warn(ctx, cond->line, "W011",
                   "'%s is ...' in condition — did you mean '=='?",
                   cond->data.assign.name);
     }
@@ -431,11 +449,11 @@ static void check_is_in_condition(ASTNode *cond, LintContext *ctx) {
 static void check_builtin_shadow(ASTNode *node, LintContext *ctx) {
     if (!node) return;
     if (node->type == AST_ASSIGN && is_builtin_name(node->data.assign.name)) {
-        lint_warn(ctx, node->line, "'%s' is a builtin — assignment shadows it",
+        lint_warn(ctx, node->line, "W012", "'%s' is a builtin — assignment shadows it",
                   node->data.assign.name);
     }
     if (node->type == AST_FUNC && is_builtin_name(node->data.func.name)) {
-        lint_warn(ctx, node->line, "'%s' is a builtin — function definition shadows it",
+        lint_warn(ctx, node->line, "W013", "'%s' is a builtin — function definition shadows it",
                   node->data.func.name);
     }
 
@@ -587,7 +605,7 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
                 for (int r = 0; r < body_ctx.assign_count; r++) {
                     free(body_ctx.assigns[r]);
                 }
-                lint_warn(ctx, node->line, "unused parameter '%s' in function '%s'",
+                lint_warn(ctx, node->line, "W002", "unused parameter '%s' in function '%s'",
                           param, node->data.func.name);
                 continue;
             }
@@ -623,19 +641,43 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
 
 /* ---- Main lint entry ---- */
 
-int eigenscript_lint(const char *path) {
+int eigenscript_lint(const char *path, int json_mode) {
     long src_size = 0;
     char *source = read_file_util(path, &src_size);
     if (!source) {
-        fprintf(stderr, "Error: cannot read file '%s'\n", path);
+        if (json_mode) {
+            char esc[256], pesc[1024];
+            json_escape("cannot read file", esc, sizeof(esc));
+            json_escape(path, pesc, sizeof(pesc));
+            printf("[{\"code\":\"E000\",\"severity\":\"error\",\"line\":0,"
+                   "\"file\":\"%s\",\"message\":\"%s '%s'\"}]\n", pesc, esc, pesc);
+        } else {
+            fprintf(stderr, "Error: cannot read file '%s'\n", path);
+        }
         return 1;
     }
 
     g_parse_errors = 0;
+    g_first_error_line = 0;
+    g_first_error_msg[0] = '\0';
     TokenList tl = tokenize(source);
     ASTNode *ast = parse(&tl);
     if (g_parse_errors > 0) {
-        fprintf(stderr, "%s: %d parse error(s) — cannot lint\n", path, g_parse_errors);
+        /* A file that doesn't parse can't be linted. Emit the first
+         * structured error (the same one the LSP surfaces) as E002. */
+        if (json_mode) {
+            char esc[512], pesc[1024];
+            json_escape(g_first_error_msg[0] ? g_first_error_msg : "parse error",
+                        esc, sizeof(esc));
+            json_escape(path, pesc, sizeof(pesc));
+            printf("[{\"code\":\"E002\",\"severity\":\"error\",\"line\":%d,"
+                   "\"file\":\"%s\",\"message\":\"%s\"}]\n",
+                   g_first_error_line, pesc, esc);
+        } else {
+            fprintf(stderr, "%s: %d parse error(s) [E002] — cannot lint\n",
+                    path, g_parse_errors);
+        }
+        free_ast(ast);
         free_tokenlist(&tl);
         free(source);
         return 1;
@@ -679,7 +721,7 @@ int eigenscript_lint(const char *path) {
         }
         if (is_func) continue;
         if (!is_ref(&ctx, name)) {
-            lint_warn(&ctx, ctx.assign_lines[i], "unused variable '%s'", name);
+            lint_warn(&ctx, ctx.assign_lines[i], "W001", "unused variable '%s'", name);
         }
     }
 
@@ -694,15 +736,29 @@ int eigenscript_lint(const char *path) {
         }
     }
 
-    /* Print warnings */
-    for (int i = 0; i < ctx.warning_count; i++) {
-        fprintf(stderr, "%s:%d: %s: %s\n", path,
-                ctx.warnings[i].line, ctx.warnings[i].level,
-                ctx.warnings[i].message);
-    }
-
-    if (ctx.warning_count == 0) {
-        fprintf(stderr, "%s: no issues found\n", path);
+    /* Emit. JSON goes to stdout (machine-consumable, even when clean →
+     * "[]"); human text goes to stderr as before, now with the [CODE]. */
+    if (json_mode) {
+        char pesc[1024], mesc[512];
+        json_escape(path, pesc, sizeof(pesc));
+        printf("[");
+        for (int i = 0; i < ctx.warning_count; i++) {
+            json_escape(ctx.warnings[i].message, mesc, sizeof(mesc));
+            printf("%s{\"code\":\"%s\",\"severity\":\"%s\",\"line\":%d,"
+                   "\"file\":\"%s\",\"message\":\"%s\"}",
+                   i ? "," : "", ctx.warnings[i].code, ctx.warnings[i].level,
+                   ctx.warnings[i].line, pesc, mesc);
+        }
+        printf("]\n");
+    } else {
+        for (int i = 0; i < ctx.warning_count; i++) {
+            fprintf(stderr, "%s:%d: %s[%s]: %s\n", path,
+                    ctx.warnings[i].line, ctx.warnings[i].level,
+                    ctx.warnings[i].code, ctx.warnings[i].message);
+        }
+        if (ctx.warning_count == 0) {
+            fprintf(stderr, "%s: no issues found\n", path);
+        }
     }
 
     /* Cleanup */

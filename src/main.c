@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
             "  eigenscript <file.eigs> [args...]   run a script (args readable via `args of null`)\n"
             "  eigenscript                         start the REPL\n"
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
-            "  eigenscript --lint <file>           lint a source file (nonzero exit on warnings)\n"
+            "  eigenscript --lint [--json] <file>  lint a source file (--json for machine-readable diagnostics)\n"
             "  eigenscript --pkg <cmd> [args...]   package manager (add/install/update/verify; see docs)\n"
             "  eigenscript --version, -v           print the version and exit\n"
             "  eigenscript --help, -h              print this help and exit\n"
@@ -211,15 +211,22 @@ int main(int argc, char **argv) {
     eigs_thread_attach(eigs_st);
     set_exe_dir(argc > 0 ? argv[0] : NULL);
 
-    /* --lint flag */
+    /* --lint flag (optionally --lint --json for machine-readable output;
+     * --json may appear before or after the path). */
     if (argc >= 2 && strcmp(argv[1], "--lint") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "Usage: eigenscript --lint file.eigs\n");
+        int json_mode = 0;
+        const char *lint_path = NULL;
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--json") == 0) json_mode = 1;
+            else if (!lint_path) lint_path = argv[i];
+        }
+        if (!lint_path) {
+            fprintf(stderr, "Usage: eigenscript --lint [--json] file.eigs\n");
             eigs_thread_detach();
             eigs_state_destroy(eigs_st);
             return 1;
         }
-        int rc = eigenscript_lint(argv[2]);
+        int rc = eigenscript_lint(lint_path, json_mode);
         eigs_thread_detach();
         eigs_state_destroy(eigs_st);
         return rc;
