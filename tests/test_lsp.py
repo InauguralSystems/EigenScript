@@ -406,6 +406,36 @@ def main():
     check("rename outer var hits the iterable expr, not the loop var/body",
           applied == "k is [1, 2]\nfor i in k:\n    print of i\nprint of k[0]\n")
 
+    # --- scope-aware: a default-parameter expression is the OUTER scope ---
+    # In `define f(b is a)`, the `a` is a default expression evaluated in the
+    # outer scope — only `b` is a parameter.
+    defp_doc = "a is 10\ndefine f(b is a) as:\n    return b\nprint of a\n"
+    rndp1 = {"jsonrpc": "2.0", "id": 23, "method": "textDocument/rename",
+             "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
+                        "newName": "g"}}
+    r = converse([INIT, did_open(defp_doc), rndp1, SHUTDOWN, EXIT])
+    applied = apply_rename(defp_doc, (by_id(r, 23) or {}).get("result"))
+    check("rename global updates a default-param expression",
+          applied == "g is 10\ndefine f(b is g) as:\n    return b\nprint of g\n")
+
+    rndp2 = {"jsonrpc": "2.0", "id": 24, "method": "textDocument/rename",
+             "params": {"textDocument": {"uri": URI}, "position": {"line": 1, "character": 9},
+                        "newName": "q"}}
+    r = converse([INIT, did_open(defp_doc), rndp2, SHUTDOWN, EXIT])
+    applied = apply_rename(defp_doc, (by_id(r, 24) or {}).get("result"))
+    check("rename param leaves the default expr (outer) alone",
+          applied == "a is 10\ndefine f(q is a) as:\n    return q\nprint of a\n")
+
+    # A default that references an EARLIER parameter renames with that param.
+    defp2_doc = "define g(x, y is x) as:\n    return x + y\n"
+    rndp3 = {"jsonrpc": "2.0", "id": 25, "method": "textDocument/rename",
+             "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 9},
+                        "newName": "p"}}
+    r = converse([INIT, did_open(defp2_doc), rndp3, SHUTDOWN, EXIT])
+    applied = apply_rename(defp2_doc, (by_id(r, 25) or {}).get("result"))
+    check("rename param renames a default expr that references it",
+          applied == "define g(p, y is p) as:\n    return p + y\n")
+
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},

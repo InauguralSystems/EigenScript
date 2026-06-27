@@ -1355,13 +1355,27 @@ static int build_scopes(Document *doc, FnScope *out, int max) {
         s->excl_hi = -1;
         int in_idx = -1;
         if (t == TOK_DEFINE) {
-            /* Params: IDENTs between the function name's '(' and ')'. */
+            /* Param list: only the NAME at the start of each comma-separated
+             * item is a parameter. After `is` comes a default expression that
+             * is evaluated in the outer scope (it may reference outer vars or
+             * earlier params) — its identifiers are NOT params, so they fall
+             * through to their real binding. Commas inside a default's
+             * brackets don't separate params, hence the depth tracking. */
             int j = i + 1, param_count = 0;
             if (j < count && tk[j].type == TOK_IDENT) j++;   /* function name */
             if (j < count && tk[j].type == TOK_LPAREN) {
                 j++;
-                while (j < count && tk[j].type != TOK_RPAREN && tk[j].type != TOK_NEWLINE) {
-                    if (tk[j].type == TOK_IDENT) { scope_add_param(s, tk[j].str_val, i); param_count++; }
+                int seg_name_pending = 1, depth = 0;
+                while (j < count && !(depth == 0 && tk[j].type == TOK_RPAREN) &&
+                       tk[j].type != TOK_NEWLINE) {
+                    TokType tt = tk[j].type;
+                    if (tt == TOK_LPAREN || tt == TOK_LBRACKET || tt == TOK_LBRACE) depth++;
+                    else if (tt == TOK_RPAREN || tt == TOK_RBRACKET || tt == TOK_RBRACE) depth--;
+                    else if (depth == 0 && tt == TOK_COMMA) seg_name_pending = 1;
+                    else if (depth == 0 && seg_name_pending && tt == TOK_IDENT) {
+                        scope_add_param(s, tk[j].str_val, i); param_count++;
+                        seg_name_pending = 0;  /* rest of this item is a default expr */
+                    }
                     j++;
                 }
             }

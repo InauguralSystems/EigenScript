@@ -18,9 +18,13 @@ All notable changes to EigenScript are documented here.
   for its loop variable and any `local` inside it (neither leaks out;
   SS5E/SS5F/SS8) — but a `for`'s **iterable expression** (between `in` and the
   body) is evaluated in the outer scope, so in `for i in i:` the second `i` is
-  the outer binding, not the loop variable. `if`, `loop while`, and
-  comprehensions are transparent (their loop-vars/locals touch the surrounding
-  scope, matching the runtime). Positions still come from exact token spans.
+  the outer binding, not the loop variable. A **default-parameter expression**
+  (`define f(b is a)`) is likewise evaluated in the outer scope — only the name
+  before each `is` is a parameter, so the default's identifiers resolve to
+  their real binding (an outer var, or an earlier param if named). `if`, `loop
+  while`, and comprehensions are transparent (their loop-vars/locals touch the
+  surrounding scope, matching the runtime). Positions still come from exact
+  token spans.
   Verified by applying the WorkspaceEdit and asserting the resulting source for
   each rule.
 - **LSP rename could corrupt source.** Reference positions came from AST node
