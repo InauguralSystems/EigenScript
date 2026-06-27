@@ -12,10 +12,14 @@ All notable changes to EigenScript are documented here.
   global — and only renames occurrences sharing the cursor's binding. This
   covers (a) explicit parameter shadowing, (b) the **implicit `n`** parameter
   of a no-arg `define` (a real whole-body binding, so a body `n` is not the
-  global `n`; issue #241), and (c) **order-sensitive `local`** — a `local x`
-  binds only from its declaration onward, so a read *before* it resolves to
-  the outer binding. Positions still come from exact token spans. Verified by
-  applying the WorkspaceEdit and asserting the resulting source for each rule.
+  global `n`; issue #241), (c) **order-sensitive `local`** — a `local x` binds
+  only from its declaration onward, so a read *before* it resolves to the outer
+  binding, and (d) **`for`-loop scopes** — a statement `for` introduces a scope
+  for its loop variable and any `local` inside it (neither leaks out;
+  SS5E/SS5F/SS8), while `if`, `loop while`, and comprehensions are transparent
+  (their loop-vars/locals touch the surrounding scope, matching the runtime).
+  Positions still come from exact token spans. Verified by applying the
+  WorkspaceEdit and asserting the resulting source for each rule.
 - **LSP rename could corrupt source.** Reference positions came from AST node
   columns, but identifier (`AST_IDENT`) nodes were built with `make_node`,
   which zero-fills `col` — so every rename edit landed at column 0. Renaming

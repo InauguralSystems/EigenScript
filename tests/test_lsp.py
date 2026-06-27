@@ -363,6 +363,29 @@ def main():
     check("rename global hits pre-local read, skips the local binding",
           applied == "z is 1\ndefine f as:\n    print of z\n    local x is 2\n    return x\nprint of z\n")
 
+    # --- scope-aware: a statement `for` creates a scope (loop var + locals) ---
+    # A `local x` inside a top-level for is loop-local and does not leak
+    # (test_scope_semantics.eigs SS5E/SS5F), so it is distinct from a global x.
+    forloc_doc = "x is 1\nfor i in [1]:\n    local x is 2\n    print of x\nprint of x\n"
+    rnfl = {"jsonrpc": "2.0", "id": 19, "method": "textDocument/rename",
+            "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 10},
+                       "newName": "z"}}
+    r = converse([INIT, did_open(forloc_doc), rnfl, SHUTDOWN, EXIT])
+    applied = apply_rename(forloc_doc, (by_id(r, 19) or {}).get("result"))
+    check("rename loop-local stays in the loop (globals untouched)",
+          applied == "x is 1\nfor i in [1]:\n    local z is 2\n    print of z\nprint of x\n")
+
+    # The loop variable itself is loop-scoped and does not overwrite an outer
+    # same-named variable (SS8) — renaming it must not touch the global.
+    iv_doc = "i is 999\nfor i in [1, 2]:\n    print of i\nprint of i\n"
+    rniv = {"jsonrpc": "2.0", "id": 20, "method": "textDocument/rename",
+            "params": {"textDocument": {"uri": URI}, "position": {"line": 1, "character": 4},
+                       "newName": "k"}}
+    r = converse([INIT, did_open(iv_doc), rniv, SHUTDOWN, EXIT])
+    applied = apply_rename(iv_doc, (by_id(r, 20) or {}).get("result"))
+    check("rename loop variable scoped to the loop (outer i untouched)",
+          applied == "i is 999\nfor k in [1, 2]:\n    print of k\nprint of i\n")
+
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},

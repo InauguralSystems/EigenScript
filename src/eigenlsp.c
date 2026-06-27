@@ -1265,14 +1265,17 @@ static void handle_formatting(int id, const char *params) {
     free(formatted);
 }
 
-/* ---- Function scopes, for scope-aware rename ----
- * EigenScript scoping: a function parameter (or a `local` declaration)
- * introduces a binding local to that function; a plain `name is expr`
- * otherwise mutates the nearest OUTER binding. So an occurrence of `x`
- * resolves to the innermost enclosing function that binds `x` as a
- * param/local, or to the global binding if none does. Rename only the
- * occurrences that resolve to the SAME binding as the cursor — so renaming
- * a global `x` leaves a shadowing `define f(x)` untouched, and vice-versa. */
+/* ---- Block scopes, for scope-aware rename ----
+ * EigenScript scoping (per tests/test_scope_semantics.eigs): a binding is
+ * introduced by a function parameter (explicit, or the implicit `n` of a
+ * no-arg define), a `for` loop variable, or a `local` declaration; a plain
+ * `name is expr` otherwise mutates the nearest OUTER binding. `define` and a
+ * statement `for` create scopes; `if`, `loop while`, and comprehensions do
+ * not (their assignments/locals/loop-vars touch the surrounding scope). So an
+ * occurrence resolves to the innermost enclosing scope that binds the name
+ * (effective at that point), or to the global binding. Rename only the
+ * occurrences that resolve to the SAME binding as the cursor — so renaming a
+ * global `x` leaves a shadowing param, loop variable, or loop-local alone. */
 #define MAX_FN_SCOPES 256
 #define MAX_SCOPE_BINDS 32
 
@@ -1315,27 +1318,55 @@ static void scope_add_local(FnScope *s, const char *name, int decl_idx) {
     s->bind_count++;
 }
 
-/* Build a scope per `define` from the token stream. Nested functions each
- * get their own scope; ranges nest naturally. */
-static int build_fn_scopes(Document *doc, FnScope *out, int max) {
+/* Innermost scope containing token `idx`, or -1. */
+static int find_innermost_scope(FnScope *scopes, int n, int idx) {
+    int best = -1, best_start = -1;
+    for (int s = 0; s < n; s++)
+        if (idx >= scopes[s].tok_start && idx < scopes[s].tok_end &&
+            scopes[s].tok_start > best_start) { best_start = scopes[s].tok_start; best = s; }
+    return best;
+}
+
+/* Build the binding scopes a rename must respect. The constructs that create
+ * a child environment are `define` (params / implicit `n`) and a statement
+ * `for` (its loop variable) — both verified against the scope-semantics suite.
+ * `if` and `loop while` are transparent (a `local` inside them binds to the
+ * surrounding scope), and a comprehension `for` (inside `[...]`) is not a
+ * statement scope. Ranges nest naturally; nested constructs each get a scope. */
+static int build_scopes(Document *doc, FnScope *out, int max) {
     Token *tk = doc->tokens.tokens;
-    int count = doc->tokens.count, n = 0;
+    int count = doc->tokens.count, n = 0, bracket_depth = 0;
     for (int i = 0; i < count && n < max; i++) {
-        if (tk[i].type != TOK_DEFINE) continue;
+        TokType t = tk[i].type;
+        if (t == TOK_LBRACKET || t == TOK_LPAREN || t == TOK_LBRACE) bracket_depth++;
+        else if (t == TOK_RBRACKET || t == TOK_RPAREN || t == TOK_RBRACE) {
+            if (bracket_depth > 0) bracket_depth--;
+        }
+        if (t != TOK_DEFINE && t != TOK_FOR) continue;
+        if (t == TOK_FOR && bracket_depth > 0) continue;  /* comprehension, not a block */
         FnScope *s = &out[n];
         s->tok_start = i;
         s->bind_count = 0;
-        /* Params: IDENTs between the function name's '(' and ')'. */
-        int j = i + 1, param_count = 0;
-        if (j < count && tk[j].type == TOK_IDENT) j++;   /* function name */
-        if (j < count && tk[j].type == TOK_LPAREN) {
-            j++;
-            while (j < count && tk[j].type != TOK_RPAREN && tk[j].type != TOK_NEWLINE) {
-                if (tk[j].type == TOK_IDENT) { scope_add_param(s, tk[j].str_val, i); param_count++; }
+        if (t == TOK_DEFINE) {
+            /* Params: IDENTs between the function name's '(' and ')'. */
+            int j = i + 1, param_count = 0;
+            if (j < count && tk[j].type == TOK_IDENT) j++;   /* function name */
+            if (j < count && tk[j].type == TOK_LPAREN) {
                 j++;
+                while (j < count && tk[j].type != TOK_RPAREN && tk[j].type != TOK_NEWLINE) {
+                    if (tk[j].type == TOK_IDENT) { scope_add_param(s, tk[j].str_val, i); param_count++; }
+                    j++;
+                }
             }
+            /* A no-param define has one implicit parameter `n` (issue #241). */
+            if (param_count == 0) scope_add_param(s, "n", i);
+        } else {
+            /* `for <var(s)> in ...` — the loop variable(s) are bound for the
+             * whole loop body and do not leak out (SS5E/SS5F, SS8). */
+            for (int j = i + 1; j < count && tk[j].type != TOK_IN && tk[j].type != TOK_NEWLINE; j++)
+                if (tk[j].type == TOK_IDENT) scope_add_param(s, tk[j].str_val, i);
         }
-        /* Body span: the first INDENT after `define`, to its matching DEDENT. */
+        /* Body span: the first INDENT after the keyword, to its matching DEDENT. */
         int k = i, end = count;
         while (k < count && tk[k].type != TOK_INDENT) k++;
         if (k < count && tk[k].type == TOK_INDENT) {
@@ -1347,15 +1378,16 @@ static int build_fn_scopes(Document *doc, FnScope *out, int max) {
             end = k;
         }
         s->tok_end = end;
-        /* A no-param define has one implicit parameter `n` (SPEC.md / the
-         * scope-semantics suite, issue #241) — a real whole-body binding. */
-        if (param_count == 0) scope_add_param(s, "n", i);
-        /* `local <ident>` declarations bind from their position onward. */
-        for (int m = s->tok_start; m + 1 < s->tok_end; m++)
-            if (tk[m].type == TOK_LOCAL && tk[m + 1].type == TOK_IDENT)
-                scope_add_local(s, tk[m + 1].str_val, m + 1);
         n++;
     }
+    /* Attribute each `local <ident>` to the innermost scope that contains it
+     * (so a local in a nested `for` binds to the loop, not the enclosing
+     * function; a top-level local has no scope and stays global). */
+    for (int m = 0; m + 1 < count; m++)
+        if (tk[m].type == TOK_LOCAL && tk[m + 1].type == TOK_IDENT) {
+            int s = find_innermost_scope(out, n, m);
+            if (s >= 0) scope_add_local(&out[s], tk[m + 1].str_val, m + 1);
+        }
     return n;
 }
 
@@ -1426,7 +1458,7 @@ static void handle_rename(int id, const char *params) {
      * to the SAME binding — so a shadowing parameter (or global) is left
      * alone. Positions still come from the token stream (exact spans). */
     static FnScope scopes[MAX_FN_SCOPES];
-    int nscopes = build_fn_scopes(doc, scopes, MAX_FN_SCOPES);
+    int nscopes = build_scopes(doc, scopes, MAX_FN_SCOPES);
     int cursor_idx = (int)(tok - doc->tokens.tokens);
     int cur_scope, cur_from;
     resolve_binding(scopes, nscopes, cursor_idx, name, &cur_scope, &cur_from);
