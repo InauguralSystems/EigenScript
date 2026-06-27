@@ -92,6 +92,24 @@ echo "  EigenScript Gen 0 Compliance Test Suite"
 echo "============================================"
 echo ""
 
+echo "[0] Opcode ABI Guard"
+TOTAL=$((TOTAL + 1))
+OP_ABI_OUT=$(${CC:-gcc} -std=c11 -I. \
+    -DEIGENSCRIPT_EXT_HTTP=0 \
+    -DEIGENSCRIPT_EXT_MODEL=0 \
+    -DEIGENSCRIPT_EXT_DB=0 \
+    -c ../tests/test_opcode_abi.c -o /tmp/eigs_opcode_abi.o 2>&1)
+OP_ABI_RC=$?
+if [ "$OP_ABI_RC" = "0" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: opcode numeric ABI unchanged"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: opcode numeric ABI changed"
+    echo "$OP_ABI_OUT" | head -8
+fi
+echo ""
+
 echo "[1/15] Gen 0 Baseline (basic language features)"
 OUTPUT=$(./eigenscript ../tests/test_gen0_baseline.eigs 2>&1)
 check "T01 Numeric Assignment" "$(echo "$OUTPUT" | grep -A1 'T01' | tail -1)" "42"
