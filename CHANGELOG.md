@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-06-26
+
 ### Added
 
 - **Flat-buffer tensors (shaped `VAL_BUFFER`)** — a buffer now carries an
