@@ -77,6 +77,26 @@ def diagnostics(responses):
     return d
 
 
+def apply_rename(doc, result):
+    """Apply a rename WorkspaceEdit's text edits to `doc` and return the
+    resulting source. Validates the edit RANGES (not just newText) — the
+    thing that catches a column-0 / wrong-position corruption."""
+    if not isinstance(result, dict):
+        return None
+    edits = result.get("changes", {}).get(URI)
+    if not isinstance(edits, list):
+        return None
+    lines = doc.split("\n")
+    # Apply last-to-first so earlier edits don't shift later offsets.
+    for e in sorted(edits, key=lambda e: (e["range"]["start"]["line"],
+                                          e["range"]["start"]["character"]),
+                    reverse=True):
+        s, en = e["range"]["start"], e["range"]["end"]
+        ln = s["line"]
+        lines[ln] = lines[ln][:s["character"]] + e["newText"] + lines[ln][en["character"]:]
+    return "\n".join(lines)
+
+
 URI = "file:///test.eigs"
 
 
@@ -237,25 +257,53 @@ def main():
           isinstance(res, list) and res and "x + y" in res[0]["newText"]
           and "f(x, y)" in res[0]["newText"])
 
-    # --- rename: WorkspaceEdit with an edit at every occurrence ---
+    # --- rename: validate the APPLIED result, not just newText. This is the
+    #     regression guard for the column-0 corruption (renaming 'count' must
+    #     not touch 'print', and must hit the RHS use). ---
     rename_doc = "count is 0\ncount is count + 1\nprint of count\n"
     rn = {"jsonrpc": "2.0", "id": 9, "method": "textDocument/rename",
           "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
                      "newName": "total"}}
     r = converse([INIT, did_open(rename_doc), rn, SHUTDOWN, EXIT])
-    res = (by_id(r, 9) or {}).get("result")
-    edits = (res or {}).get("changes", {}).get(URI) if isinstance(res, dict) else None
-    check("rename returns a WorkspaceEdit with >=2 edits",
-          isinstance(edits, list) and len(edits) >= 2)
-    check("rename edits all carry the new name",
-          isinstance(edits, list) and bool(edits) and all(e.get("newText") == "total" for e in edits))
+    applied = apply_rename(rename_doc, (by_id(r, 9) or {}).get("result"))
+    check("variable rename applies cleanly (all 4 occurrences, 'print' untouched)",
+          applied == "total is 0\ntotal is total + 1\nprint of total\n")
+
+    # --- function rename hits the definition and the call, nothing else ---
+    fn_doc = "define helper(a) as:\n    return a + 1\nr is helper of 5\n"
+    rnf = {"jsonrpc": "2.0", "id": 10, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 7},
+                      "newName": "compute"}}
+    r = converse([INIT, did_open(fn_doc), rnf, SHUTDOWN, EXIT])
+    applied = apply_rename(fn_doc, (by_id(r, 10) or {}).get("result"))
+    check("function rename applies cleanly (def + call)",
+          applied == "define compute(a) as:\n    return a + 1\nr is compute of 5\n")
+
+    # --- parameter rename works from the signature position too ---
+    rnp = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 14},
+                      "newName": "x"}}
+    r = converse([INIT, did_open(fn_doc), rnp, SHUTDOWN, EXIT])
+    applied = apply_rename(fn_doc, (by_id(r, 11) or {}).get("result"))
+    check("parameter rename applies cleanly from the signature",
+          applied == "define helper(x) as:\n    return x + 1\nr is helper of 5\n")
+
+    # --- dot-member access is a distinct binding; rename must skip it ---
+    dot_doc = "count is 0\nrec is {\"count\": 5}\nv is rec.count\nprint of count\n"
+    rnd = {"jsonrpc": "2.0", "id": 12, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
+                      "newName": "total"}}
+    r = converse([INIT, did_open(dot_doc), rnd, SHUTDOWN, EXIT])
+    applied = apply_rename(dot_doc, (by_id(r, 12) or {}).get("result"))
+    check("rename skips a dot-member access (rec.count stays)",
+          applied == "total is 0\nrec is {\"count\": 5}\nv is rec.count\nprint of total\n")
 
     # --- rename of a builtin/keyword is refused (null) ---
-    rn_kw = {"jsonrpc": "2.0", "id": 10, "method": "textDocument/rename",
+    rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},
                         "newName": "nope"}}
     r = converse([INIT, did_open(rename_doc), rn_kw, SHUTDOWN, EXIT])
-    check("rename refuses a non-user symbol (print)", (by_id(r, 10) or {}).get("result") is None)
+    check("rename refuses a non-user symbol (print)", (by_id(r, 13) or {}).get("result") is None)
 
     # --- lint warnings surface as coded diagnostics (severity 2) ---
     r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), SHUTDOWN, EXIT])

@@ -364,6 +364,7 @@ static void doc_remove(const char *uri) {
         if (strcmp(g_docs[i].uri, uri) == 0) {
             if (g_docs[i].text) free(g_docs[i].text);
             if (g_docs[i].tokens.tokens) free_tokenlist(&g_docs[i].tokens);
+            if (g_docs[i].ast) free_ast(g_docs[i].ast);
             /* Shift remaining */
             for (int j = i; j < g_doc_count - 1; j++) {
                 g_docs[j] = g_docs[j + 1];
@@ -646,7 +647,10 @@ static void doc_analyze(Document *doc) {
         free_tokenlist(&doc->tokens);
         memset(&doc->tokens, 0, sizeof(TokenList));
     }
-    doc->ast = NULL;  /* Note: not freed, would need full free_ast */
+    /* Free the previous parse before re-analyzing — otherwise every
+     * didChange leaks an AST. AST nodes own their strings (xstrdup'd), so
+     * this is independent of the token list freed just above. */
+    if (doc->ast) { free_ast(doc->ast); doc->ast = NULL; }
     doc->symbol_count = 0;
 
     if (!doc->text) return;
@@ -671,23 +675,23 @@ static void doc_analyze(Document *doc) {
 static Token* find_token_at(Document *doc, int line, int col) {
     /* LSP lines are 0-based, our tokens use 1-based lines */
     int target_line = line + 1;
-    Token *best = NULL;
+    Token *best = NULL;       /* closest token, as a fallback */
+    Token *contains = NULL;   /* token whose span strictly contains col */
     for (int i = 0; i < doc->tokens.count; i++) {
         Token *t = &doc->tokens.tokens[i];
         if (t->type == TOK_EOF || t->type == TOK_NEWLINE ||
             t->type == TOK_INDENT || t->type == TOK_DEDENT) continue;
-        if (t->line == target_line) {
-            int tok_len = t->len > 0 ? t->len : 1;  /* accurate lexeme span */
-            if (col >= t->col && col < t->col + tok_len + 1) {
-                return t;
-            }
-            /* Track closest token on same line */
-            if (!best || abs(t->col - col) < abs(best->col - col)) {
-                best = t;
-            }
-        }
+        if (t->line != target_line) continue;
+        int tok_len = t->len > 0 ? t->len : 1;  /* accurate lexeme span */
+        /* Strict containment [col, col+len): each column belongs to exactly
+         * one token, so an adjacent token (e.g. '(' before a param) can't
+         * steal the cursor position. */
+        if (col >= t->col && col < t->col + tok_len) contains = t;
+        if (!best || abs(t->col - col) < abs(best->col - col)) best = t;
     }
-    return best;
+    /* Prefer the containing token; fall back to the closest one (handles a
+     * cursor resting just past an identifier). */
+    return contains ? contains : best;
 }
 
 /* ================================================================
@@ -1283,7 +1287,9 @@ static void handle_rename(int id, const char *params) {
     if (!doc || !doc->ast) { free(uri); free(new_name); lsp_response_null(id); return; }
 
     Token *tok = find_token_at(doc, line, col);
-    if (!tok || !tok->str_val) { free(uri); free(new_name); lsp_response_null(id); return; }
+    if (!tok || tok->type != TOK_IDENT || !tok->str_val) {
+        free(uri); free(new_name); lsp_response_null(id); return;
+    }
 
     /* Don't rename language keywords or builtins — only user symbols. */
     int is_user_symbol = 0;
@@ -1291,29 +1297,27 @@ static void handle_rename(int id, const char *params) {
         if (strcmp(tok->str_val, doc->symbols[i].name) == 0) { is_user_symbol = 1; break; }
     if (!is_user_symbol) { free(uri); free(new_name); lsp_response_null(id); return; }
 
-    Location locs[512];
-    int loc_count = 0;
-    collect_references(doc->ast, tok->str_val, locs, &loc_count, 512);
-    /* Add definition sites the reference walk doesn't emit (assign LHS, params). */
-    for (int i = 0; i < doc->symbol_count && loc_count < 512; i++) {
-        Symbol *s = &doc->symbols[i];
-        if (strcmp(tok->str_val, s->name) != 0) continue;
-        int found = 0;
-        for (int j = 0; j < loc_count; j++)
-            if (locs[j].line == s->line && locs[j].col == s->col) { found = 1; break; }
-        if (!found) { locs[loc_count].line = s->line; locs[loc_count].col = s->col; loc_count++; }
-    }
-
-    int old_len = (int)strlen(tok->str_val);
+    /* Build edits from the TOKEN stream, never the AST node columns (which
+     * are unreliable for many node types and would mis-place — even corrupt —
+     * the edit). Every identifier token with this name is renamed, except a
+     * dot-member access (`obj.name`), which is a distinct binding. Token
+     * spans (line/col/len) are exact, so each edit lands precisely on the
+     * identifier. */
+    const char *name = tok->str_val;
     strbuf sb;
     strbuf_init(&sb);
     strbuf_append(&sb, "{\"changes\":{");
     json_escape_to(&sb, doc->uri);
     strbuf_append(&sb, ":[");
-    for (int i = 0; i < loc_count; i++) {
-        if (i > 0) strbuf_append_char(&sb, ',');
+    int emitted = 0;
+    for (int i = 0; i < doc->tokens.count; i++) {
+        Token *t = &doc->tokens.tokens[i];
+        if (t->type != TOK_IDENT || !t->str_val || strcmp(t->str_val, name) != 0) continue;
+        if (i > 0 && doc->tokens.tokens[i - 1].type == TOK_DOT) continue;  /* member access */
+        if (emitted) strbuf_append_char(&sb, ',');
+        emitted++;
         strbuf_append(&sb, "{\"range\":");
-        append_range(&sb, locs[i].line, locs[i].col, old_len);
+        append_range(&sb, t->line, t->col, t->len > 0 ? t->len : (int)strlen(name));
         strbuf_append(&sb, ",\"newText\":");
         json_escape_to(&sb, new_name);
         strbuf_append_char(&sb, '}');

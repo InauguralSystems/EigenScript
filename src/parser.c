@@ -566,7 +566,7 @@ static ASTNode* parse_primary(Parser *p) {
             n->data.interrogate.at_expr = at_expr;
             return n;
         }
-        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
         while (p_cur(p)->type == TOK_LBRACKET) {
@@ -595,7 +595,7 @@ static ASTNode* parse_primary(Parser *p) {
             n->data.interrogate.at_expr = at_expr;
             return n;
         }
-        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
         return n;
@@ -605,7 +605,7 @@ static ASTNode* parse_primary(Parser *p) {
      * the question-word soft-keyword path. */
     if (t->type == TOK_AT) {
         p_advance(p);
-        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
         return n;
@@ -646,7 +646,7 @@ static ASTNode* parse_primary(Parser *p) {
 
     if (t->type == TOK_IDENT) {
         p_advance(p);
-        ASTNode *n = make_node(AST_IDENT, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
         while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
@@ -1492,7 +1492,7 @@ static ASTNode* parse_statement(Parser *p) {
         ASTNode *expr = parse_expression(p);
         if (compound) {
             /* Desugar x += expr → x is x + expr */
-            ASTNode *ident = make_node(AST_IDENT, t->line);
+            ASTNode *ident = make_node_col(AST_IDENT, name_tok->line, name_tok->col);
             ident->data.ident.name = xstrdup(name_tok->str_val);
             set_name_hash(ident, ident->data.ident.name);
             ASTNode *binop = make_node(AST_BINOP, t->line);

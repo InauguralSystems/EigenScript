@@ -6,6 +6,26 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **LSP rename could corrupt source.** Reference positions came from AST node
+  columns, but identifier (`AST_IDENT`) nodes were built with `make_node`,
+  which zero-fills `col` — so every rename edit landed at column 0. Renaming
+  `count` returned edits at `[line,0]`, missing the real occurrences and
+  overwriting the start of unrelated lines (e.g. replacing `print`). Fixed at
+  the root: the five `AST_IDENT` sites now carry the identifier token's real
+  line/col. Rename itself was additionally rewritten to take every edit
+  position from the **token stream** (always-exact spans), skipping
+  dot-member accesses (`obj.name`) — so it can no longer mis-place an edit
+  regardless of AST-node quirks. This also fixed function rename (its
+  definition came from a symbol with a stale position) and parameter rename.
+- **`find_token_at` let an adjacent token steal the cursor position.** Its
+  hit-test used `col < t->col + len + 1` (a one-column slop), so `(` at the
+  column before a parameter claimed the parameter's column — rename/hover from
+  a signature returned the wrong token (or nothing). Now uses strict
+  containment `[col, col+len)` with a closest-token fallback.
+- **LSP leaked an AST on every document change.** `doc_analyze` set
+  `doc->ast = NULL` without freeing the prior parse; a long editing session
+  leaked one AST per `didChange`. Now frees it (and on `didClose`). AST nodes
+  own their strings, so this is safe after the token list is freed.
 - **Assignment statements were tagged with the *next* line.** The parser
   built an `AST_ASSIGN` node for `name is expr` after consuming the
   statement's trailing newline, so it took the following line's number —
