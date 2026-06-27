@@ -1890,6 +1890,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_ITER_SETUP] = &&lbl_ITER_SETUP, [OP_ITER_NEXT] = &&lbl_ITER_NEXT,
         [OP_LOOP_ENV_FRESH] = &&lbl_LOOP_ENV_FRESH,
         [OP_LOOP_ENV_END] = &&lbl_LOOP_ENV_END,
+        [OP_LOOP_ENV_CLEAR] = &&lbl_LOOP_ENV_CLEAR,
         [OP_BREAK] = &&lbl_BREAK, [OP_CONTINUE] = &&lbl_CONTINUE,
         [OP_TRY_BEGIN] = &&lbl_TRY_BEGIN, [OP_TRY_END] = &&lbl_TRY_END,
         [OP_OBSERVE_ASSIGN] = &&lbl_OBSERVE_ASSIGN,
@@ -3581,6 +3582,27 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         env_incref(parent);
         frame->env = parent;
         env_decref(loop_env);
+        DISPATCH();
+    }
+
+    CASE(LOOP_ENV_CLEAR): {
+        /* Persisted-loop-env optimization: the loop env was created ONCE (a
+         * single LOOP_ENV_FRESH before the loop) and is reused across
+         * iterations. Reset its bindings here at the top of each iteration so
+         * the loop variable and any loop-locals are fresh — identical to the
+         * fresh-per-iteration env they replace, but without the per-iteration
+         * env_new/env_decref. Only emitted for loops whose body provably
+         * creates no closure (the env is never captured, so refcount stays 1
+         * and clearing is safe). */
+        env_clear(frame->env);
+        /* env_clear resets bindings but NOT the slot-keyed observer state
+         * (Env::obs). A fresh-per-iteration env starts with none, so an
+         * OBSERVED loop-local would otherwise carry its entropy/dH trajectory
+         * across iterations and misreport report/observe/predicate. Reset it to
+         * match fresh-env semantics; this also drops the VM's last-observed-slot
+         * tracker (vm_obs_slot_dropped). Cheap no-op when no observer slots were
+         * allocated (the common case). */
+        observer_slot_reset(frame->env);
         DISPATCH();
     }
 

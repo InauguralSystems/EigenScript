@@ -4,6 +4,27 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance
+
+- **`for`-loops now reuse one loop env instead of allocating a fresh one per
+  iteration.** A `for` that still needs a per-iteration env (notably every
+  module-scope loop, where the loop var and loop-locals must not leak) used to
+  `env_new`/`env_decref` every pass, which also thrashed the name-resolution
+  inline cache for outer variables read in the body. The env is now created
+  once and reused, in three tiers gated entirely at compile time:
+  loops whose body defines a closure keep the old fresh-per-iteration behavior
+  (the closure captures the env, so it can't be reused); loops with a
+  loop-local or shadow persist the env and `LOOP_ENV_CLEAR` it each iteration
+  (saving the allocation); and loops that provably create no loop-local
+  (every assignment is an outer mutation) persist *and overwrite* the loop var
+  in place with no clear, so `binding_version` stays stable and the outer-var
+  inline cache stays hot. On a 2M-iteration accumulator this is ~30–36% faster
+  (observed and unobserved alike); semantics are unchanged — the overwrite
+  tier's loop-local proof is conservative and any uncertainty falls back to
+  clear, then to fresh. Adds opcode `OP_LOOP_ENV_CLEAR` (appended at the end of
+  the enum; `LOOP_ENV_CLEAR` also resets the env's slot-keyed observer state so
+  an observed loop-local matches fresh-env `report`/predicate behavior).
+
 ### Fixed
 
 - **HTTP routes ignored a request's query string for route identity.** The

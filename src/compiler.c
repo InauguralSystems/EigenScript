@@ -178,7 +178,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_RETURN: case OP_RETURN_NULL:
         return 0;
     /* Loop env: no stack change */
-    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END:
+    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
         return 0;
     /* Iterator: SETUP pops iterable pushes state = 0; NEXT pushes elem = +1 */
     case OP_ITER_SETUP:
@@ -768,6 +768,225 @@ static void scan_for_captures(ASTNode *node, NameSet *out) {
     }
 }
 
+/* True if the subtree defines any closure (function/lambda). Used to gate the
+ * persisted-loop-env optimization: OP_CLOSURE captures frame->env
+ * unconditionally (even with no free variables — see CASE(CLOSURE)), so a body
+ * that defines any closure pins the loop env and must NOT have that env reused
+ * /cleared across iterations. Mirrors scan_for_captures' node coverage so it
+ * can't miss a nesting site; returns on the first closure found. Does not
+ * descend into a closure's own body (finding the closure is sufficient). */
+static int ast_has_closure(ASTNode *node) {
+    if (!node) return 0;
+#define ANY(n) do { if (ast_has_closure(n)) return 1; } while (0)
+    switch (node->type) {
+    case AST_FUNC:
+    case AST_LAMBDA:
+        return 1;
+    case AST_IF:
+        for (int i = 0; i < node->data.cond.if_count; i++) ANY(node->data.cond.if_body[i]);
+        for (int i = 0; i < node->data.cond.else_count; i++) ANY(node->data.cond.else_body[i]);
+        ANY(node->data.cond.cond);
+        break;
+    case AST_LOOP:
+        ANY(node->data.loop.cond);
+        for (int i = 0; i < node->data.loop.body_count; i++) ANY(node->data.loop.body[i]);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < node->data.block.count; i++) ANY(node->data.block.stmts[i]);
+        break;
+    case AST_FOR:
+        ANY(node->data.forloop.iter);
+        for (int i = 0; i < node->data.forloop.body_count; i++) ANY(node->data.forloop.body[i]);
+        break;
+    case AST_TRY:
+        for (int i = 0; i < node->data.trycatch.try_count; i++) ANY(node->data.trycatch.try_body[i]);
+        for (int i = 0; i < node->data.trycatch.catch_count; i++) ANY(node->data.trycatch.catch_body[i]);
+        break;
+    case AST_MATCH:
+        ANY(node->data.match.expr);
+        for (int i = 0; i < node->data.match.case_count; i++)
+            for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                ANY(node->data.match.bodies[i][j]);
+        break;
+    case AST_BINOP:
+        ANY(node->data.binop.left); ANY(node->data.binop.right);
+        break;
+    case AST_UNARY:
+        ANY(node->data.unary.operand);
+        break;
+    case AST_RELATION:
+        ANY(node->data.relation.left); ANY(node->data.relation.right);
+        break;
+    case AST_ASSIGN:
+        ANY(node->data.assign.expr);
+        break;
+    case AST_RETURN:
+        ANY(node->data.ret.expr);
+        break;
+    case AST_LIST:
+        for (int i = 0; i < node->data.list.count; i++) ANY(node->data.list.elems[i]);
+        break;
+    case AST_INDEX:
+        ANY(node->data.index.target); ANY(node->data.index.index);
+        break;
+    case AST_LISTCOMP:
+        ANY(node->data.listcomp.expr); ANY(node->data.listcomp.iter); ANY(node->data.listcomp.filter);
+        break;
+    case AST_DICT:
+        for (int i = 0; i < node->data.dict.count; i++) {
+            ANY(node->data.dict.keys[i]); ANY(node->data.dict.vals[i]);
+        }
+        break;
+    case AST_DOT:
+        ANY(node->data.dot.target);
+        break;
+    case AST_DOT_ASSIGN:
+        ANY(node->data.dot_assign.target); ANY(node->data.dot_assign.expr);
+        break;
+    case AST_INDEX_ASSIGN:
+        ANY(node->data.index_assign.target); ANY(node->data.index_assign.index);
+        ANY(node->data.index_assign.expr);
+        break;
+    case AST_LIST_PATTERN_ASSIGN:
+        ANY(node->data.list_pattern_assign.expr);
+        break;
+    case AST_SLICE:
+        ANY(node->data.slice.target); ANY(node->data.slice.start); ANY(node->data.slice.end);
+        break;
+    case AST_INTERROGATE:
+        ANY(node->data.interrogate.expr); ANY(node->data.interrogate.at_expr);
+        break;
+    default:
+        break;
+    }
+#undef ANY
+    return 0;
+}
+
+/* Overwrite-safety analysis for the persisted loop env. The persist+overwrite
+ * tier skips the per-iteration CLEAR (keeping binding_version stable so the
+ * outer-variable inline cache stays hot) — but that is only correct if the loop
+ * body creates NO binding that lives in the loop env, because such a binding
+ * would persist across iterations instead of being fresh each pass. A binding
+ * lands in the loop env when the body assigns a name not already bound in an
+ * enclosing scope (a loop-local), or via `local`, comprehension-var leakage,
+ * a catch error name, a list-pattern, an import, or a closure. This routine
+ * returns 1 only when it can PROVE the subtree creates none of those: every
+ * plain assignment targets a name in `bound` (unconditionally bound before the
+ * loop) or an existing global/builtin, and no hard-to-prove binder appears.
+ * Conservative: anything unrecognised returns 0 (→ fall back to persist+clear,
+ * which is always correct). Nested for-loops/functions get their own env, but
+ * are bailed on here rather than reasoned through. */
+static int subtree_overwrite_safe(ASTNode *n, NameSet *bound, Env *env) {
+    if (!n) return 1;
+#define SAFE(x) do { if (!subtree_overwrite_safe((x), bound, env)) return 0; } while (0)
+    switch (n->type) {
+    /* Binders / leak / closure / opaque — cannot prove fresh-per-iteration. */
+    case AST_FUNC: case AST_LAMBDA:
+    case AST_LISTCOMP: case AST_TRY: case AST_MATCH:
+    case AST_FOR: case AST_IMPORT: case AST_LIST_PATTERN_ASSIGN:
+        return 0;
+    case AST_ASSIGN:
+        if (n->data.assign.local_only) return 0;            /* explicit shadow */
+        if (!name_set_has(bound, n->data.assign.name)) {
+            uint32_t h = env_hash_name(n->data.assign.name);
+            if (!(env && env_get_hashed(env, n->data.assign.name, h)))
+                return 0;                                   /* fresh loop-local */
+        }
+        SAFE(n->data.assign.expr);
+        break;
+    /* Same-env control flow — every child must be safe. */
+    case AST_IF:
+        SAFE(n->data.cond.cond);
+        for (int i = 0; i < n->data.cond.if_count; i++) SAFE(n->data.cond.if_body[i]);
+        for (int i = 0; i < n->data.cond.else_count; i++) SAFE(n->data.cond.else_body[i]);
+        break;
+    case AST_LOOP:
+        SAFE(n->data.loop.cond);
+        for (int i = 0; i < n->data.loop.body_count; i++) SAFE(n->data.loop.body[i]);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < n->data.block.count; i++) SAFE(n->data.block.stmts[i]);
+        break;
+    /* Expressions: no name binding, but recurse to catch nested lambdas/comps. */
+    case AST_BINOP:        SAFE(n->data.binop.left); SAFE(n->data.binop.right); break;
+    case AST_UNARY:        SAFE(n->data.unary.operand); break;
+    case AST_RELATION:     SAFE(n->data.relation.left); SAFE(n->data.relation.right); break;
+    case AST_RETURN:       SAFE(n->data.ret.expr); break;
+    case AST_LIST:         for (int i = 0; i < n->data.list.count; i++) SAFE(n->data.list.elems[i]); break;
+    case AST_INDEX:        SAFE(n->data.index.target); SAFE(n->data.index.index); break;
+    case AST_DICT:
+        for (int i = 0; i < n->data.dict.count; i++) { SAFE(n->data.dict.keys[i]); SAFE(n->data.dict.vals[i]); }
+        break;
+    case AST_DOT:          SAFE(n->data.dot.target); break;
+    case AST_DOT_ASSIGN:   SAFE(n->data.dot_assign.target); SAFE(n->data.dot_assign.expr); break;
+    case AST_INDEX_ASSIGN: SAFE(n->data.index_assign.target); SAFE(n->data.index_assign.index); SAFE(n->data.index_assign.expr); break;
+    case AST_SLICE:        SAFE(n->data.slice.target); SAFE(n->data.slice.start); SAFE(n->data.slice.end); break;
+    case AST_INTERROGATE:  SAFE(n->data.interrogate.expr); SAFE(n->data.interrogate.at_expr); break;
+    /* Leaves with no binding effect. */
+    case AST_IDENT: case AST_NUM: case AST_STR: case AST_NULL:
+    case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE:
+        break;
+    default:
+        return 0;
+    }
+#undef SAFE
+    return 1;
+}
+
+/* Collect names unconditionally bound at module top level BEFORE `loop_node`:
+ * the targets of direct top-level binding statements that precede it in the
+ * program. These are guaranteed bound when the loop runs, so a body assignment
+ * to one of them is an outer mutation, not a loop-local. Returns 1 if loop_node
+ * was found as a direct top-level statement (so `bound` is meaningful), else 0
+ * (the loop is nested — caller must not use the overwrite tier). */
+/* Add the name(s) a single statement unconditionally binds in the current env. */
+static void collect_stmt_bind(ASTNode *s, NameSet *bound) {
+    if (!s) return;
+    if (s->type == AST_ASSIGN && !s->data.assign.local_only)
+        name_set_add(bound, s->data.assign.name);
+    else if (s->type == AST_FUNC)
+        name_set_add(bound, s->data.func.name);
+    else if (s->type == AST_LIST_PATTERN_ASSIGN)
+        for (int j = 0; j < s->data.list_pattern_assign.name_count; j++)
+            name_set_add(bound, s->data.list_pattern_assign.names[j]);
+}
+
+/* Collect names unconditionally bound BEFORE `loop_node` in a statement list,
+ * recursing through `unobserved`/plain blocks (transparent — same env, no
+ * branching — so their bindings leak to this scope and execute in order).
+ * Returns 1 if loop_node was reached (so `bound` is complete and the overwrite
+ * tier may apply), 0 if not found in this unconditional stream (the loop is
+ * nested under a conditional / loop / function — caller stays on persist+clear).
+ * `if` is intentionally NOT descended: a binding inside one is not guaranteed
+ * before the loop. */
+static int collect_bound_before_in_block(ASTNode **stmts, int count,
+                                         ASTNode *loop_node, NameSet *bound) {
+    for (int i = 0; i < count; i++) {
+        ASTNode *s = stmts[i];
+        if (s == loop_node) return 1;
+        if (!s) continue;
+        if (s->type == AST_UNOBSERVED || s->type == AST_BLOCK) {
+            if (collect_bound_before_in_block(s->data.block.stmts, s->data.block.count,
+                                              loop_node, bound))
+                return 1;  /* loop is inside this block; binds before it collected */
+            for (int j = 0; j < s->data.block.count; j++)
+                collect_stmt_bind(s->data.block.stmts[j], bound);  /* whole block ran before */
+        } else {
+            collect_stmt_bind(s, bound);
+        }
+    }
+    return 0;
+}
+
+static int collect_bound_before_loop(ASTNode *root, ASTNode *loop_node, NameSet *bound) {
+    if (!root || root->type != AST_PROGRAM) return 0;
+    return collect_bound_before_in_block(root->data.program.stmts,
+                                         root->data.program.count, loop_node, bound);
+}
+
 /* Walk a function body collecting names that appear in `who is x` or `when is x`
  * interrogations. These need the slow path so env assign_counts stays consistent. */
 static void scan_for_interrogated(ASTNode *node, NameSet *out) {
@@ -1319,15 +1538,62 @@ static void compile_node(Compiler *c, ASTNode *node) {
             }
         }
 
+        /* Persisted-loop-env optimization: for any for-loop that still needs a
+         * per-iteration env (can_skip_env didn't apply — notably every
+         * module-scope loop, where the loop var and loop-locals must not leak),
+         * create the loop env ONCE before the loop and CLEAR it at the top of
+         * each iteration instead of allocating a fresh env every pass. The only
+         * requirement is that the body define no closure: OP_CLOSURE captures
+         * frame->env unconditionally, so a closure would pin the env we reuse.
+         * Clearing each iteration makes every iteration identical to the fresh
+         * env it replaces, so loop-var/loop-local/shadow semantics are
+         * unchanged (the env is still torn down after the loop — the loop var
+         * does not leak). Net: one env_new + one env_decref per loop instead of
+         * one per iteration. */
+        int can_persist_env = 0;
+        if (!can_skip_env) {
+            int body_has_closure = 0;
+            for (int i = 0; i < node->data.forloop.body_count && !body_has_closure; i++)
+                if (ast_has_closure(node->data.forloop.body[i])) body_has_closure = 1;
+            can_persist_env = !body_has_closure;
+        }
+
+        /* Overwrite tier: when the body provably creates no loop-local binding
+         * (every assignment is an outer mutation), the loop var can simply be
+         * overwritten each iteration with no CLEAR, so binding_version stays
+         * stable and the outer-var inline cache stays hot — capturing the IC
+         * win on top of the allocation win. Restricted to module top-level
+         * loops, where "bound before the loop" is decidable. Anything not
+         * provably safe stays on the persist+clear path. */
+        int persist_overwrite = 0;
+        if (can_persist_env && !c->enclosing && c->root_ast) {
+            NameSet bound = {0};
+            if (collect_bound_before_loop(c->root_ast, node, &bound)) {
+                int safe = 1;
+                for (int i = 0; i < node->data.forloop.body_count && safe; i++)
+                    if (!subtree_overwrite_safe(node->data.forloop.body[i], &bound, c->env))
+                        safe = 0;
+                persist_overwrite = safe;
+            }
+            name_set_free(&bound);
+        }
+
         LoopCtx *lp = NULL;
         if (c->loop_depth < MAX_LOOP_DEPTH) {
             lp = &c->loops[c->loop_depth++];
             lp->break_count = 0;
             lp->scope_depth = c->scope_depth;
-            lp->has_fresh_env = can_skip_env ? 0 : 1;
+            /* break emits its own per-iteration LOOP_ENV_END only in the
+             * classic fresh-per-iteration path. The skip path has no env; the
+             * persist path has a single LOOP_ENV_END at the loop exit that
+             * break falls through to. */
+            lp->has_fresh_env = (can_skip_env || can_persist_env) ? 0 : 1;
         }
 
         int depth_before_loop = c->stack_depth;
+        /* Persist: create the reused loop env once, before the back-edge target
+         * so continue/JUMP_BACK never re-create it. */
+        if (can_persist_env) emit(c, OP_LOOP_ENV_FRESH, node->line);
         int loop_start = capture_loop_start(c);
         if (lp) lp->continue_target = loop_start;
 
@@ -1340,6 +1606,16 @@ static void compile_node(Compiler *c, ASTNode *node) {
              * so the POP below still applies. */
             emit_op_u16(c, OP_SET_LOCAL, (uint16_t)loop_var_slot, node->line);
             emit(c, OP_POP, node->line);
+        } else if (can_persist_env) {
+            /* Reuse the loop env created once above. Clear tier: reset its
+             * bindings for this iteration. Overwrite tier (provably no
+             * loop-local): skip the CLEAR — the SET_NAME_LOCAL below overwrites
+             * the loop var in place (no binding_version bump), keeping the
+             * outer-var IC hot. */
+            if (!persist_overwrite) emit(c, OP_LOOP_ENV_CLEAR, node->line);
+            int var_idx = add_string_constant(c, loop_var);
+            emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)var_idx, node->line);
+            emit(c, OP_POP, node->line);
         } else {
             /* Create fresh loop env for each iteration (required for correct scoping) */
             emit(c, OP_LOOP_ENV_FRESH, node->line);
@@ -1351,7 +1627,7 @@ static void compile_node(Compiler *c, ASTNode *node) {
         compile_block(c, node->data.forloop.body, node->data.forloop.body_count);
         emit(c, OP_POP, node->line); /* discard body result */
 
-        if (!can_skip_env)
+        if (!can_skip_env && !can_persist_env)
             emit(c, OP_LOOP_ENV_END, node->line);
 
         /* Reset depth for back-edge (same as loop start) */
@@ -1369,6 +1645,11 @@ static void compile_node(Compiler *c, ASTNode *node) {
         /* Exit path: ITER_NEXT jumped here (no element pushed), or break jumped here */
         patch_jump(c, exit_jump);
         c->stack_depth = depth_before_loop; /* iterator state still on stack */
+        /* Persist: a single LOOP_ENV_END tears down the reused env. Both the
+         * normal exit (ITER_NEXT exhausted) and break converge here with
+         * frame->env still the loop env, so both restore the parent exactly
+         * once. */
+        if (can_persist_env) emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, OP_POP, node->line); /* pop iterator state */
         emit(c, OP_NULL, node->line); /* for-loop result */
 

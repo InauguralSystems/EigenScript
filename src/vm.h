@@ -160,6 +160,9 @@ typedef enum {
                             * from the local's slot trajectory. Compile-flag gated. */
     OP_OBSERVE_VALUE_NAME, /* [name_idx:16] `observe of <name>`: same, resolving the
                             * binding's (env,slot). Compile-flag gated. */
+    OP_LOOP_ENV_CLEAR,  /* reset a persisted loop env's bindings for a new iteration.
+                         * Appended here (NOT mid-list) per the convention above —
+                         * hand-built bytecode hardcodes opcode numbers. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
