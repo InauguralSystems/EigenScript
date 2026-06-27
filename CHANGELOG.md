@@ -6,6 +6,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **LSP rename is now scope-correct, including EigenScript's subtler rules.**
+  Rename resolves each occurrence to a binding identity — the innermost
+  enclosing function that binds the name as a parameter or `local`, else the
+  global — and only renames occurrences sharing the cursor's binding. This
+  covers (a) explicit parameter shadowing, (b) the **implicit `n`** parameter
+  of a no-arg `define` (a real whole-body binding, so a body `n` is not the
+  global `n`; issue #241), and (c) **order-sensitive `local`** — a `local x`
+  binds only from its declaration onward, so a read *before* it resolves to
+  the outer binding. Positions still come from exact token spans. Verified by
+  applying the WorkspaceEdit and asserting the resulting source for each rule.
 - **LSP rename could corrupt source.** Reference positions came from AST node
   columns, but identifier (`AST_IDENT`) nodes were built with `make_node`,
   which zero-fills `col` — so every rename edit landed at column 0. Renaming

@@ -330,6 +330,39 @@ def main():
     check("rename param scoped to its function (global x untouched)",
           applied == "x is 0\ndefine f(p) as:\n    return p + 1\nprint of x\n")
 
+    # --- scope-aware: implicit `n` (no-arg define) is a distinct binding ---
+    # A no-param define has an implicit parameter `n`, so the body `n` is
+    # NOT the global `n` (test_scope_semantics.eigs, issue #241).
+    impn_doc = "n is 5\ndefine bump as:\n    n is 99\n    return n\n"
+    rni = {"jsonrpc": "2.0", "id": 16, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
+                      "newName": "g"}}
+    r = converse([INIT, did_open(impn_doc), rni, SHUTDOWN, EXIT])
+    applied = apply_rename(impn_doc, (by_id(r, 16) or {}).get("result"))
+    check("rename global n skips implicit-n body binding",
+          applied == "g is 5\ndefine bump as:\n    n is 99\n    return n\n")
+
+    # --- scope-aware: `local` is order-sensitive (binds from its decl) ---
+    # The `print of x` BEFORE `local x` resolves to the outer x, so renaming
+    # the local must leave that earlier read (and the globals) untouched.
+    loc_doc = "x is 1\ndefine f as:\n    print of x\n    local x is 2\n    return x\nprint of x\n"
+    rnl = {"jsonrpc": "2.0", "id": 17, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI}, "position": {"line": 3, "character": 10},
+                      "newName": "z"}}
+    r = converse([INIT, did_open(loc_doc), rnl, SHUTDOWN, EXIT])
+    applied = apply_rename(loc_doc, (by_id(r, 17) or {}).get("result"))
+    check("rename local binds from decl (earlier read + globals untouched)",
+          applied == "x is 1\ndefine f as:\n    print of x\n    local z is 2\n    return z\nprint of x\n")
+
+    # ...and renaming the global from before the local hits the pre-decl read.
+    rng2 = {"jsonrpc": "2.0", "id": 18, "method": "textDocument/rename",
+            "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
+                       "newName": "z"}}
+    r = converse([INIT, did_open(loc_doc), rng2, SHUTDOWN, EXIT])
+    applied = apply_rename(loc_doc, (by_id(r, 18) or {}).get("result"))
+    check("rename global hits pre-local read, skips the local binding",
+          applied == "z is 1\ndefine f as:\n    print of z\n    local x is 2\n    return x\nprint of z\n")
+
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},

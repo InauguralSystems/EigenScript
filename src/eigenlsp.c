@@ -1276,24 +1276,43 @@ static void handle_formatting(int id, const char *params) {
 #define MAX_FN_SCOPES 256
 #define MAX_SCOPE_BINDS 32
 
+/* A binding is identified by (scope, effective_from) — the token index from
+ * which it takes effect. A parameter (explicit, or the implicit `n` of a
+ * no-arg define) is effective for the whole body, so from = the `define`
+ * token; a `local x` is effective only from its declaration, so from = that
+ * ident's token. A reference at index i is bound by this scope's entry only
+ * if from <= i. */
 typedef struct {
     int tok_start;   /* index of the `define` token */
     int tok_end;     /* one past the function's last body token */
-    char binds[MAX_SCOPE_BINDS][48];  /* params + `local` names */
+    struct { char name[48]; int from; } binds[MAX_SCOPE_BINDS];
     int bind_count;
 } FnScope;
 
-static void scope_add_bind(FnScope *s, const char *name) {
+/* Parameter binding (whole body). Idempotent; a param dominates a later
+ * `local` of the same name (it keeps from = tok_start). */
+static void scope_add_param(FnScope *s, const char *name, int from) {
     if (!name || s->bind_count >= MAX_SCOPE_BINDS) return;
     for (int i = 0; i < s->bind_count; i++)
-        if (strcmp(s->binds[i], name) == 0) return;
-    snprintf(s->binds[s->bind_count++], 48, "%s", name);
+        if (strcmp(s->binds[i].name, name) == 0) return;
+    snprintf(s->binds[s->bind_count].name, 48, "%s", name);
+    s->binds[s->bind_count].from = from;
+    s->bind_count++;
 }
 
-static int scope_binds(const FnScope *s, const char *name) {
+/* `local` binding, effective from its declaration. Repeated `local x` in one
+ * scope is the SAME binding — keep the earliest decl. A pre-existing param of
+ * the same name dominates (its from = tok_start <= decl, so it is kept). */
+static void scope_add_local(FnScope *s, const char *name, int decl_idx) {
+    if (!name || s->bind_count >= MAX_SCOPE_BINDS) return;
     for (int i = 0; i < s->bind_count; i++)
-        if (strcmp(s->binds[i], name) == 0) return 1;
-    return 0;
+        if (strcmp(s->binds[i].name, name) == 0) {
+            if (decl_idx < s->binds[i].from) s->binds[i].from = decl_idx;
+            return;
+        }
+    snprintf(s->binds[s->bind_count].name, 48, "%s", name);
+    s->binds[s->bind_count].from = decl_idx;
+    s->bind_count++;
 }
 
 /* Build a scope per `define` from the token stream. Nested functions each
@@ -1307,12 +1326,12 @@ static int build_fn_scopes(Document *doc, FnScope *out, int max) {
         s->tok_start = i;
         s->bind_count = 0;
         /* Params: IDENTs between the function name's '(' and ')'. */
-        int j = i + 1;
+        int j = i + 1, param_count = 0;
         if (j < count && tk[j].type == TOK_IDENT) j++;   /* function name */
         if (j < count && tk[j].type == TOK_LPAREN) {
             j++;
             while (j < count && tk[j].type != TOK_RPAREN && tk[j].type != TOK_NEWLINE) {
-                if (tk[j].type == TOK_IDENT) scope_add_bind(s, tk[j].str_val);
+                if (tk[j].type == TOK_IDENT) { scope_add_param(s, tk[j].str_val, i); param_count++; }
                 j++;
             }
         }
@@ -1328,25 +1347,40 @@ static int build_fn_scopes(Document *doc, FnScope *out, int max) {
             end = k;
         }
         s->tok_end = end;
-        /* `local <ident>` declarations also bind locally. */
+        /* A no-param define has one implicit parameter `n` (SPEC.md / the
+         * scope-semantics suite, issue #241) — a real whole-body binding. */
+        if (param_count == 0) scope_add_param(s, "n", i);
+        /* `local <ident>` declarations bind from their position onward. */
         for (int m = s->tok_start; m + 1 < s->tok_end; m++)
             if (tk[m].type == TOK_LOCAL && tk[m + 1].type == TOK_IDENT)
-                scope_add_bind(s, tk[m + 1].str_val);
+                scope_add_local(s, tk[m + 1].str_val, m + 1);
         n++;
     }
     return n;
 }
 
-/* Innermost scope that contains token `idx` and binds `name`, or -1 (global). */
-static int resolve_binding(FnScope *scopes, int n, int idx, const char *name) {
-    int best = -1;
+/* Resolve the binding of `name` at token `idx` to an identity (scope index,
+ * effective_from); global is (-1, -1). The innermost scope with a binding for
+ * `name` effective at idx wins; a `local` whose declaration is after idx is
+ * skipped, so the reference falls through to an outer binding. */
+static void resolve_binding(FnScope *scopes, int n, int idx, const char *name,
+                            int *out_scope, int *out_from) {
+    int best_scope = -1, best_from = -1, best_start = -1;
     for (int s = 0; s < n; s++) {
-        if (idx >= scopes[s].tok_start && idx < scopes[s].tok_end &&
-            scope_binds(&scopes[s], name)) {
-            if (best < 0 || scopes[s].tok_start > scopes[best].tok_start) best = s;
+        if (!(idx >= scopes[s].tok_start && idx < scopes[s].tok_end)) continue;
+        int from = -1;
+        for (int b = 0; b < scopes[s].bind_count; b++)
+            if (strcmp(scopes[s].binds[b].name, name) == 0 && scopes[s].binds[b].from <= idx)
+                from = scopes[s].binds[b].from;
+        if (from < 0) continue;  /* name not (yet) bound in this scope */
+        if (scopes[s].tok_start > best_start) {
+            best_start = scopes[s].tok_start;
+            best_scope = s;
+            best_from = from;
         }
     }
-    return best;
+    *out_scope = best_scope;
+    *out_from = best_from;
 }
 
 /* ---- textDocument/rename: scope-aware WorkspaceEdit over exact token spans ---- */
@@ -1394,7 +1428,8 @@ static void handle_rename(int id, const char *params) {
     static FnScope scopes[MAX_FN_SCOPES];
     int nscopes = build_fn_scopes(doc, scopes, MAX_FN_SCOPES);
     int cursor_idx = (int)(tok - doc->tokens.tokens);
-    int cursor_bind = resolve_binding(scopes, nscopes, cursor_idx, name);
+    int cur_scope, cur_from;
+    resolve_binding(scopes, nscopes, cursor_idx, name, &cur_scope, &cur_from);
 
     strbuf sb;
     strbuf_init(&sb);
@@ -1406,7 +1441,9 @@ static void handle_rename(int id, const char *params) {
         Token *t = &doc->tokens.tokens[i];
         if (t->type != TOK_IDENT || !t->str_val || strcmp(t->str_val, name) != 0) continue;
         if (i > 0 && doc->tokens.tokens[i - 1].type == TOK_DOT) continue;  /* member access */
-        if (resolve_binding(scopes, nscopes, i, name) != cursor_bind) continue;  /* other binding */
+        int ts, tf;
+        resolve_binding(scopes, nscopes, i, name, &ts, &tf);
+        if (ts != cur_scope || tf != cur_from) continue;  /* a different binding */
         if (emitted) strbuf_append_char(&sb, ',');
         emitted++;
         strbuf_append(&sb, "{\"range\":");
