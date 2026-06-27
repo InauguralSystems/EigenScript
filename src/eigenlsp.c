@@ -1265,7 +1265,91 @@ static void handle_formatting(int id, const char *params) {
     free(formatted);
 }
 
-/* ---- textDocument/rename: WorkspaceEdit over all references + the def ---- */
+/* ---- Function scopes, for scope-aware rename ----
+ * EigenScript scoping: a function parameter (or a `local` declaration)
+ * introduces a binding local to that function; a plain `name is expr`
+ * otherwise mutates the nearest OUTER binding. So an occurrence of `x`
+ * resolves to the innermost enclosing function that binds `x` as a
+ * param/local, or to the global binding if none does. Rename only the
+ * occurrences that resolve to the SAME binding as the cursor — so renaming
+ * a global `x` leaves a shadowing `define f(x)` untouched, and vice-versa. */
+#define MAX_FN_SCOPES 256
+#define MAX_SCOPE_BINDS 32
+
+typedef struct {
+    int tok_start;   /* index of the `define` token */
+    int tok_end;     /* one past the function's last body token */
+    char binds[MAX_SCOPE_BINDS][48];  /* params + `local` names */
+    int bind_count;
+} FnScope;
+
+static void scope_add_bind(FnScope *s, const char *name) {
+    if (!name || s->bind_count >= MAX_SCOPE_BINDS) return;
+    for (int i = 0; i < s->bind_count; i++)
+        if (strcmp(s->binds[i], name) == 0) return;
+    snprintf(s->binds[s->bind_count++], 48, "%s", name);
+}
+
+static int scope_binds(const FnScope *s, const char *name) {
+    for (int i = 0; i < s->bind_count; i++)
+        if (strcmp(s->binds[i], name) == 0) return 1;
+    return 0;
+}
+
+/* Build a scope per `define` from the token stream. Nested functions each
+ * get their own scope; ranges nest naturally. */
+static int build_fn_scopes(Document *doc, FnScope *out, int max) {
+    Token *tk = doc->tokens.tokens;
+    int count = doc->tokens.count, n = 0;
+    for (int i = 0; i < count && n < max; i++) {
+        if (tk[i].type != TOK_DEFINE) continue;
+        FnScope *s = &out[n];
+        s->tok_start = i;
+        s->bind_count = 0;
+        /* Params: IDENTs between the function name's '(' and ')'. */
+        int j = i + 1;
+        if (j < count && tk[j].type == TOK_IDENT) j++;   /* function name */
+        if (j < count && tk[j].type == TOK_LPAREN) {
+            j++;
+            while (j < count && tk[j].type != TOK_RPAREN && tk[j].type != TOK_NEWLINE) {
+                if (tk[j].type == TOK_IDENT) scope_add_bind(s, tk[j].str_val);
+                j++;
+            }
+        }
+        /* Body span: the first INDENT after `define`, to its matching DEDENT. */
+        int k = i, end = count;
+        while (k < count && tk[k].type != TOK_INDENT) k++;
+        if (k < count && tk[k].type == TOK_INDENT) {
+            int depth = 0;
+            for (; k < count; k++) {
+                if (tk[k].type == TOK_INDENT) depth++;
+                else if (tk[k].type == TOK_DEDENT) { depth--; if (depth == 0) { k++; break; } }
+            }
+            end = k;
+        }
+        s->tok_end = end;
+        /* `local <ident>` declarations also bind locally. */
+        for (int m = s->tok_start; m + 1 < s->tok_end; m++)
+            if (tk[m].type == TOK_LOCAL && tk[m + 1].type == TOK_IDENT)
+                scope_add_bind(s, tk[m + 1].str_val);
+        n++;
+    }
+    return n;
+}
+
+/* Innermost scope that contains token `idx` and binds `name`, or -1 (global). */
+static int resolve_binding(FnScope *scopes, int n, int idx, const char *name) {
+    int best = -1;
+    for (int s = 0; s < n; s++) {
+        if (idx >= scopes[s].tok_start && idx < scopes[s].tok_end &&
+            scope_binds(&scopes[s], name)) {
+            if (best < 0 || scopes[s].tok_start > scopes[best].tok_start) best = s;
+        }
+    }
+    return best;
+}
+
+/* ---- textDocument/rename: scope-aware WorkspaceEdit over exact token spans ---- */
 static void handle_rename(int id, const char *params) {
     char *td = json_get_object(params, "textDocument");
     char *pos_obj = json_get_object(params, "position");
@@ -1304,6 +1388,14 @@ static void handle_rename(int id, const char *params) {
      * spans (line/col/len) are exact, so each edit lands precisely on the
      * identifier. */
     const char *name = tok->str_val;
+    /* Resolve the cursor's binding, then rename only occurrences that resolve
+     * to the SAME binding — so a shadowing parameter (or global) is left
+     * alone. Positions still come from the token stream (exact spans). */
+    static FnScope scopes[MAX_FN_SCOPES];
+    int nscopes = build_fn_scopes(doc, scopes, MAX_FN_SCOPES);
+    int cursor_idx = (int)(tok - doc->tokens.tokens);
+    int cursor_bind = resolve_binding(scopes, nscopes, cursor_idx, name);
+
     strbuf sb;
     strbuf_init(&sb);
     strbuf_append(&sb, "{\"changes\":{");
@@ -1314,6 +1406,7 @@ static void handle_rename(int id, const char *params) {
         Token *t = &doc->tokens.tokens[i];
         if (t->type != TOK_IDENT || !t->str_val || strcmp(t->str_val, name) != 0) continue;
         if (i > 0 && doc->tokens.tokens[i - 1].type == TOK_DOT) continue;  /* member access */
+        if (resolve_binding(scopes, nscopes, i, name) != cursor_bind) continue;  /* other binding */
         if (emitted) strbuf_append_char(&sb, ',');
         emitted++;
         strbuf_append(&sb, "{\"range\":");

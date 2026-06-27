@@ -234,3 +234,10 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: cd tests && bash run_all_tests.sh
+
+      - name: Behavior-test the LSP under sanitizers
+        # `make asan` builds the interpreter, not eigenlsp — so the LSP would
+        # otherwise never run under a sanitizer in CI. This builds it with
+        # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
+        # sanitizer report from the LSP process (leaks, UB).
+        run: cd tests && bash test_lsp_asan.sh

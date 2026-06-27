@@ -38,11 +38,24 @@ def frame(obj):
     return "Content-Length: %d\r\n\r\n%s" % (len(body), body)
 
 
+# When the LSP is built with -fsanitize, ASan/UBSan/LSan write reports to the
+# subprocess's stderr (NOT ours). Scan it so a sanitizer finding fails the run
+# instead of being silently swallowed — this is the durable form of the manual
+# probe (see test_lsp_asan.sh). Against a normal build, stderr is just [LSP]
+# logs with none of these markers, so this is a no-op.
+SANITIZER_MARKERS = ("AddressSanitizer", "LeakSanitizer",
+                     "UndefinedBehaviorSanitizer", "runtime error:",
+                     "detected memory leaks", "SUMMARY: ")
+SANITIZER_HITS = []
+
+
 def converse(messages):
     """Feed framed messages to a fresh server, return parsed responses."""
     stream = "".join(frame(m) for m in messages)
     p = subprocess.run([LSP], input=stream, capture_output=True,
                        text=True, timeout=15)
+    if p.stderr and any(mk in p.stderr for mk in SANITIZER_MARKERS):
+        SANITIZER_HITS.append(p.stderr)
     out = p.stdout
     dec = json.JSONDecoder()
     responses = []
@@ -298,6 +311,25 @@ def main():
     check("rename skips a dot-member access (rec.count stays)",
           applied == "total is 0\nrec is {\"count\": 5}\nv is rec.count\nprint of total\n")
 
+    # --- scope-aware: renaming a global must NOT touch a shadowing param ---
+    shadow_doc = "x is 0\ndefine f(x) as:\n    return x + 1\nprint of x\n"
+    rng = {"jsonrpc": "2.0", "id": 14, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
+                      "newName": "g"}}
+    r = converse([INIT, did_open(shadow_doc), rng, SHUTDOWN, EXIT])
+    applied = apply_rename(shadow_doc, (by_id(r, 14) or {}).get("result"))
+    check("rename global skips shadowing param (def f(x) untouched)",
+          applied == "g is 0\ndefine f(x) as:\n    return x + 1\nprint of g\n")
+
+    # --- scope-aware: renaming the param must NOT touch the global ---
+    rnp2 = {"jsonrpc": "2.0", "id": 15, "method": "textDocument/rename",
+            "params": {"textDocument": {"uri": URI}, "position": {"line": 1, "character": 9},
+                       "newName": "p"}}
+    r = converse([INIT, did_open(shadow_doc), rnp2, SHUTDOWN, EXIT])
+    applied = apply_rename(shadow_doc, (by_id(r, 15) or {}).get("result"))
+    check("rename param scoped to its function (global x untouched)",
+          applied == "x is 0\ndefine f(p) as:\n    return p + 1\nprint of x\n")
+
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},
@@ -357,6 +389,12 @@ def main():
           any(ty == fi for (_, _, _, ty) in toks))
     check("semanticTokens carries accurate lengths (22 → len 2)",
           any(ty == ni and L == 2 for (_, _, L, ty) in toks))
+
+    # If the LSP was built under a sanitizer, fail on any report it emitted.
+    check("no sanitizer reports from the LSP process", not SANITIZER_HITS)
+    if SANITIZER_HITS:
+        print("  ---- sanitizer output (first hit) ----")
+        print("\n".join(SANITIZER_HITS[0].splitlines()[:40]))
 
     print("")
     print("Results: %d passed, %d failed" % (PASS, FAIL))
