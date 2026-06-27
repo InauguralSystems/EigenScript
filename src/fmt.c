@@ -223,14 +223,10 @@ static void strip_trailing_ws(strbuf *b) {
 
 /* ---- Main formatter ---- */
 
-int eigenscript_fmt(const char *path, int write_mode) {
-    long src_size = 0;
-    char *source = read_file_util(path, &src_size);
-    if (!source) {
-        fprintf(stderr, "Error: cannot read file '%s'\n", path);
-        return 1;
-    }
-
+/* Format EigenScript source text. Returns a malloc'd formatted string
+ * (caller frees). Pure string→string with no I/O, so it is shared by the
+ * CLI (--fmt) and the LSP formatting provider. */
+char* format_source_string(const char *source) {
     strbuf output;
     strbuf_init(&output);
 
@@ -372,27 +368,38 @@ int eigenscript_fmt(const char *path, int write_mode) {
         strbuf_append_char(&output, '\n');
     }
 
+    for (int i = 0; i < actual_lines; i++) free(lines[i]);
+    free(lines);
+    free(indents);
+    return strbuf_finish(&output);  /* transfer ownership to caller */
+}
+
+int eigenscript_fmt(const char *path, int write_mode) {
+    long src_size = 0;
+    char *source = read_file_util(path, &src_size);
+    if (!source) {
+        fprintf(stderr, "Error: cannot read file '%s'\n", path);
+        return 1;
+    }
+
+    char *formatted = format_source_string(source);
+    free(source);
+    if (!formatted) return 1;
+    size_t flen = strlen(formatted);
+
     if (write_mode) {
         FILE *fp = xfopen_write(path, "w");
         if (!fp) {
             fprintf(stderr, "Error: cannot write to '%s'\n", path);
-            for (int i = 0; i < actual_lines; i++) free(lines[i]);
-            free(lines);
-            free(indents);
-            strbuf_free(&output);
-            free(source);
+            free(formatted);
             return 1;
         }
-        fwrite(output.data, 1, output.len, fp);
+        fwrite(formatted, 1, flen, fp);
         fclose(fp);
     } else {
-        fwrite(output.data, 1, output.len, stdout);
+        fwrite(formatted, 1, flen, stdout);
     }
 
-    for (int i = 0; i < actual_lines; i++) free(lines[i]);
-    free(lines);
-    free(indents);
-    strbuf_free(&output);
-    free(source);
+    free(formatted);
     return 0;
 }

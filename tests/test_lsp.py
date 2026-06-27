@@ -104,6 +104,10 @@ def main():
     check("advertises referencesProvider", caps.get("referencesProvider") is True)
     check("advertises completionProvider",
           isinstance(caps.get("completionProvider"), dict))
+    check("advertises documentSymbolProvider", caps.get("documentSymbolProvider") is True)
+    check("advertises workspaceSymbolProvider", caps.get("workspaceSymbolProvider") is True)
+    check("advertises documentFormattingProvider", caps.get("documentFormattingProvider") is True)
+    check("advertises renameProvider", caps.get("renameProvider") is True)
     check("serverInfo name is eigenlsp",
           (init or {}).get("result", {}).get("serverInfo", {}).get("name") == "eigenlsp")
 
@@ -187,6 +191,64 @@ def main():
     r = converse([INIT, did_open("z is 1\nprint of z\n"), close, SHUTDOWN, EXIT])
     check("didClose handled, shutdown still answered",
           by_id(r, 99) is not None)
+
+    # --- documentSymbol: outline of functions + top-level vars ---
+    ds_doc = "config is 1\ndefine helper(a) as:\n    return a\ndefine main() as:\n    return 0\n"
+    dsym = {"jsonrpc": "2.0", "id": 6, "method": "textDocument/documentSymbol",
+            "params": {"textDocument": {"uri": URI}}}
+    r = converse([INIT, did_open(ds_doc), dsym, SHUTDOWN, EXIT])
+    res = (by_id(r, 6) or {}).get("result")
+    names = [s.get("name") for s in res] if isinstance(res, list) else []
+    check("documentSymbol lists functions", "helper" in names and "main" in names)
+    check("documentSymbol lists top-level var", "config" in names)
+    check("documentSymbol entries have range + selectionRange",
+          isinstance(res, list) and all("range" in s and "selectionRange" in s for s in res))
+    check("documentSymbol function kind is 12 (Function)",
+          isinstance(res, list) and any(s.get("name") == "helper" and s.get("kind") == 12 for s in res))
+
+    # --- workspace/symbol: case-insensitive filter across open docs ---
+    wsym = {"jsonrpc": "2.0", "id": 7, "method": "workspace/symbol",
+            "params": {"query": "HELP"}}
+    r = converse([INIT, did_open(ds_doc), wsym, SHUTDOWN, EXIT])
+    res = (by_id(r, 7) or {}).get("result")
+    check("workspace/symbol filters by query (case-insensitive)",
+          isinstance(res, list) and any(s.get("name") == "helper" for s in res)
+          and all(s.get("name") != "main" for s in res))
+    check("workspace/symbol carries a location uri+range",
+          isinstance(res, list) and res and res[0].get("location", {}).get("uri") == URI
+          and "range" in res[0]["location"])
+
+    # --- formatting: whole-doc TextEdit with normalized source ---
+    fmt = {"jsonrpc": "2.0", "id": 8, "method": "textDocument/formatting",
+           "params": {"textDocument": {"uri": URI},
+                      "options": {"tabSize": 4, "insertSpaces": True}}}
+    r = converse([INIT, did_open("define f(x,y) as:\n  return x+y\n"), fmt, SHUTDOWN, EXIT])
+    res = (by_id(r, 8) or {}).get("result")
+    check("formatting returns a single TextEdit",
+          isinstance(res, list) and len(res) == 1 and "newText" in res[0])
+    check("formatting normalizes spacing",
+          isinstance(res, list) and res and "x + y" in res[0]["newText"]
+          and "f(x, y)" in res[0]["newText"])
+
+    # --- rename: WorkspaceEdit with an edit at every occurrence ---
+    rename_doc = "count is 0\ncount is count + 1\nprint of count\n"
+    rn = {"jsonrpc": "2.0", "id": 9, "method": "textDocument/rename",
+          "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0},
+                     "newName": "total"}}
+    r = converse([INIT, did_open(rename_doc), rn, SHUTDOWN, EXIT])
+    res = (by_id(r, 9) or {}).get("result")
+    edits = (res or {}).get("changes", {}).get(URI) if isinstance(res, dict) else None
+    check("rename returns a WorkspaceEdit with >=2 edits",
+          isinstance(edits, list) and len(edits) >= 2)
+    check("rename edits all carry the new name",
+          isinstance(edits, list) and bool(edits) and all(e.get("newText") == "total" for e in edits))
+
+    # --- rename of a builtin/keyword is refused (null) ---
+    rn_kw = {"jsonrpc": "2.0", "id": 10, "method": "textDocument/rename",
+             "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},
+                        "newName": "nope"}}
+    r = converse([INIT, did_open(rename_doc), rn_kw, SHUTDOWN, EXIT])
+    check("rename refuses a non-user symbol (print)", (by_id(r, 10) or {}).get("result") is None)
 
     print("")
     print("Results: %d passed, %d failed" % (PASS, FAIL))

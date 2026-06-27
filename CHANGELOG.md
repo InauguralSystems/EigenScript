@@ -6,6 +6,18 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **LSP: document symbols, workspace symbols, formatting, and rename.** The
+  language server (`src/eigenlsp`) now advertises and handles
+  `textDocument/documentSymbol` (outline of functions, imports, and top-level
+  variables), `workspace/symbol` (case-insensitive filter across open
+  documents), `textDocument/formatting` (a whole-document edit produced by the
+  CLI formatter — `fmt.c` grew a reusable `format_source_string` string→string
+  core shared by `--fmt` and the LSP), and `textDocument/rename` (a
+  WorkspaceEdit over every reference plus the definition; refuses to rename
+  builtins/keywords). Builds on the existing symbol table and reference walker.
+  `tests/test_lsp.py` +13 behavioral checks. (Semantic tokens and code actions
+  remain — the former needs per-token source spans in the lexer, the latter is
+  best wired to the linter's coded diagnostics.)
 - **First-class test runner — `eigenscript --test [paths...]`.** Discovers
   `test_*.eigs` files (in `./tests` by default, or in given dirs/files) and
   runs each in its **own interpreter process**, so the `lib/test.eigs`

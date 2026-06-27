@@ -888,6 +888,7 @@ void register_store_builtins(Env *env);
 
 /* ---- Formatter & Linter ---- */
 int eigenscript_fmt(const char *path, int write_mode);
+char* format_source_string(const char *source);  /* malloc'd; caller frees */
 int eigenscript_lint(const char *path, int json_mode);
 
 #endif /* EIGENSCRIPT_H */

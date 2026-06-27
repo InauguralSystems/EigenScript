@@ -704,7 +704,11 @@ static void handle_initialize(int id) {
                 "\"completionProvider\":{\"triggerCharacters\":[\".\",\" \"]},"
                 "\"hoverProvider\":true,"
                 "\"definitionProvider\":true,"
-                "\"referencesProvider\":true"
+                "\"referencesProvider\":true,"
+                "\"documentSymbolProvider\":true,"
+                "\"workspaceSymbolProvider\":true,"
+                "\"documentFormattingProvider\":true,"
+                "\"renameProvider\":true"
             "},"
             "\"serverInfo\":{\"name\":\"eigenlsp\",\"version\":\"" EIGENSCRIPT_VERSION "\"}"
         "}"
@@ -1139,6 +1143,210 @@ static void handle_references(int id, const char *params) {
     free(uri);
 }
 
+/* LSP SymbolKind for a document symbol (distinct enum from CompletionItemKind). */
+static int sym_to_lsp_kind(SymKind k) {
+    switch (k) {
+        case SYM_FUNC:   return 12;  /* Function */
+        case SYM_IMPORT: return 2;   /* Module */
+        case SYM_VAR:    return 13;  /* Variable */
+        case SYM_PARAM:  return 13;  /* Variable */
+    }
+    return 13;
+}
+
+/* Append a {"line":L,"character":C} position (symbol lines are 1-based). */
+static void append_range(strbuf *sb, int line1, int col, int len) {
+    strbuf_append_fmt(sb,
+        "{\"start\":{\"line\":%d,\"character\":%d},\"end\":{\"line\":%d,\"character\":%d}}",
+        line1 - 1, col, line1 - 1, col + len);
+}
+
+/* ---- textDocument/documentSymbol: outline of top-level defs/vars/imports ---- */
+static void handle_document_symbol(int id, const char *params) {
+    char *td = json_get_object(params, "textDocument");
+    if (!td) { lsp_response(id, "[]"); return; }
+    char *uri = json_get_string(td, "uri");
+    free(td);
+    if (!uri) { lsp_response(id, "[]"); return; }
+    Document *doc = doc_find(uri);
+    free(uri);
+    if (!doc) { lsp_response(id, "[]"); return; }
+
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append_char(&sb, '[');
+    int first = 1;
+    char seen[MAX_SYMBOLS][256];
+    int seen_count = 0;
+    for (int i = 0; i < doc->symbol_count; i++) {
+        Symbol *s = &doc->symbols[i];
+        /* Outline carries functions, imports, and top-level variables —
+         * not params or nested locals (they'd swamp the outline). */
+        int include = (s->kind == SYM_FUNC || s->kind == SYM_IMPORT ||
+                       (s->kind == SYM_VAR && s->scope_depth == 0));
+        if (!include || s->name[0] == '\0') continue;
+        /* Dedupe by name (a re-assigned var appears once). */
+        int dup = 0;
+        for (int j = 0; j < seen_count; j++)
+            if (strcmp(seen[j], s->name) == 0) { dup = 1; break; }
+        if (dup) continue;
+        if (seen_count < MAX_SYMBOLS) snprintf(seen[seen_count++], 256, "%s", s->name);
+
+        if (!first) strbuf_append_char(&sb, ',');
+        first = 0;
+        strbuf_append(&sb, "{\"name\":");
+        json_escape_to(&sb, s->name);
+        strbuf_append_fmt(&sb, ",\"kind\":%d", sym_to_lsp_kind(s->kind));
+        int nlen = (int)strlen(s->name);
+        strbuf_append(&sb, ",\"range\":");
+        append_range(&sb, s->line, s->col, nlen);
+        strbuf_append(&sb, ",\"selectionRange\":");
+        append_range(&sb, s->line, s->col, nlen);
+        strbuf_append_char(&sb, '}');
+    }
+    strbuf_append_char(&sb, ']');
+    lsp_response(id, sb.data);
+    strbuf_free(&sb);
+}
+
+/* ---- textDocument/formatting: reuse the CLI formatter (whole-doc edit) ---- */
+static void handle_formatting(int id, const char *params) {
+    char *td = json_get_object(params, "textDocument");
+    if (!td) { lsp_response(id, "null"); return; }
+    char *uri = json_get_string(td, "uri");
+    free(td);
+    if (!uri) { lsp_response(id, "null"); return; }
+    Document *doc = doc_find(uri);
+    free(uri);
+    if (!doc || !doc->text) { lsp_response(id, "null"); return; }
+
+    char *formatted = format_source_string(doc->text);
+    if (!formatted) { lsp_response(id, "null"); return; }
+
+    /* One TextEdit replacing the whole document. End at one past the last
+     * line, character 0 — covers any trailing content the client holds. */
+    int line_count = 0;
+    for (const char *p = doc->text; *p; p++) if (*p == '\n') line_count++;
+    line_count++;  /* a doc with N newlines spans N+1 lines */
+
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append_fmt(&sb,
+        "[{\"range\":{\"start\":{\"line\":0,\"character\":0},"
+        "\"end\":{\"line\":%d,\"character\":0}},\"newText\":", line_count);
+    json_escape_to(&sb, formatted);
+    strbuf_append(&sb, "}]");
+    lsp_response(id, sb.data);
+    strbuf_free(&sb);
+    free(formatted);
+}
+
+/* ---- textDocument/rename: WorkspaceEdit over all references + the def ---- */
+static void handle_rename(int id, const char *params) {
+    char *td = json_get_object(params, "textDocument");
+    char *pos_obj = json_get_object(params, "position");
+    char *new_name = json_get_string(params, "newName");
+    if (!td || !pos_obj || !new_name) {
+        lsp_response_null(id);
+        if (td) free(td);
+        if (pos_obj) free(pos_obj);
+        if (new_name) free(new_name);
+        return;
+    }
+    char *uri = json_get_string(td, "uri");
+    int line = json_get_int(pos_obj, "line");
+    int col = json_get_int(pos_obj, "character");
+    free(td); free(pos_obj);
+    if (!uri) { free(new_name); lsp_response_null(id); return; }
+
+    Document *doc = doc_find(uri);
+    if (!doc || !doc->ast) { free(uri); free(new_name); lsp_response_null(id); return; }
+
+    Token *tok = find_token_at(doc, line, col);
+    if (!tok || !tok->str_val) { free(uri); free(new_name); lsp_response_null(id); return; }
+
+    /* Don't rename language keywords or builtins — only user symbols. */
+    int is_user_symbol = 0;
+    for (int i = 0; i < doc->symbol_count; i++)
+        if (strcmp(tok->str_val, doc->symbols[i].name) == 0) { is_user_symbol = 1; break; }
+    if (!is_user_symbol) { free(uri); free(new_name); lsp_response_null(id); return; }
+
+    Location locs[512];
+    int loc_count = 0;
+    collect_references(doc->ast, tok->str_val, locs, &loc_count, 512);
+    /* Add definition sites the reference walk doesn't emit (assign LHS, params). */
+    for (int i = 0; i < doc->symbol_count && loc_count < 512; i++) {
+        Symbol *s = &doc->symbols[i];
+        if (strcmp(tok->str_val, s->name) != 0) continue;
+        int found = 0;
+        for (int j = 0; j < loc_count; j++)
+            if (locs[j].line == s->line && locs[j].col == s->col) { found = 1; break; }
+        if (!found) { locs[loc_count].line = s->line; locs[loc_count].col = s->col; loc_count++; }
+    }
+
+    int old_len = (int)strlen(tok->str_val);
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append(&sb, "{\"changes\":{");
+    json_escape_to(&sb, doc->uri);
+    strbuf_append(&sb, ":[");
+    for (int i = 0; i < loc_count; i++) {
+        if (i > 0) strbuf_append_char(&sb, ',');
+        strbuf_append(&sb, "{\"range\":");
+        append_range(&sb, locs[i].line, locs[i].col, old_len);
+        strbuf_append(&sb, ",\"newText\":");
+        json_escape_to(&sb, new_name);
+        strbuf_append_char(&sb, '}');
+    }
+    strbuf_append(&sb, "]}}");
+    lsp_response(id, sb.data);
+    strbuf_free(&sb);
+    free(uri);
+    free(new_name);
+}
+
+/* ---- workspace/symbol: symbols across all open documents, filtered ---- */
+static void handle_workspace_symbol(int id, const char *params) {
+    char *query = json_get_string(params, "query");  /* may be "" */
+
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append_char(&sb, '[');
+    int first = 1;
+    for (int d = 0; d < g_doc_count; d++) {
+        Document *doc = &g_docs[d];
+        for (int i = 0; i < doc->symbol_count; i++) {
+            Symbol *s = &doc->symbols[i];
+            int include = (s->kind == SYM_FUNC || s->kind == SYM_IMPORT ||
+                           (s->kind == SYM_VAR && s->scope_depth == 0));
+            if (!include || s->name[0] == '\0') continue;
+            /* Case-insensitive substring filter (empty query matches all). */
+            if (query && query[0]) {
+                int match = 0;
+                for (const char *h = s->name; *h && !match; h++) {
+                    const char *a = h, *b = query;
+                    while (*a && *b && tolower((unsigned char)*a) == tolower((unsigned char)*b)) { a++; b++; }
+                    if (!*b) match = 1;
+                }
+                if (!match) continue;
+            }
+            if (!first) strbuf_append_char(&sb, ',');
+            first = 0;
+            strbuf_append(&sb, "{\"name\":");
+            json_escape_to(&sb, s->name);
+            strbuf_append_fmt(&sb, ",\"kind\":%d,\"location\":{\"uri\":", sym_to_lsp_kind(s->kind));
+            json_escape_to(&sb, doc->uri);
+            strbuf_append(&sb, ",\"range\":");
+            append_range(&sb, s->line, s->col, (int)strlen(s->name));
+            strbuf_append(&sb, "}}");
+        }
+    }
+    strbuf_append_char(&sb, ']');
+    lsp_response(id, sb.data);
+    strbuf_free(&sb);
+    if (query) free(query);
+}
+
 /* ================================================================
  * MESSAGE DISPATCH
  * ================================================================ */
@@ -1181,6 +1389,14 @@ static void handle_message(const char *json) {
         handle_definition(id, params_str ? params_str : json);
     } else if (strcmp(method, "textDocument/references") == 0) {
         handle_references(id, params_str ? params_str : json);
+    } else if (strcmp(method, "textDocument/documentSymbol") == 0) {
+        handle_document_symbol(id, params_str ? params_str : json);
+    } else if (strcmp(method, "workspace/symbol") == 0) {
+        handle_workspace_symbol(id, params_str ? params_str : json);
+    } else if (strcmp(method, "textDocument/formatting") == 0) {
+        handle_formatting(id, params_str ? params_str : json);
+    } else if (strcmp(method, "textDocument/rename") == 0) {
+        handle_rename(id, params_str ? params_str : json);
     } else {
         /* Unknown method */
         if (id >= 0) {

@@ -439,7 +439,8 @@ get made and how contributors can earn commit access over time.
 - **Vim / Neovim**: [`editors/vim/`](editors/vim/) — copy into
   `~/.vim/` or `~/.config/nvim/`.
 - **Any LSP client**: `make lsp` builds `src/eigenlsp` (diagnostics,
-  completion, hover, definition, references over stdio).
+  completion, hover, go-to-definition, find-references, document &
+  workspace symbols, document formatting, and rename over stdio).
 - On github.com, `.eigs` files render with Python highlighting (closest
   match) until a Linguist grammar is upstreamed.
 
