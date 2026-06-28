@@ -1221,15 +1221,15 @@ fi
 echo ""
 
 # [43] Extra error-path coverage (always runs)
-echo "[43/47] Error-Path Extras (24 checks)"
+echo "[43/47] Error-Path Extras (48 checks)"
 EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1); EE_OUTPUT_RC=$?
 if rc_ok "$EE_OUTPUT_RC" "$EE_OUTPUT" && echo "$EE_OUTPUT" | grep -q "All error_extra tests passed"; then
-    TOTAL=$((TOTAL + 24))
-    PASS=$((PASS + 24))
-    echo "  PASS: all 24 error-path checks"
+    TOTAL=$((TOTAL + 48))
+    PASS=$((PASS + 48))
+    echo "  PASS: all 48 error-path checks"
 else
-    TOTAL=$((TOTAL + 24))
-    FAIL=$((FAIL + 24))
+    TOTAL=$((TOTAL + 48))
+    FAIL=$((FAIL + 48))
     echo "  FAIL: error-path tests"
     echo "$EE_OUTPUT" | grep -iE "assert|error" | head -5
 fi
