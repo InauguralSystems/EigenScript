@@ -2029,6 +2029,7 @@ check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all 
 check_eigs_suite "observer interactions" test_observer_interactions.eigs "observer interactions: all passed" 1
 check_eigs_suite "osr observe-assign (#231)" test_osr_observe_assign.eigs "osr observe-assign: all passed" 1
 check_eigs_suite "scope semantics" test_scope_semantics.eigs "scope semantics: all passed" 1
+check_eigs_suite "soft keyword idents" test_soft_keyword_idents.eigs "soft keyword idents: all passed" 1
 check_eigs_suite "split empty" test_split_empty.eigs "split empty: all passed" 1
 check_eigs_suite "split hard" test_split_hard.eigs "split hard: all passed" 1
 check_eigs_suite "tensor overflow guard" test_tensor_overflow.eigs "PASS: tensor overflow guard" 1

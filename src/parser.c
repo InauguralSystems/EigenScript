@@ -55,6 +55,34 @@ static void p_expect(Parser *p, TokType type) {
     p_advance(p);
 }
 
+/* Soft keywords usable as ordinary identifiers in a binding position (params,
+ * loop vars, catch names, `local`): TOK_IDENT plus prev/at and the six
+ * interrogatives. An explicit binding context disambiguates them from their
+ * special forms (`prev of`, `... at e`, `what is e`). See docs/GRAMMAR.md. */
+static int tok_is_ident_like(TokType type) {
+    return type == TOK_IDENT || type == TOK_PREV || type == TOK_AT ||
+           (type >= TOK_WHAT && type <= TOK_HOW);
+}
+
+/* A bare statement `X is ...` is an assignment when X is identifier-like AND is
+ * not a question word: `what is e` is the interrogative form, so the six
+ * question words followed by `is` are NOT assignment targets. prev/at have no
+ * `is` special form, so they are. */
+static int tok_is_assign_name(TokType type) {
+    return type == TOK_IDENT || type == TOK_PREV || type == TOK_AT;
+}
+
+/* Consume an identifier-like token in a binding position; on a non-matching
+ * token, raise the same "expected identifier" diagnostic p_expect does. The
+ * current token (the name) is returned for callers that captured it. */
+static void p_expect_ident_like(Parser *p) {
+    if (!tok_is_ident_like(p_cur(p)->type)) {
+        p_expect(p, TOK_IDENT);   /* raises + advances */
+        return;
+    }
+    p_advance(p);
+}
+
 static void p_skip_newlines(Parser *p) {
     while (p_cur(p)->type == TOK_NEWLINE) p_advance(p);
 }
@@ -672,10 +700,10 @@ static ASTNode* parse_primary(Parser *p) {
         int is_lambda = 0;
         p_advance(p); /* skip ( */
         /* Scan forward: if we see IDENT [, IDENT]* ) => then it's a lambda */
-        if (p_cur(p)->type == TOK_IDENT || p_cur(p)->type == TOK_RPAREN) {
+        if (tok_is_ident_like(p_cur(p)->type) || p_cur(p)->type == TOK_RPAREN) {
             int scan = p->pos;
             while (scan < p->tl->count &&
-                   (p->tl->tokens[scan].type == TOK_IDENT || p->tl->tokens[scan].type == TOK_COMMA))
+                   (tok_is_ident_like(p->tl->tokens[scan].type) || p->tl->tokens[scan].type == TOK_COMMA))
                 scan++;
             if (scan + 1 < p->tl->count &&
                 p->tl->tokens[scan].type == TOK_RPAREN && p->tl->tokens[scan+1].type == TOK_ARROW)
@@ -687,7 +715,7 @@ static ASTNode* parse_primary(Parser *p) {
             p_advance(p); /* skip ( */
             char **params = xmalloc_array(16, sizeof(char*));
             int param_count = 0;
-            while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
+            while (tok_is_ident_like(p_cur(p)->type) && param_count < 16) {
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
                 if (p_cur(p)->type == TOK_COMMA) p_advance(p);
@@ -742,7 +770,7 @@ static ASTNode* parse_primary(Parser *p) {
         if (p_cur(p)->type == TOK_FOR) {
             p_advance(p);
             Token *var_tok = p_cur(p);
-            p_expect(p, TOK_IDENT);
+            p_expect_ident_like(p);
             p_expect(p, TOK_IN);
             ASTNode *iter = parse_expression(p);
             ASTNode *filter = NULL;
@@ -1095,7 +1123,7 @@ static ASTNode* parse_statement(Parser *p) {
             p_advance(p); /* skip ( */
             params = xmalloc_array(16, sizeof(char*));
             defaults = xcalloc(16, sizeof(ASTNode*));
-            while (p_cur(p)->type == TOK_IDENT && param_count < 16) {
+            while (tok_is_ident_like(p_cur(p)->type) && param_count < 16) {
                 int slot = param_count;
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
@@ -1152,7 +1180,7 @@ static ASTNode* parse_statement(Parser *p) {
         p_expect(p, TOK_CATCH);
         Token *err_tok = p_cur(p);
         char *err_name = "err";
-        if (err_tok->type == TOK_IDENT) {
+        if (tok_is_ident_like(err_tok->type)) {
             err_name = err_tok->str_val;
             p_advance(p);
         }
@@ -1279,7 +1307,7 @@ static ASTNode* parse_statement(Parser *p) {
     if (t->type == TOK_FOR) {
         p_advance(p);
         Token *var_tok = p_cur(p);
-        p_expect(p, TOK_IDENT);
+        p_expect_ident_like(p);
         p_expect(p, TOK_IN);
         ASTNode *iter = parse_expression(p);
         p_expect(p, TOK_COLON);
@@ -1483,7 +1511,7 @@ static ASTNode* parse_statement(Parser *p) {
         p->pos = saved;
     }
 
-    if (t->type == TOK_IDENT && (p_peek(p, 1)->type == TOK_IS || is_compound_assign(p_peek(p, 1)->type))) {
+    if (tok_is_assign_name(t->type) && (p_peek(p, 1)->type == TOK_IS || is_compound_assign(p_peek(p, 1)->type))) {
         Token *name_tok = p_advance(p);
         int compound = is_compound_assign(p_cur(p)->type);
         char cop[4];
@@ -1516,7 +1544,7 @@ static ASTNode* parse_statement(Parser *p) {
     if (t->type == TOK_LOCAL) {
         Token *local_tok = p_advance(p);
         Token *name_tok = p_cur(p);
-        p_expect(p, TOK_IDENT);
+        p_expect_ident_like(p);
         p_expect(p, TOK_IS);
         ASTNode *expr = parse_expression(p);
         p_match(p, TOK_NEWLINE);

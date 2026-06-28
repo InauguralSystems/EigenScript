@@ -1,0 +1,55 @@
+# Soft keywords are usable as ordinary identifiers outside their special forms.
+# - prev / at: identifier-like everywhere except `prev of` / `... at <expr>`.
+# - the six question words: identifier-like except when followed by `is`
+#   (which is the interrogative form).
+# Predicates (converged, ...) are NOT soft — they stay reserved.
+
+# --- prev / at bind via plain and compound assignment ---
+prev is 7
+assert of [prev == 7, "SK1 prev binds via assignment"]
+at is 8
+assert of [at == 8, "SK2 at binds via assignment"]
+at += 2
+assert of [at == 10, "SK3 at compound-assign"]
+
+# --- as function params (named and lambda) ---
+define usep(prev) as:
+    return prev * 2
+assert of [(usep of 5) == 10, "SK4 prev as named param"]
+define useq(what) as:
+    return what + 1
+assert of [(useq of 9) == 10, "SK5 question-word as named param"]
+lam is (at) => at + 100
+assert of [(lam of 1) == 101, "SK6 at as lambda param"]
+
+# --- as loop variables ---
+total is 0
+for prev in [1, 2, 3]:
+    total is total + prev
+assert of [total == 6, "SK7 prev as loop var"]
+wtotal is 0
+for what in [10, 20]:
+    wtotal is wtotal + what
+assert of [wtotal == 30, "SK8 question-word as loop var"]
+
+# --- as a local binding ---
+define withlocal() as:
+    local at is 99
+    return at
+assert of [(withlocal of null) == 99, "SK9 at as local binding"]
+
+# --- as a catch variable ---
+caught is 0
+try:
+    throw of "boom"
+catch prev:
+    caught is 1
+assert of [caught == 1, "SK10 prev as catch var"]
+
+# --- special forms still win, even with same-named variables in scope ---
+v is 1
+v is 5
+assert of [(prev of v) == 1, "SK11 prev of x stays temporal"]
+assert of [(what is v) == 5, "SK12 what is x stays interrogative"]
+
+print of "soft keyword idents: all passed"
