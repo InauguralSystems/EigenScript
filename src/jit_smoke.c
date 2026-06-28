@@ -36,6 +36,8 @@ void free_value(Value *v) { (void)v; }
 /* Stage 5b references &g_trace_hist as an immediate in the SET-name
  * inline trace gate. Lives in trace.c in the real binary. */
 int g_trace_hist = 0;
+/* OP_LINE bakes &g_trace_current_line to stamp the history line. trace.c. */
+int g_trace_current_line = 0;
 
 /* Stage 5d computes the dict-cache hash at compile time via
  * env_hash_name (eigenscript.c). The smoke binary never reaches the

@@ -28,6 +28,12 @@
  * immediate at compile time. Declared here instead of pulling in
  * trace.h (which drags Value/Env decls the smoke build stubs out). */
 extern int g_trace_hist;
+/* Same rationale as g_trace_hist (declared here, not via trace.h, to keep the
+ * smoke build free of Value/Env decls): its address is baked as a movabs
+ * immediate so OP_LINE can stamp it. The interpreter CASE(LINE) writes it
+ * unconditionally — the line prev_record_assign records into history — so the
+ * JIT must too, or temporal at/when/state_at freeze at the OSR point. */
+extern int g_trace_current_line;
 
 struct EigsJitCache {
     uint8_t *base;
@@ -948,6 +954,13 @@ static uint8_t *emit_movl_imm_at_disp32_rbx(uint8_t *w, int32_t disp,
                                             int32_t value) {
     *w++ = 0xC7; *w++ = 0x83;
     w = emit_u32(w, (uint32_t)disp);
+    return emit_u32(w, (uint32_t)value);
+}
+
+/* movl $imm32, (%rax)  (6 bytes) — store immediate to *(int32_t*)%rax. Used to
+ * stamp a global whose address was just baked into %rax via movabs. */
+static uint8_t *emit_movl_imm_at_rax(uint8_t *w, int32_t value) {
+    *w++ = 0xC7; *w++ = 0x00;
     return emit_u32(w, (uint32_t)value);
 }
 
@@ -3772,6 +3785,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                        ((uint16_t)chunk->code[i + 2] << 8));
             w = emit_movl_imm_at_disp32_rbx(w, g_layout.off_current_line,
                                             (int32_t)line);
+            /* Also stamp g_trace_current_line (the line prev_record_assign
+             * writes into the history tape), mirroring the interpreter's
+             * CASE(LINE). Without this, temporal `at`/`when`/`state_at` and
+             * named interrogatives are silently wrong under JIT/OSR — frozen at
+             * the line where the thunk took over. %rax is scratch between ops. */
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_current_line);
+            w = emit_movl_imm_at_rax(w, (int32_t)line);
             i += 3;
         }
         /* Update last_imm in lockstep with the scanner's last_push_immediate.

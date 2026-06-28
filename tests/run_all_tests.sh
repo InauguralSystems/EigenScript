@@ -1802,6 +1802,10 @@ else
 fi
 echo ""
 
+# Temporal correctness under JIT/OSR: a deep loop's `at`/`state_at` must not
+# freeze at the OSR point (OP_LINE must stamp g_trace_current_line in the JIT).
+check_eigs_suite "JIT temporal at/state_at under OSR (g_trace_current_line)" test_jit_temporal_osr.eigs "All tests passed" 2
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?
