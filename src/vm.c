@@ -45,6 +45,21 @@ void vm_obs_slot_dropped(Env *e) {
     if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
 }
 
+/* Classify an observer slot's trajectory by predicate kind (0..5), matching the
+ * bare OP_PREDICATE dispatch. Shared by the named OP_PREDICATE_SLOT/NAME ops,
+ * which read a SPECIFIC binding's slot instead of the global last-observed one. */
+static int vm_slot_predicate(const ObserverSlot *s, uint16_t kind) {
+    switch (kind) {
+    case 0: return observer_slot_converged(s);
+    case 1: return observer_slot_stable(s);
+    case 2: return observer_slot_improving(s);
+    case 3: return observer_slot_oscillating(s);
+    case 4: return observer_slot_diverging(s);
+    case 5: return observer_slot_equilibrium(s);
+    }
+    return 0;
+}
+
 /* Phase 5: VM execution state (g_vm), loop-stall accounting
  * (g_loop_stall_count, g_loop_iterations, g_loop_exit_reason),
  * control-flow / error-state globals (g_return_val, g_returning,
@@ -1891,6 +1906,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_LOOP_ENV_FRESH] = &&lbl_LOOP_ENV_FRESH,
         [OP_LOOP_ENV_END] = &&lbl_LOOP_ENV_END,
         [OP_LOOP_ENV_CLEAR] = &&lbl_LOOP_ENV_CLEAR,
+        [OP_PREDICATE_SLOT] = &&lbl_PREDICATE_SLOT,
+        [OP_PREDICATE_NAME] = &&lbl_PREDICATE_NAME,
         [OP_BREAK] = &&lbl_BREAK, [OP_CONTINUE] = &&lbl_CONTINUE,
         [OP_TRY_BEGIN] = &&lbl_TRY_BEGIN, [OP_TRY_END] = &&lbl_TRY_END,
         [OP_OBSERVE_ASSIGN] = &&lbl_OBSERVE_ASSIGN,
@@ -4089,6 +4106,42 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             case 5: result = observer_slot_equilibrium(s); break;
             }
         }
+        vm_push(make_num(result ? 1.0 : 0.0));
+        DISPATCH();
+    }
+
+    CASE(PREDICATE_SLOT): {
+        /* `<predicate> of <local>` — classify the NAMED local's slot trajectory
+         * (mirrors REPORT_SLOT), not the global last-observed alias the bare
+         * OP_PREDICATE reads. An unobserved/empty slot is false. */
+        uint16_t kind = read_u16(ip); ip += 2;
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        int result = 0;
+        if (e && (int)slot < e->obs_cap && e->obs[slot].used)
+            result = vm_slot_predicate(&e->obs[slot], kind);
+        vm_push(make_num(result ? 1.0 : 0.0));
+        DISPATCH();
+    }
+
+    CASE(PREDICATE_NAME): {
+        /* `<predicate> of <name>` — resolve the binding's (env,slot) and classify
+         * its slot (mirrors REPORT_NAME). Undefined name raises like GET_NAME. */
+        uint16_t kind = read_u16(ip); ip += 2;
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        int oidx = -1, odepth = 0;
+        Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (!oe) {
+            runtime_error(current_line, "undefined variable '%s'", name);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        int result = 0;
+        if (oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used)
+            result = vm_slot_predicate(&oe->obs[oidx], kind);
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }

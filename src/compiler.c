@@ -127,6 +127,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
     case OP_REPORT_SLOT: case OP_REPORT_NAME:
     case OP_OBSERVE_VALUE_SLOT: case OP_OBSERVE_VALUE_NAME:
+    case OP_PREDICATE_SLOT: case OP_PREDICATE_NAME:
         return 1;
     /* Push 2 */
     case OP_DUP2:
@@ -1288,8 +1289,20 @@ static int cond_is_observer_based(const ASTNode *n) {
         case AST_UNARY:    return cond_is_observer_based(n->data.unary.operand);
         case AST_BINOP:    return cond_is_observer_based(n->data.binop.left) ||
                                   cond_is_observer_based(n->data.binop.right);
-        case AST_RELATION: return cond_is_observer_based(n->data.relation.left) ||
-                                  cond_is_observer_based(n->data.relation.right);
+        case AST_RELATION:
+            /* A NAMED predicate `<pred> of <ident>` is an explicit, self-
+             * terminating loop condition — it reads that binding's slot each
+             * iteration — so it must NOT get the global-alias auto-stall, which
+             * would halt on whatever was observed last (the settle_steps bug).
+             * Only the BARE predicate opts into the stall. */
+            if (n->data.relation.left &&
+                n->data.relation.left->type == AST_PREDICATE &&
+                n->data.relation.right &&
+                n->data.relation.right->type == AST_IDENT) {
+                return 0;
+            }
+            return cond_is_observer_based(n->data.relation.left) ||
+                   cond_is_observer_based(n->data.relation.right);
         default:           return 0;
     }
 }
@@ -1888,6 +1901,23 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         ASTNode *arg_node = node->data.relation.right;
 
         {
+            /* `<predicate> of <ident>` (converged/stable/improving/oscillating/
+             * diverging/equilibrium): classify the NAMED binding's slot
+             * trajectory — not the global last-observed alias the bare predicate
+             * reads. Parallels `report of x`; the operand removes the ambiguity. */
+            if (fn_node && fn_node->type == AST_PREDICATE &&
+                arg_node && arg_node->type == AST_IDENT) {
+                uint16_t pkind = (uint16_t)fn_node->data.predicate.kind;
+                uint32_t ph = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
+                int pslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, ph) : -1;
+                if (pslot >= 0) {
+                    emit_op_u16_u16(c, OP_PREDICATE_SLOT, pkind, (uint16_t)pslot, node->line);
+                    break;
+                }
+                int pnidx = add_string_constant(c, arg_node->data.ident.name);
+                emit_op_u16_u16(c, OP_PREDICATE_NAME, pkind, (uint16_t)pnidx, node->line);
+                break;
+            }
             if (fn_node && fn_node->type == AST_IDENT &&
                 strcmp(fn_node->data.ident.name, "report") == 0 &&
                 arg_node && arg_node->type == AST_IDENT) {

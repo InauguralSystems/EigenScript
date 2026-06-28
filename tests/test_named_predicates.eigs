@@ -1,0 +1,37 @@
+# Named observer predicates: `<predicate> of <var>` binds to that binding's slot
+# trajectory, not the global last-observed alias the bare predicate reads.
+# This removes the ambiguity that let a trailing assignment hijack the predicate
+# (e.g. dynamics settle_steps returning the same step count for every rate).
+load_file of "lib/test.eigs"
+
+# 1. `converged of x` reads x even after an unrelated binding is observed last;
+#    the bare form reads the last-observed binding (y).
+x is 100.0
+i is 0
+loop while i < 40:
+    x is x * 0.5
+    i is i + 1
+y is 999.0
+assert_eq of [converged of x, 1, "converged of x reads x (settled)"]
+assert_eq of [converged, 0, "bare converged reads the last-observed binding (y)"]
+
+# 2. A named-predicate loop condition is rate-dependent and self-terminating —
+#    no global-alias auto-stall hijack from the trailing counter `k`.
+define settle(rate) as:
+    v is 100.0
+    k is 0
+    loop while not (converged of v):
+        v is v * rate
+        k is k + 1
+    return k
+assert of [(settle of 0.5) != (settle of 0.95), "settle is rate-dependent (named predicate)"]
+
+# 3. all six predicates accept the named form
+a is 1.0
+assert_eq of [type of (stable of a), "num", "stable of x"]
+assert_eq of [type of (improving of a), "num", "improving of x"]
+assert_eq of [type of (oscillating of a), "num", "oscillating of x"]
+assert_eq of [type of (diverging of a), "num", "diverging of x"]
+assert_eq of [type of (equilibrium of a), "num", "equilibrium of x"]
+
+test_summary of null
