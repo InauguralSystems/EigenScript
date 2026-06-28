@@ -1315,19 +1315,38 @@ Value* builtin_trim(Value *arg) {
     return result;
 }
 
+/* Upper bound on a str_replace result, beyond which it raises rather than
+ * attempt the allocation (a pathological count × replacement expansion). */
+#define STR_REPLACE_MAX ((size_t)256 * 1024 * 1024)
+
 Value* builtin_str_replace(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
     const char *str = "", *old_s = "", *new_s = "";
     if (arg->data.list.items[0]->type == VAL_STR) str = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_STR) old_s = arg->data.list.items[1]->data.str;
     if (arg->data.list.items[2]->type == VAL_STR) new_s = arg->data.list.items[2]->data.str;
-    int old_len = strlen(old_s), new_len = strlen(new_s), str_len = strlen(str);
+    size_t old_len = strlen(old_s), new_len = strlen(new_s), str_len = strlen(str);
     if (old_len == 0) return make_str(str);
     /* Count occurrences to size buffer */
-    int count = 0;
+    size_t count = 0;
     const char *p = str;
     while ((p = strstr(p, old_s)) != NULL) { count++; p += old_len; }
-    int result_len = str_len + count * (new_len - old_len);
+    /* result_len = str_len + count*(new_len - old_len), computed in size_t.
+     * The old int form overflowed count*(new_len-old_len) to a small positive
+     * value, undersized the malloc, then overran it. Cap the expansion with a
+     * catchable error (as tensor/model ops cap their sizes) so a pathological
+     * blow-up neither overflows nor attempts a multi-gigabyte allocation. */
+    size_t result_len;
+    if (new_len > old_len) {
+        size_t grow = new_len - old_len;
+        if (count != 0 && grow > (STR_REPLACE_MAX - str_len) / count) {
+            runtime_error(0, "str_replace result too large");
+            return make_null();
+        }
+        result_len = str_len + count * grow;
+    } else {
+        result_len = str_len - count * (old_len - new_len);
+    }
     char *result = xmalloc(result_len + 1);
     char *dst = result;
     p = str;
@@ -3283,11 +3302,15 @@ static EigsChunk *vm_build_chunk_desc(Value *desc) {
         if (consts->data.list.items[i])
             chunk_add_constant(chunk, consts->data.list.items[i]);
 
-    /* nested function chunks (creator ref transfers into functions[]) */
+    /* nested function chunks (creator ref transfers into functions[]). A
+     * nested descriptor that fails to build/verify invalidates the whole
+     * chunk — silently dropping it would shift the indices OP_CLOSURE refers
+     * to (wrong function, or out of range). */
     if (n >= 3 && d[2] && d[2]->type == VAL_LIST) {
         for (int i = 0; i < d[2]->data.list.count; i++) {
             EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i]);
-            if (fn) chunk_add_function(chunk, fn);
+            if (!fn) { chunk_free(chunk); return NULL; }
+            chunk_add_function(chunk, fn);
         }
     }
 
@@ -3309,6 +3332,10 @@ static EigsChunk *vm_build_chunk_desc(Value *desc) {
     /* The VM runs on its global value stack (VM_STACK_MAX), so max_stack is a
      * hint only. */
     chunk->max_stack = 64;
+
+    /* Reject untrusted bytecode with out-of-range constant/function/jump
+     * operands before it reaches the VM (which trusts operand indices). */
+    if (!chunk_verify(chunk)) { chunk_free(chunk); return NULL; }
     return chunk;
 }
 
@@ -4453,16 +4480,21 @@ Value* builtin_write_bytes(Value *arg) {
 Value* builtin_buf_copy(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_null();
     Value *src = arg->data.list.items[0];
-    int src_off = (int)arg->data.list.items[1]->data.num;
     Value *dst = arg->data.list.items[2];
-    int dst_off = (int)arg->data.list.items[3]->data.num;
-    int count = (int)arg->data.list.items[4]->data.num;
     if (!src || src->type != VAL_BUFFER || !dst || dst->type != VAL_BUFFER) return make_null();
-    if (src_off < 0 || dst_off < 0 || count <= 0) return make_null();
-    if (src_off + count > src->data.buffer.count) return make_null();
-    if (dst_off + count > dst->data.buffer.count) return make_null();
+    /* Read as 64-bit and bound with subtraction (off > count - n), never
+     * addition (off + n > count): the int-add form let two large offsets
+     * overflow negative, pass both checks, and drive memmove out of bounds. */
+    long long src_off = (long long)arg->data.list.items[1]->data.num;
+    long long dst_off = (long long)arg->data.list.items[3]->data.num;
+    long long count   = (long long)arg->data.list.items[4]->data.num;
+    long long src_n   = src->data.buffer.count;
+    long long dst_n   = dst->data.buffer.count;
+    if (count <= 0) return make_null();
+    if (src_off < 0 || src_off > src_n - count) return make_null();
+    if (dst_off < 0 || dst_off > dst_n - count) return make_null();
     memmove(&dst->data.buffer.data[dst_off], &src->data.buffer.data[src_off],
-            count * sizeof(double));
+            (size_t)count * sizeof(double));
     return make_null();
 }
 
