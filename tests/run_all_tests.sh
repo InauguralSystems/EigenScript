@@ -1221,18 +1221,28 @@ fi
 echo ""
 
 # [43] Extra error-path coverage (always runs)
-echo "[43/47] Error-Path Extras (24 checks)"
+echo "[43/47] Error-Path Extras (48 checks)"
 EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1); EE_OUTPUT_RC=$?
 if rc_ok "$EE_OUTPUT_RC" "$EE_OUTPUT" && echo "$EE_OUTPUT" | grep -q "All error_extra tests passed"; then
-    TOTAL=$((TOTAL + 24))
-    PASS=$((PASS + 24))
-    echo "  PASS: all 24 error-path checks"
+    TOTAL=$((TOTAL + 48))
+    PASS=$((PASS + 48))
+    echo "  PASS: all 48 error-path checks"
 else
-    TOTAL=$((TOTAL + 24))
-    FAIL=$((FAIL + 24))
+    TOTAL=$((TOTAL + 48))
+    FAIL=$((FAIL + 48))
     echo "  FAIL: error-path tests"
     echo "$EE_OUTPUT" | grep -iE "assert|error" | head -5
 fi
+echo ""
+
+# [43a2] Builtin argument-validation error paths (builtins.c arg guards)
+echo "[43a2] Builtin Argument Errors (26 checks)"
+check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin_errors tests passed" 26
+echo ""
+
+# [43a3] EigenStore header-validation / corruption error paths (ext_store.c)
+echo "[43a3] Store Corruption Errors (12 checks)"
+check_eigs_suite "store corruption errors" test_store_corruption.eigs "All store_corruption tests passed" 12
 echo ""
 
 # [43b] Eval-recursion-depth guard (runaway recursion → runtime error)
@@ -1968,14 +1978,14 @@ echo ""
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert
 # (on x86-64) that thunks really compiled — a regression that quietly
 # disables the JIT must not let this section pass interpreted.
-echo "[82] JIT Fast Paths (22 checks + thunk gate)"
+echo "[82] JIT Fast Paths (23 checks + thunk gate)"
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
-TOTAL=$((TOTAL + 22))
+TOTAL=$((TOTAL + 23))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
-    PASS=$((PASS + 22))
-    echo "  PASS: all 22 JIT fast-path checks"
+    PASS=$((PASS + 23))
+    echo "  PASS: all 23 JIT fast-path checks"
 else
-    FAIL=$((FAIL + 22))
+    FAIL=$((FAIL + 23))
     echo "  FAIL: JIT fast-path tests (rc=$JPATH_RC)"
     echo "$JPATH_OUTPUT" | grep -iE "FAIL|error" | head -5
 fi

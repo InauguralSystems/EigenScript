@@ -343,6 +343,39 @@ check of ["interrogated-name hot assign", fns1 == 10500]
 check of ["captured-name hot assign", fns2 == 10500]
 
 # ----------------------------------------------------------------
+# Bitwise operators in a hot fn-local loop. The interpreter bitwise
+# paths are covered by test_bitwise.eigs, but the JIT *emitters* for
+# OR/XOR/shift-left/shift-right/NOT (emit_or_rax_rdx, emit_xor_rdx_rax,
+# emit_shl_cl_rdx, emit_sar_cl_rdx, emit_not_rax) only fire on hot code
+# and were unhit by the suite — only AND (`& mask`) appeared above. This
+# loop is hot enough to JIT-compile and exercises all six operators with
+# zero bailouts; the checksum is identical interpreted vs JIT-compiled
+# (verified with EIGS_JIT_OFF=1), so a miscompiled bitwise emitter fails
+# here loudly.
+# ----------------------------------------------------------------
+define bitwise_mix(seed) as:
+    a is seed
+    acc is 0
+    k is 0
+    loop while k < 200:
+        a is (a | 1)
+        a is (a ^ 3)
+        a is (a << 2)
+        a is (a >> 1)
+        a is (~a)
+        a is (a & 1023)
+        acc is acc + a
+        k is k + 1
+    return acc
+
+bw_total is 0
+b is 0
+loop while b < 80:
+    bw_total is bw_total + (bitwise_mix of b)
+    b is b + 1
+check of ["bitwise emitters hot loop", bw_total == 5621472]
+
+# ----------------------------------------------------------------
 print of f"jit paths: {pass_count} passed, {fail_count} failed"
 if fail_count == 0:
     print of "All tests passed"
