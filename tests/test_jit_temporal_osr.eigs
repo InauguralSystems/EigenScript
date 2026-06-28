@@ -1,0 +1,16 @@
+# Regression: under JIT/OSR the emitted OP_LINE must stamp g_trace_current_line
+# (the line prev_record_assign records into the history tape), mirroring the
+# interpreter's CASE(LINE). A deep loop (past the 5000 OSR threshold) assigns x
+# on a fixed line; `what is x at <line>` / `state_at` must return the LAST value
+# written there, not the value frozen at the point the OSR thunk took over.
+# Pre-fix the JIT skipped the stamp and these queries froze (e.g. 4999).
+load_file of "lib/test.eigs"
+x is 0
+k is 0
+loop while k < 20000:
+    x is k
+    k is k + 1
+assert_eq of [what is x at 11, 19999, "JIT temporal: at-line correct under OSR"]
+sa is state_at of 11
+assert_eq of [sa["x"], 19999, "JIT temporal: state_at correct under OSR"]
+test_summary of null
