@@ -1139,6 +1139,22 @@ else
 fi
 echo ""
 
+# exit builtin: clean process exit with a code, uncatchable, leak-clean.
+echo "exit builtin (code + uncatchable + leak-clean)"
+EX_OUTPUT=$(bash "$TESTS_DIR/test_exit.sh" 2>&1)
+EX_PASS=$(echo "$EX_OUTPUT" | grep -c "PASS:" || true)
+EX_FAIL=$(echo "$EX_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + EX_PASS + EX_FAIL))
+PASS=$((PASS + EX_PASS))
+FAIL=$((FAIL + EX_FAIL))
+if [ "$EX_FAIL" -gt 0 ]; then
+    echo "  FAIL: $EX_FAIL exit check(s) failed"
+    echo "$EX_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $EX_PASS exit checks"
+fi
+echo ""
+
 # [42a] Replay tape (record/replay determinism for list/dict/buffer)
 echo "[42a/47] Replay Tape (6 checks)"
 RP_OUTPUT=$(bash "$TESTS_DIR/test_replay.sh" 2>&1)

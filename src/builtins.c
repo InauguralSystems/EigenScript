@@ -519,6 +519,29 @@ Value* builtin_get_observer_thresholds(Value *arg) {
     return result;
 }
 
+/* Process-global exit request (declared in eigenscript.h). */
+int g_exit_requested = 0;
+int g_exit_code = 0;
+
+/* exit of N — request a clean process exit with code N (default 0). Sets the
+ * unwind flag (g_has_error) so vm_run returns to main, plus g_exit_requested so
+ * the unwind is UNCATCHABLE (a `try` must not swallow `exit`) and main exits
+ * with the code after its normal teardown — leak-clean, unlike a raw exit(). */
+Value* builtin_exit(Value *arg) {
+    int code = 0;
+    if (arg && arg->type == VAL_NUM) {
+        code = (int)arg->data.num;
+    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1 &&
+               arg->data.list.items[0] &&
+               arg->data.list.items[0]->type == VAL_NUM) {
+        code = (int)arg->data.list.items[0]->data.num;
+    }
+    g_exit_code = code;
+    g_exit_requested = 1;
+    g_has_error = 1;   /* triggers CHECK_ERROR -> unwind to main */
+    return make_null();
+}
+
 Value* builtin_assert(Value *arg) {
     /* Failure path raises a normal runtime error (g_has_error + g_error_msg)
      * rather than exit(1); that lets vm_run unwind to main, which runs the
@@ -4776,6 +4799,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "set_observer_thresholds", make_builtin(builtin_set_observer_thresholds));
     env_set_local_owned(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
     env_set_local_owned(env, "assert", make_builtin(builtin_assert));
+    env_set_local_owned(env, "exit", make_builtin(builtin_exit));
     env_set_local_owned(env, "throw", make_builtin(builtin_throw));
     env_set_local_owned(env, "keys", make_builtin(builtin_keys));
     env_set_local_owned(env, "values", make_builtin(builtin_values));

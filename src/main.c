@@ -114,6 +114,14 @@ static void eigenscript_repl(Env *env) {
             continue;
         }
         Value *result = vm_execute(repl_chunk, env);
+        if (g_exit_requested) {                 /* `exit of N` typed at the REPL */
+            g_has_error = 0;
+            chunk_free(repl_chunk);
+            if (result) val_decref(result);
+            free_tokenlist(&tl);
+            free_ast(ast);
+            break;
+        }
         /* Chunks are refcounted: drop the creator ref. Functions defined
          * on this line hold their own refs on their nested chunks. */
         chunk_free(repl_chunk);
@@ -301,7 +309,7 @@ int main(int argc, char **argv) {
         g_global_env = NULL;
         eigs_thread_detach();
         eigs_state_destroy(eigs_st);
-        return 0;
+        return g_exit_requested ? g_exit_code : 0;
     }
 
     /* Extract script directory for load_file resolution. g_script_dir
@@ -372,7 +380,11 @@ int main(int argc, char **argv) {
     /* An uncaught runtime error leaves g_has_error set (vm_run unwinds to
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */
-    int exit_code = g_has_error ? 1 : 0;
+    /* `exit of N` requests a specific code (and unwound via g_has_error); it
+     * takes precedence over the generic uncaught-error code. Clear the unwind
+     * flag so the teardown below sees a clean state. */
+    int exit_code = g_exit_requested ? g_exit_code : (g_has_error ? 1 : 0);
+    if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */
     eigs_clear_error_value();
