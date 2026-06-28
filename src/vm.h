@@ -356,6 +356,9 @@ void       chunk_patch_jump(EigsChunk *chunk, int offset);
 int        chunk_add_function(EigsChunk *chunk, EigsChunk *fn);
 void       chunk_disassemble(EigsChunk *chunk, const char *label);
 const char *op_name(uint8_t op);
+/* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
+ * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
+int        chunk_verify(EigsChunk *chunk);
 
 /* Compiler */
 EigsChunk *compile_ast(ASTNode *ast, Env *env);

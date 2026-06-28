@@ -1117,6 +1117,26 @@ else
 fi
 echo ""
 
+# Crash-safety regressions: parser depth guard + builtin int-overflow bounds.
+echo "Crash-safety regressions (parser depth + builtin overflow)"
+PD_OUTPUT=$(bash "$TESTS_DIR/test_parse_depth.sh" 2>&1)
+PD_PASS=$(echo "$PD_OUTPUT" | grep -c "PASS:" || true)
+PD_FAIL=$(echo "$PD_OUTPUT" | grep -c "FAIL:" || true)
+BO_OUTPUT=$(bash "$TESTS_DIR/test_builtin_overflow.sh" 2>&1)
+BO_PASS=$(echo "$BO_OUTPUT" | grep -c "PASS:" || true)
+BO_FAIL=$(echo "$BO_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + PD_PASS + PD_FAIL + BO_PASS + BO_FAIL))
+PASS=$((PASS + PD_PASS + BO_PASS))
+FAIL=$((FAIL + PD_FAIL + BO_FAIL))
+if [ "$PD_FAIL" -gt 0 ] || [ "$BO_FAIL" -gt 0 ]; then
+    echo "  FAIL: crash-safety regression"
+    echo "$PD_OUTPUT" | grep "FAIL:" | head -5
+    echo "$BO_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $((PD_PASS + BO_PASS)) crash-safety checks"
+fi
+echo ""
+
 # [42a] Replay tape (record/replay determinism for list/dict/buffer)
 echo "[42a/47] Replay Tape (6 checks)"
 RP_OUTPUT=$(bash "$TESTS_DIR/test_replay.sh" 2>&1)
@@ -2033,7 +2053,7 @@ check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
 check_eigs_suite "rename / remove_file (atomic swap, delete)" test_file_rename.eigs "All tests passed" 12
-check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_bytecode.eigs "All tests passed" 17
+check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_bytecode.eigs "All tests passed" 23
 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
 check_eigs_suite "observer interactions" test_observer_interactions.eigs "observer interactions: all passed" 1

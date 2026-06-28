@@ -115,8 +115,14 @@ int chunk_emit_jump(EigsChunk *chunk, uint8_t op, int line) {
 void chunk_patch_jump(EigsChunk *chunk, int offset) {
     int jump = chunk->code_len - offset - 2;
     if (jump > 0xFFFF) {
+        /* Operand is u16; a larger forward jump can't be encoded. Flag a
+         * parse/compile error so the entry paths abort before executing, and
+         * write a safe in-bounds 0 (jump-to-next) rather than leaving the
+         * 0xFFFF placeholder — the old code returned with 0xFFFF in place and
+         * no error flag, so the VM later jumped 65535 bytes out of bounds. */
         fprintf(stderr, "Bytecode jump too large at offset %d\n", offset);
-        return;
+        g_parse_errors++;
+        jump = 0;
     }
     chunk->code[offset] = (uint8_t)(jump & 0xFF);
     chunk->code[offset + 1] = (uint8_t)((jump >> 8) & 0xFF);
@@ -290,4 +296,113 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
         snprintf(buf, sizeof(buf), "%s.fn[%d]", label, f);
         chunk_disassemble(chunk->functions[f], buf);
     }
+}
+
+/* ---- Bytecode verifier (for untrusted assembled chunks) ----
+ *
+ * vm_run_bytecode / sandbox_run build a chunk from caller-supplied values and
+ * run it on the same VM the C compiler's output uses. The VM trusts operand
+ * indices, so a hand-crafted descriptor carrying an out-of-range constant,
+ * function, or jump operand drove an out-of-bounds read (segfault) straight
+ * past the sandbox's name-deny-list and loop cap. This one-pass verifier
+ * rejects such a chunk before it can run.
+ *
+ * Checked: every opcode is known (< OP_COUNT) and its operands fit in code;
+ * constant/name indices are < const_count; function indices are < fn_count;
+ * every jump target lands on an instruction boundary inside code. NOT checked:
+ * local/observer slot operands — the VM already guards every slot access
+ * (slot < env->count; observer slots auto-grow), so they cannot fault. */
+typedef enum {
+    VR_RAW = 0,   /* count / kind / line / runtime-guarded slot — no bound */
+    VR_CONST,     /* index into the constant pool (string constants = names) */
+    VR_FN,        /* index into nested functions[] */
+    VR_JFWD,      /* forward jump: target = end_of_instruction + offset */
+    VR_JBACK      /* backward jump: target = end_of_instruction - offset */
+} VerifyRole;
+
+/* Fill roles[] for op; return its operand count (0..3). Mirrors the operand
+ * layout the VM decodes in vm.c — keep in lockstep if an opcode changes. */
+static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
+    switch (op) {
+    case OP_CONST:
+        roles[0] = VR_CONST; return 1;
+    case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
+    case OP_REPORT_NAME: case OP_OBSERVE_VALUE_NAME: case OP_OBSERVE_NAME_POST:
+    case OP_IMPORT:
+        roles[0] = VR_CONST; return 1;
+    case OP_CLOSURE:
+        roles[0] = VR_FN; return 1;
+    case OP_JUMP: case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
+    case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
+    case OP_ITER_NEXT: case OP_TRY_BEGIN:
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
+        roles[0] = VR_JFWD; return 1;
+    case OP_JUMP_BACK:
+        roles[0] = VR_JBACK; return 1;
+    case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_CALL:
+    case OP_LIST: case OP_DICT:
+    case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
+    case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
+    case OP_INTERROGATE: case OP_PREDICATE:
+    case OP_MATCH: case OP_LINE: case OP_DESTRUCTURE_UNPACK:
+        roles[0] = VR_RAW; return 1;
+    case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
+        roles[0] = VR_RAW; roles[1] = VR_CONST; return 2;   /* slot, name */
+    case OP_LOCAL_IDX_GET:
+        roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* slot, list idx */
+    case OP_INTERROGATE_NAMED: case OP_INTERROGATE_NAMED_AT:
+        roles[0] = VR_RAW; roles[1] = VR_CONST; return 2;   /* kind, name */
+    case OP_DEFAULT_PARAM:
+        roles[0] = VR_RAW; roles[1] = VR_JFWD; return 2;    /* slot, skip */
+    case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
+        roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_CONST; return 3;
+    default:
+        return 0;   /* no operand */
+    }
+}
+
+int chunk_verify(EigsChunk *chunk) {
+    if (!chunk || chunk->code_len <= 0) return 0;
+    int n = chunk->code_len;
+    const uint8_t *code = chunk->code;
+    unsigned char *is_start = calloc((size_t)n + 1, 1);
+    int *targets = malloc((size_t)n * sizeof(int));
+    if (!is_start || !targets) { free(is_start); free(targets); return 0; }
+    int ntargets = 0, ok = 1, i = 0;
+
+    /* Pass 1: validate opcodes/operands/pool indices; mark instruction starts;
+     * stash jump targets (validated in pass 2 once is_start[] is complete). */
+    while (i < n) {
+        uint8_t op = code[i];
+        if (op >= OP_COUNT) { ok = 0; break; }
+        is_start[i] = 1;
+        VerifyRole roles[3];
+        int nops = op_verify_operands(op, roles);
+        int end = i + 1 + 2 * nops;
+        if (end > n) { ok = 0; break; }   /* truncated operand */
+        for (int k = 0; k < nops && ok; k++) {
+            int pos = i + 1 + 2 * k;
+            int operand = code[pos] | (code[pos + 1] << 8);
+            switch (roles[k]) {
+            case VR_CONST: if (operand >= chunk->const_count) ok = 0; break;
+            case VR_FN:    if (operand >= chunk->fn_count)    ok = 0; break;
+            case VR_JFWD:  targets[ntargets++] = end + operand; break;
+            case VR_JBACK: targets[ntargets++] = end - operand; break;
+            default: break;
+            }
+        }
+        if (!ok) break;
+        i = end;
+    }
+
+    /* Pass 2: every jump must land on an in-range instruction boundary. */
+    for (int t = 0; ok && t < ntargets; t++) {
+        int tgt = targets[t];
+        if (tgt < 0 || tgt >= n || !is_start[tgt]) ok = 0;
+    }
+
+    free(is_start);
+    free(targets);
+    return ok;
 }

@@ -285,6 +285,14 @@ static void patch_jump(Compiler *c, int offset) {
 static void emit_loop(Compiler *c, int loop_start, int line) {
     chunk_emit(c->chunk, OP_JUMP_BACK, line);
     int offset = c->chunk->code_len - loop_start + 2;
+    if (offset > 0xFFFF) {
+        /* Back-edge too far for a u16 operand. The old code silently
+         * truncated it (wrong back-jump → corrupt control flow). Flag the
+         * error and clamp to an in-bounds 0 so nothing executes a wild jump. */
+        fprintf(stderr, "Bytecode loop offset too large at line %d\n", line);
+        g_parse_errors++;
+        offset = 0;
+    }
     chunk_emit_u16(c->chunk, (uint16_t)offset, line);
     /* #174: the next emit is past the back-jump; the loop's exit edge
      * lands either here (fall-through after a false condition) or via

@@ -880,6 +880,7 @@ static ASTNode* parse_primary(Parser *p) {
 }
 
 static ASTNode* parse_unary(Parser *p);
+static ASTNode* parse_unary_body(Parser *p);
 
 static ASTNode* parse_relation(Parser *p) {
     ASTNode *left = parse_primary(p);
@@ -901,7 +902,25 @@ static ASTNode* parse_relation(Parser *p) {
     return left;
 }
 
+/* Depth-guard wrapper. parse_unary self-recurses on prefix `not`/`-`/`~`
+ * and, via parse_relation's `of` RHS, on `f of g of ...` — neither path
+ * touched the parse-depth guard before, so either could overflow the C
+ * stack on a single malformed line (SIGSEGV). Bounding parse_unary bounds
+ * both chains, since every level of each passes through here. */
 static ASTNode* parse_unary(Parser *p) {
+    if (g_parse_depth >= PARSE_MAX_DEPTH) {
+        fprintf(stderr, "Parse error line %d: expression nesting too deep\n",
+                p_cur(p)->line);
+        g_parse_errors++;
+        return make_node(AST_NULL, p_cur(p)->line);
+    }
+    g_parse_depth++;
+    ASTNode *r = parse_unary_body(p);
+    g_parse_depth--;
+    return r;
+}
+
+static ASTNode* parse_unary_body(Parser *p) {
     if (p_cur(p)->type == TOK_MINUS) {
         p_advance(p);
         ASTNode *operand = parse_unary(p);

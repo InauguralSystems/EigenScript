@@ -104,6 +104,15 @@ static void eigenscript_repl(Env *env) {
         g_return_val = NULL;
         g_has_error = 0;   /* don't carry a prior line's error into this one */
         EigsChunk *repl_chunk = compile_ast(ast, env);
+        if (g_parse_errors > 0) {   /* e.g. an un-encodable jump/loop offset */
+            fprintf(stderr, "%d compile error(s) — line not run\n", g_parse_errors);
+            chunk_free(repl_chunk);
+            free_tokenlist(&tl);
+            free_ast(ast);
+            input.len = 0;
+            input.data[0] = '\0';
+            continue;
+        }
         Value *result = vm_execute(repl_chunk, env);
         /* Chunks are refcounted: drop the creator ref. Functions defined
          * on this line hold their own refs on their nested chunks. */
@@ -346,6 +355,17 @@ int main(int argc, char **argv) {
     g_compile_module_slots = 1;
     EigsChunk *script_chunk = compile_ast(ast, global);
     g_compile_module_slots = 0;
+    if (g_parse_errors > 0) {   /* compile-stage error, e.g. un-encodable jump */
+        fprintf(stderr, "%d compile error(s) — aborting\n", g_parse_errors);
+        chunk_free(script_chunk);
+        free_ast(ast);
+        free(source);
+        free_tokenlist(&tl);
+        env_decref(global);
+        eigs_thread_detach();
+        eigs_state_destroy(eigs_st);
+        return 1;
+    }
     if (getenv("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);

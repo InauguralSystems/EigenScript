@@ -94,4 +94,23 @@ loopcode is [3, 31,6,0, 63,3,0, 30,10,0, 41]
 sr_loop is sandbox_run of [[loopcode, []], 1000]
 assert_eq of [sr_loop["ok"], 1, "sandbox: runaway loop bounded (returned)"]
 
+# --- bytecode verifier: out-of-range operands are rejected, not run ---
+# Untrusted/hand-assembled descriptors must never reach the VM with an
+# operand that drives an out-of-bounds read. The verifier rejects the chunk
+# (vm_run_bytecode -> null; sandbox_run -> {ok:0}) instead of segfaulting.
+
+# constant index past the pool (0xFFFF) — was an OOB read of constants[]
+assert_eq of [vm_run_bytecode of [[CONST,255,255, RETURN], [42]], null, "verify: OOB const index rejected"]
+# forward jump target past the end of code
+assert_eq of [vm_run_bytecode of [[CONST,0,0, JUMP_IF_FALSE,255,255, RETURN], [1]], null, "verify: OOB jump target rejected"]
+# CLOSURE referencing a function index with no functions present
+assert_eq of [vm_run_bytecode of [[CLOSURE,0,0, RETURN], []], null, "verify: OOB function index rejected"]
+# truncated operand (opcode with no room for its 2 operand bytes)
+assert_eq of [vm_run_bytecode of [[CONST], [42]], null, "verify: truncated operand rejected"]
+# unknown opcode byte
+assert_eq of [vm_run_bytecode of [[254, RETURN], []], null, "verify: unknown opcode rejected"]
+# same, through the sandbox: a bad descriptor returns ok=0, no crash
+sr_bad is sandbox_run of [[[CONST,255,255, RETURN], [42]], 1000]
+assert_eq of [sr_bad["ok"], 0, "verify: sandbox rejects OOB const (ok=0)"]
+
 test_summary of null
