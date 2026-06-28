@@ -1940,7 +1940,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     };
     #define CHECK_ERROR() do { \
         if (__builtin_expect(g_has_error, 0)) { \
-            if (frame->try_count > 0) { \
+            if (frame->try_count > 0 && !g_exit_requested) { \
                 g_has_error = 0; \
                 g_try_depth--; \
                 frame->try_count--; \
@@ -1950,7 +1950,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 while (g_vm.sp > _catch_bp) val_decref(vm_pop()); \
                 vm_push(vm_take_error_value()); \
                 ip = _catch_ip; \
-            } else if (!vm_handler_in_range(base_frame)) { \
+            } else if (g_exit_requested || !vm_handler_in_range(base_frame)) { \
                 /* Uncaught: no try anywhere in this vm_run's frames. Stop \
                  * the dispatch loop instead of continuing with null (which \
                  * cascades — see stack-overflow). g_has_error stays set so \

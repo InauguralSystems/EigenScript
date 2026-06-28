@@ -787,6 +787,14 @@ void env_reserve_slots(Env *env, int total);
  * leave it off so cross-chunk env lookups continue to work. */
 extern int g_compile_module_slots;
 
+/* `exit of N` requests a clean process exit with code N. Process-global (exit
+ * terminates the whole process). The builtin sets these + g_has_error to unwind
+ * vm_run to main via the existing error path; CHECK_ERROR treats the request as
+ * uncatchable (a `try` must not swallow `exit`), and main exits with the code
+ * after its normal teardown — so exit is leak-clean, unlike a raw exit(). */
+extern int g_exit_requested;
+extern int g_exit_code;
+
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
