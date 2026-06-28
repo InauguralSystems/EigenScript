@@ -67,4 +67,9 @@ run_case "matmul normal correctness" \
 'print of (matmul of [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]])' \
 '[[19, 22], [43, 50]]'
 
+# substr: a huge length overflowed `start + rlen` (int) past the clamp, then the
+# allocation aborted (SIGABRT). Now clamped via subtraction to the string tail.
+run_case "substr huge length → clamped, no abort" \
+'print of (substr of ["hello", 1, 2147483647])' "ello"
+
 echo ""

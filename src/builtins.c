@@ -1516,7 +1516,11 @@ Value* builtin_substr(Value *arg) {
     if (start < 0) start = 0;
     if (start >= slen) return make_str("");
     if (rlen < 0) rlen = 0;
-    if (start + rlen > slen) rlen = slen - start;
+    /* Subtraction form, not `start + rlen > slen`: a huge len (e.g. INT_MAX)
+     * overflowed the int add to a negative value, skipping the clamp, and then
+     * rlen+1 overflowed the allocation (SIGABRT). start < slen here, so
+     * slen - start is a safe positive bound. */
+    if (rlen > slen - start) rlen = slen - start;
     char *buf = xmalloc(rlen + 1);
     memcpy(buf, str_val->data.str + start, rlen);
     buf[rlen] = '\0';
