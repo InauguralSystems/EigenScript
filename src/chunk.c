@@ -314,7 +314,10 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
  * (slot < env->count; observer slots auto-grow), so they cannot fault. */
 typedef enum {
     VR_RAW = 0,   /* count / kind / line / runtime-guarded slot — no bound */
-    VR_CONST,     /* index into the constant pool (string constants = names) */
+    VR_CONST,     /* constant-pool index — any value type (OP_CONST push) */
+    VR_NAME,      /* constant-pool index that MUST be a string: the VM derefs it
+                   * as an interned name (const_interns[idx]), which is NULL for
+                   * a non-string constant → NULL deref. Bound AND type-check. */
     VR_FN,        /* index into nested functions[] */
     VR_JFWD,      /* forward jump: target = end_of_instruction + offset */
     VR_JBACK      /* backward jump: target = end_of_instruction - offset */
@@ -330,7 +333,7 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
     case OP_REPORT_NAME: case OP_OBSERVE_VALUE_NAME: case OP_OBSERVE_NAME_POST:
     case OP_IMPORT:
-        roles[0] = VR_CONST; return 1;
+        roles[0] = VR_NAME; return 1;
     case OP_CLOSURE:
         roles[0] = VR_FN; return 1;
     case OP_JUMP: case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
@@ -348,15 +351,15 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_MATCH: case OP_LINE: case OP_DESTRUCTURE_UNPACK:
         roles[0] = VR_RAW; return 1;
     case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
-        roles[0] = VR_RAW; roles[1] = VR_CONST; return 2;   /* slot, name */
+        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
     case OP_LOCAL_IDX_GET:
         roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* slot, list idx */
     case OP_INTERROGATE_NAMED: case OP_INTERROGATE_NAMED_AT:
-        roles[0] = VR_RAW; roles[1] = VR_CONST; return 2;   /* kind, name */
+        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
     case OP_DEFAULT_PARAM:
         roles[0] = VR_RAW; roles[1] = VR_JFWD; return 2;    /* slot, skip */
     case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
-        roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_CONST; return 3;
+        roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_NAME; return 3;
     default:
         return 0;   /* no operand */
     }
@@ -386,6 +389,9 @@ int chunk_verify(EigsChunk *chunk) {
             int operand = code[pos] | (code[pos + 1] << 8);
             switch (roles[k]) {
             case VR_CONST: if (operand >= chunk->const_count) ok = 0; break;
+            case VR_NAME:  if (operand >= chunk->const_count ||
+                               chunk->constants[operand]->type != VAL_STR) ok = 0;
+                           break;
             case VR_FN:    if (operand >= chunk->fn_count)    ok = 0; break;
             case VR_JFWD:  targets[ntargets++] = end + operand; break;
             case VR_JBACK: targets[ntargets++] = end - operand; break;

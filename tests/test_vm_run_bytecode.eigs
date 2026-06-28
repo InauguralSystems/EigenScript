@@ -113,4 +113,14 @@ assert_eq of [vm_run_bytecode of [[254, RETURN], []], null, "verify: unknown opc
 sr_bad is sandbox_run of [[[CONST,255,255, RETURN], [42]], 1000]
 assert_eq of [sr_bad["ok"], 0, "verify: sandbox rejects OOB const (ok=0)"]
 
+# a name-consuming opcode (GET_NAME) whose constant index points at a NUMERIC
+# constant — the interned-name pointer is NULL for non-strings, so the VM
+# dereferenced NULL. The verifier now requires name operands to be strings.
+DICT is 43
+assert_eq of [vm_run_bytecode of [[GET_NAME,0,0, RETURN], [42]], null, "verify: name op on numeric const rejected"]
+# OP_DICT with a count larger than the live stack — was an out-of-bounds stack
+# read; now bounded to the pairs actually present (here none -> empty dict).
+dr is vm_run_bytecode of [[DICT,255,255, RETURN], []]
+assert_eq of [type of dr, "dict", "verify: OP_DICT oversized count bounded (no OOB)"]
+
 test_summary of null

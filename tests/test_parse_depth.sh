@@ -28,4 +28,14 @@ check_no_crash "unary '-' nesting bomb"   "x is $(printf -- '-%.0s' $(seq 1 2000
 check_no_crash "'of' relation nesting bomb" "x is $(printf 'f of %.0s' $(seq 1 100000))1"
 check_no_crash "mixed prefix nesting bomb" "x is $(printf 'not -~%.0s' $(seq 1 40000))1"
 
+# Iterative chains (postfix accessors, left-assoc binops) build a deep AST
+# without recursing, so they bypassed the parse-depth guard and overflowed the
+# recursive compiler / free_ast walkers — a distinct vector from the prefix
+# bombs above. They must be bounded, not crash.
+check_no_crash "postfix index chain bomb"  "x is a$(printf '[0]%.0s' $(seq 1 1000))"
+check_no_crash "postfix dot chain bomb"    "x is a$(printf '.b%.0s' $(seq 1 100000))"
+check_no_crash "binop '+' chain bomb"      "x is 1$(printf '+1%.0s' $(seq 1 100000))"
+check_no_crash "binop '&' chain bomb"      "x is 1$(printf '&1%.0s' $(seq 1 100000))"
+check_no_crash "logical 'and' chain bomb"  "x is 1$(printf ' and 1%.0s' $(seq 1 100000))"
+
 echo ""
