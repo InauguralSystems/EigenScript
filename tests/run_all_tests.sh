@@ -1240,6 +1240,11 @@ echo "[43a2] Builtin Argument Errors (26 checks)"
 check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin_errors tests passed" 26
 echo ""
 
+# [43a3] EigenStore header-validation / corruption error paths (ext_store.c)
+echo "[43a3] Store Corruption Errors (12 checks)"
+check_eigs_suite "store corruption errors" test_store_corruption.eigs "All store_corruption tests passed" 12
+echo ""
+
 # [43b] Eval-recursion-depth guard (runaway recursion → runtime error)
 echo "[43b/47] Recursion Guard (4 checks)"
 RG_OUTPUT=$(./eigenscript ../tests/test_recursion_guard.eigs 2>&1); RG_OUTPUT_RC=$?
