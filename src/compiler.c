@@ -90,7 +90,18 @@ static void name_set_free(NameSet *s) {
 
 /* ---- Forward declarations ---- */
 static void compile_node(Compiler *c, ASTNode *node);
+static void compile_node_inner(Compiler *c, ASTNode *node);
 static void compile_block(Compiler *c, ASTNode **stmts, int count);
+
+/* Cap the compiler's recursion depth over the AST. The walk overflows the C
+ * stack on a pathological tree — a long postfix `a[0][0]…` or left-assoc binop
+ * `1+1+…` chain, which the parser builds iteratively and so the parse-depth
+ * guard never sees. compile_node sees the *combined* depth (nesting + chains),
+ * so one bound here covers every shape. Kept well below the worst-case
+ * (-O0 + AddressSanitizer) ~180-frame stack-overflow point measured locally,
+ * and far above any real expression depth. Reuses the per-thread parse_depth
+ * counter (0 once parsing has finished). */
+#define COMPILE_MAX_DEPTH 128
 
 /* ---- Stack depth tracking ---- */
 
@@ -1284,6 +1295,22 @@ static int cond_is_observer_based(const ASTNode *n) {
 }
 
 static void compile_node(Compiler *c, ASTNode *node) {
+    if (g_parse_depth >= COMPILE_MAX_DEPTH) {
+        /* Too deep to compile without overflowing the C stack. Flag the error
+         * (entry paths abort before executing, cf. the post-compile check) and
+         * emit a safe in-bounds placeholder rather than recursing further. */
+        eigs_record_first_error(node ? node->line : 0,
+                                "expression nesting too deep to compile");
+        g_parse_errors++;
+        emit(c, OP_NULL, node ? node->line : 0);
+        return;
+    }
+    g_parse_depth++;
+    compile_node_inner(c, node);
+    g_parse_depth--;
+}
+
+static void compile_node_inner(Compiler *c, ASTNode *node) {
     if (!node) { emit(c, OP_NULL, 0); return; }
 
     emit_line(c, node->line);
@@ -2316,6 +2343,8 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env) {
     NameSet module_names = {0};
     if (ast) collect_module_names_walk(ast, &module_names);
     compiler.module_names = &module_names;
+
+    g_parse_depth = 0;  /* reuse the parse-depth counter as the compile-depth guard */
 
     /* For module-level slot promotion: seed local_count past existing env entries
      * so SET_LOCAL slot indices don't collide with builtins/globals already there. */

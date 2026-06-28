@@ -19,7 +19,7 @@ run_case() {
     if [ $rc -eq 139 ] || [ $rc -eq 134 ]; then
         echo "  FAIL: $name (crash rc=$rc)"
         echo "$out" | tail -2
-    elif echo "$out" | grep -q "$want"; then
+    elif echo "$out" | grep -qF "$want"; then
         echo "  PASS: $name (rc=$rc)"
     else
         echo "  FAIL: $name (missing '$want', rc=$rc)"
@@ -51,5 +51,20 @@ run_case "buf_copy offset/count overflow → null" \
 b is buffer of 4
 buf_copy of [a, 2000000000, b, 2000000000, 2000000000]
 print of "survived"' "survived"
+
+# matmul: the result element count ar*bc overflowed int into a tiny allocation
+# while the kernel wrote ar*bc doubles (a 65536x1 by 1x65536 product). Now the
+# product is computed in 64-bit and rejected over the 10M cap — no heap overflow.
+run_case "flat-buffer matmul result overflow → no OOB" \
+'base is buffer of 65536
+a is reshape of [base, 65536, 1]
+b is reshape of [base, 1, 65536]
+c is matmul of [a, b]
+print of "survived"' "survived"
+
+# A normal matmul still produces the right answer (guards the cap refactor).
+run_case "matmul normal correctness" \
+'print of (matmul of [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]])' \
+'[[19, 22], [43, 50]]'
 
 echo ""

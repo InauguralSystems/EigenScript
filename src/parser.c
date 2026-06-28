@@ -478,6 +478,7 @@ static void compound_to_op(TokType t, char op[4]) {
 
 static ASTNode* parse_expression(Parser *p);
 static ASTNode* parse_statement(Parser *p);
+static int chain_too_deep(Parser *p);
 
 /* Recursion-depth guard for the recursive-descent parser. Nested expressions
  * (parens, lists, dicts, call args) and nested blocks each add a C-recursion
@@ -598,6 +599,7 @@ static ASTNode* parse_primary(Parser *p) {
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
         while (p_cur(p)->type == TOK_LBRACKET) {
+            if (chain_too_deep(p)) break;
             n = parse_subscript_suffix(p, n);
         }
         return n;
@@ -652,6 +654,7 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode *n = make_node(AST_NUM, p_cur(p)->line);
         n->data.num = t->num_val;
         while (p_cur(p)->type == TOK_LBRACKET) {
+            if (chain_too_deep(p)) break;
             n = parse_subscript_suffix(p, n);
         }
         return n;
@@ -662,6 +665,7 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode *n = make_node(AST_STR, p_cur(p)->line);
         n->data.str = xstrdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET) {
+            if (chain_too_deep(p)) break;
             n = parse_subscript_suffix(p, n);
         }
         return n;
@@ -678,6 +682,7 @@ static ASTNode* parse_primary(Parser *p) {
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
         while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
+            if (chain_too_deep(p)) break;
             if (p_cur(p)->type == TOK_DOT) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
@@ -739,6 +744,7 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode *expr = parse_expression(p);
         p_expect(p, TOK_RPAREN);
         while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
+            if (chain_too_deep(p)) break;
             if (p_cur(p)->type == TOK_DOT) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
@@ -808,6 +814,7 @@ static ASTNode* parse_primary(Parser *p) {
         n->data.list.count = count;
 
         while (p_cur(p)->type == TOK_LBRACKET) {
+            if (chain_too_deep(p)) break;
             n = parse_subscript_suffix(p, n);
         }
         return n;
@@ -845,6 +852,7 @@ static ASTNode* parse_primary(Parser *p) {
         n->data.dict.count = count;
         /* Handle postfix .key and [idx] */
         while (p_cur(p)->type == TOK_DOT || p_cur(p)->type == TOK_LBRACKET) {
+            if (chain_too_deep(p)) break;
             if (p_cur(p)->type == TOK_DOT) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
@@ -881,6 +889,25 @@ static ASTNode* parse_primary(Parser *p) {
 
 static ASTNode* parse_unary(Parser *p);
 static ASTNode* parse_unary_body(Parser *p);
+
+/* Charge one element of a left-associative / postfix operator chain against
+ * the shared parse-depth guard. These chains are built ITERATIVELY (while
+ * loops), so they bypass the recursive-descent depth guard and could otherwise
+ * build an AST too deep for the recursive compiler / free_ast walkers to handle
+ * without overflowing the C stack (e.g. `1+1+1+…` or `a[0][0]…`). The charged
+ * depth is released per top-level statement (parse_statement save/restores
+ * g_parse_depth), so a function with many separate short expressions is not
+ * penalized — only depth WITHIN one expression is bounded. Returns 1 (caller
+ * must stop extending the chain) when the limit is reached. */
+static int chain_too_deep(Parser *p) {
+    if (g_parse_depth >= PARSE_MAX_DEPTH) {
+        eigs_record_first_error(p_cur(p)->line, "expression too deeply nested");
+        g_parse_errors++;
+        return 1;
+    }
+    g_parse_depth++;
+    return 0;
+}
 
 static ASTNode* parse_relation(Parser *p) {
     ASTNode *left = parse_primary(p);
@@ -951,6 +978,7 @@ static ASTNode* parse_unary_body(Parser *p) {
 static ASTNode* parse_multiply(Parser *p) {
     ASTNode *left = parse_unary(p);
     while (p_cur(p)->type == TOK_STAR || p_cur(p)->type == TOK_SLASH || p_cur(p)->type == TOK_PERCENT) {
+        if (chain_too_deep(p)) break;
         char op[4] = {0};
         if (p_cur(p)->type == TOK_STAR) op[0] = '*';
         else if (p_cur(p)->type == TOK_SLASH) op[0] = '/';
@@ -969,6 +997,7 @@ static ASTNode* parse_multiply(Parser *p) {
 static ASTNode* parse_addition(Parser *p) {
     ASTNode *left = parse_multiply(p);
     while (p_cur(p)->type == TOK_PLUS || p_cur(p)->type == TOK_MINUS) {
+        if (chain_too_deep(p)) break;
         char op[4] = {0};
         op[0] = (p_cur(p)->type == TOK_PLUS) ? '+' : '-';
         p_advance(p);
@@ -985,6 +1014,7 @@ static ASTNode* parse_addition(Parser *p) {
 static ASTNode* parse_shift(Parser *p) {
     ASTNode *left = parse_addition(p);
     while (p_cur(p)->type == TOK_SHL || p_cur(p)->type == TOK_SHR) {
+        if (chain_too_deep(p)) break;
         char op[4] = {0};
         if (p_cur(p)->type == TOK_SHL) { op[0] = '<'; op[1] = '<'; }
         else { op[0] = '>'; op[1] = '>'; }
@@ -1002,6 +1032,7 @@ static ASTNode* parse_shift(Parser *p) {
 static ASTNode* parse_bitand(Parser *p) {
     ASTNode *left = parse_shift(p);
     while (p_cur(p)->type == TOK_AMP) {
+        if (chain_too_deep(p)) break;
         p_advance(p);
         ASTNode *right = parse_shift(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
@@ -1016,6 +1047,7 @@ static ASTNode* parse_bitand(Parser *p) {
 static ASTNode* parse_bitxor(Parser *p) {
     ASTNode *left = parse_bitand(p);
     while (p_cur(p)->type == TOK_CARET) {
+        if (chain_too_deep(p)) break;
         p_advance(p);
         ASTNode *right = parse_bitand(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
@@ -1030,6 +1062,7 @@ static ASTNode* parse_bitxor(Parser *p) {
 static ASTNode* parse_bitor(Parser *p) {
     ASTNode *left = parse_bitxor(p);
     while (p_cur(p)->type == TOK_BITOR) {
+        if (chain_too_deep(p)) break;
         p_advance(p);
         ASTNode *right = parse_bitxor(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
@@ -1069,6 +1102,7 @@ static ASTNode* parse_comparison(Parser *p) {
 static ASTNode* parse_and(Parser *p) {
     ASTNode *left = parse_comparison(p);
     while (p_cur(p)->type == TOK_AND) {
+        if (chain_too_deep(p)) break;
         p_advance(p);
         ASTNode *right = parse_comparison(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
@@ -1083,6 +1117,7 @@ static ASTNode* parse_and(Parser *p) {
 static ASTNode* parse_or(Parser *p) {
     ASTNode *left = parse_and(p);
     while (p_cur(p)->type == TOK_OR) {
+        if (chain_too_deep(p)) break;
         p_advance(p);
         ASTNode *right = parse_and(p);
         ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
@@ -1097,6 +1132,7 @@ static ASTNode* parse_or(Parser *p) {
 static ASTNode* parse_pipe(Parser *p) {
     ASTNode *left = parse_or(p);
     while (p_cur(p)->type == TOK_PIPE) {
+        if (chain_too_deep(p)) break;
         p_advance(p);
         ASTNode *fn = parse_or(p);
         /* a |> b desugars to b of a */
@@ -1121,7 +1157,20 @@ static ASTNode* parse_expression(Parser *p) {
     return r;
 }
 
+static ASTNode* parse_statement_inner(Parser *p);
+
 static ASTNode* parse_statement(Parser *p) {
+    /* Release any chain-charged depth (chain_too_deep) accumulated while
+     * parsing this statement, so the bound is per-statement, not cumulative
+     * across a whole function body. Nesting depth is preserved by parse_block's
+     * own guard. */
+    int saved_depth = g_parse_depth;
+    ASTNode *r = parse_statement_inner(p);
+    g_parse_depth = saved_depth;
+    return r;
+}
+
+static ASTNode* parse_statement_inner(Parser *p) {
     p_skip_newlines(p);
     Token *t = p_cur(p);
 

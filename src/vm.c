@@ -3044,6 +3044,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         int base = g_vm.sp - count * 2;
         if (base < 0) base = 0; /* guard against stack underflow */
         for (int i = 0; i < count; i++) {
+            /* Only consume pairs actually live on the stack. An untrusted
+             * (vm_run_bytecode / sandbox_run) chunk can claim a count larger
+             * than the live stack; reading past sp is an OOB access (OP_LIST
+             * guards the same way). Indices increase, so stop at the first gap. */
+            if (base + i * 2 + 1 >= g_vm.sp) break;
             Value *k = STK_AS_VAL(base + i * 2);
             Value *v = STK_AS_VAL(base + i * 2 + 1);
             if (k->type != VAL_STR) {
@@ -3052,7 +3057,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             }
             dict_set(dict, k->data.str, v);
         }
-        for (int i = 0; i < count * 2; i++)
+        for (int i = 0; i < count * 2 && g_vm.sp > base; i++)
             val_decref(vm_pop());
         vm_push(dict);
         DISPATCH();

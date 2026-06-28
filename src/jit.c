@@ -652,8 +652,10 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
-            /* Type-check at runtime proved TOS is immediate-num — so a
-             * subsequent OP_POP can use the peephole `dec ecx`. */
+            /* PEEK leaves the (arbitrary-typed) condition operand on the stack
+             * — for `and`/`or` the left operand can be a heap value — so the
+             * following OP_POP must NOT assume an immediate. The emitter treats
+             * these as last_imm pass-through (see the last_imm switch). */
         } else if (op == OP_ITER_NEXT) {
             /* Stage 4q-a: 3-byte op [op][exit_offset:16]. Helper does the
              * iter step against g_vm.stack[sp-1] and returns 1 (exhausted)
@@ -3782,7 +3784,6 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
         case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
         case OP_NEG: case OP_NOT: case OP_BNOT:
-        case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
             last_imm = 1; break;
         case OP_CONST: {
             uint16_t idx = (uint16_t)(chunk->code[op_start + 1] |
@@ -3792,7 +3793,14 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             break;
         }
         case OP_LINE:
-            /* Pass-through — line markers don't touch the stack. */
+        case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
+            /* Pass-through. LINE touches no stack; the PEEK ops read the
+             * condition but leave the operand on the stack (they don't push),
+             * so last_imm must retain whatever the value-producing op set.
+             * Forcing last_imm=1 here made the `and`/`or` fall-through OP_POP
+             * take the `dec %ecx` peephole and skip slot_decref on a HEAP
+             * left-operand (e.g. `node and node.next`) — one leaked ref per
+             * truthy iteration once OSR-compiled. */
             break;
         default:
             last_imm = 0; break;

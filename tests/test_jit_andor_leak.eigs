@@ -1,0 +1,22 @@
+# Regression: the JIT `and`/`or` fall-through OP_POP must decref a HEAP left
+# operand. `h and i` compiles to `push h; JUMP_IF_*_PEEK end; POP h; push i`.
+# The emitter wrongly marked the PEEK ops as last_imm=1, so the fall-through POP
+# took the `dec %ecx` peephole and skipped slot_decref on h. With h a heap value
+# (string), that leaked one ref per truthy iteration once the loop OSR-compiled.
+# Run well past the OSR threshold so the JIT thunk is exercised; the ASan leak
+# gate (run_all_tests.sh under detect_leaks=1) catches a regression.
+h is "a-heap-string"
+i is 0
+acc is 0
+loop while i < 12000:
+    r is h and i
+    acc is acc + r
+    i is i + 1
+
+# also exercise `or` with a heap left operand that short-circuits (truthy -> returns h)
+j is 0
+loop while j < 12000:
+    s is h or j
+    j is j + 1
+
+print of "jit-and-or-ok"

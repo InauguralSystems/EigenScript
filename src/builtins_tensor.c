@@ -57,7 +57,11 @@ static void buf_dims(Value *v, int *r, int *c) {
     else { *r = 1; *c = v->data.buffer.count; }   /* 1-D treated as a row vector */
 }
 static Value* make_shaped_buffer(int rows, int cols) {
-    int count = (rows > 0) ? rows * cols : cols;
+    /* 64-bit product: rows*cols in int overflowed to a tiny allocation while
+     * the matmul kernel wrote rows*cols (int64) elements past it. Callers cap
+     * the product (see builtin_tensor_matmul); clamp here too as defense. */
+    int64_t count64 = (rows > 0) ? (int64_t)rows * cols : cols;
+    int count = (count64 >= 0 && count64 <= 10000000) ? (int)count64 : 0;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = count;
@@ -343,6 +347,9 @@ Value* builtin_tensor_matmul(Value *arg) {
         int ar, ac, br, bc;
         buf_dims(a, &ar, &ac); buf_dims(b, &br, &bc);
         if (ac != br) return make_null();
+        /* Reject an oversized result before the kernel writes ar*bc doubles —
+         * ar*bc overflowed int into a tiny allocation, then OOB heap writes. */
+        if ((int64_t)ar * bc > 10000000) return make_null();
         /* a 1-D left operand yields a 1-D result (mirrors flat_to_tensor_1d) */
         Value *res = (a->data.buffer.rows == 0) ? make_shaped_buffer(0, bc)
                                                 : make_shaped_buffer(ar, bc);
@@ -353,7 +360,8 @@ Value* builtin_tensor_matmul(Value *arg) {
     double *af = tensor_to_flat(a, &ar, &ac);
     double *bf = tensor_to_flat(b, &br, &bc);
     if (!af || !bf || ac != br) { free(af); free(bf); return make_null(); }
-    double *out = xcalloc(ar * bc, sizeof(double));
+    if ((int64_t)ar * bc > 10000000) { free(af); free(bf); return make_null(); }
+    double *out = xcalloc((size_t)ar * bc, sizeof(double));
     ne_matmul_buf(af, ar, ac, bf, bc, out);
     Value *result;
     if (ar == 1)
