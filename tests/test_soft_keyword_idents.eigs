@@ -11,6 +11,11 @@ at is 8
 assert of [at == 8, "SK2 at binds via assignment"]
 at += 2
 assert of [at == 10, "SK3 at compound-assign"]
+# compound assignment is not the interrogative form, so question words qualify
+define qcompound(what) as:
+    what += 1
+    return what
+assert of [(qcompound of 4) == 5, "SK3b question-word compound-assign"]
 
 # --- as function params (named and lambda) ---
 define usep(prev) as:

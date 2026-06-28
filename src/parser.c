@@ -64,10 +64,10 @@ static int tok_is_ident_like(TokType type) {
            (type >= TOK_WHAT && type <= TOK_HOW);
 }
 
-/* A bare statement `X is ...` is an assignment when X is identifier-like AND is
- * not a question word: `what is e` is the interrogative form, so the six
- * question words followed by `is` are NOT assignment targets. prev/at have no
- * `is` special form, so they are. */
+/* Targets for a bare `X is ...` assignment specifically: identifier-like minus
+ * the question words, because `what is e` is the interrogative form. prev/at
+ * have no `is` special form, so they qualify. Compound assignment (`X += ...`)
+ * is never interrogative and uses the full tok_is_ident_like set instead. */
 static int tok_is_assign_name(TokType type) {
     return type == TOK_IDENT || type == TOK_PREV || type == TOK_AT;
 }
@@ -1511,7 +1511,11 @@ static ASTNode* parse_statement(Parser *p) {
         p->pos = saved;
     }
 
-    if (tok_is_assign_name(t->type) && (p_peek(p, 1)->type == TOK_IS || is_compound_assign(p_peek(p, 1)->type))) {
+    /* Bare `X is ...` excludes question words (that's the interrogative form);
+     * compound `X += ...` etc. is never interrogative, so it accepts the full
+     * identifier-like set including question words. */
+    if ((tok_is_assign_name(t->type) && p_peek(p, 1)->type == TOK_IS) ||
+        (tok_is_ident_like(t->type) && is_compound_assign(p_peek(p, 1)->type))) {
         Token *name_tok = p_advance(p);
         int compound = is_compound_assign(p_cur(p)->type);
         char cop[4];
