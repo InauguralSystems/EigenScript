@@ -189,10 +189,15 @@ coverage: coverage-clean
 	done
 	$(CC) --coverage -o $(BINARY) $(SOURCES:.c=.o) $(LDFLAGS)
 	-cd tests && bash run_all_tests.sh > /dev/null 2>&1 || true
-	@cd $(SRC_DIR) && gcov -n $(notdir $(SOURCES)) > ../coverage.txt 2>&1 || true
+	@cd $(SRC_DIR) && gcov -n -b $(notdir $(SOURCES)) > ../coverage.txt 2>&1 || true
 	@echo ""
-	@echo "=== Coverage Summary ==="
-	@awk '/^File/{f=$$2; next} /^Lines executed/ && f {gsub(/:/," ",$$0); print "  " f ": " $$3 " of " $$5 " lines"; f=""}' coverage.txt | sed "s/'//g"
+	@echo "=== Coverage Summary (line % | branches taken at least once) ==="
+	@echo "    Line coverage in the 80s routinely hides far weaker branch"
+	@echo "    coverage (error/edge paths) — both numbers are shown so the"
+	@echo "    gap is visible. The bug classes that bit before (#239 HTTP"
+	@echo "    DoS, #231 JIT POP peephole) lived in untaken branches."
+	@echo ""
+	@sed "s/'//g" coverage.txt | awk '/^File/{f=$$2; next} /^Lines executed/&&f{ll=$$0; sub(/.*:/,"",ll); sub(/% of.*/,"",ll)} /^Taken at least once/&&f{tt=$$0; sub(/.*:/,"",tt); sub(/% of.*/,"",tt); printf "  %-24s lines %6s%%   branches %6s%%\n", f, ll, tt; f=""} /^No branches/&&f{printf "  %-24s lines %6s%%   branches    n/a\n", f, ll; f=""}'
 	@echo ""
 	@echo "Per-file .gcov reports written to $(SRC_DIR)/*.gcov"
 	@echo "Run 'make coverage-clean' to remove coverage artifacts."
