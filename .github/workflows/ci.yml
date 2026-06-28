@@ -124,11 +124,15 @@ jobs:
   # Build the http+model variant and run the suite against it: the suite's
   # probe-gated sections ([44]-[45] HTTP, [47] model roundtrip/overflow,
   # transformer smoke) silently skip on the minimal build, so without this
-  # job ~5000 lines of extension C never execute in CI. Also compile-check
-  # the gfx variant and the LSP (both bitrot invisibly otherwise) and run the
+  # job ~5000 lines of extension C never execute in CI. Also build the gfx
+  # variant and run the suite against it (the audio-synthesis section [62] is
+  # pure DSP — no display needed — and only executes against a gfx build; the
+  # windowed gfx_* demos still auto-skip), exercise the embedding API
+  # (eigs_embed.c is otherwise 0% — embed-smoke is the only thing that runs
+  # it), compile-check the LSP (bitrots invisibly otherwise), and run the
   # standalone JIT emitter smoke tests.
   extensions:
-    name: extensions (http+model suite; gfx/lsp/jit-smoke)
+    name: extensions (http+model+gfx suite; embed/lsp/jit-smoke)
     needs: dev-image
     runs-on: ubuntu-latest
     permissions:
@@ -145,14 +149,20 @@ jobs:
       - name: JIT emitter smoke tests
         run: make jit-smoke
 
+      - name: Embedding API smoke test
+        run: make embed-smoke
+
       - name: Build http+model variant
         run: make http
 
       - name: Run full suite against http+model build
         run: cd tests && bash run_all_tests.sh
 
-      - name: Compile-check gfx variant
+      - name: Build gfx variant
         run: make gfx
+
+      - name: Run full suite against gfx build (executes audio section [62])
+        run: cd tests && bash run_all_tests.sh
 
       - name: Compile-check LSP
         run: make lsp

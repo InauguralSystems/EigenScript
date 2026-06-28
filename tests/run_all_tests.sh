@@ -1968,14 +1968,14 @@ echo ""
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert
 # (on x86-64) that thunks really compiled — a regression that quietly
 # disables the JIT must not let this section pass interpreted.
-echo "[82] JIT Fast Paths (22 checks + thunk gate)"
+echo "[82] JIT Fast Paths (23 checks + thunk gate)"
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
-TOTAL=$((TOTAL + 22))
+TOTAL=$((TOTAL + 23))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
-    PASS=$((PASS + 22))
-    echo "  PASS: all 22 JIT fast-path checks"
+    PASS=$((PASS + 23))
+    echo "  PASS: all 23 JIT fast-path checks"
 else
-    FAIL=$((FAIL + 22))
+    FAIL=$((FAIL + 23))
     echo "  FAIL: JIT fast-path tests (rc=$JPATH_RC)"
     echo "$JPATH_OUTPUT" | grep -iE "FAIL|error" | head -5
 fi
