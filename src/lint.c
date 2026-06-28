@@ -301,6 +301,56 @@ static void check_unreachable(ASTNode **stmts, int count, LintContext *ctx) {
     }
 }
 
+/* ---- Check: bare predicate in a multi-observe loop condition ---- */
+
+/* True if the condition contains a BARE predicate (`converged`, …) with no
+ * named subject. The named form `<pred> of <ident>` — RELATION(PREDICATE,
+ * IDENT) — is explicit and excluded. */
+static int cond_has_bare_predicate(const ASTNode *n) {
+    if (!n) return 0;
+    switch (n->type) {
+        case AST_PREDICATE: return 1;
+        case AST_UNARY:     return cond_has_bare_predicate(n->data.unary.operand);
+        case AST_BINOP:     return cond_has_bare_predicate(n->data.binop.left) ||
+                                   cond_has_bare_predicate(n->data.binop.right);
+        case AST_RELATION:
+            if (n->data.relation.left && n->data.relation.left->type == AST_PREDICATE &&
+                n->data.relation.right && n->data.relation.right->type == AST_IDENT)
+                return 0;   /* the named form — not bare */
+            return cond_has_bare_predicate(n->data.relation.left) ||
+                   cond_has_bare_predicate(n->data.relation.right);
+        default: return 0;
+    }
+}
+
+/* Collect distinct assignment-target names directly in a loop body (and its
+ * if/block branches), into `seen`. Unobserved blocks are skipped — those
+ * assignments don't move the observer. Used to decide whether a bare predicate
+ * condition is ambiguous about which binding it reads. */
+static void collect_loop_assign_names(ASTNode *n, const char *seen[], int cap, int *count) {
+    if (!n || *count >= cap) return;
+    switch (n->type) {
+        case AST_ASSIGN: {
+            const char *nm = n->data.assign.name;
+            if (!nm) break;
+            for (int i = 0; i < *count; i++) if (strcmp(seen[i], nm) == 0) return;
+            seen[(*count)++] = nm;
+            break;
+        }
+        case AST_IF:
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                collect_loop_assign_names(n->data.cond.if_body[i], seen, cap, count);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                collect_loop_assign_names(n->data.cond.else_body[i], seen, cap, count);
+            break;
+        case AST_BLOCK:
+            for (int i = 0; i < n->data.block.count; i++)
+                collect_loop_assign_names(n->data.block.stmts[i], seen, cap, count);
+            break;
+        default: break;
+    }
+}
+
 /* ---- Check: empty blocks ---- */
 
 static void check_empty_blocks(ASTNode *node, LintContext *ctx) {
@@ -320,8 +370,22 @@ static void check_empty_blocks(ASTNode *node, LintContext *ctx) {
                 check_empty_blocks(node->data.cond.else_body[i], ctx);
             break;
         case AST_LOOP:
-            if (node->data.loop.body_count == 0)
+            if (node->data.loop.body_count == 0) {
                 lint_warn(ctx, node->line, "W005", "empty loop block");
+            } else if (cond_has_bare_predicate(node->data.loop.cond)) {
+                /* A bare predicate reads the last-observed binding. When the body
+                 * assigns more than one binding, which one that is becomes
+                 * order-dependent (a trailing counter hijacks it). Steer to the
+                 * unambiguous named form. */
+                const char *seen[4]; int cnt = 0;
+                for (int i = 0; i < node->data.loop.body_count; i++)
+                    collect_loop_assign_names(node->data.loop.body[i], seen, 4, &cnt);
+                if (cnt >= 2)
+                    lint_warn(ctx, node->line, "W014",
+                        "bare predicate in loop condition reads the last-observed "
+                        "binding, not necessarily the intended one (%d bindings are "
+                        "assigned in the body); name it: '<predicate> of <var>'", cnt);
+            }
             for (int i = 0; i < node->data.loop.body_count; i++)
                 check_empty_blocks(node->data.loop.body[i], ctx);
             break;
