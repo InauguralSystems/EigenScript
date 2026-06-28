@@ -2,7 +2,7 @@
 
 All notable changes to EigenScript are documented here.
 
-## [Unreleased]
+## [0.20.0] - 2026-06-28
 
 ### Added
 
@@ -21,6 +21,10 @@ All notable changes to EigenScript are documented here.
   opts into. Prefer the named form whenever more than one binding is observed
   in scope. Adds opcodes `OP_PREDICATE_SLOT` / `OP_PREDICATE_NAME` (appended at
   the end of the enum). See docs/PREDICATES.md.
+- **Linter warning `W014`** flags a bare predicate in a loop condition whose
+  body assigns more than one binding (where the last-observed binding — and so
+  which one the predicate reads — is order-dependent). The named form
+  `<predicate> of <var>` silences it; a single-observe loop body is not flagged.
 
 ### Performance
 
@@ -45,6 +49,31 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Memory-unsafe crashers on adversarial input (security).** A re-review of the
+  runtime closed ten reachable crashes and a leak, all triggerable from pure
+  EigenScript or hand-assembled bytecode: parser C-stack overflow on deeply
+  nested prefix (`not`/`-`/`~`) and right-recursive `of` expressions and on long
+  iterative postfix/binop chains (`a[0][0]…`, `1+1+…`) that bypassed the
+  parse-depth guard and overflowed the recursive compiler; integer-overflow
+  heap corruption in `str_replace`, `buf_copy`, `matmul` (incl. the flat-buffer
+  fast path) and a `substr` over-allocation; the `sandbox_run` / `vm_run_bytecode`
+  bytecode bridge, which trusted operand indices — a hand-built descriptor with
+  an out-of-range constant / function / jump operand, a name operand pointing at
+  a non-string constant, or an `OP_DICT` count larger than the live stack drove
+  an out-of-bounds read past the name deny-list and loop cap (now a one-pass
+  bytecode verifier rejects such a chunk before it runs); an un-encodable
+  (>64 KB) jump/loop offset that silently left a wild jump; and a JIT `and`/`or`
+  per-iteration reference leak (the PEEK ops were wrongly marked as pushing an
+  immediate, so the fall-through `OP_POP` skipped the decref of a heap left
+  operand once OSR-compiled). Malformed source and untrusted assembled bytecode
+  no longer crash. (PRs #277, #278.)
+- **Temporal queries were wrong under the JIT/OSR.** The JIT's `OP_LINE` updated
+  `g_vm.current_line` but not `g_trace_current_line` (the line the history tape
+  records), so once a loop OSR-compiled, every `what/when/where/why/how is x at
+  <line>`, `state_at`, and named interrogative read the line frozen at the point
+  the thunk took over — e.g. `4999` instead of `19999` in a 20000-iteration
+  loop. The interpreter and `prev of` were unaffected. The OP_LINE arm now
+  stamps both, mirroring the interpreter. (PR #279.)
 - **HTTP routes ignored a request's query string for route identity.** The
   request target was parsed whole into `path` (`ext_http.c`), so a route
   registered as `/ping` returned 404 for `/ping?x=1` — both exact route
