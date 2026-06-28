@@ -163,6 +163,11 @@ typedef enum {
     OP_LOOP_ENV_CLEAR,  /* reset a persisted loop env's bindings for a new iteration.
                          * Appended here (NOT mid-list) per the convention above —
                          * hand-built bytecode hardcodes opcode numbers. */
+    OP_PREDICATE_SLOT,  /* [kind:16][slot:16] `<predicate> of <local>` — classify the
+                         * named local's slot trajectory (not the global last-observed
+                         * alias the bare OP_PREDICATE reads). Appended, not mid-list. */
+    OP_PREDICATE_NAME,  /* [kind:16][name_idx:16] `<predicate> of <name>` — resolve the
+                         * binding's (env,slot) and classify its slot trajectory. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

@@ -213,6 +213,8 @@ const char *op_name(uint8_t op) {
         [OP_LOOP_ENV_FRESH] = "LOOP_ENV_FRESH",
         [OP_LOOP_ENV_END] = "LOOP_ENV_END",
         [OP_LOOP_ENV_CLEAR] = "LOOP_ENV_CLEAR",
+        [OP_PREDICATE_SLOT] = "PREDICATE_SLOT",
+        [OP_PREDICATE_NAME] = "PREDICATE_NAME",
         [OP_BREAK] = "BREAK", [OP_CONTINUE] = "CONTINUE",
         [OP_TRY_BEGIN] = "TRY_BEGIN", [OP_TRY_END] = "TRY_END",
         [OP_OBSERVE_ASSIGN] = "OBSERVE_ASSIGN",
@@ -355,6 +357,10 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_LOCAL_IDX_GET:
         roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* slot, list idx */
     case OP_INTERROGATE_NAMED: case OP_INTERROGATE_NAMED_AT:
+        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
+    case OP_PREDICATE_SLOT:
+        roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* kind, slot (runtime-guarded) */
+    case OP_PREDICATE_NAME:
         roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
     case OP_DEFAULT_PARAM:
         roles[0] = VR_RAW; roles[1] = VR_JFWD; return 2;    /* slot, skip */

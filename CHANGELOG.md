@@ -4,6 +4,24 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Named observer predicates: `<predicate> of <var>`.** Each of the six
+  predicates (`converged`, `stable`, `improving`, `oscillating`, `diverging`,
+  `equilibrium`) now accepts a named operand — `converged of x` — that
+  classifies *that binding's* slot trajectory, parallel to `report of x`. The
+  bare form (`converged`) is unchanged: it reads the **last-observed** binding
+  in scope, which a trailing assignment silently repoints (every assignment is
+  observed) — e.g. a `loop while not converged` whose body increments a counter
+  after the iterate halts on the counter, not the iterate (this is why
+  `dynamics`' `settle_steps` returned the same step count for every rate). The
+  named form removes the ambiguity, and a named-predicate loop condition
+  (`loop while not (converged of x)`) is self-terminating — it reads x's slot
+  each iteration and does not arm the global-alias auto-stall the bare form
+  opts into. Prefer the named form whenever more than one binding is observed
+  in scope. Adds opcodes `OP_PREDICATE_SLOT` / `OP_PREDICATE_NAME` (appended at
+  the end of the enum). See docs/PREDICATES.md.
+
 ### Performance
 
 - **`for`-loops now reuse one loop env instead of allocating a fresh one per

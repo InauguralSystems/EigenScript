@@ -2,7 +2,11 @@
 
 The bare predicate words — `converged`, `equilibrium`, `stable`,
 `improving`, `diverging`, `oscillating` — and the `report of x` builtin
-classify a value's recent trajectory into one of those bands. This file
+classify a value's recent trajectory into one of those bands. Each
+predicate also has a **named form**, `converged of x` (and so on), that
+binds to a specific value rather than the last-observed one — the
+preferred form, especially in a loop condition (see
+[Convergence loops in practice](#convergence-loops-in-practice)). This file
 is the spec: what each one means precisely, the windowed formula it
 evaluates, a canonical `dH`-sequence trace, and the pointwise behavior it
 replaces. ([`docs/OBSERVER.md`](OBSERVER.md) is the model; this is the
@@ -347,6 +351,40 @@ if converged:
 ```
 
 ## Convergence loops in practice
+
+### A bare predicate reads the *last-observed* binding — name the subject
+
+A bare predicate (`converged`, `stable`, …) has no syntactic subject, so it
+classifies whichever binding was **observed last** in scope. Every
+assignment is observed, so a trailing assignment silently repoints it:
+
+```eigenscript
+loop while not converged:
+    x is x * rate     # the quantity you mean
+    k is k + 1        # observed last → the bare predicate now reads k
+```
+
+`k` increments steadily, its entropy flattens at a fixed step count
+regardless of `rate`, and the loop halts on `k` — not `x`. (This is exactly
+how `dynamics`' `settle_steps` returned the same count for every rate.)
+
+Name the subject with the **named form**:
+
+```eigenscript
+loop while not (converged of x):   # binds to x's slot, every iteration
+    x is x * rate
+    k is k + 1
+```
+
+`converged of x` classifies *x*'s own slot trajectory regardless of what
+else is assigned, and a named-predicate loop condition is
+self-terminating — it does not arm the global-alias auto-stall that the
+bare `loop while not converged` opts into. The same applies as a plain
+expression: `report of x` and `converged of x` read *x*; the bare
+`converged` reads the last-observed binding. Prefer the named form whenever
+more than one binding is observed in scope.
+
+### Gentle, monotonic convergence
 
 `loop while not converged` reads as the obvious convergence idiom, and it
 is correct — but only for a value that converges *gently and

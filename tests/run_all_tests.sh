@@ -385,6 +385,8 @@ echo ""
 echo "[8h] Windowed Equilibrium (8 checks)"
 check_eigs_suite "windowed equilibrium: full-window zero-mean low-variance + mean/variance gates + partial-window" \
     "test_windowed_equilibrium.eigs" "WINDOWED_EQUILIBRIUM_ALL_PASS" 8
+check_eigs_suite "named observer predicates: <pred> of x binds the named slot, not the last-observed alias" \
+    "test_named_predicates.eigs" "All tests passed" 7
 echo ""
 
 echo "[9/15] Assert (3 checks)"
