@@ -78,7 +78,7 @@ print of signal
 define descend as:
     dg_x is n * 1.0
     dg_target is 3.0
-    loop while not converged:
+    loop while not (equilibrium of dg_x):
         dg_grad is 2.0 * (dg_x - dg_target)
         dg_x is dg_x - 0.1 * dg_grad
     return dg_x

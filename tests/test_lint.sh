@@ -114,6 +114,46 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "unused parameter" "$OUTPUT" "unused parameter 'y'"
 rm -f "$TMPFILE"
 
+# --- W014: bare predicate in a multi-observe loop condition ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 100.0
+k is 0
+loop while not converged:
+    x is x * 0.5
+    k is k + 1
+print of x
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W014 bare predicate, multi-observe loop" "$OUTPUT" "W014"
+rm -f "$TMPFILE"
+
+# --- W014 must NOT fire: single-observe loop body (unambiguous) ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 100.0
+loop while not converged:
+    x is x * 0.5
+print of x
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W014 silent for single-observe loop" "$OUTPUT" "W014"
+rm -f "$TMPFILE"
+
+# --- W014 must NOT fire: named predicate form ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 100.0
+k is 0
+loop while not (converged of x):
+    x is x * 0.5
+    k is k + 1
+print of x
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W014 silent for named predicate form" "$OUTPUT" "W014"
+rm -f "$TMPFILE"
+
 # --- _prefixed param should NOT warn ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'

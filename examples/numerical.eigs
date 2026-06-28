@@ -31,7 +31,7 @@ define bisect as:
     lo is n[0]
     hi is n[1]
     mid is (lo + hi) / 2
-    loop while not converged:
+    loop while not (equilibrium of mid):
         mid is (lo + hi) / 2
         val is f of mid
         if val > 0:
@@ -93,7 +93,7 @@ print of "--- Gradient Descent: minimize (x-3)^2 ---"
 x is 10.0
 lr is 0.1
 
-loop while not converged:
+loop while not (equilibrium of x):
     grad is 2 * (x - 3)
     x is x - lr * grad
 
