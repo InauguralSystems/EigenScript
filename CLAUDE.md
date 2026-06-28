@@ -110,6 +110,33 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 - Embedding / multi-state (multiple `EigsState` per process): docs/EMBEDDING.md.
   Observer predicates lattice: docs/PREDICATES.md.
 
+## Ecosystem (sibling repos under `InauguralSystems/`)
+
+This runtime is the center of a portfolio; each consumer project stresses a
+different axis and surfaces gaps as upstream PRs (the "forcing-function"
+model — don't work around a gap, surface it).
+
+- **ouroboros** — the **self-hosting compiler** (EigenScript→bytecode→C VM,
+  written in EigenScript) **and the AOT native compiler** (`aot/`,
+  transpile-to-C; the VM is its byte-exact oracle). This — not the JIT — is
+  the native-perf path. Changing it → the **`aot-differential`** skill.
+  (No CLAUDE.md of its own yet.)
+- **Consumer / forcing-function projects** (validate the language, drive
+  primitives):
+  - **iLambdaAi** — research system whose ternary transformer *generates*
+    EigenScript, validated against the runtime's own parser/compiler (the
+    no-oracle research project)
+  - **Tidepool** — Spore-inspired cell-stage evolution game (AI/physics/gameplay)
+  - **dynamics** — observer-rich dynamical-systems lab
+  - **liferaft** — deterministic simulation tester (DST) for Raft (durable
+    determinism); **tidelog** — serialization format + crash-recoverable store
+  - **DMG** — Game Boy emulator; its `cpu_instrs` shape is the perf stand-in
+  - **EigenMiniSat** (SAT solver + benchmark), **EigenRegex** (Pike-VM regex),
+    **EigenGauntlet** (stress-app suite for constrained hardware)
+- **Infra**: **eigen-site** (inauguralsystems.com landing + the self-owned HTTP
+  attack target), **homebrew-eigenscript** (tap), **eigs-package-template**,
+  **awesome-eigenscript** (registry).
+
 ## Releasing
 
 Push a `v*` tag **or** dispatch the Release workflow (Actions → Release → Run
