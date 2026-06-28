@@ -174,7 +174,11 @@ unary       = '-' unary
             | 'not' unary
             | call
 
-call        = primary [ 'of' addition ]
+call        = primary [ 'of' unary ]
+            ; the 'of' argument is a single unary-or-tighter expression — it
+            ; does NOT absorb trailing infix, so `sqrt of x + 1` is
+            ; `(sqrt of x) + 1` and `len of xs - 1` is `(len of xs) - 1`.
+            ; Right-associative `f of g of x` and `f of -x` still hold.
 
 primary     = NUM
             | STR
