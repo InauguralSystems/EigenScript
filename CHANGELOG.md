@@ -4,6 +4,16 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Security
+- **`sandbox_run` could be hung by a blocking builtin.** The iteration cap
+  (`g_sandbox_loop_max`) bounds loop back-edges, not time spent inside one
+  builtin, so a blocking builtin missing from the deny list hung the host
+  indefinitely (e.g. `usleep of 30000000`, or `recv` on a channel that — spawn
+  being denied — can never receive). `usleep`, `raw_key`, `recv`, `try_recv`,
+  `recv_timeout`, and `send` are now shadowed by the blocked stub in a sandbox
+  run, matching the file/process/network/db/thread builtins already denied. This
+  matters most for the untrusted, *generated* code `sandbox_run` exists to grade.
+
 ### Fixed
 - **Observer state drift across parked call-env reuse.** `vm_park_call_env`
   recycles a function's call env in place (the per-chunk `env_cache` fast path),
