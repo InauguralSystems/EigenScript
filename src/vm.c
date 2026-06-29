@@ -205,6 +205,12 @@ static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
         env->values[i] = slot_null();
         if (env->assign_counts) env->assign_counts[i] = 0;
     }
+    /* Observer state (entropy/dH per slot) is part of binding identity: a
+     * recycled env must start the next invocation with a fresh trajectory,
+     * or a windowed predicate (converged/stable/...) on an observed local
+     * reads the PREVIOUS call's history. Resetting slot values alone leaves
+     * env->obs intact — the silent drift this clears. */
+    observer_slot_reset(env);
     chunk->env_cache = env;
     return 1;
 }

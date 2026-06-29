@@ -2104,6 +2104,14 @@ check_eigs_suite "geometry" test_geometry.eigs "All tests passed." 1
 check_eigs_suite "physics" test_physics.eigs "All tests passed." 1
 echo ""
 
+# Observer state is part of binding identity: a parked/recycled call env must
+# reset Env::obs, or a windowed predicate on an observed local reads the prior
+# invocation's trajectory (vm_park_call_env). Guards both the drift and that a
+# full-window single call still converges on the reused env.
+echo "[Observer] Parked call-env observer reset"
+check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK" 1
+echo ""
+
 # [87] Closure-cycle shapes — functional correctness of every env<->fn
 # and value cycle (a KNOWN accumulating leak the runtime can't reclaim;
 # see docs/CLOSURE_CYCLE_GC.md). Locks that the shapes compute correctly

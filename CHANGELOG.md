@@ -2,6 +2,26 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **Observer state drift across parked call-env reuse.** `vm_park_call_env`
+  recycles a function's call env in place (the per-chunk `env_cache` fast path),
+  but only reset the value slots — it left `Env::obs` (per-slot entropy/dH)
+  intact. Observer state is part of binding identity (the #262 Phase-1 invariant
+  resets it "on both park and free"; `env_free` honored it, this newer fast-park
+  path silently did not), so a windowed predicate (`converged`/`stable`/…) on an
+  observed **local** read the *previous* invocation's trajectory — a function
+  with fewer than the window's worth of observed assignments would falsely
+  "converge" on its second call. Now resets observer state on park. Caught only
+  by an observer-output differential (park-on vs park-off).
+
+### Restored
+- **`exit` builtin** — `exit of N` performs a clean, uncatchable process exit
+  with code N, unwinding to main's teardown via `g_has_error` (leak-clean even
+  with live closures) rather than a raw `exit()`. Dropped in 0.19.0; consumers
+  (tidelog/liferaft) use it on failure paths.
+
 ## [0.20.0] - 2026-06-28
 
 ### Added
