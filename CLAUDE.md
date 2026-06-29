@@ -99,7 +99,7 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.21.0** (2026-06-28). Unreleased work on `main`: see
+- **Latest release: v0.21.1** (2026-06-29). Unreleased work on `main`: see
   CHANGELOG.md `[Unreleased]`. Full version history: **CHANGELOG.md**
   (don't re-narrate it here). Roadmap / open items: **ROADMAP.md**.
 - **Design phase:** the VM tier is the deliberate correctness-first phase —

@@ -2,7 +2,7 @@
 
 All notable changes to EigenScript are documented here.
 
-## [Unreleased]
+## [0.21.1] - 2026-06-29
 
 ### Fixed
 - **JIT/OSR use-after-free on a re-entrant env realloc (#291).** A function
