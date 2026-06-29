@@ -251,3 +251,29 @@ jobs:
         # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
         # sanitizer report from the LSP process (leaks, UB).
         run: cd tests && bash test_lsp_asan.sh
+
+  # Valgrind/Memcheck over a representative spread of programs — the
+  # uninitialised-read / use-after-free / definite+indirect-leak net at the
+  # system-allocator granularity, complementing the ASan+UBSan job (and the
+  # TSan-class race coverage). Runs on the plain uninstrumented binary, so no
+  # instrumented libc is needed; JIT is forced off (its runtime-emitted native
+  # code needs --smc-check=all and muddies the signal). A smoke set, not the
+  # full suite, to fit the runtime budget under Valgrind's ~20-30x slowdown.
+  # (Follow-up: annotate the arena/freelist allocators so it also sees uninit
+  # reads *inside* the custom arena, not just at malloc granularity.)
+  valgrind:
+    name: valgrind (memcheck smoke, JIT off)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Build (-O1 -g, minimal)
+        run: make valgrind
+
+      - name: Valgrind memcheck smoke
+        run: cd tests && bash valgrind_smoke.sh
