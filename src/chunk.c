@@ -161,8 +161,16 @@ int chunk_add_constant(EigsChunk *chunk, Value *val) {
     }
     val_incref(val);
     chunk->constants[chunk->const_count] = val;
-    if (val->type == VAL_STR)
+    if (val->type == VAL_STR) {
         chunk->const_interns[chunk->const_count] = env_intern_name(val->data.str);
+        /* #297: precompute the name hash here (compile time, single-threaded)
+         * instead of lazily caching it on first use in the VM name handlers —
+         * that `if (h==0) const_hashes[idx]=h` lazy write raced when parallel
+         * workers ran the same chunk. Eager + idempotent + a tiny perf win
+         * (no runtime hashing). Matches env_hash_name(const_interns[idx]). */
+        if (chunk->const_hashes)
+            chunk->const_hashes[chunk->const_count] = env_hash_name(val->data.str);
+    }
     return chunk->const_count++;
 }
 

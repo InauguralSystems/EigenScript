@@ -1,0 +1,46 @@
+# Regression for #297: workers running concurrently (spawned all, joined all)
+# execute the SAME shared chunks at once. The inline caches, JIT hotness
+# counters, lazy name-hash cache and the multithreaded-flag write are shared
+# state that raced — a torn inline-cache write could yield a WRONG cache hit
+# when two threads share an env. This pins correct results under genuine
+# parallelism (TSan-clean is verified out of band; this guards the values).
+
+define mk(v) as:
+    inner is v
+    define get() as:
+        return inner
+    return get
+
+define worker(k) as:
+    local acc is 0
+    local i is 0
+    loop while i < 50:
+        local g is mk of (i + k)
+        acc is acc + (g of null)
+        i is i + 1
+    return acc          # sum over i in 0..49 of (i+k) = 1225 + 50k
+
+checks is 0
+passed is 0
+define check(label, got, want) as:
+    checks is checks + 1
+    if got == want:
+        passed is passed + 1
+    else:
+        print of ("MISMATCH " + label + ": got=" + str of got + " want=" + str of want)
+
+# spawn ALL first (parallel), then join ALL
+handles is []
+n is 0
+loop while n < 12:
+    append of [handles, spawn of [worker, n]]
+    n is n + 1
+n is 0
+loop while n < 12:
+    check of ["w" + (str of n), thread_join of handles[n], 1225 + (50 * n)]
+    n is n + 1
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

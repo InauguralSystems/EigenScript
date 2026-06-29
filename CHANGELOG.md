@@ -5,6 +5,25 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Data races: parallel workers executing the same shared chunk (#297).**
+  ThreadSanitizer flagged ~22 races when concurrent `spawn`'d workers ran the
+  same chunks: the refcount-mode gate (`g_vm_multithreaded`) was re-written on
+  *every* spawn, racing already-running workers reading it in
+  `env_incref`/`chunk_incref` (the correctness-critical ones — a lost flag read
+  could take the non-atomic refcount path → UAF); the per-chunk JIT hotness
+  counters (`exec_count`/`back_edge_count`) and OSR machinery; the env/dict
+  inline caches (a torn write risks a wrong cache hit when two threads share an
+  env); the lazy name-hash cache (`const_hashes[idx]`); and `g_trace_current_line`.
+  Fixes: write the multithreaded flag only on the 0→1 transition (it's published
+  to all workers via the first write's happens-before); gate the JIT counters,
+  OSR, inline-cache *writes*, and the trace-line store off under MT (JIT compile
+  is already MT-gated by #296; the IC fast-path *read* stays — it just misses for
+  a worker's env); and precompute the name hash at compile time instead of
+  lazily at runtime (eager, idempotent, a tiny perf win). Single-threaded
+  behavior is unchanged (every gate passes when not multithreaded). Result:
+  ThreadSanitizer reports **0 data races** on a parallel-shared-closure workload
+  (was ~22). Regression: section [102] (`test_spawn_parallel` — 12 concurrent
+  workers, exact results). Suites 2340/2340, leak floor 0, jit-smoke green.
 - **Threaded cycle-GC: env↔closure cycles created on worker threads now collected.**
   The cycle collector's candidate registry was per-thread and was emptied +
   disabled the moment `spawn` went multithreaded, so any env↔closure cycle

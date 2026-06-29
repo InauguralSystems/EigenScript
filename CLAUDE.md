@@ -36,10 +36,11 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   stay collection candidates and the exit collector sweeps them once workers are
   joined (`handle_table_drain` clears `multithreaded`). So MT-created cycles no
   longer leak — `test_concurrent` is clean, and section [101] (`test_spawn_gc`,
-  worker-created cycles) is leak-gated. (Separate, still-open: parallel workers
-  executing the *same* shared chunk race on per-chunk advisory state — exec_count,
-  JIT counters, inline caches, shared-env refcounts — pre-existing, TSan-visible,
-  unrelated to the GC registry.)
+  worker-created cycles) is leak-gated. (#297 then made parallel shared-chunk
+  execution TSan-clean: the multithreaded flag is written once on the 0→1
+  transition, and the JIT counters / OSR / inline-cache writes / trace-line are
+  gated off under MT, name hashes precomputed at compile time. ThreadSanitizer
+  here needs `setarch -R` to disable ASLR.)
 - `make asan` overwrites `src/eigenscript` — rebuild with `make` before timing.
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
   (dispatch-table interpreter shape, the DMG/cpu_instrs stand-in),

@@ -3873,12 +3873,19 @@ Value* builtin_spawn(Value *arg) {
         free(h);
         return make_null();
     }
-    /* Flip refcounts to atomic mode before any new thread can observe
-     * a Value. pthread_create supplies the full barrier. The cycle collector's
-     * registry is per-state and lock-guarded, so registration safely continues
-     * across threads; collection is gated to single-threaded and resumes once
-     * all workers are joined (see handle_table_drain). */
-    g_vm_multithreaded = 1;
+    /* Flip refcounts to atomic mode before any new thread can observe a Value.
+     * pthread_create supplies the full barrier. The cycle collector's registry
+     * is per-state and lock-guarded, so registration safely continues across
+     * threads; collection is gated to single-threaded and resumes once all
+     * workers are joined (see handle_table_drain).
+     *
+     * #297: write the flag ONLY on the 0→1 transition. The first spawn flips it
+     * while still single-threaded (no concurrent reader); re-writing `= 1` on
+     * every later spawn raced with already-running workers reading the flag in
+     * env_incref / chunk_incref (the refcount-mode gate). Later spawns now only
+     * READ it (the value is already published to all workers via the first
+     * write's happens-before through their pthread_create). */
+    if (!g_vm_multithreaded) g_vm_multithreaded = 1;
     int pc_rc = pthread_create(&h->tid, NULL, thread_entry, h);
     if (pc_rc != 0) {
         /* The thread never started. Returning a live-looking handle here

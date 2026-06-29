@@ -1860,6 +1860,14 @@ check_eigs_suite "shared chunk JIT-compiled on a worker, many workers" test_spaw
 echo "[101] Threaded Cycle-GC (worker-created cycles collected)"
 check_eigs_suite "worker closure cycles reclaimed at exit" test_spawn_gc.eigs "All tests passed" 1
 
+# [102] Parallel shared-chunk execution correctness (#297). Workers spawned all
+# at once (genuine parallelism) run the same chunks concurrently; the inline
+# caches / JIT counters / lazy name-hash / multithreaded-flag write are shared
+# state that raced (a torn IC write could give a wrong cache hit). Pins correct
+# results; TSan-cleanliness verified out of band.
+echo "[102] Parallel Shared-Chunk Execution (#297)"
+check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_parallel.eigs "All tests passed" 1
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

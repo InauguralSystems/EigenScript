@@ -37,9 +37,12 @@ extern int g_trace_enabled;
  * trace_assign calls per 500k interpreted steps (~1/3 of runtime). */
 extern int g_trace_hist;
 
-/* Source line currently being executed. Written directly by OP_LINE
- * (an unconditional global store — cheaper than a call), read by
- * trace_assign to stamp history entries and by the tape writer. */
+/* Source line currently being executed. Written by OP_LINE (a plain global
+ * store — cheaper than a call; the JIT also stamps it via a flat-address
+ * write, so it can't be __thread), read by trace_assign to stamp history
+ * entries and by the tape writer. #297: the interpreter write is gated off
+ * under MT (history/replay is single-threaded; the per-thread g_vm.current_line
+ * carries the error line), so it isn't raced by parallel workers. */
 extern int g_trace_current_line;
 
 /* 1 when the compiler has seen a `where`/`why`/`how ... at <line>`
