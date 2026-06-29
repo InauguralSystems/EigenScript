@@ -73,6 +73,31 @@ static long http_max_body(void) {
     return g_http_max_body;
 }
 
+/* AGGREGATE request-body budget across ALL in-flight connections. The
+ * per-request cap (http_max_body) and the per-listener connection cap
+ * (HTTP_MAX_CONCURRENT_CONNS) are each bounded, but their PRODUCT is not:
+ * 256 conns x 16 MiB each = ~4 GiB held at once, enough to OOM a modest host
+ * even though no single request or connection misbehaves. g_http_body_in_flight
+ * tracks the bytes currently buffered for request reads summed over every
+ * connection; when a connection's buffer growth would push the total past this
+ * budget the connection is shed with 503. Default 128 MiB; override via
+ * EIGS_HTTP_MAX_BODY_TOTAL. */
+#define EIGS_HTTP_DEFAULT_MAX_BODY_TOTAL (128L * 1024L * 1024L)
+static long g_http_max_body_total = 0;
+static long g_http_body_in_flight = 0;   /* atomic; sum of accounted buffers */
+
+static long http_max_body_total(void) {
+    if (g_http_max_body_total != 0) return g_http_max_body_total;
+    const char *env = getenv("EIGS_HTTP_MAX_BODY_TOTAL");
+    if (env && *env) {
+        char *end = NULL;
+        long v = strtol(env, &end, 10);
+        if (end != env && v > 0) { g_http_max_body_total = v; return v; }
+    }
+    g_http_max_body_total = EIGS_HTTP_DEFAULT_MAX_BODY_TOTAL;
+    return g_http_max_body_total;
+}
+
 void* health_thread(void *arg) {
     int fd = (int)(intptr_t)arg;
     printf("[health-thread] Started on fd=%d, pid=%d\n", fd, getpid());
@@ -768,15 +793,20 @@ static void handle_request(int fd) {
     double deadline = monotonic_now() + HTTP_REQUEST_DEADLINE_SEC;
 
     long max_body = http_max_body();
+    long max_body_total = http_max_body_total();
     size_t cap = 8192;
     char *reqbuf = xmalloc(cap);
+    /* Bytes this connection has charged to the global in-flight budget; mirrors
+     * `cap` exactly so the decrement at `cleanup` is always balanced. */
+    long body_accounted = (long)cap;
+    __atomic_add_fetch(&g_http_body_in_flight, body_accounted, __ATOMIC_RELAXED);
     int total = 0;
     int header_end = -1;
 
     for (;;) {
         /* Enforce total request deadline */
         if (monotonic_now() >= deadline) {
-            free(reqbuf); close(fd); return;
+            goto done;
         }
         /* Grow when less than 4KB headroom, subject to max_body + 64KB header slack. */
         if ((size_t)total + 4096 >= cap) {
@@ -792,9 +822,23 @@ static void handle_request(int fd) {
                     const char *m = "Headers too large";
                     send_response(fd, 431, "Request Header Fields Too Large",
                                   "text/plain", m, (long)strlen(m));
-                    free(reqbuf); close(fd); return;
+                    goto done;
                 }
                 break;
+            }
+            /* Aggregate-body budget: charge the growth to the global counter
+             * BEFORE allocating. If the total in-flight across all connections
+             * would exceed the budget, shed THIS connection with 503 rather
+             * than let conns x per-conn-cap exhaust host memory. */
+            long inc = (long)new_cap - body_accounted;
+            long in_flight = __atomic_add_fetch(&g_http_body_in_flight, inc,
+                                                __ATOMIC_RELAXED);
+            body_accounted = (long)new_cap;
+            if (in_flight > max_body_total) {
+                const char *m = "Server overloaded";
+                send_response(fd, 503, "Service Unavailable", "text/plain",
+                              m, (long)strlen(m));
+                goto done;
             }
             reqbuf = xrealloc_array(reqbuf, new_cap, 1);
             cap = new_cap;
@@ -827,7 +871,7 @@ static void handle_request(int fd) {
                     const char *m = "Invalid Content-Length";
                     send_response(fd, 400, "Bad Request", "text/plain",
                                   m, (long)strlen(m));
-                    free(reqbuf); close(fd); return;
+                    goto done;
                 }
                 int body_received = total - header_end;
                 if (body_received >= content_length) break;
@@ -837,13 +881,13 @@ static void handle_request(int fd) {
         }
     }
 
-    if (total == 0) { free(reqbuf); close(fd); return; }
+    if (total == 0) { goto done; }
     reqbuf[total] = '\0';
 
     char method[16] = {0}, path[2048] = {0}, version[16] = {0};
     if (sscanf(reqbuf, "%15s %2047s %15s", method, path, version) != 3) {
         send_response(fd, 400, "Bad Request", "text/plain", "Invalid request line", 20);
-        free(reqbuf); close(fd); return;
+        goto done;
     }
 
     /* Validate HTTP version: must start with "HTTP/" followed by digit. The
@@ -852,7 +896,7 @@ static void handle_request(int fd) {
     if (strncmp(version, "HTTP/", 5) != 0 ||
         !isdigit((unsigned char)version[5])) {
         send_response(fd, 400, "Bad Request", "text/plain", "Invalid HTTP version", 20);
-        free(reqbuf); close(fd); return;
+        goto done;
     }
 
     /* Split off any query string: the request target's `?...` is request data,
@@ -1036,6 +1080,10 @@ done:
     tls_request_headers = NULL;
     tls_session_id = NULL;
     tls_suppress_body = 0;
+    /* Release this connection's share of the aggregate in-flight body budget.
+     * Every exit path funnels through here, so the charge made during the read
+     * loop is always balanced (body_accounted mirrors the final `cap`). */
+    __atomic_sub_fetch(&g_http_body_in_flight, body_accounted, __ATOMIC_RELAXED);
     free(reqbuf);
     close(fd);
 }

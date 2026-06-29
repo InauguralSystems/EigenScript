@@ -5,6 +5,15 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Security
+- **HTTP aggregate request-body DoS.** The HTTP server bounded each request
+  body (`EIGS_HTTP_MAX_BODY`, 16 MiB) and concurrent connections
+  (`HTTP_MAX_CONCURRENT_CONNS`, 256) independently, but their *product*
+  (~4 GiB held at once) was unbounded against host memory — a flood of
+  concurrent max-size uploads could OOM the host even though no single request
+  or connection misbehaved. Added a global in-flight body-byte budget
+  (`EIGS_HTTP_MAX_BODY_TOTAL`, default 128 MiB): a connection whose buffer
+  growth would push the aggregate past the budget is shed with `503`. Charged
+  during the read loop and released on every connection exit path.
 - **`sandbox_run` could be hung by a blocking builtin.** The iteration cap
   (`g_sandbox_loop_max`) bounds loop back-edges, not time spent inside one
   builtin, so a blocking builtin missing from the deny list hung the host

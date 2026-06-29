@@ -418,6 +418,15 @@ automatically at exit.
 
 Requires full build. Provides an embedded HTTP server.
 
+**Request limits (DoS bounds).** Each request body is capped by
+`EIGS_HTTP_MAX_BODY` (default 16 MiB; an over-cap `Content-Length` gets `400`,
+oversized headers `431`). Because that per-request cap times the concurrent-
+connection cap is still a large aggregate, the server also bounds the **total**
+request-body bytes in flight across *all* connections with
+`EIGS_HTTP_MAX_BODY_TOTAL` (default 128 MiB) — once exceeded, further
+connections are shed with `503` rather than letting concurrency × per-request
+size exhaust host memory.
+
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `http_route` | `http_route of [method, path, handler]` or `[method, path, "code", source]` | Register route handler (literal body or per-request `code` source) |
