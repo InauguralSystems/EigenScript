@@ -2,7 +2,7 @@
 
 All notable changes to EigenScript are documented here.
 
-## [Unreleased]
+## [0.21.2] - 2026-06-29
 
 ### Fixed
 - **Cross-thread channel transfer corrupted dict string keys (#293).** Values
