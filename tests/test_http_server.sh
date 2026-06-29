@@ -503,6 +503,47 @@ curl -s --max-time 2 "http://127.0.0.1:$PORT/acleanup" > /dev/null
 
 # ---- Summary ----
 echo ""
+# ---- Aggregate request-body budget (EIGS_HTTP_MAX_BODY_TOTAL) ----
+# Each connection's body buffer is capped (EIGS_HTTP_MAX_BODY) and concurrency
+# is capped (HTTP_MAX_CONCURRENT_CONNS) — but their PRODUCT was unbounded
+# (256 x 16 MiB ~= 4 GiB held at once), an aggregate-body DoS. Uses a SEPARATE
+# server with a tiny total budget (1 MiB) so the squeeze can't perturb the other
+# tests (HS12's 17 MiB header probe needs the default 128 MiB budget). A single
+# upload larger than the budget must be shed with 503 DURING the read (before
+# routing), and the server must stay alive for the next request.
+PORT2=$(( (RANDOM % 10000) + 50000 ))
+SRV2=$(mktemp /tmp/eigs_http_srv2_XXXXXX.eigs)
+cat > "$SRV2" <<EIGS2
+rp is http_route of ["GET", "/ping", "pong"]
+sv is http_serve of $PORT2
+EIGS2
+EIGS_HTTP_MAX_BODY_TOTAL=1048576 "$EIGS" "$SRV2" > /tmp/eigs_http_srv2_$$.log 2>&1 &
+SRV2_PID=$!
+for _ in $(seq 1 30); do
+    curl -s --max-time 1 "http://127.0.0.1:$PORT2/ping" > /dev/null 2>&1 && break
+    sleep 0.1
+done
+BIGBODY=$(mktemp /tmp/eigs_http_big_XXXXXX)
+head -c 2097152 /dev/zero | tr '\0' 'a' > "$BIGBODY"   # 2 MiB > 1 MiB budget
+STATUS=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" \
+    --data-binary @"$BIGBODY" "http://127.0.0.1:$PORT2/ping")
+rm -f "$BIGBODY"
+if [ "$STATUS" = "503" ]; then
+    ok "HS27 oversized aggregate body shed with 503 (not OOM)"
+else
+    fail "HS27 aggregate body budget" "got $STATUS (expected 503)"
+fi
+# Server survived the over-budget upload and still serves.
+RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT2/ping")
+if [ "$RESP" = "pong" ]; then
+    ok "HS28 server survives over-budget upload"
+else
+    fail "HS28 server survives over-budget upload" "got '$RESP'"
+fi
+kill "$SRV2_PID" 2>/dev/null || true
+wait "$SRV2_PID" 2>/dev/null || true
+rm -f "$SRV2" /tmp/eigs_http_srv2_$$.log
+
 echo "HTTP_SERVER: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then exit 1; fi
 exit 0
