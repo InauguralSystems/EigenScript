@@ -29,11 +29,39 @@ build (those live in the optional HTTP extension).
 
 | | meaning |
 |---|---|
-| **BUILD** | ship our own freestanding implementation (the real new code) |
-| **HAL** | route through a platform interface the kernel implements (`print`, `read_char`, `clock`, `spawn`, exec-pages…) |
+| **ROOT** | an *irreducible* primitive — touches hardware or the kernel seam (or is a libm kernel). The real per-platform substrate; implement once per platform. |
+| **ORDINARY** | a *derived* form, pure portable composition over the roots — a write-once mini-libc/libm, the *same* code hosted or bare-metal. **Not** per-platform work. |
+| **HAL** | the named seam the ROOT primitives are reached through (the kernel implements it). |
 | **DROP** | compile out — not present in the freestanding profile |
 | **ELIM** | disappears under freestanding build flags / our own `_start` |
 | **HARDEN** | exists but is young; firm it up *before* it's load-bearing |
+
+**The key distinction (and the correction to a flat reading of this ledger):**
+the 134 symbols are *not* 134 things to build. They reduce to ~10 **ROOT**
+families — the substrate that genuinely differs per platform — and a large body
+of **ORDINARY** derived forms that are portable C written once. Below, each
+subsystem names its root(s); the rest of its symbols are ordinary forms over
+them.
+
+## The roots (the real freestanding substrate)
+
+| root | reached via | the ordinary forms it generates |
+|---|---|---|
+| `page_alloc` / `page_free` | HAL (physical pages) | `malloc` `calloc` `realloc` `free` (a heap over pages) |
+| `console_write(bytes)` | HAL (VGA/serial) | the whole `printf`/`fputs`/`puts`/`putc`/`fwrite`/`write` family + `vsnprintf` formatter |
+| `read_char` | HAL (PS/2) | `fgets` `fgetc` `read` |
+| `clock_ns` | HAL (TSC/PIT) | `clock_gettime` `time` `usleep` |
+| `spawn` / `yield` / `park`+`unpark` + atomic CAS | HAL (scheduler) | `pthread_mutex_*` `pthread_cond_*` `pthread_once` |
+| `map_exec` (RX pages) | HAL (deferrable) | `mmap` `mprotect` `munmap` |
+| entropy (`RDRAND`/TSC) | HAL/hardware | `rand` `srand` `drand48` `lrand48` `srand48` |
+| `halt` / `panic` | HAL | `exit` `_exit` `abort` `atexit` |
+| `memcpy` `memset` `memcmp` | compiler/hardware intrinsic (near-root) | the rest of `mem*`/`str*` byte ops |
+| libm kernels: `exp` `log` `sin`/`cos` core `atan` core | BUILD (~4 fns) | `pow`=exp(y·log x), `log2`=log/log2, `tan`, `atan2`, `sqrt`, `acos`/`asin` |
+
+Everything not in this table — `strlen`/`strcmp`/`strstr`/…, `strtod`/`strtol`
+(parsers), `qsort`, ctype tables, the printf family, the pthread sync types, the
+PRNG, the non-kernel libm — is **ORDINARY**: portable, platform-agnostic, write
+once.
 
 ## Ledger
 
@@ -138,20 +166,25 @@ None of these are real work — they vanish in a freestanding build:
 
 ## Critical path (what's actually new code)
 
-In rough order, the real freestanding work — far less than 134 symbols once
-`DROP`/`ELIM`/`HAL` are accounted for, probably **~40 functions of genuine new
-implementation**:
+The real per-platform work is the **~10 roots above**, not the 134 symbols. In
+rough order:
 
-1. **Page + heap allocator** from physical memory (the root; gates everything).
-2. **Tiny libc**: `string.h`, ctype tables, `qsort`, a PRNG, number parsing
-   (`strtod`/`strtol`), `snprintf`.
-3. **Tiny libm subset**, `log2`/`fabs` first (the observer needs them).
-4. **The platform HAL seam** — the architectural change: a thin interface
-   (`console_write`, `read_char`, `clock_ns`, `spawn`/`yield`, `map_exec`) that
-   POSIX satisfies when hosted and the EigenOS kernel satisfies on bare metal.
-   Today the runtime talks to POSIX directly; there is no seam.
-5. **Harden threading** before it's load-bearing.
-6. Defer: the JIT (interpreter-only first), a filesystem, networking.
+1. **The HAL seam itself** — the architectural change. A thin interface
+   (`page_alloc`, `console_write`, `read_char`, `clock_ns`, `spawn`/`yield`,
+   `map_exec`, entropy, `halt`) that POSIX satisfies when hosted and the EigenOS
+   kernel satisfies on bare metal. Today the runtime talks to POSIX directly;
+   there is no seam. Cutting it is the load-bearing move — every other root
+   plugs into it.
+2. **Page + heap allocator** over the `page_alloc` root (gates all allocation;
+   the arena is already a bump allocator, the general heap is the new piece).
+3. **~4 libm kernels** (`exp`, `log`, `sin`/`cos`, `atan`); `log2`/`fabs` first
+   — the observer needs them.
+4. **The ordinary mini-libc/libm** over the roots — string ops, `strtod`/
+   `strtol`, `qsort`, ctype, PRNG, the printf family, pthread sync, derived math.
+   Portable, **write once**, not per-platform; the bulk of the symbol count but
+   the smaller share of the genuinely-hard work.
+5. **Harden threading** (the scheduler roots) before it's load-bearing.
+6. Defer: `map_exec`/the JIT (interpreter-only first), a filesystem, networking.
 
 ## Build profile
 
