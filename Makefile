@@ -154,6 +154,7 @@ asan:
 # down while giving usable stacks. Same minimal extension surface as asan.
 valgrind:
 	$(CC) -g -O1 -o $(BINARY) $(SOURCES) \
+		-DEIGS_VALGRIND \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
 		-DEIGENSCRIPT_EXT_DB=0 \

@@ -10,6 +10,24 @@
 /* g_arena is now a per-OS-thread Arena* set up by eigs_thread_attach.
  * The TLS definition lives in state.c. */
 
+/* #298 follow-up: make the arena's INTERIOR visible to Valgrind. The arena is a
+ * bump allocator over a few big malloc'd blocks, so Valgrind otherwise sees one
+ * defined block and can't catch use-after-reset — an arena value that escapes
+ * its mark/reset scope and is read after the region is reused (ASan can't see
+ * it either: the block was never free()'d). We mark released arena space
+ * NOACCESS so such a read is flagged, and DEFINED on each alloc (the bytes are
+ * memset to 0 → DEFINED, not UNDEFINED: the allocator zero-inits, so there's no
+ * uninitialized-read class here to detect). Gated behind EIGS_VALGRIND (set by
+ * `make valgrind`); a no-op with zero cost in normal/release builds. */
+#ifdef EIGS_VALGRIND
+#include <valgrind/memcheck.h>
+#define ARENA_VG_NOACCESS(p, n) VALGRIND_MAKE_MEM_NOACCESS((p), (n))
+#define ARENA_VG_DEFINED(p, n)  VALGRIND_MAKE_MEM_DEFINED((p), (n))
+#else
+#define ARENA_VG_NOACCESS(p, n) ((void)0)
+#define ARENA_VG_DEFINED(p, n)  ((void)0)
+#endif
+
 static void x_oom(size_t size) {
     fprintf(stderr, "eigenscript: out of memory (requested %zu bytes)\n", size);
     abort();
@@ -88,6 +106,7 @@ void* xrealloc_array(void *p, size_t nmemb, size_t size) {
 
 void arena_init(void) {
     g_arena.blocks[0] = xmalloc(ARENA_BLOCK_SIZE);
+    ARENA_VG_NOACCESS(g_arena.blocks[0], ARENA_BLOCK_SIZE);  /* nothing allocated yet */
     g_arena.block_count = 1;
     g_arena.current_block = 0;
     g_arena.offset = 0;
@@ -123,6 +142,7 @@ void* arena_alloc(size_t size) {
                 return p;
             }
             g_arena.blocks[g_arena.block_count] = xmalloc(ARENA_BLOCK_SIZE);
+            ARENA_VG_NOACCESS(g_arena.blocks[g_arena.block_count], ARENA_BLOCK_SIZE);
             g_arena.block_count++;
         }
         g_arena.offset = 0;
@@ -130,6 +150,7 @@ void* arena_alloc(size_t size) {
 
     void *ptr = g_arena.blocks[g_arena.current_block] + g_arena.offset;
     memset(ptr, 0, size);
+    ARENA_VG_DEFINED(ptr, size);  /* now addressable + defined (zeroed) */
     g_arena.offset += size;
     g_arena.total_allocated += size;
     return ptr;
@@ -161,8 +182,24 @@ void arena_reset_to_mark(void) {
         free(g_arena.fallbacks[i]);
     g_arena.fallback_count = g_arena.mark_fallback_count;
 
+    /* Poison everything allocated since the mark as NOACCESS so a read of an
+     * arena value that escaped this scope is caught (re-marked DEFINED when the
+     * region is next handed out by arena_alloc). Capture the high-water first. */
+    int    hi_block  = g_arena.current_block;
+    size_t hi_offset = g_arena.offset;
+
     g_arena.current_block = g_arena.mark_block;
     g_arena.offset = g_arena.mark_offset;
+
+#ifdef EIGS_VALGRIND
+    for (int b = g_arena.mark_block; b <= hi_block && b < g_arena.block_count; b++) {
+        size_t from = (b == g_arena.mark_block) ? g_arena.mark_offset : 0;
+        size_t to   = (b == hi_block) ? hi_offset : ARENA_BLOCK_SIZE;
+        if (to > from) ARENA_VG_NOACCESS(g_arena.blocks[b] + from, to - from);
+    }
+#else
+    (void)hi_block; (void)hi_offset;
+#endif
 
     g_arena.active = 0;
 }
