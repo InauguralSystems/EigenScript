@@ -1707,13 +1707,26 @@ void env_destroy_final(Env *env) {
  * registry is drained up front.
  * ================================================================ */
 
-/* Cycle-collector per-thread state (gc_envs, gc_captured_live,
- * gc_threshold, gc_enabled, in_gc) now lives on EigsThread; the g_*
- * names are bridge macros from eigenscript.h. GC_THRESHOLD_MIN is also
- * defined there so state.c can seed gc_threshold on attach. */
+/* gc_threshold, gc_enabled, in_gc are per-thread (EigsThread); the candidate
+ * registry (gc_envs, gc_captured_live) is per-state (EigsState). The g_* names
+ * are bridge macros from eigenscript.h. GC_THRESHOLD_MIN is defined there so
+ * state.c can seed gc_threshold on attach. */
+
+/* Registry-list lock: contended only while the state is multithreaded; a
+ * single-threaded state never touches the mutex. Collection holds NO lock (it
+ * runs only when single-threaded), so register/unregister under the lock can
+ * never deadlock against it. */
+static inline void gc_registry_lock(void) {
+    if (g_vm_multithreaded) pthread_mutex_lock(&eigs_current->state->gc_lock);
+}
+static inline void gc_registry_unlock(void) {
+    if (g_vm_multithreaded) pthread_mutex_unlock(&eigs_current->state->gc_lock);
+}
 
 static void gc_unregister_env(Env *env) {
-    if (!env->in_gc_list) return;
+    if (!env->in_gc_list) return;   /* fast path: not a candidate, no lock */
+    gc_registry_lock();
+    if (!env->in_gc_list) { gc_registry_unlock(); return; }
     env->in_gc_list = 0;
     if (env->gc_prev) env->gc_prev->gc_next = env->gc_next;
     else g_gc_envs = env->gc_next;
@@ -1721,28 +1734,26 @@ static void gc_unregister_env(Env *env) {
     env->gc_next = NULL;
     env->gc_prev = NULL;
     g_gc_captured_live--;
-}
-
-void gc_disable_for_threads(void) {
-    while (g_gc_envs) gc_unregister_env(g_gc_envs);
-    g_gc_enabled = 0;
+    gc_registry_unlock();
 }
 
 void env_mark_captured(Env *env) {
     if (!env) return;
     env->captured = 1;
-    if (!g_gc_enabled || g_vm_multithreaded || g_in_gc ||
-        env->in_gc_list || env == g_global_env)
+    if (!g_gc_enabled || g_in_gc || env->in_gc_list || env == g_global_env)
         return;
+    gc_registry_lock();
     env->in_gc_list = 1;
     env->gc_prev = NULL;
     env->gc_next = g_gc_envs;
     if (g_gc_envs) g_gc_envs->gc_prev = env;
     g_gc_envs = env;
-    g_gc_captured_live++;
-    /* Capture events are the only way the candidate universe grows, so
-     * this is the (off-hot-path) collection trigger. */
-    if (__builtin_expect(g_gc_captured_live >= g_gc_threshold, 0))
+    int live = ++g_gc_captured_live;
+    gc_registry_unlock();
+    /* Capture events are the only way the candidate universe grows, so this is
+     * the (off-hot-path) collection trigger — but never collect while
+     * multithreaded (gc_collect_impl bails anyway; skip the work). */
+    if (!g_vm_multithreaded && __builtin_expect(live >= g_gc_threshold, 0))
         gc_collect_cycles();
 }
 

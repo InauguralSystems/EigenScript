@@ -444,6 +444,15 @@ struct EigsState {
      * threaded states (the common case — DMG, MiniSat, Tidepool, REPL)
      * keep it at 0 and skip the atomic ~20-cycle penalty on x86. */
     int             multithreaded;
+    /* Cycle-collector registry — the intrusive list of captured envs and its
+     * live count. Per-STATE (not per-thread) so candidates created on any
+     * thread survive that thread's death and stay collectable at exit; gc_lock
+     * guards list maintenance and is taken only while `multithreaded` (single-
+     * threaded states pay nothing). Collection runs only when single-threaded
+     * (gc_collect_impl bails under MT), so it needs no lock. */
+    Env            *gc_envs;
+    int             gc_captured_live;
+    pthread_mutex_t gc_lock;
     /* JIT tuning thresholds (entry / per-iter / OSR). Each state
      * reads its own copy from EIGS_JIT_ENTRY_THRESHOLD /
      * EIGS_JIT_ITER_THRESHOLD / EIGS_JIT_OSR_THRESHOLD at state_new,
@@ -518,12 +527,11 @@ struct EigsThread {
      * state->script_dir. OP_IMPORT saves/restores around module body. */
     char                 import_resolve_dir[4096];
     /* Cycle-collector per-thread state (docs/CLOSURE_CYCLE_GC.md).
-     * The registry holds captured envs (intrusive list, gc_prev/gc_next);
      * gc_threshold drives the off-hot-path collection trigger; gc_enabled
-     * gates registration (gc_disable_for_threads flips it off when the
-     * state goes multithreaded); in_gc is the re-entrancy guard. */
-    Env                 *gc_envs;
-    int                  gc_captured_live;
+     * gates registration; in_gc is the re-entrancy guard. The candidate
+     * REGISTRY (gc_envs, gc_captured_live) lives on EigsState — shared across
+     * the state's threads, lock-guarded — so MT-created cycles stay
+     * collectable; collection still runs only single-threaded. */
     int                  gc_threshold;
     int                  gc_enabled;
     int                  in_gc;
@@ -592,8 +600,8 @@ extern __thread EigsThread *eigs_current;
 #define g_load_env            (eigs_current->load_env)
 #define g_import_resolve_dir  (eigs_current->import_resolve_dir)
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
-#define g_gc_envs             (eigs_current->gc_envs)
-#define g_gc_captured_live    (eigs_current->gc_captured_live)
+#define g_gc_envs             (eigs_current->state->gc_envs)
+#define g_gc_captured_live    (eigs_current->state->gc_captured_live)
 #define g_gc_threshold        (eigs_current->gc_threshold)
 #define g_gc_enabled          (eigs_current->gc_enabled)
 #define g_in_gc               (eigs_current->in_gc)
@@ -798,9 +806,6 @@ void gc_collect_cycles(void);
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */
 void gc_collect_at_exit(Env *global);
-/* Called by spawn() before going multithreaded: empties the registry and
- * disables future registration (cross-thread roots aren't visible). */
-void gc_disable_for_threads(void);
 void env_set_local_owned(Env *env, const char *name, Value *val);
 void env_clear(Env *env);
 /* Reserve env slots up to `total` (used at function call to pre-allocate

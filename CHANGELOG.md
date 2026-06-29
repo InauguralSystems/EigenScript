@@ -5,6 +5,25 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Threaded cycle-GC: env↔closure cycles created on worker threads now collected.**
+  The cycle collector's candidate registry was per-thread and was emptied +
+  disabled the moment `spawn` went multithreaded, so any env↔closure cycle
+  created after the first spawn — on the main thread or a worker — was never a
+  collection candidate and leaked at exit (e.g. `test_concurrent` leaked ~21 KB).
+  Moved the registry to the EigsState (shared across the state's threads),
+  guarded by a `gc_lock` taken only while multithreaded; registration now
+  continues across threads, while collection still runs only single-threaded
+  (it races mutators otherwise). `handle_table_drain` clears `multithreaded`
+  after joining every worker, so the exit-time `gc_collect_at_exit` sweeps the
+  whole accumulated registry — reclaiming both main-thread and (since-joined)
+  worker-thread cycles. Verified race-free with ThreadSanitizer (no races on the
+  registry; the lock synchronizes concurrent register/unregister); the cycle
+  collector's strict-clean section [87] still passes. Regression: section [101]
+  (`test_spawn_gc`, leak-gated). Prerequisite was #296 (the apparent "GC change
+  crashes" was actually the worker-JIT UAF). NOTE: parallel workers executing the
+  *same* shared chunk still race on per-chunk advisory state (exec_count, JIT
+  hotness counters, inline caches, shared-env refcounts) — pre-existing, separate
+  from this change; tracked separately.
 - **SEGV: shared chunk JIT-compiled on a worker thread (#296).** A function that
   got hot and JIT-compiled while running on a `spawn`'d worker left
   `chunk->jit_code` pointing into that worker's *per-thread* JIT code arena,

@@ -1,0 +1,46 @@
+# Regression: env<->closure cycles created on spawn()'d worker threads must be
+# reclaimed at exit. The cycle collector's candidate registry is per-state and
+# lock-guarded, so MT-created cycles stay collectable; collection runs once the
+# workers are joined (single-threaded again). A regression that drops these from
+# the registry shows up as an ASan leak here (suite leak tally), not a failure.
+
+define make_counter(start) as:
+    count is start
+    define value() as:
+        return count          # closure captures make_counter's env -> a cycle
+    return value
+
+define worker(k) as:
+    # build several closure cycles, return a value derived from them
+    local total is 0
+    local i is 0
+    loop while i < 25:
+        local c is make_counter of (i * 2 + k)
+        total is total + (c of null)
+        i is i + 1
+    return total
+
+checks is 0
+passed is 0
+define check(label, got, want) as:
+    checks is checks + 1
+    if got == want:
+        passed is passed + 1
+    else:
+        print of ("MISMATCH " + label + ": got=" + str of got + " want=" + str of want)
+
+# worker k: sum over i in 0..24 of (2i + k) = 2*300 + 25*k = 600 + 25k
+handles is []
+n is 0
+loop while n < 16:
+    append of [handles, spawn of [worker, n]]
+    n is n + 1
+n is 0
+loop while n < 16:
+    check of ["w" + (str of n), thread_join of handles[n], 600 + (25 * n)]
+    n is n + 1
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

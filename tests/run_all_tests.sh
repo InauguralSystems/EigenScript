@@ -1853,6 +1853,13 @@ check_eigs_suite "report_value value-channel verdicts" test_observer_value_signa
 echo "[100] Worker-Thread JIT Lifetime (#296)"
 check_eigs_suite "shared chunk JIT-compiled on a worker, many workers" test_spawn_jit.eigs "All tests passed" 1
 
+# [101] Threaded cycle-GC: env<->closure cycles created on worker threads must be
+# reclaimed at exit (per-state lock-guarded collector registry; collection runs
+# once workers are joined). A regression that drops MT-created cycles surfaces as
+# an ASan leak here -> bumps the tolerated-leak tally, not a marker failure.
+echo "[101] Threaded Cycle-GC (worker-created cycles collected)"
+check_eigs_suite "worker closure cycles reclaimed at exit" test_spawn_gc.eigs "All tests passed" 1
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

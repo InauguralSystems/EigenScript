@@ -26,19 +26,20 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   tolerates LeakSanitizer exits elsewhere and tallies them ("NOTE: N test
   program(s)…"): **currently 0** (was 4). **A jump in the tally means a new
   leak.** Any other nonzero exit — crash, assert, UBSan — fails. The old floor-4
-  was all spawn/channel programs; two fixes cleared it: (1) channel + thread
+  was all spawn/channel programs; three fixes cleared it: (1) channel + thread
   *handle*-table resources (Channel structs + ThreadHandles live in the process
-  handle table keyed by id, not on a GC'd Value) are now reclaimed
-  deterministically by `handle_table_drain` once the program finishes; (2) the
-  worker's return value was over-incref'd in `thread_entry` (a second ref with
-  no owner — `vm_execute` already returns an owned ref), now removed. **Caveat:**
-  `test_concurrent` ([55]) still leaks ~21 KB of main-thread env↔closure cycles
-  created *after* the first `spawn` — `env_mark_captured` skips GC registration
-  while multithreaded (to avoid a cross-thread register/unregister hazard), so
-  they're never collection candidates. It's NOT in the tally because the [55]
-  block is marker-only (no `rc_ok`) — a gating gap. Reclaiming it needs a
-  thread-safe GC registry (threading hardening); tightening [55] to `rc_ok`
-  should wait until then or it red-lines CI.
+  handle table keyed by id, not on a GC'd Value) are reclaimed deterministically
+  by `handle_table_drain` once the program finishes; (2) the worker's return
+  value was over-incref'd in `thread_entry` (removed); (3) **threaded cycle-GC** —
+  the collector's candidate registry moved per-thread→per-state (lock-guarded,
+  `gc_lock`), so env↔closure cycles created on any thread during the MT window
+  stay collection candidates and the exit collector sweeps them once workers are
+  joined (`handle_table_drain` clears `multithreaded`). So MT-created cycles no
+  longer leak — `test_concurrent` is clean, and section [101] (`test_spawn_gc`,
+  worker-created cycles) is leak-gated. (Separate, still-open: parallel workers
+  executing the *same* shared chunk race on per-chunk advisory state — exec_count,
+  JIT counters, inline caches, shared-env refcounts — pre-existing, TSan-visible,
+  unrelated to the GC registry.)
 - `make asan` overwrites `src/eigenscript` — rebuild with `make` before timing.
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
   (dispatch-table interpreter shape, the DMG/cpu_instrs stand-in),

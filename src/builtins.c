@@ -3874,11 +3874,10 @@ Value* builtin_spawn(Value *arg) {
         return make_null();
     }
     /* Flip refcounts to atomic mode before any new thread can observe
-     * a Value. pthread_create supplies the full barrier. The cycle
-     * collector is disabled first (registry list maintenance is not
-     * thread-safe once envs can die on other threads); spawned programs
-     * keep the pre-collector leak behavior. */
-    gc_disable_for_threads();
+     * a Value. pthread_create supplies the full barrier. The cycle collector's
+     * registry is per-state and lock-guarded, so registration safely continues
+     * across threads; collection is gated to single-threaded and resumes once
+     * all workers are joined (see handle_table_drain). */
     g_vm_multithreaded = 1;
     int pc_rc = pthread_create(&h->tid, NULL, thread_entry, h);
     if (pc_rc != 0) {
@@ -4183,15 +4182,14 @@ void handle_table_drain(EigsState *st) {
         free(ch);
         st->handle_table[i].ptr = NULL;
     }
-    /* NB: we deliberately do NOT clear st->multithreaded here to re-enable the
-     * exit-time cycle collector. It would be a no-op: `env_mark_captured` skips
-     * registering captured envs in the GC registry *while* multithreaded (to
-     * avoid a cross-thread register/unregister corruption hazard), so any
-     * main-thread env↔closure cycle created after the first `spawn` was never a
-     * collection candidate — clearing the flag at exit is too late to recover
-     * it. Reclaiming those needs a thread-safe GC registry (threading
-     * hardening), not a flag flip. The handle resources freed above are the
-     * deterministic part that IS safe to reclaim here. */
+    /* Every spawned worker is now joined → the process is single-threaded
+     * again. Clear the multithreaded flag so the cycle collector resumes:
+     * collection was gated off during the MT window (it races mutators), but
+     * the per-state registry kept accumulating candidates the whole time, so
+     * the exit-time gc_collect_at_exit now reclaims env↔closure cycles created
+     * after the first spawn — on the main thread or in a (since-joined) worker.
+     * Safe because no live thread remains to mutate the graph. */
+    st->multithreaded = 0;
 }
 
 /* nearest_in_range of [entities, x, y, range, world_w, world_h, px_key, py_key, active_key]
