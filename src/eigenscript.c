@@ -812,6 +812,92 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
     val_decref(val);
 }
 
+/* #293: cross-thread channel transfer. A value sent on a channel can outlive
+ * the SENDER thread, but its dict keys are interned in that thread's
+ * env_name_interns table (eigs_thread_drain_caches frees it at detach) — the
+ * receiver then reads dangling key pointers ("cannot index num" / garbage
+ * keys). String VALUES are strdup-owned per Value and survive on refcount;
+ * only the interned KEYS need rehoming. We deep-copy the value on send and
+ * re-intern its dict keys into a process-global, lock-protected table that
+ * lives for the process — reachable from a static root (so LeakSanitizer sees
+ * it as still-reachable, not a leak) and deduped (so it stays bounded). Copying
+ * also removes the old shared-by-reference concurrent-mutation footgun for the
+ * data types it covers. Non-container types (fn/builtin/buffer/text_builder/
+ * json) are still shared by refcount; sending a closure from a thread that then
+ * exits remains unsupported (its interned params would dangle). */
+static EnvNameIntern *g_chan_key_interns[ENV_NAME_INTERN_BUCKETS];
+static pthread_mutex_t g_chan_key_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static const char *chan_intern_key(const char *name) {
+    uint32_t h = env_hash_name(name);
+    int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
+    pthread_mutex_lock(&g_chan_key_mutex);
+    for (EnvNameIntern *it = g_chan_key_interns[bucket]; it; it = it->next) {
+        if (it->hash == h && strcmp(it->name, name) == 0) {
+            pthread_mutex_unlock(&g_chan_key_mutex);
+            return it->name;
+        }
+    }
+    EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
+    it->name = xstrdup(name);
+    it->hash = h;
+    it->next = g_chan_key_interns[bucket];
+    g_chan_key_interns[bucket] = it;
+    pthread_mutex_unlock(&g_chan_key_mutex);
+    return it->name;
+}
+
+#define CHAN_CLONE_MAX_DEPTH 64
+static Value *chan_clone_rec(Value *v, int depth) {
+    if (!v) return make_null();
+    /* Cycle / pathological-depth guard: fall back to sharing (the pre-#293
+     * behavior) rather than overflow the stack. */
+    if (depth > CHAN_CLONE_MAX_DEPTH) { val_incref(v); return v; }
+    switch (v->type) {
+        case VAL_NUM:  return make_num(v->data.num);
+        case VAL_NULL: return make_null();
+        case VAL_STR:  return make_str(v->data.str);
+        case VAL_LIST: {
+            int n = v->data.list.count;
+            Value *out = make_list_heap(n > 0 ? n : 1);
+            for (int i = 0; i < n; i++) {
+                Value *ce = chan_clone_rec(v->data.list.items[i], depth + 1);
+                list_append(out, ce);   /* increfs */
+                val_decref(ce);         /* drop birth ref */
+            }
+            return out;
+        }
+        case VAL_DICT: {
+            int n = v->data.dict.count;
+            Value *out = make_dict(n > 0 ? n : 8);
+            for (int i = 0; i < n; i++) {
+                Value *cv = chan_clone_rec(v->data.dict.vals[i], depth + 1);
+                dict_set_owned(out, v->data.dict.keys[i], cv);  /* consumes cv */
+            }
+            /* Rehome keys from the (thread-local, soon-freed) intern table to
+             * the process-global one. env_hash_find compares by hash+strcmp, so
+             * the differing key-pointer pool is fine. */
+            for (int i = 0; i < out->data.dict.count; i++)
+                out->data.dict.keys[i] = (char *)chan_intern_key(out->data.dict.keys[i]);
+            return out;
+        }
+        default:
+            val_incref(v);   /* share fn/builtin/buffer/text_builder/json by refcount */
+            return v;
+    }
+}
+
+/* Deep-copy a value for cross-thread channel transfer (see chan_clone_rec).
+ * Forces heap allocation (g_arena is per-thread, so toggling its active flag is
+ * safe here) so the copy survives the sender's arena_reset as well as detach. */
+Value *val_clone_for_send(Value *v) {
+    int saved_active = g_arena.active;
+    g_arena.active = 0;
+    Value *out = chan_clone_rec(v, 0);
+    g_arena.active = saved_active;
+    return out;
+}
+
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
     if (!dict || dict->type != VAL_DICT) return NULL;
     if (h == 0) h = env_hash_name(key);

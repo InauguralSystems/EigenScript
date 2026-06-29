@@ -1,0 +1,47 @@
+# Regression for #293: a dict sent across a channel from a spawned thread that
+# then EXITS must keep its (interned) string keys valid in the receiver. Before
+# the fix, the worker's per-thread intern table was freed at detach, dangling
+# the received dict's keys -> msg.id / msg.total read null (garbage keys).
+# Same-thread channel use was unaffected; this needs the sender to be a worker
+# thread that has exited before the receiver reads the keys.
+checks is 0
+passed is 0
+define check(label, got, want) as:
+    checks is checks + 1
+    if got == want:
+        passed is passed + 1
+    else:
+        print of ("MISMATCH " + label + ": got=" + str of got + " want=" + str of want)
+
+ch is channel of null
+
+define worker(data) as:
+    # Dict built IN the worker thread (keys interned in the worker's table),
+    # including a nested dict + a string value (string values are owned, so
+    # they must survive too).
+    send of [data.channel, {"id": 7, "total": 42, "name": "abc", "inner": {"k": 9}}]
+    return null
+
+h is spawn of [worker, {"channel": ch}]
+msg is null
+spins is 0
+loop while msg == null and spins < 5000:
+    msg is try_recv of ch
+    if msg == null:
+        usleep of 1000
+        spins is spins + 1
+thread_join of h          # worker has now exited -> its intern table is freed
+close_channel of ch
+
+check of ["type", type of msg, "dict"]
+check of ["len", len of msg, 4]
+check of ["id", msg.id, 7]            # interned-key lookup must still resolve
+check of ["total", msg.total, 42]
+check of ["name", msg.name, "abc"]    # owned string value survives
+check of ["has_key", has_key of [msg, "total"], 1]
+check of ["nested", msg.inner.k, 9]   # nested dict keys rehomed too
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

@@ -1824,6 +1824,21 @@ echo ""
 # freeze at the OSR point (OP_LINE must stamp g_trace_current_line in the JIT).
 check_eigs_suite "JIT temporal at/state_at under OSR (g_trace_current_line)" test_jit_temporal_osr.eigs "All tests passed" 2
 
+# [98] Cross-thread channel dict-key survival (#293).
+echo "[98] Cross-thread Channel Dict Keys (7 checks)"
+XCD_OUTPUT=$(./eigenscript ../tests/test_chan_dict_xthread.eigs 2>&1); XCD_OUTPUT_RC=$?
+if rc_ok "$XCD_OUTPUT_RC" "$XCD_OUTPUT" && echo "$XCD_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 7))
+    PASS=$((PASS + 7))
+    echo "  PASS: all 7 cross-thread dict-key checks"
+else
+    TOTAL=$((TOTAL + 7))
+    FAIL=$((FAIL + 7))
+    echo "  FAIL: cross-thread dict-key tests"
+    echo "$XCD_OUTPUT" | grep -iE "MISMATCH|FAIL|error" | head -5
+fi
+echo ""
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

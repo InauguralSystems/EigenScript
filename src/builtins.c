@@ -3976,10 +3976,12 @@ Value* builtin_channel(Value *arg) {
     return d;
 }
 
-/* Thread safety: values sent through channels are shared by reference
- * (incref'd, not deep-copied). Mutable containers (dicts, lists) must
- * not be mutated concurrently by sender and receiver — transfer
- * ownership or use immutable values. */
+/* Thread safety: values sent through channels are deep-copied (#293) so the
+ * received value is self-contained — independent of the sender thread's
+ * lifetime (its dict keys are interned per-thread and freed at detach) and of
+ * its arena. Data types (num/str/list/dict, nested) are copied; fn/builtin/
+ * buffer/text_builder are still shared by refcount. The copy also removes the
+ * old shared-mutable-container hazard for the copied types. */
 Value* builtin_send(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         runtime_error(0, "send requires [channel, value]");
@@ -3990,8 +3992,9 @@ Value* builtin_send(Value *arg) {
         runtime_error(0, "send: invalid channel");
         return make_null();
     }
-    Value *val = arg->data.list.items[1];
-    val_incref(val);
+    /* Deep-copy into a self-contained heap value (refcount 1) owned by the
+     * channel buffer; receiver adopts that ref. */
+    Value *val = val_clone_for_send(arg->data.list.items[1]);
     pthread_mutex_lock(&ch->mutex);
     while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed)
         pthread_cond_wait(&ch->not_full, &ch->mutex);

@@ -662,6 +662,10 @@ Value* make_builtin(BuiltinFn fn);
 Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 void dict_set_owned(Value *dict, const char *key, Value *val);
+/* Deep-copy a value for cross-thread channel transfer (#293): re-homes dict
+ * keys into a process-global intern table so they survive the sender thread's
+ * detach. Returns a heap value (refcount 1). */
+Value *val_clone_for_send(Value *v);
 Value* dict_get(Value *dict, const char *key);
 void list_append(Value *list, Value *item);
 void list_append_owned(Value *list, Value *item);

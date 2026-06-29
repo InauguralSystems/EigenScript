@@ -2,6 +2,23 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **Cross-thread channel transfer corrupted dict string keys (#293).** Values
+  sent on a channel were shared by reference (incref'd, not copied). A dict's
+  string keys are interned in the *creating thread's* per-thread intern table,
+  which is freed when that thread detaches — so a dict built in a worker, sent
+  over a channel, and read after the worker exited had dangling (garbage) keys
+  (`msg.k` read null; surfaced by EigenGauntlet's `concurrent` lab as
+  `cannot apply '+' to num and null`). `send` now deep-copies the value
+  (`val_clone_for_send`), re-homing dict keys into a process-global, deduped,
+  lock-protected intern table that lives for the process (reachable root → not
+  a leak). String *values* were already owned and unaffected; fn/builtin/buffer
+  are still shared by refcount. The copy also removes the old
+  shared-mutable-container concurrency footgun for the copied types. Regression
+  test: suite section [98] (cross-thread dict built in a spawned worker).
+
 ## [0.21.1] - 2026-06-29
 
 ### Fixed
