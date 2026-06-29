@@ -2,7 +2,7 @@
 
 All notable changes to EigenScript are documented here.
 
-## [Unreleased]
+## [0.22.0] - 2026-06-29
 
 ### Fixed
 - **Data races: parallel workers executing the same shared chunk (#297).**

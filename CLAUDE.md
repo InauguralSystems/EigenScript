@@ -112,9 +112,12 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.21.2** (2026-06-29). Unreleased work on `main`: see
-  CHANGELOG.md `[Unreleased]`. Full version history: **CHANGELOG.md**
-  (don't re-narrate it here). Roadmap / open items: **ROADMAP.md**.
+- **Latest release: v0.22.0** (2026-06-29) — `report_value` value-signal
+  observer (#294) + a full threading-hardening pass (spawn/channel leak floor
+  4→0, #296 worker-JIT SEGV, threaded cycle-GC, #297 parallel-exec data races;
+  TSan-clean). Unreleased work on `main`: see CHANGELOG.md `[Unreleased]`. Full
+  version history: **CHANGELOG.md** (don't re-narrate it here). Roadmap / open
+  items: **ROADMAP.md**.
 - **Design phase:** the VM tier is the deliberate correctness-first phase —
   its malleability keeps semantics cheap to change; the native path is the
   **AOT compiler in the sibling `ouroboros` repo** (the VM is its byte-exact
