@@ -89,6 +89,15 @@ All six predicates are now windowed (the #202 series is complete):
 The "Pointwise behavior replaced" note under each predicate records the
 single-step rule that the windowed version superseded.
 
+All six predicates above (and `report`) classify the trajectory of
+**`entropy(value)`**. `report_value of x` (#294) is a sibling that runs the
+same windowed logic on the **value's own** relative step `Δv/(1+|x|)` instead
+of its entropy — answering "has the number stopped moving" rather than "how
+determined is it." It is the right tool when the value oscillates in a
+flat-entropy region (where the entropy signal reads `stable`); see
+[`docs/OBSERVER.md`](OBSERVER.md) ("Two signals"). Vocabulary:
+`oscillating`/`converged`/`stable`/`moving`/`equilibrium`.
+
 ## The six predicates
 
 ### `converged` (kind 0)

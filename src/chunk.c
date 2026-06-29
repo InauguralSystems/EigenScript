@@ -161,8 +161,16 @@ int chunk_add_constant(EigsChunk *chunk, Value *val) {
     }
     val_incref(val);
     chunk->constants[chunk->const_count] = val;
-    if (val->type == VAL_STR)
+    if (val->type == VAL_STR) {
         chunk->const_interns[chunk->const_count] = env_intern_name(val->data.str);
+        /* #297: precompute the name hash here (compile time, single-threaded)
+         * instead of lazily caching it on first use in the VM name handlers —
+         * that `if (h==0) const_hashes[idx]=h` lazy write raced when parallel
+         * workers ran the same chunk. Eager + idempotent + a tiny perf win
+         * (no runtime hashing). Matches env_hash_name(const_interns[idx]). */
+        if (chunk->const_hashes)
+            chunk->const_hashes[chunk->const_count] = env_hash_name(val->data.str);
+    }
     return chunk->const_count++;
 }
 
@@ -215,6 +223,8 @@ const char *op_name(uint8_t op) {
         [OP_LOOP_ENV_CLEAR] = "LOOP_ENV_CLEAR",
         [OP_PREDICATE_SLOT] = "PREDICATE_SLOT",
         [OP_PREDICATE_NAME] = "PREDICATE_NAME",
+        [OP_REPORT_VALUE_SLOT] = "REPORT_VALUE_SLOT",
+        [OP_REPORT_VALUE_NAME] = "REPORT_VALUE_NAME",
         [OP_BREAK] = "BREAK", [OP_CONTINUE] = "CONTINUE",
         [OP_TRY_BEGIN] = "TRY_BEGIN", [OP_TRY_END] = "TRY_END",
         [OP_OBSERVE_ASSIGN] = "OBSERVE_ASSIGN",
@@ -262,6 +272,7 @@ static int op_has_u16(uint8_t op) {
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_IMPORT: case OP_MATCH:
     case OP_LINE:
+    case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
         return 1;
     case OP_INTERROGATE: case OP_PREDICATE:
         return 1; /* kind:8 but padded to 16 for uniformity */
@@ -334,6 +345,7 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
     case OP_REPORT_NAME: case OP_OBSERVE_VALUE_NAME: case OP_OBSERVE_NAME_POST:
+    case OP_REPORT_VALUE_NAME:
     case OP_IMPORT:
         roles[0] = VR_NAME; return 1;
     case OP_CLOSURE:
@@ -349,6 +361,7 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_LIST: case OP_DICT:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
+    case OP_REPORT_VALUE_SLOT:
     case OP_INTERROGATE: case OP_PREDICATE:
     case OP_MATCH: case OP_LINE: case OP_DESTRUCTURE_UNPACK:
         roles[0] = VR_RAW; return 1;

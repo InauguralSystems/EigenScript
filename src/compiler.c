@@ -126,6 +126,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
     case OP_REPORT_SLOT: case OP_REPORT_NAME:
+    case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
     case OP_OBSERVE_VALUE_SLOT: case OP_OBSERVE_VALUE_NAME:
     case OP_PREDICATE_SLOT: case OP_PREDICATE_NAME:
         return 1;
@@ -1927,6 +1928,18 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 /* Phase-3 B: not a local — report the name's binding via its slot. */
                 int rnidx = add_string_constant(c, arg_node->data.ident.name);
                 emit_op_u16(c, OP_REPORT_NAME, (uint16_t)rnidx, node->line);
+                break;
+            }
+            if (fn_node && fn_node->type == AST_IDENT &&
+                strcmp(fn_node->data.ident.name, "report_value") == 0 &&
+                arg_node && arg_node->type == AST_IDENT) {
+                /* #294 `report_value of <ident>` — classify the binding's VALUE
+                 * trajectory (parallel to report, which classifies entropy). */
+                uint32_t rh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
+                int rslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, rh) : -1;
+                if (rslot >= 0) { emit_op_u16(c, OP_REPORT_VALUE_SLOT, (uint16_t)rslot, node->line); break; }
+                int rnidx = add_string_constant(c, arg_node->data.ident.name);
+                emit_op_u16(c, OP_REPORT_VALUE_NAME, (uint16_t)rnidx, node->line);
                 break;
             }
             /* #262 Phase-3 D: `observe of <ident>` reads the binding's slot

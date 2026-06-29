@@ -200,6 +200,16 @@ typedef struct ObserverSlot {
     double *dh_window;          /* lazily allocated, OBSERVER_WINDOW_N doubles */
     uint8_t dh_window_head, dh_window_count;
     uint8_t used;               /* 1 once this slot has been observed */
+    /* #294 value-signal channel: the entropy window above tracks
+     * entropy(value) — a lossy proxy that goes flat in mid-magnitude regions
+     * (so a real value-oscillation reads "stable"). This parallel window tracks
+     * the value's OWN relative step Δv/(1+|v|), so `report_value of x`
+     * classifies the value trajectory directly. Same windowed logic/thresholds
+     * as the entropy channel; only the observed signal differs. */
+    double  last_value;         /* last observed numeric value (Δv source) */
+    double *v_window;           /* lazily allocated, OBSERVER_WINDOW_N relative-deltas */
+    uint8_t v_window_head, v_window_count;
+    uint8_t v_used;             /* 1 once a numeric value has been recorded */
 } ObserverSlot;
 
 struct Env {
@@ -280,6 +290,9 @@ int  observer_slot_stable(const struct ObserverSlot *s);
 /* Classify a slot into a report band (mirrors builtin_report's priority).
  * Returns a static string; NULL if the slot is unusable. */
 const char *observer_slot_report(const struct ObserverSlot *s);
+/* #294 value-signal report: classify the binding's VALUE trajectory (not its
+ * entropy) — "oscillating"/"converged"/"stable"/"moving"/"equilibrium". */
+const char *observer_slot_report_value(const struct ObserverSlot *s);
 
 /* Returns the dH at offset back from most recent (0 = most recent).
  * Caller must ensure offset < observer_window_size(v). */
@@ -431,6 +444,15 @@ struct EigsState {
      * threaded states (the common case — DMG, MiniSat, Tidepool, REPL)
      * keep it at 0 and skip the atomic ~20-cycle penalty on x86. */
     int             multithreaded;
+    /* Cycle-collector registry — the intrusive list of captured envs and its
+     * live count. Per-STATE (not per-thread) so candidates created on any
+     * thread survive that thread's death and stay collectable at exit; gc_lock
+     * guards list maintenance and is taken only while `multithreaded` (single-
+     * threaded states pay nothing). Collection runs only when single-threaded
+     * (gc_collect_impl bails under MT), so it needs no lock. */
+    Env            *gc_envs;
+    int             gc_captured_live;
+    pthread_mutex_t gc_lock;
     /* JIT tuning thresholds (entry / per-iter / OSR). Each state
      * reads its own copy from EIGS_JIT_ENTRY_THRESHOLD /
      * EIGS_JIT_ITER_THRESHOLD / EIGS_JIT_OSR_THRESHOLD at state_new,
@@ -505,12 +527,11 @@ struct EigsThread {
      * state->script_dir. OP_IMPORT saves/restores around module body. */
     char                 import_resolve_dir[4096];
     /* Cycle-collector per-thread state (docs/CLOSURE_CYCLE_GC.md).
-     * The registry holds captured envs (intrusive list, gc_prev/gc_next);
      * gc_threshold drives the off-hot-path collection trigger; gc_enabled
-     * gates registration (gc_disable_for_threads flips it off when the
-     * state goes multithreaded); in_gc is the re-entrancy guard. */
-    Env                 *gc_envs;
-    int                  gc_captured_live;
+     * gates registration; in_gc is the re-entrancy guard. The candidate
+     * REGISTRY (gc_envs, gc_captured_live) lives on EigsState — shared across
+     * the state's threads, lock-guarded — so MT-created cycles stay
+     * collectable; collection still runs only single-threaded. */
     int                  gc_threshold;
     int                  gc_enabled;
     int                  in_gc;
@@ -579,8 +600,8 @@ extern __thread EigsThread *eigs_current;
 #define g_load_env            (eigs_current->load_env)
 #define g_import_resolve_dir  (eigs_current->import_resolve_dir)
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
-#define g_gc_envs             (eigs_current->gc_envs)
-#define g_gc_captured_live    (eigs_current->gc_captured_live)
+#define g_gc_envs             (eigs_current->state->gc_envs)
+#define g_gc_captured_live    (eigs_current->state->gc_captured_live)
 #define g_gc_threshold        (eigs_current->gc_threshold)
 #define g_gc_enabled          (eigs_current->gc_enabled)
 #define g_in_gc               (eigs_current->in_gc)
@@ -785,9 +806,6 @@ void gc_collect_cycles(void);
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */
 void gc_collect_at_exit(Env *global);
-/* Called by spawn() before going multithreaded: empties the registry and
- * disables future registration (cross-thread roots aren't visible). */
-void gc_disable_for_threads(void);
 void env_set_local_owned(Env *env, const char *name, Value *val);
 void env_clear(Env *env);
 /* Reserve env slots up to `total` (used at function call to pre-allocate
@@ -902,6 +920,10 @@ Value* json_obj_get(Value *obj, const char *key);
  * Table + lock + types declared up at the EigsState struct. */
 int    handle_register(void *ptr, HandleType type);
 void*  handle_lookup(int id, HandleType type);
+/* Deterministic teardown of channel + thread handles (builtins.c): joins
+ * outstanding workers, then frees remaining channels. Call once execution is
+ * done and the value world is still alive (before env/thread teardown). */
+void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id);
 
 /* ---- EigenStore embedded database ---- */

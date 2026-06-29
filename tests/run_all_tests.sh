@@ -1839,6 +1839,35 @@ else
 fi
 echo ""
 
+# [99] Value-signal observer channel — report_value (#294). Pins that the value
+# channel classifies the value trajectory (not entropy) against closed-form
+# oracles: blind-to-slow-oscillation entropy vs not-settled value, fast
+# oscillation, geometric decay -> converged, monotone climb -> moving.
+echo "[99] Value-Signal Observer (report_value, #294)"
+check_eigs_suite "report_value value-channel verdicts" test_observer_value_signal.eigs "All tests passed." 1
+
+# [100] Worker-thread JIT lifetime (#296). A shared chunk that gets hot and
+# JIT-compiles ON a worker must not leave chunk->jit_code dangling when that
+# worker exits (its per-thread JIT code arena is munmap'd at detach). Crashed
+# (SEGV) at scale before the fix; gated rc_ok so a regression (crash) fails.
+echo "[100] Worker-Thread JIT Lifetime (#296)"
+check_eigs_suite "shared chunk JIT-compiled on a worker, many workers" test_spawn_jit.eigs "All tests passed" 1
+
+# [101] Threaded cycle-GC: env<->closure cycles created on worker threads must be
+# reclaimed at exit (per-state lock-guarded collector registry; collection runs
+# once workers are joined). A regression that drops MT-created cycles surfaces as
+# an ASan leak here -> bumps the tolerated-leak tally, not a marker failure.
+echo "[101] Threaded Cycle-GC (worker-created cycles collected)"
+check_eigs_suite "worker closure cycles reclaimed at exit" test_spawn_gc.eigs "All tests passed" 1
+
+# [102] Parallel shared-chunk execution correctness (#297). Workers spawned all
+# at once (genuine parallelism) run the same chunks concurrently; the inline
+# caches / JIT counters / lazy name-hash / multithreaded-flag write are shared
+# state that raced (a torn IC write could give a wrong cache hit). Pins correct
+# results; TSan-cleanliness verified out of band.
+echo "[102] Parallel Shared-Chunk Execution (#297)"
+check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_parallel.eigs "All tests passed" 1
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

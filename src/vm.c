@@ -1874,8 +1874,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
      * stale value left by a prior frame at this depth can't clobber
      * explicit args. */
     frame->call_argc = chunk->param_count;
-    chunk->exec_count++;
-    jit_register_chunk(chunk);
+    /* #297: JIT hotness bookkeeping is shared per-chunk state and feeds JIT
+     * compilation, which is gated off under MT (#296). Skip it while
+     * multithreaded — pointless work, and the bare ++ / registry write race
+     * with parallel workers running the same chunk. */
+    if (!g_vm_multithreaded) {
+        chunk->exec_count++;
+        jit_register_chunk(chunk);
+    }
 
     uint8_t *ip = frame->ip;
     int current_line = 0;
@@ -1921,6 +1927,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_INTERROGATE] = &&lbl_INTERROGATE, [OP_PREDICATE] = &&lbl_PREDICATE,
         [OP_REPORT_SLOT] = &&lbl_REPORT_SLOT,
         [OP_REPORT_NAME] = &&lbl_REPORT_NAME,
+        [OP_REPORT_VALUE_SLOT] = &&lbl_REPORT_VALUE_SLOT,
+        [OP_REPORT_VALUE_NAME] = &&lbl_REPORT_VALUE_NAME,
         [OP_OBSERVE_VALUE_SLOT] = &&lbl_OBSERVE_VALUE_SLOT,
         [OP_OBSERVE_VALUE_NAME] = &&lbl_OBSERVE_VALUE_NAME,
         [OP_OBSERVE_NAME_POST] = &&lbl_OBSERVE_NAME_POST,
@@ -2415,7 +2423,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             vm_push_slot(slot_null());
             DISPATCH();
         }
-        if (depth <= 1) {
+        /* #297: the inline cache is shared per-chunk state; don't populate it
+         * while multithreaded (parallel workers would race, and a torn write
+         * risks a wrong cache hit when two threads share an env). The fast-path
+         * read stays — it just misses under MT. Applies to every IC-write site
+         * below too. */
+        if (!g_vm_multithreaded && depth <= 1) {
             ic->starting_env = start;
             ic->starting_ver = start->binding_version;
             ic->target_ver   = target->binding_version;
@@ -2455,7 +2468,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             env_store_slot(target, slot_idx, s);
             if (target->assign_counts && g_unobserved_depth == 0)
                 target->assign_counts[slot_idx]++;
-            if (depth <= 1) {
+            if (!g_vm_multithreaded && depth <= 1) {   /* #297: see above */
                 ic->starting_env = start;
                 ic->starting_ver = start->binding_version;
                 ic->target_ver   = target->binding_version;
@@ -2467,7 +2480,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         /* Not found anywhere — create in starting env, then populate IC. */
         env_set_local_pre_interned_slot(start, name, h, s);
         Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
-        if (t2 == start) {
+        if (!g_vm_multithreaded && t2 == start) {   /* #297: see above */
             ic->starting_env = start;
             ic->starting_ver = start->binding_version;
             ic->target_ver   = start->binding_version;
@@ -2500,7 +2513,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         env_set_local_pre_interned_slot(start, name, h, s);
         int slot_idx, depth;
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
-        if (target == start) {
+        if (!g_vm_multithreaded && target == start) {   /* #297: see above */
             ic->starting_env = start;
             ic->starting_ver = start->binding_version;
             ic->target_ver   = start->binding_version;
@@ -2539,7 +2552,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         env_set_local_pre_interned_slot(target, name, h, s);
         int slot_idx, depth;
         Env *resolved = env_resolve_chain(target, name, h, &slot_idx, &depth);
-        if (resolved == target) {
+        if (!g_vm_multithreaded && resolved == target) {   /* #297: see above */
             ic->starting_env = target;
             ic->starting_ver = target->binding_version;
             ic->target_ver   = target->binding_version;
@@ -2565,6 +2578,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
          * "chunk that loops a lot" in addition to "chunk that's called
          * a lot." Wraparound is benign — at threshold-trip granularity
          * the chunk gets JIT'd either way. */
+        /* #297: the back-edge hotness counter + OSR machinery is shared
+         * per-chunk JIT state. Compilation is already gated off under MT
+         * (#296); skip the counter and the OSR slot scan/execute too while
+         * multithreaded so parallel workers running the same chunk don't race
+         * on back_edge_count / jit_osr (they interpret hot loops instead). */
+        if (!g_vm_multithreaded) {
         chunk->back_edge_count++;
 
         /* OSR trigger. For "called once, loops a lot" chunks (the gauntlet
@@ -2640,6 +2659,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             current_line = g_vm.current_line;
             }
         }
+        }   /* #297: end if (!g_vm_multithreaded) */
         DISPATCH();
     }
 
@@ -2910,7 +2930,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             frame->call_argc = (int)argc;
             g_loop_stall_count = 0;
             g_loop_iterations  = 0;
-            fn_chunk->exec_count++;
+            if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
 
             /* JIT hook: compile lazily, run native prefix if available.
              * Thunk runs side-effects on g_vm only; caller advances
@@ -3741,6 +3761,44 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         DISPATCH();
     }
 
+    CASE(REPORT_VALUE_SLOT): {
+        /* #294 `report_value of <local>` — classify the VALUE trajectory of the
+         * local's slot (not its entropy). observer_slot_report_value returns
+         * "equilibrium" for an unobserved / non-numeric binding. */
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        Value *result;
+        if (e && (int)slot < e->obs_cap)
+            result = make_str(observer_slot_report_value(&e->obs[slot]));
+        else
+            result = make_str("equilibrium");
+        vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(REPORT_VALUE_NAME): {
+        /* #294 report_value of a non-local name — resolve (env,slot), classify
+         * its value trajectory. Undefined name raises like GET_NAME. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        int oidx = -1, odepth = 0;
+        Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (!oe) {
+            runtime_error(current_line, "undefined variable '%s'", name);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        Value *result;
+        if (oidx >= 0 && oidx < oe->obs_cap)
+            result = make_str(observer_slot_report_value(&oe->obs[oidx]));
+        else
+            result = make_str("equilibrium");
+        vm_push(result);
+        DISPATCH();
+    }
+
     CASE(OBSERVE_VALUE_SLOT): {
         /* #262 Phase-3 D: `observe of <local>` → [status,entropy,dH,prev_dH]
          * from the local's slot trajectory; no-observation tuple if unpopulated. */
@@ -4391,8 +4449,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         g_vm.current_line = line;
         /* History stamping needs the current line whether or not a tape
          * is open — a plain global store is far cheaper than the call
-         * (17.8M calls per 500k DMG-shaped steps before this change). */
-        g_trace_current_line = line;
+         * (17.8M calls per 500k DMG-shaped steps before this change).
+         * #297: skip under MT — the global is shared, history/replay is a
+         * single-threaded feature, and the error line is carried per-thread by
+         * g_vm.current_line above. (The hot single-threaded path is unchanged:
+         * one predicted branch on an already-cached flag.) */
+        if (!g_vm_multithreaded) g_trace_current_line = line;
         if (__builtin_expect(g_trace_enabled, 0)) trace_line(line);
         DISPATCH();
     }

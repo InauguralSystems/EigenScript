@@ -1,0 +1,94 @@
+# #294 — report_value: the value-signal observer channel.
+#
+# `report of x` classifies the trajectory of entropy(value); `report_value of x`
+# classifies the value's OWN relative-step trajectory. The two disagree exactly
+# where entropy is a lossy proxy for value-settling: a sustained value
+# oscillation in a flat-entropy region reads "stable" to the entropy channel but
+# is correctly NOT-settled to the value channel. This test pins that contract
+# against closed-form trajectories whose truth is known.
+
+# Sustained oscillation x = 5 + 0.6*cos(k*omega) — oscillates forever, NEVER
+# settles. Returns [entropy-report, value-report] at a late step.
+define run_osc(omega) as:
+    local center is 5.0
+    local amp is 0.6
+    local two_cos is 2.0 * (cos of omega)
+    local u_prev is amp
+    local u_cur is amp * (cos of omega)
+    local x is center + u_cur
+    local k is 2
+    local ent is "?"
+    local val is "?"
+    loop while k < 60:
+        local u_next is two_cos * u_cur - u_prev
+        x is center + u_next
+        ent is report of x
+        val is report_value of x
+        u_prev is u_cur
+        u_cur is u_next
+        k is k + 1
+    return [ent, val]
+
+# Geometric decay to 0 — the value genuinely settles.
+define run_converge() as:
+    local x is 8.0
+    local val is "?"
+    local k is 0
+    loop while k < 60:
+        x is x * 0.5
+        val is report_value of x
+        k is k + 1
+    return val
+
+# Steady monotone climb — still moving, never oscillating, never converged.
+define run_climb() as:
+    local x is 5.0
+    local val is "?"
+    local k is 0
+    loop while k < 40:
+        x is x + 1.0
+        val is report_value of x
+        k is k + 1
+    return val
+
+local pass is 1
+
+# Case 1: slow oscillation. Entropy is blind here (does not flag it as
+# oscillating); the value channel must NOT report it settled.
+local r1 is run_osc of (0.6)
+local ent1 is r1[0]
+local val1 is r1[1]
+print of ("slow-osc: report=" + ent1 + " report_value=" + val1)
+if ent1 == "oscillating":
+    pass is 0
+    print of "FAIL: entropy channel unexpectedly flagged the slow oscillation"
+if (val1 == "converged") or (val1 == "stable"):
+    pass is 0
+    print of ("FAIL: value channel falsely settled on a sustained oscillation: " + val1)
+
+# Case 2: fast oscillation. The value channel should flag it as oscillating.
+local r2 is run_osc of (1.5)
+local val2 is r2[1]
+print of ("fast-osc: report_value=" + val2)
+if not (val2 == "oscillating"):
+    pass is 0
+    print of ("FAIL: value channel missed a fast oscillation, got " + val2)
+
+# Case 3: geometric decay — value channel converges (and agrees with entropy).
+local v3 is run_converge of null
+print of ("decay: report_value=" + v3)
+if not (v3 == "converged"):
+    pass is 0
+    print of ("FAIL: expected report_value 'converged' for geometric decay, got " + v3)
+
+# Case 4: monotone climb — moving, never oscillating/converged.
+local v4 is run_climb of null
+print of ("climb: report_value=" + v4)
+if (v4 == "oscillating") or (v4 == "converged"):
+    pass is 0
+    print of ("FAIL: monotone climb misclassified as " + v4)
+
+if pass == 1:
+    print of "All tests passed."
+else:
+    print of "SOME TESTS FAILED"

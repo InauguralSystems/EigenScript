@@ -2,6 +2,105 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **Data races: parallel workers executing the same shared chunk (#297).**
+  ThreadSanitizer flagged ~22 races when concurrent `spawn`'d workers ran the
+  same chunks: the refcount-mode gate (`g_vm_multithreaded`) was re-written on
+  *every* spawn, racing already-running workers reading it in
+  `env_incref`/`chunk_incref` (the correctness-critical ones — a lost flag read
+  could take the non-atomic refcount path → UAF); the per-chunk JIT hotness
+  counters (`exec_count`/`back_edge_count`) and OSR machinery; the env/dict
+  inline caches (a torn write risks a wrong cache hit when two threads share an
+  env); the lazy name-hash cache (`const_hashes[idx]`); and `g_trace_current_line`.
+  Fixes: write the multithreaded flag only on the 0→1 transition (it's published
+  to all workers via the first write's happens-before); gate the JIT counters,
+  OSR, inline-cache *writes*, and the trace-line store off under MT (JIT compile
+  is already MT-gated by #296; the IC fast-path *read* stays — it just misses for
+  a worker's env); and precompute the name hash at compile time instead of
+  lazily at runtime (eager, idempotent, a tiny perf win). Single-threaded
+  behavior is unchanged (every gate passes when not multithreaded). Result:
+  ThreadSanitizer reports **0 data races** on a parallel-shared-closure workload
+  (was ~22). Regression: section [102] (`test_spawn_parallel` — 12 concurrent
+  workers, exact results). Suites 2340/2340, leak floor 0, jit-smoke green.
+- **Threaded cycle-GC: env↔closure cycles created on worker threads now collected.**
+  The cycle collector's candidate registry was per-thread and was emptied +
+  disabled the moment `spawn` went multithreaded, so any env↔closure cycle
+  created after the first spawn — on the main thread or a worker — was never a
+  collection candidate and leaked at exit (e.g. `test_concurrent` leaked ~21 KB).
+  Moved the registry to the EigsState (shared across the state's threads),
+  guarded by a `gc_lock` taken only while multithreaded; registration now
+  continues across threads, while collection still runs only single-threaded
+  (it races mutators otherwise). `handle_table_drain` clears `multithreaded`
+  after joining every worker, so the exit-time `gc_collect_at_exit` sweeps the
+  whole accumulated registry — reclaiming both main-thread and (since-joined)
+  worker-thread cycles. Verified race-free with ThreadSanitizer (no races on the
+  registry; the lock synchronizes concurrent register/unregister); the cycle
+  collector's strict-clean section [87] still passes. Regression: section [101]
+  (`test_spawn_gc`, leak-gated). Prerequisite was #296 (the apparent "GC change
+  crashes" was actually the worker-JIT UAF). NOTE: parallel workers executing the
+  *same* shared chunk still race on per-chunk advisory state (exec_count, JIT
+  hotness counters, inline caches, shared-env refcounts) — pre-existing, separate
+  from this change; tracked separately.
+- **SEGV: shared chunk JIT-compiled on a worker thread (#296).** A function that
+  got hot and JIT-compiled while running on a `spawn`'d worker left
+  `chunk->jit_code` pointing into that worker's *per-thread* JIT code arena,
+  which `jit_thread_destroy` munmaps at thread detach. `chunk->jit_code` is a
+  single pointer on the *shared* chunk, so the next caller jumped into freed
+  executable memory → SEGV (reliably at scale, e.g. a worker that calls a shared
+  helper in a loop, repeated across ~50+ workers; pre-existing, layout-sensitive
+  UAF). Fixed by gating JIT compilation off while multithreaded
+  (`jit_try_compile_chunk` / `_osr` no-op under MT, leaving `jit_state` at 0 so
+  compilation resumes once single-threaded) — matching the existing "disable
+  while MT" policy for the cycle collector and call-env parking. Code main
+  compiled outside the MT window lives in main's arena (alive until exit) and is
+  safe to run from a worker. Regression: suite section [100] (`test_spawn_jit`,
+  leak-clean, reproduces the SEGV with the gate removed).
+- **Spawn/channel memory leaks at exit — ASan "tolerated leak" floor 4 → 0.**
+  Two fixes, both most relevant to the freestanding/EigenOS target where there
+  is no process exit to reclaim resources:
+  - *Handle-table resources never reclaimed.* Channels (`channel of …`) and
+    spawned-thread handles live in the process handle table keyed by an integer
+    id, not on a refcounted Value, so the GC never freed them — `close_channel`
+    only flips a flag, and an unjoined worker left its `ThreadHandle` behind.
+    Added `handle_table_drain`, run once the program finishes (value world still
+    alive): joins any still-registered worker (`spawn` uses a joinable pthread;
+    `thread_join` already frees joined ones, so no double-join), then frees every
+    remaining channel (drains+decrefs buffered messages, destroys the mutex/conds,
+    frees the struct).
+  - *Worker return value over-incref'd.* `thread_entry` did `val_incref` on the
+    result, but `vm_execute` already returns an owned ref that the handle takes
+    over — a second ref with no owner that leaked the worker's return value
+    (masked when the return happened to be arena-allocated). Removed.
+  Together these clear every `rc_ok`-gated spawn/channel test. One residual
+  remains and is *not* in the tally: `test_concurrent` leaks ~21 KB of
+  main-thread env↔closure cycles created after the first `spawn` —
+  `env_mark_captured` skips GC registration while multithreaded (cross-thread
+  registry hazard), so they're never collection candidates; its [55] suite block
+  is marker-only so doesn't gate on it. Reclaiming it needs a thread-safe GC
+  registry (threading hardening). A spawn+join loop does *not* accumulate
+  (verified to N=400).
+
+### Added
+- **`report_value of x` — a value-signal observer channel (#294).** The
+  windowed observer predicates (`report`/`converged`/`stable`/`oscillating`)
+  classify the trajectory of `entropy(value)`, not the value itself. Because
+  entropy is a non-monotonic projection of `|x|` (flat in mid-magnitude
+  regions), a sustained *value* oscillation there reads as `stable` — the
+  observer faithfully measures entropy-settling, which is a lossy proxy for
+  value-settling. Proven against a closed-form oracle `x = 5 + 0.6·cos(k·ω)`
+  (oscillates forever): `report of x` says `stable` in the flat-entropy
+  plateau, while the new `report_value of x` says `moving`/`oscillating`
+  uniformly — never falsely `converged`. The new form runs the *same* windowed
+  logic and thresholds on the value's relative step `Δv/(1+|x|)` (relative, so
+  bands carry the same meaning across value scales); vocabulary
+  `oscillating`/`converged`/`stable`/`moving`/`equilibrium`. Purely additive: a
+  parallel per-slot value window beside the entropy window, two new appended
+  opcodes (`OP_REPORT_VALUE_SLOT`/`_NAME`), and a compile-time intercept
+  paralleling `report`. Existing entropy predicates are unchanged. See
+  docs/OBSERVER.md ("Two signals").
+
 ## [0.21.2] - 2026-06-29
 
 ### Fixed
