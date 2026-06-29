@@ -2,6 +2,22 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **JIT/OSR use-after-free on a re-entrant env realloc (#291).** A function
+  whose `local_count` sat at the env capacity boundary would realloc
+  `env->values` mid-body when the loop machinery bound its two implicit names
+  (`__loop_iterations__`, `__loop_exit__`) — which `env_reserve_slots` did not
+  account for. That realloc freed the array the JIT's `%r12` (`fn_env->values`)
+  cache pointed at; a re-entrant `vm_execute` (`sandbox_run`/`vm_run_bytecode`)
+  then reused the freed memory, so the next inline `GET_LOCAL` read garbage and
+  threw `cannot index num` (intermittently, JIT-only). Surfaced by iLambdaAi's
+  `grade()` ladder running its OSR-hot `ids_to_text` decoder interleaved with
+  `sandbox_run`. Fix: `env_reserve_slots` now reserves `ENV_LOOP_BIND_HEADROOM`
+  (2) extra *capacity* for the implicit loop bindings, so a call-time-reserved
+  env never reallocs mid-body. Full suite + ASan leak-tally unchanged.
+
 ## [0.21.0] - 2026-06-28
 
 ### Security

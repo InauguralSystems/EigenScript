@@ -52,6 +52,14 @@
 #define MAX_INDENT      64
 #define MAX_VARS        512   /* lint-only; Env uses dynamic arrays */
 #define ENV_INIT_CAP    16
+/* The loop machinery binds two implicit names into the *function* env at
+ * runtime (__loop_iterations__, __loop_exit__ — vm.c) that local_count does
+ * not account for. env_reserve_slots reserves this much extra CAPACITY (not
+ * count) so a loop in a body whose local_count sits exactly at a power-of-two
+ * boundary can't realloc env->values mid-execution. That realloc frees the
+ * array the JIT's %r12 (fn_env->values) cache points at — a use-after-free the
+ * re-entrant sandbox_run/vm_execute churn turns into "cannot index num" (#291). */
+#define ENV_LOOP_BIND_HEADROOM 2
 #define MAX_STMTS       4096
 #define MAX_LIST        1024
 

@@ -2011,10 +2011,13 @@ void env_reserve_slots(Env *env, int total) {
     if (!env || total <= env->count) return;
     /* Grow capacity if needed. Mirrors env_set_local_hashed's grow path
      * for heap_allocated envs. Call-time envs are always heap-allocated
-     * (env_new sets heap_allocated=1). */
-    if (total > env->capacity) {
+     * (env_new sets heap_allocated=1). Reserve ENV_LOOP_BIND_HEADROOM extra
+     * CAPACITY (count still ends at `total`) so the runtime loop bindings
+     * don't realloc values[] out from under a live JIT %r12 cache (#291). */
+    int want_cap = total + ENV_LOOP_BIND_HEADROOM;
+    if (want_cap > env->capacity) {
         int new_cap = env->capacity ? env->capacity : ENV_INIT_CAP;
-        while (new_cap < total) new_cap *= 2;
+        while (new_cap < want_cap) new_cap *= 2;
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
         if (env->heap_allocated) {
