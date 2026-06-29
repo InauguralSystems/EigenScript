@@ -5,6 +5,18 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Security
+- **`sandbox_run` is now fail-closed (allowlist).** The sandbox previously
+  shadowed a hand-maintained *blocklist* (`SANDBOX_DENY`) — fail-open, so every
+  builtin was reachable unless someone remembered to deny it. Builtins nobody
+  had flagged leaked: `set_observer_thresholds` let sandboxed code rewrite the
+  **process-global** observer thresholds (corrupting observer behavior for the
+  whole host — including iLambdaAi's own `grade()` — after the run returned);
+  the `screen_*` terminal ops, channel ops, and `exit` (which would kill the
+  host) were also reachable. Replaced with a pure-compute **allowlist**
+  (`SANDBOX_ALLOW`): the sandbox env shadows every global name not on the list,
+  so a new builtin is denied by default and a gap costs only functionality,
+  never host safety. The http_/db_/model_ extension surface is now auto-denied
+  without enumeration.
 - **HTTP aggregate request-body DoS.** The HTTP server bounded each request
   body (`EIGS_HTTP_MAX_BODY`, 16 MiB) and concurrent connections
   (`HTTP_MAX_CONCURRENT_CONNS`, 256) independently, but their *product*
