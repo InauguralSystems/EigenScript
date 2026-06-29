@@ -1846,6 +1846,13 @@ echo ""
 echo "[99] Value-Signal Observer (report_value, #294)"
 check_eigs_suite "report_value value-channel verdicts" test_observer_value_signal.eigs "All tests passed." 1
 
+# [100] Worker-thread JIT lifetime (#296). A shared chunk that gets hot and
+# JIT-compiles ON a worker must not leave chunk->jit_code dangling when that
+# worker exits (its per-thread JIT code arena is munmap'd at detach). Crashed
+# (SEGV) at scale before the fix; gated rc_ok so a regression (crash) fails.
+echo "[100] Worker-Thread JIT Lifetime (#296)"
+check_eigs_suite "shared chunk JIT-compiled on a worker, many workers" test_spawn_jit.eigs "All tests passed" 1
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

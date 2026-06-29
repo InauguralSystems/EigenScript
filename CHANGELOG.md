@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **SEGV: shared chunk JIT-compiled on a worker thread (#296).** A function that
+  got hot and JIT-compiled while running on a `spawn`'d worker left
+  `chunk->jit_code` pointing into that worker's *per-thread* JIT code arena,
+  which `jit_thread_destroy` munmaps at thread detach. `chunk->jit_code` is a
+  single pointer on the *shared* chunk, so the next caller jumped into freed
+  executable memory → SEGV (reliably at scale, e.g. a worker that calls a shared
+  helper in a loop, repeated across ~50+ workers; pre-existing, layout-sensitive
+  UAF). Fixed by gating JIT compilation off while multithreaded
+  (`jit_try_compile_chunk` / `_osr` no-op under MT, leaving `jit_state` at 0 so
+  compilation resumes once single-threaded) — matching the existing "disable
+  while MT" policy for the cycle collector and call-env parking. Code main
+  compiled outside the MT window lives in main's arena (alive until exit) and is
+  safe to run from a worker. Regression: suite section [100] (`test_spawn_jit`,
+  leak-clean, reproduces the SEGV with the gate removed).
 - **Spawn/channel memory leaks at exit — ASan "tolerated leak" floor 4 → 0.**
   Two fixes, both most relevant to the freestanding/EigenOS target where there
   is no process exit to reclaim resources:

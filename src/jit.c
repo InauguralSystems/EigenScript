@@ -3932,6 +3932,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
 void jit_try_compile_chunk(struct EigsChunk *chunk) {
     if (!chunk) return;
     if (chunk->jit_state != 0) return;
+    /* #296: never JIT-compile while multithreaded. The native code is emitted
+     * into the COMPILING thread's per-thread JIT arena (freed by
+     * jit_thread_destroy at detach), but chunk->jit_code is a single pointer on
+     * the SHARED chunk. A worker that compiles a hot shared chunk and then exits
+     * leaves chunk->jit_code dangling into munmap'd memory; the next caller
+     * jumps into it → SEGV. Leave jit_state at 0 so compilation resumes once the
+     * program is single-threaded again. (Code main compiled before/after the MT
+     * window lives in main's arena, alive until exit, and is safe to run from a
+     * worker — only freshly-compiled worker code is the hazard.) */
+    if (g_vm_multithreaded) return;
 #if defined(EIGENSCRIPT_JIT_FORCE_OFF) && EIGENSCRIPT_JIT_FORCE_OFF
     /* Build-time JIT disable. macos-x86_64 binaries ship with this set
      * — JIT thunks SIGSEGV on first entry under macOS 15's hardened
@@ -3969,6 +3979,7 @@ void jit_try_compile_chunk_osr(struct EigsChunk *chunk, int entry_offset,
     if (!chunk) return;
     if (slot < 0 || slot >= JIT_OSR_SLOTS) return;
     if (chunk->jit_osr[slot].state != 0) return;
+    if (g_vm_multithreaded) return;   /* #296: see jit_try_compile_chunk */
     /* Record the offset whatever the outcome — a state-1 slot must
      * remember WHICH loop header failed so vm_run's scan doesn't burn
      * another slot (or retry-storm) on the same offset. */
