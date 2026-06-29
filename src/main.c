@@ -377,6 +377,10 @@ int main(int argc, char **argv) {
     if (getenv("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);
+    /* Program done: deterministically reap workers and free channels while the
+     * value world is still alive (channels/threads live in the handle table,
+     * not on a GC'd Value, so nothing else reclaims them). */
+    handle_table_drain(eigs_st);
     /* An uncaught runtime error leaves g_has_error set (vm_run unwinds to
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */

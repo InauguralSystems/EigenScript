@@ -3790,8 +3790,13 @@ static void *thread_entry(void *arg) {
             /* AST-based function — should not happen after bytecode migration */
             result = make_null();
         }
+        /* vm_execute returns an OWNED ref (cf. main.c, which decrefs it); the
+         * handle takes over that single ref via h->result. thread_join transfers
+         * it to the caller; handle_table_drain decrefs it for an unjoined worker.
+         * An extra incref here was a second ref with no owner — it leaked the
+         * worker's heap-allocated return value (arena-allocated returns masked
+         * it, since those aren't individually refcounted). */
         h->result = result;
-        if (result) val_incref(result);
         env_decref(call_env);
     } else if (fn->type == VAL_BUILTIN) {
         /* Builtins take a single Value*; pass args[0] for 1-arg form,
@@ -3811,7 +3816,8 @@ static void *thread_entry(void *arg) {
         }
         h->result = fn->data.builtin(bin_arg);
         val_decref(bin_arg);
-        if (h->result) val_incref(h->result);
+        /* builtin returns an owned ref; the handle takes it over (see the
+         * VAL_FN path above) — no extra incref, which would leak. */
     }
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
@@ -4127,6 +4133,65 @@ Value* builtin_channel_closed(Value *arg) {
     Channel *ch = get_channel(arg);
     if (!ch) return make_num(1);
     return make_num(ch->closed ? 1 : 0);
+}
+
+/* Deterministic teardown of OS-resource handles, run once the program has
+ * finished executing (the full value world is still alive, so buffered-message
+ * decrefs are safe). Channels and thread handles live in the process handle
+ * table keyed by id, not on a refcounted Value, so they are never reclaimed by
+ * the GC — `close_channel` only flips a flag, and an unjoined worker leaves its
+ * ThreadHandle behind. Reclaim them here so a program that spawns/uses channels
+ * is leak-clean at exit:
+ *   pass 1 — join every still-registered (i.e. not explicitly thread_join'd)
+ *            worker (spawn uses a joinable pthread); afterwards no thread is
+ *            live to touch a channel;
+ *   pass 2 — free each remaining channel: drain + decref buffered messages,
+ *            destroy the mutex/conds, free the struct.
+ * builtin_thread_join already releases+frees joined threads, so the table holds
+ * only the un-joined remainder — no double-join. Idempotent (slots are nulled),
+ * so a later eigs_state_destroy sees an empty table. */
+void handle_table_drain(EigsState *st) {
+    if (!st) return;
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_THREAD) continue;
+        ThreadHandle *h = (ThreadHandle*)st->handle_table[i].ptr;
+        if (!h) continue;
+        pthread_join(h->tid, NULL);
+        if (h->result) val_decref(h->result);
+        val_decref(h->fn);
+        if (h->fn_args) {
+            for (int j = 0; j < h->fn_arg_count; j++) val_decref(h->fn_args[j]);
+            free(h->fn_args);
+        }
+        free(h);
+        st->handle_table[i].ptr = NULL;
+    }
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_CHANNEL) continue;
+        Channel *ch = (Channel*)st->handle_table[i].ptr;
+        if (!ch) continue;
+        while (ch->count > 0) {
+            Value *m = ch->buffer[ch->head];
+            ch->buffer[ch->head] = NULL;
+            ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+            ch->count--;
+            if (m) val_decref(m);
+        }
+        pthread_mutex_destroy(&ch->mutex);
+        pthread_cond_destroy(&ch->not_empty);
+        pthread_cond_destroy(&ch->not_full);
+        free(ch);
+        st->handle_table[i].ptr = NULL;
+    }
+    /* NB: we deliberately do NOT clear st->multithreaded here to re-enable the
+     * exit-time cycle collector. It would be a no-op: `env_mark_captured` skips
+     * registering captured envs in the GC registry *while* multithreaded (to
+     * avoid a cross-thread register/unregister corruption hazard), so any
+     * main-thread env↔closure cycle created after the first `spawn` was never a
+     * collection candidate — clearing the flag at exit is too late to recover
+     * it. Reclaiming those needs a thread-safe GC registry (threading
+     * hardening), not a flag flip. The handle resources freed above are the
+     * deterministic part that IS safe to reclaim here. */
 }
 
 /* nearest_in_range of [entities, x, y, range, world_w, world_h, px_key, py_key, active_key]

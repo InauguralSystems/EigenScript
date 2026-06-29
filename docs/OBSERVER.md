@@ -111,6 +111,27 @@ treated as noise. The outer band is the *deterministic* one: the signal is
 taken as fact. Which band a given motion lands in is set entirely by where
 you put the thresholds — see [Resolution](#resolution).
 
+### Two signals: entropy vs. value (`report` vs. `report_value`)
+
+`report`/the bare predicates classify the trajectory of **`entropy(value)`** —
+the information content, not the number. That is the right signal for "how
+*determined* is this value," but it is a *lossy proxy* for "has this value
+*settled*": because `where` is non-monotonic (the watershed below), the
+entropy signal goes flat in mid-magnitude regions, so a real value oscillation
+there reads as `stable`. (Demonstrated against a closed-form oracle
+`x = 5 + 0.6·cos(k·ω)`, which oscillates forever: `report of x` says `stable`
+in the flat-entropy plateau around 5 — see #294.)
+
+`report_value of x` classifies the **value's own trajectory** instead, using
+the identical windowed logic and thresholds on the value's relative step
+`Δv/(1+|x|)` (relative, so the bands mean the same across value scales). On the
+same oracle it answers `moving`/`oscillating` — correctly never `converged`.
+Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `converged` (a
+full window of ~zero relative steps), `stable` (small relative steps, no
+flips), `moving` (still changing), and `equilibrium` (no numeric trajectory
+yet / non-numeric binding). Use `report` to ask *how determined*; use
+`report_value` to ask *has the number stopped moving*.
+
 ## The manifold: two basins and a horizon
 
 For numbers, `where` (information content) is **not** monotonic in the

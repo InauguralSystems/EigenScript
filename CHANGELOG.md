@@ -2,6 +2,53 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **Spawn/channel memory leaks at exit — ASan "tolerated leak" floor 4 → 0.**
+  Two fixes, both most relevant to the freestanding/EigenOS target where there
+  is no process exit to reclaim resources:
+  - *Handle-table resources never reclaimed.* Channels (`channel of …`) and
+    spawned-thread handles live in the process handle table keyed by an integer
+    id, not on a refcounted Value, so the GC never freed them — `close_channel`
+    only flips a flag, and an unjoined worker left its `ThreadHandle` behind.
+    Added `handle_table_drain`, run once the program finishes (value world still
+    alive): joins any still-registered worker (`spawn` uses a joinable pthread;
+    `thread_join` already frees joined ones, so no double-join), then frees every
+    remaining channel (drains+decrefs buffered messages, destroys the mutex/conds,
+    frees the struct).
+  - *Worker return value over-incref'd.* `thread_entry` did `val_incref` on the
+    result, but `vm_execute` already returns an owned ref that the handle takes
+    over — a second ref with no owner that leaked the worker's return value
+    (masked when the return happened to be arena-allocated). Removed.
+  Together these clear every `rc_ok`-gated spawn/channel test. One residual
+  remains and is *not* in the tally: `test_concurrent` leaks ~21 KB of
+  main-thread env↔closure cycles created after the first `spawn` —
+  `env_mark_captured` skips GC registration while multithreaded (cross-thread
+  registry hazard), so they're never collection candidates; its [55] suite block
+  is marker-only so doesn't gate on it. Reclaiming it needs a thread-safe GC
+  registry (threading hardening). A spawn+join loop does *not* accumulate
+  (verified to N=400).
+
+### Added
+- **`report_value of x` — a value-signal observer channel (#294).** The
+  windowed observer predicates (`report`/`converged`/`stable`/`oscillating`)
+  classify the trajectory of `entropy(value)`, not the value itself. Because
+  entropy is a non-monotonic projection of `|x|` (flat in mid-magnitude
+  regions), a sustained *value* oscillation there reads as `stable` — the
+  observer faithfully measures entropy-settling, which is a lossy proxy for
+  value-settling. Proven against a closed-form oracle `x = 5 + 0.6·cos(k·ω)`
+  (oscillates forever): `report of x` says `stable` in the flat-entropy
+  plateau, while the new `report_value of x` says `moving`/`oscillating`
+  uniformly — never falsely `converged`. The new form runs the *same* windowed
+  logic and thresholds on the value's relative step `Δv/(1+|x|)` (relative, so
+  bands carry the same meaning across value scales); vocabulary
+  `oscillating`/`converged`/`stable`/`moving`/`equilibrium`. Purely additive: a
+  parallel per-slot value window beside the entropy window, two new appended
+  opcodes (`OP_REPORT_VALUE_SLOT`/`_NAME`), and a compile-time intercept
+  paralleling `report`. Existing entropy predicates are unchanged. See
+  docs/OBSERVER.md ("Two signals").
+
 ## [0.21.2] - 2026-06-29
 
 ### Fixed

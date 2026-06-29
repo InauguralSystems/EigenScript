@@ -168,6 +168,10 @@ typedef enum {
                          * alias the bare OP_PREDICATE reads). Appended, not mid-list. */
     OP_PREDICATE_NAME,  /* [kind:16][name_idx:16] `<predicate> of <name>` — resolve the
                          * binding's (env,slot) and classify its slot trajectory. */
+    OP_REPORT_VALUE_SLOT, /* [slot:16] `report_value of <local>` — classify the local's
+                           * VALUE trajectory (#294), not its entropy. Appended, not mid-list. */
+    OP_REPORT_VALUE_NAME, /* [name_idx:16] `report_value of <name>` — resolve the binding's
+                           * (env,slot) and classify its value trajectory. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

@@ -1839,6 +1839,13 @@ else
 fi
 echo ""
 
+# [99] Value-signal observer channel — report_value (#294). Pins that the value
+# channel classifies the value trajectory (not entropy) against closed-form
+# oracles: blind-to-slow-oscillation entropy vs not-settled value, fast
+# oscillation, geometric decay -> converged, monotone climb -> moving.
+echo "[99] Value-Signal Observer (report_value, #294)"
+check_eigs_suite "report_value value-channel verdicts" test_observer_value_signal.eigs "All tests passed." 1
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

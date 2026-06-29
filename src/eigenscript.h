@@ -200,6 +200,16 @@ typedef struct ObserverSlot {
     double *dh_window;          /* lazily allocated, OBSERVER_WINDOW_N doubles */
     uint8_t dh_window_head, dh_window_count;
     uint8_t used;               /* 1 once this slot has been observed */
+    /* #294 value-signal channel: the entropy window above tracks
+     * entropy(value) — a lossy proxy that goes flat in mid-magnitude regions
+     * (so a real value-oscillation reads "stable"). This parallel window tracks
+     * the value's OWN relative step Δv/(1+|v|), so `report_value of x`
+     * classifies the value trajectory directly. Same windowed logic/thresholds
+     * as the entropy channel; only the observed signal differs. */
+    double  last_value;         /* last observed numeric value (Δv source) */
+    double *v_window;           /* lazily allocated, OBSERVER_WINDOW_N relative-deltas */
+    uint8_t v_window_head, v_window_count;
+    uint8_t v_used;             /* 1 once a numeric value has been recorded */
 } ObserverSlot;
 
 struct Env {
@@ -280,6 +290,9 @@ int  observer_slot_stable(const struct ObserverSlot *s);
 /* Classify a slot into a report band (mirrors builtin_report's priority).
  * Returns a static string; NULL if the slot is unusable. */
 const char *observer_slot_report(const struct ObserverSlot *s);
+/* #294 value-signal report: classify the binding's VALUE trajectory (not its
+ * entropy) — "oscillating"/"converged"/"stable"/"moving"/"equilibrium". */
+const char *observer_slot_report_value(const struct ObserverSlot *s);
 
 /* Returns the dH at offset back from most recent (0 = most recent).
  * Caller must ensure offset < observer_window_size(v). */
@@ -902,6 +915,10 @@ Value* json_obj_get(Value *obj, const char *key);
  * Table + lock + types declared up at the EigsState struct. */
 int    handle_register(void *ptr, HandleType type);
 void*  handle_lookup(int id, HandleType type);
+/* Deterministic teardown of channel + thread handles (builtins.c): joins
+ * outstanding workers, then frees remaining channels. Call once execution is
+ * done and the value world is still alive (before env/thread teardown). */
+void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id);
 
 /* ---- EigenStore embedded database ---- */

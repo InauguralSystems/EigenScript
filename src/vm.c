@@ -1921,6 +1921,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_INTERROGATE] = &&lbl_INTERROGATE, [OP_PREDICATE] = &&lbl_PREDICATE,
         [OP_REPORT_SLOT] = &&lbl_REPORT_SLOT,
         [OP_REPORT_NAME] = &&lbl_REPORT_NAME,
+        [OP_REPORT_VALUE_SLOT] = &&lbl_REPORT_VALUE_SLOT,
+        [OP_REPORT_VALUE_NAME] = &&lbl_REPORT_VALUE_NAME,
         [OP_OBSERVE_VALUE_SLOT] = &&lbl_OBSERVE_VALUE_SLOT,
         [OP_OBSERVE_VALUE_NAME] = &&lbl_OBSERVE_VALUE_NAME,
         [OP_OBSERVE_NAME_POST] = &&lbl_OBSERVE_NAME_POST,
@@ -3737,6 +3739,44 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         } else {
             result = make_str("equilibrium");  /* unobserved binding */
         }
+        vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(REPORT_VALUE_SLOT): {
+        /* #294 `report_value of <local>` — classify the VALUE trajectory of the
+         * local's slot (not its entropy). observer_slot_report_value returns
+         * "equilibrium" for an unobserved / non-numeric binding. */
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        Value *result;
+        if (e && (int)slot < e->obs_cap)
+            result = make_str(observer_slot_report_value(&e->obs[slot]));
+        else
+            result = make_str("equilibrium");
+        vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(REPORT_VALUE_NAME): {
+        /* #294 report_value of a non-local name — resolve (env,slot), classify
+         * its value trajectory. Undefined name raises like GET_NAME. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        int oidx = -1, odepth = 0;
+        Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (!oe) {
+            runtime_error(current_line, "undefined variable '%s'", name);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        Value *result;
+        if (oidx >= 0 && oidx < oe->obs_cap)
+            result = make_str(observer_slot_report_value(&oe->obs[oidx]));
+        else
+            result = make_str("equilibrium");
         vm_push(result);
         DISPATCH();
     }

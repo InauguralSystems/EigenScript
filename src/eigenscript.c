@@ -273,6 +273,39 @@ static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back
     return s->dh_window[idx];
 }
 
+/* #294 value-signal channel: same ring buffer as the entropy window, but the
+ * pushed quantity is the value's own relative step Δv/(1+|v|). */
+static void observer_slot_v_push(ObserverSlot *s, double rel_delta) {
+    if (!s->v_window) {
+        s->v_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+        s->v_window_head = 0;
+        s->v_window_count = 0;
+    }
+    s->v_window[s->v_window_head] = rel_delta;
+    s->v_window_head = (uint8_t)((s->v_window_head + 1) % OBSERVER_WINDOW_N);
+    if (s->v_window_count < OBSERVER_WINDOW_N) s->v_window_count++;
+}
+
+static double observer_slot_v_get(const ObserverSlot *s, size_t offset_back) {
+    if (!s->v_window || offset_back >= s->v_window_count) return 0.0;
+    int idx = (int)s->v_window_head - 1 - (int)offset_back;
+    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    return s->v_window[idx];
+}
+
+/* Fold one observed numeric value into the slot's value channel. The stored
+ * step is RELATIVE (Δv/(1+|v|)) so the thresholds carry the same meaning across
+ * value scales: a ±0.6 swing around 5 reads "moving" (~12% steps), the same
+ * swing around 1e6 is effectively settled. First value seeds last_value only. */
+static void observer_slot_record_value(ObserverSlot *s, double v) {
+    if (s->v_used) {
+        double rel = (v - s->last_value) / (1.0 + fabs(v));
+        observer_slot_v_push(s, rel);
+    }
+    s->last_value = v;
+    s->v_used = 1;
+}
+
 /* Core: fold a precomputed entropy into binding slot `idx` of env `e`. */
 static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     if (!e || idx < 0) return;
@@ -300,6 +333,10 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
 
 void observer_slot_update(Env *e, int idx, Value *newval) {
     observer_slot_update_e(e, idx, compute_entropy(newval));
+    /* #294 also fold the raw value into the value-signal channel (numbers only:
+     * the relative-delta step is only defined for a scalar trajectory). */
+    if (newval && newval->type == VAL_NUM && e && idx >= 0 && idx < e->obs_cap)
+        observer_slot_record_value(&e->obs[idx], newval->data.num);
 }
 
 /* #262 Phase-3 D: update a binding's observer slot from a raw immediate
@@ -307,12 +344,17 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
  * tracked Value. Same trajectory math as observer_slot_update. */
 void observer_slot_update_num(Env *e, int idx, double num) {
     observer_slot_update_e(e, idx, entropy_of_num(num));
+    if (e && idx >= 0 && idx < e->obs_cap)      /* #294 value-signal channel */
+        observer_slot_record_value(&e->obs[idx], num);
 }
 
 void observer_slot_reset(Env *e) {
     if (!e || !e->obs) return;
     vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
-    for (int i = 0; i < e->obs_cap; i++) free(e->obs[i].dh_window);
+    for (int i = 0; i < e->obs_cap; i++) {
+        free(e->obs[i].dh_window);
+        free(e->obs[i].v_window);   /* #294 value-signal window */
+    }
     free(e->obs);
     e->obs = NULL;
     e->obs_cap = 0;
@@ -407,6 +449,38 @@ const char *observer_slot_report(const ObserverSlot *s) {
     if (fabs(s->dH) < g_obs_dh_zero) return "equilibrium";
     if (fabs(s->dH) < g_obs_dh_small && s->entropy >= g_obs_h_low) return "stable";
     return "stable";
+}
+
+/* #294 value-signal report. Classifies the binding's VALUE trajectory using the
+ * SAME windowed logic and thresholds as the entropy report above — only the
+ * observed signal differs (relative value-deltas, not entropy-deltas). This is
+ * the point of the experiment: the windowed approach is sound; the entropy
+ * SIGNAL is a lossy proxy that goes blind to value-oscillation in flat-entropy
+ * regions. Oscillation is detected by sign-flips (scale-free); settling by the
+ * relative-step magnitude (so thresholds mean the same across value scales). */
+const char *observer_slot_report_value(const ObserverSlot *s) {
+    if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
+    size_t cnt = s->v_window_count;
+    if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
+    if (cnt >= 3) {
+        const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;  /* same as entropy channel */
+        int flips = 0;
+        for (size_t i = 0; i + 1 < cnt; i++) {
+            double a = observer_slot_v_get(s, i);
+            double b = observer_slot_v_get(s, i + 1);
+            if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) flips++;
+        }
+        if (flips >= FLIPS) return "oscillating";
+    }
+    int all_zero = 1, all_small = 1;
+    for (size_t i = 0; i < cnt; i++) {
+        double w = fabs(observer_slot_v_get(s, i));
+        if (w >= g_obs_dh_zero)  all_zero = 0;
+        if (w >= g_obs_dh_small) all_small = 0;
+    }
+    if (cnt >= OBSERVER_WINDOW_N && all_zero) return "converged";
+    if (all_small) return "stable";
+    return "moving";
 }
 
 /* g_last_observer, g_builtin_call_env, g_unobserved_depth are EigsThread

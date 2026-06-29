@@ -24,10 +24,21 @@ make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
   (`test_closure_cycles.eigs`) is gated **strictly** leak-clean — a
   LeakSanitizer exit there is a collector regression. The runner's `rc_ok`
   tolerates LeakSanitizer exits elsewhere and tallies them ("NOTE: N test
-  program(s)…"): **currently 4** — all spawn-thread programs (the collector is
-  off once multithreaded), the floor without threaded GC. **A jump in the
-  tally means a new leak.** Any other nonzero exit — crash, assert, UBSan —
-  fails.
+  program(s)…"): **currently 0** (was 4). **A jump in the tally means a new
+  leak.** Any other nonzero exit — crash, assert, UBSan — fails. The old floor-4
+  was all spawn/channel programs; two fixes cleared it: (1) channel + thread
+  *handle*-table resources (Channel structs + ThreadHandles live in the process
+  handle table keyed by id, not on a GC'd Value) are now reclaimed
+  deterministically by `handle_table_drain` once the program finishes; (2) the
+  worker's return value was over-incref'd in `thread_entry` (a second ref with
+  no owner — `vm_execute` already returns an owned ref), now removed. **Caveat:**
+  `test_concurrent` ([55]) still leaks ~21 KB of main-thread env↔closure cycles
+  created *after* the first `spawn` — `env_mark_captured` skips GC registration
+  while multithreaded (to avoid a cross-thread register/unregister hazard), so
+  they're never collection candidates. It's NOT in the tally because the [55]
+  block is marker-only (no `rc_ok`) — a gating gap. Reclaiming it needs a
+  thread-safe GC registry (threading hardening); tightening [55] to `rc_ok`
+  should wait until then or it red-lines CI.
 - `make asan` overwrites `src/eigenscript` — rebuild with `make` before timing.
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
   (dispatch-table interpreter shape, the DMG/cpu_instrs stand-in),
