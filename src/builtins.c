@@ -3406,34 +3406,71 @@ Value* builtin_sandbox_blocked(Value *arg) {
     return make_null();
 }
 
-/* Names shadowed by the blocked stub inside a sandbox run: anything that writes,
- * reads, or otherwise reaches outside the VM (file/process/network/db), executes
- * code, or spawns threads. GET_NAME resolves the env chain with no global
- * fallback, so a shadowed name in the sandbox env hides the real builtin; pure
- * compute builtins (print, math, list/dict/string ops, gather/matmul, ...) fall
- * through to the global env unchanged. */
-static const char *SANDBOX_DENY[] = {
-    "write", "write_text", "write_bytes", "stream_open", "stream_write",
-    "stream_close", "tensor_save", "tensor_load", "model_save_weights",
-    "model_load_weights", "eigen_model_load", "eigen_model_save_binary",
-    "read_text", "read_bytes", "read_bytes_buf", "file_exists", "md5_file",
-    "sha256_file", "ls", "rename", "remove_file", "mkdir", "rm",
-    "load_file", "eval", "vm_run_bytecode", "sandbox_run", "record_history",
-    "exec_capture", "proc_spawn", "proc_write", "proc_read", "proc_read_line",
-    "proc_read_buf", "proc_close", "proc_wait", "spawn", "thread_join",
-    /* Blocking builtins: a single blocking call hangs the host indefinitely,
-     * and the g_sandbox_loop_max iteration bound does NOT cover them (it counts
-     * loop back-edges, not time spent inside one builtin). usleep pauses for an
-     * attacker-chosen duration; raw_key does a blocking read() on stdin; the
-     * channel ops wait on a pthread condvar (recv on a channel that — with spawn
-     * denied — can never receive; send on a full one). */
-    "usleep", "raw_key", "recv", "try_recv", "recv_timeout", "send",
-    "env_get", "http_post", "http_request_body", "http_request_headers",
-    "http_route", "http_route_authed", "http_serve", "http_session_id",
-    "http_static", "http_cors", "http_early_bind", "db_connect", "db_execute",
-    "db_query_json", "db_query_value",
+/* Fail-CLOSED sandbox allowlist. Only these genuinely pure-compute builtins are
+ * visible inside a sandbox_run; EVERY other name in the global env is shadowed
+ * by the blocked stub. A blocklist (the previous design) was fail-OPEN — every
+ * builtin was reachable unless someone remembered to deny it, so each new
+ * builtin (and ones nobody flagged: set_observer_thresholds, which writes the
+ * process-global observer thresholds; the screen_* terminal ops; the channel
+ * ops; exit, which kills the host) silently widened the attack surface. With an
+ * allowlist a new builtin is SAFE by default; a missing entry only costs a
+ * sandboxed program some functionality, never host safety.
+ *
+ * Membership rule: the builtin reads/derives values, touches only the arguments
+ * it is handed, mutates NO process-global state, cannot reach outside the VM
+ * (no fs/proc/net/db/terminal/env), does not execute code, spawn, or block.
+ * When unsure, leave it out (fail closed). tests/test_sandbox_allow.eigs guards
+ * that every entry is a real builtin and that the known-dangerous stay out. */
+static const char *SANDBOX_ALLOW[] = {
+    /* scalar + tensor math (pure numeric) */
+    "abs", "acos", "add", "asin", "atan", "ceil", "cos", "divide", "dot",
+    "exp", "floor", "log", "max", "mean", "min", "multiply", "negative",
+    "norm", "num", "pi", "pow", "round", "sign_extend", "sin", "sqrt",
+    "subtract", "sum", "tan", "gather", "matmul", "reshape", "shape", "zeros",
+    "zeros_like", "fill", "leaky_relu", "relu", "softmax", "log_softmax",
+    "sgd_update", "sgd_update_cols", "sgd_update_rows", "numerical_grad",
+    "numerical_grad_cols", "numerical_grad_rows",
+    /* bit ops */
+    "bit_and", "bit_not", "bit_or", "bit_shl", "bit_shr", "bit_xor",
+    /* list / sequence (operate on the value handed in) */
+    "append", "concat", "contains", "copy_into", "get_at", "index_of", "len",
+    "list_remove_at", "list_truncate", "set_at", "sort", "sort_by", "range",
+    /* dict */
+    "dict_set", "dict_remove", "has_key", "keys", "values",
+    /* string + regex (pure) */
+    "char_at", "chr", "ends_with", "join", "ord", "split", "starts_with",
+    "str", "str_lower", "str_replace", "str_upper", "substr", "trim",
+    "regex_find", "regex_match", "regex_replace",
+    /* buffers + text builders (in-memory only) */
+    "buffer", "buf_copy", "buf_from_list", "buf_get", "buf_len", "buf_set",
+    "str_from_bytes", "text_builder_new", "text_builder_append",
+    "text_builder_append_line", "text_builder_extend", "text_builder_clear",
+    "text_builder_to_string", "text_builder_part_count",
+    /* json (string <-> value, pure) */
+    "json_build", "json_decode", "json_encode", "json_path", "json_raw",
+    /* path string manipulation (no fs access) */
+    "path_base", "path_dir", "path_ext", "path_join",
+    /* type / value utilities */
+    "type", "coalesce", "num_copy", "secure_equals",
+    /* observer READS — touch only the sandbox's own values, never globals
+     * (set_observer_thresholds / record_history are intentionally NOT here) */
+    "observe", "report", "get_observer_thresholds", "state_at",
+    /* tokenizer / parser introspection (pure over strings) */
+    "tokenize_ids", "tokenize_with_names", "token_name", "scan_ints",
+    "scan_int_tokens", "scan_tokens", "try_parse",
+    /* spatial queries (pure over lists) */
+    "nearest_in_range", "nearest_in_range_all",
+    /* control / output */
+    "print", "assert", "throw", "dispatch",
     NULL
 };
+
+static int sandbox_name_allowed(const char *name) {
+    if (!name) return 0;
+    for (int i = 0; SANDBOX_ALLOW[i]; i++)
+        if (strcmp(name, SANDBOX_ALLOW[i]) == 0) return 1;
+    return 0;
+}
 
 /* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
  * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
@@ -3458,12 +3495,18 @@ Value* builtin_sandbox_run(Value *arg) {
         return out;
     }
 
-    /* Restricted env: parent is the real global (so safe builtins resolve), but
-     * every dangerous name is shadowed by the blocked stub. */
+    /* Restricted env: parent is the real global so the allowed builtins still
+     * resolve, but every global name NOT on the allowlist — every other
+     * builtin, the http_/db_/model_ extension surface, and any host module
+     * global — is shadowed by the blocked stub. Fail-closed: a name we never
+     * classified is denied by default, not exposed. */
     Env *sbox = env_new(g_global_env);
     Value *stub = make_builtin(builtin_sandbox_blocked);
-    for (int i = 0; SANDBOX_DENY[i]; i++)
-        env_set_local(sbox, SANDBOX_DENY[i], stub);
+    for (int i = 0; i < g_global_env->count; i++) {
+        const char *nm = g_global_env->names[i];
+        if (nm && !sandbox_name_allowed(nm))
+            env_set_local(sbox, nm, stub);
+    }
     val_decref(stub);
 
     int saved_max = g_sandbox_loop_max;
