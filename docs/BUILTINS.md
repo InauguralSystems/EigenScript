@@ -31,6 +31,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `num` | `num of value` | Convert to number (parse string or coerce) |
 | `type` | `type of value` | Return type name: "num", "str", "list", "fn", "builtin", "null" |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
+| `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
 | `eval` | `eval of code_string` | Execute EigenScript code, return result |
 | `throw` | `throw of message` | Raise catchable error |
@@ -134,7 +135,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 |------|-----------|-------------|
 | `vm_run_bytecode` | `vm_run_bytecode of <descriptor>` | Assemble a chunk from a descriptor and run it on the C VM, returning the result. Descriptor: `[code, constants, functions?, param_count?, name?, local_names?]` — `code` is a list of byte ints (opcodes + little-endian 16-bit operands); `constants` is the pool; `functions` is a list of nested descriptors referenced by `OP_CLOSURE`; `local_names` (slot order) sizes the call frame and names parameters. The 2-element `[code, constants]` form is a flat module chunk. The bridge for an EigenScript-written compiler: emit bytecode as data, execute it on the same VM (and JIT) the C compiler's output uses. Caller supplies a well-formed chunk ending in `OP_RETURN`. |
 | `record_history` | `record_history of flag` | Enable (nonzero) / disable (0) per-assignment history recording that `prev of x` and `<kw> is x at <line>` temporal queries read (sets both value- and observer-state history). The C compiler auto-enables it when compiling a temporal query; a self-hosted compiler calls this. The flag must be a number — a non-numeric flag raises (it is not silently treated as disable). Returns the previous setting. |
-| `sandbox_run` | `sandbox_run of [descriptor, max_iterations?]` | Run a chunk (same descriptor as `vm_run_bytecode`) under safety bounds — dangerous builtins (file/process/network/db, code-exec, threads) are shadowed by a blocked stub, and loops are capped at `max_iterations` (default 1e6) so runaway code can't hang. Runtime errors are caught. Returns `{ok: 1/0, result: value}`. For validating untrusted/generated code. |
+| `sandbox_run` | `sandbox_run of [descriptor, max_iterations?]` | Run a chunk (same descriptor as `vm_run_bytecode`) under safety bounds — dangerous builtins (file/process/network/db, code-exec, threads) **and blocking builtins** (`usleep`, `raw_key`, the `recv`/`send` channel ops) are shadowed by a blocked stub, and loops are capped at `max_iterations` (default 1e6) — so neither a runaway loop nor a single blocking call can hang the host. Runtime errors are caught. Returns `{ok: 1/0, result: value}`. For validating untrusted/generated code. |
 
 ### Bytes ↔ values
 
