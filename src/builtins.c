@@ -3421,6 +3421,13 @@ static const char *SANDBOX_DENY[] = {
     "load_file", "eval", "vm_run_bytecode", "sandbox_run", "record_history",
     "exec_capture", "proc_spawn", "proc_write", "proc_read", "proc_read_line",
     "proc_read_buf", "proc_close", "proc_wait", "spawn", "thread_join",
+    /* Blocking builtins: a single blocking call hangs the host indefinitely,
+     * and the g_sandbox_loop_max iteration bound does NOT cover them (it counts
+     * loop back-edges, not time spent inside one builtin). usleep pauses for an
+     * attacker-chosen duration; raw_key does a blocking read() on stdin; the
+     * channel ops wait on a pthread condvar (recv on a channel that — with spawn
+     * denied — can never receive; send on a full one). */
+    "usleep", "raw_key", "recv", "try_recv", "recv_timeout", "send",
     "env_get", "http_post", "http_request_body", "http_request_headers",
     "http_route", "http_route_authed", "http_serve", "http_session_id",
     "http_static", "http_cors", "http_early_bind", "db_connect", "db_execute",

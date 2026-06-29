@@ -88,6 +88,21 @@ sr_block is sandbox_run of [block_desc, 100000]
 assert_eq of [sr_block["ok"], 0, "sandbox: dangerous builtin blocked"]
 assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", 0, "sandbox: nothing written"]
 
+# sandbox_run: BLOCKING builtins are denied too. The g_sandbox_loop_max bound
+# counts loop back-edges, not time inside one builtin, so a single blocking call
+# (usleep/raw_key/recv) would hang the host indefinitely. These must be shadowed
+# -> {ok:0}, NOT executed. If any regresses, this run HANGS (the suite timeout
+# is the backstop): usleep would sleep 30s, raw_key would read() stdin, recv
+# would wait on a channel condvar forever.
+usleep_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["usleep", 30000000]]
+assert_eq of [(sandbox_run of [usleep_desc, 100000])["ok"], 0, "sandbox: usleep blocked (no 30s hang)"]
+rawkey_desc is [[GET_NAME,0,0, CALL,0,0, RETURN], ["raw_key"]]
+assert_eq of [(sandbox_run of [rawkey_desc, 100000])["ok"], 0, "sandbox: raw_key blocked (no stdin read)"]
+recv_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["recv", 0]]
+assert_eq of [(sandbox_run of [recv_desc, 100000])["ok"], 0, "sandbox: recv blocked (no channel-wait hang)"]
+send_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["send", 0]]
+assert_eq of [(sandbox_run of [send_desc, 100000])["ok"], 0, "sandbox: send blocked"]
+
 # sandbox_run: a runaway loop is bounded by the iteration cap (returns, no hang).
 # NUM_ONE; JUMP_IF_FALSE +6; LOOP_CAP_CHECK +3; JUMP_BACK 10; RETURN_NULL
 loopcode is [3, 31,6,0, 63,3,0, 30,10,0, 41]

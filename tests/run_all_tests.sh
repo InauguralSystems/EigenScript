@@ -2075,7 +2075,7 @@ check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
 check_eigs_suite "rename / remove_file (atomic swap, delete)" test_file_rename.eigs "All tests passed" 12
-check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_bytecode.eigs "All tests passed" 25
+check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_bytecode.eigs "All tests passed" 29
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
