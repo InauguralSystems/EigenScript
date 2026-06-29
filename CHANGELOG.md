@@ -2,7 +2,7 @@
 
 All notable changes to EigenScript are documented here.
 
-## [Unreleased]
+## [0.21.0] - 2026-06-28
 
 ### Security
 - **`sandbox_run` is now fail-closed (allowlist).** The sandbox previously
