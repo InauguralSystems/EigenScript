@@ -15,6 +15,24 @@
 #include "model_internal.h"
 #endif
 
+/* #298 follow-up: surface use-after-recycle on the per-thread Value/Env
+ * freelists to Valgrind. A num/env whose refcount hits 0 is recycled onto a
+ * freelist (not free()'d), so ASan — and un-annotated Valgrind — see it as
+ * still-allocated: a stale incref/decref on a prematurely-recycled object is
+ * invisible. We poison just the REFCOUNT field NOACCESS while the object sits on
+ * the freelist (it's the field a dangling refcount op touches, it's separate
+ * from the freelist link stored in v->data / env->parent, and it's reset on
+ * reuse so re-defining it is clean). Gated behind EIGS_VALGRIND (`make
+ * valgrind`); no-op, zero cost in normal/release/asan builds. */
+#ifdef EIGS_VALGRIND
+#include <valgrind/memcheck.h>
+#define EIGS_VG_NOACCESS(p, n) VALGRIND_MAKE_MEM_NOACCESS((p), (n))
+#define EIGS_VG_DEFINED(p, n)  VALGRIND_MAKE_MEM_DEFINED((p), (n))
+#else
+#define EIGS_VG_NOACCESS(p, n) ((void)0)
+#define EIGS_VG_DEFINED(p, n)  ((void)0)
+#endif
+
 /* HTTP server globals and health thread are in ext_http.c.
  *
  * The control-flow/error-state TLS globals (g_return_val, g_returning,
@@ -546,6 +564,7 @@ void free_value(Value *v) {
             memcpy(&v->data, &g_num_freelist, sizeof(Value *));
             g_num_freelist = v;
             g_num_freelist_count++;
+            EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));  /* #297/#298 */
             return;
         }
         free(v);
@@ -614,6 +633,7 @@ Value* make_num(double n) {
         v = g_num_freelist;
         memcpy(&g_num_freelist, &v->data, sizeof(Value *));
         g_num_freelist_count--;
+        EIGS_VG_DEFINED(&v->refcount, sizeof(v->refcount));  /* un-poison before reuse */
         memset(v, 0, sizeof(Value));
     } else {
         v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
@@ -634,6 +654,7 @@ void recycle_intermediate(Value *v) {
     memcpy(&v->data, &g_num_freelist, sizeof(Value *));
     g_num_freelist = v;
     g_num_freelist_count++;
+    EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));  /* #297/#298 */
 }
 
 /* Heap-only make_num — for values that must outlive arena reset */
@@ -1277,6 +1298,7 @@ Env* env_new(Env *parent) {
         e = g_env_freelist;
         g_env_freelist = e->parent;
         g_env_freelist_count--;
+        EIGS_VG_DEFINED(&e->env_refcount, sizeof(e->env_refcount));  /* un-poison before reuse */
         e->count = 0;
         /* Generation already bumped in env_decref's freelist branch.
          * Hash slots from the prior occupant are dormant by virtue of
@@ -1626,6 +1648,7 @@ void env_decref(Env *env) {
         env->parent = g_env_freelist;
         g_env_freelist = env;
         g_env_freelist_count++;
+        EIGS_VG_NOACCESS(&env->env_refcount, sizeof(env->env_refcount));  /* #297/#298 */
     } else {
         free(env->names);
         free(env->values);
