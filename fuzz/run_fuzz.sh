@@ -31,6 +31,25 @@ fuzz_test() {
     fi
 }
 
+# Like fuzz_test but feeds the input with NO trailing newline — for cases where
+# the last byte matters (e.g. #304: a backslash at true end-of-source).
+fuzz_test_raw() {
+    local name="$1"
+    local input="$2"
+    local tmpfile
+    tmpfile=$(mktemp /tmp/fuzz_XXXXXX.eigs)
+    printf '%s' "$input" > "$tmpfile"
+    timeout 5 "$FUZZ" < "$tmpfile" >/dev/null 2>&1
+    local rc=$?
+    rm -f "$tmpfile"
+    if [ $rc -ne 0 ] && [ $rc -ne 1 ]; then
+        echo "  FAIL: $name (exit $rc)"
+        FAIL=$((FAIL + 1))
+    else
+        PASS=$((PASS + 1))
+    fi
+}
+
 echo "=== EigenScript Fuzz Tests ==="
 echo ""
 
@@ -60,6 +79,11 @@ fuzz_test "pipe to non-fn" '1 |> 2 |> 3'
 fuzz_test "for on non-list" 'for i in 99:\n    print of i'
 fuzz_test "bad quotes" '""""""""""'
 fuzz_test "unclosed f-string" 'f"{{{{{{{"'
+# #304: backslash at true end-of-source (no trailing newline) — over-read past
+# the NUL terminator. Must report an unterminated-string parse error (exit 1),
+# not crash. fuzz_test_raw keeps the backslash as the final byte.
+fuzz_test_raw "string backslash at EOF" '"\'
+fuzz_test_raw "f-string backslash at EOF" 'f"\'
 
 echo ""
 echo "Adversarial:"
