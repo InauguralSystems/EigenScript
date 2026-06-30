@@ -1868,6 +1868,18 @@ check_eigs_suite "worker closure cycles reclaimed at exit" test_spawn_gc.eigs "A
 echo "[102] Parallel Shared-Chunk Execution (#297)"
 check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_parallel.eigs "All tests passed" 1
 
+# [103] Exit must not hang on a channel-blocked worker (#303). handle_table_drain
+# closes+wakes channels before joining; a recv-blocked worker on a never-closed
+# channel must wake and let the program exit (this test times out if it regresses).
+echo "[103] Spawn/Channel Exit (no hang on blocked worker, #303)"
+check_eigs_suite "recv-blocked worker doesn't hang exit" test_spawn_channel_exit.eigs "All tests passed" 1
+
+# [104] Worker arena-allocated return value survives detach (#302). thread_entry
+# deep-copies the result before arena_destroy frees the worker arena; a UAF here
+# is ASan-caught, and the values are pinned.
+echo "[104] Worker Arena Return (no cross-thread UAF, #302)"
+check_eigs_suite "worker arena return deep-copied before detach" test_spawn_arena_return.eigs "All tests passed" 1
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

@@ -44,15 +44,22 @@ EigsState *eigs_open(void) {
 
 void eigs_close(EigsState *st) {
     if (!st) return;
-    /* Mirror main.c's teardown: trace tape first (its prev-table holds refs
-     * whose death can touch the env), then collect cycles in the global env,
-     * then drop the creator ref. */
-    if (eigs_current && eigs_current->state == st && g_global_env) {
-        Env *global = g_global_env;
-        trace_shutdown();
-        gc_collect_at_exit(global);
-        env_decref(global);
-        g_global_env = NULL;
+    /* Mirror main.c's teardown order. #301: drain the handle table FIRST — reap
+     * any spawned workers (join after closing channels, #303) and free channels.
+     * This is also the only place st->multithreaded is cleared back to 0; skip
+     * it and gc_collect_at_exit below bails (g_vm_multithreaded), silently
+     * collecting nothing, AND channels/threads leak, AND a still-running worker
+     * can UAF the env/state we free next. Then: trace tape (its prev-table holds
+     * refs whose death can touch the env), collect cycles, drop the creator ref. */
+    if (eigs_current && eigs_current->state == st) {
+        handle_table_drain(st);
+        if (g_global_env) {
+            Env *global = g_global_env;
+            trace_shutdown();
+            gc_collect_at_exit(global);
+            env_decref(global);
+            g_global_env = NULL;
+        }
     }
     eigs_thread_detach();
     eigs_state_destroy(st);

@@ -3819,13 +3819,24 @@ static void *thread_entry(void *arg) {
         /* builtin returns an owned ref; the handle takes it over (see the
          * VAL_FN path above) — no extra incref, which would leak. */
     }
+    /* #302: the return value may be arena-allocated (or a heap container with
+     * arena children) if the worker left g_arena.active — eigs_thread_detach
+     * below runs arena_destroy and frees the worker's arena. The joiner reads
+     * h->result strictly after that (pthread_join), so deep-copy it to heap
+     * now, re-homing interned dict keys into the process-global table, exactly
+     * as channel sends do (#293's val_clone_for_send). Drop the original. */
+    if (h->result) {
+        Value *cloned = val_clone_for_send(h->result);
+        val_decref(h->result);
+        h->result = cloned;
+    }
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
     h->done = 1;
     /* Detach from the state — runs arena_destroy and clears TLS. The
-     * pre-existing tolerated leak on spawn-thread exits (gc_collect_
-     * cycles disabled once multithreaded) is unchanged. */
+     * cycle collector resumes once all workers are joined (handle_table_drain
+     * clears multithreaded); see the threaded cycle-GC change. */
     eigs_thread_detach();
     return NULL;
 }
@@ -4158,6 +4169,22 @@ Value* builtin_channel_closed(Value *arg) {
  * so a later eigs_state_destroy sees an empty table. */
 void handle_table_drain(EigsState *st) {
     if (!st) return;
+    /* #303: close + wake every channel BEFORE joining workers. A worker blocked
+     * in recv (empty buffer) or send (full buffer) on a channel that was never
+     * explicitly closed only wakes on a close broadcast — so without this pass
+     * the pthread_join below would hang forever at exit. recv returns null on a
+     * closed-empty channel and send skips the enqueue when closed, so a woken
+     * worker runs to completion and becomes joinable. */
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_CHANNEL) continue;
+        Channel *ch = (Channel*)st->handle_table[i].ptr;
+        if (!ch) continue;
+        pthread_mutex_lock(&ch->mutex);
+        ch->closed = 1;
+        pthread_cond_broadcast(&ch->not_empty);
+        pthread_cond_broadcast(&ch->not_full);
+        pthread_mutex_unlock(&ch->mutex);
+    }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         if (st->handle_table[i].type != HANDLE_THREAD) continue;
         ThreadHandle *h = (ThreadHandle*)st->handle_table[i].ptr;
