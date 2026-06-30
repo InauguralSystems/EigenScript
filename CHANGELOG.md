@@ -2,6 +2,33 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **Cycle collector now reclaims local pure-value cycles (#307).** A list/dict
+  that referenced itself (or a peer that pointed back) and was built inside a
+  function then dropped was reclaimed by *nothing*: the runtime collector built
+  its universe only from the captured-env registry (closure cycles), and the
+  exit collector only from a global-scope snapshot — so a purely-local value
+  cycle leaked, unbounded, for the life of the process (ASan: a 50k-iteration
+  self-ref-list loop leaked 6.8 MB / 100k objects; mutual dicts, 26 MB). Most
+  damaging for long-running consumers (graph/tree structures with back-edges)
+  and the freestanding/EigenOS target, where there is no process exit to mop up.
+  Fix: a Bacon-Rajan "possible root" hook (`gc_note_possible_root`) — when a
+  LIST/DICT loses a ref but stays alive, it is parked (with one pin) on a
+  per-state value-candidate buffer; `gc_collect_cycles` feeds that buffer into
+  the existing mark-sweep as pinned seeds (the pin is accounted exactly like the
+  exit snapshot's, so a cycle held only by its pin + internal edges still counts
+  as garbage), then drains the pins. Hooked into both `val_decref` and
+  `slot_decref` (the env-slot drop is the dominant path by which a function-local
+  cycle dies), gated like the env registry (off when GC-disabled, mid-collection,
+  or multithreaded — kept off the lock-free hot decref). No semantics change; the
+  collector's edge-accounting and the strictly-leak-clean closure-cycle gate
+  ([87]) are untouched. Regression: section [106] (`test_value_cycles` — self-,
+  mutual-, and back-edge value cycles reclaimed; a live globally-rooted cycle
+  survives the churn), strict leak-gated like [87]. ~1–2% on a container-heavy
+  bench (within box noise; the decref-to-zero path is unchanged).
+
 ## [0.22.0] - 2026-06-29
 
 ### Fixed

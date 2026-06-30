@@ -257,6 +257,12 @@ struct Value {
      * (ObserverSlot). The Value carries no observer state. */
     int refcount;       /* reference counting GC: 0 = unmanaged, >0 = tracked */
     unsigned char arena; /* 1 if arena-allocated (don't free) */
+    /* #307: Bacon-Rajan "possible root" flag. Set when a LIST/DICT that lost a
+     * ref (but isn't dead) is parked on the value-candidate buffer for the next
+     * cycle collection; cleared when the buffer is drained. Lives in the
+     * struct's tail padding (no size change) and is zero-initialized by every
+     * Value allocator (xcalloc / arena_alloc memset / freelist reuse memset). */
+    unsigned char gc_buffered;
 };
 
 /* Window length for the per-Value dH ring buffer. Predicates require
@@ -453,6 +459,14 @@ struct EigsState {
     Env            *gc_envs;
     int             gc_captured_live;
     pthread_mutex_t gc_lock;
+    /* #307: value-candidate buffer — LIST/DICT "possible roots" parked by
+     * gc_note_possible_root for the next collection (Bacon-Rajan). Per-STATE
+     * like the env registry, but only ever touched single-threaded (the hook
+     * is gated off under MT), so it needs no lock. The buffer holds one pin
+     * apiece; gc_collect_cycles feeds it in as seeds, then drains the pins. */
+    Value         **gc_val_buf;
+    int             gc_val_count;
+    int             gc_val_cap;
     /* JIT tuning thresholds (entry / per-iter / OSR). Each state
      * reads its own copy from EIGS_JIT_ENTRY_THRESHOLD /
      * EIGS_JIT_ITER_THRESHOLD / EIGS_JIT_OSR_THRESHOLD at state_new,
@@ -602,6 +616,9 @@ extern __thread EigsThread *eigs_current;
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
 #define g_gc_envs             (eigs_current->state->gc_envs)
 #define g_gc_captured_live    (eigs_current->state->gc_captured_live)
+#define g_gc_val_buf          (eigs_current->state->gc_val_buf)
+#define g_gc_val_count        (eigs_current->state->gc_val_count)
+#define g_gc_val_cap          (eigs_current->state->gc_val_cap)
 #define g_gc_threshold        (eigs_current->gc_threshold)
 #define g_gc_enabled          (eigs_current->gc_enabled)
 #define g_in_gc               (eigs_current->in_gc)
@@ -622,6 +639,11 @@ extern __thread EigsThread *eigs_current;
 /* Cycle collector floor: never collect more often than every 64 captured-
  * env registrations. State.c reads this when initializing EigsThread. */
 #define GC_THRESHOLD_MIN 64
+
+/* #307: value-candidate buffer drains a collection once this many LIST/DICT
+ * "possible roots" have parked. Bounds the transient memory the buffer pins
+ * keep alive between collections (each pinned candidate holds its subtree). */
+#define GC_VAL_THRESHOLD 1024
 
 /* ---- OOM-safe allocation wrappers ----
  * Abort with a diagnostic on allocation failure. Used by value constructors
@@ -725,6 +747,12 @@ static inline double num_guard(double x) {
  * on x86 for any __atomic_*_fetch). The branch is well-predicted to
  * false until spawn() fires. */
 
+/* #307: Bacon-Rajan possible-root hook. A LIST/DICT that lost a ref but stayed
+ * alive may now be the root of a garbage value cycle; buffer it for the next
+ * cycle collection. Out-of-line (keeps val_decref/slot_decref lean) and gated
+ * inside on GC-enabled / not-collecting / single-threaded. */
+void gc_note_possible_root(Value *v);
+
 static inline void val_incref(Value *v) {
     if (v && !v->arena) {
         if (__builtin_expect(g_vm_multithreaded, 0))
@@ -741,6 +769,9 @@ static inline void val_decref(Value *v) {
         else
             newrc = --v->refcount;
         if (newrc <= 0) free_value(v);
+        else if (__builtin_expect((v->type == VAL_LIST || v->type == VAL_DICT)
+                                  && !v->gc_buffered, 0))
+            gc_note_possible_root(v);
     }
 }
 

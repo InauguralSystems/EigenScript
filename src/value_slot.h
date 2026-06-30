@@ -110,6 +110,12 @@ static inline void slot_decref(EigsSlot s) {
                 else
                     newrc = --v->refcount;
                 if (newrc <= 0) free_value(v);
+                /* #307: an env-slot drop is the dominant path by which a
+                 * function-local list/dict cycle becomes garbage — register it
+                 * as a possible cycle root (mirrors val_decref's hook). */
+                else if (__builtin_expect((v->type == VAL_LIST || v->type == VAL_DICT)
+                                          && !v->gc_buffered, 0))
+                    gc_note_possible_root(v);
             }
         }
     }

@@ -117,9 +117,26 @@ as a force-destroy escape hatch (no current callers in main).
   unpin — each node frees through its normal destructor
   (`free_value`/`env_decref`/`chunk_decref`), so observer-alias
   clearing (`g_last_observer`) and freelist recycling behave as usual.
+- **Local value cycles (#307).** A self-/mutually-referential list or
+  dict built inside a function and dropped touches neither the captured-env
+  registry nor the global snapshot, so before #307 it leaked for the life of
+  the process. A Bacon-Rajan "possible root" hook closes this: when
+  `val_decref`/`slot_decref` drops a LIST/DICT ref *without* reaching zero
+  (the object might now be the root of a garbage cycle), `gc_note_possible_root`
+  parks it — with one pinning ref and a `gc_buffered` flag (dedup) — on the
+  per-state value-candidate buffer (`gc_val_buf`). `gc_collect_cycles` feeds
+  that buffer in as pinned seeds alongside the env registry, so the same
+  mark-sweep + edge-accounting decides garbage (root iff
+  `rc > internal + pinned`); afterward it clears the flags and drops the pins
+  (the final pin drop frees the now-edge-cleared garbage; live candidates keep
+  their other refs). The buffer drains on the env-registry threshold trigger,
+  on its own `GC_VAL_THRESHOLD` trigger, and at exit. Gated identically to
+  `env_mark_captured` (off when GC-disabled, mid-collection, or multithreaded),
+  so the hot decref stays lock-free and single-threaded-only.
 - **Exit.** `gc_collect_at_exit(global)` (main.c, both REPL and script
-  paths): snapshot the global scope's container values with one pinning
-  ref apiece, `env_clear(global)`, collect with the pins accounted
+  paths): flush the value-candidate buffer first (`gc_collect_cycles`), then
+  snapshot the global scope's container values with one pinning ref apiece,
+  `env_clear(global)`, collect with the pins accounted
   (root iff `rc > internal + pinned`), release the pins, then
   `env_decref(global)` drops the creator ref. The snapshot is what
   reclaims pure value→value cycles bound at global scope (a list
@@ -152,24 +169,34 @@ as a force-destroy escape hatch (no current callers in main).
 - **The frame's env ref follows `frame->env`.** LOOP_ENV_FRESH/END are
   a ref *move*, not a leak-fix opportunity; returning mid-loop relies on
   the child's parent chain cascading the release up to `fn_env`.
-- `tests/test_closure_cycles.eigs` is gated **strictly** by
-  run_all_tests.sh section [87]: any LeakSanitizer exit there fails the
-  suite (rc_ok's leak tolerance does not apply). Keep it that way.
+- **The value-candidate buffer holds a counted pin per entry** (#307).
+  `gc_note_possible_root` does `refcount++` and sets `gc_buffered`;
+  `gc_collect_cycles` is the *only* place that releases (clears the flag, then
+  decrefs). So a buffered LIST/DICT cannot reach refcount 0 outside a
+  collection — keep it that way: any new buffer drain must clear `gc_buffered`
+  *before* the decref, and must re-arm `g_in_gc` across the drain so the
+  freeing child-decrefs don't re-register and realloc the array mid-walk.
+- `tests/test_closure_cycles.eigs` (section [87]) and
+  `tests/test_value_cycles.eigs` (section [106]) are both gated **strictly** by
+  run_all_tests.sh: any LeakSanitizer exit there fails the suite (rc_ok's leak
+  tolerance does not apply). [87] guards closure cycles; [106] guards local
+  value cycles. Keep it that way.
 
 ## What still leaks (known, tolerated)
 
-- **Spawned-thread programs** — the collector is disabled at first
-  `spawn`. Cross-thread collection needs a stop-the-world handshake or
-  per-thread heaps; out of scope.
-- **Mid-run pure value cycles in function scopes** (a self-referential
-  list built and discarded inside a function, never touching a captured
-  env). These never enter the registry. They were leak-equivalent before
-  the collector; the exit snapshot only covers global bindings.
+- **Worker-thread-local pure-value cycles** — the `gc_note_possible_root`
+  hook is gated off while multithreaded (to keep the hot decref lock-free), so
+  a self-referential list/dict built *and* dropped inside a spawned worker is
+  never buffered and isn't reclaimed. (Env↔closure cycles created on workers
+  *are* collected — the env registry registers under `gc_lock` during the MT
+  window and the exit sweep reclaims them once workers are joined, #297.)
+  Worker-local value cycles are rare; out of scope until a consumer needs them.
 - A **parked recycled call env pins its parent** (the callee's closure
   env) until the chunk dies or the cycle through the chunk is collected
   — at most one retained env per chunk, released at chunk death.
 
-The suite's tolerated-leak tally (the `NOTE:` line in run_all_tests.sh)
-dropped from 28 to 13 with the collector; the remainder are the classes
-above plus a handful of pre-existing non-closure shapes, all
-byte-identical to the pre-collector baseline.
+The suite's tolerated-leak tally (the `NOTE:` line in run_all_tests.sh) is now
+**0** — the collector reclaims closure cycles (env-registry), global-rooted
+value cycles (exit snapshot), local value cycles (#307 possible-root buffer),
+and worker-created closure cycles (#297 per-state registry). It started at 28
+before the collector landed.
