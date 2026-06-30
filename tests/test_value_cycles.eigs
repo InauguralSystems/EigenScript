@@ -1,0 +1,46 @@
+# #307: the cycle collector must reclaim PURE-VALUE cycles created in a local
+# scope — a list/dict that references itself or a peer that points back. Before
+# the Bacon-Rajan possible-root hook, these leaked unbounded (only env<->closure
+# and global-rooted value cycles were collected). This program builds many such
+# cycles in a loop and drops them; under ASan (detect_leaks=1) it must exit
+# leak-clean. Functionally it just has to run to completion and print the marker.
+
+# --- self-referential list, dropped every iteration ---
+define make_self_list() as:
+    x is []
+    append of [x, x]      # x now contains itself: a 1-node value cycle
+    return null
+
+# --- mutually-referential dicts, dropped every iteration ---
+define make_mutual_dicts() as:
+    a is {"v": 1}
+    b is {"v": 2}
+    dict_set of [a, "peer", b]
+    dict_set of [b, "peer", a]   # a<->b: a 2-node value cycle
+    return null
+
+# --- a deeper back-edge: list -> dict -> same list (3-node cycle) ---
+define make_back_edge() as:
+    head is []
+    node is {"next": head}
+    append of [head, node]       # head -> node -> head
+    return null
+
+i is 0
+loop while i < 3000:
+    make_self_list of []
+    make_mutual_dicts of []
+    make_back_edge of []
+    i is i + 1
+
+# A live cycle must SURVIVE (not be wrongly freed mid-run): build one, keep it
+# rooted in a global, and read it back after the churn above.
+g_keep is []
+append of [g_keep, g_keep]
+len_after is len of g_keep
+check is len_after == 1
+
+if check:
+    print of "All tests passed"
+else:
+    print of "FAIL: live cycle was corrupted"

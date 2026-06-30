@@ -882,6 +882,23 @@ echo ""
 echo "[105] Over-Long Identifiers (#305)"
 check_eigs_suite "260/256/500-char identifiers round-trip" test_long_identifier.eigs "All tests passed" 1
 
+# [106] Local pure-value cycles (#307). Self-/mutually-referential lists & dicts
+# built in a local scope and dropped — reclaimed only by the Bacon-Rajan
+# possible-root hook (gc_note_possible_root); before it they leaked unbounded.
+# STRICT exit gate (no rc_ok leak tolerance), the value-cycle analogue of [87]:
+# a LeakSanitizer exit here is a collector regression, not a tolerated leak.
+echo "[106] Local Value Cycles (#307)"
+TOTAL=$((TOTAL + 1))
+VC_OUTPUT=$(./eigenscript ../tests/test_value_cycles.eigs </dev/null 2>&1); VC_OUTPUT_RC=$?
+if [ "$VC_OUTPUT_RC" = "0" ] && echo "$VC_OUTPUT" | grep -q "All tests passed"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: value cycles reclaimed; live cycle survives (leak-clean)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: value-cycle checks (rc=$VC_OUTPUT_RC — must be leak-clean)"
+    echo "$VC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
+fi
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

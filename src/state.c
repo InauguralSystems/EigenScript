@@ -46,6 +46,9 @@ void eigs_state_destroy(EigsState *st) {
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);
+    /* #307: value-candidate buffer pins were drained at gc_collect_at_exit;
+     * free the (now-empty) backing array. NULL if no cycle ever parked. */
+    free(st->gc_val_buf);
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);
     pthread_mutex_destroy(&st->gc_lock);

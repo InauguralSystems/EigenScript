@@ -2108,8 +2108,51 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     g_in_gc = 0;
 }
 
+/* #307: Bacon-Rajan "possible root" registration. Called from val_decref /
+ * slot_decref when a LIST/DICT lost a ref but stayed alive — it may now be the
+ * root of a garbage value cycle that nothing else would reclaim (the env
+ * registry only covers closure cycles; the exit snapshot only covers
+ * global-rooted ones). Park it on the per-state value-candidate buffer with one
+ * pin so it survives until the next collection, which decides via the same
+ * edge-accounting whether it (and its cycle) is actually garbage.
+ *
+ * Gated exactly like env_mark_captured: off when GC is disabled, mid-collection
+ * (the collector's own decrefs must not re-register), or multithreaded (the
+ * buffer is single-threaded-only — MT value cycles are rare and swept at exit
+ * via the global snapshot; this keeps the hot decref lock-free). */
+void gc_note_possible_root(Value *v) {
+    if (!g_gc_enabled || g_in_gc || g_vm_multithreaded || v->gc_buffered)
+        return;
+    v->gc_buffered = 1;
+    v->refcount++;   /* buffer pin — single-threaded here, so plain ++ */
+    if (g_gc_val_count >= g_gc_val_cap) {
+        g_gc_val_cap = g_gc_val_cap ? g_gc_val_cap * 2 : 64;
+        g_gc_val_buf = xrealloc_array(g_gc_val_buf, g_gc_val_cap, sizeof(Value *));
+    }
+    g_gc_val_buf[g_gc_val_count++] = v;
+    if (__builtin_expect(g_gc_val_count >= GC_VAL_THRESHOLD, 0))
+        gc_collect_cycles();
+}
+
 void gc_collect_cycles(void) {
-    gc_collect_impl(NULL, 0);
+    if (g_in_gc || g_vm_multithreaded) return;
+    /* Feed the value-candidate buffer in as pinned seeds (each holds exactly
+     * one buffer pin, accounted like the exit snapshot's), alongside the
+     * captured-env registry. */
+    gc_collect_impl(g_gc_val_buf, g_gc_val_count);
+    /* Drain the buffer: clear the buffered flags, then drop each pin. The
+     * collection has already broken any garbage cycle's internal edges, so the
+     * final pin drop frees the garbage; live candidates keep their other refs.
+     * Re-arm g_in_gc across the drain so the child decrefs while freeing don't
+     * re-register (which would realloc the array we're walking). */
+    if (g_gc_val_count) {
+        int n = g_gc_val_count;
+        g_in_gc = 1;
+        for (int i = 0; i < n; i++) g_gc_val_buf[i]->gc_buffered = 0;
+        g_gc_val_count = 0;
+        for (int i = 0; i < n; i++) val_decref(g_gc_val_buf[i]);
+        g_in_gc = 0;
+    }
 }
 
 /* ---- Module cache (Phase 0a) ----------------------------------------
@@ -2178,6 +2221,18 @@ void gc_collect_at_exit(Env *global) {
      * closures that close over global bindings, so releasing the cache
      * before snapshotting globals exposes those for collection. */
     eigs_module_cache_clear();
+    /* #307: disable the possible-root hook for the rest of teardown, THEN flush
+     * the value-candidate buffer (and release its pins). Disabling first is
+     * essential: the env_clear(global) below drops every global slot, and a
+     * dropped LIST/DICT would otherwise re-register into the buffer *after* this
+     * drain — with nothing left to release those new pins, leaking the whole
+     * global container set. gc_collect_cycles/gc_collect_impl don't consult
+     * gc_enabled (only env_mark_captured and the hook do), so the drain and the
+     * snapshot collection below still run. Live globally-rooted candidates
+     * survive this drain (reclaimed by the snapshot pass); purely-local cycles
+     * still buffered at exit are reclaimed here. */
+    g_gc_enabled = 0;
+    gc_collect_cycles();
     Value **seeds = NULL;
     int seed_count = 0, seed_cap = 0;
     if (global && !g_vm_multithreaded) {
