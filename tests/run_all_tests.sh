@@ -899,6 +899,13 @@ else
     echo "$VC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
 fi
 
+# [107] Meta-interpreter parity (#306). lib/eigen.eigs (the meta-circular
+# interpreter) must agree with the C evaluator on and/or value-returning
+# short-circuit, raising on unbound identifiers, and div/mod-by-zero values —
+# the divergences it used to ship while claiming "full parity".
+echo "[107] Meta-Interpreter Parity (#306)"
+check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0)" test_meta_parity.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

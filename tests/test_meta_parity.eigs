@@ -1,0 +1,70 @@
+# #306: lib/eigen.eigs (the meta-circular interpreter) must agree with the C
+# evaluator on the cases that used to diverge. eigen_run returns the value of
+# its (last) expression, so we compare that value to what `./src/eigenscript`
+# produces for the same source. Diagnostics (error line numbers, the div-by-zero
+# stderr warning) are documented best-effort differences and not checked here;
+# VALUES and the raise-vs-null behavior are.
+
+load_file of "lib/eigen.eigs"
+
+checks is 0
+passed is 0
+
+define check(label, got, want) as:
+    checks is checks + 1
+    if got == want:
+        passed is passed + 1
+    else:
+        print of f"FAIL: {label}: got {got}, want {want}"
+
+# --- and/or: value-returning short-circuit (Python/Lua style), matching C ---
+check of ["1 and 2", eigen_run of "1 and 2", 2]
+check of ["0 and 2", eigen_run of "0 and 2", 0]
+check of ["1 or 3", eigen_run of "1 or 3", 1]
+check of ["0 or 3", eigen_run of "0 or 3", 3]
+check of ["empty-str or 3", eigen_run of "\"\" or 3", 3]
+check of ["null or 3", eigen_run of "null or 3", 3]
+check of ["2 and 0", eigen_run of "2 and 0", 0]
+check of ["empty-list or 3", eigen_run of "[] or 3", 3]
+check of ["chained and", eigen_run of "1 and 2 and 3", 3]
+check of ["or short-circuits to left", eigen_run of "7 or 9", 7]
+
+# --- a name bound to null is NOT "undefined": returns null, does not raise ---
+check of ["null-bound var", eigen_run of "x is null\nx", null]
+check of ["normal var", eigen_run of "y is 42\ny", 42]
+
+# --- div / mod by zero: value parity (0) ---
+check of ["5 / 0", eigen_run of "5 / 0", 0]
+check of ["5 % 0", eigen_run of "5 % 0", 0]
+
+# --- unbound identifier must RAISE (C VM raises; old meta-interp returned null) ---
+undef_caught is 0
+try:
+    r is eigen_run of "undefined_xyz"
+catch e:
+    undef_caught is 1
+check of ["unbound identifier raises", undef_caught, 1]
+
+# a use inside a larger expression must also raise (assign/binop form — a
+# `print of <unbound>` form would additionally surface a separate, pre-existing
+# host bug where a throw inside a function body doesn't halt the caller's next
+# statement, so the host `print` runs once with null; that's tracked separately
+# and is not what this parity test asserts).
+undef2_caught is 0
+try:
+    r2 is eigen_run of "q is nope_abc"
+catch e2:
+    undef2_caught is 1
+check of ["unbound in assignment raises", undef2_caught, 1]
+
+undef3_caught is 0
+try:
+    r3 is eigen_run of "nope_def + 1"
+catch e3:
+    undef3_caught is 1
+check of ["unbound in binop raises", undef3_caught, 1]
+
+if checks == passed:
+    print of "All tests passed"
+else:
+    print of f"{passed}/{checks} passed"
