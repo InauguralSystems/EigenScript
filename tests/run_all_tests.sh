@@ -876,6 +876,12 @@ else
 fi
 echo ""
 
+# [105] Over-long identifiers (#305). Names longer than the old 256-byte fixed
+# lexer buffer must lex as a single token (strbuf-grown), not be silently
+# truncated and split — a split surfaces as an undefined-variable/parse error.
+echo "[105] Over-Long Identifiers (#305)"
+check_eigs_suite "260/256/500-char identifiers round-trip" test_long_identifier.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
