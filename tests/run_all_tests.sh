@@ -906,6 +906,13 @@ fi
 echo "[107] Meta-Interpreter Parity (#306)"
 check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0)" test_meta_parity.eigs "All tests passed" 1
 
+# [108] sandbox_run allocation budget (#292). The size-controlled allocators
+# (zeros/fill/buffer/range) charge a per-run byte budget so untrusted generated
+# code can't exhaust memory (single big alloc or aggregate) into an uncatchable
+# x_oom/abort(); exceeding it returns {ok:0}. Includes the cumulative (F2) case.
+echo "[108] Sandbox Allocation Budget (#292)"
+check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-run reset" test_sandbox_budget.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

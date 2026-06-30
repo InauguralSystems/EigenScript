@@ -3485,6 +3485,14 @@ Value* builtin_sandbox_run(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
         arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM)
         max_iter = (int)arg->data.list.items[1]->data.num;
+    /* #292: optional max_bytes (3rd element) — the allocation budget for this
+     * run. Default 256 MiB: ample for the short generated snippets grade()
+     * runs, small enough that even a few of them can't thrash a 4 GB box. */
+    size_t max_bytes = (size_t)256 * 1024 * 1024;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3 &&
+        arg->data.list.items[2] && arg->data.list.items[2]->type == VAL_NUM &&
+        arg->data.list.items[2]->data.num > 0)
+        max_bytes = (size_t)arg->data.list.items[2]->data.num;
 
     EigsChunk *chunk = vm_build_chunk_desc(desc);
     Value *out = make_dict(2);
@@ -3513,6 +3521,14 @@ Value* builtin_sandbox_run(Value *arg) {
     int saved_iters = g_loop_iterations;
     g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
     g_loop_iterations = 0;
+    /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
+     * sandbox_run invoked from already-budgeted code) composes correctly. */
+    int    saved_sb_active = g_sandbox_active;
+    size_t saved_sb_used   = g_sandbox_bytes_used;
+    size_t saved_sb_max    = g_sandbox_byte_max;
+    g_sandbox_active     = 1;
+    g_sandbox_bytes_used = 0;
+    g_sandbox_byte_max   = max_bytes;
 
     Value *result = vm_execute(chunk, sbox);
 
@@ -3521,6 +3537,9 @@ Value* builtin_sandbox_run(Value *arg) {
 
     g_sandbox_loop_max = saved_max;
     g_loop_iterations = saved_iters;
+    g_sandbox_active     = saved_sb_active;
+    g_sandbox_bytes_used = saved_sb_used;
+    g_sandbox_byte_max   = saved_sb_max;
 
     chunk_free(chunk);
     env_decref(sbox);
@@ -3593,6 +3612,9 @@ Value* builtin_concat(Value *arg) {
     Value *b = arg->data.list.items[1];
     if (!a || a->type != VAL_LIST || !b || b->type != VAL_LIST) return make_null();
     int total = a->data.list.count + b->data.list.count;
+    /* #292: charge the new slots — `result is concat of [result, more]` in a loop
+     * grows quadratically and would otherwise aggregate past the budget. */
+    if (!sandbox_charge((size_t)total * sizeof(Value *))) return make_null();
     Value *result = make_list(total);
     for (int i = 0; i < a->data.list.count; i++)
         list_append(result, a->data.list.items[i]);
@@ -3644,6 +3666,9 @@ Value* builtin_range(Value *arg) {
     }
     if (count < 0) count = 0;
     if (count > 1000000) count = 1000000;
+    /* #292: range builds `count` fresh number Values — charge the sandbox budget
+     * so a range-in-a-loop can't aggregate past it. */
+    if (!sandbox_charge((size_t)count * (sizeof(Value) + sizeof(Value *)))) return make_list(0);
 
     Value *result = make_list(count);
     if (step > 0) {
@@ -3673,6 +3698,9 @@ Value* builtin_fill(Value *arg) {
     Value *val = arg->data.list.items[1];
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000; /* 10M cap */
+    /* #292: charge the sandbox budget — fill stores `count` slots pointing at the
+     * shared value (the per-iteration aggregate that defeats the loop cap). */
+    if (!sandbox_charge((size_t)count * sizeof(Value *))) return make_null();
     Value *result = make_list(count);
     for (int i = 0; i < count; i++)
         list_append(result, val);
@@ -4507,6 +4535,7 @@ Value* builtin_buffer(Value *arg) {
         if (c < 0) c = 0;
         long total = (long)r * (long)c;
         if (total > 10000000) { r = 0; c = 0; total = 0; }
+        if (!sandbox_charge((size_t)total * sizeof(double))) return make_null();  /* #292 */
         Value *v = xcalloc(1, sizeof(Value));
         v->type = VAL_BUFFER;
         v->data.buffer.count = (int)total;
@@ -4520,6 +4549,7 @@ Value* builtin_buffer(Value *arg) {
     if (arg && arg->type == VAL_NUM) count = (int)arg->data.num;
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000;
+    if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = count;

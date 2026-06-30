@@ -509,12 +509,20 @@ Value* builtin_tensor_norm(Value *arg) {
     return make_num(num_guard(sqrt(s)));
 }
 
+/* #292: bytes a list-of-fresh-numbers tensor of `n` elements costs — one Value
+ * per number plus its slot pointer. Used to charge the sandbox budget. */
+#define TENSOR_LIST_ELEM_BYTES (sizeof(Value) + sizeof(Value *))
+
 /* ==== BUILTIN: zeros ==== */
 Value* builtin_tensor_zeros(Value *arg) {
     if (!arg) return make_null();
     /* zeros of n → 1D list of n zeros */
     if (arg->type == VAL_NUM) {
-        int n = (int)arg->data.num;
+        int64_t n64 = (int64_t)arg->data.num;
+        if (n64 < 0) n64 = 0;
+        if (n64 > 10000000) n64 = 10000000;  /* #292: cap like fill/buffer (was uncapped → x_oom/abort) */
+        int n = (int)n64;
+        if (!sandbox_charge((size_t)n * TENSOR_LIST_ELEM_BYTES)) return make_null();
         Value *out = make_list(n);
         for (int i = 0; i < n; i++) list_append_owned(out, make_num(0.0));
         return out;
@@ -523,8 +531,17 @@ Value* builtin_tensor_zeros(Value *arg) {
     if (arg->type == VAL_LIST && arg->data.list.count >= 2
         && arg->data.list.items[0]->type == VAL_NUM
         && arg->data.list.items[1]->type == VAL_NUM) {
-        int rows = (int)arg->data.list.items[0]->data.num;
-        int cols = (int)arg->data.list.items[1]->data.num;
+        int64_t rows64 = (int64_t)arg->data.list.items[0]->data.num;
+        int64_t cols64 = (int64_t)arg->data.list.items[1]->data.num;
+        if (rows64 < 0) rows64 = 0;
+        if (cols64 < 0) cols64 = 0;
+        /* #292: bound each dim before multiplying (no int64 overflow), then the
+         * product — a clean make_null (sandbox: {ok:0}) instead of x_oom/abort. */
+        if (rows64 > 10000000 || cols64 > 10000000) return make_null();
+        int64_t total = rows64 * cols64;
+        if (total > 10000000) return make_null();
+        if (!sandbox_charge((size_t)total * TENSOR_LIST_ELEM_BYTES)) return make_null();
+        int rows = (int)rows64, cols = (int)cols64;
         Value *outer = make_list(rows);
         for (int r = 0; r < rows; r++) {
             Value *row = make_list(cols);

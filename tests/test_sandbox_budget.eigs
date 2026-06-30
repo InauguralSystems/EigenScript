@@ -1,0 +1,63 @@
+# #292: sandbox_run must impose an allocation budget. Before this, an allowlisted
+# allocator (zeros/fill/buffer/range) could exhaust memory in one capped-but-large
+# call — or aggregate across a loop — and the resulting x_oom -> abort() was
+# uncatchable by the sandbox's g_has_error path, killing the host (SIGABRT).
+# Now the size-controlled allocators charge a per-run byte budget; exceeding it
+# raises a CATCHABLE error so sandbox_run returns {ok:0} instead of aborting.
+
+load_file of "lib/test.eigs"
+
+# Bytecode opcodes (see test_vm_run_bytecode.eigs).
+CONST is 0
+GET_NAME is 25
+POP is 35
+CALL is 39
+RETURN is 40
+
+# zeros of N  /  fill of [N, v]  descriptors (GET_NAME fn; CONST arg; CALL 1).
+define zeros_desc(n) as:
+    return [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["zeros", n]]
+define fill_desc(n) as:
+    return [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [n, 0.0]]]
+
+# --- 1. A big allocation under a tiny budget is rejected (ok=0), not aborted ---
+ok_big is (sandbox_run of [zeros_desc of 1000000, 1000000, 1000])["ok"]
+assert_eq of [ok_big, 0, "budget: zeros(1M) under 1000-byte budget -> {ok:0}"]
+
+# --- 2. A small allocation under a generous budget runs (ok=1) ---
+ok_small is (sandbox_run of [zeros_desc of 10, 1000000, 1000000])["ok"]
+assert_eq of [ok_small, 1, "budget: zeros(10) under 1MB budget -> {ok:1}"]
+
+# --- 3. fill (the aggregate-allocation vector) is charged too ---
+ok_fill is (sandbox_run of [fill_desc of 1000000, 1000000, 1000])["ok"]
+assert_eq of [ok_fill, 0, "budget: fill(1M) under 1000-byte budget -> {ok:0}"]
+
+# --- 4. The DEFAULT budget (no max_bytes arg) bounds an otherwise-uncapped bomb,
+#        so it returns {ok:0} instead of x_oom/abort ---
+ok_default is (sandbox_run of [zeros_desc of 9000000, 1000000])["ok"]
+assert_eq of [ok_default, 0, "budget: default budget bounds zeros(9M) -> {ok:0}, no abort"]
+
+# --- 5. CUMULATIVE (F2): two fills that each fit but together exceed the budget.
+#        Each fill(600k) = 4.8MB; budget 6MB admits one, denies the second. ---
+two_fills is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
+               GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [600000, 0.0]]]
+ok_two_tight is (sandbox_run of [two_fills, 1000000, 6000000])["ok"]
+assert_eq of [ok_two_tight, 0, "budget: two fills (9.6MB) under 6MB -> {ok:0} (cumulative)"]
+ok_two_loose is (sandbox_run of [two_fills, 1000000, 12000000])["ok"]
+assert_eq of [ok_two_loose, 1, "budget: two fills (9.6MB) under 12MB -> {ok:1}"]
+
+# --- 6. The budget is per-run: a tight run doesn't poison a later generous run ---
+ok_after is (sandbox_run of [zeros_desc of 10, 1000000, 1000000])["ok"]
+assert_eq of [ok_after, 1, "budget: resets per run (generous run after a tight one)"]
+
+# --- 7. concat (the quadratic `result is concat of [result, more]` vector) is
+#        charged on its output too. `la` (50 elems) is built outside the sandbox;
+#        concat of [la, la] = 100 slots = 800 bytes. ---
+la is range of 50
+cdesc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["concat", [la, la]]]
+ok_concat_tight is (sandbox_run of [cdesc, 1000000, 100])["ok"]
+assert_eq of [ok_concat_tight, 0, "budget: concat(100 slots) under 100-byte budget -> {ok:0}"]
+ok_concat_loose is (sandbox_run of [cdesc, 1000000, 100000])["ok"]
+assert_eq of [ok_concat_loose, 1, "budget: concat(100 slots) under 100KB budget -> {ok:1}"]
+
+print of "All tests passed"

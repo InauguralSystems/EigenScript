@@ -375,6 +375,15 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env);
 /* Sandbox loop-iteration cap (0 = default 100M). Set by builtin_sandbox_run. */
 extern int g_sandbox_loop_max;
 
+/* #292: sandbox allocation budget. Set by builtin_sandbox_run; size-controlled
+ * allocators call sandbox_charge() before allocating. Returns 1 if the charge
+ * fits (and commits it), 0 if it would exceed the budget (after raising a
+ * catchable runtime_error). No-op when g_sandbox_active is 0. */
+extern int    g_sandbox_active;
+extern size_t g_sandbox_bytes_used;
+extern size_t g_sandbox_byte_max;
+int sandbox_charge(size_t bytes);
+
 /* VM execution */
 Value     *vm_execute(EigsChunk *chunk, Env *env);
 
