@@ -326,6 +326,11 @@ TokenList tokenize(const char *source) {
                 }
                 if (*p == '\\') {
                     p++; col++;
+                    /* #304: a backslash at end-of-source leaves *p on the NUL
+                     * terminator. Stop here — appending it and advancing past
+                     * the NUL reads off the end of the buffer (heap overflow).
+                     * The unterminated-f-string check below then fires. */
+                    if (*p == '\0') break;
                     switch (*p) {
                         case 'n': strbuf_append_char(&buf, '\n'); break;
                         case 't': strbuf_append_char(&buf, '\t'); break;
@@ -417,6 +422,12 @@ TokenList tokenize(const char *source) {
             while (*p && *p != '"') {
                 if (*p == '\\') {
                     p++; col++;
+                    /* #304: a backslash at end-of-source leaves *p on the NUL
+                     * terminator. Stop here — appending it and the trailing
+                     * p++ steps past the NUL and reads off the end of the
+                     * buffer (heap overflow). The unterminated-string check
+                     * below then fires. */
+                    if (*p == '\0') break;
                     switch (*p) {
                         case 'n': strbuf_append_char(&buf, '\n'); break;
                         case 't': strbuf_append_char(&buf, '\t'); break;
