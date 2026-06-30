@@ -5,6 +5,26 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **`sandbox_run` allocation budget (#292).** The sandbox bounded loop back-edges
+  and the builtin surface but imposed no *memory* budget: an allowlisted allocator
+  (`zeros`/`fill`/`buffer`/`range`) could exhaust RAM in one capped-but-large call,
+  or aggregate across a loop (each iteration's allocation never trips the
+  back-edge counter), and the resulting out-of-memory went through `x_oom →
+  abort()` — **uncatchable** by the sandbox's `g_has_error` path, so the host
+  process died with SIGABRT (a generated `zeros of [99999, 99999]` was enough).
+  Added a per-run byte budget: the size-controlled allocators call
+  `sandbox_charge()` before allocating, and a charge that would exceed the budget
+  raises a *caught* error so `sandbox_run` returns `{ok:0}` instead of aborting.
+  The budget is cumulative over the run (so the aggregate-in-a-loop vector is
+  bounded too) and configurable via a new optional `max_bytes` arg
+  (`sandbox_run of [descriptor, max_iterations?, max_bytes?]`, default 256 MiB).
+  Also gave `zeros` the same per-call size cap `fill`/`buffer` already had (it was
+  uncapped, so it could `abort()` even outside a sandbox). Regression: section
+  [108] (`test_sandbox_budget`), including the cumulative case. The in-process
+  budget covers the array/tensor allocation vectors; a fork+`setrlimit` jail would
+  cover every byte but would have to serialize the result Value across the pipe
+  (breaking the `{ok, result}` contract existing callers read) and can't safely
+  fork a pthreads process — out of scope here.
 - **Meta-interpreter parity with the C evaluator (#306).** `lib/eigen.eigs`
   advertised "full parity" but `eigen_eval` diverged from the C VM: `and`/`or`
   returned `0`/`1` instead of the deciding operand (so `1 and 2`→`1` not `2`,

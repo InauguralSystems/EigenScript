@@ -523,6 +523,41 @@ static Value *make_iter_state(Value *iterable) {
  * helpers). A plain process global: sandbox_run is synchronous. */
 int g_sandbox_loop_max = 0;
 
+/* #292: sandbox allocation budget. The loop-iteration cap bounds VM back-edges
+ * but NOT memory — an allowlisted allocator (zeros/fill/buffer/range/...) can
+ * exhaust RAM in one capped-but-large call, or aggregate across a loop, and the
+ * resulting x_oom -> abort() is uncatchable by sandbox_run's g_has_error path.
+ * The size-controlled allocators call sandbox_charge() before allocating: while
+ * a budgeted sandbox_run is active, a charge that would exceed the budget raises
+ * a catchable runtime_error (sandbox_run then returns {ok:0}) instead of letting
+ * the allocation reach abort(). Cumulative over the run (snippets are short, so
+ * cumulative ~= peak); generous default, overridable via sandbox_run's max_bytes
+ * arg. No-op outside a budgeted sandbox (active=0), so normal runs pay nothing.
+ * Plain process globals: sandbox_run is synchronous and single-threaded.
+ *
+ * Charged at: zeros, fill, buffer, range, concat — the size-controlled list/
+ * tensor allocators (the issue's vectors). NOT yet charged: zeros_like (mirrors
+ * an already-charged input), matmul output (per-call capped at 10M elems; its
+ * inputs are charged), and the text_builder growth path — all bounded by the
+ * loop-iteration cap × per-op size, not the byte budget. Extending the budget to
+ * them is a one-line sandbox_charge() at each; left out to match #292's scope. */
+int    g_sandbox_active     = 0;
+size_t g_sandbox_bytes_used = 0;
+size_t g_sandbox_byte_max   = 0;   /* 0 = no budget */
+
+int sandbox_charge(size_t bytes) {
+    if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
+    /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant
+     * (we never commit a charge that breaks it), so the subtraction can't wrap. */
+    if (bytes > g_sandbox_byte_max - g_sandbox_bytes_used) {
+        runtime_error(0, "sandbox memory budget exceeded (used %zu + %zu > %zu bytes)",
+                      g_sandbox_bytes_used, bytes, g_sandbox_byte_max);
+        return 0;
+    }
+    g_sandbox_bytes_used += bytes;
+    return 1;
+}
+
 /* JIT Stage 4k: out-of-line helper for OP_GET_NAME.
  *
  * Mirrors CASE(GET_NAME) below exactly — IC fast path then chain-walk
