@@ -465,15 +465,20 @@ TokenList tokenize(const char *source) {
         }
 
         if (isalpha(*p) || *p == '_') {
-            char word[256];
-            int wi = 0;
-            while ((isalnum(*p) || *p == '_') && wi < 255) {
-                word[wi++] = *p++;
+            /* #305: grow the identifier into a strbuf (like string literals)
+             * instead of a fixed 256-byte stack array. The old cap silently
+             * stopped at 255 chars WITHOUT consuming the rest, so the tail was
+             * re-lexed as a second token — splitting one over-long identifier
+             * into several. A strbuf lexes it as a single token of any length. */
+            strbuf buf;
+            strbuf_init(&buf);
+            while (isalnum(*p) || *p == '_') {
+                strbuf_append_char(&buf, *p++);
                 col++;
             }
-            word[wi] = '\0';
-            TokType tt = keyword_type(word);
-            tok_add(&tl, tt, 0, word, line, tok_col);
+            TokType tt = keyword_type(buf.data);
+            tok_add(&tl, tt, 0, buf.data, line, tok_col);
+            strbuf_free(&buf);
             continue;
         }
 
