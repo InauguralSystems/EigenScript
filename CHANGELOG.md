@@ -5,6 +5,23 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Meta-interpreter parity with the C evaluator (#306).** `lib/eigen.eigs`
+  advertised "full parity" but `eigen_eval` diverged from the C VM: `and`/`or`
+  returned `0`/`1` instead of the deciding operand (so `1 and 2`→`1` not `2`,
+  `0 or 3`→`1` not `3`, breaking the `x is config or fallback` idiom), and an
+  unbound identifier silently returned `null` instead of raising. Fixed: `and`/
+  `or` now do value-returning short-circuit using the host VM's own truthiness
+  (exact falsy-set parity: `0`, `""`, `null`, empty list/dict), and an unbound
+  name raises via a new `_env_has` existence check (distinct from a name bound
+  to `null`, which still returns `null`). The divide/modulo-by-zero *value* was
+  already at parity (`0`); the C VM's stderr `Warning ... division by zero` can't
+  be emitted (EigenScript has no stderr-write builtin) and error messages carry
+  no `line N` prefix (eval-time AST nodes don't track lines) — both now
+  documented in the header instead of over-claimed. ouroboros is unaffected (it
+  vendors only the front-end, not `eigen_eval`). Regression: section [107]
+  (`test_meta_parity`). Surfaced a separate, pre-existing host bug — a `throw`
+  inside a function body doesn't halt the caller's subsequent statements — which
+  is tracked on its own, not in this fix.
 - **Cycle collector now reclaims local pure-value cycles (#307).** A list/dict
   that referenced itself (or a peer that pointed back) and was built inside a
   function then dropped was reclaimed by *nothing*: the runtime collector built
