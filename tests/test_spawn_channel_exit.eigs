@@ -1,0 +1,9 @@
+# Regression #303: a worker blocked in recv (empty buffer) on a channel that the
+# script never closes must NOT hang the program at exit. handle_table_drain now
+# closes + broadcasts every channel before joining workers, so the blocked
+# worker wakes (recv returns null on a closed-empty channel) and becomes
+# joinable. Before the fix, pthread_join on the recv-blocked worker hung forever
+# and this test would time out.
+ch is channel of 1
+w is spawn of [recv, ch]      # worker parks in recv; buffer empty, never closed
+print of "All tests passed"

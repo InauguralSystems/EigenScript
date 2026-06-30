@@ -116,6 +116,30 @@ int main(void) {
     CHECK(eigs_value_dict_get(d, "missing") == NULL, "dict get miss returns NULL");
     eigs_value_release(d);
 
+    /* --- #301: spawn + channel through the embed path. eigs_close() must
+     * drain the handle table (reap workers, free channels, clear multithreaded)
+     * just like main.c — otherwise embedders leak channels/threads, the exit
+     * collector silently no-ops, and a live worker can UAF the freed state. */
+    r = eigs_eval_string(
+        "ch is channel of 1\n"
+        "define producer(c) as:\n"
+        "    send of [c, 42]\n"
+        "h is spawn of [producer, ch]\n"
+        "got is recv of ch\n"
+        "thread_join of h\n"
+        "got");
+    CHECK(r != NULL && eigs_value_as_num(r) == 42.0, "embed spawn+channel roundtrip");
+    eigs_value_release(r);
+
+    /* Leave a recv-blocked, never-joined worker for eigs_close to reap — this
+     * hangs (or leaks/UAFs) unless eigs_close drains (close+wake+join, #303). */
+    r = eigs_eval_string(
+        "ch2 is channel of 1\n"
+        "w is spawn of [recv, ch2]\n"
+        "1");
+    CHECK(r != NULL, "embed leaves a recv-blocked worker for eigs_close to reap");
+    eigs_value_release(r);
+
     eigs_close(st);
 
     if (failures == 0) {
