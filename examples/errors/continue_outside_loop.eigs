@@ -1,0 +1,9 @@
+# ERROR DEMO — continue outside a loop, in a function body. Function
+# bodies compile with their own loop context: a continue in a loop-less
+# function does NOT belong to a loop the caller might be running (#337).
+# expect-error: Compile error line 7: 'continue' outside a loop
+define helper as:
+    if n > 0:
+        continue
+    return 1
+print of (str of (helper of 5))

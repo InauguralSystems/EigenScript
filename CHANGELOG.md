@@ -5,6 +5,18 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **`break`/`continue` outside a loop are now compile errors (#337).** They
+  compiled to silent no-ops (an explicit `OP_NULL`), so a mis-indented `break`
+  left its loop spinning with no diagnostic — including inside a function body
+  with no loop of its own (a break there never crosses frames to the caller's
+  loop). Both now report `Compile error line N: 'break' outside a loop` and
+  abort via the existing post-compile gate. The same gate is now enforced at
+  every dynamic entry point: `eval`, `load_file`, and `import` previously
+  checked `g_parse_errors` only after *parse*, so compile-stage diagnostics
+  executed a placeholder chunk anyway — all three now fail with a catchable
+  error. Module-level `return` (ends the program, value discarded, exit 0) is
+  now documented in SPEC.md's Program model. Regression: section [112]
+  (`test_stray_break.eigs`) + two new `examples/errors/` demos gated by [90].
 - **f-string interpolation: whitespace and nested-string braces (#334).** Two
   lexer defects. (1) `f"{ x }"` (leading space) failed with "unexpected indent
   in expression": the interpolation body is re-lexed as a fresh source string

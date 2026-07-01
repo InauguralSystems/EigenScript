@@ -47,7 +47,9 @@ An EigenScript program is a sequence of statements executed top to
 bottom. There is no required entry point — the file *is* the program.
 Statements are expressions, assignments, definitions, or control
 structures. Blocks are delimited by indentation (like Python), and a
-statement ends at the end of its line.
+statement ends at the end of its line. A `return` at module level ends
+the program immediately (exit status 0); the returned value is
+discarded.
 
 Function application uses the keyword `of`: `f of x` calls `f` with the
 argument `x`. `print` is an ordinary builtin function.
@@ -339,7 +341,9 @@ medium
 `loop while cond:` repeats while the condition is truthy. `for v in
 seq:` iterates a list, buffer, or `range of n` (0 to n-1). `break` and
 `continue` behave conventionally and do not escape function-call
-boundaries.
+boundaries. A `break` or `continue` with no enclosing loop — including
+inside a function body that has no loop of its own — is a **compile
+error** (`'break' outside a loop`), not a silent no-op.
 
 ```eigenscript
 i is 0

@@ -1747,7 +1747,15 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* Phantom +1 for stack accounting (dead code follows jump) */
             adjust_stack(c, 1);
         } else {
-            /* Break outside loop: emit null (no-op, maintains stack balance) */
+            /* Break outside any loop: a compile error (#337). This used to
+             * be a silent no-op, turning a mis-indented break into a loop
+             * that never exits. Emit OP_NULL so compilation continues with
+             * balanced stack accounting; the post-compile g_parse_errors
+             * gate aborts before execution. */
+            fprintf(stderr, "Compile error line %d: 'break' outside a loop\n",
+                    node->line);
+            eigs_record_first_error(node->line, "'break' outside a loop");
+            g_parse_errors++;
             emit(c, OP_NULL, node->line);
         }
         break;
@@ -1760,7 +1768,12 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* Phantom +1 for stack accounting (dead code follows jump) */
             adjust_stack(c, 1);
         } else {
-            /* Continue outside loop: emit null */
+            /* Continue outside any loop: a compile error (#337), same
+             * rationale as break above. */
+            fprintf(stderr, "Compile error line %d: 'continue' outside a loop\n",
+                    node->line);
+            eigs_record_first_error(node->line, "'continue' outside a loop");
+            g_parse_errors++;
             emit(c, OP_NULL, node->line);
         }
         break;

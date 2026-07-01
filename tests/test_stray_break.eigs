@@ -1,0 +1,45 @@
+# Regression for #337 — break/continue with no enclosing loop are compile
+# errors (they were silent no-ops), and compile-stage diagnostics fail
+# eval/load_file with a catchable error instead of executing a placeholder
+# chunk. The direct-source rc=1 paths are covered by examples/errors/
+# break_outside_loop.eigs + continue_outside_loop.eigs (section [90]).
+checks is 0
+passed is 0
+
+checks is checks + 1
+c1 is 0
+try:
+    eval of "break"
+catch e1:
+    c1 is 1
+if c1 == 1:
+    passed is passed + 1
+
+checks is checks + 1
+c2 is 0
+try:
+    eval of "continue"
+catch e2:
+    c2 is 1
+if c2 == 1:
+    passed is passed + 1
+
+checks is checks + 1
+c3 is 0
+try:
+    eval of "define stray_fn as:\n    break\n    return 1"
+catch e3:
+    c3 is 1
+if c3 == 1:
+    passed is passed + 1
+
+# break/continue INSIDE loops still work through eval
+checks is checks + 1
+r is eval of "t is 0\nfor i in range of 5:\n    if i == 3:\n        break\n    t is t + 1\nt"
+if r == 3:
+    passed is passed + 1
+
+if checks == passed:
+    print of "All tests passed"
+else:
+    print of f"{passed}/{checks} passed"

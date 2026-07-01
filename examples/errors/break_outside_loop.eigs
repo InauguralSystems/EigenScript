@@ -1,0 +1,9 @@
+# ERROR DEMO — break/continue need an enclosing loop.
+# A break (or continue) with no loop around it — including inside a
+# function body that has no loop of its own — is a compile error, not
+# a silent no-op: a mis-indented break would otherwise leave its loop
+# spinning with no diagnostic (#337).
+# expect-error: Compile error line 8: 'break' outside a loop
+x is 1
+break
+print of "never runs"

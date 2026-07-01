@@ -933,6 +933,13 @@ check_eigs_suite "65th break in for/while; break in 33rd nested loop" test_loop_
 echo "[111] Statement Cap: 4200-stmt program + block (#327)"
 check_eigs_suite "no silent truncation past 4096 statements" test_stmt_cap.eigs "All tests passed" 1
 
+# [112] stray break/continue (#337). Outside any loop they are compile
+# errors (were silent no-ops); compile-stage diagnostics fail eval /
+# load_file / import with a catchable error instead of running a
+# placeholder chunk. Direct-source rc=1 covered by examples/errors/ [90].
+echo "[112] Stray break/continue Are Compile Errors (#337)"
+check_eigs_suite "eval'd stray break/continue raise; in-loop still works" test_stray_break.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

@@ -4418,7 +4418,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             vm_push(make_null());
             DISPATCH();
         }
-        g_parse_errors = saved_errors;
+        /* Compile-stage diagnostics gate below (#337) — the counter stays
+         * zeroed through compile_ast, mirroring eval/load_file. */
 
         Env *saved_load = g_load_env;
         g_load_env = mod_env;
@@ -4443,6 +4444,20 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         }
 
         EigsChunk *mod_chunk = compile_ast(ast, mod_env);
+        if (g_parse_errors > 0) {
+            g_parse_errors = saved_errors;
+            chunk_free(mod_chunk);
+            g_load_env = saved_load;
+            memcpy(g_import_resolve_dir, saved_resolve_dir, sizeof(saved_resolve_dir));
+            free_ast(ast);
+            free_tokenlist(&tl);
+            free(source);
+            env_decref(mod_env);
+            runtime_error(current_line, "import: compile errors in '%s'", name);
+            vm_push(make_null());
+            DISPATCH();
+        }
+        g_parse_errors = saved_errors;
         Value *mod_result = vm_execute(mod_chunk, mod_env);
         if (mod_result) val_decref(mod_result);
         chunk_free(mod_chunk);   /* creator ref; module fns hold their own */
