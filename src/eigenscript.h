@@ -60,7 +60,6 @@
  * array the JIT's %r12 (fn_env->values) cache points at — a use-after-free the
  * re-entrant sandbox_run/vm_execute churn turns into "cannot index num" (#291). */
 #define ENV_LOOP_BIND_HEADROOM 2
-#define MAX_STMTS       4096
 #define MAX_LIST        1024
 
 /* ---- Tokenizer ---- */

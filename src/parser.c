@@ -490,7 +490,10 @@ static int chain_too_deep(Parser *p);
  * bridge macro from eigenscript.h. */
 
 static ASTNode** parse_block(Parser *p, int *count) {
-    ASTNode **stmts = xmalloc_array(MAX_STMTS, sizeof(ASTNode*));
+    /* Grown on demand — a fixed MAX_STMTS cap here silently DROPPED every
+     * statement past 4096 (including a block's `return`), rc=0 (#327). */
+    int cap = 16;
+    ASTNode **stmts = xmalloc_array(cap, sizeof(ASTNode*));
     *count = 0;
 
     /* Nested blocks recurse (parse_block -> parse_statement -> parse_block);
@@ -512,7 +515,11 @@ static ASTNode** parse_block(Parser *p, int *count) {
         if (p_cur(p)->type == TOK_DEDENT || p_cur(p)->type == TOK_EOF) break;
         int before = p->pos;
         ASTNode *stmt = parse_statement(p);
-        if (stmt && *count < MAX_STMTS) {
+        if (stmt) {
+            if (*count == cap) {
+                cap *= 2;
+                stmts = xrealloc_array(stmts, cap, sizeof(ASTNode*));
+            }
             stmts[(*count)++] = stmt;
         }
         if (p->pos == before) {
@@ -1640,7 +1647,10 @@ ASTNode* parse(TokenList *tl) {
     p.pos = 0;
     g_parse_depth = 0;  /* reset depth guard for this parse */
 
-    ASTNode **stmts = xmalloc_array(MAX_STMTS, sizeof(ASTNode*));
+    /* Grown on demand — a fixed MAX_STMTS cap here silently DROPPED every
+     * top-level statement past 4096, rc=0 (#327). */
+    int cap = 64;
+    ASTNode **stmts = xmalloc_array(cap, sizeof(ASTNode*));
     int count = 0;
 
     p_skip_newlines(&p);
@@ -1650,7 +1660,11 @@ ASTNode* parse(TokenList *tl) {
         if (p_cur(&p)->type == TOK_EOF) break;
         int before = p.pos;
         ASTNode *stmt = parse_statement(&p);
-        if (stmt && count < MAX_STMTS) {
+        if (stmt) {
+            if (count == cap) {
+                cap *= 2;
+                stmts = xrealloc_array(stmts, cap, sizeof(ASTNode*));
+            }
             stmts[count++] = stmt;
         }
         if (p.pos == before) {

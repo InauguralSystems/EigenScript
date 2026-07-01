@@ -927,6 +927,12 @@ check_eigs_suite "nested throw halts caller's later statements; unwinds to enclo
 echo "[110] Loop Caps: 65+ breaks, 33-deep nesting (#335/#336)"
 check_eigs_suite "65th break in for/while; break in 33rd nested loop" test_loop_caps.eigs "All tests passed" 1
 
+# [111] parser statement cap (#327). Statements past a fixed 4096 cap were
+# parsed then silently dropped — at program level and inside blocks (a big
+# define lost its return). Both statement arrays now grow on demand.
+echo "[111] Statement Cap: 4200-stmt program + block (#327)"
+check_eigs_suite "no silent truncation past 4096 statements" test_stmt_cap.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
