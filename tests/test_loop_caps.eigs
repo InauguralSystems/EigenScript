@@ -1,0 +1,336 @@
+# Regression tests for #335 and #336 — compiler loop-context caps.
+# #335: break #65+ in one loop emitted OP_LOOP_ENV_END without its jump
+#       (double free at runtime). The executed break below is #65.
+# #336: loops nested past the old MAX_LOOP_DEPTH (32) bound break to the
+#       32nd loop's context (wrong jump target + stack corruption).
+# Generated shapes — regenerate rather than hand-editing.
+checks is 0
+passed is 0
+
+# --- #335: 65th break executes, in a for-loop ---
+checks is checks + 1
+hit is 0
+for i in range of 3:
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i == 99:
+        break
+    if i >= 0:
+        hit is hit + 1
+        break
+if hit == 1:
+    passed is passed + 1
+
+# --- #335: 65th break executes, in a while-loop ---
+checks is checks + 1
+whit is 0
+w is 0
+loop while w < 3:
+    w is w + 1
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w == 99:
+        break
+    if w >= 1:
+        whit is whit + 1
+        break
+if whit == 1:
+    passed is passed + 1
+
+# --- #336: break inside the 33rd nested loop exits only that loop ---
+checks is checks + 1
+body_n is 0
+a33 is 0
+a32 is 0
+for v1 in range of 2:
+    for v2 in range of 1:
+        for v3 in range of 1:
+            for v4 in range of 1:
+                for v5 in range of 1:
+                    for v6 in range of 1:
+                        for v7 in range of 1:
+                            for v8 in range of 1:
+                                for v9 in range of 1:
+                                    for v10 in range of 1:
+                                        for v11 in range of 1:
+                                            for v12 in range of 1:
+                                                for v13 in range of 1:
+                                                    for v14 in range of 1:
+                                                        for v15 in range of 1:
+                                                            for v16 in range of 1:
+                                                                for v17 in range of 1:
+                                                                    for v18 in range of 1:
+                                                                        for v19 in range of 1:
+                                                                            for v20 in range of 1:
+                                                                                for v21 in range of 1:
+                                                                                    for v22 in range of 1:
+                                                                                        for v23 in range of 1:
+                                                                                            for v24 in range of 1:
+                                                                                                for v25 in range of 1:
+                                                                                                    for v26 in range of 1:
+                                                                                                        for v27 in range of 1:
+                                                                                                            for v28 in range of 1:
+                                                                                                                for v29 in range of 1:
+                                                                                                                    for v30 in range of 1:
+                                                                                                                        for v31 in range of 1:
+                                                                                                                            for v32 in range of 1:
+                                                                                                                                for v33 in range of 1:
+                                                                                                                                    body_n is body_n + 1
+                                                                                                                                    break
+                                                                                                                                a33 is a33 + 1
+                                                                                                                            a32 is a32 + 1
+if body_n == 2 and a33 == 2 and a32 == 2:
+    passed is passed + 1
+
+if checks == passed:
+    print of "All tests passed"
+else:
+    print of f"{passed}/{checks} passed"

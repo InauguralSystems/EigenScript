@@ -12,8 +12,6 @@
 /* ---- Compiler state ---- */
 
 #define MAX_LOCALS 512
-#define MAX_LOOP_DEPTH 32
-#define MAX_BREAK_JUMPS 64
 
 typedef struct {
     char    *name;
@@ -24,11 +22,14 @@ typedef struct {
 } Local;
 
 typedef struct {
-    int break_jumps[MAX_BREAK_JUMPS];
-    int break_count;
-    int continue_target;
-    int scope_depth;
-    int has_fresh_env;  /* 1 if loop emits OP_LOOP_ENV_FRESH per iteration (for-loops) */
+    int *break_jumps;   /* grown on demand — a fixed cap here once dropped the
+                         * 65th break's jump while still emitting its env
+                         * cleanup: double free (#335) */
+    int  break_count;
+    int  break_cap;
+    int  continue_target;
+    int  scope_depth;
+    int  has_fresh_env; /* 1 if loop emits OP_LOOP_ENV_FRESH per iteration (for-loops) */
 } LoopCtx;
 
 /* Dynamic set of name pointers used for escape analysis & module-name tracking.
@@ -45,8 +46,12 @@ typedef struct Compiler {
     Local             locals[MAX_LOCALS];
     int               local_count;
     int               scope_depth;
-    LoopCtx           loops[MAX_LOOP_DEPTH];
+    LoopCtx         **loops;        /* stack of heap-allocated ctxs; a pointer
+                                     * array (not a LoopCtx array) so growth
+                                     * can't dangle an outer loop's lp held
+                                     * across compile_block (#336) */
     int               loop_depth;
+    int               loop_cap;
     Env              *env;          /* for resolving globals at compile time */
     int               stack_depth;  /* tracked stack depth for validation */
     int               max_stack;    /* high-water mark */
@@ -92,6 +97,39 @@ static void name_set_free(NameSet *s) {
 static void compile_node(Compiler *c, ASTNode *node);
 static void compile_node_inner(Compiler *c, ASTNode *node);
 static void compile_block(Compiler *c, ASTNode **stmts, int count);
+
+/* ---- Loop-context stack (#335/#336) ----
+ * Push/pop are strictly balanced within each AST_LOOP/AST_FOR case, so the
+ * stack frees itself when the outermost loop pops — no compiler-teardown
+ * hook needed. */
+static LoopCtx *loop_push(Compiler *c) {
+    if (c->loop_depth == c->loop_cap) {
+        c->loop_cap = c->loop_cap ? c->loop_cap * 2 : 8;
+        c->loops = xrealloc_array(c->loops, c->loop_cap, sizeof(LoopCtx*));
+    }
+    LoopCtx *lp = xcalloc(1, sizeof(LoopCtx));
+    c->loops[c->loop_depth++] = lp;
+    return lp;
+}
+
+static void loop_pop(Compiler *c) {
+    LoopCtx *lp = c->loops[--c->loop_depth];
+    free(lp->break_jumps);
+    free(lp);
+    if (c->loop_depth == 0) {
+        free(c->loops);
+        c->loops = NULL;
+        c->loop_cap = 0;
+    }
+}
+
+static void loop_add_break(LoopCtx *lp, int jump_offset) {
+    if (lp->break_count == lp->break_cap) {
+        lp->break_cap = lp->break_cap ? lp->break_cap * 2 : 8;
+        lp->break_jumps = xrealloc_array(lp->break_jumps, lp->break_cap, sizeof(int));
+    }
+    lp->break_jumps[lp->break_count++] = jump_offset;
+}
 
 /* Cap the compiler's recursion depth over the AST. The walk overflows the C
  * stack on a pathological tree — a long postfix `a[0][0]…` or left-assoc binop
@@ -1486,16 +1524,12 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
     case AST_LOOP: {
         /* Push loop context for break/continue */
-        LoopCtx *lp = NULL;
-        if (c->loop_depth < MAX_LOOP_DEPTH) {
-            lp = &c->loops[c->loop_depth++];
-            lp->break_count = 0;
-            lp->scope_depth = c->scope_depth;
-            lp->has_fresh_env = 0; /* while-loops don't allocate per-iter envs */
-        }
+        LoopCtx *lp = loop_push(c);
+        lp->scope_depth = c->scope_depth;
+        lp->has_fresh_env = 0; /* while-loops don't allocate per-iter envs */
 
         int loop_start = capture_loop_start(c);
-        if (lp) lp->continue_target = loop_start;
+        lp->continue_target = loop_start;
 
         int depth_at_loop = c->stack_depth;
         compile_node(c, node->data.loop.cond);
@@ -1535,11 +1569,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         /* Patch break jumps to land BEFORE OP_NULL so the break path also
          * pushes the loop result, matching the condition-exit/stall-exit paths
          * and the compile-time stack tracking (AST_BREAK's adjust_stack +1). */
-        if (lp) {
-            for (int i = 0; i < lp->break_count; i++)
-                patch_jump(c, lp->break_jumps[i]);
-            c->loop_depth--;
-        }
+        for (int i = 0; i < lp->break_count; i++)
+            patch_jump(c, lp->break_jumps[i]);
+        loop_pop(c);
 
         emit(c, OP_NULL, node->line); /* loop result */
         break;
@@ -1627,24 +1659,20 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             name_set_free(&bound);
         }
 
-        LoopCtx *lp = NULL;
-        if (c->loop_depth < MAX_LOOP_DEPTH) {
-            lp = &c->loops[c->loop_depth++];
-            lp->break_count = 0;
-            lp->scope_depth = c->scope_depth;
-            /* break emits its own per-iteration LOOP_ENV_END only in the
-             * classic fresh-per-iteration path. The skip path has no env; the
-             * persist path has a single LOOP_ENV_END at the loop exit that
-             * break falls through to. */
-            lp->has_fresh_env = (can_skip_env || can_persist_env) ? 0 : 1;
-        }
+        LoopCtx *lp = loop_push(c);
+        lp->scope_depth = c->scope_depth;
+        /* break emits its own per-iteration LOOP_ENV_END only in the
+         * classic fresh-per-iteration path. The skip path has no env; the
+         * persist path has a single LOOP_ENV_END at the loop exit that
+         * break falls through to. */
+        lp->has_fresh_env = (can_skip_env || can_persist_env) ? 0 : 1;
 
         int depth_before_loop = c->stack_depth;
         /* Persist: create the reused loop env once, before the back-edge target
          * so continue/JUMP_BACK never re-create it. */
         if (can_persist_env) emit(c, OP_LOOP_ENV_FRESH, node->line);
         int loop_start = capture_loop_start(c);
-        if (lp) lp->continue_target = loop_start;
+        lp->continue_target = loop_start;
 
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
         /* ITER_NEXT pushes element on non-exit (+1) */
@@ -1686,10 +1714,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         /* Break lands here — env already cleaned by break's LOOP_ENV_END
          * when has_fresh_env=1; in the env-skip path AST_BREAK saw
          * has_fresh_env=0 and skipped the cleanup. */
-        if (lp) {
-            for (int i = 0; i < lp->break_count; i++)
-                patch_jump(c, lp->break_jumps[i]);
-        }
+        for (int i = 0; i < lp->break_count; i++)
+            patch_jump(c, lp->break_jumps[i]);
 
         /* Exit path: ITER_NEXT jumped here (no element pushed), or break jumped here */
         patch_jump(c, exit_jump);
@@ -1702,21 +1728,22 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         emit(c, OP_POP, node->line); /* pop iterator state */
         emit(c, OP_NULL, node->line); /* for-loop result */
 
-        if (lp) c->loop_depth--;
+        loop_pop(c);
         break;
     }
 
     case AST_BREAK: {
         if (c->loop_depth > 0) {
-            LoopCtx *lp = &c->loops[c->loop_depth - 1];
+            LoopCtx *lp = c->loops[c->loop_depth - 1];
             /* Clean up loop env before jumping out, but ONLY if the loop allocated
              * a per-iteration env. While-loops don't — emitting OP_LOOP_ENV_END
              * there would free the surrounding env (often the global one). */
             if (lp->has_fresh_env)
                 emit(c, OP_LOOP_ENV_END, node->line);
-            if (lp->break_count < MAX_BREAK_JUMPS) {
-                lp->break_jumps[lp->break_count++] = emit_jump(c, OP_JUMP, node->line);
-            }
+            /* The jump must ALWAYS pair with the env cleanup above — a capped
+             * break that emitted LOOP_ENV_END and then fell through double-freed
+             * the loop env (#335). */
+            loop_add_break(lp, emit_jump(c, OP_JUMP, node->line));
             /* Phantom +1 for stack accounting (dead code follows jump) */
             adjust_stack(c, 1);
         } else {
@@ -1728,7 +1755,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
     case AST_CONTINUE: {
         if (c->loop_depth > 0) {
-            LoopCtx *lp = &c->loops[c->loop_depth - 1];
+            LoopCtx *lp = c->loops[c->loop_depth - 1];
             emit_loop(c, lp->continue_target, node->line);
             /* Phantom +1 for stack accounting (dead code follows jump) */
             adjust_stack(c, 1);

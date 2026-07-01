@@ -920,6 +920,13 @@ check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-r
 echo "[109] Throw Unwind Across Frames (#322)"
 check_eigs_suite "nested throw halts caller's later statements; unwinds to enclosing try" test_throw_unwind.eigs "All tests passed" 1
 
+# [110] compiler loop-context caps (#335/#336). Break #65+ in one loop used to
+# emit the env cleanup without its jump (double free); loops nested past 32
+# used to bind break to the 32nd loop's context (wrong target + stack
+# corruption). Both caps are now dynamic.
+echo "[110] Loop Caps: 65+ breaks, 33-deep nesting (#335/#336)"
+check_eigs_suite "65th break in for/while; break in 33rd nested loop" test_loop_caps.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

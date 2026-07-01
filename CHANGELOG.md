@@ -5,6 +5,23 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Compiler loop-context caps removed (#335, #336).** Two fixed-size arrays in
+  the compiler silently degraded on big/deep loops. (1) `MAX_BREAK_JUMPS` (64):
+  break #65+ in one loop emitted its `OP_LOOP_ENV_END` cleanup but *dropped the
+  jump* — execution fell through into the rest of the iteration with the loop
+  env already torn down, and the loop's natural exit freed it again (runtime
+  `double free or corruption`, SIGABRT, on well-formed source). (2)
+  `MAX_LOOP_DEPTH` (32): loops nested deeper pushed no `LoopCtx`, so a `break`
+  inside loop 33+ registered with the **32nd** loop's context and got patched to
+  its exit — wrong jump target plus unpopped iterator state corrupting outer
+  iterations, rc=0. Both are now dynamic: the loop stack is a grown array of
+  heap-allocated contexts (pointers, so an outer loop's ctx can't dangle when a
+  nested loop grows the stack) and `break_jumps` grows per context; everything
+  frees when the outermost loop pops, so no compiler-teardown changes. A break's
+  env cleanup and its jump are now emitted unconditionally as a pair.
+  Regression: section [110] (`test_loop_caps.eigs`) — the 65th break executing
+  in a for-loop and a while-loop, and a break inside a 33-deep nest exiting
+  exactly one loop. Found in an adversarial language review.
 - **`throw` now halts the caller's remaining statements (#322).** A `throw` that
   propagated out of a *called* function did not stop the **calling** function
   from running its subsequent statements — execution (including side-effecting
