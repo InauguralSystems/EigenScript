@@ -64,6 +64,41 @@ catch e3:
     undef3_caught is 1
 check of ["unbound in binop raises", undef3_caught, 1]
 
+# --- #338: unsupported operators must RAISE, not silently lex to wrong values ---
+tok1_caught is 0
+try:
+    t1 is eigen_run of "x is 2\nx += 2\nx"
+catch te1:
+    tok1_caught is 1
+check of ["compound += raises (was: silently x+2)", tok1_caught, 1]
+
+tok2_caught is 0
+try:
+    t2 is eigen_run of "a is 5 & 3\na"
+catch te2:
+    tok2_caught is 1
+check of ["bitwise & raises (was: silently 5)", tok2_caught, 1]
+
+tok3_caught is 0
+try:
+    t3 is eigen_run of "b is 4 | 2\nb"
+catch te3:
+    tok3_caught is 1
+check of ["bitwise | raises", tok3_caught, 1]
+
+# --- #338: call spread parity — literal-only, 2+ elements, null-fill ---
+spread_src_lit is "define f2(a, b) as:\n    if b == null:\n        return 99\n    return b\nf2 of [3, 4]"
+check of ["literal 2-elem list spreads", eigen_run of spread_src_lit, 4]
+
+spread_src_var is "define f2(a, b) as:\n    if b == null:\n        return 99\n    return b\npair is [3, 4]\nf2 of pair"
+check of ["variable list does NOT spread (b is null)", eigen_run of spread_src_var, 99]
+
+spread_src_one is "define f2(a, b) as:\n    if b == null:\n        return len of a\n    return 0\nf2 of [7]"
+check of ["1-elem literal binds whole list", eigen_run of spread_src_one, 1]
+
+spread_src_fill is "define f3(a, b, c) as:\n    if c == null:\n        return a + b\n    return 0\nf3 of [1, 2]"
+check of ["short spread null-fills trailing params", eigen_run of spread_src_fill, 3]
+
 if checks == passed:
     print of "All tests passed"
 else:

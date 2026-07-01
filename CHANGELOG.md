@@ -5,6 +5,23 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Meta-interpreter: silent wrong values eliminated (#338).** Two undocumented
+  divergences in `lib/eigen.eigs` produced wrong results with no error on
+  identical source. (1) The tokenizer's final branch *skipped* unknown
+  characters, so unsupported operators silently mangled: `x += 2` lexed as a
+  discarded `x + 2` (variable unchanged), `5 & 3` as two statements (`a is 5`),
+  dot/index compound forms likewise. The tokenizer now **raises** a tokenize
+  error on any character it can't lex (`\r` treated as whitespace); compound
+  assignment and bitwise stay unimplemented but fail loudly. (2) `eigen_eval`'s
+  call node spread *any runtime list* over multi-param functions; the C rule is
+  literal-only (2+ elements, decided at the call-site AST; a variable list
+  binds whole to the first parameter; missing parameters bind to null). The
+  meta call node now checks the argument NODE and null-fills, matching the VM
+  on all four shapes (literal spread / variable no-spread / 1-element literal /
+  short-spread null-fill — each verified against the C VM). Header parity
+  claims updated; loud parse gaps (slices, destructuring, param defaults,
+  `<<`/`>>`) remain tracked as #339. Regression: 7 new checks in section [107]
+  (`test_meta_parity.eigs`).
 - **Parser statement cap removed (#327).** `parse()` and `parse_block` stored
   statements into fixed 4096-entry arrays and silently discarded everything
   past the cap — a 100k-statement program ran only its first 4096 statements
