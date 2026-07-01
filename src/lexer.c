@@ -366,6 +366,29 @@ TokenList tokenize(const char *source) {
                     strbuf expr_buf;
                     strbuf_init(&expr_buf);
                     while (*p && depth > 0) {
+                        /* A string literal inside the interpolation is copied
+                         * wholesale — braces inside it are text, not nesting
+                         * (#334: `f"{"a}b"}"` used to cut at the `}` inside
+                         * the string). Nested f-strings still balance via
+                         * depth counting, since their braces sit outside the
+                         * quotes we skip here. */
+                        if (*p == '"') {
+                            strbuf_append_char(&expr_buf, *p++);
+                            col++;
+                            while (*p && *p != '"') {
+                                if (*p == '\\' && *(p+1)) {
+                                    strbuf_append_char(&expr_buf, *p++);
+                                    col++;
+                                }
+                                strbuf_append_char(&expr_buf, *p++);
+                                col++;
+                            }
+                            if (*p == '"') {
+                                strbuf_append_char(&expr_buf, *p++);
+                                col++;
+                            }
+                            continue;
+                        }
                         if (*p == '{') depth++;
                         else if (*p == '}') { depth--; if (depth == 0) break; }
                         strbuf_append_char(&expr_buf, *p++);
@@ -382,7 +405,13 @@ TokenList tokenize(const char *source) {
                     strbuf_free(&expr_buf);
                     for (int ti = 0; ti < inner.count; ti++) {
                         if (inner.tokens[ti].type == TOK_EOF) break;
-                        if (inner.tokens[ti].type == TOK_NEWLINE) continue;
+                        /* Layout tokens from the sub-lex are meaningless
+                         * inside a spliced expression — a leading space in
+                         * `f"{ x }"` used to lex as line-start INDENT and
+                         * break the parse (#334). */
+                        if (inner.tokens[ti].type == TOK_NEWLINE ||
+                            inner.tokens[ti].type == TOK_INDENT ||
+                            inner.tokens[ti].type == TOK_DEDENT) continue;
                         Token *it = &inner.tokens[ti];
                         tok_add(&tl, it->type, it->num_val, it->str_val, line, col);
                     }

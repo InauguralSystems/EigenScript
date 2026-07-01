@@ -582,6 +582,31 @@ static ASTNode* parse_subscript_suffix(Parser *p, ASTNode *target) {
     return n;
 }
 
+/* Shared postfix chain: `[idx]` / `[a:b]` / `.key`, applied after a primary.
+ * Used by the IDENT branch and the soft-keyword identifier fallbacks
+ * (prev/at/question words) — the fallbacks used to return a bare IDENT with
+ * no postfix, so `prev[0]` was a parse error while `prev + 1` worked (#328).
+ * (The dict/paren branches keep their own inline copies: they attribute
+ * AST_DOT lines slightly differently and aren't part of this fix.) */
+static ASTNode* parse_postfix_chain(Parser *p, ASTNode *n) {
+    while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
+        if (chain_too_deep(p)) break;
+        if (p_cur(p)->type == TOK_DOT) {
+            p_advance(p);
+            Token *key_tok = p_cur(p);
+            p_expect(p, TOK_IDENT);
+            ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
+            dot->data.dot.target = n;
+            dot->data.dot.key = xstrdup(key_tok->str_val);
+            set_name_hash(dot, dot->data.dot.key);
+            n = dot;
+        } else {
+            n = parse_subscript_suffix(p, n);
+        }
+    }
+    return n;
+}
+
 static ASTNode* parse_primary(Parser *p) {
     Token *t = p_cur(p);
 
@@ -605,11 +630,7 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
-        while (p_cur(p)->type == TOK_LBRACKET) {
-            if (chain_too_deep(p)) break;
-            n = parse_subscript_suffix(p, n);
-        }
-        return n;
+        return parse_postfix_chain(p, n);
     }
 
     /* `prev of x` — the value bound to x just before its most recent
@@ -635,7 +656,7 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
-        return n;
+        return parse_postfix_chain(p, n);
     }
 
     /* Bare `at` outside an interrogative falls back to IDENT, like
@@ -645,7 +666,7 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
-        return n;
+        return parse_postfix_chain(p, n);
     }
 
     if (t->type >= TOK_CONVERGED && t->type <= TOK_EQUILIBRIUM) {
@@ -688,22 +709,7 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
         n->data.ident.name = xstrdup(t->str_val);
         set_name_hash(n, n->data.ident.name);
-        while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
-            if (chain_too_deep(p)) break;
-            if (p_cur(p)->type == TOK_DOT) {
-                p_advance(p);
-                Token *key_tok = p_cur(p);
-                p_expect(p, TOK_IDENT);
-                ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
-                dot->data.dot.target = n;
-                dot->data.dot.key = xstrdup(key_tok->str_val);
-                set_name_hash(dot, dot->data.dot.key);
-                n = dot;
-            } else {
-                n = parse_subscript_suffix(p, n);
-            }
-        }
-        return n;
+        return parse_postfix_chain(p, n);
     }
 
     if (t->type == TOK_LPAREN) {

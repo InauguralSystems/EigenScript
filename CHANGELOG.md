@@ -5,6 +5,24 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **f-string interpolation: whitespace and nested-string braces (#334).** Two
+  lexer defects. (1) `f"{ x }"` (leading space) failed with "unexpected indent
+  in expression": the interpolation body is re-lexed as a fresh source string
+  and the splice loop dropped NEWLINE but not INDENT/DEDENT, so the leading
+  space lexed as line-start indentation. All three layout tokens are now
+  skipped. (2) The brace scanner counted `{`/`}` byte-wise, so a brace inside a
+  *string literal within the interpolation* terminated the expression early
+  (`f"{"a}b"}"` → unterminated-string errors). String literals are now copied
+  wholesale (with escape handling); nested f-strings still balance via depth
+  counting. Regression: 6 new checks in `test_fstrings.eigs` [21].
+- **Soft-keyword identifier fallback now takes postfix (#328).** `prev`, `at`,
+  and the six question words fall back to ordinary identifiers outside their
+  special forms, but the fallback returned a bare IDENT with no postfix chain —
+  `prev is [1,2]` then `prev[0]` was a parse-error cascade while `prev + 1`
+  worked. All soft-keyword fallbacks now share the IDENT branch's postfix
+  chain (`[i]`, `[a:b]`, `.key`) via a new `parse_postfix_chain` helper; the
+  special forms (`prev of x`, `what is e`) still win. Regression: SK13-SK18 in
+  `test_soft_keyword_idents.eigs`.
 - **Meta-interpreter: silent wrong values eliminated (#338).** Two undocumented
   divergences in `lib/eigen.eigs` produced wrong results with no error on
   identical source. (1) The tokenizer's final branch *skipped* unknown
