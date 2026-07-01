@@ -57,4 +57,21 @@ v is 5
 assert of [(prev of v) == 1, "SK11 prev of x stays temporal"]
 assert of [(what is v) == 5, "SK12 what is x stays interrogative"]
 
+# --- #328: the identifier fallback takes postfix like any IDENT ---
+prev is [1, 2]
+assert of [prev[0] == 1, "SK13 prev[0] indexes"]
+at is {"k": 7}
+assert of [at.k == 7, "SK14 at.k dot-access"]
+assert of [at["k"] == 7, "SK15 at[key] indexes"]
+define sk_pick(who) as:
+    return who[1]
+assert of [(sk_pick of ([10, 20, 30])) == 20, "SK16 question-word param postfix"]
+sk_seen is 0
+for how in [[4], [5, 9]]:
+    sk_seen is sk_seen + how[0]
+assert of [sk_seen == 9, "SK17 question-word loop var postfix"]
+sk_v is 1
+sk_v is 5
+assert of [(prev of sk_v) == 1, "SK18 prev of stays temporal with prev bound"]
+
 print of "soft keyword idents: all passed"

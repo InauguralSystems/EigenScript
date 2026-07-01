@@ -37,4 +37,17 @@ manual is "x is " + (str of x)
 interp is f"x is {x}"
 assert_eq of [manual, interp, "f-string matches concat"]
 
+# --- #334: whitespace inside the braces must not change the parse ---
+w is 5
+assert_eq of [f"{ w }", "5", "leading space in interpolation"]
+assert_eq of [f"{  w + 1  }", "6", "spaces around expression"]
+assert_eq of [f"{w }", "5", "trailing space in interpolation"]
+
+# --- #334: braces inside a nested string literal are text, not nesting ---
+assert_eq of [f"{"a}b"}", "a}b", "closing brace inside string"]
+assert_eq of [f"{"c{d"}", "c{d", "opening brace inside string"]
+
+# nested f-strings still balance via depth counting
+assert_eq of [f"a{f"inner{w}"}b", "ainner5b", "nested f-string"]
+
 test_summary of null
