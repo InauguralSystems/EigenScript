@@ -5,6 +5,18 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Parser statement cap removed (#327).** `parse()` and `parse_block` stored
+  statements into fixed 4096-entry arrays and silently discarded everything
+  past the cap — a 100k-statement program ran only its first 4096 statements
+  and exited 0; a `define` body past the cap lost its tail *including its
+  `return`* and yielded null. Both arrays now grow on demand (and no longer
+  preallocate 32KB per block — 256-deep nesting used to reserve ~8MB up
+  front). Exactly the wrong failure mode for generated programs (iLambdaAi).
+  Regression: section [111] (`test_stmt_cap.eigs`) — a 4200-statement program
+  and a 4200-statement function body run in full. Note: removing the cap
+  exposes a pre-existing quadratic compile cost on programs with tens of
+  thousands of *unique* module-scope names (NameSet linear-scan dedup) —
+  tracked separately; normal programs are unaffected.
 - **Compiler loop-context caps removed (#335, #336).** Two fixed-size arrays in
   the compiler silently degraded on big/deep loops. (1) `MAX_BREAK_JUMPS` (64):
   break #65+ in one loop emitted its `OP_LOOP_ENV_END` cleanup but *dropped the
