@@ -1,0 +1,108 @@
+# #322: a `throw` that propagates out of a called function must halt the CALLER's
+# subsequent statements (unwind to the nearest enclosing try/catch), not keep
+# executing them. Before the fix, CHECK_ERROR only caught in the throwing frame
+# or halted when no handler existed anywhere; when a handler existed only in an
+# OUTER frame it fell through and kept running the current function's remaining
+# statements. Each case below sets an outer flag from a statement that must NOT
+# run after a nested throw, and asserts it stayed unset.
+
+load_file of "lib/test.eigs"
+
+checks is 0
+passed is 0
+define check(label, cond) as:
+    checks is checks + 1
+    if cond:
+        passed is passed + 1
+    else:
+        print of f"FAIL: {label}"
+
+# --- 1. statement after a nested throw does not run ---
+ran_after is 0
+define thrower() as:
+    throw of "boom"
+define caller_one() as:
+    thrower of []
+    ran_after is 1            # must NOT run
+c1 is 0
+try:
+    caller_one of []
+catch e:
+    c1 is 1
+check of ["nested throw is caught", c1 == 1]
+check of ["statement after nested throw did not run", ran_after == 0]
+
+# --- 2. multi-level (a->b->c): unwind through 3 frames, no intermediate runs ---
+levels_ran is 0
+define lc() as:
+    throw of "deep"
+    levels_ran is levels_ran + 100
+define lb() as:
+    lc of []
+    levels_ran is levels_ran + 10
+define la() as:
+    lb of []
+    levels_ran is levels_ran + 1
+c2 is 0
+try:
+    la of []
+catch e:
+    c2 is 1
+check of ["3-level throw is caught", c2 == 1]
+check of ["no intermediate statement ran across 3 frames", levels_ran == 0]
+
+# --- 3. throw inside a loop inside a function: after-loop statement doesn't run
+#        (exercises unwinding a loop-fresh child env) ---
+loop_after is 0
+define worker() as:
+    j is 0
+    loop while j < 10:
+        if j == 3:
+            throw of "in-loop"
+        j is j + 1
+    loop_after is 1          # must NOT run
+c3 is 0
+try:
+    worker of []
+catch e:
+    c3 is 1
+check of ["loop-throw is caught", c3 == 1]
+check of ["after-loop statement did not run", loop_after == 0]
+
+# --- 4. a callee that catches its OWN error must NOT over-unwind: the caller
+#        continues normally afterward ---
+define risky() as:
+    try:
+        throw of "inner"
+    catch e:
+        return "handled"
+outer_ran is 0
+r is risky of []
+outer_ran is 1               # MUST run (risky handled its own error)
+check of ["inner-catch returns handled", r == "handled"]
+check of ["caller continues after callee self-catches", outer_ran == 1]
+
+# --- 5. propagation still holds when the throwing chain is JIT-hot ---
+jit_leaks is 0
+define hev(x) as:
+    if x > 5:
+        throw of "boom"
+    return x + 1
+define hcaller(x) as:
+    return (hev of x) + 1
+i is 0
+loop while i < 20000:
+    hcaught is 0
+    try:
+        v is hcaller of i
+    catch e:
+        hcaught is 1
+    if (i > 5) and (hcaught == 0):
+        jit_leaks is jit_leaks + 1
+    i is i + 1
+check of ["JIT-hot chain propagates (no leaked continuations)", jit_leaks == 0]
+
+if checks == passed:
+    print of "All tests passed"
+else:
+    print of f"{passed}/{checks} passed"

@@ -1988,7 +1988,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         [OP_SLICE_GET] = &&lbl_SLICE_GET,
     };
     #define CHECK_ERROR() do { \
-        if (__builtin_expect(g_has_error, 0)) { \
+        while (__builtin_expect(g_has_error, 0)) { \
             if (frame->try_count > 0 && !g_exit_requested) { \
                 g_has_error = 0; \
                 g_try_depth--; \
@@ -2005,6 +2005,25 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                  * cascades — see stack-overflow). g_has_error stays set so \
                  * a re-entrant caller, or main, sees the failure. */ \
                 goto vm_error_halt; \
+            } else { \
+                /* #322: error set, no handler in THIS frame, but one exists in \
+                 * an OUTER frame. The error must unwind to it — NOT keep running \
+                 * this function's remaining statements. Pop this frame (mirror \
+                 * vm_error_halt's per-frame drain: drain its stack window, free \
+                 * an owned env, restore its loop-stall globals, drop its chunk \
+                 * ref), restore the caller as the current frame, and loop to \
+                 * re-check there (catch if the caller has a handler, else unwind \
+                 * further). vm_handler_in_range being true guarantees a frame \
+                 * below the top, so frame_count-1 stays >= base_frame. */ \
+                while (g_vm.sp > frame->bp) slot_decref(g_vm.stack[--g_vm.sp]); \
+                if (frame->owns_env) env_decref(frame->env); \
+                g_loop_stall_count = frame->saved_stall_count; \
+                g_loop_iterations  = frame->saved_loop_iter; \
+                chunk_decref(frame->chunk); \
+                g_vm.frame_count--; \
+                frame = &g_vm.frames[g_vm.frame_count - 1]; \
+                ip = frame->ip; \
+                chunk = frame->chunk; \
             } \
         } \
     } while(0)

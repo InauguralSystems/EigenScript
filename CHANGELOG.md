@@ -5,6 +5,25 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **`throw` now halts the caller's remaining statements (#322).** A `throw` that
+  propagated out of a *called* function did not stop the **calling** function
+  from running its subsequent statements — execution (including side-effecting
+  builtin calls) continued until the nearest enclosing `try`, or the function
+  returned. `CHECK_ERROR` (the per-instruction error hook) only caught in the
+  *throwing* frame or halted when no handler existed anywhere; when a handler
+  existed only in an **outer** frame it fell through and kept executing the
+  current frame. Fix: `CHECK_ERROR` is now a loop that, for that missing case,
+  unwinds the current frame (drains its stack window, frees an owned env,
+  restores its loop-stall globals, drops its chunk ref — mirroring the uncaught
+  `vm_error_halt` per-frame drain) and re-checks at the caller, repeating until
+  it reaches the handler frame (catch) or runs out (halt). The control case
+  (throw directly in a `try` body) and the uncaught case were already correct
+  and are unchanged; a callee that catches its own error still doesn't
+  over-unwind. Since `DISPATCH` runs `CHECK_ERROR` before every instruction, the
+  fix covers the whole interpreter; JIT-hot throwing chains bail to the
+  interpreter and propagate correctly too. Regression: section [109]
+  (`test_throw_unwind`) — multi-level nesting, throw-in-a-loop-in-a-function,
+  inner-catch (no over-unwind), and a JIT-hot chain. Surfaced while fixing #306.
 - **`sandbox_run` allocation budget (#292).** The sandbox bounded loop back-edges
   and the builtin surface but imposed no *memory* budget: an allowlisted allocator
   (`zeros`/`fill`/`buffer`/`range`) could exhaust RAM in one capped-but-large call,
