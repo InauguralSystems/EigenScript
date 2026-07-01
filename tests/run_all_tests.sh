@@ -913,6 +913,13 @@ check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0
 echo "[108] Sandbox Allocation Budget (#292)"
 check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-run reset" test_sandbox_budget.eigs "All tests passed" 1
 
+# [109] throw propagation across call frames (#322). A throw out of a called
+# function must unwind to the nearest enclosing try — NOT keep running the
+# caller's remaining statements. Covers multi-level, loop-in-fn, inner-catch
+# (no over-unwind), and a JIT-hot throwing chain.
+echo "[109] Throw Unwind Across Frames (#322)"
+check_eigs_suite "nested throw halts caller's later statements; unwinds to enclosing try" test_throw_unwind.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
