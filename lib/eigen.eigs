@@ -521,6 +521,21 @@ define _p_skip_newlines(p) as:
     loop while (_p_peek_type of p) == "newline":
         _p_advance of p
 
+# Statement-terminator enforcement (#326 parity): a simple statement must be
+# followed by newline / dedent / eof. The C parser rejects leftover tokens
+# ("one statement per line"); accepting them here would be a silent
+# over-acceptance divergence.
+define _p_end_statement(p) as:
+    tt is _p_peek_type of p
+    if tt == "newline":
+        return null
+    if tt == "eof":
+        return null
+    if tt == "dedent":
+        return null
+    tok is _p_cur of p
+    throw of f"parse error: unexpected {tok[0]} ('{tok[1]}') after statement at line {tok[2]} — one statement per line"
+
 define _p_parse_block(p) as:
     stmts is []
     if (_p_peek_type of p) == "indent":
@@ -606,6 +621,7 @@ define _p_parse_statement(p) as:
         if (_p_peek_val of p) == "return":
             _p_advance of p
             expr is _p_parse_expr of p
+            _p_end_statement of p
             return ["_line", _stmt_line, ["return", expr]]
 
         # for
@@ -652,17 +668,20 @@ define _p_parse_statement(p) as:
         # break
         if (_p_peek_val of p) == "break":
             _p_advance of p
+            _p_end_statement of p
             return ["_line", _stmt_line, ["break"]]
 
         # continue
         if (_p_peek_val of p) == "continue":
             _p_advance of p
+            _p_end_statement of p
             return ["_line", _stmt_line, ["continue"]]
 
         # import
         if (_p_peek_val of p) == "import":
             _p_advance of p
             name_tok is _p_expect of [p, "ident"]
+            _p_end_statement of p
             return ["_line", _stmt_line, ["import", name_tok[1]]]
 
         # match
@@ -715,11 +734,13 @@ define _p_parse_statement(p) as:
                 if (_p_peek_val of p) == "is":
                     _p_advance of p
                     expr is _p_parse_expr of p
+                    _p_end_statement of p
                     return ["_line", _stmt_line, ["dot_assign", target[1], target[2], expr]]
             if (target[0] == "index") and ((_p_peek_type of p) == "kw"):
                 if (_p_peek_val of p) == "is":
                     _p_advance of p
                     expr is _p_parse_expr of p
+                    _p_end_statement of p
                     return ["_line", _stmt_line, ["index_assign", target[1], target[2], expr]]
             # Not an assignment — restore and fall through
             set_at of [p, 1, saved_pos]
@@ -732,12 +753,14 @@ define _p_parse_statement(p) as:
             if (_p_peek_val of p) == "is":
                 _p_advance of p
                 expr is _p_parse_expr of p
+                _p_end_statement of p
                 return ["_line", _stmt_line, ["assign", name, expr]]
         # Not an assignment — restore and parse as expression
         set_at of [p, 1, saved_pos]
 
     # Expression statement
     expr is _p_parse_expr of p
+    _p_end_statement of p
     return ["_line", _stmt_line, expr]
 
 # ---- Postfix parser for dot/index chains (used by assignment detection) ----

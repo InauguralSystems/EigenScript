@@ -940,6 +940,13 @@ check_eigs_suite "no silent truncation past 4096 statements" test_stmt_cap.eigs 
 echo "[112] Stray break/continue Are Compile Errors (#337)"
 check_eigs_suite "eval'd stray break/continue raise; in-loop still works" test_stray_break.eigs "All tests passed" 1
 
+# [113] statement terminator (#326). Leftover tokens after a complete
+# statement are a parse error (were a silent second statement on the same
+# line — the `throw "x"` typo class). Meta-interpreter enforces the same.
+# Direct-source rc=1 covered by examples/errors/ [90].
+echo "[113] Statement Terminator Enforced (#326)"
+check_eigs_suite "one statement per line; eval/meta parity" test_stmt_terminator.eigs "All tests passed" 1
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

@@ -38,6 +38,34 @@ static int p_match(Parser *p, TokType type) {
     return 0;
 }
 
+/* Require the statement to end HERE: a NEWLINE (consumed), or EOF/DEDENT
+ * (left for the enclosing loop). Anything else is a parse error (#326) —
+ * the old tolerant p_match(TOK_NEWLINE) let leftover tokens run as a
+ * second statement on the same line: `x is 2 x is 3` set x to 3, and a
+ * typo'd `throw "boom"` (missing `of`) silently dropped the raise.
+ * Recovery skips to end of line so one bad line yields one diagnostic. */
+static void p_end_statement(Parser *p) {
+    if (p_match(p, TOK_NEWLINE)) return;
+    TokType t = p_cur(p)->type;
+    if (t == TOK_EOF || t == TOK_DEDENT) return;
+    Token *tok = p_cur(p);
+    fprintf(stderr, "Parse error line %d: unexpected %s after statement",
+            tok->line, tok_type_name(tok->type));
+    if (tok->str_val) fprintf(stderr, " ('%s')", tok->str_val);
+    fprintf(stderr, " — one statement per line\n");
+    {
+        char m[160];
+        snprintf(m, sizeof(m), "unexpected %s after statement",
+                 tok_type_name(tok->type));
+        eigs_record_first_error(tok->line, m);
+    }
+    g_parse_errors++;
+    while (p_cur(p)->type != TOK_NEWLINE && p_cur(p)->type != TOK_EOF &&
+           p_cur(p)->type != TOK_DEDENT)
+        p_advance(p);
+    p_match(p, TOK_NEWLINE);
+}
+
 static void p_expect(Parser *p, TokType type) {
     if (p_cur(p)->type != type) {
         fprintf(stderr, "Parse error line %d: expected %s, got %s",
@@ -1407,7 +1435,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
     if (t->type == TOK_RETURN) {
         p_advance(p);
         ASTNode *expr = parse_expression(p);
-        p_match(p, TOK_NEWLINE);
+        p_end_statement(p);
         ASTNode *n = make_node(AST_RETURN, p_cur(p)->line);
         n->data.ret.expr = expr;
         return n;
@@ -1420,16 +1448,19 @@ static ASTNode* parse_statement_inner(Parser *p) {
         ASTNode *n = make_node(AST_IMPORT, t->line);
         n->data.import.module_name = xstrdup(name_tok->str_val);
         set_name_hash(n, n->data.import.module_name);
+        p_end_statement(p);
         return n;
     }
 
     if (t->type == TOK_BREAK) {
         p_advance(p);
+        p_end_statement(p);
         return make_node(AST_BREAK, t->line);
     }
 
     if (t->type == TOK_CONTINUE) {
         p_advance(p);
+        p_end_statement(p);
         return make_node(AST_CONTINUE, t->line);
     }
 
@@ -1526,7 +1557,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             p_advance(p); /* skip ']' */
             p_advance(p); /* skip 'is' (scan verified) */
             ASTNode *rhs = parse_expression(p);
-            p_match(p, TOK_NEWLINE);
+            p_end_statement(p);
             ASTNode *node = make_node(AST_LIST_PATTERN_ASSIGN, line);
             node->data.list_pattern_assign.name_count = n;
             node->data.list_pattern_assign.names = xmalloc_array(n, sizeof(char*));
@@ -1614,7 +1645,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             binop->data.binop.right = expr;
             expr = binop;
         }
-        p_match(p, TOK_NEWLINE);
+        p_end_statement(p);
         /* Line/col come from the name token — the statement's real start.
          * Using p_cur here read the NEXT statement's line (p_match above
          * already consumed this line's newline), offsetting every
@@ -1632,7 +1663,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
         p_expect_ident_like(p);
         p_expect(p, TOK_IS);
         ASTNode *expr = parse_expression(p);
-        p_match(p, TOK_NEWLINE);
+        p_end_statement(p);
 
         ASTNode *n = make_node_col(AST_ASSIGN, local_tok->line, local_tok->col);
         n->data.assign.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
@@ -1643,7 +1674,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
     }
 
     ASTNode *expr = parse_expression(p);
-    p_match(p, TOK_NEWLINE);
+    p_end_statement(p);
     return expr;
 }
 
