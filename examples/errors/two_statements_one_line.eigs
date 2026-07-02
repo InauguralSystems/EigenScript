@@ -1,0 +1,7 @@
+# ERROR DEMO — one statement per line.
+# Leftover tokens after a complete statement used to silently run as a
+# SECOND statement (`x is 2 x is 3` set x to 3; a typo'd `throw "boom"`
+# missing `of` silently dropped the raise). Now a parse error (#326).
+# expect-error: unexpected identifier after statement ('x') — one statement per line
+x is 2 x is 3
+print of (str of x)

@@ -1,0 +1,63 @@
+# Regression for #326 — the statement terminator is enforced: leftover
+# tokens after a complete statement are a parse error, not a second
+# statement on the same line. Direct-source rc=1 is pinned by
+# examples/errors/two_statements_one_line.eigs [90]; this file pins the
+# eval / load_file surfaces, meta-interpreter parity, and positive controls.
+checks is 0
+passed is 0
+
+# eval'd multi-statement line raises
+checks is checks + 1
+c1 is 0
+try:
+    eval of "x is 2 x is 3"
+catch e1:
+    c1 is 1
+if c1 == 1:
+    passed is passed + 1
+
+# the throw-typo class: `throw "x"` (missing of) is now a parse error
+checks is checks + 1
+c2 is 0
+try:
+    eval of "throw \"bang\""
+catch e2:
+    c2 is 1
+if c2 == 1:
+    passed is passed + 1
+
+# trailing garbage after a complete expression raises
+checks is checks + 1
+c3 is 0
+try:
+    eval of "y is 2 3"
+catch e3:
+    c3 is 1
+if c3 == 1:
+    passed is passed + 1
+
+# meta-interpreter parity: eigen_run rejects the same shape
+load_file of "lib/eigen.eigs"
+checks is checks + 1
+c4 is 0
+try:
+    r4 is eigen_run of "x is 2 x is 3"
+catch e4:
+    c4 is 1
+if c4 == 1:
+    passed is passed + 1
+
+# positive controls: normal one-statement lines are unaffected
+checks is checks + 1
+v is eval of "a is 1\na + 41"
+if v == 42:
+    passed is passed + 1
+checks is checks + 1
+m is eigen_run of "b is 2\nb * 3"
+if m == 6:
+    passed is passed + 1
+
+if checks == passed:
+    print of "All tests passed"
+else:
+    print of f"{passed}/{checks} passed"

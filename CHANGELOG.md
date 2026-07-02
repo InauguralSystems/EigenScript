@@ -5,6 +5,27 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **The statement terminator is enforced (#326).** Every statement path ended
+  in a tolerant `p_match(TOK_NEWLINE)`, so the NEWLINE in the documented
+  grammar (`program = { statement NEWLINE }`) was never required — any
+  leftover tokens on a line silently parsed as a *second* statement:
+  `x is 2 x is 3` set x to 3, `y is 2 3` discarded the 3, and the typo'd
+  `throw "boom"` (missing `of`) evaluated `throw` and `"boom"` as two
+  discarded expressions — silently disabling error handling. A statement must
+  now end at NEWLINE/EOF/DEDENT (`Parse error line N: unexpected X after
+  statement — one statement per line`), with recovery to end-of-line so one
+  bad line yields one diagnostic; `break`/`continue`/`import` enforce it too
+  (`break 5` no longer runs `5` as a statement). The meta-interpreter's
+  parser (`lib/eigen.eigs`) enforces the same rule at its eight simple-
+  statement return points — accepting the shape there would be a silent
+  over-acceptance divergence. GRAMMAR.md and SPEC.md already promised this
+  ("a statement ends at the end of its line"); the implementation now
+  matches. Known #315 (`1.2.3` silently splitting) is fixed as a side
+  effect: the second half is now a parse error. Regression: section [113]
+  (`test_stmt_terminator.eigs`) + `examples/errors/two_statements_one_line.eigs`
+  gated by [90]. NOTE for ouroboros: `frontend.eigs` currently mirrors the
+  old tolerant behavior and must land the same enforcement (tracked in
+  ouroboros#57) or VM-vs-AOT acceptance diverges.
 - **`break`/`continue` outside a loop are now compile errors (#337).** They
   compiled to silent no-ops (an explicit `OP_NULL`), so a mis-indented `break`
   left its loop spinning with no diagnostic — including inside a function body
