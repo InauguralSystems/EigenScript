@@ -375,6 +375,10 @@ char* format_source_string(const char *source) {
 }
 
 int eigenscript_fmt(const char *path, int write_mode) {
+#if EIGENSCRIPT_FREESTANDING
+    (void)path; (void)write_mode;
+    return 1;   /* --fmt is a host-CLI tool; no filesystem here */
+#else
     long src_size = 0;
     char *source = read_file_util(path, &src_size);
     if (!source) {
@@ -402,4 +406,5 @@ int eigenscript_fmt(const char *path, int write_mode) {
 
     free(formatted);
     return 0;
+#endif /* !EIGENSCRIPT_FREESTANDING */
 }

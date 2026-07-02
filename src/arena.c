@@ -64,6 +64,7 @@ char* xstrdup(const char *s) {
     return r;
 }
 
+#if !EIGENSCRIPT_FREESTANDING
 FILE* xfopen_write(const char *path, const char *mode) {
     /* Bare fopen("w"/"a") creates files with mode 0666 & ~umask; a permissive
      * umask leaves the file world-writable (CodeQL cpp/world-writable-file-creation).
@@ -86,6 +87,7 @@ FILE* xfopen_write(const char *path, const char *mode) {
     if (!fp) { close(fd); return NULL; }
     return fp;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 void* xmalloc_array(size_t nmemb, size_t size) {
     size_t total = safe_size_mul(nmemb, size);

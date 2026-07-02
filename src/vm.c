@@ -1773,7 +1773,7 @@ void *eigs_jit_load_eigs_current(void) {
 }
 
 void eigs_jit_get_layout(EigsJitLayout *out) {
-#if defined(__x86_64__)
+#if EIGS_JIT_ENABLED
     out->off_thread_vm                = (int)offsetof(EigsThread, vm);
     out->off_thread_unobserved_depth  = (int)offsetof(EigsThread, unobserved_depth);
     out->off_vm_owner                 = (int)offsetof(VM, owner);
@@ -4358,6 +4358,15 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     /* ---- Modules ---- */
 
     CASE(IMPORT): {
+#if EIGENSCRIPT_FREESTANDING
+        /* No filesystem to resolve modules against. Raise rather than
+         * "module not found" so the diagnosis names the real cause. */
+        ip += 2;
+        runtime_error(current_line,
+            "import: no filesystem in the freestanding profile");
+        vm_push(make_null());
+        DISPATCH();
+#else
         uint16_t idx = read_u16(ip); ip += 2;
         const char *name = chunk->const_interns[idx];
 
@@ -4503,6 +4512,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         env_decref(mod_env);
         vm_push(mod_dict);
         DISPATCH();
+#endif /* !EIGENSCRIPT_FREESTANDING */
     }
 
     CASE(MATCH): {

@@ -108,6 +108,10 @@ EigsValue *eigs_eval_string(const char *src) {
 }
 
 EigsValue *eigs_eval_file(const char *path) {
+#if EIGENSCRIPT_FREESTANDING
+    (void)path;
+    return NULL;   /* no filesystem — embed callers pass source strings */
+#else
     if (!path || !eigs_current) return NULL;
     /* Update script_dir so `import` / `load_file` inside the source can
      * resolve relative paths the same way the CLI does. */
@@ -127,6 +131,7 @@ EigsValue *eigs_eval_file(const char *path) {
     EigsValue *r = eigs_eval_string(src);
     free(src);
     return r;
+#endif /* !EIGENSCRIPT_FREESTANDING */
 }
 
 /* ---- Errors ------------------------------------------------------- */

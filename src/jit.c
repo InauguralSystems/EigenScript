@@ -42,6 +42,16 @@ struct EigsJitCache {
     int      sealed;
 };
 
+#if EIGENSCRIPT_FREESTANDING
+/* No exec pages without the map_exec HAL root — every cache op is a
+ * benign failure and the compile hooks (stubbed under !EIGS_JIT_ENABLED)
+ * never ask for one. */
+EigsJitCache *jit_cache_new(size_t page_count) { (void)page_count; return NULL; }
+void jit_cache_free(EigsJitCache *jc) { (void)jc; }
+void *jit_cache_alloc(EigsJitCache *jc, size_t bytes) { (void)jc; (void)bytes; return NULL; }
+int jit_cache_seal(EigsJitCache *jc) { (void)jc; return -1; }
+int jit_cache_unseal(EigsJitCache *jc) { (void)jc; return -1; }
+#else
 EigsJitCache *jit_cache_new(size_t page_count) {
     if (page_count == 0) page_count = 1;
     long ps = sysconf(_SC_PAGESIZE);
@@ -112,6 +122,8 @@ int jit_cache_unseal(EigsJitCache *jc) {
     return 0;
 }
 
+#endif /* EIGENSCRIPT_FREESTANDING cache stubs */
+
 size_t jit_cache_used(const EigsJitCache *jc) {
     return jc ? jc->used : 0;
 }
@@ -123,7 +135,7 @@ size_t jit_cache_used(const EigsJitCache *jc) {
  *
  * 11 bytes total. */
 JitConstFn jit_emit_const_return(EigsJitCache *jc, int64_t value) {
-#if defined(__x86_64__)
+#if EIGS_JIT_ENABLED
     uint8_t *code = jit_cache_alloc(jc, 11);
     if (!code) return NULL;
     code[0] = 0x48;
@@ -381,7 +393,7 @@ void jit_thread_destroy(EigsThread *th) {
     }
 }
 
-#if defined(__x86_64__)
+#if EIGS_JIT_ENABLED
 /* Stage 3b: layout descriptor captured once via the vm.c-owned probe. */
 static int g_layout_inited = 0;
 static EigsJitLayout g_layout;
@@ -2197,7 +2209,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                  int *out_advance,
                                  uint8_t *out_stop_op) {
     g_jit_scanned_chunks++;
-#if !defined(__x86_64__)
+#if !EIGS_JIT_ENABLED
     (void)chunk;
     (void)entry_offset; (void)advance_field_offset; (void)out_advance;
     (void)out_stop_op;

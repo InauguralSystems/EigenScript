@@ -779,6 +779,10 @@ int lint_collect(ASTNode *ast, LintDiag *out, int max) {
 /* ---- Main lint entry ---- */
 
 int eigenscript_lint(const char *path, int json_mode) {
+#if EIGENSCRIPT_FREESTANDING
+    (void)path; (void)json_mode;
+    return 1;   /* lint is a host-CLI tool; no filesystem here */
+#else
     long src_size = 0;
     char *source = read_file_util(path, &src_size);
     if (!source) {
@@ -853,4 +857,5 @@ int eigenscript_lint(const char *path, int json_mode) {
     free(source);
 
     return ctx.warning_count > 0 ? 1 : 0;
+#endif /* !EIGENSCRIPT_FREESTANDING */
 }

@@ -65,13 +65,16 @@ Value* builtin_flush(Value *arg) {
 static struct termios g_orig_termios;
 static int g_raw_mode = 0;
 
+#if !EIGENSCRIPT_FREESTANDING
 static void restore_terminal(void) {
     if (g_raw_mode) {
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_orig_termios);
         g_raw_mode = 0;
     }
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 static void enable_raw_mode(void) {
     if (g_raw_mode) return;
     tcgetattr(STDIN_FILENO, &g_orig_termios);
@@ -83,7 +86,9 @@ static void enable_raw_mode(void) {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
     g_raw_mode = 1;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_raw_key(Value *arg) {
     (void)arg;
     enable_raw_mode();
@@ -102,6 +107,7 @@ Value* builtin_raw_key(Value *arg) {
     }
     return make_str(buf);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* usleep of microseconds — pause execution */
 Value* builtin_usleep(Value *arg) {
@@ -1390,6 +1396,7 @@ Value* builtin_str_replace(Value *arg) {
 
 /* ==== BUILTIN: match — regex match, return list of groups ==== */
 /* match of [string, pattern] -> [full_match, group1, ...] or [] */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_match(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
     if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR)
@@ -1418,9 +1425,11 @@ Value* builtin_match(Value *arg) {
     regfree(&re);
     return result;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: match_all — find all matches of pattern ==== */
 /* match_all of [string, pattern] -> [match1, match2, ...] */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_match_all(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
     if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR)
@@ -1448,9 +1457,11 @@ Value* builtin_match_all(Value *arg) {
     regfree(&re);
     return result;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: regex_replace — replace all matches ==== */
 /* regex_replace of [string, pattern, replacement] -> string */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_regex_replace(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
     if (arg->data.list.items[0]->type != VAL_STR ||
@@ -1486,6 +1497,7 @@ Value* builtin_regex_replace(Value *arg) {
     strbuf_free(&out);
     return v;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: str_upper ==== */
 Value* builtin_str_upper(Value *arg) {
@@ -1663,7 +1675,11 @@ static void ensure_random_seeded(void) {
     if (!g_random_seeded) {
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
+#if EIGENSCRIPT_FREESTANDING
+        srand48(ts.tv_sec ^ ts.tv_nsec);   /* no pids on bare metal */
+#else
         srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
+#endif
         g_random_seeded = 1;
     }
 }
@@ -1711,6 +1727,7 @@ Value* builtin_seed_random(Value *arg) {
 
 static FILE *g_stream_file = NULL;
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_stream_open(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return make_num(0);
@@ -1730,7 +1747,9 @@ Value* builtin_stream_open(Value *arg) {
     }
     return make_num(1);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_stream_write(Value *arg) {
     if (!g_stream_file || !arg || arg->type != VAL_NUM) return make_num(0);
     double val = arg->data.num;
@@ -1741,7 +1760,9 @@ Value* builtin_stream_write(Value *arg) {
     }
     return make_num(1);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_stream_close(Value *arg) {
     (void)arg;
     if (!g_stream_file) return make_num(0);
@@ -1749,6 +1770,7 @@ Value* builtin_stream_close(Value *arg) {
     g_stream_file = NULL;
     return make_num(ok ? 1 : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ---- Command-line arguments ---- */
 static int g_argc = 0;
@@ -1832,6 +1854,7 @@ Value* builtin_path_ext(Value *arg) {
 /* ---- Filesystem ---- */
 
 /* mkdir of "path" → 1 on success, 0 on failure. Creates parents. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_mkdir(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_num(0);
     /* Simple recursive mkdir */
@@ -1849,9 +1872,11 @@ Value* builtin_mkdir(Value *arg) {
     struct stat st;
     return make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ls of "path" → list of filenames in directory, or [] on failure.
  * Matches `ls -1` default behavior: hidden entries (starting with '.') are excluded. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_ls(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_list(0);
     Value *list = make_list(0);
@@ -1865,20 +1890,24 @@ Value* builtin_ls(Value *arg) {
     closedir(d);
     return list;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* getcwd of null → current working directory as string */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_getcwd(Value *arg) {
     (void)arg;
     char buf[4096];
     if (getcwd(buf, sizeof(buf))) return make_str(buf);
     return make_str("");
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* exe_path of null → absolute path of the running interpreter binary.
  * Lets an EigenScript program re-invoke the same interpreter — e.g. a
  * test runner spawning `exec_capture of [exe_path of null, testfile]`,
  * which is more robust than assuming `eigenscript` is on PATH. Reads
  * /proc/self/exe; falls back to argv[0]. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_exe_path(Value *arg) {
     (void)arg;
     char buf[4096];
@@ -1890,14 +1919,18 @@ Value* builtin_exe_path(Value *arg) {
     if (g_argv && g_argc > 0 && g_argv[0]) return make_str(g_argv[0]);
     return make_str("eigenscript");
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* chdir of "path" → 1 on success, 0 on failure */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_chdir(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_num(0);
     return make_num(chdir(arg->data.str) == 0 ? 1 : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* mktemp of null → path to a new temporary file */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_mktemp(Value *arg) {
     (void)arg;
     char tmpl[] = "/tmp/eigen_XXXXXX";
@@ -1906,6 +1939,7 @@ Value* builtin_mktemp(Value *arg) {
     close(fd);
     return make_str(tmpl);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* free_val of value → frees a heap-allocated Value tree. Returns null.
  * Use this to release large temporary results (e.g. tokenize_with_names output)
@@ -1916,10 +1950,12 @@ Value* builtin_free_val(Value *arg) {
 }
 
 /* rm of "path" → 1 on success, 0 on failure */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_rm(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_num(0);
     return make_num(unlink(arg->data.str) == 0 ? 1 : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ================================================================
  * BUILTIN: build_corpus — 3-pass corpus builder in C
@@ -1940,6 +1976,7 @@ typedef struct {
     int count;
 } IdentEntry;
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_build_corpus(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4)
         return make_null();
@@ -2189,6 +2226,7 @@ Value* builtin_build_corpus(Value *arg) {
     list_append_owned(result, make_num(files_found));
     return result;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ================================================================
  * GENERIC HTTP CLIENT — language-level, no product logic
@@ -2290,6 +2328,7 @@ Value* builtin_json_path(Value *arg) {
  * ================================================================ */
 
 /* File I/O helper — used by load_file and main() */
+#if !EIGENSCRIPT_FREESTANDING
 char* read_file_util(const char *path, long *out_size) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -2306,12 +2345,15 @@ char* read_file_util(const char *path, long *out_size) {
     if (out_size) *out_size = size;
     return buf;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 static int try_resolve_path(const char *candidate, char *resolved, size_t resolved_cap) {
     if (!candidate || access(candidate, F_OK) != 0) return 0;
     snprintf(resolved, resolved_cap, "%s", candidate);
     return 1;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* Phase 0c: walk from `base` upward looking for
  *   <dir>/eigs_modules/<name>/<name>.eigs
@@ -2320,6 +2362,7 @@ static int try_resolve_path(const char *candidate, char *resolved, size_t resolv
  * higher. Only fires for bare `<name>.eigs` requests (no slashes); the
  * resolver's existing chain still handles paths with directory
  * components. Bounded to 64 levels for safety. */
+#if !EIGENSCRIPT_FREESTANDING
 static int try_eigs_modules_walk(const char *base, const char *path,
                                   char *resolved, size_t resolved_cap) {
     if (!base || !base[0] || !path) return 0;
@@ -2352,7 +2395,15 @@ static int try_eigs_modules_walk(const char *base, const char *path,
     }
     return 0;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if EIGENSCRIPT_FREESTANDING
+int resolve_eigenscript_file_from(const char *base, const char *path,
+                                   char *resolved, size_t resolved_cap) {
+    (void)base; (void)path; (void)resolved; (void)resolved_cap;
+    return 0;   /* nothing resolves without a filesystem */
+}
+#else
 int resolve_eigenscript_file_from(const char *base, const char *path,
                                    char *resolved, size_t resolved_cap) {
     char candidate[8192];
@@ -2398,11 +2449,13 @@ int resolve_eigenscript_file_from(const char *base, const char *path,
 
     return 0;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap) {
     return resolve_eigenscript_file_from(g_script_dir, path, resolved, resolved_cap);
 }
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_load_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
         runtime_error(0, "load_file requires a string path argument");
@@ -2467,6 +2520,7 @@ Value* builtin_load_file(Value *arg) {
     free_tokenlist(&tl);
     return result ? result : make_null();
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ================================================================
  * THIN BUILTINS — individual capabilities for .eigs orchestration
@@ -2477,17 +2531,20 @@ Value* builtin_load_file(Value *arg) {
  * CORE PLATFORM BUILTINS (always available)
  * ================================================================ */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_file_exists(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_num(0);
     FILE *f = fopen(arg->data.str, "r");
     if (f) { fclose(f); return make_num(1); }
     return make_num(0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
  * a temp file, then atomically swap it in). Returns 1 on success, 0 on failure. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_rename(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
     Value *from = arg->data.list.items[0];
@@ -2495,12 +2552,15 @@ Value* builtin_rename(Value *arg) {
     if (!from || from->type != VAL_STR || !to || to->type != VAL_STR) return make_num(0);
     return make_num(rename(from->data.str, to->data.str) == 0 ? 1 : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* remove_file of path — delete a file. Returns 1 on success, 0 on failure. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_remove_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_num(0);
     return make_num(remove(arg->data.str) == 0 ? 1 : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 Value* builtin_env_get(Value *arg) {
     if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("env_get", make_str(""));
@@ -2511,6 +2571,7 @@ Value* builtin_env_get(Value *arg) {
 /* ==== BUILTIN: read_text ==== */
 /* read_text of "path" → file contents as string, or "" on failure. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_read_bytes(Value *arg) {
     TRACE_NONDET_TAKE("read_bytes");
     if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_bytes", make_null());
@@ -2533,9 +2594,11 @@ Value* builtin_read_bytes(Value *arg) {
     free(buf);
     TRACE_NONDET_RECORD("read_bytes", result);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* read_bytes_buf of path — read binary file, return VAL_BUFFER of byte values.
  * Zero per-element allocation; O(1) indexed access. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_read_bytes_buf(Value *arg) {
     TRACE_NONDET_TAKE("read_bytes_buf");
     if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_bytes_buf", make_null());
@@ -2562,7 +2625,9 @@ Value* builtin_read_bytes_buf(Value *arg) {
     free(buf);
     TRACE_NONDET_RECORD("read_bytes_buf", v);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_read_text(Value *arg) {
     TRACE_NONDET_TAKE("read_text");
     if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_text", make_str(""));
@@ -2584,9 +2649,11 @@ Value* builtin_read_text(Value *arg) {
     free(buf);
     TRACE_NONDET_RECORD("read_text", result);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: write_text ==== */
 /* write_text of ["path", text] → 1 on success, 0 on failure. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_write_text(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return make_num(0);
@@ -2602,6 +2669,7 @@ Value* builtin_write_text(Value *arg) {
     int close_ok = (fclose(f) == 0);
     return make_num(written == len && close_ok ? 1 : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: exec_capture ==== */
 /* exec_capture of ["cmd", "arg1", ...]               → [exit_code, stdout_text]
@@ -2642,6 +2710,7 @@ static Value* exec_capture_result(int code, const char *text) {
     return result;
 }
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_exec_capture(Value *arg) {
     if (replay_blocks("exec_capture")) return exec_capture_result(-1, "");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1)
@@ -2783,6 +2852,7 @@ Value* builtin_exec_capture(Value *arg) {
     free(buf);
     return result;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: proc_spawn / proc_write / proc_read_line / proc_read /
  *               proc_close / proc_wait — streaming subprocess I/O (0.13.0) ====
@@ -2806,9 +2876,11 @@ Value* builtin_exec_capture(Value *arg) {
  * EPIPE instead of dying when the child exits. */
 
 static pthread_once_t g_proc_sigpipe_once = PTHREAD_ONCE_INIT;
+#if !EIGENSCRIPT_FREESTANDING
 static void proc_install_sigpipe_ignore(void) {
     signal(SIGPIPE, SIG_IGN);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 static Value* proc_spawn_fail(void) {
     Value *r = make_list(3);
@@ -2819,6 +2891,7 @@ static Value* proc_spawn_fail(void) {
     return r;
 }
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_proc_spawn(Value *arg) {
     if (replay_blocks("proc_spawn")) return proc_spawn_fail();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1)
@@ -2883,7 +2956,9 @@ Value* builtin_proc_spawn(Value *arg) {
     r->data.list.count = 3;
     return r;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_proc_write(Value *arg) {
     if (replay_blocks("proc_write")) return make_num(-1);
     if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
@@ -2910,7 +2985,9 @@ Value* builtin_proc_write(Value *arg) {
     }
     return make_num((double)off);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_proc_read_line(Value *arg) {
     if (replay_blocks("proc_read_line")) return make_null();
     if (!arg || arg->type != VAL_NUM) return make_null();
@@ -2951,7 +3028,9 @@ Value* builtin_proc_read_line(Value *arg) {
     free(buf);
     return s;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_proc_read(Value *arg) {
     if (replay_blocks("proc_read")) return make_null();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
@@ -2978,9 +3057,11 @@ Value* builtin_proc_read(Value *arg) {
     buf[n] = '\0';
     return make_str_owned(buf);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* #159: binary-safe variant of proc_read. Returns a VAL_BUFFER (no
  * NUL-truncation), null on EOF. Same 10 MB cap as proc_read. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_proc_read_buf(Value *arg) {
     if (replay_blocks("proc_read_buf")) return make_null();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
@@ -3014,7 +3095,9 @@ Value* builtin_proc_read_buf(Value *arg) {
     free(buf);
     return v;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_proc_close(Value *arg) {
     if (replay_blocks("proc_close")) return make_null();
     if (!arg || arg->type != VAL_NUM) return make_null();
@@ -3022,7 +3105,9 @@ Value* builtin_proc_close(Value *arg) {
     if (fd >= 0) close(fd);
     return make_null();
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_proc_wait(Value *arg) {
     if (replay_blocks("proc_wait")) return make_num(-1);
     if (!arg || arg->type != VAL_NUM) return make_num(-1);
@@ -3040,6 +3125,7 @@ Value* builtin_proc_wait(Value *arg) {
              : -1;
     return make_num((double)code);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: arena_mark ==== */
 /* arena_mark of null — saves current arena position. All Values allocated
@@ -3172,6 +3258,7 @@ Value* builtin_token_name(Value *arg) {
 /* ==== BUILTIN: random_hex ==== */
 /* random_hex of n → string of n random hex characters from /dev/urandom.
  * Capability builtin: provides randomness so .eigs libraries can generate tokens. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_random_hex(Value *arg) {
     int n = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 0;
     if (n <= 0 || n > 256) TRACE_NONDET_RET("random_hex", make_str(""));
@@ -3188,6 +3275,7 @@ Value* builtin_random_hex(Value *arg) {
     hex[n] = '\0';
     TRACE_NONDET_RET("random_hex", make_str(hex));
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ==== BUILTIN: state_at ==== */
 /* state_at(line) → dict of every tracked binding's value at <line>, or
@@ -3256,10 +3344,13 @@ Value* builtin_try_parse(Value *arg) {
     const char *src = arg->data.str;
     if (!src || !src[0]) return make_num(0);
 
-    /* Suppress stderr during parse attempt */
+    /* Suppress stderr during parse attempt (needs fd plumbing — parse
+     * diagnostics print unsuppressed in the freestanding profile) */
+#if !EIGENSCRIPT_FREESTANDING
     int saved_stderr = dup(STDERR_FILENO);
     int devnull = open("/dev/null", O_WRONLY);
     if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
+#endif
 
     /* Reset parse error counter before parsing */
     int saved_errors = g_parse_errors;
@@ -3272,7 +3363,9 @@ Value* builtin_try_parse(Value *arg) {
     g_parse_errors = saved_errors; /* restore for caller */
 
     /* Restore stderr */
+#if !EIGENSCRIPT_FREESTANDING
     if (saved_stderr >= 0) { dup2(saved_stderr, STDERR_FILENO); close(saved_stderr); }
+#endif
 
     /* Valid only if: non-null AST, at least one statement, AND no parse errors */
     int valid = (ast != NULL && ast->type == AST_PROGRAM
@@ -4723,6 +4816,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
  * binary-clean — NUL bytes are written verbatim, not treated as terminators —
  * so it can carry CBOR / arbitrary binary. Surfaced by tidelog's append-only
  * log (write_text is truncate-mode and NUL-truncating). */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_write_bytes(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return make_num(0);
@@ -4760,6 +4854,7 @@ Value* builtin_write_bytes(Value *arg) {
     free(out);
     return make_num((close_ok && written == (size_t)n) ? (double)written : 0);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* buf_copy of [src, src_off, dst, dst_off, count] — bulk copy between buffers */
 Value* builtin_buf_copy(Value *arg) {
@@ -4982,7 +5077,9 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "print", make_builtin(builtin_print));
     env_set_local_owned(env, "write", make_builtin(builtin_write));
     env_set_local_owned(env, "flush", make_builtin(builtin_flush));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "raw_key", make_builtin(builtin_raw_key));
+#endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "usleep", make_builtin(builtin_usleep));
     env_set_local_owned(env, "monotonic_ns", make_builtin(builtin_monotonic_ns));
     env_set_local_owned(env, "monotonic_ms", make_builtin(builtin_monotonic_ms));
@@ -5055,6 +5152,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "path_dir", make_builtin(builtin_path_dir));
     env_set_local_owned(env, "path_base", make_builtin(builtin_path_base));
     env_set_local_owned(env, "path_ext", make_builtin(builtin_path_ext));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "mkdir", make_builtin(builtin_mkdir));
     env_set_local_owned(env, "ls", make_builtin(builtin_ls));
     env_set_local_owned(env, "getcwd", make_builtin(builtin_getcwd));
@@ -5062,11 +5160,14 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "chdir", make_builtin(builtin_chdir));
     env_set_local_owned(env, "mktemp", make_builtin(builtin_mktemp));
     env_set_local_owned(env, "rm", make_builtin(builtin_rm));
+#endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "free_val", make_builtin(builtin_free_val));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "stream_open", make_builtin(builtin_stream_open));
     env_set_local_owned(env, "stream_write", make_builtin(builtin_stream_write));
     env_set_local_owned(env, "stream_close", make_builtin(builtin_stream_close));
     env_set_local_owned(env, "build_corpus", make_builtin(builtin_build_corpus));
+#endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "contains", make_builtin(builtin_contains));
     env_set_local_owned(env, "starts_with", make_builtin(builtin_starts_with));
     env_set_local_owned(env, "split", make_builtin(builtin_split));
@@ -5075,6 +5176,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "scan_int_tokens", make_builtin(builtin_scan_int_tokens));
     env_set_local_owned(env, "trim", make_builtin(builtin_trim));
     env_set_local_owned(env, "str_replace", make_builtin(builtin_str_replace));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "regex_match", make_builtin(builtin_match));
     env_set_local_owned(env, "regex_find", make_builtin(builtin_match_all));
     env_set_local_owned(env, "regex_replace", make_builtin(builtin_regex_replace));
@@ -5082,7 +5184,9 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "file_exists", make_builtin(builtin_file_exists));
     env_set_local_owned(env, "rename", make_builtin(builtin_rename));
     env_set_local_owned(env, "remove_file", make_builtin(builtin_remove_file));
+#endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "env_get", make_builtin(builtin_env_get));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
     env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));
@@ -5096,6 +5200,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "proc_read_buf", make_builtin(builtin_proc_read_buf));
     env_set_local_owned(env, "proc_close", make_builtin(builtin_proc_close));
     env_set_local_owned(env, "proc_wait", make_builtin(builtin_proc_wait));
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
     /* ---- Tensor / math stdlib (always available) ---- */
     env_set_local_owned(env, "dot", make_builtin(builtin_dot));
@@ -5134,7 +5239,9 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "token_name", make_builtin(builtin_token_name));
     env_set_local_owned(env, "chr", make_builtin(builtin_chr));
     env_set_local_owned(env, "ord", make_builtin(builtin_ord));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "random_hex", make_builtin(builtin_random_hex));
+#endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "state_at", make_builtin(builtin_state_at));
     env_set_local_owned(env, "secure_equals", make_builtin(builtin_secure_equals));
     env_set_local_owned(env, "try_parse", make_builtin(builtin_try_parse));
@@ -5142,8 +5249,10 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "vm_run_bytecode", make_builtin(builtin_vm_run_bytecode));
     env_set_local_owned(env, "record_history", make_builtin(builtin_record_history));
     env_set_local_owned(env, "sandbox_run", make_builtin(builtin_sandbox_run));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));
+#endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "copy_into", make_builtin(builtin_copy_into));
     env_set_local_owned(env, "num_copy", make_builtin(builtin_num_copy));
     env_set_local_owned(env, "concat", make_builtin(builtin_concat));

@@ -5,6 +5,13 @@
 
 #include "ext_store_internal.h"
 
+#if EIGENSCRIPT_FREESTANDING
+/* The page store is file-backed end to end — carved out of the
+ * freestanding profile. Registration stays linkable (eigs_embed.c calls
+ * it unconditionally) and registers nothing. */
+void register_store_builtins(Env *env) { (void)env; }
+#else
+
 /* ================================================================
  * Bounded record iteration — validates all on-disk lengths before use.
  *
@@ -1183,3 +1190,4 @@ void register_store_builtins(Env *env) {
     env_set_local_owned(env, "store_collections", make_builtin(builtin_store_collections));
     env_set_local_owned(env, "store_drop",        make_builtin(builtin_store_drop));
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */

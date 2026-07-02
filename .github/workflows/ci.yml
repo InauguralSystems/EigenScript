@@ -95,6 +95,33 @@ jobs:
       - name: Observer cross-repo corpus
         run: bash tests/observer_corpus/run.sh
 
+  # Freestanding symbol gate: compiles the runtime with the freestanding
+  # profile (-DEIGENSCRIPT_FREESTANDING=1) and asserts its undefined-symbol
+  # set stays within tools/freestanding_allowlist.txt — the HAL roots +
+  # mini-libc/libm surface from docs/FREESTANDING.md. Catches any new libc
+  # dependency leaking into the EigenOS-bound profile. Also smoke-runs a
+  # hosted build of the profile to prove the core language still executes.
+  freestanding:
+    name: freestanding profile (symbol gate + smoke)
+    needs: dev-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Symbol gate
+        run: make freestanding-check
+
+      - name: Hosted smoke of the profile
+        run: bash tools/freestanding_smoke.sh
+
   # macOS exercises the BSD/clang toolchain and (on arm64) the non-x86 JIT
   # fallback. Runs natively — a Linux container image can't host these.
   build-and-test-macos:

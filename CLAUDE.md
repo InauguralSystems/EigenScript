@@ -14,6 +14,7 @@ make test       # build + full suite (tests/run_all_tests.sh)
 make asan       # ASan+UBSan build (same binary path!)
 make http       # http+model variant — run tests/test_http_server.sh
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
+make freestanding-check  # symbol gate for the EigenOS profile (docs/FREESTANDING.md)
 ```
 
 - The suite must pass **both** release and ASan with leaks on:

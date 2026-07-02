@@ -258,6 +258,7 @@ Value* builtin_md5(Value *arg) {
     return make_str(hex);
 }
 
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_sha256_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_str("");
     FILE *f = fopen(arg->data.str, "rb");
@@ -293,6 +294,7 @@ Value* builtin_md5_file(Value *arg) {
     bytes_to_hex(hash, 16, hex, sizeof(hex));
     return make_str(hex);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 Value* builtin_hmac_sha256(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
@@ -357,7 +359,9 @@ Value* builtin_hmac_sha256(Value *arg) {
 void register_hash_builtins(Env *env) {
     env_set_local_owned(env, "sha256",      make_builtin(builtin_sha256));
     env_set_local_owned(env, "md5",         make_builtin(builtin_md5));
+#if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "sha256_file", make_builtin(builtin_sha256_file));
     env_set_local_owned(env, "md5_file",    make_builtin(builtin_md5_file));
+#endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "hmac_sha256", make_builtin(builtin_hmac_sha256));
 }
