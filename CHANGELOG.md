@@ -5,6 +5,39 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **The compiler no longer costs ~12.7 KiB of C stack per AST level — the
+  EigenOS "#UD heisenbug" root cause.** `Compiler` embedded
+  `Local locals[512]` (12 KiB) by value, and `compile_node_inner`
+  stack-declares a `Compiler` for every nested function — so compiling even
+  a 5-deep AST used ~64 KiB of C stack. Hosted 8 MiB stacks never noticed;
+  on EigenOS's 64 KiB boot stack the overflow (no guard page on bare metal)
+  silently trampled the `.bss` sections below the stack, producing the
+  layout-sensitive delayed `#UD` wild-dispatch documented in EigenOS
+  KNOWN_ISSUES — the fault was deterministic per build, moved with every
+  rebuild, and survived heap/stack zeroing, which had mis-pointed the
+  diagnosis at an uninitialized read. Poison-fill (`make poison`, new) +
+  `MALLOC_PERTURB_` + Valgrind on a new embed-API REPL soak exonerated the
+  allocation layers, and rerunning the soak under `ulimit -s 64` reproduced
+  the crash hosted in `compile_node_inner`'s prologue. The `locals` array is
+  now heap-allocated per compiler (`compile_node_inner` frame: 12,704 →
+  1,440 bytes; `compile_ast`: 12,576 → 304; worst-case compile stack at
+  `COMPILE_MAX_DEPTH` 128: ~1.6 MiB → ~184 KiB). Regression:
+  `tools/embed_stack_soak.sh` (CI, freestanding job) runs a 104-step
+  REPL-accumulation soak through `eigs_eval_string` — the pattern the suite
+  never exercises (one script per process) — inside a 64 KiB stack rlimit;
+  it SIGSEGVs without this fix.
+
+### Added
+- **`make poison` — uninitialized-read hunter build.** Fills `xmalloc`
+  blocks, `xrealloc` grown tails, and the env freelist's parked dormant
+  arrays (`names`/`values`/`assign_counts` + hash `hashes`/`indices`; the
+  generation gate itself is untouched) with `0xAA`, so a read of
+  never-initialized or stale-gated memory misbehaves deterministically on
+  every link layout instead of reading glibc's benign zero pages — the
+  MSan-shaped bug class the ASan/UBSan gates can't see, surfaced by the
+  EigenOS bare-metal port. Pairs with `MALLOC_PERTURB_` at suite time
+  (documented on the target); zero cost when off. The full suite passes
+  under poison + perturb.
 - **#326 gap closed: member-assign statements enforce the terminator (#351).**
   The dot-/index-assignment statement paths missed the v0.23.0 check —
   `d.a is 2 3`, `l[0] is 8 9`, and `d.a += 5 6` still silently ran the

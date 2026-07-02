@@ -46,6 +46,25 @@
 #define EIGS_JIT_ENABLED 0
 #endif
 
+/* EIGS_POISON (`make poison`): fill memory the allocator stack hands out
+ * fresh or parks dirty with 0xAA instead of leaving it zero/stale. Hosted
+ * glibc hands back zero pages, so an uninitialized read is a benign 0 here
+ * but wild garbage on a non-glibc substrate (the EigenOS freestanding port)
+ * — a layout-sensitive heisenbug class the sanitizer gates can't see (MSan
+ * is deferred). Poison makes the read deterministic on every layout, so the
+ * hosted suite names it. Sites: xmalloc fresh blocks, xrealloc grown tails,
+ * and the env freelist's parked dormant arrays (names/values/assign_counts
+ * + hash.hashes/indices — reuse deliberately does not clear them; the
+ * generation gate itself is NOT poisoned). arena_alloc, xcalloc and the num
+ * freelist zero-fill by documented contract and stay untouched. Pairs with
+ * MALLOC_PERTURB_ (raw malloc/realloc sites) at suite time. Zero cost off. */
+#ifdef EIGS_POISON
+#define EIGS_POISON_BYTE 0xAA
+#define EIGS_POISON_MEM(p, n) memset((p), EIGS_POISON_BYTE, (n))
+#else
+#define EIGS_POISON_MEM(p, n) ((void)0)
+#endif
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>

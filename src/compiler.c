@@ -48,7 +48,14 @@ typedef struct {
 typedef struct Compiler {
     EigsChunk        *chunk;
     struct Compiler  *enclosing;
-    Local             locals[MAX_LOCALS];
+    /* Heap-allocated MAX_LOCALS array (xcalloc'd right after each Compiler's
+     * memset-init, freed in the same block's teardown). Inline it was 12 KiB
+     * of struct — and compile_node_inner stack-declares a Compiler per nested
+     * function, so the compile recursion cost ~12.7 KiB of C stack PER AST
+     * LEVEL. Hosted (8 MB stacks) never noticed; on an embedded/kernel stack
+     * (EigenOS boots on 64 KiB) a 5-deep AST overflowed and silently trampled
+     * the neighboring sections — the mn-repl "#UD heisenbug". */
+    Local            *locals;
     int               local_count;
     int               scope_depth;
     LoopCtx         **loops;        /* stack of heap-allocated ctxs; a pointer
@@ -1866,6 +1873,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         Compiler fn_compiler;
         memset(&fn_compiler, 0, sizeof(fn_compiler));
+        fn_compiler.locals = xcalloc_array(MAX_LOCALS, sizeof(Local));
         fn_compiler.chunk = fn_chunk;
         fn_compiler.enclosing = c;
         fn_compiler.env = c->env;
@@ -1934,6 +1942,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
+        free(fn_compiler.locals);
 
         int fn_idx = chunk_add_function(c->chunk, fn_chunk);
         emit_op_u16(c, OP_CLOSURE, (uint16_t)fn_idx, node->line);
@@ -1951,6 +1960,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         Compiler fn_compiler;
         memset(&fn_compiler, 0, sizeof(fn_compiler));
+        fn_compiler.locals = xcalloc_array(MAX_LOCALS, sizeof(Local));
         fn_compiler.chunk = fn_chunk;
         fn_compiler.enclosing = c;
         fn_compiler.env = c->env;
@@ -1986,6 +1996,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
+        free(fn_compiler.locals);
 
         int fn_idx = chunk_add_function(c->chunk, fn_chunk);
         emit_op_u16(c, OP_CLOSURE, (uint16_t)fn_idx, node->line);
@@ -2482,6 +2493,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env) {
 
     Compiler compiler;
     memset(&compiler, 0, sizeof(compiler));
+    compiler.locals = xcalloc_array(MAX_LOCALS, sizeof(Local));
     compiler.chunk = chunk;
     compiler.env = env;
     compiler.last_line = -1;  /* #174: force first OP_LINE at module entry */
@@ -2514,5 +2526,6 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env) {
 
     name_set_free(&module_names);
     name_set_free(&compiler.module_slot_names);
+    free(compiler.locals);
     return chunk;
 }

@@ -162,6 +162,23 @@ valgrind:
 		-lm -lpthread
 	@echo "EigenScript $(VERSION) (valgrind -O1 -g) built. Binary: $(BINARY)"
 
+# Uninitialized-read hunter (the EigenOS #UD heisenbug class, see
+# eigenscript.h EIGS_POISON). Fills xmalloc blocks, xrealloc grown tails and
+# parked env-freelist arrays with 0xAA so a read of never-initialized memory
+# fails deterministically on every link layout instead of reading glibc's
+# benign zero pages. Run the suite against it, with the raw-malloc boundary
+# poisoned too:
+#   make poison && cd tests && MALLOC_PERTURB_=170 bash run_all_tests.sh
+poison:
+	$(CC) -g -O1 -o $(BINARY) $(SOURCES) \
+		-DEIGS_POISON \
+		-DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+		-lm -lpthread
+	@echo "EigenScript $(VERSION) (poison 0xAA -O1 -g) built. Binary: $(BINARY)"
+
 # Profile-guided optimization. Builds an instrumented binary, runs the
 # DMG cpu_instrs workload to collect branch/edge counters, then rebuilds
 # with -fprofile-use. Net win on cpu_instrs has been ~8%, mostly in the
