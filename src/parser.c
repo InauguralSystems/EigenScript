@@ -1601,6 +1601,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             n->data.dot_assign.expr = rhs;
             free(target->data.dot.key);
             free(target);
+            p_end_statement(p);   /* #351: this path missed the #326 check */
             return n;
         }
         /* Index-assignment: grid[0][1] is value, items[i] is value */
@@ -1616,6 +1617,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             n->data.index_assign.expr = rhs;
             memcpy(n->data.index_assign.compound_op, cop, 4);
             free(target);
+            p_end_statement(p);   /* #351: this path missed the #326 check */
             return n;
         }
         /* Not a dot-assignment — restore and fall through */

@@ -36,6 +36,39 @@ catch e3:
 if c3 == 1:
     passed is passed + 1
 
+# #351: the member-assign statement paths missed the #326 check —
+# d.a is 2 3 / l[0] is 8 9 / d.a += 5 6 all silently split (and diverged
+# from the meta-interpreter, which already gated these points).
+checks is checks + 1
+c3a is 0
+try:
+    eval of "d is {\"a\": 1}\nd.a is 2 3"
+catch e3a:
+    c3a is 1
+if c3a == 1:
+    passed is passed + 1
+checks is checks + 1
+c3b is 0
+try:
+    eval of "l is [1, 2]\nl[0] is 8 9"
+catch e3b:
+    c3b is 1
+if c3b == 1:
+    passed is passed + 1
+checks is checks + 1
+c3c is 0
+try:
+    eval of "d is {\"a\": 1}\nd.a += 5 6"
+catch e3c:
+    c3c is 1
+if c3c == 1:
+    passed is passed + 1
+# positive controls: legit member assigns still parse
+checks is checks + 1
+mv is eval of "d is {\"a\": 1}\nd.a is 2\nl is [1, 2]\nl[0] += 5\nd.a + l[0]"
+if mv == 8:
+    passed is passed + 1
+
 # meta-interpreter parity: eigen_run rejects the same shape
 load_file of "lib/eigen.eigs"
 checks is checks + 1
