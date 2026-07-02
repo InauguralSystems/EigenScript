@@ -139,11 +139,14 @@ jitter). Used by `random_int`/`randn`/stdlib.
 - **`BUILD`/`ELIM`**: `exit`/`_exit`/`abort` → halt the CPU / panic; `getenv` →
   empty stub or a kernel config table; `atexit` → no-op.
 
-### Regex — `DROP` → reuse the ecosystem
+### Regex — `DROP` → route to EigenRegex (the route now exists)
 `regcomp` `regexec` `regfree`
-The regex builtins use glibc ERE. Freestanding: drop them, or route to
-**EigenRegex** (the pure-EigenScript Pike-VM regex already in the portfolio) —
-the ecosystem feeding its own substrate.
+The regex builtins use glibc ERE. Freestanding: drop the C builtins and load
+**EigenRegex**'s `lib/regex_compat.eigs` (ERE-parity as of its S8, 2026-07-01) —
+builtin-shaped drop-ins for `regex_match`/`regex_find`/`regex_replace` over the
+pure-EigenScript Pike VM, differential-tested against these builtins as the
+oracle. Documented divergences: POSIX leftmost-longest vs Pike-VM
+leftmost-first, and no `\b`. The ecosystem feeding its own substrate.
 
 ### ctype / sort — `BUILD` tiny
 `__ctype_b_loc` `__ctype_tolower_loc` `__ctype_toupper_loc` (`isalpha`/`toupper`
