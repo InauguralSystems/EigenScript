@@ -2446,10 +2446,20 @@ Value* builtin_load_file(Value *arg) {
         runtime_error(0, "load_file: parse error in '%s'", arg->data.str);
         return make_null();
     }
-    g_parse_errors = saved_errors;
-
+    /* Compile-stage diagnostics must fail the load too (#337) — same
+     * rationale as eval above. */
     Env *target = g_load_env ? g_load_env : g_global_env;
     EigsChunk *lf_chunk = compile_ast(ast, target);
+    if (g_parse_errors > 0) {
+        g_parse_errors = saved_errors;
+        chunk_free(lf_chunk);
+        free_ast(ast);
+        free_tokenlist(&tl);
+        free(source);
+        runtime_error(0, "load_file: compile error in '%s'", arg->data.str);
+        return make_null();
+    }
+    g_parse_errors = saved_errors;
     Value *result = vm_execute(lf_chunk, target);
     chunk_free(lf_chunk);   /* creator ref; loaded fns hold their own */
     free_ast(ast);
@@ -3297,10 +3307,20 @@ Value* builtin_eval(Value *arg) {
         runtime_error(0, "eval: parse error in code string");
         return make_null();
     }
-    g_parse_errors = saved_errors;
-
+    /* Keep the zeroed counter through COMPILE too — compile-stage
+     * diagnostics ('break' outside a loop #337, un-encodable jumps) must
+     * fail the eval instead of executing a placeholder chunk. */
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
     EigsChunk *ev_chunk = compile_ast(ast, target);
+    if (g_parse_errors > 0) {
+        g_parse_errors = saved_errors;
+        chunk_free(ev_chunk);
+        free_tokenlist(&tl);
+        free_ast(ast);
+        runtime_error(0, "eval: compile error in code string");
+        return make_null();
+    }
+    g_parse_errors = saved_errors;
     Value *result = vm_execute(ev_chunk, target);
     /* Chunks are refcounted: drop the creator ref; fn values keep their
      * nested chunks alive. */

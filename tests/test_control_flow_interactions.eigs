@@ -4,8 +4,11 @@
 # === BREAK/CONTINUE ACROSS FUNCTION BOUNDARIES ===
 
 # --- break in function must not break caller's for loop ---
+# (#337: a loop-less break is now a compile error, so the callee breaks
+# its OWN loop; the property under test — never the CALLER's — is unchanged.)
 define do_break as:
-    break
+    for jb in [1, 2]:
+        break
 
 count is 0
 for i in [1, 2, 3, 4, 5]:
@@ -16,7 +19,8 @@ assert of [count == 5, "CF1 break in function does not escape for"]
 # --- continue in function must not skip caller's loop body ---
 total is 0
 define do_continue as:
-    continue
+    for jc in [1, 2]:
+        continue
 
 for i in [1, 2, 3]:
     do_continue of null
@@ -34,7 +38,8 @@ assert of [wcount == 5, "CF3 break in function does not escape while"]
 
 # --- nested: break in inner function, called from outer function, in loop ---
 define inner_break as:
-    break
+    loop while 1:
+        break
 
 define outer_call as:
     inner_break of null
@@ -138,7 +143,8 @@ assert of [classify of 99 == "other", "CF19 return from wildcard"]
 fns is []
 for i in range of 3:
     define f(x) as:
-        break
+        for kf in [1, 2]:
+            break
         return x
     append of [fns, f]
 

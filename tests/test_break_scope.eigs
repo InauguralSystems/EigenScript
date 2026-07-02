@@ -1,10 +1,19 @@
-# break/continue must not escape function call boundaries
+# break/continue must not escape function call boundaries.
+# (#337 update: a break/continue in a LOOP-LESS function is now a compile
+# error — pinned by examples/errors/break_outside_loop.eigs and
+# continue_outside_loop.eigs. The no-escape property is pinned here with
+# functions that break/continue their OWN loops while the CALLER is
+# looping: the callee's break must never touch the caller's loop.)
 
 define breaker as:
-    break
+    for j in [1, 2]:
+        break
+    return 0
 
 define continuer as:
-    continue
+    for j in [1, 2]:
+        continue
+    return 0
 
 # break inside called function must not break caller's loop
 count is 0
@@ -20,13 +29,15 @@ for i in [1, 2, 3]:
     total is total + i
 assert of [total == 6, "continue inside function must not escape to caller loop"]
 
-# break inside nested call must not escape
+# break inside nested call must not escape through two frames
 define inner_break as:
-    break
+    loop while 1:
+        break
+    return 41
 
 define outer_fn as:
-    inner_break of null
-    return 42
+    r is inner_break of null
+    return r + 1
 
 result is 0
 for i in [1, 2, 3]:
