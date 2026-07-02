@@ -1,7 +1,9 @@
 # EigenScript Formal Grammar
 
-EBNF specification for EigenScript v0.8.0+. This grammar describes the
-concrete syntax accepted by the parser in `src/parser.c`.
+EBNF specification for EigenScript v0.22+. This grammar describes the
+concrete syntax accepted by the parser in `src/parser.c`. SPEC.md is the
+normative semantics document (its examples are CI-gated); this file tracks
+the concrete grammar.
 
 ## Notation
 
@@ -21,7 +23,12 @@ lower       non-terminal (grammar rule)
 ### Tokens
 
 ```
-NUM         = digit { digit } [ '.' digit { digit } ]
+NUM         = digit { digit } [ '.' { digit } ]
+            | '.' digit { digit }
+            ; delegated to strtod: scientific notation (1e5, 1E5) and
+            ; hexadecimal (0x10) also lex as single numbers; a trailing
+            ; dot (1.) is accepted. Malformed forms like 1.2.3 are a
+            ; parse error (one statement per line, #326/#315).
 STR         = '"' { char | escape } '"'
 FSTR        = 'f"' { char | escape | '{' expression '}' } '"'
 IDENT       = ( letter | '_' ) { letter | digit | '_' }
@@ -71,7 +78,9 @@ converged  stable  improving  oscillating  diverging  equilibrium
 
 ```
 +  -  *  /  %
+&  |  ^  <<  >>  ~
 <  >  <=  >=  ==  !=
++=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=
 (  )  [  ]  {  }
 ,  :  .
 |>          pipe (left-associative, desugars a |> b to b of a)
@@ -109,13 +118,23 @@ statement   = define_stmt
             | break_stmt
             | continue_stmt
             | dot_assign_stmt
+            | index_assign_stmt
+            | destructure_stmt
             | local_assign_stmt
             | assign_stmt
             | expression
 
+; Every statement ends at NEWLINE (or EOF/DEDENT) — leftover tokens on
+; the line are a parse error ("one statement per line", #326).
+; `break`/`continue` require an enclosing loop (compile error otherwise,
+; #337); a module-level `return` ends the program (see SPEC.md).
+
 define_stmt = 'define' IDENT [ '(' param_list ')' ] [ 'as' ] ':' NEWLINE block
 
-param_list  = IDENT { ',' IDENT }
+param_list  = param { ',' param }
+param       = IDENT [ 'is' expression ]
+            ; the optional expression is a default value, evaluated in
+            ; the defining scope when the argument is missing
 
 if_stmt     = 'if' expression ':' NEWLINE block
               { 'elif' expression ':' NEWLINE block }
@@ -141,11 +160,21 @@ break_stmt  = 'break'
 
 continue_stmt = 'continue'
 
-dot_assign_stmt = postfix '.' IDENT 'is' expression
+; dot/index assignment targets must be rooted at an IDENT
+; ({"a":1}.k is 2 is a parse error; xs[0].a is 9 works)
+dot_assign_stmt   = ident_chain '.' IDENT assign_op expression
+index_assign_stmt = ident_chain '[' expression ']' assign_op expression
+ident_chain       = IDENT { '[' expression ']' | '.' IDENT }
+
+destructure_stmt  = '[' IDENT { ',' IDENT } ']' 'is' expression
+                  ; the RHS list length must equal the pattern length
 
 local_assign_stmt = 'local' IDENT 'is' expression
 
-assign_stmt = IDENT 'is' expression
+assign_stmt = IDENT assign_op expression
+assign_op   = 'is' | '+=' | '-=' | '*=' | '/=' | '%='
+            | '&=' | '|=' | '^=' | '<<=' | '>>='
+            ; compound forms desugar: x += e  ==  x is x + e
 
 block       = INDENT { statement NEWLINE } DEDENT
 ```
@@ -163,8 +192,17 @@ or_expr     = and_expr { 'or' and_expr }
 
 and_expr    = comparison { 'and' comparison }
 
-comparison  = addition [ comp_op addition ]
+comparison  = bitor_expr [ comp_op bitor_expr ]
 comp_op     = '==' | '!=' | '<' | '>' | '<=' | '>='
+            ; comparisons do NOT chain: 1 < 2 < 3 is a parse error
+
+bitor_expr  = bitxor_expr { '|' bitxor_expr }
+
+bitxor_expr = bitand_expr { '^' bitand_expr }
+
+bitand_expr = shift_expr { '&' shift_expr }
+
+shift_expr  = addition { ( '<<' | '>>' ) addition }
 
 addition    = multiply { ( '+' | '-' ) multiply }
 
@@ -172,6 +210,7 @@ multiply    = unary { ( '*' | '/' | '%' ) unary }
 
 unary       = '-' unary
             | 'not' unary
+            | '~' unary
             | call
 
 call        = primary [ 'of' unary ]
@@ -200,11 +239,17 @@ lambda      = '(' [ param_list ] ')' '=>' expression
 After any primary expression, zero or more postfix operations:
 
 ```
-postfix     = primary { '[' expression ']' | '.' IDENT }
+postfix     = primary { subscript | '.' IDENT }
+subscript   = '[' expression ']'
+            | '[' [ expression ] ':' [ expression ] ']'   ; slice
 ```
 
-Note: postfix indexing and dot access apply to NUM, STR, IDENT,
-list literals, dict literals, and parenthesized expressions.
+Note: which postfix forms a primary accepts depends on the primary.
+IDENT, dict literals, parenthesized expressions, f-strings (which
+desugar to parenthesized expressions), and the soft-keyword identifier
+fallbacks (`prev`/`at`/question words, #328) accept both subscripts and
+dot access. NUM, STR, and list literals accept only subscripts —
+`[10, 20].x` is a parse error.
 
 ### Literals
 
@@ -243,13 +288,17 @@ From lowest to highest precedence:
 | 1 | `\|>` | Left | Pipe (desugars `a \|> b` to `b of a`) |
 | 2 | `or` | Left | Logical OR |
 | 3 | `and` | Left | Logical AND |
-| 4 | `==` `!=` `<` `>` `<=` `>=` | None | Comparison |
-| 5 | `+` `-` | Left | Addition, subtraction |
-| 6 | `*` `/` `%` | Left | Multiplication, division, modulo |
-| 7 | `-` (unary) `not` | Right | Negation, logical NOT |
-| 8 | `of` | Left | Function call / observation |
-| 9 | `[i]` `.key` | Left | Index, dot access |
-| 10 | `=>` | — | Lambda (inside parenthesized param list) |
+| 4 | `==` `!=` `<` `>` `<=` `>=` | None | Comparison (non-chaining) |
+| 5 | `\|` | Left | Bitwise OR |
+| 6 | `^` | Left | Bitwise XOR |
+| 7 | `&` | Left | Bitwise AND |
+| 8 | `<<` `>>` | Left | Shifts |
+| 9 | `+` `-` | Left | Addition, subtraction |
+| 10 | `*` `/` `%` | Left | Multiplication, division, modulo |
+| 11 | `-` (unary) `not` `~` | Right | Negation, logical NOT, bitwise NOT |
+| 12 | `of` | Right | Function call / observation (`f of g of x` = `f of (g of x)`) |
+| 13 | `[i]` `[a:b]` `.key` | Left | Index, slice, dot access |
+| 14 | `=>` | — | Lambda (inside parenthesized param list) |
 
 ## Semantic Notes
 
@@ -259,9 +308,16 @@ From lowest to highest precedence:
   binding in the current evaluator scope only.
 - **Function definition** (`define`) always creates a local binding.
 - **Function call** (`fn of arg`) passes a single value. Multiple arguments
-  are passed as a list: `fn of [a, b, c]`.
-- **Named parameters** (`define fn(a, b) as:`) unpack a list argument into
-  named locals. `define fn as:` uses the implicit parameter `n`.
+  are passed as a **literal** list: `fn of [a, b, c]`.
+- **Argument spreading** (SPEC.md is normative): only a *literal* list
+  argument with 2+ elements spreads into named parameters. A 1-element
+  literal list does **not** spread (`f of [x]` binds the whole list), and
+  a list passed via a variable never spreads (it binds whole to the first
+  parameter; remaining parameters bind to `null`). For one-argument calls
+  to multi-parameter functions write `f of (x)`.
+- **Implicit parameter**: `define fn as:` (no parameter list) uses the
+  implicit parameter `n`. A zero-parameter lambda `() => expr` mirrors
+  this classic style: it also receives the implicit `n`.
 - **Observer tracking** is automatic on every assignment. Interrogatives and
   predicates query the observer state without modifying it.
 - **`break`/`continue`** affect the innermost enclosing `loop` or `for`.

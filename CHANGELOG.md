@@ -4,6 +4,23 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Documentation
+- **GRAMMAR.md brought back in sync with the parser (#329, #330, #331, #332,
+  #333).** It was frozen at "v0.8.0+" while the parser grew: added the four
+  bitwise precedence levels (`|` `^` `&` `<<`/`>>` between comparison and
+  addition) and unary `~`; compound assignment (`+=` family, incl. dot/index
+  targets); slices; destructuring; index assignment; parameter defaults; the
+  IDENT-rooted restriction on dot/index assignment targets (#332); the true
+  postfix applicability matrix (#329: NUM/STR/list literals take subscripts
+  only; f-strings and soft-keyword fallbacks take full postfix); the `of`
+  precedence-table row corrected Left→Right (#333); the named-parameter
+  "unpack" note replaced with the real literal-only spread rule; and the
+  extended numeric-literal forms (#331: `.5`, `1.`, `1e5`, `0x10` via strtod)
+  documented in both GRAMMAR.md and SPEC.md. The zero-parameter lambda's
+  implicit `n` (#330) is now documented in SPEC.md as deliberate
+  classic-style mirroring. Statement-terminator and break/continue rules
+  cross-referenced (#326/#337).
+
 ### Fixed
 - **The statement terminator is enforced (#326).** Every statement path ended
   in a tolerant `p_match(TOK_NEWLINE)`, so the NEWLINE in the documented
