@@ -122,6 +122,9 @@ jobs:
       - name: Hosted smoke of the profile
         run: bash tools/freestanding_smoke.sh
 
+      - name: Embedded-stack soak (REPL soak in a 64 KiB stack rlimit)
+        run: bash tools/embed_stack_soak.sh
+
       - name: Mini-libc differential vs glibc oracle
         run: make freestanding-libc-diff
 
