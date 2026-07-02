@@ -4,6 +4,30 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance
+- **Compile time is linear in program size (#341).** Profiling (gprof, the
+  12k-unique-name generated program) refuted the issue's suspect: 92% of
+  compile time was `chunk_add_constant`'s linear dedup scan over the constant
+  pool, with `name_set_add` (the filed suspect) second at 3% — and dominant
+  only after the first fix. Both are now hash-indexed (open addressing;
+  constant equality is byte-for-byte the old scan's tests, so pools stay
+  identical — NaN still never dedups, -0.0 still merges with +0.0, and the
+  AOT byte-parity contract is safe). The NameSet index also replaces the
+  direct swap-removal at the param-filter sites with `name_set_remove`
+  (rebuilds the index). Medians (n=5, N3350): 12k statements 8.76s → 0.07s
+  (~125×); 3k/6k/12k now scale linearly (0.01/0.03/0.07s); 30k runs in 0.2s.
+
+### Fixed
+- **Constant pool past 65536 entries is a compile error, not a wrap (#341).**
+  Constant indices are u16 operands; a pool crossing 65536 silently wrapped
+  the emitted index, and a wrapped SET_NAME operand landing on a NUM constant
+  made `const_interns[idx]` NULL — SEGV in `env_hash_name` (reachable since
+  #327 removed the statement cap; found running the 100k-statement probe).
+  The compiler now reports `constant pool exceeds 65536 entries in one chunk`
+  once and aborts via the post-compile gate. Regression: section [114]
+  (generated at test time). Widening to a 32-bit operand (`OP_CONST_WIDE`)
+  is the future lift if a real consumer needs it.
+
 ### Documentation
 - **GRAMMAR.md brought back in sync with the parser (#329, #330, #331, #332,
   #333).** It was frozen at "v0.8.0+" while the parser grew: added the four

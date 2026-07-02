@@ -947,6 +947,30 @@ check_eigs_suite "eval'd stray break/continue raise; in-loop still works" test_s
 echo "[113] Statement Terminator Enforced (#326)"
 check_eigs_suite "one statement per line; eval/meta parity" test_stmt_terminator.eigs "All tests passed" 1
 
+# [114] compile scaling guards (#341). Constant indices are u16 operands:
+# a pool past 65536 entries is a clean compile error (it used to WRAP and
+# crash in env_hash_name on a NULL intern). Generated at test time (a
+# 34k-statement file is not worth committing).
+echo "[114] Constant-Pool u16 Ceiling (#341)"
+CPG_FILE=$(mktemp /tmp/eigs_cpool_XXXX.eigs)
+python3 -c "
+n = 34000
+print('\n'.join(f'w{i} is {i}' for i in range(n)))
+print('print of \"should-not-run\"')" > "$CPG_FILE"
+CPG_OUTPUT=$(./eigenscript "$CPG_FILE" </dev/null 2>&1); CPG_RC=$?
+CPG_MSGS=$(echo "$CPG_OUTPUT" | grep -c "constant pool exceeds 65536" || true)
+TOTAL=$((TOTAL + 1))
+if [ "$CPG_RC" -ne 0 ] && [ "$CPG_MSGS" = "1" ] \
+   && ! echo "$CPG_OUTPUT" | grep -q "should-not-run"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: >65536-constant chunk fails cleanly (one diagnostic, no run)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: constant-pool ceiling (rc=$CPG_RC msgs=$CPG_MSGS)"
+    echo "$CPG_OUTPUT" | head -3
+fi
+rm -f "$CPG_FILE"
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
