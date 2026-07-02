@@ -55,6 +55,7 @@ void chunk_decref(EigsChunk *chunk) {
     free(chunk->constants);
     free(chunk->const_hashes);
     free(chunk->const_interns);
+    free(chunk->const_dedup);
     free(chunk->env_ic);
     /* Stage 5i: release the parked call env (not captured, all slots
      * already null; the chunk holds its single ref — env_decref destroys
@@ -130,16 +131,75 @@ void chunk_patch_jump(EigsChunk *chunk, int offset) {
 
 /* ---- Constant pool ---- */
 
+/* ---- Constant-pool dedup index (#341) ----
+ * Equality is EXACTLY the old linear scan's tests, so pools stay
+ * byte-identical (the AOT oracle depends on that): NaN never equals
+ * itself (each NaN appends), and -0.0 merges with +0.0 (they hash the
+ * same and compare ==). Non-NUM/STR constants are never deduped. */
+static uint32_t const_hash_value(const Value *v) {
+    if (v->type == VAL_NUM) {
+        double d = v->data.num;
+        if (d == 0.0) d = 0.0;   /* fold -0.0 into +0.0, matching == */
+        uint64_t bits;
+        memcpy(&bits, &d, sizeof bits);
+        bits ^= bits >> 33;
+        bits *= 0xff51afd7ed558ccdULL;
+        bits ^= bits >> 33;
+        return (uint32_t)bits;
+    }
+    uint32_t h = 2166136261u;    /* FNV-1a */
+    for (const char *p = v->data.str; *p; p++) {
+        h ^= (unsigned char)*p;
+        h *= 16777619u;
+    }
+    return h;
+}
+
+static int const_equal(const Value *a, const Value *b) {
+    if (a->type == VAL_NUM && b->type == VAL_NUM)
+        return a->data.num == b->data.num;
+    if (a->type == VAL_STR && b->type == VAL_STR)
+        return strcmp(a->data.str, b->data.str) == 0;
+    return 0;
+}
+
+static void const_dedup_insert(EigsChunk *c, uint32_t h, int idx) {
+    uint32_t mask = (uint32_t)c->const_dedup_cap - 1;
+    uint32_t s = h & mask;
+    while (c->const_dedup[s]) s = (s + 1) & mask;
+    c->const_dedup[s] = idx + 1;
+}
+
+static void const_dedup_grow(EigsChunk *c) {
+    int new_cap = c->const_dedup_cap ? c->const_dedup_cap * 2 : 64;
+    free(c->const_dedup);
+    c->const_dedup = xcalloc(new_cap, sizeof(int));
+    c->const_dedup_cap = new_cap;
+    for (int i = 0; i < c->const_count; i++) {
+        Value *v = c->constants[i];
+        if (v->type == VAL_NUM || v->type == VAL_STR)
+            const_dedup_insert(c, const_hash_value(v), i);
+    }
+}
+
 int chunk_add_constant(EigsChunk *chunk, Value *val) {
-    /* Deduplicate numbers and strings */
-    for (int i = 0; i < chunk->const_count; i++) {
-        Value *existing = chunk->constants[i];
-        if (val->type == VAL_NUM && existing->type == VAL_NUM &&
-            val->data.num == existing->data.num)
-            return i;
-        if (val->type == VAL_STR && existing->type == VAL_STR &&
-            strcmp(val->data.str, existing->data.str) == 0)
-            return i;
+    /* Deduplicate numbers and strings via the hash index — the linear
+     * scan here was O(pool) per add: 92% of compile time on a 12k-name
+     * generated program (#341). */
+    int hashable = (val->type == VAL_NUM || val->type == VAL_STR);
+    uint32_t h = 0;
+    if (hashable) {
+        if ((chunk->const_count + 1) * 2 > chunk->const_dedup_cap)
+            const_dedup_grow(chunk);
+        h = const_hash_value(val);
+        uint32_t mask = (uint32_t)chunk->const_dedup_cap - 1;
+        uint32_t s = h & mask;
+        while (chunk->const_dedup[s]) {
+            int idx = chunk->const_dedup[s] - 1;
+            if (const_equal(val, chunk->constants[idx]))
+                return idx;
+            s = (s + 1) & mask;
+        }
     }
     if (chunk->const_count >= chunk->const_cap) {
         int old_cap = chunk->const_cap;
@@ -171,6 +231,8 @@ int chunk_add_constant(EigsChunk *chunk, Value *val) {
         if (chunk->const_hashes)
             chunk->const_hashes[chunk->const_count] = env_hash_name(val->data.str);
     }
+    if (hashable)
+        const_dedup_insert(chunk, h, chunk->const_count);
     return chunk->const_count++;
 }
 

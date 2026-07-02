@@ -212,6 +212,13 @@ typedef struct EigsChunk {
     EnvIC   *env_ic;            /* IC entry per string constant (zeroed = empty) */
     int      const_count;
     int      const_cap;
+    int     *const_dedup;       /* compile-time NUM/STR dedup index — open
+                                 * addressing, slot = const index+1, 0=empty.
+                                 * The linear dedup scan it replaces was 92%
+                                 * of compile time on many-name programs
+                                 * (#341). Rebuilt on grow; freed with the
+                                 * chunk. */
+    int      const_dedup_cap;   /* power of two; 0 until first NUM/STR add */
 
     int     *lines;             /* line number per bytecode offset */
     int      lines_len;

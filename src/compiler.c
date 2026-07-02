@@ -38,6 +38,11 @@ typedef struct {
     const char **names;
     int          count;
     int          cap;
+    int         *index;      /* open addressing: slot -> names idx+1, 0=empty.
+                              * The linear-scan dedup/lookup it replaces was
+                              * the second quadratic compile cost on many-name
+                              * programs (#341). */
+    int          index_cap;  /* power of two; 0 until first add */
 } NameSet;
 
 typedef struct Compiler {
@@ -71,26 +76,77 @@ int g_compile_module_slots = 0;
 
 /* ---- NameSet helpers ---- */
 
-static int name_set_has(const NameSet *s, const char *name) {
-    if (!s) return 0;
+static uint32_t name_set_hash(const char *name) {
+    uint32_t h = 2166136261u;    /* FNV-1a */
+    for (const char *p = name; *p; p++) {
+        h ^= (unsigned char)*p;
+        h *= 16777619u;
+    }
+    return h;
+}
+
+static void name_set_index_insert(NameSet *s, uint32_t h, int idx) {
+    uint32_t mask = (uint32_t)s->index_cap - 1;
+    uint32_t slot = h & mask;
+    while (s->index[slot]) slot = (slot + 1) & mask;
+    s->index[slot] = idx + 1;
+}
+
+static void name_set_index_grow(NameSet *s) {
+    int new_cap = s->index_cap ? s->index_cap * 2 : 16;
+    free(s->index);
+    s->index = xcalloc(new_cap, sizeof(int));
+    s->index_cap = new_cap;
     for (int i = 0; i < s->count; i++)
-        if (s->names[i] == name || strcmp(s->names[i], name) == 0) return 1;
+        name_set_index_insert(s, name_set_hash(s->names[i]), i);
+}
+
+static int name_set_has(const NameSet *s, const char *name) {
+    if (!s || s->count == 0) return 0;
+    uint32_t mask = (uint32_t)s->index_cap - 1;
+    uint32_t slot = name_set_hash(name) & mask;
+    while (s->index[slot]) {
+        const char *have = s->names[s->index[slot] - 1];
+        if (have == name || strcmp(have, name) == 0) return 1;
+        slot = (slot + 1) & mask;
+    }
     return 0;
 }
 
 static void name_set_add(NameSet *s, const char *name) {
-    if (!name || name_set_has(s, name)) return;
+    if (!name) return;
+    if ((s->count + 1) * 2 > s->index_cap) name_set_index_grow(s);
+    if (name_set_has(s, name)) return;
     if (s->count >= s->cap) {
         s->cap = s->cap ? s->cap * 2 : 8;
         s->names = realloc(s->names, s->cap * sizeof(const char *));
     }
+    name_set_index_insert(s, name_set_hash(name), s->count);
     s->names[s->count++] = name;
 }
 
 static void name_set_free(NameSet *s) {
     free(s->names);
     s->names = NULL;
-    s->count = s->cap = 0;
+    free(s->index);
+    s->index = NULL;
+    s->count = s->cap = s->index_cap = 0;
+}
+
+/* Swap-remove + index rebuild. The removal sites (param filtering) used
+ * to swap entries directly, which is fine for a linear array but stales
+ * the hash index. These sets are tiny (a function's captured names), so
+ * the rebuild is cheap. */
+static void name_set_remove(NameSet *s, const char *name) {
+    for (int i = 0; i < s->count; i++) {
+        if (s->names[i] == name || strcmp(s->names[i], name) == 0) {
+            s->names[i] = s->names[--s->count];
+            memset(s->index, 0, s->index_cap * sizeof(int));
+            for (int k = 0; k < s->count; k++)
+                name_set_index_insert(s, name_set_hash(s->names[k]), k);
+            return;
+        }
+    }
 }
 
 /* ---- Forward declarations ---- */
@@ -372,18 +428,39 @@ static void emit_line(Compiler *c, int line) {
 
 /* ---- Constant helpers ---- */
 
+/* u16 operand ceiling: constant indices are encoded as 16-bit operands
+ * everywhere (OP_CONST, the name ops, ...). Past 65535 the (uint16_t)
+ * cast at the emit sites silently wrapped — a SET_NAME operand landing
+ * on a NUM constant made const_interns[idx] NULL and env_hash_name
+ * crashed (found via #341's cap removals). A chunk needing more
+ * constants is a compile error, not a wrap. */
+static int check_const_index(int idx) {
+    if (idx > 0xFFFF) {
+        /* Report once (the first index past the line is exactly 0x10000 —
+         * dedup returns only existing indices below it); count every
+         * occurrence so the post-compile gate always aborts. */
+        if (idx == 0x10000) {
+            fprintf(stderr, "Compile error: constant pool exceeds 65536 entries in one chunk\n");
+            eigs_record_first_error(0, "constant pool exceeds 65536 entries in one chunk");
+        }
+        g_parse_errors++;
+        return 0;   /* in-bounds placeholder; the post-compile gate aborts */
+    }
+    return idx;
+}
+
 static int add_string_constant(Compiler *c, const char *str) {
     Value *v = make_str(str);
     int idx = chunk_add_constant(c->chunk, v);
     val_decref(v);
-    return idx;
+    return check_const_index(idx);
 }
 
 static int add_num_constant(Compiler *c, double num) {
     Value *v = make_num(num);
     int idx = chunk_add_constant(c->chunk, v);
     val_decref(v);
-    return idx;
+    return check_const_index(idx);
 }
 
 /* ---- Local variable tracking ---- */
@@ -1803,14 +1880,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             scan_for_interrogated(node->data.func.body[i], &fn_compiler.interrogated);
         }
         /* Function's own params are never "captured by themselves" */
-        for (int i = 0; i < node->data.func.param_count; i++) {
-            for (int j = 0; j < fn_compiler.captured.count; j++) {
-                if (strcmp(fn_compiler.captured.names[j], node->data.func.params[i]) == 0) {
-                    fn_compiler.captured.names[j] = fn_compiler.captured.names[--fn_compiler.captured.count];
-                    break;
-                }
-            }
-        }
+        for (int i = 0; i < node->data.func.param_count; i++)
+            name_set_remove(&fn_compiler.captured, node->data.func.params[i]);
 
         /* Store param names in chunk AND add as compiler locals.
          * Params are at env slots 0..param_count-1, bound by OP_CALL. */
@@ -1890,12 +1961,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         scan_for_captures(node->data.lambda.body, &fn_compiler.captured);
         scan_for_interrogated(node->data.lambda.body, &fn_compiler.interrogated);
         for (int i = 0; i < node->data.lambda.param_count; i++) {
-            for (int j = 0; j < fn_compiler.captured.count; j++) {
-                if (strcmp(fn_compiler.captured.names[j], node->data.lambda.params[i]) == 0) {
-                    fn_compiler.captured.names[j] = fn_compiler.captured.names[--fn_compiler.captured.count];
-                    break;
-                }
-            }
+            name_set_remove(&fn_compiler.captured, node->data.lambda.params[i]);
         }
 
         fn_chunk->local_names = xcalloc(node->data.lambda.param_count, sizeof(char *));
