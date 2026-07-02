@@ -465,6 +465,15 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 3; ops++; non_line_ops++;
         } else if (op == OP_GET_LOCAL) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            /* #348: the emitter writes env->values[slot] with no bounds
+             * check, relying on the reserve-local_count invariant. Bytecode
+             * that violates it (hand-built descriptors) must interpret this
+             * op instead — the interpreter raises the runtime error. */
+            {
+                uint16_t slot = (uint16_t)(chunk->code[i + 1] |
+                                           ((uint16_t)chunk->code[i + 2] << 8));
+                if ((int)slot >= chunk->local_count) { *stop_op = op; *stop_offset = i; break; }
+            }
             i += 3; ops++; non_line_ops++;
             *needs_env_cache = 1;
         } else if (op == OP_GET_NAME) {
@@ -582,6 +591,12 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *needs_env_cache = 1;   /* Stage 5d inline fast path */
         } else if (op == OP_SET_LOCAL) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            /* #348: same bounds rule as OP_GET_LOCAL above. */
+            {
+                uint16_t slot = (uint16_t)(chunk->code[i + 1] |
+                                           ((uint16_t)chunk->code[i + 2] << 8));
+                if ((int)slot >= chunk->local_count) { *stop_op = op; *stop_offset = i; break; }
+            }
             i += 3; ops++; non_line_ops++;
             *needs_env_cache = 1;
         } else if (op == OP_DUP) {
