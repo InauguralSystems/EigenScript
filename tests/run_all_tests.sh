@@ -1370,7 +1370,7 @@ echo ""
 
 # [43a2] Builtin argument-validation error paths (builtins.c arg guards)
 echo "[43a2] Builtin Argument Errors (26 checks)"
-check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin_errors tests passed" 26
+check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin_errors tests passed" 30
 echo ""
 
 # [43a3] EigenStore header-validation / corruption error paths (ext_store.c)
@@ -1885,15 +1885,16 @@ fi
 echo ""
 
 # [68] OP_DISPATCH key handling (boxed-num regression + float-discipline)
-echo "[68] Dispatch (9 checks)"
+# + #353 fast-path/builtin error parity (non-list table, non-callable slot)
+echo "[68] Dispatch (14 checks)"
 DISP_OUTPUT=$(./eigenscript ../tests/test_dispatch.eigs 2>&1); DISP_OUTPUT_RC=$?
 if rc_ok "$DISP_OUTPUT_RC" "$DISP_OUTPUT" && echo "$DISP_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 9))
-    PASS=$((PASS + 9))
-    echo "  PASS: all 9 dispatch checks"
+    TOTAL=$((TOTAL + 14))
+    PASS=$((PASS + 14))
+    echo "  PASS: all 14 dispatch checks"
 else
-    TOTAL=$((TOTAL + 9))
-    FAIL=$((FAIL + 9))
+    TOTAL=$((TOTAL + 14))
+    FAIL=$((FAIL + 14))
     echo "  FAIL: dispatch tests"
     echo "$DISP_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi

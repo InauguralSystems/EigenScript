@@ -62,9 +62,51 @@ catch e:
     caught_frac is e
 check of ["fractional key raises", contains of [caught_frac, "integer"]]
 
-# Out-of-range / non-list table still silently nulls (unchanged behavior).
+# Out-of-range key still silently nulls (deliberate — sparse tables; both
+# implementations agree, see builtin_dispatch).
 check of ["OOB key silently null", (dispatch of [t, 99, null]) == null]
 check of ["negative key silently null", (dispatch of [t, -1, null]) == null]
+
+# ---- #353: the OP_DISPATCH fast path must raise exactly where the ----
+# ---- reference builtin_dispatch raises (literal arg = opcode path) ----
+
+# Non-list table raises (was a silent null).
+caught_tbl is ""
+try:
+    x is dispatch of [42, 0, 7]
+catch e:
+    caught_tbl is e
+check of ["non-list table raises", contains of [caught_tbl, "table must be a list"]]
+
+# In-range slot holding a non-callable raises (was a silent null).
+nums is [42, 7]
+caught_slot is ""
+try:
+    x is dispatch of [nums, 0, 99]
+catch e:
+    caught_slot is e
+check of ["non-callable slot raises", contains of [caught_slot, "is not a function"]]
+
+# A null slot (hole in the table) stays a silent null on both paths.
+holes is [null, f1]
+check of ["null slot silently null", (dispatch of [holes, 0, null]) == null]
+
+# Non-number key raises (was a silent null on the opcode path).
+caught_key is ""
+try:
+    x is dispatch of [t, "k", null]
+catch e:
+    caught_key is e
+check of ["non-number key raises", contains of [caught_key, "key must be a number"]]
+
+# Literal (OP_DISPATCH) and variable (builtin) forms agree on the error.
+vargs is [42, 0, 7]
+caught_var is ""
+try:
+    x is dispatch of vargs
+catch e:
+    caught_var is e
+check of ["literal/variable forms agree", contains of [caught_var, "table must be a list"]]
 
 total is pass_count + fail_count
 print of f"Dispatch Tests: {pass_count}/{total} passed"

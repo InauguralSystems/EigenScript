@@ -4897,8 +4897,21 @@ Value* builtin_dispatch(Value *arg) {
         return make_null();
     }
     Value *table = arg->data.list.items[0];
-    int key = (int)arg->data.list.items[1]->data.num;
+    Value *key_v = arg->data.list.items[1];
     Value *fn_arg = arg->data.list.items[2];
+
+    /* Key validation mirrors OP_DISPATCH (#353): a non-number key used to
+     * reinterpret whatever union member the value carried as a double. */
+    if (!key_v || key_v->type != VAL_NUM) {
+        runtime_error(0, "dispatch: key must be a number");
+        return make_null();
+    }
+    int key = (int)key_v->data.num;
+    if ((double)key != key_v->data.num) {
+        runtime_error(0, "dispatch key must be an integer, got %g",
+                      key_v->data.num);
+        return make_null();
+    }
 
     if (!table || table->type != VAL_LIST) {
         runtime_error(0, "dispatch: table must be a list");

@@ -4565,6 +4565,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             key_d = slot_as_ptr(key_s)->data.num;
         } else {
             slot_decref(arg_s); slot_decref(key_s); slot_decref(table_s);
+            runtime_error(current_line, "dispatch: key must be a number");
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4572,6 +4573,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
         if (!slot_is_ptr(table_s)) {
             slot_decref(arg_s); slot_decref(table_s);
+            runtime_error(current_line, "dispatch: table must be a list");
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4586,8 +4588,15 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             DISPATCH();
         }
 
-        if (table->type != VAL_LIST ||
-            key < 0 || key >= table->data.list.count) {
+        if (table->type != VAL_LIST) {
+            slot_decref(arg_s); slot_decref(table_s);
+            runtime_error(current_line, "dispatch: table must be a list");
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        /* Out-of-range key stays a silent null on BOTH implementations —
+         * deliberate (sparse dispatch tables); see builtin_dispatch. */
+        if (key < 0 || key >= table->data.list.count) {
             slot_decref(arg_s); slot_decref(table_s);
             vm_push_slot(slot_null());
             DISPATCH();
@@ -4727,8 +4736,19 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             DISPATCH();
         }
 
-        /* Not callable */
+        /* Null slot (a hole in the table) is a silent null, matching
+         * builtin_dispatch. VAL_FN with an AST body also nulls there
+         * (unreachable post-bytecode-migration, kept for parity). */
+        if (!fn || fn->type == VAL_NULL || fn->type == VAL_FN) {
+            slot_decref(arg_s); slot_decref(table_s);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+
+        /* Anything else in-range is a populated-with-non-function bug in
+         * the program — raise like builtin_dispatch (#353). */
         slot_decref(arg_s); slot_decref(table_s);
+        runtime_error(current_line, "dispatch: slot %d is not a function", key);
         vm_push_slot(slot_null());
         DISPATCH();
     }

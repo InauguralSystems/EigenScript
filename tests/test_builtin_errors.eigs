@@ -137,6 +137,31 @@ catch e:
 assert of [c11 == 1, "BE11 dispatch slot-not-fn caught"]
 assert of [(contains of [m11, "is not a function"]) == 1, "BE11 message"]
 
+# ---- dispatch: key must be a number (builtin path; used to reinterpret ----
+# ---- the value's union bits as a double — #353 parity fix)            ----
+c11b is 0
+m11b is ""
+dargs3 is [[7], "k", 5]
+try:
+    r is dispatch of dargs3
+catch e:
+    c11b is 1
+    m11b is e
+assert of [c11b == 1, "BE11b dispatch non-number key caught"]
+assert of [(contains of [m11b, "key must be a number"]) == 1, "BE11b message"]
+
+# ---- dispatch: fractional key raises on the builtin path too (#353) ----
+c11c is 0
+m11c is ""
+dargs4 is [[7], 0.5, 5]
+try:
+    r is dispatch of dargs4
+catch e:
+    c11c is 1
+    m11c is e
+assert of [c11c == 1, "BE11c dispatch fractional key caught"]
+assert of [(contains of [m11c, "integer"]) == 1, "BE11c message"]
+
 # ---- nearest_in_range: wrong argument shape ----
 c12 is 0
 m12 is ""
