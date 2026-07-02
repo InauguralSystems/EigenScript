@@ -4,6 +4,18 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **#326 gap closed: member-assign statements enforce the terminator (#351).**
+  The dot-/index-assignment statement paths missed the v0.23.0 check —
+  `d.a is 2 3`, `l[0] is 8 9`, and `d.a += 5 6` still silently ran the
+  trailing token as a second statement, and diverged from the
+  meta-interpreter (which already gated these points, so `eigen_run`
+  rejected what the C parser accepted). Both paths now call
+  `p_end_statement`. Found during the ouroboros v0.23.0 pin bump; its
+  frontend carries a `stmt_terminator_gap.eigs` canary that must be flipped
+  (gap-exemption removed) at the next EIGS_REF bump. Regression: 4 checks
+  added to section [113].
+
 ## [0.23.0] - 2026-07-01
 
 ### Performance
