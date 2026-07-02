@@ -116,11 +116,14 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Symbol gate
+      - name: Symbol gate (stage 1 profile, stage 2 mini-libc residue)
         run: make freestanding-check
 
       - name: Hosted smoke of the profile
         run: bash tools/freestanding_smoke.sh
+
+      - name: Mini-libc differential vs glibc oracle
+        run: make freestanding-libc-diff
 
   # macOS exercises the BSD/clang toolchain and (on arm64) the non-x86 JIT
   # fallback. Runs natively — a Linux container image can't host these.

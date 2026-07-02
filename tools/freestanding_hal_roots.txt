@@ -1,0 +1,45 @@
+# Stage-2 residue: the symbols still imported after the mini-libc/libm
+# (src/freestanding/) is linked in. Every entry here is KERNEL-OWED —
+# an EigenOS HAL root, never portable C. If stage 2 of
+# tools/freestanding_check.sh reports anything outside this list, either
+# the mini-libc lost coverage or a new host dependency crept in.
+
+# heap root (page_alloc -> heap)
+malloc
+calloc
+realloc
+free
+
+# console-out root (console_write)
+printf
+fprintf
+fputs
+putc
+fflush
+stdout
+stderr
+
+# clock root
+clock_gettime
+usleep
+
+# scheduler roots
+pthread_create
+pthread_join
+pthread_mutex_init
+pthread_mutex_lock
+pthread_mutex_unlock
+pthread_mutex_destroy
+pthread_cond_init
+pthread_cond_wait
+pthread_cond_timedwait
+pthread_cond_signal
+pthread_cond_broadcast
+pthread_cond_destroy
+pthread_condattr_init
+pthread_condattr_destroy
+pthread_condattr_setclock
+
+# halt root
+exit
+abort

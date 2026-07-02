@@ -33,7 +33,7 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check print-%
+.PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff print-%
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -253,9 +253,20 @@ fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 version:
 	@echo $(VERSION)
 
-# Freestanding symbol gate (docs/FREESTANDING.md as an assertion): compile
-# the runtime with -DEIGENSCRIPT_FREESTANDING=1 and fail if it imports any
-# symbol outside tools/freestanding_allowlist.txt (the HAL roots + the
-# write-once mini-libc/libm the EigenOS port must provide).
+# Freestanding symbol gate (docs/FREESTANDING.md as an assertion). Stage 1:
+# compile the runtime with -DEIGENSCRIPT_FREESTANDING=1 and fail if it
+# imports any symbol outside tools/freestanding_allowlist.txt. Stage 2: link
+# the mini-libc/libm (src/freestanding/) in and fail unless the residue is
+# exactly the kernel-owed HAL roots (tools/freestanding_hal_roots.txt).
 freestanding-check:
 	bash tools/freestanding_check.sh
+
+# Mini-libc/libm differential vs glibc as the oracle (hosted). Bit/byte-exact
+# for mem/str/ctype/strtol/strtod/qsort/rand48/snprintf and the exact libm
+# subset; ulp-bounded for the transcendentals (bounds pinned in the harness).
+freestanding-libc-diff:
+	$(CC) -O2 -fno-builtin -ffp-contract=off -Wall -Wextra \
+		-o /tmp/eigs_libc_diff tests/freestanding_libc_diff.c \
+		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
+		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
+	/tmp/eigs_libc_diff
