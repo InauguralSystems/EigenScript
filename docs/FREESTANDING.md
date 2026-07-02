@@ -189,14 +189,34 @@ rough order:
 5. **Harden threading** (the scheduler roots) before it's load-bearing.
 6. Defer: `map_exec`/the JIT (interpreter-only first), a filesystem, networking.
 
-## Build profile
+## Build profile (EXISTS since 2026-07-02)
 
-A fourth profile beside `minimal` / `full` / `wasm`: **`freestanding`** —
-`-ffreestanding -nostdlib -U_FORTIFY_SOURCE -fno-stack-protector`, links the tiny
-libc/libm + the HAL, compiles out subprocess/fs/net/regex/JIT. The WASM build
-(net/subprocess/JIT already carved out) and the embedding API (`eigs_embed.h`)
-are the precedent; the new requirement is abstracting **core I/O**, which WASM
-still gets from its host and freestanding cannot.
+The fourth profile beside `minimal` / `full` / `wasm`: **`freestanding`** —
+compile with `-DEIGENSCRIPT_FREESTANDING=1`. It compiles out everything the
+DROP rows above name: the filesystem builtins (incl. `load_file`/`import`,
+which raise a profile-specific error), subprocess, terminal raw mode, libc
+regex (route: EigenRegex's `regex_compat`), the page store, the trace-tape
+file sinks, and the JIT (`EIGS_JIT_ENABLED` gates every arch check;
+interpreter-only until the `map_exec` root exists). The entry point is
+`eigs_embed.h` with **source strings** — `main.c` (the POSIX CLI) is not part
+of the profile.
+
+Two CI gates keep it honest:
+
+- **`make freestanding-check`** (`tools/freestanding_check.sh`) — compiles the
+  profile with `-ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE`, links
+  it relocatable, and fails if the undefined-symbol set contains anything
+  outside `tools/freestanding_allowlist.txt` (the roots + mini-libc/libm
+  table above, as machine-checked truth). Currently ~75 symbols, all within
+  the allowlist.
+- **`tools/freestanding_smoke.sh`** — builds a hosted binary of the profile
+  behind an embed-API harness and proves the core language (functions, lists,
+  dicts, f-strings, observer predicates) still runs while the carved surfaces
+  fail loudly (undefined variable / profile-specific import error).
+
+What remains before it links on bare metal is exactly the allowlist: the ~8
+HAL roots implemented by the EigenOS kernel plus the write-once portable
+mini-libc/libm — both testable hosted with glibc as the differential oracle.
 
 ## Standout findings
 

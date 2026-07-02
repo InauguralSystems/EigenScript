@@ -33,7 +33,7 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo print-%
+.PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check print-%
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -252,3 +252,10 @@ fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 
 version:
 	@echo $(VERSION)
+
+# Freestanding symbol gate (docs/FREESTANDING.md as an assertion): compile
+# the runtime with -DEIGENSCRIPT_FREESTANDING=1 and fail if it imports any
+# symbol outside tools/freestanding_allowlist.txt (the HAL roots + the
+# write-once mini-libc/libm the EigenOS port must provide).
+freestanding-check:
+	bash tools/freestanding_check.sh

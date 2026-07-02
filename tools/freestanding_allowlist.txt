@@ -1,0 +1,121 @@
+# Symbols the freestanding profile is ALLOWED to import — the ledger's
+# (docs/FREESTANDING.md) HAL roots + the write-once mini-libc/libm surface.
+# tools/freestanding_check.sh compiles the runtime (minus main.c) with
+# -DEIGENSCRIPT_FREESTANDING=1 and fails if the undefined-symbol set
+# contains anything not listed here. Adding a symbol to this list is a
+# statement that EigenOS's HAL or the portable mini-libc must provide it.
+
+# --- heap root (page_alloc -> heap) ---
+malloc
+calloc
+realloc
+free
+
+# --- console-out root (console_write + BUILD formatter) ---
+printf
+fprintf
+snprintf
+vsnprintf
+fputc
+fputs
+fwrite
+fflush
+putc
+putchar
+puts
+write
+stdout
+stderr
+
+# --- console-in root (read_char) ---
+fgets
+fgetc
+read
+stdin
+
+# --- clock root ---
+clock_gettime
+time
+usleep
+
+# --- scheduler roots (pthread over spawn/yield/park) ---
+pthread_create
+pthread_join
+pthread_once
+pthread_mutex_init
+pthread_mutex_lock
+pthread_mutex_unlock
+pthread_mutex_destroy
+pthread_cond_init
+pthread_cond_wait
+pthread_cond_timedwait
+pthread_cond_signal
+pthread_cond_broadcast
+pthread_cond_destroy
+pthread_condattr_init
+pthread_condattr_destroy
+pthread_condattr_setclock
+
+# --- entropy root + PRNG ---
+rand
+srand
+random
+drand48
+lrand48
+srand48
+
+# --- halt root ---
+exit
+_exit
+abort
+atexit
+
+# --- config (kernel config table / empty stub) ---
+getenv
+
+# --- C runtime glue that survives freestanding flags ---
+__errno_location
+
+# --- mini-libc: mem/str (write once, portable) ---
+memcpy
+memmove
+memset
+memcmp
+strlen
+strcmp
+strncmp
+strchr
+strrchr
+strstr
+strdup
+strncpy
+strtod
+strtol
+strtoul
+strtok_r
+strerror
+
+# --- mini-libc: ctype + sort ---
+__ctype_b_loc
+__ctype_tolower_loc
+__ctype_toupper_loc
+qsort
+
+# --- mini-libm (4 kernels + derived) ---
+exp
+log
+log2
+pow
+sqrt
+sin
+cos
+tan
+asin
+acos
+atan
+atan2
+fmod
+round
+floor
+ceil
+fabs

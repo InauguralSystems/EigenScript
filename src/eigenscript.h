@@ -25,6 +25,27 @@
 #define EIGENSCRIPT_EXT_GFX 0
 #endif
 
+/* Freestanding profile (docs/FREESTANDING.md) — the no-libc/EigenOS
+ * carve-out. Compiles out everything that needs a host OS beyond the
+ * HAL roots + mini-libc/libm allowlist (tools/freestanding_allowlist.txt):
+ * filesystem builtins (incl. load_file/import), subprocess, terminal raw
+ * mode, libc regex (route to EigenRegex's regex_compat), the trace-tape
+ * file sinks, and the JIT (interpreter-only; exec pages are a deferred
+ * HAL root). Gated in CI by tools/freestanding_check.sh. The entry point
+ * is eigs_embed.h, not main.c. */
+#ifndef EIGENSCRIPT_FREESTANDING
+#define EIGENSCRIPT_FREESTANDING 0
+#endif
+
+/* The JIT is x86-64-only and compiled out of the freestanding profile
+ * (executable pages are a deferred HAL root). All arch gates in jit.c /
+ * vm.c go through this so the two conditions can't drift. */
+#if defined(__x86_64__) && !EIGENSCRIPT_FREESTANDING
+#define EIGS_JIT_ENABLED 1
+#else
+#define EIGS_JIT_ENABLED 0
+#endif
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>

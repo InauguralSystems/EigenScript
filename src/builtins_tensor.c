@@ -1031,6 +1031,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
     }
     return matrix;
 }
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_tensor_save(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
     Value *tensor = arg->data.list.items[0];
@@ -1069,6 +1070,7 @@ Value* builtin_tensor_save(Value *arg) {
     fclose(f);
     return make_num(1);
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* #262 Step E: the on-disk observer block is read past (format compatibility)
  * but no longer applied — Values carry no observer state under the slot model. */
@@ -1083,6 +1085,7 @@ static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int c
 /* ==== BUILTIN: tensor_load ==== */
 /* tensor_load of path — load 1D or 2D tensor from binary file.
  * Restores observer state if present in the file. */
+#if !EIGENSCRIPT_FREESTANDING
 Value* builtin_tensor_load(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
 
@@ -1157,3 +1160,4 @@ Value* builtin_tensor_load(Value *arg) {
 
     return result;
 }
+#endif /* !EIGENSCRIPT_FREESTANDING */

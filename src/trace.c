@@ -401,6 +401,11 @@ void trace_init(void) {
      * Done first so trace_init can succeed even if EIGS_TRACE is unset. */
     trace_replay_init();
 
+#if EIGENSCRIPT_FREESTANDING
+    /* Tape files need a filesystem; EIGS_TRACE is a hosted tool. The
+     * in-memory temporal machinery (g_trace_hist etc.) is unaffected. */
+    return;
+#else
     const char *path = getenv("EIGS_TRACE");
     if (!path || !*path) return;
 
@@ -423,6 +428,7 @@ void trace_init(void) {
     setvbuf(g_trace_fp, NULL, _IOFBF, 64 * 1024);
     g_trace_enabled = 1;
     g_trace_hist = 1;
+#endif /* !EIGENSCRIPT_FREESTANDING */
 }
 
 /* ----- Phase 3: replay reader.
@@ -438,6 +444,9 @@ static size_t g_replay_cap = 0;
 static int   g_replay_strict = 0;      /* EIGS_REPLAY_STRICT=1: mismatch is fatal */
 
 static void trace_replay_init(void) {
+#if EIGENSCRIPT_FREESTANDING
+    return;   /* tape files need a filesystem; replay is a hosted tool */
+#else
     const char *path = getenv("EIGS_REPLAY");
     if (!path || !*path) return;
     g_replay_fp = fopen(path, "r");
@@ -449,10 +458,13 @@ static void trace_replay_init(void) {
     const char *strict = getenv("EIGS_REPLAY_STRICT");
     g_replay_strict = (strict && strict[0] && strcmp(strict, "0") != 0);
     g_replay_enabled = 1;
+#endif /* !EIGENSCRIPT_FREESTANDING */
 }
 
 static void replay_shutdown(void) {
+#if !EIGENSCRIPT_FREESTANDING
     if (g_replay_fp) { fclose(g_replay_fp); g_replay_fp = NULL; }
+#endif
     free(g_replay_line); g_replay_line = NULL; g_replay_cap = 0;
     g_replay_enabled = 0;
 }
@@ -725,11 +737,13 @@ int trace_replay_take(const char *fn, Value **out) {
 }
 
 void trace_shutdown(void) {
+#if !EIGENSCRIPT_FREESTANDING
     if (g_trace_fp) {
         fflush(g_trace_fp);
         fclose(g_trace_fp);
         g_trace_fp = NULL;
     }
+#endif
     g_trace_enabled = 0;
 
     if (g_prev_tab) {
@@ -833,14 +847,15 @@ void trace_assign(const char *name, EigsSlot value) {
  * record cannot be used for full determinism. */
 
 static void wf_putc(int c, int *budget) {
-    if (*budget <= 0) return;
+    if (*budget <= 0 || !g_trace_fp) return;
     fputc(c, g_trace_fp); (*budget)--;
 }
 static void wf_puts(const char *s, int *budget) {
+    if (!g_trace_fp) return;
     while (*s && *budget > 0) { fputc(*s++, g_trace_fp); (*budget)--; }
 }
 static void wf_printf(int *budget, const char *fmt, ...) {
-    if (*budget <= 0) return;
+    if (*budget <= 0 || !g_trace_fp) return;
     char buf[64];
     va_list ap; va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
