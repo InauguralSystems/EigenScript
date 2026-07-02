@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-01
+
 ### Performance
 - **Compile time is linear in program size (#341).** Profiling (gprof, the
   12k-unique-name generated program) refuted the issue's suspect: 92% of
