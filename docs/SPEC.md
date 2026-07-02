@@ -171,6 +171,11 @@ All numbers are 64-bit floats. Integer-valued numbers print without a
 decimal point. Division is true division. `%` is modulo. There is no
 exponent operator; use `pow of [base, exp]`.
 
+Numeric literals accept the usual decimal forms plus a leading or
+trailing dot, scientific notation, and hexadecimal (lexing is delegated
+to C's `strtod`): `.5`, `1.`, `1e5`, `1E5`, `0x10` are all single
+numbers. A malformed form like `1.2.3` is a parse error.
+
 ```eigenscript
 print of (7 + 3)
 print of (7 - 3)
@@ -598,7 +603,9 @@ print of xs
 Functions capture their defining environment by reference: inner
 functions can read *and write* outer variables, and the captured state
 survives after the outer function returns. Lambda syntax is
-`(params) => expr`.
+`(params) => expr`. A zero-parameter lambda `() => expr` mirrors the
+classic no-parameter `define` style: it receives the implicit
+parameter `n` (so `h is () => n * 2` then `h of 21` is `42`).
 
 ```eigenscript
 define make_counter as:
