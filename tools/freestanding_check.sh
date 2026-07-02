@@ -33,7 +33,7 @@ extra=$(comm -23 "$BUILD/undefined.txt" "$BUILD/allow.txt")
 unused=$(comm -13 "$BUILD/undefined.txt" "$BUILD/allow.txt")
 
 n_undef=$(wc -l < "$BUILD/undefined.txt")
-echo "freestanding-check: $n_undef undefined symbols (allowlist $(wc -l < "$BUILD/allow.txt"))"
+echo "stage 1: $n_undef undefined symbols (allowlist $(wc -l < "$BUILD/allow.txt"))"
 
 if [ -n "$unused" ]; then
     echo "note: allowlisted but not currently imported (toolchain-dependent, not an error):"
@@ -46,4 +46,33 @@ if [ -n "$extra" ]; then
     echo "symbol to tools/freestanding_allowlist.txt WITH its HAL/mini-libc story."
     exit 1
 fi
-echo "OK: freestanding import surface is within the ledger allowlist"
+echo "OK stage 1: freestanding import surface is within the ledger allowlist"
+
+# ---- stage 2: link the mini-libc/libm in; the residue must be exactly
+# the kernel-owed HAL roots (tools/freestanding_hal_roots.txt) ----
+for f in mini_libc mini_libm mini_fmt mini_strtod; do
+    gcc -O2 -ffreestanding -fno-builtin -ffp-contract=off -fno-math-errno \
+        -fno-stack-protector -U_FORTIFY_SOURCE \
+        -Werror=implicit-function-declaration \
+        -DEIGS_MINI_STANDARD_NAMES=1 \
+        -c "src/freestanding/$f.c" -o "$BUILD/$f.o"
+done
+ld -r -o "$BUILD/stage2.o" "$BUILD/all.o" \
+    "$BUILD/mini_libc.o" "$BUILD/mini_libm.o" "$BUILD/mini_fmt.o" "$BUILD/mini_strtod.o"
+nm -u "$BUILD/stage2.o" | awk '{print $2}' | grep -v '^_GLOBAL_OFFSET_TABLE_$' \
+    | sort -u > "$BUILD/residue.txt"
+grep -v '^#' tools/freestanding_hal_roots.txt | grep -v '^$' | sort -u > "$BUILD/roots.txt"
+
+extra2=$(comm -23 "$BUILD/residue.txt" "$BUILD/roots.txt")
+missing2=$(comm -13 "$BUILD/residue.txt" "$BUILD/roots.txt")
+echo "stage 2: $(wc -l < "$BUILD/residue.txt") symbols after mini-libc (HAL roots $(wc -l < "$BUILD/roots.txt"))"
+if [ -n "$extra2" ]; then
+    echo "FAIL: mini-libc left non-HAL symbols unresolved:"
+    echo "$extra2" | sed 's/^/  /'
+    exit 1
+fi
+if [ -n "$missing2" ]; then
+    echo "note: HAL roots not currently imported:"
+    echo "$missing2" | sed 's/^/  /'
+fi
+echo "OK stage 2: residue is exactly the kernel-owed HAL roots"

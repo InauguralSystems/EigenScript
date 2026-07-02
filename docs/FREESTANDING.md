@@ -182,10 +182,11 @@ rough order:
    the arena is already a bump allocator, the general heap is the new piece).
 3. **~4 libm kernels** (`exp`, `log`, `sin`/`cos`, `atan`); `log2`/`fabs` first
    — the observer needs them.
-4. **The ordinary mini-libc/libm** over the roots — string ops, `strtod`/
-   `strtol`, `qsort`, ctype, PRNG, the printf family, pthread sync, derived math.
-   Portable, **write once**, not per-platform; the bulk of the symbol count but
-   the smaller share of the genuinely-hard work.
+4. **The ordinary mini-libc/libm** over the roots — DONE 2026-07-02
+   (`src/freestanding/`, see below): string ops, `strtod`, `qsort`, ctype,
+   PRNG, the vsnprintf formatter, derived math — differential-tested against
+   glibc. Still kernel-side: the printf-family wrappers over `console_write`
+   and pthread sync over the scheduler roots (they ARE the HAL seam).
 5. **Harden threading** (the scheduler roots) before it's load-bearing.
 6. Defer: `map_exec`/the JIT (interpreter-only first), a filesystem, networking.
 
@@ -203,20 +204,46 @@ of the profile.
 
 Two CI gates keep it honest:
 
-- **`make freestanding-check`** (`tools/freestanding_check.sh`) — compiles the
-  profile with `-ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE`, links
-  it relocatable, and fails if the undefined-symbol set contains anything
-  outside `tools/freestanding_allowlist.txt` (the roots + mini-libc/libm
-  table above, as machine-checked truth). Currently ~75 symbols, all within
-  the allowlist.
+- **`make freestanding-check`** (`tools/freestanding_check.sh`) — stage 1
+  compiles the profile with `-ffreestanding -fno-stack-protector
+  -U_FORTIFY_SOURCE`, links it relocatable, and fails if the undefined-symbol
+  set contains anything outside `tools/freestanding_allowlist.txt` (~75
+  symbols, all within). Stage 2 links the mini-libc/libm in and fails unless
+  the residue is EXACTLY the kernel-owed HAL roots
+  (`tools/freestanding_hal_roots.txt` — 30 symbols: heap 4, console 7,
+  clock 2, scheduler 15, halt 2).
 - **`tools/freestanding_smoke.sh`** — builds a hosted binary of the profile
   behind an embed-API harness and proves the core language (functions, lists,
   dicts, f-strings, observer predicates) still runs while the carved surfaces
   fail loudly (undefined variable / profile-specific import error).
 
-What remains before it links on bare metal is exactly the allowlist: the ~8
-HAL roots implemented by the EigenOS kernel plus the write-once portable
-mini-libc/libm — both testable hosted with glibc as the differential oracle.
+## Mini-libc/libm (EXISTS since 2026-07-02)
+
+`src/freestanding/` — the write-once portable layer, ~45 of the allowlist's
+symbols: `mini_libc.c` (mem/str, glibc-ABI ctype tables, strtol/strtoul,
+STABLE mergesort qsort — deterministic tie order hosted and bare-metal,
+POSIX-exact rand48, errno/getenv/atexit glue), `mini_strtod.c`
+(correctly-rounded decimal→double: Clinger fast path + exact digit-array
+slow path), `mini_fmt.c` (vsnprintf/snprintf whose float conversions ride an
+exact big-decimal digit engine — correct rounding at any precision), and
+`mini_libm.c` (4 kernels + derived forms, no borrowed coefficient tables).
+
+Every function is `eigs_`-prefixed with standard-name aliases under
+`-DEIGS_MINI_STANDARD_NAMES=1`, so the same objects diff hosted against
+glibc and link freestanding. **`make freestanding-libc-diff`** is the oracle
+gate (`tests/freestanding_libc_diff.c`, CI-run): bit/byte-exact for
+mem/str/ctype/strtol/strtod/qsort/rand48/snprintf and the exact libm subset
+(fabs/floor/ceil/round/sqrt/fmod); measured ulp vs glibc for the rest —
+exp 1, sin/cos 1, log 2, log2 3, tan 3, pow 5, atan/asin/acos 5, atan2 6
+(bounds pinned in the harness). Known limits, documented: trig reduction is
+Cody-Waite 3-word (full accuracy to |x| ~1.6e6, degrading beyond —
+Payne-Hanek later if anything needs it); strtod takes no hex floats; rand/
+random are a different (SplitMix64) generator — rand48 is the reproducibility
+surface.
+
+What remains before it links on bare metal is exactly stage 2's residue: the
+30 HAL-root symbols the EigenOS kernel owes (M2 pages→heap, M1 serial→
+console_write, M4 PIT→clock, the scheduler, halt).
 
 ## Standout findings
 
