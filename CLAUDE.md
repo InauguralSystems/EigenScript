@@ -16,6 +16,8 @@ make http       # http+model variant — run tests/test_http_server.sh
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 make freestanding-check  # 2-stage symbol gate for the EigenOS profile (docs/FREESTANDING.md)
 make freestanding-libc-diff  # mini-libc/libm vs glibc oracle (src/freestanding/)
+make poison     # 0xAA uninit-read hunter build; run the suite with MALLOC_PERTURB_=170
+bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (CI gate)
 ```
 
 - The suite must pass **both** release and ASan with leaks on:
@@ -80,6 +82,14 @@ make freestanding-libc-diff  # mini-libc/libm vs glibc oracle (src/freestanding/
   .eigs sections should use `check_eigs_suite` (rc + marker). The one
   tolerated nonzero exit is a LeakSanitizer report (see the leak tally
   above; section [87] deliberately opts out of that tolerance).
+- **No big by-value arrays/structs in recursive functions.** The C stack is
+  a resource axis no hosted gate bounds (8 MiB + guard page hides it); the
+  `Compiler`'s inline `Local[512]` cost ~12.7 KiB of stack per AST level for
+  23 versions until EigenOS's 64 KiB boot stack exposed it as a
+  layout-sensitive heisenbug (PR #361). Audit with `gcc -fstack-usage`
+  (≥ ~2 KiB in a recursive path is suspect); `tools/embed_stack_soak.sh`
+  (CI) is the regression gate and also the only multi-eval-per-EigsState
+  coverage in the repo.
 - **`tests/test_temporal.eigs` is line-number-sensitive** — its `at`
   queries hardcode line numbers. Append only before the final if/else, and
   re-verify the `grep -n` markers in the file.
