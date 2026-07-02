@@ -7,6 +7,10 @@
 
 #include "eigenscript.h"
 
+#if defined(EIGS_POISON) && defined(__GLIBC__)
+#include <malloc.h>   /* malloc_usable_size, for xrealloc tail poisoning */
+#endif
+
 /* g_arena is now a per-OS-thread Arena* set up by eigs_thread_attach.
  * The TLS definition lives in state.c. */
 
@@ -42,6 +46,7 @@ size_t safe_size_mul(size_t a, size_t b) {
 void* xmalloc(size_t size) {
     void *p = malloc(size);
     if (!p) x_oom(size);
+    EIGS_POISON_MEM(p, size);
     return p;
 }
 
@@ -52,8 +57,16 @@ void* xcalloc(size_t nmemb, size_t size) {
 }
 
 void* xrealloc(void *p, size_t size) {
+#if defined(EIGS_POISON) && defined(__GLIBC__)
+    size_t old_usable = p ? malloc_usable_size(p) : 0;
+#endif
     void *q = realloc(p, size);
     if (!q && size) x_oom(size);
+#if defined(EIGS_POISON) && defined(__GLIBC__)
+    /* Poison only the grown tail — the copied prefix is live data. */
+    if (q && size > old_usable)
+        memset((char *)q + old_usable, EIGS_POISON_BYTE, size - old_usable);
+#endif
     return q;
 }
 

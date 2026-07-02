@@ -1645,6 +1645,18 @@ void env_decref(Env *env) {
                    (env->hash.mask + 1) * sizeof(uint32_t));
             env->hash.generation = 1;
         }
+#ifdef EIGS_POISON
+        /* The parked arrays are dormant-dirty by design (gated by count=0 +
+         * the generation bump). Poison them so any read that slips past a
+         * gate sees 0xAA, not a stale-but-plausible pointer/index. The
+         * generations array IS the gate and must not be touched. */
+        EIGS_POISON_MEM(env->names, env->capacity * sizeof(char *));
+        EIGS_POISON_MEM(env->values, env->capacity * sizeof(EigsSlot));
+        if (env->assign_counts)
+            EIGS_POISON_MEM(env->assign_counts, env->capacity * sizeof(int));
+        EIGS_POISON_MEM(env->hash.hashes, (env->hash.mask + 1) * sizeof(uint32_t));
+        EIGS_POISON_MEM(env->hash.indices, (env->hash.mask + 1) * sizeof(int));
+#endif
         env->parent = g_env_freelist;
         g_env_freelist = env;
         g_env_freelist_count++;
