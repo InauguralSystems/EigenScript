@@ -2414,6 +2414,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             slot_incref(s);
             vm_push_slot(s);
         } else {
+            /* Out-of-range read -> null. This is LOAD-BEARING, not a bug
+             * (#348 tried to make it an error and 18 call-semantics checks
+             * failed): an underfed call to a defaults-free function binds
+             * only argc slots, and reading a missing parameter resolves
+             * HERE — this null IS the "missing parameters bind to null"
+             * semantics (SPEC.md). Only SET is a hard error (below). */
             vm_push_slot(slot_null());
         }
         DISPATCH();
@@ -2446,6 +2452,18 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             slot_incref(tos);
             slot_decref(e->values[slot]);
             e->values[slot] = tos;
+        } else {
+            /* #348: an out-of-range slot used to DROP the write silently
+             * (the assigned variable simply never existed). Compiler-emitted
+             * writes are always backed (body locals size the call env;
+             * defaults-bearing chunks get their param slots reserved), so
+             * this is hand-built bytecode (vm_run_bytecode descriptors) with
+             * a bad or missing local_names table. Loud and catchable.
+             * NOTE: the GET side above deliberately stays a silent null —
+             * that path is the missing-parameter-reads-null semantics. */
+            runtime_error(current_line,
+                          "SET_LOCAL slot %d out of range (env has %d slots)",
+                          (int)slot, e->count);
         }
         DISPATCH();
     }

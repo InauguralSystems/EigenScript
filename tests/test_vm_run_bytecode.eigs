@@ -138,4 +138,19 @@ assert_eq of [vm_run_bytecode of [[GET_NAME,0,0, RETURN], [42]], null, "verify: 
 dr is vm_run_bytecode of [[DICT,255,255, RETURN], []]
 assert_eq of [type of dr, "dict", "verify: OP_DICT oversized count bounded (no OOB)"]
 
+# --- #348: an out-of-range SET_LOCAL raises instead of silently dropping ---
+# (Slot indices are absolute env positions for module-level chunks, so use
+# 65535 — beyond any real env. GET_LOCAL out-of-range deliberately stays a
+# silent null: that path implements missing-parameter-reads-null for
+# underfed calls — see the call-semantics suite.)
+GET_LOCAL is 23
+SET_LOCAL is 24
+sl348 is 0
+try:
+    rs348 is vm_run_bytecode of [[CONST,0,0, SET_LOCAL,255,255, RETURN], [7]]
+catch es348:
+    sl348 is 1
+assert_eq of [sl348, 1, "SET_LOCAL out-of-range slot raises (#348)"]
+assert_eq of [vm_run_bytecode of [[GET_LOCAL,255,255, RETURN], []], null, "GET_LOCAL out-of-range reads null (missing-param semantics)"]
+
 test_summary of null

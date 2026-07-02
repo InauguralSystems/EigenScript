@@ -18,6 +18,24 @@ All notable changes to EigenScript are documented here.
   (~125×); 3k/6k/12k now scale linearly (0.01/0.03/0.07s); 30k runs in 0.2s.
 
 ### Fixed
+- **An out-of-range `OP_SET_LOCAL` is a runtime error (#348).** A slot ≥
+  `env->count` silently DROPPED the write — the assigned variable simply
+  never came into existence. Compiler-emitted writes are always backed (body
+  locals size the call env; defaults-bearing chunks reserve their param
+  slots), so the drop only hit hand-built bytecode (`vm_run_bytecode`
+  descriptors, the ouroboros codegen): a defaults prologue on an underfed
+  call wrote into a nonexistent slot and continued unbound (F-OURO-22;
+  ouroboros pads a spare local as a workaround it can drop at the next pin
+  bump). Now a catchable `SET_LOCAL slot N out of range` error.
+  **`OP_GET_LOCAL`'s out-of-range null push stays, deliberately** — the fix
+  originally made it an error too and 18 call-semantics checks failed: that
+  null IS the "missing parameters bind to null" semantics for underfed calls
+  to defaults-free functions (now documented at the handler). The JIT scan
+  additionally refuses to compile local ops whose slot ≥
+  `chunk->local_count` (the emitter reads/writes `env->values[slot]`
+  unchecked — a violating JIT'd chunk was native out-of-bounds access, not
+  even a silent drop); those ops interpret instead. Regression: 2 checks in
+  `test_vm_run_bytecode.eigs` [93].
 - **Constant pool past 65536 entries is a compile error, not a wrap (#341).**
   Constant indices are u16 operands; a pool crossing 65536 silently wrapped
   the emitted index, and a wrapped SET_NAME operand landing on a NUM constant
