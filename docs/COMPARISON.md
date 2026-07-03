@@ -368,5 +368,8 @@ print of (word_lengths of (["ada", "grace"]))
 {"ada": 3, "grace": 5}
 ```
 
-(Note the `of (["ada", "grace"])` — parenthesised, because the function
-takes one parameter and the argument is itself a list.)
+(Note the `of (["ada", "grace"])` — parenthesised: parentheses always
+make the argument a single value, so the literal list arrives whole
+instead of spreading. A bare `of ["ada", "grace"]` would also bind
+whole here — single-parameter functions never spread — but the
+parenthesised form works for any arity.)

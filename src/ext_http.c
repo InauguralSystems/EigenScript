@@ -134,9 +134,16 @@ void* health_thread(void *arg) {
  * ================================================================ */
 
 Value* builtin_http_route(Value *arg) {
-    if (arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-
-    if (g_server.route_count >= MAX_ROUTES) return make_null();
+    /* #356: registration failures must raise — the return value is never
+     * checked, so a silent make_null() means the route just never exists. */
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        runtime_error(0, "http_route requires [method, path, handler...] (3+ elements)");
+        return make_null();
+    }
+    if (g_server.route_count >= MAX_ROUTES) {
+        runtime_error(0, "http_route: route table full (max %d routes)", MAX_ROUTES);
+        return make_null();
+    }
 
     Route *r = &g_server.routes[g_server.route_count];
     char *method_s = value_to_string(arg->data.list.items[0]);

@@ -97,8 +97,10 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
   only at `count > 1`, so a 1-element list binds the *whole list* to the
   first param. For 1-arg calls to multi-param (incl. defaulted) functions
   use `f of (x)`. This breaks the obvious recursive form `fib of [n - 1]`
-  the moment a defaulted param is added (issue #153). (More `.eigs`-writing
-  gotchas: the `write-eigenscript` skill.)
+  the moment a defaulted param is added (issue #153). Parenthesising
+  suppresses spread entirely (#355): `f of ([a, b])` passes the literal
+  list whole. (More `.eigs`-writing gotchas: the `write-eigenscript`
+  skill.)
 - The Makefile `asan` target compiles with `EIGENSCRIPT_EXT_HTTP=0`; if you
   touch `ext_http.c`, compile-check with `make http`. Same for `ext_gfx.c`
   — in **no** default build; compile-check with `make gfx`. All variants

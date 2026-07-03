@@ -1222,15 +1222,19 @@ PD_FAIL=$(echo "$PD_OUTPUT" | grep -c "FAIL:" || true)
 BO_OUTPUT=$(bash "$TESTS_DIR/test_builtin_overflow.sh" 2>&1)
 BO_PASS=$(echo "$BO_OUTPUT" | grep -c "PASS:" || true)
 BO_FAIL=$(echo "$BO_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + PD_PASS + PD_FAIL + BO_PASS + BO_FAIL))
-PASS=$((PASS + PD_PASS + BO_PASS))
-FAIL=$((FAIL + PD_FAIL + BO_FAIL))
-if [ "$PD_FAIL" -gt 0 ] || [ "$BO_FAIL" -gt 0 ]; then
+PC_OUTPUT=$(bash "$TESTS_DIR/test_parse_caps.sh" 2>&1)
+PC_PASS=$(echo "$PC_OUTPUT" | grep -c "  PASS:" || true)
+PC_FAIL=$(echo "$PC_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + PD_PASS + PD_FAIL + BO_PASS + BO_FAIL + PC_PASS + PC_FAIL))
+PASS=$((PASS + PD_PASS + BO_PASS + PC_PASS))
+FAIL=$((FAIL + PD_FAIL + BO_FAIL + PC_FAIL))
+if [ "$PD_FAIL" -gt 0 ] || [ "$BO_FAIL" -gt 0 ] || [ "$PC_FAIL" -gt 0 ]; then
     echo "  FAIL: crash-safety regression"
     echo "$PD_OUTPUT" | grep "FAIL:" | head -5
     echo "$BO_OUTPUT" | grep "FAIL:" | head -5
+    echo "$PC_OUTPUT" | grep "FAIL:" | head -5
 else
-    echo "  PASS: all $((PD_PASS + BO_PASS)) crash-safety checks"
+    echo "  PASS: all $((PD_PASS + BO_PASS + PC_PASS)) crash-safety checks"
 fi
 echo ""
 

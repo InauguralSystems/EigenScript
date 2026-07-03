@@ -24,16 +24,25 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
 
     *sql = arg->data.list.items[0]->data.str;
     *nparams = arg->data.list.count - 1;
-    if (*nparams > DB_MAX_PARAMS) *nparams = DB_MAX_PARAMS;
+    /* #356: raise instead of silently dropping params 17+ (Postgres would
+     * error confusingly at exec time — or worse, not at all) or coercing
+     * non-scalar params to "" (the #316 class). */
+    if (*nparams > DB_MAX_PARAMS) {
+        runtime_error(0, "db: too many parameters (%d, max %d)",
+                      *nparams, DB_MAX_PARAMS);
+        return 0;
+    }
     for (int i = 0; i < *nparams; i++) {
         Value *v = arg->data.list.items[i + 1];
-        if (v->type == VAL_STR) {
+        if (v && v->type == VAL_STR) {
             params[i] = v->data.str;
-        } else if (v->type == VAL_NUM) {
+        } else if (v && v->type == VAL_NUM) {
             snprintf(numbuf[i], 64, "%g", v->data.num);
             params[i] = numbuf[i];
         } else {
-            params[i] = "";
+            runtime_error(0, "db: parameter %d is not a string or number (got %s)",
+                          i + 1, v ? val_type_name(v->type) : "null");
+            return 0;
         }
     }
     return 1;
