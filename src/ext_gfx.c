@@ -1129,7 +1129,9 @@ Value* builtin_ppu_render_frame(Value *arg) {
     int sprite_h = (lcdc & 0x04) ? 16 : 8;
     int bg_en  = lcdc & 0x01;
     int spr_en = lcdc & 0x02;
-    int win_en = lcdc & 0x20;
+    /* On DMG, LCDC bit 0 disables the window as well as the BG — keep in
+     * lockstep with the script PPU twin (DMG src/ppu.eigs, DMG#31). */
+    int win_en = bg_en && (lcdc & 0x20);
 
     /* Per-scanline BG priority for sprite compositing */
     uint8_t bg_pri[160];
