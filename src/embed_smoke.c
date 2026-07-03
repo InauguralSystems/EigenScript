@@ -141,6 +141,33 @@ int main(void) {
     if (r) eigs_value_release(r);
     eigs_set_source_provider(NULL, NULL);
 
+    /* --- Multi-state switching on one thread (the M9 scheduler seam). */
+    EigsState *st2 = eigs_state_new();
+    CHECK(st2 != NULL, "second state created");
+    CHECK(eigs_thread_switch(st2) != NULL, "switch to st2");
+    eigs_state_init_runtime(st2);
+    r = eigs_eval_string("mstate is 11\nmstate");
+    CHECK(r != NULL && eigs_value_as_num(r) == 11.0, "eval on st2");
+    if (r) eigs_value_release(r);
+    /* The source provider is process-global: it serves every state. */
+    eigs_set_source_provider(smoke_provider, NULL);
+    r = eigs_eval_string("import smokemod\nsmokemod[\"answer\"]");
+    CHECK(r != NULL && eigs_value_as_num(r) == 42.0, "provider serves st2 too");
+    if (r) eigs_value_release(r);
+    eigs_set_source_provider(NULL, NULL);
+    CHECK(eigs_thread_switch(st) != NULL, "switch back to st1 (parked, no teardown)");
+    eigs_clear_error();
+    r = eigs_eval_string("mstate");
+    CHECK(r == NULL && eigs_has_error(), "st1 does not see st2's binding");
+    eigs_clear_error();
+    r = eigs_eval_string("z + 2");
+    CHECK(r != NULL && eigs_value_as_num(r) == 42.0,
+          "st1 bindings preserved across switches");
+    if (r) eigs_value_release(r);
+    CHECK(eigs_thread_switch(st2) != NULL, "switch to st2 for close");
+    eigs_close(st2);                 /* full teardown; thread left detached */
+    CHECK(eigs_thread_switch(st) != NULL, "re-activate st1 after st2 close");
+
     /* --- #301: spawn + channel through the embed path. eigs_close() must
      * drain the handle table (reap workers, free channels, clear multithreaded)
      * just like main.c — otherwise embedders leak channels/threads, the exit

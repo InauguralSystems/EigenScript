@@ -64,6 +64,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     }
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
+    th->owner_tls = (void *)&eigs_current;   /* this OS thread's identity */
     th->loop_exit_reason = "normal";
     th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
 
@@ -91,6 +92,35 @@ EigsThread *eigs_thread_attach(EigsState *st) {
 
 EigsState *eigs_current_state(void) {
     return eigs_current ? eigs_current->state : NULL;
+}
+
+/* Single-thread multi-state switching (the M9 scheduler seam): PARK the
+ * calling thread's current attachment (no teardown — the arena,
+ * freelists, VM and error state all live on the EigsThread and stay
+ * intact) and activate this thread's attachment to `st`, creating one on
+ * first switch. The only per-OS-thread state that is NOT on the
+ * EigsThread is vm.c's __thread hot-pointer caches — reset on every
+ * switch, exactly as attach does. Cross-state rule stays the caller's
+ * job: values belong to the state that made them; move numbers (copy),
+ * never Value pointers. */
+EigsThread *eigs_thread_switch(EigsState *st) {
+    if (!st) return NULL;
+    if (eigs_current && eigs_current->state == st) return eigs_current;
+
+    eigs_current = NULL;                       /* park (no teardown) */
+
+    EigsThread *th = NULL;
+    pthread_mutex_lock(&st->threads_lock);
+    for (EigsThread *it = st->threads; it; it = it->next)
+        if (it->owner_tls == (void *)&eigs_current) { th = it; break; }
+    pthread_mutex_unlock(&st->threads_lock);
+
+    if (th) {
+        eigs_current = th;
+        vm_thread_reset_caches();              /* stale cross-state pointers */
+        return th;
+    }
+    return eigs_thread_attach(st);             /* first switch: fresh attach */
 }
 
 void eigs_thread_detach(void) {

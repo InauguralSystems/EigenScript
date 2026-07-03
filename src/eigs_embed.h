@@ -49,6 +49,17 @@ void        eigs_close(EigsState *st);
 EigsState  *eigs_state_new(void);
 void        eigs_state_destroy(EigsState *st);
 EigsThread *eigs_thread_attach(EigsState *st);
+
+/* Single-thread multi-state switching: park the calling thread's current
+ * attachment (nothing is torn down) and activate its attachment to `st`,
+ * creating one on first use. Returns the (possibly new) EigsThread, or
+ * NULL on failure. After a switch, eigs_eval_string / globals / values
+ * operate on `st`. Rules: (1) a value belongs to the state that created
+ * it — never carry EigsValue pointers across a switch; copy numbers out.
+ * (2) eigs_close(st) must be called while attached to st (switch first)
+ * and leaves the thread detached — switch to another state afterwards.
+ * This is the cooperative-scheduler seam (EigenOS M9: task = state). */
+EigsThread *eigs_thread_switch(EigsState *st);
 void        eigs_thread_detach(void);
 /* Set up the global env + register stdlib builtins on the calling thread's
  * state. Idempotent: returns 0 if already initialized. -1 if not attached. */

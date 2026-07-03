@@ -5,6 +5,17 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Single-thread multi-state switching (`eigs_thread_switch`).** Parks the
+  calling thread's current attachment (no teardown — arena, freelists, VM
+  and error state live on the `EigsThread` and stay intact) and activates
+  its attachment to another state, creating one on first switch; vm.c's
+  `__thread` hot caches are reset per switch exactly as attach does. This is
+  the cooperative-scheduler seam (EigenOS M9: a task IS an `EigsState`; a
+  step is one eval; the scheduler is script). Rules: values never cross
+  states (copy numbers out); `eigs_close` must run while attached to the
+  closing state. Covered in embed_smoke: isolation both ways, bindings
+  preserved across switches, process-global source provider serving every
+  state, close-and-reactivate.
 - **Embedder source provider — the module seam (`eigs_set_source_provider`).**
   `import name` now consults a host-registered provider FIRST in every build
   profile; the filesystem chain is the hosted fallback and is absent in the
