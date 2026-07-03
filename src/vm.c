@@ -4358,77 +4358,105 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     /* ---- Modules ---- */
 
     CASE(IMPORT): {
-#if EIGENSCRIPT_FREESTANDING
-        /* No filesystem to resolve modules against. Raise rather than
-         * "module not found" so the diagnosis names the real cause. */
-        ip += 2;
-        runtime_error(current_line,
-            "import: no filesystem in the freestanding profile");
-        vm_push(make_null());
-        DISPATCH();
-#else
         uint16_t idx = read_u16(ip); ip += 2;
         const char *name = chunk->const_interns[idx];
 
-        char request[4096];
-        char path_buf[8192];
-        snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
-
-        extern int resolve_eigenscript_file_from(const char *base, const char *name,
-                                                  char *out, size_t outlen);
-        extern char *read_file_util(const char *path, long *size);
         extern TokenList tokenize(const char *source);
         extern ASTNode *parse(TokenList *tl);
         extern void free_tokenlist(TokenList *tl);
         extern void free_ast(ASTNode *ast);
 
-        /* Per-file resolution base (Phase 0b): an `import` inside a
-         * module anchors at *that* module's directory, not the main
-         * script's. `g_import_resolve_dir` is empty at the main-script
-         * level, in which case the chain falls back to g_script_dir. */
-        const char *resolve_base = g_import_resolve_dir[0]
-                                       ? g_import_resolve_dir
-                                       : g_script_dir;
+        /* Source acquisition. The embedder's source provider
+         * (eigs_set_source_provider) is consulted FIRST in every
+         * profile; the filesystem chain is the hosted fallback and does
+         * not exist in the freestanding profile (there the provider —
+         * e.g. EigenOS's ROM bundle — is the only module source). */
+        char abs_path[8192];         /* module-cache key */
+        char *source = NULL;
 
-        if (!resolve_eigenscript_file_from(resolve_base, request,
-                                            path_buf, sizeof(path_buf))) {
-            /* Not a stdlib module — fall back to a user module:
-             * <name>.eigs resolved against the per-file resolve base
-             * (and the other standard locations the chain tries). */
-            snprintf(request, sizeof(request), "%.1024s.eigs", name);
+        const char *provided = eigs_source_lookup(name);
+        if (provided) {
+            /* Copy immediately: downstream owns + frees `source`, and
+             * the provider's pointer is only guaranteed for this call.
+             * Cache key uses a NUL-adjacent prefix no real path can
+             * start with, so provider modules can't collide with files. */
+            source = xstrdup(provided);
+            snprintf(abs_path, sizeof(abs_path), "\x01provider:%.1024s", name);
+            Value *cached_dict = NULL;
+            if (eigs_module_cache_get(abs_path, &cached_dict)) {
+                free(source);
+                vm_push(cached_dict);
+                DISPATCH();
+            }
+        }
+#if EIGENSCRIPT_FREESTANDING
+        if (!source) {
+            /* Raise with the real cause: there is no filesystem here,
+             * and the registered provider (if any) had no entry. */
+            runtime_error(current_line,
+                "import: module '%s' not found — no filesystem in the "
+                "freestanding profile (no source-provider entry)", name);
+            vm_push(make_null());
+            DISPATCH();
+        }
+#else
+        if (!source) {
+            char request[4096];
+            char path_buf[8192];
+            snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
+
+            extern int resolve_eigenscript_file_from(const char *base, const char *name,
+                                                      char *out, size_t outlen);
+            extern char *read_file_util(const char *path, long *size);
+
+            /* Per-file resolution base (Phase 0b): an `import` inside a
+             * module anchors at *that* module's directory, not the main
+             * script's. `g_import_resolve_dir` is empty at the main-script
+             * level, in which case the chain falls back to g_script_dir. */
+            const char *resolve_base = g_import_resolve_dir[0]
+                                           ? g_import_resolve_dir
+                                           : g_script_dir;
+
             if (!resolve_eigenscript_file_from(resolve_base, request,
                                                 path_buf, sizeof(path_buf))) {
-                runtime_error(current_line, "import: module '%s' not found "
-                              "(tried lib/%s.eigs and %s.eigs)", name, name, name);
+                /* Not a stdlib module — fall back to a user module:
+                 * <name>.eigs resolved against the per-file resolve base
+                 * (and the other standard locations the chain tries). */
+                snprintf(request, sizeof(request), "%.1024s.eigs", name);
+                if (!resolve_eigenscript_file_from(resolve_base, request,
+                                                    path_buf, sizeof(path_buf))) {
+                    runtime_error(current_line, "import: module '%s' not found "
+                                  "(tried lib/%s.eigs and %s.eigs)", name, name, name);
+                    vm_push(make_null());
+                    DISPATCH();
+                }
+            }
+
+            /* Module cache: canonicalize to absolute path so two different
+             * importers (different cwds, different relative paths) hash to
+             * the same entry. A miss re-executes; a hit binds the same dict
+             * (shared mutable state — by design, mirrors Python/JS). */
+            if (!realpath(path_buf, abs_path)) {
+                /* realpath shouldn't fail here (we just resolved + access'd
+                 * the file) but fall back to the resolved path so the cache
+                 * still functions when it does. */
+                snprintf(abs_path, sizeof(abs_path), "%s", path_buf);
+            }
+            Value *cached_dict = NULL;
+            if (eigs_module_cache_get(abs_path, &cached_dict)) {
+                vm_push(cached_dict);
+                DISPATCH();
+            }
+
+            long src_size = 0;
+            source = read_file_util(path_buf, &src_size);
+            if (!source) {
+                runtime_error(current_line, "import: cannot read '%s'", name);
                 vm_push(make_null());
                 DISPATCH();
             }
         }
-
-        /* Module cache: canonicalize to absolute path so two different
-         * importers (different cwds, different relative paths) hash to
-         * the same entry. A miss re-executes; a hit binds the same dict
-         * (shared mutable state — by design, mirrors Python/JS). */
-        char abs_path[8192];
-        if (!realpath(path_buf, abs_path)) {
-            /* realpath shouldn't fail here (we just resolved + access'd
-             * the file) but fall back to the resolved path so the cache
-             * still functions when it does. */
-            snprintf(abs_path, sizeof(abs_path), "%s", path_buf);
-        }
-        Value *cached_dict = NULL;
-        if (eigs_module_cache_get(abs_path, &cached_dict)) {
-            vm_push(cached_dict);
-            DISPATCH();
-        }
-
-        long src_size = 0;
-        char *source = read_file_util(path_buf, &src_size);
-        if (!source) {
-            runtime_error(current_line, "import: cannot read '%s'", name);
-            vm_push(make_null());
-            DISPATCH();
-        }
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
         Env *mod_env = env_new(g_global_env);
         int saved_errors = g_parse_errors;
@@ -4512,7 +4540,6 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         env_decref(mod_env);
         vm_push(mod_dict);
         DISPATCH();
-#endif /* !EIGENSCRIPT_FREESTANDING */
     }
 
     CASE(MATCH): {

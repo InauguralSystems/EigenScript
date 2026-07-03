@@ -5,10 +5,20 @@
 #include <stdio.h>
 #include "../src/eigs_embed.h"
 
+/* A one-module source provider, standing in for EigenOS's ROM bundle:
+ * proves `import` works in the freestanding profile with no filesystem. */
+static const char *fs_smoke_provider(const char *name, void *ud) {
+    (void)ud;
+    if (name && name[0]=='t' && name[1]=='i' && name[2]=='n' && name[3]=='y' && !name[4])
+        return "t is 41\nanswer is t + 1\n";
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s '<eigenscript source>'\n", argv[0]); return 2; }
     EigsState *st = eigs_open();
     if (!st) { fprintf(stderr, "eigs_open failed\n"); return 2; }
+    eigs_set_source_provider(fs_smoke_provider, 0);
     EigsValue *v = eigs_eval_string(argv[1]);
     int rc = 0;
     if (eigs_has_error()) {
