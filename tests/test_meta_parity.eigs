@@ -17,6 +17,17 @@ define check(label, got, want) as:
     else:
         print of f"FAIL: {label}: got {got}, want {want}"
 
+# --- #355: a parenthesised literal list is ONE argument (no spread) ---
+check of ["paren'd literal list binds whole",
+    eigen_run of "define one(a) as:\n    return a\nr is one of ([1, 2])\nr",
+    [1, 2]]
+check of ["paren'd literal to 2-param binds first",
+    eigen_run of "define fst(a, b) as:\n    return a\nr is fst of ([1, 2])\nr",
+    [1, 2]]
+check of ["bare literal still spreads",
+    eigen_run of "define fst(a, b) as:\n    return a\nr is fst of [1, 2]\nr",
+    1]
+
 # --- and/or: value-returning short-circuit (Python/Lua style), matching C ---
 check of ["1 and 2", eigen_run of "1 and 2", 2]
 check of ["0 and 2", eigen_run of "0 and 2", 0]

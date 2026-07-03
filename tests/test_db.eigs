@@ -70,6 +70,30 @@ if (contains of [conn, "connected"]) == 1:
     assert of [decoded[0].name == "alpha", "DB14 query_json field value"]
     bad is db_execute of "THIS IS NOT SQL"
     assert of [bad == "error", "DB15 malformed SQL returns error"]
+
+    # ---- #356: param validation raises instead of silently proceeding ----
+    q17 is ["SELECT $1", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    c16a is 0
+    m16a is ""
+    try:
+        db_query_value of q17
+    catch e:
+        c16a is 1
+        m16a is e
+    assert of [c16a == 1, "DB16 17-param query raises"]
+    assert of [(contains of [m16a, "too many parameters"]) == 1, "DB16 message names the cap"]
+
+    qbad is ["SELECT $1::text", [1, 2]]
+    c17a is 0
+    m17a is ""
+    try:
+        db_query_value of qbad
+    catch e:
+        c17a is 1
+        m17a is e
+    assert of [c17a == 1, "DB17 list param raises"]
+    assert of [(contains of [m17a, "not a string or number"]) == 1, "DB17 message names the type rule"]
+
     db_execute of "DROP TABLE eigs_ci_smoke"
 else:
     print of "live-DB checks skipped (no connection)"

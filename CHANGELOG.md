@@ -69,7 +69,42 @@ All notable changes to EigenScript are documented here.
   freestanding `import` error now names both causes. Covered hosted
   (embed_smoke) and freestanding (freestanding_smoke).
 
+### Changed
+- **Parentheses always mean one argument (#355).** A parenthesized
+  literal list no longer spreads: `f of ([a, b])` binds the whole list
+  `[a, b]` to the first parameter, exactly as SPEC.md's `f of (x)`
+  guidance always promised (previously parens were AST-transparent and
+  the literal spread anyway, leaving **no syntax** to pass a literal
+  2+-element list as a single argument to a multi-parameter function).
+  `f of ([])` is likewise a one-argument call passing the empty list;
+  bare `f of []` remains the zero-arg form and bare `f of [a, b]`
+  still spreads. The meta-interpreter (lib/eigen.eigs) mirrors the rule
+  (test_meta_parity), and SPEC.md / LANGUAGE_CONTRACT.md / COMPARISON.md
+  document it. The ouroboros AOT frontend mirrors this at its next
+  runtime-pin bump, per the #326/#328 precedent.
+
 ### Fixed
+- **Parser caps fail loudly at the cap (#354).** A 17-parameter
+  `define`/lambda or a 65-case `match` used to stop consuming at the cap
+  and die in a stray-token error cascade that never mentioned the limit —
+  a real hazard for generated code. Each now produces exactly one parse
+  error naming the cap (`function exceeds 16 parameters`, `lambda exceeds
+  16 parameters`, `match exceeds 64 cases`), draining the excess input so
+  the diagnostic stands alone. The caps are now named constants
+  (MAX_PARAMS, MAX_MATCH_CASES) and documented in SPEC.md's new
+  "Syntactic limits" note alongside the existing 1024-element list cap.
+- **ext_db raises instead of silently mangling queries (#356).** A query
+  list with 17+ parameters silently dropped the extras (Postgres would
+  then error confusingly at exec time, or worse, not at all), and a
+  non-string/number parameter was silently sent as `""` (the #316
+  coerce-to-empty class). Both now raise catchable errors naming the
+  problem (`db: too many parameters (N, max 16)`, `db: parameter N is
+  not a string or number`).
+- **ext_http route registration raises on failure (#356).** A malformed
+  route argument or the 257th route returned a silent `make_null()` that
+  no caller checks — the route just never existed. Both now raise
+  (`http_route requires [method, path, handler...]`, `http_route: route
+  table full (max 256 routes)`).
 - **gfx: `ppu_render_frame` window uses an internal line counter.** The
   window's row advances only on scanlines where it actually renders
   (resetting each frame), replacing the `ly - wy` approximation that

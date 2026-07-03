@@ -11,12 +11,24 @@ assert of [r1 == "route registered", "HTTP01 http_route GET returns ack"]
 r2 is http_route of ["POST", "/b", "static", "body-b"]
 assert of [r2 == "route registered", "HTTP02 http_route POST 4-arg returns ack"]
 
-# ---- http_route: bad argument shape returns null ----
-r_bad1 is http_route of 42
-assert of [r_bad1 == null, "HTTP03 http_route non-list arg returns null"]
+# ---- http_route: bad argument shape raises (#356 — was a silent null
+# whose return value nobody checks, so the route just never existed) ----
+c3 is 0
+m3 is ""
+try:
+    r_bad1 is http_route of 42
+catch e:
+    c3 is 1
+    m3 is e
+assert of [c3 == 1, "HTTP03 http_route non-list arg raises"]
+assert of [(contains of [m3, "http_route requires"]) == 1, "HTTP03 message"]
 
-r_bad2 is http_route of ["GET"]
-assert of [r_bad2 == null, "HTTP04 http_route too-few-elements returns null"]
+c4 is 0
+try:
+    r_bad2 is http_route of ["GET"]
+catch e:
+    c4 is 1
+assert of [c4 == 1, "HTTP04 http_route too-few-elements raises"]
 
 # ---- http_route_authed: registers a route requiring auth ----
 r3 is http_route_authed of ["GET", "/secret", "secret-body"]

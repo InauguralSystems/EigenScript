@@ -101,6 +101,8 @@
  * re-entrant sandbox_run/vm_execute churn turns into "cannot index num" (#291). */
 #define ENV_LOOP_BIND_HEADROOM 2
 #define MAX_LIST        1024
+#define MAX_PARAMS      16
+#define MAX_MATCH_CASES 64
 
 /* ---- Tokenizer ---- */
 
@@ -167,6 +169,9 @@ struct ASTNode {
     int line;
     int col;    /* 0-based column offset */
     uint32_t name_hash; /* cached hash for identifier/name-bearing nodes */
+    uint8_t parenthesized; /* expression was written as ( expr ) — a
+                            * parenthesized literal list is a single call
+                            * argument, never spread (#355) */
     union {
         double num;
         char *str;
@@ -935,6 +940,7 @@ void eigenscript_set_args(int argc, char **argv);
  * enclosing try, otherwise fatal — the VM unwinds) and prints to stderr
  * when uncaught. Declared here so extension TUs (ext_store, etc.) can route
  * argument/operation failures through the same strict channel as the VM. */
+const char* val_type_name(ValType t);
 void runtime_error(int line, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 char* read_file_util(const char *path, long *out_size);

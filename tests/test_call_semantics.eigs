@@ -67,6 +67,19 @@ e is d
 e.k is 99
 assert of [d.k == 99, "dict assignment aliases"]
 
+# Issue #355: parentheses always mean ONE argument — a parenthesised
+# literal list does not spread, giving literals the same escape hatch
+# variables have.
+assert of [(mp of ([7, 8])) == [[7, 8], null], "paren'd 2-elem literal binds whole to a, b=null"]
+assert of [(one of ([1, 2, 3])) == [1, 2, 3], "paren'd literal to 1-param binds whole"]
+xs355 is [10, 20]
+assert of [(mp of (xs355)) == [[10, 20], null], "paren'd variable list binds whole (unchanged)"]
+assert of [(mp of [10, 20]) == [10, 20], "bare literal still spreads"]
+assert of [(mp of ((7))) == [7, null], "nested parens on a scalar stay a 1-arg call"]
+# f of ([]) is ONE argument (the empty list); bare f of [] stays zero-arg.
+assert of [(one of ([])) == [], "paren'd empty list is a real empty-list argument"]
+assert of [(mp of ([])) == [[], null], "paren'd empty list to 2-param binds whole, b=null"]
+
 # Scalars are immutable, so reassigning an alias never affects the original
 x is 5
 y is x

@@ -2095,11 +2095,16 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         compile_node(c, fn_node);
 
-        if (arg_node && arg_node->type == AST_LIST && arg_node->data.list.count == 0) {
+        if (arg_node && arg_node->type == AST_LIST && !arg_node->parenthesized &&
+            arg_node->data.list.count == 0) {
             /* Zero-arg call: f of [] — required so default-param fns can
              * be called with no args and let every default fire. */
             emit_call(c, 0, node->line);
-        } else if (arg_node && arg_node->type == AST_LIST && arg_node->data.list.count > 1) {
+        } else if (arg_node && arg_node->type == AST_LIST && !arg_node->parenthesized &&
+                   arg_node->data.list.count > 1) {
+            /* #355: the spread applies to a BARE literal list only — a
+             * parenthesized list `f of ([a, b])` is one argument, giving
+             * literals the same escape hatch variables have. */
             /* Multi-arg: compile each element as separate stack value */
             for (int i = 0; i < arg_node->data.list.count; i++)
                 compile_node(c, arg_node->data.list.elems[i]);

@@ -1004,6 +1004,11 @@ define _p_parse_primary(p) as:
         _p_advance of p
         expr is _p_parse_expr of p
         _p_expect of [p, "rparen"]
+        # C-parity (#355): a parenthesized literal list is a single call
+        # argument — wrap so the call spread check (node[2][0] == "list")
+        # does not fire for it. Other node kinds pass through untouched.
+        if expr[0] == "list":
+            return ["paren", expr]
         return expr
 
     if tt == "lbracket":
@@ -1336,6 +1341,11 @@ define eigen_eval(node, env) as:
                     return result
         # C builtin — call it directly through the host runtime
         return fn of arg
+
+    if ntype == "paren":
+        # #355 wrapper: evaluates to its inner expression; exists so a
+        # parenthesized literal list is not spread at call sites.
+        return eigen_eval of [node[1], env]
 
     if ntype == "list":
         elems is node[1]

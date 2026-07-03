@@ -182,10 +182,16 @@ unobservable. To get an independent copy, copy explicitly.
 ## Function calls & argument unpacking
 
 **Promise:** `f of X` calls `f` with argument `X`.
-- If `X` is a **literal list of length ≥ 2**, the elements are spread
-  across the callee's parameters in order. Extra elements are ignored;
-  missing parameters are `null`. So `momentum of [2, 3]` passes
-  `m=2, v=3`.
+- If `X` is a **bare literal list of length ≥ 2**, the elements are
+  spread across the callee's parameters in order. Extra elements are
+  ignored; missing parameters are `null`. So `momentum of [2, 3]`
+  passes `m=2, v=3`.
+- **Parentheses always mean one argument** (issue #355): a
+  parenthesised literal list does not spread — `f of ([a, b])` binds
+  the list `[a, b]` to the first parameter, and `f of ([])` is a
+  one-argument call passing the empty list (unlike bare `f of []`,
+  which is the zero-arg form). This is the literal-list counterpart of
+  the `f of (x)` escape hatch below.
 - A **literal list of length 1** is *not* spread — `f of [x]` binds
   the one-element list `[x]` as a single argument, regardless of the
   callee's arity. (See the default-params footgun below.)
@@ -193,10 +199,11 @@ unobservable. To get an independent copy, copy explicitly.
   a list is **not** spread. So `mean of [1,2,3,4]` passes the whole list.
 - An empty literal list `f of []` is a **zero-arg call**, so a function
   with all-default params runs every default.
-- To pass a single scalar to a multi-param (or any) function, use the
-  parenthesized form: `f of (x)` is always a one-argument call binding
-  `x` to the first parameter (later params take defaults or `null`).
-  `f of x` is the same one-argument form when `x` isn't a list literal.
+- To pass a single value — scalar or literal list — to a multi-param
+  (or any) function, use the parenthesized form: `f of (x)` is always
+  a one-argument call binding `x` to the first parameter (later params
+  take defaults or `null`). `f of x` is the same one-argument form
+  when `x` isn't a list literal.
 
 **Status:** Enforced — `tests/test_call_semantics.eigs`.
 

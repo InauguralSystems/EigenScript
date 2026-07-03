@@ -481,10 +481,13 @@ print of app.users[1].id
 value; falling off the end returns `null`. Calling conventions:
 
 - `f of x` — one argument.
-- `f of [a, b, c]` — a **literal** list with 2+ elements spreads into
-  the parameters.
+- `f of [a, b, c]` — a **bare literal** list with 2+ elements spreads
+  into the parameters.
 - `f of (x)` — parenthesised single argument (required for one-argument
-  calls to multi-parameter functions — see the warning below).
+  calls to multi-parameter functions — see the warning below). This
+  also works for literal lists: `f of ([a, b])` binds the whole list
+  `[a, b]` as the single argument — parentheses always mean "one
+  argument", so only a *bare* literal list ever spreads.
 - `f of null` — call with no meaningful argument.
 
 ```eigenscript
@@ -505,7 +508,9 @@ hey!
 **Spread warning:** a literal list with exactly **one** element does
 not spread — `f of [x]` binds the whole list `[x]` to the first
 parameter. For one-argument calls to multi-parameter (including
-defaulted) functions, write `f of (x)`.
+defaulted) functions, write `f of (x)`. To pass a literal 2+-element
+list whole to a multi-parameter function, parenthesise it:
+`f of ([a, b])`.
 
 ```eigenscript
 define first(a, b) as:
@@ -513,11 +518,20 @@ define first(a, b) as:
 
 print of (first of [10, 20])
 print of (type of (first of [10]))
+print of (first of ([10, 20]))
 ```
 ```output
 10
 list
+[10, 20]
 ```
+
+**Syntactic limits.** A function or lambda takes at most **16
+parameters**, a `match` at most **64 cases**, and a list literal at most
+**1024 elements**. Exceeding any of these is a parse error that names
+the limit (`function exceeds 16 parameters`, `match exceeds 64 cases`,
+`list literal exceeds 1024 elements`) — generated code that outgrows a
+cap fails loudly at the cap, never with a stray-token cascade.
 
 Default parameter values use `is` in the parameter list; defaults fire
 for every unsupplied slot:

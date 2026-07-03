@@ -315,6 +315,7 @@ static ASTNode *clone_ast(ASTNode *node) {
     if (!node) return NULL;
     ASTNode *n = make_node_col(node->type, node->line, node->col);
     n->name_hash = node->name_hash;
+    n->parenthesized = node->parenthesized;
     switch (node->type) {
         case AST_NUM:
             n->data.num = node->data.num;
@@ -759,9 +760,22 @@ static ASTNode* parse_primary(Parser *p) {
 
         if (is_lambda) {
             p_advance(p); /* skip ( */
-            char **params = xmalloc_array(16, sizeof(char*));
+            char **params = xmalloc_array(MAX_PARAMS, sizeof(char*));
             int param_count = 0;
-            while (tok_is_ident_like(p_cur(p)->type) && param_count < 16) {
+            int lambda_cap_reported = 0;
+            while (tok_is_ident_like(p_cur(p)->type)) {
+                if (param_count >= MAX_PARAMS) {
+                    /* #354: one loud diagnostic, then drain (see match). */
+                    if (!lambda_cap_reported) {
+                        fprintf(stderr, "Parse error line %d: lambda exceeds %d parameters\n",
+                                p_cur(p)->line, MAX_PARAMS);
+                        g_parse_errors++;
+                        lambda_cap_reported = 1;
+                    }
+                    p_advance(p);
+                    if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+                    continue;
+                }
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
                 if (p_cur(p)->type == TOK_COMMA) p_advance(p);
@@ -784,6 +798,9 @@ static ASTNode* parse_primary(Parser *p) {
         p_advance(p);
         ASTNode *expr = parse_expression(p);
         p_expect(p, TOK_RPAREN);
+        /* #355: parens make any expression — including a literal list —
+         * a single call argument; the compiler's spread check honors it. */
+        if (expr) expr->parenthesized = 1;
         while (p_cur(p)->type == TOK_LBRACKET || p_cur(p)->type == TOK_DOT) {
             if (chain_too_deep(p)) break;
             if (p_cur(p)->type == TOK_DOT) {
@@ -1230,9 +1247,27 @@ static ASTNode* parse_statement_inner(Parser *p) {
         int first_default = -1;
         if (p_cur(p)->type == TOK_LPAREN) {
             p_advance(p); /* skip ( */
-            params = xmalloc_array(16, sizeof(char*));
-            defaults = xcalloc(16, sizeof(ASTNode*));
-            while (tok_is_ident_like(p_cur(p)->type) && param_count < 16) {
+            params = xmalloc_array(MAX_PARAMS, sizeof(char*));
+            defaults = xcalloc(MAX_PARAMS, sizeof(ASTNode*));
+            int param_cap_reported = 0;
+            while (tok_is_ident_like(p_cur(p)->type)) {
+                if (param_count >= MAX_PARAMS) {
+                    /* #354: one loud diagnostic, then drain (see match). */
+                    if (!param_cap_reported) {
+                        fprintf(stderr, "Parse error line %d: function exceeds %d parameters\n",
+                                p_cur(p)->line, MAX_PARAMS);
+                        g_parse_errors++;
+                        param_cap_reported = 1;
+                    }
+                    p_advance(p);
+                    if (p_cur(p)->type == TOK_IS) {
+                        p_advance(p);
+                        ASTNode *xd = parse_expression(p);
+                        if (xd) free_ast(xd);
+                    }
+                    if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+                    continue;
+                }
                 int slot = param_count;
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
@@ -1316,12 +1351,42 @@ static ASTNode* parse_statement_inner(Parser *p) {
         p_skip_newlines(p);
 
         /* Parse case branches */
-        ASTNode **patterns = xmalloc_array(64, sizeof(ASTNode*));
-        ASTNode ***bodies = xmalloc_array(64, sizeof(ASTNode**));
-        int *body_counts = xmalloc_array(64, sizeof(int));
+        ASTNode **patterns = xmalloc_array(MAX_MATCH_CASES, sizeof(ASTNode*));
+        ASTNode ***bodies = xmalloc_array(MAX_MATCH_CASES, sizeof(ASTNode**));
+        int *body_counts = xmalloc_array(MAX_MATCH_CASES, sizeof(int));
         int case_count = 0;
 
-        while (p_cur(p)->type == TOK_CASE && case_count < 64) {
+        int match_cap_reported = 0;
+        while (p_cur(p)->type == TOK_CASE) {
+            if (case_count >= MAX_MATCH_CASES) {
+                /* #354: report the cap once, then drain the excess cases so
+                 * the diagnostic stands alone instead of the stray-token
+                 * error cascade that never mentioned the cap. */
+                if (!match_cap_reported) {
+                    fprintf(stderr, "Parse error line %d: match exceeds %d cases\n",
+                            p_cur(p)->line, MAX_MATCH_CASES);
+                    g_parse_errors++;
+                    match_cap_reported = 1;
+                }
+                p_advance(p);
+                if (p_cur(p)->type == TOK_IDENT && p_cur(p)->str_val &&
+                    strcmp(p_cur(p)->str_val, "_") == 0) {
+                    p_advance(p);
+                } else {
+                    ASTNode *xp = parse_expression(p);
+                    if (xp) free_ast(xp);
+                }
+                p_expect(p, TOK_COLON);
+                p_skip_newlines(p);
+                int xbc;
+                ASTNode **xbody = parse_block(p, &xbc);
+                if (xbody) {
+                    for (int xi = 0; xi < xbc; xi++) free_ast(xbody[xi]);
+                    free(xbody);
+                }
+                p_skip_newlines(p);
+                continue;
+            }
             p_advance(p); /* skip 'case' */
             /* Parse pattern — _ is wildcard (null pattern) */
             ASTNode *pattern = NULL;
