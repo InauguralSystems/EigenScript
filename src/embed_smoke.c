@@ -124,6 +124,51 @@ int main(void) {
     CHECK(eigs_value_dict_get(d, "missing") == NULL, "dict get miss returns NULL");
     eigs_value_release(d);
 
+    /* --- Buffers: the binary carrier across the host boundary. ------- */
+    EigsValue *buf = eigs_value_new_buffer(4);
+    CHECK(eigs_value_type(buf) == EIGS_TYPE_BUFFER, "new buffer type");
+    CHECK(eigs_value_buffer_len(buf) == 4, "buffer len");
+    eigs_value_buffer_set(buf, 0, 7.0);
+    eigs_value_buffer_set(buf, 3, 255.0);
+    eigs_value_buffer_set(buf, 4, 999.0);            /* OOB: must be a no-op */
+    eigs_value_buffer_set(buf, -1, 999.0);
+    CHECK(eigs_value_buffer_get(buf, 0) == 7.0,   "buffer get [0]");
+    CHECK(eigs_value_buffer_get(buf, 1) == 0.0,   "buffer zero-filled");
+    CHECK(eigs_value_buffer_get(buf, 3) == 255.0, "buffer get [3]");
+    CHECK(eigs_value_buffer_get(buf, 4) == 0.0,   "buffer OOB get is 0");
+    CHECK(eigs_value_buffer_get(buf, -1) == 0.0,  "buffer negative get is 0");
+
+    /* Host buffer visible to script — SAME object, no copy at the
+     * boundary: the script's buf_set is visible back in C. */
+    eigs_set_global("hbuf", buf);
+    r = eigs_eval_string("buf_set of [hbuf, 1, (buf_get of [hbuf, 0]) + 10]\n"
+                         "buf_len of hbuf");
+    CHECK(r != NULL && eigs_value_as_num(r) == 4.0, "script sees host buffer len");
+    if (r) eigs_value_release(r);
+    CHECK(eigs_value_buffer_get(buf, 1) == 17.0,
+          "script buf_set visible to host (shared object)");
+    eigs_value_release(buf);
+
+    /* Script-created buffer read from the host. */
+    r = eigs_eval_string("sb is buffer of 3\nbuf_set of [sb, 2, 42]\nsb");
+    CHECK(r != NULL && eigs_value_type(r) == EIGS_TYPE_BUFFER,
+          "script buffer arrives as EIGS_TYPE_BUFFER");
+    CHECK(eigs_value_buffer_len(r) == 3, "script buffer len via embed");
+    CHECK(eigs_value_buffer_get(r, 2) == 42.0, "script buffer element via embed");
+    if (r) eigs_value_release(r);
+
+    /* Degenerate constructions stay safe. */
+    EigsValue *zb = eigs_value_new_buffer(-5);
+    CHECK(eigs_value_buffer_len(zb) == 0, "negative count clamps to empty");
+    CHECK(eigs_value_buffer_get(zb, 0) == 0.0, "empty buffer get is 0");
+    eigs_value_release(zb);
+    CHECK(eigs_value_buffer_len(NULL) == 0, "NULL buffer len is 0");
+    EigsValue *notbuf = eigs_value_new_num(1.0);
+    CHECK(eigs_value_buffer_len(notbuf) == 0, "non-buffer len is 0");
+    eigs_value_buffer_set(notbuf, 0, 5.0);           /* wrong type: no-op */
+    CHECK(eigs_value_as_num(notbuf) == 1.0, "non-buffer set is a no-op");
+    eigs_value_release(notbuf);
+
     /* --- Source provider: import resolves from the embedder. --------- */
     eigs_set_source_provider(smoke_provider, NULL);
     r = eigs_eval_string("import smokemod\nsmokemod[\"answer\"]");

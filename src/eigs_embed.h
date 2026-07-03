@@ -104,6 +104,7 @@ typedef enum {
     EIGS_TYPE_LIST,
     EIGS_TYPE_DICT,
     EIGS_TYPE_FN,
+    EIGS_TYPE_BUFFER,
     EIGS_TYPE_OTHER
 } EigsValueType;
 
@@ -129,6 +130,18 @@ void           eigs_value_list_append(EigsValue *v, EigsValue *item);
 EigsValue     *eigs_value_dict_get(EigsValue *v, const char *k);
 /* Same ownership semantics as list_append. */
 void           eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val);
+
+/* ---- Buffers -------------------------------------------------------
+ * The script-side `buffer of n` value: a flat mutable array of nums,
+ * NUL-safe end to end — the natural carrier for binary data across the
+ * host boundary (a bytes-in-a-string round trip is not; strings are
+ * C-terminated). Elements are doubles, same as in-language; a host
+ * moving raw bytes stores 0..255 per element. Script sees the same
+ * object through buf_get/buf_set/len — no copy at the boundary. */
+EigsValue     *eigs_value_new_buffer(int count);   /* zeroed, 1-D (unshaped) */
+int            eigs_value_buffer_len(EigsValue *v);          /* 0 if not a buffer */
+double         eigs_value_buffer_get(EigsValue *v, int i);   /* 0.0 out of range */
+void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op */
 
 /* ---- FFI ---------------------------------------------------------- */
 

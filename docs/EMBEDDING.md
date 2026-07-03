@@ -127,6 +127,7 @@ EigsValue *eigs_value_new_string(const char *s);
 EigsValue *eigs_value_new_null(void);
 EigsValue *eigs_value_new_list(int capacity);
 EigsValue *eigs_value_new_dict(int capacity);
+EigsValue *eigs_value_new_buffer(int count);   /* zeroed, 1-D; the binary carrier */
 ```
 
 Ref-count management — every value the host owns must eventually be
@@ -140,7 +141,7 @@ void eigs_value_release(EigsValue *v);
 Inspection:
 
 ```c
-EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _OTHER */
+EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER */
 double        eigs_value_as_num(EigsValue *v);     /* 0.0 if wrong type */
 const char   *eigs_value_as_string(EigsValue *v);  /* NULL if wrong type; borrowed pointer */
 int           eigs_value_list_len(EigsValue *v);
@@ -148,12 +149,24 @@ EigsValue    *eigs_value_list_get(EigsValue *v, int i);    /* counted ref */
 void          eigs_value_list_append(EigsValue *v, EigsValue *item);
 EigsValue    *eigs_value_dict_get(EigsValue *v, const char *k);
 void          eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val);
+int           eigs_value_buffer_len(EigsValue *v);          /* 0 if not a buffer */
+double        eigs_value_buffer_get(EigsValue *v, int i);   /* 0.0 out of range */
+void          eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op */
 ```
 
 `_list_get` / `_dict_get` return counted refs (caller releases). `_list_append`
 / `_dict_set` retain their own ref on `item`/`val`, so the caller still
 owns the ref it passed in (release it after the call if it was freshly
 constructed).
+
+Buffers are the binary carrier across the host boundary: the script-side
+`buffer of n` value (a flat mutable array of nums), NUL-safe end to end —
+strings are C-terminated and cannot carry a 0x00 byte. A host moving raw
+bytes stores 0..255 per element. There is no copy at the boundary: pass a
+host-built buffer to script (`eigs_set_global`) and the script's
+`buf_set` mutations are visible back through `eigs_value_buffer_get` —
+it is the same object. This is the seam a block-device embedder (EigenOS
+M10) moves sectors through.
 
 ## FFI: calling host functions from script
 

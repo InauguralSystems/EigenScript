@@ -191,6 +191,7 @@ EigsValueType eigs_value_type(EigsValue *v) {
         case VAL_NULL:    return EIGS_TYPE_NULL;
         case VAL_FN:
         case VAL_BUILTIN: return EIGS_TYPE_FN;
+        case VAL_BUFFER:  return EIGS_TYPE_BUFFER;
         default:          return EIGS_TYPE_OTHER;
     }
 }
@@ -230,6 +231,35 @@ EigsValue *eigs_value_dict_get(EigsValue *v, const char *k) {
 void eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val) {
     if (!v || v->type != VAL_DICT || !k || !val) return;
     dict_set(v, k, val);
+}
+
+/* ---- Buffers ------------------------------------------------------- */
+
+EigsValue *eigs_value_new_buffer(int count) {
+    if (count < 0) count = 0;
+    if (count > 10000000) count = 10000000;  /* same cap as `buffer of n` */
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_BUFFER;
+    v->data.buffer.count = count;            /* rows/cols stay 0: unshaped 1-D */
+    v->data.buffer.data = xcalloc(count > 0 ? (size_t)count : 1, sizeof(double));
+    v->refcount = 1;
+    return v;
+}
+
+int eigs_value_buffer_len(EigsValue *v) {
+    return (v && v->type == VAL_BUFFER) ? v->data.buffer.count : 0;
+}
+
+double eigs_value_buffer_get(EigsValue *v, int i) {
+    if (!v || v->type != VAL_BUFFER) return 0.0;
+    if (i < 0 || i >= v->data.buffer.count) return 0.0;
+    return v->data.buffer.data[i];
+}
+
+void eigs_value_buffer_set(EigsValue *v, int i, double x) {
+    if (!v || v->type != VAL_BUFFER) return;
+    if (i < 0 || i >= v->data.buffer.count) return;
+    v->data.buffer.data[i] = x;
 }
 
 /* ---- FFI ---------------------------------------------------------- */
