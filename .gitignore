@@ -42,3 +42,4 @@ fuzz/fuzz_stdin
 fuzz/fuzz_eigenscript
 eigenlsp
 massif.out.*
+tests/tmp_mod_373*.eigs

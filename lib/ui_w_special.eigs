@@ -196,8 +196,8 @@ define _mousemove_piano_kb(hit, root, mx, my) as:
 
 define _mousedown_splitter(hit, root, mx, my, ev) as:
     hit.dragging is 1
-    _drag_widget is hit
-    _drag_ox is hit._ax
+    _ui.drag_widget is hit
+    _ui.drag_ox is hit._ax
 
 define _mousedown_piano_kb(hit, root, mx, my, ev) as:
     abs_x is hit._ax

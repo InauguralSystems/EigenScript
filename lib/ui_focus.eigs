@@ -6,7 +6,7 @@ define _build_focus_list(widget) as:
     if widget.visible == 0:
         return null
     if (_is_focusable of widget) == 1:
-        append of [_focus_list, widget]
+        append of [_ui.focus_list, widget]
     if _is_container of widget.type:
         for i in range of (len of widget.children):
             _build_focus_list of widget.children[i]
@@ -22,37 +22,37 @@ define _build_focus_list(widget) as:
 
 define _sync_focus_to(widget) as:
     if (_is_focusable of widget) == 1:
-        _focused_widget is widget
+        _ui.focused_widget is widget
         # Try to find index in current focus list
-        for i in range of (len of _focus_list):
-            if _focus_list[i].id == widget.id:
-                _focus_index is i
+        for i in range of (len of _ui.focus_list):
+            if _ui.focus_list[i].id == widget.id:
+                _ui.focus_index is i
                 return null
-        _focus_index is -1
+        _ui.focus_index is -1
 
 define _focus_next(root, reverse) as:
-    _focus_list is []
+    _ui.focus_list is []
     _build_focus_list of root
-    n is len of _focus_list
+    n is len of _ui.focus_list
     if n == 0:
-        _focused_widget is null
-        _focus_index is -1
+        _ui.focused_widget is null
+        _ui.focus_index is -1
         return null
     if reverse == 1:
-        _focus_index is _focus_index - 1
-        if _focus_index < 0:
-            _focus_index is n - 1
+        _ui.focus_index is _ui.focus_index - 1
+        if _ui.focus_index < 0:
+            _ui.focus_index is n - 1
     else:
-        _focus_index is _focus_index + 1
-        if _focus_index >= n:
-            _focus_index is 0
-    _focused_widget is _focus_list[_focus_index]
+        _ui.focus_index is _ui.focus_index + 1
+        if _ui.focus_index >= n:
+            _ui.focus_index is 0
+    _ui.focused_widget is _ui.focus_list[_ui.focus_index]
     # If it's a text input, focus it
     _unfocus_all of root
-    _focused_input is null
-    if _focused_widget.type == "text_input":
-        _focused_widget.focused is 1
-        _focused_input is _focused_widget
+    _ui.focused_input is null
+    if _ui.focused_widget.type == "text_input":
+        _ui.focused_widget.focused is 1
+        _ui.focused_input is _ui.focused_widget
 
 define _handle_focus_key(root, ev) as:
     if ev.key == "tab":
@@ -62,9 +62,9 @@ define _handle_focus_key(root, ev) as:
             _focus_next of [root, 0]
         return 1
     # Activation keys
-    if _focused_widget == null:
+    if _ui.focused_widget == null:
         return 0
-    w is _focused_widget
+    w is _ui.focused_widget
     if ev.key == "return" or ev.key == "space":
         if w.type == "button" and w.enabled == 1:
             if w.on_click != null:
@@ -272,7 +272,7 @@ define _handle_focus_key(root, ev) as:
     if ev.key == "escape":
         _close_dropdowns of root
         _close_menus of root
-        if (len of _modal_stack) > 0:
+        if (len of _ui.modal_stack) > 0:
             pop_modal of null
         return 1
     return 0

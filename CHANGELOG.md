@@ -70,6 +70,30 @@ All notable changes to EigenScript are documented here.
   (embed_smoke) and freestanding (freestanding_smoke).
 
 ### Changed
+- **Module functions can no longer bind writes through to the loader's
+  globals (#373).** Whether a `load_file`'d (or `import`ed) module's
+  function could clobber a caller global used to depend on load order:
+  a global declared *before* the load was a compile-time write-through
+  target (`in_globals` probed the live env during the module compile),
+  one declared *after* was insulated — so a library's stray bare
+  assignment silently corrupted exactly those caller globals that
+  existed at load time (EigenRegex#5: the caller's `pos is 42` broke
+  the regex engine's own matching). Module compiles now set a boundary
+  flag: function-body writes to names that aren't local / captured /
+  outer / the module's own top-level state compile as fresh locals,
+  never as dynamic writes through the loader's env. Reads and calls
+  still resolve dynamically across the boundary (cross-module reads,
+  caller-provided hooks, and value mutation via index all work
+  unchanged), top-level module statements still execute in the current
+  scope, and same-file outward mutation — the documented scope model —
+  is untouched. Compile-time only; zero runtime cost. The one stdlib
+  consumer of the old write-through — the UI toolkit's 23 bare globals
+  shared across its 18 files — migrated to a single `_ui` state dict
+  (reads cross the boundary; field writes are value mutations), which
+  is now the documented cross-file shared-state pattern (SPEC.md
+  "Module write boundary").
+
+### Changed
 - **Parentheses always mean one argument (#355).** A parenthesized
   literal list no longer spreads: `f of ([a, b])` binds the whole list
   `[a, b]` to the first parameter, exactly as SPEC.md's `f of (x)`

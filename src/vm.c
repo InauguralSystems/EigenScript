@@ -4645,7 +4645,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             g_import_resolve_dir[0] = '\0';
         }
 
+        int saved_boundary = g_compile_module_boundary;
+        g_compile_module_boundary = 1;                   /* #373 */
         EigsChunk *mod_chunk = compile_ast(ast, mod_env);
+        g_compile_module_boundary = saved_boundary;
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
             chunk_free(mod_chunk);
