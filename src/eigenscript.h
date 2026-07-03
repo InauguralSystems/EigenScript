@@ -524,11 +524,6 @@ struct EigsState {
 
 struct EigsThread {
     EigsState  *state;
-    /* Which OS thread created this attachment: the address of that
-     * thread's `eigs_current` TLS slot (unique per thread, needs no
-     * pthread_self — works freestanding). eigs_thread_switch uses it to
-     * find this thread's parked attachment to a state. */
-    void       *owner_tls;
     Arena       arena;
     /* Control-flow propagation (return/break/continue out of nested
      * blocks). All three are checked + cleared by the interpreter
