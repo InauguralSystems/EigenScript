@@ -1136,6 +1136,12 @@ Value* builtin_ppu_render_frame(Value *arg) {
     /* Per-scanline BG priority for sprite compositing */
     uint8_t bg_pri[160];
 
+    /* Window internal line counter: advances only on scanlines where the
+     * window actually renders (DMG#18) — `ly - wy` is wrong when the
+     * window is toggled or WY changes mid-frame. Kept in lockstep with
+     * the script-PPU twin (DMG src/ppu.eigs). */
+    int win_line = 0;
+
     for (int ly = 0; ly < 144; ly++) {
         int base = ly * 160;
 
@@ -1179,7 +1185,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
         /* ---- Window ---- */
         if (win_en && ly >= wy && wx <= 166) {
-            int win_y = ly - wy;
+            int win_y = win_line++;
             int win_row = win_y & 7;
             int win_map_row = (win_y >> 3) * 32;
             int start_x = wx - 7;
