@@ -168,6 +168,40 @@ host-built buffer to script (`eigs_set_global`) and the script's
 it is the same object. This is the seam a block-device embedder (EigenOS
 M10) moves sectors through.
 
+## Trace tape: record and replay without a filesystem
+
+Hosted, the replay tape is `EIGS_TRACE`/`EIGS_REPLAY` files. The embed
+API reaches the same machinery as bytes, so a freestanding embedder
+(EigenOS M11's machine journal) can record and replay with no files:
+
+```c
+typedef void (*EigsTraceSink)(const char *bytes, size_t len, void *ud);
+void eigs_set_trace_sink(EigsTraceSink cb, void *ud);  /* non-NULL enables recording */
+int  eigs_set_replay_tape(const char *bytes, size_t len, int strict); /* copied; NULL clears */
+int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served from tape */
+void eigs_trace_record_nondet(const char *name, EigsValue *v);
+```
+
+The sink receives complete newline-terminated record lines (an
+oversized record arrives in ordered chunks). It fires from inside
+evaluation — do not re-enter the runtime from it; buffer the bytes and
+act between evals. While a replay tape is set, nondet builtins return
+the recorded `N` values in order instead of consulting their live
+sources; when the tape runs out they fall back to live.
+
+Host builtins participate with the take/record pair, the same contract
+the runtime's own nondet builtins use:
+
+```c
+static EigsValue *my_sensor(EigsValue *arg) {
+    EigsValue *v;
+    if (eigs_replay_take("my_sensor", &v)) return v;   /* from the tape */
+    v = eigs_value_new_num(read_hw());
+    eigs_trace_record_nondet("my_sensor", v);          /* onto the tape */
+    return v;
+}
+```
+
 ## FFI: calling host functions from script
 
 ```c

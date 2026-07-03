@@ -383,6 +383,76 @@ static int   g_trace_initialized = 0;
 static int g_last_line  = -1;
 static int g_line_dirty = 0;
 
+/* ----- Embed byte-sink seam (trace_set_sink).
+ *
+ * The freestanding profile has no filesystem, so EIGS_TRACE's fopen is
+ * compiled out there — but the tape itself is just bytes. An embedder
+ * (EigenOS M11: the machine journal) installs a sink callback and the
+ * emit primitives below hand it complete record lines (newline
+ * included); a record longer than the staging buffer arrives in
+ * chunks, still in order. Installing a sink enables recording exactly
+ * like EIGS_TRACE does hosted; the two paths are independent sinks of
+ * the same byte stream (in practice an embedder uses one or the
+ * other). All emitters funnel through tp_putc/tp_puts/tp_printf. */
+static void (*g_trace_sink)(const char *bytes, size_t len, void *ud) = NULL;
+static void *g_trace_sink_ud = NULL;
+#define TRACE_SINK_LINEBUF 4096
+static char   g_sink_buf[TRACE_SINK_LINEBUF];
+static size_t g_sink_len = 0;
+
+static void sink_flush(void) {
+    if (g_trace_sink && g_sink_len) {
+        g_trace_sink(g_sink_buf, g_sink_len, g_trace_sink_ud);
+        g_sink_len = 0;
+    }
+}
+
+static int trace_out_active(void) {
+    return g_trace_fp != NULL || g_trace_sink != NULL;
+}
+
+static void tp_putc(int c) {
+    if (g_trace_sink) {
+        g_sink_buf[g_sink_len++] = (char)c;
+        if (g_sink_len == TRACE_SINK_LINEBUF || c == '\n') sink_flush();
+    }
+    if (g_trace_fp) fputc(c, g_trace_fp);
+}
+
+static void tp_write(const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) tp_putc(s[i]);
+}
+
+static void tp_puts(const char *s) { tp_write(s, strlen(s)); }
+
+static void tp_printf(const char *fmt, ...) {
+    char buf[128];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    if (n <= 0) return;
+    if (n >= (int)sizeof buf) n = (int)sizeof buf - 1;
+    tp_write(buf, (size_t)n);
+}
+
+void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
+    if (cb) {
+        g_trace_sink = cb;
+        g_trace_sink_ud = ud;
+        g_sink_len = 0;
+        g_last_line = -1;
+        g_line_dirty = 0;
+        g_trace_enabled = 1;
+        g_trace_hist = 1;
+    } else {
+        sink_flush();
+        g_trace_sink = NULL;
+        g_trace_sink_ud = NULL;
+        if (!g_trace_fp) g_trace_enabled = 0;
+    }
+}
+
 /* Forward decl — implementation below; called from trace_init. */
 static void trace_replay_init(void);
 
@@ -443,6 +513,32 @@ static char *g_replay_line = NULL;     /* growable read buffer */
 static size_t g_replay_cap = 0;
 static int   g_replay_strict = 0;      /* EIGS_REPLAY_STRICT=1: mismatch is fatal */
 
+/* Embed replay source (trace_set_replay_mem): the whole tape as bytes,
+ * copied in (the embedder's buffer may go away). The freestanding
+ * counterpart of EIGS_REPLAY — EigenOS M11 reads the journal from its
+ * store and hands it here. */
+static char  *g_replay_mem = NULL;
+static size_t g_replay_mem_len = 0;
+static size_t g_replay_mem_pos = 0;
+
+int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
+    free(g_replay_mem);
+    g_replay_mem = NULL;
+    g_replay_mem_len = 0;
+    g_replay_mem_pos = 0;
+    if (!bytes) {
+        if (!g_replay_fp) g_replay_enabled = 0;
+        return 1;
+    }
+    g_replay_mem = malloc(len > 0 ? len : 1);
+    if (!g_replay_mem) return 0;
+    memcpy(g_replay_mem, bytes, len);
+    g_replay_mem_len = len;
+    g_replay_strict = strict;
+    g_replay_enabled = 1;
+    return 1;
+}
+
 static void trace_replay_init(void) {
 #if EIGENSCRIPT_FREESTANDING
     return;   /* tape files need a filesystem; replay is a hosted tool */
@@ -466,6 +562,8 @@ static void replay_shutdown(void) {
     if (g_replay_fp) { fclose(g_replay_fp); g_replay_fp = NULL; }
 #endif
     free(g_replay_line); g_replay_line = NULL; g_replay_cap = 0;
+    free(g_replay_mem);  g_replay_mem = NULL;
+    g_replay_mem_len = 0; g_replay_mem_pos = 0;
     g_replay_enabled = 0;
 }
 
@@ -473,6 +571,29 @@ static void replay_shutdown(void) {
  * file-static slot, reads up to and including the next newline (or EOF).
  * Returns the length (newline NOT included, NUL-terminated) or -1 at EOF. */
 static int read_tape_line(void) {
+    if (g_replay_mem) {
+        /* serve the next newline-terminated line from the memory tape */
+        if (g_replay_mem_pos >= g_replay_mem_len) return -1;
+        if (g_replay_cap < 256) {
+            g_replay_cap = 256;
+            g_replay_line = realloc(g_replay_line, g_replay_cap);
+            if (!g_replay_line) { g_replay_cap = 0; return -1; }
+        }
+        size_t len = 0;
+        while (g_replay_mem_pos < g_replay_mem_len) {
+            char c = g_replay_mem[g_replay_mem_pos++];
+            if (c == '\n') break;
+            if (len + 2 > g_replay_cap) {
+                size_t nc = g_replay_cap * 2;
+                char *nb = realloc(g_replay_line, nc);
+                if (!nb) return -1;
+                g_replay_line = nb; g_replay_cap = nc;
+            }
+            g_replay_line[len++] = c;
+        }
+        g_replay_line[len] = '\0';
+        return (int)len;
+    }
     if (!g_replay_fp) return -1;
     if (g_replay_cap < 256) {
         g_replay_cap = 256;
@@ -696,7 +817,7 @@ static Value *parse_value(const char *s) {
 }
 
 int trace_replay_take(const char *fn, Value **out) {
-    if (!g_replay_fp || !out) return 0;
+    if ((!g_replay_fp && !g_replay_mem) || !out) return 0;
     for (;;) {
         int len = read_tape_line();
         if (len < 0) {
@@ -723,8 +844,15 @@ int trace_replay_take(const char *fn, Value **out) {
                 /* _exit, not exit: an abort must not run atexit teardown
                  * (half-executed program state) and keeps the status
                  * deterministic under sanitizers, whose leak checker
-                 * would otherwise override the code at forced exits. */
+                 * would otherwise override the code at forced exits.
+                 * Freestanding has no _exit; abort() is a HAL root
+                 * (halt) and a strict mismatch on bare metal is a
+                 * panic by any name. */
+#if EIGENSCRIPT_FREESTANDING
+                abort();
+#else
                 _exit(3);
+#endif
             }
             fprintf(stderr, "trace: replay name mismatch — expected '%s', got '%s' (using anyway)\n",
                     fn, rec_name);
@@ -744,6 +872,9 @@ void trace_shutdown(void) {
         g_trace_fp = NULL;
     }
 #endif
+    sink_flush();
+    g_trace_sink = NULL;
+    g_trace_sink_ud = NULL;
     g_trace_enabled = 0;
 
     if (g_prev_tab) {
@@ -770,9 +901,9 @@ void trace_shutdown(void) {
 void trace_line(int line) {
     /* OP_LINE stores g_trace_current_line directly; this function is
      * only called when a tape is open (g_trace_enabled). */
-    if (!g_trace_fp) return;
+    if (!trace_out_active()) return;
     if (line == g_last_line && !g_line_dirty) return;
-    fprintf(g_trace_fp, "L %d\n", line);
+    tp_printf("L %d\n", line);
     g_last_line  = line;
     g_line_dirty = 0;
 }
@@ -781,60 +912,60 @@ void trace_line(int line) {
  * one event per text line. Truncation marker is a trailing '…' (UTF-8
  * ellipsis) inside the closing quote. */
 static void write_string(const char *s) {
-    if (!s) { fputs("\"\"", g_trace_fp); return; }
-    fputc('"', g_trace_fp);
+    if (!s) { tp_puts("\"\""); return; }
+    tp_putc('"');
     int written = 0;
     for (const char *p = s; *p && written < TRACE_STR_MAX; p++) {
         unsigned char c = (unsigned char)*p;
-        if (c == '"' || c == '\\') { fputc('\\', g_trace_fp); fputc(c, g_trace_fp); written += 2; }
-        else if (c == '\n')        { fputs("\\n", g_trace_fp); written += 2; }
-        else if (c == '\r')        { fputs("\\r", g_trace_fp); written += 2; }
-        else                       { fputc(c, g_trace_fp);    written += 1; }
+        if (c == '"' || c == '\\') { tp_putc('\\'); tp_putc(c); written += 2; }
+        else if (c == '\n')        { tp_puts("\\n"); written += 2; }
+        else if (c == '\r')        { tp_puts("\\r"); written += 2; }
+        else                       { tp_putc(c);    written += 1; }
     }
-    if ((int)strlen(s) > TRACE_STR_MAX) fputs("…", g_trace_fp);
-    fputc('"', g_trace_fp);
+    if ((int)strlen(s) > TRACE_STR_MAX) tp_puts("…");
+    tp_putc('"');
 }
 
 /* Format a heap or tracked Value*. Numeric heap values unwrap to their
  * number; collections show their size for at-a-glance scanning. */
 static void write_value_ptr(Value *v) {
-    if (!v) { fputs("null", g_trace_fp); return; }
+    if (!v) { tp_puts("null"); return; }
     switch (v->type) {
-        case VAL_NUM:          fprintf(g_trace_fp, "%.17g", v->data.num); break;
-        case VAL_NULL:         fputs("null", g_trace_fp); break;
+        case VAL_NUM:          tp_printf("%.17g", v->data.num); break;
+        case VAL_NULL:         tp_puts("null"); break;
         case VAL_STR:          write_string(v->data.str); break;
-        case VAL_LIST:         fprintf(g_trace_fp, "<list:%d>", v->data.list.count); break;
-        case VAL_DICT:         fprintf(g_trace_fp, "<dict:%d>", v->data.dict.count); break;
-        case VAL_FN:           fputs("<fn>", g_trace_fp); break;
-        case VAL_BUILTIN:      fputs("<builtin>", g_trace_fp); break;
-        case VAL_BUFFER:       fprintf(g_trace_fp, "<buffer:%d>", v->data.buffer.count); break;
-        case VAL_JSON_RAW:     fputs("<json>", g_trace_fp); break;
-        case VAL_TEXT_BUILDER: fputs("<text>", g_trace_fp); break;
-        default:               fputs("<heap>", g_trace_fp); break;
+        case VAL_LIST:         tp_printf("<list:%d>", v->data.list.count); break;
+        case VAL_DICT:         tp_printf("<dict:%d>", v->data.dict.count); break;
+        case VAL_FN:           tp_puts("<fn>"); break;
+        case VAL_BUILTIN:      tp_puts("<builtin>"); break;
+        case VAL_BUFFER:       tp_printf("<buffer:%d>", v->data.buffer.count); break;
+        case VAL_JSON_RAW:     tp_puts("<json>"); break;
+        case VAL_TEXT_BUILDER: tp_puts("<text>"); break;
+        default:               tp_puts("<heap>"); break;
     }
 }
 
 static void write_slot(EigsSlot s) {
-    if (slot_is_num(s))  { fprintf(g_trace_fp, "%.17g", s.d); return; }
-    if (slot_is_null(s)) { fputs("null", g_trace_fp); return; }
-    if (slot_is_bool(s)) { fputs(slot_as_bool(s) ? "true" : "false", g_trace_fp); return; }
+    if (slot_is_num(s))  { tp_printf("%.17g", s.d); return; }
+    if (slot_is_null(s)) { tp_puts("null"); return; }
+    if (slot_is_bool(s)) { tp_puts(slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
-    fputs("<unknown>", g_trace_fp);
+    tp_puts("<unknown>");
 }
 
 void trace_assign(const char *name, EigsSlot value) {
     /* Prev-map update runs regardless of EIGS_TRACE — `prev of x` is a
-     * language feature, not a tape feature. The file write below is
-     * still gated on the tape being open. */
+     * language feature, not a tape feature. The tape write below is
+     * still gated on a tape (file or sink) being open. */
     prev_record_assign(name, value);
 
-    if (!g_trace_fp) return;
+    if (!trace_out_active()) return;
     if (!name) name = "?";
-    fputs("A ", g_trace_fp);
-    fputs(name, g_trace_fp);
-    fputc('=', g_trace_fp);
+    tp_puts("A ");
+    tp_puts(name);
+    tp_putc('=');
     write_slot(value);
-    fputc('\n', g_trace_fp);
+    tp_putc('\n');
     g_line_dirty = 1;
 }
 
@@ -847,22 +978,23 @@ void trace_assign(const char *name, EigsSlot value) {
  * record cannot be used for full determinism. */
 
 static void wf_putc(int c, int *budget) {
-    if (*budget <= 0 || !g_trace_fp) return;
-    fputc(c, g_trace_fp); (*budget)--;
+    if (*budget <= 0 || !trace_out_active()) return;
+    tp_putc(c); (*budget)--;
 }
 static void wf_puts(const char *s, int *budget) {
-    if (!g_trace_fp) return;
-    while (*s && *budget > 0) { fputc(*s++, g_trace_fp); (*budget)--; }
+    if (!trace_out_active()) return;
+    while (*s && *budget > 0) { tp_putc(*s++); (*budget)--; }
 }
 static void wf_printf(int *budget, const char *fmt, ...) {
-    if (*budget <= 0 || !g_trace_fp) return;
+    if (*budget <= 0 || !trace_out_active()) return;
     char buf[64];
     va_list ap; va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     if (n < 0) return;
+    if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;
     if (n > *budget) n = *budget;
-    fwrite(buf, 1, n, g_trace_fp);
+    tp_write(buf, (size_t)n);
     *budget -= n;
 }
 
@@ -931,14 +1063,14 @@ static void write_value_ptr_full(Value *v, int *budget) {
 }
 
 void trace_nondet_value(const char *fn, Value *v) {
-    if (!g_trace_fp) return;
+    if (!trace_out_active()) return;
     if (!fn) fn = "?";
-    fputs("N ", g_trace_fp);
-    fputs(fn, g_trace_fp);
-    fputc('=', g_trace_fp);
+    tp_puts("N ");
+    tp_puts(fn);
+    tp_putc('=');
     int budget = TRACE_NONDET_MAX;
     write_value_ptr_full(v, &budget);
-    if (budget <= 0) fprintf(g_trace_fp, "…<truncated>");
-    fputc('\n', g_trace_fp);
+    if (budget <= 0) tp_puts("…<truncated>");
+    tp_putc('\n');
     g_line_dirty = 1;
 }

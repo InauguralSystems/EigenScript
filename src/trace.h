@@ -62,6 +62,18 @@ void trace_init(void);
 /* Called at process exit to flush and close the tape. */
 void trace_shutdown(void);
 
+/* ---- Embed tape seam (the freestanding tape path; see eigs_embed.h).
+ * trace_set_sink installs a byte sink for tape records and enables
+ * recording — the sink receives complete record lines (newline
+ * included; an oversized record arrives in ordered chunks). NULL
+ * uninstalls and stops recording (unless EIGS_TRACE also opened a
+ * file). trace_set_replay_mem installs a whole tape as the replay
+ * source (bytes are COPIED in); NULL clears it. Returns 0 on OOM. */
+#include <stddef.h>
+void trace_set_sink(void (*cb)(const char *bytes, size_t len, void *ud),
+                    void *ud);
+int  trace_set_replay_mem(const char *bytes, size_t len, int strict);
+
 /* Record a source-line event. Emitted by OP_LINE. */
 void trace_line(int line);
 
