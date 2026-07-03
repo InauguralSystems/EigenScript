@@ -4969,20 +4969,36 @@ Value* builtin_sort_by(Value *arg) {
     return result;
 }
 
-/* sort of list — sort a numeric list in-place using qsort, return the list */
-static int sort_cmp_asc(const void *a, const void *b) {
-    Value *va = *(Value**)a, *vb = *(Value**)b;
-    if (va->type == VAL_NUM && vb->type == VAL_NUM) {
-        double d = va->data.num - vb->data.num;
-        return (d > 0) - (d < 0);
-    }
-    return 0;
+/* sort of list — in-place qsort of an all-number or all-string list.
+ * Anything else raises (#368): the old comparator returned 0 for any
+ * non-numeric pair, so sorting a list of records silently no-oped —
+ * with libc-dependent element order on top (qsort gives no stability
+ * guarantee for all-equal elements). Record sorting is sort_by's job. */
+static int sort_cmp_num(const void *a, const void *b) {
+    double da = (*(Value**)a)->data.num, db = (*(Value**)b)->data.num;
+    return (da > db) - (da < db);
+}
+
+static int sort_cmp_str(const void *a, const void *b) {
+    return strcmp((*(Value**)a)->data.str, (*(Value**)b)->data.str);
 }
 
 Value* builtin_sort(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return arg ? arg : make_null();
-    qsort(arg->data.list.items, arg->data.list.count, sizeof(Value*), sort_cmp_asc);
+    ValType t = arg->data.list.items[0] ? arg->data.list.items[0]->type
+                                        : VAL_NULL;
+    for (int i = 0; i < arg->data.list.count; i++) {
+        Value *v = arg->data.list.items[i];
+        if (!v || v->type != t || (t != VAL_NUM && t != VAL_STR)) {
+            runtime_error(0, "sort requires all numbers or all strings "
+                          "(element %d is %s); use sort_by for records",
+                          i, v ? val_type_name(v->type) : "null");
+            return make_null();
+        }
+    }
+    qsort(arg->data.list.items, arg->data.list.count, sizeof(Value*),
+          t == VAL_NUM ? sort_cmp_num : sort_cmp_str);
     return arg;
 }
 
