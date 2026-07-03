@@ -9,7 +9,7 @@ VERSION=$(cat ../VERSION)
 # Compiler is overridable (e.g. CC=clang ./build.sh) so CI can exercise
 # more than one toolchain; defaults to gcc.
 CC="${CC:-gcc}"
-SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c main.c"
+SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c eigs_embed.c main.c"
 
 # macOS Intel JIT: enabled via the Mach-O TLV-aware prologue (the JIT
 # now calls eigs_jit_load_eigs_current instead of inlining %fs:
