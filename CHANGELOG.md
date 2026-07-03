@@ -5,6 +5,15 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Buffer support in the embed API.** `eigs_value_new_buffer` /
+  `eigs_value_buffer_len` / `eigs_value_buffer_get` / `eigs_value_buffer_set`
+  plus `EIGS_TYPE_BUFFER` in the type enum — the script-side `buffer of n`
+  value crossable at the host boundary with no copy (a host-built buffer
+  passed to script is the same object `buf_set` mutates). Buffers are the
+  NUL-safe binary carrier: this is the seam a block-device embedder
+  (EigenOS M10, tidelog-as-filesystem) moves sectors through. Covered in
+  `embed_smoke.c` (construction, OOB/wrong-type safety, shared-object
+  mutation both directions), documented in docs/EMBEDDING.md.
 - **Single-thread multi-state switching (`eigs_thread_switch`).** Parks the
   calling thread's current attachment (no teardown — arena, freelists, VM
   and error state live on the `EigsThread` and stay intact) and activates
