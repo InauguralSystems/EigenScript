@@ -93,6 +93,43 @@ EigsState *eigs_current_state(void) {
     return eigs_current ? eigs_current->state : NULL;
 }
 
+/* Single-thread multi-state switching (the M9 scheduler seam): PARK the
+ * calling thread's current attachment (no teardown — the arena,
+ * freelists, VM and error state all live on the EigsThread and stay
+ * intact) and activate this thread's attachment to `st`, creating one on
+ * first switch. The only per-OS-thread state that is NOT on the
+ * EigsThread is vm.c's __thread hot-pointer caches — reset on every
+ * switch, exactly as attach does.
+ *
+ * This is for ONE OS thread juggling many states (a task = a state; the
+ * cooperative scheduler). Each such state therefore has exactly one
+ * attachment, so its parked EigsThread is `st->threads` — we identify it
+ * by state, NOT by taking the address of the `eigs_current` __thread
+ * variable (that miscompiles under a hand-rolled local-exec TLS such as
+ * EigenOS's: attach and switch disagreed on the address, every switch
+ * re-attached, and each fresh attach leaked a 16 MiB arena — the M9 OOM).
+ * Attaching more than one OS thread to a state (eigs_thread_attach) and
+ * then switching it is out of scope by contract. Cross-state rule stays
+ * the caller's job: values belong to the state that made them; move
+ * numbers (copy), never Value pointers. */
+EigsThread *eigs_thread_switch(EigsState *st) {
+    if (!st) return NULL;
+    if (eigs_current && eigs_current->state == st) return eigs_current;
+
+    eigs_current = NULL;                       /* park (no teardown) */
+
+    pthread_mutex_lock(&st->threads_lock);
+    EigsThread *th = st->threads;              /* sole attachment, if any */
+    pthread_mutex_unlock(&st->threads_lock);
+
+    if (th) {
+        eigs_current = th;
+        vm_thread_reset_caches();              /* stale cross-state pointers */
+        return th;
+    }
+    return eigs_thread_attach(st);             /* first switch: fresh attach */
+}
+
 void eigs_thread_detach(void) {
     EigsThread *th = eigs_current;
     if (!th) return;
