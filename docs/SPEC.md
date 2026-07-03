@@ -840,6 +840,18 @@ executes a file directly **in the current scope**. The standard
 library's helper modules (`lib/test.eigs`'s `assert_eq`, ...) are
 conventionally loaded this way.
 
+**Module write boundary.** A loaded (or imported) module's *functions*
+can read the loader's globals and call its functions, but they can
+never bind a write through to them — a bare `name is expr` inside a
+module function that doesn't refer to a local, a captured name, or the
+module's own top-level state creates a fresh local, regardless of what
+happens to exist in the loader's scope. (Top-level statements in the
+loaded file still execute directly in the current scope.) To share
+mutable state across files, put it in a dict or list and mutate fields
+— reads cross the boundary and field/index writes are value mutations,
+not bindings. The standard library's UI toolkit (`lib/ui.eigs`'s `_ui`
+state dict, shared by 17 sub-modules) is the reference pattern.
+
 ```eigenscript skip
 load_file of "lib/test.eigs"     # assert_eq, test_summary, ...
 load_file of "mymodule.eigs"     # definitions land in *your* scope

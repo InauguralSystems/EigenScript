@@ -203,7 +203,7 @@ define _mousedown_text_input(hit, root, mx, my, ev) as:
     if hit.enabled == 1:
         _unfocus_all of root
         hit.focused is 1
-        _focused_input is hit
+        _ui.focused_input is hit
 
 define _mousedown_editable_label(hit, root, mx, my, ev) as:
     # Single click does nothing (double-click starts editing)
@@ -274,23 +274,23 @@ define _handle_text_key(widget, ev) as:
             widget.cursor is len of widget.text
             return null
         if k == "c":
-            _clipboard is _get_selected_text of widget
+            _ui.clipboard is _get_selected_text of widget
             return null
         if k == "x":
-            _clipboard is _get_selected_text of widget
-            if (len of _clipboard) > 0:
+            _ui.clipboard is _get_selected_text of widget
+            if (len of _ui.clipboard) > 0:
                 _delete_selection of widget
                 if widget.on_change != null:
                     widget.on_change of widget
             return null
         if k == "v":
-            if (len of _clipboard) > 0:
+            if (len of _ui.clipboard) > 0:
                 if widget.sel_start != null and widget.sel_start >= 0 and widget.sel_end != null and widget.sel_end >= 0:
                     _delete_selection of widget
                 before is substr of [widget.text, 0, widget.cursor]
                 after is substr of [widget.text, widget.cursor, (len of widget.text) - widget.cursor]
-                widget.text is before + _clipboard + after
-                widget.cursor is widget.cursor + (len of _clipboard)
+                widget.text is before + _ui.clipboard + after
+                widget.cursor is widget.cursor + (len of _ui.clipboard)
                 if widget.on_change != null:
                     widget.on_change of widget
             return null
@@ -350,14 +350,14 @@ define _handle_text_key(widget, ev) as:
         if widget.type == "editable_label":
             _commit_editing of widget
         else:
-            _focused_input is null
+            _ui.focused_input is null
             widget.focused is 0
     elif k == "escape":
         if widget.type == "editable_label":
             widget.editing is 0
-            _focused_input is null
+            _ui.focused_input is null
         else:
-            _focused_input is null
+            _ui.focused_input is null
             widget.focused is 0
     elif k == "space":
         _insert_char of [widget, " "]
@@ -451,15 +451,15 @@ define _clear_selection(widget) as:
         widget.sel_end is -1
 
 define _start_editing(widget) as:
-    _unfocus_all_editable of _edit_root
+    _unfocus_all_editable of _ui.edit_root
     widget.editing is 1
     widget.cursor is len of widget.text
-    _focused_input is widget
+    _ui.focused_input is widget
 
 define _commit_editing(widget) as:
     widget.editing is 0
     widget.w is (text_width of [widget.text, widget.scale]) + 8
-    _focused_input is null
+    _ui.focused_input is null
     if widget.on_commit != null:
         widget.on_commit of widget
 

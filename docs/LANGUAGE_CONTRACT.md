@@ -77,7 +77,14 @@ with `_` are private (omitted from the dict). Resolution order:
 script-relative and the other standard locations; the not-found error
 names both tried paths. `load_file of "path.eigs"` is the
 non-namespaced form: it executes the file directly in the current
-scope. A **parse error** in a loaded file (via `import`, `load_file`, or
+scope. **Module functions never write the loader's bindings** (issue
+#373): a module function's bare assignment to a name that isn't its
+own local/captured/module-top-level state creates a fresh local — it
+does not depend on what existed in the loader's scope at load time
+(it used to: a global declared before the load was silently
+write-through, one declared after was not). Reads and calls resolve
+dynamically across the boundary; share mutable state via dict/list
+fields. A **parse error** in a loaded file (via `import`, `load_file`, or
 `eval`) raises a catchable runtime error rather than silently executing a
 partial AST — consistent with the **Errors** promise.
 

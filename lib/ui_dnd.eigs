@@ -1,6 +1,6 @@
 # ============================================================
 # UI Drag-and-Drop — state and render overlay
 # ============================================================
-# Note: DnD state (_dnd_state) and dispatch handling remain in ui.eigs.
+# Note: DnD state (_ui.dnd_state) and dispatch handling remain in ui.eigs.
 # This file is reserved for future DnD-specific extensions.
 # Currently kept as a placeholder in the load chain for consistency.

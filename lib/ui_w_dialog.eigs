@@ -202,12 +202,12 @@ define _mousedown_color_picker(hit, root, mx, my, ev) as:
     rel_y is my - abs_y
     if rel_x < 150 and rel_y < 120:
         hit.drag_part is "sv"
-        _drag_widget is hit
+        _ui.drag_widget is hit
         hit.sat is rel_x / 150.0
         hit.val is 1.0 - rel_y / 120.0
     elif rel_x >= 158 and rel_x < 178 and rel_y < 120:
         hit.drag_part is "hue"
-        _drag_widget is hit
+        _ui.drag_widget is hit
         hit.hue is rel_y * 360 / 120.0
     hit.color is _hsv_to_rgb of [hit.hue, hit.sat, hit.val]
     if hit.on_change != null:

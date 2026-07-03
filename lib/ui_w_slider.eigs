@@ -152,15 +152,15 @@ define _render_scrollbar(widget, ax, ay) as:
 define _mousedown_slider(hit, root, mx, my, ev) as:
     if hit.enabled == 1:
         hit.dragging is 1
-        _drag_widget is hit
-        _drag_ox is hit._ax
+        _ui.drag_widget is hit
+        _ui.drag_ox is hit._ax
         _update_drag of [hit, mx]
 
 define _mousedown_vslider(hit, root, mx, my, ev) as:
     if hit.enabled == 1:
         hit.dragging is 1
-        _drag_widget is hit
-        _drag_oy is hit._ay
+        _ui.drag_widget is hit
+        _ui.drag_oy is hit._ay
         _update_vdrag of [hit, my]
 
 define _mousedown_knob(hit, root, mx, my, ev) as:
@@ -168,14 +168,14 @@ define _mousedown_knob(hit, root, mx, my, ev) as:
         hit.dragging is 1
         hit.drag_start_y is my
         hit.drag_start_val is hit.value
-        _drag_widget is hit
+        _ui.drag_widget is hit
 
 define _mousedown_scrollbar(hit, root, mx, my, ev) as:
     if hit.enabled == 1:
         hit.dragging is 1
-        _drag_widget is hit
-        _drag_ox is hit._ax
-        _drag_oy is hit._ay
+        _ui.drag_widget is hit
+        _ui.drag_ox is hit._ax
+        _ui.drag_oy is hit._ay
         _update_scrollbar_drag of [hit, mx, my]
 
 # ---- Drag math ----
@@ -184,7 +184,7 @@ define _update_drag(widget, mx) as:
     range_val is widget.max_val - widget.min_val
     if range_val <= 0:
         return null
-    frac is (mx - _drag_ox) / widget.w
+    frac is (mx - _ui.drag_ox) / widget.w
     if frac < 0:
         frac is 0
     if frac > 1:
@@ -198,7 +198,7 @@ define _update_vdrag(widget, my) as:
     if range_val <= 0:
         return null
     # Inverted: top = max, bottom = min
-    frac is 1.0 - (my - _drag_oy) / widget.h
+    frac is 1.0 - (my - _ui.drag_oy) / widget.h
     if frac < 0:
         frac is 0
     if frac > 1:
@@ -234,7 +234,7 @@ define _update_scrollbar_drag(widget, mx, my) as:
         track is widget.h - thumb_h
         if track <= 0:
             return null
-        frac is (my - _drag_oy - thumb_h / 2) / track
+        frac is (my - _ui.drag_oy - thumb_h / 2) / track
     else:
         ts is widget.thumb_size
         if ts < 0.05:
@@ -245,7 +245,7 @@ define _update_scrollbar_drag(widget, mx, my) as:
         track is widget.w - thumb_w
         if track <= 0:
             return null
-        frac is (mx - _drag_ox - thumb_w / 2) / track
+        frac is (mx - _ui.drag_ox - thumb_w / 2) / track
     if frac < 0:
         frac is 0
     if frac > 1:

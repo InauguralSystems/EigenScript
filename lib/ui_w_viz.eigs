@@ -407,8 +407,8 @@ define _mousedown_waveform_view(hit, root, mx, my, ev) as:
     sample_pos is floor of (hit.offset + (mx - abs_x) * hit.zoom)
     hit.sel_start is sample_pos
     hit.sel_end is sample_pos
-    _drag_widget is hit
-    _drag_ox is abs_x
+    _ui.drag_widget is hit
+    _ui.drag_ox is abs_x
 
 define _mousedown_bar_chart(hit, root, mx, my, ev) as:
     abs_x is hit._ax

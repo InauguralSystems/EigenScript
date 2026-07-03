@@ -2502,7 +2502,10 @@ Value* builtin_load_file(Value *arg) {
     /* Compile-stage diagnostics must fail the load too (#337) — same
      * rationale as eval above. */
     Env *target = g_load_env ? g_load_env : g_global_env;
+    int saved_boundary = g_compile_module_boundary;
+    g_compile_module_boundary = 1;                       /* #373 */
     EigsChunk *lf_chunk = compile_ast(ast, target);
+    g_compile_module_boundary = saved_boundary;
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
         chunk_free(lf_chunk);

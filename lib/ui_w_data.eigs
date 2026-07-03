@@ -347,13 +347,13 @@ define _mousedown_item_list(hit, root, mx, my, ev) as:
     if idx >= 0 and idx < (len of hit.items):
         if hit.draggable == 1:
             # Start DnD
-            _dnd_state.active is 1
-            _dnd_state.source is hit
-            _dnd_state.source_index is idx
-            _dnd_state.data is hit.items[idx]
-            _dnd_state.mx is mx
-            _dnd_state.my is my
-            _dnd_state.text is f"{hit.items[idx]}"
+            _ui.dnd_state.active is 1
+            _ui.dnd_state.source is hit
+            _ui.dnd_state.source_index is idx
+            _ui.dnd_state.data is hit.items[idx]
+            _ui.dnd_state.mx is mx
+            _ui.dnd_state.my is my
+            _ui.dnd_state.text is f"{hit.items[idx]}"
             hit.selected is idx
         else:
             hit.selected is idx

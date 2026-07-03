@@ -225,38 +225,38 @@ add_child of [fp, fb2]
 
 _layout of [fp, 0, 0]
 
-_focus_list is []
+_ui.focus_list is []
 _build_focus_list of fp
-assert_eq of [len of _focus_list, 3, "focus list skips label (3 focusable)"]
-assert_eq of [_focus_list[0].id, "fb1", "focus list[0] = button 1"]
-assert_eq of [_focus_list[1].id, "fs", "focus list[1] = slider"]
-assert_eq of [_focus_list[2].id, "fb2", "focus list[2] = button 2"]
+assert_eq of [len of _ui.focus_list, 3, "focus list skips label (3 focusable)"]
+assert_eq of [_ui.focus_list[0].id, "fb1", "focus list[0] = button 1"]
+assert_eq of [_ui.focus_list[1].id, "fs", "focus list[1] = slider"]
+assert_eq of [_ui.focus_list[2].id, "fb2", "focus list[2] = button 2"]
 
 # Focus cycling
-_focus_index is -1
-_focused_widget is null
-_focused_input is null
+_ui.focus_index is -1
+_ui.focused_widget is null
+_ui.focused_input is null
 _focus_next of [fp, 0]
-assert_eq of [_focused_widget.id, "fb1", "focus next -> button 1"]
+assert_eq of [_ui.focused_widget.id, "fb1", "focus next -> button 1"]
 
 _focus_next of [fp, 0]
-assert_eq of [_focused_widget.id, "fs", "focus next -> slider"]
+assert_eq of [_ui.focused_widget.id, "fs", "focus next -> slider"]
 
 _focus_next of [fp, 0]
-assert_eq of [_focused_widget.id, "fb2", "focus next -> button 2"]
+assert_eq of [_ui.focused_widget.id, "fb2", "focus next -> button 2"]
 
 _focus_next of [fp, 0]
-assert_eq of [_focused_widget.id, "fb1", "focus wraps to button 1"]
+assert_eq of [_ui.focused_widget.id, "fb1", "focus wraps to button 1"]
 
 # Reverse
 _focus_next of [fp, 1]
-assert_eq of [_focused_widget.id, "fb2", "focus prev wraps to button 2"]
+assert_eq of [_ui.focused_widget.id, "fb2", "focus prev wraps to button 2"]
 
 # Disabled widget skipped
 fs.enabled is 0
-_focus_list is []
+_ui.focus_list is []
 _build_focus_list of fp
-assert_eq of [len of _focus_list, 2, "disabled slider not in focus list"]
+assert_eq of [len of _ui.focus_list, 2, "disabled slider not in focus list"]
 fs.enabled is 1
 
 # ============================================================
@@ -318,9 +318,9 @@ add_child of [kp, piano_keyboard of ["kpk", 0, 0, 2, null]]
 
 _layout of [kp, 0, 0]
 
-_focus_list is []
+_ui.focus_list is []
 _build_focus_list of kp
-assert_eq of [len of _focus_list, 10, "all 10 new types in focus list"]
+assert_eq of [len of _ui.focus_list, 10, "all 10 new types in focus list"]
 
 # Verify specific types are present
 found_canvas is 0
@@ -328,16 +328,16 @@ found_grid is 0
 found_chart is 0
 found_gauge is 0
 found_color_picker is 0
-for i in range of (len of _focus_list):
-    if _focus_list[i].type == "canvas":
+for i in range of (len of _ui.focus_list):
+    if _ui.focus_list[i].type == "canvas":
         found_canvas is 1
-    if _focus_list[i].type == "grid":
+    if _ui.focus_list[i].type == "grid":
         found_grid is 1
-    if _focus_list[i].type == "chart":
+    if _ui.focus_list[i].type == "chart":
         found_chart is 1
-    if _focus_list[i].type == "gauge":
+    if _ui.focus_list[i].type == "gauge":
         found_gauge is 1
-    if _focus_list[i].type == "color_picker":
+    if _ui.focus_list[i].type == "color_picker":
         found_color_picker is 1
 assert_eq of [found_canvas, 1, "canvas focusable"]
 assert_eq of [found_grid, 1, "grid focusable"]
@@ -349,7 +349,7 @@ assert_eq of [found_color_picker, 1, "color_picker focusable"]
 g is grid of ["tg", 0, 0, 4, 4, 20, 20, null]
 g.hover_row is 1
 g.hover_col is 1
-_focused_widget is g
+_ui.focused_widget is g
 _handle_focus_key of [kp, {"key": "right", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_eq of [g.hover_col, 2, "grid right arrow"]
 _handle_focus_key of [kp, {"key": "down", "shift": 0, "ctrl": 0, "alt": 0}]
@@ -363,7 +363,7 @@ assert_eq of [g.cells[2][2], 0, "grid space toggles off"]
 
 # Editable label: enter starts editing
 el is editable_label of ["tel", 0, 0, "test", null]
-_focused_widget is el
+_ui.focused_widget is el
 _handle_focus_key of [kp, {"key": "return", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_eq of [el.editing, 1, "editable_label enter starts editing"]
 

@@ -1,0 +1,56 @@
+# #373: module-boundary write insulation. A load_file'd / imported module's
+# FUNCTIONS can never bind writes through to the loader's globals — no
+# matter whether the global existed before or after the load. Reads stay
+# dynamic (cross-module reads and calls keep working), top-level module
+# statements still execute in the current scope, and same-file outward
+# mutation is unchanged.
+
+fixture is "tmp_mod_373.eigs"
+write_text of [fixture, "define mod_touch() as:\n    y373 is 777\n    pos373 is 777\ndefine mod_read() as:\n    return cfg373\ndefine mod_call() as:\n    return helper373 of null\nmod_count is 0\ndefine mod_bump() as:\n    mod_count is mod_count + 1\n    return mod_count\ndefine mod_poke(xs) as:\n    xs[0] is 99\n"]
+
+# Case 1: caller globals declared BEFORE the load — the order that used to
+# clobber (and could corrupt the loaded engine's own state, EigenRegex#5).
+y373 is 5
+cfg373 is "visible"
+define helper373() as:
+    return "caller-fn"
+
+load_file of fixture
+
+# Case 2: declared AFTER the load — was already insulated; must stay so.
+pos373 is 42
+
+mod_touch of null
+assert of [y373 == 5, "M1 before-load global survives module fn write"]
+assert of [pos373 == 42, "M2 after-load global survives module fn write"]
+
+# Reads and calls still pass through the boundary
+assert of [(mod_read of null) == "visible", "M3 module fn reads caller global"]
+assert of [(mod_call of null) == "caller-fn", "M4 module fn calls caller function"]
+
+# The module's own top-level state is still writable by its functions
+assert of [(mod_bump of null) == 1, "M5 module self-state first bump"]
+assert of [(mod_bump of null) == 2, "M6 module self-state accumulates"]
+
+# Value mutation (list index) through the boundary is mutation, not binding
+shared is [1, 2]
+mod_poke of shared
+assert of [shared[0] == 99, "M7 module fn mutates caller list contents"]
+
+# Same-file outward mutation unchanged (the documented scope model)
+x373 is 5
+define samefile_touch() as:
+    x373 is 99
+samefile_touch of null
+assert of [x373 == 99, "M8 same-file outward mutation still works"]
+
+# import direction: an imported module's fn is insulated the same way
+write_text of ["tmp_mod_373i.eigs", "define imp_touch() as:\n    z373 is 888\n"]
+z373 is 7
+import tmp_mod_373i
+tmp_mod_373i.imp_touch of null
+assert of [z373 == 7, "M9 imported module fn cannot clobber caller global"]
+
+remove_file of fixture
+remove_file of "tmp_mod_373i.eigs"
+print of "All module-scope tests passed"

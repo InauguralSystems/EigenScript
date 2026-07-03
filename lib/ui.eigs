@@ -18,31 +18,36 @@ load_file of "lib/ui_draw.eigs"
 load_file of "lib/ui_layout.eigs"
 load_file of "lib/ui_anim.eigs"
 
-# Module state — drag capture, focus, animation
-
-_drag_widget is null
-_tooltip_widget is null
-_tooltip_start_time is 0
-_tooltip_x is 0
-_tooltip_y is 0
-_last_click_time is 0
-_last_click_id is ""
-_edit_root is null
-_focus_list is []
-_focus_index is -1
-_focused_widget is null
-_window_w is 800
-_window_h is 600
-_hotkeys is []
-_clipboard is ""
-_modal_stack is []
-_dnd_state is {"active": 0, "source": null, "source_index": -1, "data": null, "mx": 0, "my": 0, "text": ""}
-_toasts is []
-_last_mouse_x is 0
-_last_mouse_y is 0
-_drag_ox is 0
-_drag_oy is 0
-_focused_input is null
+# Module state — drag capture, focus, animation. ONE shared dict: the
+# toolkit spans 18 load_file'd parts, and module functions cannot bind
+# writes through to another file's bare globals (#373) — but they can
+# read the shared `_ui` binding and mutate its fields, which is the
+# supported cross-file state pattern.
+_ui is {
+    "drag_widget": null,
+    "tooltip_widget": null,
+    "tooltip_start_time": 0,
+    "tooltip_x": 0,
+    "tooltip_y": 0,
+    "last_click_time": 0,
+    "last_click_id": "",
+    "edit_root": null,
+    "focus_list": [],
+    "focus_index": 0 - 1,
+    "focused_widget": null,
+    "window_w": 800,
+    "window_h": 600,
+    "hotkeys": [],
+    "clipboard": "",
+    "modal_stack": [],
+    "dnd_state": {"active": 0, "source": null, "source_index": -1, "data": null, "mx": 0, "my": 0, "text": ""},
+    "toasts": [],
+    "last_mouse_x": 0,
+    "last_mouse_y": 0,
+    "drag_ox": 0,
+    "drag_oy": 0,
+    "focused_input": null
+}
 
 # Load sub-modules
 
@@ -125,26 +130,26 @@ define show_toast(text, duration) as:
         "start_time": gfx_ticks of null,
         "duration": duration
     }
-    append of [_toasts, t]
+    append of [_ui.toasts, t]
 
 define _update_toasts() as:
     now is gfx_ticks of null
     new_list is []
-    for i in range of (len of _toasts):
-        t is _toasts[i]
+    for i in range of (len of _ui.toasts):
+        t is _ui.toasts[i]
         elapsed is now - t.start_time
         if elapsed < t.duration:
             append of [new_list, t]
-    _toasts is new_list
+    _ui.toasts is new_list
 
 define _render_toasts() as:
     now is gfx_ticks of null
-    n is len of _toasts
+    n is len of _ui.toasts
     if n == 0:
         return null
     ty is 8
     for i in range of n:
-        t is _toasts[i]
+        t is _ui.toasts[i]
         elapsed is now - t.start_time
         remaining is t.duration - elapsed
         # Alpha: full opacity, fade in last 500ms
@@ -155,7 +160,7 @@ define _render_toasts() as:
                 alpha is 0
         tw is (text_width of [t.text, _theme.font_scale]) + 16
         th is _theme.font_scale * 7 + 12
-        tx is _window_w - tw - 12
+        tx is _ui.window_w - tw - 12
         # Background
         gfx_rrect of [tx, ty, tw, th, 4, 40, 40, 55, alpha]
         # Text
@@ -179,29 +184,29 @@ define render(widget, ox, oy) as:
     if widget.enabled != null and widget.enabled == 0:
         _draw_disabled_overlay of [ax, ay, widget.w, widget.h]
     # Focus ring
-    if _focused_widget != null and _focused_widget.id == widget.id:
+    if _ui.focused_widget != null and _ui.focused_widget.id == widget.id:
         _draw_focus_ring of [ax, ay, widget.w, widget.h, _theme.radius_sm]
     return null
 
 # Render tooltip overlay — called after main render
 define _render_tooltip() as:
-    if _tooltip_widget == null:
+    if _ui.tooltip_widget == null:
         return null
-    if (gfx_ticks of null) - _tooltip_start_time < 500:
+    if (gfx_ticks of null) - _ui.tooltip_start_time < 500:
         return null
-    tw is (text_width of [_tooltip_widget.tooltip, 1]) + 8
+    tw is (text_width of [_ui.tooltip_widget.tooltip, 1]) + 8
     th is 18
-    tx is _tooltip_x + 12
-    ty is _tooltip_y - 20
+    tx is _ui.tooltip_x + 12
+    ty is _ui.tooltip_y - 20
     if ty < 0:
-        ty is _tooltip_y + 20
+        ty is _ui.tooltip_y + 20
     # Clamp to window bounds
-    if tx + tw > _window_w:
-        tx is _window_w - tw - 4
+    if tx + tw > _ui.window_w:
+        tx is _ui.window_w - tw - 4
     if tx < 0:
         tx is 4
-    if ty + th > _window_h:
-        ty is _window_h - th - 4
+    if ty + th > _ui.window_h:
+        ty is _ui.window_h - th - 4
     # Shadow
     tbg is _theme.tooltip_bg
     ttc is _theme.tooltip_text
@@ -209,7 +214,7 @@ define _render_tooltip() as:
     # Background
     gfx_rrect of [tx, ty, tw, th, 3, tbg[0], tbg[1], tbg[2]]
     # Text
-    gfx_text of [tx + 4, ty + 4, _tooltip_widget.tooltip, ttc[0], ttc[1], ttc[2], 1]
+    gfx_text of [tx + 4, ty + 4, _ui.tooltip_widget.tooltip, ttc[0], ttc[1], ttc[2], 1]
 
 # Hit testing — registry-driven dispatch
 
@@ -339,13 +344,13 @@ define _find_scrollable_at(widget, ox, oy, mx, my) as:
 # DnD render overlay
 
 define _render_dnd() as:
-    if _dnd_state.active == 0:
+    if _ui.dnd_state.active == 0:
         return null
-    tx is _dnd_state.mx + 10
-    ty is _dnd_state.my - 10
-    tw is (text_width of [_dnd_state.text, _theme.font_scale]) + 12
+    tx is _ui.dnd_state.mx + 10
+    ty is _ui.dnd_state.my - 10
+    tw is (text_width of [_ui.dnd_state.text, _theme.font_scale]) + 12
     gfx_rrect of [tx, ty, tw, 22, _theme.radius_sm, _theme.accent[0], _theme.accent[1], _theme.accent[2], 180]
-    gfx_text of [tx + 6, ty + 4, _dnd_state.text, 255, 255, 255, _theme.font_scale]
+    gfx_text of [tx + 6, ty + 4, _ui.dnd_state.text, 255, 255, 255, _theme.font_scale]
 
 # Tree walk helpers
 
@@ -393,14 +398,14 @@ define _find_visible_dialog(widget) as:
 # Hotkey system
 
 define register_hotkey(combo, callback) as:
-    append of [_hotkeys, {"combo": combo, "callback": callback}]
+    append of [_ui.hotkeys, {"combo": combo, "callback": callback}]
 
 define unregister_hotkey(combo) as:
     new_list is []
-    for i in range of (len of _hotkeys):
-        if _hotkeys[i].combo != combo:
-            append of [new_list, _hotkeys[i]]
-    _hotkeys is new_list
+    for i in range of (len of _ui.hotkeys):
+        if _ui.hotkeys[i].combo != combo:
+            append of [new_list, _ui.hotkeys[i]]
+    _ui.hotkeys is new_list
 
 define _combo_matches(combo, ctrl, shift, alt, key) as:
     # Parse combo string like "ctrl+s", "ctrl+shift+z", "alt+f"
@@ -437,8 +442,8 @@ define _match_hotkey(ev) as:
         shift is ev.shift
     if ev.alt != null:
         alt is ev.alt
-    for i in range of (len of _hotkeys):
-        hk is _hotkeys[i]
+    for i in range of (len of _ui.hotkeys):
+        hk is _ui.hotkeys[i]
         if (_combo_matches of [hk.combo, ctrl, shift, alt, ev.key]) == 1:
             hk.callback of null
             return 1
@@ -451,18 +456,18 @@ define push_modal(dlg, parent_w, parent_h) as:
     dlg.y is floor of ((parent_h - dlg.h) / 2)
     dlg.visible is 1
     dlg.hover_btn is -1
-    append of [_modal_stack, dlg]
+    append of [_ui.modal_stack, dlg]
 
 define pop_modal() as:
-    n is len of _modal_stack
+    n is len of _ui.modal_stack
     if n == 0:
         return null
-    top is _modal_stack[n - 1]
+    top is _ui.modal_stack[n - 1]
     top.visible is 0
     new_stack is []
     for i in range of (n - 1):
-        append of [new_stack, _modal_stack[i]]
-    _modal_stack is new_stack
+        append of [new_stack, _ui.modal_stack[i]]
+    _ui.modal_stack is new_stack
     return top
 
 define show_menu(menu_widget, x, y) as:
@@ -484,12 +489,12 @@ define dispatch(root, ev) as:
         my is ev.y
 
     # Handle DnD in progress
-    if ev.type == "mousemove" and _dnd_state.active == 1:
-        _dnd_state.mx is mx
-        _dnd_state.my is my
+    if ev.type == "mousemove" and _ui.dnd_state.active == 1:
+        _ui.dnd_state.mx is mx
+        _ui.dnd_state.my is my
         # Compute reorder insertion index if dragging over source list
-        if _dnd_state.source != null and _dnd_state.source.type == "item_list":
-            src is _dnd_state.source
+        if _ui.dnd_state.source != null and _ui.dnd_state.source.type == "item_list":
+            src is _ui.dnd_state.source
             abs_y is src._ay
             if _point_in_rect of [mx, my, src._ax, abs_y, src.w, src.h]:
                 src.reorder_insert is floor of ((my - abs_y + src.scroll_y) / src.item_h)
@@ -500,29 +505,29 @@ define dispatch(root, ev) as:
         return null
 
     # Handle drag in progress (slider, vslider, or knob)
-    if ev.type == "mousemove" and _drag_widget != null:
-        if _drag_widget.type == "knob":
-            _update_knob_drag of [_drag_widget, my]
-        elif _drag_widget.type == "vslider":
-            _update_vdrag of [_drag_widget, my]
-        elif _drag_widget.type == "waveform_view":
-            sample_pos is floor of (_drag_widget.offset + (mx - _drag_ox) * _drag_widget.zoom)
-            _drag_widget.sel_end is sample_pos
-        elif _drag_widget.type == "scrollbar":
-            _update_scrollbar_drag of [_drag_widget, mx, my]
-        elif _drag_widget.type == "splitter":
-            new_pos is mx - _drag_ox
+    if ev.type == "mousemove" and _ui.drag_widget != null:
+        if _ui.drag_widget.type == "knob":
+            _update_knob_drag of [_ui.drag_widget, my]
+        elif _ui.drag_widget.type == "vslider":
+            _update_vdrag of [_ui.drag_widget, my]
+        elif _ui.drag_widget.type == "waveform_view":
+            sample_pos is floor of (_ui.drag_widget.offset + (mx - _ui.drag_ox) * _ui.drag_widget.zoom)
+            _ui.drag_widget.sel_end is sample_pos
+        elif _ui.drag_widget.type == "scrollbar":
+            _update_scrollbar_drag of [_ui.drag_widget, mx, my]
+        elif _ui.drag_widget.type == "splitter":
+            new_pos is mx - _ui.drag_ox
             if new_pos < 50:
                 new_pos is 50
-            if new_pos > _drag_widget.w - 50:
-                new_pos is _drag_widget.w - 50
-            _drag_widget.split_pos is new_pos
-            if _drag_widget.on_resize != null:
-                _drag_widget.on_resize of _drag_widget
-        elif _drag_widget.type == "color_picker":
-            abs_x is _drag_widget._ax
-            abs_y is _drag_widget._ay
-            if _drag_widget.drag_part == "sv":
+            if new_pos > _ui.drag_widget.w - 50:
+                new_pos is _ui.drag_widget.w - 50
+            _ui.drag_widget.split_pos is new_pos
+            if _ui.drag_widget.on_resize != null:
+                _ui.drag_widget.on_resize of _ui.drag_widget
+        elif _ui.drag_widget.type == "color_picker":
+            abs_x is _ui.drag_widget._ax
+            abs_y is _ui.drag_widget._ay
+            if _ui.drag_widget.drag_part == "sv":
                 s_val is (mx - abs_x) / 150.0
                 v_val is 1.0 - (my - abs_y) / 120.0
                 if s_val < 0:
@@ -533,96 +538,96 @@ define dispatch(root, ev) as:
                     v_val is 0
                 if v_val > 1:
                     v_val is 1
-                _drag_widget.sat is s_val
-                _drag_widget.val is v_val
-            elif _drag_widget.drag_part == "hue":
+                _ui.drag_widget.sat is s_val
+                _ui.drag_widget.val is v_val
+            elif _ui.drag_widget.drag_part == "hue":
                 h_val is (my - abs_y) * 360 / 120.0
                 if h_val < 0:
                     h_val is 0
                 if h_val > 359:
                     h_val is 359
-                _drag_widget.hue is h_val
-            _drag_widget.color is _hsv_to_rgb of [_drag_widget.hue, _drag_widget.sat, _drag_widget.val]
-            if _drag_widget.on_change != null:
-                _drag_widget.on_change of _drag_widget
+                _ui.drag_widget.hue is h_val
+            _ui.drag_widget.color is _hsv_to_rgb of [_ui.drag_widget.hue, _ui.drag_widget.sat, _ui.drag_widget.val]
+            if _ui.drag_widget.on_change != null:
+                _ui.drag_widget.on_change of _ui.drag_widget
         else:
-            _update_drag of [_drag_widget, mx]
+            _update_drag of [_ui.drag_widget, mx]
         return null
 
-    if ev.type == "mouseup" and _dnd_state.active == 1:
+    if ev.type == "mouseup" and _ui.dnd_state.active == 1:
         # DnD drop
         hit is _hit_test of [root, 0, 0, mx, my]
-        drop_data is {"source_widget": _dnd_state.source, "source_index": _dnd_state.source_index, "data": _dnd_state.data}
+        drop_data is {"source_widget": _ui.dnd_state.source, "source_index": _ui.dnd_state.source_index, "data": _ui.dnd_state.data}
         # Self-drop reorder
-        if hit != null and _dnd_state.source != null and hit.id == _dnd_state.source.id and hit.type == "item_list" and hit.on_reorder != null:
+        if hit != null and _ui.dnd_state.source != null and hit.id == _ui.dnd_state.source.id and hit.type == "item_list" and hit.on_reorder != null:
             insert_idx is hit.reorder_insert
             if insert_idx >= 0:
-                hit.on_reorder of [hit, _dnd_state.source_index, insert_idx]
+                hit.on_reorder of [hit, _ui.dnd_state.source_index, insert_idx]
             hit.reorder_insert is -1
         elif hit != null and hit.on_drop != null:
             hit.on_drop of [hit, drop_data]
         # Clean up
-        if _dnd_state.source != null and _dnd_state.source.type == "item_list":
-            _dnd_state.source.reorder_insert is -1
-        _dnd_state.active is 0
-        _dnd_state.source is null
-        _dnd_state.source_index is -1
-        _dnd_state.data is null
-        _dnd_state.text is ""
+        if _ui.dnd_state.source != null and _ui.dnd_state.source.type == "item_list":
+            _ui.dnd_state.source.reorder_insert is -1
+        _ui.dnd_state.active is 0
+        _ui.dnd_state.source is null
+        _ui.dnd_state.source_index is -1
+        _ui.dnd_state.data is null
+        _ui.dnd_state.text is ""
         return null
 
-    if ev.type == "mouseup" and _drag_widget != null:
-        _drag_widget.dragging is 0
-        if _drag_widget.on_change != null:
-            _drag_widget.on_change of _drag_widget
-        _drag_widget is null
+    if ev.type == "mouseup" and _ui.drag_widget != null:
+        _ui.drag_widget.dragging is 0
+        if _ui.drag_widget.on_change != null:
+            _ui.drag_widget.on_change of _ui.drag_widget
+        _ui.drag_widget is null
         return null
 
     # Mouse move — update hover + tooltip
     if ev.type == "mousemove":
-        _last_mouse_x is mx
-        _last_mouse_y is my
+        _ui.last_mouse_x is mx
+        _ui.last_mouse_y is my
         _clear_hover of root
         hit is _hit_test of [root, 0, 0, mx, my]
         if hit != null:
             hit.hover is 1
             # Tooltip tracking
             if hit.tooltip != null and (len of hit.tooltip) > 0:
-                if _tooltip_widget == null or _tooltip_widget.id != hit.id:
-                    _tooltip_widget is hit
-                    _tooltip_start_time is gfx_ticks of null
-                _tooltip_x is mx
-                _tooltip_y is my
+                if _ui.tooltip_widget == null or _ui.tooltip_widget.id != hit.id:
+                    _ui.tooltip_widget is hit
+                    _ui.tooltip_start_time is gfx_ticks of null
+                _ui.tooltip_x is mx
+                _ui.tooltip_y is my
             else:
-                _tooltip_widget is null
-                _tooltip_start_time is gfx_ticks of null
+                _ui.tooltip_widget is null
+                _ui.tooltip_start_time is gfx_ticks of null
             # Per-type hover details via registry
             entry is _widget_registry[hit.type]
             if entry != null and entry.on_mousemove != null:
                 entry.on_mousemove of [hit, root, mx, my]
         else:
-            _tooltip_widget is null
-            _tooltip_start_time is gfx_ticks of null
+            _ui.tooltip_widget is null
+            _ui.tooltip_start_time is gfx_ticks of null
         return null
 
     # Mouse down — start interaction
     if ev.type == "mousedown":
         # Reset tooltip
-        _tooltip_widget is null
-        _tooltip_start_time is gfx_ticks of null
+        _ui.tooltip_widget is null
+        _ui.tooltip_start_time is gfx_ticks of null
         # Close any open dropdowns first
         _close_dropdowns of root
         # Check modal stack first (they're modal)
-        if (len of _modal_stack) > 0:
-            top_modal is _modal_stack[(len of _modal_stack) - 1]
+        if (len of _ui.modal_stack) > 0:
+            top_modal is _ui.modal_stack[(len of _ui.modal_stack) - 1]
             _handle_dialog_click of [top_modal, mx, my]
             return null
         hit is _hit_test of [root, 0, 0, mx, my]
         if hit == null:
             _unfocus_all of root
-            _focused_input is null
-            _focused_widget is null
-            _focus_index is -1
+            _ui.focused_input is null
+            _ui.focused_widget is null
+            _ui.focus_index is -1
             return null
         # Universal disabled check
         if hit.enabled != null and hit.enabled == 0:
@@ -642,16 +647,16 @@ define dispatch(root, ev) as:
         _sync_focus_to of hit
         # Double-click detection
         now is gfx_ticks of null
-        if hit.id == _last_click_id and (now - _last_click_time) < 400:
+        if hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
             if hit.type == "editable_label":
                 _start_editing of hit
             elif hit.on_dblclick != null:
                 hit.on_dblclick of hit
-            _last_click_id is ""
-            _last_click_time is 0
+            _ui.last_click_id is ""
+            _ui.last_click_time is 0
             return null
-        _last_click_id is hit.id
-        _last_click_time is now
+        _ui.last_click_id is hit.id
+        _ui.last_click_time is now
         # Per-type mousedown via registry
         entry is _widget_registry[hit.type]
         if entry != null and entry.on_mousedown != null:
@@ -683,7 +688,7 @@ define dispatch(root, ev) as:
 
     # Scroll wheel — target the scrollable widget under the cursor
     if ev.type == "wheel":
-        scroll_target is _find_scrollable_at of [root, 0, 0, _last_mouse_x, _last_mouse_y]
+        scroll_target is _find_scrollable_at of [root, 0, 0, _ui.last_mouse_x, _ui.last_mouse_y]
         if scroll_target != null:
             _scroll_panels of [scroll_target, ev.x * -20, ev.y * -20]
         else:
@@ -695,12 +700,12 @@ define dispatch(root, ev) as:
 # App loop
 
 define app_loop(root, on_key, on_tick) as:
-    _edit_root is root
-    _window_w is root.w
-    _window_h is root.h
+    _ui.edit_root is root
+    _ui.window_w is root.w
+    _ui.window_h is root.h
     _running is 1
     # Build initial focus list
-    _focus_list is []
+    _ui.focus_list is []
     _build_focus_list of root
     loop while _running == 1:
         ev is gfx_poll of null
@@ -708,8 +713,8 @@ define app_loop(root, on_key, on_tick) as:
             if ev.type == "quit":
                 _running is 0
             elif ev.type == "resize":
-                _window_w is ev.w
-                _window_h is ev.h
+                _ui.window_w is ev.w
+                _ui.window_h is ev.h
                 root.w is ev.w
                 root.h is ev.h
             elif ev.type == "keydown":
@@ -717,18 +722,18 @@ define app_loop(root, on_key, on_tick) as:
                 hotkey_handled is _match_hotkey of ev
                 if hotkey_handled == 0:
                     # Escape pops modal stack
-                    if ev.key == "escape" and (len of _modal_stack) > 0:
+                    if ev.key == "escape" and (len of _ui.modal_stack) > 0:
                         pop_modal of null
                     # Combobox key handling when open
-                    elif _focused_widget != null and _focused_widget.type == "combobox" and _focused_widget.open == 1:
-                        _handle_combobox_key of [_focused_widget, ev]
+                    elif _ui.focused_widget != null and _ui.focused_widget.type == "combobox" and _ui.focused_widget.open == 1:
+                        _handle_combobox_key of [_ui.focused_widget, ev]
                     # Text input gets next crack at keys
-                    elif _focused_input != null:
-                        _handle_text_key of [_focused_input, ev]
+                    elif _ui.focused_input != null:
+                        _handle_text_key of [_ui.focused_input, ev]
                     # Focus navigation (Tab, Enter, Space, arrows, Escape)
                     elif ev.key == "tab" or ev.key == "escape":
                         _handle_focus_key of [root, ev]
-                    elif (_focused_widget != null and _focused_input == null):
+                    elif (_ui.focused_widget != null and _ui.focused_input == null):
                         _handle_focus_key of [root, ev]
                 if on_key != null:
                     result is on_key of ev
@@ -754,8 +759,8 @@ define app_loop(root, on_key, on_tick) as:
         gfx_clear of [_theme.bg[0], _theme.bg[1], _theme.bg[2]]
         render of [root, 0, 0]
         # Render modal stack (dim overlay + dialog for each)
-        for mi in range of (len of _modal_stack):
-            mdlg is _modal_stack[mi]
+        for mi in range of (len of _ui.modal_stack):
+            mdlg is _ui.modal_stack[mi]
             if mdlg.visible == 1:
                 render of [mdlg, 0, 0]
         _render_tooltip of null
