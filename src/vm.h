@@ -253,6 +253,16 @@ typedef struct EigsChunk {
     uint8_t  jit_stop_op;       /* opcode that stopped the JIT prefix scan,
                                  * or OP_COUNT if scan ran to end of chunk */
 
+    /* #366: body is a single pure accessor expression over param locals
+     * (field/index gets + num arithmetic, ending in RETURN — set by
+     * chunk_scan_leaf_accessor at compile time). Exactly-fed calls run
+     * frameless against the caller's stack: no env take/rebind/park, no
+     * frame push, no chunk refcount round-trip. Any runtime surprise
+     * (type mismatch, out-of-range index) bails to the generic CALL
+     * path before touching the stack, so error semantics are byte-
+     * identical. */
+    uint8_t  leaf_accessor;
+
     /* OSR — On-Stack Replacement. The from-zero JIT slot above only
      * helps chunks that get called repeatedly (exec_count gate) or do
      * enough loop iterations to trip back_edge_count over the iter
@@ -370,6 +380,7 @@ void       chunk_emit_u16(EigsChunk *chunk, uint16_t val, int line);
 int        chunk_emit_jump(EigsChunk *chunk, uint8_t op, int line);
 void       chunk_patch_jump(EigsChunk *chunk, int offset);
 int        chunk_add_function(EigsChunk *chunk, EigsChunk *fn);
+void       chunk_scan_leaf_accessor(EigsChunk *chunk);  /* #366 */
 void       chunk_disassemble(EigsChunk *chunk, const char *label);
 const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM

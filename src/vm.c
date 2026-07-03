@@ -1157,6 +1157,140 @@ static inline int vm_index_resolve(int *i, int len) {
     return 1;
 }
 
+/* ---- #366: frameless leaf-accessor calls ----
+ *
+ * A chunk flagged leaf_accessor (chunk_scan_leaf_accessor, chunk.c) is a
+ * single pure expression over its params. An exactly-fed call can run it
+ * here against the caller's stack: params ARE the arg slots, so there is
+ * no env to take/rebind/park, no frame push, no chunk refcount traffic,
+ * and no dispatch in/out of the callee — the measured ~200ns/call CALL
+ * round-trip drops to the expression itself.
+ *
+ * Contract: returns 1 with args+fn popped and the result pushed (exactly
+ * the generic call's stack effect), or 0 having touched NOTHING — any
+ * type surprise, missing field chain, or out-of-range index bails so the
+ * generic path re-executes with full semantics (identical runtime_error
+ * text, lines, and null-push behavior). Every whitelisted op is side-
+ * effect-free, which is what makes the bail-anytime contract sound.
+ *
+ * Mini-stack slots are BORROWS (no incref) — args stay live on the VM
+ * stack until success, and no op here can free or mutate anything. The
+ * result is increfed BEFORE the arg pops so a value borrowed from a
+ * temporary argument survives (same reason as CASE(CALL)'s direct-
+ * borrow heuristic). Mirrors CASE(LOCAL_DOT_GET)/CASE(INDEX_GET)/
+ * ARITH_FAST semantics exactly — divergence here is a silent-wrong bug. */
+static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
+    EigsSlot mini[8];
+    int msp = 0;
+    const EigsSlot *args = &g_vm.stack[g_vm.sp - argc];
+    uint8_t *ip = c->code;
+    for (;;) {
+        switch (*ip++) {
+        case OP_LINE:
+            ip += 2;
+            break;
+        case OP_CONST: {
+            uint16_t idx = read_u16(ip); ip += 2;
+            /* Scanner guarantees VAL_NUM. */
+            mini[msp++] = slot_from_num(c->constants[idx]->data.num);
+            break;
+        }
+        case OP_NUM_ZERO:
+            mini[msp++] = slot_from_num(0.0);
+            break;
+        case OP_NUM_ONE:
+            mini[msp++] = slot_from_num(1.0);
+            break;
+        case OP_GET_LOCAL: {
+            uint16_t slot = read_u16(ip); ip += 2;
+            mini[msp++] = args[slot];       /* borrow */
+            break;
+        }
+        case OP_LOCAL_DOT_GET: {
+            uint16_t slot = read_u16(ip); ip += 2;
+            uint16_t name_idx = read_u16(ip); ip += 2;
+            EigsSlot ts = args[slot];
+            if (!slot_is_ptr(ts)) return 0;
+            Value *target = slot_as_ptr(ts);
+            if (!target || target->type != VAL_DICT) return 0;
+            const char *key = c->const_interns[name_idx];
+            uint32_t h = c->const_hashes[name_idx];
+            if (h == 0) {
+                h = env_hash_name(key);
+                c->const_hashes[name_idx] = h;
+            }
+            Value *v = dict_get_cached(target, key, h);
+            if (!v || v->type == VAL_NULL) {
+                /* Missing field is null in the interpreter too. NOTE:
+                 * slot_from_value would TAKE OWNERSHIP (decref) of a
+                 * null/num input — these are borrows, so wrap by hand. */
+                mini[msp++] = slot_null();
+            } else if (v->type == VAL_NUM) {
+                mini[msp++] = slot_from_num(v->data.num);
+            } else {
+                mini[msp++] = slot_from_heap(v);    /* borrow, no incref */
+            }
+            break;
+        }
+        case OP_INDEX_GET: {
+            EigsSlot idx_s = mini[--msp];
+            EigsSlot tgt_s = mini[--msp];
+            double idx_d;
+            /* slot_as_double: immediate OR boxed VAL_NUM index — a for-in
+             * loop variable arrives as a heap num, same as ARITH_FAST. */
+            if (!slot_as_double(idx_s, &idx_d) || !slot_is_ptr(tgt_s)) return 0;
+            Value *target = slot_as_ptr(tgt_s);
+            int i;
+            if (!vm_index_is_int(idx_d, &i)) return 0;
+            if (target->type == VAL_LIST) {
+                if (!vm_index_resolve(&i, target->data.list.count)) return 0;
+                Value *r = target->data.list.items[i];
+                if (!r) return 0;
+                if (r->type == VAL_NUM)
+                    mini[msp++] = slot_from_num(r->data.num);
+                else if (r->type == VAL_NULL)
+                    mini[msp++] = slot_null();
+                else
+                    mini[msp++] = slot_from_heap(r);    /* borrow, no incref */
+            } else if (target->type == VAL_BUFFER) {
+                if (!vm_index_resolve(&i, target->data.buffer.count)) return 0;
+                mini[msp++] = slot_from_num(target->data.buffer.data[i]);
+            } else {
+                return 0;
+            }
+            break;
+        }
+        case OP_ADD: case OP_SUB: case OP_MUL: {
+            double a, b;
+            if (!slot_as_double(mini[msp - 2], &a) ||
+                !slot_as_double(mini[msp - 1], &b))
+                return 0;
+            double r;
+            switch (ip[-1]) {
+            case OP_ADD: r = a + b; break;
+            case OP_SUB: r = a - b; break;
+            default:     r = a * b; break;
+            }
+            msp--;
+            mini[msp - 1] = slot_from_num(num_guard(r));
+            break;
+        }
+        case OP_RETURN: {
+            EigsSlot res = mini[--msp];
+            slot_incref(res);
+            for (int i = 0; i < argc; i++)
+                slot_decref(g_vm.stack[--g_vm.sp]);
+            slot_decref(g_vm.stack[--g_vm.sp]);   /* fn */
+            g_vm.stack[g_vm.sp++] = res;
+            return 1;
+        }
+        default:
+            /* Unreachable: the scanner admitted only the ops above. */
+            return 0;
+        }
+    }
+}
+
 /* Stage 4q-c: out-of-line helper for OP_INDEX_GET.
  *
  * Mirrors CASE(INDEX_GET) below: pops the index and target slots
@@ -1516,6 +1650,12 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         if (fn_val->type != VAL_FN || fn_val->data.fn.body_count != -1)
             return 1;
         EigsChunk *fn_chunk = (EigsChunk *)fn_val->data.fn.body;
+        /* #366: frameless leaf-accessor fast path — same contract as
+         * return 0 (args+fn consumed, result pushed). Bail falls through
+         * to the thunk path / interpreter re-execution. */
+        if (fn_chunk->leaf_accessor && argc == fn_val->data.fn.param_count &&
+            !g_trace_hist && vm_leaf_accessor_exec(fn_chunk, argc))
+            return 0;
         if (fn_chunk->jit_state != 2 || !fn_chunk->jit_code) return 1;
         if (g_vm.frame_count >= VM_FRAMES_MAX) return 1;
         if (g_native_call_depth >= JIT_NATIVE_CALL_DEPTH_MAX) return 1;
@@ -2894,6 +3034,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
              * Push new frame and continue dispatch loop. */
             EigsChunk *fn_chunk = (EigsChunk *)fn_val->data.fn.body;
             int param_count = fn_val->data.fn.param_count;
+            /* #366: frameless leaf-accessor fast path. Bail (0) falls
+             * through to the generic call with the stack untouched. */
+            if (fn_chunk->leaf_accessor && (int)argc == param_count &&
+                !g_trace_hist &&
+                vm_leaf_accessor_exec(fn_chunk, (int)argc)) {
+                DISPATCH();
+            }
             /* Stage 5i: recycle the chunk's parked call env when the
              * shape matches; param slots rebind in place. */
             Env *call_env = vm_take_call_env(fn_chunk,

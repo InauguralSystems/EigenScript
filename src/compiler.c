@@ -1944,6 +1944,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         name_set_free(&fn_compiler.interrogated);
         free(fn_compiler.locals);
 
+        chunk_scan_leaf_accessor(fn_chunk);  /* #366 */
+
         int fn_idx = chunk_add_function(c->chunk, fn_chunk);
         emit_op_u16(c, OP_CLOSURE, (uint16_t)fn_idx, node->line);
 
@@ -1997,6 +1999,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         free(fn_compiler.locals);
+
+        chunk_scan_leaf_accessor(fn_chunk);  /* #366 */
 
         int fn_idx = chunk_add_function(c->chunk, fn_chunk);
         emit_op_u16(c, OP_CLOSURE, (uint16_t)fn_idx, node->line);
