@@ -239,3 +239,20 @@ void eigs_register_function(const char *name, EigsHostFn fn) {
     Value *bv = make_builtin((BuiltinFn)fn);
     env_set_local_owned(g_global_env, name, bv);
 }
+
+/* ---- Source provider (the module seam; see eigs_embed.h) ---------- */
+
+static EigsSourceProvider g_source_provider    = 0;
+static void              *g_source_provider_ud = 0;
+
+void eigs_set_source_provider(EigsSourceProvider fn, void *userdata) {
+    g_source_provider    = fn;
+    g_source_provider_ud = userdata;
+}
+
+/* Internal: vm.c's IMPORT calls this before (hosted) or instead of
+ * (freestanding) the filesystem resolution chain. */
+const char *eigs_source_lookup(const char *name) {
+    if (!g_source_provider || !name) return 0;
+    return g_source_provider(name, g_source_provider_ud);
+}

@@ -129,6 +129,22 @@ void           eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val);
 typedef EigsValue *(*EigsHostFn)(EigsValue *arg);
 void eigs_register_function(const char *name, EigsHostFn fn);
 
+/* ---- Source provider (the module seam) ------------------------------
+ *
+ * `import name` consults the registered provider FIRST, in every build
+ * profile; the filesystem chain is the fallback (hosted) or absent
+ * (freestanding — where the provider is the ONLY module source, e.g.
+ * EigenOS's ROM bundle of stdlib + programs baked into the kernel
+ * image). Return the module's source text for `name` ("math", not
+ * "lib/math.eigs"), or NULL if the provider doesn't carry it. The
+ * returned pointer must stay valid for the duration of the import call
+ * (the runtime copies it immediately); static/arena-backed strings are
+ * ideal. Provider-served modules are cached like file modules — a
+ * second `import name` binds the same module dict. Pass fn=NULL to
+ * unregister. */
+typedef const char *(*EigsSourceProvider)(const char *name, void *userdata);
+void eigs_set_source_provider(EigsSourceProvider fn, void *userdata);
+
 #ifdef __cplusplus
 }
 #endif

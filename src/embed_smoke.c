@@ -22,6 +22,14 @@ static int failures = 0;
     }                                                                      \
 } while (0)
 
+/* Source provider for the M7.5 module seam: serves one module. */
+static const char *smoke_provider(const char *name, void *ud) {
+    (void)ud;
+    if (strcmp(name, "smokemod") == 0)
+        return "answer is 42\ndefine twice(k) as:\n    return k * 2\n";
+    return 0;
+}
+
 /* Host function: adds two numbers. Multi-arg calls receive a VAL_LIST. */
 static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_type(arg) != EIGS_TYPE_LIST) return eigs_value_new_null();
@@ -115,6 +123,23 @@ int main(void) {
     eigs_value_release(got);
     CHECK(eigs_value_dict_get(d, "missing") == NULL, "dict get miss returns NULL");
     eigs_value_release(d);
+
+    /* --- Source provider: import resolves from the embedder. --------- */
+    eigs_set_source_provider(smoke_provider, NULL);
+    r = eigs_eval_string("import smokemod\nsmokemod[\"answer\"]");
+    CHECK(r != NULL && eigs_value_as_num(r) == 42.0,
+          "provider-served module: import + binding");
+    if (r) eigs_value_release(r);
+    r = eigs_eval_string("import smokemod\nsmokemod.twice of 21");
+    CHECK(r != NULL && eigs_value_as_num(r) == 42.0,
+          "provider-served module: cache hit + fn call");
+    if (r) eigs_value_release(r);
+    /* Provider miss falls back to the filesystem chain (hosted). */
+    r = eigs_eval_string("import math\nmath.abs of -7");
+    CHECK(r != NULL && eigs_value_as_num(r) == 7.0,
+          "provider miss falls back to filesystem import");
+    if (r) eigs_value_release(r);
+    eigs_set_source_provider(NULL, NULL);
 
     /* --- #301: spawn + channel through the embed path. eigs_close() must
      * drain the handle table (reap workers, free channels, clear multithreaded)

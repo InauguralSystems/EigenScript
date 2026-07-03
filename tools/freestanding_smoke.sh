@@ -64,7 +64,10 @@ check "read_text is carved" 1 "read_text" 'x is read_text of "/etc/hostname"'
 check "regex is carved (EigenRegex is the route)" 1 "regex_match" 'x is regex_match of ["a", "a"]'
 check "exec is carved" 1 "exec_capture" 'x is exec_capture of "ls"'
 
-# import raises the profile-specific error.
+# import: a provider-served module works with no filesystem; a module the
+# provider lacks raises the profile-specific error.
+check "import resolves via the source provider" 0 "^42$" 'import tiny
+print of (tiny["answer"])'
 check "import raises profile error" 1 "no filesystem in the freestanding profile" 'import math'
 
 echo "---"

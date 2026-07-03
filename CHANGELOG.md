@@ -4,6 +4,20 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Embedder source provider — the module seam (`eigs_set_source_provider`).**
+  `import name` now consults a host-registered provider FIRST in every build
+  profile; the filesystem chain is the hosted fallback and is absent in the
+  freestanding profile, where the provider is the only module source. This is
+  the seam EigenOS's M7.5 "ROM bundle" plugs into (stdlib + programs baked
+  into the kernel image, `import` working on bare metal with no filesystem —
+  later re-backed by a real filesystem without changing the interface).
+  Provider-served modules share the module cache (keyed under a
+  `\x01provider:` prefix no real path can collide with); the provider's
+  returned pointer is copied immediately, so static strings are ideal. The
+  freestanding `import` error now names both causes. Covered hosted
+  (embed_smoke) and freestanding (freestanding_smoke).
+
 ### Fixed
 - **The compiler no longer costs ~12.7 KiB of C stack per AST level — the
   EigenOS "#UD heisenbug" root cause.** `Compiler` embedded

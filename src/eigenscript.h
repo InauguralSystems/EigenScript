@@ -962,6 +962,11 @@ void eigs_record_first_error(int line, const char *msg);
 /* Hit: out_dict gets a new counted ref (caller decrefs). Miss: out_dict
  * is NULL and the caller must execute + put. Keyed on the *absolute*
  * resolved path. */
+/* Embedder source provider (eigs_embed.h seam): returns module source
+ * for `name` or NULL. Consulted by vm.c's IMPORT before the filesystem
+ * (hosted) / as the only source (freestanding). */
+const char *eigs_source_lookup(const char *name);
+
 int  eigs_module_cache_get(const char *abs_path, Value **out_dict);
 /* Adds (incref'ing dict and env, strdup'ing path). No-op if path already
  * cached — first writer wins, since two concurrent inserts of the same
