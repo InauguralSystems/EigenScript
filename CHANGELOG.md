@@ -70,6 +70,11 @@ All notable changes to EigenScript are documented here.
   (embed_smoke) and freestanding (freestanding_smoke).
 
 ### Fixed
+- **gfx: `ppu_render_frame` window uses an internal line counter.** The
+  window's row advances only on scanlines where it actually renders
+  (resetting each frame), replacing the `ly - wy` approximation that
+  misrendered mid-frame window toggles/WY changes. In lockstep with the
+  script-PPU twin (DMG#18).
 - **gfx: `ppu_render_frame` gates the window layer on LCDC bit 0.** On DMG
   hardware, LCDC bit 0 = 0 disables the window as well as the background;
   the native renderer drew the window whenever bit 5 was set. Kept in
