@@ -262,6 +262,25 @@ void eigs_value_buffer_set(EigsValue *v, int i, double x) {
     v->data.buffer.data[i] = x;
 }
 
+/* ---- Trace tape (record + replay) ---------------------------------- */
+
+void eigs_set_trace_sink(EigsTraceSink cb, void *ud) {
+    trace_set_sink(cb, ud);
+}
+
+int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
+    return trace_set_replay_mem(bytes, len, strict);
+}
+
+int eigs_replay_take(const char *name, EigsValue **out) {
+    if (!g_replay_enabled || !out) return 0;
+    return trace_replay_take(name, (Value **)out);
+}
+
+void eigs_trace_record_nondet(const char *name, EigsValue *v) {
+    if (g_trace_enabled) trace_nondet_value(name, (Value *)v);
+}
+
 /* ---- FFI ---------------------------------------------------------- */
 
 void eigs_register_function(const char *name, EigsHostFn fn) {

@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Trace-tape seam in the embed API.** `eigs_set_trace_sink` streams every
+  tape record (L/A/N lines) to a host callback as bytes, enabling recording
+  with no filesystem; `eigs_set_replay_tape` hands a whole tape back as the
+  in-memory replay source (nondet builtins serve the recorded `N` values in
+  order, falling back to live at tape end); `eigs_replay_take` /
+  `eigs_trace_record_nondet` let HOST-registered builtins participate in
+  the tape with the same take/record contract the runtime's own nondet
+  builtins use. This un-carves record/replay for the freestanding profile
+  (EigenOS M11: the machine journal targets the M10 store). Hosted
+  EIGS_TRACE / EIGS_REPLAY behavior unchanged; the strict-mismatch abort
+  uses `abort()` freestanding (`_exit` is hosted-only). Covered in
+  `embed_smoke.c` (record → sink, sink-off freeze, replay-served values vs
+  an advancing live source, tape exhaustion, clear), documented in
+  docs/EMBEDDING.md.
 - **Buffer support in the embed API.** `eigs_value_new_buffer` /
   `eigs_value_buffer_len` / `eigs_value_buffer_get` / `eigs_value_buffer_set`
   plus `EIGS_TYPE_BUFFER` in the type enum — the script-side `buffer of n`

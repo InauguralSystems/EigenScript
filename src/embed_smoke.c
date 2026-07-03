@@ -30,6 +30,29 @@ static const char *smoke_provider(const char *name, void *ud) {
     return 0;
 }
 
+/* Host NONDET function for the tape seam: the live source advances on
+ * every call, so a replayed value is distinguishable from a live one. */
+static double g_sensor_reading = 100.0;
+static EigsValue *host_sensor(EigsValue *arg) {
+    (void)arg;
+    EigsValue *v;
+    if (eigs_replay_take("host_sensor", &v)) return v;   /* from the tape */
+    v = eigs_value_new_num(g_sensor_reading);
+    g_sensor_reading += 1.0;
+    eigs_trace_record_nondet("host_sensor", v);          /* onto the tape */
+    return v;
+}
+
+/* Trace sink: append tape bytes into a growing C buffer. */
+static char   g_tape[8192];
+static size_t g_tape_len = 0;
+static void tape_sink(const char *bytes, size_t len, void *ud) {
+    (void)ud;
+    if (g_tape_len + len > sizeof g_tape) len = sizeof g_tape - g_tape_len;
+    memcpy(g_tape + g_tape_len, bytes, len);
+    g_tape_len += len;
+}
+
 /* Host function: adds two numbers. Multi-arg calls receive a VAL_LIST. */
 static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_type(arg) != EIGS_TYPE_LIST) return eigs_value_new_null();
@@ -168,6 +191,48 @@ int main(void) {
     eigs_value_buffer_set(notbuf, 0, 5.0);           /* wrong type: no-op */
     CHECK(eigs_value_as_num(notbuf) == 1.0, "non-buffer set is a no-op");
     eigs_value_release(notbuf);
+
+    /* --- Trace tape seam: record via the sink, replay from memory. --- */
+    eigs_register_function("host_sensor", host_sensor);
+    eigs_set_trace_sink(tape_sink, NULL);
+    r = eigs_eval_string("s1 is host_sensor of []\n"
+                         "s2 is host_sensor of []\n"
+                         "s1 * 1000 + s2");
+    CHECK(r != NULL && eigs_value_as_num(r) == 100101.0,
+          "live sensor reads 100 then 101");
+    if (r) eigs_value_release(r);
+    eigs_set_trace_sink(NULL, NULL);
+    CHECK(g_tape_len > 0, "sink captured tape bytes");
+    g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
+    CHECK(strstr(g_tape, "N host_sensor=100") != NULL, "tape has N record 100");
+    CHECK(strstr(g_tape, "N host_sensor=101") != NULL, "tape has N record 101");
+    CHECK(strstr(g_tape, "A s1=100") != NULL, "tape has assignment record");
+
+    /* recording stopped: another live read advances but adds no bytes */
+    size_t tape_frozen = g_tape_len;
+    r = eigs_eval_string("host_sensor of []");
+    CHECK(r != NULL && eigs_value_as_num(r) == 102.0, "sink off: live 102");
+    if (r) eigs_value_release(r);
+    CHECK(g_tape_len == tape_frozen, "sink off: no new tape bytes");
+
+    /* replay: the tape's recorded values are served instead of the live
+     * source (which would read 103/104 by now) */
+    CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1, "replay tape set");
+    r = eigs_eval_string("r1 is host_sensor of []\n"
+                         "r2 is host_sensor of []\n"
+                         "r1 * 1000 + r2");
+    CHECK(r != NULL && eigs_value_as_num(r) == 100101.0,
+          "replay serves recorded 100 then 101");
+    if (r) eigs_value_release(r);
+    /* tape exhausted: the builtin falls back to its live source */
+    r = eigs_eval_string("host_sensor of []");
+    CHECK(r != NULL && eigs_value_as_num(r) == 103.0,
+          "tape exhausted: live source resumes");
+    if (r) eigs_value_release(r);
+    CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1, "replay cleared");
+    r = eigs_eval_string("host_sensor of []");
+    CHECK(r != NULL && eigs_value_as_num(r) == 104.0, "clear: live again");
+    if (r) eigs_value_release(r);
 
     /* --- Source provider: import resolves from the embedder. --------- */
     eigs_set_source_provider(smoke_provider, NULL);

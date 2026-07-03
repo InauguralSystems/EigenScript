@@ -143,6 +143,38 @@ int            eigs_value_buffer_len(EigsValue *v);          /* 0 if not a buffe
 double         eigs_value_buffer_get(EigsValue *v, int i);   /* 0.0 out of range */
 void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op */
 
+/* ---- Trace tape (record + replay) ----------------------------------
+ * The runtime's replay tape (hosted: EIGS_TRACE / EIGS_REPLAY files),
+ * reachable without a filesystem. Install a sink and every tape record
+ * (L/A/N lines) streams to it as bytes — the sink receives complete
+ * newline-terminated lines (an oversized record arrives in ordered
+ * chunks). Installing a sink ENABLES recording; passing NULL stops it.
+ * The sink fires from inside evaluation — do not re-enter the runtime
+ * from it; buffer the bytes and act between evals.
+ *
+ * eigs_set_replay_tape hands the whole tape back as the replay source
+ * (bytes are copied; returns 0 on OOM; NULL clears). While replay is
+ * active, nondet builtins return the tape's recorded N values in order
+ * instead of consulting their live sources. `strict` makes a tape/
+ * program name mismatch fatal instead of logged-and-tolerated.
+ *
+ * Host builtins participate through the take/record pair — the same
+ * contract the runtime's own nondet builtins use:
+ *
+ *   EigsValue *my_sensor(EigsValue *arg) {
+ *       EigsValue *v;
+ *       if (eigs_replay_take("my_sensor", &v)) return v;   // from tape
+ *       v = eigs_value_new_num(read_hw());
+ *       eigs_trace_record_nondet("my_sensor", v);          // onto tape
+ *       return v;
+ *   }
+ */
+typedef void (*EigsTraceSink)(const char *bytes, size_t len, void *ud);
+void eigs_set_trace_sink(EigsTraceSink cb, void *ud);
+int  eigs_set_replay_tape(const char *bytes, size_t len, int strict);
+int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served */
+void eigs_trace_record_nondet(const char *name, EigsValue *v);
+
 /* ---- FFI ---------------------------------------------------------- */
 
 /* Host function signature mirrors the internal BuiltinFn: `arg` is the
