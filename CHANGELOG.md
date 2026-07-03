@@ -70,6 +70,17 @@ All notable changes to EigenScript are documented here.
   (embed_smoke) and freestanding (freestanding_smoke).
 
 ### Fixed
+- **`sort` no longer silently no-ops on non-numeric lists (#368).** The
+  comparator returned 0 for any non-number pair, so sorting a list of
+  records did nothing — with libc-dependent element order, since qsort
+  guarantees nothing for all-equal elements. DMG shipped two
+  silently-unsorted call sites on this (sprite X-priority — the very use
+  case `sort` was added for — and input-script ordering; DMG#25/#26).
+  `sort` now sorts all-number lists numerically (unchanged), sorts
+  all-string lists lexicographically (making `lib/test_runner.eigs`'s
+  directory discovery deterministic), and **raises** on mixed or
+  non-scalar elements, naming the offending index/type and pointing at
+  `sort_by` (stable, numeric-keyed) for records.
 - **The compiler no longer costs ~12.7 KiB of C stack per AST level — the
   EigenOS "#UD heisenbug" root cause.** `Compiler` embedded
   `Local locals[512]` (12 KiB) by value, and `compile_node_inner`

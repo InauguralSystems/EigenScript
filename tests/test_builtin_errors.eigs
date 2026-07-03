@@ -162,6 +162,42 @@ catch e:
 assert of [c11c == 1, "BE11c dispatch fractional key caught"]
 assert of [(contains of [m11c, "integer"]) == 1, "BE11c message"]
 
+# ---- sort: list of records raises instead of silently no-oping (#368) ----
+c11d is 0
+m11d is ""
+recs is [[3, "c"], [1, "a"], [2, "b"]]
+try:
+    r is sort of recs
+catch e:
+    c11d is 1
+    m11d is e
+assert of [c11d == 1, "BE11d sort on records caught"]
+assert of [(contains of [m11d, "use sort_by"]) == 1, "BE11d message"]
+
+# ---- sort: mixed numbers and strings raises ----
+c11e is 0
+m11e is ""
+mixed is [2, "a", 1]
+try:
+    r is sort of mixed
+catch e:
+    c11e is 1
+    m11e is e
+assert of [c11e == 1, "BE11e sort on mixed types caught"]
+assert of [(contains of [m11e, "element 1 is"]) == 1, "BE11e message"]
+
+# ---- sort: strings now actually sort (was a silent no-op, #368) ----
+strs is ["cherry", "apple", "banana"]
+sort of strs
+assert of [strs[0] == "apple", "BE11f string sort element 0"]
+assert of [strs[1] == "banana", "BE11f string sort element 1"]
+assert of [strs[2] == "cherry", "BE11f string sort element 2"]
+
+# ---- sort: numeric behavior unchanged ----
+nums is [3, 1, 2]
+sort of nums
+assert of [nums[0] == 1 and nums[2] == 3, "BE11g numeric sort unchanged"]
+
 # ---- nearest_in_range: wrong argument shape ----
 c12 is 0
 m12 is ""

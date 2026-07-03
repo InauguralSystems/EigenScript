@@ -52,7 +52,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `get_at` | `get_at of [list, index]` | Get element at index |
 | `copy_into` | `copy_into of [dest, src, offset]` | Copy src elements into dest starting at offset |
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
-| `sort` | `sort of list` | Sort list in-place by numeric value (qsort). Returns the list |
+| `sort` | `sort of list` | Sort an all-number or all-string list in-place (numeric / lexicographic). Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
 | `sort_by` | `sort_by of [list, key_fn]` | Sort list by numeric keys from key_fn (qsort, O(n log n), stable). Returns a new sorted list |
