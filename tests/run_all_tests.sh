@@ -2265,6 +2265,14 @@ echo "[Observer] Parked call-env observer reset"
 check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK" 1
 echo ""
 
+# #366: frameless leaf-accessor call fast path — results, borrows from
+# temporary args, redefinition, lambdas, and non-qualifying fallbacks must
+# match the generic CALL path exactly (vm_leaf_accessor_exec bails to the
+# generic path on any surprise, so error/traceback parity is by design).
+echo "[Calls] Leaf-accessor fast path"
+check_eigs_suite "leaf-accessor calls" test_leaf_call.eigs "LEAF_CALL_OK" 1
+echo ""
+
 # [87] Closure-cycle shapes — functional correctness of every env<->fn
 # and value cycle (a KNOWN accumulating leak the runtime can't reclaim;
 # see docs/CLOSURE_CYCLE_GC.md). Locks that the shapes compute correctly

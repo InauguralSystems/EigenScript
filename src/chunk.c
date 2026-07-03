@@ -493,3 +493,83 @@ int chunk_verify(EigsChunk *chunk) {
     free(targets);
     return ok;
 }
+
+/* ---- #366: leaf-accessor scan ----
+ *
+ * Marks a function chunk whose body is one pure expression over its own
+ * params — field gets (LOCAL_DOT_GET), list/buffer index gets, numeric
+ * arithmetic, numeric constants — ending in RETURN. Such chunks qualify
+ * for the frameless call fast path in vm.c (vm_leaf_accessor_exec):
+ * no env take/rebind/park, no frame push, no chunk refcount traffic.
+ *
+ * The whitelist is deliberately side-effect-free: no SET ops, no calls,
+ * no jumps, no observer/temporal ops. Anything else rejects the chunk,
+ * so the fast path can bail at any point without unwinding. Static
+ * stack depth is tracked so the runtime mini-stack is provably bounded.
+ */
+#define LEAF_ACCESSOR_MAX_CODE  128
+#define LEAF_ACCESSOR_MAX_DEPTH 8
+
+void chunk_scan_leaf_accessor(EigsChunk *c) {
+    c->leaf_accessor = 0;
+    if (c->param_count > LEAF_ACCESSOR_MAX_DEPTH) return;
+    if (c->first_default < c->param_count) return;   /* defaulted params */
+    if (c->code_len > LEAF_ACCESSOR_MAX_CODE) return;
+    int depth = 0;
+    const uint8_t *ip = c->code, *end = c->code + c->code_len;
+    while (ip < end) {
+        uint8_t op = *ip++;
+        switch (op) {
+        case OP_LINE:
+            if (ip + 2 > end) return;
+            ip += 2;
+            break;
+        case OP_CONST: {
+            if (ip + 2 > end) return;
+            uint16_t idx = (uint16_t)(ip[0] | (ip[1] << 8)); ip += 2;
+            if (idx >= (uint16_t)c->const_count) return;
+            if (c->constants[idx]->type != VAL_NUM) return;
+            depth++;
+            break;
+        }
+        case OP_NUM_ZERO:
+        case OP_NUM_ONE:
+            depth++;
+            break;
+        case OP_GET_LOCAL: {
+            if (ip + 2 > end) return;
+            uint16_t slot = (uint16_t)(ip[0] | (ip[1] << 8)); ip += 2;
+            if (slot >= (uint16_t)c->param_count) return;
+            depth++;
+            break;
+        }
+        case OP_LOCAL_DOT_GET: {
+            if (ip + 4 > end) return;
+            uint16_t slot = (uint16_t)(ip[0] | (ip[1] << 8));
+            uint16_t name_idx = (uint16_t)(ip[2] | (ip[3] << 8));
+            ip += 4;
+            if (slot >= (uint16_t)c->param_count) return;
+            if (name_idx >= (uint16_t)c->const_count) return;
+            if (!c->const_interns[name_idx]) return;
+            depth++;
+            break;
+        }
+        case OP_INDEX_GET:
+        case OP_ADD:
+        case OP_SUB:
+        case OP_MUL:
+            if (depth < 2) return;
+            depth--;
+            break;
+        case OP_RETURN:
+            /* First RETURN ends execution (no branches in the whitelist,
+             * so it is always reached with the single result on top). */
+            if (depth != 1) return;
+            c->leaf_accessor = 1;
+            return;
+        default:
+            return;
+        }
+        if (depth > LEAF_ACCESSOR_MAX_DEPTH) return;
+    }
+}

@@ -1,0 +1,100 @@
+# #366: leaf-accessor call fast path — semantics must be identical to the
+# generic CALL path. Each accessor here is compiled with leaf_accessor=1
+# (pure single-expression body over params); the asserts compare fast-path
+# results against inline computation of the same expression.
+
+define get_field(d) as:
+    return d.x
+
+define get_missing(d) as:
+    return d.nope
+
+define get_at2(store, i) as:
+    return store.lits[i]
+
+define get_lit3(store, ci, pos) as:
+    return store.lits[(store.offsets[ci]) + pos]
+
+define add_k(x) as:
+    return x + 2.5
+
+define scale2(a, b) as:
+    return a * b - 1
+
+define buf_at(v, i) as:
+    return v[i]
+
+# Non-qualifying control: body has a local assignment -> generic path.
+define with_local(d) as:
+    local t is d.x
+    return t + 1
+
+store is { "x": 7, "lits": [10, 20, 30, 40], "offsets": [0, 2] }
+
+# dict field (1-arg call)
+assert of [(get_field of (store)) == 7, "get_field"]
+# missing field -> null (same as inline d.nope)
+assert of [(get_missing of (store)) == null, "get_missing null"]
+# PRESENT null field and null list element (borrow-wrap must not steal a ref)
+nulled is { "x": null, "lits": [null, 2] }
+assert of [(get_field of (nulled)) == null, "present null field"]
+assert of [(get_at2 of [nulled, 0]) == null, "null list element"]
+assert of [(get_at2 of [nulled, 1]) == 2, "list after null element"]
+
+# list index: immediate literal index
+assert of [(get_at2 of [store, 2]) == 30, "get_at2 literal"]
+# heap-num index from a for-in loop variable
+total is 0
+for i in range of 4:
+    total += get_at2 of [store, i]
+assert of [total == 100, "get_at2 loop sum"]
+# negative index resolves like the inline form
+assert of [(get_at2 of [store, 0 - 1]) == (store.lits[0 - 1]), "get_at2 negative"]
+
+# nested dot/index/arithmetic accessor
+assert of [(get_lit3 of [store, 1, 1]) == 40, "get_lit3"]
+assert of [(get_lit3 of [store, 0, 0]) == 10, "get_lit3 zero"]
+
+# numeric constant + arithmetic
+assert of [(add_k of (10)) == 12.5, "add_k"]
+assert of [(scale2 of [3, 4]) == 11, "scale2"]
+
+# buffer-backed accessor (int_vector storage shape)
+v is buffer of 3
+buf_set of [v, 0, 5]
+buf_set of [v, 1, 6]
+buf_set of [v, 2, 7]
+assert of [(buf_at of [v, 1]) == 6, "buf_at"]
+
+# result borrowed from a TEMPORARY argument must survive the arg pop
+assert of [(get_field of ({ "x": 99 })) == 99, "temp-arg borrow"]
+# non-num result borrowed from a temporary (list identity survives)
+define get_inner(d) as:
+    return d.inner
+inner_got is get_inner of ({ "inner": [1, 2, 3] })
+assert of [(len of inner_got) == 3, "temp-arg list borrow"]
+assert of [inner_got[2] == 3, "temp-arg list content"]
+
+# redefinition mid-run: fast path must follow the live binding
+define pick(d) as:
+    return d.x
+assert of [(pick of (store)) == 7, "pick v1"]
+define pick(d) as:
+    return d.lits[0]
+assert of [(pick of (store)) == 10, "pick v2 after redefine"]
+
+# lambda accessor
+grab is (d) => d.x
+assert of [(grab of (store)) == 7, "lambda accessor"]
+
+# non-qualifying body still correct
+assert of [(with_local of (store)) == 8, "with_local"]
+
+# accessor result feeding an observed binding (observer sees the caller
+# assignment exactly as before)
+obs is 0
+for i in range of 4:
+    obs is get_at2 of [store, i]
+assert of [obs == 40, "observed assign of accessor result"]
+
+print of "LEAF_CALL_OK"

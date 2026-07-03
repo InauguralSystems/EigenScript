@@ -4,6 +4,23 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Performance
+- **Frameless leaf-accessor calls (#366).** Function chunks whose body is a
+  single pure expression over their params — field gets, list/buffer index
+  gets, numeric arithmetic, numeric constants ending in `return` — are
+  flagged at compile time (`chunk_scan_leaf_accessor`) and exactly-fed calls
+  execute directly against the caller's stack (`vm_leaf_accessor_exec`): no
+  call env take/rebind/park, no frame push, no chunk refcount traffic, no
+  dispatch in/out of the callee. Any runtime surprise (type mismatch,
+  out-of-range index, missing-field chain) bails to the generic CALL path
+  before touching the stack, so results, errors, and tracebacks are
+  byte-identical. Measured on the EigenMiniSat-derived accessor micro-bench
+  (200K-iteration loop, n=5 medians): call overhead vs the inlined
+  expression drops from ~198ns to ~40ns per call (+44% loop penalty →
+  ~+7%). Hooked in both the interpreter's `CASE(CALL)` and
+  `jit_helper_call`, so interpreter-tier consumers (EigenOS) and JIT'd
+  loops both benefit.
+
 ### Added
 - **Trace-tape seam in the embed API.** `eigs_set_trace_sink` streams every
   tape record (L/A/N lines) to a host callback as bytes, enabling recording
