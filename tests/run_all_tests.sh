@@ -2606,6 +2606,17 @@ else
 fi
 echo ""
 
+echo "[99] Doc drift (mechanical)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/doc_drift_check.sh"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: no mechanical doc drift (STDLIB coverage, release line, CHANGELOG section)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: doc drift detected (see DRIFT lines above)"
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then
