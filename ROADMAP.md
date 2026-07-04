@@ -1,17 +1,119 @@
 # Roadmap
 
-Current version: **0.19.0**
+Current version: **0.26.0**
 
-Recently shipped (0.19.0): flat-buffer tensors — a `VAL_BUFFER` now
-carries an optional 2-D shape (`buffer of [rows, cols]` / `reshape`),
-and `matmul`/`add`/`relu` compute directly on the flat `double[]` with
-no per-call flatten of nested-list weights, byte-identical to the
-nested-list path (3-layer MLP forward ~11× faster). Plus `dot`/`norm`
-reductions with spec-unspecified summation association (licenses the
-AOT backend to reassociate across SIMD lanes). Full per-version detail
-lives in [CHANGELOG.md](CHANGELOG.md) — this file is forward-looking.
+Recently shipped (0.25.0/0.26.0, 2026-07-04): the hex contract (integer-only,
+lexed on every profile, decisive `0x` prefix — #378/#381), the async abort
+seam (`eigs_set_abort_flag`, #379), `bit_*` builtins aligned with the infix
+int64 operators (#382), and seven new stdlib surfaces (checksum, datetime
+civil math, bcd, wait_until, hexdump, harness, observer_slots — #384). Full
+per-version detail lives in [CHANGELOG.md](CHANGELOG.md) — this file is
+forward-looking.
 
 ## Next
+
+The plan below is sequenced by the 2026-07 language-strategy survey
+(tracking issue [#419](https://github.com/InauguralSystems/EigenScript/issues/419):
+8 top-language profiles → repo ground-truth → 7 dimension gap analyses →
+adversarial critic). Governing principle: **never trade the runtime
+guarantee for generality — generalize at the DX surface, and route every
+new capability through the trace tape so becoming more general deepens the
+observer/deterministic-replay niche instead of diluting it.**
+
+### Now (days-class, independently shippable)
+
+- [ ] REPL line editing/history — port the EigenOS editor;
+      kill the `^[[A` first-run failure ([#392](https://github.com/InauguralSystems/EigenScript/issues/392))
+- [ ] Stdlib discoverability CI gate — undocumented `regex_*` are the
+      proven failure mode ([#393](https://github.com/InauguralSystems/EigenScript/issues/393))
+- [ ] `--test --trace-on-fail` — every failing test prints its
+      `EIGS_REPLAY` invocation ([#394](https://github.com/InauguralSystems/EigenScript/issues/394))
+- [ ] `lib/contract.eigs` trajectory contracts — the answer to "what
+      replaces static types here" ([#395](https://github.com/InauguralSystems/EigenScript/issues/395))
+- [ ] Lint fences for the two load-bearing traps — W015
+      outer-mutation-without-`local`, W016 bare-predicate aliasing
+      ([#396](https://github.com/InauguralSystems/EigenScript/issues/396))
+- [ ] `make lib` + two-file amalgamation — Lua-grade time-to-embedded
+      ([#397](https://github.com/InauguralSystems/EigenScript/issues/397))
+- [ ] `bench/` replay-pinned perf harness, CI-gated, published as
+      docs/PERFORMANCE.md ([#398](https://github.com/InauguralSystems/EigenScript/issues/398))
+- [ ] `--lint` severity control ([#399](https://github.com/InauguralSystems/EigenScript/issues/399));
+      install.sh builds eigenlsp + one canonical VS Code tree
+      ([#400](https://github.com/InauguralSystems/EigenScript/issues/400))
+- [ ] docs/CONCURRENCY.md executable memory-model contract + TSan CI job
+      ([#401](https://github.com/InauguralSystems/EigenScript/issues/401))
+- [ ] COMPARISON.md convergence loops — observer semantics as boilerplate
+      deletion ([#402](https://github.com/InauguralSystems/EigenScript/issues/402));
+      AI-legibility single-file reference + validation ladder
+      ([#403](https://github.com/InauguralSystems/EigenScript/issues/403))
+
+### Next (weeks-class, dependency-ordered)
+
+- [ ] Scope-aware name-resolution lint (E-class, shared with the LSP) —
+      the highest correctness yield per week available
+      ([#404](https://github.com/InauguralSystems/EigenScript/issues/404))
+- [ ] **Language change:** bare literal list after `of` is always an
+      argument list — kill the 1-element spread trap while pre-1.0 makes
+      it cheap ([#405](https://github.com/InauguralSystems/EigenScript/issues/405), closes #153)
+- [ ] Structured runtime errors `{kind, message, line}` with a closed
+      kind set ([#406](https://github.com/InauguralSystems/EigenScript/issues/406))
+- [ ] Column tracking + caret/span diagnostics
+      ([#407](https://github.com/InauguralSystems/EigenScript/issues/407))
+- [ ] **Trace-tape format versioning decision** — blocks anything that
+      ships a tape across a version boundary
+      ([#411](https://github.com/InauguralSystems/EigenScript/issues/411))
+- [ ] **Deterministic cooperative task layer on the tape** — the
+      strategic headline: byte-identical replay of concurrent programs,
+      closing the #148 contradiction; JIT stays on (no #297 flip);
+      forcing functions EigenOS + liferaft
+      ([#408](https://github.com/InauguralSystems/EigenScript/issues/408))
+- [ ] `lib/supervise.eigs` observer-native supervision — predictive
+      (catches the silently-wedged worker), not crash-reactive; after
+      #408 only ([#409](https://github.com/InauguralSystems/EigenScript/issues/409))
+- [ ] Observer surface coherence — implement-or-remove `how`, decide
+      `|x|=1.0`, fold in #383
+      ([#412](https://github.com/InauguralSystems/EigenScript/issues/412))
+- [ ] JIT back-edge abort poll — hard timeouts without `EIGS_JIT_OFF`
+      ([#410](https://github.com/InauguralSystems/EigenScript/issues/410))
+- [ ] eigsdap v1 as a CLI tape-stepper; DAP/VS Code deferred until
+      locals ride the tape
+      ([#418](https://github.com/InauguralSystems/EigenScript/issues/418))
+- [ ] `--bundle` single-file distribution, optional attached tape =
+      a self-replaying bug report
+      ([#413](https://github.com/InauguralSystems/EigenScript/issues/413))
+- [ ] `ext_net` raw TCP/UDP sockets as tape-recorded nondet inputs —
+      record/replay networking no incumbent stdlib has
+      ([#414](https://github.com/InauguralSystems/EigenScript/issues/414))
+
+### Design decisions (cheap to decide, expensive to defer)
+
+- [ ] Unicode/text position — likely bytes-forever + `lib/utf8.eigs`,
+      made official in SPEC ([#416](https://github.com/InauguralSystems/EigenScript/issues/416))
+- [ ] Numeric tower position — document the f64 + `bit_*` int64 contract
+      and the 2^53 boundary; bigint/decimal only when a consumer forces
+      ([#417](https://github.com/InauguralSystems/EigenScript/issues/417))
+
+### AOT (ouroboros — the native-perf path; not the JIT)
+
+- [ ] Close the F-OURO-23 envelope via `lib/checksum.eigs` as forcing
+      function (ouroboros#64)
+- [ ] `spec_audit` — replayable profile-guided specialization audit;
+      observer trajectories as compiler evidence (ouroboros#65)
+
+### Deliberately NOT doing (survey-critic vetoes — don't re-propose without new facts)
+
+- Gradual/static type system — months buying a worse TypeScript; #404 +
+  #395 are the correctness answer for this language.
+- JIT grinding toward native claims (tracing tier, ARM64/Windows JIT
+  port, thread-safe JIT) — native perf routes through AOT; concurrency
+  gets the task tier.
+- Untraced FFI — worse than none (silently breaks replay). Design is on
+  record as tape-first ([#415](https://github.com/InauguralSystems/EigenScript/issues/415)),
+  implementation blocked until a consumer forces it.
+- Vendored crypto extension (AEAD/Ed25519) — security liability with
+  zero consumers needing it.
+- Package registry + version solver, `--pkg audit` behavioral lockfiles —
+  the SHA-pinned vendoring model is structurally sounder at this scale.
 
 ### Performance carryover
 
@@ -77,14 +179,26 @@ when picked up:
         on demand.
 - [ ] WASM compilation target
 - [ ] Foreign function interface for calling arbitrary C libraries
-      from script (libffi/libdl style — the *script → host* direction).
-      The *host → script* direction (C host embeds the runtime + can
-      register host functions callable from script) is live as of the
-      Phase 10 embedding API; see [docs/EMBEDDING.md](docs/EMBEDDING.md).
-- [ ] Crypto / HTTPS in-process (SHA hashes shipped 0.9.2; no AEAD, no TLS)
-- [ ] Raw TCP/UDP sockets
-- [ ] Additional DB drivers (SQLite, MySQL, NoSQL)
-- [ ] bigint / decimal numeric types
+      from script (the *script → host* direction) — design settled as
+      **tape-first** in [#415](https://github.com/InauguralSystems/EigenScript/issues/415)
+      (every foreign call is a recorded nondet input, sqlite3 as the
+      first binding, which also covers the SQLite DB-driver item);
+      implementation blocked until a consumer forces it. The
+      *host → script* direction is live via the embedding API; see
+      [docs/EMBEDDING.md](docs/EMBEDDING.md).
+- [ ] Crypto / HTTPS in-process (SHA hashes shipped 0.9.2; no AEAD, no
+      TLS) — **deliberately deferred** per the 2026-07 survey critic:
+      vendored crypto is a solo-maintainer security liability with zero
+      consumers needing AEAD; revisit when one does.
+- [ ] Raw TCP/UDP sockets — now specced as tape-recorded nondet inputs,
+      liferaft as forcing function
+      ([#414](https://github.com/InauguralSystems/EigenScript/issues/414))
+- [ ] Additional DB drivers (MySQL, NoSQL; SQLite folds into the #415
+      FFI plan)
+- [ ] bigint / decimal numeric types — superseded by the numeric-tower
+      design decision ([#417](https://github.com/InauguralSystems/EigenScript/issues/417)):
+      document the f64 + `bit_*` int64 contract now, bigint only when a
+      consumer forces it
 
 ### Long-term
 
