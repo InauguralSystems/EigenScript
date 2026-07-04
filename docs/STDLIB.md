@@ -366,6 +366,35 @@ result is chain of [[double, square], 3]   # square(double(3)) = 36
 results is apply_all of [[double, square], 5]  # [10, 25]
 ```
 
+### The UI Toolkit — lib/ui*.eigs
+
+A widget toolkit over the gfx extension, split across focused modules:
+`lib/ui.eigs` (core + the `_ui` shared-state dict — the reference
+pattern for cross-file module state), `lib/ui_layout.eigs`,
+`lib/ui_draw.eigs`, `lib/ui_theme.eigs`, `lib/ui_focus.eigs`,
+`lib/ui_anim.eigs`, `lib/ui_dnd.eigs`, `lib/ui_registry.eigs`, and the
+widget families `lib/ui_w_basic.eigs`, `lib/ui_w_button.eigs`,
+`lib/ui_w_container.eigs`, `lib/ui_w_data.eigs`,
+`lib/ui_w_dialog.eigs`, `lib/ui_w_input.eigs`, `lib/ui_w_menu.eigs`,
+`lib/ui_w_slider.eigs`, `lib/ui_w_special.eigs`, `lib/ui_w_viz.eigs`.
+Start from `lib/ui.eigs`'s header; the modules document their own
+widget signatures.
+
+### lib/invariant.eigs — Runtime Invariant Checks
+
+Declare-and-check invariants inside programs; see the module header
+for the assertion forms.
+
+### lib/pkg.eigs — Package Manager Runtime
+
+The `--pkg` machinery's script half (eigs.json, SHA-pinned lockfiles);
+used by the package tooling rather than imported directly.
+
+### lib/test_runner.eigs — Suite Runner
+
+Drives multi-file test suites (used with lib/test.eigs); prints
+per-file and total tallies.
+
 ### lib/args.eigs — CLI Argument Parsing
 
 | Function | Signature | Description |

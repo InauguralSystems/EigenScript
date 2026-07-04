@@ -126,14 +126,16 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.24.0** (2026-07-03) — the review-cascade release:
-  `sort` raises on non-scalar lists (#369), parens always mean one argument
-  (#355), module write boundary (#374), `hex` builtin + 16-channel audio
-  mixer (#375), loud parse caps (#354), extension raises (#356), PPU twin
-  fixes, frameless leaf-accessor calls (#367). All 10 consumers bumped same
-  day. Unreleased work on `main`: see CHANGELOG.md `[Unreleased]`. Full
-  version history: **CHANGELOG.md** (don't re-narrate it here). Roadmap / open
-  items: **ROADMAP.md**.
+- **Latest release: v0.26.0** (2026-07-04) — the stdlib-trains release:
+  hex is a lexed, profile-consistent contract end to end (#378/#381 lexer,
+  num-of strings), the `bit_*` builtins are the infix operators (int64,
+  #382), and seven new stdlib surfaces (checksum, datetime civil math, bcd,
+  wait_until, hexdump, harness, observer_slots). All 10 consumers bumped
+  same day. (v0.25.0, same day: the hex + abort-seam release.) Unreleased
+  work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
+  **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
+  now FAILS the suite when this line falls behind the latest tag). Roadmap:
+  **ROADMAP.md**.
 - **Design phase:** the VM tier is the deliberate correctness-first phase —
   its malleability keeps semantics cheap to change; the native path is the
   **AOT compiler in the sibling `ouroboros` repo** (the VM is its byte-exact
