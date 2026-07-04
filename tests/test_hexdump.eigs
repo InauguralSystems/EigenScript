@@ -1,0 +1,45 @@
+# format.hexdump — exact row format, multi-row offsets, buffer parity.
+# All-pass prints HEXDUMP_ALL_PASS.
+load_file of "lib/format.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag}"
+        print of f"    got  [{got}]"
+        print of f"    want [{want}]"
+        fails is fails + 1
+
+print of "=== HEXDUMP (lib/format.eigs) ==="
+
+check of ["one short row", hexdump of "Hello!", "00000000  48 65 6C 6C 6F 21                                |Hello!|"]
+
+# non-printables become dots
+nl is chr of 10
+check of ["control byte dotted", hexdump of ("A" + nl), "00000000  41 0A                                            |A.|"]
+
+# two rows: second offset is 00000010
+long is "0123456789ABCDEF-tail"
+d is hexdump of long
+lines is split of [d, "\n"]
+check of ["two rows", len of lines, 2]
+check of ["second row offset", char_at of [lines[1], 7], "0"]
+check of ["second row starts at byte 16", contains of [lines[1], "2D 74 61 69 6C"], 1]
+
+# buffer input equals string input
+b is buffer of 6
+i is 0
+loop while i < 6:
+    buf_set of [b, i, ord of (char_at of ["Hello!", i])]
+    i is i + 1
+check of ["buffer == string", hexdump of b, hexdump of "Hello!"]
+
+check of ["empty input is empty string", hexdump of "", ""]
+
+if fails == 0:
+    print of "HEXDUMP_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "hexdump tests failed"

@@ -1,0 +1,65 @@
+# observer_slots — trajectories survive slot dispatch (the #262 trap
+# this module encodes): a wedged nonzero constant reads stable, a
+# growing signal does not, slots are independent, and out-of-range
+# feeds throw. All-pass prints OBSERVER_SLOTS_ALL_PASS.
+import observer_slots
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== OBSERVER SLOTS (lib/observer_slots.eigs) ==="
+
+# slot 0: wedged at a nonzero constant -> stable (the WM's hung-window read)
+i is 0
+loop while i < 14:
+    observer_slots.feed of [0, 5.0]
+    i is i + 1
+check of ["wedged constant reads stable", observer_slots.is_stable of (0), 1]
+
+# slot 1: growing magnitude -> NOT stable (an advancing signal keeps moving)
+v is 5.0
+i is 0
+loop while i < 14:
+    observer_slots.feed of [1, v]
+    v is v * 2
+    i is i + 1
+check of ["growing signal is not stable", observer_slots.is_stable of (1), 0]
+
+# slot 3: entropy RISING (magnitude shrinking toward |x|=1 from above,
+# never crossing) -> diverging per the lattice
+v is 4096.0
+i is 0
+loop while i < 14:
+    observer_slots.feed of [3, v]
+    v is v * 0.6
+    i is i + 1
+check of ["entropy-rising signal diverges", observer_slots.is_diverging of (3), 1]
+
+# independence: slot 0's verdict survived slot 1's activity
+check of ["slot 0 verdict independent of slot 1", observer_slots.is_stable of (0), 1]
+
+# feeding through a LIST (the shape callers keep) still lands on named slots
+sigs is [7.5, 7.5, 7.5]
+i is 0
+loop while i < 14:
+    observer_slots.feed of [2, sigs[i % 3]]
+    i is i + 1
+check of ["list-sourced feed reads stable", observer_slots.is_stable of (2), 1]
+
+caught is 0
+try:
+    observer_slots.feed of [8, 1.0]
+catch err:
+    caught is 1
+check of ["ninth slot throws, never silently unobserved", caught, 1]
+
+if fails == 0:
+    print of "OBSERVER_SLOTS_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "observer_slots tests failed"

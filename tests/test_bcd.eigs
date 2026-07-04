@@ -1,0 +1,50 @@
+# BCD codec — round-trips, edges, and loud rejection of invalid nibbles.
+# All-pass prints BCD_ALL_PASS.
+load_file of "lib/bcd.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== BCD (lib/bcd.eigs) ==="
+
+check of ["from_bcd byte", from_bcd of 0x26, 26]
+check of ["from_bcd zero", from_bcd of 0, 0]
+check of ["from_bcd wide", from_bcd of 0x1234, 1234]
+check of ["from_bcd max byte", from_bcd of 0x99, 99]
+check of ["to_bcd byte", to_bcd of 59, 0x59]
+check of ["to_bcd zero", to_bcd of 0, 0]
+check of ["to_bcd wide", to_bcd of 2026, 0x2026]
+
+# round-trip 0..99 (the RTC/DMG byte domain)
+rt is 1
+v is 0
+loop while v < 100:
+    if (from_bcd of (to_bcd of (v))) != v:
+        rt is 0
+    v is v + 1
+check of ["round-trip 0..99", rt, 1]
+
+caught is 0
+try:
+    x is from_bcd of 0x1A
+catch err:
+    caught is 1
+check of ["invalid nibble raises", caught, 1]
+
+caught is 0
+try:
+    x is to_bcd of 12.5
+catch err:
+    caught is 1
+check of ["fraction raises", caught, 1]
+
+if fails == 0:
+    print of "BCD_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "bcd tests failed"

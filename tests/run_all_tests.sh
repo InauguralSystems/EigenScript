@@ -1654,6 +1654,32 @@ check_eigs_suite "civil days/epoch round-trips + leap edges vs references" \
     "test_datetime_civil.eigs" "DATETIME_CIVIL_ALL_PASS" 14
 echo ""
 
+# [50e-50i] Stdlib backlog train: bcd, wait_until, hexdump, harness, observer_slots
+echo "[50e] BCD Codec (10 checks)"
+check_eigs_suite "bcd: round-trips + loud invalid-nibble/fraction rejection" \
+    "test_bcd.eigs" "BCD_ALL_PASS" 10
+echo ""
+
+echo "[50f] wait_until (7 checks)"
+check_eigs_suite "functional.wait_until: success timing, timeout, sleep cadence" \
+    "test_wait_until.eigs" "WAIT_UNTIL_ALL_PASS" 7
+echo ""
+
+echo "[50g] hexdump (7 checks)"
+check_eigs_suite "format.hexdump: exact rows, offsets, buffer/string parity" \
+    "test_hexdump.eigs" "HEXDUMP_ALL_PASS" 7
+echo ""
+
+echo "[50h] Harness (4 checks)"
+check_eigs_suite "harness: count-and-continue, throwing finish, reset" \
+    "test_harness.eigs" "HARNESS_ALL_PASS" 4
+echo ""
+
+echo "[50i] Observer Slots (6 checks)"
+check_eigs_suite "observer_slots: trajectories through slot dispatch, independence" \
+    "test_observer_slots.eigs" "OBSERVER_SLOTS_ALL_PASS" 6
+echo ""
+
 # [51] Unobserved block
 echo "[51] Unobserved Block (8 checks)"
 UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?

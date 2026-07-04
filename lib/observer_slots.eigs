@@ -1,0 +1,105 @@
+# ============================================================
+# Observer Slots — watch a DYNAMIC collection of signals
+# ============================================================
+#
+# How to use:
+#   import observer_slots
+#
+#   observer_slots.feed of [w.slot, w.progress]    # each frame/step
+#   if (observer_slots.is_stable of (w.slot)) == 1:
+#       mark_stalled of w                          # wedged: value stopped moving
+#
+# Feed BOUNDED signatures (e.g. 1.5 + (raw % 8)), not raw counters —
+# and remember the lattice is ENTROPY-shaped: growing magnitude is
+# falling entropy (`improving`), shrinking toward |x|=1 is rising
+# entropy (`diverging`). Pick predicates from docs/PREDICATES.md.
+#
+# Why this module exists (the trap it encodes): observer trajectories
+# key to the ENV SLOT of a *named binding* — a list element or dict
+# field has none, so `stable of xs[i]` can never accumulate a
+# trajectory (#262). Watching N dynamic things (windows, tasks,
+# channels) therefore requires N NAMED scalars plus dispatch, which the
+# EigenOS window manager hand-rolled as p0..p7. This module owns those
+# scalars so callers keep list-shaped code. Eight slots, matching the
+# WM/task-table precedent; feed throws past the pool — silently
+# unobserved is the failure mode this exists to prevent. Feeding
+# forces a fresh value (`v + 0.0`) so an aliased iterate can't smuggle
+# its old trajectory in.
+#
+# Verdict semantics are the predicate lattice (docs/PREDICATES.md):
+# a wedged counter reads `stable` (nonzero constant), an advancing
+# BOUNDED signature keeps moving — feed `1.5 + (raw % 8)`-style
+# signatures, not unbounded counters (the #294 flat-entropy band).
+
+_s0 is 0.0
+_s1 is 0.0
+_s2 is 0.0
+_s3 is 0.0
+_s4 is 0.0
+_s5 is 0.0
+_s6 is 0.0
+_s7 is 0.0
+
+define feed(i, v) as:
+    if i == 0:
+        _s0 is v + 0.0
+    elif i == 1:
+        _s1 is v + 0.0
+    elif i == 2:
+        _s2 is v + 0.0
+    elif i == 3:
+        _s3 is v + 0.0
+    elif i == 4:
+        _s4 is v + 0.0
+    elif i == 5:
+        _s5 is v + 0.0
+    elif i == 6:
+        _s6 is v + 0.0
+    elif i == 7:
+        _s7 is v + 0.0
+    else:
+        throw of "observer_slots: slot out of range (8 slots)"
+    return 1
+
+define is_stable(i) as:
+    if i == 0:
+        return stable of _s0
+    elif i == 1:
+        return stable of _s1
+    elif i == 2:
+        return stable of _s2
+    elif i == 3:
+        return stable of _s3
+    elif i == 4:
+        return stable of _s4
+    elif i == 5:
+        return stable of _s5
+    elif i == 6:
+        return stable of _s6
+    elif i == 7:
+        return stable of _s7
+    throw of "observer_slots: slot out of range (8 slots)"
+
+define is_diverging(i) as:
+    if i == 0:
+        return diverging of _s0
+    elif i == 1:
+        return diverging of _s1
+    elif i == 2:
+        return diverging of _s2
+    elif i == 3:
+        return diverging of _s3
+    elif i == 4:
+        return diverging of _s4
+    elif i == 5:
+        return diverging of _s5
+    elif i == 6:
+        return diverging of _s6
+    elif i == 7:
+        return diverging of _s7
+    throw of "observer_slots: slot out of range (8 slots)"
+
+# NOTE: no report-of verdict API yet — `report of <slot>` inside a
+# module function falls to the no-binding path while the predicates
+# resolve the slot fine (upstream #383); is_stable/is_diverging are
+# the proven surface. Add verdict() when #383 lands.

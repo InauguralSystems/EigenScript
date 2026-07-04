@@ -1,0 +1,45 @@
+# harness library — the count-and-continue contract itself: failures
+# tally instead of aborting, finish throws with the count, the marker
+# only prints on all-pass. All-pass prints HARNESS_ALL_PASS.
+import harness
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== HARNESS (lib/harness.eigs) ==="
+
+# a passing run: finish returns the check count and prints the marker
+harness.start of "INNER_OK"
+harness.check of ["math", 2 + 2, 4]
+harness.check_true of ["truthy", 1]
+n is harness.finish of []
+check of ["finish returns check count", n, 2]
+
+# a failing run: later checks STILL run (count-and-continue), finish throws
+harness.start of "INNER_BAD"
+harness.check of ["deliberate miss", 1, 2]
+harness.check of ["still runs after a failure", 3, 3]
+threw is 0
+try:
+    harness.finish of []
+catch err:
+    threw is 1
+    check of ["throw names the marker and tally", contains of [err, "INNER_BAD"], 1]
+check of ["finish throws on failures", threw, 1]
+
+# start resets state: a fresh run is clean after the failing one
+harness.start of "INNER_RESET"
+harness.check of ["clean slate", 5, 5]
+n is harness.finish of []
+check of ["reset run passes with 1 check", n, 1]
+
+if fails == 0:
+    print of "HARNESS_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "harness tests failed"

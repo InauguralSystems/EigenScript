@@ -199,6 +199,30 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `l2_norm` | `l2_norm of tensor` | Euclidean norm |
 | `scale` | `scale of [tensor, scalar]` | Scalar multiplication |
 
+### lib/bcd.eigs — Packed BCD Codec
+
+`from_bcd of 0x26` → 26, `to_bcd of 59` → 0x59 — any width, each hex
+nibble a decimal digit. Invalid nibbles, negatives, and fractions
+raise (a torn RTC register read must fail loudly, not decode to a
+plausible number). Consumers: CMOS RTC registers, the Game Boy's DAA.
+
+### lib/harness.eigs — Count-and-Continue Test Scaffolding
+
+`harness.start of "MARKER"` / `harness.check of [tag, got, want]` /
+`harness.check_true` / `harness.finish of []` — every check prints and
+COUNTS (one failure never hides the rest), finish prints
+`MARKER_ALL_PASS` on success or throws with the tally. The twin-gate
+pattern extracted from six hand-rolled EigenOS harnesses.
+
+### lib/observer_slots.eigs — Observe a Dynamic Collection
+
+`observer_slots.feed of [i, v]` / `is_stable of i` / `is_diverging of
+i` — eight NAMED scalar slots behind index dispatch, because observer
+trajectories key to named bindings and `stable of xs[i]` can never
+accumulate one (#262). Feed forces fresh values; slot 9 throws
+(silently-unobserved is the failure mode this prevents). Feed bounded
+signatures, not raw counters (the #294 flat-entropy band).
+
 ### lib/datetime.eigs — Dates, Times, Durations
 
 Two halves. The CLOCK functions (`now`, `today`, `timestamp`,
@@ -265,6 +289,11 @@ load_file of "lib/checksum.eigs"
 print of (crc32 of "123456789")      # 3421780262
 print of (adler32 of "Wikipedia")    # 300286872
 ```
+
+`format.eigs` also ships `hexdump of data` (string or buffer → classic
+offset/hex/ascii rows), and `functional.eigs` ships
+`wait_until of [pred, tries, sleep_fn]` — the bounded-poll shape every
+IRQ drain and readiness check re-derives.
 
 ### lib/sort.eigs — Sorting Utilities
 
@@ -357,6 +386,30 @@ if (get_flag of [parsed, "--verbose"]) == 1:
 outfile is get_opt of [parsed, "--output", "out.txt"]
 files is get_positional of parsed    # ["input.csv"]
 ```
+
+### lib/bcd.eigs — Packed BCD Codec
+
+`from_bcd of 0x26` → 26, `to_bcd of 59` → 0x59 — any width, each hex
+nibble a decimal digit. Invalid nibbles, negatives, and fractions
+raise (a torn RTC register read must fail loudly, not decode to a
+plausible number). Consumers: CMOS RTC registers, the Game Boy's DAA.
+
+### lib/harness.eigs — Count-and-Continue Test Scaffolding
+
+`harness.start of "MARKER"` / `harness.check of [tag, got, want]` /
+`harness.check_true` / `harness.finish of []` — every check prints and
+COUNTS (one failure never hides the rest), finish prints
+`MARKER_ALL_PASS` on success or throws with the tally. The twin-gate
+pattern extracted from six hand-rolled EigenOS harnesses.
+
+### lib/observer_slots.eigs — Observe a Dynamic Collection
+
+`observer_slots.feed of [i, v]` / `is_stable of i` / `is_diverging of
+i` — eight NAMED scalar slots behind index dispatch, because observer
+trajectories key to named bindings and `stable of xs[i]` can never
+accumulate one (#262). Feed forces fresh values; slot 9 throws
+(silently-unobserved is the failure mode this prevents). Feed bounded
+signatures, not raw counters (the #294 flat-entropy band).
 
 ### lib/datetime.eigs — Date, Time, and Duration
 
