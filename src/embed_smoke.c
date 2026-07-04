@@ -10,10 +10,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <sys/time.h>
 
 #include "eigs_embed.h"
 
 static int failures = 0;
+
+/* Async abort seam: the flag a signal handler (standing in for an OS
+ * keyboard IRQ / ctrl-c) sets while an eval is running. */
+static volatile int g_abort = 0;
+static void abort_alarm(int sig) { (void)sig; g_abort = 1; }
+static void arm_abort_timer_ms(long ms) {
+    struct itimerval it = {{0, 0}, {ms / 1000, (ms % 1000) * 1000}};
+    signal(SIGALRM, abort_alarm);
+    setitimer(ITIMER_REAL, &it, NULL);
+}
 
 #define CHECK(cond, msg) do {                                              \
     if (!(cond)) {                                                         \
@@ -292,6 +304,31 @@ int main(void) {
         "got");
     CHECK(r != NULL && eigs_value_as_num(r) == 42.0, "embed spawn+channel roundtrip");
     eigs_value_release(r);
+
+    /* Async abort seam: a pre-set flag kills the eval at its first
+     * back-edge (proves the plumbing), and an interval timer firing
+     * MID-eval kills an otherwise-unbounded loop (the real ctrl-c /
+     * timeout shape). Both must consume the flag and leave the state
+     * usable for the next eval. */
+    eigs_set_abort_flag(&g_abort);
+    g_abort = 1;
+    r = eigs_eval_string("i is 0\nloop while 1:\n    i is i + 1\ni");
+    CHECK(r == NULL && eigs_has_error(), "pre-set abort flag stops the loop");
+    CHECK(eigs_last_error_message() &&
+          strstr(eigs_last_error_message(), "aborted") != NULL,
+          "abort raises the 'aborted' error");
+    CHECK(g_abort == 0, "abort flag is consumed when honored");
+    eigs_clear_error();
+
+    arm_abort_timer_ms(150);
+    r = eigs_eval_string("j is 0\nloop while 1:\n    j is j + 1\nj");
+    CHECK(r == NULL && eigs_has_error(), "mid-eval abort stops an unbounded loop");
+    eigs_clear_error();
+
+    r = eigs_eval_string("6 * 7");
+    CHECK(r != NULL && eigs_value_as_num(r) == 42.0, "state usable after aborts");
+    eigs_value_release(r);
+    eigs_set_abort_flag(NULL);
 
     /* Leave a recv-blocked, never-joined worker for eigs_close to reap — this
      * hangs (or leaks/UAFs) unless eigs_close drains (close+wake+join, #303). */

@@ -175,6 +175,26 @@ int  eigs_set_replay_tape(const char *bytes, size_t len, int strict);
 int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served */
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
 
+/* ---- Async abort -----------------------------------------------------
+ * Register a flag the host may set from an interrupt/signal context (a
+ * ctrl-c handler, a timeout timer, an OS keyboard IRQ). The interpreter
+ * polls it on every loop back-edge; when set, the running eval raises an
+ * ordinary runtime error ("aborted") and the flag is CONSUMED — one set
+ * aborts exactly one eval, and the state stays usable for the next eval.
+ * The host side is async-signal-safe by construction: setting the flag is
+ * a plain store into the host's own int (register it once; pass NULL to
+ * unregister). Process-global, not per-state: the semantic is "abort
+ * whatever is evaluating."
+ *
+ * Two documented caveats:
+ *  - The error is catchable like any runtime error — a `try` around the
+ *    loop observes it (set the flag again if the program keeps looping).
+ *  - Loops running as JIT/OSR native code do not poll; the abort lands at
+ *    the next interpreted back-edge. Embedders needing hard timeouts run
+ *    with EIGS_JIT_OFF=1; the freestanding profile compiles the JIT out,
+ *    so coverage there is total. */
+void eigs_set_abort_flag(volatile int *flag);
+
 /* ---- FFI ---------------------------------------------------------- */
 
 /* Host function signature mirrors the internal BuiltinFn: `arg` is the

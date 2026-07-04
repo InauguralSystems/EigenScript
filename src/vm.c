@@ -523,6 +523,22 @@ static Value *make_iter_state(Value *iterable) {
  * helpers). A plain process global: sandbox_run is synchronous. */
 int g_sandbox_loop_max = 0;
 
+/* Async abort seam (eigs_set_abort_flag): the embedder registers a flag it
+ * may set from an interrupt/signal context; the interpreter polls it on
+ * every loop back-edge and raises an ordinary runtime error ("aborted")
+ * when set, consuming the flag. Deliberately PROCESS-global, not per-state:
+ * the semantic is "abort whatever is evaluating" (a ctrl-c / timeout), and
+ * the setter side must stay async-signal/IRQ-safe — a plain store into the
+ * embedder's own int, no TLS deref, no runtime call. The runtime only ever
+ * READS the embedder's flag (and clears it when honoring). Unregistered
+ * (NULL) costs one predicted-not-taken test per back-edge. Caveats, both
+ * documented in eigs_embed.h: a JIT/OSR-native hot loop doesn't poll (the
+ * freestanding profile compiles the JIT out, so coverage is total there;
+ * hosted embedders needing hard timeouts run EIGS_JIT_OFF=1), and the
+ * error is an ordinary catchable runtime error — a `try` around the loop
+ * can observe it (the flag can simply be set again). */
+volatile int *g_vm_abort_flag = NULL;
+
 /* #292: sandbox allocation budget. The loop-iteration cap bounds VM back-edges
  * but NOT memory — an allowlisted allocator (zeros/fill/buffer/range/...) can
  * exhaust RAM in one capped-but-large call, or aggregate across a loop, and the
@@ -2785,6 +2801,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     CASE(JUMP_BACK): {
         uint16_t offset = read_u16(ip); ip += 2;
         ip -= offset;
+        /* Async abort: poll the embedder's registered flag on the one
+         * opcode every loop crosses. Consume the flag (edge, not level)
+         * so the abort kills exactly one eval. */
+        if (__builtin_expect(g_vm_abort_flag && *g_vm_abort_flag, 0)) {
+            *g_vm_abort_flag = 0;
+            runtime_error(current_line, "aborted");
+            DISPATCH();
+        }
         /* Hotness signal: this is the back-edge of every while/for body.
          * Tracking iterations here lets jit_try_compile_chunk gate on
          * "chunk that loops a lot" in addition to "chunk that's called
