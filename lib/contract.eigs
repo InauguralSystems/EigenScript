@@ -1,0 +1,172 @@
+# ============================================================
+# Contract Library — trajectory contracts (#395)
+# ============================================================
+#
+# Static types prove shape. They cannot state "this solver converges" or
+# "this residual shrinks without oscillating". The observer already
+# classifies exactly those properties on every assignment, for free. These
+# contracts turn that classification into a machine-checked assertion:
+# convergence / monotonicity / stability of a scalar trajectory, outside
+# any type grammar, at near-zero cost because the measurement is already paid.
+#
+# How to use:
+#   load_file of "lib/contract.eigs"
+#
+#   require of [cond, msg]        # plain precondition  — throw unless truthy
+#   ensure  of [cond, msg]        # plain postcondition — throw unless truthy
+#   expect_converging of [x0, step_fn, max_obs, msg]
+#   expect_monotone   of [x0, step_fn, max_obs, msg]
+#   invariant_stable  of [x0, step_fn, max_obs, msg]
+#
+# CONTRACT MODEL — WHY THE STEP FUNCTION.
+# The observer's trajectory lives in the *binding slot* it is written to, not
+# on the value (Env::obs is binding identity; #262/#294). A value computed in
+# the caller's loop therefore carries NO trajectory across a call boundary —
+# `report of x` inside a contract that merely received `x` sees a fresh,
+# single-sample slot. So a trajectory contract cannot inspect an already-built
+# value; it must DRIVE the trajectory in its own scope. Each contract takes the
+# seed `x0` and a one-arg `step_fn` (x -> x'), applies it up to `max_obs` times
+# into a single local accumulator, and classifies THAT slot. The cross-scope
+# gap is filed upstream (EigenScript #421), not worked around here.
+#
+# SCALAR ONLY. The value channel (report_value) only carries a numeric
+# trajectory. A step_fn that returns a list/dict has no value trajectory, so a
+# naive contract would classify "equilibrium" forever and pass SILENTLY. These
+# contracts refuse a non-numeric accumulator loudly — on the seed AND on every
+# step's output — so a step that returns a non-num mid-run fails instead of
+# silently certifying nothing. For a vector solver, have step_fn return the
+# scalar residual/estimate you actually want to constrain.
+#
+# RESOLUTION FLOOR / KNOWN BLIND SPOTS (inherited from the instrument, filed as
+# #422 — do not paper over in .eigs). The value channel classifies the
+# *relative* step (v-last)/(1+|v|) against dh_zero=1e-3 / dh_small=1e-2 over a
+# 10-sample window. Two consequences the contracts cannot see and therefore do
+# not claim to catch:
+#   1. A runaway whose step/magnitude ratio VANISHES — additive or polynomial
+#      growth, e.g. x -> x + c once |x| is large — normalizes below the deadband
+#      and can read "converged". Exponential/geometric divergence IS caught.
+#   2. An oscillation whose relative amplitude sits below dh_zero is invisible
+#      to the flip counter, so expect_monotone passes a tiny (or, after
+#      normalization, a large-but-relatively-tiny) perpetual oscillation.
+# Guard both with an explicit absolute bound: `ensure of [(abs of x) < LIMIT]`.
+# And convergence is not correctness even when caught — pair with `ensure` on
+# the final residual to pin the actual target, not merely the fact of settling.
+
+# ---- _num_guard: refuse a non-scalar trajectory loudly ----
+# Internal. report_value is blind to non-numeric values, so an unguarded
+# contract over a vector accumulator is a silent no-op. Fail instead.
+define _num_guard(a, who) as:
+    t is type of a
+    if t == "num":
+        return 1
+    throw of (who + ": trajectory must be a scalar (num), got " + t + " — return a residual/estimate from step_fn, not the raw state")
+
+# ---- _budget_guard: reject a budget too small to classify ----
+# Internal. The observer window is OBSERVER_WINDOW_N = 10 samples; fewer cannot
+# distinguish settling from a single lucky read, so a small max_obs would
+# vacuously accept a divergent solver. A too-small budget is a caller error.
+define _budget_guard(max_obs, who) as:
+    if max_obs < 10:
+        throw of (who + ": max_obs must be >= 10 (the observer window); got " + (str of max_obs))
+    return 1
+
+# ---- require of [cond, msg] — precondition; throw unless cond is truthy ----
+define require(n) as:
+    cond is n[0]
+    msg is n[1]
+    if cond:
+        return 1
+    throw of ("require failed: " + msg)
+
+# ---- ensure of [cond, msg] — postcondition; throw unless cond is truthy ----
+# Semantic twin of require; the different name documents intent at call sites
+# (a checked promise on the way out vs a demand on the way in).
+define ensure(n) as:
+    cond is n[0]
+    msg is n[1]
+    if cond:
+        return 1
+    throw of ("ensure failed: " + msg)
+
+# ---- expect_converging of [x0, step_fn, max_obs, msg] ----
+# Drives step_fn from x0 and asserts the trajectory reaches the value channel's
+# "converged" verdict — a full 10-sample window of below-deadband relative steps
+# — within max_obs observations. Returns the converged value; throws, naming the
+# last regime, if the budget is spent without converging (a runaway stays
+# "moving", an over-relaxed solver "oscillating", a crawler "stable").
+#
+# WHY THE VALUE CHANNEL, NOT `report`. The entropy channel cannot tell a
+# converging solver from an exploding one: a monotonically growing value has
+# falling-then-flat entropy, so `report` labels a runaway "converged" (measured:
+# grow x*1.5 for 40 steps -> report=converged). Only the value channel keeps
+# them apart — same run reads report_value=moving. This is the #294 lossy-proxy
+# lesson made load-bearing. (For a runaway the value channel itself does not see,
+# see the #422 blind spots in the header — bound |x| with `ensure`.)
+define expect_converging(n) as:
+    a is n[0]
+    step_fn is n[1]
+    max_obs is n[2]
+    msg is n[3]
+    _num_guard of [a, "expect_converging"]
+    _budget_guard of [max_obs, "expect_converging"]
+    steps is 0
+    loop while steps < max_obs:
+        a is step_fn of a
+        steps is steps + 1
+        _num_guard of [a, "expect_converging"]
+        if (report_value of a) == "converged":
+            return a
+    throw of ("expect_converging failed (did not converge within " + (str of max_obs) + " obs; last value regime '" + (report_value of a) + "'): " + msg)
+
+# ---- expect_monotone of [x0, step_fn, max_obs, msg] ----
+# The #294 value-delta contract: asserts the VALUE trajectory never oscillates
+# (sign-flipping steps above the deadband) across up to max_obs updates. Uses
+# report_value — the value signal catches oscillation the entropy channel goes
+# blind to in flat-entropy regions. Returns early on a converged value, else the
+# final value; throws on the first "oscillating" classification. A damped
+# oscillation (alternating but shrinking) IS oscillation on the raw state — feed
+# its residual/|x| if you mean "converges, possibly by ringing down".
+define expect_monotone(n) as:
+    a is n[0]
+    step_fn is n[1]
+    max_obs is n[2]
+    msg is n[3]
+    _num_guard of [a, "expect_monotone"]
+    _budget_guard of [max_obs, "expect_monotone"]
+    steps is 0
+    loop while steps < max_obs:
+        a is step_fn of a
+        steps is steps + 1
+        _num_guard of [a, "expect_monotone"]
+        vstatus is report_value of a
+        if vstatus == "oscillating":
+            throw of ("expect_monotone failed (oscillating at obs " + (str of steps) + "): " + msg)
+        if vstatus == "converged":
+            return a
+    return a
+
+# ---- invariant_stable of [x0, step_fn, max_obs, msg] ----
+# Asserts the value HOLDS — never begins moving or oscillating above the
+# deadband — across the window. For quantities that must stay constant (a
+# conserved energy, a fixed point already reached). Throws on the first "moving"
+# / "oscillating" classification of the value channel. Returns the final value.
+# (A drift SLOWER than the relative deadband reads "stable" and is not caught —
+# the #422 blind spot; bound it with `ensure of [(abs of x) < LIMIT]`.)
+define invariant_stable(n) as:
+    a is n[0]
+    step_fn is n[1]
+    max_obs is n[2]
+    msg is n[3]
+    _num_guard of [a, "invariant_stable"]
+    _budget_guard of [max_obs, "invariant_stable"]
+    steps is 0
+    loop while steps < max_obs:
+        a is step_fn of a
+        steps is steps + 1
+        _num_guard of [a, "invariant_stable"]
+        vstatus is report_value of a
+        if vstatus == "moving":
+            throw of ("invariant_stable violated (moving at obs " + (str of steps) + "): " + msg)
+        if vstatus == "oscillating":
+            throw of ("invariant_stable violated (oscillating at obs " + (str of steps) + "): " + msg)
+    return a

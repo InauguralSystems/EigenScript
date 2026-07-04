@@ -1680,6 +1680,11 @@ check_eigs_suite "observer_slots: trajectories through slot dispatch, independen
     "test_observer_slots.eigs" "OBSERVER_SLOTS_ALL_PASS" 6
 echo ""
 
+echo "[50j] Trajectory Contracts (15 checks)"
+check_eigs_suite "contract: require/ensure + expect_converging/monotone/invariant_stable, value-channel divergence catch, scalar guard" \
+    "test_contract.eigs" "CONTRACT_ALL_PASS" 1
+echo ""
+
 # [51] Unobserved block
 echo "[51] Unobserved Block (8 checks)"
 UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?

@@ -385,6 +385,27 @@ widget signatures.
 Declare-and-check invariants inside programs; see the module header
 for the assertion forms.
 
+### lib/contract.eigs — Trajectory Contracts
+
+Machine-checked convergence/stability properties — the observer-native
+answer to "what replaces static types here." `require`/`ensure` are plain
+predicates; the trajectory contracts drive a seed through a one-arg step
+function and assert a property of the resulting trajectory.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `require` | `require of [cond, msg]` | Precondition; throws unless `cond` is truthy |
+| `ensure` | `ensure of [cond, msg]` | Postcondition; throws unless `cond` is truthy |
+| `expect_converging` | `expect_converging of [x0, step_fn, max_obs, msg]` | Throws unless the trajectory settles within `max_obs` (value channel) |
+| `expect_monotone` | `expect_monotone of [x0, step_fn, max_obs, msg]` | Throws on a sign-flipping (oscillating) value trajectory |
+| `invariant_stable` | `invariant_stable of [x0, step_fn, max_obs, msg]` | Throws if the value ever begins moving or oscillating |
+
+Convergence is read on the value channel, not entropy (a monotonically
+exploding value reads `converged` on the entropy channel — the #294 blind
+spot). Convergence is not correctness: pair with `ensure` on the final
+residual. See docs/OBSERVER.md "Contracts" and
+`examples/stem/contract_solver.eigs`.
+
 ### lib/pkg.eigs — Package Manager Runtime
 
 The `--pkg` machinery's script half (eigs.json, SHA-pinned lockfiles);

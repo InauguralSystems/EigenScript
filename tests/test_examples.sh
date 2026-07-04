@@ -122,6 +122,7 @@ echo ""
 # ---- Integrated STEM applications ----
 echo "Integrated STEM applications:"
 run_example "stem/greenhouse_controller" 30 "Decision: APPROVE RUN"
+run_example "stem/contract_solver" 10 "CONTRACTS HELD"
 echo ""
 
 # ---- Simulation examples ----
