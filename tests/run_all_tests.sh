@@ -1642,6 +1642,12 @@ done
 rm -f /tmp/eigs_hex_reject.eigs
 echo ""
 
+# [50c] Checksum library (CRC-32 / Adler-32 / sum8 over strings+buffers)
+echo "[50c] Checksums (9 checks)"
+check_eigs_suite "checksums: published vectors + buffer/string equivalence" \
+    "test_checksum.eigs" "CHECKSUM_ALL_PASS" 9
+echo ""
+
 # [51] Unobserved block
 echo "[51] Unobserved Block (8 checks)"
 UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?
