@@ -177,6 +177,8 @@ a code's meaning never changes, and retired codes are not reused.
 | `W011` | warning | `name is ...` used in a condition (likely meant `==`). |
 | `W012` | warning | Assignment shadows a builtin. |
 | `W013` | warning | Function definition shadows a builtin. |
+| `W014` | warning | Bare trajectory predicate in a loop condition reads the last-observed binding, but the body assigns two or more bindings — name it (`<predicate> of <var>`). |
+| `W015` | warning | A function assigns (without `local`) over a module-level **function** name, clobbering it via mutate-outward so later `<fn> of ...` calls fail — add `local` or rename. (Scoped to function clobbering; benign module-variable reuse is not flagged — that is #404's dataflow-aware territory. `_`-prefixed names are skipped as intentional module state.) |
 
 The human linter output carries the code inline:
 

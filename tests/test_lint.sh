@@ -304,6 +304,45 @@ check_contains "parse error json has E002" "$JSON" '"code":"E002"'
 check_contains "parse error json has error severity" "$JSON" '"severity":"error"'
 rm -f "$TMPFILE"
 
+# --- W015: assignment clobbers a module-level function ---
+# Fires only when a function assigns (without `local`) over a module-level
+# FUNCTION name — the unambiguous-bug core. Generic module VARIABLE reuse is
+# benign under mutate-outward and deliberately NOT flagged (see the rule).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+count is 0
+define helper(n) as:
+    return n
+define bump(n) as:
+    count is count + 1
+    return count
+define clobber(n) as:
+    helper is 5
+    return helper
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W015 fires on function-name clobber" "$OUTPUT" "warning\[W015\]: 'helper'"
+check_not_contains "W015 silent on generic module-variable reuse" "$OUTPUT" "'count'"
+rm -f "$TMPFILE"
+
+# Silent: `local`, a fresh function-local, param mutation, and (by convention)
+# an `_`-prefixed module function treated as intentional private state.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define real_work(n) as:
+    return n
+define _private(n) as:
+    return n
+define caller(n) as:
+    local real_work is n + 1
+    _private is 9
+    tmp is n * 2
+    return real_work + tmp
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W015 silent with local / fresh local / _-prefixed fn" "$OUTPUT" "W015"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

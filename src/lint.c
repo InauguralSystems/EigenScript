@@ -718,7 +718,153 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
 /* Run every lint check on a parsed AST, filling ctx->warnings (sorted by
  * line). Frees the transient assign/ref tracking it allocates; the caller
  * owns ctx and reads ctx->warnings. Shared by the CLI and lint_collect. */
+/* ---- W015: a function assignment clobbers a module-level function ---- */
+
+/* A top-level function that assigns — without `local` — to a name that is a
+ * module-level FUNCTION silently reassigns (destroys) that function via the
+ * `is`-mutates-outward scope model: later `<fn> of ...` calls then fail. This
+ * is almost always a name collision, not intent; the fix is `local` or a
+ * rename. Mirrors the runtime's resolution exactly (a bare `x is ...` binds
+ * outward iff `x` exists in an enclosing scope), so it is not an approximation.
+ *
+ * SCOPED DELIBERATELY to function-name clobbering. The broader "any outer
+ * mutation" reading is refuted by the corpus: under mutate-outward, reusing a
+ * generic module VARIABLE name (`total`, `status`, `result`) inside a function
+ * is pervasive and almost always benign — 155 such firings across working
+ * examples — so flagging it is noise, not a fence. `_`-prefixed names are the
+ * convention for intentional module-private state (as W001 already honors) and
+ * are skipped. The general local-discipline lint belongs to the scope-aware
+ * name-resolution pass (#404), which can do the dataflow to tell benign reuse
+ * from a real clobber; #396 tracks that. Params and `local`-declared names are
+ * excluded; nested functions are not analysed (enclosing scope isn't module). */
+
+#define W015_MAX_NAMES 512
+
+static int name_present(const char *name, char *const set[], int n) {
+    for (int i = 0; i < n; i++) if (strcmp(set[i], name) == 0) return 1;
+    return 0;
+}
+static void name_add(const char *name, char *set[], int *n) {
+    if (!name || *n >= W015_MAX_NAMES) return;
+    if (name_present(name, set, *n)) return;
+    set[(*n)++] = (char *)name;   /* borrowed pointer into the AST; not freed */
+}
+
+/* Over-collect every name that is function-local within `n` — `local x`, params
+ * (added by the caller), loop/for/catch/list-pattern binders. Recurses through
+ * ALL body-bearing nodes (including match and nested funcs' *bodies* only for
+ * binder discovery) so a real local is never mistaken for an outer binding.
+ * Over-collecting is safe (at worst it suppresses a warning); under-collecting
+ * would be a false positive, which is the cardinal sin. */
+static void w015_collect_locals(ASTNode *n, char *locals[], int *count) {
+    if (!n) return;
+    switch (n->type) {
+        case AST_ASSIGN:
+            if (n->data.assign.local_only) name_add(n->data.assign.name, locals, count);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+                name_add(n->data.list_pattern_assign.names[i], locals, count);
+            break;
+        case AST_IF:
+            for (int i = 0; i < n->data.cond.if_count; i++)   w015_collect_locals(n->data.cond.if_body[i], locals, count);
+            for (int i = 0; i < n->data.cond.else_count; i++) w015_collect_locals(n->data.cond.else_body[i], locals, count);
+            break;
+        case AST_LOOP:
+            for (int i = 0; i < n->data.loop.body_count; i++) w015_collect_locals(n->data.loop.body[i], locals, count);
+            break;
+        case AST_FOR:
+            name_add(n->data.forloop.var, locals, count);
+            for (int i = 0; i < n->data.forloop.body_count; i++) w015_collect_locals(n->data.forloop.body[i], locals, count);
+            break;
+        case AST_TRY:
+            name_add(n->data.trycatch.err_name, locals, count);
+            for (int i = 0; i < n->data.trycatch.try_count; i++)   w015_collect_locals(n->data.trycatch.try_body[i], locals, count);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++) w015_collect_locals(n->data.trycatch.catch_body[i], locals, count);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++) w015_collect_locals(n->data.block.stmts[i], locals, count);
+            break;
+        case AST_MATCH:
+            for (int c = 0; c < n->data.match.case_count; c++)
+                for (int k = 0; k < n->data.match.body_counts[c]; k++)
+                    w015_collect_locals(n->data.match.bodies[c][k], locals, count);
+            break;
+        default: break;
+    }
+}
+
+/* Flag each outward assignment. Recurses the common body-bearing nodes; does
+ * NOT descend into nested AST_FUNC (a different scope). Under-covering a node
+ * only misses a warning (safe); it never invents one. */
+static void w015_flag(ASTNode *n, char *const module[], int module_n,
+                      char *const locals[], int locals_n, LintContext *ctx) {
+    if (!n) return;
+    switch (n->type) {
+        case AST_ASSIGN:
+            if (!n->data.assign.local_only && n->data.assign.name &&
+                n->data.assign.name[0] != '_' &&
+                name_present(n->data.assign.name, module, module_n) &&
+                !name_present(n->data.assign.name, locals, locals_n)) {
+                lint_warn(ctx, n->line, "W015",
+                    "'%s' is a module-level function; assigning it without "
+                    "'local' clobbers it (later '%s of ...' calls will fail) — "
+                    "add 'local' or rename",
+                    n->data.assign.name, n->data.assign.name);
+            }
+            break;
+        case AST_IF:
+            for (int i = 0; i < n->data.cond.if_count; i++)   w015_flag(n->data.cond.if_body[i], module, module_n, locals, locals_n, ctx);
+            for (int i = 0; i < n->data.cond.else_count; i++) w015_flag(n->data.cond.else_body[i], module, module_n, locals, locals_n, ctx);
+            break;
+        case AST_LOOP:
+            for (int i = 0; i < n->data.loop.body_count; i++) w015_flag(n->data.loop.body[i], module, module_n, locals, locals_n, ctx);
+            break;
+        case AST_FOR:
+            for (int i = 0; i < n->data.forloop.body_count; i++) w015_flag(n->data.forloop.body[i], module, module_n, locals, locals_n, ctx);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < n->data.trycatch.try_count; i++)   w015_flag(n->data.trycatch.try_body[i], module, module_n, locals, locals_n, ctx);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++) w015_flag(n->data.trycatch.catch_body[i], module, module_n, locals, locals_n, ctx);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++) w015_flag(n->data.block.stmts[i], module, module_n, locals, locals_n, ctx);
+            break;
+        default: break;
+    }
+}
+
+static void check_outer_mutation(ASTNode *ast, LintContext *ctx) {
+    if (!ast || ast->type != AST_PROGRAM) return;
+
+    /* Module scope of interest = top-level FUNCTION names only (see the rule
+     * comment: clobbering a function is the unambiguous-bug core; variable
+     * name-reuse is benign under mutate-outward and belongs to #404). */
+    char *module[W015_MAX_NAMES]; int module_n = 0;
+    for (int i = 0; i < ast->data.program.count; i++) {
+        ASTNode *s = ast->data.program.stmts[i];
+        if (s && s->type == AST_FUNC) name_add(s->data.func.name, module, &module_n);
+    }
+    if (module_n == 0) return;
+
+    /* Analyse each top-level function against module scope. */
+    for (int i = 0; i < ast->data.program.count; i++) {
+        ASTNode *fn = ast->data.program.stmts[i];
+        if (!fn || fn->type != AST_FUNC) continue;
+        char *locals[W015_MAX_NAMES]; int locals_n = 0;
+        for (int p = 0; p < fn->data.func.param_count; p++)
+            name_add(fn->data.func.params[p], locals, &locals_n);
+        for (int b = 0; b < fn->data.func.body_count; b++)
+            w015_collect_locals(fn->data.func.body[b], locals, &locals_n);
+        for (int b = 0; b < fn->data.func.body_count; b++)
+            w015_flag(fn->data.func.body[b], module, module_n, locals, locals_n, ctx);
+    }
+}
+
 static void lint_run_checks(ASTNode *ast, LintContext *ctx) {
+    check_outer_mutation(ast, ctx);
     check_empty_blocks(ast, ctx);
     check_dup_keys(ast, ctx);
     check_builtin_shadow(ast, ctx);
