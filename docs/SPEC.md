@@ -312,8 +312,12 @@ print of ({"a": 1} == {"a": 2})
 
 ## Bitwise operators
 
-`& | ^ << >> ~` operate on the integer part of nums. Note `^` is XOR,
-not exponentiation.
+`& | ^ << >> ~` operate on the integer part of nums as 64-bit
+two's-complement values. Note `^` is XOR, not exponentiation. The
+`bit_and`/`bit_or`/`bit_xor`/`bit_not`/`bit_shl`/`bit_shr` builtins
+are the SAME operation in call form — one semantics, two spellings —
+so the full unsigned-32-bit range (device registers, CRC polynomials)
+works identically through either:
 
 ```eigenscript
 print of (12 & 10)
@@ -322,6 +326,9 @@ print of (12 ^ 10)
 print of (1 << 4)
 print of (16 >> 2)
 print of (~0 & 255)
+print of (0xEDB88320 & 0xFFFFFFFF)
+print of (bit_and of [0xEDB88320, 0xFFFFFFFF])
+print of (bit_shl of [1, 32])
 ```
 ```output
 8
@@ -330,6 +337,9 @@ print of (~0 & 255)
 16
 4
 255
+3988292384
+3988292384
+4294967296
 ```
 
 ## Conditionals

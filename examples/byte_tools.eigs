@@ -1,0 +1,36 @@
+# Byte tooling in pure EigenScript: hexdump + checksums + BCD.
+# The same three modules a bare-metal driver uses to debug a sector,
+# verify its integrity, and decode a hardware clock register — running
+# identically on a hosted machine.
+
+load_file of "lib/format.eigs"
+load_file of "lib/checksum.eigs"
+load_file of "lib/bcd.eigs"
+
+# A little "sector": header magic + a BCD-coded timestamp byte.
+sector is buffer of 24
+magic is "EIGS"
+i is 0
+loop while i < 4:
+    buf_set of [sector, i, ord of (char_at of [magic, i])]
+    i is i + 1
+buf_set of [sector, 4, to_bcd of 59]        # seconds register, BCD 0x59
+i is 5
+loop while i < 24:
+    buf_set of [sector, i, (i * 7) % 256]   # deterministic payload
+    i is i + 1
+
+print of "-- the sector, human-readable --"
+print of (hexdump of sector)
+
+print of "-- integrity --"
+print of f"crc32:   0x{hex of [crc32 of sector, 8]}"
+print of f"adler32: 0x{hex of [adler32 of sector, 8]}"
+
+print of "-- the BCD register decodes --"
+print of f"seconds byte 0x{hex of [buf_get of [sector, 4], 2]} -> {str of (from_bcd of (buf_get of [sector, 4]))}"
+
+# tampering is visible
+buf_set of [sector, 10, 0xFF]
+print of "-- after flipping one byte --"
+print of f"crc32:   0x{hex of [crc32 of sector, 8]} (changed)"
