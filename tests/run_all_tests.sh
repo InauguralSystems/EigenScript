@@ -1648,6 +1648,12 @@ check_eigs_suite "checksums: published vectors + buffer/string equivalence" \
     "test_checksum.eigs" "CHECKSUM_ALL_PASS" 9
 echo ""
 
+# [50d] Datetime civil math (pure half of lib/datetime.eigs)
+echo "[50d] Datetime Civil Math (14 checks)"
+check_eigs_suite "civil days/epoch round-trips + leap edges vs references" \
+    "test_datetime_civil.eigs" "DATETIME_CIVIL_ALL_PASS" 14
+echo ""
+
 # [51] Unobserved block
 echo "[51] Unobserved Block (8 checks)"
 UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?

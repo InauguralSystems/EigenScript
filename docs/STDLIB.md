@@ -199,6 +199,17 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `l2_norm` | `l2_norm of tensor` | Euclidean norm |
 | `scale` | `scale of [tensor, scalar]` | Scalar multiplication |
 
+### lib/datetime.eigs — Dates, Times, Durations
+
+Two halves. The CLOCK functions (`now`, `today`, `timestamp`,
+`format_date`, `sleep_ms`) shell out to system `date` — host profiles
+only. The CIVIL-MATH functions are pure and run on every profile:
+`days_from_civil of [y, m, d]` / `civil_from_days of days` (day 0 =
+1970-01-01, proleptic Gregorian), `weekday_from_days of days`
+(0=Sunday), `epoch_from_civil of [y, m, d, hh, mm, ss]` /
+`civil_from_epoch of secs`. A bare-metal RTC driver turns CMOS
+registers into epoch seconds with these and no host clock.
+
 ### lib/io.eigs — File and Data Helpers
 
 | Function | Signature | Description |

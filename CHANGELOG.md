@@ -4,6 +4,20 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`lib/checksum.eigs`** — CRC-32 (reflected 0xEDB88320, table-driven),
+  Adler-32, and `sum8` over strings or buffers; results unsigned 32-bit.
+  Byte-integrity math written once: regionfs hand-rolls Adler-32 today,
+  DMG needs the cartridge header sum, M13 networking wants CRC-32.
+  Suite [50c] pins the published check values.
+- **Civil-date math in `lib/datetime.eigs`** — the module's first PURE
+  half (the clock functions shell out to `date` and are host-only):
+  `days_from_civil`/`civil_from_days`, `weekday_from_days`,
+  `epoch_from_civil`/`civil_from_epoch` (Hinnant's algorithms, exact
+  integer arithmetic in doubles, every profile). EigenOS's rtc.eigs is
+  the motivating consumer — CMOS registers to epoch seconds with no
+  host clock. Suite [50d] pins leap edges and round-trips.
+
 ### Fixed
 - **The `bit_*` builtins are now the same operation as the infix
   operators.** They were a second, divergent implementation — a
