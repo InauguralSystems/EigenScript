@@ -2622,6 +2622,17 @@ else
 fi
 echo ""
 
+echo "[99b] Stdlib/builtin discoverability (#393)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/stdlib_index_check.sh" && bash "$TESTS_DIR/../tools/stdlib_index_check.sh" --selftest >/dev/null; then
+    PASS=$((PASS + 1))
+    echo "  PASS: every registered builtin + lib module is documented (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: undocumented builtin/module, or gate self-test broke (see lines above)"
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then

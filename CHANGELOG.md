@@ -5,6 +5,14 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Stdlib/builtin discoverability gate** (`tools/stdlib_index_check.sh`, #393):
+  every builtin registered in `src/builtins.c` must appear in the reference docs
+  (BUILTINS.md / SPEC.md / STDLIB.md) and every `lib/*.eigs` module must have a
+  STDLIB.md heading — undiscoverable breadth is zero breadth. The gate ships a
+  `--selftest` proving it flags an injected undocumented builtin, and runs in the
+  suite as [99b] beside the doc-drift gate. Backfilled the six builtins it caught
+  (`dispatch`, `nearest_in_range_all`, `proc_read_buf`, `read_bytes`, `reshape`,
+  `secure_equals`) into docs/BUILTINS.md.
 - **`lib/contract.eigs`** — trajectory contracts (#395): `require`/`ensure`
   (plain predicates) plus the observer-native differentiators
   `expect_converging`, `expect_monotone`, and `invariant_stable`. Each drives a

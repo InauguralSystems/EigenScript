@@ -57,6 +57,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
 | `sort_by` | `sort_by of [list, key_fn]` | Sort list by numeric keys from key_fn (qsort, O(n log n), stable). Returns a new sorted list |
+| `dispatch` | `dispatch of [table, key, arg]` | Index list `table` by numeric `key` and call the resulting function with `arg` — a jump table (mirrors the `OP_DISPATCH` fast path). `key` must be a number |
 
 ### Strings
 
@@ -85,6 +86,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `text_builder_part_count` | `text_builder_part_count of builder` | Count appended parts |
 | `text_builder_clear` | `text_builder_clear of builder` | Empty a builder for reuse |
 | `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
+| `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`1`/`0`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-strings → `0` |
 
 ### Regex
 
@@ -223,6 +225,8 @@ Boolean keywords that check the most recently observed value:
 | `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file |
 | `file_exists` | `file_exists of "path"` | 1 if file exists, 0 otherwise |
 | `read_text` | `read_text of "path"` | Read file contents as string ("" on failure, 10 MB cap) |
+| `read_bytes` | `read_bytes of "path"` | Read a file's raw bytes as a list of integers 0–255 (`null` on failure, 10 MB cap). Trace-recorded, so replay is deterministic |
+| `proc_read_buf` | `proc_read_buf of [out_fd, max]` | Single `read(2)` of up to `max` bytes from a child fd, returned as a list of integers 0–255 — the byte-list twin of `proc_read`. `null` on EOF / error, 10 MB cap. Replay-gated |
 | `write_text` | `write_text of ["path", text]` | Write string to file (1 on success, 0 on failure) |
 | `exec_capture` | `exec_capture of ["cmd", "arg1", ...]` | Run subprocess, return [exit_code, stdout_text]. No shell (direct exec). Child stdin is /dev/null. Returns [-1, ""] on failure, [-2, partial] on timeout. 10 MB output cap. Timeout form: `exec_capture of [["cmd", ...], seconds]` |
 | `proc_spawn` | `proc_spawn of ["cmd", "arg1", ...]` | Fork+execvp a child with stdin/stdout connected to anonymous pipes. Returns `[pid, in_fd, out_fd]` (or `[-1,-1,-1]` on failure). Caller is responsible for `proc_close` on both fds and `proc_wait` on the pid. SIGPIPE is set to `SIG_IGN` process-wide on first spawn so the parent gets `EPIPE` from `proc_write` instead of dying; child resets to `SIG_DFL` post-fork. |
@@ -373,6 +377,7 @@ automatically at exit.
 | `zeros_like` | `zeros_like of t` | Create zero tensor matching shape |
 | `random_normal` | `random_normal of [rows, cols, scale]` | Gaussian random tensor |
 | `shape` | `shape of t` | Return dimensions as list |
+| `reshape` | `reshape of [buffer, rows, cols]` | New numeric buffer with the same data reinterpreted as `rows`×`cols` (requires `rows*cols == count`; `null` otherwise) |
 
 ### Persistence
 
@@ -564,6 +569,7 @@ strings).
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `nearest_in_range` | `nearest_in_range of [entities, x, y, range, world_w, world_h]` | Find the nearest active entity within `range` using torus (wrapping) distance. `entities` is a list of dicts with `"px"`, `"py"`, `"active"` keys. Returns `{"index", "dist", "dx", "dy"}` or `null`. Optional extra args: custom key names `[..., px_key, py_key, active_key]`. |
+| `nearest_in_range_all` | `nearest_in_range_all of [entities, range, world_w, world_h]` | Like `nearest_in_range`, but returns ALL active entities within `range` (torus distance) as a list, not just the closest. Optional trailing custom key names `[..., px_key, py_key, active_key]`. |
 
 ## Audio (additional)
 
