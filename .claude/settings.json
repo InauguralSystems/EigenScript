@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/tools/stop_gate.sh",
+            "timeout": 120,
+            "statusMessage": "Stop gate: build + smoke on dirty src"
+          }
+        ]
+      }
+    ]
+  }
+}
