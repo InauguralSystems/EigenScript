@@ -368,50 +368,61 @@ Value* builtin_text_builder_to_string(Value *arg) {
  * Non-numeric args raise a runtime error (consistent with the strict error
  * model used by the arithmetic operators and the '& | ^ << >> ~' operators). */
 
-static int bit_pair(Value *arg, uint32_t *a_out, uint32_t *b_out) {
+/* The bit_* builtins are the SAME operation as the infix operators
+ * (& | ^ << >>): int64 two's-complement over the numeric value (vm.c's
+ * INT_BINOP). They used to be a second, divergent implementation —
+ * (uint32_t)(int32_t) conversion, UB for inputs >= 2^31 and
+ * sign-extended results — so `0xEDB88320 & x` worked while
+ * `bit_and of [0xEDB88320, x]` returned garbage (found by the CRC-32
+ * stdlib module, the first consumer needing the full unsigned-32
+ * range). Shift counts are masked to 0..63 like the hardware would. */
+static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return 0;
     Value *va = arg->data.list.items[0];
     Value *vb = arg->data.list.items[1];
     if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
-    *a_out = (uint32_t)(int32_t)va->data.num;
-    *b_out = (uint32_t)(int32_t)vb->data.num;
+    *a_out = (int64_t)va->data.num;
+    *b_out = (int64_t)vb->data.num;
     return 1;
 }
 
 Value* builtin_bit_and(Value *arg) {
-    uint32_t a, b;
+    int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_and expects [number, number]"); return make_null(); }
-    return make_num((double)(int32_t)(a & b));
+    return make_num((double)(a & b));
 }
 
 Value* builtin_bit_or(Value *arg) {
-    uint32_t a, b;
+    int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_or expects [number, number]"); return make_null(); }
-    return make_num((double)(int32_t)(a | b));
+    return make_num((double)(a | b));
 }
 
 Value* builtin_bit_xor(Value *arg) {
-    uint32_t a, b;
+    int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_xor expects [number, number]"); return make_null(); }
-    return make_num((double)(int32_t)(a ^ b));
+    return make_num((double)(a ^ b));
 }
 
 Value* builtin_bit_not(Value *arg) {
     if (!arg || arg->type != VAL_NUM) { runtime_error(0, "bit_not expects a number"); return make_null(); }
-    uint32_t a = (uint32_t)(int32_t)arg->data.num;
-    return make_num((double)(int32_t)(~a));
+    int64_t a = (int64_t)arg->data.num;
+    return make_num((double)(~a));
 }
 
 Value* builtin_bit_shift_left(Value *arg) {
-    uint32_t a, b;
+    int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_shl expects [number, number]"); return make_null(); }
-    return make_num((double)(int32_t)(a << (b & 31)));
+    return make_num((double)(a << (b & 63)));
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
-    uint32_t a, b;
+    int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_shr expects [number, number]"); return make_null(); }
-    return make_num((double)(a >> (b & 31)));
+    /* Arithmetic shift, like the infix >> on int64 (negative operands
+     * keep their sign); mask a non-negative operand first for a
+     * logical u32 shift. */
+    return make_num((double)(a >> (b & 63)));
 }
 
 /* monotonic_ns of null — nanoseconds from CLOCK_MONOTONIC */

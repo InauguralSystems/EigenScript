@@ -1606,15 +1606,15 @@ fi
 echo ""
 
 # [50] Bitwise operations
-echo "[50] Bitwise Operations (22 checks)"
+echo "[50] Bitwise Operations (37 checks)"
 BW_OUTPUT=$(./eigenscript ../tests/test_bitwise.eigs 2>&1); BW_OUTPUT_RC=$?
 if rc_ok "$BW_OUTPUT_RC" "$BW_OUTPUT" && echo "$BW_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 22))
-    PASS=$((PASS + 22))
-    echo "  PASS: all 22 bitwise checks"
+    TOTAL=$((TOTAL + 37))
+    PASS=$((PASS + 37))
+    echo "  PASS: all 37 bitwise checks"
 else
-    TOTAL=$((TOTAL + 22))
-    FAIL=$((FAIL + 22))
+    TOTAL=$((TOTAL + 37))
+    FAIL=$((FAIL + 37))
     echo "  FAIL: bitwise tests"
     echo "$BW_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi

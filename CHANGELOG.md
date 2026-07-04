@@ -5,6 +5,16 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **The `bit_*` builtins are now the same operation as the infix
+  operators.** They were a second, divergent implementation — a
+  `(uint32_t)(int32_t)` conversion that was undefined behavior for
+  inputs ≥ 2^31 and sign-extended results — so `0xEDB88320 & x` worked
+  while `bit_and of [0xEDB88320, x]` returned garbage (found by the
+  CRC-32 stdlib module, the first consumer needing the full unsigned-32
+  range). All six builtins now use the infix int64 two's-complement
+  semantics; shift counts are real up to 63 (the old int32-era `&31`
+  count masking — `bit_shl of [1, 32]` == 1 — is gone). test_bitwise
+  gains an infix-vs-builtin equality battery over the high-bit range.
 - **`num of` hex strings share the lexer's contract.** The string→number
   builtin delegated wholesale to `strtod`, so `num of "0x.8"` read 0.5
   and `num of "0x1p4"` read 16 hosted while the freestanding profile
