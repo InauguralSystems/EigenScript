@@ -22,6 +22,24 @@ All notable changes to EigenScript are documented here.
   loops both benefit.
 
 ### Added
+- **`hex of n` / `hex of [n, nibbles]` builtin.** Uppercase hex of a
+  non-negative integer, optionally zero-padded (never truncated); raises
+  on negatives, fractions, and non-numbers. Demanded by the emulator
+  repos (DMG GAP-DMG-010) — addresses/opcodes/registers all want hex
+  diagnostics and every consumer hand-rolled it.
+- **Audio channel mixer: `audio_volume`, `audio_stop`, infinite loops
+  (Tidepool GAP-002/GAP-003).** The audio device now runs a 16-channel
+  callback mixer instead of SDL queue mode. `audio_play` /
+  `audio_play_loop` return a channel id; `audio_play_loop of [clip, -1]`
+  loops forever (the mixer rewinds — loop count no longer multiplies
+  memory, so the old 256 MiB loops×len budget is gone);
+  `audio_volume of [ch, vol]` adjusts a playing channel live (0.0–4.0);
+  `audio_stop of ch` stops one channel. The pool always succeeds —
+  when all 16 channels are busy the oldest finite one is recycled
+  (callers historically ignore the return value, so refusal would be
+  silent). `audio_queue_size` now reports unplayed bytes across active
+  finite channels; `audio_clear` stops everything. Channel state is
+  mutated only under `SDL_LockAudioDevice`.
 - **Trace-tape seam in the embed API.** `eigs_set_trace_sink` streams every
   tape record (L/A/N lines) to a host callback as bytes, enabling recording
   with no filesystem; `eigs_set_replay_tape` hands a whole tape back as the
@@ -108,6 +126,13 @@ All notable changes to EigenScript are documented here.
   runtime-pin bump, per the #326/#328 precedent.
 
 ### Fixed
+- **`--lint` no longer reports false-positive `unused parameter` for
+  uses inside `unobserved:` blocks (dynamics F-DYN-4).** The lint
+  walkers didn't descend into `AST_UNOBSERVED` (same block shape as
+  `AST_BLOCK`), so a parameter referenced only inside an `unobserved:`
+  hot loop looked unused; `AST_SLICE` and `AST_LIST_PATTERN_ASSIGN`
+  operands were invisible to use-analysis the same way. All three now
+  traverse.
 - **Parser caps fail loudly at the cap (#354).** A 17-parameter
   `define`/lambda or a 65-case `match` used to stop consuming at the cap
   and die in a stray-token error cascade that never mentioned the limit —

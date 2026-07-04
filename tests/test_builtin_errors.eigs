@@ -198,6 +198,34 @@ nums is [3, 1, 2]
 sort of nums
 assert of [nums[0] == 1 and nums[2] == 3, "BE11g numeric sort unchanged"]
 
+# ---- hex: formatting + raise on non-integer/negative (#GAP-DMG-010) ----
+assert of [(hex of 0) == "0", "hex zero"]
+assert of [(hex of 255) == "FF", "hex byte"]
+assert of [(hex of [211, 2]) == "D3", "hex width exact"]
+assert of [(hex of [291, 4]) == "0123", "hex width pads"]
+assert of [(hex of [255, 1]) == "FF", "hex width never truncates"]
+c_hex1 is 0
+m_hex1 is ""
+try:
+    hex of (0 - 5)
+catch e:
+    c_hex1 is 1
+    m_hex1 is e
+assert of [c_hex1 == 1, "hex negative raises"]
+assert of [(contains of [m_hex1, "non-negative integer"]) == 1, "hex negative message"]
+c_hex2 is 0
+try:
+    hex of 1.5
+catch e:
+    c_hex2 is 1
+assert of [c_hex2 == 1, "hex fraction raises"]
+c_hex3 is 0
+try:
+    hex of "x"
+catch e:
+    c_hex3 is 1
+assert of [c_hex3 == 1, "hex non-number raises"]
+
 # ---- nearest_in_range: wrong argument shape ----
 c12 is 0
 m12 is ""

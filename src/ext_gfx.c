@@ -112,6 +112,8 @@ static int g_fb_w = 0, g_fb_h = 0;
 static int (*p_SDL_OpenAudioDevice)(const char*, int, const SDL_AudioSpec*, SDL_AudioSpec*, int);
 static void (*p_SDL_CloseAudioDevice)(int);
 static int (*p_SDL_QueueAudio)(int, const void*, Uint32);
+static void (*p_SDL_LockAudioDevice)(int);
+static void (*p_SDL_UnlockAudioDevice)(int);
 static void (*p_SDL_PauseAudioDevice)(int, int);
 static Uint32 (*p_SDL_GetQueuedAudioSize)(int);
 static void (*p_SDL_ClearQueuedAudio)(int);
@@ -150,6 +152,8 @@ static int load_sdl2(void) {
     p_SDL_OpenAudioDevice = dlsym(g_sdl_lib, "SDL_OpenAudioDevice");
     p_SDL_CloseAudioDevice = dlsym(g_sdl_lib, "SDL_CloseAudioDevice");
     p_SDL_QueueAudio = dlsym(g_sdl_lib, "SDL_QueueAudio");
+    p_SDL_LockAudioDevice = dlsym(g_sdl_lib, "SDL_LockAudioDevice");
+    p_SDL_UnlockAudioDevice = dlsym(g_sdl_lib, "SDL_UnlockAudioDevice");
     p_SDL_PauseAudioDevice = dlsym(g_sdl_lib, "SDL_PauseAudioDevice");
     p_SDL_GetQueuedAudioSize = dlsym(g_sdl_lib, "SDL_GetQueuedAudioSize");
     p_SDL_ClearQueuedAudio = dlsym(g_sdl_lib, "SDL_ClearQueuedAudio");
@@ -661,7 +665,117 @@ Value* builtin_gfx_text(Value *arg) {
 
 /* ---- Audio Builtins ---- */
 
-/* audio_open of [freq, channels] — open audio device with queue mode */
+/* ================================================================
+ * AUDIO CHANNEL MIXER (Tidepool GAP-002 / GAP-003)
+ * ================================================================
+ * The device runs in callback mode; up to AUDIO_MAX_CHANNELS clips play
+ * concurrently, each with its own live volume and loop count (-1 =
+ * infinite — the callback rewinds, so looping no longer multiplies
+ * memory the way queue-mode audio_play_loop's N queued copies did).
+ * Channel state is mutated only under SDL_LockAudioDevice. The pool
+ * always succeeds: when full, the oldest finite channel is recycled
+ * (callers historically ignore audio_play's return value, so a refusal
+ * would be silent — see the fixed-pool rule). */
+#define AUDIO_MAX_CHANNELS 16
+typedef struct {
+    int16_t *samples;   /* owned; freed on recycle/clear/close */
+    int      count;
+    int      pos;
+    int      loops;     /* -1 infinite, else passes remaining */
+    double   volume;    /* 0.0 .. 4.0 */
+    int      active;
+    unsigned seq;       /* recycle-oldest ordering */
+} AudioChannel;
+static AudioChannel g_audio_ch[AUDIO_MAX_CHANNELS];
+static unsigned g_audio_seq = 0;
+
+static void audio_mix_callback(void *ud, uint8_t *stream, int len) {
+    (void)ud;
+    int16_t *out = (int16_t*)stream;
+    int n = len / 2;
+    memset(stream, 0, (size_t)len);
+    for (int c = 0; c < AUDIO_MAX_CHANNELS; c++) {
+        AudioChannel *ch = &g_audio_ch[c];
+        if (!ch->active || !ch->samples || ch->count <= 0) continue;
+        for (int i = 0; i < n; i++) {
+            if (ch->pos >= ch->count) {
+                if (ch->loops < 0) { ch->pos = 0; }
+                else if (ch->loops > 1) { ch->loops--; ch->pos = 0; }
+                else { ch->active = 0; break; }
+            }
+            int32_t v = (int32_t)out[i]
+                      + (int32_t)((double)ch->samples[ch->pos++] * ch->volume);
+            if (v > 32767) v = 32767;
+            if (v < -32768) v = -32768;
+            out[i] = (int16_t)v;
+        }
+    }
+}
+
+/* Convert a sample list (floats -1..1) to an owned int16 buffer.
+ * Returns NULL on bad shape or an over-64MB clip. */
+static int16_t* audio_convert_samples(Value *samples, int *out_n) {
+    if (!samples || samples->type != VAL_LIST) return NULL;
+    int n = samples->data.list.count;
+    if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
+    int16_t *buf = xmalloc_array(n, sizeof(int16_t));
+    for (int i = 0; i < n; i++) {
+        Value *v = samples->data.list.items[i];
+        double s = (v && v->type == VAL_NUM) ? v->data.num : 0;
+        if (s > 1.0) s = 1.0;
+        if (s < -1.0) s = -1.0;
+        buf[i] = (int16_t)(s * 32767);
+    }
+    *out_n = n;
+    return buf;
+}
+
+/* Install a clip on a free (else oldest-finite, else oldest) channel.
+ * Takes ownership of buf. Returns the 1-based channel id. */
+static int audio_install_channel(int16_t *buf, int n, int loops) {
+    int slot = -1;
+    p_SDL_LockAudioDevice(g_audio_device);
+    for (int c = 0; c < AUDIO_MAX_CHANNELS; c++)
+        if (!g_audio_ch[c].active) { slot = c; break; }
+    if (slot < 0) {
+        unsigned best = 0; int best_c = -1;
+        for (int c = 0; c < AUDIO_MAX_CHANNELS; c++) {
+            AudioChannel *ch = &g_audio_ch[c];
+            if (ch->loops >= 0 && (best_c < 0 || ch->seq < best)) {
+                best = ch->seq; best_c = c;
+            }
+        }
+        if (best_c < 0) {
+            for (int c = 0; c < AUDIO_MAX_CHANNELS; c++)
+                if (best_c < 0 || g_audio_ch[c].seq < best) {
+                    best = g_audio_ch[c].seq; best_c = c;
+                }
+        }
+        slot = best_c;
+    }
+    AudioChannel *ch = &g_audio_ch[slot];
+    if (ch->samples) free(ch->samples);
+    ch->samples = buf;
+    ch->count = n;
+    ch->pos = 0;
+    ch->loops = loops;
+    ch->volume = 1.0;
+    ch->active = 1;
+    ch->seq = ++g_audio_seq;
+    p_SDL_UnlockAudioDevice(g_audio_device);
+    return slot + 1;
+}
+
+static void audio_free_channels(int lock) {
+    if (lock && g_audio_device) p_SDL_LockAudioDevice(g_audio_device);
+    for (int c = 0; c < AUDIO_MAX_CHANNELS; c++) {
+        if (g_audio_ch[c].samples) free(g_audio_ch[c].samples);
+        memset(&g_audio_ch[c], 0, sizeof(AudioChannel));
+    }
+    if (lock && g_audio_device) p_SDL_UnlockAudioDevice(g_audio_device);
+}
+
+/* audio_open of [freq, channels] — open the mixer device (callback mode) */
 Value* builtin_audio_open(Value *arg) {
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }
     if (!p_SDL_OpenAudioDevice) {
@@ -675,7 +789,7 @@ Value* builtin_audio_open(Value *arg) {
     want.format = MY_SDL_AUDIO_S16LSB;
     want.channels = 1;
     want.samples = 1024;
-    want.callback = NULL;
+    want.callback = audio_mix_callback;
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         want.freq = (int)arg->data.list.items[0]->data.num;
@@ -694,8 +808,9 @@ Value* builtin_audio_open(Value *arg) {
 Value* builtin_audio_close(Value *arg) {
     (void)arg;
     if (g_audio_device) {
-        p_SDL_CloseAudioDevice(g_audio_device);
+        p_SDL_CloseAudioDevice(g_audio_device); /* joins the audio thread */
         g_audio_device = 0;
+        audio_free_channels(0);
     }
     return make_null();
 }
@@ -772,72 +887,93 @@ Value* builtin_audio_music_stop(Value *arg) {
 
 /* audio_play of samples — convert float list [-1,1] to int16, queue */
 Value* builtin_audio_play(Value *arg) {
-    if (!g_audio_device || !arg || arg->type != VAL_LIST) return make_null();
-    int n = arg->data.list.count;
-    if (n == 0) return make_null();
-    int16_t *buf = xmalloc_array(n, sizeof(int16_t));
-    for (int i = 0; i < n; i++) {
-        double s = (arg->data.list.items[i]->type == VAL_NUM) ? arg->data.list.items[i]->data.num : 0;
-        if (s > 1.0) s = 1.0;
-        if (s < -1.0) s = -1.0;
-        buf[i] = (int16_t)(s * 32767);
-    }
-    p_SDL_QueueAudio(g_audio_device, buf, n * sizeof(int16_t));
-    free(buf);
-    return make_null();
+    if (!g_audio_device) return make_num(0);
+    int n = 0;
+    int16_t *buf = audio_convert_samples(arg, &n);
+    if (!buf) return make_num(0);
+    return make_num(audio_install_channel(buf, n, 1));
 }
 
-/* audio_play_loop of [samples, loops] — queue `samples` `loops` times.
- * Finite count only: loops must be >= 1. Returns the total sample
- * count queued, or 0 on a bad arg / closed device. Saves N round-trips
- * through the per-frame poll-and-refill workaround for ambient loops.
- *
- * NOTE: loops == -1 (infinite) is intentionally rejected — infinite
- * playback needs a background refill mechanism and is a separate ship.
- */
+/* audio_play_loop of [samples, loops] — play `samples` `loops` times on
+ * one mixer channel. loops == -1 loops forever (the callback rewinds;
+ * no memory multiplication — Tidepool GAP-002). Returns the channel id,
+ * or 0 on a bad arg / closed device. */
 Value* builtin_audio_play_loop(Value *arg) {
     if (!g_audio_device || !arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return make_num(0);
     Value *samples = arg->data.list.items[0];
     Value *loops_v = arg->data.list.items[1];
-    if (samples->type != VAL_LIST || loops_v->type != VAL_NUM)
-        return make_num(0);
-    /* #152: NaN/>INT_MAX cast is UB; cap dodges gigabyte SDL queue copies. */
+    if (!loops_v || loops_v->type != VAL_NUM) return make_num(0);
+    /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
     double loops_d = loops_v->data.num;
-    if (isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0)
-        return make_num(0);
-    int loops = (int)loops_d;
-    int n = samples->data.list.count;
-    if (n == 0) return make_num(0);
-    if ((double)loops * (double)n * (double)sizeof(int16_t) > 256.0 * 1024.0 * 1024.0)
-        return make_num(0);
+    int loops;
+    if (loops_d == -1.0) loops = -1;
+    else if (isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0) return make_num(0);
+    else loops = (int)loops_d;
+    int n = 0;
+    int16_t *buf = audio_convert_samples(samples, &n);
+    if (!buf) return make_num(0);
+    return make_num(audio_install_channel(buf, n, loops));
+}
 
-    int16_t *buf = xmalloc_array(n, sizeof(int16_t));
-    for (int i = 0; i < n; i++) {
-        double s = (samples->data.list.items[i]->type == VAL_NUM)
-                   ? samples->data.list.items[i]->data.num : 0;
-        if (s > 1.0) s = 1.0;
-        if (s < -1.0) s = -1.0;
-        buf[i] = (int16_t)(s * 32767);
-    }
-    for (int k = 0; k < loops; k++) {
-        p_SDL_QueueAudio(g_audio_device, buf, n * sizeof(int16_t));
-    }
-    free(buf);
-    return make_num((double)n * (double)loops);
+/* audio_volume of [channel, vol] — live per-channel volume, 0.0..4.0
+ * (Tidepool GAP-003). Returns 1, or 0 on a bad channel/arg. */
+Value* builtin_audio_volume(Value *arg) {
+    if (!g_audio_device || !arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+        return make_num(0);
+    Value *ch_v = arg->data.list.items[0];
+    Value *vol_v = arg->data.list.items[1];
+    if (!ch_v || ch_v->type != VAL_NUM || !vol_v || vol_v->type != VAL_NUM)
+        return make_num(0);
+    int c = (int)ch_v->data.num - 1;
+    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);
+    double vol = vol_v->data.num;
+    if (isnan(vol) || vol < 0.0) vol = 0.0;
+    if (vol > 4.0) vol = 4.0;
+    p_SDL_LockAudioDevice(g_audio_device);
+    int ok = g_audio_ch[c].active;
+    if (ok) g_audio_ch[c].volume = vol;
+    p_SDL_UnlockAudioDevice(g_audio_device);
+    return make_num(ok);
+}
+
+/* audio_stop of channel — stop one mixer channel. Returns 1, or 0 on a
+ * bad/inactive channel. */
+Value* builtin_audio_stop(Value *arg) {
+    if (!g_audio_device || !arg || arg->type != VAL_NUM) return make_num(0);
+    int c = (int)arg->data.num - 1;
+    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);
+    p_SDL_LockAudioDevice(g_audio_device);
+    int ok = g_audio_ch[c].active;
+    g_audio_ch[c].active = 0;
+    p_SDL_UnlockAudioDevice(g_audio_device);
+    return make_num(ok);
 }
 
 /* audio_queue_size of null — bytes queued */
 Value* builtin_audio_queue_size(Value *arg) {
     (void)arg;
     if (!g_audio_device) return make_num(0);
-    return make_num(p_SDL_GetQueuedAudioSize(g_audio_device));
+    /* Mixer equivalent of the old queued-bytes count: unplayed bytes
+     * summed over active FINITE channels (infinite loops would be
+     * infinity; they are excluded so refill-style polls terminate). */
+    double bytes = 0;
+    p_SDL_LockAudioDevice(g_audio_device);
+    for (int c = 0; c < AUDIO_MAX_CHANNELS; c++) {
+        AudioChannel *ch = &g_audio_ch[c];
+        if (!ch->active || ch->loops < 0) continue;
+        double rem = (double)(ch->count - ch->pos)
+                   + (double)(ch->loops - 1) * (double)ch->count;
+        bytes += rem * (double)sizeof(int16_t);
+    }
+    p_SDL_UnlockAudioDevice(g_audio_device);
+    return make_num(bytes);
 }
 
-/* audio_clear of null — clear audio queue */
+/* audio_clear of null — stop all mixer channels and free their clips */
 Value* builtin_audio_clear(Value *arg) {
     (void)arg;
-    if (g_audio_device) p_SDL_ClearQueuedAudio(g_audio_device);
+    if (g_audio_device) audio_free_channels(1);
     return make_null();
 }
 
@@ -1307,6 +1443,8 @@ void register_gfx_builtins(Env *env) {
     /* Audio builtins */
     env_set_local_owned(env, "audio_open", make_builtin(builtin_audio_open));
     env_set_local_owned(env, "audio_close", make_builtin(builtin_audio_close));
+    env_set_local_owned(env, "audio_volume", make_builtin(builtin_audio_volume));
+    env_set_local_owned(env, "audio_stop", make_builtin(builtin_audio_stop));
     env_set_local_owned(env, "audio_pause", make_builtin(builtin_audio_pause));
     env_set_local_owned(env, "audio_play", make_builtin(builtin_audio_play));
     env_set_local_owned(env, "audio_play_loop", make_builtin(builtin_audio_play_loop));

@@ -3331,6 +3331,39 @@ Value* builtin_chr(Value *arg) {
     return make_str(buf);
 }
 
+/* ==== BUILTIN: hex ==== */
+/* hex of n → uppercase hex string, minimal digits ("0" for 0).
+ * hex of [n, nibbles] → zero-padded to at least `nibbles` digits.
+ * n must be a non-negative integer (exact up to 2^53); anything else
+ * raises — hex of a fraction or a negative has no single right answer
+ * and silently picking one is the #316/#368 tolerance class.
+ * Demanded by the emulator repos (DMG GAP-DMG-010): addresses/opcodes/
+ * registers all want hex diagnostics and every consumer hand-rolled it. */
+Value* builtin_hex(Value *arg) {
+    double num;
+    long long width = 0;
+    if (arg && arg->type == VAL_NUM) {
+        num = arg->data.num;
+    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
+               arg->data.list.items[0] && arg->data.list.items[0]->type == VAL_NUM &&
+               arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM) {
+        num = arg->data.list.items[0]->data.num;
+        width = (long long)arg->data.list.items[1]->data.num;
+    } else {
+        runtime_error(0, "hex requires a number or [number, nibbles]");
+        return make_null();
+    }
+    if (num < 0 || num != (double)(long long)num || num > 9007199254740992.0) {
+        runtime_error(0, "hex requires a non-negative integer (got %g)", num);
+        return make_null();
+    }
+    if (width < 0) width = 0;
+    if (width > 16) width = 16;
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%0*llX", (int)width, (unsigned long long)num);
+    return make_str(buf);
+}
+
 /* ==== BUILTIN: ord ==== */
 /* ord of s → first byte of s as integer (0..255), or -1 on empty / non-string */
 Value* builtin_ord(Value *arg) {
@@ -3554,7 +3587,7 @@ static const char *SANDBOX_ALLOW[] = {
     /* dict */
     "dict_set", "dict_remove", "has_key", "keys", "values",
     /* string + regex (pure) */
-    "char_at", "chr", "ends_with", "join", "ord", "split", "starts_with",
+    "char_at", "chr", "ends_with", "hex", "join", "ord", "split", "starts_with",
     "str", "str_lower", "str_replace", "str_upper", "substr", "trim",
     "regex_find", "regex_match", "regex_replace",
     /* buffers + text builders (in-memory only) */
@@ -5257,6 +5290,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "tokenize_with_names", make_builtin(builtin_tokenize_with_names));
     env_set_local_owned(env, "token_name", make_builtin(builtin_token_name));
     env_set_local_owned(env, "chr", make_builtin(builtin_chr));
+    env_set_local_owned(env, "hex", make_builtin(builtin_hex));
     env_set_local_owned(env, "ord", make_builtin(builtin_ord));
 #if !EIGENSCRIPT_FREESTANDING
     env_set_local_owned(env, "random_hex", make_builtin(builtin_random_hex));
