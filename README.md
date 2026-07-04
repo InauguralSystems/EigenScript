@@ -17,7 +17,7 @@
 
 A complete, standalone programming language with native observer semantics,
 real concurrency, a 44-widget GUI toolkit, embedded database, tensor math,
-and a 49-module standard library (14 STEM) — all in a single zero-dependency C binary.
+and a 51-module standard library (14 STEM) — all in a single zero-dependency C binary.
 
 ## Try it in your browser
 
@@ -256,6 +256,10 @@ Pure EigenScript libraries under `lib/`:
 | `lib/geometry.eigs` | Points, vectors, triangles, polygons, convex hull, circles, transforms |
 | `lib/lab.eigs` | Experiment management, data collection with observer feedback, CSV export |
 | `lib/audio.eigs` | `play_note`, `note_freq`, `play_chord`, drum synthesis |
+| `lib/checksum.eigs` | CRC-32, Adler-32, byte sums over strings or buffers |
+| `lib/bcd.eigs` | Packed BCD codec (RTC registers, DAA), loud on invalid nibbles |
+| `lib/harness.eigs` | Count-and-continue test scaffolding with grep-able pass markers |
+| `lib/observer_slots.eigs` | Named observer slots for watching dynamic collections |
 | `lib/eigen.eigs` | Meta-circular interpreter — full language parity, debug hooks |
 
 ```eigenscript

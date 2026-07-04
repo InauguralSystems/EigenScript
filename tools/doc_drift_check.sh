@@ -30,4 +30,12 @@ if ! grep -q "^## \[$v\]" CHANGELOG.md; then
     drift=1
 fi
 
+# 4. README's "N-module standard library" headline equals its own table.
+rows=$(grep -c '^| `lib/' README.md)
+claim=$(grep -oE '[0-9]+-module standard library' README.md | grep -oE '^[0-9]+')
+if [ -n "$claim" ] && [ "$claim" != "$rows" ]; then
+    echo "DRIFT: README claims ${claim}-module stdlib but its table has ${rows} rows"
+    drift=1
+fi
+
 exit $drift
