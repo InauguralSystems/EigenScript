@@ -165,8 +165,18 @@ static void collect_refs(ASTNode *node, LintContext *ctx) {
             collect_refs(node->data.ret.expr, ctx);
             break;
         case AST_BLOCK:
+        case AST_UNOBSERVED:   /* F-DYN-4: same block shape; refs inside
+                                * `unobserved:` count as uses */
             for (int i = 0; i < node->data.block.count; i++)
                 collect_refs(node->data.block.stmts[i], ctx);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            collect_refs(node->data.list_pattern_assign.expr, ctx);
+            break;
+        case AST_SLICE:
+            collect_refs(node->data.slice.target, ctx);
+            collect_refs(node->data.slice.start, ctx);
+            collect_refs(node->data.slice.end, ctx);
             break;
         case AST_LIST:
             for (int i = 0; i < node->data.list.count; i++)
@@ -267,6 +277,7 @@ static void collect_assigns(ASTNode *node, LintContext *ctx) {
                 collect_assigns(node->data.loop.body[i], ctx);
             break;
         case AST_BLOCK:
+        case AST_UNOBSERVED:
             for (int i = 0; i < node->data.block.count; i++)
                 collect_assigns(node->data.block.stmts[i], ctx);
             break;
@@ -344,6 +355,7 @@ static void collect_loop_assign_names(ASTNode *n, const char *seen[], int cap, i
                 collect_loop_assign_names(n->data.cond.else_body[i], seen, cap, count);
             break;
         case AST_BLOCK:
+        case AST_UNOBSERVED:
             for (int i = 0; i < n->data.block.count; i++)
                 collect_loop_assign_names(n->data.block.stmts[i], seen, cap, count);
             break;

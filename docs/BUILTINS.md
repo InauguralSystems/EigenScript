@@ -14,7 +14,7 @@ streaming subprocess I/O (`proc_spawn`, `proc_write`, `proc_read_line`,
 `store_count`, `store_update`, `store_collections`, `store_drop`),
 observer tuning (`set_observer_thresholds`, `get_observer_thresholds`),
 audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
-`audio_play_loop`, `audio_queue_size`, `audio_clear`, `audio_sine`,
+`audio_play_loop`, `audio_volume`, `audio_stop`, `audio_queue_size`, `audio_clear`, `audio_sine`,
 `audio_saw`, `audio_sweep`,
 `audio_square`, `audio_noise`, `audio_mix`, `audio_gain`,
 `audio_envelope`), and `free_val`/`free_ast` for memory management.
@@ -52,6 +52,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `get_at` | `get_at of [list, index]` | Get element at index |
 | `copy_into` | `copy_into of [dest, src, offset]` | Copy src elements into dest starting at offset |
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
+| `hex` | `hex of n` or `hex of [n, nibbles]` | Uppercase hex string of a non-negative integer, zero-padded to `nibbles` (never truncated). Raises on negatives, fractions, non-numbers |
 | `sort` | `sort of list` | Sort an all-number or all-string list in-place (numeric / lexicographic). Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
@@ -569,4 +570,7 @@ strings).
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep with continuous phase. `waveform`: 0=sine, 1=sawtooth. Returns sample list. |
-| `audio_play_loop` | `audio_play_loop of [samples, loops]` | Queue `samples` `loops` times in one call (finite count, `loops >= 1`). Returns total samples queued (`len of samples * loops`), or `0` on bad args / closed device. Use instead of polling `audio_queue_size` to refill an ambient loop each frame. `loops == -1` (infinite) is reserved for a future ship and currently returns `0`. |
+| `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device |
+| `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. |
+| `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. |
+| `audio_stop` | `audio_stop of channel` | Stop one mixer channel. Returns `1`, or `0` on a bad/inactive channel. |
