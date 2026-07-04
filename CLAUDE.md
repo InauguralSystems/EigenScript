@@ -126,10 +126,12 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.22.0** (2026-06-29) — `report_value` value-signal
-  observer (#294) + a full threading-hardening pass (spawn/channel leak floor
-  4→0, #296 worker-JIT SEGV, threaded cycle-GC, #297 parallel-exec data races;
-  TSan-clean). Unreleased work on `main`: see CHANGELOG.md `[Unreleased]`. Full
+- **Latest release: v0.24.0** (2026-07-03) — the review-cascade release:
+  `sort` raises on non-scalar lists (#369), parens always mean one argument
+  (#355), module write boundary (#374), `hex` builtin + 16-channel audio
+  mixer (#375), loud parse caps (#354), extension raises (#356), PPU twin
+  fixes, frameless leaf-accessor calls (#367). All 10 consumers bumped same
+  day. Unreleased work on `main`: see CHANGELOG.md `[Unreleased]`. Full
   version history: **CHANGELOG.md** (don't re-narrate it here). Roadmap / open
   items: **ROADMAP.md**.
 - **Design phase:** the VM tier is the deliberate correctness-first phase —
