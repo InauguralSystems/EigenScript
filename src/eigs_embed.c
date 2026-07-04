@@ -281,6 +281,12 @@ void eigs_trace_record_nondet(const char *name, EigsValue *v) {
     if (g_trace_enabled) trace_nondet_value(name, (Value *)v);
 }
 
+/* ---- Async abort (see eigs_embed.h) -------------------------------- */
+
+void eigs_set_abort_flag(volatile int *flag) {
+    g_vm_abort_flag = flag;
+}
+
 /* ---- FFI ---------------------------------------------------------- */
 
 void eigs_register_function(const char *name, EigsHostFn fn) {

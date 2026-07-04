@@ -4,6 +4,21 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Async abort seam for embedders** (`eigs_set_abort_flag`). The host
+  registers a flag it may set from an interrupt/signal context (SIGINT
+  handler, timeout timer, bare-metal keyboard IRQ); the interpreter polls
+  it on every loop back-edge and raises an ordinary `aborted` runtime
+  error, consuming the flag — one set aborts exactly one eval and the
+  state stays usable. Setting the flag is a plain store into the host's
+  own int (async-signal-safe; the runtime only reads). Unregistered cost
+  is one predicted-not-taken test per back-edge. Documented caveats:
+  catchable like any runtime error; JIT/OSR-native loops don't poll
+  (freestanding compiles the JIT out, so bare-metal coverage is total).
+  Motivated by EigenOS: ctrl-c must break a runaway eval at the metal
+  REPL instead of owning the machine. Covered by embed_smoke (pre-set +
+  mid-eval interval-timer cases) and docs/EMBEDDING.md.
+
 ### Fixed
 - **Hex integer literals are lexed explicitly, not delegated to `strtod`.**
   `0xFF` previously parsed only because glibc's C99 `strtod` accepts hex —

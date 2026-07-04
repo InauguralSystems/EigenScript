@@ -393,6 +393,11 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env);
 /* Sandbox loop-iteration cap (0 = default 100M). Set by builtin_sandbox_run. */
 extern int g_sandbox_loop_max;
 
+/* Async abort seam: embedder-registered flag polled on every interpreter
+ * loop back-edge (see the definition in vm.c and eigs_set_abort_flag in
+ * eigs_embed.h). NULL = unregistered. */
+extern volatile int *g_vm_abort_flag;
+
 /* #292: sandbox allocation budget. Set by builtin_sandbox_run; size-controlled
  * allocators call sandbox_charge() before allocating. Returns 1 if the charge
  * fits (and commits it), 0 if it would exceed the budget (after raising a

@@ -98,6 +98,26 @@ void        eigs_clear_error(void);
 The returned message pointer is owned by the thread state — copy it if
 you need to keep it past the next API call.
 
+## Aborting a running eval
+
+```c
+void eigs_set_abort_flag(volatile int *flag);   /* NULL unregisters */
+```
+
+`eigs_eval_string` is synchronous, so a runaway `loop while 1:` would
+otherwise own the thread. Register a flag once; setting it from an
+interrupt/signal context (a SIGINT handler, a timeout timer, a keyboard
+IRQ on bare metal) makes the interpreter raise an ordinary runtime error
+(`aborted`) at the next loop back-edge. The flag is consumed when
+honored — one set aborts exactly one eval — and the state stays usable
+afterward. The host side is async-signal-safe by construction: it is a
+plain store into the host's own `int`; the runtime only reads it.
+Caveats: the error is catchable like any runtime error (a `try` around
+the loop observes it — set the flag again if needed), and JIT/OSR-native
+hot loops don't poll (the abort lands at the next interpreted back-edge;
+run `EIGS_JIT_OFF=1` for hard timeouts — the freestanding profile
+compiles the JIT out, so coverage there is total).
+
 ## Globals
 
 ```c
