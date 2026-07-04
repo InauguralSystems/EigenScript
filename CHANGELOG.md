@@ -4,6 +4,10 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.24.0] - 2026-07-03
+
 ### Performance
 - **Frameless leaf-accessor calls (#366).** Function chunks whose body is a
   single pure expression over their params — field gets, list/buffer index
