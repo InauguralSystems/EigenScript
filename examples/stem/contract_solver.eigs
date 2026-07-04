@@ -1,0 +1,72 @@
+# examples/stem/contract_solver.eigs
+# A real iterative solver, hardened with trajectory contracts (#395).
+#
+# Newton's method for a square root is the textbook iterative solver:
+#   x_{k+1} = (x_k + N/x_k) / 2   ->   x_k -> sqrt(N)
+# It converges — until it doesn't: a sign slip or a bad relaxation factor turns
+# the same loop into a runaway. A static type would call every line here `num`
+# and notice nothing. The observer already classifies the trajectory on every
+# assignment; lib/contract.eigs turns that classification into an assertion, so
+# a divergent solver fails LOUDLY instead of returning a confident wrong number.
+
+load_file of "lib/contract.eigs"
+load_file of "lib/math.eigs"
+
+print of "=== Contract-hardened iterative solvers ==="
+print of ""
+
+# ---- Solver 1: Newton's method for sqrt(2) ----
+# One-arg step function (the contract drives it into an observed local so the
+# trajectory actually accumulates — see lib/contract.eigs on WHY the step fn).
+define newton_sqrt2(x) as:
+    return (x + 2.0 / x) / 2.0
+
+print of "Newton sqrt(2):"
+# expect_converging: value channel must settle within 50 observations.
+root is expect_converging of [2.0, newton_sqrt2, 50, "Newton sqrt(2) must converge"]
+# expect_monotone: the estimate approaches from one side — no oscillation.
+root is expect_monotone of [2.0, newton_sqrt2, 50, "Newton sqrt(2) is monotone"]
+# Convergence is not correctness: ensure pins the actual target.
+resid is (root * root) - 2.0
+resid is abs of resid
+ensure of [resid < 0.000000001, "residual must vanish"]
+print of ("  root  = " + (str of root))
+print of ("  resid = " + (str of resid) + "  (contract: converging + monotone + residual)")
+print of ""
+
+# ---- Solver 2: fixed-point relaxation x = cos(x) (Banach iteration) ----
+# cos is a contraction on [0,1]; the Dottie-number fixed point ~0.739085.
+define cos_fixed(x) as:
+    return cos of x
+
+# Contract-convergence settles to the observer's step deadband (dh_zero=1e-3),
+# not arbitrary precision: cos converges LINEARLY, so its residual rests near
+# that scale (Newton reached machine-eps above only because it is quadratic).
+print of "Fixed point x = cos(x):"
+dottie is expect_converging of [1.0, cos_fixed, 80, "cos iteration must converge"]
+fp_resid is abs of ((cos of dottie) - dottie)
+ensure of [fp_resid < 0.001, "must rest at the fixed point (deadband scale)"]
+print of ("  x     = " + (str of dottie))
+print of ("  resid = " + (str of fp_resid) + "  (contract: converging + fixed-point residual)")
+print of ""
+
+# ---- The value the contract adds: catching a divergent solver ----
+# A relaxation factor > 2 turns the same fixed-point search into a runaway. The
+# ENTROPY channel is fooled — a monotonically exploding value reads "converged"
+# (the #294 blind spot) — so a naive `report`-based guard would pass it. The
+# contract reads the VALUE channel and catches it.
+define bad_relax(x) as:
+    return x + 2.5 * ((cos of x) - x)
+
+print of "Over-relaxed (factor 2.5) — expected to be REJECTED:"
+caught is 0
+try:
+    x is expect_converging of [1.0, bad_relax, 80, "over-relaxation diverges"]
+catch err:
+    caught is 1
+    print of ("  REJECTED: " + err)
+ensure of [caught == 1, "the divergent solver must be caught"]
+print of ""
+
+print of "All solvers converged under contract; the divergent one was rejected."
+print of "CONTRACTS HELD"

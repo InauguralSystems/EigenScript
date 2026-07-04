@@ -228,6 +228,81 @@ settling toward `0`), great. When they don't (a value climbing toward the
 ridge at `1`), the observer is telling you the truth about itself, and the
 goal was never something it could see.
 
+## Contracts: convergence as an assertion
+
+A static type proves *shape* — `num`, `list`, `str`. It cannot state *"this
+solver converges"* or *"this residual shrinks without oscillating."* Those are
+properties of a **trajectory**, and the observer already classifies them on
+every assignment, for free. `lib/contract.eigs` turns that classification into a
+machine-checked assertion — the affirmative answer to "what replaces static
+types here."
+
+```eigenscript
+load_file of "lib/contract.eigs"
+
+define newton_sqrt2(x) as:
+    return (x + 2.0 / x) / 2.0
+
+root is expect_converging of [2.0, newton_sqrt2, 50, "must converge"]
+root is expect_monotone   of [2.0, newton_sqrt2, 50, "no overshoot"]
+ensure of [(abs of ((root * root) - 2.0)) < 1e-9, "residual must vanish"]
+```
+
+Five surfaces:
+
+| Contract | Asserts | Channel |
+|---|---|---|
+| `require of [cond, msg]` | precondition holds | plain predicate |
+| `ensure of [cond, msg]` | postcondition holds | plain predicate |
+| `expect_converging of [x0, step_fn, max_obs, msg]` | trajectory settles within budget | value |
+| `expect_monotone of [x0, step_fn, max_obs, msg]` | no sign-flipping steps | value |
+| `invariant_stable of [x0, step_fn, max_obs, msg]` | value never begins moving | value |
+
+Three things the observer's own semantics force on the design — and each is the
+point, not an accident:
+
+- **The trajectory contracts take a *step function*, not a value.** The
+  observer's history lives in the binding slot it was written to (binding
+  identity), so a value handed to a function arrives as a fresh, single-sample
+  slot — its past does not travel. A contract therefore cannot inspect an
+  already-built value; it must *drive* the recurrence in its own scope. The
+  cross-scope gap is filed as [#421](https://github.com/InauguralSystems/EigenScript/issues/421),
+  not papered over.
+
+- **Convergence is detected on the value channel, not entropy.** A
+  monotonically *exploding* value has falling-then-flat entropy, so `report`
+  labels a runaway solver `converged` (measured: `grow` = `x*1.5` for 40 steps
+  → `report` = `converged`). Only `report_value` keeps a converging solver and a
+  diverging one apart — same run reads `moving`. This is the [`report` vs
+  `report_value`](#two-signals-entropy-vs-value-report-vs-report_value)
+  distinction made load-bearing: a contract the entropy signal would silently
+  pass.
+
+- **Contract-convergence means "settled to the step deadband" (`dh_zero`,
+  default `1e-3`), not arbitrary precision.** Newton reaches machine-epsilon
+  because it converges *quadratically*; a linearly-convergent fixed point rests
+  near the deadband scale. Convergence is not correctness — pair it with an
+  `ensure` on the final residual to pin the actual target.
+
+And one silent hole closed loudly: the value channel carries no trajectory for a
+non-numeric value, so a contract over a *vector* accumulator would classify
+`equilibrium` forever and pass as a no-op. The contracts refuse a non-scalar
+accumulator with a raise — on the seed *and* on every step's output — and reject
+a `max_obs` too small to fill the observer window. Feed them the scalar residual
+you actually want to constrain. A worked example lives in
+`examples/stem/contract_solver.eigs`.
+
+What the contracts inherit and cannot fix — the value channel's resolution floor
+([#422](https://github.com/InauguralSystems/EigenScript/issues/422)). Because
+it classifies the *relative* step `(v-last)/(1+|v|)` against a `1e-3` deadband,
+a runaway whose step-to-magnitude ratio vanishes (additive/polynomial growth,
+`x -> x + c`) can read `converged`, and an oscillation below the deadband is
+invisible to the flip counter. Exponential divergence and supra-deadband
+oscillation *are* caught; for the rest, bound absolute magnitude with an
+explicit `ensure of [(abs of x) < LIMIT]`. The contracts document this and file
+it rather than hiding the instrument's edge behind an ad-hoc heuristic — the
+forcing-function model: a gap surfaces upstream instead of being papered over.
+
 ## Rough edges (current implementation)
 
 Honest notes about where the code, as of this writing, does not yet fully

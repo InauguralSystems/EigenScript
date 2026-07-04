@@ -1,0 +1,122 @@
+# Trajectory contracts (lib/contract.eigs, #395) — pass AND throw paths for
+# require/ensure/expect_converging/expect_monotone/invariant_stable, plus the
+# scalar-guard silent-hole. All-pass prints CONTRACT_ALL_PASS.
+load_file of "lib/contract.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+# ---- deterministic one-arg step functions ----
+define halve(x) as:            # monotone decreasing -> 0 (converges)
+    return x / 2.0
+define newton2(x) as:          # Newton iteration for sqrt(2), monotone from 2.0
+    return (x + 2.0 / x) / 2.0
+define grow(x) as:             # monotone increasing (diverges)
+    return x * 1.5
+define flip(x) as:             # sign-flipping, shrinking (oscillates)
+    return 0 - (x * 0.9)
+define hold(x) as:             # constant (stable)
+    return x
+define creep(x) as:            # slow multiplicative runaway (0.5%/step)
+    return x * 1.005
+define to_list(x) as:          # returns a non-num after the seed
+    return [x]
+
+print of "=== Contracts (lib/contract.eigs) ==="
+
+# ---- require / ensure: plain predicates ----
+check of ["require truthy passes", require of [1, "n/a"], 1]
+check of ["ensure truthy passes", ensure of [5 > 2, "n/a"], 1]
+
+caught is 0
+try:
+    x is require of [0, "must be positive"]
+catch err:
+    caught is 1
+check of ["require falsy throws", caught, 1]
+
+caught is 0
+try:
+    x is ensure of [3 > 9, "postcond"]
+catch err:
+    caught is 1
+check of ["ensure falsy throws", caught, 1]
+
+# ---- expect_converging ----
+r is expect_converging of [1.0, halve, 60, "halving must converge"]
+check of ["expect_converging halve -> settled", r < 0.01, 1]
+
+r is expect_converging of [2.0, newton2, 60, "newton must converge"]
+check of ["expect_converging newton -> sqrt(2)", (r > 1.41) and (r < 1.42), 1]
+
+caught is 0
+try:
+    x is expect_converging of [1.0, grow, 40, "diverges"]
+catch err:
+    caught is 1
+check of ["expect_converging on divergent throws", caught, 1]
+
+# ---- expect_monotone (value channel, #294) ----
+r is expect_monotone of [64.0, halve, 60, "halving is monotone"]
+check of ["expect_monotone halve passes", r < 1.0, 1]
+
+caught is 0
+try:
+    x is expect_monotone of [1.0, flip, 40, "sign-flips"]
+catch err:
+    caught is 1
+check of ["expect_monotone catches oscillation", caught, 1]
+
+# ---- invariant_stable ----
+r is invariant_stable of [7.0, hold, 40, "constant holds"]
+check of ["invariant_stable on constant passes", r, 7.0]
+
+caught is 0
+try:
+    x is invariant_stable of [1.0, grow, 40, "moves"]
+catch err:
+    caught is 1
+check of ["invariant_stable catches motion", caught, 1]
+
+# ---- scalar guard: a vector accumulator must fail LOUDLY, not silently pass ----
+caught is 0
+try:
+    x is expect_monotone of [[1, 2, 3], hold, 10, "vector state"]
+catch err:
+    caught is 1
+check of ["non-scalar seed refused", caught, 1]
+
+# guard fires on a step that turns non-num MID-RUN, not just the seed
+caught is 0
+try:
+    x is expect_converging of [1.0, to_list, 20, "goes non-num"]
+catch err:
+    caught is 1
+check of ["non-scalar mid-run step refused", caught, 1]
+
+# a budget too small to fill the observer window must raise, not vacuously pass
+caught is 0
+try:
+    x is expect_converging of [1.0, grow, 5, "tiny budget"]
+catch err:
+    caught is 1
+check of ["sub-window budget rejected", caught, 1]
+
+# a slow multiplicative runaway never converges — must throw (not read 'stable')
+caught is 0
+try:
+    x is expect_converging of [1.0, creep, 40, "0.5%/step runaway"]
+catch err:
+    caught is 1
+check of ["slow multiplicative runaway rejected", caught, 1]
+
+if fails == 0:
+    print of "CONTRACT_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "contract tests failed"

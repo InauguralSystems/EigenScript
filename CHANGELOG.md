@@ -4,7 +4,27 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-(nothing yet)
+### Added
+- **`lib/contract.eigs`** — trajectory contracts (#395): `require`/`ensure`
+  (plain predicates) plus the observer-native differentiators
+  `expect_converging`, `expect_monotone`, and `invariant_stable`. Each drives a
+  seed through a one-arg step function into an observed local and asserts a
+  property of that trajectory — convergence/monotonicity/stability — that no
+  type grammar can state. Two observer truths are baked in: convergence is read
+  on the **value channel**, because a monotonically exploding value reads
+  `converged` on the entropy channel (the #294 blind spot — a contract `report`
+  would silently pass); and a non-scalar accumulator is refused loudly rather
+  than classified `equilibrium` forever as a silent no-op. Worked solver:
+  `examples/stem/contract_solver.eigs`; new "Contracts" section in
+  docs/OBSERVER.md; suite [50j]. An adversarial verification sweep hardened the
+  module: the scalar guard fires on every step's output (not just the seed), a
+  `max_obs` below the observer window is rejected rather than vacuously passing,
+  and `expect_converging` requires a genuine "converged" verdict instead of
+  accepting a "stable" slow-runaway. Surfaced two upstream gaps rather than
+  working around them: #421 (the observer slot is binding-identity, so a value's
+  history can't be inspected by a function it is passed to) and #422 (the value
+  channel's relative-delta normalization is blind to sub-exponential divergence
+  and sub-deadband oscillation).
 
 ## [0.26.0] - 2026-07-04
 
