@@ -1622,9 +1622,9 @@ echo ""
 
 # [50b] Hex integer literals (lexed, not strtod — the freestanding profile
 # has no hex strtod path, so this form must never regress to delegation)
-echo "[50b] Hex Integer Literals (14 checks + 3 rejects)"
+echo "[50b] Hex Integer Literals (19 checks + 3 rejects)"
 check_eigs_suite "hex literals: 0x/0X forms, case, adjacency, arithmetic" \
-    "test_hex_literals.eigs" "HEX_LITERALS_ALL_PASS" 14
+    "test_hex_literals.eigs" "HEX_LITERALS_ALL_PASS" 19
 # Hex-float forms and a bare prefix must be LOUD parse errors on every
 # profile — strtod must never see a hex prefix (glibc would quietly
 # parse 0x1p4 / 0x.8 while the freestanding mini_strtod cannot).

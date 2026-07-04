@@ -4,7 +4,15 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-(nothing yet)
+### Fixed
+- **`num of` hex strings share the lexer's contract.** The string→number
+  builtin delegated wholesale to `strtod`, so `num of "0x.8"` read 0.5
+  and `num of "0x1p4"` read 16 hosted while the freestanding profile
+  read 0 — the #378 divergence surviving through the string path. Hex
+  strings now convert in the builtin itself on every profile: integer
+  digits, stop at the first non-hex character ("0xFFzz" → 255,
+  "0x1p4" → 1), prefix with no hex digit → 0 like any non-numeric
+  string. Suite [50b] gains five conversion checks.
 
 ## [0.25.0] - 2026-07-04
 

@@ -251,15 +251,22 @@ Ada was born in 1815
 sum = 6
 ```
 
-Convert explicitly with `str of n` and `num of s`:
+Convert explicitly with `str of n` and `num of s`. `num of` accepts
+decimal and hex-integer strings (hex converts identically on every
+profile and stops at the first non-hex character); a string with no
+leading number converts to `0`:
 
 ```eigenscript
 print of ("value is " + (str of 42))
 print of ((num of "10") + 5)
+print of (num of "0xFF")
+print of (num of "zebra")
 ```
 ```output
 value is 42
 15
+255
+0
 ```
 
 ## Booleans, comparison, and logic

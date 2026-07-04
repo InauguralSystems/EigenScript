@@ -33,4 +33,16 @@ check of ["hex feeds hex-of round trip", hex of 0xBEEF, "BEEF"]
 xs is [0xA, 0xB]
 check of ["list of hex literals", xs[1], 11]
 
+# num-of string conversion shares the lexer's contract (#378 through the
+# string path): hex integers convert on every profile, conversion stops
+# at the first non-hex character (so "0x1p4" is 1 — the p is just a
+# stray char, exactly how the lexer splits the same source), and a
+# prefix with no hex digit converts to 0 like any non-numeric string —
+# strtod never sees a hex prefix here either.
+check of ["num of hex string", num of "0xFF", 255]
+check of ["num of negative hex string", num of "-0x10", -16]
+check of ["num of stops at non-hex", num of "0xFFzz", 255]
+check of ["num of hex-float string is 0", num of "0x.8", 0]
+check of ["num of stops at p (no exponent semantics)", num of "0x1p4", 1]
+
 print of "HEX_LITERALS_ALL_PASS"

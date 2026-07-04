@@ -454,7 +454,32 @@ Value* builtin_str(Value *arg) {
 Value* builtin_num(Value *arg) {
     if (!arg) return make_num(0);
     if (arg->type == VAL_NUM) return arg;
-    if (arg->type == VAL_STR) return make_num(strtod(arg->data.str, NULL));
+    if (arg->type == VAL_STR) {
+        /* Hex strings are converted HERE, never by strtod — same contract
+         * as the lexer (#378/#381): glibc's strtod reads hex floats
+         * ("0x.8" -> 0.5, "0x1p4" -> 16) while the freestanding
+         * mini_strtod reads 0, a silent profile divergence through the
+         * string path. Hex is integer-only; conversion stops at the
+         * first non-hex-digit (matching strtod's partial-parse shape,
+         * "12abc" -> 12); a prefix with no hex digit converts to 0
+         * like any other non-numeric string. */
+        const char *p = arg->data.str;
+        while (*p == ' ' || *p == '\t') p++;
+        int neg = 0;
+        if (*p == '+' || *p == '-') { neg = (*p == '-'); p++; }
+        if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+            if (!isxdigit((unsigned char)p[2])) return make_num(0);
+            double v = 0;
+            p += 2;
+            while (isxdigit((unsigned char)*p)) {
+                int d = *p <= '9' ? *p - '0' : (*p | 32) - 'a' + 10;
+                v = v * 16 + d;
+                p++;
+            }
+            return make_num(neg ? -v : v);
+        }
+        return make_num(strtod(arg->data.str, NULL));
+    }
     if (arg->type == VAL_NULL) return make_num(0);
     return make_num(0);
 }
