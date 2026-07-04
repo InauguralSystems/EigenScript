@@ -1,0 +1,42 @@
+# Checksum library — pinned against the standard published vectors
+# (CRC-32 check value, zlib's Adler-32 examples) plus buffer/string
+# equivalence. Self-asserting; all-pass prints CHECKSUM_ALL_PASS.
+load_file of "lib/checksum.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== CHECKSUMS (lib/checksum.eigs) ==="
+
+# the canonical CRC-32 check value
+check of ["crc32 of 123456789", crc32 of "123456789", 0xCBF43926]
+check of ["crc32 of empty", crc32 of "", 0]
+check of ["crc32 of single byte", crc32 of "a", 0xE8B7BE43]
+
+# Adler-32: zlib's Wikipedia example + identities
+check of ["adler32 of Wikipedia", adler32 of "Wikipedia", 0x11E60398]
+check of ["adler32 of empty is 1", adler32 of "", 1]
+
+# buffer input must equal string input byte-for-byte
+b is buffer of 9
+i is 0
+loop while i < 9:
+    buf_set of [b, i, ord of (char_at of ["123456789", i])]
+    i is i + 1
+check of ["crc32 buffer == string", crc32 of b, crc32 of "123456789"]
+check of ["adler32 buffer == string", adler32 of b, adler32 of "123456789"]
+
+# sum8: bytewise mod-256
+check of ["sum8 of abc", sum8 of "abc", (97 + 98 + 99) % 256]
+check of ["sum8 of empty", sum8 of "", 0]
+
+if fails == 0:
+    print of "CHECKSUM_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "checksum tests failed"

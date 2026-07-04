@@ -33,9 +33,11 @@ assert_eq of [bit_and of [unlocked, 2], 0, "bitmask bit 1 clear"]
 assert_eq of [bit_and of [unlocked, 4], 4, "bitmask bit 2 set"]
 
 # Shift amount masking — out-of-range shifts are defined, not UB
-assert_eq of [bit_shl of [1, 32], 1, "SHL 1 << 32 masks to << 0"]
-assert_eq of [bit_shl of [1, 33], 2, "SHL 1 << 33 masks to << 1"]
-assert_eq of [bit_shr of [8, 35], 1, "SHR 8 >> 35 masks to >> 3"]
+# int64 semantics (aligned with the infix operators): counts are real
+# up to 63 — the old int32-era &31 masking (1<<32 == 1) is gone.
+assert_eq of [bit_shl of [1, 32], 4294967296, "SHL 1 << 32 is 2^32 (int64, no 31-masking)"]
+assert_eq of [bit_shl of [1, 33], 8589934592, "SHL 1 << 33 is 2^33"]
+assert_eq of [bit_shr of [8, 35], 0, "SHR 8 >> 35 shifts out to 0"]
 
 # Type safety — non-numeric args raise (strict error model, not UB, not 0).
 # Builtins:
@@ -88,5 +90,24 @@ try:
 catch err:
     caught_op_not is err
 assert_true of [contains of [caught_op_not, "cannot apply"], "~ null operand raises"]
+
+# --- int64 alignment: the bit_* builtins ARE the infix operators ---
+# (they used to be a divergent int32 implementation: UB past 2^31 and
+# sign-extended results — 0xEDB88320, CRC-32's polynomial, was the
+# first casualty. Every pair below asserts builtin == infix on the
+# same operands, including the high-bit range.)
+assert_eq of [bit_and of [0xEDB88320, 0xFFFFFFFF], 0xEDB88320 & 0xFFFFFFFF, "AND matches infix at 2^31..2^32"]
+assert_eq of [bit_and of [0xEDB88320, 0xFFFFFFFF], 0xEDB88320, "AND identity holds unsigned"]
+assert_eq of [bit_xor of [0xEDB88320, 0xEDB88320], 0, "XOR self-cancels in high range"]
+assert_eq of [bit_xor of [0xEDB88320, 0], 0xEDB88320, "XOR zero is identity, unsigned result"]
+assert_eq of [bit_or of [0x80000000, 0x1], 0x80000001, "OR keeps bit 31 unsigned"]
+assert_eq of [bit_shr of [0xEDB88320, 1], 0x76DC4190, "SHR is logical on non-negative operands"]
+assert_eq of [bit_shr of [0xEDB88320, 1], 0xEDB88320 >> 1, "SHR matches infix"]
+assert_eq of [bit_shl of [0x40000000, 1], 0x80000000, "SHL crosses bit 31 without sign-extending"]
+assert_eq of [bit_shl of [1, 40], 1 << 40, "SHL matches infix past 32 bits"]
+assert_eq of [bit_and of [bit_not of 0, 0xFFFFFFFF], 0xFFFFFFFF, "NOT of 0 masked to u32 is all-ones"]
+# one CRC-32 update step, the motivating consumer shape
+crc_step is bit_xor of [bit_shr of [0xFFFFFFFF, 8], 0xEDB88320]
+assert_eq of [crc_step, (0xFFFFFFFF >> 8) ^ 0xEDB88320, "CRC step: builtin chain == infix chain"]
 
 test_summary of null

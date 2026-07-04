@@ -199,6 +199,17 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `l2_norm` | `l2_norm of tensor` | Euclidean norm |
 | `scale` | `scale of [tensor, scalar]` | Scalar multiplication |
 
+### lib/datetime.eigs — Dates, Times, Durations
+
+Two halves. The CLOCK functions (`now`, `today`, `timestamp`,
+`format_date`, `sleep_ms`) shell out to system `date` — host profiles
+only. The CIVIL-MATH functions are pure and run on every profile:
+`days_from_civil of [y, m, d]` / `civil_from_days of days` (day 0 =
+1970-01-01, proleptic Gregorian), `weekday_from_days of days`
+(0=Sunday), `epoch_from_civil of [y, m, d, hh, mm, ss]` /
+`civil_from_epoch of secs`. A bare-metal RTC driver turns CMOS
+registers into epoch seconds with these and no host clock.
+
 ### lib/io.eigs — File and Data Helpers
 
 | Function | Signature | Description |
@@ -240,6 +251,20 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `fmt_bar` | `fmt_bar of [val, max, width]` | Text progress bar |
 | `fmt_padded` | `fmt_padded of [value, width]` | Right-aligned field |
 | `fmt_table` | `fmt_table of [headers, rows]` | Aligned text table |
+
+### lib/checksum.eigs — Byte Integrity
+
+`crc32 of data`, `adler32 of data`, `sum8 of data` — over a string or a
+buffer (bytes 0..255); results are unsigned 32-bit numbers. CRC-32 is
+the reflected 0xEDB88320 polynomial (zlib/PNG/ethernet), Adler-32 is
+zlib's. Written once so storage layers, cartridge headers, and network
+frames stop hand-rolling integrity math.
+
+```eigenscript
+load_file of "lib/checksum.eigs"
+print of (crc32 of "123456789")      # 3421780262
+print of (adler32 of "Wikipedia")    # 300286872
+```
 
 ### lib/sort.eigs — Sorting Utilities
 

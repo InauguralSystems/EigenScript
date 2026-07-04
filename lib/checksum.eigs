@@ -1,0 +1,79 @@
+# ============================================================
+# Checksum Library — CRC-32, Adler-32, byte sums in pure EigenScript
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/checksum.eigs"
+#
+#   crc32 of "123456789"            # 3421780262 (0xCBF43926)
+#   adler32 of "Wikipedia"          # 300286872  (0x11E60398)
+#   sum8 of some_buffer             # bytewise sum mod 256
+#
+# All three accept a STRING or a BUFFER (the ecosystem's two byte
+# carriers) and read bytes 0..255. CRC-32 is the reflected polynomial
+# 0xEDB88320 (zlib/PNG/ethernet); Adler-32 is zlib's (mod 65521,
+# applied per byte — exact in doubles by construction). Results are
+# unsigned 32-bit numbers.
+#
+# These exist so byte-integrity code is written once: regionfs
+# (EigenOS) hand-rolled Adler-32, DMG needs the cartridge header sum,
+# and the M13 network stack arrives wanting CRC-32. The module also
+# leans on the bit_* builtins' int64 alignment (same release) — CRC-32
+# was the first consumer to need bit ops past 2^31.
+
+define _blen(x) as:
+    if (type of x) == "buffer":
+        return buf_len of x
+    return len of x
+
+define _byte(x, i) as:
+    if (type of x) == "buffer":
+        return buf_get of [x, i]
+    return ord of (char_at of [x, i])
+
+_crc_table is []
+
+define _crc_init() as:
+    local n is 0
+    loop while n < 256:
+        local c is n
+        local k is 0
+        loop while k < 8:
+            if (c & 1) == 1:
+                c is (c >> 1) ^ 0xEDB88320
+            else:
+                c is c >> 1
+            k is k + 1
+        append of [_crc_table, c]
+        n is n + 1
+
+_crc_init of []
+
+define crc32(data) as:
+    local c is 0xFFFFFFFF
+    local i is 0
+    local n is _blen of data
+    loop while i < n:
+        c is (c >> 8) ^ _crc_table[(c ^ (_byte of [data, i])) & 0xFF]
+        i is i + 1
+    return (c ^ 0xFFFFFFFF) & 0xFFFFFFFF
+
+define adler32(data) as:
+    local a is 1
+    local b is 0
+    local i is 0
+    local n is _blen of data
+    loop while i < n:
+        a is (a + (_byte of [data, i])) % 65521
+        b is (b + a) % 65521
+        i is i + 1
+    return (b * 65536) + a
+
+define sum8(data) as:
+    local s is 0
+    local i is 0
+    local n is _blen of data
+    loop while i < n:
+        s is (s + (_byte of [data, i])) % 256
+        i is i + 1
+    return s

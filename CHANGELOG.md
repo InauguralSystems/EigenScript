@@ -4,7 +4,39 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-(nothing yet)
+### Added
+- **`lib/checksum.eigs`** — CRC-32 (reflected 0xEDB88320, table-driven),
+  Adler-32, and `sum8` over strings or buffers; results unsigned 32-bit.
+  Byte-integrity math written once: regionfs hand-rolls Adler-32 today,
+  DMG needs the cartridge header sum, M13 networking wants CRC-32.
+  Suite [50c] pins the published check values.
+- **Civil-date math in `lib/datetime.eigs`** — the module's first PURE
+  half (the clock functions shell out to `date` and are host-only):
+  `days_from_civil`/`civil_from_days`, `weekday_from_days`,
+  `epoch_from_civil`/`civil_from_epoch` (Hinnant's algorithms, exact
+  integer arithmetic in doubles, every profile). EigenOS's rtc.eigs is
+  the motivating consumer — CMOS registers to epoch seconds with no
+  host clock. Suite [50d] pins leap edges and round-trips.
+
+### Fixed
+- **The `bit_*` builtins are now the same operation as the infix
+  operators.** They were a second, divergent implementation — a
+  `(uint32_t)(int32_t)` conversion that was undefined behavior for
+  inputs ≥ 2^31 and sign-extended results — so `0xEDB88320 & x` worked
+  while `bit_and of [0xEDB88320, x]` returned garbage (found by the
+  CRC-32 stdlib module, the first consumer needing the full unsigned-32
+  range). All six builtins now use the infix int64 two's-complement
+  semantics; shift counts are real up to 63 (the old int32-era `&31`
+  count masking — `bit_shl of [1, 32]` == 1 — is gone). test_bitwise
+  gains an infix-vs-builtin equality battery over the high-bit range.
+- **`num of` hex strings share the lexer's contract.** The string→number
+  builtin delegated wholesale to `strtod`, so `num of "0x.8"` read 0.5
+  and `num of "0x1p4"` read 16 hosted while the freestanding profile
+  read 0 — the #378 divergence surviving through the string path. Hex
+  strings now convert in the builtin itself on every profile: integer
+  digits, stop at the first non-hex character ("0xFFzz" → 255,
+  "0x1p4" → 1), prefix with no hex digit → 0 like any non-numeric
+  string. Suite [50b] gains five conversion checks.
 
 ## [0.25.0] - 2026-07-04
 

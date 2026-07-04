@@ -1606,15 +1606,15 @@ fi
 echo ""
 
 # [50] Bitwise operations
-echo "[50] Bitwise Operations (22 checks)"
+echo "[50] Bitwise Operations (37 checks)"
 BW_OUTPUT=$(./eigenscript ../tests/test_bitwise.eigs 2>&1); BW_OUTPUT_RC=$?
 if rc_ok "$BW_OUTPUT_RC" "$BW_OUTPUT" && echo "$BW_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 22))
-    PASS=$((PASS + 22))
-    echo "  PASS: all 22 bitwise checks"
+    TOTAL=$((TOTAL + 37))
+    PASS=$((PASS + 37))
+    echo "  PASS: all 37 bitwise checks"
 else
-    TOTAL=$((TOTAL + 22))
-    FAIL=$((FAIL + 22))
+    TOTAL=$((TOTAL + 37))
+    FAIL=$((FAIL + 37))
     echo "  FAIL: bitwise tests"
     echo "$BW_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
@@ -1622,9 +1622,9 @@ echo ""
 
 # [50b] Hex integer literals (lexed, not strtod — the freestanding profile
 # has no hex strtod path, so this form must never regress to delegation)
-echo "[50b] Hex Integer Literals (14 checks + 3 rejects)"
+echo "[50b] Hex Integer Literals (19 checks + 3 rejects)"
 check_eigs_suite "hex literals: 0x/0X forms, case, adjacency, arithmetic" \
-    "test_hex_literals.eigs" "HEX_LITERALS_ALL_PASS" 14
+    "test_hex_literals.eigs" "HEX_LITERALS_ALL_PASS" 19
 # Hex-float forms and a bare prefix must be LOUD parse errors on every
 # profile — strtod must never see a hex prefix (glibc would quietly
 # parse 0x1p4 / 0x.8 while the freestanding mini_strtod cannot).
@@ -1640,6 +1640,18 @@ for bad in '0x1p4' '0x.8' '0x'; do
     fi
 done
 rm -f /tmp/eigs_hex_reject.eigs
+echo ""
+
+# [50c] Checksum library (CRC-32 / Adler-32 / sum8 over strings+buffers)
+echo "[50c] Checksums (9 checks)"
+check_eigs_suite "checksums: published vectors + buffer/string equivalence" \
+    "test_checksum.eigs" "CHECKSUM_ALL_PASS" 9
+echo ""
+
+# [50d] Datetime civil math (pure half of lib/datetime.eigs)
+echo "[50d] Datetime Civil Math (14 checks)"
+check_eigs_suite "civil days/epoch round-trips + leap edges vs references" \
+    "test_datetime_civil.eigs" "DATETIME_CIVIL_ALL_PASS" 14
 echo ""
 
 # [51] Unobserved block

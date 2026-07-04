@@ -1,0 +1,50 @@
+# datetime's pure civil-math half — Hinnant algorithms pinned against
+# Python-computed references (incl. leap edges) and full round-trips.
+# No host clock involved: these must pass on every profile.
+# All-pass prints DATETIME_CIVIL_ALL_PASS.
+load_file of "lib/datetime.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== DATETIME CIVIL MATH ==="
+
+check of ["epoch day zero", days_from_civil of [1970, 1, 1], 0]
+check of ["2026-07-04", days_from_civil of [2026, 7, 4], 20638]
+check of ["leap day 2000-02-29 (400-rule)", days_from_civil of [2000, 2, 29], 11016]
+check of ["1999-12-31", days_from_civil of [1999, 12, 31], 10956]
+check of ["2100-03-01 (century non-leap)", days_from_civil of [2100, 3, 1], 47541]
+
+ymd is civil_from_days of 20638
+check of ["inverse year", ymd[0], 2026]
+check of ["inverse month", ymd[1], 7]
+check of ["inverse day", ymd[2], 4]
+
+# round-trip a sweep across month/leap boundaries
+rt_ok is 1
+d is 10950
+loop while d < 11100:
+    c is civil_from_days of (d)
+    if (days_from_civil of [c[0], c[1], c[2]]) != d:
+        rt_ok is 0
+    d is d + 1
+check of ["round-trip 150 days across Y2K leap window", rt_ok, 1]
+
+check of ["weekday of epoch day 0 is Thursday", weekday_from_days of 0, 4]
+check of ["weekday of 2026-07-04 is Saturday", weekday_from_days of 20638, 6]
+
+check of ["epoch seconds compose", epoch_from_civil of [2026, 7, 4, 5, 30, 2], (20638 * 86400) + (5 * 3600) + (30 * 60) + 2]
+t is civil_from_epoch of ((20638 * 86400) + (5 * 3600) + (30 * 60) + 2)
+check of ["epoch inverse y", t[0], 2026]
+check of ["epoch inverse hms", (t[3] * 10000) + (t[4] * 100) + t[5], 53002]
+
+if fails == 0:
+    print of "DATETIME_CIVIL_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "datetime civil tests failed"

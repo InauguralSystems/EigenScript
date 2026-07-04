@@ -12,7 +12,18 @@
 #   format_date of fmt                      # strftime format string
 #   sleep_ms of 500                         # pause execution
 #
-# Note: uses exec_capture to call system `date`. Works on Linux/macOS.
+#   days_from_civil of [2026, 7, 4]         # 20638 (days since 1970-01-01)
+#   civil_from_days of 20638                # [2026, 7, 4]
+#   epoch_from_civil of [2026, 7, 4, 5, 30, 2]   # 1783229402
+#   civil_from_epoch of 1783229402          # [2026, 7, 4, 5, 30, 2]
+#   weekday_from_days of 20638              # 6 (0=Sunday .. 6=Saturday)
+#
+# Note: the CLOCK functions (now/today/timestamp/format_date/sleep_ms)
+# use exec_capture to call system `date` — host profiles only. The
+# CIVIL-MATH functions below them are pure (Hinnant's algorithms,
+# exact integer arithmetic in doubles) and run on every profile — a
+# bare-metal RTC driver turns CMOS registers into epoch seconds with
+# them and no host clock.
 
 # ---- now: current date and time ----
 define now as:
@@ -97,3 +108,53 @@ define timer_start as:
 # timer_elapsed of start_ts -> seconds
 define timer_elapsed(start_ts) as:
     return (timestamp of null) - start_ts
+
+
+# ---- civil-date math (pure; every profile) ----
+# Hinnant's civil-days algorithms: proleptic Gregorian, day 0 =
+# 1970-01-01. All arithmetic is exact integer math in doubles.
+
+define _fdiv(a, b) as:
+    return (a - (a % b)) / b
+
+define days_from_civil(y, m, d) as:
+    local yy is y
+    if m <= 2:
+        yy is yy - 1
+    local era is _fdiv of [yy, 400]
+    local yoe is yy - (era * 400)
+    local mp is (m + 9) % 12
+    local doy is (_fdiv of [(153 * mp) + 2, 5]) + d - 1
+    local doe is (yoe * 365) + (_fdiv of [yoe, 4]) - (_fdiv of [yoe, 100]) + doy
+    return (era * 146097) + doe - 719468
+
+define civil_from_days(days) as:
+    local z is days + 719468
+    local era is _fdiv of [z, 146097]
+    local doe is z - (era * 146097)
+    local yoe is _fdiv of [doe - (_fdiv of [doe, 1460]) + (_fdiv of [doe, 36524]) - (_fdiv of [doe, 146096]), 365]
+    local y is yoe + (era * 400)
+    local doy is doe - ((365 * yoe) + (_fdiv of [yoe, 4]) - (_fdiv of [yoe, 100]))
+    local mp is _fdiv of [(5 * doy) + 2, 153]
+    local d is doy - (_fdiv of [(153 * mp) + 2, 5]) + 1
+    local m is mp + 3
+    if mp >= 10:
+        m is mp - 9
+    if m <= 2:
+        y is y + 1
+    return [y, m, d]
+
+define weekday_from_days(days) as:
+    return (days + 4) % 7
+
+define epoch_from_civil(y, m, d, hh, mm, ss) as:
+    return ((days_from_civil of [y, m, d]) * 86400) + (hh * 3600) + (mm * 60) + ss
+
+define civil_from_epoch(secs) as:
+    local days is _fdiv of [secs, 86400]
+    local rem is secs - (days * 86400)
+    local ymd is civil_from_days of (days)
+    local hh is _fdiv of [rem, 3600]
+    local mm is _fdiv of [rem - (hh * 3600), 60]
+    local ss is rem - (hh * 3600) - (mm * 60)
+    return [ymd[0], ymd[1], ymd[2], hh, mm, ss]
