@@ -172,9 +172,11 @@ decimal point. Division is true division. `%` is modulo. There is no
 exponent operator; use `pow of [base, exp]`.
 
 Numeric literals accept the usual decimal forms plus a leading or
-trailing dot, scientific notation, and hexadecimal (lexing is delegated
-to C's `strtod`): `.5`, `1.`, `1e5`, `1E5`, `0x10` are all single
-numbers. A malformed form like `1.2.3` is a parse error.
+trailing dot and scientific notation: `.5`, `1.`, `1e5`, `1E5` are all
+single numbers. Hexadecimal *integer* literals are lexed explicitly:
+`0x10`/`0X10` is 16, digits `0-9a-fA-F`, and the literal ends at the
+first non-hex-digit character. Hex-float forms (`0x1p4`, `0xA.8`) are
+not numbers. A malformed form like `1.2.3` is a parse error.
 
 ```eigenscript
 print of (7 + 3)

@@ -4,7 +4,15 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-(nothing yet)
+### Fixed
+- **Hex integer literals are lexed explicitly, not delegated to `strtod`.**
+  `0xFF` previously parsed only because glibc's C99 `strtod` accepts hex —
+  the freestanding profile (mini_strtod, deliberately hex-free) lexed the
+  same source as `0` + identifier `xFF`, so hex-using programs parsed
+  hosted and broke on EigenOS (found by its M12 PCI port-I/O probe). The
+  lexer now consumes `0x`/`0X` + hex digits itself on every profile, and
+  the accidentally-accepted hex-FLOAT forms (`0x1p4`, `0xA.8`) are loud
+  parse errors instead of numbers. New suite section [50b] pins the form.
 
 ## [0.24.0] - 2026-07-03
 

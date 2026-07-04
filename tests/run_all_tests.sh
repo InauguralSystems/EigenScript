@@ -1620,6 +1620,13 @@ else
 fi
 echo ""
 
+# [50b] Hex integer literals (lexed, not strtod — the freestanding profile
+# has no hex strtod path, so this form must never regress to delegation)
+echo "[50b] Hex Integer Literals (14 checks)"
+check_eigs_suite "hex literals: 0x/0X forms, case, adjacency, arithmetic" \
+    "test_hex_literals.eigs" "HEX_LITERALS_ALL_PASS" 14
+echo ""
+
 # [51] Unobserved block
 echo "[51] Unobserved Block (8 checks)"
 UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?

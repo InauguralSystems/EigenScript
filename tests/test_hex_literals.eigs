@@ -1,0 +1,36 @@
+# Hex integer literals — pinned as a LEXED form, not a strtod accident.
+#
+# Until this suite existed, `0xFF` only worked because glibc's C99 strtod
+# parses hex floats: the freestanding profile (mini_strtod, no hex path)
+# lexed `0xFF` as `0` followed by an identifier `xFF`, so the same source
+# parsed hosted and broke on EigenOS (found by M12's PCI probe). The lexer
+# now consumes 0x/0X + hex digits itself; strtod never sees them, and the
+# accidental hex-FLOAT forms (0x1p4, 0xA.8) are no longer numbers.
+# Self-asserting: any failure aborts via `assert`; all-pass prints
+# HEX_LITERALS_ALL_PASS.
+
+print of "=== HEX INTEGER LITERALS ==="
+
+define check(tag, got, want) as:
+    assert of [got == want, f"{tag}: expected {str of want} got {str of got}"]
+    print of f"  PASS: {tag}"
+
+check of ["zero", 0x0, 0]
+check of ["single digit", 0x7, 7]
+check of ["byte upper", 0xFF, 255]
+check of ["byte lower", 0xff, 255]
+check of ["mixed case digits", 0xAbCd, 43981]
+check of ["capital X prefix", 0X10, 16]
+check of ["leading zeros", 0x000F, 15]
+check of ["pci config address", 0x80000000, 2147483648]
+check of ["dword all-ones", 0xFFFFFFFF, 4294967295]
+check of ["arithmetic binds", 0xFF + 1, 256]
+check of ["modulo extracts low word", 0x12378086 % 0x10000, 0x8086]
+check of ["unary minus applies", 0 - 0x10, -16]
+check of ["hex feeds hex-of round trip", hex of 0xBEEF, "BEEF"]
+
+# Adjacency: the literal ends at the first non-hex-digit character.
+xs is [0xA, 0xB]
+check of ["list of hex literals", xs[1], 11]
+
+print of "HEX_LITERALS_ALL_PASS"
