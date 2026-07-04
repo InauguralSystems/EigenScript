@@ -1622,9 +1622,24 @@ echo ""
 
 # [50b] Hex integer literals (lexed, not strtod — the freestanding profile
 # has no hex strtod path, so this form must never regress to delegation)
-echo "[50b] Hex Integer Literals (14 checks)"
+echo "[50b] Hex Integer Literals (14 checks + 3 rejects)"
 check_eigs_suite "hex literals: 0x/0X forms, case, adjacency, arithmetic" \
     "test_hex_literals.eigs" "HEX_LITERALS_ALL_PASS" 14
+# Hex-float forms and a bare prefix must be LOUD parse errors on every
+# profile — strtod must never see a hex prefix (glibc would quietly
+# parse 0x1p4 / 0x.8 while the freestanding mini_strtod cannot).
+for bad in '0x1p4' '0x.8' '0x'; do
+    TOTAL=$((TOTAL + 1))
+    printf 'x is %s\nprint of (str of x)\n' "$bad" > /tmp/eigs_hex_reject.eigs
+    if ./eigenscript /tmp/eigs_hex_reject.eigs </dev/null >/dev/null 2>&1; then
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: '$bad' parsed (must be a loud parse error)"
+    else
+        PASS=$((PASS + 1))
+        echo "  PASS: '$bad' rejected loudly"
+    fi
+done
+rm -f /tmp/eigs_hex_reject.eigs
 echo ""
 
 # [51] Unobserved block

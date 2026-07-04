@@ -490,17 +490,28 @@ TokenList tokenize(const char *source) {
              * also accepts hex-FLOAT forms (0x1p4, 0xA.8) the language
              * does not mean. Digits accumulate in a double, so values
              * past 2^53 round exactly like long decimal literals do. */
-            if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X') &&
-                isxdigit((unsigned char)p[2])) {
-                double num = 0;
-                p += 2; col += 2;
-                while (isxdigit((unsigned char)*p)) {
-                    int d = *p <= '9' ? *p - '0' : (*p | 32) - 'a' + 10;
-                    num = num * 16 + d;
-                    p++; col++;
+            if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+                if (isxdigit((unsigned char)p[2])) {
+                    double num = 0;
+                    p += 2; col += 2;
+                    while (isxdigit((unsigned char)*p)) {
+                        int d = *p <= '9' ? *p - '0' : (*p | 32) - 'a' + 10;
+                        num = num * 16 + d;
+                        p++; col++;
+                    }
+                    tok_add(&tl, TOK_NUM, num, NULL, line, tok_col);
+                    tl.tokens[tl.count - 1].len = (int)(p - num_start);
+                    continue;
                 }
-                tok_add(&tl, TOK_NUM, num, NULL, line, tok_col);
-                tl.tokens[tl.count - 1].len = (int)(p - num_start);
+                /* A 0x prefix with no hex digit (bare `0x`, or the
+                 * hex-FLOAT fraction form `0x.8`): lex just the `0` so
+                 * the rest re-lexes as an identifier/dot and the parse
+                 * fails loudly. strtod must NEVER see a hex prefix —
+                 * glibc would parse `0x.8` as 0.5 while mini_strtod
+                 * (no hex) reads 0, a silent profile divergence. */
+                tok_add(&tl, TOK_NUM, 0, NULL, line, tok_col);
+                tl.tokens[tl.count - 1].len = 1;
+                p++; col++;
                 continue;
             }
             char *end;
