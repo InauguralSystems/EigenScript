@@ -4,6 +4,10 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.25.0] - 2026-07-04
+
 ### Added
 - **Async abort seam for embedders** (`eigs_set_abort_flag`). The host
   registers a flag it may set from an interrupt/signal context (SIGINT
