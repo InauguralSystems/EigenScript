@@ -105,3 +105,46 @@ define fmt_table(headers, rows) as:
             line is line + cell
         result is result + "\n" + line
     return result
+
+# ---- hexdump: bytes as offset / hex / ascii rows ----
+# hexdump of data -> multi-line string (data is a string or a buffer):
+#   00000000  48 65 6C 6C 6F 21                                |Hello!|
+# 16 bytes per row, printable ASCII (32..126) in the gutter, dot
+# otherwise. Returns the string; the caller prints. Written for sector
+# and packet debugging (regionfs, tidelog, DMG, the M13 frames).
+
+define _hd_len(x) as:
+    if (type of x) == "buffer":
+        return buf_len of x
+    return len of x
+
+define _hd_byte(x, i) as:
+    if (type of x) == "buffer":
+        return buf_get of [x, i]
+    return ord of (char_at of [x, i])
+
+define hexdump(data) as:
+    local n is _hd_len of data
+    local out is ""
+    local row is 0
+    loop while row < n:
+        local line is (hex of [row, 8]) + "  "
+        local col is 0
+        local gutter is ""
+        loop while col < 16:
+            local i is row + col
+            if i < n:
+                local b is _hd_byte of [data, i]
+                line is line + (hex of [b, 2]) + " "
+                if (b >= 32) and (b <= 126):
+                    gutter is gutter + (chr of b)
+                else:
+                    gutter is gutter + "."
+            else:
+                line is line + "   "
+            col is col + 1
+        out is out + line + " |" + gutter + "|"
+        row is row + 16
+        if row < n:
+            out is out + "\n"
+    return out

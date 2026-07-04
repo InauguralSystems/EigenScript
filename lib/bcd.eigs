@@ -1,0 +1,48 @@
+# ============================================================
+# BCD Library — packed binary-coded decimal, any width
+# ============================================================
+#
+# How to use:
+#   load_file of "lib/bcd.eigs"
+#
+#   from_bcd of 0x26        # 26   (each hex nibble is a decimal digit)
+#   from_bcd of 0x1234      # 1234
+#   to_bcd of 59            # 0x59 (89)
+#
+# Hardware speaks packed BCD in two places in this portfolio: CMOS RTC
+# registers (EigenOS rtc.eigs) and the Game Boy's DAA instruction /
+# score counters (DMG). Validate-don't-tolerate: a nibble above 9 in
+# from_bcd, or a negative/fractional input anywhere, raises — a torn
+# register read should fail loudly, not decode to a plausible number.
+
+define from_bcd(v) as:
+    if v != (v - (v % 1)):
+        throw of "from_bcd: input must be an integer"
+    if v < 0:
+        throw of "from_bcd: input must be non-negative"
+    local out is 0
+    local scale is 1
+    local rest is v
+    loop while rest > 0:
+        local nib is rest % 16
+        if nib > 9:
+            throw of "from_bcd: invalid BCD nibble"
+        out is out + (nib * scale)
+        scale is scale * 10
+        rest is (rest - nib) / 16
+    return out
+
+define to_bcd(v) as:
+    if v != (v - (v % 1)):
+        throw of "to_bcd: input must be an integer"
+    if v < 0:
+        throw of "to_bcd: input must be non-negative"
+    local out is 0
+    local scale is 1
+    local rest is v
+    loop while rest > 0:
+        local dig is rest % 10
+        out is out + (dig * scale)
+        scale is scale * 16
+        rest is (rest - dig) / 10
+    return out

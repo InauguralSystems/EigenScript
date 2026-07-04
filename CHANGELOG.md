@@ -5,6 +5,17 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Stdlib backlog train** (from the cross-repo pattern survey):
+  `lib/bcd.eigs` (packed BCD any width, loud rejection of invalid
+  nibbles — CMOS RTC + Game Boy DAA), `functional.wait_until` (the
+  bounded-poll shape; caller supplies the sleep primitive),
+  `format.hexdump` (offset/hex/ascii rows over strings or buffers),
+  `lib/harness.eigs` (the count-and-continue twin-gate scaffolding
+  extracted from six hand-rolled EigenOS harnesses), and
+  `lib/observer_slots.eigs` (eight named observer slots behind index
+  dispatch — the #262 trajectory-identity trap encoded once; verdict()
+  deferred on the #383 report-of resolution asymmetry found while
+  building it). Suite sections [50e]-[50i].
 - **`lib/checksum.eigs`** — CRC-32 (reflected 0xEDB88320, table-driven),
   Adler-32, and `sum8` over strings or buffers; results unsigned 32-bit.
   Byte-integrity math written once: regionfs hand-rolls Adler-32 today,

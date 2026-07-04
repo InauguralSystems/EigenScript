@@ -1,0 +1,55 @@
+# ============================================================
+# Harness Library — count-and-continue test scaffolding
+# ============================================================
+#
+# How to use:
+#   import harness            (or load_file of "lib/harness.eigs")
+#
+#   harness.start of "RTC_TWIN"
+#   harness.check of ["decodes year", got, want]
+#   harness.check_true of ["ring drained", ring_empty]
+#   harness.finish of []      # prints RTC_TWIN_ALL_PASS, or throws
+#
+# The house twin-gate pattern, written once: every check prints
+# PASS/FAIL and COUNTS failures (unlike lib/test.eigs's assert style,
+# which aborts on the first), and finish emits a single grep-able
+# marker on success or throws with the tally — so a shell gate is
+# `run | grep MARKER_ALL_PASS` plus the exit code, and one failure
+# never hides the rest. Extracted from six hand-rolled EigenOS twin
+# harnesses (desktop/regionfs/tidefs/kbd/rtc/spkr).
+
+_h is {"marker": "TESTS", "fails": 0, "checks": 0}
+
+define start(marker) as:
+    _h.marker is marker
+    _h.fails is 0
+    _h.checks is 0
+    print of f"=== {marker} ==="
+
+define check(tag, got, want) as:
+    _h.checks is _h.checks + 1
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        _h.fails is _h.fails + 1
+
+define check_true(tag, cond) as:
+    _h.checks is _h.checks + 1
+    if cond:
+        print of f"  PASS: {tag}"
+    if not cond:
+        print of f"  FAIL: {tag}"
+        _h.fails is _h.fails + 1
+
+define fail(tag) as:
+    _h.checks is _h.checks + 1
+    _h.fails is _h.fails + 1
+    print of f"  FAIL: {tag}"
+
+define finish() as:
+    if _h.fails == 0:
+        print of f"{_h.marker}_ALL_PASS"
+        return _h.checks
+    print of f"{str of _h.fails} of {str of _h.checks} FAILED"
+    throw of f"{_h.marker}: {str of _h.fails} failure(s)"

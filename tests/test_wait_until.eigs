@@ -1,0 +1,44 @@
+# functional.wait_until — success timing, timeout, sleep_fn cadence.
+# All-pass prints WAIT_UNTIL_ALL_PASS.
+load_file of "lib/functional.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== WAIT_UNTIL (lib/functional.eigs) ==="
+
+calls is 0
+naps is 0
+define ready_on_third() as:
+    calls is calls + 1
+    return calls >= 3
+define nap() as:
+    naps is naps + 1
+    return 1
+
+check of ["succeeds when pred turns true", wait_until of [ready_on_third, 10, nap], 1]
+check of ["stopped at first success", calls, 3]
+check of ["slept only between attempts", naps, 2]
+
+calls is 0
+naps is 0
+define never() as:
+    calls is calls + 1
+    return 0
+check of ["times out at the bound", wait_until of [never, 5, nap], 0]
+check of ["exactly tries attempts", calls, 5]
+
+calls is 0
+check of ["null sleep_fn busy-retries", wait_until of [never, 3, null], 0]
+check of ["busy retry attempted 3 times", calls, 3]
+
+if fails == 0:
+    print of "WAIT_UNTIL_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "wait_until tests failed"
