@@ -483,8 +483,27 @@ TokenList tokenize(const char *source) {
         }
 
         if (isdigit(*p) || (*p == '.' && isdigit(*(p+1)))) {
-            char *end;
             const char *num_start = p;
+            /* Hex integer literals are lexed HERE, not via strtod: the
+             * freestanding mini_strtod has no hex path (documented
+             * divergence — hex used to break on EigenOS), and C99 strtod
+             * also accepts hex-FLOAT forms (0x1p4, 0xA.8) the language
+             * does not mean. Digits accumulate in a double, so values
+             * past 2^53 round exactly like long decimal literals do. */
+            if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X') &&
+                isxdigit((unsigned char)p[2])) {
+                double num = 0;
+                p += 2; col += 2;
+                while (isxdigit((unsigned char)*p)) {
+                    int d = *p <= '9' ? *p - '0' : (*p | 32) - 'a' + 10;
+                    num = num * 16 + d;
+                    p++; col++;
+                }
+                tok_add(&tl, TOK_NUM, num, NULL, line, tok_col);
+                tl.tokens[tl.count - 1].len = (int)(p - num_start);
+                continue;
+            }
+            char *end;
             double num = strtod(p, &end);
             col += (int)(end - p);
             p = end;

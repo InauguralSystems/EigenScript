@@ -6,8 +6,10 @@
  *     halving, fraction bits by longhand doubling, then round half-even
  *     on guard+sticky. Bit-equal to glibc by construction (the harness
  *     asserts it over randomized corpora).
- * Parses decimal, inf/infinity/nan (case-insensitive). No hex floats
- * (the runtime's lexer never produces them) — documented divergence.
+ * Parses decimal, inf/infinity/nan (case-insensitive). No hex forms —
+ * documented divergence: the lexer consumes 0x integer literals itself
+ * (it never forwards them here), and hex floats are not a number form
+ * the language means.
  */
 #include "mini_libc.h"
 #include <stdint.h>
