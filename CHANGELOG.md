@@ -4,6 +4,10 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.26.0] - 2026-07-04
+
 ### Added
 - **Stdlib backlog train** (from the cross-repo pattern survey):
   `lib/bcd.eigs` (packed BCD any width, loud rejection of invalid
