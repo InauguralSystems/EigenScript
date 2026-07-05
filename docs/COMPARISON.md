@@ -280,6 +280,48 @@ print of (recv of ch)
 42
 ```
 
+## Convergence loops: boilerplate you stop writing
+
+Before the metaphysics, the everyday win. Every numeric fixed-point loop in
+Python or JavaScript hand-rolls the same three things — and beginners get them
+wrong: an **epsilon threshold**, a way to **remember** the previous value(s),
+and a **max-iteration guard** so a non-converging loop doesn't hang.
+
+```python
+# Python: the epsilon, the remembering, and the guard are all yours
+def newton_sqrt(n, eps=1e-12, max_iter=1000):
+    guess = n / 2 or 1.0
+    for _ in range(max_iter):            # max-iter guard, by hand
+        nxt = (guess + n / guess) / 2
+        if abs(nxt - guess) < eps:       # epsilon threshold, by hand
+            return nxt
+        guess = nxt                      # remember the last value, by hand
+    return guess                         # ...and hope it converged
+```
+
+EigenScript watches every value settle for you, so the loop *is* the
+convergence test — no epsilon, no remembered previous, no guard:
+
+```eigenscript
+define newton_sqrt as:
+    guess is n / 2.0
+    if guess == 0:
+        guess is 1.0
+    loop while not converged:
+        guess is (guess + n / guess) / 2.0
+    return guess
+
+print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))
+```
+```output
+sqrt(2) = 1.414213562373095
+```
+
+`converged` reads the loop's last-assigned value and is true once its trend has
+flattened. (Use it inside a function so the loop gets a fresh binding to watch —
+see `examples/observer_vs_boilerplate.eigs`.) The next section is *why* this
+works; you can reach for it long before you need the theory.
+
 ## What has no equivalent elsewhere: the observer
 
 Every assignment (outside `unobserved` blocks) updates an observer

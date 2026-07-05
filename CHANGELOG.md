@@ -5,6 +5,13 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **COMPARISON.md "Convergence loops" section** (#402): the observer's everyday
+  payoff, framed as boilerplate deletion before any theory — the same Newton's
+  square root in Python (hand-rolled epsilon threshold, remembered previous
+  value, max-iteration guard) versus EigenScript's `loop while not converged`,
+  byte-checked under the doc-examples gate. New
+  `examples/observer_vs_boilerplate.eigs`; README links the pragmatic comparison
+  ahead of the OBSERVER.md theory.
 - **First-run tooling unification** (#400): `install.sh` now builds and installs
   the `eigenlsp` language server alongside the interpreter (via a new
   `./build.sh lsp` mode, gcc-only, reusing build.sh's source list). The two

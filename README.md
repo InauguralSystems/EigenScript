@@ -152,6 +152,11 @@ Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
 `improving`, `diverging` — handy for convergence detection, instability
 alerts, or debugging without writing logging code.
 
+The everyday payoff before any theory: `loop while not converged` deletes the
+epsilon / remembered-previous / max-iteration boilerplate every numeric loop in
+Python or JS hand-rolls — see
+[docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-boilerplate-you-stop-writing).
+
 > **What `improving` and the rest actually mean.** EigenScript's observer
 > rests on a specific idea — a value locating itself *from the inside*,
 > with no external goal — so the trajectory words don't always match a
