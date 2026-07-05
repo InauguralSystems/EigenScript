@@ -5,6 +5,15 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Numeric model documented as a deliberate position** (#417): SPEC.md gains a
+  "numeric model" subsection stating the contracts one f64 number kind buys —
+  integer exactness ends at 2^53, arithmetic is finite by construction (`NaN`
+  collapses to `0`, overflow saturates at ±1e308, never `Infinity`), and integer
+  bitwise ops act on int64 (exact past 2^32) — with byte-checked examples. The
+  decision: no bigint/decimal until a consumer forces it (it would ripple through
+  the JIT and AOT); the wording avoids overcommitting "num IS f64" so a future
+  wider kind stays possible. Roadmap item updated from a one-liner to the decided
+  position.
 - **`bench/` perf harness + a regression-gated `docs/PERFORMANCE.md`** (#398):
   performance as an executable, gated fact rather than a README claim. Two
   metrics on purpose — `bench/run_bench.sh` reports wall-clock n=5 medians (the
