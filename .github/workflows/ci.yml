@@ -201,8 +201,14 @@ jobs:
       - name: JIT emitter smoke tests
         run: make jit-smoke
 
-      - name: Embedding API smoke test
+      - name: Embedding API smoke test (linked against the amalgamation)
         run: make embed-smoke
+
+      - name: Static embed library (make lib)
+        run: make lib
+
+      - name: Two-file amalgamation drop-in (cc alone, fresh dir)
+        run: bash tests/test_amalgamation.sh
 
       - name: Build http+model variant
         run: make http

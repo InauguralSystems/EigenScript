@@ -33,7 +33,7 @@ observer/deterministic-replay niche instead of diluting it.**
 - [ ] Lint fences for the two load-bearing traps — W015
       outer-mutation-without-`local`, W016 bare-predicate aliasing
       ([#396](https://github.com/InauguralSystems/EigenScript/issues/396))
-- [ ] `make lib` + two-file amalgamation — Lua-grade time-to-embedded
+- [x] `make lib` + two-file amalgamation — Lua-grade time-to-embedded
       ([#397](https://github.com/InauguralSystems/EigenScript/issues/397))
 - [ ] `bench/` replay-pinned perf harness, CI-gated, published as
       docs/PERFORMANCE.md ([#398](https://github.com/InauguralSystems/EigenScript/issues/398))
