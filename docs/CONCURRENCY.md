@@ -63,11 +63,14 @@ benchmark harness, #398.)
 ## Replay boundary (#148)
 
 Thread scheduling is nondeterministic, so it cannot be recorded onto the trace
-tape. Under `EIGS_REPLAY`, the nondeterministic concurrency primitives
-(`recv`, `try_recv`, `recv_timeout`, and the spawn/join handles) **raise a
-catchable error** rather than diverge silently — a program that replays must not
-depend on live threads. This is the same fail-loud contract the non-replayable
-builtins use (see docs/TRACE.md, "Non-Replayable Builtins").
+tape. The unrecordable part is a cross-thread **channel receive** — its arrival
+order is not on the tape — so under `EIGS_REPLAY` the receive family
+(`recv`, `try_recv`, `recv_timeout`) **raises a catchable error** rather than
+diverge silently, the same fail-loud contract the other non-replayable builtins
+use (see docs/TRACE.md, "Non-Replayable Builtins"). `spawn` and `thread_join`
+themselves are not blocked under replay: a worker that returns a pure value
+replays deterministically (the joined result is copied). Keep replayable
+programs off `recv` and off any worker whose result depends on thread ordering.
 
 ## The race gate
 
