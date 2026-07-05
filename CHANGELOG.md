@@ -5,6 +5,14 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **First-run tooling unification** (#400): `install.sh` now builds and installs
+  the `eigenlsp` language server alongside the interpreter (via a new
+  `./build.sh lsp` mode, gcc-only, reusing build.sh's source list). The two
+  parallel VS Code extension trees are collapsed into one canonical
+  `editors/vscode/` that ships `extension.js` — a bundled client auto-launching
+  `eigenlsp` on `.eigs` files; the drifted `editor/` duplicate is deleted. A new
+  `install-smoke` CI job asserts the canonical tree wires the LSP client and that
+  a fresh `install.sh` leaves both binaries on `PATH`.
 - **docs/CONCURRENCY.md + a ThreadSanitizer race gate** (#401): the memory-model
   contract, written down at last — messages (channel sends, joined results) are
   deep-COPIED (`val_clone_for_send`, share-nothing); a spawned closure SHARES the

@@ -20,7 +20,21 @@ SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c aren
 # JIT_FLAGS=-DEIGENSCRIPT_JIT_FORCE_OFF=1`).
 JIT_FLAGS=""
 
-if [ "$1" = "full" ]; then
+if [ "$1" = "lsp" ]; then
+    # Language server (src/eigenlsp) — the editor-intelligence half of the
+    # toolchain. Links eigenlsp.c against the runtime (SOURCES minus main.c),
+    # minimal extensions, gcc-only like the rest of build.sh. Source list reused
+    # from SOURCES above so it can't drift.
+    LSP_SOURCES="${SOURCES/ main.c/} eigenlsp.c"
+    $CC -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -o eigenlsp $LSP_SOURCES \
+        -DEIGENSCRIPT_EXT_HTTP=0 \
+        -DEIGENSCRIPT_EXT_MODEL=0 \
+        -DEIGENSCRIPT_EXT_DB=0 \
+        -DEIGENSCRIPT_VERSION="\"$VERSION\"" \
+        $JIT_FLAGS \
+        -lm -lpthread
+    echo "EigenScript LSP $VERSION built. Binary: $(du -sh eigenlsp | cut -f1)"
+elif [ "$1" = "full" ]; then
     # Full build: all extensions. Requires libpq-dev.
     $CC -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_http.c ext_db.c \
         model_io.c model_infer.c model_train.c \

@@ -438,8 +438,10 @@ get made and how contributors can earn commit access over time.
 ## Editor Support
 
 - **VS Code**: [`editors/vscode/`](editors/vscode/) — syntax
-  highlighting, f-string interpolation, bracket/indent rules. Symlink it
-  into `~/.vscode/extensions/` or package with `vsce`.
+  highlighting, f-string interpolation, bracket/indent rules, **and** a
+  bundled client that auto-launches the `eigenlsp` language server
+  (`./install.sh` puts it on your `PATH`). Symlink it into
+  `~/.vscode/extensions/` or package with `vsce`.
 - **Vim / Neovim**: [`editors/vim/`](editors/vim/) — copy into
   `~/.vim/` or `~/.config/nvim/`.
 - **Any LSP client**: `make lsp` builds `src/eigenlsp` (lint + syntax
