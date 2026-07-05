@@ -89,8 +89,11 @@ observer/deterministic-replay niche instead of diluting it.**
 
 - [ ] Unicode/text position — likely bytes-forever + `lib/utf8.eigs`,
       made official in SPEC ([#416](https://github.com/InauguralSystems/EigenScript/issues/416))
-- [ ] Numeric tower position — document the f64 + `bit_*` int64 contract
-      and the 2^53 boundary; bigint/decimal only when a consumer forces
+- [x] Numeric tower position — **DECIDED**: one f64 number kind, no bigint/
+      decimal until a consumer forces it. SPEC.md now states the contracts
+      (exactness below 2^53, finite-by-construction NaN→0 / saturation, the
+      int64 `bit_*` seam) with byte-checked examples; the docs avoid overcommitting
+      "num IS f64" so a future wider kind stays possible
       ([#417](https://github.com/InauguralSystems/EigenScript/issues/417))
 
 ### AOT (ouroboros — the native-perf path; not the JIT)

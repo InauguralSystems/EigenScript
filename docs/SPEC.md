@@ -212,6 +212,50 @@ print of "still running"
 still running
 ```
 
+### The numeric model (deliberate position)
+
+There is one number kind — the IEEE-754 f64 — and by design there is no
+bigint or decimal type. This is a chosen position, not an oversight; the
+consequences are contracts you can rely on:
+
+- **Integer exactness ends at 2^53.** Whole numbers up to `9007199254740992`
+  are exact; past that the gaps between representable values exceed 1, so
+  `+ 1` can be invisible. Keep integer identifiers, counters, and money-in-cents
+  below 2^53, or use the bitwise seam below for wider exact integer work.
+- **Finite by construction — no `NaN`, no `Infinity` ever reach your program.**
+  A `NaN` result collapses to `0` (`sqrt of -1` is `0`), and overflow saturates
+  at `±1e308` instead of becoming `Infinity`. Arithmetic is total: every
+  operation returns a usable finite number (division by zero warns and yields
+  `0`, above).
+- **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
+  `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
+  `1 << 40` is exact where an f64 mantissa alone would not help. This is the
+  seam for checksums, hashing, and byte protocols (see docs/BUILTINS.md).
+
+```eigenscript
+print of (9007199254740992 + 1)              # +1 is invisible past 2^53
+print of (9007199254740993 == 9007199254740992)
+print of (sqrt of -1)                        # NaN collapses to 0
+print of (1e308 * 10)                        # saturates, never Infinity
+print of (bit_and of [0xFFFFFFFF, 0xFF])     # int64 bitwise
+print of (bit_shl of [1, 40])                # exact past 2^32
+```
+```output
+9007199254740992
+1
+0
+1e+308
+255
+1099511627776
+```
+
+Bigint / decimal value kinds would be a VM representation change rippling through
+the JIT and the AOT (whose numeric speed rests on everything-being-a-double), so
+they are deferred until a consumer genuinely forces them — not adopted
+speculatively. Nothing above says "a number *is* an f64" any more than it must:
+the contracts are exactness-below-2^53, finiteness, and the int64 bitwise seam,
+which a future wider numeric kind could still honor.
+
 ## Strings
 
 Strings are immutable. `+` concatenates (both operands must be strings
