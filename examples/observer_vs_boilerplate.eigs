@@ -1,0 +1,19 @@
+# The observer deletes convergence-loop boilerplate.
+#
+# Every numeric fixed-point loop in Python/JS carries the same three things you
+# have to get right by hand: an epsilon threshold, a way to remember the last
+# value(s), and a max-iteration guard. `loop while not converged` deletes all
+# three — the runtime already watches every value settle. Same Newton's-method
+# square root, no tuning knobs.
+
+define newton_sqrt as:
+    guess is n / 2.0
+    if guess == 0:
+        guess is 1.0
+    loop while not converged:
+        guess is (guess + n / guess) / 2.0
+    return guess
+
+print of ("sqrt(2)    = " + (str of (newton_sqrt of 2)))
+print of ("sqrt(100)  = " + (str of (newton_sqrt of 100)))
+print of ("sqrt(0.25) = " + (str of (newton_sqrt of 0.25)))

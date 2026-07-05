@@ -42,9 +42,9 @@ observer/deterministic-replay niche instead of diluting it.**
       ([#400](https://github.com/InauguralSystems/EigenScript/issues/400))
 - [x] docs/CONCURRENCY.md executable memory-model contract + TSan CI job
       ([#401](https://github.com/InauguralSystems/EigenScript/issues/401))
-- [ ] COMPARISON.md convergence loops — observer semantics as boilerplate
-      deletion ([#402](https://github.com/InauguralSystems/EigenScript/issues/402));
-      AI-legibility single-file reference + validation ladder
+- [x] COMPARISON.md convergence loops — observer semantics as boilerplate
+      deletion ([#402](https://github.com/InauguralSystems/EigenScript/issues/402))
+- [ ] AI-legibility single-file reference + validation ladder
       ([#403](https://github.com/InauguralSystems/EigenScript/issues/403))
 
 ### Next (weeks-class, dependency-ordered)

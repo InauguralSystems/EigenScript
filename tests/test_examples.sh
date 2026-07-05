@@ -93,6 +93,7 @@ echo ""
 # ---- Core EigenScript examples (heavily weighted in corpus) ----
 echo "Core idiom examples:"
 run_example "observer_predicates" 30 "converged as termination"
+run_example "observer_vs_boilerplate" 10 "sqrt(2)"
 run_example "self_referential" 10 "All string_math\|token_name\|VALID"
 run_example "idioms" 30 "expected 210"
 run_example "numerical" 30 "Newton"
