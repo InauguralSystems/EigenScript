@@ -35,7 +35,7 @@ observer/deterministic-replay niche instead of diluting it.**
       ([#396](https://github.com/InauguralSystems/EigenScript/issues/396))
 - [x] `make lib` + two-file amalgamation — Lua-grade time-to-embedded
       ([#397](https://github.com/InauguralSystems/EigenScript/issues/397))
-- [ ] `bench/` replay-pinned perf harness, CI-gated, published as
+- [x] `bench/` replay-pinned perf harness, CI-gated, published as
       docs/PERFORMANCE.md ([#398](https://github.com/InauguralSystems/EigenScript/issues/398))
 - [x] `--lint` severity control ([#399](https://github.com/InauguralSystems/EigenScript/issues/399));
       install.sh builds eigenlsp + one canonical VS Code tree

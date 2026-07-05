@@ -1,0 +1,5 @@
+# Scalar for-loop sum — arithmetic dispatch + env-slot reuse.
+total is 0
+for i in range of 40000:
+    total is total + (i * 2) - 1
+print of total
