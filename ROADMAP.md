@@ -26,7 +26,7 @@ observer/deterministic-replay niche instead of diluting it.**
       kill the `^[[A` first-run failure ([#392](https://github.com/InauguralSystems/EigenScript/issues/392))
 - [x] Stdlib discoverability CI gate — undocumented `regex_*` are the
       proven failure mode ([#393](https://github.com/InauguralSystems/EigenScript/issues/393))
-- [ ] `--test --trace-on-fail` — every failing test prints its
+- [x] `--test --trace-on-fail` — every failing test prints its
       `EIGS_REPLAY` invocation ([#394](https://github.com/InauguralSystems/EigenScript/issues/394))
 - [x] `lib/contract.eigs` trajectory contracts — the answer to "what
       replaces static types here" ([#395](https://github.com/InauguralSystems/EigenScript/issues/395))

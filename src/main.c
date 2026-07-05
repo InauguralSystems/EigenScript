@@ -175,6 +175,18 @@ static void set_exe_dir(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+    /* `--trace <path> <script...>`: record this run's tape to <path>, the CLI
+     * twin of EIGS_TRACE (which trace_init reads below). Set before trace_init
+     * and strip the two tokens so the rest of arg handling sees the script at
+     * argv[1]. Used by `--test --trace-on-fail` to give each test its own tape;
+     * the flag is authoritative (overwrites any inherited EIGS_TRACE) so each
+     * child records to its own tape, not a shared inherited one. */
+    if (argc >= 3 && strcmp(argv[1], "--trace") == 0) {
+        setenv("EIGS_TRACE", argv[2], 1);
+        for (int i = 1; i + 2 < argc; i++) argv[i] = argv[i + 2];
+        argc -= 2;
+    }
+
     trace_init();
     atexit(trace_shutdown);
 
@@ -197,6 +209,8 @@ int main(int argc, char **argv) {
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
             "  eigenscript --lint [--json] <file>  lint a source file (--json for machine-readable diagnostics)\n"
             "  eigenscript --test [paths...]       run test_*.eigs files (--json for machine-readable results)\n"
+            "     ... --trace-on-fail              record each test; a failure prints its EIGS_REPLAY reproducer\n"
+            "  eigenscript --trace <tape> <file>   run and record a replay tape (CLI twin of EIGS_TRACE)\n"
             "  eigenscript --pkg <cmd> [args...]   package manager (add/install/update/verify; see docs)\n"
             "  eigenscript --version, -v           print the version and exit\n"
             "  eigenscript --help, -h              print this help and exit\n"

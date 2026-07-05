@@ -95,6 +95,25 @@ jobs:
       - name: Observer cross-repo corpus
         run: bash tests/observer_corpus/run.sh
 
+      # Trace-on-fail (#394): prove a failing test's tape replays byte-for-byte,
+      # then record one and archive it — the artifact a CI post-mortem replays
+      # with `EIGS_REPLAY=<tape> eigenscript <file>` (same-binary; see TRACE.md).
+      - name: Trace-on-fail replay + tape artifact
+        if: matrix.cc == 'gcc'
+        run: |
+          bash tests/test_trace_on_fail.sh
+          mkdir -p failure-tapes
+          printf 'r is random of null\nprint of ("roll: " + (str of r))\nassert of [0, "demo red test — replay this tape"]\n' > /tmp/red_demo.eigs
+          ./src/eigenscript --trace failure-tapes/red_demo.tape /tmp/red_demo.eigs || true
+
+      - name: Upload trace-on-fail tape
+        if: matrix.cc == 'gcc'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: trace-on-fail-tape
+          path: failure-tapes/
+          if-no-files-found: ignore
+
   # Freestanding symbol gate: compiles the runtime with the freestanding
   # profile (-DEIGENSCRIPT_FREESTANDING=1) and asserts its undefined-symbol
   # set stays within tools/freestanding_allowlist.txt — the HAL roots +

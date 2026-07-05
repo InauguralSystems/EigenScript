@@ -1270,6 +1270,22 @@ else
 fi
 echo ""
 
+# [42b] --test --trace-on-fail (#394): every failure is a replayable tape
+echo "[42b] Trace-on-fail (7 checks)"
+TOF_OUTPUT=$(bash "$TESTS_DIR/test_trace_on_fail.sh" 2>&1)
+TOF_PASS=$(echo "$TOF_OUTPUT" | grep -c "PASS:" || true)
+TOF_FAIL=$(echo "$TOF_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + TOF_PASS + TOF_FAIL))
+PASS=$((PASS + TOF_PASS))
+FAIL=$((FAIL + TOF_FAIL))
+if [ "$TOF_FAIL" -gt 0 ]; then
+    echo "  FAIL: $TOF_FAIL trace-on-fail check(s) failed"
+    echo "$TOF_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $TOF_PASS trace-on-fail checks"
+fi
+echo ""
+
 echo "[loop-halting] opt-in observer-stall classifier"
 LH_OUTPUT=$(bash "$TESTS_DIR/test_loop_halting.sh" 2>&1)
 LH_PASS=$(echo "$LH_OUTPUT" | grep -c "PASS:" || true)
