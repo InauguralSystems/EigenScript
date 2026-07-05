@@ -271,6 +271,24 @@ refuse_case "missing header" "$TMPDIR/v_none.tape" "no version header"
 : > "$TMPDIR/v_empty.tape"
 refuse_case "empty tape" "$TMPDIR/v_empty.tape" "empty replay tape"
 
+# Unopenable EIGS_REPLAY path (the most common operator error) is fatal too —
+# a warn-and-run-live would be the same silent divergence as a bad header.
+refuse_case "unopenable path" "$TMPDIR/does_not_exist.tape" "cannot open EIGS_REPLAY"
+
+# Torn mid-stream session header (concatenated-journal corruption): a bare
+# 'V' line must refuse loudly, not slip through the record filter.
+sed '2i V' "$TMPDIR/v.tape" > "$TMPDIR/v_torn.tape"
+refuse_case "torn mid-stream header" "$TMPDIR/v_torn.tape" "malformed tape version header"
+
+# A stale EIGS_REPLAY must not take down pure queries: --version/--help are
+# handled before trace_init, so they succeed even with a refusable tape set.
+VOUT=$(EIGS_REPLAY="$TMPDIR/v_none.tape" "$EIGS" --version 2>/dev/null); VRC=$?
+if [ "$VRC" = "0" ] && [ -n "$VOUT" ]; then
+    ok "stale EIGS_REPLAY: --version still works (exit 0)"
+else
+    fail "stale EIGS_REPLAY --version" "rc=$VRC out='$VOUT'"
+fi
+
 echo
 echo "REPLAY: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ] && exit 0 || exit 1

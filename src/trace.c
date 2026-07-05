@@ -539,35 +539,60 @@ static char  *g_replay_mem = NULL;
 static size_t g_replay_mem_len = 0;
 static size_t g_replay_mem_pos = 0;
 
-/* #411: consume and verify the tape's V header. Defined below
+/* #411: consume and verify the tape's V header(s). Defined below
  * read_tape_line; prints the refusal reason on failure. */
+static int read_tape_line(void);
 static int replay_check_header(void);
 static int replay_vline_ok(void);
 
 int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
-    free(g_replay_mem);
-    g_replay_mem = NULL;
-    g_replay_mem_len = 0;
-    g_replay_mem_pos = 0;
     if (!bytes) {
-        if (!g_replay_fp) g_replay_enabled = 0;
-        return 1;
-    }
-    g_replay_mem = malloc(len > 0 ? len : 1);
-    if (!g_replay_mem) return 0;
-    memcpy(g_replay_mem, bytes, len);
-    g_replay_mem_len = len;
-    g_replay_strict = strict;
-    if (!replay_check_header()) {
-        /* Version-and-reject (#411): refusal is the embedder's to handle —
-         * return 0 with the tape uninstalled, never a half-armed replay. */
         free(g_replay_mem);
         g_replay_mem = NULL;
         g_replay_mem_len = 0;
         g_replay_mem_pos = 0;
         if (!g_replay_fp) g_replay_enabled = 0;
+        return 1;
+    }
+
+    char *nm = malloc(len > 0 ? len : 1);
+    if (!nm) return 0;   /* prior replay state untouched */
+    memcpy(nm, bytes, len);
+
+    /* Stage the new tape and validate EVERY session header up front (#411):
+     * the first line must be a matching V record, and so must the header of
+     * each appended session (a journal written across several sink installs).
+     * Deferring a later header to the take loop would turn a refusable
+     * install into a mid-eval abort of the host process — the return-0
+     * contract exists so the embedder gets to handle refusal. */
+    char  *om = g_replay_mem;
+    size_t ol = g_replay_mem_len, op = g_replay_mem_pos;
+    int    os = g_replay_strict, oe = g_replay_enabled;
+    g_replay_mem = nm;
+    g_replay_mem_len = len;
+    g_replay_mem_pos = 0;
+    g_replay_strict = strict;
+    int ok = replay_check_header();
+    while (ok) {
+        if (read_tape_line() < 0) break;
+        /* Any V-shaped line is a session header (or a torn one) —
+         * replay_vline_ok refuses the malformed shapes loudly. */
+        if (g_replay_line[0] == 'V') ok = replay_vline_ok();
+    }
+    if (!ok) {
+        /* Version-and-reject (#411), atomically: the refused tape is
+         * discarded and the PREVIOUS replay state — tape, strict mode,
+         * enablement — survives untouched, never a half-armed replay. */
+        free(nm);
+        g_replay_mem = om;
+        g_replay_mem_len = ol;
+        g_replay_mem_pos = op;
+        g_replay_strict = os;
+        g_replay_enabled = oe;
         return 0;
     }
+    free(om);
+    g_replay_mem_pos = 0;
     g_replay_enabled = 1;
     return 1;
 }
@@ -582,7 +607,11 @@ static void trace_replay_init(void) {
     if (!g_replay_fp) {
         fprintf(stderr, "trace: cannot open EIGS_REPLAY=%s: %s\n",
                 path, strerror(errno));
-        return;
+        /* Fatal, like every other way of not honoring the requested
+         * replay (#411): a warn-and-run-live here is the same silent
+         * divergence a mismatched header would be — worse, it's the
+         * most common operator error (typo'd/deleted tape path). */
+        _exit(3);
     }
     const char *strict = getenv("EIGS_REPLAY_STRICT");
     g_replay_strict = (strict && strict[0] && strcmp(strict, "0") != 0);
@@ -664,6 +693,13 @@ static int read_tape_line(void) {
 static int replay_vline_ok(void) {
     const char *p = g_replay_line;
     if (p[0] != 'V' || p[1] != ' ') {
+        if (p[0] == 'V') {
+            /* A V-shaped line that isn't `V ` is a torn/corrupted header
+             * (truncated journal write), not a missing one. */
+            fprintf(stderr, "trace: malformed tape version header '%s'; "
+                    "refusing to replay (docs/TRACE.md)\n", p);
+            return 0;
+        }
         fprintf(stderr, "trace: tape has no version header — recorded by a "
                 "pre-versioning EigenScript or not a tape; refusing to "
                 "replay (docs/TRACE.md)\n");
@@ -912,12 +948,14 @@ int trace_replay_take(const char *fn, Value **out) {
             replay_shutdown();
             return 0;
         }
-        if (len >= 2 && g_replay_line[0] == 'V' && g_replay_line[1] == ' ') {
+        if (len >= 1 && g_replay_line[0] == 'V') {
             /* Mid-stream header: a concatenated tape (journal appended
              * across sessions/sink installs). Every session's header must
-             * match this binary — a mismatch is always fatal, strict or
-             * not (#411): continuing would splice another version's
-             * records into this replay. */
+             * match this binary — a mismatch OR a torn/malformed V line is
+             * always fatal, strict or not (#411): continuing would splice
+             * another version's (or an unverifiable) session's records
+             * into this replay. Memory tapes were fully pre-scanned at
+             * install, so this fires only for EIGS_REPLAY files. */
             if (!replay_vline_ok()) {
 #if EIGENSCRIPT_FREESTANDING
                 abort();

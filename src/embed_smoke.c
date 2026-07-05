@@ -246,6 +246,35 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 104.0, "clear: live again");
     if (r) eigs_value_release(r);
 
+    /* --- #411 refusal contract: install-time, atomic, return 0. ------ */
+    /* Headerless tape: refused, nothing installed, live source intact. */
+    static const char noh[] = "N host_sensor=999\n";
+    CHECK(eigs_set_replay_tape(noh, sizeof noh - 1, 0) == 0,
+          "headerless tape refused (return 0)");
+    r = eigs_eval_string("host_sensor of []");
+    CHECK(r != NULL && eigs_value_as_num(r) == 105.0,
+          "refused install: live source untouched");
+    if (r) eigs_value_release(r);
+
+    /* Mixed-version concatenated journal: a later session's mismatched
+     * header refuses the WHOLE install up front — never a mid-eval abort. */
+    static char mixed[sizeof g_tape + 64];
+    size_t ml = g_tape_len;
+    memcpy(mixed, g_tape, ml);
+    ml += (size_t)snprintf(mixed + ml, sizeof mixed - ml,
+                           "V 1 0.0.0-elsewhere\nN host_sensor=888\n");
+    CHECK(eigs_set_replay_tape(mixed, ml, 0) == 0,
+          "mixed-version journal refused at install");
+
+    /* Atomic swap: a refused install leaves the ACTIVE tape serving. */
+    CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1, "good tape re-set");
+    CHECK(eigs_set_replay_tape(noh, sizeof noh - 1, 0) == 0, "swap refused");
+    r = eigs_eval_string("host_sensor of []");
+    CHECK(r != NULL && eigs_value_as_num(r) == 100.0,
+          "refused swap: previous tape still serves");
+    if (r) eigs_value_release(r);
+    CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1, "replay cleared (411 block)");
+
     /* --- Source provider: import resolves from the embedder. --------- */
     eigs_set_source_provider(smoke_provider, NULL);
     r = eigs_eval_string("import smokemod\nsmokemod[\"answer\"]");

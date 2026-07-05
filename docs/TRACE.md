@@ -166,15 +166,19 @@ everywhere else in the runtime (version-and-reject, never migrate).
 - Every tape's first record is `V <format> <runtime>`. The format integer
   (`TRACE_FORMAT_VERSION` in `src/trace.h`) bumps on **any** change to the
   tape encoding; the runtime string is the recording binary's version.
-- On replay, a missing header, a malformed header, a different format
-  version, or a different runtime version each refuse loudly — hosted
-  replay exits with status 3 (the replay-divergence status), and
-  `eigs_set_replay_tape` returns 0 without installing the tape. Replay
-  never falls back to a live run: the user asked for a replay, and a
-  plausible-looking live run is exactly the silent divergence the header
-  exists to prevent.
+- On replay, a missing header, a malformed (torn) header, a different
+  format version, a different runtime version, an empty tape, or an
+  unopenable `EIGS_REPLAY` path each refuse loudly — hosted replay exits
+  with status 3 (the replay-divergence status), and `eigs_set_replay_tape`
+  returns 0 without installing the tape. Replay never falls back to a
+  live run: the user asked for a replay, and a plausible-looking live run
+  is exactly the silent divergence the header exists to prevent.
 - Mid-stream `V` records are legal (a journal appended across sessions
-  carries one per session) but each must match, or replay aborts.
+  carries one per session) but each must match, or replay aborts. The
+  embed seam validates **every** session header at install time, so a
+  mixed-version journal is refused up front (return 0, the previously
+  installed tape left untouched) rather than aborting the host mid-run;
+  the mid-stream abort therefore only fires for `EIGS_REPLAY` files.
 
 ```
 $ EIGS_REPLAY=old-v0.26.0.tape eigenscript sim.eigs

@@ -156,13 +156,18 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  *
  * eigs_set_replay_tape hands the whole tape back as the replay source
  * (bytes are copied; NULL clears). Returns 0 on OOM or when the tape is
- * REFUSED: a tape whose version header is missing or does not match this
- * runtime (format and version both) is never installed — version-and-
- * reject, no migration (#411, docs/TRACE.md; reason goes to stderr).
- * Store tape bytes verbatim: strip the header and replay refuses the
- * journal. While replay is active, nondet builtins return the tape's
- * recorded N values in order instead of consulting their live sources.
- * `strict` makes a tape/program name mismatch fatal instead of
+ * REFUSED: a tape whose version headers are missing, torn, or don't
+ * match this runtime (format and version both) is never installed —
+ * version-and-reject, no migration (#411, docs/TRACE.md; reason goes to
+ * stderr). EVERY session header in a concatenated journal is validated
+ * at install time, so refusal always happens here, not mid-eval. The
+ * call is atomic: on any 0 return the previously installed tape (and
+ * its strict mode) survives untouched. An empty journal is refused —
+ * a fresh store has nothing to replay; install nothing instead. Store
+ * tape bytes verbatim: strip a header and replay refuses the journal.
+ * While replay is active, nondet builtins return the tape's recorded N
+ * values in order instead of consulting their live sources. `strict`
+ * makes a tape/program name mismatch fatal instead of
  * logged-and-tolerated.
  *
  * Host builtins participate through the take/record pair — the same
