@@ -40,7 +40,7 @@ observer/deterministic-replay niche instead of diluting it.**
 - [ ] `--lint` severity control ([#399](https://github.com/InauguralSystems/EigenScript/issues/399));
       install.sh builds eigenlsp + one canonical VS Code tree
       ([#400](https://github.com/InauguralSystems/EigenScript/issues/400))
-- [ ] docs/CONCURRENCY.md executable memory-model contract + TSan CI job
+- [x] docs/CONCURRENCY.md executable memory-model contract + TSan CI job
       ([#401](https://github.com/InauguralSystems/EigenScript/issues/401))
 - [ ] COMPARISON.md convergence loops — observer semantics as boilerplate
       deletion ([#402](https://github.com/InauguralSystems/EigenScript/issues/402));

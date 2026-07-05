@@ -5,6 +5,17 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **docs/CONCURRENCY.md + a ThreadSanitizer race gate** (#401): the memory-model
+  contract, written down at last — messages (channel sends, joined results) are
+  deep-COPIED (`val_clone_for_send`, share-nothing); a spawned closure SHARES the
+  parent heap by reference (races are yours); the first `spawn` flips the runtime
+  to interpreter-only (#297 gates the JIT/OSR/IC off — the MT perf cliff); and
+  `recv`/spawn handles raise loudly under `EIGS_REPLAY` (#148). Its examples are
+  byte-exact under the doc-examples gate ([89]). The #297 "TSan-clean" claim was
+  only a code comment; now `make tsan` + `tests/test_tsan.sh` (CI `tsan` job)
+  run the spawn/channel slice under ThreadSanitizer (`setarch -R`) and prove it
+  race-free — and a deliberately seeded race (`tests/tsan_seeded_race.eigs`) is
+  asserted to be caught, so the gate can't rot into a vacuous pass.
 - **`--lint` severity control + inline suppression** (#399): `--lint-level
   error|warning` chooses the exit-1 threshold — `error` makes warnings advisory
   (still printed / in `--json`, but exit 0 unless an error-severity diagnostic

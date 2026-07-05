@@ -33,7 +33,7 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http gfx lib amalgamation test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff print-%
+.PHONY: all build full http gfx lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff print-%
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -162,6 +162,18 @@ asan:
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		-lm -lpthread
 	@echo "EigenScript $(VERSION) (asan+ubsan) built. Binary: $(BINARY)"
+
+# ThreadSanitizer build for the concurrency race gate (tests/test_tsan.sh).
+# Complements ASan (which is not run with the thread checker). Run the tests
+# under `setarch -R` — ThreadSanitizer needs ASLR disabled here (CLAUDE.md).
+tsan:
+	$(CC) -fsanitize=thread -g -O1 -o $(BINARY) $(SOURCES) \
+		-DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+		-lm -lpthread
+	@echo "EigenScript $(VERSION) (tsan) built. Binary: $(BINARY)"
 
 # Plain -O1 -g minimal build for Valgrind/Memcheck (tests/valgrind_smoke.sh).
 # No sanitizers — Valgrind shadows the uninstrumented binary at runtime, so it

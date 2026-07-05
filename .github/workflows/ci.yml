@@ -335,3 +335,21 @@ jobs:
 
       - name: Valgrind memcheck smoke
         run: cd tests && bash valgrind_smoke.sh
+
+  # ThreadSanitizer concurrency race gate (#401): the spawn/channel slice must
+  # be data-race-free (the #297 property, now regression-gated), and a seeded
+  # race must be caught so the gate can't rot. `setarch -R` disables ASLR, which
+  # ThreadSanitizer needs here (see CLAUDE.md).
+  tsan:
+    name: tsan (concurrency race gate)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: ThreadSanitizer build
+        run: make tsan
+
+      - name: Concurrency race gate (setarch -R)
+        run: bash tests/test_tsan.sh
