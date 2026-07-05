@@ -33,7 +33,7 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http gfx test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff print-%
+.PHONY: all build full http gfx lib amalgamation test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff print-%
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -121,15 +121,31 @@ jit-smoke:
 	$(CC) -Wall -Wextra -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
 
-# Phase 10 embedding API smoke test. Links the runtime (minus main.c) plus
-# the standalone host harness; exercises eigs_open/eval/globals/FFI.
 EMBED_SOURCES := $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
-embed-smoke:
-	$(CC) $(CFLAGS) -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c $(EMBED_SOURCES) \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+
+# Single-file amalgamation (#397): "copy two files, call eigs_open".
+# build/eigenscript_all.c (self-contained, system headers only) + the public
+# build/eigs_embed.h. Source list is read from SOURCES above — no second list.
+amalgamation:
+	bash tools/amalgamate.sh build
+
+# Static library for embedding — the minimal (zero-dependency) build; optional
+# extensions stay opt-in.
+lib:
+	@mkdir -p build/obj
+	@for f in $(EMBED_SOURCES); do \
+		$(CC) $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 \
+			-DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+			-c $$f -o build/obj/$$(basename $$f .c).o || exit 1; \
+	done
+	ar rcs libeigenscript.a build/obj/*.o
+	@echo "libeigenscript.a built ($$(du -sh libeigenscript.a | cut -f1))"
+
+# Phase 10 embedding API smoke test — the host harness linked against the
+# AMALGAMATION (not the raw source list), so the two-file artifact can never
+# silently rot: if amalgamate.sh drifts, this fails in CI.
+embed-smoke: amalgamation
+	$(CC) $(CFLAGS) -Ibuild -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c build/eigenscript_all.c \
 		-lm -lpthread
 	/tmp/embed_smoke
 
@@ -205,7 +221,8 @@ pgo:
 	@echo "EigenScript $(VERSION) (PGO) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
 
 clean:
-	rm -f $(BINARY) $(LSP_BINARY) $(SRC_DIR)/*.o /tmp/jit_smoke
+	rm -f $(BINARY) $(LSP_BINARY) $(SRC_DIR)/*.o /tmp/jit_smoke libeigenscript.a
+	rm -rf build
 
 coverage-clean:
 	rm -f $(SRC_DIR)/*.gcda $(SRC_DIR)/*.gcno $(SRC_DIR)/*.gcov coverage.txt

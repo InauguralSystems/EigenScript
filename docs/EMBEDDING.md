@@ -10,6 +10,44 @@ This document is the reference. The minimum working example is
 [`src/embed_smoke.c`](../src/embed_smoke.c), built and run by
 `make embed-smoke`.
 
+## Drop-in: the two-file amalgamation
+
+The fastest path to embedded — no build system, no source list. From the repo:
+
+```
+make amalgamation      # writes build/eigenscript_all.c + build/eigs_embed.h
+```
+
+Copy those **two files** into your project and compile them with your host —
+`cc` alone, no `-I`, no `-D`, no dependency beyond libm/libpthread:
+
+```c
+/* host.c */
+#include <stdio.h>
+#include "eigs_embed.h"
+
+int main(void) {
+    EigsState *st = eigs_open();
+    eigs_eval_string("print of (6 * 7)\n");    /* prints 42 */
+    if (eigs_has_error()) { printf("%s\n", eigs_last_error_message()); return 1; }
+    eigs_close(st);
+    return 0;
+}
+```
+
+```
+cc -O2 host.c eigenscript_all.c -lm -lpthread -o host
+```
+
+`eigenscript_all.c` inlines every runtime source and header into one
+self-contained translation unit; the optional extensions (HTTP, model, DB, gfx)
+default **off**, so the drop-in is the minimal zero-dependency build. Everything
+below — multi-state, value handles, the abort flag, and the trace-sink /
+record-replay seam — is available through the same `eigs_embed.h`.
+
+Prefer a static library? `make lib` produces `libeigenscript.a`; link it with
+`-Ibuild` (for `eigs_embed.h`) and `-lm -lpthread`.
+
 ## Overview
 
 A host application talks to the runtime through three opaque types:

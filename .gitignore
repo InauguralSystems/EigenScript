@@ -43,3 +43,6 @@ fuzz/fuzz_eigenscript
 eigenlsp
 massif.out.*
 tests/tmp_mod_373*.eigs
+
+# Generated embeddable artifacts (make lib / make amalgamation, #397)
+build/

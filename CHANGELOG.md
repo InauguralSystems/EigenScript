@@ -5,6 +5,17 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`make lib` + two-file amalgamation — the embeddable artifact** (#397):
+  `make amalgamation` writes `build/eigenscript_all.c` (every runtime source and
+  header inlined into one self-contained translation unit, optional extensions
+  defaulted off) plus the public `build/eigs_embed.h`. Copy the two files and
+  compile with `cc` alone — no `-I`, no `-D`, no source list — the Lua-grade
+  drop-in. `make lib` produces `libeigenscript.a`. The amalgamator reads its
+  source list from the Makefile's `SOURCES` (no second list to drift), and
+  `make embed-smoke` now links against the amalgamation so the artifact can't
+  silently rot. New "Drop-in" quickstart in docs/EMBEDDING.md;
+  tests/test_amalgamation.sh proves the fresh-dir `cc`-alone build; CI covers
+  `make lib` and the drop-in.
 - **`--test --trace-on-fail` — every failure is a replayable tape** (#394):
   records each test into its own tape via a new `--trace <path>` CLI flag (the
   twin of `EIGS_TRACE`). A passing test discards its tape; a failing one keeps
