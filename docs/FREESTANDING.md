@@ -13,7 +13,7 @@ the right build flags.
 
 ## How this was measured
 
-The minimal build (`make` → `src/eigenscript`, **v0.21.2**) imports **134**
+The minimal build (`make` → `src/eigenscript`, **v0.26.0**) imports **136**
 external symbols from `libc`/`libm`/`pthread`. Regenerate:
 
 ```bash
@@ -37,7 +37,7 @@ build (those live in the optional HTTP extension).
 | **HARDEN** | exists but is young; firm it up *before* it's load-bearing |
 
 **The key distinction (and the correction to a flat reading of this ledger):**
-the 134 symbols are *not* 134 things to build. They reduce to ~10 **ROOT**
+the 136 symbols are *not* 136 things to build. They reduce to ~10 **ROOT**
 families — the substrate that genuinely differs per platform — and a large body
 of **ORDINARY** derived forms that are portable C written once. Below, each
 subsystem names its root(s); the rest of its symbols are ordinary forms over
@@ -169,7 +169,7 @@ None of these are real work — they vanish in a freestanding build:
 
 ## Critical path (what's actually new code)
 
-The real per-platform work is the **~10 roots above**, not the 134 symbols. In
+The real per-platform work is the **~10 roots above**, not the 136 symbols. In
 rough order:
 
 1. **The HAL seam itself** — the architectural change. A thin interface
