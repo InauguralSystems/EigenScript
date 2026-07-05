@@ -405,6 +405,10 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
   construct with a runnable example and exact output, verified by the
   test suite on every commit (the spec cannot drift from the
   implementation)
+- [docs/llms.txt](docs/llms.txt) — **the whole language in one file for an
+  LLM**: syntax, the `of`/spread rule, the outward-scope model, observer
+  idioms, the trap list, and a generate-then-validate loop. Hand it to a model
+  (or read it yourself) before generating `.eigs`
 - [docs/COMPARISON.md](docs/COMPARISON.md) — EigenScript next to
   Python/JS/Rust/Lisp, with a porting checklist (also suite-verified)
 - [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide

@@ -38,4 +38,11 @@ if [ -n "$claim" ] && [ "$claim" != "$rows" ]; then
     drift=1
 fi
 
+# 5. docs/llms.txt (the single-file model reference, #403) stamps the current
+# version, so it can't silently drift from the language it describes.
+if [ -f docs/llms.txt ] && ! grep -q "EigenScript v$(cat VERSION)" docs/llms.txt; then
+    echo "DRIFT: docs/llms.txt is not stamped 'EigenScript v$(cat VERSION)'"
+    drift=1
+fi
+
 exit $drift

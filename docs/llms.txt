@@ -1,0 +1,177 @@
+# EigenScript — single-file reference for language models
+
+> EigenScript v0.26.0. A small dynamically-typed language with one distinctive
+> feature: an **observer** tracks every value's entropy/trend on each
+> assignment, so convergence, stability, and oscillation are first-class. This
+> file is the whole surface you need to generate correct `.eigs`. Models
+> generate EigenScript badly by defaulting to Python/JS habits — the traps below
+> are where that fails. When unsure, generate, then run the validation ladder at
+> the end.
+
+## Calls use `of`, never `f(x)`
+
+- Apply a function or builtin with `of`: `print of x`, `sqrt of n`, `len of xs`.
+- Multiple arguments are passed as a list, which spreads: `f of [a, b]` calls `f(a, b)`.
+- **THE #1 TRAP: `f of [x]` (a ONE-element list) does NOT spread** — it binds the
+  whole list to the first parameter. For a single argument to a multi-parameter
+  (or defaulted) function, write `f of (x)`. A bare single value `f of x` is
+  also fine. This silently produces wrong results, not an error.
+- **Parentheses always mean exactly one argument**: `f of ([a, b])` passes the
+  literal 2-element list as one argument (the escape hatch). `f of []` is the
+  zero-argument form.
+- `of` binds tighter than infix arithmetic: `sqrt of x + 1` means `(sqrt of x) + 1`.
+  Parenthesize the operand when you mean otherwise: `sqrt of (x + 1)`.
+
+## One statement per line
+
+Leftover tokens after a complete statement are a parse error. Never put two
+statements on one line. **Raising an error is `throw of value`** (`throw` is a
+builtin — `throw "x"` without `of` is a parse error). `break`/`continue` outside
+a loop are compile errors.
+
+## Definitions and the implicit `n`
+
+```eigenscript
+define add(a, b) as:
+    return a + b
+
+define double as:      # no parameter list => ONE implicit parameter named `n`
+    return n * 2
+
+print of (add of [2, 3])   # 5
+print of (double of 21)    # 42
+```
+
+Inside a no-arg `define ... as:`, a reference to `n` is that implicit parameter,
+not any outer `n`.
+
+## Scope: assignment mutates OUTWARD; use `local` in helpers
+
+- `name is expr` **updates an existing binding up the scope chain** if one
+  exists (it mutates the caller's/module's variable); it creates a new local
+  only if no such binding exists.
+- **Inside any library/helper function, prefix internal variables with `local`**
+  (`local total is 0`) so you don't clobber a same-named caller/module variable.
+  This is the single most common scope bug. `local` binds from its line onward.
+- Two `local` traps: each **sibling `if`/`elif`/`else` branch** needs its own
+  `local` for a first assignment (a `local` in one branch doesn't run for
+  another), and a first assignment inside a `loop while` body needs `local`.
+- `if` blocks do NOT create a scope (assignments leak out). `for` loops DO
+  (body-only names and the loop variable stay local). Comprehension variables
+  DO leak.
+
+## Reserved and soft keywords (cannot be plain variable names)
+
+- **Reserved** (never identifiers): `in`, and the observer predicates
+  `converged`, `stable`, `improving`, `diverging`, `oscillating`, `equilibrium`.
+- **Soft** (`prev`, `at`, and the six question words `what who when where why
+  how`): usable as params/loop-vars/catch-names, but you can NEVER bind one with
+  plain `is` (`what is e` is the interrogative form, a silent no-op as an
+  assignment). Just avoid naming variables after any keyword.
+
+## The observer (the reason to use this language)
+
+Every assignment (outside `unobserved:`) updates the value's observer. Trajectory
+predicates classify it: `converged`, `stable`, `improving`, `diverging`,
+`oscillating`, `equilibrium`.
+
+```eigenscript
+define newton_sqrt as:
+    guess is n / 2.0
+    if guess == 0:
+        guess is 1.0
+    loop while not converged:       # deletes the epsilon/window/max-iter boilerplate
+        guess is (guess + n / guess) / 2.0
+    return guess
+
+print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.414213562373095
+```
+
+- `loop while not converged` uses the **bare** predicate reading the loop's
+  last-assigned value. Put it **inside a function** so the loop gets a fresh
+  binding to watch (a module-scope version can loop forever).
+- `report of x` returns the entropy-channel state string; `report_value of x`
+  the value-channel state (use the value channel for convergence vs divergence —
+  the entropy channel calls a monotonically exploding value `converged`).
+- `converged` needs LOW absolute entropy on top of a settled window: a value
+  pinned at `5.0` reports `stable`, never `converged`; pinned at `0.0`/`1.0` it
+  converges. Don't guess the predicate — see docs/PREDICATES.md.
+- Temporal reads: `prev of x` (value before the last assignment),
+  `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
+  parse error. Wrap hot loops in `unobserved:` to skip observer bookkeeping.
+
+## Values and strings
+
+- `+` concatenates **strings only**. List concatenation is `append of [xs, v]`
+  (in place) or a comprehension — `xs + ys` is a runtime error.
+- Numbers are f64 and finite by construction: `NaN` collapses to `0`, overflow
+  saturates at ±1e308, `sqrt of -1` is `0`. Integer bit ops are `bit_and`/`&`
+  etc. on int64; exactness ends at 2^53.
+- Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
+  (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
+- f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`.
+
+## Lists, dicts, control flow (quick shapes)
+
+```eigenscript
+xs is [1, 2, 3]
+append of [xs, 4]                       # in-place
+doubled is [v * 2 for v in xs]          # comprehension (its var leaks!)
+d is {"a": 1, "b": 2}
+print of d["a"]
+
+for v in xs:
+    print of v
+
+i is 0
+loop while i < 3:
+    i is i + 1
+
+if i == 3:
+    print of "done"
+elif i > 3:
+    print of "over"
+else:
+    print of "under"
+
+try:
+    throw of "boom"          # 1/0 does NOT throw (it warns and saturates) — raise explicitly
+catch err:
+    print of ("caught: " + err)
+
+match x:
+    case 1:
+        print of "one"
+    case _:
+        print of "other"
+```
+
+## Before hand-rolling a helper
+
+The runtime has ~255 builtins and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
+`str_upper`/`char_at`/`index_of`/`hex of [n, nibbles]` are builtins (there is no
+bare `lower` — it's `str_lower`). `lib/` has `string.pad_left`, `format.fmt_*`,
+`checksum.crc32`, and civil-date math in `datetime`. See docs/BUILTINS.md and
+docs/STDLIB.md before writing your own.
+
+## The generation-validation ladder (always run what you generate)
+
+EigenScript is a low-training-data language: a generated program that "looks
+right" is often wrong at exactly the traps above. Grade it mechanically, cheapest
+check first — this is the same parse→compile→sandbox ladder iLambdaAi uses:
+
+1. **Parse / lint** (no execution): `eigenscript --lint --json prog.eigs`.
+   Empty `[]` = clean; `E002` = parse error (usually two statements on one line,
+   or a soft-keyword bound with `is`); `W###` = warnings (`--lint-level error`
+   to keep them advisory, `# lint: allow W001` to suppress one inline).
+2. **Run it**: `eigenscript prog.eigs`. The three failure signatures:
+   `undefined variable` (a missing `local`, or a scope/soft-keyword surprise),
+   `unexpected … after statement` (two statements on one line), and **silently
+   wrong numbers** (an `f of [x]` that didn't spread — no error, bad output).
+3. **Test suites**: name files `test_*.eigs`, `assert of [cond, msg]` on
+   failure, and run `eigenscript --test [dir]`. Add `--trace-on-fail` and a
+   failing test prints an `EIGS_REPLAY=<tape> …` line that reproduces it
+   byte-for-byte.
+
+Full executable spec: docs/SPEC.md. Language-vs-Python/JS: docs/COMPARISON.md.
+Observer model: docs/OBSERVER.md + docs/PREDICATES.md.
