@@ -23,10 +23,11 @@ predicted-not-taken load + branch.
 
 ## Tape Format
 
-The tape is plain text, one record per line, three record kinds:
+The tape is plain text, one record per line, four record kinds:
 
 | Record | Meaning |
 |--------|---------|
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 1 0.26.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `L <line>` | Source-line event (from `OP_LINE`). Adjacent duplicate lines with no `A`/`N` between them are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `A <name>=<value>` | Assignment delta: a top-level binding changed. |
 | `N <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
@@ -145,11 +146,56 @@ that actually failed, not a fresh one that might not.
 Under `--json`, each result carries a `"tape"` field for CI to archive as an
 artifact; the human form prints the replay line.
 
-**Same-binary caveat.** A tape is a reproducer for the interpreter build that
-recorded it. Until tape-format versioning lands (#411), do not replay a tape
-against a different EigenScript version — archive the tape *and* the version
-that produced it. `EIGS_REPLAY_STRICT=1` turns any record/replay mismatch into a
-loud abort rather than a silent divergence.
+**Same-version enforcement.** A tape is a reproducer for the EigenScript
+version that recorded it, and since #411 the runtime enforces that
+mechanically: replaying an archived tape after a version bump refuses loudly
+instead of silently diverging (see [Format Versioning](#format-versioning-411)).
+Archiving jobs need only keep the tape — it names its own version on line 1.
+`EIGS_REPLAY_STRICT=1` additionally turns any record/replay *name* mismatch
+into a loud abort.
+
+## Format Versioning (#411)
+
+The tape is a persisted artifact — CI archives failure tapes, bundles may
+carry one, embedders journal them — so it names its own provenance. **The
+decision: version-stamped tapes, refuse-on-mismatch. There is no
+compatibility promise, ever** — a tape is valid for exactly the format
+*and* runtime version that recorded it, matching the no-backcompat policy
+everywhere else in the runtime (version-and-reject, never migrate).
+
+- Every tape's first record is `V <format> <runtime>`. The format integer
+  (`TRACE_FORMAT_VERSION` in `src/trace.h`) bumps on **any** change to the
+  tape encoding; the runtime string is the recording binary's version.
+- On replay, a missing header, a malformed header, a different format
+  version, or a different runtime version each refuse loudly — hosted
+  replay exits with status 3 (the replay-divergence status), and
+  `eigs_set_replay_tape` returns 0 without installing the tape. Replay
+  never falls back to a live run: the user asked for a replay, and a
+  plausible-looking live run is exactly the silent divergence the header
+  exists to prevent.
+- Mid-stream `V` records are legal (a journal appended across sessions
+  carries one per session) but each must match, or replay aborts.
+
+```
+$ EIGS_REPLAY=old-v0.26.0.tape eigenscript sim.eigs
+trace: tape recorded on EigenScript 0.26.0, this binary is 0.27.0 —
+refusing to replay; a tape is valid only for the version that recorded
+it (docs/TRACE.md)
+$ echo $?
+3
+```
+
+There is no override flag. The tape is plain text: if you are certain a
+tape is valid for this binary (say, two dev builds of the same tree),
+editing line 1 is the override — a deliberate, visible act. The residual
+honesty gap runs the other way: version *equality* is necessary, not
+sufficient. Two different dev builds can share the string `dev` (or an
+unreleased version), and the header cannot tell them apart — release
+boundaries are enforced; dev builds are on their honor.
+
+Regression coverage: the `version refuse` cases in `tests/test_replay.sh`
+plant each mismatch class (format, runtime, missing header, empty file)
+and require the exit-3 refusal.
 
 ## Temporal Interrogatives and `state_at`
 

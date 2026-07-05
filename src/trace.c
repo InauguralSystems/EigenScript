@@ -2,6 +2,7 @@
  * EigenScript Trace — implementation (Phase 1 + 2).
  * ================================================================
  * Tape format (text, one record per line):
+ *   V <format> <runtime-ver>    version header — always the first record
  *   L <line>                    source-line event
  *   A <name>=<value>            name-keyed assignment delta
  *   N <fn>=<value>              nondeterministic builtin return
@@ -31,6 +32,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Runtime version stamped into the tape header (#411). The Makefile
+ * injects the real value; embed/freestanding builds without it share
+ * "dev" — so version equality is necessary, not sufficient, and dev
+ * builds are on their honor (documented in docs/TRACE.md). */
+#ifndef EIGENSCRIPT_VERSION
+#define EIGENSCRIPT_VERSION "dev"
+#endif
 
 #define TRACE_STR_MAX     60       /* truncate strings in `A` events */
 #define TRACE_NONDET_MAX  65536    /* per-record cap for `N` events;
@@ -436,6 +445,13 @@ static void tp_printf(const char *fmt, ...) {
     tp_write(buf, (size_t)n);
 }
 
+/* #411: stamp the version header. Called once per tape-open (EIGS_TRACE
+ * fopen, sink install) — a journal appended across several installs
+ * carries one V record per session; replay verifies each. */
+static void emit_header(void) {
+    tp_printf("V %d %s\n", TRACE_FORMAT_VERSION, EIGENSCRIPT_VERSION);
+}
+
 void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
     if (cb) {
         g_trace_sink = cb;
@@ -445,6 +461,7 @@ void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
         g_line_dirty = 0;
         g_trace_enabled = 1;
         g_trace_hist = 1;
+        emit_header();
     } else {
         sink_flush();
         g_trace_sink = NULL;
@@ -498,6 +515,7 @@ void trace_init(void) {
     setvbuf(g_trace_fp, NULL, _IOFBF, 64 * 1024);
     g_trace_enabled = 1;
     g_trace_hist = 1;
+    emit_header();
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }
 
@@ -521,6 +539,11 @@ static char  *g_replay_mem = NULL;
 static size_t g_replay_mem_len = 0;
 static size_t g_replay_mem_pos = 0;
 
+/* #411: consume and verify the tape's V header. Defined below
+ * read_tape_line; prints the refusal reason on failure. */
+static int replay_check_header(void);
+static int replay_vline_ok(void);
+
 int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
     free(g_replay_mem);
     g_replay_mem = NULL;
@@ -535,6 +558,16 @@ int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
     memcpy(g_replay_mem, bytes, len);
     g_replay_mem_len = len;
     g_replay_strict = strict;
+    if (!replay_check_header()) {
+        /* Version-and-reject (#411): refusal is the embedder's to handle —
+         * return 0 with the tape uninstalled, never a half-armed replay. */
+        free(g_replay_mem);
+        g_replay_mem = NULL;
+        g_replay_mem_len = 0;
+        g_replay_mem_pos = 0;
+        if (!g_replay_fp) g_replay_enabled = 0;
+        return 0;
+    }
     g_replay_enabled = 1;
     return 1;
 }
@@ -553,6 +586,13 @@ static void trace_replay_init(void) {
     }
     const char *strict = getenv("EIGS_REPLAY_STRICT");
     g_replay_strict = (strict && strict[0] && strcmp(strict, "0") != 0);
+    if (!replay_check_header()) {
+        /* Version-and-reject (#411): falling back to a live run would be
+         * the exact silent divergence the header exists to prevent — the
+         * user asked for a replay, so a tape this binary can't honor is
+         * fatal. Same _exit rationale as the strict divergence abort. */
+        _exit(3);
+    }
     g_replay_enabled = 1;
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }
@@ -615,6 +655,52 @@ static int read_tape_line(void) {
     if (c == EOF && len == 0) return -1;
     g_replay_line[len] = '\0';
     return (int)len;
+}
+
+/* #411: validate the V record sitting in g_replay_line against this
+ * binary. One rule, no migration path: format AND runtime version must
+ * match exactly, else the tape is refused with the reason on stderr.
+ * (The tape is plain text — a deliberate override is editing line 1.) */
+static int replay_vline_ok(void) {
+    const char *p = g_replay_line;
+    if (p[0] != 'V' || p[1] != ' ') {
+        fprintf(stderr, "trace: tape has no version header — recorded by a "
+                "pre-versioning EigenScript or not a tape; refusing to "
+                "replay (docs/TRACE.md)\n");
+        return 0;
+    }
+    char *end = NULL;
+    long fmt = strtol(p + 2, &end, 10);
+    if (end == p + 2 || *end != ' ') {
+        fprintf(stderr, "trace: malformed tape version header '%s'; "
+                "refusing to replay (docs/TRACE.md)\n", p);
+        return 0;
+    }
+    if (fmt != TRACE_FORMAT_VERSION) {
+        fprintf(stderr, "trace: tape format v%ld, this binary reads v%d — "
+                "refusing to replay; re-record on this version "
+                "(docs/TRACE.md)\n", fmt, TRACE_FORMAT_VERSION);
+        return 0;
+    }
+    const char *ver = end + 1;
+    if (strcmp(ver, EIGENSCRIPT_VERSION) != 0) {
+        fprintf(stderr, "trace: tape recorded on EigenScript %s, this binary "
+                "is %s — refusing to replay; a tape is valid only for the "
+                "version that recorded it (docs/TRACE.md)\n",
+                ver, EIGENSCRIPT_VERSION);
+        return 0;
+    }
+    return 1;
+}
+
+/* #411: the first record of a tape must be a matching V header. */
+static int replay_check_header(void) {
+    if (read_tape_line() < 0) {
+        fprintf(stderr, "trace: empty replay tape — refusing to replay "
+                "(docs/TRACE.md)\n");
+        return 0;
+    }
+    return replay_vline_ok();
 }
 
 /* Un-escape a tape-format quoted string in place. Reads the byte stream
@@ -825,6 +911,21 @@ int trace_replay_take(const char *fn, Value **out) {
              * read overhead, and let the builtin run normally. */
             replay_shutdown();
             return 0;
+        }
+        if (len >= 2 && g_replay_line[0] == 'V' && g_replay_line[1] == ' ') {
+            /* Mid-stream header: a concatenated tape (journal appended
+             * across sessions/sink installs). Every session's header must
+             * match this binary — a mismatch is always fatal, strict or
+             * not (#411): continuing would splice another version's
+             * records into this replay. */
+            if (!replay_vline_ok()) {
+#if EIGENSCRIPT_FREESTANDING
+                abort();
+#else
+                _exit(3);
+#endif
+            }
+            continue;
         }
         if (len < 2 || g_replay_line[0] != 'N' || g_replay_line[1] != ' ')
             continue;  /* skip L, A, blanks, anything else */

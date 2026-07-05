@@ -146,17 +146,24 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
 /* ---- Trace tape (record + replay) ----------------------------------
  * The runtime's replay tape (hosted: EIGS_TRACE / EIGS_REPLAY files),
  * reachable without a filesystem. Install a sink and every tape record
- * (L/A/N lines) streams to it as bytes — the sink receives complete
+ * (V/L/A/N lines) streams to it as bytes — the sink receives complete
  * newline-terminated lines (an oversized record arrives in ordered
- * chunks). Installing a sink ENABLES recording; passing NULL stops it.
- * The sink fires from inside evaluation — do not re-enter the runtime
- * from it; buffer the bytes and act between evals.
+ * chunks). Installing a sink ENABLES recording — the first bytes are the
+ * version header (`V <format> <runtime>`, #411); a journal appended
+ * across several installs carries one header per session. Passing NULL
+ * stops recording. The sink fires from inside evaluation — do not
+ * re-enter the runtime from it; buffer the bytes and act between evals.
  *
  * eigs_set_replay_tape hands the whole tape back as the replay source
- * (bytes are copied; returns 0 on OOM; NULL clears). While replay is
- * active, nondet builtins return the tape's recorded N values in order
- * instead of consulting their live sources. `strict` makes a tape/
- * program name mismatch fatal instead of logged-and-tolerated.
+ * (bytes are copied; NULL clears). Returns 0 on OOM or when the tape is
+ * REFUSED: a tape whose version header is missing or does not match this
+ * runtime (format and version both) is never installed — version-and-
+ * reject, no migration (#411, docs/TRACE.md; reason goes to stderr).
+ * Store tape bytes verbatim: strip the header and replay refuses the
+ * journal. While replay is active, nondet builtins return the tape's
+ * recorded N values in order instead of consulting their live sources.
+ * `strict` makes a tape/program name mismatch fatal instead of
+ * logged-and-tolerated.
  *
  * Host builtins participate through the take/record pair — the same
  * contract the runtime's own nondet builtins use:

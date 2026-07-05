@@ -71,6 +71,16 @@ else
     fail "buffer replay" "rec='$REC_B' rep='$REP_B'"
 fi
 
+# ---- #411: every tape opens with a version header ----
+# Handcrafted tapes below reuse the real header off the recorded tape, so
+# they stay valid when the format or runtime version bumps.
+VHDR=$(head -1 "$TAPE_L")
+if echo "$VHDR" | grep -Eq '^V [0-9]+ .'; then
+    ok "version header: recorded tape starts with 'V <format> <runtime>'"
+else
+    fail "version header" "first line='$VHDR'"
+fi
+
 # ---- Dict replay (handcrafted tape — no nondet builtin returns dicts) ----
 # trace_replay_take is lenient on name mismatch (warns, uses anyway),
 # so we craft the N record under any nondet name and bind it.
@@ -79,7 +89,8 @@ v is env_get of "EIGS_REPLAY_TEST_KEY_DOES_NOT_EXIST"
 print of v
 EOF
 
-cat > "$TMPDIR/dict.tape" <<'EOF'
+cat > "$TMPDIR/dict.tape" <<EOF
+$VHDR
 N env_get={"a": 1, "b": "two", "c": null}
 EOF
 
@@ -100,7 +111,8 @@ print of v[2][1]
 EOF
 
 # Outer list: [{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
-cat > "$TMPDIR/nested.tape" <<'EOF'
+cat > "$TMPDIR/nested.tape" <<EOF
+$VHDR
 N env_get=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 EOF
 
@@ -119,7 +131,8 @@ r is random of null
 print of r
 EOF
 
-cat > "$TMPDIR/strict.tape" <<'EOF'
+cat > "$TMPDIR/strict.tape" <<EOF
+$VHDR
 N monotonic_ns=12345
 EOF
 
@@ -190,10 +203,10 @@ catch e:
 print of caught
 EOF
 
-# Empty tape so replay is enabled but every builtin's TAKE returns 0 — the
-# replay_blocks guard fires before TAKE on these builtins, so no record is
-# consumed. The script just counts how many calls raised.
-: > "$TMPDIR/block.tape"
+# Header-only tape so replay is enabled but every builtin's TAKE returns 0 —
+# the replay_blocks guard fires before TAKE on these builtins, so no record
+# is consumed. The script just counts how many calls raised.
+echo "$VHDR" > "$TMPDIR/block.tape"
 BLOCK_OUT=$(EIGS_REPLAY="$TMPDIR/block.tape" "$EIGS" "$TMPDIR/p_block.eigs" 2>/dev/null)
 if [ "$BLOCK_OUT" = "10" ]; then
     ok "replay-block: all 10 subprocess/channel builtins refuse under EIGS_REPLAY (#148)"
@@ -215,6 +228,48 @@ if echo "$BLOCK_MSG" | grep -q "not replayable under EIGS_REPLAY" \
 else
     fail "replay-block message" "out='$BLOCK_MSG'"
 fi
+
+# ---- #411: version-and-reject — every mismatch class refuses loudly ----
+# Control first: the untampered tape must still replay (proves the checks
+# below fail because of the tamper, not a broken fixture), on both tiers.
+printf 'ABC' > "$INPUT"
+GOOD=$(EIGS_TRACE="$TMPDIR/v.tape" "$EIGS" "$TMPDIR/p_list.eigs" 2>&1)
+printf 'XYZ' > "$INPUT"
+CTRL=$(EIGS_REPLAY="$TMPDIR/v.tape" "$EIGS" "$TMPDIR/p_list.eigs" 2>/dev/null)
+CTRL_JOFF=$(EIGS_JIT_OFF=1 EIGS_REPLAY="$TMPDIR/v.tape" "$EIGS" "$TMPDIR/p_list.eigs" 2>/dev/null)
+if [ "$CTRL" = "$GOOD" ] && [ "$CTRL_JOFF" = "$GOOD" ]; then
+    ok "version control: untampered tape replays, JIT on and off"
+else
+    fail "version control" "rec='$GOOD' rep='$CTRL' rep_joff='$CTRL_JOFF'"
+fi
+
+refuse_case() {  # $1 label  $2 tape  $3 expected-stderr-substring
+    local err rc out
+    out=$(EIGS_REPLAY="$2" "$EIGS" "$TMPDIR/p_list.eigs" 2>"$TMPDIR/v.err")
+    rc=$?
+    err=$(cat "$TMPDIR/v.err")
+    if [ "$rc" = "3" ] && [ -z "$out" ] && echo "$err" | grep -q "$3"; then
+        ok "version refuse: $1 aborts with exit 3"
+    else
+        fail "version refuse: $1" "rc=$rc out='$out' err='$err'"
+    fi
+}
+
+# Format-version mismatch.
+sed '1s/^V [0-9]*/V 999/' "$TMPDIR/v.tape" > "$TMPDIR/v_fmt.tape"
+refuse_case "format mismatch" "$TMPDIR/v_fmt.tape" "tape format v999"
+
+# Runtime-version mismatch.
+sed '1s/^\(V [0-9]*\) .*/\1 0.0.0-elsewhere/' "$TMPDIR/v.tape" > "$TMPDIR/v_run.tape"
+refuse_case "runtime mismatch" "$TMPDIR/v_run.tape" "recorded on EigenScript 0.0.0-elsewhere"
+
+# Headerless (pre-#411 tape shape).
+sed '1d' "$TMPDIR/v.tape" > "$TMPDIR/v_none.tape"
+refuse_case "missing header" "$TMPDIR/v_none.tape" "no version header"
+
+# Empty file is not a tape.
+: > "$TMPDIR/v_empty.tape"
+refuse_case "empty tape" "$TMPDIR/v_empty.tape" "empty replay tape"
 
 echo
 echo "REPLAY: $PASS passed, $FAIL failed"

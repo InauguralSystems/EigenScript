@@ -13,6 +13,14 @@ All notable changes to EigenScript are documented here.
   `chr of n` == `str_from_bytes of [n]` across the shared range.
 
 ### Added
+- **Trace-tape format versioning** (#411): every tape now opens with a
+  `V <format> <runtime>` header (both the hosted `EIGS_TRACE` file and the
+  embed sink), and replay refuses a tape whose format or runtime version
+  doesn't match the running binary — missing/malformed/mismatched headers
+  exit with status 3 (hosted) or reject the tape at `eigs_set_replay_tape`
+  (embed, returns 0). Version-and-reject, no migration, no override flag;
+  the decision and the residual dev-build honesty gap are recorded in
+  docs/TRACE.md. Pre-#411 (headerless) tapes are no longer replayable.
 - **W016 — bare-predicate aliasing fence** (#396, completing it): a bare
   trajectory predicate outside a loop condition (`if stable:`,
   `ok is converged`, `return diverging`) reads the last-observed binding —
