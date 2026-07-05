@@ -16,6 +16,13 @@ All notable changes to EigenScript are documented here.
   run the spawn/channel slice under ThreadSanitizer (`setarch -R`) and prove it
   race-free — and a deliberately seeded race (`tests/tsan_seeded_race.eigs`) is
   asserted to be caught, so the gate can't rot into a vacuous pass.
+
+### Fixed
+- **Data race in `channel_closed`** — it read `ch->closed` without the channel
+  mutex while `close_channel` wrote it under the lock. Single-core timing hid it
+  locally; the new #401 TSan gate caught it on its first CI run (two workers
+  polling `channel_closed` against a concurrent `close`). Now reads under the
+  lock. This was the one real gap behind the "#297 TSan-clean" claim.
 - **`--lint` severity control + inline suppression** (#399): `--lint-level
   error|warning` chooses the exit-1 threshold — `error` makes warnings advisory
   (still printed / in `--json`, but exit 0 unless an error-severity diagnostic

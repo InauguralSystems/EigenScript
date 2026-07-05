@@ -4362,7 +4362,14 @@ Value* builtin_close_channel(Value *arg) {
 Value* builtin_channel_closed(Value *arg) {
     Channel *ch = get_channel(arg);
     if (!ch) return make_num(1);
-    return make_num(ch->closed ? 1 : 0);
+    /* Read ch->closed under the mutex: close_channel writes it while holding
+     * the lock, so a bare read here is a data race (caught by the #401 TSan
+     * gate — it fired in CI where two workers polled channel_closed against a
+     * concurrent close, though single-core timing hid it locally). */
+    pthread_mutex_lock(&ch->mutex);
+    int closed = ch->closed;
+    pthread_mutex_unlock(&ch->mutex);
+    return make_num(closed ? 1 : 0);
 }
 
 /* Deterministic teardown of OS-resource handles, run once the program has
