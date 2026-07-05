@@ -277,7 +277,8 @@ refuse_case "unopenable path" "$TMPDIR/does_not_exist.tape" "cannot open EIGS_RE
 
 # Torn mid-stream session header (concatenated-journal corruption): a bare
 # 'V' line must refuse loudly, not slip through the record filter.
-sed '2i V' "$TMPDIR/v.tape" > "$TMPDIR/v_torn.tape"
+# (head/tail, not `sed 2i` — BSD sed rejects the GNU one-liner form.)
+{ head -1 "$TMPDIR/v.tape"; echo "V"; tail -n +2 "$TMPDIR/v.tape"; } > "$TMPDIR/v_torn.tape"
 refuse_case "torn mid-stream header" "$TMPDIR/v_torn.tape" "malformed tape version header"
 
 # A stale EIGS_REPLAY must not take down pure queries: --version/--help are
