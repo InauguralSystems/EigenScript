@@ -33,6 +33,31 @@ check of ["lone lead byte (truncated)", utf8_validate of (substr of ["€", 0, 1
 check of ["lone continuation byte", utf8_validate of (substr of ["€", 1, 1]), 0]
 check of ["truncated 2-of-3", utf8_validate of (substr of ["€", 0, 2]), 0]
 
+# encoding — the same published vectors, driven backwards (#435)
+check of ["encode ascii", utf8_encode of 65, "A"]
+check of ["encode 2-byte (é)", utf8_encode of 233, "é"]
+check of ["encode 3-byte (€)", utf8_encode of 8364, "€"]
+check of ["encode 3-byte (中)", utf8_encode of 20013, "中"]
+check of ["encode 4-byte (𐍈)", utf8_encode of 66376, "𐍈"]
+# width boundaries: 0x7F/0x80, 0x7FF/0x800, 0xFFFF/0x10000, and the ceiling
+check of ["0x7F is 1 byte", len of (utf8_encode of 127), 1]
+check of ["0x80 is 2 bytes", len of (utf8_encode of 128), 2]
+check of ["0x7FF is 2 bytes", len of (utf8_encode of 2047), 2]
+check of ["0x800 is 3 bytes", len of (utf8_encode of 2048), 3]
+check of ["0xFFFF is 3 bytes", len of (utf8_encode of 65535), 3]
+check of ["0x10000 is 4 bytes", len of (utf8_encode of 65536), 4]
+check of ["0x10FFFF is 4 bytes", len of (utf8_encode of 1114111), 4]
+check of ["past the ceiling is empty", utf8_encode of 1114112, ""]
+check of ["negative is empty", utf8_encode of (0 - 1), ""]
+check of ["NUL is empty (strings can't hold it)", utf8_encode of 0, ""]
+# every encoded boundary is structurally valid and round-trips
+check of ["0x80 validates", utf8_validate of (utf8_encode of 128), 1]
+check of ["0x10FFFF validates", utf8_validate of (utf8_encode of 1114111), 1]
+check of ["0x10FFFF round-trips", utf8_at of [(utf8_encode of 1114111), 0], 1114111]
+# list form: utf8_from_codepoints inverts utf8_codepoints
+check of ["from_codepoints rebuilds the string", utf8_from_codepoints of (utf8_codepoints of s), s]
+check of ["from_codepoints of empty", utf8_from_codepoints of ([]), ""]
+
 if fails == 0:
     print of "UTF8_ALL_PASS"
 if fails > 0:

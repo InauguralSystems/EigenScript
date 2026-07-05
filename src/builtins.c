@@ -3359,11 +3359,27 @@ Value* builtin_secure_equals(Value *arg) {
 
 /* ==== BUILTIN: chr ==== */
 /* chr of n → single-character string from ASCII code */
+/* chr of n → one-byte string, the byte-writing inverse of `ord` (which reads
+ * bytes 0..255). Strings are bytes (#416): chr writes a BYTE, not a Unicode
+ * codepoint — codepoint→UTF-8 encoding is lib/utf8.eigs `utf8_encode`.
+ * n must be an integer in 1..255; 0 raises because strings are NUL-terminated
+ * and cannot hold a NUL byte (keep NUL-bearing binary in a buffer). Anything
+ * else raises too — the old silent empty-string return for >127 hid every
+ * high-byte construction bug (#435). */
 Value* builtin_chr(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_str("");
-    int code = (int)arg->data.num;
-    if (code < 0 || code > 127) return make_str("");
-    char buf[2] = { (char)code, '\0' };
+    if (!arg || arg->type != VAL_NUM) {
+        runtime_error(0, "chr requires a number");
+        return make_null();
+    }
+    double num = arg->data.num;
+    if (num != (double)(long long)num || num < 1 || num > 255) {
+        if (num == 0)
+            runtime_error(0, "chr of 0: strings are NUL-terminated and cannot hold a NUL byte (use a buffer for binary with NULs)");
+        else
+            runtime_error(0, "chr requires an integer byte in 1..255 (got %g); for a codepoint use utf8_encode (lib/utf8.eigs)", num);
+        return make_null();
+    }
+    char buf[2] = { (char)(int)num, '\0' };
     return make_str(buf);
 }
 
@@ -4817,10 +4833,10 @@ Value* builtin_buf_from_list(Value *arg) {
 }
 
 /* str_from_bytes of <list|buffer of byte ints> → string of those raw bytes.
- * Reconstructs a native string from its bytes (the inverse of an `ord` loop),
- * which `chr` cannot do for bytes >= 128 (chr treats its arg as a Unicode
- * codepoint and emits UTF-8). EigenScript strings are NUL-terminated, so a 0
- * byte ends the string; binary data that may contain NUL must stay in a buffer.
+ * Reconstructs a native string from its bytes (the inverse of an `ord` loop);
+ * the list form of scalar `chr` (chr of n == str_from_bytes of [n] for
+ * 1..255). EigenScript strings are NUL-terminated, so a 0 byte ends the
+ * string; binary data that may contain NUL must stay in a buffer.
  * Surfaced by tidelog's CBOR text-string decoder. */
 Value* builtin_str_from_bytes(Value *arg) {
     int n = 0;

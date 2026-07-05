@@ -226,6 +226,47 @@ catch e:
     c_hex3 is 1
 assert of [c_hex3 == 1, "hex non-number raises"]
 
+# ---- chr: byte writer 1..255 — everything else raises loudly (#435) ----
+# The old behavior returned "" silently for >127, hiding every high-byte bug.
+assert of [(ord of (chr of 255)) == 255, "chr emits high bytes"]
+c_chr1 is 0
+m_chr1 is ""
+try:
+    chr of 256
+catch e:
+    c_chr1 is 1
+    m_chr1 is e
+assert of [c_chr1 == 1, "chr above 255 raises"]
+assert of [(contains of [m_chr1, "1..255"]) == 1, "chr range message"]
+assert of [(contains of [m_chr1, "utf8_encode"]) == 1, "chr message points at utf8_encode"]
+c_chr2 is 0
+try:
+    chr of (0 - 1)
+catch e:
+    c_chr2 is 1
+assert of [c_chr2 == 1, "chr negative raises"]
+c_chr3 is 0
+try:
+    chr of 65.5
+catch e:
+    c_chr3 is 1
+assert of [c_chr3 == 1, "chr fraction raises (no silent truncation)"]
+c_chr4 is 0
+m_chr4 is ""
+try:
+    chr of 0
+catch e:
+    c_chr4 is 1
+    m_chr4 is e
+assert of [c_chr4 == 1, "chr of 0 raises (NUL unrepresentable)"]
+assert of [(contains of [m_chr4, "NUL"]) == 1, "chr NUL message"]
+c_chr5 is 0
+try:
+    chr of "A"
+catch e:
+    c_chr5 is 1
+assert of [c_chr5 == 1, "chr non-number raises"]
+
 # ---- nearest_in_range: wrong argument shape ----
 c12 is 0
 m12 is ""

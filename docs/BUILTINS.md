@@ -77,7 +77,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `scan_int_tokens` | `scan_int_tokens of s` or `scan_int_tokens of [s, comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]` |
 | `trim` | `trim of s` | Strip leading/trailing whitespace |
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new |
-| `chr` | `chr of code` | Convert ASCII code to single character |
+| `chr` | `chr of byte` | One-byte string from a byte value 1–255 (the writing inverse of `ord`). Raises outside 1–255 — including 0, since strings are NUL-terminated — and on fractions; for a Unicode *codepoint* use `utf8_encode` (lib/utf8.eigs). |
 | `join` | `join of [list, sep]` | Concatenate list elements with separator (C-backed, O(n)) |
 | `text_builder_new` | `text_builder_new of null` | Create a native growable text builder |
 | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
@@ -143,11 +143,11 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 ### Bytes ↔ values
 
 For serialization: reconstruct strings/floats from raw bytes (the inverse of an
-`ord` loop / manual bit-packing), covering cases `chr` and 32-bit bitwise can't.
+`ord` loop / manual bit-packing), covering cases 32-bit bitwise can't.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255). Unlike `chr` (which emits the UTF-8 of a *codepoint*), this writes the bytes verbatim, so it inverts an `ord`-over-bytes loop for any byte. Strings are NUL-terminated: a `0` byte ends the string — keep NUL-bearing binary in a buffer. |
+| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Strings are NUL-terminated: a `0` byte ends the string — keep NUL-bearing binary in a buffer. |
 | `f64_to_bytes` | `f64_to_bytes of x` | List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). |
 | `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. |
 
