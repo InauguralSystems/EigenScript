@@ -5,6 +5,19 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Lint W015 — function-clobber fence** (`src/lint.c`, advances #396): a
+  function that assigns (without `local`) over a module-level *function* name
+  silently reassigns it via mutate-outward, so later `<fn> of ...` calls fail.
+  W015 flags exactly that. It is deliberately scoped to function clobbering: the
+  broad "any outer mutation" reading is refuted by the corpus — under
+  mutate-outward, reusing a generic module *variable* name inside a function is
+  pervasive and almost always benign (155 such firings across working examples),
+  so flagging it would be noise. `_`-prefixed names (intentional module state,
+  as W001 already honors) are skipped. The general local-discipline lint is
+  #404's dataflow-aware territory. Surfaces in the editor via the shared
+  `lint_collect` path; docs/DIAGNOSTICS.md entries for W014 and W015 (W014 was
+  missing). Firing + non-firing fixtures in test_lint.sh; zero false positives
+  across lib/ + examples/.
 - **Stdlib/builtin discoverability gate** (`tools/stdlib_index_check.sh`, #393):
   every builtin registered in `src/builtins.c` must appear in the reference docs
   (BUILTINS.md / SPEC.md / STDLIB.md) and every `lib/*.eigs` module must have a
@@ -33,6 +46,12 @@ All notable changes to EigenScript are documented here.
   history can't be inspected by a function it is passed to) and #422 (the value
   channel's relative-delta normalization is blind to sub-exponential divergence
   and sub-deadband oscillation).
+
+### Fixed
+- **`lib/tensor.eigs` — `xavier_init`/`he_init` clobbered the module `scale`
+  function.** Both used a bare `scale is ...` local; because `scale` is also a
+  top-level function, mutate-outward destroyed it, so a `scale of [t, s]` call
+  after either initializer would fail. Now `local scale`. Found by the new W015.
 
 ## [0.26.0] - 2026-07-04
 
