@@ -207,7 +207,9 @@ int main(int argc, char **argv) {
             "  eigenscript <file.eigs> [args...]   run a script (args readable via `args of null`)\n"
             "  eigenscript                         start the REPL\n"
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
-            "  eigenscript --lint [--json] <file>  lint a source file (--json for machine-readable diagnostics)\n"
+            "  eigenscript --lint [--json] [--lint-level error|warning] <file>\n"
+            "                                      lint a source file (--json machine-readable; --lint-level error = warnings advisory;\n"
+            "                                      '# lint: allow W001' suppresses a code inline)\n"
             "  eigenscript --test [paths...]       run test_*.eigs files (--json for machine-readable results)\n"
             "     ... --trace-on-fail              record each test; a failure prints its EIGS_REPLAY reproducer\n"
             "  eigenscript --trace <tape> <file>   run and record a replay tape (CLI twin of EIGS_TRACE)\n"
@@ -247,18 +249,34 @@ int main(int argc, char **argv) {
      * --json may appear before or after the path). */
     if (argc >= 2 && strcmp(argv[1], "--lint") == 0) {
         int json_mode = 0;
+        int fail_on_warning = 1;   /* --lint-level warning (default) */
         const char *lint_path = NULL;
         for (int i = 2; i < argc; i++) {
-            if (strcmp(argv[i], "--json") == 0) json_mode = 1;
-            else if (!lint_path) lint_path = argv[i];
+            if (strcmp(argv[i], "--json") == 0) {
+                json_mode = 1;
+            } else if (strcmp(argv[i], "--lint-level") == 0 && i + 1 < argc) {
+                const char *lvl = argv[++i];
+                if (strcmp(lvl, "error") == 0) {
+                    fail_on_warning = 0;   /* warnings advisory; only errors fail */
+                } else if (strcmp(lvl, "warning") == 0) {
+                    fail_on_warning = 1;
+                } else {
+                    fprintf(stderr, "Unknown --lint-level '%s' (use error|warning)\n", lvl);
+                    eigs_thread_detach();
+                    eigs_state_destroy(eigs_st);
+                    return 1;
+                }
+            } else if (!lint_path) {
+                lint_path = argv[i];
+            }
         }
         if (!lint_path) {
-            fprintf(stderr, "Usage: eigenscript --lint [--json] file.eigs\n");
+            fprintf(stderr, "Usage: eigenscript --lint [--json] [--lint-level error|warning] file.eigs\n");
             eigs_thread_detach();
             eigs_state_destroy(eigs_st);
             return 1;
         }
-        int rc = eigenscript_lint(lint_path, json_mode);
+        int rc = eigenscript_lint(lint_path, json_mode, fail_on_warning);
         eigs_thread_detach();
         eigs_state_destroy(eigs_st);
         return rc;

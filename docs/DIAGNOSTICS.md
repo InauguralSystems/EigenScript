@@ -201,10 +201,38 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
 - A clean file emits `[]` (and still exits 0).
 - A file that doesn't parse emits a single `E002` element built from the
   first parse error (the same one the LSP surfaces), and exits 1.
-- Exit codes are unchanged from text mode: 0 if no diagnostics, 1 if any.
+- Exit code follows `--lint-level` (see below); the default fails on any
+  surviving warning.
 
 The `--json` flag may appear before or after the path. Runtime errors are
 not part of `--lint` (it never executes the program).
+
+## Severity control and suppression
+
+By default `--lint` exits 1 on any warning, which is warnings-as-errors. Two
+escape hatches let a project wire `--lint` into CI without that being all or
+nothing:
+
+- **`--lint-level error|warning`** chooses the exit-1 threshold. `warning` (the
+  default) fails on any warning; **`error`** makes warnings advisory — they are
+  still printed (and still appear in `--json`), but the exit code is 0 unless an
+  error-severity diagnostic is present. Use `error` to surface diagnostics in CI
+  without breaking the build on style warnings.
+
+- **`# lint: allow <CODE>...`** silences specific codes inline. The comment
+  suppresses the listed codes (space- or comma-separated; `all` silences every
+  code) on **its own line** and **the line below it**, so it works as a trailing
+  comment or on the line above the flagged construct:
+
+  ```eigenscript
+  scratch is compute of x   # lint: allow W001
+  # lint: allow W001 W014
+  next is other of y
+  ```
+
+  A suppressed diagnostic is removed from both the human and `--json` output.
+
+(Per-file allow-lists in `eigs.json` are not yet wired up — see #399.)
 
 `E100` is the **category code** for an uncaught runtime error. It is
 deliberately *not* injected into the `Error line N: ...` text, because

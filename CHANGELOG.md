@@ -5,6 +5,17 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`--lint` severity control + inline suppression** (#399): `--lint-level
+  error|warning` chooses the exit-1 threshold — `error` makes warnings advisory
+  (still printed / in `--json`, but exit 0 unless an error-severity diagnostic
+  is present), so a consumer can wire `--lint --json` into CI for diagnostics
+  without warnings-as-errors. A `# lint: allow W001` comment (space/comma-
+  separated codes, or `all`) silences those codes on its line and the line below
+  — trailing or above the flagged construct — removing them from human and
+  `--json` output. docs/DIAGNOSTICS.md "Severity control and suppression";
+  test_lint.sh both-ways coverage. (This is the suppression escape hatch W016
+  was waiting on.) Per-file `eigs.json` allow-lists remain open on #399 as a
+  contributor on-ramp.
 - **`make lib` + two-file amalgamation — the embeddable artifact** (#397):
   `make amalgamation` writes `build/eigenscript_all.c` (every runtime source and
   header inlined into one self-contained translation unit, optional extensions
