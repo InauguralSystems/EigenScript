@@ -351,6 +351,62 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "W015 silent with local / fresh local / _-prefixed fn" "$OUTPUT" "W015"
 rm -f "$TMPFILE"
 
+# --- W016: bare predicate OUTSIDE a loop condition (#396, #247/#262 family) ---
+# Fires in if-conditions, assignment RHS, and return position; loop conditions
+# are W014's territory (single-assign `loop while not converged` is the
+# documented idiom and stays silent).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 1.0
+x is x * 0.5
+if stable:
+    print of "settled"
+ok is converged
+print of ok
+define check(n) as:
+    return diverging
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W016 fires on bare predicate in if-condition" "$OUTPUT" "warning\[W016\]: bare 'stable'"
+check_contains "W016 fires on bare predicate in assignment" "$OUTPUT" "bare 'converged'"
+check_contains "W016 fires on bare predicate in return" "$OUTPUT" "bare 'diverging'"
+rm -f "$TMPFILE"
+
+# Silent: loop-condition idiom (W014's territory), the named form, the
+# explicit-subject #262 workaround `stable of (x + 0.0)`, and inline allow.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 1.0
+loop while not converged:
+    x is x * 0.5
+if stable of x:
+    print of "settled"
+if stable of (x + 0.0):
+    print of "workaround"
+y is converged of x
+print of y
+sup is stable  # lint: allow W016
+print of sup
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W016 silent: loop idiom / named / explicit subject / allow" "$OUTPUT" "W016"
+rm -f "$TMPFILE"
+
+# Multi-assign loop condition stays W014-only — no W016 double-fire.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 1.0
+i is 0
+loop while not converged:
+    x is x * 0.5
+    i is i + 1
+print of i
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "ambiguous loop still W014" "$OUTPUT" "W014"
+check_not_contains "no W016 double-fire on loop condition" "$OUTPUT" "W016"
+rm -f "$TMPFILE"
+
 # --- #399: --lint-level threshold ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 printf 'temp is 42\nprint of "hi"\n' > "$TMPFILE"   # W001 unused variable

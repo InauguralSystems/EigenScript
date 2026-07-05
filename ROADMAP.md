@@ -30,8 +30,9 @@ observer/deterministic-replay niche instead of diluting it.**
       `EIGS_REPLAY` invocation ([#394](https://github.com/InauguralSystems/EigenScript/issues/394))
 - [x] `lib/contract.eigs` trajectory contracts — the answer to "what
       replaces static types here" ([#395](https://github.com/InauguralSystems/EigenScript/issues/395))
-- [ ] Lint fences for the two load-bearing traps — W015
-      outer-mutation-without-`local`, W016 bare-predicate aliasing
+- [x] Lint fences for the two load-bearing traps — W015
+      outer-mutation-without-`local` (function-clobber core, #425),
+      W016 bare-predicate aliasing
       ([#396](https://github.com/InauguralSystems/EigenScript/issues/396))
 - [x] `make lib` + two-file amalgamation — Lua-grade time-to-embedded
       ([#397](https://github.com/InauguralSystems/EigenScript/issues/397))
