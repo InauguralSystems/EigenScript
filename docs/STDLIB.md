@@ -217,7 +217,8 @@ pattern extracted from six hand-rolled EigenOS harnesses.
 ### lib/observer_slots.eigs — Observe a Dynamic Collection
 
 `observer_slots.feed of [i, v]` / `is_stable of i` / `is_diverging of
-i` — eight NAMED scalar slots behind index dispatch, because observer
+i` / `verdict of i` (the full regime string) — eight NAMED scalar slots
+behind index dispatch, because observer
 trajectories key to named bindings and `stable of xs[i]` can never
 accumulate one (#262). Feed forces fresh values; slot 9 throws
 (silently-unobserved is the failure mode this prevents). Feed bounded
@@ -471,7 +472,8 @@ pattern extracted from six hand-rolled EigenOS harnesses.
 ### lib/observer_slots.eigs — Observe a Dynamic Collection
 
 `observer_slots.feed of [i, v]` / `is_stable of i` / `is_diverging of
-i` — eight NAMED scalar slots behind index dispatch, because observer
+i` / `verdict of i` (the full regime string) — eight NAMED scalar slots
+behind index dispatch, because observer
 trajectories key to named bindings and `stable of xs[i]` can never
 accumulate one (#262). Feed forces fresh values; slot 9 throws
 (silently-unobserved is the failure mode this prevents). Feed bounded

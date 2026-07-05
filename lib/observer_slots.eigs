@@ -99,7 +99,27 @@ define is_diverging(i) as:
         return diverging of _s7
     throw of "observer_slots: slot out of range (8 slots)"
 
-# NOTE: no report-of verdict API yet — `report of <slot>` inside a
-# module function falls to the no-binding path while the predicates
-# resolve the slot fine (upstream #383); is_stable/is_diverging are
-# the proven surface. Add verdict() when #383 lands.
+# verdict: the full trajectory-regime string for a slot (converged / stable /
+# equilibrium / improving / diverging / oscillating), where is_stable/is_diverging
+# give only a boolean. `report of <slot>` inside a module function resolves the
+# named binding's slot correctly and agrees with the predicates — the earlier
+# doubt (#383) did not reproduce; it was a misread of a constant reading as
+# "equilibrium" (which also satisfies `stable`), not a resolution divergence.
+define verdict(i) as:
+    if i == 0:
+        return report of _s0
+    elif i == 1:
+        return report of _s1
+    elif i == 2:
+        return report of _s2
+    elif i == 3:
+        return report of _s3
+    elif i == 4:
+        return report of _s4
+    elif i == 5:
+        return report of _s5
+    elif i == 6:
+        return report of _s6
+    elif i == 7:
+        return report of _s7
+    throw of "observer_slots: slot out of range (8 slots)"
