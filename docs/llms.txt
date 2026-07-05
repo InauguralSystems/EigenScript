@@ -135,7 +135,7 @@ else:
     print of "under"
 
 try:
-    throw of "boom"          # 1/0 does NOT throw (it warns and saturates) — raise explicitly
+    throw of "boom"          # 1/0 does NOT throw (it warns and returns 0) — raise explicitly
 catch err:
     print of ("caught: " + err)
 
