@@ -65,7 +65,7 @@ if x > 0
     print of x
 
 $ eigenscript bad.eigs
-Parse error line 1: expected ':', got newline
+Parse error line 1:9: expected ':', got newline
 1 parse error(s) — aborting
 $ echo $?
 1
@@ -161,7 +161,7 @@ a code's meaning never changes, and retired codes are not reused.
 | Code | Severity | Meaning |
 |------|----------|---------|
 | `E000` | error | File cannot be read (lint). |
-| `E001` | error | Syntax error (tokenizer). |
+| `E001` | error | *Reserved* — tokenizer/syntax error. Not currently emitted: lexer-level failures surface through the parser as `E002`. The code is held so `E002` keeps its meaning if a distinct tokenizer diagnostic is added later. |
 | `E002` | error | Parse error (parser). `--lint --json` reports the first one. |
 | `E100` | error | Uncaught runtime error (category code; see note below). |
 | `W001` | warning | Unused variable. |
