@@ -18,6 +18,13 @@ VERSION=$(cat VERSION)
 cp src/eigenscript ~/.local/bin/eigenscript
 chmod +x ~/.local/bin/eigenscript
 
+# Build and install the language server alongside it — the toolchain is one
+# artifact (the VS Code extension in editors/vscode/ auto-launches `eigenlsp`).
+./build.sh lsp
+cp src/eigenlsp ~/.local/bin/eigenlsp
+chmod +x ~/.local/bin/eigenlsp
+echo "Language server installed: ~/.local/bin/eigenlsp"
+
 # Install stdlib
 cp -r lib/*.eigs ~/.local/lib/eigenscript/
 echo "Stdlib installed to ~/.local/lib/eigenscript/"
@@ -34,6 +41,7 @@ if [ "${1:-}" = "full" ]; then
 else
     echo ""
     echo "Installed: ~/.local/bin/eigenscript (v$VERSION, minimal)"
+    echo "           ~/.local/bin/eigenlsp     (v$VERSION, language server)"
     echo "Run './install.sh full' to also install eigenscript-full."
 fi
 

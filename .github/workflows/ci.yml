@@ -353,3 +353,33 @@ jobs:
 
       - name: Concurrency race gate (setarch -R)
         run: bash tests/test_tsan.sh
+
+  # First-run tooling unification (#400): the VS Code tree is canonical and has
+  # the LSP client, and a fresh install.sh leaves BOTH binaries on PATH.
+  install-smoke:
+    name: install.sh (interpreter + eigenlsp on PATH)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Canonical VS Code tree has the LSP client (no drifted duplicate)
+        run: |
+          test -f editors/vscode/extension.js
+          test ! -e editor
+          python3 - <<'PY'
+          import json
+          p = json.load(open("editors/vscode/package.json"))
+          assert p.get("main") == "./extension.js", p.get("main")
+          assert "vscode-languageclient" in p.get("dependencies", {}), "missing LSP client dep"
+          assert "onLanguage:eigenscript" in p.get("activationEvents", []), "missing activation"
+          print("editors/vscode/ package.json wires the LSP client")
+          PY
+
+      - name: Fresh install.sh puts eigenscript AND eigenlsp on PATH
+        run: |
+          ./install.sh
+          test -x "$HOME/.local/bin/eigenscript"
+          test -x "$HOME/.local/bin/eigenlsp"
+          "$HOME/.local/bin/eigenscript" --version

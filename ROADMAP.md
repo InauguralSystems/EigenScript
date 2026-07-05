@@ -37,7 +37,7 @@ observer/deterministic-replay niche instead of diluting it.**
       ([#397](https://github.com/InauguralSystems/EigenScript/issues/397))
 - [ ] `bench/` replay-pinned perf harness, CI-gated, published as
       docs/PERFORMANCE.md ([#398](https://github.com/InauguralSystems/EigenScript/issues/398))
-- [ ] `--lint` severity control ([#399](https://github.com/InauguralSystems/EigenScript/issues/399));
+- [x] `--lint` severity control ([#399](https://github.com/InauguralSystems/EigenScript/issues/399));
       install.sh builds eigenlsp + one canonical VS Code tree
       ([#400](https://github.com/InauguralSystems/EigenScript/issues/400))
 - [x] docs/CONCURRENCY.md executable memory-model contract + TSan CI job
