@@ -1,0 +1,16 @@
+# Deliberate data race — validates that the TSan gate is live (tests/test_tsan.sh
+# asserts ThreadSanitizer catches THIS). Two spawned workers do unsynchronized
+# read-modify-write on a shared list (spawned closures share the parent heap by
+# reference; see docs/CONCURRENCY.md). NEVER add this to the normal suite.
+shared is [0]
+define worker(n) as:
+    local i is 0
+    loop while i < 20000:
+        set_at of [shared, 0, (get_at of [shared, 0]) + 1]
+        i is i + 1
+    return 0
+h1 is spawn of [worker, 0]
+h2 is spawn of [worker, 0]
+thread_join of h1
+thread_join of h2
+print of (get_at of [shared, 0])
