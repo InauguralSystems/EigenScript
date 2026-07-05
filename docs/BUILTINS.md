@@ -1,6 +1,6 @@
 # EigenScript Builtin Reference
 
-200+ builtins organized by module (160+ core + 45 extensions).
+250+ builtins organized by module (199 core + ~60 extensions).
 Core builtins are always available; extension builtins (HTTP, DB, model,
 gfx, audio) require a full build or the `gfx` target.
 
