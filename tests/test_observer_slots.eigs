@@ -58,6 +58,32 @@ catch err:
     caught is 1
 check of ["ninth slot throws, never silently unobserved", caught, 1]
 
+# verdict(): the full regime string, resolving the slot correctly (the #383
+# non-bug) and AGREEING with the boolean predicates.
+# slot 4: a descending signal -> improving (not equilibrium — proves report-of
+# reads the slot, not the value-fallback).
+i is 0
+dv is 100.0
+loop while i < 14:
+    dv is dv * 0.5
+    observer_slots.feed of [4, dv]
+    i is i + 1
+check of ["verdict reads the slot regime (improving)", observer_slots.verdict of (4), "improving"]
+check of ["verdict agrees with is_diverging (0)", observer_slots.is_diverging of (4), 0]
+# slot 5: wedged constant -> equilibrium, which also satisfies stable
+i is 0
+loop while i < 14:
+    observer_slots.feed of [5, 9.0]
+    i is i + 1
+check of ["verdict on a wedged constant is equilibrium", observer_slots.verdict of (5), "equilibrium"]
+check of ["...and that same slot reads stable", observer_slots.is_stable of (5), 1]
+vcaught is 0
+try:
+    observer_slots.verdict of (8)
+catch err:
+    vcaught is 1
+check of ["verdict out-of-range throws too", vcaught, 1]
+
 if fails == 0:
     print of "OBSERVER_SLOTS_ALL_PASS"
 if fails > 0:

@@ -1691,9 +1691,9 @@ check_eigs_suite "harness: count-and-continue, throwing finish, reset" \
     "test_harness.eigs" "HARNESS_ALL_PASS" 4
 echo ""
 
-echo "[50i] Observer Slots (6 checks)"
-check_eigs_suite "observer_slots: trajectories through slot dispatch, independence" \
-    "test_observer_slots.eigs" "OBSERVER_SLOTS_ALL_PASS" 6
+echo "[50i] Observer Slots (11 checks)"
+check_eigs_suite "observer_slots: trajectories through slot dispatch, independence, verdict()" \
+    "test_observer_slots.eigs" "OBSERVER_SLOTS_ALL_PASS" 11
 echo ""
 
 echo "[50j] Trajectory Contracts (15 checks)"

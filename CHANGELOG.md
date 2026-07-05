@@ -5,6 +5,13 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`observer_slots.verdict of i`** — the full trajectory-regime string for a
+  slot (was deferred on #383). Investigating #383 showed `report of <name>`
+  inside a function *does* resolve the module binding's slot correctly and agrees
+  with the predicates — the reported divergence did not reproduce (it was a
+  constant reading as "equilibrium", which also satisfies `stable`, misread as a
+  resolution bug). Verified with a descending signal reading "improving" (not the
+  value-fallback), single-file and via `load_file`. Suite [50i] now 11 checks.
 - **Unicode/text position settled: bytes-forever + `lib/utf8.eigs`** (#416).
   SPEC.md gains a "Text" subsection making `str`-is-a-byte-string official — byte
   indexing, multibyte-safe concat/f-strings — with byte-checked examples, and the
