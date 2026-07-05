@@ -370,7 +370,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # 2,000+ checks (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 2,500+ checks (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ### Writing your own tests
@@ -416,7 +416,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
 - [docs/LANGUAGE_CONTRACT.md](docs/LANGUAGE_CONTRACT.md) — edge-case promises
-- [docs/BUILTINS.md](docs/BUILTINS.md) — 150+ builtin functions (130 core + 20 extensions)
+- [docs/BUILTINS.md](docs/BUILTINS.md) — 250+ builtin functions (199 core + ~60 extensions)
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
@@ -466,7 +466,7 @@ get made and how contributors can earn commit access over time.
 
 ```bash
 make                  # build
-make test             # build and run the full suite (1,800+ checks)
+make test             # build and run the full suite (2,500+ checks)
 make gfx              # build with SDL2 graphics (UI toolkit, games)
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts
