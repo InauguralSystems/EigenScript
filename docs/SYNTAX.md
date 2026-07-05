@@ -88,7 +88,8 @@ print of (greet of ["Jon", 30])
 ```
 
 The argument list is unpacked into the named parameters automatically.
-`n` is still available as the raw argument for backward compatibility.
+(With a named parameter list, `n` is not defined — the implicit `n` exists
+*only* when a function has no parameter list.)
 
 ### Classic Style
 
@@ -140,7 +141,7 @@ Run `eigenscript` with no arguments to enter the REPL:
 
 ```
 $ eigenscript
-EigenScript 0.6.0
+EigenScript 0.26.0
 Type 'exit' or Ctrl-D to quit.
 
 eigs> x is 42
@@ -285,7 +286,6 @@ print of (len of items)   # 5
 append of [items, 6]      # mutates items
 ```
 
-Note: list literals must be on a single line.
 
 ## Dictionaries
 
@@ -547,10 +547,17 @@ Libraries live in `lib/` and are loaded with `load_file`:
 
 See [BUILTINS.md](BUILTINS.md) for the complete builtin reference.
 
-## Limitations
+## Gotchas
 
-**Single-line collections:**
-List and dict literals must be on a single line.
+**The one-element spread trap:** `f of [x]` (a one-element list) binds the whole
+list to the first parameter — it does **not** spread. For a single argument to a
+multi-parameter (or defaulted) function, write `f of (x)`; `f of ([a, b])` passes
+a literal list whole. (`f of x` for a bare value is fine.)
 
-**No break/continue:**
-Use flag variables to exit loops early.
+**Strings are bytes, not characters.** `len`/`char_at`/indexing operate on bytes;
+a multibyte character has length > 1. Use `lib/utf8.eigs` for codepoint
+semantics. See [SPEC.md → Text and Unicode](SPEC.md).
+
+**Numbers are finite.** No `NaN`/`Inf` reach your code — they collapse to `0` /
+saturate at `±1e308` (see *Numeric Semantics* above). Integer exactness ends at
+2^53; integer bitwise ops act on int64.
