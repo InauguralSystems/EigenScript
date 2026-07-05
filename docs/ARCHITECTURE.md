@@ -63,7 +63,7 @@ Source code (.eigs)
   Lexer          tokenize() → token array
     │
     ▼
-  Parser         parse() → AST (31 node types)
+  Parser         parse() → AST (33 node types)
     │
     ▼
   Compiler       compile_ast() → EigsChunk (bytecode + constant pool)
@@ -85,7 +85,7 @@ tracks indent depth and emits INDENT/DEDENT tokens.
 
 ### Parser
 
-The recursive-descent parser (`parse()`) builds an AST with 31 node types.
+The recursive-descent parser (`parse()`) builds an AST with 33 node types.
 Each node has a type (assignment, if, for, while, define, return, etc.) and
 child expressions. Expressions use a Pratt-style precedence parser.
 
@@ -224,7 +224,8 @@ destroys at zero — there is no special-cased teardown path.
 
 **Cycle collector.** An env that binds a closure capturing it forms an
 `env<->fn` reference cycle that plain counts cannot reclaim. Captured
-envs register in a per-thread list; when the registry crosses an
+envs register in a per-state list (lock-guarded via `state->gc_lock`);
+when the registry crosses an
 adaptive threshold (and once at exit), `gc_collect_cycles` walks the
 subgraph reachable from registered envs over owned edges (env slots,
 `parent`, `fn->closure`, list/dict elements, `fn->chunk->env_cache`),
@@ -232,8 +233,11 @@ counts in-subgraph references per node, and treats any node whose
 refcount exceeds that count as externally rooted. Unmarked remainder is
 cyclic garbage: pinned, edge-cleared, then released through the normal
 destructors. Conservative by construction — any accounting mismatch
-aborts the collection (leaking instead of freeing). Disabled once
-spawn() goes multithreaded. See `docs/CLOSURE_CYCLE_GC.md`.
+aborts the collection (leaking instead of freeing). While `spawn()` is
+multithreaded, mid-run collection is deferred (not disabled): registration
+continues under the lock, and the exit sweep reclaims worker-created
+env<->closure cycles once workers are joined (#297). See
+`docs/CLOSURE_CYCLE_GC.md`.
 
 ## Extensions
 
@@ -252,9 +256,10 @@ The minimal build (`make build`) sets all flags to 0. The full build
 ## Standard Library
 
 The 73 modules in `lib/` are pure EigenScript — no C code. They are loaded at
-runtime via `load_file of "lib/module.eigs"`. Path resolution searches relative
-to the executable's directory, then the current working directory, then the
-script's directory.
+runtime via `load_file of "lib/module.eigs"`. Path resolution searches in
+order: the current working directory, the script file's directory, the script's
+parent directory, directories relative to the executable (`exe_dir/..` and the
+installed stdlib beside it), then `~/.local/lib/eigenscript`.
 
 The meta-circular interpreter (`lib/eigen.eigs`) implements tokenization,
 parsing, and evaluation of EigenScript source code in EigenScript itself.

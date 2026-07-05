@@ -394,19 +394,24 @@ are the query interface — zero cost when you don't ask:
 | `who is x` | Variable name as string | `who is loss` → `"loss"` |
 | `when is x` | Observation age (number of assignments) | `when is loss` → `4` |
 | `where is x` | Entropy (information content) | `where is loss` → `0.832` |
-| `why is x` | dH (rate of change, negative = improving) | `why is loss` → `-0.15` |
-| `how is x` | Stability score (0 = unstable, 1 = stable) | `how is loss` → `0.95` |
+| `why is x` | dH (rate of entropy change; negative while descending into a basin = improving) | `why is loss` → `-0.27` |
+| `how is x` | Currently degenerate — returns 0 (1 only at zero entropy); see OBSERVER.md, #412 | `how is loss` → `0` |
 
 ```eigenscript
-loss is 100.0
-loss is 80.0
-loss is 55.0
+loss is 0.9
+loss is 0.5
+loss is 0.2
 
-print of (what is loss)    # 55
-print of (why is loss)     # negative — loss is decreasing
-print of (how is loss)     # high — change is consistent
+print of (what is loss)    # 0.2
+print of (why is loss)     # negative — descending into a basin (entropy falling)
+print of (how is loss)     # 0 — how is currently degenerate (see OBSERVER.md)
 print of (when is loss)    # 3 — three assignments
 ```
+
+Note that `why` tracks the *entropy* trajectory, not the raw value: a
+magnitude shrinking toward `1` (e.g. `100 → 55`) climbs the entropy ridge and
+reads as *diverging* (positive dH), while one descending into a basin below `1`
+reads as *improving*. See `docs/OBSERVER.md` for the full model.
 
 Use interrogatives for debugging, convergence detection, or understanding
 runtime behavior without writing logging code.

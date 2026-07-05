@@ -169,7 +169,7 @@ model — don't work around a gap, surface it).
     **EigenGauntlet** (stress-app suite for constrained hardware)
 - **Infra**: **eigen-site** (inauguralsystems.com landing + the self-owned HTTP
   attack target), **homebrew-eigenscript** (tap), **eigs-package-template**,
-  **awesome-eigenscript** (registry).
+  **awesome-eigenscript** (curated index — a list, not a registry).
 
 ## Releasing
 

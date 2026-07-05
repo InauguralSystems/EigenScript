@@ -107,8 +107,9 @@ The bulk of the surface, but mostly *not* reimplemented:
 `pthread_cond_*` `pthread_condattr_*`
 Route onto the kernel's own scheduler + sync primitives via the HAL. **But
 harden first**: the threading/channel layer is the youngest part of the runtime
-(#293 cross-thread channel UAF; the cycle collector is disabled once
-multithreaded; spawn-thread programs leak — the ASan floor). Freestanding
+(#293 cross-thread channel UAF; before #295/#297 the cycle collector was
+disabled once multithreaded and spawn-thread programs leaked — the ASan floor,
+now driven to 0). Freestanding
 threading on a custom scheduler will lean hardest on exactly this code, so it
 should be solid before EigenOS depends on it. (EigenGauntlet's `concurrent` lab
 is the standing pressure here.)
@@ -207,7 +208,7 @@ Two CI gates keep it honest:
 - **`make freestanding-check`** (`tools/freestanding_check.sh`) — stage 1
   compiles the profile with `-ffreestanding -fno-stack-protector
   -U_FORTIFY_SOURCE`, links it relocatable, and fails if the undefined-symbol
-  set contains anything outside `tools/freestanding_allowlist.txt` (~75
+  set contains anything outside `tools/freestanding_allowlist.txt` (~90
   symbols, all within). Stage 2 links the mini-libc/libm in and fails unless
   the residue is EXACTLY the kernel-owed HAL roots
   (`tools/freestanding_hal_roots.txt` — 30 symbols: heap 4, console 7,

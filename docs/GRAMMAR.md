@@ -47,7 +47,7 @@ COMMENT     = '#' { any } '\n'
 
 letter      = 'a'..'z' | 'A'..'Z'
 digit       = '0'..'9'
-escape      = '\n' | '\t' | '\\' | '\"' | '\{' | '\}'
+escape      = '\n' | '\t' | '\r' | '\\' | '\"' | '\{' | '\}'
 ```
 
 ### Keywords

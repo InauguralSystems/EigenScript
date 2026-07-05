@@ -1740,11 +1740,12 @@ void env_destroy_final(Env *env) {
  *
  * Conservative by construction: if internal counts ever exceed a
  * refcount (an uncounted edge was traversed — accounting bug), the
- * whole collection aborts and the memory leaks instead. Collection is
- * disabled once spawn() goes multithreaded: cross-thread roots are
- * still counted refs (so nothing would be freed wrongly), but registry
- * list maintenance is not thread-safe, so registration stops and the
- * registry is drained up front.
+ * whole collection aborts and the memory leaks instead. Mid-run
+ * collection is deferred (not disabled) once spawn() goes multithreaded:
+ * cross-thread roots are still counted refs (so nothing would be freed
+ * wrongly), and registration continues under the per-state gc_lock, but
+ * the collector only runs single-threaded, so worker-created env<->closure
+ * cycles are reclaimed by the exit sweep once workers are joined (#297).
  * ================================================================ */
 
 /* gc_threshold, gc_enabled, in_gc are per-thread (EigsThread); the candidate

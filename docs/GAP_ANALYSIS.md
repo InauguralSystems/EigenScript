@@ -1,8 +1,8 @@
 # EigenScript Gap Analysis [HISTORICAL]
 
-**This document is a historical snapshot from version 0.8.1.** Current
-version is **0.12.0**. Many listed gaps have been resolved in later
-releases:
+**This document is a historical snapshot from version 0.8.1.** See
+`ROADMAP.md` and `CHANGELOG.md` for the live state — many listed gaps have
+been resolved in later releases:
 
 - **Concurrency**: spawn/thread_join/channels added in 0.9.0
 - **Pattern matching / lambdas / regex / imports**: added in 0.7.0
@@ -34,7 +34,7 @@ The survey is grounded in the current state of `src/`, `lib/`, `docs/`, and
 - Hybrid memory: atomic reference counting, arena bump allocator, numeric freelist
 - Native binary, zero runtime dependencies
 
-**Standard library highlights** (25 modules in 0.8.1; 49 modules in current 0.9.3, all pure EigenScript)
+**Standard library highlights** (25 modules in 0.8.1; 49 modules by 0.9.3, all pure EigenScript)
 - File I/O and path manipulation
 - JSON encode/decode, CSV, INI, `.env`
 - List / set / queue / map / state-machine / template / format helpers
@@ -206,7 +206,7 @@ most of these have shipped:
 - LSP — **shipped 0.9.1**
 - JIT — **shipped 0.12.0** (copy-and-patch x86-64 + inline ICs)
 - WASM target — still open (ecosystem)
-- Package manager / module registry — still open (ecosystem)
+- Package manager — basic `--pkg` tool **shipped** (add/install/update/verify/list; see PACKAGE_SPEC.md); a hosted module registry remains deliberately out of scope
 - FFI — still open (ecosystem)
 
 Gaps still without roadmap entries beyond ecosystem placeholders:

@@ -118,7 +118,7 @@ examples (executed by the suite).
   byte-offset operations — this is the documented consequence of the byte
   model, not a bug.
 - Strings are immutable; comparison (`==`, `<`) is bytewise.
-- String literals support the escapes `\n \t \\ \"`. There is no `\0`,
+- String literals support the escapes `\n \t \r \\ \" \{ \}`. There is no `\0`,
   `\xNN`, or `\u{…}` escape, so a string cannot embed a NUL or an arbitrary
   byte from source (only the raw bytes present in the source file flow
   through). An embedded NUL, if one ever arrived from file/buffer input,

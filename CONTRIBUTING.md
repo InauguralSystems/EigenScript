@@ -25,8 +25,8 @@ Two gates worth knowing before you push:
 
 - **The suite must also pass under sanitizers** (CI enforces it):
   `make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh`.
-  The final summary prints a tolerated-leak tally (known closure-cycle
-  leaks, see `docs/CLOSURE_CYCLE_GC.md`) — if your change makes that
+  The final summary prints a tolerated-leak tally (currently 0 — see
+  `docs/CLOSURE_CYCLE_GC.md`) — if your change makes that
   number jump, you've introduced a leak.
 - **The spec is executable.** Every example in `docs/SPEC.md` and
   `docs/COMPARISON.md` runs in CI and must match its output block

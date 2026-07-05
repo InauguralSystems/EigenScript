@@ -21,7 +21,7 @@ WASM build, no install required.
 | document | what it answers |
 |---|---|
 | [BUILTINS.md](BUILTINS.md) | Every built-in function: signature, behavior, errors. |
-| [STDLIB.md](STDLIB.md) | The 49 standard-library modules under `lib/`. |
+| [STDLIB.md](STDLIB.md) | The 73 standard-library modules under `lib/`. |
 | [OBSERVER.md](OBSERVER.md) | Observer semantics in depth: entropy, dH, predicates, `unobserved`. |
 | [TRACE.md](TRACE.md) | Temporal interrogatives, the trace tape, deterministic replay, and replay's nondeterminism boundary. |
 | [DIAGNOSTICS.md](DIAGNOSTICS.md) | Error messages, the linter, and the formatter. |
@@ -36,7 +36,8 @@ WASM build, no install required.
 | [CLOSURE_CYCLE_GC.md](CLOSURE_CYCLE_GC.md) | The closure-cycle collector: honest env refcounts, the registry/mark-sweep design as built, maintainer invariants, and what still leaks. |
 | [TEST_COVERAGE_ANALYSIS.md](TEST_COVERAGE_ANALYSIS.md) | The coverage program: findings → fixes → residual gaps, with measured numbers. |
 | [GAP_ANALYSIS.md](GAP_ANALYSIS.md) | Downstream feature-gap tracking. |
-| [PACKAGE_DESIGN.md](PACKAGE_DESIGN.md) | **Proposal** (not implemented): the package/dependency design — vendored `eigs_modules/`, git-pinned manifest + lockfile, `--pkg` tool. |
+| [PACKAGE_SPEC.md](PACKAGE_SPEC.md) | The `--pkg` tool as implemented: `add`/`install`/`update`/`verify`/`list`, `eigs.json` manifest, SHA-pinned lockfile, vendored `eigs_modules/`. |
+| [PACKAGE_DESIGN.md](PACKAGE_DESIGN.md) | Partially implemented — shipped behavior lives in PACKAGE_SPEC.md; the design intent and open questions are here. |
 
 ## Editor support
 
@@ -53,7 +54,7 @@ completion, hover, definition, references over stdio).
   purpose*, each declaring its expected error message in an
   `# expect-error:` header (verified by the suite). Read these to learn
   what mistakes look like.
-- [`tests/`](../tests/) — the language's executable semantics: 1700+
+- [`tests/`](../tests/) — the language's executable semantics: 2,500+
   checks, each test file readable as a statement of intended behavior.
 
 ## Conventions in these docs

@@ -86,8 +86,9 @@ as a force-destroy escape hatch (no current callers in main).
 ### Stage 2 — the collector (`gc_collect_cycles`, eigenscript.c)
 
 - **Registry.** `OP_CLOSURE` calls `env_mark_captured`, which links the
-  env into a per-thread intrusive list (`gc_next`/`gc_prev`/
-  `in_gc_list` on `Env`). `g_global_env` is never registered. The env
+  env into a per-state intrusive list (`gc_next`/`gc_prev`/
+  `in_gc_list` on `Env`), lock-guarded by `state->gc_lock` while
+  multithreaded. `g_global_env` is never registered. The env
   destructor and `env_destroy_final` unlink.
 - **Trigger.** Registration is the only way the candidate universe
   grows, so the threshold check lives there — zero cost on the
@@ -130,9 +131,11 @@ as a force-destroy escape hatch (no current callers in main).
   `rc > internal + pinned`); afterward it clears the flags and drops the pins
   (the final pin drop frees the now-edge-cleared garbage; live candidates keep
   their other refs). The buffer drains on the env-registry threshold trigger,
-  on its own `GC_VAL_THRESHOLD` trigger, and at exit. Gated identically to
-  `env_mark_captured` (off when GC-disabled, mid-collection, or multithreaded),
-  so the hot decref stays lock-free and single-threaded-only.
+  on its own `GC_VAL_THRESHOLD` trigger, and at exit. The hook is off when
+  GC-disabled, mid-collection, or multithreaded, so the hot decref stays
+  lock-free and single-threaded-only. (This is *not* identical to
+  `env_mark_captured`, whose registration continues under `gc_lock` while
+  multithreaded — only its collection trigger is suppressed there.)
 - **Exit.** `gc_collect_at_exit(global)` (main.c, both REPL and script
   paths): flush the value-candidate buffer first (`gc_collect_cycles`), then
   snapshot the global scope's container values with one pinning ref apiece,
@@ -142,12 +145,14 @@ as a force-destroy escape hatch (no current callers in main).
   reclaims pure value→value cycles bound at global scope (a list
   appended to itself) that are unreachable from the captured-env
   registry.
-- **Threads.** `builtin_spawn` calls `gc_disable_for_threads()` before
-  flipping `g_vm_multithreaded`: the registry is drained on the main
-  thread and registration stops. Spawned programs keep the old leak
-  behavior (their leaks stay *visible* to LSan — drained envs are
-  unreachable at exit, nothing is masked). Cross-thread refcounts stay
-  correct (atomic); only the collector is off.
+- **Threads.** While `g_vm_multithreaded` is set, mid-run collection is
+  deferred but env registration continues under `state->gc_lock` (the
+  candidate registry is per-state). The value-candidate hook
+  (`gc_note_possible_root`) is off during the MT window, so worker-local
+  pure-value cycles are not buffered (see "What still leaks" below), but
+  env↔closure cycles captured on workers are registered and reclaimed by
+  the exit sweep once the workers are joined (#297). Cross-thread
+  refcounts stay correct (atomic).
 
 ### Maintainer invariants (violations are UAF or silent leaks)
 

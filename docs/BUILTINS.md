@@ -17,7 +17,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_play_loop`, `audio_volume`, `audio_stop`, `audio_queue_size`, `audio_clear`, `audio_sine`,
 `audio_saw`, `audio_sweep`,
 `audio_square`, `audio_noise`, `audio_mix`, `audio_gain`,
-`audio_envelope`), and `free_val`/`free_ast` for memory management.
+`audio_envelope`), and `free_val` for memory management.
 
 ## Core Language
 
@@ -185,7 +185,7 @@ Six keywords for querying a value's observer state. Zero cost when unused.
 | `when` | `when is x` | Observation age (number of assignments) |
 | `where` | `where is x` | Entropy (information content) |
 | `why` | `why is x` | dH (rate of change) |
-| `how` | `how is x` | Stability score (0 = unstable, 1 = stable) |
+| `how` | `how is x` | Currently degenerate — returns 0 (1 only at zero entropy); see OBSERVER.md, #412 |
 
 ### Temporal
 
@@ -499,7 +499,7 @@ worker envs don't populate it).
 
 ## Optional: Graphics (SDL2) Extension
 
-Requires full build with gfx (`./build.sh gfx`). Dynamically loads
+Requires a build with graphics enabled (`make gfx`). Dynamically loads
 libSDL2 at runtime — no SDL2 headers needed at build time.
 
 | Name | Signature | Description |
@@ -549,7 +549,7 @@ Requires full build. Transformer model inference and training.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `spawn` | `spawn of fn` or `spawn of [fn, arg1, ...]` | Spawn a thread running `fn`. Bare-fn form passes no args; list form passes `arg1...` positionally. Missing trailing params bind to `null`; extra args are ignored. Args are shared by reference (consistent with channels) — see thread-safety note below. Returns a thread handle dict. |
+| `spawn` | `spawn of fn` or `spawn of [fn, arg1, ...]` | Spawn a thread running `fn`. Bare-fn form passes no args; list form passes `arg1...` positionally. Missing trailing params bind to `null`; extra args are ignored. Args are shared by reference (unlike channel sends, which copy) — see thread-safety note below. Returns a thread handle dict. |
 | `thread_join` | `thread_join of handle` | Block until thread completes. Returns the thread function's return value. |
 | `channel` | `channel of null` | Create a bounded FIFO channel (capacity 64). Returns a channel handle dict. |
 | `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. |
@@ -559,10 +559,14 @@ Requires full build. Transformer model inference and training.
 | `close_channel` | `close_channel of channel` | Close the channel. Wakes all blocked senders/receivers. |
 | `channel_closed` | `channel_closed of channel` | Returns 1 if closed, 0 otherwise. |
 
-**Thread safety:** Values sent through channels are shared by reference, not
-copied. Mutable containers (dicts, lists) must not be mutated concurrently by
-sender and receiver. Transfer ownership or send immutable values (numbers,
-strings).
+**Thread safety:** Values sent through a channel (or returned through
+`thread_join`) are deep-COPIED via `val_clone_for_send` — messages are
+share-nothing. Numbers, strings, and nested lists/dicts arrive as independent
+copies, so mutating the original after a send cannot be observed by the other
+thread (see `docs/CONCURRENCY.md`). The exceptions are handle-like values —
+`buffer`, `text_builder`, `fn`, and `builtin` — which remain shared by
+reference across a send; do not mutate those concurrently from sender and
+receiver.
 
 ## Spatial Queries
 

@@ -56,7 +56,7 @@ All notable changes to EigenScript are documented here.
   (`--lint --json` → run → `--test`, the parse→compile→sandbox grading). Linked
   from the README; a doc-drift check stamps it to the current version so it
   can't silently fall behind the language. (Writing it caught a wrong idiom in
-  its own draft — `1/0` warns and saturates rather than throwing, so the
+  its own draft — `1/0` warns and returns 0 rather than throwing, so the
   try/catch example now raises with `throw of` explicitly.)
 - **COMPARISON.md "Convergence loops" section** (#402): the observer's everyday
   payoff, framed as boilerplate deletion before any theory — the same Newton's
