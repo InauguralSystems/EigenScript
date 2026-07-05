@@ -936,9 +936,47 @@ int lint_collect(ASTNode *ast, LintDiag *out, int max) {
 
 /* ---- Main lint entry ---- */
 
-int eigenscript_lint(const char *path, int json_mode) {
+/* Inline suppression (#399). Does a `# lint: allow <CODE>...` comment on source
+ * line `warn_line` (a trailing comment) or `warn_line - 1` (a comment on the
+ * line above) silence `code`? `all` silences every code. Comments are stripped
+ * before the AST, so this scans the raw source. */
+static int comment_allows(const char *after_marker, const char *code) {
+    const char *p = after_marker;
+    size_t clen = strlen(code);
+    while (*p && *p != '\n') {
+        while (*p == ' ' || *p == '\t' || *p == ',') p++;
+        if (!*p || *p == '\n') break;
+        const char *tk = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != ',' && *p != '\n') p++;
+        size_t len = (size_t)(p - tk);
+        if (len == 3 && strncmp(tk, "all", 3) == 0) return 1;
+        if (len == clen && strncmp(tk, code, clen) == 0) return 1;
+    }
+    return 0;
+}
+static int lint_suppressed(const char *source, int warn_line, const char *code) {
+    static const char MARKER[] = "# lint: allow";
+    const size_t MLEN = sizeof(MARKER) - 1;
+    int line = 1;
+    for (const char *p = source; *p; ) {
+        const char *nl = strchr(p, '\n');
+        const char *end = nl ? nl : p + strlen(p);
+        if (warn_line == line || warn_line == line + 1) {
+            for (const char *q = p; q + MLEN <= end; q++) {
+                if (strncmp(q, MARKER, MLEN) == 0 && comment_allows(q + MLEN, code))
+                    return 1;
+            }
+        }
+        if (!nl) break;
+        p = nl + 1;
+        line++;
+    }
+    return 0;
+}
+
+int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
 #if EIGENSCRIPT_FREESTANDING
-    (void)path; (void)json_mode;
+    (void)path; (void)json_mode; (void)fail_on_warning;
     return 1;   /* lint is a host-CLI tool; no filesystem here */
 #else
     long src_size = 0;
@@ -985,6 +1023,18 @@ int eigenscript_lint(const char *path, int json_mode) {
     LintContext ctx = {0};
     lint_run_checks(ast, &ctx);
 
+    /* #399 inline suppression: drop warnings silenced by a `# lint: allow`
+     * comment on their line (or the line above). Compact in place so the
+     * suppressed diagnostics vanish from both human and JSON output. */
+    {
+        int kept = 0;
+        for (int w = 0; w < ctx.warning_count; w++) {
+            if (!lint_suppressed(source, ctx.warnings[w].line, ctx.warnings[w].code))
+                ctx.warnings[kept++] = ctx.warnings[w];
+        }
+        ctx.warning_count = kept;
+    }
+
     /* Emit. JSON goes to stdout (machine-consumable, even when clean →
      * "[]"); human text goes to stderr as before, now with the [CODE]. */
     if (json_mode) {
@@ -1014,6 +1064,17 @@ int eigenscript_lint(const char *path, int json_mode) {
     free_tokenlist(&tl);
     free(source);
 
+    /* Exit code (#399): --lint-level warning (default) fails on any surviving
+     * warning; --lint-level error makes warnings advisory (exit 0) and fails
+     * only on error-severity diagnostics — so a consumer can wire
+     * `--lint --json` into CI for diagnostics without warnings-as-errors.
+     * (Parse/read errors are E-codes that already returned 1 above.) */
+    if (!fail_on_warning) {
+        int errors = 0;
+        for (int i = 0; i < ctx.warning_count; i++)
+            if (strcmp(ctx.warnings[i].level, "error") == 0) errors++;
+        return errors > 0 ? 1 : 0;
+    }
     return ctx.warning_count > 0 ? 1 : 0;
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }

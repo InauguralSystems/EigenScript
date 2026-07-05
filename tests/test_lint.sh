@@ -343,6 +343,45 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "W015 silent with local / fresh local / _-prefixed fn" "$OUTPUT" "W015"
 rm -f "$TMPFILE"
 
+# --- #399: --lint-level threshold ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'temp is 42\nprint of "hi"\n' > "$TMPFILE"   # W001 unused variable
+RC_DEFAULT=0; $EIGS --lint "$TMPFILE" >/dev/null 2>&1 || RC_DEFAULT=$?
+RC_ERROR=0; $EIGS --lint --lint-level error "$TMPFILE" >/dev/null 2>&1 || RC_ERROR=$?
+RC_WARN=0; $EIGS --lint --lint-level warning "$TMPFILE" >/dev/null 2>&1 || RC_WARN=$?
+[ "$RC_DEFAULT" -eq 1 ] && { echo "  PASS: default level fails on warning (exit 1)"; PASS=$((PASS+1)); } || { echo "  FAIL: default level exit was $RC_DEFAULT"; FAIL=$((FAIL+1)); }
+[ "$RC_ERROR" -eq 0 ] && { echo "  PASS: --lint-level error makes warnings advisory (exit 0)"; PASS=$((PASS+1)); } || { echo "  FAIL: --lint-level error exit was $RC_ERROR"; FAIL=$((FAIL+1)); }
+[ "$RC_WARN" -eq 1 ] && { echo "  PASS: --lint-level warning fails on warning (exit 1)"; PASS=$((PASS+1)); } || { echo "  FAIL: --lint-level warning exit was $RC_WARN"; FAIL=$((FAIL+1)); }
+TOTAL=$((TOTAL+3))
+# warning is still REPORTED under --lint-level error (advisory, not hidden)
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1 || true)
+check_contains "advisory warning still printed" "$OUTPUT" "W001"
+rm -f "$TMPFILE"
+
+# --- #399: inline suppression `# lint: allow` ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'temp is 42  # lint: allow W001\nprint of "hi"\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "trailing '# lint: allow W001' suppresses it" "$OUTPUT" "W001"
+RC_SUP=0; $EIGS --lint "$TMPFILE" >/dev/null 2>&1 || RC_SUP=$?
+[ "$RC_SUP" -eq 0 ] && { echo "  PASS: suppressed file exits 0"; PASS=$((PASS+1)); } || { echo "  FAIL: suppressed file nonzero exit"; FAIL=$((FAIL+1)); }
+TOTAL=$((TOTAL+1))
+rm -f "$TMPFILE"
+
+# comment on the line ABOVE also suppresses
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf '# lint: allow W001\ntemp is 42\nprint of "hi"\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "'# lint: allow' on the line above suppresses" "$OUTPUT" "W001"
+rm -f "$TMPFILE"
+
+# a non-matching code does NOT over-suppress
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'temp is 42  # lint: allow W014\nprint of "hi"\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "wrong code does not over-suppress W001" "$OUTPUT" "W001"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

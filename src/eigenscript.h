@@ -1030,6 +1030,6 @@ typedef struct {
 /* Run all lint checks on an already-parsed AST; fill out[] (up to max),
  * return the count. No I/O. Used by the LSP to publish diagnostics. */
 int lint_collect(ASTNode *ast, LintDiag *out, int max);
-int eigenscript_lint(const char *path, int json_mode);
+int eigenscript_lint(const char *path, int json_mode, int fail_on_warning);
 
 #endif /* EIGENSCRIPT_H */
