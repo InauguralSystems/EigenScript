@@ -1701,6 +1701,11 @@ check_eigs_suite "contract: require/ensure + expect_converging/monotone/invarian
     "test_contract.eigs" "CONTRACT_ALL_PASS" 1
 echo ""
 
+echo "[50k] UTF-8 codepoints (16 checks)"
+check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural validation (published vectors)" \
+    "test_utf8.eigs" "UTF8_ALL_PASS" 1
+echo ""
+
 # [51] Unobserved block
 echo "[51] Unobserved Block (8 checks)"
 UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?

@@ -5,6 +5,16 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Unicode/text position settled: bytes-forever + `lib/utf8.eigs`** (#416).
+  SPEC.md gains a "Text" subsection making `str`-is-a-byte-string official — byte
+  indexing, multibyte-safe concat/f-strings — with byte-checked examples, and the
+  new `lib/utf8.eigs` gives character semantics over the byte string
+  (`utf8_len`/`utf8_codepoints`/`utf8_at`/`utf8_char_at`/`utf8_validate`, tested
+  against published U+00E9/U+20AC/U+10348 vectors, suite [50k]). Native
+  UTF-8-by-construction is deliberately not adopted (it would ripple through
+  VM/JIT/AOT/tools). Building the module surfaced a real gap, filed rather than
+  worked around: `chr` can't emit bytes ≥ 0x80, so `utf8_encode` (and byte-output
+  generally) waits on #435.
 - **Numeric model documented as a deliberate position** (#417): SPEC.md gains a
   "numeric model" subsection stating the contracts one f64 number kind buys —
   integer exactness ends at 2^53, arithmetic is finite by construction (`NaN`

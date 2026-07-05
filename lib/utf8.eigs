@@ -1,0 +1,145 @@
+# ============================================================
+# UTF-8 Library — codepoints over byte strings (#416)
+# ============================================================
+#
+# EigenScript `str` is a byte string by definition (docs/SPEC.md "Text"):
+# `len`, `char_at`, and `[]` index BYTES, not characters. That is the
+# deliberate, zero-dependency position. This module is the Lua-shaped answer for
+# when you need character semantics: decode/iterate/validate UTF-8 in pure
+# EigenScript over the byte primitives. No new number type, no runtime change.
+#
+# How to use:
+#   load_file of "lib/utf8.eigs"
+#   utf8_len of s                 # number of codepoints
+#   utf8_codepoints of s          # list of codepoint numbers
+#   utf8_at of [s, i]             # i-th codepoint (0-indexed), or -1 if out of range
+#   utf8_char_at of [s, i]        # i-th character as a (multi-byte) string, or ""
+#   utf8_validate of s            # 1 if structurally valid UTF-8, else 0
+#
+# DECODE only — for now. Encoding a codepoint to bytes needs to write bytes
+# >= 0x80, and `chr` currently caps at 127 (returns "" above it), so there is no
+# way to construct a high byte in pure EigenScript. Filed upstream as #435; once
+# `chr` (or a `byte` builtin) can emit 0..255, `utf8_encode` is a few lines.
+# Reading raw bytes (`char_at`/`ord`) works, which is why decode/validate do.
+
+# ---- _u8_lead_len: sequence length a lead byte begins (0 = not a lead) ----
+define _u8_lead_len(b) as:
+    if b < 128:
+        return 1
+    if b < 192:
+        return 0
+    if b < 224:
+        return 2
+    if b < 240:
+        return 3
+    if b < 248:
+        return 4
+    return 0
+
+# ---- _u8_decode_at of [s, i]: [codepoint, seq_len] at byte index i ----
+# Lenient: a malformed sequence still advances by the lead-implied length (>=1)
+# so iteration always terminates; masks continuation bytes with 0x3F. Reject
+# with utf8_validate.
+define _u8_decode_at(n) as:
+    local s is n[0]
+    local i is n[1]
+    local b0 is ord of (char_at of [s, i])
+    local nb is _u8_lead_len of b0
+    if nb < 2:
+        return [b0, 1]
+    local cp is 0
+    if nb == 2:
+        cp is bit_and of [b0, 31]
+    if nb == 3:
+        cp is bit_and of [b0, 15]
+    if nb == 4:
+        cp is bit_and of [b0, 7]
+    local slen is len of s
+    local k is 1
+    loop while k < nb:
+        if (i + k) >= slen:
+            return [cp, nb]
+        local cb is bit_and of [(ord of (char_at of [s, i + k])), 63]
+        cp is (bit_shl of [cp, 6]) + cb
+        k is k + 1
+    return [cp, nb]
+
+# ---- utf8_len: number of codepoints ----
+define utf8_len(s) as:
+    local slen is len of s
+    local i is 0
+    local count is 0
+    loop while i < slen:
+        local r is _u8_decode_at of [s, i]
+        i is i + r[1]
+        count is count + 1
+    return count
+
+# ---- utf8_codepoints: list of codepoint numbers ----
+define utf8_codepoints(s) as:
+    local slen is len of s
+    local i is 0
+    local out is []
+    loop while i < slen:
+        local r is _u8_decode_at of [s, i]
+        append of [out, r[0]]
+        i is i + r[1]
+    return out
+
+# ---- utf8_at of [s, idx]: idx-th codepoint (0-indexed), or -1 ----
+define utf8_at(n) as:
+    local s is n[0]
+    local idx is n[1]
+    local slen is len of s
+    local i is 0
+    local j is 0
+    loop while i < slen:
+        local r is _u8_decode_at of [s, i]
+        if j == idx:
+            return r[0]
+        i is i + r[1]
+        j is j + 1
+    return 0 - 1
+
+# ---- utf8_char_at of [s, idx]: idx-th character as a byte substring, or "" ----
+define utf8_char_at(n) as:
+    local s is n[0]
+    local idx is n[1]
+    local slen is len of s
+    local i is 0
+    local j is 0
+    loop while i < slen:
+        local r is _u8_decode_at of [s, i]
+        if j == idx:
+            return substr of [s, i, r[1]]
+        i is i + r[1]
+        j is j + 1
+    return ""
+
+# ---- utf8_validate: 1 if structurally valid UTF-8, else 0 ----
+# Checks lead bytes and that each sequence has its full run of 0x80..0xBF
+# continuation bytes. (Structural: does not reject overlong encodings or
+# surrogate-range codepoints.)
+define utf8_validate(s) as:
+    local slen is len of s
+    local i is 0
+    loop while i < slen:
+        local b0 is ord of (char_at of [s, i])
+        local nb is _u8_lead_len of b0
+        if nb == 0:
+            return 0
+        if (i + nb) > slen:
+            return 0
+        local k is 1
+        loop while k < nb:
+            local cb is ord of (char_at of [s, i + k])
+            if cb < 128:
+                return 0
+            if cb > 191:
+                return 0
+            k is k + 1
+        i is i + nb
+    return 1
+
+# utf8_encode is intentionally absent — see the header note and #435 (chr can't
+# emit bytes >= 0x80 yet). Decoding is the load-bearing half at this scale.
