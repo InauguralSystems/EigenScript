@@ -323,18 +323,22 @@ honor the model above. These are observations, not yet fixes.
   always `0` (or `1` when entropy is `0`). It does not currently provide
   the `0–1` gradient its name suggests. Treat it as not-yet-implemented.
 
-- **Observation is lazy, so trajectories are sampled at *reads*, not
-  assignments.** Assignment only marks the value dirty; `where`/`why` are
-  computed when you ask. Between two interrogations only the latest value
-  survives — `why` compares consecutive *observations*, not every write.
-  Inside `loop while not converged` the predicate is read every iteration,
-  so it does see each step; ad-hoc `why is x` compares to the last time you
-  asked. This is the price of "zero cost until you ask," and it is the
-  right price — just know it's the contract.
+- **Trajectories are sampled at every *assignment*, not at reads.** Since the
+  slot-keyed rewrite (#262), a binding that is interrogated *anywhere* in the
+  program — a predicate, `report`, or a temporal query on it, decided at compile
+  time — has its window pushed on **every** assignment, with entropy and dH
+  computed then and there. So `report of x` after a batch of writes reflects the
+  whole window, not just the last value, and `loop while not converged` sees
+  each step because each `x is …` sampled it. `unobserved:` is the only thing
+  that skips the push. "Zero cost until you ask" holds at compile-flag
+  granularity — a binding you *never* interrogate anywhere is never tracked —
+  not per-read.
 
 ## Cost
 
-Zero until you ask. Assignment marks the value dirty in O(1); `where` and
-`why` are computed only when an interrogative or predicate reads them. An
-`unobserved:` block skips even the dirty-marking. You never pay for a
-question you don't ask.
+Zero until you ask, at compile-flag granularity: a binding no part of the
+program ever interrogates is never sampled and allocates nothing. Once a binding
+*is* interrogated somewhere, every assignment to it (outside `unobserved:`)
+pushes a window sample and computes entropy/dH in O(1). So you pay per-write for
+the bindings you observe and nothing for the rest; an `unobserved:` block opts a
+hot region back out.
