@@ -4,7 +4,20 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **`chr` is the byte-writing inverse of `ord`** (#435): `chr of n` now emits
+  the raw byte for any integer 1–255 (was: silent `""` for anything above
+  127). Everything else raises loudly — 0 (strings are NUL-terminated),
+  negatives, fractions (previously truncated silently), values above 255
+  (the error points at `utf8_encode` for codepoints), and non-numbers.
+  `chr of n` == `str_from_bytes of [n]` across the shared range.
+
 ### Added
+- **`utf8_encode` / `utf8_from_codepoints`** in `lib/utf8.eigs` (#435): the
+  encode half of the #416 module — codepoint(s) → UTF-8 byte string, built on
+  `str_from_bytes`. #435's premise was a misdiagnosis: high bytes were already
+  constructible via `str_from_bytes` (#248); encode had been omitted on that
+  mistaken belief.
 - **Parse errors carry `line:col`** (#407, first increment): the lexer already
   tracked columns; now the two parser diagnostics surface them. Human output
   reads `Parse error line 6:9: …`, the `--lint --json` `E002` element gains a

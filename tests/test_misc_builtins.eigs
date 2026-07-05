@@ -1,10 +1,15 @@
 # Miscellaneous builtin coverage tests
 load_file of "lib/test.eigs"
 
-# chr — ASCII code to character
+# chr — byte value to one-byte string (the writing inverse of ord, #435)
 assert_eq of [chr of 65, "A", "chr 65 = A"]
 assert_eq of [chr of 48, "0", "chr 48 = 0"]
 assert_eq of [chr of 10, "\n", "chr 10 = newline"]
+assert_eq of [ord of (chr of 128), 128, "chr 128 round-trips through ord"]
+assert_eq of [ord of (chr of 233), 233, "chr 233 round-trips through ord"]
+assert_eq of [ord of (chr of 255), 255, "chr 255 round-trips through ord"]
+assert_eq of [len of (chr of 233), 1, "chr of a high byte is one byte"]
+assert_eq of [chr of 233, str_from_bytes of [233], "chr n == str_from_bytes [n]"]
 
 # coalesce — return first non-null/non-empty
 assert_eq of [coalesce of ["hello", "default"], "hello", "coalesce non-empty"]

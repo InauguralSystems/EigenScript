@@ -15,12 +15,12 @@
 #   utf8_at of [s, i]             # i-th codepoint (0-indexed), or -1 if out of range
 #   utf8_char_at of [s, i]        # i-th character as a (multi-byte) string, or ""
 #   utf8_validate of s            # 1 if structurally valid UTF-8, else 0
+#   utf8_encode of cp             # codepoint -> UTF-8 byte string ("" if unencodable)
+#   utf8_from_codepoints of cps   # list of codepoints -> UTF-8 string
 #
-# DECODE only — for now. Encoding a codepoint to bytes needs to write bytes
-# >= 0x80, and `chr` currently caps at 127 (returns "" above it), so there is no
-# way to construct a high byte in pure EigenScript. Filed upstream as #435; once
-# `chr` (or a `byte` builtin) can emit 0..255, `utf8_encode` is a few lines.
-# Reading raw bytes (`char_at`/`ord`) works, which is why decode/validate do.
+# Byte writing comes from `str_from_bytes` (any byte 0..255 as a list) and
+# `chr` (a single byte 1..255) — see #435 for the history: encode was
+# originally omitted on the mistaken belief no high byte was constructible.
 
 # ---- _u8_lead_len: sequence length a lead byte begins (0 = not a lead) ----
 define _u8_lead_len(b) as:
@@ -141,5 +141,37 @@ define utf8_validate(s) as:
         i is i + nb
     return 1
 
-# utf8_encode is intentionally absent — see the header note and #435 (chr can't
-# emit bytes >= 0x80 yet). Decoding is the load-bearing half at this scale.
+# ---- utf8_encode: codepoint -> UTF-8 bytes as a string ----
+# Structural like the rest of the module: any codepoint in 1..0x10FFFF encodes
+# (surrogates included — utf8_validate is structural and accepts them too).
+# Returns "" for anything unencodable: cp > 0x10FFFF, cp < 0, and cp 0
+# (strings are NUL-terminated; NUL-bearing binary belongs in a buffer).
+define utf8_encode(cp) as:
+    if cp < 1:
+        return ""
+    if cp > 1114111:
+        return ""
+    local bytes is []
+    if cp < 128:
+        append of [bytes, cp]
+    if (cp >= 128) and (cp < 2048):
+        append of [bytes, 192 + (bit_shr of [cp, 6])]
+        append of [bytes, 128 + (bit_and of [cp, 63])]
+    if (cp >= 2048) and (cp < 65536):
+        append of [bytes, 224 + (bit_shr of [cp, 12])]
+        append of [bytes, 128 + (bit_and of [(bit_shr of [cp, 6]), 63])]
+        append of [bytes, 128 + (bit_and of [cp, 63])]
+    if cp >= 65536:
+        append of [bytes, 240 + (bit_shr of [cp, 18])]
+        append of [bytes, 128 + (bit_and of [(bit_shr of [cp, 12]), 63])]
+        append of [bytes, 128 + (bit_and of [(bit_shr of [cp, 6]), 63])]
+        append of [bytes, 128 + (bit_and of [cp, 63])]
+    return str_from_bytes of bytes
+
+# ---- utf8_from_codepoints: list of codepoints -> UTF-8 string ----
+# Inverse of utf8_codepoints. Unencodable codepoints contribute "" (dropped).
+define utf8_from_codepoints(cps) as:
+    local out is ""
+    for c in cps:
+        out is out + (utf8_encode of c)
+    return out

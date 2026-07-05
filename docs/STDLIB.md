@@ -435,9 +435,8 @@ semantics when you need them, decoding UTF-8 over the byte primitives.
 | `utf8_at` | `utf8_at of [s, i]` | i-th codepoint (0-indexed), or -1 |
 | `utf8_char_at` | `utf8_char_at of [s, i]` | i-th character as a (multi-byte) string, or "" |
 | `utf8_validate` | `utf8_validate of s` | 1 if structurally valid UTF-8, else 0 |
-
-Decode-only for now: encoding needs to write bytes ≥ 0x80, which `chr` cannot
-yet do (filed as #435). Reading raw bytes works, so decode/validate do.
+| `utf8_encode` | `utf8_encode of cp` | Codepoint → UTF-8 byte string ("" if unencodable) |
+| `utf8_from_codepoints` | `utf8_from_codepoints of cps` | List of codepoints → UTF-8 string (inverse of `utf8_codepoints`) |
 
 ### lib/pkg.eigs — Package Manager Runtime
 
