@@ -2362,13 +2362,19 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         DISPATCH();
     }
 
-#define INT_BINOP(NAME, OP, OPNAME) \
+/* RHS is the (possibly transformed) right operand expression. For `& | ^`
+ * it is the plain int64 operand; for the shifts it is masked to [0,63] so a
+ * large or negative shift count is defined (mod-64), never C UB — the same
+ * `& 63` the bit_shl/bit_shr builtins apply, honoring the LANGUAGE_CONTRACT
+ * "shifts are defined, not UB" promise. Without the mask, `1 << 64` on the
+ * infix path is undefined behavior (UBSan trips; only untested counts hid it). */
+#define INT_BINOP_R(NAME, OP, OPNAME, RHS) \
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
         double _ad, _bd; \
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) { \
-            double _r = (double)((int64_t)_ad OP (int64_t)_bd); \
+            double _r = (double)((int64_t)_ad OP (RHS)); \
             if (slot_is_ptr(_as)) { \
                 Value *_a = slot_as_ptr(_as); \
                 if (NUM_REUSE(_a)) { _a->data.num = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
@@ -2396,11 +2402,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         DISPATCH(); \
     }
 
+/* Non-shift bitwise ops: RHS is the plain int64 operand. */
+#define INT_BINOP(NAME, OP, OPNAME) INT_BINOP_R(NAME, OP, OPNAME, (int64_t)_bd)
+
     INT_BINOP(BAND, &, "&")
     INT_BINOP(BOR, |, "|")
     INT_BINOP(BXOR, ^, "^")
-    INT_BINOP(SHL, <<, "<<")
-    INT_BINOP(SHR, >>, ">>")
+    INT_BINOP_R(SHL, <<, "<<", ((int64_t)_bd & 63))
+    INT_BINOP_R(SHR, >>, ">>", ((int64_t)_bd & 63))
 
     /* ---- Unary ---- */
 

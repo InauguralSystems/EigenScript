@@ -86,6 +86,16 @@ All notable changes to EigenScript are documented here.
   asserted to be caught, so the gate can't rot into a vacuous pass.
 
 ### Fixed
+- **Infix shift undefined behavior — shift counts now masked `& 63`.** The
+  `bit_shl`/`bit_shr` builtins already masked the count to `[0,63]`, but the
+  infix `<<`/`>>` operators did not: `1 << 64` (and any count ≥ 64 or a negative
+  count) was C undefined behavior on the `int64` path. No suite case exercised a
+  count ≥ 64, so UBSan stayed quiet over a real latent bug. Both paths now mask
+  identically, honoring the `docs/LANGUAGE_CONTRACT.md` "shifts are defined, not
+  UB" promise; `tests/test_bitwise.eigs` gains the ≥ 64 cases for the infix
+  operators (`1 << 64 == 1`, `1 << 100 == 2^36`) proving parity with the
+  builtins. Behavior on x86-64 is unchanged (the hardware already masked mod-64);
+  the fix makes it defined rather than accidental.
 - **Data race in `channel_closed`** — it read `ch->closed` without the channel
   mutex while `close_channel` wrote it under the lock. Single-core timing hid it
   locally; the new #401 TSan gate caught it on its first CI run (two workers
