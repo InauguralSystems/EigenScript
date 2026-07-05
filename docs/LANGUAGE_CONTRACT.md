@@ -136,15 +136,19 @@ in `builtins.c` / `vm.c`.
 ## Bitwise — `&` `|` `^` `<<` `>>` `~`
 
 **Promise:** Bitwise operators (and the `bit_and` / `bit_or` / `bit_xor` /
-`bit_not` / `bit_shl` / `bit_shr` builtins) operate on 32-bit two's-complement
-integers; operands are truncated toward zero to `int32`. Shift amounts are
-masked to `[0,31]`, so large or negative shifts are defined, not UB.
-Non-numeric operands **raise** a runtime error — they are not silently
-treated as `0`. This is the same strict error model the arithmetic operators
-use; it makes the **Errors** promise ("type-mismatched operator … raises")
-hold for *every* operator with no exceptions.
+`bit_not` / `bit_shl` / `bit_shr` builtins) operate on **64-bit** two's-complement
+integers; operands are truncated toward zero to `int64` (exact for magnitudes
+below 2^63). Shift amounts are masked to `[0,63]`, so large or negative shifts
+are defined, not UB (`1 << 64` == `1 << 0` == `1`; `1 << 100` == `1 << 36`). The
+infix operators and the `bit_*` builtins agree bit-for-bit on the same operands —
+they were once a divergent `int32` implementation (`0xEDB88320`, CRC-32's
+polynomial, was the first casualty). Non-numeric operands **raise** a runtime
+error — they are not silently treated as `0`. This is the same strict error model
+the arithmetic operators use; it makes the **Errors** promise ("type-mismatched
+operator … raises") hold for *every* operator with no exceptions.
 
-**Status:** Enforced — `tests/test_bitwise.eigs`, `INT_BINOP` / `CASE(BNOT)`
+**Status:** Enforced — `tests/test_bitwise.eigs` (builtin == infix parity across
+the high-bit range and out-of-range shift counts), `INT_BINOP_R` / `CASE(BNOT)`
 in `vm.c`, `bit_*` builtins in `builtins.c`.
 
 ## Truthiness
@@ -230,8 +234,7 @@ unobservable. To get an independent copy, copy explicitly.
   fire for it. To request the default, call with fewer arguments. For
   a single-parameter function with a default, write `f of []` to call
   with zero args (since `f of null` would bind `null`).
-- Lambdas (`(x) -> expr`, `lambda` blocks) do **not** support
-  defaults.
+- Lambdas (`(x) => expr`) do **not** support defaults.
 - **Footgun (issue #153):** `f of [x]` does *not* spread to a
   multi-param defaulted function. Per the call-spread rule above, a
   length-1 literal list binds as one argument, so `f` receives the list

@@ -23,12 +23,20 @@ lower       non-terminal (grammar rule)
 ### Tokens
 
 ```
-NUM         = digit { digit } [ '.' { digit } ]
-            | '.' digit { digit }
-            ; delegated to strtod: scientific notation (1e5, 1E5) and
-            ; hexadecimal (0x10) also lex as single numbers; a trailing
-            ; dot (1.) is accepted. Malformed forms like 1.2.3 are a
-            ; parse error (one statement per line, #326/#315).
+NUM         = HEX | DEC
+DEC         = digit { digit } [ '.' { digit } ] [ exp ]
+            | '.' digit { digit } [ exp ]
+            ; the decimal form is parsed with strtod: scientific notation
+            ; (1e5, 1E5) also lexes as one number and a trailing dot (1.)
+            ; is accepted. Malformed forms like 1.2.3 are a parse error
+            ; (one statement per line, #326/#315).
+HEX         = ( '0x' | '0X' ) hexdigit { hexdigit }
+            ; integer-only, lexed explicitly by the front end (#378) — NOT
+            ; via strtod — so the value is exact to int64 and the profile
+            ; is consistent (freestanding lexes it too). Hex-FLOAT forms
+            ; (0x1p4, 0xA.8) are NOT numbers: they are a parse error.
+exp         = ( 'e' | 'E' ) [ '+' | '-' ] digit { digit }
+hexdigit    = digit | 'a'..'f' | 'A'..'F'
 STR         = '"' { char | escape } '"'
 FSTR        = 'f"' { char | escape | '{' expression '}' } '"'
 IDENT       = ( letter | '_' ) { letter | digit | '_' }
