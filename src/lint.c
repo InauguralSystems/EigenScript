@@ -863,8 +863,162 @@ static void check_outer_mutation(ASTNode *ast, LintContext *ctx) {
     }
 }
 
+/* ---- W016: bare trajectory predicate outside a loop condition ---- */
+
+/* A bare predicate (`stable`, `converged`, ...) reads the LAST-OBSERVED
+ * binding — which binding that is depends on whatever assignment ran most
+ * recently, an invisible alias (the #247/#262 family). One position is a
+ * documented, well-defined idiom and stays exempt: a LOOP condition, where
+ * W014 already fences the ambiguous multi-assign case and the single-assign
+ * `loop while not converged` form is the canonical tutorial pattern. Anywhere
+ * else — `if` conditions, assignment RHS, `return`, arguments — the subject
+ * is genuinely hidden state; steer to the explicit `<predicate> of <var>`.
+ * The named form exempts ANY explicit subject (`stable of (x + 0.0)` is the
+ * #262 aliasing workaround, not a bare read). Sites that mean the bare read
+ * deliberately carry `# lint: allow W016` (#399). */
+
+static const char *W016_PREDICATE_NAMES[] = {
+    "converged", "stable", "improving", "oscillating", "diverging", "equilibrium"
+};
+
+static void w016_scan(ASTNode *n, LintContext *ctx) {
+    if (!n) return;
+    switch (n->type) {
+        case AST_PREDICATE: {
+            int k = n->data.predicate.kind;
+            const char *nm = (k >= 0 && k < 6) ? W016_PREDICATE_NAMES[k] : "predicate";
+            lint_warn(ctx, n->line, "W016",
+                "bare '%s' reads the last-observed binding (an invisible "
+                "alias) — write '%s of <var>'", nm, nm);
+            break;
+        }
+        case AST_RELATION:
+            /* `<pred> of <subject>` — explicit subject, not a bare read.
+             * Skip the predicate, still scan the subject expression. */
+            if (n->data.relation.left && n->data.relation.left->type == AST_PREDICATE) {
+                w016_scan(n->data.relation.right, ctx);
+                break;
+            }
+            w016_scan(n->data.relation.left, ctx);
+            w016_scan(n->data.relation.right, ctx);
+            break;
+        case AST_LOOP:
+            /* Condition is W014's territory (the documented idiom lives
+             * there); the body is scanned like any other code. */
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w016_scan(n->data.loop.body[i], ctx);
+            break;
+        case AST_BINOP:
+            w016_scan(n->data.binop.left, ctx);
+            w016_scan(n->data.binop.right, ctx);
+            break;
+        case AST_UNARY:
+            w016_scan(n->data.unary.operand, ctx);
+            break;
+        case AST_ASSIGN:
+            w016_scan(n->data.assign.expr, ctx);
+            break;
+        case AST_IF:
+            w016_scan(n->data.cond.cond, ctx);
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w016_scan(n->data.cond.if_body[i], ctx);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w016_scan(n->data.cond.else_body[i], ctx);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < n->data.func.body_count; i++)
+                w016_scan(n->data.func.body[i], ctx);
+            break;
+        case AST_RETURN:
+            w016_scan(n->data.ret.expr, ctx);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w016_scan(n->data.block.stmts[i], ctx);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            w016_scan(n->data.list_pattern_assign.expr, ctx);
+            break;
+        case AST_SLICE:
+            w016_scan(n->data.slice.target, ctx);
+            w016_scan(n->data.slice.start, ctx);
+            w016_scan(n->data.slice.end, ctx);
+            break;
+        case AST_LIST:
+            for (int i = 0; i < n->data.list.count; i++)
+                w016_scan(n->data.list.elems[i], ctx);
+            break;
+        case AST_INDEX:
+            w016_scan(n->data.index.target, ctx);
+            w016_scan(n->data.index.index, ctx);
+            break;
+        case AST_LISTCOMP:
+            w016_scan(n->data.listcomp.expr, ctx);
+            w016_scan(n->data.listcomp.iter, ctx);
+            if (n->data.listcomp.filter)
+                w016_scan(n->data.listcomp.filter, ctx);
+            break;
+        case AST_FOR:
+            w016_scan(n->data.forloop.iter, ctx);
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                w016_scan(n->data.forloop.body[i], ctx);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w016_scan(n->data.program.stmts[i], ctx);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < n->data.trycatch.try_count; i++)
+                w016_scan(n->data.trycatch.try_body[i], ctx);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++)
+                w016_scan(n->data.trycatch.catch_body[i], ctx);
+            break;
+        case AST_DICT:
+            for (int i = 0; i < n->data.dict.count; i++) {
+                w016_scan(n->data.dict.keys[i], ctx);
+                w016_scan(n->data.dict.vals[i], ctx);
+            }
+            break;
+        case AST_DOT:
+            w016_scan(n->data.dot.target, ctx);
+            break;
+        case AST_DOT_ASSIGN:
+            w016_scan(n->data.dot_assign.target, ctx);
+            w016_scan(n->data.dot_assign.expr, ctx);
+            break;
+        case AST_INDEX_ASSIGN:
+            w016_scan(n->data.index_assign.target, ctx);
+            w016_scan(n->data.index_assign.index, ctx);
+            w016_scan(n->data.index_assign.expr, ctx);
+            break;
+        case AST_MATCH:
+            w016_scan(n->data.match.expr, ctx);
+            for (int i = 0; i < n->data.match.case_count; i++) {
+                w016_scan(n->data.match.patterns[i], ctx);
+                for (int j = 0; j < n->data.match.body_counts[i]; j++)
+                    w016_scan(n->data.match.bodies[i][j], ctx);
+            }
+            break;
+        case AST_LAMBDA:
+            w016_scan(n->data.lambda.body, ctx);
+            break;
+        case AST_INTERROGATE:
+            w016_scan(n->data.interrogate.expr, ctx);
+            if (n->data.interrogate.at_expr)
+                w016_scan(n->data.interrogate.at_expr, ctx);
+            break;
+        default: break;
+    }
+}
+
+static void check_bare_predicate_alias(ASTNode *ast, LintContext *ctx) {
+    w016_scan(ast, ctx);
+}
+
 static void lint_run_checks(ASTNode *ast, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
+    check_bare_predicate_alias(ast, ctx);
     check_empty_blocks(ast, ctx);
     check_dup_keys(ast, ctx);
     check_builtin_shadow(ast, ctx);

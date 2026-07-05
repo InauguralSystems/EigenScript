@@ -179,6 +179,7 @@ a code's meaning never changes, and retired codes are not reused.
 | `W013` | warning | Function definition shadows a builtin. |
 | `W014` | warning | Bare trajectory predicate in a loop condition reads the last-observed binding, but the body assigns two or more bindings — name it (`<predicate> of <var>`). |
 | `W015` | warning | A function assigns (without `local`) over a module-level **function** name, clobbering it via mutate-outward so later `<fn> of ...` calls fail — add `local` or rename. (Scoped to function clobbering; benign module-variable reuse is not flagged — that is #404's dataflow-aware territory. `_`-prefixed names are skipped as intentional module state.) |
+| `W016` | warning | Bare trajectory predicate **outside a loop condition** (`if stable:`, `ok is converged`, `return diverging`) reads the last-observed binding — an invisible alias (#247/#262) — write `<predicate> of <var>`. Loop conditions are exempt: the single-assign `loop while not converged` form is the documented idiom, and the ambiguous multi-assign case is `W014`. Any explicit subject counts as named, including `stable of (x + 0.0)`; deliberate bare reads carry `# lint: allow W016`. |
 
 The human linter output carries the code inline:
 

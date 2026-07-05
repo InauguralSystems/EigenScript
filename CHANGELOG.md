@@ -13,6 +13,17 @@ All notable changes to EigenScript are documented here.
   `chr of n` == `str_from_bytes of [n]` across the shared range.
 
 ### Added
+- **W016 — bare-predicate aliasing fence** (#396, completing it): a bare
+  trajectory predicate outside a loop condition (`if stable:`,
+  `ok is converged`, `return diverging`) reads the last-observed binding —
+  the #247/#262 invisible-alias family — and now warns: write
+  `<predicate> of <var>`. Loop conditions stay exempt (single-assign
+  `loop while not converged` is the documented idiom; the ambiguous
+  multi-assign case is already W014, no double-fire). Any explicit subject
+  counts as named (incl. the `stable of (x + 0.0)` #262 workaround);
+  deliberate bare reads use `# lint: allow W016` (#399). Zero firings
+  across `lib/` + `examples/` and the consumer corpora; surfaces in
+  `--lint --json` and eigenlsp via the shared pipeline.
 - **`utf8_encode` / `utf8_from_codepoints`** in `lib/utf8.eigs` (#435): the
   encode half of the #416 module — codepoint(s) → UTF-8 byte string, built on
   `str_from_bytes`. #435's premise was a misdiagnosis: high bytes were already
