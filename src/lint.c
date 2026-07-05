@@ -1008,8 +1008,8 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
                         esc, sizeof(esc));
             json_escape(path, pesc, sizeof(pesc));
             printf("[{\"code\":\"E002\",\"severity\":\"error\",\"line\":%d,"
-                   "\"file\":\"%s\",\"message\":\"%s\"}]\n",
-                   g_first_error_line, pesc, esc);
+                   "\"column\":%d,\"file\":\"%s\",\"message\":\"%s\"}]\n",
+                   g_first_error_line, g_first_error_col + 1, pesc, esc);
         } else {
             fprintf(stderr, "%s: %d parse error(s) [E002] — cannot lint\n",
                     path, g_parse_errors);

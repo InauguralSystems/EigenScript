@@ -302,6 +302,14 @@ printf 'if x > 0\n  print of x\n' > "$TMPFILE"
 JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
 check_contains "parse error json has E002" "$JSON" '"code":"E002"'
 check_contains "parse error json has error severity" "$JSON" '"severity":"error"'
+check_contains "parse error json carries a column (#407)" "$JSON" '"column":'
+rm -f "$TMPFILE"
+
+# --- #407: parse errors carry line:col in human output ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'value is 1 extra\n' > "$TMPFILE"   # two statements -> error at 'extra' (col 12)
+OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "human parse error shows line:col" "$OUTPUT" "line 1:12:"
 rm -f "$TMPFILE"
 
 # --- W015: assignment clobbers a module-level function ---

@@ -735,13 +735,16 @@ static void send_diagnostics(Document *doc) {
      * syntax error, so diagnostics never appeared. */
     if (g_parse_errors > 0 && g_first_error_line > 0) {
         int err_line = g_first_error_line - 1;  /* 1-based → 0-based */
+        int err_col = g_first_error_col;        /* already 0-based, LSP-native */
         char full[320];
         snprintf(full, sizeof(full), "syntax error: %s",
                  g_first_error_msg[0] ? g_first_error_msg : "invalid syntax");
 
         strbuf_append(&sb, "{\"range\":{\"start\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
-        strbuf_append(&sb, ",\"character\":0},\"end\":{\"line\":");
+        strbuf_append(&sb, ",\"character\":");
+        strbuf_append_fmt(&sb, "%d", err_col);
+        strbuf_append(&sb, "},\"end\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
         strbuf_append(&sb, ",\"character\":1000}},\"severity\":1,\"code\":\"E002\","
                             "\"source\":\"eigenscript\",\"message\":");

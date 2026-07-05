@@ -49,15 +49,15 @@ static void p_end_statement(Parser *p) {
     TokType t = p_cur(p)->type;
     if (t == TOK_EOF || t == TOK_DEDENT) return;
     Token *tok = p_cur(p);
-    fprintf(stderr, "Parse error line %d: unexpected %s after statement",
-            tok->line, tok_type_name(tok->type));
+    fprintf(stderr, "Parse error line %d:%d: unexpected %s after statement",
+            tok->line, tok->col + 1, tok_type_name(tok->type));
     if (tok->str_val) fprintf(stderr, " ('%s')", tok->str_val);
     fprintf(stderr, " — one statement per line\n");
     {
         char m[160];
         snprintf(m, sizeof(m), "unexpected %s after statement",
                  tok_type_name(tok->type));
-        eigs_record_first_error(tok->line, m);
+        eigs_record_first_error_at(tok->line, tok->col, m);
     }
     g_parse_errors++;
     while (p_cur(p)->type != TOK_NEWLINE && p_cur(p)->type != TOK_EOF &&
@@ -68,15 +68,15 @@ static void p_end_statement(Parser *p) {
 
 static void p_expect(Parser *p, TokType type) {
     if (p_cur(p)->type != type) {
-        fprintf(stderr, "Parse error line %d: expected %s, got %s",
-                p_cur(p)->line, tok_type_name(type), tok_type_name(p_cur(p)->type));
+        fprintf(stderr, "Parse error line %d:%d: expected %s, got %s",
+                p_cur(p)->line, p_cur(p)->col + 1, tok_type_name(type), tok_type_name(p_cur(p)->type));
         if (p_cur(p)->str_val) fprintf(stderr, " ('%s')", p_cur(p)->str_val);
         fprintf(stderr, "\n");
         {
             char m[160];
             snprintf(m, sizeof(m), "expected %s, got %s",
                      tok_type_name(type), tok_type_name(p_cur(p)->type));
-            eigs_record_first_error(p_cur(p)->line, m);
+            eigs_record_first_error_at(p_cur(p)->line, p_cur(p)->col, m);
         }
         g_parse_errors++;
     }

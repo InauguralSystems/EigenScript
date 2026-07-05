@@ -57,7 +57,9 @@ observer/deterministic-replay niche instead of diluting it.**
       it cheap ([#405](https://github.com/InauguralSystems/EigenScript/issues/405), closes #153)
 - [ ] Structured runtime errors `{kind, message, line}` with a closed
       kind set ([#406](https://github.com/InauguralSystems/EigenScript/issues/406))
-- [ ] Column tracking + caret/span diagnostics
+- [~] Column tracking + caret/span diagnostics — parse errors now carry
+      line:col (human + `--lint --json` E002 + LSP range); per-warning spans,
+      runtime-error columns, and caret rendering remain
       ([#407](https://github.com/InauguralSystems/EigenScript/issues/407))
 - [ ] **Trace-tape format versioning decision** — blocks anything that
       ships a tape across a version boundary

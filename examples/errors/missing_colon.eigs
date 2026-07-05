@@ -1,7 +1,7 @@
 # ERROR DEMO — block headers need a trailing colon.
 # `if`, `loop`, `for`, `define`, `try`, and `match` all introduce
 # blocks with `:`; omitting it is a parse error and nothing runs.
-# expect-error: Parse error line 6: expected ':', got newline
+# expect-error: Parse error line 6:9: expected ':', got newline
 x is 1
 if x > 0
     print of x
