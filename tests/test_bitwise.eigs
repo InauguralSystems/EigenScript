@@ -39,6 +39,16 @@ assert_eq of [bit_shl of [1, 32], 4294967296, "SHL 1 << 32 is 2^32 (int64, no 31
 assert_eq of [bit_shl of [1, 33], 8589934592, "SHL 1 << 33 is 2^33"]
 assert_eq of [bit_shr of [8, 35], 0, "SHR 8 >> 35 shifts out to 0"]
 
+# Out-of-range shift COUNTS are defined (masked & 63), not C UB — for BOTH the
+# infix operators and the bit_* builtins. Count 64 == count 0 (64 & 63 == 0),
+# count 65 == count 1, count 100 == count 36. Without the mask the infix path
+# was undefined behavior (only untested counts kept UBSan quiet).
+assert_eq of [1 << 64, 1, "infix << 64 masks to << 0 (defined, not UB)"]
+assert_eq of [1 << 65, 2, "infix << 65 masks to << 1"]
+assert_eq of [1 << 100, 68719476736, "infix << 100 masks to << 36 == 2^36"]
+assert_eq of [bit_shl of [1, 64], 1, "bit_shl count 64 masks to 0 (matches infix)"]
+assert_eq of [256 >> 64, 256, "infix >> 64 masks to >> 0"]
+
 # Type safety — non-numeric args raise (strict error model, not UB, not 0).
 # Builtins:
 caught_and is ""
