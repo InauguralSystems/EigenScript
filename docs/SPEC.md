@@ -313,6 +313,38 @@ value is 42
 0
 ```
 
+### Text and Unicode (bytes by definition)
+
+A `str` is a **byte string**, and that is a deliberate, documented position, not
+an accident. `len`, `char_at`, `[]` indexing, and slicing all operate on
+**bytes**, not characters. Source is UTF-8, so a non-ASCII literal is stored as
+its UTF-8 bytes and round-trips exactly through concatenation, f-strings, and
+printing — you just don't get character indexing for free.
+
+```eigenscript
+print of (len of "hello")     # 5 — all ASCII, 1 byte each
+print of (len of "héllo")     # 6 — é is 2 UTF-8 bytes
+euro is "€"
+print of (len of euro)        # 3 — one character, three bytes
+print of (euro == "€")        # 1 — bytes round-trip exactly
+print of ("price: " + euro)   # f-strings / concat are byte-wise, multibyte-safe
+```
+```output
+5
+6
+3
+1
+price: €
+```
+
+This is the Lua-shaped choice: it keeps the runtime zero-dependency and the
+freestanding profile viable, at the cost of native character semantics. When you
+need those — counting codepoints, indexing by character, validating input —
+`lib/utf8.eigs` decodes UTF-8 over the byte string (`utf8_len`,
+`utf8_codepoints`, `utf8_at`, `utf8_char_at`, `utf8_validate`). Native
+UTF-8-by-construction is deliberately **not** adopted: it would ripple through
+the VM, JIT, AOT, and every tool, for a bill this scale doesn't need.
+
 ## Booleans, comparison, and logic
 
 There is no separate boolean type: comparisons produce `1` (true) or

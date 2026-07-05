@@ -406,6 +406,22 @@ spot). Convergence is not correctness: pair with `ensure` on the final
 residual. See docs/OBSERVER.md "Contracts" and
 `examples/stem/contract_solver.eigs`.
 
+### lib/utf8.eigs — UTF-8 Codepoints over Byte Strings
+
+`str` is a byte string (docs/SPEC.md "Text"); this module gives character
+semantics when you need them, decoding UTF-8 over the byte primitives.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `utf8_len` | `utf8_len of s` | Number of codepoints |
+| `utf8_codepoints` | `utf8_codepoints of s` | List of codepoint numbers |
+| `utf8_at` | `utf8_at of [s, i]` | i-th codepoint (0-indexed), or -1 |
+| `utf8_char_at` | `utf8_char_at of [s, i]` | i-th character as a (multi-byte) string, or "" |
+| `utf8_validate` | `utf8_validate of s` | 1 if structurally valid UTF-8, else 0 |
+
+Decode-only for now: encoding needs to write bytes ≥ 0x80, which `chr` cannot
+yet do (filed as #435). Reading raw bytes works, so decode/validate do.
+
 ### lib/pkg.eigs — Package Manager Runtime
 
 The `--pkg` machinery's script half (eigs.json, SHA-pinned lockfiles);

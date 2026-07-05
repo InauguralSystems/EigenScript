@@ -1,0 +1,40 @@
+# UTF-8 codepoint decoding over byte strings (lib/utf8.eigs, #416).
+# Published vectors: A=U+0041, é=U+00E9, €=U+20AC (3B), 中=U+4E2D (3B),
+# 𐍈=U+10348 (4B). All-pass prints UTF8_ALL_PASS.
+load_file of "lib/utf8.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== UTF-8 (lib/utf8.eigs) ==="
+
+s is "Aé€中𐍈"
+check of ["byte length is 13", len of s, 13]
+check of ["codepoint length is 5", utf8_len of s, 5]
+check of ["codepoints decode", utf8_codepoints of s, [65, 233, 8364, 20013, 66376]]
+check of ["ascii cp", utf8_at of [s, 0], 65]
+check of ["2-byte cp (é)", utf8_at of [s, 1], 233]
+check of ["3-byte cp (€)", utf8_at of [s, 2], 8364]
+check of ["4-byte cp (𐍈)", utf8_at of [s, 4], 66376]
+check of ["out-of-range cp is -1", utf8_at of [s, 5], 0 - 1]
+check of ["char_at returns the whole character", utf8_char_at of [s, 2], "€"]
+check of ["char_at 4-byte", utf8_char_at of [s, 4], "𐍈"]
+
+# validation — invalid sequences built by slicing a real multi-byte char
+check of ["valid ascii", utf8_validate of "hello", 1]
+check of ["valid mixed", utf8_validate of s, 1]
+check of ["empty is valid", utf8_validate of "", 1]
+check of ["lone lead byte (truncated)", utf8_validate of (substr of ["€", 0, 1]), 0]
+check of ["lone continuation byte", utf8_validate of (substr of ["€", 1, 1]), 0]
+check of ["truncated 2-of-3", utf8_validate of (substr of ["€", 0, 2]), 0]
+
+if fails == 0:
+    print of "UTF8_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "utf8 tests failed"

@@ -87,8 +87,12 @@ observer/deterministic-replay niche instead of diluting it.**
 
 ### Design decisions (cheap to decide, expensive to defer)
 
-- [ ] Unicode/text position — likely bytes-forever + `lib/utf8.eigs`,
-      made official in SPEC ([#416](https://github.com/InauguralSystems/EigenScript/issues/416))
+- [x] Unicode/text position — **DECIDED**: bytes-forever. SPEC.md "Text"
+      subsection makes `str`-is-bytes official (byte indexing, multibyte-safe
+      concat/f-strings) with byte-checked examples, and `lib/utf8.eigs` provides
+      decode/len/at/validate for character semantics. (Surfaced #435: `chr`
+      can't emit bytes ≥ 0x80, so `utf8_encode` waits on that.)
+      ([#416](https://github.com/InauguralSystems/EigenScript/issues/416))
 - [x] Numeric tower position — **DECIDED**: one f64 number kind, no bigint/
       decimal until a consumer forces it. SPEC.md now states the contracts
       (exactness below 2^53, finite-by-construction NaN→0 / saturation, the
