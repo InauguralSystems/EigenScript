@@ -60,6 +60,15 @@ check_lib_modules() {
             rc=1
         fi
     done
+    # No module may have more than one '### lib/<name>' heading — the index was
+    # once assembled from two overlapping regions and four modules shipped twice.
+    local dups
+    dups=$(grep -oE '^### lib/[a-zA-Z0-9_]+\.eigs' docs/STDLIB.md | sort | uniq -d)
+    if [ -n "$dups" ]; then
+        echo "DUPLICATE STDLIB.md entries (each module heading must appear once):"
+        echo "$dups" | sed 's/^### /  - /'
+        rc=1
+    fi
     return $rc
 }
 

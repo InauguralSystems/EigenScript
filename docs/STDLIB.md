@@ -226,9 +226,25 @@ signatures, not raw counters (the #294 flat-entropy band).
 
 ### lib/datetime.eigs — Dates, Times, Durations
 
-Two halves. The CLOCK functions (`now`, `today`, `timestamp`,
-`format_date`, `sleep_ms`) shell out to system `date` — host profiles
-only. The CIVIL-MATH functions are pure and run on every profile:
+Two halves. The **clock/timer** functions shell out to system `date` and are
+host-profile only:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `now` | `now of null` | Current date and time string |
+| `today` | `today of null` | Current date string |
+| `timestamp` | `timestamp of null` | Unix epoch seconds |
+| `iso_date` | `iso_date of null` | ISO 8601 timestamp |
+| `elapsed` | `elapsed of [start, end]` | Human-readable duration |
+| `elapsed_ms` | `elapsed_ms of [start, end]` | Duration in milliseconds |
+| `sleep_ms` | `sleep_ms of ms` | Pause execution |
+| `year` / `month` / `day` | `year of null` (etc.) | Current field |
+| `weekday` | `weekday of null` | Day-of-week name |
+| `timer_start` | `timer_start of null` | Capture start timestamp |
+| `timer_elapsed` | `timer_elapsed of start` | Seconds since start |
+| `format_date` | `format_date of fmt` | strftime format string |
+
+The **civil-math** functions are pure and run on every profile:
 `days_from_civil of [y, m, d]` / `civil_from_days of days` (day 0 =
 1970-01-01, proleptic Gregorian), `weekday_from_days of days`
 (0=Sunday), `epoch_from_civil of [y, m, d, hh, mm, ss]` /
@@ -453,50 +469,6 @@ if (get_flag of [parsed, "--verbose"]) == 1:
 outfile is get_opt of [parsed, "--output", "out.txt"]
 files is get_positional of parsed    # ["input.csv"]
 ```
-
-### lib/bcd.eigs — Packed BCD Codec
-
-`from_bcd of 0x26` → 26, `to_bcd of 59` → 0x59 — any width, each hex
-nibble a decimal digit. Invalid nibbles, negatives, and fractions
-raise (a torn RTC register read must fail loudly, not decode to a
-plausible number). Consumers: CMOS RTC registers, the Game Boy's DAA.
-
-### lib/harness.eigs — Count-and-Continue Test Scaffolding
-
-`harness.start of "MARKER"` / `harness.check of [tag, got, want]` /
-`harness.check_true` / `harness.finish of []` — every check prints and
-COUNTS (one failure never hides the rest), finish prints
-`MARKER_ALL_PASS` on success or throws with the tally. The twin-gate
-pattern extracted from six hand-rolled EigenOS harnesses.
-
-### lib/observer_slots.eigs — Observe a Dynamic Collection
-
-`observer_slots.feed of [i, v]` / `is_stable of i` / `is_diverging of
-i` / `verdict of i` (the full regime string) — eight NAMED scalar slots
-behind index dispatch, because observer
-trajectories key to named bindings and `stable of xs[i]` can never
-accumulate one (#262). Feed forces fresh values; slot 9 throws
-(silently-unobserved is the failure mode this prevents). Feed bounded
-signatures, not raw counters (the #294 flat-entropy band).
-
-### lib/datetime.eigs — Date, Time, and Duration
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `now` | `now of null` | Current date and time string |
-| `today` | `today of null` | Current date string |
-| `timestamp` | `timestamp of null` | Unix epoch seconds |
-| `iso_date` | `iso_date of null` | ISO 8601 timestamp |
-| `elapsed` | `elapsed of [start, end]` | Human-readable duration |
-| `elapsed_ms` | `elapsed_ms of [start, end]` | Duration in milliseconds |
-| `sleep_ms` | `sleep_ms of ms` | Pause execution |
-| `year` | `year of null` | Current year |
-| `month` | `month of null` | Current month (1-12) |
-| `day` | `day of null` | Current day |
-| `weekday` | `weekday of null` | Day of week name |
-| `timer_start` | `timer_start of null` | Capture start timestamp |
-| `timer_elapsed` | `timer_elapsed of start` | Seconds since start |
-| `format_date` | `format_date of fmt` | strftime format string |
 
 ### lib/config.eigs — Configuration File Loading
 
