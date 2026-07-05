@@ -542,6 +542,7 @@ struct EigsThread {
     int          has_error;
     int          try_depth;
     int          first_error_line;
+    int          first_error_col;   /* 0-based column of the first error, or 0 */
     char         error_msg[4096];
     char         first_error_msg[256];
     struct Value *error_value;      /* thrown payload for structured catch */
@@ -634,6 +635,7 @@ extern __thread EigsThread *eigs_current;
 #define g_has_error         (eigs_current->has_error)
 #define g_try_depth         (eigs_current->try_depth)
 #define g_first_error_line  (eigs_current->first_error_line)
+#define g_first_error_col   (eigs_current->first_error_col)
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
@@ -969,6 +971,7 @@ char* eigs_json_encode(Value *v);
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
 void eigs_record_first_error(int line, const char *msg);
+void eigs_record_first_error_at(int line, int col, const char *msg);
 
 /* ---- Module cache (Phase 0a of the package design) ---- */
 /* Hit: out_dict gets a new counted ref (caller decrefs). Miss: out_dict

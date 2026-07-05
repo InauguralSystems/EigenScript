@@ -5,6 +5,13 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Parse errors carry `line:col`** (#407, first increment): the lexer already
+  tracked columns; now the two parser diagnostics surface them. Human output
+  reads `Parse error line 6:9: …`, the `--lint --json` `E002` element gains a
+  1-based `"column"` field, and the LSP diagnostic range starts at that column
+  instead of 0. Per-warning spans, runtime-error columns, and caret rendering
+  remain the rest of #407. (`docs/DIAGNOSTICS.md` records the `--json` contract
+  change.)
 - **`observer_slots.verdict of i`** — the full trajectory-regime string for a
   slot (was deferred on #383). Investigating #383 showed `report of <name>`
   inside a function *does* resolve the module binding's slot correctly and agrees

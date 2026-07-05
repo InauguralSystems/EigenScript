@@ -200,7 +200,11 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
 
 - A clean file emits `[]` (and still exits 0).
 - A file that doesn't parse emits a single `E002` element built from the
-  first parse error (the same one the LSP surfaces), and exits 1.
+  first parse error (the same one the LSP surfaces), and exits 1. The `E002`
+  element carries a 1-based `"column"` (#407) alongside `"line"`; human parser
+  errors show `line:col` too, and the LSP diagnostic range starts at that
+  column. (Warning elements are line-only for now — per-warning spans are the
+  remaining #407 work.)
 - Exit code follows `--lint-level` (see below); the default fails on any
   surviving warning.
 

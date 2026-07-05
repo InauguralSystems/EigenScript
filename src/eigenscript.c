@@ -46,10 +46,15 @@
  * for consumers that can't see the parser's stderr (the LSP, which turns
  * it into a publishDiagnostics squiggle). Reset at the top of tokenize().
  * g_first_error_line is 1-based and 0 when no error has been recorded. */
-void eigs_record_first_error(int line, const char *msg) {
+void eigs_record_first_error_at(int line, int col, const char *msg) {
     if (g_first_error_line) return;   /* keep only the first */
     g_first_error_line = line;
+    g_first_error_col = col;
     snprintf(g_first_error_msg, sizeof(g_first_error_msg), "%s", msg ? msg : "syntax error");
+}
+
+void eigs_record_first_error(int line, const char *msg) {
+    eigs_record_first_error_at(line, 0, msg);
 }
 
 /* Structured error payload: set by `throw` so catch can bind the thrown
