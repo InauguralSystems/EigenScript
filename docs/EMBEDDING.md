@@ -46,7 +46,9 @@ below — multi-state, value handles, the abort flag, and the trace-sink /
 record-replay seam — is available through the same `eigs_embed.h`.
 
 Prefer a static library? `make lib` produces `libeigenscript.a`; link it with
-`-Ibuild` (for `eigs_embed.h`) and `-lm -lpthread`.
+`-Isrc` (for `eigs_embed.h`, which lives in `src/`) and `-lm -lpthread`. (The
+single-file amalgamation is the other route — `make amalgamation` writes a
+self-contained `build/eigenscript_all.c` plus `build/eigs_embed.h`.)
 
 ## Overview
 
