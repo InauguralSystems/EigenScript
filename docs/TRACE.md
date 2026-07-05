@@ -118,6 +118,39 @@ Regression coverage: `tests/test_replay.sh` — each case mutates the
 underlying source (e.g. rewrites the file `read_bytes` read) between
 record and replay to prove the value comes from the tape.
 
+## Every Failure is a Tape (`--test --trace-on-fail`)
+
+Dynamic typing surfaces errors at runtime; deterministic replay converts that
+weakness into a capability no incumbent ships — every failing test arrives as a
+byte-identical reproducer.
+
+```
+$ eigenscript --test --trace-on-fail tests/
+  FAIL  tests/test_solver.eigs  (exit 1)
+        roll: 0.297357521
+        replay: EIGS_REPLAY=/tmp/eigen_bNGhgd eigenscript tests/test_solver.eigs
+```
+
+`--test --trace-on-fail` records each test into its own tape (`--trace <path>`,
+the CLI twin of `EIGS_TRACE`). A passing test discards its tape; a failing one
+keeps it and prints the exact `EIGS_REPLAY=<tape> …` invocation. Running that
+line re-drives the failure with the *same* recorded nondeterminism — the random
+draw, the clock read, the file bytes — so a flake reproduces on the first try.
+
+The canonical loop: **failure → replay → interrogate**. Once you are replaying
+the exact run, the temporal interrogatives read its history — `prev of x`,
+`state_at`, and the `eigsdap` tape-stepper (#418) — so you inspect the trajectory
+that actually failed, not a fresh one that might not.
+
+Under `--json`, each result carries a `"tape"` field for CI to archive as an
+artifact; the human form prints the replay line.
+
+**Same-binary caveat.** A tape is a reproducer for the interpreter build that
+recorded it. Until tape-format versioning lands (#411), do not replay a tape
+against a different EigenScript version — archive the tape *and* the version
+that produced it. `EIGS_REPLAY_STRICT=1` turns any record/replay mismatch into a
+loud abort rather than a silent divergence.
+
 ## Temporal Interrogatives and `state_at`
 
 `prev of x`, the `at <line>` qualifier, and `state_at of line` query a

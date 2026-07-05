@@ -5,6 +5,17 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`--test --trace-on-fail` — every failure is a replayable tape** (#394):
+  records each test into its own tape via a new `--trace <path>` CLI flag (the
+  twin of `EIGS_TRACE`). A passing test discards its tape; a failing one keeps
+  it and prints the exact `EIGS_REPLAY=<tape> eigenscript <file>` invocation that
+  reproduces the failure byte-for-byte — the same random draw, clock read, and
+  file bytes come off the tape. `--json` results carry a per-test `tape` field
+  for CI archival. Proven by a transcript byte-diff oracle
+  (`tests/test_trace_on_fail.sh`, suite [42b]) on both execution tiers (JIT on
+  and `EIGS_JIT_OFF`) and under `EIGS_REPLAY_STRICT`; new "Every Failure is a
+  Tape" section in docs/TRACE.md with the same-binary (#411) caveat; a CI leg
+  records and uploads a tape artifact.
 - **Lint W015 — function-clobber fence** (`src/lint.c`, advances #396): a
   function that assigns (without `local`) over a module-level *function* name
   silently reassigns it via mutate-outward, so later `<fn> of ...` calls fail.

@@ -22,10 +22,13 @@
 # ---- arg parsing ----
 argv is args of null
 json_mode is 0
+trace_on_fail is 0
 paths is []
 for a in argv:
     if a == "--json":
         json_mode is 1
+    elif a == "--trace-on-fail":
+        trace_on_fail is 1
     else:
         append of [paths, a]
 
@@ -86,20 +89,31 @@ asserts_pass is 0
 asserts_fail is 0
 
 for f in files:
-    r is exec_capture of [interp, f]
+    # --trace-on-fail: record each test into its own tape so a failure arrives
+    # as a byte-identical reproducer. Passing tests discard their tape; failing
+    # ones keep it and surface the EIGS_REPLAY invocation below.
+    tape is ""
+    if trace_on_fail == 1:
+        tape is mktemp of null
+        r is exec_capture of [interp, "--trace", tape, f]
+    else:
+        r is exec_capture of [interp, f]
     code is r[0]
     output is r[1]
     ok is 0
     if code == 0:
         ok is 1
         passed_files is passed_files + 1
+        if trace_on_fail == 1:
+            rm of tape
+            tape is ""
     ap is extract_count of [output, "Pass:"]
     af is extract_count of [output, "Fail:"]
     if ap >= 0:
         asserts_pass is asserts_pass + ap
     if af >= 0:
         asserts_fail is asserts_fail + af
-    rec is {"file": f, "ok": ok, "code": code, "ap": ap, "af": af, "output": output}
+    rec is {"file": f, "ok": ok, "code": code, "ap": ap, "af": af, "output": output, "tape": tape}
     append of [results, rec]
 
 total_files is len of files
@@ -116,7 +130,10 @@ if json_mode:
         item is item + "," + (json_str of "status") + ":" + (json_str of status)
         item is item + "," + (json_str of "exit_code") + ":" + (str of rec.code)
         item is item + "," + (json_str of "asserts_pass") + ":" + (str of rec.ap)
-        item is item + "," + (json_str of "asserts_fail") + ":" + (str of rec.af) + "}"
+        item is item + "," + (json_str of "asserts_fail") + ":" + (str of rec.af)
+        if trace_on_fail == 1:
+            item is item + "," + (json_str of "tape") + ":" + (json_str of rec.tape)
+        item is item + "}"
         append of [parts, item]
     body is join of [parts, ","]
     out is "{" + (json_str of "files") + ":" + (str of total_files)
@@ -147,6 +164,9 @@ else:
                 for ln in (split of [rec.output, "\n"]):
                     if (len of (trim of ln)) > 0:
                         print of ("        " + ln)
+                # every failure is a tape: print the exact byte-identical replay
+                if trace_on_fail == 1 and rec.tape != "":
+                    print of ("        replay: EIGS_REPLAY=" + rec.tape + " " + interp + " " + rec.file)
         print of ""
         print of ("Files: " + (str of total_files) + " | Passed: " + (str of passed_files) + " | Failed: " + (str of failed_files))
         if (asserts_pass + asserts_fail) > 0:
