@@ -5,6 +5,16 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`bench/` perf harness + a regression-gated `docs/PERFORMANCE.md`** (#398):
+  performance as an executable, gated fact rather than a README claim. Two
+  metrics on purpose — `bench/run_bench.sh` reports wall-clock n=5 medians (the
+  human-facing PERFORMANCE.md numbers, environment-dependent), while the CI gate
+  (`bench/check_regression.sh`) compares **deterministic cachegrind instruction
+  counts** of the commit against origin/main, both built in the same runner, so a
+  regression is a diffable fact and the gate never flakes on runner load. A
+  `--selftest` builds a 2x-work workload and asserts it is flagged (the gate
+  isn't vacuous). Workloads include observed-vs-unobserved, making the observer
+  cost an executable document: ~28% wall-clock / ~46% instructions.
 - **`docs/llms.txt` — single-file language reference for LLMs** (#403): the whole
   surface a model needs to generate correct `.eigs`, distilled to the traps
   where Python/JS habits fail — the `of`/one-element-spread rule, the

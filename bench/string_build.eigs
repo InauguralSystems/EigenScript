@@ -1,0 +1,5 @@
+# String assembly via the native builder.
+b is text_builder_new of null
+for i in range of 15000:
+    text_builder_append of [b, "x" + (str of (i % 10))]
+print of (len of (text_builder_to_string of b))

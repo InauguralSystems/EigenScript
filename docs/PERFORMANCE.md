@@ -1,0 +1,69 @@
+# Performance
+
+Performance as an executable, regression-gated fact rather than a README claim.
+Everything here regenerates from `bench/`.
+
+## Two metrics, on purpose
+
+Wall-clock and instruction count answer different questions, and only one of them
+can gate CI honestly:
+
+- **Wall-clock medians** (below) are what a user feels, but they swing with
+  machine and load — a shared CI runner under a noisy neighbour can differ 2x
+  from one run to the next. So they are **published, not gated**: representative
+  numbers, regenerated with `bash bench/run_bench.sh` (n=5 medians, the house
+  rule).
+- **Instruction counts** (cachegrind `Ir`) are deterministic — the same binary
+  on the same input executes the same number of instructions every run, on any
+  machine. So the **regression gate** (`bench/check_regression.sh`, the CI `bench`
+  job) compares `Ir` against a checked-in baseline (`bench/baseline.txt`) and
+  fails on more than a few percent. A regression is then a diffable fact, not a
+  statistical argument — and the gate never flakes on runner load.
+
+The gate is not vacuous: `bench/check_regression.sh --selftest` builds a workload
+that does ~2x the work and asserts it is flagged.
+
+## Wall-clock medians
+
+Representative n=5 medians (a 2020-era x86-64 Linux dev box; **your numbers will
+differ** — regenerate with `bash bench/run_bench.sh`):
+
+| workload | median | what it exercises |
+|---|---|---|
+| `scalar_loop` | ~26 ms | arithmetic dispatch + env-slot reuse (40k iters) |
+| `dict_ops` | ~54 ms | hash insert + lookup under churn (12k keys) |
+| `string_build` | ~28 ms | native text builder (15k appends) |
+| `observed_loop` | ~37 ms | numeric loop **with** per-assignment observer |
+| `unobserved_loop` | ~29 ms | the same loop inside `unobserved:` |
+
+## The observer overhead, measured
+
+`observed_loop` vs `unobserved_loop` is the same arithmetic; the only difference
+is that the observed one pays per-assignment entropy/trend bookkeeping. That cost
+is now an executable document:
+
+- **Wall-clock:** ~28% slower observed (~37 ms vs ~29 ms here).
+- **Instructions (deterministic):** ~46% more (`Ir` ≈ 93.2M vs 63.8M).
+
+So wrap a hot numeric loop that doesn't need convergence tracking in
+`unobserved:` — the win is real and now regression-gated in both directions
+(a change that made the observer cheaper, or the unobserved path costlier, would
+move the baseline).
+
+## Concurrency
+
+The first `spawn` flips the runtime interpreter-only (the #297 JIT/OSR/IC gates),
+trading single-thread peak throughput for parallelism — the multithreaded perf
+cliff. It is documented as a contract in
+[docs/CONCURRENCY.md](CONCURRENCY.md#the-multithreaded-performance-cliff); a
+dedicated spawn/channel bench workload is future work here.
+
+## Reproducing
+
+```bash
+make                              # build the release interpreter
+bash bench/run_bench.sh           # wall-clock n=5 medians (this table)
+bash bench/check_regression.sh    # deterministic Ir gate vs bench/baseline.txt
+bash bench/check_regression.sh --selftest   # prove the gate catches a 2x pessimization
+bash bench/check_regression.sh --update     # regenerate the baseline after an intentional change
+```

@@ -1,0 +1,5 @@
+# Same numeric loop WITH per-assignment observer bookkeeping.
+x is 1.0
+for i in range of 60000:
+    x is (x * 1.0000001) + 0.5
+print of (x > 0)

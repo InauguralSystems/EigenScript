@@ -1,0 +1,8 @@
+# Dict insert then lookup — hash table under churn.
+d is {}
+for i in range of 12000:
+    dict_set of [d, str of i, i * i]
+acc is 0
+for i in range of 12000:
+    acc is acc + d[str of i]
+print of acc

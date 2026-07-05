@@ -383,3 +383,35 @@ jobs:
           test -x "$HOME/.local/bin/eigenscript"
           test -x "$HOME/.local/bin/eigenlsp"
           "$HOME/.local/bin/eigenscript" --version
+
+  # Performance regression gate (#398). Wall-clock flakes on shared runners, so
+  # the gate compares deterministic cachegrind instruction counts (Ir) of THIS
+  # commit against origin/main — both built in the same runner, so the diff is a
+  # pure code-change signal, never machine noise. A self-test proves a 2x-work
+  # pessimization is caught. Published numbers (wall-clock) live in
+  # docs/PERFORMANCE.md, regenerated from bench/run_bench.sh.
+  bench:
+    name: bench (instruction-count regression gate)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Build this commit
+        run: ./build.sh
+
+      - name: Build origin/main in a worktree (same environment)
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          git worktree add /tmp/main-ref origin/main
+          ( cd /tmp/main-ref && ./build.sh )
+
+      - name: Gate self-test (a 2x pessimization must fail the gate)
+        run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --selftest
+
+      - name: Regression gate — Ir of this commit vs origin/main
+        run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript

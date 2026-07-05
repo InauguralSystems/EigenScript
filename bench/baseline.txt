@@ -1,0 +1,5 @@
+dict_ops 117894836
+observed_loop 93231983
+scalar_loop 63850385
+string_build 76737811
+unobserved_loop 63843716
