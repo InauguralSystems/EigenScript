@@ -4,6 +4,22 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Interactive REPL line editor** (#392) — the REPL on a tty now has
+  history (in-memory + `EIGS_HISTORY` file, default
+  `~/.eigenscript_history`, created `0600`), arrow-key cursor editing,
+  Home/End/Delete, Ctrl-A/E/U/K/W/L, Ctrl-C line-and-block cancel, and tab
+  completion over builtins + session bindings (both are env bindings, so
+  one walk covers them). Zero new link dependencies: a raw-termios editor
+  in the new CLI-only `src/repl.c` (ported from the EigenOS console
+  editor), not readline/libedit — the embed/freestanding profiles never
+  see it. Piped/non-tty sessions keep the old fgets loop byte-for-byte
+  (`EIGS_REPL_PLAIN=1` forces it on a tty). Interactive sessions record
+  assignment history from the start, so `prev of x` works on session
+  bindings instead of silently answering from no history. Suite section
+  [42c] drives the editor on a real pty (`tests/test_repl.py`) and pins
+  the piped transcript as a byte-exact golden.
+
 ### Fixed
 - **Four silent-wrong-answer builtin contracts** (#312, #314, #316, #317),
   batch-fixed after the 2026-07 backlog triage:

@@ -58,7 +58,7 @@ Image tags: `:latest`, `:X.Y.Z`, `:X.Y`, `:X` for releases; `:edge` tracks `main
 
 ```bash
 eigenscript program.eigs    # run a script
-eigenscript                 # interactive REPL
+eigenscript                 # interactive REPL (history, arrow keys, tab completion)
 eigenscript --version
 ```
 

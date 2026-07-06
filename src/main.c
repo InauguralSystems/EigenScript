@@ -6,6 +6,7 @@
 #include "state.h"
 #include "vm.h"
 #include "trace.h"
+#include "repl.h"
 #if EIGENSCRIPT_EXT_GFX
 void register_gfx_builtins(Env *env);
 #endif
@@ -14,137 +15,8 @@ void register_gfx_builtins(Env *env);
 #define EIGENSCRIPT_VERSION "dev"
 #endif
 
-/* ---- REPL ---- */
-
-static void eigenscript_repl(Env *env) {
-    printf("EigenScript %s\n", EIGENSCRIPT_VERSION);
-    printf("Type 'exit' or Ctrl-D to quit.\n\n");
-
-    char line_buf[4096];
-    strbuf input;
-    strbuf_init(&input);
-    int continuation = 0;
-
-    while (1) {
-        printf(continuation ? "...   " : "eigs> ");
-        fflush(stdout);
-
-        if (!fgets(line_buf, sizeof(line_buf), stdin)) {
-            printf("\n");
-            break;
-        }
-
-        /* Exit commands */
-        if (!continuation) {
-            char *trimmed = line_buf;
-            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-            if (strcmp(trimmed, "exit\n") == 0 || strcmp(trimmed, "quit\n") == 0 ||
-                strcmp(trimmed, "exit\r\n") == 0 || strcmp(trimmed, "quit\r\n") == 0) {
-                break;
-            }
-        }
-
-        int len = strlen(line_buf);
-        strbuf_append_n(&input, line_buf, (size_t)len);
-
-        /* Multi-line detection */
-        if (!continuation) {
-            /* Check if line ends with colon (block opener) */
-            char *end = line_buf + len - 1;
-            while (end > line_buf && (*end == '\n' || *end == '\r' || *end == ' ')) end--;
-            if (*end == ':') {
-                continuation = 1;
-                continue;
-            }
-        } else {
-            /* In continuation: blank line or unindented line ends block */
-            char *trimmed = line_buf;
-            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-            if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0') {
-                continuation = 0;
-                /* fall through to execute */
-            } else if (line_buf[0] == ' ' || line_buf[0] == '\t') {
-                continue; /* still indented, keep accumulating */
-            } else {
-                continuation = 0;
-                /* unindented non-blank: end of block */
-            }
-        }
-
-        /* Skip empty input */
-        {
-            char *check = input.data;
-            while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') check++;
-            if (*check == '\0') {
-                input.len = 0;
-                input.data[0] = '\0';
-                continue;
-            }
-        }
-
-        /* Tokenize, parse, eval with error recovery */
-        g_parse_errors = 0;
-        TokenList tl = tokenize(input.data);
-        if (g_parse_errors > 0) {
-            free_tokenlist(&tl);
-            input.len = 0;
-            input.data[0] = '\0';
-            continue;
-        }
-
-        ASTNode *ast = parse(&tl);
-        if (g_parse_errors > 0) {
-            free_tokenlist(&tl);
-            input.len = 0;
-            input.data[0] = '\0';
-            continue;
-        }
-
-        g_returning = 0;
-        g_return_val = NULL;
-        g_has_error = 0;   /* don't carry a prior line's error into this one */
-        EigsChunk *repl_chunk = compile_ast(ast, env);
-        if (g_parse_errors > 0) {   /* e.g. an un-encodable jump/loop offset */
-            fprintf(stderr, "%d compile error(s) — line not run\n", g_parse_errors);
-            chunk_free(repl_chunk);
-            free_tokenlist(&tl);
-            free_ast(ast);
-            input.len = 0;
-            input.data[0] = '\0';
-            continue;
-        }
-        Value *result = vm_execute(repl_chunk, env);
-        if (g_exit_requested) {                 /* `exit of N` typed at the REPL */
-            g_has_error = 0;
-            chunk_free(repl_chunk);
-            if (result) val_decref(result);
-            free_tokenlist(&tl);
-            free_ast(ast);
-            break;
-        }
-        /* Chunks are refcounted: drop the creator ref. Functions defined
-         * on this line hold their own refs on their nested chunks. */
-        chunk_free(repl_chunk);
-
-        /* Print non-null results */
-        if (result && result->type != VAL_NULL) {
-            char *s = value_to_string(result);
-            printf("=> %s\n", s);
-            free(s);
-        }
-        if (result) val_decref(result);
-
-        free_tokenlist(&tl);
-        /* Function bodies are cloned (AST fns) or compiled into chunks
-         * (bytecode fns), so the per-line AST is safe to free. */
-        free_ast(ast);
-        input.len = 0;
-        input.data[0] = '\0';
-    }
-    strbuf_free(&input);
-}
-
 /* ---- Main ---- */
+/* The REPL (piped loop + the #392 interactive line editor) lives in repl.c. */
 
 static void set_exe_dir(const char *argv0) {
     char exe_path[4096];

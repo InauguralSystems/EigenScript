@@ -1286,6 +1286,22 @@ else
 fi
 echo ""
 
+# [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
+echo "[42c] REPL editor & piped transcript (16 checks)"
+RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)
+RE_PASS=$(echo "$RE_OUTPUT" | grep -c "PASS:" || true)
+RE_FAIL=$(echo "$RE_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + RE_PASS + RE_FAIL))
+PASS=$((PASS + RE_PASS))
+FAIL=$((FAIL + RE_FAIL))
+if [ "$RE_FAIL" -gt 0 ]; then
+    echo "  FAIL: $RE_FAIL REPL check(s) failed"
+    echo "$RE_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $RE_PASS REPL checks"
+fi
+echo ""
+
 echo "[loop-halting] opt-in observer-stall classifier"
 LH_OUTPUT=$(bash "$TESTS_DIR/test_loop_halting.sh" 2>&1)
 LH_PASS=$(echo "$LH_OUTPUT" | grep -c "PASS:" || true)
