@@ -2067,6 +2067,23 @@ check_eigs_suite "recv-blocked worker doesn't hang exit" test_spawn_channel_exit
 echo "[104] Worker Arena Return (no cross-thread UAF, #302)"
 check_eigs_suite "worker arena return deep-copied before detach" test_spawn_arena_return.eigs "All tests passed" 1
 
+# [105] Builtin contract fixes (#312 negative indices, #316 predicate
+# type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
+# script path must take the clean cannot-read-file exit, not xmalloc's
+# fatal-OOM SIGABRT (ftell on a directory reports LONG_MAX).
+echo "[105] Builtin Contracts (#312/#314/#316/#317)"
+check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
+TOTAL=$((TOTAL + 1))
+DIR_OUT=$(./eigenscript ../tests 2>&1); DIR_RC=$?
+if [ "$DIR_RC" -eq 1 ] && echo "$DIR_OUT" | grep -q "cannot read file"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: directory script arg exits 1 with a clean error"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: directory script arg (rc=$DIR_RC, want 1 + 'cannot read file')"
+    echo "$DIR_OUT" | head -3
+fi
+
 # [78] spawn with multiple args (0.13.0).
 echo "[78] Spawn With Multiple Args (22 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?

@@ -1054,20 +1054,21 @@ Value* builtin_str_lower(Value *arg) {
     return r;
 }
 
+/* #316: the string predicates reject non-string operands outright. The old
+ * idiom folded them to "" — and an empty needle/prefix/suffix matches
+ * everything, so `contains of [[1,2,3], 2]` reported a spurious hit. */
 Value* builtin_contains(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    const char *haystack = "", *needle = "";
-    if (arg->data.list.items[0]->type == VAL_STR) haystack = arg->data.list.items[0]->data.str;
-    if (arg->data.list.items[1]->type == VAL_STR) needle = arg->data.list.items[1]->data.str;
-    return make_num(strstr(haystack, needle) != NULL ? 1 : 0);
+    Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
+    if (!h || h->type != VAL_STR || !n || n->type != VAL_STR) return make_num(0);
+    return make_num(strstr(h->data.str, n->data.str) != NULL ? 1 : 0);
 }
 
 Value* builtin_starts_with(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    const char *str = "", *prefix = "";
-    if (arg->data.list.items[0]->type == VAL_STR) str = arg->data.list.items[0]->data.str;
-    if (arg->data.list.items[1]->type == VAL_STR) prefix = arg->data.list.items[1]->data.str;
-    return make_num(strncmp(str, prefix, strlen(prefix)) == 0 ? 1 : 0);
+    Value *s = arg->data.list.items[0], *p = arg->data.list.items[1];
+    if (!s || s->type != VAL_STR || !p || p->type != VAL_STR) return make_num(0);
+    return make_num(strncmp(s->data.str, p->data.str, strlen(p->data.str)) == 0 ? 1 : 0);
 }
 
 Value* builtin_split(Value *arg) {
@@ -1546,7 +1547,8 @@ Value* builtin_str_upper(Value *arg) {
 }
 
 /* ==== BUILTIN: char_at ==== */
-/* char_at of [string, index] → single character as string, or "" if out of range */
+/* char_at of [string, index] → single character as string, or "" if out of range.
+ * Negative indices count from the end, matching the [] operator (#312). */
 Value* builtin_char_at(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_str("");
     Value *str_val = arg->data.list.items[0];
@@ -1555,6 +1557,7 @@ Value* builtin_char_at(Value *arg) {
         return make_str("");
     int idx = (int)idx_val->data.num;
     int len = strlen(str_val->data.str);
+    if (idx < 0) idx += len;
     if (idx < 0 || idx >= len) return make_str("");
     char buf[2] = { str_val->data.str[idx], '\0' };
     return make_str(buf);
@@ -1563,9 +1566,9 @@ Value* builtin_char_at(Value *arg) {
 /* ==== BUILTIN: ends_with ==== */
 Value* builtin_ends_with(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    const char *str = "", *suffix = "";
-    if (arg->data.list.items[0]->type == VAL_STR) str = arg->data.list.items[0]->data.str;
-    if (arg->data.list.items[1]->type == VAL_STR) suffix = arg->data.list.items[1]->data.str;
+    Value *sv = arg->data.list.items[0], *xv = arg->data.list.items[1];
+    if (!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR) return make_num(0);
+    const char *str = sv->data.str, *suffix = xv->data.str;
     int slen = strlen(str), xlen = strlen(suffix);
     if (xlen > slen) return make_num(0);
     return make_num(strcmp(str + slen - xlen, suffix) == 0 ? 1 : 0);
@@ -1601,15 +1604,15 @@ Value* builtin_substr(Value *arg) {
 }
 
 /* ==== BUILTIN: index_of ==== */
-/* index_of of [haystack, needle] → first index, or -1 */
+/* index_of of [haystack, needle] → first index, or -1. Non-string operands
+ * are a miss (-1), never a fold-to-"" false positive at index 0 (#316). */
 Value* builtin_index_of(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(-1);
-    const char *haystack = "", *needle = "";
-    if (arg->data.list.items[0]->type == VAL_STR) haystack = arg->data.list.items[0]->data.str;
-    if (arg->data.list.items[1]->type == VAL_STR) needle = arg->data.list.items[1]->data.str;
-    const char *p = strstr(haystack, needle);
+    Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
+    if (!h || h->type != VAL_STR || !n || n->type != VAL_STR) return make_num(-1);
+    const char *p = strstr(h->data.str, n->data.str);
     if (!p) return make_num(-1);
-    return make_num((double)(p - haystack));
+    return make_num((double)(p - h->data.str));
 }
 
 /* ================================================================
@@ -1680,21 +1683,27 @@ Value* builtin_abs(Value *arg) {
     return make_num(fabs(arg->data.num));
 }
 
-Value* builtin_min(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    Value *a = arg->data.list.items[0];
-    Value *b = arg->data.list.items[1];
-    if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) return make_num(0);
-    return make_num(a->data.num < b->data.num ? a->data.num : b->data.num);
+/* #317: min/max are N-ary reductions over a flat list of numbers — the old
+ * code silently read only items[0..1] (`max of [1,2,3]` was 2) and returned 0
+ * for a 1-element list. A single bare number returns itself (mirrors `sum`);
+ * an empty list or any non-number element keeps the old 0 fallback rather
+ * than inventing a partial answer. */
+static Value* minmax_reduce(Value *arg, int want_max) {
+    if (arg && arg->type == VAL_NUM) return make_num(arg->data.num);
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1) return make_num(0);
+    double best = 0.0;
+    for (int i = 0; i < arg->data.list.count; i++) {
+        Value *v = arg->data.list.items[i];
+        if (!v || v->type != VAL_NUM) return make_num(0);
+        if (i == 0 || (want_max ? v->data.num > best : v->data.num < best))
+            best = v->data.num;
+    }
+    return make_num(best);
 }
 
-Value* builtin_max(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
-    Value *a = arg->data.list.items[0];
-    Value *b = arg->data.list.items[1];
-    if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) return make_num(0);
-    return make_num(a->data.num > b->data.num ? a->data.num : b->data.num);
-}
+Value* builtin_min(Value *arg) { return minmax_reduce(arg, 0); }
+
+Value* builtin_max(Value *arg) { return minmax_reduce(arg, 1); }
 
 Value* builtin_pi(Value *arg) {
     (void)arg;
@@ -2368,9 +2377,14 @@ Value* builtin_json_path(Value *arg) {
 char* read_file_util(const char *path, long *out_size) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
+    /* #314: fopen succeeds on a directory, and ftell then reports LONG_MAX —
+     * which sailed straight into xmalloc's fatal-OOM abort. Reject
+     * directories here so callers hit their existing clean error paths. */
+    struct stat st;
+    if (fstat(fileno(f), &st) == 0 && !S_ISREG(st.st_mode)) { fclose(f); return NULL; }
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
-    if (size < 0) { fclose(f); return NULL; }
+    if (size < 0 || size == LONG_MAX) { fclose(f); return NULL; }
     fseek(f, 0, SEEK_SET);
     char *buf = xmalloc(size + 1);
     if (!buf) { fclose(f); return NULL; }
@@ -3919,6 +3933,8 @@ Value* builtin_set_at(Value *arg) {
         Value *list = arg->data.list.items[0];
         int idx = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
         Value *val = arg->data.list.items[2];
+        /* #312: negative indices count from the end, matching []. */
+        if (list->type == VAL_LIST && idx < 0) idx += list->data.list.count;
         if (list->type == VAL_LIST && idx >= 0 && idx < list->data.list.count) {
             val_incref(val);
             val_decref(list->data.list.items[idx]);
@@ -3932,8 +3948,10 @@ Value* builtin_set_at(Value *arg) {
         int row = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
         int col = (arg->data.list.items[2]->type == VAL_NUM) ? (int)arg->data.list.items[2]->data.num : 0;
         Value *val = arg->data.list.items[3];
+        if (list->type == VAL_LIST && row < 0) row += list->data.list.count;
         if (list->type == VAL_LIST && row >= 0 && row < list->data.list.count) {
             Value *rowv = list->data.list.items[row];
+            if (rowv->type == VAL_LIST && col < 0) col += rowv->data.list.count;
             if (rowv->type == VAL_LIST && col >= 0 && col < rowv->data.list.count) {
                 val_incref(val);
                 val_decref(rowv->data.list.items[col]);
@@ -3953,6 +3971,8 @@ Value* builtin_get_at(Value *arg) {
     if (argc == 2) {
         Value *list = arg->data.list.items[0];
         int idx = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
+        /* #312: negative indices count from the end, matching []. */
+        if (list->type == VAL_LIST && idx < 0) idx += list->data.list.count;
         if (list->type == VAL_LIST && idx >= 0 && idx < list->data.list.count) {
             val_incref(list->data.list.items[idx]);
             return list->data.list.items[idx];
@@ -3963,8 +3983,10 @@ Value* builtin_get_at(Value *arg) {
         Value *list = arg->data.list.items[0];
         int row = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
         int col = (arg->data.list.items[2]->type == VAL_NUM) ? (int)arg->data.list.items[2]->data.num : 0;
+        if (list->type == VAL_LIST && row < 0) row += list->data.list.count;
         if (list->type == VAL_LIST && row >= 0 && row < list->data.list.count) {
             Value *rowv = list->data.list.items[row];
+            if (rowv->type == VAL_LIST && col < 0) col += rowv->data.list.count;
             if (rowv->type == VAL_LIST && col >= 0 && col < rowv->data.list.count) {
                 val_incref(rowv->data.list.items[col]);
                 return rowv->data.list.items[col];

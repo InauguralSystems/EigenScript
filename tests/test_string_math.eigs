@@ -12,7 +12,7 @@ assert of [(str_upper of "ABC") == "ABC", "SU3 already upper"]
 assert of [(char_at of ["hello", 0]) == "h", "CA1 first char"]
 assert of [(char_at of ["hello", 4]) == "o", "CA2 last char"]
 assert of [(char_at of ["hello", 5]) == "", "CA3 out of range"]
-assert of [(char_at of ["hello", -1]) == "", "CA4 negative index"]
+assert of [(char_at of ["hello", -1]) == "o", "CA4 negative index counts from the end (#312)"]
 
 # ---- ends_with ----
 assert of [(ends_with of ["hello.eigs", ".eigs"]) == 1, "EW1 match"]

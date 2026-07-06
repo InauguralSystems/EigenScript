@@ -48,8 +48,8 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `append` | `append of [list, item]` | Append item to list (mutates list) |
 | `concat` | `concat of [a, b]` | Concatenate two lists into new list |
 | `range` | `range of n` or `range of [start, end]` | Generate integer list [0..n) or [start..end) |
-| `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list) |
-| `get_at` | `get_at of [list, index]` | Get element at index |
+| `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list); negative indices count from the end, like `[]` |
+| `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]` |
 | `copy_into` | `copy_into of [dest, src, offset]` | Copy src elements into dest starting at offset |
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
 | `hex` | `hex of n` or `hex of [n, nibbles]` | Uppercase hex string of a non-negative integer, zero-padded to `nibbles` (never truncated). Raises on negatives, fractions, non-numbers |
@@ -65,11 +65,11 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 |------|-----------|-------------|
 | `str_lower` | `str_lower of s` | Convert to lowercase |
 | `str_upper` | `str_upper of s` | Convert to uppercase |
-| `char_at` | `char_at of [s, index]` | Single character at index as string ("" if out of range) |
-| `contains` | `contains of [haystack, needle]` | 1 if haystack contains needle, else 0 |
+| `char_at` | `char_at of [s, index]` | Single character at index as string ("" if out of range); negative indices count from the end, like `[]` |
+| `contains` | `contains of [haystack, needle]` | 1 if haystack contains needle, else 0 (non-string operands are 0, never a spurious match) |
 | `starts_with` | `starts_with of [s, prefix]` | 1 if s starts with prefix, else 0 |
 | `ends_with` | `ends_with of [s, suffix]` | 1 if s ends with suffix, else 0 |
-| `index_of` | `index_of of [haystack, needle]` | First index of needle in haystack, or -1 |
+| `index_of` | `index_of of [haystack, needle]` | First index of needle in haystack, or -1 (non-string operands are -1) |
 | `substr` | `substr of [s, start, length]` | Extract substring |
 | `split` | `split of [s, delim]` | Split string by delimiter into list |
 | `scan_ints` | `scan_ints of s` or `scan_ints of [s, comment_marker]` | C-backed scan of whitespace-delimited signed integer tokens, optionally skipping comment lines |
@@ -316,8 +316,8 @@ automatically at exit.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `abs` | `abs of x` | Absolute value |
-| `min` | `min of [a, b]` | Smaller of two numbers |
-| `max` | `max of [a, b]` | Larger of two numbers |
+| `min` | `min of [n1, n2, ...]` | Smallest of a list of numbers (any length >= 1) |
+| `max` | `max of [n1, n2, ...]` | Largest of a list of numbers (any length >= 1) |
 | `floor` | `floor of x` | Round down to integer |
 | `ceil` | `ceil of x` | Round up to integer |
 | `round` | `round of x` | Round to nearest integer |
