@@ -4,6 +4,10 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.27.0] - 2026-07-06
+
 ### Changed
 - **BREAKING — one call rule (#405, closes #153): a bare literal list
   after `of` is ALWAYS an argument list**, at every element count:
