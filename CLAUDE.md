@@ -125,12 +125,15 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.26.0** (2026-07-04) — the stdlib-trains release:
-  hex is a lexed, profile-consistent contract end to end (#378/#381 lexer,
-  num-of strings), the `bit_*` builtins are the infix operators (int64,
-  #382), and seven new stdlib surfaces (checksum, datetime civil math, bcd,
-  wait_until, hexdump, harness, observer_slots). All 10 consumers bumped
-  same day. (v0.25.0, same day: the hex + abort-seam release.) Unreleased
+- **Latest release: v0.27.0** (2026-07-06) — the tooling-and-contracts
+  release: the one call rule (#405, BREAKING — bare literal list after
+  `of` is always an argument list, W017 is the migration audit), tape
+  format versioning (#411, BREAKING — replay refuses mismatched tapes),
+  `chr` as ord's loud inverse (#435), the lint rule train (E003
+  undefined-name, W015–W017, `--lint-level` + inline suppression), the
+  interactive REPL line editor (#392), the embeddable two-file
+  amalgamation (#397), and four silent-wrong-answer builtin fixes.
+  (v0.26.0, 2026-07-04: the stdlib-trains release.) Unreleased
   work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
   **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
   now FAILS the suite when this line falls behind the latest tag). Roadmap:
@@ -175,5 +178,9 @@ model — don't work around a gap, surface it).
 Push a `v*` tag **or** dispatch the Release workflow (Actions → Release → Run
 workflow), which creates the tag and builds in the same run. This
 environment's git proxy **cannot push tags**, and GITHUB_TOKEN-pushed tags
-don't retrigger workflows — so use the dispatch path. Homebrew tap:
-github.com/InauguralSystems/homebrew-eigenscript (tracks the latest release).
+don't retrigger workflows — so use the dispatch path. **The cut PR must update
+this file's "Latest release" line to the new version**: doc-drift rule 2
+compares it to the latest tag, and the release build runs *after* the tag is
+created — a stale line fails the release's own suite (bit the v0.27.0 cut).
+Homebrew tap: github.com/InauguralSystems/homebrew-eigenscript (tracks the
+latest release).
