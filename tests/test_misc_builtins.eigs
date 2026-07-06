@@ -9,7 +9,7 @@ assert_eq of [ord of (chr of 128), 128, "chr 128 round-trips through ord"]
 assert_eq of [ord of (chr of 233), 233, "chr 233 round-trips through ord"]
 assert_eq of [ord of (chr of 255), 255, "chr 255 round-trips through ord"]
 assert_eq of [len of (chr of 233), 1, "chr of a high byte is one byte"]
-assert_eq of [chr of 233, str_from_bytes of [233], "chr n == str_from_bytes [n]"]
+assert_eq of [chr of 233, str_from_bytes of ([233]), "chr n == str_from_bytes [n]"]
 
 # coalesce — return first non-null/non-empty
 assert_eq of [coalesce of ["hello", "default"], "hello", "coalesce non-empty"]

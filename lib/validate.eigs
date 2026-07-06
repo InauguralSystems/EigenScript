@@ -39,7 +39,7 @@ define is_number(value) as:
             if (len of value) == 1:
                 return 0
             start is 1
-        for i in range of [(len of value) - start]:
+        for i in range of ((len of value) - start):
             c is char_at of [value, i + start]
             if c == ".":
                 if has_dot == 1:

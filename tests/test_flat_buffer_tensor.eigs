@@ -7,7 +7,7 @@ ol is [2.0, -1.0, 3.0]
 bl is [10.0, 20.0]
 ml is matmul of [ol, wl]
 nl_add is add of [ml, bl]
-nl_relu is relu of [[-1.0, 5.0, -3.0]]
+nl_relu is relu of ([-1.0, 5.0, -3.0])
 
 # --- shaped-buffer path, identical values ---
 ws is buffer of [3, 2]

@@ -5,9 +5,9 @@
 # EigenScript implemented in EigenScript. Evaluator VALUES are at parity with
 # the C evaluator: and/or short-circuit returns the deciding operand, unbound
 # identifiers raise, arithmetic / comparison / truthiness match, and the call
-# spread rule matches (#338: only a LITERAL list argument with 2+ elements
-# spreads into parameters; a variable list binds whole to the first parameter;
-# missing parameters bind to null).
+# rule matches (#405: a LITERAL list argument node is always the argument
+# list, at every element count; a variable list binds whole to the first
+# parameter; missing parameters bind to null).
 # UNSUPPORTED SYNTAX FAILS LOUDLY (#338): the tokenizer raises on any
 # character it doesn't lex — compound assignment (`+=` family) and bitwise
 # operators (`& | ^ ~`) are not implemented here, so they raise a tokenize
@@ -1309,24 +1309,33 @@ define eigen_eval(node, env) as:
                     params is fn[2]
                     body is fn[3]
                     call_env is _env_new of env
-                    # C-parity spread rule (#338): only a LITERAL list
-                    # argument with 2+ elements spreads into parameters —
-                    # a list arriving via a variable (or a 1-element
-                    # literal) binds whole to the first parameter. The C
-                    # compiler decides this from the call-site AST, so we
-                    # check the arg NODE (node[2]), not the runtime value.
-                    # Missing parameters bind to null, as the C VM does.
-                    spread is 0
-                    if (len of params) > 1:
-                        if node[2][0] == "list":
-                            if (len of (node[2][1])) > 1:
-                                spread is 1
-                    if spread == 1:
-                        for pi in range of (len of params):
-                            if pi < (len of arg):
-                                _env_set_local of [call_env, params[pi], arg[pi]]
+                    # C-parity call rule (#405): a LITERAL list argument
+                    # node is ALWAYS the argument list — argc is its
+                    # element count at every size ([x] passes x itself).
+                    # Binding then mirrors the C VM: each param takes one
+                    # argument (missing -> null); a 1-param callee packs
+                    # 2+ arguments back into a list, and `f of []` keeps
+                    # the #154 1-param empty-list bind. A list arriving
+                    # via a variable (or parenthesized, #355) binds whole
+                    # to the first parameter. The C compiler decides from
+                    # the call-site AST, so we check the arg NODE
+                    # (node[2]), not the runtime value.
+                    if node[2][0] == "list":
+                        argc is len of arg
+                        if (len of params) == 1:
+                            if argc == 1:
+                                _env_set_local of [call_env, params[0], arg[0]]
                             else:
-                                _env_set_local of [call_env, params[pi], null]
+                                if argc == 0:
+                                    _env_set_local of [call_env, params[0], []]
+                                else:
+                                    _env_set_local of [call_env, params[0], arg]
+                        else:
+                            for pi in range of (len of params):
+                                if pi < argc:
+                                    _env_set_local of [call_env, params[pi], arg[pi]]
+                                else:
+                                    _env_set_local of [call_env, params[pi], null]
                     else:
                         _env_set_local of [call_env, params[0], arg]
                         fill is 1

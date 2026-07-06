@@ -13,28 +13,28 @@ assert of [(two of [10, 3]) == 7, "2-param spreads list"]
 assert of [(three of [1, 2, 3]) == 6, "3-param spreads list"]
 assert of [(two of [10, 3, 99]) == 7, "extra list elements ignored"]
 
-# A one-param function binds the WHOLE argument (a list is not spread)
-assert of [(one of [7]) == [7], "1-param binds whole list"]
+# #405: a bare literal list after `of` is ALWAYS an argument list, at
+# every count — so [x] is ONE argument: x itself, never a 1-element list.
+assert of [(one of [7]) == 7, "1-element arg list passes the element"]  # lint: allow W017
 assert of [(one of 5) == 5, "1-param binds scalar"]
+assert of [(one of ([7])) == [7], "paren'd 1-element list binds whole (#355)"]
 
-# Issue #153: a length-1 literal list does NOT spread, even to a
-# multi-param callee. f of [x] binds [x] as one arg; the second param
-# stays unset (null) or takes its default. Use f of (x) for the
-# one-arg spread case.
 define mp(a, b) as:
     return [a, b]
-assert of [(mp of [7]) == [[7], null], "1-element list to 2-param: binds whole list, b=null"]
-assert of [(mp of (7)) == [7, null], "paren form: 1 arg to 2-param spreads, b=null"]
+assert of [(mp of [7]) == [7, null], "1-element arg list to 2-param: a=7, b=null"]  # lint: allow W017
+assert of [(mp of (7)) == [7, null], "paren form: 1 arg to 2-param, b=null"]
 
 define mpd(a, b is 100) as:
     return a + b
 assert of [(mpd of (5)) == 105, "paren form lets default fire"]
-# fib-style recursion footgun avoided by paren form
+assert of [(mpd of [5]) == 105, "bracket form lets default fire too (#405)"]  # lint: allow W017
+# The #153 footgun is dead: bracketed recursion works WITH a defaulted
+# param — this exact shape used to bind [n - 1] whole to n.
 define fib(n, memo is 0) as:
     if n < 2:
         return n
-    return (fib of (n - 1)) + (fib of (n - 2))
-assert of [(fib of 10) == 55, "fib paren form recurses correctly"]
+    return (fib of [n - 1]) + (fib of [n - 2])  # lint: allow W017
+assert of [(fib of 10) == 55, "fib bracket form recurses correctly (#405)"]
 
 # Issue #154: f of [] lowers to a zero-arg call for every callee, so a
 # multi-param callee gets all params = null (or defaults fire). The

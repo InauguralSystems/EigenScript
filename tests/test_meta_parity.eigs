@@ -104,8 +104,11 @@ check of ["literal 2-elem list spreads", eigen_run of spread_src_lit, 4]
 spread_src_var is "define f2(a, b) as:\n    if b == null:\n        return 99\n    return b\npair is [3, 4]\nf2 of pair"
 check of ["variable list does NOT spread (b is null)", eigen_run of spread_src_var, 99]
 
-spread_src_one is "define f2(a, b) as:\n    if b == null:\n        return len of a\n    return 0\nf2 of [7]"
-check of ["1-elem literal binds whole list", eigen_run of spread_src_one, 1]
+spread_src_one is "define f2(a, b) as:\n    if b == null:\n        return a\n    return 0\nf2 of [7]"
+check of ["1-elem literal arg list passes the element (#405)", eigen_run of spread_src_one, 7]
+
+spread_src_paren is "define f2(a, b) as:\n    if b == null:\n        return len of a\n    return 0\nf2 of ([7])"
+check of ["paren'd 1-elem literal binds whole list (#355)", eigen_run of spread_src_paren, 1]
 
 spread_src_fill is "define f3(a, b, c) as:\n    if c == null:\n        return a + b\n    return 0\nf3 of [1, 2]"
 check of ["short spread null-fills trailing params", eigen_run of spread_src_fill, 3]

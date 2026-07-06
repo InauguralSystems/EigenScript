@@ -3,8 +3,8 @@
 load_file of "lib/test.eigs"
 
 # ---- #317: min/max N-ary reduction ----
-assert_eq of [min of [5], 5, "min of 1-element list is the element"]
-assert_eq of [max of [5], 5, "max of 1-element list is the element"]
+assert_eq of [min of ([5]), 5, "min of 1-element list is the element"]
+assert_eq of [max of ([5]), 5, "max of 1-element list is the element"]
 assert_eq of [min of [3, 7], 3, "min 2-arg unchanged"]
 assert_eq of [max of [3, 7], 7, "max 2-arg unchanged"]
 assert_eq of [max of [1, 2, 3], 3, "max reduces past the first two elements"]

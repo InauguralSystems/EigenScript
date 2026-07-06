@@ -29,7 +29,7 @@ code is proc_wait of h[0]
 check of ["3b", code, 0]
 
 # 4. cat: stdin → stdout round-trip via separate read+write.
-h is proc_spawn of ["/bin/cat"]
+h is proc_spawn of (["/bin/cat"])
 n is proc_write of [h[1], "round\n"]
 check of ["4a", n, 6]
 line is proc_read_line of h[2]
@@ -65,7 +65,7 @@ code is proc_wait of h[0]
 check of ["6c", code, 0]
 
 # 7. Nonexistent program: spawn succeeds, child _exit(127) → exit code 127.
-h is proc_spawn of ["/no/such/binary/anywhere"]
+h is proc_spawn of (["/no/such/binary/anywhere"])
 check of ["7a", h[0] > 0, 1]
 proc_close of h[1]
 proc_close of h[2]
@@ -78,7 +78,7 @@ proc_close of h[1]
 proc_close of h[2]
 proc_wait of h[0]
 # Spawn a fresh one and let it exit; write after exit should fail.
-h is proc_spawn of ["/bin/true"]
+h is proc_spawn of (["/bin/true"])
 # Give /bin/true a moment to exit.
 i is 0
 loop while i < 100000:
@@ -108,7 +108,7 @@ check of ["12a", proc_read_line of 9999, null]
 # 13. Issue #149 — pipe fds carry FD_CLOEXEC so they don't leak into
 #     subsequent children. Spawn a long-lived cat, then exec_capture a
 #     checker that inspects /proc/self/fd for cat's parent-side fds.
-h is proc_spawn of ["/bin/cat"]
+h is proc_spawn of (["/bin/cat"])
 in_fd is h[1]
 out_fd is h[2]
 script is "test -e /proc/self/fd/" + str of in_fd + " && echo present || echo absent"

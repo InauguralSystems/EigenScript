@@ -4,7 +4,27 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING — one call rule (#405, closes #153): a bare literal list
+  after `of` is ALWAYS an argument list**, at every element count:
+  `f of []` is zero arguments, `f of [x]` is ONE argument (the element —
+  previously it bound the whole 1-element list to the first parameter),
+  `f of [a, b]` is two. Brackets are an argument list; parentheses are
+  one argument — `f of ([x])` (#355) still passes a literal list whole.
+  The obvious recursive form `fib of [n - 1]` now works even after a
+  defaulted parameter is added (the arity-dependent silent-wrong this
+  kills). Migration: every behavior-changed site is a bare 1-element
+  literal arg list — the new **W017** lint flags exactly that shape with
+  the two unambiguous rewrites (`f of x` / `f of ([x])`), so `--lint`
+  over a repo is the mechanical audit. SPEC/COMPARISON call sections
+  rewritten.
+
 ### Added
+- **W017 — bare 1-element literal arg list** (#405): warns on `f of [x]`
+  (historically ambiguous; inverted meaning pre-#405) and names both
+  unambiguous spellings — `f of x` for one argument, `f of ([x])` to
+  pass a 1-element list. Doubles as the #405 migration audit over a
+  consumer repo.
 - **E003 — undefined-name lint, increment one of the scope-aware
   name-resolution pass** (#404): `--lint` (and the LSP, as red squiggles)
   now reports a name that is read but bound nowhere — the typo'd name in a
