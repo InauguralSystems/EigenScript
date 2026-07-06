@@ -1,6 +1,6 @@
 # EigenScript — single-file reference for language models
 
-> EigenScript v0.26.0. A small dynamically-typed language with one distinctive
+> EigenScript v0.27.0. A small dynamically-typed language with one distinctive
 > feature: an **observer** tracks every value's entropy/trend on each
 > assignment, so convergence, stability, and oscillation are first-class. This
 > file is the whole surface you need to generate correct `.eigs`. Models
