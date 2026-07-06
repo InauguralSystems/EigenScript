@@ -1031,6 +1031,153 @@ static void check_bare_predicate_alias(ASTNode *ast, LintContext *ctx) {
     w016_scan(ast, ctx);
 }
 
+/* ---- W017 (#405): bare 1-element literal arg list ---- */
+
+/* Under the #405 call rule a bare literal list after `of` is ALWAYS an
+ * argument list, so `f of [x]` passes ONE argument — x itself, not a
+ * 1-element list. The form still reads ambiguously (and under the pre-#405
+ * rule it meant the opposite), so steer to the two unambiguous spellings:
+ * `f of x` for one argument, `f of ([x])` (#355) to pass the list whole.
+ * This doubles as the migration audit: run --lint over a consumer repo and
+ * every behavior-changed call site surfaces as a W017. */
+
+static void w017_check_relation(ASTNode *n, LintContext *ctx) {
+    ASTNode *fn = n->data.relation.left;
+    ASTNode *arg = n->data.relation.right;
+    if (!arg || arg->type != AST_LIST || arg->parenthesized ||
+        arg->data.list.count != 1)
+        return;
+    /* `<pred> of [x]` is not a call; the predicate path ignores lists. */
+    if (fn && fn->type == AST_PREDICATE) return;
+    const char *name = (fn && fn->type == AST_IDENT) ? fn->data.ident.name
+                                                     : "<fn>";
+    lint_warn(ctx, arg->line, "W017",
+        "'%s of [<expr>]' passes one argument (the element, not the list) "
+        "— write '%s of <expr>', or '%s of ([<expr>])' to pass a 1-element "
+        "list", name, name, name);
+}
+
+static void w017_scan(ASTNode *n, LintContext *ctx) {
+    if (!n) return;
+    switch (n->type) {
+        case AST_RELATION:
+            w017_check_relation(n, ctx);
+            w017_scan(n->data.relation.left, ctx);
+            w017_scan(n->data.relation.right, ctx);
+            break;
+        case AST_LOOP:
+            w017_scan(n->data.loop.cond, ctx);
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w017_scan(n->data.loop.body[i], ctx);
+            break;
+        case AST_BINOP:
+            w017_scan(n->data.binop.left, ctx);
+            w017_scan(n->data.binop.right, ctx);
+            break;
+        case AST_UNARY:
+            w017_scan(n->data.unary.operand, ctx);
+            break;
+        case AST_ASSIGN:
+            w017_scan(n->data.assign.expr, ctx);
+            break;
+        case AST_IF:
+            w017_scan(n->data.cond.cond, ctx);
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w017_scan(n->data.cond.if_body[i], ctx);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w017_scan(n->data.cond.else_body[i], ctx);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < n->data.func.body_count; i++)
+                w017_scan(n->data.func.body[i], ctx);
+            break;
+        case AST_RETURN:
+            w017_scan(n->data.ret.expr, ctx);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w017_scan(n->data.block.stmts[i], ctx);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            w017_scan(n->data.list_pattern_assign.expr, ctx);
+            break;
+        case AST_SLICE:
+            w017_scan(n->data.slice.target, ctx);
+            w017_scan(n->data.slice.start, ctx);
+            w017_scan(n->data.slice.end, ctx);
+            break;
+        case AST_LIST:
+            for (int i = 0; i < n->data.list.count; i++)
+                w017_scan(n->data.list.elems[i], ctx);
+            break;
+        case AST_INDEX:
+            w017_scan(n->data.index.target, ctx);
+            w017_scan(n->data.index.index, ctx);
+            break;
+        case AST_LISTCOMP:
+            w017_scan(n->data.listcomp.expr, ctx);
+            w017_scan(n->data.listcomp.iter, ctx);
+            if (n->data.listcomp.filter)
+                w017_scan(n->data.listcomp.filter, ctx);
+            break;
+        case AST_FOR:
+            w017_scan(n->data.forloop.iter, ctx);
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                w017_scan(n->data.forloop.body[i], ctx);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w017_scan(n->data.program.stmts[i], ctx);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < n->data.trycatch.try_count; i++)
+                w017_scan(n->data.trycatch.try_body[i], ctx);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++)
+                w017_scan(n->data.trycatch.catch_body[i], ctx);
+            break;
+        case AST_DICT:
+            for (int i = 0; i < n->data.dict.count; i++) {
+                w017_scan(n->data.dict.keys[i], ctx);
+                w017_scan(n->data.dict.vals[i], ctx);
+            }
+            break;
+        case AST_DOT:
+            w017_scan(n->data.dot.target, ctx);
+            break;
+        case AST_DOT_ASSIGN:
+            w017_scan(n->data.dot_assign.target, ctx);
+            w017_scan(n->data.dot_assign.expr, ctx);
+            break;
+        case AST_INDEX_ASSIGN:
+            w017_scan(n->data.index_assign.target, ctx);
+            w017_scan(n->data.index_assign.index, ctx);
+            w017_scan(n->data.index_assign.expr, ctx);
+            break;
+        case AST_MATCH:
+            w017_scan(n->data.match.expr, ctx);
+            for (int i = 0; i < n->data.match.case_count; i++) {
+                w017_scan(n->data.match.patterns[i], ctx);
+                for (int j = 0; j < n->data.match.body_counts[i]; j++)
+                    w017_scan(n->data.match.bodies[i][j], ctx);
+            }
+            break;
+        case AST_LAMBDA:
+            w017_scan(n->data.lambda.body, ctx);
+            break;
+        case AST_INTERROGATE:
+            w017_scan(n->data.interrogate.expr, ctx);
+            if (n->data.interrogate.at_expr)
+                w017_scan(n->data.interrogate.at_expr, ctx);
+            break;
+        default: break;
+    }
+}
+
+static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
+    w017_scan(ast, ctx);
+}
+
 /* ---- E003 (#404): undefined name — no binding on any path ---- */
 
 /* Increment one of the scope-aware name-resolution pass: a name that is READ
@@ -1351,6 +1498,7 @@ static void check_undefined_names(ASTNode *ast, const char *path,
 static void lint_run_checks(ASTNode *ast, const char *path, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
+    check_one_element_arg_list(ast, ctx);
 #if !EIGENSCRIPT_FREESTANDING
     check_undefined_names(ast, path, ctx);
 #else

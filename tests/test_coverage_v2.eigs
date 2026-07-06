@@ -161,8 +161,8 @@ assert of [r_neg[0] == 10, "CV2-43 range neg step first"]
 assert of [r_neg[4] == 2, "CV2-44 range neg step last"]
 
 # --- range single-element list fallback ---
-r_single is range of [5]
-assert of [(len of r_single) == 5, "CV2-45 range single-elem list"]
+r_single is range of ([5])
+assert of [(len of r_single) == 5, "CV2-45 range single-elem list (paren form)"]
 
 # --- range with step 0 (should default to 1) ---
 r_zero_step is range of [0, 3, 0]

@@ -14,7 +14,7 @@ assert of [(len of u) == 4, "SG2 softmax preserves length"]
 assert of [(u[0] > 0.24) and (u[0] < 0.26), "SG3 softmax of zeros is uniform"]
 
 # Empty-ish guard: 1-element input must return [1.0]
-one is softmax of [5.0]
+one is softmax of ([5.0])
 assert of [(len of one) == 1, "SG4 softmax 1D length"]
 assert of [(one[0] > 0.99) and (one[0] < 1.01), "SG5 softmax 1-element is 1.0"]
 

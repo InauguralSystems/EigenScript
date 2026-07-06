@@ -39,7 +39,7 @@ assert_true of [abs of g[100] <= abs of s[100] + 0.0001, "gain reduces amplitude
 bad is audio_sine of [440, 0, 0.5]
 assert_eq of [len of bad, 0, "zero duration = empty"]
 
-bad2 is audio_sine of [440]
+bad2 is audio_sine of ([440])
 assert_eq of [len of bad2, 0, "too few args = empty"]
 
 bad3 is audio_mix of [42, 43]

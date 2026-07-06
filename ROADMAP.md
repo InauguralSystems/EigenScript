@@ -53,9 +53,12 @@ observer/deterministic-replay niche instead of diluting it.**
 - [ ] Scope-aware name-resolution lint (E-class, shared with the LSP) —
       the highest correctness yield per week available
       ([#404](https://github.com/InauguralSystems/EigenScript/issues/404))
-- [ ] **Language change:** bare literal list after `of` is always an
+- [x] **Language change:** bare literal list after `of` is always an
       argument list — kill the 1-element spread trap while pre-1.0 makes
-      it cheap ([#405](https://github.com/InauguralSystems/EigenScript/issues/405), closes #153)
+      it cheap ([#405](https://github.com/InauguralSystems/EigenScript/issues/405), closes #153).
+      Landed on main with lint `W017` as the migration audit; the
+      ouroboros `frontend.eigs` parity leg rides the next release + pin
+      bump (with the `chr` raise and #411 tape headers)
 - [ ] Structured runtime errors `{kind, message, line}` with a closed
       kind set ([#406](https://github.com/InauguralSystems/EigenScript/issues/406))
 - [~] Column tracking + caret/span diagnostics — parse errors now carry

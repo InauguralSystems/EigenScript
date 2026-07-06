@@ -93,14 +93,13 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 - **`tests/test_temporal.eigs` is line-number-sensitive** — its `at`
   queries hardcode line numbers. Append only before the final if/else, and
   re-verify the `grep -n` markers in the file.
-- **`f of [x]` does not spread** — the compiler spreads literal list args
-  only at `count > 1`, so a 1-element list binds the *whole list* to the
-  first param. For 1-arg calls to multi-param (incl. defaulted) functions
-  use `f of (x)`. This breaks the obvious recursive form `fib of [n - 1]`
-  the moment a defaulted param is added (issue #153). Parenthesising
-  suppresses spread entirely (#355): `f of ([a, b])` passes the literal
-  list whole. (More `.eigs`-writing gotchas: the `write-eigenscript`
-  skill.)
+- **Brackets after `of` are an argument list; parentheses are one
+  argument** (#405, closed #153): a bare literal list is an arg list at
+  EVERY count — `f of []` zero args, `f of [x]` one arg (the element,
+  not the list), `f of [a, b]` two. To pass a literal list whole,
+  parenthesise (#355): `f of ([x])`. Lint W017 flags the 1-element bare
+  form (pre-#405 it meant the opposite). (More `.eigs`-writing gotchas:
+  the `write-eigenscript` skill.)
 - The Makefile `asan` target compiles with `EIGENSCRIPT_EXT_HTTP=0`; if you
   touch `ext_http.c`, compile-check with `make http`. Same for `ext_gfx.c`
   — in **no** default build; compile-check with `make gfx`. All variants

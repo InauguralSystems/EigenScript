@@ -15,8 +15,8 @@ define greet() as:
 t is spawn of greet
 check of ["1a", thread_join of t, "hi"]
 
-# 2. Bare-list zero-arg form (`[fn]` with no further args).
-t is spawn of [greet]
+# 2. Bare fn value, no args (#405: `spawn of [greet]` passes greet itself).
+t is spawn of greet
 check of ["2a", thread_join of t, "hi"]
 
 # 3. Single-arg form (existing).
@@ -52,7 +52,7 @@ check of ["7a", thread_join of t, ["p", "q", null]]
 t is spawn of [show3, "p"]
 check of ["7b", thread_join of t, ["p", null, null]]
 
-t is spawn of [show3]
+t is spawn of ([show3])
 check of ["7c", thread_join of t, [null, null, null]]
 
 # 8. Overfill: extra args ignored.

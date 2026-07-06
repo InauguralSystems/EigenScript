@@ -54,7 +54,7 @@ result4 is exec_capture of ["echo", 42]
 assert of [result4[0] == -1, "EC4 non-string arg"]
 
 # EC5: cat without stdin should exit immediately (stdin is /dev/null)
-result5 is exec_capture of ["cat"]
+result5 is exec_capture of (["cat"])
 assert of [result5[0] == 0, "EC5 cat with /dev/null stdin exits"]
 assert of [result5[1] == "", "EC5 cat produces no output"]
 

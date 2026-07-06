@@ -103,7 +103,7 @@ EigenScript is dynamically typed. The runtime types are:
 ```eigenscript
 print of (type of 1)
 print of (type of "a")
-print of (type of [1])
+print of (type of [1, 2])
 print of (type of {"k": 1})
 print of (type of null)
 print of (type of print)
@@ -576,13 +576,14 @@ print of app.users[1].id
 value; falling off the end returns `null`. Calling conventions:
 
 - `f of x` — one argument.
-- `f of [a, b, c]` — a **bare literal** list with 2+ elements spreads
-  into the parameters.
-- `f of (x)` — parenthesised single argument (required for one-argument
-  calls to multi-parameter functions — see the warning below). This
-  also works for literal lists: `f of ([a, b])` binds the whole list
-  `[a, b]` as the single argument — parentheses always mean "one
-  argument", so only a *bare* literal list ever spreads.
+- `f of [a, b, c]` — a **bare literal** list after `of` is always an
+  argument list, at every element count: `f of []` is zero arguments,
+  `f of [x]` is one argument (x itself, not a 1-element list),
+  `f of [a, b]` is two.
+- `f of (x)` — parenthesised single argument. This also works for
+  literal lists: `f of ([a, b])` binds the whole list `[a, b]` as the
+  single argument — parentheses always mean "one argument", so only a
+  *bare* literal list is ever an argument list.
 - `f of null` — call with no meaningful argument.
 
 ```eigenscript
@@ -600,12 +601,12 @@ print of (shout of "hey")
 hey!
 ```
 
-**Spread warning:** a literal list with exactly **one** element does
-not spread — `f of [x]` binds the whole list `[x]` to the first
-parameter. For one-argument calls to multi-parameter (including
-defaulted) functions, write `f of (x)`. To pass a literal 2+-element
-list whole to a multi-parameter function, parenthesise it:
-`f of ([a, b])`.
+**One rule, one sentence:** brackets after `of` are an argument list;
+parentheses are one argument. So `f of [x]` and `f of x` are the same
+one-argument call, and `f of ([x])` passes a literal 1-element list
+whole. (Before #405, `f of [x]` bound the whole list `[x]` to the
+first parameter — lint `W017` flags the historically ambiguous
+1-element form and names both unambiguous spellings.)
 
 ```eigenscript
 define first(a, b) as:
@@ -617,7 +618,7 @@ print of (first of ([10, 20]))
 ```
 ```output
 10
-list
+num
 [10, 20]
 ```
 
@@ -677,14 +678,14 @@ print of n
 5
 ```
 
-Recursion works as expected. Note the parenthesised recursive call —
-`fib of (m - 1)`, not `fib of [m - 1]`:
+Recursion works as expected, including the bracketed recursive call
+`fib of [m - 1]` (one argument — see the call rule above):
 
 ```eigenscript
 define fib(m) as:
     if m < 2:
         return m
-    return (fib of (m - 1)) + (fib of (m - 2))
+    return (fib of [m - 1]) + (fib of [m - 2])
 
 print of (fib of 10)
 ```

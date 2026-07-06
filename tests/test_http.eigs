@@ -25,7 +25,7 @@ assert of [(contains of [m3, "http_route requires"]) == 1, "HTTP03 message"]
 
 c4 is 0
 try:
-    r_bad2 is http_route of ["GET"]
+    r_bad2 is http_route of (["GET"])
 catch e:
     c4 is 1
 assert of [c4 == 1, "HTTP04 http_route too-few-elements raises"]
@@ -59,7 +59,7 @@ assert of [hdrs == "", "HTTP10 http_request_headers default is empty"]
 p_bad1 is http_post of null
 assert of [p_bad1 == "", "HTTP11 http_post null returns empty string"]
 
-p_bad2 is http_post of ["just-url"]
+p_bad2 is http_post of (["just-url"])
 assert of [p_bad2 == "", "HTTP12 http_post too-few-elements returns empty string"]
 
 p_bad3 is http_post of ["", "{}", "body"]

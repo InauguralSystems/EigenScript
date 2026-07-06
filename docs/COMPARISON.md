@@ -74,10 +74,10 @@ const add = (a, b) => a + b;
 console.log(add(3, 4));
 ```
 
-EigenScript — multi-argument calls pass a literal list, which spreads
-into the parameters. (One-argument calls to multi-parameter functions
-must use parentheses — `f of (x)` — because a 1-element literal list
-does not spread.)
+EigenScript — a bare literal list after `of` is the argument list, at
+every element count: `f of [a, b]` is two arguments, `f of [x]` is one.
+(Parentheses always mean one argument: `f of ([x])` passes a literal
+1-element list whole.)
 
 ```eigenscript
 define add(a, b) as:
@@ -373,8 +373,8 @@ Transformations you will apply constantly when porting Python code:
 |---|---|---|
 | `x = v` | `x is v` | assignment keyword |
 | `f(a)` | `f of a` | application keyword |
-| `f(a, b)` | `f of [a, b]` | literal list spreads (2+ elements) |
-| `f(a)` where `f` has 2+ params | `f of (a)` | 1-element lists do **not** spread |
+| `f(a, b)` | `f of [a, b]` | bare literal list = argument list |
+| `f([a])` (pass a 1-element list) | `f of ([a])` | parentheses = one argument |
 | `True` / `False` / `None` | `1` / `0` / `null` | no boolean type |
 | `x ** y` | `pow of [x, y]` | `^` is XOR |
 | `len(x)` | `len of x` | builtin, same name |
@@ -411,7 +411,7 @@ print of (word_lengths of (["ada", "grace"]))
 ```
 
 (Note the `of (["ada", "grace"])` — parenthesised: parentheses always
-make the argument a single value, so the literal list arrives whole
-instead of spreading. A bare `of ["ada", "grace"]` would also bind
-whole here — single-parameter functions never spread — but the
-parenthesised form works for any arity.)
+make the argument a single value, so the literal list arrives whole. A
+bare `of ["ada", "grace"]` would also work here — two arguments to a
+one-parameter function pack back into a list — but the parenthesised
+form says "one list" directly and works for any arity.)
