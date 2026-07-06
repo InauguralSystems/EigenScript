@@ -17,7 +17,6 @@ import os
 import pty
 import select
 import signal
-import subprocess
 import sys
 import tempfile
 import time
@@ -39,7 +38,13 @@ def report(ok, name, detail=""):
 
 
 class Repl:
-    """An interactive REPL session on a pty."""
+    """An interactive REPL session on a pty.
+
+    pty.fork(), not openpty()+subprocess: the fork makes the pty the
+    child's *controlling* terminal (what a real terminal session is).
+    Without that, the raw-termios calls sit in undefined job-control
+    territory — Linux happened to tolerate it, macOS wedged the child.
+    """
 
     def __init__(self, env_extra=None):
         env = dict(os.environ)
@@ -51,11 +56,13 @@ class Repl:
         env.setdefault("EIGS_HISTORY", "/dev/null")
         if env_extra:
             env.update(env_extra)
-        self.master, slave = pty.openpty()
-        self.proc = subprocess.Popen(
-            [EIGS], stdin=slave, stdout=slave, stderr=slave,
-            env=env, close_fds=True)
-        os.close(slave)
+        pid, self.master = pty.fork()
+        if pid == 0:  # child: exec the REPL on the controlling pty
+            try:
+                os.execve(EIGS, [EIGS], env)
+            finally:
+                os._exit(127)
+        self.pid = pid
         self.buf = b""
 
     def send(self, data: bytes):
@@ -84,12 +91,24 @@ class Repl:
         return self.expect_count(needle, 1, timeout)
 
     def close(self, timeout=10.0):
-        try:
-            rc = self.proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            self.proc.kill()
-            self.proc.wait()
-            rc = None
+        rc = None
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            pid, status = os.waitpid(self.pid, os.WNOHANG)
+            if pid == self.pid:
+                if os.WIFEXITED(status):
+                    rc = os.WEXITSTATUS(status)
+                break
+            # child still running: drain the pty so it can't block on writes
+            r, _, _ = select.select([self.master], [], [], 0.1)
+            if r:
+                try:
+                    self.buf += os.read(self.master, 4096)
+                except OSError:
+                    pass
+        else:  # timed out: kill and reap
+            os.kill(self.pid, signal.SIGKILL)
+            os.waitpid(self.pid, 0)
         os.close(self.master)
         return rc
 
