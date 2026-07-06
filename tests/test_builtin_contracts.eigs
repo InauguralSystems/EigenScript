@@ -1,0 +1,49 @@
+# Builtin contract fixes: #312 (negative indices), #316 (string predicates
+# reject non-strings), #317 (min/max are true N-ary reductions).
+load_file of "lib/test.eigs"
+
+# ---- #317: min/max N-ary reduction ----
+assert_eq of [min of [5], 5, "min of 1-element list is the element"]
+assert_eq of [max of [5], 5, "max of 1-element list is the element"]
+assert_eq of [min of [3, 7], 3, "min 2-arg unchanged"]
+assert_eq of [max of [3, 7], 7, "max 2-arg unchanged"]
+assert_eq of [max of [1, 2, 3], 3, "max reduces past the first two elements"]
+assert_eq of [min of [4, 2, 9, 1, 5], 1, "min N-ary reduction"]
+assert_eq of [max of [-3, -1, -2], -1, "max of all-negative list"]
+assert_eq of [min of (7), 7, "min of a bare number is itself (mirrors sum)"]
+assert_eq of [max of [], 0, "max of empty list keeps the 0 fallback"]
+assert_eq of [max of ["a", 5], 0, "non-number element keeps the 0 fallback"]
+
+# ---- #316: string predicates reject non-string operands ----
+assert_eq of [index_of of [[1, 2, 3], 2], -1, "index_of list haystack is a miss"]
+assert_eq of [index_of of [123, 2], -1, "index_of number haystack is a miss"]
+assert_eq of [index_of of ["abc", 5], -1, "index_of non-string needle is a miss"]
+assert_eq of [index_of of ["abc", "c"], 2, "index_of still finds real needles"]
+assert_eq of [contains of [[1, 2, 3], 2], 0, "contains list haystack is 0"]
+assert_eq of [contains of ["abc", 5], 0, "contains non-string needle is 0"]
+assert_eq of [contains of ["abc", "b"], 1, "contains still matches"]
+assert_eq of [starts_with of [[1, 2, 3], 1], 0, "starts_with non-strings is 0"]
+assert_eq of [starts_with of ["abc", "ab"], 1, "starts_with still matches"]
+assert_eq of [ends_with of [999, 9], 0, "ends_with non-strings is 0"]
+assert_eq of [ends_with of ["abc", "bc"], 1, "ends_with still matches"]
+assert_eq of [ends_with of ["abc", ""], 1, "empty suffix still matches a real string"]
+
+# ---- #312: builtin accessors honor negative indices like [] ----
+xs is [10, 20, 30]
+assert_eq of [get_at of [xs, -1], 30, "get_at -1 is the last element"]
+assert_eq of [get_at of [xs, -1], xs[-1], "get_at -1 matches the [] operator"]
+assert_eq of [get_at of [xs, -3], 10, "get_at -len is the first element"]
+assert_eq of [get_at of [xs, -4], 0, "get_at past-the-start keeps the 0 miss"]
+set_at of [xs, -1, 99]
+assert_eq of [xs[2], 99, "set_at -1 writes the last element"]
+set_at of [xs, -4, 111]
+assert_eq of [xs[0], 10, "set_at past-the-start stays a no-op"]
+grid is [[1, 2], [3, 4]]
+assert_eq of [get_at of [grid, -1, -1], 4, "2D get_at negative row and col"]
+set_at of [grid, -1, -2, 77]
+assert_eq of [grid[1][0], 77, "2D set_at negative row and col"]
+assert_eq of [char_at of ["hello", -1], "o", "char_at -1 is the last char"]
+assert_eq of [char_at of ["hello", -1], "hello"[-1], "char_at -1 matches the [] operator"]
+assert_eq of [char_at of ["hi", -3], "", "char_at past-the-start keeps the empty miss"]
+
+test_summary of null

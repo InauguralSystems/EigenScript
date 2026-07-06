@@ -4,6 +4,30 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Four silent-wrong-answer builtin contracts** (#312, #314, #316, #317),
+  batch-fixed after the 2026-07 backlog triage:
+  - `min`/`max` are now true N-ary reductions over a flat list of numbers
+    (#317). The old code read only the first two elements — `max of [1, 2, 3]`
+    returned **2** — and returned `0` for a 1-element list. Now
+    `min of [5]` → `5`, `max of [1, 2, 3]` → `3`, and a bare number returns
+    itself (mirroring `sum`); an empty list or a non-number element keeps
+    the documented `0` fallback.
+  - The string predicates `index_of`/`contains`/`starts_with`/`ends_with`
+    reject non-string operands (#316) instead of folding them to `""`,
+    which spuriously matched everything (`index_of of [[1,2,3], 2]` returned
+    `0` — "found at index 0" — in violation of its "or -1" contract). Misses
+    now answer `-1` (`index_of`) / `0` (the predicates).
+  - `get_at`/`set_at`/`char_at` honor negative indices exactly like the `[]`
+    operator (#312) — `get_at of [xs, -1]` is the last element (was: silent
+    `0`/no-op/`""`), including the 2-D `get_at`/`set_at` row/col paths.
+    Out-of-range indices keep the old miss defaults.
+  - Passing a directory as the script path exits `1` with the clean
+    `Error: cannot read file '...'` path (#314) instead of SIGABRT via a
+    bogus 9-exabyte `xmalloc` (`ftell` on a directory reports `LONG_MAX`);
+    `read_file_util` now rejects non-regular files up front, which covers
+    `load_file` and the `--fmt`/`--lint` paths too.
+
 ### Changed
 - **`chr` is the byte-writing inverse of `ord`** (#435): `chr of n` now emits
   the raw byte for any integer 1–255 (was: silent `""` for anything above
