@@ -187,10 +187,9 @@ int main(int argc, char **argv) {
         argc -= 2;
     }
 
-    trace_init();
-    atexit(trace_shutdown);
-
-    /* --version doesn't touch the runtime; handle it before any state. */
+    /* --version doesn't touch the runtime; handle it before any state —
+     * including trace_init: a stale EIGS_REPLAY in the environment is a
+     * fatal header check (#411) and must not take down pure queries. */
     if (argc >= 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
         printf("%s\n", EIGENSCRIPT_VERSION);
         return 0;
@@ -221,6 +220,9 @@ int main(int argc, char **argv) {
             EIGENSCRIPT_VERSION);
         return 0;
     }
+
+    trace_init();
+    atexit(trace_shutdown);
 
     /* --fmt is a pure source transformer; no VM, no arena, no state. */
     if (argc >= 2 && strcmp(argv[1], "--fmt") == 0) {

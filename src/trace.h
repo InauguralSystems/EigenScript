@@ -22,6 +22,14 @@
 typedef union { double d; uint64_t u; } EigsSlot;
 #endif
 
+/* Tape format version (#411). Every tape's first line is a header record:
+ *   V <format> <runtime-version>
+ * Bump this integer on ANY change to the tape encoding — record kinds,
+ * value serialization, escaping, truncation markers, the header itself.
+ * Replay refuses a tape whose format or runtime version differs from the
+ * running binary: version-and-reject, never migrate (docs/TRACE.md). */
+#define TRACE_FORMAT_VERSION 1
+
 /* 1 when EIGS_TRACE was set and a tape was successfully opened.
  * Hook sites in vm.c gate on this directly so the disabled case
  * costs one load + one branch. */
