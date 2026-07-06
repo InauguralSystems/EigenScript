@@ -13,9 +13,10 @@ cd "$(dirname "$0")/.."
 OUT="${1:-build}"
 mkdir -p "$OUT"
 
-# Read SOURCES from the Makefile, expand $(SRC_DIR)=src, drop main.c.
+# Read SOURCES from the Makefile, expand $(SRC_DIR)=src, drop the CLI-only
+# units (main.c + repl.c — repl.c pulls termios, banned in the embed profile).
 SOURCES=$(grep '^SOURCES :=' Makefile | sed 's/^SOURCES :=//; s/\$(SRC_DIR)/src/g' \
-    | tr ' ' '\n' | grep '\.c$' | grep -v '/main\.c$')
+    | tr ' ' '\n' | grep '\.c$' | grep -v '/main\.c$' | grep -v '/repl\.c$')
 
 python3 - "$OUT/eigenscript_all.c" $SOURCES <<'PY'
 import re, sys, os

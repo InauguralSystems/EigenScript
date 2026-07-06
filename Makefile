@@ -19,8 +19,13 @@ LDFLAGS := -pie -Wl,-z,relro,-z,now -lm -lpthread
 endif
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/main.c
 BINARY  := $(SRC_DIR)/eigenscript
+
+# CLI-only translation units: linked into the binary, never into the
+# runtime library (repl.c pulls termios/isatty — banned in the
+# freestanding/embed profile, same footing as main.c).
+CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c
 
 FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c \
                 $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
@@ -30,7 +35,7 @@ PREFIX  := $(HOME)/.local
 # The LSP links the whole runtime (minus main.c): eigenscript.c calls into
 # the VM/compiler/trace layers, so a hand-picked subset bitrots every time
 # the runtime grows (it had, silently — nothing built this target in CI).
-LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
+LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
 .PHONY: all build full http gfx lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff print-%
@@ -121,7 +126,7 @@ jit-smoke:
 	$(CC) -Wall -Wextra -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
 
-EMBED_SOURCES := $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
+EMBED_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
 # Single-file amalgamation (#397): "copy two files, call eigs_open".
 # build/eigenscript_all.c (self-contained, system headers only) + the public
@@ -266,7 +271,7 @@ coverage: coverage-clean
 # Like the LSP, the fuzz harness links the whole runtime minus main.c —
 # the old hand-picked subset bitrotted when the bytecode VM replaced the
 # tree-walking evaluator (eval_node), leaving `make fuzz` unbuildable.
-FUZZ_SOURCES := $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
+FUZZ_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
 fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
 	$(CC) -g -fsanitize=address,undefined -o fuzz/fuzz_stdin \

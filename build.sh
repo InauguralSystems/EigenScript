@@ -9,7 +9,7 @@ VERSION=$(cat ../VERSION)
 # Compiler is overridable (e.g. CC=clang ./build.sh) so CI can exercise
 # more than one toolchain; defaults to gcc.
 CC="${CC:-gcc}"
-SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c eigs_embed.c main.c"
+SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c eigs_embed.c repl.c main.c"
 
 # macOS Intel JIT: enabled via the Mach-O TLV-aware prologue (the JIT
 # now calls eigs_jit_load_eigs_current instead of inlining %fs:
@@ -25,7 +25,8 @@ if [ "$1" = "lsp" ]; then
     # toolchain. Links eigenlsp.c against the runtime (SOURCES minus main.c),
     # minimal extensions, gcc-only like the rest of build.sh. Source list reused
     # from SOURCES above so it can't drift.
-    LSP_SOURCES="${SOURCES/ main.c/} eigenlsp.c"
+    LSP_SOURCES="${SOURCES/ main.c/}"
+    LSP_SOURCES="${LSP_SOURCES/ repl.c/} eigenlsp.c"   # repl.c is CLI-only, like main.c
     $CC -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -o eigenlsp $LSP_SOURCES \
         -DEIGENSCRIPT_EXT_HTTP=0 \
         -DEIGENSCRIPT_EXT_MODEL=0 \
