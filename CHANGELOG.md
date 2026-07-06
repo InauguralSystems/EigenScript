@@ -5,6 +5,30 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **E003 — undefined-name lint, increment one of the scope-aware
+  name-resolution pass** (#404): `--lint` (and the LSP, as red squiggles)
+  now reports a name that is read but bound nowhere — the typo'd name in a
+  cold branch that a dynamic language otherwise carries to runtime. The
+  binding set is a deliberate whole-file over-approximation (silent on
+  outward-`is`, `local` shadowing, sibling-branch first assignment; a false
+  positive is the failure mode that breaks consumer CI, so the pass always
+  fails open). Builtins come from `register_builtins()` itself on a scratch
+  env — never a hand list (the old lint.c copy had drifted ~120 names and
+  carried a phantom `"error"` entry). Extension builtins bind by name via
+  the new `src/ext_names.h` X-lists, which the gfx/http/db/model registrars
+  now expand too, so registration and name-resolution cannot drift; the
+  lint describes the language surface, not one binary's build flags.
+  Literal `load_file of "path"` is resolved with the runtime's own
+  resolution chain and its top-level binders collected transitively, so
+  entry-point files assembling a program from parts lint clean. `eval` or a
+  computed `load_file` path disables the pass for the file (documented
+  dynamic escape). E003 is error-severity: it fails `--lint` even at
+  `--lint-level error`. Full model in docs/DIAGNOSTICS.md.
+- **`# lint: allow-file <CODE>...` file-wide suppression** — the escape for
+  module *fragments* (files a loader `load_file`s into scope the loader
+  provides, e.g. `lib/ui_w_*.eigs`), honored by both `--lint` and the LSP.
+  `lib/invariant.eigs` instead became self-contained (it now loads
+  `lib/observer.eigs` for `cs_signature` — pure defines, idempotent).
 - **Interactive REPL line editor** (#392) — the REPL on a tty now has
   history (in-memory + `EIGS_HISTORY` file, default
   `~/.eigenscript_history`, created `0600`), arrow-key cursor editing,

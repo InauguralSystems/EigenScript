@@ -451,6 +451,22 @@ def main():
     check("lint diagnostic severity is warning (2)",
           bool(d) and any(x.get("severity") == 2 for x in d))
 
+    # --- E003 undefined name surfaces as an ERROR squiggle (severity 1) ---
+    r = converse([INIT, did_open("x is 1\nif x > 5:\n    y is totl + 1\n    print of y\n"),
+                  SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("E003 undefined name surfaces as a diagnostic",
+          bool(d) and any(x.get("code") == "E003" for x in d))
+    check("E003 diagnostic severity is error (1)",
+          bool(d) and any(x.get("code") == "E003" and x.get("severity") == 1 for x in d))
+
+    # --- '# lint: allow-file' silences the code in the LSP too ---
+    r = converse([INIT, did_open("# lint: allow-file E003\nx is 1\nif x > 5:\n    y is totl + 1\n    print of y\n"),
+                  SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("allow-file suppresses E003 in LSP diagnostics",
+          not any(x.get("code") == "E003" for x in (d or [])))
+
     # --- codeAction offers a quickfix for the W001 diagnostic ---
     ca = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/codeAction",
           "params": {"textDocument": {"uri": URI},

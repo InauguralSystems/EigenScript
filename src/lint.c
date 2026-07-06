@@ -4,6 +4,7 @@
  */
 
 #include "eigenscript.h"
+#include "ext_names.h"
 
 /* ---- Lint warning storage ---- */
 
@@ -48,16 +49,30 @@ static void json_escape(const char *s, char *out, size_t outsz) {
     out[o] = '\0';
 }
 
-static void lint_warn(LintContext *ctx, int line, const char *code,
-                      const char *fmt, ...) {
+static void lint_vdiag(LintContext *ctx, int line, const char *level,
+                       const char *code, const char *fmt, va_list ap) {
     if (ctx->warning_count >= MAX_LINT_WARNINGS) return;
     LintWarning *w = &ctx->warnings[ctx->warning_count++];
     w->line = line;
-    memcpy(w->level, "warning", 8);
+    snprintf(w->level, sizeof(w->level), "%s", level);
     snprintf(w->code, sizeof(w->code), "%s", code);
+    vsnprintf(w->message, sizeof(w->message), fmt, ap);
+}
+
+static void lint_warn(LintContext *ctx, int line, const char *code,
+                      const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(w->message, sizeof(w->message), fmt, ap);
+    lint_vdiag(ctx, line, "warning", code, fmt, ap);
+    va_end(ap);
+}
+
+/* Error-severity diagnostic: fails --lint even at --lint-level error. */
+static void lint_error(LintContext *ctx, int line, const char *code,
+                       const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    lint_vdiag(ctx, line, "error", code, fmt, ap);
     va_end(ap);
 }
 
@@ -1016,9 +1031,331 @@ static void check_bare_predicate_alias(ASTNode *ast, LintContext *ctx) {
     w016_scan(ast, ctx);
 }
 
-static void lint_run_checks(ASTNode *ast, LintContext *ctx) {
+/* ---- E003 (#404): undefined name — no binding on any path ---- */
+
+/* Increment one of the scope-aware name-resolution pass: a name that is READ
+ * somewhere but BOUND nowhere — not by any assignment in any scope, not a
+ * param/binder, not a builtin of this binary, not a top-level name of a file
+ * pulled in by a literal `load_file` — cannot resolve on any execution path.
+ * The runtime raises "undefined variable" the moment that path runs; this
+ * surfaces it before then, including on cold branches (the classic
+ * dynamic-language typo bug).
+ *
+ * Direction of approximation: the binding set is a whole-file
+ * OVER-approximation. Mutate-outward makes most bindings visible across
+ * scopes anyway, and a `local` in a sibling function is still collected —
+ * over-collecting can only silence a true positive, never invent a false one
+ * (the same fail-open discipline as W015; a false positive breaks consumer
+ * CI, which runs --lint nonzero-on-warning). Scope-precise "unbound on THIS
+ * path" analysis is #404's later increments.
+ *
+ * The binding base comes from register_builtins() itself — the runtime's own
+ * registry on a scratch Env — never a hand-copied list, so it cannot drift
+ * from the binary (lint.c's old BUILTINS list was ~120 names behind).
+ *
+ * Dynamic escape (documented in docs/DIAGNOSTICS.md): `eval` appearing
+ * anywhere, or a `load_file` whose argument is not a string literal, can bind
+ * names invisible to static analysis — the pass disables itself for the
+ * file. A literal `load_file of "path"` is resolved with the runtime's own
+ * resolve_eigenscript_file_from() chain (anchored at the linted file's
+ * directory, the runtime's g_script_dir for a directly-run script) and the
+ * loaded file's binders are collected transitively. Any resolution, read, or
+ * parse failure fails open (pass disabled), matching what the runtime could
+ * not execute either. `import` binds only the module NAME (the module dict);
+ * member access is a dot-key the identifier walk never touches. */
+
+#if !EIGENSCRIPT_FREESTANDING
+
+#define E003_MAX_VISITED 64
+#define E003_MAX_DEPTH   16
+
+typedef struct {
+    Env *bind;                      /* builtins + every binder seen */
+    int dynamic;                    /* 1 → eval/computed-load_file: pass off */
+    char base_dir[4096];            /* dir of the linted file */
+    char *visited[E003_MAX_VISITED];/* realpath'd load_file targets */
+    int visited_n;
+    int depth;
+} E003;
+
+enum { E003_COLLECT, E003_FLAG };
+
+static void e003_bind_name(E003 *e, const char *name) {
+    if (!name || !name[0]) return;
+    if (!env_get(e->bind, name))
+        env_set_local_owned(e->bind, name, make_null());
+}
+
+static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode);
+
+/* Pull the top-level binders of a literally-named load_file target into the
+ * binding set, transitively (the runtime executes the file into the global
+ * env). Fails open: anything the runtime couldn't load either → pass off. */
+static void e003_load(E003 *e, const char *relpath) {
+    if (e->dynamic) return;
+    if (e->depth >= E003_MAX_DEPTH || e->visited_n >= E003_MAX_VISITED) {
+        e->dynamic = 1;
+        return;
+    }
+    char resolved[8192], real[8192];
+    if (!resolve_eigenscript_file_from(e->base_dir, relpath,
+                                       resolved, sizeof(resolved))) {
+        e->dynamic = 1;
+        return;
+    }
+    if (!realpath(resolved, real))
+        snprintf(real, sizeof(real), "%s", resolved);
+    for (int i = 0; i < e->visited_n; i++)
+        if (strcmp(e->visited[i], real) == 0) return;
+    e->visited[e->visited_n++] = xstrdup(real);
+
+    long size = 0;
+    char *src = read_file_util(real, &size);
+    if (!src) { e->dynamic = 1; return; }
+    int saved_errors = g_parse_errors;
+    g_parse_errors = 0;
+    TokenList tl = tokenize(src);
+    ASTNode *ast = parse(&tl);
+    if (g_parse_errors > 0 || !ast) {
+        e->dynamic = 1;
+    } else {
+        e->depth++;
+        e003_walk(ast, e, NULL, E003_COLLECT);
+        e->depth--;
+    }
+    g_parse_errors = saved_errors;
+    free_ast(ast);
+    free_tokenlist(&tl);
+    free(src);
+}
+
+/* One walker, two modes. COLLECT gathers every binder (assign targets incl.
+ * `local`, function names/params, lambda params, for/listcomp vars, catch
+ * vars, list-pattern names, import module names) and spots the dynamic
+ * sites; FLAG reports each AST_IDENT with no binding. Binder-name positions
+ * are char* fields, never AST_IDENT children, so FLAG can flag every ident
+ * it reaches. */
+static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
+    if (!n || e->dynamic) return;
+    switch (n->type) {
+        case AST_IDENT:
+            if (mode == E003_COLLECT) {
+                /* A bare (non-call-position) `eval` or `load_file` can be
+                 * aliased and invoked with anything — dynamic. Call
+                 * positions are intercepted at AST_RELATION below. */
+                if (strcmp(n->data.ident.name, "eval") == 0 ||
+                    strcmp(n->data.ident.name, "load_file") == 0)
+                    e->dynamic = 1;
+            } else if (!env_get(e->bind, n->data.ident.name)) {
+                lint_error(ctx, n->line, "E003",
+                           "undefined name '%s' — no binding on any path",
+                           n->data.ident.name);
+            }
+            break;
+        case AST_RELATION: {
+            ASTNode *l = n->data.relation.left, *r = n->data.relation.right;
+            if (mode == E003_COLLECT && l && l->type == AST_IDENT) {
+                if (strcmp(l->data.ident.name, "eval") == 0) {
+                    e->dynamic = 1;
+                    return;
+                }
+                if (strcmp(l->data.ident.name, "load_file") == 0) {
+                    if (r && r->type == AST_STR) e003_load(e, r->data.str);
+                    else e->dynamic = 1;
+                    return;
+                }
+            }
+            e003_walk(l, e, ctx, mode);
+            e003_walk(r, e, ctx, mode);
+            break;
+        }
+        case AST_ASSIGN:
+            if (mode == E003_COLLECT) e003_bind_name(e, n->data.assign.name);
+            e003_walk(n->data.assign.expr, e, ctx, mode);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            if (mode == E003_COLLECT)
+                for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+                    e003_bind_name(e, n->data.list_pattern_assign.names[i]);
+            e003_walk(n->data.list_pattern_assign.expr, e, ctx, mode);
+            break;
+        case AST_FUNC:
+            if (mode == E003_COLLECT) {
+                e003_bind_name(e, n->data.func.name);
+                for (int i = 0; i < n->data.func.param_count; i++)
+                    e003_bind_name(e, n->data.func.params[i]);
+            }
+            if (n->data.func.param_defaults)
+                for (int i = 0; i < n->data.func.param_count; i++)
+                    e003_walk(n->data.func.param_defaults[i], e, ctx, mode);
+            for (int i = 0; i < n->data.func.body_count; i++)
+                e003_walk(n->data.func.body[i], e, ctx, mode);
+            break;
+        case AST_LAMBDA:
+            if (mode == E003_COLLECT)
+                for (int i = 0; i < n->data.lambda.param_count; i++)
+                    e003_bind_name(e, n->data.lambda.params[i]);
+            e003_walk(n->data.lambda.body, e, ctx, mode);
+            break;
+        case AST_FOR:
+            if (mode == E003_COLLECT) e003_bind_name(e, n->data.forloop.var);
+            e003_walk(n->data.forloop.iter, e, ctx, mode);
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                e003_walk(n->data.forloop.body[i], e, ctx, mode);
+            break;
+        case AST_LISTCOMP:
+            if (mode == E003_COLLECT) e003_bind_name(e, n->data.listcomp.var);
+            e003_walk(n->data.listcomp.expr, e, ctx, mode);
+            e003_walk(n->data.listcomp.iter, e, ctx, mode);
+            e003_walk(n->data.listcomp.filter, e, ctx, mode);
+            break;
+        case AST_TRY:
+            if (mode == E003_COLLECT) e003_bind_name(e, n->data.trycatch.err_name);
+            for (int i = 0; i < n->data.trycatch.try_count; i++)
+                e003_walk(n->data.trycatch.try_body[i], e, ctx, mode);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++)
+                e003_walk(n->data.trycatch.catch_body[i], e, ctx, mode);
+            break;
+        case AST_IMPORT:
+            if (mode == E003_COLLECT)
+                e003_bind_name(e, n->data.import.module_name);
+            break;
+        case AST_BINOP:
+            e003_walk(n->data.binop.left, e, ctx, mode);
+            e003_walk(n->data.binop.right, e, ctx, mode);
+            break;
+        case AST_UNARY:
+            e003_walk(n->data.unary.operand, e, ctx, mode);
+            break;
+        case AST_IF:
+            e003_walk(n->data.cond.cond, e, ctx, mode);
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                e003_walk(n->data.cond.if_body[i], e, ctx, mode);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                e003_walk(n->data.cond.else_body[i], e, ctx, mode);
+            break;
+        case AST_LOOP:
+            e003_walk(n->data.loop.cond, e, ctx, mode);
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                e003_walk(n->data.loop.body[i], e, ctx, mode);
+            break;
+        case AST_RETURN:
+            e003_walk(n->data.ret.expr, e, ctx, mode);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                e003_walk(n->data.block.stmts[i], e, ctx, mode);
+            break;
+        case AST_LIST:
+            for (int i = 0; i < n->data.list.count; i++)
+                e003_walk(n->data.list.elems[i], e, ctx, mode);
+            break;
+        case AST_INDEX:
+            e003_walk(n->data.index.target, e, ctx, mode);
+            e003_walk(n->data.index.index, e, ctx, mode);
+            break;
+        case AST_SLICE:
+            e003_walk(n->data.slice.target, e, ctx, mode);
+            e003_walk(n->data.slice.start, e, ctx, mode);
+            e003_walk(n->data.slice.end, e, ctx, mode);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                e003_walk(n->data.program.stmts[i], e, ctx, mode);
+            break;
+        case AST_DICT:
+            for (int i = 0; i < n->data.dict.count; i++) {
+                e003_walk(n->data.dict.keys[i], e, ctx, mode);
+                e003_walk(n->data.dict.vals[i], e, ctx, mode);
+            }
+            break;
+        case AST_DOT:
+            /* target only — the key is a field name, not an identifier
+             * (module-qualified names stay silent by construction) */
+            e003_walk(n->data.dot.target, e, ctx, mode);
+            break;
+        case AST_DOT_ASSIGN:
+            e003_walk(n->data.dot_assign.target, e, ctx, mode);
+            e003_walk(n->data.dot_assign.expr, e, ctx, mode);
+            break;
+        case AST_INDEX_ASSIGN:
+            e003_walk(n->data.index_assign.target, e, ctx, mode);
+            e003_walk(n->data.index_assign.index, e, ctx, mode);
+            e003_walk(n->data.index_assign.expr, e, ctx, mode);
+            break;
+        case AST_MATCH:
+            /* patterns are compared expressions (reads), not binders */
+            e003_walk(n->data.match.expr, e, ctx, mode);
+            for (int i = 0; i < n->data.match.case_count; i++) {
+                e003_walk(n->data.match.patterns[i], e, ctx, mode);
+                for (int j = 0; j < n->data.match.body_counts[i]; j++)
+                    e003_walk(n->data.match.bodies[i][j], e, ctx, mode);
+            }
+            break;
+        case AST_INTERROGATE:
+            e003_walk(n->data.interrogate.expr, e, ctx, mode);
+            e003_walk(n->data.interrogate.at_expr, e, ctx, mode);
+            break;
+        default:
+            break;
+    }
+}
+
+static void check_undefined_names(ASTNode *ast, const char *path,
+                                  LintContext *ctx) {
+    E003 e;
+    memset(&e, 0, sizeof(e));
+    e.bind = env_new(NULL);
+    register_builtins(e.bind);
+    register_store_builtins(e.bind);
+    /* Extension builtins bind by NAME regardless of this binary's build
+     * flags (ext_names.h, the same lists their registrars expand): the lint
+     * describes the language surface, not the build — a consumer linting
+     * gfx code with a default binary must not see phantom E003s. */
+#define X(name, fn) e003_bind_name(&e, #name);
+    EIGS_GFX_BUILTINS(X)
+    EIGS_HTTP_BUILTINS(X)
+    EIGS_HTTP_REQUEST_BUILTINS(X)
+    EIGS_DB_BUILTINS(X)
+    EIGS_MODEL_BUILTINS(X)
+#undef X
+    /* Names the compiler resolves itself, so no registrar ever binds them:
+     * `report_value of x` is a special form (#294), and the observed-loop
+     * machinery injects __loop_exit__ / __loop_iterations__ bindings. */
+    e003_bind_name(&e, "report_value");
+    e003_bind_name(&e, "__loop_exit__");
+    e003_bind_name(&e, "__loop_iterations__");
+    /* load_file resolution anchors at the linted file's directory —
+     * mirrors main.c's g_script_dir extraction for a directly-run script */
+    e.base_dir[0] = '.';
+    e.base_dir[1] = '\0';
+    if (path) {
+        const char *slash = strrchr(path, '/');
+        if (slash && slash != path) {
+            size_t d = (size_t)(slash - path);
+            if (d >= sizeof(e.base_dir)) d = sizeof(e.base_dir) - 1;
+            memcpy(e.base_dir, path, d);
+            e.base_dir[d] = '\0';
+        }
+    }
+    e003_walk(ast, &e, NULL, E003_COLLECT);
+    if (!e.dynamic)
+        e003_walk(ast, &e, ctx, E003_FLAG);
+    for (int i = 0; i < e.visited_n; i++) free(e.visited[i]);
+    env_decref(e.bind);
+}
+
+#endif /* !EIGENSCRIPT_FREESTANDING */
+
+static void lint_run_checks(ASTNode *ast, const char *path, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
+#if !EIGENSCRIPT_FREESTANDING
+    check_undefined_names(ast, path, ctx);
+#else
+    (void)path;
+#endif
     check_empty_blocks(ast, ctx);
     check_dup_keys(ast, ctx);
     check_builtin_shadow(ast, ctx);
@@ -1073,11 +1410,13 @@ static void lint_run_checks(ASTNode *ast, LintContext *ctx) {
     ctx->ref_count = 0;
 }
 
-/* Public structured-lint entry: run checks on an AST, copy diagnostics out. */
-int lint_collect(ASTNode *ast, LintDiag *out, int max) {
+/* Public structured-lint entry: run checks on an AST, copy diagnostics out.
+ * `path` is the source file's filesystem path (NULL if unknown) — it anchors
+ * E003's literal-load_file resolution; all other checks ignore it. */
+int lint_collect(ASTNode *ast, const char *path, LintDiag *out, int max) {
     if (!ast || !out || max <= 0) return 0;
     LintContext ctx = {0};
-    lint_run_checks(ast, &ctx);
+    lint_run_checks(ast, path, &ctx);
     int n = ctx.warning_count < max ? ctx.warning_count : max;
     for (int i = 0; i < n; i++) {
         out[i].line = ctx.warnings[i].line;
@@ -1108,6 +1447,21 @@ static int comment_allows(const char *after_marker, const char *code) {
     }
     return 0;
 }
+/* File-level suppression (#404): `# lint: allow-file <CODE>...` anywhere in
+ * the source (conventionally the file header) drops that code file-wide, in
+ * both --lint and the LSP. The escape for module FRAGMENTS — files a loader
+ * load_files into scope it provides (lib/ui_w_*.eigs expect lib/ui.eigs to
+ * have bound _theme/_ui already), where per-line allows would drown the
+ * file. `all` drops every code. */
+int lint_file_allows(const char *source, const char *code) {
+    static const char MARKER[] = "# lint: allow-file";
+    const size_t MLEN = sizeof(MARKER) - 1;
+    if (!source) return 0;
+    for (const char *q = source; (q = strstr(q, MARKER)) != NULL; q += MLEN)
+        if (comment_allows(q + MLEN, code)) return 1;
+    return 0;
+}
+
 static int lint_suppressed(const char *source, int warn_line, const char *code) {
     static const char MARKER[] = "# lint: allow";
     const size_t MLEN = sizeof(MARKER) - 1;
@@ -1175,7 +1529,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     }
 
     LintContext ctx = {0};
-    lint_run_checks(ast, &ctx);
+    lint_run_checks(ast, path, &ctx);
 
     /* #399 inline suppression: drop warnings silenced by a `# lint: allow`
      * comment on their line (or the line above). Compact in place so the
@@ -1183,7 +1537,8 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     {
         int kept = 0;
         for (int w = 0; w < ctx.warning_count; w++) {
-            if (!lint_suppressed(source, ctx.warnings[w].line, ctx.warnings[w].code))
+            if (!lint_file_allows(source, ctx.warnings[w].code) &&
+                !lint_suppressed(source, ctx.warnings[w].line, ctx.warnings[w].code))
                 ctx.warnings[kept++] = ctx.warnings[w];
         }
         ctx.warning_count = kept;

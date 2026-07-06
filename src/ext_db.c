@@ -4,6 +4,7 @@
  */
 
 #include "ext_db_internal.h"
+#include "ext_names.h"
 #if EIGENSCRIPT_EXT_DB
 
 PGconn *g_db_conn = NULL;
@@ -163,10 +164,12 @@ Value* builtin_db_query_json(Value *arg) {
 }
 
 void register_db_builtins(Env *env) {
-    env_set_local_owned(env, "db_connect", make_builtin(builtin_db_connect));
-    env_set_local_owned(env, "db_query_value", make_builtin(builtin_db_query_value));
-    env_set_local_owned(env, "db_execute", make_builtin(builtin_db_execute));
-    env_set_local_owned(env, "db_query_json", make_builtin(builtin_db_query_json));
+    /* Expanded from ext_names.h — the shared name list the linter's E003
+     * binding base also expands, so registration and name-resolution
+     * cannot drift. Add a builtin there, not here. */
+#define X(name, fn) env_set_local_owned(env, #name, make_builtin(fn));
+    EIGS_DB_BUILTINS(X)
+#undef X
 }
 
 #endif /* EIGENSCRIPT_EXT_DB */

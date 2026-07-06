@@ -1031,8 +1031,14 @@ typedef struct {
     char message[256];
 } LintDiag;
 /* Run all lint checks on an already-parsed AST; fill out[] (up to max),
- * return the count. No I/O. Used by the LSP to publish diagnostics. */
-int lint_collect(ASTNode *ast, LintDiag *out, int max);
+ * return the count. `path` = the source file's filesystem path (NULL if
+ * unknown); it anchors E003's literal-load_file resolution, which reads the
+ * loaded files — otherwise no I/O. Used by the LSP to publish diagnostics. */
+int lint_collect(ASTNode *ast, const char *path, LintDiag *out, int max);
+/* 1 if the source carries a file-wide `# lint: allow-file <code>` directive
+ * for `code` (or `all`). Callers of lint_collect apply it themselves (the
+ * CLI and the LSP both do), since lint_collect never sees the source. */
+int lint_file_allows(const char *source, const char *code);
 int eigenscript_lint(const char *path, int json_mode, int fail_on_warning);
 
 #endif /* EIGENSCRIPT_H */

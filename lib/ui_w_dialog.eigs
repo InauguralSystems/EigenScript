@@ -1,3 +1,4 @@
+# lint: allow-file E003 -- fragment of lib/ui.eigs: the loader binds the shared ui state (_theme, _ui, widget registry, sibling widgets) before this file runs
 # ============================================================
 # UI Widgets — Dialog: dialog, property_editor, toast, color_picker + HSV
 # ============================================================

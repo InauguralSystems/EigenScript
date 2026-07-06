@@ -7,6 +7,7 @@
  */
 
 #include "eigenscript.h"
+#include "ext_names.h"
 
 #if EIGENSCRIPT_EXT_GFX
 
@@ -1422,45 +1423,12 @@ Value* builtin_ppu_render_frame(Value *arg) {
 }
 
 void register_gfx_builtins(Env *env) {
-    env_set_local_owned(env, "gfx_open", make_builtin(builtin_gfx_open));
-    env_set_local_owned(env, "gfx_close", make_builtin(builtin_gfx_close));
-    env_set_local_owned(env, "gfx_clear", make_builtin(builtin_gfx_clear));
-    env_set_local_owned(env, "gfx_rect", make_builtin(builtin_gfx_rect));
-    env_set_local_owned(env, "gfx_line", make_builtin(builtin_gfx_line));
-    env_set_local_owned(env, "gfx_point", make_builtin(builtin_gfx_point));
-    env_set_local_owned(env, "gfx_circle", make_builtin(builtin_gfx_circle));
-    env_set_local_owned(env, "gfx_rrect", make_builtin(builtin_gfx_rrect));
-    env_set_local_owned(env, "gfx_clip", make_builtin(builtin_gfx_clip));
-    env_set_local_owned(env, "gfx_present", make_builtin(builtin_gfx_present));
-    env_set_local_owned(env, "gfx_poll", make_builtin(builtin_gfx_poll));
-    env_set_local_owned(env, "gfx_ticks", make_builtin(builtin_gfx_ticks));
-    env_set_local_owned(env, "gfx_delay", make_builtin(builtin_gfx_delay));
-    env_set_local_owned(env, "gfx_title", make_builtin(builtin_gfx_title));
-    env_set_local_owned(env, "gfx_text", make_builtin(builtin_gfx_text));
-    env_set_local_owned(env, "gfx_fb", make_builtin(builtin_gfx_fb));
-    env_set_local_owned(env, "ppu_render_frame", make_builtin(builtin_ppu_render_frame));
-
-    /* Audio builtins */
-    env_set_local_owned(env, "audio_open", make_builtin(builtin_audio_open));
-    env_set_local_owned(env, "audio_close", make_builtin(builtin_audio_close));
-    env_set_local_owned(env, "audio_volume", make_builtin(builtin_audio_volume));
-    env_set_local_owned(env, "audio_stop", make_builtin(builtin_audio_stop));
-    env_set_local_owned(env, "audio_pause", make_builtin(builtin_audio_pause));
-    env_set_local_owned(env, "audio_play", make_builtin(builtin_audio_play));
-    env_set_local_owned(env, "audio_play_loop", make_builtin(builtin_audio_play_loop));
-    env_set_local_owned(env, "audio_music_play", make_builtin(builtin_audio_music_play));
-    env_set_local_owned(env, "audio_music_volume", make_builtin(builtin_audio_music_volume));
-    env_set_local_owned(env, "audio_music_stop", make_builtin(builtin_audio_music_stop));
-    env_set_local_owned(env, "audio_queue_size", make_builtin(builtin_audio_queue_size));
-    env_set_local_owned(env, "audio_clear", make_builtin(builtin_audio_clear));
-    env_set_local_owned(env, "audio_sine", make_builtin(builtin_audio_sine));
-    env_set_local_owned(env, "audio_saw", make_builtin(builtin_audio_saw));
-    env_set_local_owned(env, "audio_square", make_builtin(builtin_audio_square));
-    env_set_local_owned(env, "audio_sweep", make_builtin(builtin_audio_sweep));
-    env_set_local_owned(env, "audio_noise", make_builtin(builtin_audio_noise));
-    env_set_local_owned(env, "audio_mix", make_builtin(builtin_audio_mix));
-    env_set_local_owned(env, "audio_gain", make_builtin(builtin_audio_gain));
-    env_set_local_owned(env, "audio_envelope", make_builtin(builtin_audio_envelope));
+    /* Expanded from ext_names.h — the shared name list the linter's E003
+     * binding base also expands, so registration and name-resolution
+     * cannot drift. Add a builtin there, not here. */
+#define X(name, fn) env_set_local_owned(env, #name, make_builtin(fn));
+    EIGS_GFX_BUILTINS(X)
+#undef X
 }
 
 #endif /* EIGENSCRIPT_EXT_GFX */

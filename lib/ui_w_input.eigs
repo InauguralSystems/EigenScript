@@ -1,3 +1,4 @@
+# lint: allow-file E003 -- fragment of lib/ui.eigs: the loader binds the shared ui state (_theme, _ui, widget registry, sibling widgets) before this file runs
 # UI Widgets — Input: text_input, editable_label, spinbox, combobox
 
 define text_input(id, x, y, w, text, on_change) as:

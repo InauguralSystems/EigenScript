@@ -9,7 +9,7 @@
 caught1 is 0
 msg1 is ""
 try:
-    x is no_such_identifier_1
+    x is no_such_identifier_1  # lint: allow E003 -- deliberately undefined (tests the runtime error)
 catch e:
     caught1 is 1
     msg1 is e
@@ -90,7 +90,7 @@ outer_caught is 0
 inner_caught is 0
 try:
     try:
-        r is no_such_10
+        r is no_such_10  # lint: allow E003 -- deliberately undefined (tests the runtime error)
     catch e:
         inner_caught is 1
     # After the inner catch, execution continues normally:

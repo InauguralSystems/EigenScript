@@ -751,19 +751,26 @@ static void send_diagnostics(Document *doc) {
         json_escape_to(&sb, full);
         strbuf_append_char(&sb, '}');
     } else if (doc->ast) {
-        /* Parse OK → run the linter and publish each warning as a
-         * yellow squiggle carrying its stable code (#3 taxonomy), so the
-         * editor shows the same diagnostics as `--lint`. */
+        /* Parse OK → run the linter and publish each diagnostic as a
+         * squiggle carrying its stable code (#3 taxonomy), so the editor
+         * shows the same diagnostics as `--lint` — warnings yellow,
+         * E-class errors red. The doc's filesystem path anchors E003's
+         * load_file resolution (as-you-type typo squiggles). */
         LintDiag diags[256];
-        int n = lint_collect(doc->ast, diags, 256);
+        const char *fs_path =
+            strncmp(doc->uri, "file://", 7) == 0 ? doc->uri + 7 : NULL;
+        int n = lint_collect(doc->ast, fs_path, diags, 256);
+        int emitted = 0;
         for (int i = 0; i < n; i++) {
+            if (lint_file_allows(doc->text, diags[i].code)) continue;
             int ln = diags[i].line - 1;
             if (ln < 0) ln = 0;
-            if (i > 0) strbuf_append_char(&sb, ',');
+            int sev = strcmp(diags[i].severity, "error") == 0 ? 1 : 2;
+            if (emitted++ > 0) strbuf_append_char(&sb, ',');
             strbuf_append_fmt(&sb,
                 "{\"range\":{\"start\":{\"line\":%d,\"character\":0},"
-                "\"end\":{\"line\":%d,\"character\":1000}},\"severity\":2,\"code\":\"%s\","
-                "\"source\":\"eigenscript\",\"message\":", ln, ln, diags[i].code);
+                "\"end\":{\"line\":%d,\"character\":1000}},\"severity\":%d,\"code\":\"%s\","
+                "\"source\":\"eigenscript\",\"message\":", ln, ln, sev, diags[i].code);
             json_escape_to(&sb, diags[i].message);
             strbuf_append_char(&sb, '}');
         }
@@ -1593,7 +1600,9 @@ static void handle_code_action(int id, const char *params) {
     /* Recompute diagnostics from the AST rather than parsing the client's
      * context.diagnostics array — more robust, and the codes are ours. */
     LintDiag diags[256];
-    int n = lint_collect(doc->ast, diags, 256);
+    const char *fs_path =
+        strncmp(doc->uri, "file://", 7) == 0 ? doc->uri + 7 : NULL;
+    int n = lint_collect(doc->ast, fs_path, diags, 256);
 
     strbuf sb;
     strbuf_init(&sb);
