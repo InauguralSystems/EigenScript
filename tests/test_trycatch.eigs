@@ -13,7 +13,7 @@ assert_true of [contains of [caught1, "index"], "catch index error"]
 # Catch undefined variable
 caught2 is ""
 try:
-    x is nonexistent_var
+    x is nonexistent_var  # lint: allow E003 -- deliberately undefined (tests the runtime error)
 catch err:
     caught2 is err
 assert_true of [contains of [caught2, "undefined"], "catch undefined var"]
@@ -139,7 +139,7 @@ try:
     try:
         throw of {"kind": "stale"}
     catch ignored:
-        x is undefined_variable_here
+        x is undefined_variable_here  # lint: allow E003 -- deliberately undefined (tests the runtime error)
 catch e3:
     superseded is e3
 assert_eq of [type of superseded, "str", "runtime error supersedes stale value"]

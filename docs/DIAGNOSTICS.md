@@ -163,6 +163,7 @@ a code's meaning never changes, and retired codes are not reused.
 | `E000` | error | File cannot be read (lint). |
 | `E001` | error | *Reserved* — tokenizer/syntax error. Not currently emitted: lexer-level failures surface through the parser as `E002`. The code is held so `E002` keeps its meaning if a distinct tokenizer diagnostic is added later. |
 | `E002` | error | Parse error (parser). `--lint --json` reports the first one. |
+| `E003` | error | Undefined name — **no binding on any path** (#404). A name is read somewhere but bound nowhere: not by any assignment in any scope, not a parameter/binder (function/lambda params, `for`/comprehension variables, `catch` names, list-pattern names, `import` module names), not a builtin, and not a top-level name of a file pulled in by a literal `load_file` (resolved with the runtime's own resolution chain, transitively). The runtime raises `undefined variable` the moment such a path executes; `E003` surfaces it statically, including on cold branches. See "Name resolution (`E003`)" below for the exact model and escapes. |
 | `E100` | error | Uncaught runtime error (category code; see note below). |
 | `W001` | warning | Unused variable. |
 | `W002` | warning | Unused function parameter. |
@@ -237,7 +238,51 @@ nothing:
 
   A suppressed diagnostic is removed from both the human and `--json` output.
 
-(Per-file allow-lists in `eigs.json` are not yet wired up — see #399.)
+- **`# lint: allow-file <CODE>...`** silences the listed codes (or `all`) for
+  the **whole file**, in both `--lint` and the LSP. Conventionally the first
+  line. This is the escape for module *fragments* — files that a loader
+  `load_file`s into scope the loader provides (e.g. `lib/ui_w_*.eigs` expect
+  `lib/ui.eigs` to have bound `_theme`/`_ui` first), where `E003` would flag
+  every loader-bound name and per-line allows would drown the file:
+
+  ```eigenscript
+  # lint: allow-file E003 -- fragment of lib/ui.eigs: loader binds _theme/_ui
+  ```
+
+(Per-file allow-lists in `eigs.json` are not yet wired up — see #455.)
+
+## Name resolution (`E003`)
+
+`E003` is increment one of the scope-aware name-resolution pass (#404) —
+ROADMAP's sanctioned alternative to a type system. Its model:
+
+- **Binding set = whole-file over-approximation.** Every binder anywhere in
+  the file counts (mutate-outward makes most bindings cross-scope visible
+  anyway). Over-collecting can only *miss* a bug, never invent one — a false
+  positive would break consumer CI, so the approximation always fails open.
+  Consequently `E003` is silent on outward-`is`, `local` shadowing, and
+  sibling-branch first assignments; path-precise analysis is later #404 work.
+- **Builtins come from the runtime's own registry** — the linter calls
+  `register_builtins()` on a scratch environment rather than keeping a name
+  list that can drift. Extension builtins (`gfx_*`/`audio_*`, `http_*`,
+  `db_*`, model) bind by name regardless of the binary's build flags, from
+  the same `ext_names.h` lists their registrars expand: the lint describes
+  the language surface, not one build. `report_value` (a compiler special
+  form) and the observed-loop bindings `__loop_exit__`/`__loop_iterations__`
+  are also known.
+- **Literal `load_file` is followed.** `load_file of "path"` resolves with
+  the runtime's resolution chain (anchored at the linted file's directory)
+  and the loaded file's top-level binders are collected transitively, so an
+  entry-point file that assembles its program from parts lints clean.
+- **Dynamic escape.** `eval` appearing anywhere, or a `load_file` whose
+  argument is not a string literal, can bind names invisible to static
+  analysis — the pass disables itself for that file. A `load_file` the
+  linter cannot resolve, read, or parse also fails open.
+- **Module members are not checked.** `import m` binds `m`; `m.anything` is
+  a dict key, outside this pass.
+- For a file that is *deliberately* a fragment of a larger program, use
+  `# lint: allow-file E003` (above). For a single host-injected name, a
+  per-line `# lint: allow E003` works as usual.
 
 `E100` is the **category code** for an uncaught runtime error. It is
 deliberately *not* injected into the `Error line N: ...` text, because

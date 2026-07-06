@@ -12,6 +12,7 @@
 #define _GNU_SOURCE
 
 #include "ext_http_internal.h"
+#include "ext_names.h"
 #include "state.h"
 #include "trace.h"
 #include <pthread.h>
@@ -1296,18 +1297,12 @@ static Value* builtin_http_cors(Value *arg) {
  * communicate across worker code routes. No Server allocation, no
  * eigs_http_active wiring. Safe to call on a fresh worker state. */
 void register_http_request_builtins(Env *env) {
-    env_set_local_owned(env, "http_request_body", make_builtin(builtin_http_request_body));
-    env_set_local_owned(env, "http_session_id", make_builtin(builtin_http_session_id));
-    env_set_local_owned(env, "http_post", make_builtin(builtin_http_post));
-    env_set_local_owned(env, "http_request_headers", make_builtin(builtin_http_request_headers));
-    env_set_local_owned(env, "shared_set", make_builtin(builtin_shared_set));
-    env_set_local_owned(env, "shared_incr", make_builtin(builtin_shared_incr));
-    env_set_local_owned(env, "shared_get", make_builtin(builtin_shared_get));
-    env_set_local_owned(env, "shared_has", make_builtin(builtin_shared_has));
-    env_set_local_owned(env, "shared_delete", make_builtin(builtin_shared_delete));
-    env_set_local_owned(env, "shared_keys", make_builtin(builtin_shared_keys));
-    env_set_local_owned(env, "shared_size", make_builtin(builtin_shared_size));
-    env_set_local_owned(env, "shared_clear", make_builtin(builtin_shared_clear));
+    /* Expanded from ext_names.h — the shared name list the linter's E003
+     * binding base also expands, so registration and name-resolution
+     * cannot drift. Add a builtin there, not here. */
+#define X(name, fn) env_set_local_owned(env, #name, make_builtin(fn));
+    EIGS_HTTP_REQUEST_BUILTINS(X)
+#undef X
 }
 
 void register_http_builtins(Env *env) {
@@ -1323,12 +1318,9 @@ void register_http_builtins(Env *env) {
     eigs_http_active = st->ext_http_server;
     g_server.global_env = env;
 
-    env_set_local_owned(env, "http_route", make_builtin(builtin_http_route));
-    env_set_local_owned(env, "http_route_authed", make_builtin(builtin_http_route_authed));
-    env_set_local_owned(env, "http_static", make_builtin(builtin_http_static));
-    env_set_local_owned(env, "http_early_bind", make_builtin(builtin_http_early_bind));
-    env_set_local_owned(env, "http_serve", make_builtin(builtin_http_serve));
-    env_set_local_owned(env, "http_cors", make_builtin(builtin_http_cors));
+#define X(name, fn) env_set_local_owned(env, #name, make_builtin(fn));
+    EIGS_HTTP_BUILTINS(X)
+#undef X
     register_http_request_builtins(env);
 }
 

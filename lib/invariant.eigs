@@ -27,6 +27,10 @@
 #   r is run_descent of [inv, Q0, lr, eps_change, max_iter]
 #   r is run_preserving of [inv, Q0, n_steps]
 
+# Self-contained: pull in cs_signature (pure defines, idempotent to re-load
+# when the caller already followed the two-line usage above).
+load_file of "lib/observer.eigs"
+
 # ---- constructor: bundle three callables into an Invariant record ----
 define make_invariant(ds2_fn, grad_fn, step_fn) as:
     return {"ds2": ds2_fn, "grad": grad_fn, "step": step_fn}

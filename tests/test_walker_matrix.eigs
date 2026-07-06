@@ -266,7 +266,7 @@ define mk_try as:
         r is 0
         try:
             if mode == 1:
-                r is undefined_name_to_throw
+                r is undefined_name_to_throw  # lint: allow E003 -- deliberately undefined (tests the runtime error)
             else:
                 r is secret
         catch e:

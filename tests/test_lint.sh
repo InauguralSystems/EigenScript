@@ -446,6 +446,162 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "wrong code does not over-suppress W001" "$OUTPUT" "W001"
 rm -f "$TMPFILE"
 
+# --- E003 (#404): undefined name — no binding on any path ---
+# Fires: a typo'd name in a cold branch — the classic dynamic-language bug
+# that otherwise survives until that exact path executes at runtime.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+total is 0
+flag is 1
+if flag > 100:
+    total is totl + 1
+print of total
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires on cold-branch typo" "$OUTPUT" "error\[E003\]: undefined name 'totl'"
+# E003 is error-severity: it still fails under --lint-level error
+RC_E=0; $EIGS --lint --lint-level error "$TMPFILE" >/dev/null 2>&1 || RC_E=$?
+[ "$RC_E" -eq 1 ] && { echo "  PASS: E003 fails --lint-level error"; PASS=$((PASS+1)); } || { echo "  FAIL: E003 --lint-level error exit was $RC_E"; FAIL=$((FAIL+1)); }
+TOTAL=$((TOTAL+1))
+# JSON carries error severity
+OUTPUT=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_contains "E003 JSON severity error" "$OUTPUT" '"code":"E003","severity":"error"'
+rm -f "$TMPFILE"
+
+# Fires in callee position too (typo'd function name).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define compute(n) as:
+    return n * 2
+r is comptue of 21
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires on typo'd callee" "$OUTPUT" "undefined name 'comptue'"
+rm -f "$TMPFILE"
+
+# Silent on the real scope rules: outward-`is`, `local` shadowing,
+# sibling-branch first assignment, module-qualified names, and a builtin
+# that postdates lint.c's old hand-copied list (bit_and) — the binding
+# base comes from register_builtins() itself, so it cannot drift.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+flag is 1
+count is 0
+define bump(n) as:
+    count is count + n
+    return count
+define shadowed(n) as:
+    local count is n
+    return count
+if flag > 0:
+    first is bump of 1
+if flag > 1:
+    second is first + (shadowed of 2)
+    print of second
+import util
+u is util.helper
+print of u
+b is bit_and of [6, 3]
+print of b
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 silent on scope rules + registry builtins" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
+# Silent on every binder form: for var, listcomp var, lambda params,
+# catch var, list-pattern names.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+items is [1, 2, 3]
+for it in items:
+    print of it
+doubled is [x * 2 for x in items]
+print of doubled
+f is (y) => y * 2
+print of (f of 3)
+try:
+    throw of "boom"
+catch err:
+    print of err
+[a, b] is [10, 20]
+print of a + b
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 silent on all binder forms" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
+# A literal `load_file of "path"` is resolved with the runtime's own
+# resolution chain and the loaded file's top-level binders count.
+TMPLIB=$(mktemp /tmp/lint_lib_XXXXXX.eigs)
+cat > "$TMPLIB" << 'EIGS'
+define lib_helper(n) as:
+    return n * 2
+EIGS
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << EIGS
+load_file of "$TMPLIB"
+r is lib_helper of 21
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 silent: name bound by literal load_file" "$OUTPUT" "E003"
+# ...and the pass stays ON alongside literal loads: a name bound nowhere
+# (not even in the loaded file) still fires.
+cat > "$TMPFILE" << EIGS
+load_file of "$TMPLIB"
+r is lib_helper_missing of 21
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 still fires alongside literal load_file" "$OUTPUT" "undefined name 'lib_helper_missing'"
+rm -f "$TMPFILE" "$TMPLIB"
+
+# Documented dynamic escape: `eval` anywhere disables the pass for the
+# file (dynamic code can bind anything).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+eval of "zz is 1"
+print of zz
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 disabled by eval (dynamic escape)" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
+# Computed load_file path likewise disables the pass.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+p is "unknowable.eigs"
+load_file of p
+print of mystery_name
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 disabled by computed load_file" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
+# `# lint: allow E003` suppresses per-site (host-injected names).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'print of injected_by_host  # lint: allow E003\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 suppressed by inline allow" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
+# `# lint: allow-file E003` suppresses file-wide (module fragments) —
+# and does NOT over-suppress other codes.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+# lint: allow-file E003 -- fragment: the loader binds shared state
+define widget(x) as:
+    return _theme_color of x
+r is widget of 1
+print of r
+unused_tmp is 42
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "allow-file E003 suppresses file-wide" "$OUTPUT" "E003"
+check_contains "allow-file does not over-suppress other codes" "$OUTPUT" "W001"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

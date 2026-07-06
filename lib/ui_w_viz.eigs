@@ -1,3 +1,4 @@
+# lint: allow-file E003 -- fragment of lib/ui.eigs: the loader binds the shared ui state (_theme, _ui, widget registry, sibling widgets) before this file runs
 # UI Widgets — Viz: chart, bar_chart, gauge, meter, canvas, waveform_view, code_view
 
 define chart(id, x, y, w, h) as:
