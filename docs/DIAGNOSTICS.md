@@ -320,15 +320,28 @@ nothing:
 
 ## Name resolution (`E003`)
 
-`E003` is increment one of the scope-aware name-resolution pass (#404) —
-ROADMAP's sanctioned alternative to a type system. Its model:
+`E003` is the scope-aware name-resolution pass (#404, increments one and
+two) — ROADMAP's sanctioned alternative to a type system. Its model:
 
-- **Binding set = whole-file over-approximation.** Every binder anywhere in
-  the file counts (mutate-outward makes most bindings cross-scope visible
-  anyway). Over-collecting can only *miss* a bug, never invent one — a false
-  positive would break consumer CI, so the approximation always fails open.
-  Consequently `E003` is silent on outward-`is`, `local` shadowing, and
-  sibling-branch first assignments; path-precise analysis is later #404 work.
+- **Binding sets are scope-precise, path-insensitive** (increment two).
+  The pass models the runtime's actual rules, each pinned empirically
+  against the interpreter: a fresh-name `is` (or `local`) inside a
+  function is function-local — invisible to siblings and module code;
+  closures read enclosing function scopes; module names are
+  order-insensitive (a body may read a module name bound after the
+  definition); a nested `define` binds its name in the enclosing
+  function only; a **module-level `for` loop-scopes its variable** (the
+  VM drops it at loop exit — a function-level `for` var survives);
+  listcomp and `catch` vars bind in the containing scope. Within a
+  scope, "bound on some path" still suppresses (sibling-branch first
+  assignments stay silent) — path-precise analysis is the remaining
+  #404 increment. Over-collecting can only *miss* a bug, never invent
+  one — a false positive would break consumer CI, so every
+  approximation fails open.
+- **Near-miss suggestions.** When an undefined name is edit-distance 1
+  from a visible binding, the message appends `(did you mean 'x'?)`.
+  Distance 1 only, names ≥ 3 chars — a suggestion is near-certain or
+  absent.
 - **Builtins come from the runtime's own registry** — the linter calls
   `register_builtins()` on a scratch environment rather than keeping a name
   list that can drift. Extension builtins (`gfx_*`/`audio_*`, `http_*`,
@@ -355,11 +368,12 @@ ROADMAP's sanctioned alternative to a type system. Its model:
   `# lint: allow E003` works as usual.
 
 `E100` is the **category code** for an uncaught runtime error. It is
-deliberately *not* injected into the `Error line N: ...` text, because
-that exact string is also what a `try`/`catch` binds (see "What `catch`
-binds") — tagging it inline would change the bound value and break the
-stability contract. Tools map the `Error line N:` prefix to `E100`; the
-specific failure is in the message (see "Runtime Error Types").
+deliberately *not* injected into the `Error line N: ...` text — the
+message half of that string is also the `message` field a `try`/`catch`
+binds (see "What `catch` binds"), and in-language error discrimination
+goes through the caught dict's `kind`, not through tag-matching text.
+Tools map the `Error line N:` prefix to `E100`; the specific failure is
+in the message (see "Runtime Error Types").
 
 ## Editor diagnostics
 
