@@ -429,7 +429,8 @@ struct EigsHttpServer;
 typedef enum {
     HANDLE_STORE,
     HANDLE_THREAD,
-    HANDLE_CHANNEL
+    HANDLE_CHANNEL,
+    HANDLE_TASK      /* #408 cooperative task — id-keyed, drained at teardown */
 } HandleType;
 
 typedef struct {
