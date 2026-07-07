@@ -2,9 +2,9 @@
 observe ENERGY (Lyapunov) vs DISPLACEMENT (oscillation); flags = regime visited
 
   zeta     | E:osc conv div grew | x:osc conv div | reading
-  -0.05	| E:Y - Y Y     | x:Y - Y      | DIVERGES (energy grew)
-  0	| E:Y - - -     | x:Y - Y      | x OSCILLATES, energy settles
-  0.1	| E:- Y - -     | x:Y - Y      | x OSCILLATES, energy settles
+  -0.05	| E:Y - Y Y     | x:Y - -      | DIVERGES (energy grew)
+  0	| E:Y - - -     | x:Y - -      | x OSCILLATES, energy settles
+  0.1	| E:- Y - -     | x:Y - -      | x OSCILLATES, energy settles
   0.4	| E:- Y - -     | x:Y Y -      | x OSCILLATES, energy settles
   1	| E:- Y - -     | x:- Y -      | settles
   2	| E:- Y - -     | x:- Y -      | settles
