@@ -110,4 +110,33 @@ catch e:
     assert_eq of [e.kind, "value", "task_yield in an arena scope is a value-error"]
 assert_eq of [threw2, 1, "arena-scoped yield raises"]
 
+# --- teardown: a task KILLED while suspended (main ends first) with a heap
+#     value live on its saved value stack must be reclaimed clean. The list
+#     literal evaluates left-to-right, so the string is on the stack when the
+#     inner task_yield suspends. Covered by the ASan leak gate (tally 0). ---
+define holder() as:
+    local keep is ["heap-string-on-the-value-stack", task_yield of null]
+    return len of keep
+hk is task_spawn of holder
+# NOT joined — reaped by kill-outstanding while suspended holding the string.
+
+# --- a task that dies inside an arena scope, UNJOINED, must not leave the
+#     per-thread arena active (would arena-allocate its error dict and
+#     contaminate the next task). Covered by the valgrind arena-poison gate. ---
+define arena_dier() as:
+    arena_mark of null
+    task_yield of null    # guard raises here; the task dies inside the scope
+    return 0
+ad is task_spawn of arena_dier
+# NOT joined — sched_finish must force the arena inactive on this dead task.
+
+# A clean task spawned AFTER the arena-dier proves the arena baseline is clean:
+# its string allocations must be heap, not arena (no cross-task contamination).
+define after_arena() as:
+    task_yield of null
+    local s is "fresh-heap-string"
+    return len of s
+aa is task_spawn of after_arena
+assert_eq of [task_join of aa, 17, "task after an arena-dier gets a clean arena"]
+
 test_summary of null

@@ -1126,6 +1126,47 @@ print of (thread_join of h)
 9
 ```
 
+## Cooperative tasks
+
+`task_spawn` creates a **cooperative task** on the single interpreter
+thread (unlike `spawn`, which uses an OS thread). Tasks are scheduled
+round-robin: a task runs until it calls `task_yield of null`, which
+hands control to the next ready task; it resumes where it left off.
+Because there is one thread and a fixed policy, the interleaving is
+**deterministic by construction** — the same program prints identically
+on every run, with no threads and no clock. Args and results cross the
+task boundary deep-copied (share-nothing, like channel sends).
+
+`task_join of id` blocks until task `id` finishes and returns its
+result (or re-raises its uncaught error as the same `{kind, message,
+line}` dict — see [Error handling](#error-handling)). `task_alive of
+id` is 1 until the task finishes.
+
+```eigenscript
+order is []
+define step(tag) as:
+    order is append of [order, f"{tag}-1"]
+    task_yield of null
+    order is append of [order, f"{tag}-2"]
+    return tag
+
+a is task_spawn of [step, "a"]
+b is task_spawn of [step, "b"]
+ra is task_join of a
+rb is task_join of b
+print of order
+print of f"{ra}{rb}"
+```
+```output
+["a-1", "b-1", "a-2", "b-2"]
+ab
+```
+
+When the main program returns, any tasks still running are torn down
+(the program ends). If every task is blocked with none runnable — for
+example two tasks each `task_join`-ing the other — that is a `deadlock`
+error, reported loudly rather than hanging.
+
 ## Buffers
 
 `buffer of count` allocates a flat array of `count` nums (all 0).
