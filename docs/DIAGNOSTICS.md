@@ -176,8 +176,8 @@ a code's meaning never changes, and retired codes are not reused.
 | `W009` | warning | Empty `catch` block. |
 | `W010` | warning | Duplicate dict key. |
 | `W011` | warning | `name is ...` used in a condition (likely meant `==`). |
-| `W012` | warning | Assignment shadows a builtin. |
-| `W013` | warning | Function definition shadows a builtin. |
+| `W012` | warning | Assignment shadows a builtin. The builtin set is derived from `register_builtins()` itself plus the extension names (`ext_names.h`) — never a hand list (#459: the old hand-copied array was ~120 names behind the binary, so shadowing `dispatch`, `chr`, `eval`, … lint'd clean). |
+| `W013` | warning | Function definition shadows a builtin (same registry-derived set as `W012`). For the observer special forms (`report`, `report_value`, `observe`) this warning is load-bearing: their name-keyed forms are compiler-resolved and a rebinding does NOT change them (#459) — the shadowing function is only reachable through non-ident argument forms. |
 | `W014` | warning | Bare trajectory predicate in a loop condition reads the last-observed binding, but the body assigns two or more bindings — name it (`<predicate> of <var>`). |
 | `W015` | warning | A function assigns (without `local`) over a module-level **function** name, clobbering it via mutate-outward so later `<fn> of ...` calls fail — add `local` or rename. (Scoped to function clobbering; benign module-variable reuse is not flagged — that is #404's dataflow-aware territory. `_`-prefixed names are skipped as intentional module state.) |
 | `W016` | warning | Bare trajectory predicate **outside a loop condition** (`if stable:`, `ok is converged`, `return diverging`) reads the last-observed binding — an invisible alias (#247/#262) — write `<predicate> of <var>`. Loop conditions are exempt: the single-assign `loop while not converged` form is the documented idiom, and the ambiguous multi-assign case is `W014`. Any explicit subject counts as named, including `stable of (x + 0.0)`; deliberate bare reads carry `# lint: allow W016`. |

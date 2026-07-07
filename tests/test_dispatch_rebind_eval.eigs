@@ -1,0 +1,19 @@
+# test_dispatch_rebind_eval.eigs — #459, the dynamic escape: this unit has
+# NO static binder of `dispatch`; the rebind happens inside eval'd code.
+# The presence of `eval` anywhere disables the superinstruction (the same
+# escape E003 honors), so the post-eval call honors the rebound name.
+
+define f1(x) as:
+    return 20
+
+define my3(a, b, c) as:
+    return 111
+
+t is [null, f1]
+
+z is eval of "dispatch is my3"
+
+if (dispatch of [t, 1, null]) == 111:
+    print of "All tests passed"
+else:
+    assert of [0, "eval-rebound dispatch was hijacked"]

@@ -105,33 +105,53 @@ static int is_ref(LintContext *ctx, const char *name) {
 }
 
 
-/* Known builtin names */
-static const char *BUILTINS[] = {
-    "print", "len", "str", "num", "type", "append", "keys", "values",
-    "has_key", "dict_set", "set_at", "remove_at", "range", "abs",
-    "floor", "ceil", "round", "sqrt", "pow", "min", "max", "sum",
-    "sort", "reverse", "join", "text_builder_new", "text_builder_append",
-    "text_builder_append_line", "text_builder_extend", "text_builder_part_count",
-    "text_builder_clear", "text_builder_to_string", "split", "scan_ints", "scan_tokens", "scan_int_tokens", "trim", "upper", "lower",
-    "contains", "starts_with", "ends_with", "replace", "index_of",
-    "slice", "read_text", "write_text", "append_text", "file_exists",
-    "delete_file", "list_dir", "make_dir", "env_get", "env_set",
-    "time_now", "sleep", "shell", "json_parse", "json_encode",
-    "input", "exit", "assert", "rand", "regex_match", "regex_find",
-    "regex_replace", "hash_sha256", "hash_md5", "hash_sha512",
-    "base64_encode", "base64_decode", "store_open", "store_close",
-    "store_put", "store_get", "store_delete", "store_query",
-    "store_count", "store_update", "store_collections", "store_drop",
-    "load_file", "error", "copy",
-    NULL
-};
+/* Known builtin names — the registry itself, never a hand list (#459: the
+ * old hand-copied BUILTINS[] array drifted ~120 names behind the binary, so
+ * `define dispatch` shadowed a live builtin with no W012/W013). Same
+ * derivation as E003's binding base: register_builtins() on a scratch Env,
+ * plus the extension names (ext_names.h — the surface of the LANGUAGE, not
+ * of this binary's build flags) and the compiler-resolved special forms no
+ * registrar binds. Built once per process; still-reachable by design. */
+#if !EIGENSCRIPT_FREESTANDING
+static Env *g_builtin_name_env = NULL;
+
+/* Freed at the end of every eigenscript_lint run: LeakSanitizer cannot trace
+ * through the env's tagged EigsSlot pointers, so a kept-for-the-process env
+ * reads as a direct leak and fails the detect_leaks=1 gate. */
+static void builtin_name_env_free(void) {
+    if (g_builtin_name_env) {
+        env_decref(g_builtin_name_env);
+        g_builtin_name_env = NULL;
+    }
+}
 
 static int is_builtin_name(const char *name) {
-    for (int i = 0; BUILTINS[i]; i++) {
-        if (strcmp(BUILTINS[i], name) == 0) return 1;
+    if (!g_builtin_name_env) {
+        Env *e = env_new(NULL);
+        register_builtins(e);
+        register_store_builtins(e);
+#define X(nm, fn) if (!env_get(e, #nm)) env_set_local_owned(e, #nm, make_null());
+        EIGS_GFX_BUILTINS(X)
+        EIGS_HTTP_BUILTINS(X)
+        EIGS_HTTP_REQUEST_BUILTINS(X)
+        EIGS_DB_BUILTINS(X)
+        EIGS_MODEL_BUILTINS(X)
+#undef X
+        if (!env_get(e, "report_value"))
+            env_set_local_owned(e, "report_value", make_null());
+        g_builtin_name_env = e;
     }
+    return env_get(g_builtin_name_env, name) != NULL;
+}
+#else
+/* Freestanding lint is a stub (eigenscript_lint returns early), but the
+ * checks still compile — a minimal fallback keeps them self-contained. */
+static int is_builtin_name(const char *name) {
+    (void)name;
     return 0;
 }
+static void builtin_name_env_free(void) {}
+#endif
 
 /* ---- AST walkers ---- */
 
@@ -1572,6 +1592,7 @@ int lint_collect(ASTNode *ast, const char *path, LintDiag *out, int max) {
         snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
         snprintf(out[i].message, sizeof(out[i].message), "%s", ctx.warnings[i].message);
     }
+    builtin_name_env_free();
     return n;
 }
 
@@ -1720,6 +1741,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     free_ast(ast);
     free_tokenlist(&tl);
     free(source);
+    builtin_name_env_free();
 
     /* Exit code (#399): --lint-level warning (default) fails on any surviving
      * warning; --lint-level error makes warnings advisory (exit 0) and fails
