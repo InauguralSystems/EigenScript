@@ -2395,6 +2395,11 @@ echo ""
 # full-window single call still converges on the reused env.
 echo "[Observer] Parked call-env observer reset"
 check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK" 1
+
+# #412: the settled observer-surface decisions — unity horizon (entropy at
+# |x|=1.0 is the formula max, never converged) and `how` as the
+# deadband-normalized settledness gradient.
+check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All tests passed" 10
 echo ""
 
 # #366: frameless leaf-accessor call fast path — results, borrows from

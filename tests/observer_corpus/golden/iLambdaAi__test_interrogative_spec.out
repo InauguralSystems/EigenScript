@@ -43,11 +43,11 @@ WHY returns gradient (number):
 
 --- HOW: stability (0-1) ---
 HOW returns stability (0-1 range):
-0
+1
 
 --- ARITHMETIC COMPOSITION ---
 Arithmetic on interrogatives works:
-101
+102
 
 --- ASSIGNMENT THEN INTERROGATIVE ---
 256

@@ -4,6 +4,21 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **Observer surface coherence (#412), two settled decisions.** (1)
+  **Unity is the horizon**: the `|x| == 1.0` entropy special case is
+  gone — the binary-entropy formula is smooth and maximal there
+  (`H = 1.0`), so a value placed exactly at `1.0` reads like its
+  neighbors (a flat run at `1.0` classifies `equilibrium`, never
+  `converged`); `|x| == 0` keeps `H = 0`, the formula's own home-point
+  limit. (2) **`how` is a real 0–1 gradient**: deadband-normalized
+  settledness of the last observed step, `1 - min(1, |dH|/dh_zero)` —
+  `1.0` = entropy unmoved, `0.0` = moved by the settle deadband or
+  more. Pure in the recorded `dH`, so `how is x at L` reads identically
+  from tape history (no tape format change). The old
+  `1 - entropy/last_entropy` was degenerate (always `0` or `1`).
+  OBSERVER.md's "Rough edges" caveats are closed as settled decisions.
+
 ### Added
 - **JIT loop back-edges poll the async abort flag (#410)** — hard
   timeouts (`eigs_set_abort_flag`) now hold at full speed. The gap was

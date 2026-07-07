@@ -999,6 +999,12 @@ void eigs_module_cache_clear(void);
 /* Observer thresholds are EigsState fields — set via set_observer_thresholds;
  * read through g_obs_dh_zero / g_obs_dh_small / g_obs_h_low (macros above). */
 
+/* #412: `how` — deadband-normalized settledness of the last observed step,
+ * 1.0 (unmoved) .. 0.0 (moved by >= the settle deadband). Pure function of
+ * the recorded dH, shared by the live INTERROGATE paths (vm.c) and the tape
+ * history reader (trace.c) so `how is x at L` matches the live reading. */
+double observer_settledness(double dH);
+
 /* ---- Cross-file functions for MODEL tensor builtins ---- */
 /* When MODEL is enabled, these are defined in model_infer.c.
  * When disabled, eigenscript.c provides static stubs. */

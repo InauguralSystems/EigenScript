@@ -4202,7 +4202,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         }
         case 3: case 4: case 5: {
             /* #262 Phase-3 A: where/why/how on a bound name read the binding's
-             * SLOT trajectory (entropy / dH / 1 - entropy/last_entropy). Falls
+             * SLOT trajectory (entropy / dH / settledness-of-dH, #412). Falls
              * back to the Value's observer fields if the slot isn't populated
              * yet, so the answer matches the value path. */
             int oidx = -1, odepth = 0;
@@ -4211,8 +4211,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 const ObserverSlot *s = &oe->obs[oidx];
                 if (kind == 3)      result = make_num(s->entropy);
                 else if (kind == 4) result = make_num(s->dH);
-                else                result = make_num(s->last_entropy > 0
-                                            ? 1.0 - s->entropy / s->last_entropy : 1.0);
+                else                result = make_num(observer_settledness(s->dH));
             } else {
                 /* #262 Step E: unobserved binding — no trajectory. */
                 result = make_num(kind == 5 ? 1.0 : 0.0);

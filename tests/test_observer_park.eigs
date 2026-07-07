@@ -5,15 +5,19 @@
 # silently "converges" on its 2nd invocation by inheriting the 1st call's
 # samples. The window is 10.
 
+# #412 note: the settling value is 0.001, NOT 1.0 — unity is the entropy
+# HORIZON now (H = 1.0 there, >= h_low), so nothing parked at exactly 1.0 can
+# classify converged; 0.001 sits in the low-entropy home region (H ~ 0.011).
+
 # (a) DRIFT GUARD: 6 observed assigns/call (< 10) must NEVER fill the window,
 #     no matter how many times the function is called on a recycled env.
 define few() as:
-    local x is 1.0
-    x is 1.0
-    x is 1.0
-    x is 1.0
-    x is 1.0
-    x is 1.0
+    local x is 0.001
+    x is 0.001
+    x is 0.001
+    x is 0.001
+    x is 0.001
+    x is 0.001
     return converged of x
 local a1 is few of null
 local a2 is few of null
@@ -23,18 +27,18 @@ local a3 is few of null
 #     every time, including on the reused env — so the park-reset doesn't
 #     over-correct and suppress legitimate convergence.
 define many() as:
-    local y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
-    y is 1.0
+    local y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
+    y is 0.001
     return converged of y
 local b1 is many of null
 local b2 is many of null
