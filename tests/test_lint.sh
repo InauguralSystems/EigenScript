@@ -267,6 +267,58 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "human output carries [W001] code" "$OUTPUT" "warning\[W001\]"
 rm -f "$TMPFILE"
 
+# --- #460: '# lint: loaded-by <file>' — a library fragment lints against
+# its composer's transitive binding set; unlike allow-file E003, a genuine
+# typo in the fragment still fires. Unresolvable context fails open.
+FRAGDIR=$(mktemp -d /tmp/lint_frag_XXXXXX)
+cat > "$FRAGDIR/entry.eigs" << 'EIGS'
+define helper(x) as:
+    return x + 1
+load_file of "fragment.eigs"
+EIGS
+cat > "$FRAGDIR/fragment.eigs" << 'EIGS'
+r is helper of 1
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$FRAGDIR/fragment.eigs" 2>&1 || true)
+check_contains "fragment standalone: E003 fires" "$OUTPUT" "E003.*undefined name 'helper'"
+cat > "$FRAGDIR/fragment.eigs" << 'EIGS'
+# lint: loaded-by entry.eigs
+r is helper of 1
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$FRAGDIR/fragment.eigs" 2>&1 || true)
+check_not_contains "loaded-by kills the composition FP" "$OUTPUT" "E003"
+cat > "$FRAGDIR/fragment.eigs" << 'EIGS'
+# lint: loaded-by entry.eigs
+r is helper of 1
+q is no_such_name of 2
+print of r
+print of q
+EIGS
+OUTPUT=$($EIGS --lint "$FRAGDIR/fragment.eigs" 2>&1 || true)
+check_contains "loaded-by keeps typo protection" "$OUTPUT" "E003.*undefined name 'no_such_name'"
+check_not_contains "loaded-by silent on the composed name" "$OUTPUT" "undefined name 'helper'"
+cat > "$FRAGDIR/fragment.eigs" << 'EIGS'
+# lint: loaded-by missing.eigs
+r is helper of 1
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$FRAGDIR/fragment.eigs" 2>&1 || true)
+check_not_contains "unresolvable loaded-by fails open" "$OUTPUT" "E003"
+cat > "$FRAGDIR/sibling.eigs" << 'EIGS'
+define assert_eq(args) as:
+    return args[0] == args[1]
+EIGS
+cat > "$FRAGDIR/fragment.eigs" << 'EIGS'
+# lint: loaded-by sibling.eigs
+ok is assert_eq of [1, 1]
+print of ok
+EIGS
+OUTPUT=$($EIGS --lint "$FRAGDIR/fragment.eigs" 2>&1 || true)
+check_not_contains "concat-sibling context binds (no loader needed)" "$OUTPUT" "E003"
+rm -rf "$FRAGDIR"
+
 # --- #459: W012/W013 derive from register_builtins(), not a hand list ---
 # `dispatch` and `chr` were registered builtins missing from the old
 # hand-copied BUILTINS[] array, so shadowing them lint'd clean.

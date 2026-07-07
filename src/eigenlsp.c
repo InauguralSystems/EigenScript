@@ -759,7 +759,7 @@ static void send_diagnostics(Document *doc) {
         LintDiag diags[256];
         const char *fs_path =
             strncmp(doc->uri, "file://", 7) == 0 ? doc->uri + 7 : NULL;
-        int n = lint_collect(doc->ast, fs_path, diags, 256);
+        int n = lint_collect(doc->ast, fs_path, doc->text, diags, 256);
         int emitted = 0;
         for (int i = 0; i < n; i++) {
             if (lint_file_allows(doc->text, diags[i].code)) continue;
@@ -1602,7 +1602,7 @@ static void handle_code_action(int id, const char *params) {
     LintDiag diags[256];
     const char *fs_path =
         strncmp(doc->uri, "file://", 7) == 0 ? doc->uri + 7 : NULL;
-    int n = lint_collect(doc->ast, fs_path, diags, 256);
+    int n = lint_collect(doc->ast, fs_path, doc->text, diags, 256);
 
     strbuf sb;
     strbuf_init(&sb);
