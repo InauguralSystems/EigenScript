@@ -93,7 +93,6 @@ extern void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val);
 extern void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
 extern Value* env_get_hashed(Env *env, const char *name, uint32_t h);
 extern Value* env_get(Env *env, const char *name);
-extern void runtime_error(int line, const char *fmt, ...);
 extern double num_guard(double x);
 extern Value* promote_if_arena(Value *v);
 /* Observer helper — declared in eval.c, needs to be exposed for VM.
@@ -413,7 +412,7 @@ static inline Value *slot_bridge_unwrap(EigsSlot s) {
 
 static inline void vm_push(Value *v) {
     if (g_vm.sp >= VM_STACK_MAX) {
-        runtime_error(0, "VM stack overflow");
+        rt_error(EK_LIMIT, 0, "VM stack overflow");
         return;
     }
     g_vm.stack[g_vm.sp++] = slot_bridge_wrap(v);
@@ -466,7 +465,7 @@ static inline Value *vm_peek(int distance) {
  * immediates directly (post-arith, post-cmp, NEG/NOT/BNOT, DUP, etc.). */
 static inline void vm_push_slot(EigsSlot s) {
     if (g_vm.sp >= VM_STACK_MAX) {
-        runtime_error(0, "VM stack overflow");
+        rt_error(EK_LIMIT, 0, "VM stack overflow");
         return;
     }
     g_vm.stack[g_vm.sp++] = s;
@@ -574,7 +573,7 @@ int sandbox_charge(size_t bytes) {
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant
      * (we never commit a charge that breaks it), so the subtraction can't wrap. */
     if (bytes > g_sandbox_byte_max - g_sandbox_bytes_used) {
-        runtime_error(0, "sandbox memory budget exceeded (used %zu + %zu > %zu bytes)",
+        rt_error(EK_SANDBOX, 0, "sandbox memory budget exceeded (used %zu + %zu > %zu bytes)",
                       g_sandbox_bytes_used, bytes, g_sandbox_byte_max);
         return 0;
     }
@@ -613,7 +612,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
     int slot_idx, depth;
     Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
     if (!target) {
-        runtime_error(g_vm.current_line, "undefined variable '%s'", name);
+        rt_error(EK_UNDEFINED_NAME, g_vm.current_line, "undefined variable '%s'", name);
         vm_push_slot(slot_null());
         return;
     }
@@ -764,7 +763,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
             if (i < target->data.buffer.count) {
                 vm_push_slot(slot_from_num(target->data.buffer.data[i]));
             } else {
-                runtime_error(g_vm.current_line,
+                rt_error(EK_INDEX, g_vm.current_line,
                     "buffer index %d out of range (length %d)",
                     i, target->data.buffer.count);
                 vm_push_slot(slot_null());
@@ -781,7 +780,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
                     vm_push(item);
                 }
             } else {
-                runtime_error(g_vm.current_line,
+                rt_error(EK_INDEX, g_vm.current_line,
                     "index %d out of range (list length %d)",
                     i, target->data.list.count);
                 vm_push_slot(slot_null());
@@ -794,7 +793,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
                 char buf[2] = { target->data.str[i], 0 };
                 vm_push(make_str(buf));
             } else {
-                runtime_error(g_vm.current_line,
+                rt_error(EK_INDEX, g_vm.current_line,
                     "string index %d out of range (length %d)",
                     i, len);
                 vm_push_slot(slot_null());
@@ -802,7 +801,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
             return;
         }
         if (target->type != VAL_NULL) {
-            runtime_error(g_vm.current_line,
+            rt_error(EK_TYPE, g_vm.current_line,
                 "cannot index %s", val_type_name(target->type));
         }
     }
@@ -840,7 +839,7 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
     }
     if (target && target->type != VAL_NULL) {
         const char *key = chunk->const_interns[name_idx];
-        runtime_error(g_vm.current_line,
+        rt_error(EK_TYPE, g_vm.current_line,
             "cannot access field '%s' on %s",
             key, val_type_name(target->type));
     }
@@ -886,17 +885,17 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                 }
             } else if (dict && dict->type != VAL_NULL) {
                 const char *key = chunk->const_interns[name_idx];
-                runtime_error(g_vm.current_line,
+                rt_error(EK_TYPE, g_vm.current_line,
                     "cannot access field '%s' on %s",
                     key, val_type_name(dict->type));
             }
         } else {
-            runtime_error(g_vm.current_line,
+            rt_error(EK_INDEX, g_vm.current_line,
                 "index %d out of range (list length %d)",
                 i, target->data.list.count);
         }
     } else if (target && target->type != VAL_NULL) {
-        runtime_error(g_vm.current_line,
+        rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
     }
     vm_push_slot(slot_null());
@@ -945,7 +944,7 @@ void jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
     if (target->type == VAL_DICT)
         dict_set_cached(target, key, h, val);
     else if (target->type != VAL_NULL)
-        runtime_error(g_vm.current_line, "cannot set field '%s' on %s",
+        rt_error(EK_TYPE, g_vm.current_line, "cannot set field '%s' on %s",
             key, val_type_name(target->type));
     val_decref(target);
     val_incref(val);
@@ -976,7 +975,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
             return;
         }
     } else if (target->type != VAL_NULL) {
-        runtime_error(g_vm.current_line,
+        rt_error(EK_TYPE, g_vm.current_line,
             "cannot access field '%s' on %s",
             key, val_type_name(target->type));
     }
@@ -1015,7 +1014,7 @@ void jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
     }
     if (target && target->type != VAL_NULL) {
         const char *key = chunk->const_interns[name_idx];
-        runtime_error(g_vm.current_line, "cannot set field '%s' on %s",
+        rt_error(EK_TYPE, g_vm.current_line, "cannot set field '%s' on %s",
             key, val_type_name(target->type));
     }
 }
@@ -1469,8 +1468,8 @@ void jit_helper_index_set(void) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                 target->data.buffer.data[i] = val_s.d;
             } else {
-                if (!_ok) runtime_error(g_vm.current_line, "index must be an integer, got %g", idx_s.d);
-                else runtime_error(g_vm.current_line, "buffer index %d out of range (length %d)",
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                else rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)",
                               i, target->data.buffer.count);
             }
             g_vm.sp -= 2;  /* keep val on TOS */
@@ -1491,8 +1490,8 @@ void jit_helper_index_set(void) {
                     target->data.list.items[i] = make_num(val_s.d);
                 }
             } else {
-                if (!_ok) runtime_error(g_vm.current_line, "index must be an integer, got %g", idx_s.d);
-                else runtime_error(g_vm.current_line, "index %d out of range (list length %d)",
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                else rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
             }
             g_vm.sp -= 2;
@@ -1506,27 +1505,27 @@ void jit_helper_index_set(void) {
     if (target->type == VAL_LIST && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(idx->data.num, &i)) {
-            runtime_error(g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             val_incref(val);
             val_decref(target->data.list.items[i]);
             target->data.list.items[i] = val;
         } else {
-            runtime_error(g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+            rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
         }
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(idx->data.num, &i)) {
-            runtime_error(g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
-            runtime_error(g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+            rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else if (val->type == VAL_NUM) {
             target->data.buffer.data[i] = val->data.num;
         }
     } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
         dict_set(target, idx->data.str, val);
     } else if (target->type != VAL_NULL) {
-        runtime_error(g_vm.current_line, "cannot index %s for assignment", val_type_name(target->type));
+        rt_error(EK_TYPE, g_vm.current_line, "cannot index %s for assignment", val_type_name(target->type));
     }
     val_decref(target); val_decref(idx);
     vm_push(val);
@@ -1555,8 +1554,8 @@ void jit_helper_index_get(void) {
                     vm_push(r);
                 }
             } else {
-                if (!_ok) runtime_error(g_vm.current_line, "index must be an integer, got %g", idx_s.d);
-                else runtime_error(g_vm.current_line,
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                else rt_error(EK_INDEX, g_vm.current_line,
                     "index %d out of range (list length %d)",
                     i, target->data.list.count);
                 slot_decref(tgt_s);
@@ -1570,8 +1569,8 @@ void jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(slot_from_num(v));
             } else {
-                if (!_ok) runtime_error(g_vm.current_line, "index must be an integer, got %g", idx_s.d);
-                else runtime_error(g_vm.current_line,
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                else rt_error(EK_INDEX, g_vm.current_line,
                     "buffer index %d out of range (length %d)",
                     i, target->data.buffer.count);
                 slot_decref(tgt_s);
@@ -1589,12 +1588,12 @@ void jit_helper_index_get(void) {
     if (target->type == VAL_LIST && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(idx->data.num, &i)) {
-            runtime_error(g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             result = target->data.list.items[i];
             val_incref(result);
         } else {
-            runtime_error(g_vm.current_line,
+            rt_error(EK_INDEX, g_vm.current_line,
                 "index %d out of range (list length %d)",
                 i, target->data.list.count);
         }
@@ -1604,27 +1603,27 @@ void jit_helper_index_get(void) {
     } else if (target->type == VAL_STR && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(idx->data.num, &i)) {
-            runtime_error(g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         } else if (vm_index_resolve(&i, (int)strlen(target->data.str))) {
             char buf[2] = { target->data.str[i], 0 };
             result = make_str(buf);
         } else {
-            runtime_error(g_vm.current_line,
+            rt_error(EK_INDEX, g_vm.current_line,
                 "string index %d out of range (length %d)",
                 i, (int)strlen(target->data.str));
         }
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(idx->data.num, &i))
-            runtime_error(g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         else if (vm_index_resolve(&i, target->data.buffer.count))
             result = make_num(target->data.buffer.data[i]);
         else
-            runtime_error(g_vm.current_line,
+            rt_error(EK_INDEX, g_vm.current_line,
                 "buffer index %d out of range (length %d)",
                 i, target->data.buffer.count);
     } else if (target->type != VAL_NULL) {
-        runtime_error(g_vm.current_line,
+        rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
     }
     val_decref(target); val_decref(idx);
@@ -1994,16 +1993,29 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
  * vm_run unwinds and returns with g_has_error still set so the C caller
  * (a re-entrant vm_run, or main) observes the failure. */
 /* Catch-binding: if `throw` stashed a structured error value (dict,
- * list, ...), the catch variable binds that value — ownership of the
- * stash's ref transfers to the stack. Plain runtime errors (and string
- * throws, which also fill g_error_msg) bind the message string. */
+ * list, string, ...), the catch variable binds that value — ownership
+ * of the stash's ref transfers to the stack. Built-in runtime errors
+ * bind a {kind, message, line} dict (#406): kind from the closed
+ * ErrKind vocabulary, message without the "Error line N:" frame, line
+ * 1-based. Built lazily here so the uncaught path never allocates. */
 static Value *vm_take_error_value(void) {
     if (g_error_value) {
         Value *v = g_error_value;
         g_error_value = NULL;
         return v;
     }
-    return make_str(g_error_msg);
+    Value *d = make_dict(3);
+    dict_set_owned(d, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
+    dict_set_owned(d, "message", make_str(g_error_raw));
+    dict_set_owned(d, "line", make_num((double)g_error_line));
+    return d;
+}
+
+/* Live source line for error stamping — rt_error uses this when a raise
+ * site (a builtin) has no line of its own. 0 when no VM is running. */
+int vm_current_line(void) {
+    if (!eigs_current || !eigs_current->vm) return 0;
+    return g_vm.current_line;
 }
 
 /* Print the live call stack, innermost frame first. Called by
@@ -2300,11 +2312,11 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
              * concatenation use an f-string — f"{a}{b}" — or str of. */
             const char *ta = val_type_name(a->type), *tb = val_type_name(b->type);
             if ((a->type == VAL_STR) != (b->type == VAL_STR))
-                runtime_error(current_line,
+                rt_error(EK_TYPE, current_line,
                     "cannot apply '+' to %s and %s (use an f-string or 'str of' to concatenate)",
                     ta, tb);
             else
-                runtime_error(current_line, "cannot apply '+' to %s and %s", ta, tb);
+                rt_error(EK_TYPE, current_line, "cannot apply '+' to %s and %s", ta, tb);
             vm_push(make_null());
         }
         val_decref(a); val_decref(b);
@@ -2321,7 +2333,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); } \
             vm_push(make_num(r)); \
         } else { \
-            runtime_error(current_line, "cannot apply '%s' to %s and %s", \
+            rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
                 OPNAME, val_type_name(a->type), val_type_name(b->type)); \
             vm_push(make_num(0)); \
         } \
@@ -2345,7 +2357,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 vm_push(make_num(r));
             }
         } else {
-            runtime_error(current_line, "cannot apply '/' to %s and %s",
+            rt_error(EK_TYPE, current_line, "cannot apply '/' to %s and %s",
                 val_type_name(a->type), val_type_name(b->type));
             vm_push(make_num(0));
         }
@@ -2362,7 +2374,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             vm_push(make_num(r));
         } else {
             if (!(a->type == VAL_NUM && b->type == VAL_NUM))
-                runtime_error(current_line, "cannot apply '%%' to %s and %s",
+                rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
                     val_type_name(a->type), val_type_name(b->type));
             vm_push(make_num(0));
         }
@@ -2402,7 +2414,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         { \
             const char *_tna = slot_type_name(_as), *_tnb = slot_type_name(_bs); \
             slot_decref(_as); slot_decref(_bs); \
-            runtime_error(current_line, "cannot apply '%s' to %s and %s", \
+            rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
                 OPNAME, _tna, _tnb); \
         } \
         g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
@@ -2433,7 +2445,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             g_vm.stack[g_vm.sp - 1] = slot_from_num(-d);
             DISPATCH();
         }
-        runtime_error(current_line, "cannot negate non-numeric");
+        rt_error(EK_TYPE, current_line, "cannot negate non-numeric");
         slot_decref(s);
         g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
         DISPATCH();
@@ -2463,7 +2475,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         {
             const char *_tn = slot_type_name(s);
             slot_decref(s);
-            runtime_error(current_line, "cannot apply '~' to %s", _tn);
+            rt_error(EK_TYPE, current_line, "cannot apply '~' to %s", _tn);
         }
         g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
         DISPATCH();
@@ -2561,7 +2573,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         { \
             const char *_tna = slot_type_name(_as), *_tnb = slot_type_name(_bs); \
             slot_decref(_as); slot_decref(_bs); \
-            runtime_error(current_line, "cannot compare %s and %s with '%s'", \
+            rt_error(EK_TYPE, current_line, "cannot compare %s and %s with '%s'", \
                 _tna, _tnb, OPNAME); \
         } \
         g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
@@ -2634,7 +2646,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
              * a bad or missing local_names table. Loud and catchable.
              * NOTE: the GET side above deliberately stays a silent null —
              * that path is the missing-parameter-reads-null semantics. */
-            runtime_error(current_line,
+            rt_error(EK_INTERNAL, current_line,
                           "SET_LOCAL slot %d out of range (env has %d slots)",
                           (int)slot, e->count);
         }
@@ -2664,7 +2676,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         int slot_idx, depth;
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (!target) {
-            runtime_error(current_line, "undefined variable '%s'", name);
+            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -2825,7 +2837,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
          * deref — the same check the JIT emits at native back-edges. */
         if (__builtin_expect(*g_vm_abort_flag, 0)) {
             *g_vm_abort_flag = 0;
-            runtime_error(current_line, "aborted");
+            rt_error(EK_INTERRUPT, current_line, "aborted");
             DISPATCH();
         }
         /* Hotness signal: this is the back-edge of every while/for body.
@@ -3166,7 +3178,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             /* Save current frame and push new one */
             frame->ip = ip;
             if (g_vm.frame_count >= VM_FRAMES_MAX) {
-                runtime_error(current_line, "call stack overflow");
+                rt_error(EK_LIMIT, current_line, "call stack overflow");
                 env_decref(call_env);
                 vm_push(make_null());
                 DISPATCH();
@@ -3255,7 +3267,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         }
 
         /* Not callable */
-        runtime_error(current_line, "cannot call %s", val_type_name(fn_val->type));
+        rt_error(EK_TYPE, current_line, "cannot call %s", val_type_name(fn_val->type));
         for (int i = 0; i < argc; i++) val_decref(vm_pop());
         val_decref(vm_pop());
         vm_push(make_null());
@@ -3357,7 +3369,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             Value *k = STK_AS_VAL(base + i * 2);
             Value *v = STK_AS_VAL(base + i * 2 + 1);
             if (k->type != VAL_STR) {
-                runtime_error(current_line, "dict key must be a string, got %s", val_type_name(k->type));
+                rt_error(EK_TYPE, current_line, "dict key must be a string, got %s", val_type_name(k->type));
                 continue;
             }
             dict_set(dict, k->data.str, v);
@@ -3399,8 +3411,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                         vm_push(r);
                     }
                 } else {
-                    if (!_ok) runtime_error(current_line, "index must be an integer, got %g", idx_s.d);
-                    else runtime_error(current_line, "index %d out of range (list length %d)",
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                                   i, target->data.list.count);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_null());
@@ -3413,8 +3425,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     slot_decref(tgt_s);
                     vm_push_slot(slot_from_num(v));
                 } else {
-                    if (!_ok) runtime_error(current_line, "index must be an integer, got %g", idx_s.d);
-                    else runtime_error(current_line, "buffer index %d out of range (length %d)",
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_null());
@@ -3431,12 +3443,12 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(idx->data.num, &i)) {
-                runtime_error(current_line, "index must be an integer, got %g", idx->data.num);
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 result = target->data.list.items[i];
                 val_incref(result);
             } else {
-                runtime_error(current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+                rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
             }
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             Value *v = dict_get(target, idx->data.str);
@@ -3444,23 +3456,23 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         } else if (target->type == VAL_STR && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(idx->data.num, &i)) {
-                runtime_error(current_line, "index must be an integer, got %g", idx->data.num);
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             } else if (vm_index_resolve(&i, (int)strlen(target->data.str))) {
                 char buf[2] = { target->data.str[i], 0 };
                 result = make_str(buf);
             } else {
-                runtime_error(current_line, "string index %d out of range (length %d)", i, (int)strlen(target->data.str));
+                rt_error(EK_INDEX, current_line, "string index %d out of range (length %d)", i, (int)strlen(target->data.str));
             }
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(idx->data.num, &i))
-                runtime_error(current_line, "index must be an integer, got %g", idx->data.num);
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             else if (vm_index_resolve(&i, target->data.buffer.count))
                 result = make_num(target->data.buffer.data[i]);
             else
-                runtime_error(current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+                rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else if (target->type != VAL_NULL) {
-            runtime_error(current_line, "cannot index %s", val_type_name(target->type));
+            rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
         }
         val_decref(target); val_decref(idx);
         vm_push(result);
@@ -3480,8 +3492,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                     target->data.buffer.data[i] = val_s.d;
                 } else {
-                    if (!_ok) runtime_error(current_line, "index must be an integer, got %g", idx_s.d);
-                    else runtime_error(current_line, "buffer index %d out of range (length %d)",
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
                 }
                 g_vm.sp -= 2;  /* keep val on TOS */
@@ -3503,8 +3515,8 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                         target->data.list.items[i] = make_num(val_s.d);
                     }
                 } else {
-                    if (!_ok) runtime_error(current_line, "index must be an integer, got %g", idx_s.d);
-                    else runtime_error(current_line, "index %d out of range (list length %d)",
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                                   i, target->data.list.count);
                 }
                 g_vm.sp -= 2;
@@ -3518,27 +3530,27 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(idx->data.num, &i)) {
-                runtime_error(current_line, "index must be an integer, got %g", idx->data.num);
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 val_incref(val);
                 val_decref(target->data.list.items[i]);
                 target->data.list.items[i] = val;
             } else {
-                runtime_error(current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+                rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
             }
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(idx->data.num, &i)) {
-                runtime_error(current_line, "index must be an integer, got %g", idx->data.num);
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
-                runtime_error(current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+                rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
             } else if (val->type == VAL_NUM) {
                 target->data.buffer.data[i] = val->data.num;
             }
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             dict_set(target, idx->data.str, val);
         } else if (target->type != VAL_NULL) {
-            runtime_error(current_line, "cannot index %s for assignment", val_type_name(target->type));
+            rt_error(EK_TYPE, current_line, "cannot index %s for assignment", val_type_name(target->type));
         }
         val_decref(target); val_decref(idx);
         val_incref(val);
@@ -3568,7 +3580,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 DISPATCH();
             }
         } else if (target->type != VAL_NULL) {
-            runtime_error(current_line, "cannot access field '%s' on %s",
+            rt_error(EK_TYPE, current_line, "cannot access field '%s' on %s",
                 key, val_type_name(target->type));
         }
         val_decref(target);
@@ -3602,7 +3614,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (target->type == VAL_DICT)
             dict_set_cached(target, key, h, val);
         else if (target->type != VAL_NULL)
-            runtime_error(current_line, "cannot set field '%s' on %s",
+            rt_error(EK_TYPE, current_line, "cannot set field '%s' on %s",
                 key, val_type_name(target->type));
         val_decref(target);
         val_incref(val);
@@ -3638,7 +3650,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             }
         } else if (target && target->type != VAL_NULL) {
             const char *key = chunk->const_interns[name_idx];
-            runtime_error(current_line, "cannot access field '%s' on %s",
+            rt_error(EK_TYPE, current_line, "cannot access field '%s' on %s",
                 key, val_type_name(target->type));
             vm_push_slot(slot_null());
         } else {
@@ -3666,7 +3678,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             dict_set_cached(target, key, h, val);
         } else if (target && target->type != VAL_NULL) {
             const char *key = chunk->const_interns[name_idx];
-            runtime_error(current_line, "cannot set field '%s' on %s",
+            rt_error(EK_TYPE, current_line, "cannot set field '%s' on %s",
                 key, val_type_name(target->type));
         }
         DISPATCH();
@@ -3687,7 +3699,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 if (i < target->data.buffer.count) {
                     vm_push_slot(slot_from_num(target->data.buffer.data[i]));
                 } else {
-                    runtime_error(current_line, "buffer index %d out of range (length %d)",
+                    rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
                     vm_push_slot(slot_null());
                 }
@@ -3704,7 +3716,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                         vm_push(item);
                     }
                 } else {
-                    runtime_error(current_line, "index %d out of range (list length %d)",
+                    rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                                   i, target->data.list.count);
                     vm_push_slot(slot_null());
                 }
@@ -3716,14 +3728,14 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     char buf[2] = { target->data.str[i], 0 };
                     vm_push(make_str(buf));
                 } else {
-                    runtime_error(current_line, "string index %d out of range (length %d)",
+                    rt_error(EK_INDEX, current_line, "string index %d out of range (length %d)",
                                   i, len);
                     vm_push_slot(slot_null());
                 }
                 DISPATCH();
             }
             if (target->type != VAL_NULL) {
-                runtime_error(current_line, "cannot index %s", val_type_name(target->type));
+                rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
             }
         }
         vm_push_slot(slot_null());
@@ -3760,15 +3772,15 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     }
                 } else if (dict && dict->type != VAL_NULL) {
                     const char *key = chunk->const_interns[name_idx];
-                    runtime_error(current_line, "cannot access field '%s' on %s",
+                    rt_error(EK_TYPE, current_line, "cannot access field '%s' on %s",
                         key, val_type_name(dict->type));
                 }
             } else {
-                runtime_error(current_line, "index %d out of range (list length %d)",
+                rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
             }
         } else if (target && target->type != VAL_NULL) {
-            runtime_error(current_line, "cannot index %s", val_type_name(target->type));
+            rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
         }
         vm_push_slot(slot_null());
         DISPATCH();
@@ -3802,15 +3814,15 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                     dict_set_cached(dict, key, h, val);
                 } else if (dict && dict->type != VAL_NULL) {
                     const char *key = chunk->const_interns[name_idx];
-                    runtime_error(current_line, "cannot assign field '%s' on %s",
+                    rt_error(EK_TYPE, current_line, "cannot assign field '%s' on %s",
                         key, val_type_name(dict->type));
                 }
             } else {
-                runtime_error(current_line, "index %d out of range (list length %d)",
+                rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
             }
         } else if (target && target->type != VAL_NULL) {
-            runtime_error(current_line, "cannot index %s for assignment",
+            rt_error(EK_TYPE, current_line, "cannot index %s for assignment",
                           val_type_name(target->type));
         }
         DISPATCH();
@@ -3821,7 +3833,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     CASE(ITER_SETUP): {
         Value *iterable = vm_pop();
         if (iterable && iterable->type != VAL_LIST && iterable->type != VAL_BUFFER) {
-            runtime_error(current_line, "'for' requires a list or buffer, got %s",
+            rt_error(EK_TYPE, current_line, "'for' requires a list or buffer, got %s",
                 val_type_name(iterable->type));
         }
         Value *state = make_iter_state(iterable);
@@ -4009,7 +4021,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            runtime_error(current_line, "undefined variable '%s'", name);
+            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4048,7 +4060,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            runtime_error(current_line, "undefined variable '%s'", name);
+            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4263,7 +4275,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         EigsSlot tgt_s = g_vm.stack[g_vm.sp - 1];
         g_vm.sp -= 1;
         if (!slot_is_ptr(tgt_s) || slot_as_ptr(tgt_s)->type != VAL_LIST) {
-            runtime_error(current_line,
+            rt_error(EK_TYPE, current_line,
                 "destructuring requires a list, got %s",
                 slot_is_ptr(tgt_s) ? val_type_name(slot_as_ptr(tgt_s)->type) : "number");
             slot_decref(tgt_s);
@@ -4272,7 +4284,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         }
         Value *lst = slot_as_ptr(tgt_s);
         if (lst->data.list.count != n) {
-            runtime_error(current_line,
+            rt_error(EK_VALUE, current_line,
                 "destructuring expected list of length %d, got %d",
                 n, lst->data.list.count);
             slot_decref(tgt_s);
@@ -4303,7 +4315,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         g_vm.sp -= 3;
 
         if (!slot_is_ptr(tgt_s)) {
-            runtime_error(g_vm.current_line, "cannot slice number");
+            rt_error(EK_TYPE, g_vm.current_line, "cannot slice number");
             slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
             vm_push_slot(slot_null());
             DISPATCH();
@@ -4315,7 +4327,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             case VAL_STR:    len = (int)strlen(target->data.str); break;
             case VAL_BUFFER: len = target->data.buffer.count; break;
             default:
-                runtime_error(g_vm.current_line, "cannot slice %s",
+                rt_error(EK_TYPE, g_vm.current_line, "cannot slice %s",
                               val_type_name(target->type));
                 slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
                 vm_push_slot(slot_null());
@@ -4332,7 +4344,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             do {                                                              \
                 if (slot_is_num(slot)) {                                      \
                     if (!vm_index_is_int(slot.d, &(outvar))) {                \
-                        runtime_error(g_vm.current_line,                      \
+                        rt_error(EK_VALUE, g_vm.current_line,                      \
                             "slice bound must be an integer, got %g", slot.d);\
                         bound_err = 1;                                        \
                     }                                                         \
@@ -4342,13 +4354,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                         (outvar) = (defval);                                  \
                     } else if (bv->type == VAL_NUM) {                         \
                         if (!vm_index_is_int(bv->data.num, &(outvar))) {      \
-                            runtime_error(g_vm.current_line,                  \
+                            rt_error(EK_VALUE, g_vm.current_line,                  \
                                 "slice bound must be an integer, got %g",     \
                                 bv->data.num);                                \
                             bound_err = 1;                                    \
                         }                                                     \
                     } else {                                                  \
-                        runtime_error(g_vm.current_line,                      \
+                        rt_error(EK_VALUE, g_vm.current_line,                      \
                             "slice bound must be an integer or null, got %s", \
                             val_type_name(bv->type));                         \
                         bound_err = 1;                                        \
@@ -4371,7 +4383,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (start < 0) start += len;
         if (end   < 0) end   += len;
         if (start < 0 || start > len || end < 0 || end > len || start > end) {
-            runtime_error(g_vm.current_line,
+            rt_error(EK_INDEX, g_vm.current_line,
                 "slice %d:%d out of range (length %d)",
                 orig_start, orig_end, len);
             slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
@@ -4460,7 +4472,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            runtime_error(current_line, "undefined variable '%s'", name);
+            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4582,7 +4594,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         if (!source) {
             /* Raise with the real cause: there is no filesystem here,
              * and the registered provider (if any) had no entry. */
-            runtime_error(current_line,
+            rt_error(EK_IO, current_line,
                 "import: module '%s' not found — no filesystem in the "
                 "freestanding profile (no source-provider entry)", name);
             vm_push(make_null());
@@ -4614,7 +4626,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
                 snprintf(request, sizeof(request), "%.1024s.eigs", name);
                 if (!resolve_eigenscript_file_from(resolve_base, request,
                                                     path_buf, sizeof(path_buf))) {
-                    runtime_error(current_line, "import: module '%s' not found "
+                    rt_error(EK_IO, current_line, "import: module '%s' not found "
                                   "(tried lib/%s.eigs and %s.eigs)", name, name, name);
                     vm_push(make_null());
                     DISPATCH();
@@ -4640,7 +4652,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             long src_size = 0;
             source = read_file_util(path_buf, &src_size);
             if (!source) {
-                runtime_error(current_line, "import: cannot read '%s'", name);
+                rt_error(EK_IO, current_line, "import: cannot read '%s'", name);
                 vm_push(make_null());
                 DISPATCH();
             }
@@ -4658,7 +4670,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             free_tokenlist(&tl);
             free(source);
             env_decref(mod_env);
-            runtime_error(current_line, "import: parse errors in '%s'", name);
+            rt_error(EK_PARSE, current_line, "import: parse errors in '%s'", name);
             vm_push(make_null());
             DISPATCH();
         }
@@ -4700,7 +4712,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             free_tokenlist(&tl);
             free(source);
             env_decref(mod_env);
-            runtime_error(current_line, "import: compile errors in '%s'", name);
+            rt_error(EK_PARSE, current_line, "import: compile errors in '%s'", name);
             vm_push(make_null());
             DISPATCH();
         }
@@ -4794,7 +4806,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
             key_d = slot_as_ptr(key_s)->data.num;
         } else {
             slot_decref(arg_s); slot_decref(key_s); slot_decref(table_s);
-            runtime_error(current_line, "dispatch: key must be a number");
+            rt_error(EK_TYPE, current_line, "dispatch: key must be a number");
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4802,7 +4814,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
         if (!slot_is_ptr(table_s)) {
             slot_decref(arg_s); slot_decref(table_s);
-            runtime_error(current_line, "dispatch: table must be a list");
+            rt_error(EK_TYPE, current_line, "dispatch: table must be a list");
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4811,7 +4823,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         int key;
         if (!vm_index_is_int(key_d, &key)) {
             slot_decref(arg_s); slot_decref(table_s);
-            runtime_error(current_line,
+            rt_error(EK_VALUE, current_line,
                 "dispatch key must be an integer, got %g", key_d);
             vm_push_slot(slot_null());
             DISPATCH();
@@ -4819,7 +4831,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
         if (table->type != VAL_LIST) {
             slot_decref(arg_s); slot_decref(table_s);
-            runtime_error(current_line, "dispatch: table must be a list");
+            rt_error(EK_TYPE, current_line, "dispatch: table must be a list");
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4908,7 +4920,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
             frame->ip = ip;
             if (g_vm.frame_count >= VM_FRAMES_MAX) {
-                runtime_error(current_line, "call stack overflow");
+                rt_error(EK_LIMIT, current_line, "call stack overflow");
                 env_decref(call_env);
                 vm_push(make_null());
                 DISPATCH();
@@ -4977,7 +4989,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         /* Anything else in-range is a populated-with-non-function bug in
          * the program — raise like builtin_dispatch (#353). */
         slot_decref(arg_s); slot_decref(table_s);
-        runtime_error(current_line, "dispatch: slot %d is not a function", key);
+        rt_error(EK_TYPE, current_line, "dispatch: slot %d is not a function", key);
         vm_push_slot(slot_null());
         DISPATCH();
     }
@@ -4989,7 +5001,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
 #ifndef __GNUC__
     default:
-        runtime_error(current_line, "unknown opcode %d", ip[-1]);
+        rt_error(EK_INTERNAL, current_line, "unknown opcode %d", ip[-1]);
         vm_push(make_null());
         break;
     }} /* end switch / for */

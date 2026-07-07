@@ -5,6 +5,22 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Structured runtime errors (#406, BREAKING)** — `catch` now binds a
+  `{kind, message, line}` dict for built-in runtime errors instead of
+  the flat `"Error line N: ..."` string: `kind` from a closed,
+  SPEC-enumerated vocabulary (`undefined_name`, `type_mismatch`,
+  `value`, `index_range`, `parse`, `io`, `limit`, `sandbox`,
+  `interrupt`, `assert`, `internal`), `message` without the line frame,
+  `line` 1-based. Discriminating error classes no longer means string
+  matching. User-thrown values bind untouched, as before; uncaught
+  stderr output is unchanged. Also: builtin raise sites now stamp the
+  live source line (previously `Error line 0:`), `assert` failures are
+  ordinary catchable errors (kind `assert`; caught asserts no longer
+  print to stderr), `sandbox_run`'s result carries `"error": {kind,
+  message, line}` when `ok` is 0, and the embed API gains
+  `eigs_last_error_kind()` / `eigs_last_error_line()`. The kind table
+  lives in docs/DIAGNOSTICS.md; SPEC.md Error handling rewritten with
+  executable examples (suite EM26–EM30).
 - **Parse errors print a source excerpt with a caret under the offending
   column (#407, increment two)** — for the column-carrying errors
   (`expected X, got Y`, one-statement-per-line), in the script runner,

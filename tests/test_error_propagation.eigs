@@ -80,7 +80,7 @@ try:
     bad_index of null
 catch e:
     caught_rt is e
-assert of [contains of [caught_rt, "out of range"], "EP7 runtime error propagates through call"]
+assert of [contains of [caught_rt.message, "out of range"], "EP7 runtime error propagates through call"]
 
 # --- Try/catch in loop — each iteration independent ---
 results is []

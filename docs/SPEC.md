@@ -520,19 +520,21 @@ print of (a + b + c)
 6
 ```
 
-Out-of-range indexing is a runtime error (catchable with `try`):
+Out-of-range indexing is a runtime error (catchable with `try`; the
+caught value is a `{kind, message, line}` dict — see
+[Error handling](#error-handling)):
 
 ```eigenscript
 xs is [1, 2]
 try:
     v is xs[10]
 catch e:
-    print of "caught:"
-    print of e
+    print of e.kind
+    print of e.message
 ```
 ```output
-caught:
-Error line 3: index 10 out of range (list length 2)
+index_range
+index 10 out of range (list length 2)
 ```
 
 ## Dictionaries
@@ -802,8 +804,12 @@ expressions match too
 
 ## Error handling
 
-`try:` / `catch name:` captures runtime errors; the caught message is
-bound as a string. `throw of value` raises a user error. An *uncaught*
+`try:` / `catch name:` captures runtime errors. A **built-in** runtime
+error binds a small dict `{kind, message, line}`: `kind` is drawn from
+a closed vocabulary (below), `message` is the error text without the
+`Error line N:` frame, `line` is the 1-based source line. `throw of
+value` raises a user error and the catch variable binds the thrown
+value itself, unchanged — a thrown string stays a string. An *uncaught*
 runtime error stops the program with a nonzero exit; warnings (like
 division by zero) do not.
 
@@ -816,19 +822,62 @@ catch e:
 try:
     x is undefined_name
 catch e:
-    print of e
+    print of e.kind
+    print of e.message
+    print of e.line
 
 print of "execution continues"
 ```
 ```output
 caught: custom failure
-Error line 7: undefined variable 'undefined_name'
+undefined_name
+undefined variable 'undefined_name'
+7
 execution continues
+```
+
+The kind set is **closed** — the same design instinct as the closed
+trajectory vocabulary. Every built-in runtime error carries exactly one
+of:
+
+| kind | raised by |
+|------|-----------|
+| `undefined_name` | reading a name with no binding |
+| `type_mismatch` | an operation or builtin argument of the wrong type |
+| `value` | right type, unacceptable value (fractional index, `chr of 0`) |
+| `index_range` | index or slice outside the target's bounds |
+| `parse` | runtime-surfaced parse/compile failure (`eval`, `import`, `load_file`) |
+| `io` | the outside world failed: files, stores, sockets, threads |
+| `limit` | an engine resource cap: stack overflow, size caps |
+| `sandbox` | sandbox policy denial or budget exhaustion |
+| `interrupt` | host-requested abort |
+| `assert` | `assert` builtin failure |
+| `internal` | a VM invariant broke (report it) |
+
+Discriminate on `kind`, not on message text — messages are wording,
+kinds are contract:
+
+```eigenscript
+xs is [1, 2, 3]
+define get(i) as:
+    try:
+        return xs[i]
+    catch e:
+        if e.kind == "index_range":
+            return null
+        throw of e
+
+print of (get of 1)
+print of (get of 99)
+```
+```output
+2
+null
 ```
 
 `throw` preserves the thrown *value*: throw a dict (or list) and the
 catch variable binds it unchanged, so errors can carry data and be
-matched on fields. Runtime errors and thrown strings bind as strings.
+matched on fields. Thrown strings bind as strings.
 
 ```eigenscript
 define validate(age) as:

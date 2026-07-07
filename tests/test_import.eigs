@@ -64,7 +64,7 @@ try:
     import surely_does_not_exist_zz
 catch e:
     import_err is e
-assert_true of [contains of [import_err, "not found"], "missing module raises"]
-assert_true of [contains of [import_err, "surely_does_not_exist_zz.eigs"], "error names tried path"]
+assert_true of [contains of [import_err.message, "not found"], "missing module raises"]
+assert_true of [contains of [import_err.message, "surely_does_not_exist_zz.eigs"], "error names tried path"]
 
 test_summary of null

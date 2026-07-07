@@ -81,7 +81,7 @@ if (contains of [conn, "connected"]) == 1:
         c16a is 1
         m16a is e
     assert of [c16a == 1, "DB16 17-param query raises"]
-    assert of [(contains of [m16a, "too many parameters"]) == 1, "DB16 message names the cap"]
+    assert of [(contains of [m16a.message, "too many parameters"]) == 1, "DB16 message names the cap"]
 
     qbad is ["SELECT $1::text", [1, 2]]
     c17a is 0
@@ -92,7 +92,7 @@ if (contains of [conn, "connected"]) == 1:
         c17a is 1
         m17a is e
     assert of [c17a == 1, "DB17 list param raises"]
-    assert of [(contains of [m17a, "not a string or number"]) == 1, "DB17 message names the type rule"]
+    assert of [(contains of [m17a.message, "not a string or number"]) == 1, "DB17 message names the type rule"]
 
     db_execute of "DROP TABLE eigs_ci_smoke"
 else:

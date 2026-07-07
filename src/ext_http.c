@@ -138,11 +138,11 @@ Value* builtin_http_route(Value *arg) {
     /* #356: registration failures must raise — the return value is never
      * checked, so a silent make_null() means the route just never exists. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        runtime_error(0, "http_route requires [method, path, handler...] (3+ elements)");
+        rt_error(EK_TYPE, 0, "http_route requires [method, path, handler...] (3+ elements)");
         return make_null();
     }
     if (g_server.route_count >= MAX_ROUTES) {
-        runtime_error(0, "http_route: route table full (max %d routes)", MAX_ROUTES);
+        rt_error(EK_LIMIT, 0, "http_route: route table full (max %d routes)", MAX_ROUTES);
         return make_null();
     }
 

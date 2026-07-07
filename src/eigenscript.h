@@ -546,6 +546,13 @@ struct EigsThread {
     char         error_msg[4096];
     char         first_error_msg[256];
     struct Value *error_value;      /* thrown payload for structured catch */
+    /* #406: structured runtime errors. Kind (ErrKind), 1-based line, and
+     * the bare message (no "Error line N:" frame) of the live error —
+     * catch binds {kind, message, line} from these when error_value is
+     * NULL (i.e. for built-in errors; thrown values bind untouched). */
+    int          error_kind;
+    int          error_line;
+    char         error_raw[3900];
     /* Observer execution state — current observer and "unobserved {}"
      * scope depth (incremented on entry, decremented on exit; non-zero
      * suppresses assign-count bumps so observer interrogatives don't
@@ -639,6 +646,9 @@ extern __thread EigsThread *eigs_current;
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
+#define g_error_kind        (eigs_current->error_kind)
+#define g_error_line        (eigs_current->error_line)
+#define g_error_raw         (eigs_current->error_raw)
 #define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
@@ -952,8 +962,32 @@ void eigenscript_set_args(int argc, char **argv);
  * when uncaught. Declared here so extension TUs (ext_store, etc.) can route
  * argument/operation failures through the same strict channel as the VM. */
 const char* val_type_name(ValType t);
-void runtime_error(int line, const char *fmt, ...)
-    __attribute__((format(printf, 2, 3)));
+/* #406: the closed error-kind vocabulary. Every built-in runtime error
+ * carries exactly one of these; `catch` binds it as the dict's "kind"
+ * string (err_kind_name). The set is CLOSED by design — the same
+ * instinct as the closed trajectory vocabulary. Extend only with a SPEC
+ * + DIAGNOSTICS.md entry in the same PR. EK_USER marks `throw` (the
+ * thrown value itself binds; the kind shows up only in host/embed
+ * introspection). EK_INTERNAL is deliberately 0: a raise site that
+ * somehow never classified reads as the "runtime invariant broke"
+ * bucket, which is the loud interpretation. */
+typedef enum {
+    EK_INTERNAL = 0,      /* VM invariant broke (unknown opcode, slot table) */
+    EK_UNDEFINED_NAME,    /* no binding for a name */
+    EK_TYPE,              /* operation/argument received the wrong type */
+    EK_VALUE,             /* right type, unacceptable value */
+    EK_INDEX,             /* index or slice out of range */
+    EK_PARSE,             /* runtime-surfaced parse/compile failure (eval, import, load_file) */
+    EK_IO,                /* the outside world failed: files, stores, sockets, threads */
+    EK_LIMIT,             /* engine resource cap: stack overflow, size caps, table full */
+    EK_SANDBOX,           /* sandbox policy denial or budget exhaustion */
+    EK_INTERRUPT,         /* host-requested abort (eigs_abort) */
+    EK_ASSERT,            /* assert builtin failure */
+    EK_USER,              /* `throw` — catch binds the thrown value, not a dict */
+} ErrKind;
+const char* err_kind_name(ErrKind k);
+void rt_error(ErrKind kind, int line, const char *fmt, ...)
+    __attribute__((format(printf, 3, 4)));
 char* read_file_util(const char *path, long *out_size);
 int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap);
 /* Same chain, but the "script-relative" and "../" steps anchor at
@@ -973,6 +1007,7 @@ char* eigs_json_encode(Value *v);
  * above). The declarations below cover the not-yet-migrated globals. */
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
+int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 void eigs_record_first_error(int line, const char *msg);
 void eigs_record_first_error_at(int line, int col, const char *msg);
 /* #407: register the compilation unit's raw source so column-carrying parse

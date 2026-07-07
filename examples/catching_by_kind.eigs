@@ -1,0 +1,33 @@
+# Structured runtime errors (#406): a built-in runtime error binds a
+# {kind, message, line} dict to the catch variable. `kind` is drawn
+# from a closed vocabulary (docs/DIAGNOSTICS.md) — discriminate on it
+# instead of substring-matching message text. Thrown values still bind
+# untouched. This example runs clean (exit 0): every error is caught.
+
+xs is [10, 20, 30]
+
+define get_or_null(i) as:
+    try:
+        return xs[i]
+    catch e:
+        if e.kind == "index_range":
+            return null
+        # anything else is unexpected here — re-raise it
+        throw of e
+
+print of (get_or_null of 1)
+print of (get_or_null of 99)
+
+# The dict carries the bare message and the failing line too:
+try:
+    print of ([1] - 1)
+catch e:
+    print of e.kind
+    print of e.message
+    print of e.line
+
+# User throws are untouched — a thrown dict binds as that dict:
+try:
+    throw of {"kind": "validation", "field": "age"}
+catch e:
+    print of e.field

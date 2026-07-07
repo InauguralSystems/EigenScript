@@ -2,7 +2,7 @@
 
 EigenScript reports errors with source line numbers and consistent
 formatting. This document defines the error contract. The behaviors
-here are enforced by the suite (`run_all_tests.sh` EM1–EM23 and
+here are enforced by the suite (`run_all_tests.sh` EM1–EM30 and
 `examples/errors/`).
 
 ## Error Categories
@@ -12,9 +12,9 @@ here are enforced by the suite (`run_all_tests.sh` EM1–EM23 and
 | Syntax error | `Syntax error line N: ...` | 1 | Tokenizer problem. Accumulates all errors, aborts before execution. |
 | Parse error | `Parse error line N: ...` | 1 | Parser problem. Accumulates all errors, aborts before execution. |
 | Runtime error (uncaught) | `Error line N: ...` + stack trace | 1 | Type mismatch, undefined variable, index out of bounds, non-callable, uncaught `throw`. Prints to stderr and **halts** — no statement after the error runs. |
-| Runtime error (caught) | bound to the `catch` variable | — | Recoverable with `try`/`catch`; execution continues in the handler. |
+| Runtime error (caught) | `{kind, message, line}` dict bound to the `catch` variable | — | Recoverable with `try`/`catch`; execution continues in the handler. `kind` is from the closed set below. |
 | Warning | `Warning line N: ...` | 0 | Recoverable issue (division by zero yields `0`). Prints to stderr, continues execution. |
-| Assertion | `ASSERT FAIL: ...` | 1 | Intentional termination via `assert`. |
+| Assertion | `Error line N: ASSERT FAIL: ...` | 1 | `assert` failure — an ordinary runtime error with kind `assert` (catchable). |
 
 Parse errors prevent execution entirely — the program never runs if
 parsing fails. Warnings allow execution to continue; **uncaught runtime
@@ -38,11 +38,41 @@ Caught errors print nothing; the handler decides.
 
 ## What `catch` binds
 
-- A **runtime error** binds its message string
-  (`"Error line 2: cannot apply '-' to list and num"`).
+- A **built-in runtime error** binds a `{kind, message, line}` dict
+  (#406): `kind` from the closed vocabulary below, `message` without
+  the `Error line N:` frame (`"cannot apply '-' to list and num"`),
+  `line` 1-based. Discriminate on `kind`, never on message text —
+  messages are wording, kinds are contract.
 - A **thrown value** binds unchanged: `throw of {"kind": "validation"}`
   gives the catch variable that dict — match on fields instead of
   substring-searching a message. Thrown strings bind as strings.
+
+## Runtime error kinds (closed set)
+
+Every built-in runtime error carries exactly one kind. The set is
+CLOSED by design — the same instinct as the closed trajectory
+vocabulary. Extending it is a SPEC + DIAGNOSTICS change, not a
+patch-release tweak. (`ErrKind` in `src/eigenscript.h`; the strings
+below are the contract.)
+
+| kind | meaning | examples |
+|------|---------|----------|
+| `undefined_name` | no binding for a name | `undefined variable 'x'` |
+| `type_mismatch` | operation/argument of the wrong type | `cannot apply '-' to list and num`, `bit_not expects a number` |
+| `value` | right type, unacceptable value | `index must be an integer, got 1.5`, `chr of 0`, invalid channel |
+| `index_range` | index/slice outside bounds | `index 10 out of range (list length 3)` |
+| `parse` | runtime-surfaced parse/compile failure | `eval: parse error in code string`, `import: parse errors in 'm'` |
+| `io` | the outside world failed | `import: cannot read 'm'`, `store_open: cannot create`, thread-create failure |
+| `limit` | engine resource cap hit | `call stack overflow`, `store_put: record too large`, route table full |
+| `sandbox` | sandbox policy denial or budget | `blocked in sandbox`, `sandbox memory budget exceeded` |
+| `interrupt` | host-requested abort (`eigs_abort`) | `aborted` |
+| `assert` | `assert` builtin failure | `ASSERT FAIL: ...` |
+| `internal` | VM invariant broke — report it | `unknown opcode`, `SET_LOCAL slot out of range` |
+
+`throw` stamps kind `user` for host/embed introspection
+(`eigs_last_error_kind`), but a catch never sees it — the thrown value
+itself binds. `sandbox_run` reports failures with the same shape: its
+result dict gains `"error": {kind, message, line}` when `ok` is 0.
 
 ## Exit Codes
 

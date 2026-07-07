@@ -38,7 +38,7 @@ catch e:
     cm is 1
     mm is e
 assert of [cm == 1, "SC01 corrupt magic rejected"]
-assert of [(contains of [mm, "invalid database file"]) == 1, "SC01 message"]
+assert of [(contains of [mm.message, "invalid database file"]) == 1, "SC01 message"]
 
 # ---- corrupt version (version != 1) ----
 hv is base_hdr of 1
@@ -52,7 +52,7 @@ catch e:
     cv is 1
     mv is e
 assert of [cv == 1, "SC02 corrupt version rejected"]
-assert of [(contains of [mv, "invalid database file"]) == 1, "SC02 message"]
+assert of [(contains of [mv.message, "invalid database file"]) == 1, "SC02 message"]
 
 # ---- corrupt page_size (4097 != 4096) ----
 hp is base_hdr of 1
@@ -66,7 +66,7 @@ catch e:
     cp is 1
     mp is e
 assert of [cp == 1, "SC03 corrupt page_size rejected"]
-assert of [(contains of [mp, "invalid database file"]) == 1, "SC03 message"]
+assert of [(contains of [mp.message, "invalid database file"]) == 1, "SC03 message"]
 
 # ---- not page-aligned (header + 10 stray bytes) ----
 ha is base_hdr of 1
@@ -83,7 +83,7 @@ catch e:
     ca is 1
     ma is e
 assert of [ca == 1, "SC04 non-page-aligned file rejected"]
-assert of [(contains of [ma, "invalid database file"]) == 1, "SC04 message"]
+assert of [(contains of [ma.message, "invalid database file"]) == 1, "SC04 message"]
 
 # ---- page_count mismatch (header claims 5, file has 1 page) ----
 hpc is base_hdr of 5
@@ -100,7 +100,7 @@ catch e:
     cpc is 1
     mpc is e
 assert of [cpc == 1, "SC05 page_count mismatch rejected"]
-assert of [(contains of [mpc, "invalid database file"]) == 1, "SC05 message"]
+assert of [(contains of [mpc.message, "invalid database file"]) == 1, "SC05 message"]
 
 # ---- store_put: record larger than a page ----
 db is store_open of "/tmp/eigs_corrupt_put.db"
@@ -115,7 +115,7 @@ catch e:
     cput is 1
     mput is e
 assert of [cput == 1, "SC06 oversized record rejected"]
-assert of [(contains of [mput, "exceeds page size"]) == 1, "SC06 message"]
+assert of [(contains of [mput.message, "exceeds page size"]) == 1, "SC06 message"]
 store_close of db
 
 print of "All store_corruption tests passed"

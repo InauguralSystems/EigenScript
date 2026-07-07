@@ -29,7 +29,7 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
      * error confusingly at exec time — or worse, not at all) or coercing
      * non-scalar params to "" (the #316 class). */
     if (*nparams > DB_MAX_PARAMS) {
-        runtime_error(0, "db: too many parameters (%d, max %d)",
+        rt_error(EK_LIMIT, 0, "db: too many parameters (%d, max %d)",
                       *nparams, DB_MAX_PARAMS);
         return 0;
     }
@@ -41,7 +41,7 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
             snprintf(numbuf[i], 64, "%g", v->data.num);
             params[i] = numbuf[i];
         } else {
-            runtime_error(0, "db: parameter %d is not a string or number (got %s)",
+            rt_error(EK_TYPE, 0, "db: parameter %d is not a string or number (got %s)",
                           i + 1, v ? val_type_name(v->type) : "null");
             return 0;
         }

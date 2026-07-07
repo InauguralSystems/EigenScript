@@ -635,7 +635,7 @@ static void store_free(Store *store) {
 /* store_open(path) -> handle dict */
 static Value* builtin_store_open(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
-        runtime_error(0, "store_open requires a string path\n");
+        rt_error(EK_TYPE, 0, "store_open requires a string path\n");
         return make_null();
     }
     const char *path = arg->data.str;
@@ -649,13 +649,13 @@ static Value* builtin_store_open(Value *arg) {
         /* Existing file */
         store->fp = fp;
         if (store_read_header(store) != 0) {
-            runtime_error(0, "store_open: invalid database file '%s'\n", path);
+            rt_error(EK_IO, 0, "store_open: invalid database file '%s'\n", path);
             fclose(fp);
             store_free(store);
             return make_null();
         }
         if (store_load_catalog(store) != 0) {
-            runtime_error(0, "store_open: corrupt catalog in '%s'\n", path);
+            rt_error(EK_IO, 0, "store_open: corrupt catalog in '%s'\n", path);
             fclose(fp);
             store_free(store);
             return make_null();
@@ -664,7 +664,7 @@ static Value* builtin_store_open(Value *arg) {
         /* Create new file */
         fp = xfopen_write(path, "w+b");
         if (!fp) {
-            runtime_error(0, "store_open: cannot create '%s'\n", path);
+            rt_error(EK_IO, 0, "store_open: cannot create '%s'\n", path);
             store_free(store);
             return make_null();
         }
@@ -704,7 +704,7 @@ static Value* builtin_store_open(Value *arg) {
 static Value* builtin_store_close(Value *arg) {
     Store *store = get_store(arg);
     if (!store) {
-        runtime_error(0, "store_close requires a store handle\n");
+        rt_error(EK_TYPE, 0, "store_close requires a store handle\n");
         return make_null();
     }
     /* Release handle BEFORE freeing memory to prevent use-after-free
@@ -726,18 +726,18 @@ static Value* builtin_store_close(Value *arg) {
 /* store_put([handle, collection, record]) -> key string */
 static Value* builtin_store_put(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        runtime_error(0, "store_put requires [handle, collection, record]\n");
+        rt_error(EK_TYPE, 0, "store_put requires [handle, collection, record]\n");
         return make_null();
     }
     Store *store = get_store(arg->data.list.items[0]);
     Value *col_val = arg->data.list.items[1];
     Value *record = arg->data.list.items[2];
     if (!store || !col_val || col_val->type != VAL_STR) {
-        runtime_error(0, "store_put: invalid handle or collection\n");
+        rt_error(EK_VALUE, 0, "store_put: invalid handle or collection\n");
         return make_null();
     }
     if (!record || record->type != VAL_DICT) {
-        runtime_error(0, "store_put: record must be a dict\n");
+        rt_error(EK_TYPE, 0, "store_put: record must be a dict\n");
         return make_null();
     }
     const char *collection = col_val->data.str;
@@ -793,14 +793,14 @@ static Value* builtin_store_put(Value *arg) {
     size_t key_len = strlen(key_buf);
 
     if (key_len > 0xFFFF || json_len > 0xFFFFFFFF) {
-        runtime_error(0, "store_put: record too large\n");
+        rt_error(EK_LIMIT, 0, "store_put: record too large\n");
         free(json);
         return make_null();
     }
 
     size_t record_size = 2 + key_len + 4 + json_len;
     if (record_size > STORE_PAGE_DATA_SIZE) {
-        runtime_error(0, "store_put: record exceeds page size\n");
+        rt_error(EK_LIMIT, 0, "store_put: record exceeds page size\n");
         free(json);
         return make_null();
     }
@@ -873,7 +873,7 @@ static Value* builtin_store_put(Value *arg) {
 /* store_get([handle, collection, key]) -> record dict or null */
 static Value* builtin_store_get(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        runtime_error(0, "store_get requires [handle, collection, key]\n");
+        rt_error(EK_TYPE, 0, "store_get requires [handle, collection, key]\n");
         return make_null();
     }
     Store *store = get_store(arg->data.list.items[0]);
@@ -929,7 +929,7 @@ static Value* builtin_store_get(Value *arg) {
 /* store_delete([handle, collection, key]) -> 1 or 0 */
 static Value* builtin_store_delete(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        runtime_error(0, "store_delete requires [handle, collection, key]\n");
+        rt_error(EK_TYPE, 0, "store_delete requires [handle, collection, key]\n");
         return make_num(0);
     }
     Store *store = get_store(arg->data.list.items[0]);
@@ -989,7 +989,7 @@ static Value* builtin_store_delete(Value *arg) {
 /* store_query([handle, collection]) -> list of all records */
 static Value* builtin_store_query(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        runtime_error(0, "store_query requires [handle, collection]\n");
+        rt_error(EK_TYPE, 0, "store_query requires [handle, collection]\n");
         return make_list(0);
     }
     Store *store = get_store(arg->data.list.items[0]);
@@ -1031,7 +1031,7 @@ static Value* builtin_store_query(Value *arg) {
 /* store_count([handle, collection]) -> number */
 static Value* builtin_store_count(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        runtime_error(0, "store_count requires [handle, collection]\n");
+        rt_error(EK_TYPE, 0, "store_count requires [handle, collection]\n");
         return make_num(0);
     }
     Store *store = get_store(arg->data.list.items[0]);
@@ -1066,7 +1066,7 @@ static Value* builtin_store_count(Value *arg) {
 /* store_update([handle, collection, key, record]) -> 1 or 0 */
 static Value* builtin_store_update(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
-        runtime_error(0, "store_update requires [handle, collection, key, record]\n");
+        rt_error(EK_TYPE, 0, "store_update requires [handle, collection, key, record]\n");
         return make_num(0);
     }
     Value *handle = arg->data.list.items[0];
@@ -1116,7 +1116,7 @@ static Value* builtin_store_update(Value *arg) {
 static Value* builtin_store_collections(Value *arg) {
     Store *store = get_store(arg);
     if (!store) {
-        runtime_error(0, "store_collections requires a store handle\n");
+        rt_error(EK_TYPE, 0, "store_collections requires a store handle\n");
         return make_list(0);
     }
     Value *list = make_list(store->catalog->data.dict.count);
@@ -1129,7 +1129,7 @@ static Value* builtin_store_collections(Value *arg) {
 /* store_drop([handle, collection]) -> 1 or 0 */
 static Value* builtin_store_drop(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        runtime_error(0, "store_drop requires [handle, collection]\n");
+        rt_error(EK_TYPE, 0, "store_drop requires [handle, collection]\n");
         return make_num(0);
     }
     Store *store = get_store(arg->data.list.items[0]);

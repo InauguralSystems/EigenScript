@@ -72,7 +72,27 @@ void eigs_clear_error_value(void) {
  * Safe to call when no VM is active (it no-ops). */
 void vm_print_stack_trace(FILE *out);
 
-void runtime_error(int line, const char *fmt, ...) {
+/* #406: kind → the string `catch` sees in the bound dict's "kind" field.
+ * Table order tracks the ErrKind enum. */
+const char* err_kind_name(ErrKind k) {
+    switch (k) {
+        case EK_INTERNAL:       return "internal";
+        case EK_UNDEFINED_NAME: return "undefined_name";
+        case EK_TYPE:           return "type_mismatch";
+        case EK_VALUE:          return "value";
+        case EK_INDEX:          return "index_range";
+        case EK_PARSE:          return "parse";
+        case EK_IO:             return "io";
+        case EK_LIMIT:          return "limit";
+        case EK_SANDBOX:        return "sandbox";
+        case EK_INTERRUPT:      return "interrupt";
+        case EK_ASSERT:         return "assert";
+        case EK_USER:           return "user";
+    }
+    return "internal";
+}
+
+void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     char tmp[3900];
     va_list args;
     va_start(args, fmt);
@@ -83,7 +103,14 @@ void runtime_error(int line, const char *fmt, ...) {
      * their own, and a trailing \n would also leak into a caught error's text. */
     size_t _tl = strlen(tmp);
     if (_tl > 0 && tmp[_tl - 1] == '\n') tmp[_tl - 1] = '\0';
+    /* Builtins raise with line 0 (they don't carry source positions);
+     * stamp the VM's live line so both the printed frame and the caught
+     * dict's `line` point at the failing statement instead of 0. */
+    if (line == 0) line = vm_current_line();
+    snprintf(g_error_raw, sizeof(g_error_raw), "%s", tmp);
     snprintf(g_error_msg, sizeof(g_error_msg), "Error line %d: %s", line, tmp);
+    g_error_kind = (int)kind;
+    g_error_line = line;
     g_has_error = 1;
     eigs_clear_error_value();   /* a new error supersedes any thrown value */
     if (g_try_depth == 0) {
