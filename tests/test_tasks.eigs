@@ -1,0 +1,48 @@
+# #408 cooperative task layer — increment 1a (spawn + alive + teardown).
+# The copying-stack scheduler that runs/interleaves tasks lands in 1b; this
+# pins the foundational surface: a spawned task exists, is alive, holds its
+# closure + deep-copied args without leaking, and an unrun task is reclaimed
+# deterministically at teardown (the leak-tally-0 gate covers that half).
+
+load_file of "lib/test.eigs"
+
+# --- spawn returns a numeric id; a fresh task is alive ---
+define worker() as:
+    return 42
+tid is task_spawn of worker
+assert_eq of [type of tid, "num", "task_spawn returns a numeric id"]
+assert_eq of [task_alive of tid, 1, "a freshly spawned task is alive"]
+
+# --- unknown id is not alive (no crash, no false positive) ---
+assert_eq of [task_alive of 99999, 0, "unknown task id is not alive"]
+assert_eq of [task_alive of 0, 0, "id 0 (reserved/invalid) is not alive"]
+
+# --- args form: [fn, arg1, ...] spawns and stays alive ---
+define adder(a, b) as:
+    return a + b
+tid2 is task_spawn of [adder, 3, 4]
+assert_eq of [task_alive of tid2, 1, "spawn with args is alive"]
+
+# --- distinct ids per spawn ---
+assert_true of [tid2 != tid, "each spawn gets a distinct id"]
+
+# --- non-callable target is a structured type error, caught cleanly ---
+caught is 0
+try:
+    junk is task_spawn of 5
+catch e:
+    caught is 1
+    assert_eq of [e.kind, "type_mismatch", "spawn of a non-function is type_mismatch"]
+assert_eq of [caught, 1, "spawn of a non-function raises"]
+
+# --- args are deep-copied at the boundary: mutating the caller's value
+#     after spawn cannot be observed as a shared reference here (1a just
+#     holds the copy; 1b will prove it on run). We at least prove spawn
+#     accepts a compound arg and stays alive without aliasing the caller. ---
+shared is [1, 2, 3]
+tid3 is task_spawn of [adder, shared, 10]
+shared is append of [shared, 4]   # mutate caller's list post-spawn
+assert_eq of [task_alive of tid3, 1, "spawn with a compound arg is alive"]
+assert_eq of [len of shared, 4, "caller's list still mutable post-spawn"]
+
+test_summary of null

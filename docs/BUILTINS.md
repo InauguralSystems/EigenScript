@@ -568,6 +568,8 @@ Requires full build. Transformer model inference and training.
 | `recv_timeout` | `recv_timeout of [channel, ms]` | Bounded-wait receive. Returns the value if one arrives before `ms` milliseconds elapse, else `null`. A close while waiting also returns `null`. Fractional `ms` is honored (ns precision on Linux); negative `ms` degenerates to a `try_recv`. |
 | `close_channel` | `close_channel of channel` | Close the channel. Wakes all blocked senders/receivers. |
 | `channel_closed` | `channel_closed of channel` | Returns 1 if closed, 0 otherwise. |
+| `task_spawn` | `task_spawn of fn` or `task_spawn of [fn, arg1, ...]` | Create a cooperative task (#408) running `fn` on the single OS thread — deterministic by construction, unlike `spawn`'s OS thread. Args are deep-COPIED (share-nothing, like channel sends), not shared by reference. Returns a numeric task id. (Increment 1a: the task is recorded and reported by `task_alive`; the copying-stack scheduler that runs and interleaves tasks — `task_yield`/`task_join` — lands in a later increment.) |
+| `task_alive` | `task_alive of id` | Returns 1 while the task is runnable or suspended, 0 once it has finished (or for an unknown id). |
 
 **Thread safety:** Values sent through a channel (or returned through
 `thread_join`) are deep-COPIED via `val_clone_for_send` — messages are

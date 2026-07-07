@@ -367,6 +367,47 @@ typedef struct VM {
     struct EigsThread *owner;
 } VM;
 
+/* ---- #408 cooperative task layer ------------------------------------
+ * A Task is a reified VM context on the single OS thread — cooperatively
+ * scheduled, deterministic by construction (no tape records: interleaving
+ * is a pure function of program order). Increment 1a defines the full
+ * struct; the copying-stack save-buffer fields (saved_*) are populated by
+ * the suspend/resume surgery in increment 1b. Held refs (entry_fn/args/
+ * result/error_value) keep their objects live under the trial-deletion
+ * cycle collector automatically — a counted ref exceeds the collector's
+ * internal edge count within U, exactly as ThreadHandle->fn does; no
+ * special root registration needed (docs/CLOSURE_CYCLE_GC.md). */
+typedef enum {
+    TASK_READY,       /* runnable, not started or between yields */
+    TASK_RUNNING,     /* currently executing (== scheduler current) */
+    TASK_SUSPENDED,   /* yielded/blocked with a live save-buffer (1b) */
+    TASK_DONE,        /* returned normally */
+    TASK_DEAD         /* died of an uncaught error */
+} TaskState;
+
+typedef struct Task {
+    int        id;                 /* == handle-table id; 1-based */
+    TaskState  state;
+    int        started;            /* 0 until first scheduled (1b) */
+    Value     *entry_fn;           /* owned VAL_FN/VAL_BUILTIN to run */
+    Value    **args;               /* owned, deep-copied at spawn */
+    int        argc;
+    /* Copying-stack save-buffer — valid only while TASK_SUSPENDED (1b). */
+    EigsSlot  *saved_stack;
+    int        saved_stack_len;
+    struct CallFrame *saved_frames;
+    int        saved_frame_count;
+    int        saved_current_line;
+    /* Completion. */
+    Value     *result;             /* owned, deep-copied on normal end */
+    int        has_error;          /* died of an uncaught error */
+    Value     *error_value;        /* owned {kind,message,line} dict */
+} Task;
+
+/* Free a Task's held refs and the struct. Safe on any state; called by
+ * handle_table_drain and (1b) by the scheduler on join/teardown. */
+void task_free(Task *t);
+
 /* ---- Public API ---- */
 
 /* Chunk lifecycle */

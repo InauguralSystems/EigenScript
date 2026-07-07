@@ -2140,6 +2140,10 @@ check_eigs_suite "recv-blocked worker doesn't hang exit" test_spawn_channel_exit
 echo "[104] Worker Arena Return (no cross-thread UAF, #302)"
 check_eigs_suite "worker arena return deep-copied before detach" test_spawn_arena_return.eigs "All tests passed" 1
 
+# #408 cooperative task layer — increment 1a: spawn + alive + leak-clean
+# teardown of unrun tasks (the interleaving scheduler lands in 1b).
+check_eigs_suite "cooperative tasks: spawn + alive + teardown (#408 inc 1a)" test_tasks.eigs "All tests passed" 1
+
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
 # script path must take the clean cannot-read-file exit, not xmalloc's

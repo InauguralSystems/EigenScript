@@ -4428,6 +4428,88 @@ Value* builtin_channel_closed(Value *arg) {
     return make_num(closed ? 1 : 0);
 }
 
+/* ==== #408 cooperative task layer (increment 1a: spawn + alive) ====
+ *
+ * A Task rides the single OS thread; it never flips g_vm_multithreaded, so
+ * the JIT stays live and the refcount fast paths stay non-atomic. Increment
+ * 1a records tasks and reports liveness; the copying-stack scheduler that
+ * actually runs and interleaves them lands in 1b (task_yield/task_join and
+ * the suspend/resume surgery). Held refs (entry_fn/args) are kept live by
+ * the trial-deletion cycle collector automatically — a counted ref exceeds
+ * the collector's internal-edge count within its candidate set U, exactly
+ * as ThreadHandle->fn does — so no root registration is needed. These
+ * builtins take NO trace records: the scheduling order is a pure function of
+ * program order, not host nondeterminism (the #408 deterministic-by-
+ * construction ruling), so wrapping them in TRACE_NONDET_RET would be wrong. */
+void task_free(Task *t) {
+    if (!t) return;
+    if (t->entry_fn) val_decref(t->entry_fn);
+    if (t->args) {
+        for (int i = 0; i < t->argc; i++)
+            if (t->args[i]) val_decref(t->args[i]);
+        free(t->args);
+    }
+    if (t->result) val_decref(t->result);
+    if (t->error_value) val_decref(t->error_value);
+    free(t->saved_stack);           /* NULL in 1a; populated in 1b */
+    free(t->saved_frames);
+    free(t);
+}
+
+/* task_spawn of fn  /  task_spawn of [fn, arg1, ...] → task id (a number).
+ * Args are deep-copied to the heap (share-nothing at the boundary, exactly
+ * like channel sends / thread_join results — #293's val_clone_for_send), so
+ * a task never shares a mutable arena/heap value with its spawner by
+ * reference. The task does not run yet (1a); the scheduler starts it in 1b. */
+Value* builtin_task_spawn(Value *arg) {
+    Value *fn = arg;
+    Value **args = NULL;
+    int argc = 0;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
+        fn = arg->data.list.items[0];
+        argc = arg->data.list.count - 1;
+        if (argc > 0) {
+            args = xmalloc(sizeof(Value*) * argc);
+            for (int i = 0; i < argc; i++)
+                args[i] = val_clone_for_send(arg->data.list.items[i + 1]);
+        }
+    }
+    if (!fn || (fn->type != VAL_FN && fn->type != VAL_BUILTIN)) {
+        if (args) {
+            for (int i = 0; i < argc; i++) val_decref(args[i]);
+            free(args);
+        }
+        rt_error(EK_TYPE, 0, "task_spawn requires a function or [function, arg1, ...]");
+        return make_null();
+    }
+    Task *t = xcalloc(1, sizeof(Task));
+    t->state = TASK_READY;
+    t->entry_fn = fn;
+    val_incref(fn);
+    t->args = args;
+    t->argc = argc;
+    int id = handle_register(t, HANDLE_TASK);
+    if (id < 0) {
+        task_free(t);
+        rt_error(EK_LIMIT, 0, "task_spawn: too many live tasks (max %d)",
+                 HANDLE_TABLE_SIZE - 1);
+        return make_null();
+    }
+    t->id = id;
+    return make_num((double)id);
+}
+
+/* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
+ * (DONE, DEAD, or an unknown id). */
+Value* builtin_task_alive(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    Task *t = (Task*)handle_lookup((int)arg->data.num, HANDLE_TASK);
+    if (!t) return make_num(0);
+    int alive = (t->state == TASK_READY || t->state == TASK_RUNNING ||
+                 t->state == TASK_SUSPENDED);
+    return make_num(alive ? 1 : 0);
+}
+
 /* Deterministic teardown of OS-resource handles, run once the program has
  * finished executing (the full value world is still alive, so buffered-message
  * decrefs are safe). Channels and thread handles live in the process handle
@@ -4490,6 +4572,18 @@ void handle_table_drain(EigsState *st) {
         pthread_cond_destroy(&ch->not_empty);
         pthread_cond_destroy(&ch->not_full);
         free(ch);
+        st->handle_table[i].ptr = NULL;
+    }
+    /* #408 tasks: cooperative, single-thread, no OS resource — just held
+     * refs. An outstanding task at exit (never joined, or the program ended
+     * with it still live) is reclaimed here. Its held entry_fn/args/result
+     * decref through task_free; the value world is still alive so this is
+     * safe, and it composes with the same leak-tally-0 gate as channels. */
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_TASK) continue;
+        Task *t = (Task*)st->handle_table[i].ptr;
+        if (!t) continue;
+        task_free(t);
         st->handle_table[i].ptr = NULL;
     }
     /* Every spawned worker is now joined → the process is single-threaded
@@ -5415,6 +5509,8 @@ void register_builtins(Env *env) {
 
     /* ---- Concurrency builtins ---- */
     env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));
+    env_set_local_owned(env, "task_spawn", make_builtin(builtin_task_spawn));
+    env_set_local_owned(env, "task_alive", make_builtin(builtin_task_alive));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));
