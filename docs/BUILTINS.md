@@ -570,6 +570,8 @@ Requires full build. Transformer model inference and training.
 | `channel_closed` | `channel_closed of channel` | Returns 1 if closed, 0 otherwise. |
 | `task_spawn` | `task_spawn of fn` or `task_spawn of [fn, arg1, ...]` | Create a cooperative task (#408) running `fn` on the single OS thread — deterministic by construction, unlike `spawn`'s OS thread. Args are deep-COPIED (share-nothing, like channel sends), not shared by reference. Returns a numeric task id. (Increment 1a: the task is recorded and reported by `task_alive`; the copying-stack scheduler that runs and interleaves tasks — `task_yield`/`task_join` — lands in a later increment.) |
 | `task_alive` | `task_alive of id` | Returns 1 while the task is runnable or suspended, 0 once it has finished (or for an unknown id). |
+| `task_yield` | `task_yield of null` | Cooperatively hand control to the next ready task; this task resumes round-robin. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
+| `task_join` | `task_join of id` | Block until task `id` finishes, then return its deep-copied result — or re-raise its uncaught error (as the same `{kind, message, line}` it died with). Joining an already-finished task returns immediately; an unknown id (or self) returns null. All tasks blocked with none runnable is a `deadlock` error, not a hang. |
 
 **Thread safety:** Values sent through a channel (or returned through
 `thread_join`) are deep-COPIED via `val_clone_for_send` — messages are

@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Deterministic cooperative tasks — increment 1 (#408).** `task_spawn`
+  / `task_yield` / `task_join` / `task_alive`: a single-OS-thread
+  cooperative scheduler whose interleaving is deterministic **by
+  construction** — no trace records, byte-identical across runs. Tasks
+  are reified VM contexts (a copying-stack save-buffer per suspended
+  task, not a 1.28 MB VM each); the JIT and non-atomic refcount fast
+  paths stay live because the scheduler never flips the multithreaded
+  flag. Args and results cross the boundary deep-copied (share-nothing,
+  like channels). `task_join` returns the worker's result or re-raises
+  its uncaught error as the same `{kind, message, line}`. All-tasks-
+  blocked is a new `deadlock` error kind (loud, not a hang); suspending
+  inside an `arena_mark`…`arena_reset` scope or a nested evaluation is a
+  `value` error. Not yet: mailboxes/`task_send` (increment 2), virtual
+  time, the pluggable seeded-strategy hook for the DST consumer.
 - **E003 is scope-precise (#404, increment two)** — the undefined-name
   pass models the runtime's real scope rules instead of a whole-file
   binding set: function-locals (fresh-name `is` and `local`) are

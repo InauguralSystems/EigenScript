@@ -2056,8 +2056,43 @@ static const char *slot_type_name(EigsSlot s) {
     return "num"; /* immediate double / bool */
 }
 
-static Value *vm_run(EigsChunk *chunk, Env *env) {
-    int base_frame = g_vm.frame_count; /* track entry point for re-entrant returns */
+/* #408: forward decls — the copying-stack save/restore and the "who is
+ * running" helper live with the scheduler below vm_execute; vm_run_ex's
+ * resume/suspend paths call them. */
+static void task_restore_slice(Task *t);
+static void task_save_slice(Task *t);
+static Task *task_current_running(void);
+static void task_apply_join_result(Task *t);   /* fill a join placeholder on resume */
+
+/* vm_run_ex: the shared VM dispatch body. `resume` != NULL means resume a
+ * suspended #408 task — restore its copying-stack slice onto the (empty) VM
+ * and continue from the innermost frame's saved ip, instead of pushing a
+ * fresh base frame. vm_run() is the ordinary fresh-entry wrapper. */
+static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
+    int base_frame;
+    CallFrame *frame;
+    uint8_t *ip;
+    int current_line = 0;
+
+    if (resume) {
+        /* Resume: the scheduler only ever resumes a task at the outermost
+         * level, so base_frame is 0. Restore frames+stack, then continue
+         * from where task_yield/task_join left off (its placeholder result
+         * already sits on the restored stack top). */
+        base_frame = 0;
+        task_restore_slice(resume);
+        /* If this task was blocked in task_join, its joinee has finished:
+         * overwrite the placeholder on the stack top with the joinee's result
+         * (or re-raise its error — CHECK_ERROR at vm_resume_dispatch catches). */
+        task_apply_join_result(resume);
+        frame = &g_vm.frames[g_vm.frame_count - 1];
+        chunk = frame->chunk;
+        ip = frame->ip;
+        current_line = g_vm.current_line;
+        goto vm_resume_dispatch;
+    }
+
+    base_frame = g_vm.frame_count; /* track entry point for re-entrant returns */
     /* Module-level slot promotion (Part B) AND nested entries from builtins
      * (e.g. call_eigs_fn, eval): if the chunk allocated slots past env->count
      * at compile time, reserve them now so OP_SET_LOCAL has a place to write.
@@ -2065,7 +2100,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     if (chunk->local_count > env->count) {
         env_reserve_slots(env, chunk->local_count);
     }
-    CallFrame *frame = &g_vm.frames[g_vm.frame_count++];
+    frame = &g_vm.frames[g_vm.frame_count++];
     frame->chunk = chunk;
     chunk_incref(chunk);   /* frame's ref — released when this frame pops */
     frame->ip = chunk->code;
@@ -2088,14 +2123,16 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     /* #297: JIT hotness bookkeeping is shared per-chunk state and feeds JIT
      * compilation, which is gated off under MT (#296). Skip it while
      * multithreaded — pointless work, and the bare ++ / registry write race
-     * with parallel workers running the same chunk. */
-    if (!g_vm_multithreaded) {
+     * with parallel workers running the same chunk. #408: also skip while a
+     * cooperative task scheduler is active — task code runs interpreted so a
+     * JIT thunk never runs mid-suspend (the "non-JIT suspending code" ruling,
+     * coarsened for v1: V8 shipped un-optimized generators for years). */
+    if (!g_vm_multithreaded && !g_task_sched) {
         chunk->exec_count++;
         jit_register_chunk(chunk);
     }
 
-    uint8_t *ip = frame->ip;
-    int current_line = 0;
+    ip = frame->ip;
 
 #ifdef __GNUC__
     /* Computed goto dispatch table */
@@ -2212,6 +2249,7 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
     for (;;) { switch (*ip++) {
 #endif
 
+vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above */
     DISPATCH();
 
     /* ---- Constants ---- */
@@ -3081,6 +3119,20 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
 
             /* Check for errors from builtins */
             CHECK_ERROR();
+            /* #408: a suspending builtin (task_yield/task_join) sets the
+             * request flag and leaves its placeholder result on the stack.
+             * Suspension is only legal at the outermost level (base_frame 0);
+             * inside a nested evaluation (eval/comparator/import — base_frame
+             * > 0) the C stack can't be captured, so raise instead. On a valid
+             * suspend, ip already points past this CALL, so the saved frame
+             * resumes with the placeholder on top. */
+            if (__builtin_expect(g_task_suspend_request, 0)) {
+                if (base_frame == 0) { frame->ip = ip; goto vm_suspend_halt; }
+                g_task_suspend_request = 0;
+                rt_error(EK_VALUE, current_line,
+                         "cannot suspend (task_yield/task_join) inside a nested evaluation");
+                CHECK_ERROR();
+            }
             DISPATCH();
         }
 
@@ -5029,13 +5081,330 @@ vm_error_halt:
         g_vm.frame_count--;
     }
     return make_null();
+
+vm_suspend_halt:
+    /* #408 suspend: the OPPOSITE of vm_error_halt — do NOT drain the frames,
+     * we are preserving them. Sync the live current_line, then hand the whole
+     * live slice [0, frame_count)/[0, sp) to the copying-stack save-buffer and
+     * retreat the VM to empty so the scheduler can run the next task at base 0.
+     * Ownership moves with the memcpy'd bytes; g_task_suspend_request is
+     * cleared by the save. Returns NULL — the scheduler distinguishes a
+     * suspend from a real result via the task's state (TASK_SUSPENDED). */
+    g_vm.current_line = current_line;
+    task_save_slice(task_current_running());
+    g_task_suspend_request = 0;
+    return NULL;
+}
+
+/* Ordinary fresh-entry wrapper — the common path for every non-task call. */
+static Value *vm_run(EigsChunk *chunk, Env *env) {
+    return vm_run_ex(chunk, env, NULL);
 }
 
 /* ---- Public API ---- */
 
+/* ===== #408 cooperative task scheduler ==================================
+ * A trampoline just above the OUTERMOST vm_execute drives every task —
+ * including task 0 (the main program) — so C-stack depth stays flat
+ * (vm_execute → scheduler → one vm_run) no matter how often tasks ping-pong.
+ * A task suspends by a builtin setting g_task_suspend_request; the CASE(CALL)
+ * site saves its live stack+frame slice (the copying-stack model: memory =
+ * live depth, not a full 1.28 MB VM per task) and returns here, which runs
+ * the next ready task. Deterministic by construction — no tape records; the
+ * interleaving is a pure function of program order.
+ * ======================================================================== */
+
+int g_task_suspend_request = 0;
+
+#define TASK_READY_MAX HANDLE_TABLE_SIZE
+
+typedef struct {
+    int   ready[TASK_READY_MAX];  /* circular FIFO of runnable task ids (0=main) */
+    int   rhead, rcount;
+    int   current;                /* running task id; 0 = main */
+    int   live;                   /* spawned tasks not yet DONE/DEAD */
+    int   active;                 /* armed on first spawn */
+    Task  main_task;              /* task 0 — save-buffer only, never "started" */
+} TaskScheduler;
+
+static TaskScheduler *sched_get(void) { return (TaskScheduler *)g_task_sched; }
+
+static TaskScheduler *sched_ensure(void) {
+    TaskScheduler *s = sched_get();
+    if (!s) {
+        s = xcalloc(1, sizeof(TaskScheduler));
+        s->main_task.id = 0;
+        s->main_task.state = TASK_RUNNING;
+        s->current = 0;
+        g_task_sched = s;
+    }
+    return s;
+}
+
+void task_sched_thread_free(void) {
+    TaskScheduler *s = sched_get();
+    if (!s) return;
+    free(s->main_task.saved_stack);
+    free(s->main_task.saved_frames);
+    free(s);
+    g_task_sched = NULL;
+}
+
+static Task *sched_lookup(TaskScheduler *s, int id) {
+    if (id == 0) return &s->main_task;
+    return (Task *)handle_lookup(id, HANDLE_TASK);
+}
+
+static Task *task_current_running(void) {
+    TaskScheduler *s = sched_get();
+    return s ? sched_lookup(s, s->current) : NULL;
+}
+
+static void sched_ready_push(TaskScheduler *s, int id) {
+    if (s->rcount >= TASK_READY_MAX) return;   /* ids are table-bounded; can't overflow */
+    s->ready[(s->rhead + s->rcount) % TASK_READY_MAX] = id;
+    s->rcount++;
+}
+
+static int sched_ready_pop(TaskScheduler *s) {
+    if (s->rcount == 0) return -1;
+    int id = s->ready[s->rhead];
+    s->rhead = (s->rhead + 1) % TASK_READY_MAX;
+    s->rcount--;
+    return id;
+}
+
+/* Copying-stack save: memcpy the running task's live slice [0,fc)/[0,sp) into
+ * its right-sized save-buffer, then retreat the VM to empty. Refs move WITH
+ * the bytes (the saved slots/frames own the same counted refs that were on
+ * the stack), so sp/frame_count just retreat — no incref/decref, no walk. */
+static void task_save_slice(Task *t) {
+    if (!t) return;
+    int fc = g_vm.frame_count, sp = g_vm.sp;
+    free(t->saved_frames);
+    free(t->saved_stack);
+    t->saved_frames = fc ? xmalloc(sizeof(CallFrame) * fc) : NULL;
+    t->saved_stack  = sp ? xmalloc(sizeof(EigsSlot) * sp)  : NULL;
+    if (fc) memcpy(t->saved_frames, g_vm.frames, sizeof(CallFrame) * fc);
+    if (sp) memcpy(t->saved_stack,  g_vm.stack,  sizeof(EigsSlot) * sp);
+    t->saved_frame_count  = fc;
+    t->saved_stack_len    = sp;
+    t->saved_current_line = g_vm.current_line;
+    g_vm.frame_count = 0;
+    g_vm.sp = 0;
+    t->state = TASK_SUSPENDED;
+}
+
+/* Copying-stack restore: memcpy a suspended task's slice back onto the empty
+ * VM. Symmetric with save — refs move back with the bytes. */
+static void task_restore_slice(Task *t) {
+    int fc = t->saved_frame_count, sp = t->saved_stack_len;
+    if (fc) memcpy(g_vm.frames, t->saved_frames, sizeof(CallFrame) * fc);
+    if (sp) memcpy(g_vm.stack,  t->saved_stack,  sizeof(EigsSlot) * sp);
+    g_vm.frame_count  = fc;
+    g_vm.sp           = sp;
+    g_vm.current_line = t->saved_current_line;
+    free(t->saved_frames); t->saved_frames = NULL;
+    free(t->saved_stack);  t->saved_stack  = NULL;
+    t->saved_frame_count = 0;
+    t->saved_stack_len   = 0;
+    t->state = TASK_RUNNING;
+}
+
+/* task_spawn (builtins.c) hands a freshly registered task here. */
+void task_sched_on_spawn(int id) {
+    TaskScheduler *s = sched_ensure();
+    s->active = 1;
+    s->live++;
+    sched_ready_push(s, id);
+}
+
+/* task_yield: mark the current task for suspension; the trampoline re-enqueues
+ * it at the tail (round-robin) after the save. */
+void task_request_yield(void) { g_task_suspend_request = 1; }
+
+/* task_join: block the current task on `target`. Returns 0 for a bad target
+ * (main, self, or unknown) so the builtin can fall back; 1 to suspend. A
+ * target that is already finished is handled in the builtin (returns its
+ * result without suspending). */
+int task_request_join(int target) {
+    TaskScheduler *s = sched_get();
+    if (!s || target == 0 || target == s->current) return 0;
+    Task *tt = sched_lookup(s, target);
+    if (!tt) return 0;
+    Task *cur = sched_lookup(s, s->current);
+    cur->join_target = target;
+    g_task_suspend_request = 1;
+    return 1;
+}
+
+/* Start a never-run spawned task: bind its deep-copied args into a fresh env
+ * from the entry closure (the base frame borrows it — the Task owns run_env
+ * across suspend/resume), then run at base 0 so it is suspendable. Mirrors
+ * call_eigs_fn's param binding, but does not run to completion. */
+static Value *task_start(Task *t) {
+    Value *fn = t->entry_fn;
+    if (fn->type == VAL_BUILTIN) {          /* builtins never suspend — run direct */
+        Value *a = t->argc == 1 ? t->args[0] : make_null();
+        return fn->data.builtin(a);
+    }
+    Env *call_env = env_new(fn->data.fn.closure);
+    for (int i = 0; i < fn->data.fn.param_count && i < t->argc; i++)
+        env_set_local(call_env, fn->data.fn.params[i], t->args[i]);
+    t->run_env = call_env;                  /* Task owns it; base frame borrows */
+    t->started = 1;
+    EigsChunk *chunk = (EigsChunk *)fn->data.fn.body;
+    return vm_run_ex(chunk, call_env, NULL);
+}
+
+/* Record a task that just finished (returned or errored) and wake any joiner
+ * blocked on it. `r` is the value vm_run returned (NULL on suspend — not this
+ * path). g_has_error distinguishes a normal end from an uncaught error. */
+static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
+    if (g_has_error) {
+        t->has_error = 1;
+        t->error_value = vm_take_error_value();  /* the {kind,message,line} dict */
+        g_has_error = 0;
+        if (r) val_decref(r);
+        t->result = NULL;
+    } else {
+        t->result = r ? val_clone_for_send(r) : NULL;   /* share-nothing result */
+        if (r) val_decref(r);
+    }
+    t->state = t->has_error ? TASK_DEAD : TASK_DONE;
+    if (t->id != 0) s->live--;
+    if (t->run_env) { env_decref(t->run_env); t->run_env = NULL; }
+    /* Wake every task blocked on this one: enqueue it; on resume the join
+     * builtin's placeholder gets overwritten with our result (or re-raise). */
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
+        if (w && w->state == TASK_SUSPENDED && w->join_target == t->id)
+            sched_ready_push(s, w->id);
+    }
+    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == t->id)
+        sched_ready_push(s, 0);
+}
+
+/* On resuming a task that was blocked in task_join, replace the placeholder
+ * null the builtin left on the stack top with the joinee's result — or, if
+ * the joinee died, re-raise its error in the joiner. Called from vm_run_ex's
+ * resume path (after the stack is restored). */
+static void task_apply_join_result(Task *t) {
+    TaskScheduler *s = sched_get();
+    if (!s || t->join_target == 0) return;
+    Task *jt = sched_lookup(s, t->join_target);
+    t->join_target = 0;
+    if (!jt) return;
+    if (jt->has_error) {
+        /* Re-raise: restore the error payload so the joiner's CHECK_ERROR
+         * catches/propagates it as if the throw happened at the join. */
+        if (jt->error_value) {
+            g_error_value = jt->error_value;
+            val_incref(g_error_value);
+            g_error_kind = (int)EK_USER;
+        }
+        snprintf(g_error_msg, sizeof(g_error_msg), "joined task %d failed", jt->id);
+        g_has_error = 1;
+        return;
+    }
+    /* Overwrite TOS placeholder with the joinee's (already deep-copied) result. */
+    if (g_vm.sp > 0) {
+        slot_decref(g_vm.stack[g_vm.sp - 1]);
+        Value *res = jt->result ? jt->result : make_null();
+        val_incref(res);
+        g_vm.stack[g_vm.sp - 1] = slot_from_heap(res);
+    }
+}
+
+/* The trampoline. Entered from the outermost vm_execute once main (task 0)
+ * has first suspended. Drives tasks round-robin until the ready queue drains,
+ * then returns main's result. All-tasks-blocked = deadlock (loud, not a hang).
+ * Task 0 finishing kills outstanding tasks (kill-outstanding ruling). */
+static Value *scheduler_trampoline(TaskScheduler *s) {
+    for (;;) {
+        int id = sched_ready_pop(s);
+        if (id < 0) {
+            /* Nothing runnable. If main already finished, we're done. If tasks
+             * remain live (blocked on joins that can't resolve), that's a
+             * deadlock — raise it loudly rather than hang. */
+            if (s->main_task.state == TASK_DONE || s->main_task.state == TASK_DEAD) {
+                if (s->main_task.has_error) {
+                    g_error_value = s->main_task.error_value;
+                    s->main_task.error_value = NULL;
+                    g_has_error = 1;
+                    return make_null();
+                }
+                Value *r = s->main_task.result;
+                s->main_task.result = NULL;
+                return r ? r : make_null();
+            }
+            rt_error(EK_DEADLOCK, 0, "all tasks are blocked — deadlock");
+            return make_null();
+        }
+        Task *t = sched_lookup(s, id);
+        if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) continue;
+        s->current = id;
+
+        Value *r;
+        if (t->state == TASK_SUSPENDED) {
+            /* Resume (the join placeholder, if any, is filled inside the
+             * resume path via task_apply_join_result). */
+            r = vm_run_ex(NULL, NULL, t);
+        } else {
+            r = task_start(t);   /* never-run task: bind args + run at base 0 */
+        }
+
+        if (t->state == TASK_SUSPENDED) {
+            /* It suspended again. task_yield → re-enqueue; task_join → stay
+             * blocked (woken by sched_finish when its target ends). */
+            if (t->join_target == 0) sched_ready_push(s, id);
+        } else {
+            sched_finish(s, t, r);
+            /* kill-outstanding: main ending tears the rest down deterministically. */
+            if (id == 0) break;
+        }
+    }
+    /* main finished with tasks still outstanding → reap them (kill-outstanding). */
+    if (s->main_task.has_error) {
+        g_error_value = s->main_task.error_value;
+        s->main_task.error_value = NULL;
+        g_has_error = 1;
+        return make_null();
+    }
+    Value *r = s->main_task.result;
+    s->main_task.result = NULL;
+    return r ? r : make_null();
+}
+
 Value *vm_execute(EigsChunk *chunk, Env *env) {
     vm_init();
-    /* Re-entrant safe: vm_run pushes/pops its own frame and cleans
-     * the stack back to its base pointer on return. */
-    return vm_run(chunk, env);
+    /* Only the OUTERMOST vm_execute drives the scheduler; a nested call
+     * (eval/dispatch/import/comparator) runs to completion on the C stack and
+     * may not suspend (enforced at CASE(CALL) via base_frame). frame_count==0
+     * identifies the outermost. */
+    int outermost = (g_vm.frame_count == 0);
+    Value *r = vm_run(chunk, env);
+    if (!outermost) return r;
+    TaskScheduler *s = sched_get();
+    if (!s || !s->active) return r;
+    /* main (task 0) either finished (no task ever blocked) or suspended. If it
+     * suspended, its slice is saved; drive the trampoline. If it finished but
+     * tasks are still live, drive them too (kill-outstanding at main's end). */
+    if (s->main_task.state == TASK_SUSPENDED) {
+        /* main's first suspension happened in the initial vm_run, outside the
+         * trampoline — enqueue it now (unless it blocked on a join, in which
+         * case sched_finish wakes it) so it resumes round-robin. */
+        if (s->main_task.join_target == 0) sched_ready_push(s, 0);
+        return scheduler_trampoline(s);
+    }
+    /* main ran to completion without ever suspending. Record its result and,
+     * if any spawned task is still runnable, drive them (kill-outstanding). */
+    if (s->live > 0 && s->rcount > 0) {
+        s->main_task.state = TASK_DONE;
+        s->main_task.result = r ? val_clone_for_send(r) : NULL;
+        if (r) val_decref(r);
+        Value *mr = scheduler_trampoline(s);
+        return mr;
+    }
+    return r;
 }

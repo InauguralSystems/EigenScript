@@ -392,12 +392,23 @@ typedef struct Task {
     Value     *entry_fn;           /* owned VAL_FN/VAL_BUILTIN to run */
     Value    **args;               /* owned, deep-copied at spawn */
     int        argc;
+    /* The task's base call env (1b), created at start from entry_fn's
+     * closure with args bound. The base frame BORROWS it (owns_env=0), so
+     * the Task owns it across suspend/resume; decref'd when the task ends
+     * (or in task_free). NULL for main (task 0 runs on the global env). */
+    struct Env *run_env;
     /* Copying-stack save-buffer — valid only while TASK_SUSPENDED (1b). */
     EigsSlot  *saved_stack;
     int        saved_stack_len;
-    struct CallFrame *saved_frames;
+    CallFrame *saved_frames;
     int        saved_frame_count;
     int        saved_current_line;
+    /* Blocking join (1b): while this task is suspended in task_join, the id
+     * of the task it waits on (0 = not joining). On resume the scheduler
+     * writes the joinee's deep-copied result over the placeholder the
+     * task_join builtin left on the stack top — a builtin can't return a
+     * value it doesn't know yet — or re-raises the joinee's error. */
+    int        join_target;
     /* Completion. */
     Value     *result;             /* owned, deep-copied on normal end */
     int        has_error;          /* died of an uncaught error */
@@ -407,6 +418,17 @@ typedef struct Task {
 /* Free a Task's held refs and the struct. Safe on any state; called by
  * handle_table_drain and (1b) by the scheduler on join/teardown. */
 void task_free(Task *t);
+
+/* #408 scheduler interface (1b). The task_* builtins (builtins.c) signal the
+ * cooperative scheduler through these; the trampoline lives in vm.c, just
+ * above the outermost vm_execute, so C-stack depth stays flat across any
+ * number of task switches. Suspension is deterministic-by-construction — no
+ * tape records. */
+extern int g_task_suspend_request;   /* set by a suspending builtin; actioned at CASE(CALL) */
+void task_sched_on_spawn(int id);    /* enqueue a freshly spawned task, arm the scheduler */
+void task_request_yield(void);       /* current task → tail of the ready queue */
+int  task_request_join(int target);  /* current task blocks on `target`; 0 = bad target */
+void task_sched_thread_free(void);   /* release the scheduler at thread detach */
 
 /* ---- Public API ---- */
 

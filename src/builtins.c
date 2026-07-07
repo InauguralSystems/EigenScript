@@ -4449,10 +4449,25 @@ void task_free(Task *t) {
             if (t->args[i]) val_decref(t->args[i]);
         free(t->args);
     }
+    if (t->run_env) env_decref(t->run_env);
     if (t->result) val_decref(t->result);
     if (t->error_value) val_decref(t->error_value);
-    free(t->saved_stack);           /* NULL in 1a; populated in 1b */
-    free(t->saved_frames);
+    /* A task torn down while still SUSPENDED (kill-outstanding at main's end,
+     * or an unjoined task at exit) still owns the counted refs sitting in its
+     * saved slice — decref them so the leak tally stays 0. */
+    if (t->saved_stack) {
+        for (int i = 0; i < t->saved_stack_len; i++)
+            slot_decref(t->saved_stack[i]);
+        free(t->saved_stack);
+    }
+    if (t->saved_frames) {
+        for (int i = 0; i < t->saved_frame_count; i++) {
+            CallFrame *f = &t->saved_frames[i];
+            if (f->owns_env && f->env) env_decref(f->env);
+            if (f->chunk) chunk_decref(f->chunk);
+        }
+        free(t->saved_frames);
+    }
     free(t);
 }
 
@@ -4496,7 +4511,61 @@ Value* builtin_task_spawn(Value *arg) {
         return make_null();
     }
     t->id = id;
+    task_sched_on_spawn(id);   /* enqueue + arm the scheduler */
     return make_num((double)id);
+}
+
+/* task_yield of null — cooperatively hand control to the next ready task.
+ * Returns null (the value of the yield expression); the scheduler saves and
+ * re-enqueues this task at the tail. Forbidden inside an active arena scope
+ * (arena_mark…arena_reset): a suspended task's arena values would be reclaimed
+ * by another task's arena_reset — the task layer and the training arena are
+ * separate tools (Lua-style "can't yield across a C boundary"). */
+Value* builtin_task_yield(Value *arg) {
+    (void)arg;
+    if (!g_task_sched) return make_null();   /* no scheduler: yield is a no-op */
+    if (g_arena.active) {
+        rt_error(EK_VALUE, 0, "cannot task_yield inside an arena scope "
+                 "(arena_mark…arena_reset)");
+        return make_null();
+    }
+    task_request_yield();
+    return make_null();   /* placeholder: execution resumes right after this */
+}
+
+/* task_join of id — block until task `id` finishes; return its (deep-copied)
+ * result, or re-raise its uncaught error. Joining an already-finished task
+ * returns immediately. Joining an unknown id, self, or with no scheduler
+ * returns null. Same arena/nesting restriction as task_yield. */
+Value* builtin_task_join(Value *arg) {
+    if (!arg || arg->type != VAL_NUM || !g_task_sched) return make_null();
+    int target = (int)arg->data.num;
+    Task *t = (Task*)handle_lookup(target, HANDLE_TASK);
+    if (!t) return make_null();
+    if (t->state == TASK_DONE || t->state == TASK_DEAD) {
+        /* Already finished: deliver its result / error now, no suspend. */
+        if (t->has_error) {
+            if (t->error_value) {
+                val_incref(t->error_value);
+                eigs_clear_error_value();
+                g_error_value = t->error_value;
+                g_error_kind = (int)EK_USER;
+            }
+            snprintf(g_error_msg, sizeof(g_error_msg), "joined task %d failed", target);
+            g_has_error = 1;
+            return make_null();
+        }
+        Value *r = t->result ? t->result : make_null();
+        val_incref(r);
+        return r;
+    }
+    if (g_arena.active) {
+        rt_error(EK_VALUE, 0, "cannot task_join inside an arena scope "
+                 "(arena_mark…arena_reset)");
+        return make_null();
+    }
+    if (!task_request_join(target)) return make_null();
+    return make_null();   /* placeholder: the scheduler fills it with the result on resume */
 }
 
 /* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
@@ -5511,6 +5580,8 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));
     env_set_local_owned(env, "task_spawn", make_builtin(builtin_task_spawn));
     env_set_local_owned(env, "task_alive", make_builtin(builtin_task_alive));
+    env_set_local_owned(env, "task_yield", make_builtin(builtin_task_yield));
+    env_set_local_owned(env, "task_join", make_builtin(builtin_task_join));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));
