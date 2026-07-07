@@ -65,9 +65,10 @@ observer/deterministic-replay niche instead of diluting it.**
       v0.27.0 pin bump (ouroboros PR #68)
 - [ ] Structured runtime errors `{kind, message, line}` with a closed
       kind set ([#406](https://github.com/InauguralSystems/EigenScript/issues/406))
-- [~] Column tracking + caret/span diagnostics — parse errors now carry
-      line:col (human + `--lint --json` E002 + LSP range); per-warning spans,
-      runtime-error columns, and caret rendering remain
+- [~] Column tracking + caret/span diagnostics — parse errors carry
+      line:col (human + `--lint --json` E002 + LSP range) AND print a
+      source excerpt + caret (increment 2); per-warning spans and
+      runtime-error columns remain
       ([#407](https://github.com/InauguralSystems/EigenScript/issues/407))
 - [x] **Trace-tape format versioning decision** — decided and shipped in
       0.27.0 (version-stamped tapes, refuse-on-mismatch, no compat
@@ -82,10 +83,14 @@ observer/deterministic-replay niche instead of diluting it.**
 - [ ] `lib/supervise.eigs` observer-native supervision — predictive
       (catches the silently-wedged worker), not crash-reactive; after
       #408 only ([#409](https://github.com/InauguralSystems/EigenScript/issues/409))
-- [ ] Observer surface coherence — implement-or-remove `how`, decide
-      `|x|=1.0`, fold in #383
+- [x] Observer surface coherence — decided and shipped: unity is the
+      horizon (the `|x|=1.0` entropy special case is gone) and `how` is a
+      real deadband-normalized 0–1 gradient; #383 was struck earlier
+      (#437 landed observer_slots.verdict(), divergence did not reproduce)
       ([#412](https://github.com/InauguralSystems/EigenScript/issues/412))
-- [ ] JIT back-edge abort poll — hard timeouts without `EIGS_JIT_OFF`
+- [x] JIT back-edge abort poll — hard timeouts hold at full speed; the
+      gap was the from-zero thunk only (OSR always re-entered through the
+      interpreted back-edge)
       ([#410](https://github.com/InauguralSystems/EigenScript/issues/410))
 - [ ] eigsdap v1 as a CLI tape-stepper; DAP/VS Code deferred until
       locals ride the tape
