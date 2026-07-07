@@ -139,6 +139,7 @@ void eigs_thread_detach(void) {
      * so any bridge-macro reads inside the destructors stay valid). */
     jit_thread_destroy(th);
     vm_thread_destroy(th);
+    task_sched_thread_free();   /* #408: release the cooperative task scheduler */
 
     /* Phase 8: release freelist + intern memory before the EigsThread
      * struct itself goes. Must run while eigs_current still points at th

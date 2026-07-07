@@ -624,6 +624,11 @@ struct EigsThread {
     int                  vts_depth;
     int                  json_depth;
     int                  native_call_depth;
+    /* #408 cooperative task scheduler — opaque (TaskScheduler defined in
+     * vm.c; Task lives in vm.h, not visible here). Allocated lazily on the
+     * first task_spawn, freed at thread detach. Per-OS-thread because tasks
+     * are single-threaded by construction. */
+    void                *task_sched;
     /* Registry list — set by eigs_thread_attach. */
     EigsThread *next;
 };
@@ -695,6 +700,7 @@ extern __thread EigsThread *eigs_current;
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)
 #define g_native_call_depth   (eigs_current->native_call_depth)
+#define g_task_sched          (eigs_current->task_sched)
 #define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
 #define g_iter_threshold      (eigs_current->state->jit_iter_threshold)
 #define g_osr_threshold       (eigs_current->state->jit_osr_threshold)
@@ -984,6 +990,7 @@ typedef enum {
     EK_SANDBOX,           /* sandbox policy denial or budget exhaustion */
     EK_INTERRUPT,         /* host-requested abort (eigs_abort) */
     EK_ASSERT,            /* assert builtin failure */
+    EK_DEADLOCK,          /* #408 all cooperative tasks blocked, none runnable */
     EK_USER,              /* `throw` — catch binds the thrown value, not a dict */
 } ErrKind;
 const char* err_kind_name(ErrKind k);

@@ -67,6 +67,7 @@ below are the contract.)
 | `sandbox` | sandbox policy denial or budget | `blocked in sandbox`, `sandbox memory budget exceeded` |
 | `interrupt` | host-requested abort (`eigs_abort`) | `aborted` |
 | `assert` | `assert` builtin failure | `ASSERT FAIL: ...` |
+| `deadlock` | #408 all cooperative tasks blocked, none runnable | `all tasks are blocked — deadlock` |
 | `internal` | VM invariant broke — report it | `unknown opcode`, `SET_LOCAL slot out of range` |
 
 `throw` stamps kind `user` for host/embed introspection

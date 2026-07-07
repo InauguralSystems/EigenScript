@@ -39,10 +39,75 @@ assert_eq of [caught, 1, "spawn of a non-function raises"]
 #     after spawn cannot be observed as a shared reference here (1a just
 #     holds the copy; 1b will prove it on run). We at least prove spawn
 #     accepts a compound arg and stays alive without aliasing the caller. ---
+define lister(xs) as:
+    return len of xs
 shared is [1, 2, 3]
-tid3 is task_spawn of [adder, shared, 10]
+tid3 is task_spawn of [lister, shared]
 shared is append of [shared, 4]   # mutate caller's list post-spawn
 assert_eq of [task_alive of tid3, 1, "spawn with a compound arg is alive"]
 assert_eq of [len of shared, 4, "caller's list still mutable post-spawn"]
+# the task saw the deep copy (len 3), not the caller's later-mutated list (len 4)
+assert_eq of [task_join of tid3, 3, "task got the deep-copied arg, not the mutation"]
+
+# ============ increment 1b: yield / join / deadlock ============
+
+# --- deterministic round-robin interleaving. Tasks append to a shared
+#     module list; the final order is a pure function of spawn+yield order. ---
+trace is []
+define stepper(tag) as:
+    trace is append of [trace, f"{tag}1"]
+    task_yield of null
+    trace is append of [trace, f"{tag}2"]
+    return 0
+sa is task_spawn of [stepper, "a"]
+sb is task_spawn of [stepper, "b"]
+ja is task_join of sa
+jb is task_join of sb
+# main joins sa (blocks) → a runs a1,yield; b runs b1,yield; a a2 done; b b2 done
+assert_eq of [trace[0], "a1", "interleave: a1 first"]
+assert_eq of [trace[1], "b1", "interleave: b1 second"]
+assert_eq of [trace[2], "a2", "interleave: a2 third"]
+assert_eq of [trace[3], "b2", "interleave: b2 fourth"]
+
+# --- task_join delivers the (deep-copied) return value ---
+define doubler(n) as:
+    task_yield of null
+    return n * 2
+d1 is task_spawn of [doubler, 21]
+r1 is task_join of d1
+assert_eq of [r1, 42, "task_join returns the worker result"]
+
+# --- joining an already-finished task returns its result immediately ---
+r1b is task_join of d1
+assert_eq of [r1b, 42, "re-join of a finished task returns the result"]
+assert_eq of [task_alive of d1, 0, "a finished task is not alive"]
+
+# --- an uncaught error in a task is rethrown at the join, as its #406 kind ---
+define crasher() as:
+    task_yield of null
+    boom is undefined_name_xyz
+    return 0
+c1 is task_spawn of crasher
+threw is 0
+try:
+    rc is task_join of c1
+catch e:
+    threw is 1
+    assert_eq of [e.kind, "undefined_name", "join rethrows the task's error kind"]
+assert_eq of [threw, 1, "join of a crashed task raises"]
+
+# --- suspension inside an arena scope is a structured value-error ---
+define arena_yielder() as:
+    arena_mark of null
+    task_yield of null
+    return 0
+ay is task_spawn of arena_yielder
+threw2 is 0
+try:
+    ra is task_join of ay
+catch e:
+    threw2 is 1
+    assert_eq of [e.kind, "value", "task_yield in an arena scope is a value-error"]
+assert_eq of [threw2, 1, "arena-scoped yield raises"]
 
 test_summary of null

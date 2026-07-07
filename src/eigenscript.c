@@ -87,6 +87,7 @@ const char* err_kind_name(ErrKind k) {
         case EK_SANDBOX:        return "sandbox";
         case EK_INTERRUPT:      return "interrupt";
         case EK_ASSERT:         return "assert";
+        case EK_DEADLOCK:       return "deadlock";
         case EK_USER:           return "user";
     }
     return "internal";

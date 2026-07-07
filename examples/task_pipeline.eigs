@@ -1,0 +1,23 @@
+# Deterministic cooperative tasks (#408, increment 1). Three workers each
+# compute a stage, cooperatively yielding so their progress interleaves —
+# but the interleaving is a pure function of program order, so this program
+# prints byte-identically on every run (no threads, no clock, no tape).
+# `task_join` collects each worker's result; main sums them.
+
+define stage(name, base) as:
+    print of f"{name}: begin"
+    task_yield of null                 # cooperatively let a sibling run
+    local doubled is base * 2
+    print of f"{name}: computed {doubled}"
+    return doubled
+
+a is task_spawn of [stage, "alpha", 10]
+b is task_spawn of [stage, "beta", 20]
+c is task_spawn of [stage, "gamma", 30]
+
+print of "main: workers spawned, collecting"
+ra is task_join of a
+rb is task_join of b
+rc is task_join of c
+
+print of f"results: {ra} + {rb} + {rc} = {ra + rb + rc}"
