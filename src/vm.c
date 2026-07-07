@@ -5261,6 +5261,15 @@ static Value *task_start(Task *t) {
  * blocked on it. `r` is the value vm_run returned (NULL on suspend — not this
  * path). g_has_error distinguishes a normal end from an uncaught error. */
 static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
+    /* A task that ended (returned OR died) while its per-thread arena is still
+     * active — arena_mark with no matching arena_reset, e.g. the arena-suspend
+     * guard raised inside the scope — must not leave the arena active: (1) its
+     * error dict / result below outlive the task and cross to the joiner, so
+     * they must be heap, not arena (a later arena_reset would dangle them); and
+     * (2) the next task must start from a clean arena baseline. The suspend
+     * guard guarantees a task never *yields* with the arena active, so the only
+     * way it's active here is an ending task that leaked the scope. */
+    g_arena.active = 0;
     if (g_has_error) {
         t->has_error = 1;
         t->error_value = vm_take_error_value();  /* the {kind,message,line} dict */

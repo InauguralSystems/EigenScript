@@ -19,6 +19,13 @@ All notable changes to EigenScript are documented here.
   inside an `arena_mark`…`arena_reset` scope or a nested evaluation is a
   `value` error. Not yet: mailboxes/`task_send` (increment 2), virtual
   time, the pluggable seeded-strategy hook for the DST consumer.
+  Increment 1c hardening: adversarial valgrind/ASan planted-fault
+  verification proved the arena guard and the save-buffer teardown are
+  load-bearing, and surfaced+fixed a real bug — a task ending inside an
+  active arena scope arena-allocated its error dict (which crosses to the
+  joiner) and left the arena active for the next task; `sched_finish` now
+  forces the arena inactive. Determinism is a suite gate (two-run
+  byte-identical), and SPEC gains an executable Tasks section.
 - **E003 is scope-precise (#404, increment two)** — the undefined-name
   pass models the runtime's real scope rules instead of a whole-file
   binding set: function-locals (fresh-name `is` and `local`) are
