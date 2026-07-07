@@ -152,11 +152,10 @@ IRQ on bare metal) makes the interpreter raise an ordinary runtime error
 honored — one set aborts exactly one eval — and the state stays usable
 afterward. The host side is async-signal-safe by construction: it is a
 plain store into the host's own `int`; the runtime only reads it.
-Caveats: the error is catchable like any runtime error (a `try` around
-the loop observes it — set the flag again if needed), and JIT/OSR-native
-hot loops don't poll (the abort lands at the next interpreted back-edge;
-run `EIGS_JIT_OFF=1` for hard timeouts — the freestanding profile
-compiles the JIT out, so coverage there is total).
+Every tier polls: interpreter back-edges and JIT/OSR-native back-edges
+alike (#410), so a hard timeout holds at full speed — no `EIGS_JIT_OFF`
+required. One caveat: the error is catchable like any runtime error (a
+`try` around the loop observes it — set the flag again if needed).
 
 ## Globals
 

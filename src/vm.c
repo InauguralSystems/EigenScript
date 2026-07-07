@@ -530,14 +530,22 @@ int g_sandbox_loop_max = 0;
  * the semantic is "abort whatever is evaluating" (a ctrl-c / timeout), and
  * the setter side must stay async-signal/IRQ-safe — a plain store into the
  * embedder's own int, no TLS deref, no runtime call. The runtime only ever
- * READS the embedder's flag (and clears it when honoring). Unregistered
- * (NULL) costs one predicted-not-taken test per back-edge. Caveats, both
- * documented in eigs_embed.h: a JIT/OSR-native hot loop doesn't poll (the
- * freestanding profile compiles the JIT out, so coverage is total there;
- * hosted embedders needing hard timeouts run EIGS_JIT_OFF=1), and the
- * error is an ordinary catchable runtime error — a `try` around the loop
- * can observe it (the flag can simply be set again). */
-volatile int *g_vm_abort_flag = NULL;
+ * READS the embedder's flag (and clears it when honoring). The caveat
+ * documented in eigs_embed.h: the error is an ordinary catchable runtime
+ * error — a `try` around the loop can observe it (the flag can simply be
+ * set again).
+ *
+ * #410: the pointer is NEVER NULL — unregistered points at a static
+ * always-zero int (eigs_set_abort_flag maps NULL back to it). That turns
+ * the poll into a single unconditional deref on both tiers, which is what
+ * lets the JIT poll it too: the loop stencil emits the same
+ * movabs/deref/cmpl at every back-edge and bails to the interpreter AT the
+ * JUMP_BACK when set (the interpreter re-runs the back-edge, consumes the
+ * flag, and raises through the normal error path — no error machinery in
+ * native code). Unregistered costs one predicted-not-taken load+test per
+ * back-edge, same as before. */
+volatile int g_vm_abort_never = 0;
+volatile int *g_vm_abort_flag = &g_vm_abort_never;
 
 /* #292: sandbox allocation budget. The loop-iteration cap bounds VM back-edges
  * but NOT memory — an allowlisted allocator (zeros/fill/buffer/range/...) can
@@ -2812,8 +2820,10 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
         ip -= offset;
         /* Async abort: poll the embedder's registered flag on the one
          * opcode every loop crosses. Consume the flag (edge, not level)
-         * so the abort kills exactly one eval. */
-        if (__builtin_expect(g_vm_abort_flag && *g_vm_abort_flag, 0)) {
+         * so the abort kills exactly one eval. #410: the pointer is
+         * never NULL (sentinel when unregistered), so this is a single
+         * deref — the same check the JIT emits at native back-edges. */
+        if (__builtin_expect(*g_vm_abort_flag, 0)) {
             *g_vm_abort_flag = 0;
             runtime_error(current_line, "aborted");
             DISPATCH();

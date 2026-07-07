@@ -323,6 +323,38 @@ int main(void) {
      * drain the handle table (reap workers, free channels, clear multithreaded)
      * just like main.c — otherwise embedders leak channels/threads, the exit
      * collector silently no-ops, and a live worker can UAF the freed state. */
+    /* #410: a hard timeout must hold at FULL SPEED. The gap was the
+     * FROM-ZERO thunk: a call-hot function's loop closes natively via the
+     * backward patch and never touches an interpreted back-edge (the OSR
+     * tier exits at its own back-edge each iteration, so it always polled
+     * via CASE(JUMP_BACK)). Warm the function past the call threshold with
+     * tiny bounds, then run one long call: pre-#410 the timer was ignored
+     * and the loop ran to the 100M iteration cap (r == 1e8, no error); now
+     * the native back-edge polls. Bounded body so a regression fails
+     * loudly, not as a hang. MUST run before the spawn test below —
+     * g_vm_multithreaded permanently gates JIT compilation off for the
+     * process, so a later placement would test the interpreter twice. */
+    eigs_set_abort_flag(&g_abort);
+    arm_abort_timer_ms(150);
+    r = eigs_eval_string(
+        "define hot(n) as:\n"
+        "    k is 0.0\n"
+        "    loop while k < n:\n"
+        "        k is k + 1.0\n"
+        "    return k\n"
+        "w is 0\n"
+        "loop while w < 300:\n"
+        "    z is hot of 50.0\n"
+        "    w is w + 1\n"
+        "hot of 200000000.0");
+    CHECK(r == NULL && eigs_has_error(),
+          "mid-eval abort stops a JIT'd hot loop (#410)");
+    CHECK(eigs_last_error_message() &&
+          strstr(eigs_last_error_message(), "aborted") != NULL,
+          "JIT'd abort raises the 'aborted' error");
+    eigs_clear_error();
+    eigs_set_abort_flag(NULL);
+
     r = eigs_eval_string(
         "ch is channel of 1\n"
         "define producer(c) as:\n"

@@ -5,6 +5,19 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **JIT loop back-edges poll the async abort flag (#410)** — hard
+  timeouts (`eigs_set_abort_flag`) now hold at full speed. The gap was
+  the from-zero thunk: a call-hot function's loop closes natively via the
+  backward patch and never crossed an interpreted back-edge (the OSR tier
+  always re-entered through the interpreted `JUMP_BACK`, so it already
+  polled). The emitter now plants a movabs/deref/cmpl poll before every
+  native back-edge that bails to the interpreter at the `JUMP_BACK` when
+  set — the interpreter consumes the flag and raises the ordinary
+  catchable "aborted" error; no error machinery in native code. The flag
+  pointer is now never NULL (unregistered points at a static zero), so
+  both tiers poll with a single deref. Bench medians unchanged within
+  noise (n=5: dmg_shape 326.3→323.4 ms, idxset 39.6→38.8 ms). The
+  EMBEDDING.md / eigs_embed.h "JIT'd loops don't poll" caveat is deleted.
 - **`# lint: loaded-by <relpath>` fragment directive (#460)** — a library
   fragment declares its composer (the entry point that `load_file`s it, or
   a concat sibling in out-of-language composition); E003 collects the named

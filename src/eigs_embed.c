@@ -284,7 +284,9 @@ void eigs_trace_record_nondet(const char *name, EigsValue *v) {
 /* ---- Async abort (see eigs_embed.h) -------------------------------- */
 
 void eigs_set_abort_flag(volatile int *flag) {
-    g_vm_abort_flag = flag;
+    /* #410: NULL (unregister) maps to the always-zero sentinel so the
+     * pointer is never NULL — both tiers poll with a single deref. */
+    g_vm_abort_flag = flag ? flag : &g_vm_abort_never;
 }
 
 /* ---- FFI ---------------------------------------------------------- */

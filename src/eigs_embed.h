@@ -198,13 +198,11 @@ void eigs_trace_record_nondet(const char *name, EigsValue *v);
  * unregister). Process-global, not per-state: the semantic is "abort
  * whatever is evaluating."
  *
- * Two documented caveats:
- *  - The error is catchable like any runtime error — a `try` around the
- *    loop observes it (set the flag again if the program keeps looping).
- *  - Loops running as JIT/OSR native code do not poll; the abort lands at
- *    the next interpreted back-edge. Embedders needing hard timeouts run
- *    with EIGS_JIT_OFF=1; the freestanding profile compiles the JIT out,
- *    so coverage there is total. */
+ * Every tier polls the flag — interpreter back-edges and JIT/OSR-native
+ * back-edges alike (#410) — so a hard timeout holds at full speed. One
+ * documented caveat: the error is catchable like any runtime error — a
+ * `try` around the loop observes it (set the flag again if the program
+ * keeps looping). */
 void eigs_set_abort_flag(volatile int *flag);
 
 /* ---- FFI ---------------------------------------------------------- */
