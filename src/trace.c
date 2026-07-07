@@ -343,8 +343,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         if (!o->valid) return 0;
         double r = (kind == 3) ? o->entropy
                  : (kind == 4) ? o->dH
-                 : (o->last_entropy > 0 ? 1.0 - o->entropy / o->last_entropy
-                                        : 1.0);
+                 : observer_settledness(o->dH);   /* #412: how = f(dH) */
         *out = slot_from_num(r);
         return 1;
     }

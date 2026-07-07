@@ -50,7 +50,7 @@ history — never from an external reference:
 | `when is x` | assignment count | how many times it has been set |
 | `where is x`| information content | how much information it carries |
 | `why is x`  | change in that content | how fast that is changing |
-| `how is x`  | a stability reading | (see *Rough edges* — currently coarse) |
+| `how is x`  | settledness in `[0, 1]` | how settled the last step left it |
 
 Two of these are the load-bearing pair:
 
@@ -145,7 +145,11 @@ infinity. So the value's information-landscape is a **watershed**:
 
 A value can *ride over* the ridge by ordinary motion (going `1.5 → 0.9`
 just passes the peak and comes down the other side). Landing **exactly**
-on `|x| = 1` is different — see *Rough edges*.
+on `|x| = 1` is not special (#412 decided this): the formula is smooth
+and maximal there (`H = 1.0`), so an exactly-placed `1.0` reads like its
+neighbors — maximally entropic, never `converged` (a flat run at `1.0`
+classifies `equilibrium`: steady, but not at a low-entropy home). Unity
+is the **horizon**, not a home point; `0` is the home point (`H = 0`).
 
 A consequence worth internalizing: because `where` is not monotonic, a
 value whose magnitude is *shrinking* does not always read as `improving`.
@@ -303,25 +307,32 @@ explicit `ensure of [(abs of x) < LIMIT]`. The contracts document this and file
 it rather than hiding the instrument's edge behind an ad-hoc heuristic — the
 forcing-function model: a gap surfaces upstream instead of being papered over.
 
-## Rough edges (current implementation)
+## Settled decisions (formerly "Rough edges")
 
-Honest notes about where the code, as of this writing, does not yet fully
-honor the model above. These are observations, not yet fixes.
+Two long-standing caveats were decided and closed by #412:
 
-- **The unity horizon is special-cased to zero.** `compute_entropy_impl`
-  returns `0` for `|x|` exactly `0` or `1`. At `1` that is the *opposite*
-  of the formula's limit there (which approaches the maximum). The
-  defensible reading is that the ridge can be *approached* by motion but
-  only *occupied* by direct assignment, so an exactly-placed `1` is marked
-  as a boundary event. The practical effect: a value sitting at exactly
-  `1.0` reports as `converged` immediately. Worth a deliberate decision:
-  is unity the horizon (drop the special case) or a home point (re-center
-  the formula)?
+- **Unity is the horizon.** `compute_entropy_impl` used to special-case
+  `|x| == 1.0` to entropy `0` — the *opposite* of the formula's value
+  there (`1.0`, the maximum) — so a value placed exactly at `1.0`
+  reported `converged` immediately. The special case is gone: the
+  formula is smooth at the ridge and an exactly-placed `1.0` now reads
+  like its neighbors. `|x| == 0` keeps entropy `0`, which *is* the
+  formula's limit at the home point.
 
-- **`how` is degenerate.** It computes `1 - entropy/last_entropy`, but the
-  observer sets those two equal on every refresh, so `how` is effectively
-  always `0` (or `1` when entropy is `0`). It does not currently provide
-  the `0–1` gradient its name suggests. Treat it as not-yet-implemented.
+- **`how` is a real gradient now.** It reads the deadband-normalized
+  settledness of the last observed step: `1 - min(1, |dH| / dh_zero)`,
+  where `dh_zero` is the same settle threshold the `converged` window
+  uses (`set_observer_thresholds`). `1.0` = the last assignment left the
+  entropy unmoved; `0.0` = it moved by the deadband or more; linear in
+  between. It is a pure function of the recorded `dH`, so
+  `how is x at L` reads identically from tape history, and it measures
+  the **entropy** trajectory like `where`/`why` — a value-magnitude step
+  that lands at the same information content is settled by construction
+  (the value-channel reading is `report_value`'s job, #294). The old
+  `1 - entropy/last_entropy` was degenerate (the observer refreshes
+  `last_entropy` on every push, so it read `0` or `1` only).
+
+One observation stands (not a defect — a property to know):
 
 - **Trajectories are sampled at every *assignment*, not at reads.** Since the
   slot-keyed rewrite (#262), a binding that is interrogated *anywhere* in the

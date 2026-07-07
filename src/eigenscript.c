@@ -219,11 +219,30 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
  * Value (the default path no longer promotes observed nums to tracked
  * pointers). Single source of truth for the VAL_NUM entropy formula. */
 static double entropy_of_num(double num) {
+    /* #412: unity is the HORIZON, not a home point. The binary-entropy
+     * formula is smooth and maximal at |x| = 1 (p = 0.5, H = 1.0); the old
+     * `x == 1.0 -> 0.0` special case inverted it, so a value placed exactly
+     * at 1.0 read as converged while 1.0000001 read as maximally entropic —
+     * a discontinuity the formula never had. |x| = 0 keeps H = 0 (p = 1,
+     * the guard below), which IS the formula's limit there. */
     double x = fabs(num);
-    if (x == 0.0 || x == 1.0) return 0.0;
+    if (x == 0.0) return 0.0;
     double p = 1.0 / (1.0 + x);
     if (p <= 0.0 || p >= 1.0) return 0.0;
     return -(p * log2(p) + (1.0-p) * log2(1.0-p));
+}
+
+/* #412: `how` — deadband-normalized settledness of the last observed step.
+ * 1.0 = the last assignment moved entropy not at all; 0.0 = it moved by the
+ * settle deadband (g_obs_dh_zero, the same threshold the converged window
+ * uses) or more; linear in between. A pure function of the recorded dH, so
+ * `how is x at L` reads identically from tape history — no new record kind.
+ * (The old 1 - entropy/last_entropy was degenerate: the observer refreshes
+ * last_entropy to entropy on every push, so it read 0 or 1 only.) */
+double observer_settledness(double dH) {
+    double r = fabs(dH) / g_obs_dh_zero;
+    if (r > 1.0) r = 1.0;
+    return 1.0 - r;
 }
 
 static double compute_entropy_impl(Value *v, int depth) {

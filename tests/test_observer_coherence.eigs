@@ -1,0 +1,72 @@
+# test_observer_coherence.eigs — #412: the two settled decisions.
+#
+# 1. Unity is the HORIZON: entropy(|x| = 1.0) is the formula's smooth
+#    maximum (1.0), not the old special-cased 0 — so a value placed exactly
+#    at 1.0 never reads `converged` (a flat run there is `equilibrium`:
+#    steady, but not at a low-entropy home). entropy(0) stays 0 (home point).
+# 2. `how` is deadband-normalized settledness of the last step:
+#    1 - min(1, |dH| / dh_zero) — a real 0..1 gradient of the ENTROPY
+#    trajectory (value-channel readings are report_value's job, #294),
+#    pure in the recorded dH so `how is x at L` matches the live reading.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+# --- unity horizon ---
+x is 1.0
+check of ["entropy at exactly 1.0 is the formula max", (where is x) == 1.0]
+nx is 0 - 1.0
+check of ["entropy at exactly -1.0 too", (where is nx) == 1.0]
+z is 0.0
+check of ["entropy at 0 stays 0 (home point)", (where is z) == 0.0]
+
+y is 1.0
+i is 0
+loop while i < 12:
+    y is 1.0
+    i is i + 1
+check of ["flat run AT 1.0 is equilibrium, not converged", (report of y) == "equilibrium"]
+check of ["converged predicate stays false at the horizon", (converged of y) == 0]
+
+# a genuine convergence to the home region still classifies converged
+c is 100.0
+j is 0
+loop while j < 40:
+    c is c * 0.5
+    j is j + 1
+check of ["decay toward 0 still converges", (report of c) == "converged"]
+
+# --- how gradient ---
+s is 5.0
+k is 0
+loop while k < 12:
+    s is 5.0
+    k is k + 1
+check of ["settled binding: how == 1", (how is s) == 1.0]
+
+b is 5.0
+b is 1.0
+check of ["entropy step >= deadband: how == 0", (how is b) == 0.0]
+check of ["how tracks the recorded dH", (why is b) > 0.001]
+
+# in [0, 1] always
+q is 3.0
+q is 3.0001
+hq is how is q
+check of ["how stays in [0,1]", (hq >= 0.0) and (hq <= 1.0)]
+
+total is pass_count + fail_count
+print of f"Observer coherence tests: {pass_count}/{total} passed"
+if fail_count == 0:
+    print of "All tests passed"
+else:
+    assert of [0, "Some observer coherence tests failed"]
