@@ -29,7 +29,6 @@
 #endif
 
 /* Internal helpers defined in eigenscript.c. */
-void runtime_error(int line, const char *fmt, ...);
 Value* make_num_permanent(double n);
 const char* val_type_name(ValType t);
 int dict_has(Value *dict, const char *key);
@@ -388,37 +387,37 @@ static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
 
 Value* builtin_bit_and(Value *arg) {
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_and expects [number, number]"); return make_null(); }
+    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_and expects [number, number]"); return make_null(); }
     return make_num((double)(a & b));
 }
 
 Value* builtin_bit_or(Value *arg) {
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_or expects [number, number]"); return make_null(); }
+    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_or expects [number, number]"); return make_null(); }
     return make_num((double)(a | b));
 }
 
 Value* builtin_bit_xor(Value *arg) {
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_xor expects [number, number]"); return make_null(); }
+    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_xor expects [number, number]"); return make_null(); }
     return make_num((double)(a ^ b));
 }
 
 Value* builtin_bit_not(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) { runtime_error(0, "bit_not expects a number"); return make_null(); }
+    if (!arg || arg->type != VAL_NUM) { rt_error(EK_TYPE, 0, "bit_not expects a number"); return make_null(); }
     int64_t a = (int64_t)arg->data.num;
     return make_num((double)(~a));
 }
 
 Value* builtin_bit_shift_left(Value *arg) {
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_shl expects [number, number]"); return make_null(); }
+    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shl expects [number, number]"); return make_null(); }
     return make_num((double)(a << (b & 63)));
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { runtime_error(0, "bit_shr expects [number, number]"); return make_null(); }
+    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shr expects [number, number]"); return make_null(); }
     /* Arithmetic shift, like the infix >> on int64 (negative operands
      * keep their sign); mask a non-negative operand first for a
      * logical u32 shift. */
@@ -528,18 +527,18 @@ Value* builtin_report(Value *arg) {
  * or when working with values whose entropy changes are unusually small. */
 Value* builtin_set_observer_thresholds(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        runtime_error(0, "set_observer_thresholds requires [dh_zero, dh_small, h_low]");
+        rt_error(EK_TYPE, 0, "set_observer_thresholds requires [dh_zero, dh_small, h_low]");
         return make_null();
     }
     double dh_zero  = arg->data.list.items[0]->data.num;
     double dh_small = arg->data.list.items[1]->data.num;
     double h_low    = arg->data.list.items[2]->data.num;
     if (dh_zero <= 0 || dh_small <= 0 || h_low <= 0) {
-        runtime_error(0, "observer thresholds must be positive");
+        rt_error(EK_VALUE, 0, "observer thresholds must be positive");
         return make_null();
     }
     if (dh_zero >= dh_small) {
-        runtime_error(0, "dh_zero must be less than dh_small");
+        rt_error(EK_VALUE, 0, "dh_zero must be less than dh_small");
         return make_null();
     }
     fprintf(stderr, "Warning: observer thresholds changed — dh_zero=%.6f dh_small=%.6f h_low=%.6f\n",
@@ -595,19 +594,13 @@ Value* builtin_assert(Value *arg) {
         Value *msg = arg->data.list.items[1];
         if (!is_truthy(cond)) {
             char *msg_str = value_to_string(msg);
-            fprintf(stderr, "ASSERT FAIL: %s\n", msg_str);
-            snprintf(g_error_msg, sizeof(g_error_msg), "ASSERT FAIL: %s", msg_str);
+            rt_error(EK_ASSERT, 0, "ASSERT FAIL: %s", msg_str);
             free(msg_str);
-            g_has_error = 1;
-            eigs_clear_error_value();
         }
         return make_null();
     }
     if (!is_truthy(arg)) {
-        fprintf(stderr, "ASSERT FAIL\n");
-        snprintf(g_error_msg, sizeof(g_error_msg), "ASSERT FAIL");
-        g_has_error = 1;
-        eigs_clear_error_value();
+        rt_error(EK_ASSERT, 0, "ASSERT FAIL");
     }
     return make_null();
 }
@@ -615,9 +608,14 @@ Value* builtin_assert(Value *arg) {
 Value* builtin_throw(Value *arg) {
     /* g_error_msg always carries the stringified form (uncaught
      * printing, traces); g_error_value preserves the thrown value
-     * itself so `catch e` binds a dict/list/... unchanged. */
+     * itself so `catch e` binds a dict/list/string/... unchanged —
+     * user throws do NOT get the #406 {kind, message, line} wrapping.
+     * Kind/line are still stamped for host/embed introspection. */
     char *msg = value_to_string(arg);
     snprintf(g_error_msg, sizeof(g_error_msg), "%s", msg);
+    snprintf(g_error_raw, sizeof(g_error_raw), "%s", msg);
+    g_error_kind = (int)EK_USER;
+    g_error_line = vm_current_line();
     g_has_error = 1;
     eigs_clear_error_value();
     if (arg) {
@@ -951,7 +949,7 @@ Value* eigs_json_parse_value(const char *s, int *pos) {
 
 Value* builtin_json_decode(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
-        runtime_error(0, "json_decode requires a string, got %s",
+        rt_error(EK_TYPE, 0, "json_decode requires a string, got %s",
                 arg ? val_type_name(arg->type) : "null");
         return make_null();
     }
@@ -1406,7 +1404,7 @@ Value* builtin_str_replace(Value *arg) {
     if (new_len > old_len) {
         size_t grow = new_len - old_len;
         if (count != 0 && grow > (STR_REPLACE_MAX - str_len) / count) {
-            runtime_error(0, "str_replace result too large");
+            rt_error(EK_LIMIT, 0, "str_replace result too large");
             return make_null();
         }
         result_len = str_len + count * grow;
@@ -2508,7 +2506,7 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_load_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
-        runtime_error(0, "load_file requires a string path argument");
+        rt_error(EK_TYPE, 0, "load_file requires a string path argument");
         return make_null();
     }
     char resolved[8192];
@@ -2546,7 +2544,7 @@ Value* builtin_load_file(Value *arg) {
         free_ast(ast);
         free_tokenlist(&tl);
         free(source);
-        runtime_error(0, "load_file: parse error in '%s'", arg->data.str);
+        rt_error(EK_PARSE, 0, "load_file: parse error in '%s'", arg->data.str);
         return make_null();
     }
     /* Compile-stage diagnostics must fail the load too (#337) — same
@@ -2562,7 +2560,7 @@ Value* builtin_load_file(Value *arg) {
         free_ast(ast);
         free_tokenlist(&tl);
         free(source);
-        runtime_error(0, "load_file: compile error in '%s'", arg->data.str);
+        rt_error(EK_PARSE, 0, "load_file: compile error in '%s'", arg->data.str);
         return make_null();
     }
     g_parse_errors = saved_errors;
@@ -2747,7 +2745,7 @@ Value* builtin_write_text(Value *arg) {
  * "fail loudly" at the boundary. Documented in docs/TRACE.md. */
 static int replay_blocks(const char *fn) {
     if (__builtin_expect(g_replay_enabled, 0)) {
-        runtime_error(0,
+        rt_error(EK_IO, 0,
             "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
             "boundary; see docs/TRACE.md)", fn);
         return 1;
@@ -3382,15 +3380,15 @@ Value* builtin_secure_equals(Value *arg) {
  * high-byte construction bug (#435). */
 Value* builtin_chr(Value *arg) {
     if (!arg || arg->type != VAL_NUM) {
-        runtime_error(0, "chr requires a number");
+        rt_error(EK_TYPE, 0, "chr requires a number");
         return make_null();
     }
     double num = arg->data.num;
     if (num != (double)(long long)num || num < 1 || num > 255) {
         if (num == 0)
-            runtime_error(0, "chr of 0: strings are NUL-terminated and cannot hold a NUL byte (use a buffer for binary with NULs)");
+            rt_error(EK_VALUE, 0, "chr of 0: strings are NUL-terminated and cannot hold a NUL byte (use a buffer for binary with NULs)");
         else
-            runtime_error(0, "chr requires an integer byte in 1..255 (got %g); for a codepoint use utf8_encode (lib/utf8.eigs)", num);
+            rt_error(EK_VALUE, 0, "chr requires an integer byte in 1..255 (got %g); for a codepoint use utf8_encode (lib/utf8.eigs)", num);
         return make_null();
     }
     char buf[2] = { (char)(int)num, '\0' };
@@ -3416,11 +3414,11 @@ Value* builtin_hex(Value *arg) {
         num = arg->data.list.items[0]->data.num;
         width = (long long)arg->data.list.items[1]->data.num;
     } else {
-        runtime_error(0, "hex requires a number or [number, nibbles]");
+        rt_error(EK_TYPE, 0, "hex requires a number or [number, nibbles]");
         return make_null();
     }
     if (num < 0 || num != (double)(long long)num || num > 9007199254740992.0) {
-        runtime_error(0, "hex requires a non-negative integer (got %g)", num);
+        rt_error(EK_VALUE, 0, "hex requires a non-negative integer (got %g)", num);
         return make_null();
     }
     if (width < 0) width = 0;
@@ -3499,7 +3497,7 @@ Value* builtin_eval(Value *arg) {
          * free it here so error paths don't leak (free_ast walks NULL
          * children safely — see parse_check for the same pattern). */
         free_ast(ast);
-        runtime_error(0, "eval: parse error in code string");
+        rt_error(EK_PARSE, 0, "eval: parse error in code string");
         return make_null();
     }
     /* Keep the zeroed counter through COMPILE too — compile-stage
@@ -3512,7 +3510,7 @@ Value* builtin_eval(Value *arg) {
         chunk_free(ev_chunk);
         free_tokenlist(&tl);
         free_ast(ast);
-        runtime_error(0, "eval: compile error in code string");
+        rt_error(EK_PARSE, 0, "eval: compile error in code string");
         return make_null();
     }
     g_parse_errors = saved_errors;
@@ -3617,7 +3615,7 @@ Value* builtin_vm_run_bytecode(Value *arg) {
  * raises a catchable error so untrusted generated code can't touch the outside. */
 Value* builtin_sandbox_blocked(Value *arg) {
     (void)arg;
-    runtime_error(0, "blocked in sandbox");
+    rt_error(EK_SANDBOX, 0, "blocked in sandbox");
     return make_null();
 }
 
@@ -3715,6 +3713,14 @@ Value* builtin_sandbox_run(Value *arg) {
         Value *zero = make_num(0);
         dict_set(out, "ok", zero);   /* dict_set increfs; drop our ref */
         val_decref(zero);
+        /* #406: surface the build failure structurally — a descriptor
+         * that doesn't verify is a bad argument value, same shape as a
+         * runtime failure's error field. */
+        Value *ev = make_dict(3);
+        dict_set_owned(ev, "kind", make_str(err_kind_name(EK_VALUE)));
+        dict_set_owned(ev, "message", make_str("invalid chunk descriptor"));
+        dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(out, "error", ev);
         return out;
     }
 
@@ -3748,7 +3754,19 @@ Value* builtin_sandbox_run(Value *arg) {
     Value *result = vm_execute(chunk, sbox);
 
     int ok = g_has_error ? 0 : 1;
-    if (g_has_error) { g_has_error = 0; eigs_clear_error_value(); }
+    if (g_has_error) {
+        /* #406: surface the failure structurally on the result dict so the
+         * graded ladder can discriminate (sandbox denial vs type error vs
+         * parse) without re-running outside the sandbox. Same shape as a
+         * catch binding: {kind, message, line}. */
+        Value *ev = make_dict(3);
+        dict_set_owned(ev, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
+        dict_set_owned(ev, "message", make_str(g_error_raw));
+        dict_set_owned(ev, "line", make_num((double)g_error_line));
+        dict_set_owned(out, "error", ev);
+        g_has_error = 0;
+        eigs_clear_error_value();
+    }
 
     g_sandbox_loop_max = saved_max;
     g_loop_iterations = saved_iters;
@@ -3775,7 +3793,7 @@ Value* builtin_sandbox_run(Value *arg) {
  * vm_run_bytecode) calls this to do the same. Returns the previous setting. */
 Value* builtin_record_history(Value *arg) {
     if (!arg || arg->type != VAL_NUM) {
-        runtime_error(0, "record_history requires a number flag (nonzero=on, 0=off), got %s",
+        rt_error(EK_TYPE, 0, "record_history requires a number flag (nonzero=on, 0=off), got %s",
                       arg ? val_type_name(arg->type) : "null");
         return make_null();
     }
@@ -3906,7 +3924,7 @@ Value* builtin_range(Value *arg) {
    Much faster than a loop for large arrays (e.g., 64K memory). */
 Value* builtin_fill(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        runtime_error(0, "fill requires [count, value]");
+        rt_error(EK_TYPE, 0, "fill requires [count, value]");
         return make_list(0);
     }
     int count = (int)arg->data.list.items[0]->data.num;
@@ -4113,7 +4131,7 @@ Value* builtin_spawn(Value *arg) {
             for (int i = 0; i < fn_arg_count; i++) val_decref(fn_args[i]);
             free(fn_args);
         }
-        runtime_error(0, "spawn requires a function or [function, arg1, ...]");
+        rt_error(EK_TYPE, 0, "spawn requires a function or [function, arg1, ...]");
         return make_null();
     }
     ThreadHandle *h = xmalloc(sizeof(ThreadHandle));
@@ -4165,7 +4183,7 @@ Value* builtin_spawn(Value *arg) {
             free(h->fn_args);
         }
         free(h);
-        runtime_error(0, "spawn: could not create thread: %s", strerror(pc_rc));
+        rt_error(EK_IO, 0, "spawn: could not create thread: %s", strerror(pc_rc));
         return make_null();
     }
     Value *d = make_dict(8);
@@ -4176,7 +4194,7 @@ Value* builtin_spawn(Value *arg) {
 
 Value* builtin_thread_join(Value *arg) {
     if (!arg || arg->type != VAL_DICT) {
-        runtime_error(0, "thread_join requires a thread handle");
+        rt_error(EK_TYPE, 0, "thread_join requires a thread handle");
         return make_null();
     }
     Value *hv = dict_get(arg, "_handle_id");
@@ -4258,12 +4276,12 @@ Value* builtin_channel(Value *arg) {
  * old shared-mutable-container hazard for the copied types. */
 Value* builtin_send(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        runtime_error(0, "send requires [channel, value]");
+        rt_error(EK_TYPE, 0, "send requires [channel, value]");
         return make_null();
     }
     Channel *ch = get_channel(arg->data.list.items[0]);
     if (!ch) {
-        runtime_error(0, "send: invalid channel");
+        rt_error(EK_VALUE, 0, "send: invalid channel");
         return make_null();
     }
     /* Deep-copy into a self-contained heap value (refcount 1) owned by the
@@ -4288,7 +4306,7 @@ Value* builtin_recv(Value *arg) {
     if (replay_blocks("recv")) return make_null();
     Channel *ch = get_channel(arg);
     if (!ch) {
-        runtime_error(0, "recv: invalid channel");
+        rt_error(EK_VALUE, 0, "recv: invalid channel");
         return make_null();
     }
     pthread_mutex_lock(&ch->mutex);
@@ -4310,7 +4328,7 @@ Value* builtin_try_recv(Value *arg) {
     if (replay_blocks("try_recv")) return make_null();
     Channel *ch = get_channel(arg);
     if (!ch) {
-        runtime_error(0, "try_recv: invalid channel");
+        rt_error(EK_VALUE, 0, "try_recv: invalid channel");
         return make_null();
     }
     pthread_mutex_lock(&ch->mutex);
@@ -4332,17 +4350,17 @@ Value* builtin_try_recv(Value *arg) {
 Value* builtin_recv_timeout(Value *arg) {
     if (replay_blocks("recv_timeout")) return make_null();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        runtime_error(0, "recv_timeout requires [channel, ms]");
+        rt_error(EK_TYPE, 0, "recv_timeout requires [channel, ms]");
         return make_null();
     }
     Channel *ch = get_channel(arg->data.list.items[0]);
     if (!ch) {
-        runtime_error(0, "recv_timeout: invalid channel");
+        rt_error(EK_VALUE, 0, "recv_timeout: invalid channel");
         return make_null();
     }
     Value *ms_v = arg->data.list.items[1];
     if (ms_v->type != VAL_NUM) {
-        runtime_error(0, "recv_timeout: ms must be a number");
+        rt_error(EK_TYPE, 0, "recv_timeout: ms must be a number");
         return make_null();
     }
     double ms = ms_v->data.num;
@@ -4386,7 +4404,7 @@ Value* builtin_recv_timeout(Value *arg) {
 Value* builtin_close_channel(Value *arg) {
     Channel *ch = get_channel(arg);
     if (!ch) {
-        runtime_error(0, "close_channel: invalid channel");
+        rt_error(EK_VALUE, 0, "close_channel: invalid channel");
         return make_null();
     }
     pthread_mutex_lock(&ch->mutex);
@@ -4490,7 +4508,7 @@ void handle_table_drain(EigsState *st) {
    using torus distance. Keys default to "px", "py", "active" if not provided. */
 Value* builtin_nearest_in_range(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 6) {
-        runtime_error(0, "nearest_in_range requires [entities, x, y, range, world_w, world_h]");
+        rt_error(EK_TYPE, 0, "nearest_in_range requires [entities, x, y, range, world_w, world_h]");
         return make_null();
     }
     Value *entities = arg->data.list.items[0];
@@ -4610,7 +4628,7 @@ Value* builtin_nearest_in_range(Value *arg) {
    pointer chases through 6-key dicts. */
 Value* builtin_nearest_in_range_all(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
-        runtime_error(0, "nearest_in_range_all requires [entities, range, world_w, world_h]");
+        rt_error(EK_TYPE, 0, "nearest_in_range_all requires [entities, range, world_w, world_h]");
         return make_null();
     }
     Value *entities = arg->data.list.items[0];
@@ -5108,7 +5126,7 @@ Value* builtin_sort(Value *arg) {
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *v = arg->data.list.items[i];
         if (!v || v->type != t || (t != VAL_NUM && t != VAL_STR)) {
-            runtime_error(0, "sort requires all numbers or all strings "
+            rt_error(EK_TYPE, 0, "sort requires all numbers or all strings "
                           "(element %d is %s); use sort_by for records",
                           i, v ? val_type_name(v->type) : "null");
             return make_null();
@@ -5121,7 +5139,7 @@ Value* builtin_sort(Value *arg) {
 
 Value* builtin_dispatch(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        runtime_error(0, "dispatch requires [table, key, arg]");
+        rt_error(EK_TYPE, 0, "dispatch requires [table, key, arg]");
         return make_null();
     }
     Value *table = arg->data.list.items[0];
@@ -5131,18 +5149,18 @@ Value* builtin_dispatch(Value *arg) {
     /* Key validation mirrors OP_DISPATCH (#353): a non-number key used to
      * reinterpret whatever union member the value carried as a double. */
     if (!key_v || key_v->type != VAL_NUM) {
-        runtime_error(0, "dispatch: key must be a number");
+        rt_error(EK_TYPE, 0, "dispatch: key must be a number");
         return make_null();
     }
     int key = (int)key_v->data.num;
     if ((double)key != key_v->data.num) {
-        runtime_error(0, "dispatch key must be an integer, got %g",
+        rt_error(EK_VALUE, 0, "dispatch key must be an integer, got %g",
                       key_v->data.num);
         return make_null();
     }
 
     if (!table || table->type != VAL_LIST) {
-        runtime_error(0, "dispatch: table must be a list");
+        rt_error(EK_TYPE, 0, "dispatch: table must be a list");
         return make_null();
     }
     if (key < 0 || key >= table->data.list.count) {
@@ -5176,7 +5194,7 @@ Value* builtin_dispatch(Value *arg) {
         return make_null();
     }
 
-    runtime_error(0, "dispatch: slot %d is not a function", key);
+    rt_error(EK_TYPE, 0, "dispatch: slot %d is not a function", key);
     return make_null();
 }
 

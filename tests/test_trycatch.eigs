@@ -8,7 +8,7 @@ try:
     x is items[10]
 catch err:
     caught1 is err
-assert_true of [contains of [caught1, "index"], "catch index error"]
+assert_true of [contains of [caught1.message, "index"], "catch index error"]
 
 # Catch undefined variable
 caught2 is ""
@@ -16,7 +16,7 @@ try:
     x is nonexistent_var  # lint: allow E003 -- deliberately undefined (tests the runtime error)
 catch err:
     caught2 is err
-assert_true of [contains of [caught2, "undefined"], "catch undefined var"]
+assert_true of [contains of [caught2.message, "undefined"], "catch undefined var"]
 
 # Catch type error
 caught3 is ""
@@ -24,7 +24,7 @@ try:
     x is [1, 2] - 5
 catch err:
     caught3 is err
-assert_true of [contains of [caught3, "cannot apply"], "catch type error"]
+assert_true of [contains of [caught3.message, "cannot apply"], "catch type error"]
 
 # No error — catch body should not run
 ran_catch is 0
@@ -74,21 +74,21 @@ try:
     x is nums[1.5]
 catch e:
     caught_frac is e
-assert_true of [contains of [caught_frac, "integer"], "fractional list index raises"]
+assert_true of [contains of [caught_frac.message, "integer"], "fractional list index raises"]
 
 caught_sfrac is ""
 try:
     x is "abc"[1.5]
 catch e:
     caught_sfrac is e
-assert_true of [contains of [caught_sfrac, "integer"], "fractional string index raises"]
+assert_true of [contains of [caught_sfrac.message, "integer"], "fractional string index raises"]
 
 caught_setfrac is ""
 try:
     nums[0.5] is 99
 catch e:
     caught_setfrac is e
-assert_true of [contains of [caught_setfrac, "integer"], "fractional index assignment raises"]
+assert_true of [contains of [caught_setfrac.message, "integer"], "fractional index assignment raises"]
 
 # floor is the explicit escape hatch for division-derived indices
 assert_eq of [nums[floor of (5 / 2)], 30, "floor of (5/2) indexes element 2"]
@@ -133,7 +133,8 @@ catch e2:
 assert_eq of [rethrown.kind, "inner", "rethrow preserves structure"]
 
 # A runtime error after a structured throw supersedes the stash:
-# catch must bind the runtime error's message string, not the old dict.
+# catch must bind the runtime error's {kind, message, line} dict, not
+# the old thrown dict (#406).
 superseded is null
 try:
     try:
@@ -142,7 +143,7 @@ try:
         x is undefined_variable_here  # lint: allow E003 -- deliberately undefined (tests the runtime error)
 catch e3:
     superseded is e3
-assert_eq of [type of superseded, "str", "runtime error supersedes stale value"]
-assert_true of [contains of [superseded, "undefined variable"], "superseding message intact"]
+assert_eq of [superseded.kind, "undefined_name", "runtime error supersedes stale value"]
+assert_true of [contains of [superseded.message, "undefined variable"], "superseding message intact"]
 
 test_summary of null

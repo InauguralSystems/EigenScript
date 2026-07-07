@@ -145,10 +145,23 @@ int eigs_has_error(void) {
     return (eigs_current && g_has_error) ? 1 : 0;
 }
 
+const char *eigs_last_error_kind(void) {
+    if (!eigs_current || !g_has_error) return NULL;
+    return err_kind_name((ErrKind)g_error_kind);
+}
+
+int eigs_last_error_line(void) {
+    if (!eigs_current || !g_has_error) return 0;
+    return g_error_line;
+}
+
 void eigs_clear_error(void) {
     if (!eigs_current) return;
     g_has_error = 0;
     g_error_msg[0] = '\0';
+    g_error_raw[0] = '\0';
+    g_error_kind = 0;
+    g_error_line = 0;
     g_first_error_msg[0] = '\0';
     g_first_error_line = 0;
     eigs_clear_error_value();

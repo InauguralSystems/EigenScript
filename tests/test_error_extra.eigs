@@ -14,7 +14,7 @@ catch e:
     caught1 is 1
     msg1 is e
 assert of [caught1 == 1, "EE01 try/catch caught undefined variable"]
-assert of [(contains of [msg1, "undefined variable"]) == 1, "EE01 message mentions 'undefined variable'"]
+assert of [(contains of [msg1.message, "undefined variable"]) == 1, "EE01 message mentions 'undefined variable'"]
 
 # ---- try/catch around an index-out-of-range ----
 caught2 is 0
@@ -26,7 +26,7 @@ catch e:
     caught2 is 1
     msg2 is e
 assert of [caught2 == 1, "EE02 try/catch caught out-of-range index"]
-assert of [(contains of [msg2, "out of range"]) == 1, "EE02 message mentions 'out of range'"]
+assert of [(contains of [msg2.message, "out of range"]) == 1, "EE02 message mentions 'out of range'"]
 
 # ---- try/catch around indexing a number ----
 caught3 is 0
@@ -38,7 +38,7 @@ catch e:
     caught3 is 1
     msg3 is e
 assert of [caught3 == 1, "EE03 try/catch caught index-on-num"]
-assert of [(contains of [msg3, "cannot index"]) == 1, "EE03 message mentions 'cannot index'"]
+assert of [(contains of [msg3.message, "cannot index"]) == 1, "EE03 message mentions 'cannot index'"]
 
 # ---- try/catch around calling a non-function ----
 caught4 is 0
@@ -142,7 +142,7 @@ catch e:
     caught13 is 1
     msg13 is e
 assert of [caught13 == 1, "EE13 caught non-integer list index (read)"]
-assert of [(contains of [msg13, "index must be an integer"]) == 1, "EE13 message mentions integer index"]
+assert of [(contains of [msg13.message, "index must be an integer"]) == 1, "EE13 message mentions integer index"]
 
 # ---- list index out of range (assignment) ----
 caught14 is 0
@@ -154,7 +154,7 @@ catch e:
     caught14 is 1
     msg14 is e
 assert of [caught14 == 1, "EE14 caught out-of-range list index (assignment)"]
-assert of [(contains of [msg14, "out of range"]) == 1, "EE14 message mentions 'out of range'"]
+assert of [(contains of [msg14.message, "out of range"]) == 1, "EE14 message mentions 'out of range'"]
 
 # ---- non-integer index (assignment) ----
 caught15 is 0
@@ -166,7 +166,7 @@ catch e:
     caught15 is 1
     msg15 is e
 assert of [caught15 == 1, "EE15 caught non-integer list index (assignment)"]
-assert of [(contains of [msg15, "index must be an integer"]) == 1, "EE15 message mentions integer index"]
+assert of [(contains of [msg15.message, "index must be an integer"]) == 1, "EE15 message mentions integer index"]
 
 # ---- set a field on a non-dict ----
 caught16 is 0
@@ -178,7 +178,7 @@ catch e:
     caught16 is 1
     msg16 is e
 assert of [caught16 == 1, "EE16 caught field-set on a number"]
-assert of [(contains of [msg16, "cannot set field"]) == 1, "EE16 message mentions 'cannot set field'"]
+assert of [(contains of [msg16.message, "cannot set field"]) == 1, "EE16 message mentions 'cannot set field'"]
 
 # ---- index a non-indexable for assignment ----
 caught17 is 0
@@ -190,7 +190,7 @@ catch e:
     caught17 is 1
     msg17 is e
 assert of [caught17 == 1, "EE17 caught index-assignment on a number"]
-assert of [(contains of [msg17, "cannot index"]) == 1, "EE17 message mentions 'cannot index'"]
+assert of [(contains of [msg17.message, "cannot index"]) == 1, "EE17 message mentions 'cannot index'"]
 
 # ---- dict indexed by a non-string key (read) ----
 caught18 is 0
@@ -202,7 +202,7 @@ catch e:
     caught18 is 1
     msg18 is e
 assert of [caught18 == 1, "EE18 caught dict indexed by number (read)"]
-assert of [(contains of [msg18, "cannot index"]) == 1, "EE18 message mentions 'cannot index'"]
+assert of [(contains of [msg18.message, "cannot index"]) == 1, "EE18 message mentions 'cannot index'"]
 
 # ---- dict indexed by a non-string key (assignment) ----
 caught19 is 0
@@ -214,7 +214,7 @@ catch e:
     caught19 is 1
     msg19 is e
 assert of [caught19 == 1, "EE19 caught dict indexed by number (assignment)"]
-assert of [(contains of [msg19, "cannot index"]) == 1, "EE19 message mentions 'cannot index'"]
+assert of [(contains of [msg19.message, "cannot index"]) == 1, "EE19 message mentions 'cannot index'"]
 
 # ---- '+' on incompatible types ----
 caught20 is 0
@@ -225,7 +225,7 @@ catch e:
     caught20 is 1
     msg20 is e
 assert of [caught20 == 1, "EE20 caught '+' on dict and num"]
-assert of [(contains of [msg20, "cannot apply '+'"]) == 1, "EE20 message mentions cannot apply '+'"]
+assert of [(contains of [msg20.message, "cannot apply '+'"]) == 1, "EE20 message mentions cannot apply '+'"]
 
 # ---- '/' on incompatible types ----
 caught21 is 0
@@ -236,7 +236,7 @@ catch e:
     caught21 is 1
     msg21 is e
 assert of [caught21 == 1, "EE21 caught '/' on list and num"]
-assert of [(contains of [msg21, "cannot apply '/'"]) == 1, "EE21 message mentions cannot apply '/'"]
+assert of [(contains of [msg21.message, "cannot apply '/'"]) == 1, "EE21 message mentions cannot apply '/'"]
 
 # ---- '%' on incompatible types ----
 caught22 is 0
@@ -247,7 +247,7 @@ catch e:
     caught22 is 1
     msg22 is e
 assert of [caught22 == 1, "EE22 caught '%' on list and num"]
-assert of [(contains of [msg22, "cannot apply"]) == 1, "EE22 message mentions cannot apply"]
+assert of [(contains of [msg22.message, "cannot apply"]) == 1, "EE22 message mentions cannot apply"]
 
 # ---- buffer index out of range ----
 caught23 is 0
@@ -259,7 +259,7 @@ catch e:
     caught23 is 1
     msg23 is e
 assert of [caught23 == 1, "EE23 caught buffer index out of range"]
-assert of [(contains of [msg23, "out of range"]) == 1, "EE23 message mentions 'out of range'"]
+assert of [(contains of [msg23.message, "out of range"]) == 1, "EE23 message mentions 'out of range'"]
 
 # ---- buffer non-integer index ----
 caught24 is 0
@@ -271,6 +271,6 @@ catch e:
     caught24 is 1
     msg24 is e
 assert of [caught24 == 1, "EE24 caught non-integer buffer index"]
-assert of [(contains of [msg24, "index must be an integer"]) == 1, "EE24 message mentions integer index"]
+assert of [(contains of [msg24.message, "index must be an integer"]) == 1, "EE24 message mentions integer index"]
 
 print of "All error_extra tests passed"

@@ -85,6 +85,16 @@ const char *eigs_last_error_message(void);
 int         eigs_has_error(void);
 void        eigs_clear_error(void);
 
+/* #406: kind of the pending error, from the closed vocabulary documented
+ * in docs/DIAGNOSTICS.md ("undefined_name", "type_mismatch", "value",
+ * "index_range", "parse", "io", "limit", "sandbox", "interrupt",
+ * "assert", "internal"; "user" for `throw`). NULL when no error is
+ * pending. Same lifetime rules as eigs_last_error_message (the kind
+ * string itself is static). eigs_last_error_line is 1-based, 0 when
+ * unknown. */
+const char *eigs_last_error_kind(void);
+int         eigs_last_error_line(void);
+
 /* ---- Globals ------------------------------------------------------ */
 
 /* Bind `val` into the global env under `name`. The store retains its own

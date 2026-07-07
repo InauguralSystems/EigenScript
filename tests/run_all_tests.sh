@@ -718,6 +718,51 @@ check_exit "EM18 caught error exits 0" 'try:
     x is undefined_thing
 catch e:
     print of "ok"' "0"
+
+# #406: catch binds {kind, message, line} for built-in runtime errors.
+# check() compares stdout exactly; these run the program and grep stdout.
+check_stdout() {
+    TOTAL=$((TOTAL + 1))
+    local test_name="$1"
+    local script="$2"
+    local expected_substr="$3"
+    local tmpfile
+    tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
+    printf '%s\n' "$script" > "$tmpfile"
+    local outfile
+    outfile=$(mktemp /tmp/eigs_out_XXXXXX.txt)
+    ./eigenscript "$tmpfile" >"$outfile" 2>/dev/null || true
+    if grep -qF "$expected_substr" "$outfile"; then
+        echo "  PASS: $test_name"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $test_name (output: '$(cat "$outfile")', expected to contain '$expected_substr')"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$tmpfile" "$outfile"
+}
+
+check_stdout "EM26 catch binds kind from the closed set" 'try:
+    x is undefined_thing
+catch e:
+    print of e.kind' "undefined_name"
+check_stdout "EM27 catch message carries no Error-line frame" 'try:
+    v is [1,2][9]
+catch e:
+    print of e.message' "index 9 out of range (list length 2)"
+check_stdout "EM28 catch line is the failing source line" 'x is 1
+try:
+    y is [1] - 1
+catch e:
+    print of e.line' "3"
+check_stdout "EM29 thrown string binds untouched (no dict wrap)" 'try:
+    throw of "boom"
+catch e:
+    print of (type of e)' "str"
+check_stdout "EM30 assert failure is catchable with kind assert" 'try:
+    assert of [1 == 2, "nope"]
+catch e:
+    print of e.kind' "assert"
 echo ""
 
 # [17] Transformer smoke test — only runs if model extension compiled in.

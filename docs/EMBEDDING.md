@@ -133,10 +133,16 @@ if (!r) {
 const char *eigs_last_error_message(void);  /* NULL when no error */
 int         eigs_has_error(void);
 void        eigs_clear_error(void);
+/* #406 structured errors: kind from the closed vocabulary in
+ * docs/DIAGNOSTICS.md ("user" for `throw`), NULL when no error;
+ * 1-based line, 0 when unknown. */
+const char *eigs_last_error_kind(void);
+int         eigs_last_error_line(void);
 ```
 
 The returned message pointer is owned by the thread state — copy it if
-you need to keep it past the next API call.
+you need to keep it past the next API call. (The kind string itself is
+static.)
 
 ## Aborting a running eval
 

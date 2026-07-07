@@ -21,7 +21,7 @@ catch e:
     c3 is 1
     m3 is e
 assert of [c3 == 1, "HTTP03 http_route non-list arg raises"]
-assert of [(contains of [m3, "http_route requires"]) == 1, "HTTP03 message"]
+assert of [(contains of [m3.message, "http_route requires"]) == 1, "HTTP03 message"]
 
 c4 is 0
 try:

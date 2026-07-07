@@ -226,17 +226,25 @@ except Exception as e:
     print(f"caught: {e}")
 ```
 
-EigenScript — errors are strings; `throw of` raises, `catch name:`
-binds:
+EigenScript — `throw of` raises, `catch name:` binds. A thrown value
+binds unchanged; a built-in runtime error binds a `{kind, message,
+line}` dict with `kind` from a closed vocabulary (no exception
+hierarchy — discriminate on the kind string):
 
 ```eigenscript
 try:
     throw of "boom"
 catch e:
     print of f"caught: {e}"
+
+try:
+    x is [1] - 1
+catch e:
+    print of f"caught: {e.kind} at line {e.line}"
 ```
 ```output
 caught: boom
+caught: type_mismatch at line 7
 ```
 
 ## Pipes (vs Lisp threading / shell pipes)

@@ -22,7 +22,7 @@ catch e:
     c1 is 1
     m1 is e
 assert of [c1 == 1, "BE01 set_observer_thresholds wrong arity caught"]
-assert of [(contains of [m1, "set_observer_thresholds requires"]) == 1, "BE01 message"]
+assert of [(contains of [m1.message, "set_observer_thresholds requires"]) == 1, "BE01 message"]
 
 # ---- set_observer_thresholds: non-positive threshold ----
 c2 is 0
@@ -33,7 +33,7 @@ catch e:
     c2 is 1
     m2 is e
 assert of [c2 == 1, "BE02 non-positive threshold caught"]
-assert of [(contains of [m2, "must be positive"]) == 1, "BE02 message"]
+assert of [(contains of [m2.message, "must be positive"]) == 1, "BE02 message"]
 
 # ---- set_observer_thresholds: dh_zero >= dh_small ----
 c3 is 0
@@ -44,7 +44,7 @@ catch e:
     c3 is 1
     m3 is e
 assert of [c3 == 1, "BE03 dh_zero>=dh_small caught"]
-assert of [(contains of [m3, "dh_zero must be less than dh_small"]) == 1, "BE03 message"]
+assert of [(contains of [m3.message, "dh_zero must be less than dh_small"]) == 1, "BE03 message"]
 
 # ---- load_file: non-string path ----
 c4 is 0
@@ -55,7 +55,7 @@ catch e:
     c4 is 1
     m4 is e
 assert of [c4 == 1, "BE04 load_file non-string caught"]
-assert of [(contains of [m4, "load_file requires a string"]) == 1, "BE04 message"]
+assert of [(contains of [m4.message, "load_file requires a string"]) == 1, "BE04 message"]
 
 # ---- fill: wrong argument shape ----
 c5 is 0
@@ -66,7 +66,7 @@ catch e:
     c5 is 1
     m5 is e
 assert of [c5 == 1, "BE05 fill wrong shape caught"]
-assert of [(contains of [m5, "fill requires"]) == 1, "BE05 message"]
+assert of [(contains of [m5.message, "fill requires"]) == 1, "BE05 message"]
 
 # ---- send: not a channel ----
 c6 is 0
@@ -77,7 +77,7 @@ catch e:
     c6 is 1
     m6 is e
 assert of [c6 == 1, "BE06 send invalid channel caught"]
-assert of [(contains of [m6, "invalid channel"]) == 1, "BE06 message"]
+assert of [(contains of [m6.message, "invalid channel"]) == 1, "BE06 message"]
 
 # ---- try_recv: not a channel ----
 c7 is 0
@@ -88,7 +88,7 @@ catch e:
     c7 is 1
     m7 is e
 assert of [c7 == 1, "BE07 try_recv invalid channel caught"]
-assert of [(contains of [m7, "invalid channel"]) == 1, "BE07 message"]
+assert of [(contains of [m7.message, "invalid channel"]) == 1, "BE07 message"]
 
 # ---- recv_timeout: not a channel ----
 c8 is 0
@@ -99,7 +99,7 @@ catch e:
     c8 is 1
     m8 is e
 assert of [c8 == 1, "BE08 recv_timeout invalid channel caught"]
-assert of [(contains of [m8, "invalid channel"]) == 1, "BE08 message"]
+assert of [(contains of [m8.message, "invalid channel"]) == 1, "BE08 message"]
 
 # ---- dispatch: wrong arity ----
 c9 is 0
@@ -110,7 +110,7 @@ catch e:
     c9 is 1
     m9 is e
 assert of [c9 == 1, "BE09 dispatch wrong arity caught"]
-assert of [(contains of [m9, "dispatch requires"]) == 1, "BE09 message"]
+assert of [(contains of [m9.message, "dispatch requires"]) == 1, "BE09 message"]
 
 # ---- dispatch: table is not a list (variable arg to avoid list spread) ----
 c10 is 0
@@ -122,7 +122,7 @@ catch e:
     c10 is 1
     m10 is e
 assert of [c10 == 1, "BE10 dispatch table-not-list caught"]
-assert of [(contains of [m10, "table must be a list"]) == 1, "BE10 message"]
+assert of [(contains of [m10.message, "table must be a list"]) == 1, "BE10 message"]
 
 # ---- dispatch: slot is not a function ----
 c11 is 0
@@ -135,7 +135,7 @@ catch e:
     c11 is 1
     m11 is e
 assert of [c11 == 1, "BE11 dispatch slot-not-fn caught"]
-assert of [(contains of [m11, "is not a function"]) == 1, "BE11 message"]
+assert of [(contains of [m11.message, "is not a function"]) == 1, "BE11 message"]
 
 # ---- dispatch: key must be a number (builtin path; used to reinterpret ----
 # ---- the value's union bits as a double — #353 parity fix)            ----
@@ -148,7 +148,7 @@ catch e:
     c11b is 1
     m11b is e
 assert of [c11b == 1, "BE11b dispatch non-number key caught"]
-assert of [(contains of [m11b, "key must be a number"]) == 1, "BE11b message"]
+assert of [(contains of [m11b.message, "key must be a number"]) == 1, "BE11b message"]
 
 # ---- dispatch: fractional key raises on the builtin path too (#353) ----
 c11c is 0
@@ -160,7 +160,7 @@ catch e:
     c11c is 1
     m11c is e
 assert of [c11c == 1, "BE11c dispatch fractional key caught"]
-assert of [(contains of [m11c, "integer"]) == 1, "BE11c message"]
+assert of [(contains of [m11c.message, "integer"]) == 1, "BE11c message"]
 
 # ---- sort: list of records raises instead of silently no-oping (#368) ----
 c11d is 0
@@ -172,7 +172,7 @@ catch e:
     c11d is 1
     m11d is e
 assert of [c11d == 1, "BE11d sort on records caught"]
-assert of [(contains of [m11d, "use sort_by"]) == 1, "BE11d message"]
+assert of [(contains of [m11d.message, "use sort_by"]) == 1, "BE11d message"]
 
 # ---- sort: mixed numbers and strings raises ----
 c11e is 0
@@ -184,7 +184,7 @@ catch e:
     c11e is 1
     m11e is e
 assert of [c11e == 1, "BE11e sort on mixed types caught"]
-assert of [(contains of [m11e, "element 1 is"]) == 1, "BE11e message"]
+assert of [(contains of [m11e.message, "element 1 is"]) == 1, "BE11e message"]
 
 # ---- sort: strings now actually sort (was a silent no-op, #368) ----
 strs is ["cherry", "apple", "banana"]
@@ -212,7 +212,7 @@ catch e:
     c_hex1 is 1
     m_hex1 is e
 assert of [c_hex1 == 1, "hex negative raises"]
-assert of [(contains of [m_hex1, "non-negative integer"]) == 1, "hex negative message"]
+assert of [(contains of [m_hex1.message, "non-negative integer"]) == 1, "hex negative message"]
 c_hex2 is 0
 try:
     hex of 1.5
@@ -237,8 +237,8 @@ catch e:
     c_chr1 is 1
     m_chr1 is e
 assert of [c_chr1 == 1, "chr above 255 raises"]
-assert of [(contains of [m_chr1, "1..255"]) == 1, "chr range message"]
-assert of [(contains of [m_chr1, "utf8_encode"]) == 1, "chr message points at utf8_encode"]
+assert of [(contains of [m_chr1.message, "1..255"]) == 1, "chr range message"]
+assert of [(contains of [m_chr1.message, "utf8_encode"]) == 1, "chr message points at utf8_encode"]
 c_chr2 is 0
 try:
     chr of (0 - 1)
@@ -259,7 +259,7 @@ catch e:
     c_chr4 is 1
     m_chr4 is e
 assert of [c_chr4 == 1, "chr of 0 raises (NUL unrepresentable)"]
-assert of [(contains of [m_chr4, "NUL"]) == 1, "chr NUL message"]
+assert of [(contains of [m_chr4.message, "NUL"]) == 1, "chr NUL message"]
 c_chr5 is 0
 try:
     chr of "A"
@@ -276,7 +276,7 @@ catch e:
     c12 is 1
     m12 is e
 assert of [c12 == 1, "BE12 nearest_in_range wrong shape caught"]
-assert of [(contains of [m12, "nearest_in_range requires"]) == 1, "BE12 message"]
+assert of [(contains of [m12.message, "nearest_in_range requires"]) == 1, "BE12 message"]
 
 # ---- nearest_in_range_all: wrong argument shape ----
 c13 is 0
@@ -287,6 +287,6 @@ catch e:
     c13 is 1
     m13 is e
 assert of [c13 == 1, "BE13 nearest_in_range_all wrong shape caught"]
-assert of [(contains of [m13, "nearest_in_range_all requires"]) == 1, "BE13 message"]
+assert of [(contains of [m13.message, "nearest_in_range_all requires"]) == 1, "BE13 message"]
 
 print of "All builtin_errors tests passed"

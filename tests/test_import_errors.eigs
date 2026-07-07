@@ -10,7 +10,7 @@ try:
     import _nonexistent_module_xyz_42
 catch e:
     err1 is e
-assert_true of [contains of [err1, "not found"], "import nonexistent triggers 'not found' error"]
+assert_true of [contains of [err1.message, "not found"], "import nonexistent triggers 'not found' error"]
 
 # ---- Test 2: Import module with parse errors ----
 # Write a file with invalid syntax into script_dir/../lib/ which is where
@@ -24,7 +24,7 @@ catch e:
     err2 is e
 rm of bad_path
 assert_true of [(len of err2) > 0, "import parse-error triggers error"]
-assert_true of [contains of [err2, "parse errors"], "import parse-error message contains 'parse errors'"]
+assert_true of [contains of [err2.message, "parse errors"], "import parse-error message contains 'parse errors'"]
 
 # ---- Test 3: Import via eval — nonexistent ----
 # Confirms the same not-found path works through eval indirection
@@ -33,7 +33,7 @@ try:
     eval of "import _also_nonexistent_999"
 catch e:
     err3 is e
-assert_true of [contains of [err3, "not found"], "eval import nonexistent caught"]
+assert_true of [contains of [err3.message, "not found"], "eval import nonexistent caught"]
 
 # ---- Test 4: Import valid module works (sanity check) ----
 import math
@@ -60,7 +60,7 @@ catch e:
     err_lf is e
 rm of bad_lf_path
 assert_true of [(len of err_lf) > 0, "load_file parse-error raises (not a silent no-op)"]
-assert_true of [contains of [err_lf, "parse error"], "load_file parse-error message contains 'parse error'"]
+assert_true of [contains of [err_lf.message, "parse error"], "load_file parse-error message contains 'parse error'"]
 
 # ---- Test 7: a clean load_file is unaffected ----
 ok_lf_path is "../lib/_test_ok_loadfile_tmp.eigs"
