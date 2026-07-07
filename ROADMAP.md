@@ -63,8 +63,11 @@ observer/deterministic-replay niche instead of diluting it.**
       Fully executed: shipped in 0.27.0 with lint `W017` as the migration
       audit; the ouroboros `frontend.eigs` parity leg landed at the
       v0.27.0 pin bump (ouroboros PR #68)
-- [ ] Structured runtime errors `{kind, message, line}` with a closed
-      kind set ([#406](https://github.com/InauguralSystems/EigenScript/issues/406))
+- [x] Structured runtime errors `{kind, message, line}` with a closed
+      kind set ([#406](https://github.com/InauguralSystems/EigenScript/issues/406)):
+      11 kinds (no `arity` — calls pad by design), user throws bind
+      untouched, uncaught output byte-unchanged; kind-typo lint is the
+      follow-up ([#469](https://github.com/InauguralSystems/EigenScript/issues/469))
 - [~] Column tracking + caret/span diagnostics — parse errors carry
       line:col (human + `--lint --json` E002 + LSP range) AND print a
       source excerpt + caret (increment 2); per-warning spans and
