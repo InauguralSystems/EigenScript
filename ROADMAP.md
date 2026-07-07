@@ -1,14 +1,15 @@
 # Roadmap
 
-Current version: **0.26.0**
+Current version: **0.27.0**
 
-Recently shipped (0.25.0/0.26.0, 2026-07-04): the hex contract (integer-only,
-lexed on every profile, decisive `0x` prefix — #378/#381), the async abort
-seam (`eigs_set_abort_flag`, #379), `bit_*` builtins aligned with the infix
-int64 operators (#382), and seven new stdlib surfaces (checksum, datetime
-civil math, bcd, wait_until, hexdump, harness, observer_slots — #384). Full
-per-version detail lives in [CHANGELOG.md](CHANGELOG.md) — this file is
-forward-looking.
+Recently shipped (0.27.0, 2026-07-06): the one call rule (#405, BREAKING —
+bare literal list after `of` is always an argument list, W017 as the
+migration audit), tape format versioning (#411, BREAKING — replay refuses
+mismatched tapes), E003 undefined-name lint (#404 increment one), the
+interactive REPL line editor (#392), `chr` as ord's loud inverse (#435),
+the two-file amalgamation (#397), and four silent-wrong-answer builtin
+fixes. Full per-version detail lives in [CHANGELOG.md](CHANGELOG.md) —
+this file is forward-looking.
 
 ## Next
 
@@ -22,7 +23,7 @@ observer/deterministic-replay niche instead of diluting it.**
 
 ### Now (days-class, independently shippable)
 
-- [ ] REPL line editing/history — port the EigenOS editor;
+- [x] REPL line editing/history — port the EigenOS editor;
       kill the `^[[A` first-run failure ([#392](https://github.com/InauguralSystems/EigenScript/issues/392))
 - [x] Stdlib discoverability CI gate — undocumented `regex_*` are the
       proven failure mode ([#393](https://github.com/InauguralSystems/EigenScript/issues/393))
@@ -50,23 +51,28 @@ observer/deterministic-replay niche instead of diluting it.**
 
 ### Next (weeks-class, dependency-ordered)
 
-- [ ] Scope-aware name-resolution lint (E-class, shared with the LSP) —
-      the highest correctness yield per week available
-      ([#404](https://github.com/InauguralSystems/EigenScript/issues/404))
+- [~] Scope-aware name-resolution lint (E-class, shared with the LSP) —
+      the highest correctness yield per week available; increment one
+      (E003 undefined-name, whole-file over-approximation) shipped in
+      0.27.0 — the fuller path-aware pass, token-precise LSP ranges
+      (waits on #407 columns), and the #460 library-fragment ergonomics
+      remain ([#404](https://github.com/InauguralSystems/EigenScript/issues/404))
 - [x] **Language change:** bare literal list after `of` is always an
       argument list — kill the 1-element spread trap while pre-1.0 makes
       it cheap ([#405](https://github.com/InauguralSystems/EigenScript/issues/405), closes #153).
-      Landed on main with lint `W017` as the migration audit; the
-      ouroboros `frontend.eigs` parity leg rides the next release + pin
-      bump (with the `chr` raise and #411 tape headers)
+      Fully executed: shipped in 0.27.0 with lint `W017` as the migration
+      audit; the ouroboros `frontend.eigs` parity leg landed at the
+      v0.27.0 pin bump (ouroboros PR #68)
 - [ ] Structured runtime errors `{kind, message, line}` with a closed
       kind set ([#406](https://github.com/InauguralSystems/EigenScript/issues/406))
 - [~] Column tracking + caret/span diagnostics — parse errors now carry
       line:col (human + `--lint --json` E002 + LSP range); per-warning spans,
       runtime-error columns, and caret rendering remain
       ([#407](https://github.com/InauguralSystems/EigenScript/issues/407))
-- [ ] **Trace-tape format versioning decision** — blocks anything that
-      ships a tape across a version boundary
+- [x] **Trace-tape format versioning decision** — decided and shipped in
+      0.27.0 (version-stamped tapes, refuse-on-mismatch, no compat
+      promise); unblocks the tape-shipping train (#413 bundle, #418
+      eigsdap, #414 sockets, #408's future record kinds)
       ([#411](https://github.com/InauguralSystems/EigenScript/issues/411))
 - [ ] **Deterministic cooperative task layer on the tape** — the
       strategic headline: byte-identical replay of concurrent programs,
