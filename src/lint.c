@@ -1208,13 +1208,30 @@ static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
  * surfaces it before then, including on cold branches (the classic
  * dynamic-language typo bug).
  *
- * Direction of approximation: the binding set is a whole-file
- * OVER-approximation. Mutate-outward makes most bindings visible across
- * scopes anyway, and a `local` in a sibling function is still collected —
- * over-collecting can only silence a true positive, never invent a false one
- * (the same fail-open discipline as W015; a false positive breaks consumer
- * CI, which runs --lint nonzero-on-warning). Scope-precise "unbound on THIS
- * path" analysis is #404's later increments.
+ * Direction of approximation (increment two): the binding sets are
+ * SCOPE-precise but path-insensitive, modeling the runtime's actual rules
+ * (each empirically pinned against the interpreter):
+ *   - a fresh-name `is` (or `local`) inside a function binds
+ *     FUNCTION-LOCAL — invisible to siblings and to module code;
+ *   - closures read enclosing function scopes (lexical chain);
+ *   - module-level names are order-insensitive (a function body may read
+ *     a module name bound after the definition);
+ *   - a nested `define` binds its name in the ENCLOSING function only;
+ *   - a module-level `for` LOOP-SCOPES its variable (reading it after
+ *     the loop is a runtime error) — a function-level `for` does not;
+ *   - listcomp vars and catch vars bind in the containing scope.
+ * Within a scope the binder set is still an over-approximation across
+ * paths ("bound on some path" suppresses — the sibling-branch
+ * first-assignment case). Over-collecting can only silence a true
+ * positive, never invent a false one (a false positive breaks consumer
+ * CI, which runs --lint nonzero-on-warning). Path-precise "unbound on
+ * THIS path" analysis is #404's remaining increment.
+ *
+ * External contributions (load_file targets, `# lint: loaded-by`
+ * composers) stay a FLAT over-approximation collected into the base
+ * env: the runtime executes those files into the caller's scope, and
+ * scope-narrowing someone else's file buys precision nobody asked for
+ * at real false-positive risk.
  *
  * The binding base comes from register_builtins() itself — the runtime's own
  * registry on a scratch Env — never a hand-copied list, so it cannot drift
@@ -1235,9 +1252,20 @@ static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
 
 #define E003_MAX_VISITED 64
 #define E003_MAX_DEPTH   16
+#define E003_MAX_SCOPES  4096
 
 typedef struct {
-    Env *bind;                      /* builtins + every binder seen */
+    Env *bind;                      /* base: builtins + flat external binders */
+    Env *module_scope;              /* the linted file's top-level scope */
+    Env *scope;                     /* current scope (chains to bind via parents) */
+    /* Scope registry: COLLECT creates one Env per scope-introducing node
+     * (function, lambda, module-level for) in walk order; FLAG re-enters
+     * the same Envs by replaying the counter. Both walks visit the same
+     * nodes in the same order, so the indices agree by construction. */
+    Env *scopes[E003_MAX_SCOPES];
+    int scope_count;                /* total created (COLLECT) */
+    int scope_idx;                  /* replay cursor (FLAG) */
+    int external;                   /* 1 → collecting a loaded file: bind flat */
     int dynamic;                    /* 1 → eval/computed-load_file: pass off */
     char base_dir[4096];            /* dir of the linted file */
     char *visited[E003_MAX_VISITED];/* realpath'd load_file targets */
@@ -1247,10 +1275,69 @@ typedef struct {
 
 enum { E003_COLLECT, E003_FLAG };
 
-static void e003_bind_name(E003 *e, const char *name) {
+static void e003_bind_in(Env *env, const char *name) {
     if (!name || !name[0]) return;
-    if (!env_get(e->bind, name))
-        env_set_local_owned(e->bind, name, make_null());
+    if (!env_get(env, name))
+        env_set_local_owned(env, name, make_null());
+}
+
+/* Bind in the CURRENT scope — external (loaded-file) collection routes
+ * flat to the base env instead. */
+static void e003_bind_name(E003 *e, const char *name) {
+    e003_bind_in(e->external ? e->bind : e->scope, name);
+}
+
+/* Enter the next scope: COLLECT creates it as a child of the current
+ * scope; FLAG replays the registry. Returns the previous scope for the
+ * caller to restore. During external collection scopes are not pushed
+ * (flat by design). */
+static Env *e003_scope_push(E003 *e, int mode) {
+    if (e->external) return e->scope;
+    Env *prev = e->scope;
+    if (mode == E003_COLLECT) {
+        if (e->scope_count >= E003_MAX_SCOPES) { e->dynamic = 1; return prev; }
+        Env *s = env_new(e->scope);
+        e->scopes[e->scope_count++] = s;
+        e->scope = s;
+    } else {
+        if (e->scope_idx >= e->scope_count) { e->dynamic = 1; return prev; }
+        e->scope = e->scopes[e->scope_idx++];
+    }
+    return prev;
+}
+
+/* Edit-distance-1 near-miss against every name visible from `scope`
+ * (walking the parent chain). Returns the first hit or NULL. Distance 1
+ * only — one substitution, insertion, or deletion — so a suggestion is
+ * near-certain to be the intended name and the message stays quiet
+ * otherwise. */
+static int e003_dist1(const char *a, const char *b) {
+    size_t la = strlen(a), lb = strlen(b);
+    if (la == lb) {                       /* one substitution */
+        int diff = 0;
+        for (size_t i = 0; i < la; i++)
+            if (a[i] != b[i] && ++diff > 1) return 0;
+        return diff == 1;
+    }
+    if (la + 1 == lb) { const char *t = a; a = b; b = t; la = lb; lb = la - 1; }
+    else if (la != lb + 1) return 0;
+    /* a is longer by one: one deletion from a yields b */
+    size_t i = 0, j = 0; int skipped = 0;
+    while (i < la && j < lb) {
+        if (a[i] == b[j]) { i++; j++; continue; }
+        if (skipped) return 0;
+        skipped = 1; i++;
+    }
+    return 1;
+}
+
+static const char *e003_suggest(Env *scope, const char *name) {
+    if (strlen(name) < 3) return NULL;   /* 1-2 char typos suggest noise */
+    for (Env *s = scope; s; s = s->parent)
+        for (int i = 0; i < s->count; i++)
+            if (s->names[i] && e003_dist1(name, s->names[i]))
+                return s->names[i];
+    return NULL;
 }
 
 static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode);
@@ -1286,9 +1373,12 @@ static void e003_load(E003 *e, const char *relpath) {
     if (g_parse_errors > 0 || !ast) {
         e->dynamic = 1;
     } else {
+        int saved_external = e->external;
+        e->external = 1;   /* flat collection into the base env */
         e->depth++;
         e003_walk(ast, e, NULL, E003_COLLECT);
         e->depth--;
+        e->external = saved_external;
     }
     g_parse_errors = saved_errors;
     free_ast(ast);
@@ -1313,10 +1403,16 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
                 if (strcmp(n->data.ident.name, "eval") == 0 ||
                     strcmp(n->data.ident.name, "load_file") == 0)
                     e->dynamic = 1;
-            } else if (!env_get(e->bind, n->data.ident.name)) {
-                lint_error(ctx, n->line, "E003",
-                           "undefined name '%s' — no binding on any path",
-                           n->data.ident.name);
+            } else if (!env_get(e->scope, n->data.ident.name)) {
+                const char *near = e003_suggest(e->scope, n->data.ident.name);
+                if (near)
+                    lint_error(ctx, n->line, "E003",
+                               "undefined name '%s' — no binding on any path (did you mean '%s'?)",
+                               n->data.ident.name, near);
+                else
+                    lint_error(ctx, n->line, "E003",
+                               "undefined name '%s' — no binding on any path",
+                               n->data.ident.name);
             }
             break;
         case AST_RELATION: {
@@ -1346,30 +1442,48 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
                     e003_bind_name(e, n->data.list_pattern_assign.names[i]);
             e003_walk(n->data.list_pattern_assign.expr, e, ctx, mode);
             break;
-        case AST_FUNC:
-            if (mode == E003_COLLECT) {
-                e003_bind_name(e, n->data.func.name);
+        case AST_FUNC: {
+            /* The function NAME binds in the enclosing scope (a nested
+             * define is enclosing-local — module code cannot call it);
+             * params and body binders live in the function's own scope. */
+            if (mode == E003_COLLECT) e003_bind_name(e, n->data.func.name);
+            Env *prev = e003_scope_push(e, mode);
+            if (mode == E003_COLLECT)
                 for (int i = 0; i < n->data.func.param_count; i++)
                     e003_bind_name(e, n->data.func.params[i]);
-            }
             if (n->data.func.param_defaults)
                 for (int i = 0; i < n->data.func.param_count; i++)
                     e003_walk(n->data.func.param_defaults[i], e, ctx, mode);
             for (int i = 0; i < n->data.func.body_count; i++)
                 e003_walk(n->data.func.body[i], e, ctx, mode);
+            e->scope = prev;
             break;
-        case AST_LAMBDA:
+        }
+        case AST_LAMBDA: {
+            Env *prev = e003_scope_push(e, mode);
             if (mode == E003_COLLECT)
                 for (int i = 0; i < n->data.lambda.param_count; i++)
                     e003_bind_name(e, n->data.lambda.params[i]);
             e003_walk(n->data.lambda.body, e, ctx, mode);
+            e->scope = prev;
             break;
-        case AST_FOR:
-            if (mode == E003_COLLECT) e003_bind_name(e, n->data.forloop.var);
+        }
+        case AST_FOR: {
+            /* Module-level `for` LOOP-SCOPES its variable (the VM drops
+             * it at loop exit — reading it after the loop is a runtime
+             * error); a function-level `for` var is an ordinary local.
+             * The iterable is evaluated before the var exists, so it
+             * walks in the outer scope. */
             e003_walk(n->data.forloop.iter, e, ctx, mode);
+            int module_level = (!e->external && e->scope == e->module_scope);
+            Env *prev = e->scope;
+            if (module_level) prev = e003_scope_push(e, mode);
+            if (mode == E003_COLLECT) e003_bind_name(e, n->data.forloop.var);
             for (int i = 0; i < n->data.forloop.body_count; i++)
                 e003_walk(n->data.forloop.body[i], e, ctx, mode);
+            e->scope = prev;
             break;
+        }
         case AST_LISTCOMP:
             if (mode == E003_COLLECT) e003_bind_name(e, n->data.listcomp.var);
             e003_walk(n->data.listcomp.expr, e, ctx, mode);
@@ -1474,6 +1588,8 @@ static void check_undefined_names(ASTNode *ast, const char *path,
     E003 e;
     memset(&e, 0, sizeof(e));
     e.bind = env_new(NULL);
+    e.module_scope = env_new(e.bind);
+    e.scope = e.module_scope;
     register_builtins(e.bind);
     register_store_builtins(e.bind);
     /* Extension builtins bind by NAME regardless of this binary's build
@@ -1535,9 +1651,15 @@ static void check_undefined_names(ASTNode *ast, const char *path,
         }
     }
     e003_walk(ast, &e, NULL, E003_COLLECT);
-    if (!e.dynamic)
+    if (!e.dynamic) {
+        e.scope = e.module_scope;   /* replay from the top */
+        e.scope_idx = 0;
         e003_walk(ast, &e, ctx, E003_FLAG);
+    }
     for (int i = 0; i < e.visited_n; i++) free(e.visited[i]);
+    /* Children first: each scope holds a counted ref on its parent. */
+    for (int i = e.scope_count - 1; i >= 0; i--) env_decref(e.scopes[i]);
+    env_decref(e.module_scope);
     env_decref(e.bind);
 }
 

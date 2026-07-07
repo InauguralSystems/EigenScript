@@ -54,8 +54,11 @@ observer/deterministic-replay niche instead of diluting it.**
 - [~] Scope-aware name-resolution lint (E-class, shared with the LSP) —
       the highest correctness yield per week available; increment one
       (E003 undefined-name, whole-file over-approximation) shipped in
-      0.27.0 — the fuller path-aware pass, token-precise LSP ranges
-      (waits on #407 columns), and the #460 library-fragment ergonomics
+      0.27.0; increment two (scope-precise binding sets — fn-locals
+      invisible to siblings, module for-var loop-scoping, closures,
+      edit-distance-1 did-you-mean; #460 loaded-by shipped separately)
+      landed post-0.27.0 — the path-aware pass and token-precise LSP
+      ranges (waits on #407 columns)
       remain ([#404](https://github.com/InauguralSystems/EigenScript/issues/404))
 - [x] **Language change:** bare literal list after `of` is always an
       argument list — kill the 1-element spread trap while pre-1.0 makes

@@ -672,6 +672,100 @@ check_not_contains "allow-file E003 suppresses file-wide" "$OUTPUT" "E003"
 check_contains "allow-file does not over-suppress other codes" "$OUTPUT" "W001"
 rm -f "$TMPFILE"
 
+# --- E003 increment two (#404): scope-precise binding sets ---
+# Every rule below is pinned against the interpreter: each firing fixture
+# is a program the runtime rejects with "undefined variable", each silent
+# fixture is a program the runtime runs clean.
+
+# Fires: a function-local (plain `is` on a fresh name, and `local`) is
+# invisible to module code and sibling functions.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define g() as:
+    fn_only is 42
+    local fn_local is 7
+    return fn_only + fn_local
+define h() as:
+    return fn_only
+r is g of null
+print of fn_local
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires on sibling read of fn-local" "$OUTPUT" "undefined name 'fn_only'"
+check_contains "E003 fires on module read of local" "$OUTPUT" "undefined name 'fn_local'"
+rm -f "$TMPFILE"
+
+# Fires: a nested define binds in the enclosing function only.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define outer() as:
+    define inner() as:
+        return 1
+    return inner of null
+r is outer of null
+print of (inner of null)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires on module call of nested define" "$OUTPUT" "undefined name 'inner'"
+rm -f "$TMPFILE"
+
+# Fires: a module-level `for` loop-scopes its variable — the VM drops it
+# at loop exit, so a post-loop read is a runtime error.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+acc is 0
+for item in [1, 2, 3]:
+    acc is acc + item
+print of item
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires on post-loop read of module for-var" "$OUTPUT" "undefined name 'item'"
+rm -f "$TMPFILE"
+
+# Near-miss suggestion: edit-distance-1 against the visible binding set.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+total is 100
+print of totl
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 suggests the near-miss binding" "$OUTPUT" "did you mean 'total'?"
+rm -f "$TMPFILE"
+
+# Silent: the scope rules the runtime actually has — closures read
+# enclosing function locals; a function body reads a module name bound
+# after the definition; a FUNCTION-level for-var survives its loop;
+# a listcomp var leaks to the containing scope; a closure defined in a
+# module loop body reads the loop var.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define outer() as:
+    local z is 7
+    define inner() as:
+        return z
+    return inner of null
+define late_reader() as:
+    return bound_later
+define fn_for() as:
+    for j in [1, 2]:
+        x is j
+    return j
+bound_later is 5
+squares is [v * v for v in [1, 2]]
+last_v is v
+fns is []
+for k in [1, 2]:
+    define mk() as:
+        return k
+    append of [fns, mk]
+first is fns[0]
+total_sum is (outer of null) + (late_reader of null) + (fn_for of null) + last_v + (first of null) + squares[0]
+print of total_sum
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 silent on scope-precise legal reads" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

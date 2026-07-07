@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **E003 is scope-precise (#404, increment two)** — the undefined-name
+  pass models the runtime's real scope rules instead of a whole-file
+  binding set: function-locals (fresh-name `is` and `local`) are
+  invisible to siblings and module code, closures read enclosing
+  function scopes, nested `define` names are enclosing-local, and a
+  module-level `for` loop-scopes its variable (a post-loop read is a
+  runtime error the lint now catches; function-level `for` vars
+  survive, matching the VM). Messages gain an edit-distance-1
+  suggestion: `undefined name 'totl' — no binding on any path (did you
+  mean 'total'?)`. Calibration: zero E003 across lib/, examples/,
+  tests/ and all 10 consumer repos. External files (`load_file`
+  targets, `# lint: loaded-by` composers) still contribute a flat
+  over-approximated set. Path-precise "unbound on THIS path" analysis
+  remains #404's last increment.
 - **Structured runtime errors (#406, BREAKING)** — `catch` now binds a
   `{kind, message, line}` dict for built-in runtime errors instead of
   the flat `"Error line N: ..."` string: `kind` from a closed,
