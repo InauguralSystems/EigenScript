@@ -4,6 +4,14 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Parse errors print a source excerpt with a caret under the offending
+  column (#407, increment two)** — for the column-carrying errors
+  (`expected X, got Y`, one-statement-per-line), in the script runner,
+  `--lint`, and the REPL. Additive: the `Parse error line N:C: ...`
+  message is byte-unchanged, so substring-matching tools keep working.
+  Remaining #407 scope: per-warning spans, runtime-error columns.
+
 ### Changed
 - **Observer surface coherence (#412), two settled decisions.** (1)
   **Unity is the horizon**: the `|x| == 1.0` entropy special case is
@@ -1855,7 +1863,7 @@ Together these dropped the ASan harness leak tally from 13 to 10.
 
 - **`"\r"` produces ASCII CR (0x0D) instead of the literal char `'r'`.**
   The lexer's escape switches (regular `"..."` and f-strings `f"..."`,
-  `src/lexer.c`) only handled `\n`, `\t`, `\\`, and `\"`; `\r` fell to
+  `src/lexer.c`) only handled `\n`, `\t`, `\`, and `\"`; `\r` fell to
   the default branch, which dropped the backslash and kept `'r'`. Real
   on-disk CRLF in files was always handled correctly by the C scanners
   (`scan_ints`, `scan_int_tokens`, `scan_tokens`) because `isspace('\r')`
@@ -2546,7 +2554,7 @@ Round 2 (residual gaps from `docs/TEST_COVERAGE_ANALYSIS.md`):
   `build_corpus` + the `tok_base_string` detokenizer table, both 0%
   before; lexer.c 71→92%), ext_store list-valued fields +
   corrupt-header rejects (`store_json_parse_array` was 0%;
-  test_store 14→22), JSON escape branches JH32–JH43 (`\n \r \t \/ \\`
+  test_store 14→22), JSON escape branches JH32–JH43 (`\n \r \t \/ \`
   + multi-byte `\uXXXX`, only ASCII `\u` ran before), lint
   fn-def-shadow / fn-unreachable / feature-rich-clean-walk
   (lint.c 50→81%), and hot interrogated/captured-name assignment in
@@ -3415,7 +3423,7 @@ nondeterministic input). The graphical debugger gains step-back.
   monotonic_*, env_get, read_*, random_hex, http_post, …).
 
 Full-fidelity nondet writer: per-record byte budget of 64 KiB, recursive
-emission of lists/dicts/buffers, strings escape `\"`, `\\`, `\n`, `\r`,
+emission of lists/dicts/buffers, strings escape `\"`, `\`, `\n`, `\r`,
 `\xNN`, truncation marker on overflow so partial records remain visually
 parseable. Disabled cost is one predicted-not-taken load + branch at each
 hook site.

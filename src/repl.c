@@ -55,7 +55,9 @@ static int repl_eval_buffer(Env *env, strbuf *input) {
         return 0;
     }
 
+    parser_set_caret_source(input->data); /* #407: excerpt+caret on col errors */
     ASTNode *ast = parse(&tl);
+    parser_set_caret_source(NULL);
     if (g_parse_errors > 0) {
         free_ast(ast);
         free_tokenlist(&tl);

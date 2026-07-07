@@ -1705,7 +1705,9 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     g_first_error_line = 0;
     g_first_error_msg[0] = '\0';
     TokenList tl = tokenize(source);
+    parser_set_caret_source(source);   /* #407: excerpt+caret on col errors */
     ASTNode *ast = parse(&tl);
+    parser_set_caret_source(NULL);
     if (g_parse_errors > 0) {
         /* A file that doesn't parse can't be linted. Emit the first
          * structured error (the same one the LSP surfaces) as E002. */

@@ -44,6 +44,36 @@ static int p_match(Parser *p, TokType type) {
  * second statement on the same line: `x is 2 x is 3` set x to 3, and a
  * typo'd `throw "boom"` (missing `of`) silently dropped the raise.
  * Recovery skips to end of line so one bad line yields one diagnostic. */
+/* #407 increment 2: one-line source excerpt + caret under the offending
+ * column, printed after a column-carrying parse-error message when the
+ * caller registered the unit's raw source. Additive — every existing
+ * "Parse error line N[:C]: ..." line is byte-unchanged, so substring
+ * assertions and tools that grep the message keep working. */
+static const char *g_parse_caret_src = NULL;
+
+void parser_set_caret_source(const char *src) {
+    g_parse_caret_src = src;
+}
+
+static void p_print_caret(int line, int col) {
+    const char *s = g_parse_caret_src;
+    if (!s || line < 1 || col < 0) return;
+    for (int l = 1; l < line; l++) {
+        s = strchr(s, '\n');
+        if (!s) return;
+        s++;
+    }
+    const char *e = strchr(s, '\n');
+    size_t len = e ? (size_t)(e - s) : strlen(s);
+    if (len > 200) len = 200;              /* pathological lines stay sane */
+    if ((size_t)col > len) return;
+    fprintf(stderr, "  %4d | %.*s\n", line, (int)len, s);
+    fprintf(stderr, "       | ");
+    for (int i = 0; i < col; i++)
+        fputc(s[i] == '\t' ? '\t' : ' ', stderr);
+    fprintf(stderr, "^\n");
+}
+
 static void p_end_statement(Parser *p) {
     if (p_match(p, TOK_NEWLINE)) return;
     TokType t = p_cur(p)->type;
@@ -59,6 +89,7 @@ static void p_end_statement(Parser *p) {
                  tok_type_name(tok->type));
         eigs_record_first_error_at(tok->line, tok->col, m);
     }
+    p_print_caret(tok->line, tok->col);
     g_parse_errors++;
     while (p_cur(p)->type != TOK_NEWLINE && p_cur(p)->type != TOK_EOF &&
            p_cur(p)->type != TOK_DEDENT)
@@ -78,6 +109,7 @@ static void p_expect(Parser *p, TokType type) {
                      tok_type_name(type), tok_type_name(p_cur(p)->type));
             eigs_record_first_error_at(p_cur(p)->line, p_cur(p)->col, m);
         }
+        p_print_caret(p_cur(p)->line, p_cur(p)->col);
         g_parse_errors++;
     }
     p_advance(p);
