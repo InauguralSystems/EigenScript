@@ -29,7 +29,7 @@ The tape is plain text, one record per line, four record kinds:
 |--------|---------|
 | `V <format> <runtime>` | Version header — always the first record (e.g. `V 1 0.26.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `L <line>` | Source-line event (from `OP_LINE`). Adjacent duplicate lines with no `A`/`N` between them are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
-| `A <name>=<value>` | Assignment delta: a top-level binding changed. |
+| `A <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and carries the name only (no scope qualifier), so same-named bindings from different scopes share one record stream. |
 | `N <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
 
 ### Value serialization
@@ -210,8 +210,12 @@ the same assignment hooks. This history is **independent of
 The tape exists for cross-run reproducibility; the history exists for
 in-run time travel.
 
-- History tracks top-level (global) bindings — the same assignments
-  that produce `A` records when tracing is on.
+- History tracks assignments at **every scope**, function locals
+  included — exactly the assignments that produce `A` records when
+  tracing is on. Entries are keyed by name only (no scope qualifier),
+  so `state_at` merges same-named bindings from different scopes into
+  one stream, and a query can see a local of a function that has
+  already returned.
 - Recording is compile-gated: the compiler enables it when the program
   contains `prev of`, any `at <expr>` qualifier, or a reference to
   `state_at` (and `EIGS_TRACE` enables it unconditionally). Programs
