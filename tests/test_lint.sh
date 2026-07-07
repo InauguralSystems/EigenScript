@@ -267,6 +267,24 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "human output carries [W001] code" "$OUTPUT" "warning\[W001\]"
 rm -f "$TMPFILE"
 
+# --- #459: W012/W013 derive from register_builtins(), not a hand list ---
+# `dispatch` and `chr` were registered builtins missing from the old
+# hand-copied BUILTINS[] array, so shadowing them lint'd clean.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define dispatch(a, b, c) as:
+    return 999
+define report(v) as:
+    return v
+chr is 7
+print of "hi"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W013 fires on define dispatch (#459)" "$OUTPUT" "W013.*'dispatch'"
+check_contains "W013 fires on define report (observer special form)" "$OUTPUT" "W013.*'report'"
+check_contains "W012 fires on a registry-only builtin (chr)" "$OUTPUT" "W012.*'chr'"
+rm -f "$TMPFILE"
+
 # --- JSON mode: structured diagnostics on stdout ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'

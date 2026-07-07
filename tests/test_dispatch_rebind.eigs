@@ -1,0 +1,47 @@
+# test_dispatch_rebind.eigs — #459: a user binding of `dispatch` wins over
+# the OP_DISPATCH superinstruction. This file's rebinds disable the opcode
+# for the WHOLE unit (the guard is a unit-level scan), so the opcode's own
+# behavior stays pinned in test_dispatch.eigs — keep these cases here.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+define f1(x) as:
+    return 20
+
+t is [null, f1]
+
+# Module-scope define: the user function wins (was: OP_DISPATCH hijacked the
+# call and returned 40 here).
+define dispatch(a, b, c) as:
+    if c == null:
+        return 7770
+    return 999
+
+check of ["define rebind wins", (dispatch of [t, 1, 21]) == 999]
+
+# The parenthesized #355 form is ONE argument: a/b/c land as [list]/null/null.
+check of ["paren form is one arg", (dispatch of ([t, 1, 21])) == 7770]
+
+# Module-scope reassign: the newest binding wins.
+define my3(a, b, c) as:
+    return 111
+
+dispatch is my3
+check of ["reassign rebind wins", (dispatch of [t, 1, 21]) == 111]
+
+total is pass_count + fail_count
+print of f"Dispatch rebind tests: {pass_count}/{total} passed"
+if fail_count == 0:
+    print of "All tests passed"
+else:
+    assert of [0, "Some dispatch rebind tests failed"]

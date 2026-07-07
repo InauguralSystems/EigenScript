@@ -939,6 +939,9 @@ void eigs_json_escape_string(strbuf *out, const char *s);
 /* ---- Registration ---- */
 
 void register_builtins(Env *env);
+/* #459: the compiler's OP_DISPATCH guard compares the compile-time binding
+ * of `dispatch` against the registered builtin to detect a rebound name. */
+Value *builtin_dispatch(Value *arg);
 void register_hash_builtins(Env *env);
 void eigenscript_set_args(int argc, char **argv);
 

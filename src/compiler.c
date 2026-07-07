@@ -77,6 +77,14 @@ typedef struct Compiler {
                                      * stamp the line". Reset at every basic-block boundary
                                      * (patch_jump targets, emit_loop, loop_start capture,
                                      * after CALL/DISPATCH/RETURN, fn entry). */
+    int               dispatch_rebound; /* #459, root-computed and copied to fn
+                                     * compilers: the unit binds `dispatch`
+                                     * somewhere (any scope) or references
+                                     * `eval`, so the OP_DISPATCH
+                                     * superinstruction must not fire — the
+                                     * normal name-call path honors the user
+                                     * binding, and the builtin fallback is
+                                     * semantically identical (fail-open). */
 } Compiler;
 
 int g_compile_module_slots = 0;
@@ -1289,6 +1297,122 @@ static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out)
     for (int i = 0; i < count; i++) collect_module_names_walk(stmts[i], out);
 }
 
+/* #459: does this compilation unit bind `dispatch` anywhere — module scope,
+ * any function/lambda body, any binder position (a plain `dispatch is ...`
+ * inside a function writes through to the global builtin binding, see
+ * in_globals in emit_assign_for_tos) — or reference `eval`, which can bind
+ * it dynamically (the same escape E003 honors)? Match patterns compare, they
+ * don't bind (same reading as the E003 walker). Over-approximation is
+ * deliberate: a spurious hit only costs the OP_DISPATCH fast path; a miss is
+ * a silent wrong answer. Cross-unit rebinding (a load_file'd module that
+ * rebinds `dispatch` for a sibling unit) is out of scope here and is what
+ * the compile-time env check at the emit site catches for the REPL/embed
+ * sequential-unit case. */
+static int scan_dispatch_rebind_block(ASTNode **stmts, int count);
+static int scan_dispatch_rebind(ASTNode *n) {
+    if (!n) return 0;
+    switch (n->type) {
+    case AST_IDENT:
+        return strcmp(n->data.ident.name, "eval") == 0;
+    case AST_ASSIGN:
+        if (strcmp(n->data.assign.name, "dispatch") == 0) return 1;
+        return scan_dispatch_rebind(n->data.assign.expr);
+    case AST_FUNC:
+        if (strcmp(n->data.func.name, "dispatch") == 0) return 1;
+        for (int i = 0; i < n->data.func.param_count; i++) {
+            if (strcmp(n->data.func.params[i], "dispatch") == 0) return 1;
+            if (n->data.func.param_defaults &&
+                scan_dispatch_rebind(n->data.func.param_defaults[i])) return 1;
+        }
+        return scan_dispatch_rebind_block(n->data.func.body, n->data.func.body_count);
+    case AST_LAMBDA:
+        for (int i = 0; i < n->data.lambda.param_count; i++)
+            if (strcmp(n->data.lambda.params[i], "dispatch") == 0) return 1;
+        return scan_dispatch_rebind(n->data.lambda.body);
+    case AST_BINOP:
+        return scan_dispatch_rebind(n->data.binop.left) ||
+               scan_dispatch_rebind(n->data.binop.right);
+    case AST_UNARY:
+        return scan_dispatch_rebind(n->data.unary.operand);
+    case AST_RELATION:
+        return scan_dispatch_rebind(n->data.relation.left) ||
+               scan_dispatch_rebind(n->data.relation.right);
+    case AST_IF:
+        return scan_dispatch_rebind(n->data.cond.cond) ||
+               scan_dispatch_rebind_block(n->data.cond.if_body, n->data.cond.if_count) ||
+               scan_dispatch_rebind_block(n->data.cond.else_body, n->data.cond.else_count);
+    case AST_LOOP:
+        return scan_dispatch_rebind(n->data.loop.cond) ||
+               scan_dispatch_rebind_block(n->data.loop.body, n->data.loop.body_count);
+    case AST_RETURN:
+        return scan_dispatch_rebind(n->data.ret.expr);
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        return scan_dispatch_rebind_block(n->data.block.stmts, n->data.block.count);
+    case AST_LIST:
+        return scan_dispatch_rebind_block(n->data.list.elems, n->data.list.count);
+    case AST_INDEX:
+        return scan_dispatch_rebind(n->data.index.target) ||
+               scan_dispatch_rebind(n->data.index.index);
+    case AST_LISTCOMP:
+        if (n->data.listcomp.var && strcmp(n->data.listcomp.var, "dispatch") == 0) return 1;
+        return scan_dispatch_rebind(n->data.listcomp.expr) ||
+               scan_dispatch_rebind(n->data.listcomp.iter) ||
+               scan_dispatch_rebind(n->data.listcomp.filter);
+    case AST_FOR:
+        if (strcmp(n->data.forloop.var, "dispatch") == 0) return 1;
+        return scan_dispatch_rebind(n->data.forloop.iter) ||
+               scan_dispatch_rebind_block(n->data.forloop.body, n->data.forloop.body_count);
+    case AST_PROGRAM:
+        return scan_dispatch_rebind_block(n->data.program.stmts, n->data.program.count);
+    case AST_INTERROGATE:
+        return scan_dispatch_rebind(n->data.interrogate.expr) ||
+               scan_dispatch_rebind(n->data.interrogate.at_expr);
+    case AST_TRY:
+        if (n->data.trycatch.err_name &&
+            strcmp(n->data.trycatch.err_name, "dispatch") == 0) return 1;
+        return scan_dispatch_rebind_block(n->data.trycatch.try_body, n->data.trycatch.try_count) ||
+               scan_dispatch_rebind_block(n->data.trycatch.catch_body, n->data.trycatch.catch_count);
+    case AST_DICT:
+        return scan_dispatch_rebind_block(n->data.dict.keys, n->data.dict.count) ||
+               scan_dispatch_rebind_block(n->data.dict.vals, n->data.dict.count);
+    case AST_DOT:
+        return scan_dispatch_rebind(n->data.dot.target);
+    case AST_DOT_ASSIGN:
+        return scan_dispatch_rebind(n->data.dot_assign.target) ||
+               scan_dispatch_rebind(n->data.dot_assign.expr);
+    case AST_INDEX_ASSIGN:
+        return scan_dispatch_rebind(n->data.index_assign.target) ||
+               scan_dispatch_rebind(n->data.index_assign.index) ||
+               scan_dispatch_rebind(n->data.index_assign.expr);
+    case AST_IMPORT:
+        return strcmp(n->data.import.module_name, "dispatch") == 0;
+    case AST_MATCH:
+        if (scan_dispatch_rebind(n->data.match.expr)) return 1;
+        for (int i = 0; i < n->data.match.case_count; i++) {
+            if (scan_dispatch_rebind(n->data.match.patterns[i])) return 1;
+            if (scan_dispatch_rebind_block(n->data.match.bodies[i],
+                                           n->data.match.body_counts[i])) return 1;
+        }
+        return 0;
+    case AST_LIST_PATTERN_ASSIGN:
+        for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+            if (strcmp(n->data.list_pattern_assign.names[i], "dispatch") == 0) return 1;
+        return scan_dispatch_rebind(n->data.list_pattern_assign.expr);
+    case AST_SLICE:
+        return scan_dispatch_rebind(n->data.slice.target) ||
+               scan_dispatch_rebind(n->data.slice.start) ||
+               scan_dispatch_rebind(n->data.slice.end);
+    default: /* NUM, STR, NULL, PREDICATE, BREAK, CONTINUE */
+        return 0;
+    }
+}
+static int scan_dispatch_rebind_block(ASTNode **stmts, int count) {
+    for (int i = 0; i < count; i++)
+        if (scan_dispatch_rebind(stmts[i])) return 1;
+    return 0;
+}
+
 /* Is this name visible in an enclosing function's locals/params?
  * Checks three places per enclosing compiler:
  *   - locals[]: names that the enclosing function chose to put on slot-path.
@@ -1885,6 +2009,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         fn_compiler.last_line = -1;  /* #174: force first OP_LINE in this chunk */
         fn_compiler.param_count = node->data.func.param_count;
         fn_compiler.module_names = c->module_names;
+        fn_compiler.dispatch_rebound = c->dispatch_rebound;
 
         /* Escape analysis: find names captured by nested closures + names that
          * are interrogated (who/when is x). These stay on the slow name path. */
@@ -1974,6 +2099,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         fn_compiler.last_line = -1;  /* #174: force first OP_LINE in this chunk */
         fn_compiler.param_count = node->data.lambda.param_count;
         fn_compiler.module_names = c->module_names;
+        fn_compiler.dispatch_rebound = c->dispatch_rebound;
 
         scan_for_captures(node->data.lambda.body, &fn_compiler.captured);
         scan_for_interrogated(node->data.lambda.body, &fn_compiler.interrogated);
@@ -2084,10 +2210,19 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             }
         }
 
-        /* Optimize: dispatch of [table, key, arg] → OP_DISPATCH */
+        /* Optimize: dispatch of [table, key, arg] → OP_DISPATCH.
+         * #459 guards, all fail-open to the semantically identical normal
+         * call path: (a) the unit statically binds `dispatch` or references
+         * `eval` (dispatch_rebound); (b) `dispatch` is already rebound in
+         * the compile-time env — a prior REPL line or embed eval (an absent
+         * binding stays on the fast path: some embeds run without
+         * register_builtins); (c) the parenthesized #355 form is ONE
+         * argument, not three (bare-list-only, matching the #405 rule). */
         if (fn_node && fn_node->type == AST_IDENT &&
             strcmp(fn_node->data.ident.name, "dispatch") == 0 &&
+            !c->dispatch_rebound &&
             arg_node && arg_node->type == AST_LIST &&
+            !arg_node->parenthesized &&
             arg_node->data.list.count == 3) {
             compile_node(c, arg_node->data.list.elems[0]); /* table */
             compile_node(c, arg_node->data.list.elems[1]); /* key */
@@ -2513,6 +2648,17 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env) {
     NameSet module_names = {0};
     if (ast) collect_module_names_walk(ast, &module_names);
     compiler.module_names = &module_names;
+
+    /* #459: OP_DISPATCH must not hijack a user-rebound `dispatch`. Static
+     * half: the unit binds the name somewhere or references eval. Dynamic
+     * half: a PRIOR unit in this env (REPL line, embed eval) already rebound
+     * it — visible at compile time as a non-builtin_dispatch binding. */
+    compiler.dispatch_rebound = ast ? scan_dispatch_rebind(ast) : 0;
+    if (!compiler.dispatch_rebound && env) {
+        Value *dv = env_get(env, "dispatch");
+        if (dv && !(dv->type == VAL_BUILTIN && dv->data.builtin == builtin_dispatch))
+            compiler.dispatch_rebound = 1;
+    }
 
     g_parse_depth = 0;  /* reuse the parse-depth counter as the compile-depth guard */
 

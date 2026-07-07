@@ -1993,19 +1993,27 @@ echo ""
 
 # [68] OP_DISPATCH key handling (boxed-num regression + float-discipline)
 # + #353 fast-path/builtin error parity (non-list table, non-callable slot)
-echo "[68] Dispatch (14 checks)"
+# + #459 paren-form/opcode agreement pin
+echo "[68] Dispatch (15 checks)"
 DISP_OUTPUT=$(./eigenscript ../tests/test_dispatch.eigs 2>&1); DISP_OUTPUT_RC=$?
 if rc_ok "$DISP_OUTPUT_RC" "$DISP_OUTPUT" && echo "$DISP_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 14))
-    PASS=$((PASS + 14))
-    echo "  PASS: all 14 dispatch checks"
+    TOTAL=$((TOTAL + 15))
+    PASS=$((PASS + 15))
+    echo "  PASS: all 15 dispatch checks"
 else
-    TOTAL=$((TOTAL + 14))
-    FAIL=$((FAIL + 14))
+    TOTAL=$((TOTAL + 15))
+    FAIL=$((FAIL + 15))
     echo "  FAIL: dispatch tests"
     echo "$DISP_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi
 echo ""
+
+# [68b] #459: a user-rebound `dispatch` wins over the OP_DISPATCH
+# superinstruction — module-scope rebinds, fn-body write-through rebinds
+# (the unit scan descends into function bodies), and the eval escape.
+check_eigs_suite "dispatch rebind (module scope + paren form)" test_dispatch_rebind.eigs "All tests passed" 3
+check_eigs_suite "dispatch rebind (fn-body write-through)" test_dispatch_rebind_fn.eigs "All tests passed" 2
+check_eigs_suite "dispatch rebind (eval escape)" test_dispatch_rebind_eval.eigs "All tests passed" 1
 
 # [70] Temporal interrogatives (prev of, at, state_at) + the line-floor
 # index in trace.c (deep loop histories must skip segments correctly).

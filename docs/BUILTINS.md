@@ -57,7 +57,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
 | `sort_by` | `sort_by of [list, key_fn]` | Sort list by numeric keys from key_fn (qsort, O(n log n), stable). Returns a new sorted list |
-| `dispatch` | `dispatch of [table, key, arg]` | Index list `table` by numeric `key` and call the resulting function with `arg` — a jump table (mirrors the `OP_DISPATCH` fast path). `key` must be a number |
+| `dispatch` | `dispatch of [table, key, arg]` | Index list `table` by numeric `key` and call the resulting function with `arg` — a jump table (mirrors the `OP_DISPATCH` fast path). `key` must be a number. An ordinary builtin, not a special form: a user binding of the name wins (#459 — the fast path steps aside for any unit that rebinds `dispatch`, references `eval`, or compiles against an env where it is already rebound), and the parenthesized `dispatch of ([t, k, a])` form is one argument per #355/#405 |
 
 ### Strings
 
@@ -204,6 +204,16 @@ Query a binding's assignment history. Always on for top-level bindings;
 |------|-----------|-------------|
 | `report` | `report of value` | Classify change trajectory: "improving", "diverging", "stable", "equilibrium", "oscillating", "converged" |
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
+
+**`report`, `report_value`, and `observe` on a plain variable are observer
+special forms** (decided in #459): like the predicates and interrogatives,
+`report of x` / `report_value of x` / `observe of x` are resolved by the
+compiler to the named *binding's* slot trajectory — an operation on the
+name, not the value — so a user rebinding of these names does not change
+them (`--lint` W013 warns on the shadowing attempt). The non-ident forms
+(`report of (x + 0.0)`, `observe of expr`) are ordinary calls to the
+value-path builtins. `dispatch` is deliberately NOT in this set — it is a
+plain builtin and a user rebinding wins (see Lists above).
 
 ### Predicates
 

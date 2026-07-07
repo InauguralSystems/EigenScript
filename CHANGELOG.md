@@ -4,7 +4,30 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
-(nothing yet)
+### Fixed
+- **A user rebinding of `dispatch` wins over the `OP_DISPATCH`
+  superinstruction (#459)** — previously `define dispatch(a, b, c)` (or a
+  plain `dispatch is ...`, including a write-through assignment inside a
+  function body) was silently ignored at `dispatch of [t, k, a]` call
+  sites: the compiler keyed on the name alone and emitted the fast path
+  regardless of the binding. The superinstruction now steps aside — for
+  any unit that binds `dispatch` anywhere or references `eval` (dynamic
+  escape), and for a REPL/embed unit compiled against an env where the
+  name is already rebound — failing open to the semantically identical
+  normal call path. The parenthesized `dispatch of ([t, k, a])` form now
+  also takes the normal path (one argument, per the #355/#405 contract).
+- **W012/W013 (builtin shadowing) derive from `register_builtins()`
+  itself, not a hand list (#459)** — the old hand-copied array was ~120
+  names behind the binary, so shadowing `dispatch`, `chr`, `eval`, and
+  every other post-list builtin lint'd clean. Same derivation as E003's
+  binding base, plus the extension names (`ext_names.h`).
+
+### Changed
+- **Decided (#459): `report`, `report_value`, and `observe` on a plain
+  variable are observer special forms** — compiler-resolved to the named
+  binding's slot trajectory, like the predicates and interrogatives; a
+  user rebinding does not change them (W013 now warns on the attempt).
+  Documented in BUILTINS.md and DIAGNOSTICS.md.
 
 ## [0.27.0] - 2026-07-06
 

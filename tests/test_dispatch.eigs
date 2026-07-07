@@ -108,6 +108,11 @@ catch e:
     caught_var is e
 check of ["literal/variable forms agree", contains of [caught_var, "table must be a list"]]
 
+# #459 facet 3: the parenthesized #355 form is ONE argument on the normal
+# call path (never OP_DISPATCH); builtin_dispatch given a single 3-element
+# list agrees with the opcode by contract — pinned here.
+check of ["paren form agrees with opcode", (dispatch of ([t, 1, null])) == 20]
+
 total is pass_count + fail_count
 print of f"Dispatch Tests: {pass_count}/{total} passed"
 if fail_count == 0:
