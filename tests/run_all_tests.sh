@@ -2267,7 +2267,7 @@ fi
 echo ""
 
 # [81] Linter (--lint) — exercises lint.c, which had zero suite coverage.
-echo "[81] Linter (13 checks)"
+echo "[81] Linter (test_lint.sh, counted dynamically)"
 LINT_OUTPUT=$(bash "$TESTS_DIR/test_lint.sh" </dev/null 2>&1)
 LINT_PASS=$(echo "$LINT_OUTPUT" | grep -c "PASS:" || true)
 LINT_FAIL=$(echo "$LINT_OUTPUT" | grep -c "FAIL:" || true)

@@ -1470,7 +1470,7 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
 }
 
 static void check_undefined_names(ASTNode *ast, const char *path,
-                                  LintContext *ctx) {
+                                  const char *source, LintContext *ctx) {
     E003 e;
     memset(&e, 0, sizeof(e));
     e.bind = env_new(NULL);
@@ -1506,6 +1506,34 @@ static void check_undefined_names(ASTNode *ast, const char *path,
             e.base_dir[d] = '\0';
         }
     }
+    /* #460: `# lint: loaded-by <relpath>` — this file is a library FRAGMENT
+     * composed by the named file: a load_file loader (DMG's dmg.eigs), or a
+     * sibling in out-of-language composition (EigenMiniSat's ROM-bundle
+     * concat — the context file need not load the fragment; its binders are
+     * collected either way, transitively). The named file's binding set
+     * becomes the lint context, then THIS file is flagged against it — so
+     * unlike `# lint: allow-file E003`, a genuine typo in the fragment
+     * still fires. Path resolves like a load_file target from the
+     * fragment's directory. Repeatable. Fail-open like every E003 edge: an
+     * unresolvable or malformed context disables the pass for the file. */
+    if (source) {
+        static const char MARKER[] = "# lint: loaded-by";
+        const size_t MLEN = sizeof(MARKER) - 1;
+        for (const char *q = source; (q = strstr(q, MARKER)) != NULL; ) {
+            q += MLEN;
+            while (*q == ' ' || *q == '\t') q++;
+            const char *tk = q;
+            while (*q && *q != ' ' && *q != '\t' && *q != '\n' && *q != '\r') q++;
+            if (q > tk && (size_t)(q - tk) < 4096) {
+                char rel[4096];
+                memcpy(rel, tk, (size_t)(q - tk));
+                rel[q - tk] = '\0';
+                e003_load(&e, rel);
+            } else {
+                e.dynamic = 1;
+            }
+        }
+    }
     e003_walk(ast, &e, NULL, E003_COLLECT);
     if (!e.dynamic)
         e003_walk(ast, &e, ctx, E003_FLAG);
@@ -1515,14 +1543,15 @@ static void check_undefined_names(ASTNode *ast, const char *path,
 
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
-static void lint_run_checks(ASTNode *ast, const char *path, LintContext *ctx) {
+static void lint_run_checks(ASTNode *ast, const char *path,
+                            const char *source, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
     check_one_element_arg_list(ast, ctx);
 #if !EIGENSCRIPT_FREESTANDING
-    check_undefined_names(ast, path, ctx);
+    check_undefined_names(ast, path, source, ctx);
 #else
-    (void)path;
+    (void)path; (void)source;
 #endif
     check_empty_blocks(ast, ctx);
     check_dup_keys(ast, ctx);
@@ -1581,10 +1610,11 @@ static void lint_run_checks(ASTNode *ast, const char *path, LintContext *ctx) {
 /* Public structured-lint entry: run checks on an AST, copy diagnostics out.
  * `path` is the source file's filesystem path (NULL if unknown) — it anchors
  * E003's literal-load_file resolution; all other checks ignore it. */
-int lint_collect(ASTNode *ast, const char *path, LintDiag *out, int max) {
+int lint_collect(ASTNode *ast, const char *path, const char *source,
+                 LintDiag *out, int max) {
     if (!ast || !out || max <= 0) return 0;
     LintContext ctx = {0};
-    lint_run_checks(ast, path, &ctx);
+    lint_run_checks(ast, path, source, &ctx);
     int n = ctx.warning_count < max ? ctx.warning_count : max;
     for (int i = 0; i < n; i++) {
         out[i].line = ctx.warnings[i].line;
@@ -1698,7 +1728,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     }
 
     LintContext ctx = {0};
-    lint_run_checks(ast, path, &ctx);
+    lint_run_checks(ast, path, source, &ctx);
 
     /* #399 inline suppression: drop warnings silenced by a `# lint: allow`
      * comment on their line (or the line above). Compact in place so the

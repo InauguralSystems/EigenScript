@@ -250,6 +250,34 @@ nothing:
   # lint: allow-file E003 -- fragment of lib/ui.eigs: loader binds _theme/_ui
   ```
 
+  For the `E003` fragment case specifically, prefer `# lint: loaded-by`
+  (below) — it keeps undefined-name protection that `allow-file E003`
+  abandons.
+
+- **`# lint: loaded-by <relpath>`** (#460) declares this file a library
+  *fragment* of the named composer. E003 collects the named file's
+  **transitive binding set** (its binders, plus everything its literal
+  `load_file`s bind, exactly as if linting it as an entry point) and lints
+  this file against that context — so the composed-in names stop flagging
+  while **a genuine typo in the fragment still fires**. The path resolves
+  like a `load_file` target from the fragment's directory. The directive is
+  repeatable, works in both `--lint` and the LSP, and covers both
+  composition styles:
+
+  ```eigenscript
+  # lint: loaded-by ../dmg.eigs        (the entry point that load_files me)
+  ```
+
+  ```eigenscript
+  # lint: loaded-by sibling.eigs       (out-of-language concat: the named
+                                        file need not load me — its binders
+                                        become context either way)
+  ```
+
+  Fail-open like every `E003` edge: a context file the linter cannot
+  resolve, read, or parse disables the pass for the fragment (never a false
+  positive).
+
 (Per-file allow-lists in `eigs.json` are not yet wired up — see #455.)
 
 ## Name resolution (`E003`)
@@ -281,9 +309,12 @@ ROADMAP's sanctioned alternative to a type system. Its model:
   linter cannot resolve, read, or parse also fails open.
 - **Module members are not checked.** `import m` binds `m`; `m.anything` is
   a dict key, outside this pass.
-- For a file that is *deliberately* a fragment of a larger program, use
-  `# lint: allow-file E003` (above). For a single host-injected name, a
-  per-line `# lint: allow E003` works as usual.
+- For a file that is *deliberately* a fragment of a larger program, declare
+  its composer with `# lint: loaded-by <relpath>` (above) — it lints the
+  fragment against the composer's binding set and keeps typo protection.
+  `# lint: allow-file E003` remains the blunt escape (silences the pass
+  entirely); for a single host-injected name, a per-line
+  `# lint: allow E003` works as usual.
 
 `E100` is the **category code** for an uncaught runtime error. It is
 deliberately *not* injected into the `Error line N: ...` text, because

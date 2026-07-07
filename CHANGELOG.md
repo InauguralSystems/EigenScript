@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`# lint: loaded-by <relpath>` fragment directive (#460)** — a library
+  fragment declares its composer (the entry point that `load_file`s it, or
+  a concat sibling in out-of-language composition); E003 collects the named
+  file's transitive binding set as context and lints the fragment against
+  it. Kills the ~380 cross-module false positives the v0.27.0 consumer
+  sweep hit (DMG 217→0, EigenMiniSat 99→0, verified on the real repos)
+  while — unlike `# lint: allow-file E003` — a genuine typo in the fragment
+  still fires. Repeatable, works in `--lint` and the LSP (which now passes
+  the live document buffer through `lint_collect`, so as-you-type edits to
+  the directive take effect), fails open on an unresolvable context.
+  Documented in docs/DIAGNOSTICS.md.
+
 ### Fixed
 - **A user rebinding of `dispatch` wins over the `OP_DISPATCH`
   superinstruction (#459)** — previously `define dispatch(a, b, c)` (or a
