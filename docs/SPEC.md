@@ -1167,6 +1167,28 @@ When the main program returns, any tasks still running are torn down
 example two tasks each `task_join`-ing the other — that is a `deadlock`
 error, reported loudly rather than hanging.
 
+Tasks communicate through **mailboxes**. `task_send of [id, value]`
+appends a deep-copied message to task `id`'s FIFO mailbox (share-
+nothing, like channel sends); `task_recv of null` returns the next
+message or blocks cooperatively until one arrives. `task_try_recv`
+is the non-blocking form.
+
+```eigenscript
+worker_id is 0
+define worker() as:
+    a is task_recv of null
+    b is task_recv of null
+    return a + b
+
+worker_id is task_spawn of worker
+task_send of [worker_id, 10]
+task_send of [worker_id, 32]
+print of (task_join of worker_id)
+```
+```output
+42
+```
+
 ## Buffers
 
 `buffer of count` allocates a flat array of `count` nums (all 0).

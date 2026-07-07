@@ -4452,6 +4452,12 @@ void task_free(Task *t) {
     if (t->run_env) env_decref(t->run_env);
     if (t->result) val_decref(t->result);
     if (t->error_value) val_decref(t->error_value);
+    /* inc 2: drain any undelivered mailbox messages. */
+    if (t->mbox) {
+        for (int i = 0; i < t->mbox_count; i++)
+            val_decref(t->mbox[(t->mbox_head + i) % t->mbox_cap]);
+        free(t->mbox);
+    }
     /* A task torn down while still SUSPENDED (kill-outstanding at main's end,
      * or an unjoined task at exit) still owns the counted refs sitting in its
      * saved slice — decref them so the leak tally stays 0. */
@@ -4566,6 +4572,54 @@ Value* builtin_task_join(Value *arg) {
     }
     if (!task_request_join(target)) return make_null();
     return make_null();   /* placeholder: the scheduler fills it with the result on resume */
+}
+
+/* task_send of [id, value] — append a deep-copied message to task `id`'s
+ * unbounded FIFO mailbox and wake it if it is waiting in task_recv. Sending to
+ * a finished or unknown task is a silent drop (counted as a dead letter), not
+ * an error — Akka dead-letters / Erlang cast. Returns 1 if delivered, 0 if
+ * dropped. Never blocks (the mailbox is unbounded in v1). */
+Value* builtin_task_send(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2 || !g_task_sched)
+        return make_num(0);
+    Value *idv = arg->data.list.items[0];
+    if (!idv || idv->type != VAL_NUM) return make_num(0);
+    Value *copy = val_clone_for_send(arg->data.list.items[1]);   /* share-nothing */
+    int sent = task_deliver((int)idv->data.num, copy);
+    if (!sent) val_decref(copy);   /* dropped to a dead task — release the copy */
+    return make_num(sent ? 1 : 0);
+}
+
+/* task_recv of null — return the next message from this task's mailbox, or
+ * block cooperatively until one arrives (woken by task_send). Same arena /
+ * nested-evaluation restriction as the other suspending builtins. */
+Value* builtin_task_recv(Value *arg) {
+    (void)arg;
+    if (!g_task_sched) return make_null();   /* no tasks: nothing can arrive */
+    if (task_mbox_has()) return task_mbox_pop();
+    if (g_arena.active) {
+        rt_error(EK_VALUE, 0, "cannot task_recv inside an arena scope "
+                 "(arena_mark…arena_reset)");
+        return make_null();
+    }
+    task_request_recv();
+    return make_null();   /* placeholder: the scheduler delivers the message on resume */
+}
+
+/* task_try_recv of null — non-blocking receive: the next message, or null if
+ * the mailbox is empty. Never suspends. */
+Value* builtin_task_try_recv(Value *arg) {
+    (void)arg;
+    if (!g_task_sched || !task_mbox_has()) return make_null();
+    return task_mbox_pop();
+}
+
+/* task_kill of id — deterministically tear down task `id`: drop its mailbox
+ * and suspended slice, wake any joiner with an `interrupt` error, mark it
+ * dead. Returns 1 if killed, 0 for a bad/self/finished target. */
+Value* builtin_task_kill(Value *arg) {
+    if (!arg || arg->type != VAL_NUM || !g_task_sched) return make_num(0);
+    return make_num(task_do_kill((int)arg->data.num) ? 1 : 0);
 }
 
 /* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
@@ -5582,6 +5636,10 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_alive", make_builtin(builtin_task_alive));
     env_set_local_owned(env, "task_yield", make_builtin(builtin_task_yield));
     env_set_local_owned(env, "task_join", make_builtin(builtin_task_join));
+    env_set_local_owned(env, "task_send", make_builtin(builtin_task_send));
+    env_set_local_owned(env, "task_recv", make_builtin(builtin_task_recv));
+    env_set_local_owned(env, "task_try_recv", make_builtin(builtin_task_try_recv));
+    env_set_local_owned(env, "task_kill", make_builtin(builtin_task_kill));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));

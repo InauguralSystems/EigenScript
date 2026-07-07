@@ -572,6 +572,10 @@ Requires full build. Transformer model inference and training.
 | `task_alive` | `task_alive of id` | Returns 1 while the task is runnable or suspended, 0 once it has finished (or for an unknown id). |
 | `task_yield` | `task_yield of null` | Cooperatively hand control to the next ready task; this task resumes round-robin. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
 | `task_join` | `task_join of id` | Block until task `id` finishes, then return its deep-copied result — or re-raise its uncaught error (as the same `{kind, message, line}` it died with). Joining an already-finished task returns immediately; an unknown id (or self) returns null. All tasks blocked with none runnable is a `deadlock` error, not a hang. |
+| `task_send` | `task_send of [id, value]` | Append a deep-copied message to task `id`'s unbounded FIFO mailbox, waking it if it waits in `task_recv`. Returns 1 if delivered, 0 if `id` is finished/unknown (a silent drop — send-to-dead is never an error). Never blocks. |
+| `task_recv` | `task_recv of null` | Return the next message from this task's mailbox, or block cooperatively until one arrives. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
+| `task_try_recv` | `task_try_recv of null` | Non-blocking receive: the next mailbox message, or `null` if empty. Never suspends. |
+| `task_kill` | `task_kill of id` | Tear down task `id`: drop its mailbox, mark it dead, wake any joiner with an `interrupt` error. Returns 1 if killed, 0 for a finished/unknown/self target. |
 
 **Thread safety:** Values sent through a channel (or returned through
 `thread_join`) are deep-COPIED via `val_clone_for_send` — messages are

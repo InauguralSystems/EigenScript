@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Cooperative task mailboxes — increment 2 (#408).** `task_send` /
+  `task_recv` / `task_try_recv` / `task_kill`: unbounded FIFO mailboxes
+  (Erlang-style; bounded/backpressure is a later add) with messages
+  deep-copied across the boundary (share-nothing, like channels).
+  `task_recv` blocks cooperatively on an empty mailbox — reusing the
+  increment-1 suspend/resume machinery, delivered on wake — while
+  `task_try_recv` is the non-blocking form. Sending to a finished or
+  unknown task is a **silent drop** returning 0 (Akka dead-letters /
+  Erlang cast — an error path here would be a nondeterminism magnet),
+  not an error. `task_kill` tears a task down deterministically and
+  wakes any joiner with an `interrupt` error. Still deterministic by
+  construction (byte-identical across runs). Not yet: virtual time
+  (`task_sleep`) and the pluggable seeded-strategy hook for the DST
+  consumer.
 - **Deterministic cooperative tasks — increment 1 (#408).** `task_spawn`
   / `task_yield` / `task_join` / `task_alive`: a single-OS-thread
   cooperative scheduler whose interleaving is deterministic **by

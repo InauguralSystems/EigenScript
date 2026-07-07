@@ -139,4 +139,79 @@ define after_arena() as:
 aa is task_spawn of after_arena
 assert_eq of [task_join of aa, 17, "task after an arena-dier gets a clean arena"]
 
+# ============ increment 2: mailboxes ============
+
+# --- producer/consumer: consumer blocks on recv, producer sends + yields;
+#     delivery is FIFO and deterministic. ---
+cons_id is 0
+define consumer() as:
+    total is 0
+    n is 0
+    loop n < 4:
+        m is task_recv of null
+        total is total + m
+        n is n + 1
+    return total
+define producer() as:
+    task_send of [cons_id, 10]
+    task_send of [cons_id, 20]
+    task_yield of null
+    task_send of [cons_id, 30]
+    task_send of [cons_id, 40]
+    return 0
+cons_id is task_spawn of consumer
+pr is task_spawn of producer
+assert_eq of [task_join of cons_id, 100, "mailbox FIFO delivery (10+20+30+40)"]
+
+# --- task_try_recv is non-blocking: null when empty, the message when present ---
+box_id is 0
+define boxed() as:
+    e1 is task_try_recv of null            # empty → null
+    task_yield of null                     # (main sends 7 meanwhile)
+    v is task_try_recv of null             # → 7
+    e2 is task_try_recv of null            # empty again → null
+    return [e1, v, e2]
+box_id is task_spawn of boxed
+task_yield of null
+task_send of [box_id, 7]
+tr is task_join of box_id
+assert_eq of [tr[0], null, "try_recv on empty mailbox is null"]
+assert_eq of [tr[1], 7, "try_recv returns the queued message"]
+assert_eq of [tr[2], null, "try_recv empty after draining is null"]
+
+# --- send to a finished/unknown task is a silent drop returning 0 ---
+define fast() as:
+    return 1
+f1 is task_spawn of fast
+jr is task_join of f1                        # f1 finishes
+assert_eq of [task_send of [f1, 99], 0, "send to a finished task drops (returns 0)"]
+assert_eq of [task_send of [88888, 1], 0, "send to an unknown task drops (returns 0)"]
+
+# --- messages cross the boundary deep-copied (share-nothing) ---
+echo_id is 0
+define echoer() as:
+    m is task_recv of null
+    return len of m
+echo_id is task_spawn of echoer
+payload is [1, 2, 3]
+task_send of [echo_id, payload]
+payload is append of [payload, 4]            # mutate after send
+assert_eq of [task_join of echo_id, 3, "received message is a deep copy, not aliased"]
+
+# --- task_kill: a joiner on a killed task gets an `interrupt` error ---
+define victim() as:
+    task_recv of null                        # blocks forever
+    return 1
+vk is task_spawn of victim
+task_yield of null
+assert_eq of [task_kill of vk, 1, "task_kill of a live task returns 1"]
+assert_eq of [task_alive of vk, 0, "a killed task is not alive"]
+kthrew is 0
+try:
+    kr is task_join of vk
+catch e:
+    kthrew is 1
+    assert_eq of [e.kind, "interrupt", "join of a killed task raises interrupt"]
+assert_eq of [kthrew, 1, "join of a killed task raises"]
+
 test_summary of null

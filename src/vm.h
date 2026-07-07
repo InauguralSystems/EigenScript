@@ -409,6 +409,14 @@ typedef struct Task {
      * task_join builtin left on the stack top — a builtin can't return a
      * value it doesn't know yet — or re-raises the joinee's error. */
     int        join_target;
+    /* Inc 2: unbounded FIFO mailbox of deep-copied messages (share-nothing,
+     * Erlang-style — bounded/backpressure is a cheap later add). Circular
+     * buffer; grows on demand. recv_blocked is 1 while this task is suspended
+     * in task_recv on an empty mailbox — woken by task_send, delivered to the
+     * stack top on resume (same placeholder mechanism as join). */
+    Value    **mbox;
+    int        mbox_head, mbox_count, mbox_cap;
+    int        recv_blocked;
     /* Completion. */
     Value     *result;             /* owned, deep-copied on normal end */
     int        has_error;          /* died of an uncaught error */
@@ -429,6 +437,12 @@ void task_sched_on_spawn(int id);    /* enqueue a freshly spawned task, arm the 
 void task_request_yield(void);       /* current task → tail of the ready queue */
 int  task_request_join(int target);  /* current task blocks on `target`; 0 = bad target */
 void task_sched_thread_free(void);   /* release the scheduler at thread detach */
+/* Inc 2 mailbox interface (builtins.c task_send/task_recv/task_try_recv/task_kill). */
+int   task_deliver(int tid, Value *msg_owned); /* append msg (ownership taken); 1 sent / 0 dropped-to-dead */
+int   task_mbox_has(void);           /* current task has a queued message? */
+Value *task_mbox_pop(void);          /* pop current task's front message (owned ref) */
+void  task_request_recv(void);       /* current task blocks awaiting a message */
+int   task_do_kill(int tid);         /* deterministic teardown of `tid`; 0 = bad target */
 
 /* ---- Public API ---- */
 
