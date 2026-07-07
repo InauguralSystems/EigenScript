@@ -2063,6 +2063,7 @@ static void task_restore_slice(Task *t);
 static void task_save_slice(Task *t);
 static Task *task_current_running(void);
 static void task_apply_join_result(Task *t);   /* fill a join placeholder on resume */
+static void task_apply_recv_result(Task *t);   /* fill a recv placeholder on resume */
 
 /* vm_run_ex: the shared VM dispatch body. `resume` != NULL means resume a
  * suspended #408 task — restore its copying-stack slice onto the (empty) VM
@@ -2081,10 +2082,12 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
          * already sits on the restored stack top). */
         base_frame = 0;
         task_restore_slice(resume);
-        /* If this task was blocked in task_join, its joinee has finished:
-         * overwrite the placeholder on the stack top with the joinee's result
-         * (or re-raise its error — CHECK_ERROR at vm_resume_dispatch catches). */
+        /* If this task was blocked in task_join / task_recv, fill the
+         * placeholder on the stack top with the joinee's result (or re-raise
+         * its error) / the delivered message. A task is blocked on at most one
+         * of the two, so both are safe to run. */
         task_apply_join_result(resume);
+        task_apply_recv_result(resume);
         frame = &g_vm.frames[g_vm.frame_count - 1];
         chunk = frame->chunk;
         ip = frame->ip;
@@ -5124,6 +5127,7 @@ typedef struct {
     int   current;                /* running task id; 0 = main */
     int   live;                   /* spawned tasks not yet DONE/DEAD */
     int   active;                 /* armed on first spawn */
+    int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
     Task  main_task;              /* task 0 — save-buffer only, never "started" */
 } TaskScheduler;
 
@@ -5144,8 +5148,19 @@ static TaskScheduler *sched_ensure(void) {
 void task_sched_thread_free(void) {
     TaskScheduler *s = sched_get();
     if (!s) return;
-    free(s->main_task.saved_stack);
-    free(s->main_task.saved_frames);
+    Task *m = &s->main_task;
+    /* main runs to completion before we get here, so its saved slice is empty;
+     * free defensively. Drain any messages left in main's mailbox + its result
+     * (nulled by the trampoline on a clean exit, but be defensive). */
+    free(m->saved_stack);
+    free(m->saved_frames);
+    if (m->mbox) {
+        for (int i = 0; i < m->mbox_count; i++)
+            val_decref(m->mbox[(m->mbox_head + i) % m->mbox_cap]);
+        free(m->mbox);
+    }
+    if (m->result) val_decref(m->result);
+    if (m->error_value) val_decref(m->error_value);
     free(s);
     g_task_sched = NULL;
 }
@@ -5236,6 +5251,136 @@ int task_request_join(int target) {
     cur->join_target = target;
     g_task_suspend_request = 1;
     return 1;
+}
+
+/* ---- Inc 2: mailboxes -------------------------------------------------- */
+
+/* Append msg (ownership transferred in) to task `tid`'s FIFO mailbox and wake
+ * it if it is blocked in task_recv. Returns 1 if delivered, 0 if dropped
+ * because the target is gone (finished/unknown) — send-to-dead is a silent
+ * drop plus a dead-letter count (Akka dead-letters / Erlang cast), NOT an
+ * error: an error path here would be a nondeterminism magnet. */
+int task_deliver(int tid, Value *msg_owned) {
+    TaskScheduler *s = sched_get();
+    Task *t = s ? sched_lookup(s, tid) : NULL;
+    if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) {
+        if (s) s->dead_letters++;
+        return 0;
+    }
+    if (t->mbox_count >= t->mbox_cap) {
+        int nc = t->mbox_cap ? t->mbox_cap * 2 : 8;
+        Value **nb = xmalloc(sizeof(Value *) * nc);
+        for (int i = 0; i < t->mbox_count; i++)
+            nb[i] = t->mbox[(t->mbox_head + i) % t->mbox_cap];
+        free(t->mbox);
+        t->mbox = nb; t->mbox_cap = nc; t->mbox_head = 0;
+    }
+    t->mbox[(t->mbox_head + t->mbox_count) % t->mbox_cap] = msg_owned;
+    t->mbox_count++;
+    /* Wake a recv-blocked receiver on the FIRST message that arrives while it
+     * waits on an empty mailbox (mbox_count just became 1). recv_blocked stays
+     * set so the resume path (task_apply_recv_result) delivers this message and
+     * clears it; the mbox_count==1 guard makes the enqueue idempotent — a
+     * second send before the receiver resumes finds count>1 and does not
+     * re-enqueue (which would put the task in the ready queue twice). */
+    if (t->recv_blocked && t->state == TASK_SUSPENDED && t->mbox_count == 1)
+        sched_ready_push(s, tid);
+    return 1;
+}
+
+int task_mbox_has(void) {
+    Task *t = task_current_running();
+    return (t && t->mbox_count > 0) ? 1 : 0;
+}
+
+Value *task_mbox_pop(void) {
+    Task *t = task_current_running();
+    if (!t || t->mbox_count == 0) return make_null();
+    Value *v = t->mbox[t->mbox_head];
+    t->mbox_head = (t->mbox_head + 1) % t->mbox_cap;
+    t->mbox_count--;
+    return v;   /* owned ref transfers to caller */
+}
+
+void task_request_recv(void) {
+    Task *t = task_current_running();
+    if (t) t->recv_blocked = 1;
+    g_task_suspend_request = 1;
+}
+
+/* Deterministic teardown of a task mid-run (task_kill): drop its mailbox and
+ * saved slice, wake any joiner with an `interrupt` error, mark it DEAD. The
+ * handle entry stays (task_alive → 0, joiners see DEAD); handle_table_drain
+ * frees the struct at exit. Returns 0 for a bad/self/finished target. */
+int task_do_kill(int tid) {
+    TaskScheduler *s = sched_get();
+    if (!s || tid == 0 || tid == s->current) return 0;
+    Task *t = sched_lookup(s, tid);
+    if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) return 0;
+    /* Drain the mailbox. */
+    while (t->mbox_count > 0) {
+        val_decref(t->mbox[t->mbox_head]);
+        t->mbox_head = (t->mbox_head + 1) % t->mbox_cap;
+        t->mbox_count--;
+    }
+    free(t->mbox); t->mbox = NULL; t->mbox_cap = 0; t->mbox_head = 0;
+    /* Release the suspended slice's counted refs (mirror task_free's slice
+     * teardown) so a killed suspended task doesn't leak. */
+    if (t->saved_stack) {
+        for (int i = 0; i < t->saved_stack_len; i++) slot_decref(t->saved_stack[i]);
+        free(t->saved_stack); t->saved_stack = NULL; t->saved_stack_len = 0;
+    }
+    if (t->saved_frames) {
+        for (int i = 0; i < t->saved_frame_count; i++) {
+            CallFrame *f = &t->saved_frames[i];
+            if (f->owns_env && f->env) env_decref(f->env);
+            if (f->chunk) chunk_decref(f->chunk);
+        }
+        free(t->saved_frames); t->saved_frames = NULL; t->saved_frame_count = 0;
+    }
+    if (t->run_env) { env_decref(t->run_env); t->run_env = NULL; }
+    t->has_error = 1;
+    t->state = TASK_DEAD;
+    s->live--;
+    /* Wake joiners with an interrupt: on resume task_apply_join_result sees
+     * has_error and re-raises. Give them an error payload. */
+    if (!t->error_value) {
+        Value *ev = make_dict(3);
+        dict_set_owned(ev, "kind", make_str(err_kind_name(EK_INTERRUPT)));
+        dict_set_owned(ev, "message", make_str("task was killed"));
+        dict_set_owned(ev, "line", make_num(0));
+        t->error_value = ev;
+    }
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
+        if (w && w->state == TASK_SUSPENDED && w->join_target == tid)
+            sched_ready_push(s, w->id);
+    }
+    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == tid)
+        sched_ready_push(s, 0);
+    return 1;
+}
+
+/* On resuming a recv-blocked task, fill the placeholder the task_recv builtin
+ * left on the stack top with the next mailbox message. */
+static void task_apply_recv_result(Task *t) {
+    /* Only a task that suspended INSIDE task_recv has a placeholder to fill.
+     * A task resuming from a plain task_yield/task_join must NOT have its
+     * mailbox drained here, even if a message arrived meanwhile. */
+    if (!t->recv_blocked) return;
+    t->recv_blocked = 0;
+    if (g_vm.sp > 0) {
+        slot_decref(g_vm.stack[g_vm.sp - 1]);
+        Value *msg;
+        if (t->mbox_count > 0) {
+            msg = t->mbox[t->mbox_head];
+            t->mbox_head = (t->mbox_head + 1) % t->mbox_cap;
+            t->mbox_count--;
+        } else {
+            msg = make_null();   /* woken without a message (killed sender race) */
+        }
+        g_vm.stack[g_vm.sp - 1] = slot_from_heap(msg);
+    }
 }
 
 /* Start a never-run spawned task: bind its deep-copied args into a fresh env
@@ -5365,8 +5510,9 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
 
         if (t->state == TASK_SUSPENDED) {
             /* It suspended again. task_yield → re-enqueue; task_join → stay
-             * blocked (woken by sched_finish when its target ends). */
-            if (t->join_target == 0) sched_ready_push(s, id);
+             * blocked (woken by sched_finish); task_recv on an empty mailbox →
+             * stay blocked (woken by task_deliver). */
+            if (t->join_target == 0 && !t->recv_blocked) sched_ready_push(s, id);
         } else {
             sched_finish(s, t, r);
             /* kill-outstanding: main ending tears the rest down deterministically. */
