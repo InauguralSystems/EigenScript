@@ -34,6 +34,11 @@ extern int g_trace_hist;
  * unconditionally — the line prev_record_assign records into history — so the
  * JIT must too, or temporal at/when/state_at freeze at the OSR point. */
 extern int g_trace_current_line;
+/* #410: async abort seam (vm.c). NEVER NULL — unregistered points at an
+ * always-zero sentinel — so the back-edge poll is movabs + two derefs +
+ * cmpl, mirroring the interpreter's CASE(JUMP_BACK) check. Declared here
+ * (not via vm.h) for the same smoke-build reason; jit_smoke.c stubs it. */
+extern volatile int *g_vm_abort_flag;
 
 struct EigsJitCache {
     uint8_t *base;
@@ -1753,6 +1758,11 @@ static uint8_t *emit_incl_rdi_r9_4(uint8_t *w) {
 static uint8_t *emit_cmpl_0_mem_rax(uint8_t *w) {
     *w++ = 0x83; *w++ = 0x38; *w++ = 0x00; return w;
 }
+/* mov (%rax), %rax  (3 bytes) — deref a baked pointer-to-pointer (#410:
+ * load the registered abort-flag pointer before testing the flag). */
+static uint8_t *emit_mov_mem_rax_to_rax(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x8B; *w++ = 0x00; return w;
+}
 /* je rel8 (2 bytes) */
 static uint8_t *emit_je_rel8(uint8_t *w, uint8_t **patch) {
     *w++ = 0x74; *patch = w; *w++ = 0x00; return w;
@@ -3400,13 +3410,30 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * forward targets register a pending patch resolved at the
              * end of body emission. */
             if (pending_count + 1 > (int)(sizeof pending /
-                                          sizeof pending[0])) {
+                                          sizeof pending[0]) ||
+                bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
             uint16_t off = (uint16_t)(chunk->code[i + 1] |
                                       ((uint16_t)chunk->code[i + 2] << 8));
             int target = (op == OP_JUMP) ? (i + 3 + (int)off)
                                          : (i + 3 - (int)off);
+            if (op == OP_JUMP_BACK) {
+                /* #410: poll the async abort flag on every native
+                 * back-edge, mirroring CASE(JUMP_BACK). The pointer is
+                 * never NULL (sentinel), so: load the registered pointer,
+                 * test the flag, and on set bail to the interpreter AT
+                 * this op (r13d still holds its offset) — the interpreter
+                 * re-runs the back-edge, consumes the flag, and raises
+                 * "aborted" through the normal error path. Unset costs a
+                 * predicted-not-taken load+test per iteration. */
+                w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_vm_abort_flag);
+                w = emit_mov_mem_rax_to_rax(w);
+                w = emit_cmpl_0_mem_rax(w);
+                w = emit_jne_rel32(w, &bail_patches[bail_count]);
+                bail_count++;
+            }
             /* r13d holds "bytes to advance from frame->ip on exit", and
              * frame->ip sits at entry_offset when the thunk is invoked.
              * The subtraction folds to identity when entry_offset == 0. */

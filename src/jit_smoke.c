@@ -38,6 +38,10 @@ void free_value(Value *v) { (void)v; }
 int g_trace_hist = 0;
 /* OP_LINE bakes &g_trace_current_line to stamp the history line. trace.c. */
 int g_trace_current_line = 0;
+/* #410: the back-edge abort poll bakes &g_vm_abort_flag (vm.c). Never NULL
+ * there; the smoke stub mirrors the sentinel shape. */
+static volatile int g_smoke_abort_never = 0;
+volatile int *g_vm_abort_flag = &g_smoke_abort_never;
 
 /* Stage 5d computes the dict-cache hash at compile time via
  * env_hash_name (eigenscript.c). The smoke binary never reaches the
