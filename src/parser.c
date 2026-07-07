@@ -68,10 +68,13 @@ static void p_print_caret(int line, int col) {
     if (len > 200) len = 200;              /* pathological lines stay sane */
     if ((size_t)col > len) return;
     fprintf(stderr, "  %4d | %.*s\n", line, (int)len, s);
-    fprintf(stderr, "       | ");
+    /* pad buffer, not fputc: the freestanding mini-libc has fprintf but no
+     * fputc (the symbol gate rejects it). col <= len <= 200 by the guards. */
+    char pad[201];
     for (int i = 0; i < col; i++)
-        fputc(s[i] == '\t' ? '\t' : ' ', stderr);
-    fprintf(stderr, "^\n");
+        pad[i] = (s[i] == '\t') ? '\t' : ' ';
+    pad[col] = '\0';
+    fprintf(stderr, "       | %s^\n", pad);
 }
 
 static void p_end_statement(Parser *p) {
