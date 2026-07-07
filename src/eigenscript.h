@@ -975,6 +975,11 @@ void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
 void eigs_record_first_error(int line, const char *msg);
 void eigs_record_first_error_at(int line, int col, const char *msg);
+/* #407: register the compilation unit's raw source so column-carrying parse
+ * errors print a one-line excerpt + caret. NULL = no excerpt (unchanged
+ * output). Set before parse, clear after — the parser never reads it outside
+ * a parse() call, so the caller's buffer lifetime only has to span parsing. */
+void parser_set_caret_source(const char *src);
 
 /* ---- Module cache (Phase 0a of the package design) ---- */
 /* Hit: out_dict gets a new counted ref (caller decrefs). Miss: out_dict

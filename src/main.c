@@ -255,7 +255,9 @@ int main(int argc, char **argv) {
 
     g_parse_errors = 0;
     TokenList tl = tokenize(source);
+    parser_set_caret_source(source);   /* #407: excerpt+caret on col errors */
     ASTNode *ast = parse(&tl);
+    parser_set_caret_source(NULL);
     if (g_parse_errors > 0) {
         fprintf(stderr, "%d parse error(s) — aborting\n", g_parse_errors);
         free_ast(ast);  /* parse returns a partial tree on error; free it (cf. #214) */

@@ -66,10 +66,18 @@ if x > 0
 
 $ eigenscript bad.eigs
 Parse error line 1:9: expected ':', got newline
+     1 | if x > 0
+       |         ^
 1 parse error(s) — aborting
 $ echo $?
 1
 ```
+
+Column-carrying parse errors print a one-line source excerpt with a caret
+under the offending column (#407). The excerpt lines are additive — the
+`Parse error line N:C: ...` message itself is byte-unchanged, so tools that
+match on it keep working. Errors without a tracked column (deep-nesting
+caps, size limits) print the message only.
 
 ### Uncaught runtime error — halts with a trace
 ```
