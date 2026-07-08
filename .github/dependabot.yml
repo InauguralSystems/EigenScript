@@ -4,3 +4,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Group all Action bumps into ONE PR. github/codeql-action is a monorepo:
+    # its init/analyze/upload-sarif sub-actions MUST move in lockstep (the
+    # workflows pin them to one SHA, and codeql-action rejects an init/analyze
+    # version mismatch). Ungrouped, dependabot opened a separate PR per
+    # sub-action, so each one alone created a version skew that failed CI and
+    # could not be merged without breaking main. A single grouped PR keeps them
+    # in sync.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
