@@ -2179,6 +2179,28 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# #408 increment 4 seeded scheduling: task_sched_seed makes the scheduler pick
+# the next ready task from a seeded PRNG. The seeded schedule must be identical
+# on two fresh processes, replay byte-identically, record ZERO tape 'N' records,
+# and differ from the FIFO round-robin order (proving the seed actually reorders).
+TOTAL=$((TOTAL + 1))
+SS_EX=../examples/task_seeded_schedule.eigs
+SS_TAPE=$(mktemp -t eigs_ss.XXXXXX)
+SSA=$(./eigenscript "$SS_EX" </dev/null 2>&1)
+SSB=$(./eigenscript "$SS_EX" </dev/null 2>&1)
+EIGS_TRACE="$SS_TAPE" ./eigenscript "$SS_EX" </dev/null >/dev/null 2>&1
+SSR=$(EIGS_REPLAY="$SS_TAPE" ./eigenscript "$SS_EX" </dev/null 2>&1)
+SS_NREC=$(grep -c '^N ' "$SS_TAPE" 2>/dev/null)
+rm -f "$SS_TAPE"
+if [ "$SSA" = "$SSB" ] && [ "$SSA" = "$SSR" ] && [ "$SS_NREC" -eq 0 ] && \
+   [ "$SSA" = '["b", "c", "a", "b", "c", "a"]' ]; then
+    echo "  PASS: seeded scheduling is deterministic, replays, reorders vs FIFO (#408 inc4)"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: seeded scheduling diverged/replayed wrong/leaked nondet (rec=$SS_NREC, out=$SSA)"
+    FAIL=$((FAIL + 1))
+fi
+
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
 # script path must take the clean cannot-read-file exit, not xmalloc's

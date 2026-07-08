@@ -1,0 +1,35 @@
+# Seeded scheduling (#408). By default cooperative tasks run round-robin
+# (FIFO): the next ready task is always the one that has waited longest. A
+# deterministic simulation tester (DST) instead wants to EXPLORE many
+# interleavings of the same concurrent program, each one perfectly
+# reproducible. `task_sched_seed of n` switches the scheduler to pick the next
+# ready task from a seeded, platform-independent PRNG:
+#
+#   * same seed  => the SAME interleaving on every run and under EIGS_REPLAY
+#                   (still zero tape nondeterminism — the pick is a pure
+#                    function of the seed and program order);
+#   * a different seed => a different ordering to test.
+#
+# So a DST can sweep seeds 0, 1, 2, ... to search the interleaving space while
+# every failure it finds replays byte-for-byte. Without a seed the scheduler is
+# unchanged (FIFO), so existing programs behave exactly as before.
+
+task_sched_seed of 42
+
+order is []
+define step(tag) as:
+    order is append of [order, tag]         # runs, records, then hands off
+    task_yield of null
+    order is append of [order, tag]          # resumes after the others
+    return tag
+
+a is task_spawn of [step, "a"]
+b is task_spawn of [step, "b"]
+c is task_spawn of [step, "c"]
+task_join of a
+task_join of b
+task_join of c
+
+# Under seed 42 the ready task chosen at each hand-off is not the FIFO one, so
+# the recorded order is a deterministic permutation — the same on every run.
+print of order

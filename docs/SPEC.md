@@ -1222,6 +1222,43 @@ print of (task_now of null)
 30
 ```
 
+### Seeded scheduling
+
+By default the ready tasks run round-robin (FIFO). `task_sched_seed of n`
+switches the scheduler to pick the next ready task from a seeded,
+platform-independent PRNG. The schedule stays **fully deterministic** — the
+same seed produces the same interleaving on every run and replays
+byte-identically, recording no tape nondeterminism — but a *different* seed
+explores a *different* ordering. This is the lever a deterministic simulation
+tester uses to search the space of interleavings while keeping every run
+reproducible. Without a seed the scheduler is unchanged, so existing programs
+behave exactly as before.
+
+```eigenscript
+task_sched_seed of 42
+order is []
+define step(tag) as:
+    order is append of [order, tag]
+    task_yield of null
+    order is append of [order, tag]
+    return tag
+
+a is task_spawn of [step, "a"]
+b is task_spawn of [step, "b"]
+c is task_spawn of [step, "c"]
+task_join of a
+task_join of b
+task_join of c
+print of order
+```
+```output
+["b", "c", "a", "b", "c", "a"]
+```
+
+The same program with no seed prints the round-robin order
+`["a", "b", "c", "a", "b", "c"]`; a different seed prints a different — but
+equally reproducible — permutation.
+
 ## Buffers
 
 `buffer of count` allocates a flat array of `count` nums (all 0).

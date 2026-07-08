@@ -4663,6 +4663,22 @@ Value* builtin_task_now(Value *arg) {
     return make_num(task_virtual_now());
 }
 
+/* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO
+ * round-robin; with a seed the scheduler picks the next ready task
+ * pseudo-randomly from a deterministic PRNG. The interleaving stays
+ * reproducible (same seed → byte-identical run + replay, zero tape nondet); a
+ * DIFFERENT seed explores a different ordering — the lever a deterministic
+ * simulation tester uses to search interleavings. Typically called once at
+ * program start. Returns null. */
+Value* builtin_task_sched_seed(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "task_sched_seed requires a number (the seed)");
+        return make_null();
+    }
+    task_sched_set_seed(arg->data.num);
+    return make_null();
+}
+
 /* Deterministic teardown of OS-resource handles, run once the program has
  * finished executing (the full value world is still alive, so buffered-message
  * decrefs are safe). Channels and thread handles live in the process handle
@@ -5672,6 +5688,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_kill", make_builtin(builtin_task_kill));
     env_set_local_owned(env, "task_sleep", make_builtin(builtin_task_sleep));
     env_set_local_owned(env, "task_now", make_builtin(builtin_task_now));
+    env_set_local_owned(env, "task_sched_seed", make_builtin(builtin_task_sched_seed));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));
