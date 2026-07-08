@@ -5,6 +5,18 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Cooperative task seeded scheduling — increment 4 (#408).**
+  `task_sched_seed of n` switches the scheduler from FIFO round-robin to
+  picking the next ready task from a seeded, platform-independent PRNG
+  (splitmix64). The schedule stays **fully deterministic** — the same seed
+  produces the same interleaving on every run and replays byte-identically
+  with **zero tape `N` records** — but a *different* seed explores a
+  *different* ordering. This is the pluggable strategy hook a deterministic
+  simulation tester (liferaft) uses to search the interleaving space while
+  keeping every run reproducible. Without a seed the scheduler is
+  unchanged (the FIFO fast path is untouched), so existing programs behave
+  exactly as before. Completes the #408 primitives; next is the liferaft
+  differential-proof migration.
 - **Cooperative task virtual time — increment 3 (#408).** `task_sleep of
   ticks` suspends a task on a **logical clock**; `task_now of null` reads
   it. The clock starts at 0 and only jumps *forward to the earliest

@@ -5129,6 +5129,8 @@ typedef struct {
     int   active;                 /* armed on first spawn */
     int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
     double now;                   /* inc 3: virtual clock (logical, starts 0) */
+    int   seeded;                 /* inc 4: 1 once task_sched_seed installs a seed */
+    uint64_t rng_state;           /* inc 4: splitmix64 state for the seeded pick */
     Task  main_task;              /* task 0 — save-buffer only, never "started" */
 } TaskScheduler;
 
@@ -5182,10 +5184,47 @@ static void sched_ready_push(TaskScheduler *s, int id) {
     s->rcount++;
 }
 
+/* Inc 4: splitmix64 — a deterministic, platform-independent integer PRNG for
+ * the seeded scheduling strategy. Pure integer arithmetic (no float, no OS
+ * entropy), so the pick sequence is a reproducible function of the installed
+ * seed + program order — the seeded schedule replays byte-identically and
+ * records no tape nondeterminism. */
+static uint64_t sched_rng_next(TaskScheduler *s) {
+    uint64_t z = (s->rng_state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+/* task_sched_seed: install a seed and switch the scheduler from FIFO
+ * round-robin to a seeded pseudo-random pick of the next ready task. Ensures
+ * the scheduler exists so the seed sticks even when set before the first
+ * task_spawn. The interleaving stays deterministic — a DST varies the seed to
+ * explore different interleavings, each fully reproducible. */
+void task_sched_set_seed(double seed) {
+    TaskScheduler *s = sched_ensure();
+    s->rng_state = (uint64_t)(int64_t)seed;   /* integer seeds; fractions truncate */
+    s->seeded = 1;
+}
+
 static int sched_ready_pop(TaskScheduler *s) {
     if (s->rcount == 0) return -1;
-    int id = s->ready[s->rhead];
-    s->rhead = (s->rhead + 1) % TASK_READY_MAX;
+    if (!s->seeded || s->rcount == 1) {
+        /* Default FIFO: O(1) head pop — the fast path, unchanged. */
+        int id = s->ready[s->rhead];
+        s->rhead = (s->rhead + 1) % TASK_READY_MAX;
+        s->rcount--;
+        return id;
+    }
+    /* Seeded strategy: pick a pseudo-random ready task, then compact the hole
+     * by shifting the suffix down one (order-preserving among the rest). O(n)
+     * in the ready count, which is tiny and only paid in DST/seeded mode. */
+    int idx = (int)(sched_rng_next(s) % (uint64_t)s->rcount);
+    int id  = s->ready[(s->rhead + idx) % TASK_READY_MAX];
+    for (int k = idx; k < s->rcount - 1; k++) {
+        s->ready[(s->rhead + k) % TASK_READY_MAX] =
+            s->ready[(s->rhead + k + 1) % TASK_READY_MAX];
+    }
     s->rcount--;
     return id;
 }

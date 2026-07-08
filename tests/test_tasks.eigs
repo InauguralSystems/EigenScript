@@ -284,4 +284,49 @@ define lone() as:
     return 7
 assert_eq of [task_join of (task_spawn of lone), 7, "a lone sleeper is woken by the clock, not a deadlock"]
 
+# ============================================================================
+# Increment 4: the seeded scheduling strategy (task_sched_seed).
+# MUST be the last section: seeding is sticky (global, no off-switch), so it
+# would change the FIFO tie-breaks the earlier sections rely on. With a seed
+# the scheduler picks the next ready task from a deterministic PRNG — same seed
+# => same interleaving, a different seed => a different ordering.
+# ============================================================================
+define step(tag) as:
+    sched_order is append of [sched_order, tag]
+    task_yield of null
+    sched_order is append of [sched_order, tag]
+    return tag
+
+# --- seed 42 yields its specific deterministic permutation (pins the PRNG) ---
+task_sched_seed of 42
+sched_order is []
+sa is task_spawn of [step, "a"]
+sb is task_spawn of [step, "b"]
+sc is task_spawn of [step, "c"]
+task_join of sa
+task_join of sb
+task_join of sc
+assert_eq of [sched_order, ["b", "c", "a", "b", "c", "a"], "seed 42 gives its deterministic permutation"]
+assert_true of [not (sched_order == ["a", "b", "c", "a", "b", "c"]), "seeded order differs from FIFO round-robin"]
+
+# --- re-seeding with a different seed gives a different (still deterministic) order ---
+task_sched_seed of 7
+sched_order is []
+s2a is task_spawn of [step, "a"]
+s2b is task_spawn of [step, "b"]
+s2c is task_spawn of [step, "c"]
+task_join of s2a
+task_join of s2b
+task_join of s2c
+assert_eq of [sched_order, ["a", "b", "c", "a", "c", "b"], "seed 7 gives a different deterministic permutation"]
+
+# --- task_sched_seed requires a number ---
+seed_threw is 0
+try:
+    task_sched_seed of "not a number"
+catch e:
+    seed_threw is 1
+    assert_eq of [e.kind, "type_mismatch", "task_sched_seed rejects a non-number seed"]
+assert_eq of [seed_threw, 1, "task_sched_seed of a non-number raises"]
+
 test_summary of null

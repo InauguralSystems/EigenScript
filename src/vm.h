@@ -453,6 +453,8 @@ int   task_do_kill(int tid);         /* deterministic teardown of `tid`; 0 = bad
 /* Inc 3 virtual time (builtins.c task_sleep/task_now). */
 void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
 double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */
+/* Inc 4 seeded scheduling strategy (builtins.c task_sched_seed). */
+void   task_sched_set_seed(double seed); /* install a seed → seeded pick; ensures the scheduler */
 
 /* ---- Public API ---- */
 
