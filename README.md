@@ -145,7 +145,9 @@ reading is 5.0
 reading is 2.0
 reading is 5.0
 reading is 2.0
-report of reading             # "oscillating"
+reading is 5.0
+reading is 2.0
+report of reading             # "oscillating"  (needs a few periods to classify)
 ```
 
 Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
@@ -269,7 +271,9 @@ Pure EigenScript libraries under `lib/`:
 
 ```eigenscript
 load_file of "lib/list.eigs"
-doubled is map of [[1,2,3], double]
+define double as:                        # functions take one argument, n
+    return n * 2
+doubled is map of [[1, 2, 3], double]    # [2, 4, 6]
 ```
 
 See [docs/STDLIB.md](docs/STDLIB.md) for the full library guide.

@@ -8,7 +8,7 @@
 #   fmt_num of [value, decimals]            # "3.14"
 #   fmt_percent of [0.856, 1]               # "85.6%"
 #   fmt_table of [headers, rows]            # aligned text table
-#   fmt_bar of [value, max_val, width]      # "████░░░░░░"
+#   fmt_bar of [6, 10, 10]                  # "[######....] 60.0%"
 #   fmt_padded of [value, width]            # right-aligned in field
 
 # ---- fmt_num: format number to fixed decimal places ----

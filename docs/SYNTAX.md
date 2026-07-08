@@ -135,6 +135,10 @@ print of f"list length: {len of items}"
 Expressions inside `{}` are evaluated and converted to strings. Use `\{` and
 `\}` for literal braces.
 
+Both plain and `f` strings recognize the escapes `\n`, `\t`, `\r`, `\\`, and
+`\"`. Any other `\x` yields the literal character `x` (the backslash is
+dropped) — which is exactly why `\{` and `\}` produce literal braces.
+
 ## Interactive REPL
 
 Run `eigenscript` with no arguments to enter the REPL:
