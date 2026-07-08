@@ -1189,6 +1189,39 @@ print of (task_join of worker_id)
 42
 ```
 
+### Virtual time
+
+`task_sleep of ticks` suspends a task until a **virtual clock** advances by
+`ticks`; `task_now of null` reads that clock. The clock is *logical*, not
+wall-clock: it starts at 0 and only ever jumps **forward to the earliest
+sleeper** when nothing else is runnable. So a program that sleeps runs in
+zero real time and — like the rest of the task layer — replays identically,
+with no dependence on how fast the machine is. Tasks therefore resume in
+virtual-time order regardless of the order they were spawned, and the clock
+lands on the last wake time.
+
+```eigenscript
+log is []
+define nap(tag, ticks) as:
+    task_sleep of ticks
+    t is task_now of null
+    log is append of [log, f"{tag}@{t}"]
+    return tag
+
+a is task_spawn of [nap, "a", 30]
+b is task_spawn of [nap, "b", 10]
+c is task_spawn of [nap, "c", 20]
+task_join of a
+task_join of b
+task_join of c
+print of log
+print of (task_now of null)
+```
+```output
+["b@10", "c@20", "a@30"]
+30
+```
+
 ## Buffers
 
 `buffer of count` allocates a flat array of `count` nums (all 0).

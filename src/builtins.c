@@ -4633,6 +4633,36 @@ Value* builtin_task_alive(Value *arg) {
     return make_num(alive ? 1 : 0);
 }
 
+/* task_sleep of ticks — suspend the current task until the virtual clock
+ * advances by `ticks`. The clock is logical (discrete-event): it only jumps
+ * forward, to the earliest sleeper, when nothing else is runnable — so this is
+ * deterministic-by-construction like the rest of the task layer, NOT wall time.
+ * A negative sleep is treated as 0 (a same-tick yield to everything ready). No
+ * scheduler (no task ever spawned) → no time to pass, so it is a no-op, like
+ * task_yield. Same arena/nesting restriction as the other suspending builtins. */
+Value* builtin_task_sleep(Value *arg) {
+    if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
+    if (!arg || arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "task_sleep requires a number of ticks");
+        return make_null();
+    }
+    if (g_arena.active) {
+        rt_error(EK_VALUE, 0, "cannot task_sleep inside an arena scope "
+                 "(arena_mark…arena_reset)");
+        return make_null();
+    }
+    task_request_sleep(arg->data.num);
+    return make_null();   /* placeholder: execution resumes when the clock wakes it */
+}
+
+/* task_now of null → the current virtual-clock value (a number, 0 before any
+ * task_sleep and 0 when no scheduler is active). Deterministic; reads a logical
+ * counter, so it records no tape nondet. */
+Value* builtin_task_now(Value *arg) {
+    (void)arg;
+    return make_num(task_virtual_now());
+}
+
 /* Deterministic teardown of OS-resource handles, run once the program has
  * finished executing (the full value world is still alive, so buffered-message
  * decrefs are safe). Channels and thread handles live in the process handle
@@ -5640,6 +5670,8 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_recv", make_builtin(builtin_task_recv));
     env_set_local_owned(env, "task_try_recv", make_builtin(builtin_task_try_recv));
     env_set_local_owned(env, "task_kill", make_builtin(builtin_task_kill));
+    env_set_local_owned(env, "task_sleep", make_builtin(builtin_task_sleep));
+    env_set_local_owned(env, "task_now", make_builtin(builtin_task_now));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));

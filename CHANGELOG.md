@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Cooperative task virtual time — increment 3 (#408).** `task_sleep of
+  ticks` suspends a task on a **logical clock**; `task_now of null` reads
+  it. The clock starts at 0 and only jumps *forward to the earliest
+  sleeper* when nothing else is runnable (discrete-event simulation) —
+  so a program that sleeps runs in zero real time and stays deterministic
+  by construction: identical on two fresh processes, replays
+  byte-identically, and records **zero tape `N` records** (the clock is
+  not a nondeterministic source). Sleepers waiting on the clock are no
+  longer mistaken for a `deadlock`; ties at the same wake time break by
+  ascending task id. A negative sleep clamps to 0; `task_sleep of 0` is a
+  same-tick yield; with no task ever spawned it is a no-op like
+  `task_yield`. This is the election-timeout / heartbeat primitive the
+  deterministic Raft simulator (liferaft) needs. Not yet: the pluggable
+  seeded-strategy hook for the DST consumer.
 - **Cooperative task mailboxes — increment 2 (#408).** `task_send` /
   `task_recv` / `task_try_recv` / `task_kill`: unbounded FIFO mailboxes
   (Erlang-style; bounded/backpressure is a later add) with messages
