@@ -1,0 +1,27 @@
+# Virtual time (#408). A watchdog and a worker race on a *logical* clock.
+# The worker sleeps 100 ticks of "work"; the watchdog sleeps a 40-tick
+# timeout. Because time is virtual — the scheduler jumps the clock forward to
+# the earliest sleeper only when nothing else can run — the whole race
+# resolves in ZERO real time and prints byte-identically on every machine and
+# every run (no threads, no wall clock, no tape nondeterminism). This is the
+# election-timeout / heartbeat shape a deterministic Raft simulator needs.
+
+deadline is 40
+
+define worker() as:
+    task_sleep of 100                      # a long job, measured in virtual ticks
+    return "done"
+
+define watchdog(target) as:
+    task_sleep of deadline
+    if task_alive of target:
+        task_kill of target                # timed out first — cancel the worker
+        return f"timeout at t={task_now of null}"
+    return f"worker finished by t={task_now of null}"
+
+w is task_spawn of worker
+d is task_spawn of [watchdog, w]
+
+verdict is task_join of d
+print of verdict
+print of f"clock rests at t={task_now of null}"

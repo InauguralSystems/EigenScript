@@ -2158,6 +2158,27 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# #408 increment 3 virtual time: task_sleep/task_now on a LOGICAL clock must be
+# deterministic (identical on two fresh processes), replay byte-identically,
+# and — since the clock is not a nondet source — record ZERO tape 'N' records.
+TOTAL=$((TOTAL + 1))
+VT_EX=../examples/task_virtual_time.eigs
+VT_TAPE=$(mktemp -t eigs_vt.XXXXXX)
+VTA=$(./eigenscript "$VT_EX" </dev/null 2>&1)
+VTB=$(./eigenscript "$VT_EX" </dev/null 2>&1)
+EIGS_TRACE="$VT_TAPE" ./eigenscript "$VT_EX" </dev/null >/dev/null 2>&1
+VTR=$(EIGS_REPLAY="$VT_TAPE" ./eigenscript "$VT_EX" </dev/null 2>&1)
+VT_NREC=$(grep -c '^N ' "$VT_TAPE" 2>/dev/null)
+rm -f "$VT_TAPE"
+if [ "$VTA" = "$VTB" ] && [ "$VTA" = "$VTR" ] && [ "$VT_NREC" -eq 0 ] && \
+   echo "$VTA" | grep -q "timeout at t=40"; then
+    echo "  PASS: virtual time is deterministic, replays, records zero nondet (#408 inc3)"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: virtual time diverged/replayed wrong/leaked nondet (rec=$VT_NREC)"
+    FAIL=$((FAIL + 1))
+fi
+
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
 # script path must take the clean cannot-read-file exit, not xmalloc's

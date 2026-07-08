@@ -214,4 +214,74 @@ catch e:
     assert_eq of [e.kind, "interrupt", "join of a killed task raises interrupt"]
 assert_eq of [kthrew, 1, "join of a killed task raises"]
 
+# ============================================================================
+# Increment 3: virtual time (task_sleep / task_now).
+# The virtual clock is logical: it starts at 0 and only jumps FORWARD to the
+# earliest sleeper when nothing else is runnable, so sleeps stay deterministic
+# (no wall clock). The scheduler is per-run, so `now` is monotonic across the
+# whole file — these checks reason from a captured baseline, not absolutes.
+# ============================================================================
+
+# --- sleepers wake in virtual-time order, not spawn order; each observes the
+#     clock advanced by exactly its own sleep; the clock rests at the last wake ---
+base is task_now of null
+woke is []
+define sleeper(tag, ticks) as:
+    task_sleep of ticks
+    woke is append of [woke, tag]
+    return task_now of null
+sa is task_spawn of [sleeper, "a", 30]
+sb is task_spawn of [sleeper, "b", 10]
+sc is task_spawn of [sleeper, "c", 20]
+ra is task_join of sa
+rb is task_join of sb
+rc is task_join of sc
+assert_eq of [woke, ["b", "c", "a"], "sleepers wake in virtual-time order, not spawn order"]
+assert_eq of [rb - base, 10, "b observes now advanced by exactly its sleep"]
+assert_eq of [rc - base, 20, "c observes now advanced by exactly its sleep"]
+assert_eq of [ra - base, 30, "a observes now advanced by exactly its sleep"]
+assert_eq of [(task_now of null) - base, 30, "the clock rests at the last wake and holds"]
+
+# --- task_sleep of 0 is a same-tick yield: both run, clock does not advance ---
+b0 is task_now of null
+tick0 is []
+define zzz(tag) as:
+    task_sleep of 0
+    tick0 is append of [tick0, tag]
+    return null
+z1 is task_spawn of [zzz, "x"]
+z2 is task_spawn of [zzz, "y"]
+task_join of z1
+task_join of z2
+assert_eq of [tick0, ["x", "y"], "sleep(0) tasks both run"]
+assert_eq of [task_now of null, b0, "sleep(0) does not advance the virtual clock"]
+
+# --- a negative sleep is clamped to 0 (no time travel) ---
+bn is task_now of null
+define nap_neg() as:
+    task_sleep of (0 - 5)
+    return task_now of null
+rn is task_join of (task_spawn of nap_neg)
+assert_eq of [rn, bn, "a negative sleep is clamped to 0"]
+
+# --- main itself can sleep to let an earlier-waking worker run first ---
+bm is task_now of null
+mlog is []
+define bg() as:
+    task_sleep of 5
+    mlog is append of [mlog, "worker"]
+    return null
+bgid is task_spawn of bg
+task_sleep of 15                             # main sleeps PAST the worker's wake
+mlog is append of [mlog, "main"]
+task_join of bgid
+assert_eq of [mlog, ["worker", "main"], "a sleeping main lets an earlier-waking worker run first"]
+assert_eq of [(task_now of null) - bm, 15, "main's own sleep advances the clock"]
+
+# --- a lone sleeper is woken by the clock, not reported as a deadlock ---
+define lone() as:
+    task_sleep of 100
+    return 7
+assert_eq of [task_join of (task_spawn of lone), 7, "a lone sleeper is woken by the clock, not a deadlock"]
+
 test_summary of null

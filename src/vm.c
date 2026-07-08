@@ -5128,6 +5128,7 @@ typedef struct {
     int   live;                   /* spawned tasks not yet DONE/DEAD */
     int   active;                 /* armed on first spawn */
     int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
+    double now;                   /* inc 3: virtual clock (logical, starts 0) */
     Task  main_task;              /* task 0 — save-buffer only, never "started" */
 } TaskScheduler;
 
@@ -5308,6 +5309,65 @@ void task_request_recv(void) {
     g_task_suspend_request = 1;
 }
 
+/* ---- Inc 3: virtual time ---------------------------------------------- */
+
+/* task_sleep: the current task becomes runnable again when the virtual clock
+ * reaches now + ticks. The trampoline advances the clock only when nothing is
+ * runnable (see sched_wake_sleepers), so time is a pure function of program
+ * order + sleep durations — no tape records, no wall clock. A negative sleep
+ * is clamped to 0 (a same-tick yield to everything currently ready). */
+void task_request_sleep(double ticks) {
+    TaskScheduler *s = sched_get();
+    Task *t = task_current_running();
+    if (!s || !t) return;
+    double dt = ticks > 0 ? ticks : 0;
+    t->wake_at = s->now + dt;
+    t->sleeping = 1;
+    g_task_suspend_request = 1;
+}
+
+double task_virtual_now(void) {
+    TaskScheduler *s = sched_get();
+    return s ? s->now : 0;
+}
+
+/* When the ready queue is empty, advance the virtual clock to the earliest
+ * sleeper's wake time and make every task due at (or before) that instant
+ * runnable. Returns 1 if any sleeper was woken (the trampoline then loops),
+ * 0 if there are no sleepers (genuine idle → done or deadlock). Ties at the
+ * same wake_at are broken by ascending task id (main = 0 first), so the
+ * interleaving stays deterministic. The clock only ever moves forward:
+ * wake_at = now + dt >= now, so the min is never behind the current now. */
+static int sched_wake_sleepers(TaskScheduler *s) {
+    double best = 0; int have_best = 0;
+    if (s->main_task.state == TASK_SUSPENDED && s->main_task.sleeping) {
+        best = s->main_task.wake_at; have_best = 1;
+    }
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
+        if (t && t->state == TASK_SUSPENDED && t->sleeping &&
+            (!have_best || t->wake_at < best)) {
+            best = t->wake_at; have_best = 1;
+        }
+    }
+    if (!have_best) return 0;
+    s->now = best;
+    /* Wake main first, then tasks in ascending id order — a fixed tie-break. */
+    if (s->main_task.state == TASK_SUSPENDED && s->main_task.sleeping &&
+        s->main_task.wake_at <= s->now) {
+        s->main_task.sleeping = 0;
+        sched_ready_push(s, 0);
+    }
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
+        if (t && t->state == TASK_SUSPENDED && t->sleeping && t->wake_at <= s->now) {
+            t->sleeping = 0;
+            sched_ready_push(s, t->id);
+        }
+    }
+    return 1;
+}
+
 /* Deterministic teardown of a task mid-run (task_kill): drop its mailbox and
  * saved slice, wake any joiner with an `interrupt` error, mark it DEAD. The
  * handle entry stays (task_alive → 0, joiners see DEAD); handle_table_drain
@@ -5478,9 +5538,13 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
     for (;;) {
         int id = sched_ready_pop(s);
         if (id < 0) {
-            /* Nothing runnable. If main already finished, we're done. If tasks
-             * remain live (blocked on joins that can't resolve), that's a
-             * deadlock — raise it loudly rather than hang. */
+            /* Nothing runnable now. Sleepers waiting on the virtual clock are
+             * not a deadlock — advance time to the earliest wake and retry
+             * before deciding anything is stuck. */
+            if (sched_wake_sleepers(s)) continue;
+            /* Genuinely nothing runnable. If main already finished, we're done.
+             * If tasks remain live (blocked on joins that can't resolve), that's
+             * a deadlock — raise it loudly rather than hang. */
             if (s->main_task.state == TASK_DONE || s->main_task.state == TASK_DEAD) {
                 if (s->main_task.has_error) {
                     g_error_value = s->main_task.error_value;
@@ -5511,8 +5575,10 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
         if (t->state == TASK_SUSPENDED) {
             /* It suspended again. task_yield → re-enqueue; task_join → stay
              * blocked (woken by sched_finish); task_recv on an empty mailbox →
-             * stay blocked (woken by task_deliver). */
-            if (t->join_target == 0 && !t->recv_blocked) sched_ready_push(s, id);
+             * stay blocked (woken by task_deliver); task_sleep → stay blocked
+             * (woken by sched_wake_sleepers when the clock reaches wake_at). */
+            if (t->join_target == 0 && !t->recv_blocked && !t->sleeping)
+                sched_ready_push(s, id);
         } else {
             sched_finish(s, t, r);
             /* kill-outstanding: main ending tears the rest down deterministically. */
@@ -5547,9 +5613,13 @@ Value *vm_execute(EigsChunk *chunk, Env *env) {
      * tasks are still live, drive them too (kill-outstanding at main's end). */
     if (s->main_task.state == TASK_SUSPENDED) {
         /* main's first suspension happened in the initial vm_run, outside the
-         * trampoline — enqueue it now (unless it blocked on a join, in which
-         * case sched_finish wakes it) so it resumes round-robin. */
-        if (s->main_task.join_target == 0) sched_ready_push(s, 0);
+         * trampoline — enqueue it now so it resumes round-robin, UNLESS it
+         * blocked on a join (sched_finish wakes it), a recv (task_deliver
+         * wakes it), or a sleep (sched_wake_sleepers wakes it). Mirrors the
+         * trampoline's re-enqueue guard. */
+        if (s->main_task.join_target == 0 && !s->main_task.recv_blocked &&
+            !s->main_task.sleeping)
+            sched_ready_push(s, 0);
         return scheduler_trampoline(s);
     }
     /* main ran to completion without ever suspending. Record its result and,

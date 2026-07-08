@@ -417,6 +417,13 @@ typedef struct Task {
     Value    **mbox;
     int        mbox_head, mbox_count, mbox_cap;
     int        recv_blocked;
+    /* Inc 3: virtual time. `sleeping` is 1 while this task is suspended in
+     * task_sleep; `wake_at` is the virtual-clock value it becomes runnable at.
+     * The clock is logical (discrete-event) — it never tracks wall time and
+     * only jumps forward to the earliest sleeper when nothing else is runnable,
+     * so sleeping stays deterministic-by-construction (no tape records). */
+    int        sleeping;
+    double     wake_at;
     /* Completion. */
     Value     *result;             /* owned, deep-copied on normal end */
     int        has_error;          /* died of an uncaught error */
@@ -443,6 +450,9 @@ int   task_mbox_has(void);           /* current task has a queued message? */
 Value *task_mbox_pop(void);          /* pop current task's front message (owned ref) */
 void  task_request_recv(void);       /* current task blocks awaiting a message */
 int   task_do_kill(int tid);         /* deterministic teardown of `tid`; 0 = bad target */
+/* Inc 3 virtual time (builtins.c task_sleep/task_now). */
+void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
+double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */
 
 /* ---- Public API ---- */
 

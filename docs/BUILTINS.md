@@ -576,6 +576,8 @@ Requires full build. Transformer model inference and training.
 | `task_recv` | `task_recv of null` | Return the next message from this task's mailbox, or block cooperatively until one arrives. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
 | `task_try_recv` | `task_try_recv of null` | Non-blocking receive: the next mailbox message, or `null` if empty. Never suspends. |
 | `task_kill` | `task_kill of id` | Tear down task `id`: drop its mailbox, mark it dead, wake any joiner with an `interrupt` error. Returns 1 if killed, 0 for a finished/unknown/self target. |
+| `task_sleep` | `task_sleep of ticks` | Suspend this task until the **virtual clock** advances by `ticks`. The clock is logical (discrete-event): it only jumps forward — to the earliest sleeper — when nothing else is runnable, so sleeping stays deterministic, not wall-clock. A negative sleep is treated as 0. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope. |
+| `task_now` | `task_now of null` | The current virtual-clock value (a number; 0 before any `task_sleep`). Deterministic — reads a logical counter, records no nondeterminism. |
 
 **Thread safety:** Values sent through a channel (or returned through
 `thread_join`) are deep-COPIED via `val_clone_for_send` — messages are
