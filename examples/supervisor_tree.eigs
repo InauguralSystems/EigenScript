@@ -1,0 +1,46 @@
+# ============================================================
+# supervisor_tree.eigs — observer-native supervision (#409)
+# ============================================================
+#
+# A worker pool of three tasks. Two are healthy; one silently WEDGES partway
+# through — it never crashes and never times out, so a crash-reactive
+# supervisor (BEAM-style) would watch it hang forever. Here the supervisor
+# samples each worker's progress trajectory and sees the frozen one go
+# `stable`, then restarts it from its spec. The restarted worker runs to
+# completion. Deterministic: this prints identically on every run.
+
+load_file of "lib/supervise.eigs"
+
+# A worker advances a counter, publishing progress each step. The one in the
+# "wedge slot" freezes on its FIRST life (infinite yield, progress stuck), and
+# on its restarted life runs cleanly to the end.
+wedge_slot is 1
+lives is [0, 0, 0]
+
+define worker(slot) as:
+    lives is set_at of [lives, slot, lives[slot] + 1]
+    life is lives[slot]
+    n is 0
+    loop while n < 12:
+        heartbeat of [slot, n]
+        # First life of the wedge-slot worker gets stuck at step 4.
+        if slot == wedge_slot and life == 1 and n == 4:
+            loop while 1 == 1:
+                heartbeat of [slot, 4]     # frozen — alive but no progress
+                task_yield of null
+        task_yield of null
+        n is n + 1
+    return f"worker {slot} finished"
+
+sup is supervisor_new of 3
+supervise of [sup, worker, 0]
+supervise of [sup, worker, 1]
+supervise of [sup, worker, 2]
+
+restarts is supervise_run of [sup, 1000]
+
+print of f"restarts performed: {restarts}"
+print of f"worker 0 completed: {_sup_done[0]}"
+print of f"worker 1 completed: {_sup_done[1]}"
+print of f"worker 2 completed: {_sup_done[2]}"
+print of "supervision tree settled"

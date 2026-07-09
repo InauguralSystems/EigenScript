@@ -752,6 +752,19 @@ and the claim). `lock_new`, `lock_acquire`, `lock_release`, and
 if the body raises). Acquire only from within tasks — it spins with
 `task_yield`, so it needs the scheduler active.
 
+### lib/supervise.eigs
+Observer-native supervision over the #408 task layer. Beyond BEAM-style
+crash-restart, it also detects the silently **wedged** worker — alive, not
+crashed, never timing out, but no longer making progress — by sampling each
+worker's progress trajectory and seeing it go `stable` (the EigenOS
+red-title pattern generalized). Workers publish raw progress with
+`heartbeat of [slot, value]`; the supervisor turns it into a bounded
+signature (dodging the #294 flat-entropy blind spot). `supervisor_new`,
+`supervise of [sup, fn, slot]`, `supervise_step`, and `supervise_run of
+[sup, max_ticks]` (drive to settled); wedged and crashed workers are
+restarted from their spec under a per-worker restart-intensity cap. Eight
+slots. See `examples/supervisor_tree.eigs`.
+
 ### lib/store.eigs
 EigenStore high-level layer: `find`, `find_one`, `upsert`, `bulk_put`,
 `to_dataframe`.

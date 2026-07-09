@@ -1,0 +1,73 @@
+# lib/supervise.eigs — observer-native supervision over the #408 task layer:
+# a wedged worker (alive, progress frozen, no crash, no timeout) is detected
+# via its observer trajectory and restarted; a crashed worker is restarted;
+# a healthy worker is left alone; restart-intensity is capped. Deterministic
+# by construction (the cooperative task layer).
+load_file of "lib/test.eigs"
+load_file of "lib/supervise.eigs"
+
+# --- 1. Healthy worker is never restarted; wedged worker (frozen progress) is
+#        detected and restarted once, then recovers ------------------------
+define healthy(slot) as:
+    n is 0
+    loop while n < 20:
+        heartbeat of [slot, n]
+        task_yield of null
+        n is n + 1
+    return "ok"
+
+wedge_lives is 0
+define flaky(slot) as:
+    wedge_lives is wedge_lives + 1
+    life is wedge_lives
+    if life == 1:
+        # WEDGE: alive forever, progress frozen — no crash, no timeout.
+        loop while 1 == 1:
+            heartbeat of [slot, 5]
+            task_yield of null
+    n is 0
+    loop while n < 20:
+        heartbeat of [slot, n]
+        task_yield of null
+        n is n + 1
+    return "recovered"
+
+sup is supervisor_new of 3
+supervise of [sup, healthy, 0]
+supervise of [sup, flaky, 1]
+r1 is supervise_run of [sup, 500]
+assert_eq of [r1, 1, "wedged worker detected + restarted exactly once"]
+assert_eq of [_sup_done[0], 1, "healthy worker completed (never restarted)"]
+assert_eq of [_sup_done[1], 1, "flaky worker recovered after its restart"]
+
+# --- 2. Crashed worker is restarted, and the caught crash does NOT fail the
+#        run (supervised crash is recovered, not fatal) --------------------
+crash_lives is 0
+define crasher(slot) as:
+    crash_lives is crash_lives + 1
+    life is crash_lives
+    heartbeat of [slot, 1]
+    task_yield of null
+    if life == 1:
+        throw of "boom"
+    return "recovered"
+
+sup2 is supervisor_new of 3
+supervise of [sup2, crasher, 0]
+r2 is supervise_run of [sup2, 200]
+assert_eq of [r2, 1, "crashed worker restarted exactly once"]
+assert_eq of [_sup_done[0], 1, "crashed worker recovered on restart"]
+
+# --- 3. Restart-intensity cap: a worker that always wedges is restarted at
+#        most max_restarts times, then supervision gives up ----------------
+define always_wedge(slot) as:
+    loop while 1 == 1:
+        heartbeat of [slot, 7]
+        task_yield of null
+
+sup3 is supervisor_new of 2
+supervise of [sup3, always_wedge, 0]
+r3 is supervise_run of [sup3, 400]
+assert_eq of [r3, 2, "restart-intensity cap honored (max_restarts=2)"]
+
+test_summary of null
