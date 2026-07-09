@@ -17,6 +17,30 @@ All notable changes to EigenScript are documented here.
   atomic. Still open under #488: a debug-mode *assertion* that a delimited
   region issued no scheduler yield (needs VM support).
 
+### Changed
+- **Silent-tolerance audit, batch 2 — invalid input raises instead of
+  returning a silent wrong value** (#497, #498, #499, #501, #502, #511,
+  #512). Builtins that used to fold bad input to a `null`/`0`/`""`/
+  wrong-order sentinel — the hardest class of bug to spot in a data or
+  numeric pipeline — now raise a catchable error from the closed error-kind
+  set:
+  - `matmul` — incompatible shapes raise `value`, non-matrix operands raise
+    `type_mismatch`, an oversized result raises `limit` (#512).
+  - `sha256` / `md5` / `sha256_file` / `md5_file` / `hmac_sha256` — a
+    non-string argument raises `type_mismatch` (was the empty-string
+    sentinel, i.e. a silent wrong digest); the `_file` variants also raise
+    `io` when the file can't be opened (#511).
+  - `range` — a non-numeric argument raises `type_mismatch` (#497); a
+    request past the 1M cap raises `limit` instead of silently building an
+    unbounded list (the cap used to size only the prealloc while the loop
+    ran to the original bound — an OOM, #498).
+  - `sort_by` — a key function returning a non-number raises `type_mismatch`
+    (was coerced to `0.0`, a silent wrong order); mirrors `sort` (#368) (#501).
+  - `get_at` / `set_at` and `buf_get` / `buf_set` — an out-of-range index
+    raises `index_range` and a non-list/non-buffer target or non-integer
+    index raises `type_mismatch`, matching the `xs[i]` operator (was a silent
+    fold-to-0 / no-op) (#499, #502).
+
 ### Fixed
 - **Circular `import` / `load_file` no longer crashes (#496).** A mutual or
   self-referential `import` (a→b→a) or `load_file` used to recurse through

@@ -235,7 +235,12 @@ static void bytes_to_hex(const uint8_t *bytes, int len, char *hex, int hex_size)
  * ================================================================ */
 
 Value* builtin_sha256(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    /* #511: a non-string input hashed to the empty-string sentinel — a
+     * silent wrong digest. Raise instead. */
+    if (!arg || arg->type != VAL_STR) {
+        rt_error(EK_TYPE, 0, "sha256 requires a string");
+        return make_str("");
+    }
     SHA256_CTX ctx;
     sha256_init(&ctx);
     sha256_update(&ctx, (uint8_t*)arg->data.str, strlen(arg->data.str));
@@ -247,7 +252,10 @@ Value* builtin_sha256(Value *arg) {
 }
 
 Value* builtin_md5(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    if (!arg || arg->type != VAL_STR) {              /* #511 */
+        rt_error(EK_TYPE, 0, "md5 requires a string");
+        return make_str("");
+    }
     MD5_CTX ctx;
     md5_init(&ctx);
     md5_update(&ctx, (uint8_t*)arg->data.str, strlen(arg->data.str));
@@ -260,9 +268,15 @@ Value* builtin_md5(Value *arg) {
 
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_sha256_file(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    if (!arg || arg->type != VAL_STR) {              /* #511 */
+        rt_error(EK_TYPE, 0, "sha256_file requires a string path");
+        return make_str("");
+    }
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) return make_str("");
+    if (!f) {
+        rt_error(EK_IO, 0, "sha256_file: cannot open '%s'", arg->data.str);
+        return make_str("");
+    }
     SHA256_CTX ctx;
     sha256_init(&ctx);
     uint8_t buf[4096];
@@ -278,9 +292,15 @@ Value* builtin_sha256_file(Value *arg) {
 }
 
 Value* builtin_md5_file(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    if (!arg || arg->type != VAL_STR) {              /* #511 */
+        rt_error(EK_TYPE, 0, "md5_file requires a string path");
+        return make_str("");
+    }
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) return make_str("");
+    if (!f) {
+        rt_error(EK_IO, 0, "md5_file: cannot open '%s'", arg->data.str);
+        return make_str("");
+    }
     MD5_CTX ctx;
     md5_init(&ctx);
     uint8_t buf[4096];
@@ -297,12 +317,16 @@ Value* builtin_md5_file(Value *arg) {
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
 Value* builtin_hmac_sha256(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {  /* #511 */
+        rt_error(EK_TYPE, 0, "hmac_sha256 requires [key, message]");
         return make_str("");
+    }
     Value *key_val = arg->data.list.items[0];
     Value *msg_val = arg->data.list.items[1];
-    if (!key_val || key_val->type != VAL_STR || !msg_val || msg_val->type != VAL_STR)
+    if (!key_val || key_val->type != VAL_STR || !msg_val || msg_val->type != VAL_STR) {
+        rt_error(EK_TYPE, 0, "hmac_sha256: key and message must be strings");
         return make_str("");
+    }
 
     const uint8_t *key = (const uint8_t*)key_val->data.str;
     size_t key_len = strlen(key_val->data.str);

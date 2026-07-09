@@ -55,12 +55,18 @@ print of "survived"' "survived"
 # matmul: the result element count ar*bc overflowed int into a tiny allocation
 # while the kernel wrote ar*bc doubles (a 65536x1 by 1x65536 product). Now the
 # product is computed in 64-bit and rejected over the 10M cap — no heap overflow.
-run_case "flat-buffer matmul result overflow → no OOB" \
+# #512: the over-cap case now RAISES `limit` (was a silent null); the
+# crash-safety guarantee (no OOB/SIGSEGV) holds either way, so catch it.
+run_case "flat-buffer matmul result overflow → catchable, no OOB" \
 'base is buffer of 65536
 a is reshape of [base, 65536, 1]
 b is reshape of [base, 1, 65536]
-c is matmul of [a, b]
-print of "survived"' "survived"
+caught is 0
+try:
+    c is matmul of [a, b]
+catch e:
+    caught is 1
+print of caught' "1"
 
 # A normal matmul still produces the right answer (guards the cap refactor).
 run_case "matmul normal correctness" \

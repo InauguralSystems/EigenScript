@@ -75,8 +75,22 @@ b is buf_from_list of [1.5, 2.5, 3.5]
 check of ["buf_from_list type", (type of b) == "buffer"]
 check of ["buf_len direct", (buf_len of b) == 3]
 check of ["buf_get direct", (buf_get of [b, 1]) == 2.5]
-check of ["buf_get OOR returns 0", (buf_get of [b, 99]) == 0]
-check of ["buf_get neg returns 0", (buf_get of [b, 0 - 1]) == 0]
+# #502: out-of-range buf_get raises index_range (was a silent fold-to-0,
+# indistinguishable from a real stored 0). Mirrors the buffer [i] operator.
+oor_raised is 0
+oor_kind is ""
+try:
+    ignore is buf_get of [b, 99]
+catch e:
+    oor_raised is 1
+    oor_kind is e.kind
+check of ["buf_get OOR raises index_range", oor_raised == 1 and oor_kind == "index_range"]
+neg_raised is 0
+try:
+    ignore2 is buf_get of [b, 0 - 99]
+catch e:
+    neg_raised is 1
+check of ["buf_get far-neg raises", neg_raised == 1]
 
 bfl is buf_from_list
 bget is buf_get

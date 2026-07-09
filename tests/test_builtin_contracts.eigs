@@ -33,11 +33,26 @@ xs is [10, 20, 30]
 assert_eq of [get_at of [xs, -1], 30, "get_at -1 is the last element"]
 assert_eq of [get_at of [xs, -1], xs[-1], "get_at -1 matches the [] operator"]
 assert_eq of [get_at of [xs, -3], 10, "get_at -len is the first element"]
-assert_eq of [get_at of [xs, -4], 0, "get_at past-the-start keeps the 0 miss"]
+# #499: past-the-start now raises index_range, matching the [] operator
+# (xs[-4] on a 3-list raises) — the whole point of #312 was "honor negative
+# indices like []", and [] raises out of range rather than folding to 0.
+ga_past is 0
+ga_past_k is ""
+try:
+    ig is get_at of [xs, -4]
+catch e:
+    ga_past is 1
+    ga_past_k is e.kind
+assert_true of [ga_past == 1 and ga_past_k == "index_range", "get_at past-the-start raises index_range"]
 set_at of [xs, -1, 99]
 assert_eq of [xs[2], 99, "set_at -1 writes the last element"]
-set_at of [xs, -4, 111]
-assert_eq of [xs[0], 10, "set_at past-the-start stays a no-op"]
+sa_past is 0
+try:
+    set_at of [xs, -4, 111]
+catch e:
+    sa_past is 1
+assert_true of [sa_past == 1, "set_at past-the-start raises (was a silent no-op)"]
+assert_eq of [xs[0], 10, "set_at past-the-start left the list unchanged"]
 grid is [[1, 2], [3, 4]]
 assert_eq of [get_at of [grid, -1, -1], 4, "2D get_at negative row and col"]
 set_at of [grid, -1, -2, 77]

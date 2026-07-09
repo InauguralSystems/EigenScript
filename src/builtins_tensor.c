@@ -339,17 +339,31 @@ Value* builtin_tensor_negative(Value *arg) { return tensor_unary(arg, op_neg); }
 
 /* ==== BUILTIN: matmul ==== */
 Value* builtin_tensor_matmul(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    /* #512: invalid shapes/types raise instead of returning a silent null —
+     * a null in a numeric pipeline (training, games) is hard to spot.
+     * type_mismatch for non-matrix operands, value for incompatible shapes,
+     * limit for an oversized result. */
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "matmul requires [A, B]");
+        return make_null();
+    }
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
     /* flat-buffer fast path: compute in place, no flatten/rebuild */
     if (a->type == VAL_BUFFER && b->type == VAL_BUFFER) {
         int ar, ac, br, bc;
         buf_dims(a, &ar, &ac); buf_dims(b, &br, &bc);
-        if (ac != br) return make_null();
+        if (ac != br) {
+            rt_error(EK_VALUE, 0, "matmul: incompatible shapes "
+                     "(%dx%d · %dx%d)", ar, ac, br, bc);
+            return make_null();
+        }
         /* Reject an oversized result before the kernel writes ar*bc doubles —
          * ar*bc overflowed int into a tiny allocation, then OOB heap writes. */
-        if ((int64_t)ar * bc > 10000000) return make_null();
+        if ((int64_t)ar * bc > 10000000) {
+            rt_error(EK_LIMIT, 0, "matmul: result too large (%dx%d)", ar, bc);
+            return make_null();
+        }
         /* a 1-D left operand yields a 1-D result (mirrors flat_to_tensor_1d) */
         Value *res = (a->data.buffer.rows == 0) ? make_shaped_buffer(0, bc)
                                                 : make_shaped_buffer(ar, bc);
@@ -359,8 +373,23 @@ Value* builtin_tensor_matmul(Value *arg) {
     int ar, ac, br, bc;
     double *af = tensor_to_flat(a, &ar, &ac);
     double *bf = tensor_to_flat(b, &br, &bc);
-    if (!af || !bf || ac != br) { free(af); free(bf); return make_null(); }
-    if ((int64_t)ar * bc > 10000000) { free(af); free(bf); return make_null(); }
+    if (!af || !bf) {
+        free(af); free(bf);
+        rt_error(EK_TYPE, 0, "matmul: expected matrices (got %s, %s)",
+                 val_type_name(a->type), val_type_name(b->type));
+        return make_null();
+    }
+    if (ac != br) {
+        free(af); free(bf);
+        rt_error(EK_VALUE, 0, "matmul: incompatible shapes "
+                 "(%dx%d · %dx%d)", ar, ac, br, bc);
+        return make_null();
+    }
+    if ((int64_t)ar * bc > 10000000) {
+        free(af); free(bf);
+        rt_error(EK_LIMIT, 0, "matmul: result too large (%dx%d)", ar, bc);
+        return make_null();
+    }
     double *out = xcalloc((size_t)ar * bc, sizeof(double));
     ne_matmul_buf(af, ar, ac, bf, bc, out);
     Value *result;
