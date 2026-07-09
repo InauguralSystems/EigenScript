@@ -74,6 +74,16 @@ All notable changes to EigenScript are documented here.
   `load_file`, so a cycle that crosses the two is caught too. Repeated
   *sequential* loads of the same file stay legal — only active re-entrancy is
   a cycle. Regression: suite section **[115]**.
+- **`for x in xs` snapshots the iteration length at loop entry (#491).**
+  ITER_NEXT used to re-read the sequence's *live* length every step, so a
+  body that appended to `xs` looped forever (unbounded memory, OOM) and one
+  that removed from the front skipped elements. The length is now fixed at
+  entry and bounded by `min(snapshot, live length)`: appending can't extend
+  the loop, and removing stops at the live length instead of reading a freed
+  slot. `for` over a sequence mutated in its body is now well-defined — it
+  visits exactly the indices 0..N-1 that existed at entry, read live (SPEC
+  updated). Applies to both the interpreter and JIT tiers and to list
+  comprehensions. Regression: suite section **[117]**.
 
 ## [0.28.0] - 2026-07-08
 

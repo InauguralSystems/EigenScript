@@ -500,11 +500,24 @@ static inline uint16_t read_u16(uint8_t *ip) {
 
 /* Iterator state: stored as a list [iterable, index] */
 static Value *make_iter_state(Value *iterable) {
-    Value *state = make_list(2);
+    Value *state = make_list(3);
     list_append(state, iterable);
     Value *idx = make_num(0);
     list_append(state, idx);
     val_decref(idx);
+    /* #491: snapshot the length at loop entry (items[2]). ITER_NEXT bounds
+     * the iteration by min(snapshot, live length), so appending to the
+     * iterable in the body can no longer extend the loop (it used to read
+     * the live count every step — an unbounded loop / OOM), while a shrink
+     * (remove) still stops at the live length instead of reading a freed
+     * slot. `for` over a list mutated in its body is thus well-defined:
+     * exactly the indices 0..N-1 that existed at entry, read live. */
+    int snap = 0;
+    if (iterable && iterable->type == VAL_LIST)        snap = iterable->data.list.count;
+    else if (iterable && iterable->type == VAL_BUFFER) snap = iterable->data.buffer.count;
+    Value *slen = make_num((double)snap);
+    list_append(state, slen);
+    val_decref(slen);
     return state;
 }
 
@@ -1130,6 +1143,15 @@ int jit_helper_iter_next(void) {
     if (iterable->type == VAL_LIST)        len = iterable->data.list.count;
     else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
     else                                   return 1;
+    /* #491: cap by the entry-time snapshot (items[2]) — see make_iter_state.
+     * Mirrors CASE(ITER_NEXT). */
+    if (state->data.list.count >= 3) {
+        Value *snap_v = state->data.list.items[2];
+        if (snap_v && snap_v->type == VAL_NUM) {
+            int snap = (int)snap_v->data.num;
+            if (snap < len) len = snap;
+        }
+    }
     if (idx >= len) return 1;
     Value *elem;
     if (iterable->type == VAL_BUFFER) {
@@ -3909,6 +3931,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int len = 0;
         if (iterable->type == VAL_LIST) len = iterable->data.list.count;
         else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
+        /* #491: cap by the entry-time snapshot (items[2]) so a body that
+         * appends can't extend the loop; min() with the live length keeps a
+         * remove from reading past the end. See make_iter_state. */
+        if (state->data.list.count >= 3 &&
+            state->data.list.items[2]->type == VAL_NUM) {
+            int snap = (int)state->data.list.items[2]->data.num;
+            if (snap < len) len = snap;
+        }
 
         if (idx >= len) {
             ip += exit_offset;

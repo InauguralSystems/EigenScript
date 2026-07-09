@@ -439,9 +439,13 @@ medium
 ## Loops
 
 `loop while cond:` repeats while the condition is truthy. `for v in
-seq:` iterates a list, buffer, or `range of n` (0 to n-1). `break` and
-`continue` behave conventionally and do not escape function-call
-boundaries. A `break` or `continue` with no enclosing loop — including
+seq:` iterates a list, buffer, or `range of n` (0 to n-1). The iteration
+length is **fixed at loop entry**: mutating `seq` inside the body is
+well-defined — the loop visits the indices that existed when it started,
+reading each element live, so appending does not extend the loop and
+removing stops it early (rather than looping forever or reading past the
+end). `break` and `continue` behave conventionally and do not escape
+function-call boundaries. A `break` or `continue` with no enclosing loop — including
 inside a function body that has no loop of its own — is a **compile
 error** (`'break' outside a loop`), not a silent no-op.
 

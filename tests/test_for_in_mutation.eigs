@@ -1,0 +1,60 @@
+# test_for_in_mutation.eigs — #491: `for x in xs` snapshots the length at
+# loop entry. Mutating xs in the body is well-defined: the loop visits
+# exactly the indices 0..N-1 that existed at entry, read live. Appending can
+# no longer extend the loop forever (was an unbounded loop / OOM); removing
+# stops at the live length instead of reading a freed slot.
+load_file of "lib/test.eigs"
+
+# ---- append during iteration terminates (was infinite) ----
+xs is [1, 2, 3]
+seen is 0
+for x in xs:
+    append of [xs, x * 10]
+    seen += 1
+assert_eq of [seen, 3, "append-during-iter runs exactly the 3 entry-time elements"]
+assert_eq of [len of xs, 6, "the 3 appended elements are present after the loop"]
+assert_true of [xs[0] == 1 and xs[3] == 10 and xs[5] == 30, "appended values are correct and in order"]
+
+# ---- remove from the front is OOB-safe and terminates ----
+ys is [1, 2, 3, 4, 5]
+visited is []
+for y in ys:
+    list_remove_at of [ys, 0]
+    append of [visited, y]
+# bounded by min(snapshot=5, shrinking live length): visits indices 0..2 of
+# the shrinking list, then idx passes the live length and the loop stops.
+assert_true of [len of visited > 0 and len of visited <= 5, "remove-front loop terminates, no OOB"]
+
+# ---- a big loop crosses the JIT threshold and still snapshots ----
+big is []
+for i in range of 500:
+    append of [big, i]
+jit_count is 0
+for b in big:
+    append of [big, 0]
+    jit_count += 1
+assert_eq of [jit_count, 500, "JIT-tier for-in snapshots the entry-time length"]
+
+# ---- normal iteration is unchanged ----
+sum is 0
+for n in [10, 20, 30]:
+    sum += n
+assert_eq of [sum, 60, "plain for-in over a literal list still works"]
+
+buf_sum is 0
+bf is buf_from_list of [7, 8, 9]
+for v in bf:
+    buf_sum += v
+assert_eq of [buf_sum, 24, "for-in over a buffer still works"]
+
+empty_hits is 0
+for e in []:
+    empty_hits += 1
+assert_eq of [empty_hits, 0, "for-in over an empty list runs zero times"]
+
+# ---- a list comprehension over a list is unaffected ----
+doubled is [k * 2 for k in [1, 2, 3, 4]]
+assert_true of [len of doubled == 4 and doubled[3] == 8, "list comprehension still works"]
+
+print of "FOR_IN_MUTATION_DONE"
+test_summary of null

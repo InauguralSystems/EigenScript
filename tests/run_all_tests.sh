@@ -1036,6 +1036,14 @@ echo "[116] Silent-Tolerance Batch-2: bad input raises (13 issues)"
 check_eigs_suite "invalid input raises instead of silent null/0/empty" \
     test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 35
 
+# [117] for-in snapshots the iteration length at loop entry (#491). Mutating
+# the sequence in the body is well-defined: appending no longer loops forever
+# (was an unbounded loop / OOM), removing stops at the live length instead of
+# reading a freed slot. Covers interpreter + JIT tiers, buffer, empty, listcomp.
+echo "[117] for-in Length Snapshot (#491, 9 checks)"
+check_eigs_suite "for-in snapshots length; body mutation is bounded + safe" \
+    test_for_in_mutation.eigs "FOR_IN_MUTATION_DONE" 9
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
