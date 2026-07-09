@@ -4728,12 +4728,16 @@ Value* builtin_task_spawn(Value *arg) {
  * separate tools (Lua-style "can't yield across a C boundary"). */
 Value* builtin_task_yield(Value *arg) {
     (void)arg;
-    if (!g_task_sched) return make_null();   /* no scheduler: yield is a no-op */
+    /* #510: the arena guard is independent of whether a scheduler exists yet.
+     * Yielding inside arena_mark…arena_reset is forbidden even before any
+     * task_spawn — check it BEFORE the no-scheduler short-circuit so the
+     * "no-op with no tasks" rule cannot hide the "raise inside an arena" rule. */
     if (g_arena.active) {
         rt_error(EK_VALUE, 0, "cannot task_yield inside an arena scope "
                  "(arena_mark…arena_reset)");
         return make_null();
     }
+    if (!g_task_sched) return make_null();   /* no scheduler: yield is a no-op */
     task_request_yield();
     return make_null();   /* placeholder: execution resumes right after this */
 }
@@ -4750,6 +4754,7 @@ Value* builtin_task_join(Value *arg) {
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
         /* Already finished: deliver its result / error now, no suspend. */
         if (t->has_error) {
+            t->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
             if (t->error_value) {
                 val_incref(t->error_value);
                 eigs_clear_error_value();
@@ -4794,13 +4799,17 @@ Value* builtin_task_send(Value *arg) {
  * nested-evaluation restriction as the other suspending builtins. */
 Value* builtin_task_recv(Value *arg) {
     (void)arg;
-    if (!g_task_sched) return make_null();   /* no tasks: nothing can arrive */
+    /* A buffered message is delivered without suspending — arena-safe (and
+     * mbox helpers are null-safe with no scheduler). Only the BLOCKING path
+     * suspends, so only that path is arena-forbidden, and (#510) that guard
+     * fires regardless of whether a scheduler exists yet. */
     if (task_mbox_has()) return task_mbox_pop();
     if (g_arena.active) {
         rt_error(EK_VALUE, 0, "cannot task_recv inside an arena scope "
                  "(arena_mark…arena_reset)");
         return make_null();
     }
+    if (!g_task_sched) return make_null();   /* no tasks: nothing can arrive */
     task_request_recv();
     return make_null();   /* placeholder: the scheduler delivers the message on resume */
 }
@@ -4840,14 +4849,15 @@ Value* builtin_task_alive(Value *arg) {
  * scheduler (no task ever spawned) → no time to pass, so it is a no-op, like
  * task_yield. Same arena/nesting restriction as the other suspending builtins. */
 Value* builtin_task_sleep(Value *arg) {
-    if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
-    if (!arg || arg->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "task_sleep requires a number of ticks");
-        return make_null();
-    }
+    /* #510: arena guard before the no-scheduler short-circuit (see task_yield). */
     if (g_arena.active) {
         rt_error(EK_VALUE, 0, "cannot task_sleep inside an arena scope "
                  "(arena_mark…arena_reset)");
+        return make_null();
+    }
+    if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
+    if (!arg || arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "task_sleep requires a number of ticks");
         return make_null();
     }
     task_request_sleep(arg->data.num);

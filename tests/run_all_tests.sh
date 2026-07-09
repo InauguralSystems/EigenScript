@@ -2236,6 +2236,32 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# #493 exit-code contract + #483 deadlock leak lock. These assert PROCESS exit
+# behavior (not in-language assertions), so they run as a dedicated harness: an
+# unjoined uncaught task death fails the process; joining+catching recovers; a
+# deliberate task_kill does not fail; a mutual-join deadlock is loud. Every case
+# must also be leak-clean under the ASan build (the exact paths #483 covers) —
+# any LeakSanitizer report here fails, stricter than the tolerated global tally.
+# args: file  expected_rc  marker
+check_task_exit() {
+    TOTAL=$((TOTAL + 1))
+    local file="$1" want_rc="$2" marker="$3" out rc
+    out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
+    if [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker" \
+       && ! echo "$out" | grep -q "LeakSanitizer"; then
+        echo "  PASS: task exit contract — $file (rc=$rc)"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: task exit contract — $file (rc=$rc, want=$want_rc)"
+        echo "$out" | grep -iE "LeakSanitizer|error|assert" | head -3
+        FAIL=$((FAIL + 1))
+    fi
+}
+check_task_exit task_exit_unjoined_death.eigs 1 "MARK_END"         # #493 strict: main completes, rc 1
+check_task_exit task_exit_join_catch.eigs     0 "undefined_name"   # #493 caught: rc 0
+check_task_exit task_exit_killed.eigs         0 "MARK_END"         # #493 kill: rc 0
+check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 loud
+
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
 # script path must take the clean cannot-read-file exit, not xmalloc's

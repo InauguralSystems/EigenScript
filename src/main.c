@@ -285,6 +285,9 @@ int main(int argc, char **argv) {
     if (getenv("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);
+    /* #493: capture whether any worker died of an uncaught error without ever
+     * being joined — must be read BEFORE handle_table_drain frees the tasks. */
+    int unobserved_task_error = task_any_unobserved_error();
     /* Program done: deterministically reap workers and free channels while the
      * value world is still alive (channels/threads live in the handle table,
      * not on a GC'd Value, so nothing else reclaims them). */
@@ -295,7 +298,8 @@ int main(int argc, char **argv) {
     /* `exit of N` requests a specific code (and unwound via g_has_error); it
      * takes precedence over the generic uncaught-error code. Clear the unwind
      * flag so the teardown below sees a clean state. */
-    int exit_code = g_exit_requested ? g_exit_code : (g_has_error ? 1 : 0);
+    int exit_code = g_exit_requested ? g_exit_code
+                    : ((g_has_error || unobserved_task_error) ? 1 : 0);
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */

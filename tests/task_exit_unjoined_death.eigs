@@ -1,0 +1,9 @@
+# #493: a worker that dies of an uncaught error while NOBODY joins it must
+# fail the process (exit non-zero) — a fire-and-forget worker's death must
+# not silently green a run. Expected: stderr trace + rc 1.
+define die() as:
+    missing
+id is task_spawn of die
+print of "main continues"
+task_yield of null
+print of "MARK_END"

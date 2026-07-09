@@ -5200,11 +5200,26 @@ void task_sched_thread_free(void) {
     TaskScheduler *s = sched_get();
     if (!s) return;
     Task *m = &s->main_task;
-    /* main runs to completion before we get here, so its saved slice is empty;
-     * free defensively. Drain any messages left in main's mailbox + its result
-     * (nulled by the trampoline on a clean exit, but be defensive). */
-    free(m->saved_stack);
-    free(m->saved_frames);
+    /* #483: main is USUALLY run-to-completion here (empty slice). But a fatal
+     * exit while main is still SUSPENDED — a `deadlock`, or main blocked on a
+     * join/recv that never resolves — leaves a live saved slice whose counted
+     * refs would otherwise leak: the base module frame owns a chunk ref (the
+     * script chunk, see vm_run's frame push), and the operand stack owns value
+     * refs. Release them, mirroring task_free's worker-slice teardown, before
+     * freeing the arrays. (owns_env is 0 for the module frame — the global env
+     * is dropped separately in main.c/eigs_close — so only chunk_decref here.) */
+    if (m->saved_stack) {
+        for (int i = 0; i < m->saved_stack_len; i++) slot_decref(m->saved_stack[i]);
+        free(m->saved_stack);
+    }
+    if (m->saved_frames) {
+        for (int i = 0; i < m->saved_frame_count; i++) {
+            CallFrame *f = &m->saved_frames[i];
+            if (f->owns_env && f->env) env_decref(f->env);
+            if (f->chunk) chunk_decref(f->chunk);
+        }
+        free(m->saved_frames);
+    }
     if (m->mbox) {
         for (int i = 0; i < m->mbox_count; i++)
             val_decref(m->mbox[(m->mbox_head + i) % m->mbox_cap]);
@@ -5219,6 +5234,19 @@ void task_sched_thread_free(void) {
 static Task *sched_lookup(TaskScheduler *s, int id) {
     if (id == 0) return &s->main_task;
     return (Task *)handle_lookup(id, HANDLE_TASK);
+}
+
+/* #493: does any worker still carry an uncaught-error death that no task_join
+ * ever observed? Scanned once at process exit (before handle_table_drain frees
+ * the tasks) so a fire-and-forget worker's death makes the process exit
+ * non-zero instead of silently returning 0. */
+int task_any_unobserved_error(void) {
+    if (!g_task_sched) return 0;
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
+        if (t && t->err_unobserved) return 1;
+    }
+    return 0;
 }
 
 static Task *task_current_running(void) {
@@ -5566,6 +5594,11 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
         t->has_error = 1;
         t->error_value = vm_take_error_value();  /* the {kind,message,line} dict */
         g_has_error = 0;
+        /* #493: a worker that dies of an uncaught error must fail the process
+         * if nothing ever joins it. Main (task 0) already propagates its own
+         * error via the trampoline's return, so only mark workers here; a
+         * later task_join on this task clears the flag. */
+        if (t->id != 0) t->err_unobserved = 1;
         if (r) val_decref(r);
         t->result = NULL;
     } else {
@@ -5597,6 +5630,7 @@ static void task_apply_join_result(Task *t) {
     t->join_target = 0;
     if (!jt) return;
     if (jt->has_error) {
+        jt->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
         /* Re-raise: restore the error payload so the joiner's CHECK_ERROR
          * catches/propagates it as if the throw happened at the join. */
         if (jt->error_value) {

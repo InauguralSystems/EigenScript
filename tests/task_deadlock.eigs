@@ -1,0 +1,14 @@
+# #483/#509: a mutual join deadlock is loud (rc 1) and — the #483 regression
+# lock — leak-clean at exit under ASan. On deadlock, main is left SUSPENDED in
+# the module frame, whose saved slice owns the script chunk + nested fn chunks;
+# task_sched_thread_free must tear that slice down ref-correctly (it used to
+# free the arrays assuming main's slice was empty, leaking ~10 KB).
+define da() as:
+    return task_join of gb
+define db() as:
+    return task_join of ga
+ga is 0
+gb is 0
+ga is task_spawn of da
+gb is task_spawn of db
+task_join of ga

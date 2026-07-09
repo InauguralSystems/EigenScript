@@ -428,6 +428,13 @@ typedef struct Task {
     Value     *result;             /* owned, deep-copied on normal end */
     int        has_error;          /* died of an uncaught error */
     Value     *error_value;        /* owned {kind,message,line} dict */
+    /* #493: set when a worker (id != 0) dies of an uncaught runtime error and
+     * NOT yet observed by a task_join. Cleared once a joiner delivers/re-raises
+     * the error (caught or not). A task killed via task_kill is a deliberate
+     * teardown, not an uncaught error, so it never sets this. Any task left
+     * with this at process exit makes the process exit non-zero — a
+     * fire-and-forget worker's death must not silently green a run. */
+    int        err_unobserved;
 } Task;
 
 /* Free a Task's held refs and the struct. Safe on any state; called by
@@ -444,6 +451,7 @@ void task_sched_on_spawn(int id);    /* enqueue a freshly spawned task, arm the 
 void task_request_yield(void);       /* current task → tail of the ready queue */
 int  task_request_join(int target);  /* current task blocks on `target`; 0 = bad target */
 void task_sched_thread_free(void);   /* release the scheduler at thread detach */
+int  task_any_unobserved_error(void);/* #493: any worker died of an uncaught error and was never joined? */
 /* Inc 2 mailbox interface (builtins.c task_send/task_recv/task_try_recv/task_kill). */
 int   task_deliver(int tid, Value *msg_owned); /* append msg (ownership taken); 1 sent / 0 dropped-to-dead */
 int   task_mbox_has(void);           /* current task has a queued message? */
