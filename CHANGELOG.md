@@ -62,6 +62,17 @@ All notable changes to EigenScript are documented here.
     raises `value` instead of being silently skipped by `strtok`, which
     masked a malformed path; a genuine lookup miss still returns `""` (#507).
 
+  Batch 2c — `json_decode` strictness (#495):
+  - `json_decode` rejects malformed input with a `value` error instead of
+    silently succeeding. A truncated document (`[1, 2,`, `{"a":`), an
+    unterminated string, a partial/garbage container (`{]`, `[1,2,3,]`),
+    over-deep nesting, and trailing garbage after a complete value
+    (`[1,2,3] trailing`, `42abc`) all used to return a partial value with
+    `rc=0` — and a genuine JSON `null` was indistinguishable from a parse
+    failure (both returned `null`). Valid JSON is unchanged. `json_path` and
+    the HTTP header/body parsers keep their lenient behavior (they ignore the
+    strict-parse flag) (#495).
+
 ### Fixed
 - **Circular `import` / `load_file` no longer crashes (#496).** A mutual or
   self-referential `import` (a→b→a) or `load_file` used to recurse through

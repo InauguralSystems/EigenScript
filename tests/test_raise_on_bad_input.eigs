@@ -233,5 +233,51 @@ assert_true of [jp_empty == 1 and jp_empty_k == "value", "json_path empty segmen
 
 assert_eq of [json_path of ["{\"a\": {\"b\": 5}}", "a.b"], "5", "json_path with a valid path still works"]
 
+# ---- #495 json_decode: malformed JSON raises (was a silent partial value) ----
+jd_trunc is 0
+jd_trunc_k is ""
+try:
+    ig is json_decode of "[1, 2,"
+catch e:
+    jd_trunc is 1
+    jd_trunc_k is e.kind
+assert_true of [jd_trunc == 1 and jd_trunc_k == "value", "json_decode truncated array raises value"]
+
+jd_garbage is 0
+try:
+    ig is json_decode of "[1, 2, 3] trailing"
+catch e:
+    jd_garbage is 1
+assert_true of [jd_garbage == 1, "json_decode trailing garbage raises"]
+
+jd_partial_obj is 0
+try:
+    ig is json_decode of "{\"a\":"
+catch e:
+    jd_partial_obj is 1
+assert_true of [jd_partial_obj == 1, "json_decode truncated object raises"]
+
+jd_num_garbage is 0
+try:
+    ig is json_decode of "42abc"
+catch e:
+    jd_num_garbage is 1
+assert_true of [jd_num_garbage == 1, "json_decode number with trailing garbage raises"]
+
+jd_empty is 0
+try:
+    ig is json_decode of ""
+catch e:
+    jd_empty is 1
+assert_true of [jd_empty == 1, "json_decode of an empty string raises"]
+
+# valid JSON — including a bare null, which must stay distinguishable from a
+# parse failure (the whole point of #495)
+assert_eq of [len of (json_decode of "[1, 2, 3]"), 3, "json_decode of a valid array still works"]
+jd_ok_null is json_decode of "null"
+assert_true of [(type of jd_ok_null) == "none", "json_decode of a bare null still returns null"]
+jd_ok_obj is json_decode of "{\"a\": 1, \"b\": [2, 3]}"
+assert_true of [jd_ok_obj.a == 1 and (len of jd_ok_obj.b) == 2, "json_decode of a valid nested object still works"]
+
 print of "ALL_RAISE_TESTS_DONE"
 test_summary of null

@@ -1032,9 +1032,12 @@ rm -f "$CPG_FILE"
 # pattern → value, non-string → type_mismatch), substr (negative start counts
 # from the end), list_truncate (negative len → value), json_path (empty path
 # segment → value).
-echo "[116] Silent-Tolerance Batch-2: bad input raises (13 issues)"
+# Batch-2c adds #495: json_decode rejects truncated / partial / trailing-
+# garbage JSON (was a silent partial value; also made a genuine `null`
+# indistinguishable from a parse failure).
+echo "[116] Silent-Tolerance Batch-2: bad input raises (14 issues)"
 check_eigs_suite "invalid input raises instead of silent null/0/empty" \
-    test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 35
+    test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 43
 
 # [117] for-in snapshots the iteration length at loop entry (#491). Mutating
 # the sequence in the body is well-defined: appending no longer loops forever
