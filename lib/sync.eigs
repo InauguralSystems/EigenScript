@@ -1,0 +1,59 @@
+# ============================================================
+# Sync Library — cooperative-task synchronization (#408 task layer)
+# ============================================================
+#
+# Coordination primitives for cooperative tasks (task_spawn / task_yield). A
+# lock gives mutual exclusion ACROSS yield points: while one task holds it, any
+# other task that tries to acquire cooperatively yields until it is released.
+# Correct by the cooperative model — there is no preemption between the acquire
+# check passing and the claim, so claiming the lock is itself atomic.
+#
+# How to use:
+#   load_file of "lib/sync.eigs"
+#   lk is lock_new of null
+#   lock_acquire of lk          # yields cooperatively until free, then claims it
+#   # ... critical section: may span task_yield; the lock is held across yields
+#   lock_release of lk
+#
+#   # exception-safe form (releases even if the body raises):
+#   with_lock of [lk, body_fn]  # acquire, run body_fn of null, release
+#
+# NOTE: acquire spins with task_yield, so it is only meaningful while the #408
+# scheduler is active (>= 1 task_spawn). With no tasks there is nothing to yield
+# to and a contended acquire would loop forever — acquire only from within tasks.
+
+# lock_new() — a fresh, unheld lock.
+define lock_new() as:
+    return {"held": 0}
+
+# lock_acquire(lk) — claim the lock, cooperatively yielding until it is free.
+define lock_acquire(lk) as:
+    loop while lk.held == 1:
+        task_yield of null
+    lk.held is 1
+    return null
+
+# lock_release(lk) — release the lock.
+define lock_release(lk) as:
+    lk.held is 0
+    return null
+
+# with_lock([lk, fn]) — run `fn of null` while holding `lk`, releasing it even
+# if the body raises (the lock is never leaked on an aborted critical section),
+# then re-raise. Returns the body's result.
+define with_lock(n) as:
+    lk is n[0]
+    body is n[1]
+    lock_acquire of lk
+    failed is 0
+    err is null
+    result is null
+    try:
+        result is body of null
+    catch e:
+        failed is 1
+        err is e
+    lock_release of lk
+    if failed == 1:
+        throw of err
+    return result

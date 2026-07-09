@@ -1,0 +1,60 @@
+# lib/sync.eigs — cooperative-task locks give mutual exclusion ACROSS yield
+# points; with_lock runs a body under the lock and releases even on abort.
+load_file of "lib/test.eigs"
+load_file of "lib/sync.eigs"
+
+# --- the hazard is real: a non-atomic read-yield-write increment loses updates
+#     WITHOUT a lock (both tasks interleave inside the critical section) ---
+counter is 0
+define bump_nolock() as:
+    i is 0
+    loop while i < 50:
+        c is counter
+        task_yield of null
+        counter is c + 1
+        i is i + 1
+    return null
+a is task_spawn of bump_nolock
+b is task_spawn of bump_nolock
+task_join of a
+task_join of b
+assert_true of [counter < 100, "unlocked non-atomic RMW loses updates (the hazard is real)"]
+
+# --- the lock closes the race: exactly 100, even with a yield in the section ---
+counter is 0
+lk is lock_new of null
+define bump_locked() as:
+    i is 0
+    loop while i < 50:
+        lock_acquire of lk
+        c is counter
+        task_yield of null              # yield INSIDE the critical section
+        counter is c + 1
+        lock_release of lk
+        i is i + 1
+    return null
+a2 is task_spawn of bump_locked
+b2 is task_spawn of bump_locked
+task_join of a2
+task_join of b2
+assert_eq of [counter, 100, "lock gives mutual exclusion across yield points (no lost updates)"]
+
+# --- with_lock returns the body result and releases the lock ---
+lk2 is lock_new of null
+define give7() as:
+    return 7
+assert_eq of [with_lock of [lk2, give7], 7, "with_lock returns the body result"]
+assert_eq of [lk2.held, 0, "with_lock releases the lock after the body"]
+
+# --- with_lock releases + re-raises when the body aborts (lock not leaked) ---
+wthrew is 0
+define boom() as:
+    throw of "boom"
+try:
+    with_lock of [lk2, boom]
+catch e:
+    wthrew is 1
+assert_eq of [wthrew, 1, "with_lock re-raises a body error"]
+assert_eq of [lk2.held, 0, "with_lock releases the lock even when the body raises"]
+
+test_summary of null

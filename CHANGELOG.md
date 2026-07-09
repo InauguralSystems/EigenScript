@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`lib/sync` — cooperative-task locks (#488).** A `lib/sync.eigs` stdlib
+  module giving mutual exclusion **across** `task_yield` points for the #408
+  task layer: `lock_new` / `lock_acquire` / `lock_release`, plus
+  `with_lock of [lock, fn]` (runs `fn of null` under the lock, releasing even
+  if the body raises, then re-raising). `lock_acquire` cooperatively yields
+  until the lock is free, then claims it — correct because there is no
+  preemption between the acquire check passing and the claim. Surfaced by the
+  `eddy` consumer (concurrency-control DST): a critical section that spans a
+  yield needs an explicit lock, since only a non-yielding region is implicitly
+  atomic. Still open under #488: a debug-mode *assertion* that a delimited
+  region issued no scheduler yield (needs VM support).
+
 ## [0.28.0] - 2026-07-08
 
 ### Added

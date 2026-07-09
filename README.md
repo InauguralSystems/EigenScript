@@ -17,7 +17,7 @@
 
 A complete, standalone programming language with native observer semantics,
 real concurrency, a 44-widget GUI toolkit, embedded database, tensor math,
-and a 51-module standard library (14 STEM) — all in a single zero-dependency C binary.
+and a 52-module standard library (14 STEM) — all in a single zero-dependency C binary.
 
 ## Try it in your browser
 
@@ -246,6 +246,7 @@ Pure EigenScript libraries under `lib/`:
 | `lib/data.eigs` | `df_from_csv`, `df_select`, `df_where`, `df_sort_by`, `df_join`, `df_group_by` |
 | `lib/stats.eigs` | `mean`, `median`, `std_dev`, `variance`, `histogram`, `correlation`, `describe` |
 | `lib/concurrent.eigs` | `future`, `await_all`, `parallel_map`, `parallel_each`, `worker_pool` |
+| `lib/sync.eigs` | `lock_new`, `lock_acquire`, `lock_release`, `with_lock` |
 | `lib/store.eigs` | `open`, `put`, `get`, `find`, `upsert`, `bulk_put`, `to_dataframe` |
 | `lib/ui.eigs` | 44-widget GUI toolkit (buttons, sliders, tables, charts, trees, etc.) |
 | `lib/physics.eigs` | Kinematics, forces, waves, thermodynamics, EM, optics, relativity, quantum |

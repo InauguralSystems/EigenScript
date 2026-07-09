@@ -2144,6 +2144,11 @@ check_eigs_suite "worker arena return deep-copied before detach" test_spawn_aren
 # teardown of suspended/killed tasks (incl. heap-on-saved-stack + arena-dier).
 check_eigs_suite "cooperative tasks: yield/join/deadlock/teardown (#408)" test_tasks.eigs "All tests passed" 1
 
+# lib/sync — cooperative-task lock gives mutual exclusion across yield points
+# (#488): unlocked non-atomic RMW loses updates, the lock closes the race,
+# with_lock releases + re-raises on abort.
+check_eigs_suite "lib/sync cooperative locks (#488)" test_sync.eigs "All tests passed" 1
+
 # #408 determinism-by-construction: a task program with cooperative yields must
 # print byte-identically on two fresh processes (the signature property — the
 # interleaving is a pure function of program order, no tape).
