@@ -57,15 +57,19 @@ stderr after the error line. Programs never continue past an
 unrecovered error or report success on failure. Warnings (e.g.
 division by zero, which yields 0) are not errors and do not stop execution.
 
-**What `catch` binds:** a runtime error binds its message **string**; a
-`throw`n value binds **unchanged** — `throw of {"kind": ...}` gives the
-handler that dict (thrown strings bind as strings). Re-throwing a
-structured value preserves it; a runtime error raised while a
-structured value is in flight supersedes it.
+**What `catch` binds (#406):** a **built-in** runtime error binds a small
+dict `{kind, message, line}` — `kind` is drawn from a closed vocabulary
+(see `docs/DIAGNOSTICS.md`), `message` is the error text without the
+`Error line N:` frame, and `line` is the 1-based source line. A `throw`n
+value binds **unchanged** — `throw of {"kind": ...}` gives the handler that
+dict, and a thrown string stays a string. Re-throwing a structured value
+preserves it; a built-in error raised while a structured value is in flight
+supersedes it.
 
 **Status:** Enforced — `run_all_tests.sh` EM14–EM18,
 `tests/test_trycatch.eigs` (incl. structured-throw checks),
-`examples/errors/uncaught_with_trace.eigs`.
+`examples/errors/uncaught_with_trace.eigs`. (Before #406, a built-in error
+bound only its message string.)
 
 ## Modules
 
@@ -194,31 +198,37 @@ unobservable. To get an independent copy, copy explicitly.
 
 ## Function calls & argument unpacking
 
-**Promise:** `f of X` calls `f` with argument `X`.
-- If `X` is a **bare literal list of length ≥ 2**, the elements are
-  spread across the callee's parameters in order. Extra elements are
-  ignored; missing parameters are `null`. So `momentum of [2, 3]`
-  passes `m=2, v=3`.
-- **Parentheses always mean one argument** (issue #355): a
-  parenthesised literal list does not spread — `f of ([a, b])` binds
-  the list `[a, b]` to the first parameter, and `f of ([])` is a
-  one-argument call passing the empty list (unlike bare `f of []`,
-  which is the zero-arg form). This is the literal-list counterpart of
-  the `f of (x)` escape hatch below.
-- A **literal list of length 1** is *not* spread — `f of [x]` binds
-  the one-element list `[x]` as a single argument, regardless of the
-  callee's arity. (See the default-params footgun below.)
-- If `f` has **exactly one** parameter, the *entire* argument binds to it —
-  a list is **not** spread. So `mean of [1,2,3,4]` passes the whole list.
-- An empty literal list `f of []` is a **zero-arg call**, so a function
-  with all-default params runs every default.
-- To pass a single value — scalar or literal list — to a multi-param
-  (or any) function, use the parenthesized form: `f of (x)` is always
-  a one-argument call binding `x` to the first parameter (later params
-  take defaults or `null`). `f of x` is the same one-argument form
-  when `x` isn't a list literal.
+**Promise (#405):** brackets after `of` are an **argument list**;
+parentheses are **one argument**. A bare literal list `[...]` after `of`
+is the call's argument list at *every* count — its elements bind to the
+callee's parameters in order:
+- `f of []` — **zero** arguments (every default fires).
+- `f of [x]` — **one** argument: the *element* `x`, not the list `[x]`.
+  So `one of [7]` binds `a = 7`.
+- `f of [a, b]` — **two** arguments. So `momentum of [2, 3]` passes
+  `m = 2, v = 3`.
+- Extra elements are ignored; parameters with no matching element take
+  their default, else `null`.
+- **Parentheses always mean one argument** (issue #355). To pass a literal
+  list *whole*, parenthesise it: `f of ([a, b])` binds the list `[a, b]`
+  to the first parameter, and `f of ([7])` binds the one-element list
+  `[7]`. `f of (x)` is likewise always a one-argument call binding `x` to
+  the first parameter (later params take defaults or `null`); `f of x` is
+  the same one-argument form when `x` isn't a bare list literal.
+- A list held in a **variable** never spreads: `xs is [1,2,3]; f of xs`
+  binds the whole list to the first parameter (only a *literal* bracket at
+  the call site is an argument list). So `mean of [1,2,3,4]` passes the
+  four elements to a 4-param `mean`, while `mean of xs` passes the list
+  whole — pass `(...)` or a variable when you mean "one list argument."
 
-**Status:** Enforced — `tests/test_call_semantics.eigs`.
+Lint **W017** flags the bare 1-element form `f of [x]` as ambiguous-looking
+(pre-#405 it bound the list; now it binds the element) — write `f of (x)`
+for one scalar arg or `f of ([x])` for one list arg.
+
+**Status:** Enforced — `tests/test_call_semantics.eigs`. (This is the #405
+model; before #405 a length-1 literal list bound as the whole list and
+`f of []`/`f of [x, y]` were the only spreading forms — see the CHANGELOG
+for #405/#153.)
 
 ## Default parameter values (0.13.0)
 
@@ -237,14 +247,14 @@ unobservable. To get an independent copy, copy explicitly.
   a single-parameter function with a default, write `f of []` to call
   with zero args (since `f of null` would bind `null`).
 - Lambdas (`(x) => expr`) do **not** support defaults.
-- **Footgun (issue #153):** `f of [x]` does *not* spread to a
-  multi-param defaulted function. Per the call-spread rule above, a
-  length-1 literal list binds as one argument, so `f` receives the list
-  `[x]` as its first param — defaults can then fail or surprise
-  (e.g. `define fib(n, memo is 0)` with `fib of [n - 1]` binds
-  `n = [n - 1]`, then `n < 2` raises "compare list and num").
-  Use the parenthesized form `f of (x)` for the one-arg case:
-  `fib of (n - 1)` binds `n = n - 1` and lets `memo` default.
+- **Resolved footgun (issue #153, fixed by #405):** a bare `f of [x]`
+  now binds the *element* `x` as one argument (see the argument-unpacking
+  section above), so bracketed recursion on a defaulted function works:
+  `define fib(n, memo is 0)` with `fib of [n - 1]` binds `n = n - 1` and
+  lets `memo` default — no "compare list and num". Before #405 the
+  length-1 literal bound the whole list `[x]`, which surprised such calls;
+  lint **W017** still flags the bare 1-element form as ambiguous-looking,
+  so prefer `f of (x)` for one scalar arg.
 - **Behavior change in 0.13.0 (issue #154):** `f of []` now lowers to
   a **zero-arg call** for every callee arity. On a multi-param
   function `g(a, b)` it binds `a = null, b = null` (matches the
