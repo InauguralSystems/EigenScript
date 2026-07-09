@@ -5,6 +5,13 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`task_self` — a task can learn its own id (#526).** `task_self of null`
+  returns the running task's id in the same integer space `task_spawn`
+  returns (the main task is 0, including before any task has been spawned).
+  Surfaced by `lib/supervise` (#409): without it a worker has no reply
+  address to hand out, so message-link supervision — a worker delivering its
+  exit as an ordinary message to its supervisor's mailbox — was not
+  expressible. Deterministic (pure scheduler state, zero tape records).
 - **`lib/supervise` — observer-native supervision (#409).** A supervisor over
   the #408 cooperative task layer that, beyond BEAM-style crash-restart, also
   catches the silently **wedged** worker — alive, not crashed, never timing
