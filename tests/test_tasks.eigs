@@ -384,4 +384,50 @@ catch e:
     assert_eq of [e.message, "all tasks are blocked — deadlock", "deadlock carries its message"]
 assert_eq of [dl_caught, 1, "the deadlock handler ran and code after the try continues"]
 
+# --- #488: must_not_yield asserts a critical region issues no scheduler yield ---
+# A yield inside the region raises a catchable `value` error.
+define _mny_yielder() as:
+    task_yield of null
+    return 0
+define _mny_probe_yield() as:
+    caught is 0
+    try:
+        must_not_yield of _mny_yielder
+    catch e:
+        caught is 1
+        assert_eq of [e.kind, "value", "must_not_yield violation is a catchable value error"]
+    # depth is balanced even though the body raised: a yield now must work
+    task_yield of null
+    return caught
+_mny_w0 is task_spawn of _mny_probe_yield
+assert_eq of [task_join of _mny_w0, 1, "yield inside must_not_yield is caught, region depth restored"]
+
+# A region that issues no yield returns its body's result, no raise.
+_mny_acc is 0
+define _mny_clean() as:
+    _mny_acc is _mny_acc + 5
+    _mny_acc is _mny_acc + 5
+    return _mny_acc
+assert_eq of [must_not_yield of _mny_clean, 10, "non-yielding region returns its body result"]
+
+# Non-blocking ops (task_try_recv) inside a region do NOT trip the assertion.
+define _mny_nonblock() as:
+    m is task_try_recv of null
+    return 1
+assert_eq of [must_not_yield of _mny_nonblock, 1, "non-suspending ops are allowed in a region"]
+
+# A blocking task_recv inside a region raises (would suspend).
+define _mny_blockrecv() as:
+    m is task_recv of null
+    return 0
+define _mny_probe_recv() as:
+    caught is 0
+    try:
+        must_not_yield of _mny_blockrecv
+    catch e:
+        caught is 1
+    return caught
+_mny_w1 is task_spawn of _mny_probe_recv
+assert_eq of [task_join of _mny_w1, 1, "blocking task_recv inside must_not_yield raises"]
+
 test_summary of null
