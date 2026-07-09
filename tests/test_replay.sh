@@ -290,6 +290,26 @@ else
     fail "stale EIGS_REPLAY --version" "rc=$VRC out='$VOUT'"
 fi
 
+# ---- #471: args (argv) is a taped nondeterminism source ----
+# Record the tape under one argv, then replay the SAME script under a
+# DIFFERENT argv. The recorded args must win — a program that branches on
+# args would otherwise silently diverge on replay (the closed-world hole).
+cat > "$TMPDIR/p_args.eigs" <<'EOF'
+print of (args of null)
+EOF
+
+TAPE_A="$TMPDIR/args.tape"
+REC_A=$(EIGS_TRACE="$TAPE_A" "$EIGS" "$TMPDIR/p_args.eigs" A B 2>&1)
+# Live (no replay) under the mutated argv — proves the tape actually overrides.
+LIVE_A=$(EIGS_TRACE=/dev/null "$EIGS" "$TMPDIR/p_args.eigs" X Y Z 2>&1)
+REP_A=$(EIGS_REPLAY="$TAPE_A" "$EIGS" "$TMPDIR/p_args.eigs" X Y Z 2>&1)
+
+if [ "$REC_A" = '["A", "B"]' ] && [ "$REP_A" = '["A", "B"]' ] && [ "$LIVE_A" = '["X", "Y", "Z"]' ]; then
+    ok "args replay: recorded argv wins under EIGS_REPLAY with a mutated argv"
+else
+    fail "args replay" "rec='$REC_A' live='$LIVE_A' rep='$REP_A'"
+fi
+
 echo
 echo "REPLAY: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ] && exit 0 || exit 1
