@@ -17,6 +17,19 @@ All notable changes to EigenScript are documented here.
   atomic. Still open under #488: a debug-mode *assertion* that a delimited
   region issued no scheduler yield (needs VM support).
 
+### Fixed
+- **Circular `import` / `load_file` no longer crashes (#496).** A mutual or
+  self-referential `import` (a→b→a) or `load_file` used to recurse through
+  `vm_execute` until the C stack overflowed — SIGSEGV, `rc=139`, uncatchable.
+  The module cache is only populated *after* a load completes, so the
+  re-entrant load missed the cache and recursed. A per-`EigsState` in-flight
+  load stack now records paths whose load is on the current C stack; the
+  loader raises a catchable `io` error (`import: circular dependency — '…' is
+  already being loaded`) instead of recursing. Shared by `import` and
+  `load_file`, so a cycle that crosses the two is caught too. Repeated
+  *sequential* loads of the same file stay legal — only active re-entrancy is
+  a cycle. Regression: suite section **[115]**.
+
 ## [0.28.0] - 2026-07-08
 
 ### Added

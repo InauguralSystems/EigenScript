@@ -4714,6 +4714,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
+        /* #496: circular-import guard. `abs_path` is a confirmed cache
+         * miss here (both source branches above return on a hit), so if
+         * it is already on the in-flight load stack this import re-enters
+         * a module whose load hasn't finished — a cycle that would
+         * otherwise recurse to a C-stack SIGSEGV. Raise a catchable error
+         * instead. The enter/leave brackets vm_execute below, where any
+         * nested import runs. */
+        if (eigs_loading_active(abs_path)) {
+            free(source);
+            rt_error(EK_IO, current_line,
+                "import: circular dependency — '%s' is already being loaded",
+                name);
+            vm_push(make_null());
+            DISPATCH();
+        }
+
         Env *mod_env = env_new(g_global_env);
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
@@ -4772,7 +4788,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         g_parse_errors = saved_errors;
+        eigs_loading_enter(abs_path);            /* #496 */
         Value *mod_result = vm_execute(mod_chunk, mod_env);
+        eigs_loading_leave(abs_path);            /* #496 */
         if (mod_result) val_decref(mod_result);
         chunk_free(mod_chunk);   /* creator ref; module fns hold their own */
         g_load_env = saved_load;

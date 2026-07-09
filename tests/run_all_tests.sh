@@ -2636,6 +2636,47 @@ else
 fi
 echo ""
 
+echo "[115] Circular Import/Load Guard (#496, 3 checks)"
+# A mutual import (a→b→a) or load_file (a↔b) used to recurse through
+# vm_execute until the C stack overflowed — SIGSEGV, rc=139, uncatchable.
+# The in-flight load stack now detects the cycle and raises a catchable
+# EK_IO error. Generated in a temp dir (multi-file, not worth committing).
+# Checks: (1) mutual import raises, no segfault; (2) it's try/catch-able;
+# (3) mutual load_file raises, no segfault.
+CIRC_DIR=$(mktemp -d /tmp/eigs_circ_XXXX)
+printf 'import b\n'                 > "$CIRC_DIR/a.eigs"
+printf 'import a\n'                 > "$CIRC_DIR/b.eigs"
+printf 'import a\nprint of "ok"\n'  > "$CIRC_DIR/main.eigs"
+printf 'try:\n    import a\ncatch e:\n    print of e.kind\n    print of "CAUGHT"\n' > "$CIRC_DIR/catch.eigs"
+printf 'load_file of "lb.eigs"\n'   > "$CIRC_DIR/la.eigs"
+printf 'load_file of "la.eigs"\n'   > "$CIRC_DIR/lb.eigs"
+BIN_ABS="$PWD/eigenscript"
+CI_IMP=$( cd "$CIRC_DIR" && "$BIN_ABS" main.eigs </dev/null 2>&1 ); CI_IMP_RC=$?
+CI_CAT=$( cd "$CIRC_DIR" && "$BIN_ABS" catch.eigs </dev/null 2>&1 ); CI_CAT_RC=$?
+# Capture rc directly off the substitution (a trailing `| grep` would make
+# $? grep's exit, not eigenscript's); strip the [load_file] debug lines after.
+CI_LF=$( cd "$CIRC_DIR" && "$BIN_ABS" la.eigs </dev/null 2>&1 ); CI_LF_RC=$?
+CI_LF=$(echo "$CI_LF" | grep -v '^\[load_file\]')
+rm -rf "$CIRC_DIR"
+TOTAL=$((TOTAL + 3))
+# rc=1 (raised, uncaught) and NOT 139 (segfault); message present.
+if [ "$CI_IMP_RC" = "1" ] && echo "$CI_IMP" | grep -q "circular dependency"; then
+    echo "  PASS: mutual import raises (no SIGSEGV)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: mutual import (rc=$CI_IMP_RC out='$CI_IMP')"; FAIL=$((FAIL + 1))
+fi
+if [ "$CI_CAT_RC" = "0" ] && echo "$CI_CAT" | grep -q "^CAUGHT$"; then
+    echo "  PASS: circular import is try/catch-able"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: circular import not catchable (rc=$CI_CAT_RC out='$CI_CAT')"; FAIL=$((FAIL + 1))
+fi
+if [ "$CI_LF_RC" = "1" ] && echo "$CI_LF" | grep -q "circular dependency"; then
+    echo "  PASS: mutual load_file raises (no SIGSEGV)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: mutual load_file (rc=$CI_LF_RC out='$CI_LF')"; FAIL=$((FAIL + 1))
+fi
+echo ""
+
 echo "[92] Module Resolve Base (1 check)"
 # Phase 0b: an `import` inside a module resolves relative to *that
 # module's* directory, not the main script's. Shell-driven because

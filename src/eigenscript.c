@@ -2275,6 +2275,51 @@ void eigs_module_cache_clear(void) {
      * is cleared at gc_collect_at_exit; the state outlives that call. */
 }
 
+/* ---- In-flight load guard (#496) ------------------------------------
+ * A circular import/load_file re-enters the loader for a path whose load
+ * hasn't finished. The module cache is populated only *after* a load
+ * completes (eigs_module_cache_put below the vm_execute), so the re-entry
+ * misses the cache and recurses through vm_execute until the C stack
+ * overflows — SIGSEGV, rc=139, uncatchable. This stack records paths whose
+ * load is currently on the C stack; the loader checks it on entry and
+ * raises a catchable error instead of recursing. Same-thread startup use,
+ * so unguarded like the module cache above. */
+int eigs_loading_active(const char *abs_path) {
+    if (!abs_path || !eigs_current) return 0;
+    EigsState *st = eigs_current->state;
+    for (size_t i = 0; i < st->loading_count; i++)
+        if (strcmp(st->loading_stack[i], abs_path) == 0) return 1;
+    return 0;
+}
+
+void eigs_loading_enter(const char *abs_path) {
+    if (!abs_path || !eigs_current) return;
+    EigsState *st = eigs_current->state;
+    if (st->loading_count == st->loading_cap) {
+        size_t newcap = st->loading_cap ? st->loading_cap * 2 : 8;
+        st->loading_stack = xrealloc_array(st->loading_stack, newcap,
+                                           sizeof(char *));
+        st->loading_cap = newcap;
+    }
+    st->loading_stack[st->loading_count++] = strdup(abs_path);
+}
+
+void eigs_loading_leave(const char *abs_path) {
+    if (!abs_path || !eigs_current) return;
+    EigsState *st = eigs_current->state;
+    /* LIFO in practice; scan from the top and remove the match so an
+     * unexpected out-of-order leave can't strand the wrong entry. */
+    for (size_t i = st->loading_count; i-- > 0; ) {
+        if (strcmp(st->loading_stack[i], abs_path) == 0) {
+            free(st->loading_stack[i]);
+            memmove(&st->loading_stack[i], &st->loading_stack[i + 1],
+                    (st->loading_count - i - 1) * sizeof(char *));
+            st->loading_count--;
+            return;
+        }
+    }
+}
+
 /* Exit-time collection. Pure value->value cycles bound at global scope
  * (e.g. a list appended to itself) are unreachable from the captured-env
  * registry, so snapshot the global scope's container values first (one
