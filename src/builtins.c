@@ -4929,6 +4929,16 @@ Value* builtin_task_now(Value *arg) {
     return make_num(task_virtual_now());
 }
 
+/* task_self of null → the running task's id (a number, in the same integer
+ * space task_spawn returns; the main task is 0, including before any task has
+ * been spawned). Lets a worker hand out its own id as a reply address — the
+ * message-link supervision pattern (#526). Deterministic; reads scheduler
+ * state, so it records no tape nondet. */
+Value* builtin_task_self(Value *arg) {
+    (void)arg;
+    return make_num((double)task_current_id());
+}
+
 /* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO
  * round-robin; with a seed the scheduler picks the next ready task
  * pseudo-randomly from a deterministic PRNG. The interleaving stays
@@ -5993,6 +6003,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));
     env_set_local_owned(env, "task_spawn", make_builtin(builtin_task_spawn));
     env_set_local_owned(env, "task_alive", make_builtin(builtin_task_alive));
+    env_set_local_owned(env, "task_self", make_builtin(builtin_task_self));
     env_set_local_owned(env, "task_yield", make_builtin(builtin_task_yield));
     env_set_local_owned(env, "must_not_yield", make_builtin(builtin_must_not_yield));
     env_set_local_owned(env, "task_join", make_builtin(builtin_task_join));

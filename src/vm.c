@@ -5446,6 +5446,14 @@ double task_virtual_now(void) {
     return s ? s->now : 0;
 }
 
+/* task_self (builtins.c): the running task's id, in the same integer space
+ * task_spawn returns — 0 for the main task, including before any scheduler
+ * exists. Pure scheduler state, so no tape participation. */
+int task_current_id(void) {
+    TaskScheduler *s = sched_get();
+    return s ? s->current : 0;
+}
+
 /* When the ready queue is empty, advance the virtual clock to the earliest
  * sleeper's wake time and make every task due at (or before) that instant
  * runnable. Returns 1 if any sleeper was woken (the trampoline then loops),

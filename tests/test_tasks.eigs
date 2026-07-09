@@ -430,4 +430,27 @@ define _mny_probe_recv() as:
 _mny_w1 is task_spawn of _mny_probe_recv
 assert_eq of [task_join of _mny_w1, 1, "blocking task_recv inside must_not_yield raises"]
 
+# --- task_self (#526): a task can learn its own id -----------------------
+
+# Main is task 0, even with the scheduler already active.
+assert_eq of [task_self of null, 0, "main task's task_self is 0"]
+
+# A worker's task_self is the same id its spawner got back from task_spawn.
+define _self_worker() as:
+    return task_self of null
+_self_w is task_spawn of _self_worker
+assert_eq of [task_join of _self_w, _self_w, "worker's task_self equals its spawn id"]
+
+# Reply-address pattern (the gap that motivated #526): the spawner hands its
+# own id down; the worker messages its own task_self back to that address.
+define _self_replier(sup) as:
+    local me is task_self of null
+    task_send of [sup, me]
+    return null
+_self_sup is task_self of null
+_self_r is task_spawn of [_self_replier, _self_sup]
+task_join of _self_r
+_self_msg is task_recv of null
+assert_eq of [_self_msg, _self_r, "worker replied its own id to the supervisor's mailbox"]
+
 test_summary of null

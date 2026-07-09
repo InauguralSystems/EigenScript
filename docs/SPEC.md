@@ -1190,6 +1190,13 @@ nothing, like channel sends); `task_recv of null` returns the next
 message or blocks cooperatively until one arrives. `task_try_recv`
 is the non-blocking form.
 
+A task learns its **own** id with `task_self of null` — the same
+integer space `task_spawn` returns; the main task is 0. That is what
+makes a *reply address* expressible: a spawner passes `task_self of
+null` down as an argument (or a worker sends its own `task_self` up),
+and messages can then flow back to whoever asked — the link pattern
+message-based supervision needs.
+
 ```eigenscript
 worker_id is 0
 define worker() as:
