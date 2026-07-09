@@ -2523,6 +2523,24 @@ Value* builtin_load_file(Value *arg) {
         fprintf(stderr, "load_file: cannot read '%s'\n", arg->data.str);
         return make_null();
     }
+
+    /* #496: circular-load guard. load_file has no module cache — it
+     * re-executes every call — so a mutual load (a loads b, b loads a)
+     * recurses through vm_execute to a C-stack SIGSEGV. Key on the
+     * canonical path (shared with import's cycle stack) and raise if this
+     * path's load is already on the stack. Sequential re-loads of the same
+     * file stay legal: the entry pops when each load completes. */
+    char abs_key[8192];
+    if (!realpath(path, abs_key))
+        snprintf(abs_key, sizeof(abs_key), "%s", path);
+    if (eigs_loading_active(abs_key)) {
+        free(source);
+        rt_error(EK_IO, 0,
+            "load_file: circular dependency — '%s' is already being loaded",
+            arg->data.str);
+        return make_null();
+    }
+
     fprintf(stderr, "[load_file] Loading %s (%ld bytes)\n", path, size);
 
     /* A parse error in the loaded file must surface, not be silently run as a
@@ -2564,7 +2582,9 @@ Value* builtin_load_file(Value *arg) {
         return make_null();
     }
     g_parse_errors = saved_errors;
+    eigs_loading_enter(abs_key);            /* #496 */
     Value *result = vm_execute(lf_chunk, target);
+    eigs_loading_leave(abs_key);            /* #496 */
     chunk_free(lf_chunk);   /* creator ref; loaded fns hold their own */
     free_ast(ast);
     free(source);

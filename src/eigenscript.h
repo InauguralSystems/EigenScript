@@ -483,6 +483,18 @@ struct EigsState {
     EigsModuleCacheEntry *module_cache;
     size_t          module_cache_count;
     size_t          module_cache_cap;
+    /* In-flight load stack (#496): paths currently executing via import /
+     * load_file. The module cache is only populated *after* a load
+     * completes, so a re-entrant load of a still-loading path misses the
+     * cache and recurses through vm_execute until the C stack is exhausted
+     * (SIGSEGV, rc=139). This detects the cycle so the loader raises a
+     * catchable error instead. Not a cache: repeated *sequential* loads
+     * stay legal (each entry pops on completion); only active
+     * re-entrancy — a path importing itself, directly or transitively —
+     * is a cycle. */
+    char          **loading_stack;
+    size_t          loading_count;
+    size_t          loading_cap;
     /* Opaque-pointer handle table (Store/Thread/Channel ids). Locked
      * via handle_mutex since spawn workers can release handles too. */
     EigsHandleSlot  handle_table[HANDLE_TABLE_SIZE];
@@ -1043,6 +1055,14 @@ void eigs_module_cache_put(const char *abs_path, Value *dict, Env *env);
  * dropped first and any pure-value cycle they hold goes through the
  * usual snapshot collection. */
 void eigs_module_cache_clear(void);
+
+/* In-flight load guard (#496). eigs_loading_active is true while `abs_path`
+ * is between enter and leave — i.e. its load is on the current C stack.
+ * import and load_file share this so a cycle that crosses the two (import
+ * a → load_file b → import a) is still caught. LIFO in practice. */
+int  eigs_loading_active(const char *abs_path);
+void eigs_loading_enter(const char *abs_path);
+void eigs_loading_leave(const char *abs_path);
 
 /* Observer thresholds are EigsState fields — set via set_observer_thresholds;
  * read through g_obs_dh_zero / g_obs_dh_small / g_obs_h_low (macros above). */

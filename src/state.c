@@ -46,6 +46,11 @@ void eigs_state_destroy(EigsState *st) {
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);
+    /* #496: any load still on the in-flight stack at destroy is a leak of
+     * a strdup'd path (shouldn't happen in a clean run — every enter is
+     * paired with a leave — but free defensively). */
+    for (size_t i = 0; i < st->loading_count; i++) free(st->loading_stack[i]);
+    free(st->loading_stack);
     /* #307: value-candidate buffer pins were drained at gc_collect_at_exit;
      * free the (now-empty) backing array. NULL if no cycle ever parked. */
     free(st->gc_val_buf);
