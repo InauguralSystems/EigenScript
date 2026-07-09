@@ -5,6 +5,21 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`lib/supervise` — observer-native supervision (#409).** A supervisor over
+  the #408 cooperative task layer that, beyond BEAM-style crash-restart, also
+  catches the silently **wedged** worker — alive, not crashed, never timing
+  out, but no longer making progress — a signal BEAM structurally cannot see.
+  Workers publish raw progress with `heartbeat of [slot, value]`; the
+  supervisor samples each alive worker every tick, feeds a **bounded** signature
+  (`1.5 + v % 8`, dodging the #294 flat-entropy blind spot) into that slot's
+  observer trajectory, and restarts a worker whose signature has gone `stable`
+  after a warm-up window (the EigenOS red-title pattern, generalized) or that
+  died with an uncaught raise — each up to a per-worker restart-intensity cap.
+  `supervisor_new`, `supervise of [sup, fn, slot]`, `supervise_step`, and
+  `supervise_run of [sup, max_ticks]`. Deterministic by construction; flagship
+  `examples/supervisor_tree.eigs`. Surfaced a gap: a task cannot learn its own
+  id (no `task_self`), so the message-link supervision variant is not yet
+  expressible — filed separately.
 - **Lint `W018` — `e.kind` compared against an out-of-set error kind (#469).**
   A `catch` handler comparing a caught error's `.kind` against a string that is
   a near-miss of a real kind — a case variant (`"IO"`), a single-character typo

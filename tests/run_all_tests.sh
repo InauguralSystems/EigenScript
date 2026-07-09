@@ -2179,6 +2179,12 @@ check_eigs_suite "cooperative tasks: yield/join/deadlock/teardown (#408)" test_t
 # with_lock releases + re-raises on abort.
 check_eigs_suite "lib/sync cooperative locks (#488)" test_sync.eigs "All tests passed" 1
 
+# lib/supervise — observer-native supervision over the #408 task layer (#409):
+# a wedged worker (alive, progress frozen) is detected via its observer
+# trajectory and restarted; a crashed worker is restarted; a healthy worker is
+# left alone; restart-intensity is capped.
+check_eigs_suite "lib/supervise observer supervision (#409)" test_supervise.eigs "All tests passed" 1
+
 # #408 determinism-by-construction: a task program with cooperative yields must
 # print byte-identically on two fresh processes (the signature property — the
 # interleaving is a pure function of program order, no tape).

@@ -1,0 +1,227 @@
+# ============================================================
+# Supervise Library — observer-native supervision (#408 task layer)
+# ============================================================
+#
+# BEAM-style supervision restarts a worker when it CRASHES. An observer
+# supervisor also catches the worker that is silently WEDGED — alive, not
+# crashed, never timing out, but no longer making progress — a signal BEAM
+# structurally cannot see, because its processes carry no free per-value
+# trajectory measurement. This is the EigenOS window manager's red-title
+# pattern (a hung window detected via `stable of`), generalized over the #408
+# cooperative task layer.
+#
+# The model (share-nothing messages are unnecessary here — cooperative tasks
+# share the module-global heap on one thread):
+#   * A worker publishes RAW progress each step with `heartbeat of [slot, v]`.
+#   * The SUPERVISOR samples each alive worker's progress every tick, feeds a
+#     BOUNDED signature (1.5 + v % 8 — never a raw counter, which hits the
+#     #294 flat-entropy blind spot) into that slot's observer trajectory, and
+#     flags a worker whose signature has gone `stable` (frozen) after a
+#     warm-up window. Sampling on the SUPERVISOR side is what makes a wedge
+#     visible: a frozen worker stops calling heartbeat, so only the poller
+#     keeps adding the (now constant) samples that read `stable`.
+#   * A worker that returns normally is `done`; one that raises is `crashed`
+#     (caught by the wrapper, so a supervised crash never fails the process).
+#   * Wedged and crashed workers are restarted from their spec, up to
+#     `max_restarts` per worker (restart-intensity cap).
+#
+# How to use:
+#   load_file of "lib/supervise.eigs"
+#
+#   define worker(slot) as:
+#       n is 0
+#       loop while n < 100:
+#           heartbeat of [slot, n]     # publish progress
+#           task_yield of null
+#           n is n + 1
+#       return "ok"
+#
+#   sup is supervisor_new of 3          # up to 3 restarts per worker
+#   supervise of [sup, worker, 0]       # worker in slot 0
+#   supervise of [sup, worker, 1]
+#   restarts is supervise_run of [sup, 500]   # drive until done / 500 ticks
+#
+# Eight slots (the WM/task-table precedent). Slots are the caller's index
+# space; one supervised worker per slot.
+
+# --- Shared per-slot state (indexed by slot 0..7) ------------------------
+_sup_progress is [0, 0, 0, 0, 0, 0, 0, 0]   # each worker's latest raw progress
+_sup_done     is [0, 0, 0, 0, 0, 0, 0, 0]   # 1 when the worker returned normally
+_sup_crashed  is [0, 0, 0, 0, 0, 0, 0, 0]   # 1 when the worker raised
+_sup_warm     is [0, 0, 0, 0, 0, 0, 0, 0]   # observer samples since (re)start
+
+# --- Observer trajectory scalars (one NAMED binding per slot; a list element
+# has no trajectory, #262, so the eight signals need eight named scalars) ---
+_sup_o0 is 0.0
+_sup_o1 is 0.0
+_sup_o2 is 0.0
+_sup_o3 is 0.0
+_sup_o4 is 0.0
+_sup_o5 is 0.0
+_sup_o6 is 0.0
+_sup_o7 is 0.0
+
+# _sup_feed(slot, sig) — write the bounded signature into slot's trajectory.
+# `+ 0.0` forces a fresh value so an aliased iterate can't smuggle in an old
+# trajectory (#262).
+define _sup_feed(pair) as:
+    slot is pair[0]
+    sig is pair[1]
+    if slot == 0:
+        _sup_o0 is sig + 0.0
+    elif slot == 1:
+        _sup_o1 is sig + 0.0
+    elif slot == 2:
+        _sup_o2 is sig + 0.0
+    elif slot == 3:
+        _sup_o3 is sig + 0.0
+    elif slot == 4:
+        _sup_o4 is sig + 0.0
+    elif slot == 5:
+        _sup_o5 is sig + 0.0
+    elif slot == 6:
+        _sup_o6 is sig + 0.0
+    elif slot == 7:
+        _sup_o7 is sig + 0.0
+    else:
+        throw of "supervise: slot out of range (8 slots)"
+    return 1
+
+# _sup_stable(slot) — 1 if slot's signature trajectory has frozen.
+define _sup_stable(slot) as:
+    if slot == 0:
+        return stable of _sup_o0
+    elif slot == 1:
+        return stable of _sup_o1
+    elif slot == 2:
+        return stable of _sup_o2
+    elif slot == 3:
+        return stable of _sup_o3
+    elif slot == 4:
+        return stable of _sup_o4
+    elif slot == 5:
+        return stable of _sup_o5
+    elif slot == 6:
+        return stable of _sup_o6
+    elif slot == 7:
+        return stable of _sup_o7
+    throw of "supervise: slot out of range (8 slots)"
+
+# --- Public API ----------------------------------------------------------
+
+# supervisor_new(max_restarts) — a fresh supervisor with a per-worker restart
+# cap.
+define supervisor_new(max_restarts) as:
+    return {"children": [], "max_restarts": max_restarts}
+
+# heartbeat([slot, value]) — a worker calls this each step to publish its raw
+# progress. Any value that ADVANCES while the worker is healthy works; the
+# supervisor turns it into a bounded observer signature.
+define heartbeat(pair) as:
+    slot is pair[0]
+    value is pair[1]
+    _sup_progress is set_at of [_sup_progress, slot, value]
+    return 1
+
+# _run_child([fn, slot]) — the wrapper task. Runs the worker, records normal
+# completion; catches a raise as `crashed` so a supervised crash never turns
+# into an uncaught task death (which would fail the process, #493).
+define _run_child(pair) as:
+    fn is pair[0]
+    slot is pair[1]
+    try:
+        r is fn of slot
+        _sup_done is set_at of [_sup_done, slot, 1]
+        return r
+    catch e:
+        _sup_crashed is set_at of [_sup_crashed, slot, 1]
+        return null
+
+# _reset_slot(slot) — clear a slot's bookkeeping before a (re)start.
+define _reset_slot(slot) as:
+    _sup_progress is set_at of [_sup_progress, slot, 0]
+    _sup_done     is set_at of [_sup_done, slot, 0]
+    _sup_crashed  is set_at of [_sup_crashed, slot, 0]
+    _sup_warm     is set_at of [_sup_warm, slot, 0]
+    return 1
+
+# supervise([sup, fn, slot]) — spawn `fn` as a supervised worker in `slot`.
+# `fn` must accept its slot index and publish progress via `heartbeat`.
+define supervise(triple) as:
+    sup is triple[0]
+    fn is triple[1]
+    slot is triple[2]
+    _reset_slot of slot
+    id is task_spawn of [_run_child, [fn, slot]]
+    child is {"fn": fn, "slot": slot, "id": id, "restarts": 0}
+    sup.children is append of [sup.children, child]
+    return child
+
+# _restart([sup, child]) — restart a worker if under its cap. Returns 1 if it
+# restarted, else 0.
+define _restart(pair) as:
+    sup is pair[0]
+    child is pair[1]
+    if child.restarts >= sup.max_restarts:
+        return 0
+    slot is child.slot
+    if (task_alive of child.id) == 1:
+        task_kill of child.id
+    _reset_slot of slot
+    child.id is task_spawn of [_run_child, [child.fn, slot]]
+    child.restarts is child.restarts + 1
+    return 1
+
+# supervise_step(sup) — one supervision tick. Feeds each alive worker's
+# progress into its trajectory and restarts wedged (alive + frozen after the
+# warm-up window) or crashed (dead, raised) workers under the cap. Returns the
+# number of restarts performed this tick.
+define supervise_step(sup) as:
+    restarted is 0
+    for child in sup.children:
+        slot is child.slot
+        if (task_alive of child.id) == 1:
+            sig is 1.5 + (_sup_progress[slot] % 8)
+            _sup_feed of [slot, sig]
+            _sup_warm is set_at of [_sup_warm, slot, _sup_warm[slot] + 1]
+            warmed is _sup_warm[slot] >= 10
+            if warmed == 1 and (_sup_stable of slot) == 1:
+                restarted is restarted + (_restart of [sup, child])
+        else:
+            if _sup_crashed[slot] == 1:
+                restarted is restarted + (_restart of [sup, child])
+    return restarted
+
+# _all_settled(sup) — every worker has finished normally, or exhausted its
+# restart cap while still failing (so no further supervision can help).
+define _all_settled(sup) as:
+    for child in sup.children:
+        slot is child.slot
+        finished is (task_alive of child.id) == 0
+        done is _sup_done[slot] == 1
+        capped is child.restarts >= sup.max_restarts
+        if done == 1:
+            settled is 1
+        elif finished == 1 and capped == 1:
+            settled is 1
+        else:
+            settled is 0
+        if settled == 0:
+            return 0
+    return 1
+
+# supervise_run([sup, max_ticks]) — drive supervision from the main task until
+# every worker is settled or `max_ticks` elapse. Deterministic: the same
+# program replays identically. Returns the total number of restarts performed.
+define supervise_run(pair) as:
+    sup is pair[0]
+    max_ticks is pair[1]
+    t is 0
+    total is 0
+    loop while t < max_ticks:
+        if (_all_settled of sup) == 1:
+            return total
+        total is total + (supervise_step of sup)
+        task_yield of null
+        t is t + 1
+    return total
