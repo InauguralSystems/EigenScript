@@ -318,7 +318,27 @@ nothing:
   resolve, read, or parse disables the pass for the fragment (never a false
   positive).
 
-(Per-file allow-lists in `eigs.json` are not yet wired up — see #455.)
+- **Per-file allow-list in `eigs.json`** (#455) silences codes for a whole
+  file **without editing the file** — the escape for generated or vendored
+  modules a project should not sprinkle `# lint: allow` comments through:
+
+  ```json
+  {
+    "lint": {
+      "allow": {
+        "lib/generated_tables.eigs": ["W003", "W015"],
+        "vendor/thirdparty.eigs": ["all"]
+      }
+    }
+  }
+  ```
+
+  Keys are paths **relative to the project root** (the directory containing
+  `eigs.json`); `all` silences every code. Resolution walks up from the
+  linted file to that root — the same walk the module resolver uses — so it
+  applies regardless of the cwd the linter runs from. A code allowed here is
+  filtered exactly like a `# lint: allow-file <code>` in the file. (`--lint`
+  only for now; the in-file directives above also cover the LSP.)
 
 ## Name resolution (`E003`)
 

@@ -766,6 +766,37 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "E003 silent on scope-precise legal reads" "$OUTPUT" "E003"
 rm -f "$TMPFILE"
 
+# --- #455: per-file lint allow-list in eigs.json ---
+# A project can suppress a code for a whole file via eigs.json, without inline
+# comments (generated/vendored code). Resolution walks to the project root
+# (dir with eigs.json) regardless of the cwd the linter runs from.
+LINTPKG=$(mktemp -d /tmp/lint_pkg_XXXXXX)
+mkdir -p "$LINTPKG/lib"
+# W017: 'f of [<expr>]' — one bare-list arg.
+printf 'define f(x) as:\n    return x\nprint of (f of [1])\n' > "$LINTPKG/lib/gen.eigs"
+cp "$LINTPKG/lib/gen.eigs" "$LINTPKG/lib/other.eigs"
+
+printf '{ "lint": { "allow": { "lib/gen.eigs": ["W017"] } } }\n' > "$LINTPKG/eigs.json"
+OUT_ALLOW=$($EIGS --lint "$LINTPKG/lib/gen.eigs" 2>&1 || true)
+check_not_contains "#455 eigs.json allow suppresses listed code for the file" "$OUT_ALLOW" "W017"
+
+OUT_OTHER=$($EIGS --lint "$LINTPKG/lib/other.eigs" 2>&1 || true)
+check_contains "#455 a file not in the allow-list still fires" "$OUT_OTHER" "W017"
+
+printf '{ "lint": { "allow": { "lib/gen.eigs": ["W003"] } } }\n' > "$LINTPKG/eigs.json"
+OUT_WRONGCODE=$($EIGS --lint "$LINTPKG/lib/gen.eigs" 2>&1 || true)
+check_contains "#455 allowing a different code leaves W017 firing" "$OUT_WRONGCODE" "W017"
+
+printf '{ "lint": { "allow": { "lib/gen.eigs": ["all"] } } }\n' > "$LINTPKG/eigs.json"
+OUT_ALL=$($EIGS --lint "$LINTPKG/lib/gen.eigs" 2>&1 || true)
+check_not_contains "#455 'all' suppresses every code for the file" "$OUT_ALL" "W017"
+
+# Root discovery is cwd-independent.
+printf '{ "lint": { "allow": { "lib/gen.eigs": ["W017"] } } }\n' > "$LINTPKG/eigs.json"
+OUT_CWD=$( (cd / && "$EIGS" --lint "$LINTPKG/lib/gen.eigs" 2>&1) || true)
+check_not_contains "#455 allow-list resolves from project root, not cwd" "$OUT_CWD" "W017"
+rm -rf "$LINTPKG"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

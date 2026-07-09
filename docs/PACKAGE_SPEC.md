@@ -23,7 +23,7 @@ or corrupt `eigs.json` can never break `import`.
 
 | File | Role |
 |------|------|
-| `eigs.json` | Manifest: `name`, `version`, and `deps` keyed by `<owner>/<name>`. |
+| `eigs.json` | Manifest: `name`, `version`, and `deps` keyed by `<owner>/<name>`. Also an optional `lint.allow` map (per-file lint allow-list — see docs/DIAGNOSTICS.md). |
 | `eigs.lock.json` | Resolved commit SHAs + content hashes for each dep. |
 | `eigs_modules/<leaf>/` | One directory per dep — a git checkout at the locked commit. |
 
