@@ -57,12 +57,19 @@ perspective lands on the tape as an `N` record:
 - **Time:** `monotonic_ns`, `monotonic_ms`
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
   `read_bytes_buf`
+- **Process:** `args` (command-line arguments — differ across
+  invocations, so the recorded list is served on replay regardless of
+  the live argv; #471)
 - **HTTP extension:** `http_post` (success and all error paths),
   `http_request_body`, `http_session_id`, `http_request_headers`
 
 The hook is the `TRACE_NONDET_RET` macro in `src/trace.h`, used at
 every nondet return site — adding a new nondet builtin means wrapping
-its return in the same macro.
+its return in the same macro. A builtin that *builds* its return value
+(a list, buffer, or dict) before returning uses the `TRACE_NONDET_TAKE`
+/ `TRACE_NONDET_RECORD` pair instead (`args` does): the early `TAKE`
+short-circuits under replay before the value is built, so the live
+construction is neither run nor leaked.
 
 ## Non-Replayable Builtins (issue #148)
 

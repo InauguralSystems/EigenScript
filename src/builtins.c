@@ -1915,15 +1915,26 @@ void eigenscript_set_args(int argc, char **argv) {
     g_argv = argv;
 }
 
-/* args of null → list of command-line arguments (after the script name) */
+/* args of null → list of command-line arguments (after the script name).
+ *
+ * argv is a nondeterminism source across invocations (the closed-world
+ * replay invariant, #471): a program that branches on args records under
+ * one argv and would silently diverge when replayed under another. So the
+ * built list rides the tape as one N record and replay serves the recorded
+ * list regardless of the live argv. The construction happens before the
+ * return value exists, so this uses the TAKE/RECORD pair rather than
+ * TRACE_NONDET_RET — under replay the early TAKE short-circuits before the
+ * list is built, avoiding both the wasted work and the abandoned (leaked)
+ * live list. */
 Value* builtin_args(Value *arg) {
     (void)arg;
+    TRACE_NONDET_TAKE("args");
     Value *list = make_list(g_argc > 2 ? g_argc - 2 : 0);
     /* g_argv[0] = eigenscript, g_argv[1] = script.eigs, g_argv[2..] = user args */
     for (int i = 2; i < g_argc; i++) {
         list_append_owned(list, make_str(g_argv[i]));
     }
-    return list;
+    TRACE_NONDET_RECORD("args", list);
 }
 
 /* ---- Path manipulation ---- */

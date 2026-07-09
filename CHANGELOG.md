@@ -136,6 +136,18 @@ All notable changes to EigenScript are documented here.
     (the one legitimate empty-expression position) still yields `null` (#494).
 
 ### Fixed
+- **`args` now rides the trace tape (#471).** The `args` builtin returned
+  `argv` directly, unwrapped — the last un-taped nondeterminism source
+  reachable by a pure script, and a hole in the closed-world invariant behind
+  deterministic replay. A program that branched on `args` recorded a tape
+  under one invocation and silently diverged when replayed under a different
+  argv (the exact class chaos-mode `--seed N` scheduling for the #408 task
+  layer would hit). The recorded argument list now rides the tape as one `N`
+  record and replay serves it regardless of the live argv. Because `args`
+  *builds* its list before returning, it uses the `TRACE_NONDET_TAKE` /
+  `TRACE_NONDET_RECORD` pair (not `TRACE_NONDET_RET`), so under replay the
+  live list is neither built nor leaked. Regression: `tests/test_replay.sh`
+  (record under `A B`, replay under `X Y Z`, recorded args win).
 - **Circular `import` / `load_file` no longer crashes (#496).** A mutual or
   self-referential `import` (a→b→a) or `load_file` used to recurse through
   `vm_execute` until the C stack overflowed — SIGSEGV, `rc=139`, uncatchable.
