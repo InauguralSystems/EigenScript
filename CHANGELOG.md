@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-08
+
 ### Added
 - **Cooperative task seeded scheduling — increment 4 (#408).**
   `task_sched_seed of n` switches the scheduler from FIFO round-robin to

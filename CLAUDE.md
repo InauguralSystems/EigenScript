@@ -125,15 +125,19 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.27.0** (2026-07-06) — the tooling-and-contracts
-  release: the one call rule (#405, BREAKING — bare literal list after
-  `of` is always an argument list, W017 is the migration audit), tape
-  format versioning (#411, BREAKING — replay refuses mismatched tapes),
-  `chr` as ord's loud inverse (#435), the lint rule train (E003
-  undefined-name, W015–W017, `--lint-level` + inline suppression), the
-  interactive REPL line editor (#392), the embeddable two-file
-  amalgamation (#397), and four silent-wrong-answer builtin fixes.
-  (v0.26.0, 2026-07-04: the stdlib-trains release.) Unreleased
+- **Latest release: v0.28.0** (2026-07-08) — the concurrency release: the
+  deterministic cooperative task layer (#408) — `task_spawn`/`task_yield`/
+  `task_join`/`task_alive`, mailboxes (`task_send`/`task_recv`/
+  `task_try_recv`/`task_kill`), virtual time (`task_sleep`/`task_now`), and a
+  seeded scheduling strategy (`task_sched_seed`), all deterministic by
+  construction (byte-identical across runs, zero tape `N` records) on a single
+  OS thread so the JIT stays live; structured runtime errors (#406, BREAKING —
+  `catch` binds `{kind, message, line}`), parse-error source excerpt + caret
+  (#407), scope-precise E003 undefined-name lint (#404), observer surface
+  coherence (#412, unity horizon + real `how` gradient), and correctness fixes
+  (#459 `dispatch` rebinding + builtin-shadow lint derivation, #410 JIT
+  back-edge abort poll, #460 `# lint: loaded-by`). (v0.27.0, 2026-07-06: the
+  tooling-and-contracts release.) Unreleased
   work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
   **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
   now FAILS the suite when this line falls behind the latest tag). Roadmap:
