@@ -5,6 +5,18 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Lint `W018` — `e.kind` compared against an out-of-set error kind (#469).**
+  A `catch` handler comparing a caught error's `.kind` against a string that is
+  a near-miss of a real kind — a case variant (`"IO"`), a single-character typo
+  (`"index_rage"`), or a kind renamed out from under the handler — is dead code
+  that silently never fires. The new rule warns and suggests the intended kind.
+  Zero-false-positive by construction: the closed kind set is derived from
+  `err_kind_name` at run time (no hand list to drift — it already covers the
+  post-#509 `deadlock`), and a warning requires all of (1) the `.kind` read off
+  a **catch-bound** variable, (2) a non-exact match, and (3) a near-miss
+  (case variant or edit distance 1) — so a valid kind and a genuinely custom
+  `throw {kind: "..."}` value both stay silent. Calibrated to zero hits over
+  `lib/`, the test corpus, and the consumer repos.
 - **Per-file lint allow-list in `eigs.json` (#455).** A project can now silence
   a lint code for a whole file without editing it — an `eigs.json` `lint.allow`
   map from project-root-relative path to a list of codes (`"all"` silences
