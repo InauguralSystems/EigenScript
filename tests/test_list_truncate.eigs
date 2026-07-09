@@ -29,11 +29,15 @@ checks += 1
 if (len of c) == 3:
     passed += 1
 
-# T4: negative clamps to 0
+# T4: negative new_len raises (#503, was a silent clamp-to-0)
 d is [1, 2, 3]
-list_truncate of [d, -1]
 checks += 1
-if (len of d) == 0:
+truncate_raised is 0
+try:
+    list_truncate of [d, -1]
+catch e:
+    truncate_raised is 1
+if truncate_raised == 1 and (len of d) == 3:
     passed += 1
 
 # T5: truncate to 1

@@ -1027,9 +1027,14 @@ rm -f "$CPG_FILE"
 # 1M cap), sort_by (non-numeric key), get_at/set_at + buf_get/buf_set (OOB
 # → index_range, matching the [] operator). Each case asserts it raises (and
 # the kind where it matters) plus a happy-path sanity check.
-echo "[116] Silent-Tolerance Batch-2: bad input raises (7 issues)"
+# Batch-2b (#500/#503/#504/#506/#507/#508) extends the same file: len (no-
+# length type), append (non-list target), regex_match/find/replace (invalid
+# pattern → value, non-string → type_mismatch), substr (negative start counts
+# from the end), list_truncate (negative len → value), json_path (empty path
+# segment → value).
+echo "[116] Silent-Tolerance Batch-2: bad input raises (13 issues)"
 check_eigs_suite "invalid input raises instead of silent null/0/empty" \
-    test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 21
+    test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 35
 
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"

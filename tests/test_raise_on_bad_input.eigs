@@ -149,5 +149,89 @@ assert_true of [bs_oob == 1, "buf_set OOB raises"]
 
 assert_eq of [buf_get of [b, 1], 2, "buf_get in range still works"]
 
+# ================================================================
+# batch-2b (#500/#503/#504/#506/#507/#508)
+# ================================================================
+
+# ---- #508 len: a type with no length raises (was a silent 0) ----
+len_num is 0
+len_num_k is ""
+try:
+    ig is len of 42
+catch e:
+    len_num is 1
+    len_num_k is e.kind
+assert_true of [len_num == 1 and len_num_k == "type_mismatch", "len of a number raises type_mismatch"]
+
+len_null is 0
+try:
+    ig is len of null
+catch e:
+    len_null is 1
+assert_true of [len_null == 1, "len of null raises"]
+
+assert_eq of [len of [1, 2, 3], 3, "len of a list still works"]
+assert_eq of [len of {"a": 1, "b": 2}, 2, "len of a dict still works"]
+
+# ---- #506 append: non-list target raises (was a silent no-op) ----
+app_bad is 0
+app_bad_k is ""
+try:
+    ig is append of [5, 6]
+catch e:
+    app_bad is 1
+    app_bad_k is e.kind
+assert_true of [app_bad == 1 and app_bad_k == "type_mismatch", "append onto a non-list raises type_mismatch"]
+
+app_xs is [1, 2]
+append of [app_xs, 9]
+assert_true of [app_xs[2] == 9, "append onto a list still works"]
+
+# ---- #500 regex: an invalid pattern raises (was [] / no-op) ----
+rx_bad is 0
+rx_bad_k is ""
+try:
+    ig is regex_match of ["abc", "["]
+catch e:
+    rx_bad is 1
+    rx_bad_k is e.kind
+assert_true of [rx_bad == 1 and rx_bad_k == "value", "regex_match invalid pattern raises value"]
+
+rxr_bad is 0
+try:
+    ig is regex_replace of ["abc", "(", "X"]
+catch e:
+    rxr_bad is 1
+assert_true of [rxr_bad == 1, "regex_replace invalid pattern raises"]
+
+rx_ok is regex_match of ["abc123", "[0-9]+"]
+assert_eq of [rx_ok[0], "123", "regex_match with a valid pattern still works"]
+
+# ---- #504 substr: negative start counts from the end (not clamp-to-0) ----
+assert_eq of [substr of ["hello", 0 - 2, 2], "lo", "substr negative start counts from the end"]
+assert_eq of [substr of ["hello", 1, 3], "ell", "substr with a positive start still works"]
+
+# ---- #503 list_truncate: a negative length raises (was empty-the-list) ----
+lt_neg is 0
+lt_neg_k is ""
+try:
+    ig is list_truncate of [[1, 2, 3], 0 - 1]
+catch e:
+    lt_neg is 1
+    lt_neg_k is e.kind
+assert_true of [lt_neg == 1 and lt_neg_k == "value", "list_truncate negative length raises value"]
+
+# ---- #507 json_path: an empty path segment raises (was silently skipped) ----
+jp_empty is 0
+jp_empty_k is ""
+try:
+    ig is json_path of ["{\"a\": 1}", "a..b"]
+catch e:
+    jp_empty is 1
+    jp_empty_k is e.kind
+assert_true of [jp_empty == 1 and jp_empty_k == "value", "json_path empty segment raises value"]
+
+assert_eq of [json_path of ["{\"a\": {\"b\": 5}}", "a.b"], "5", "json_path with a valid path still works"]
+
 print of "ALL_RAISE_TESTS_DONE"
 test_summary of null

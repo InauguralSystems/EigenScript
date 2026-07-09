@@ -41,6 +41,27 @@ All notable changes to EigenScript are documented here.
     index raises `type_mismatch`, matching the `xs[i]` operator (was a silent
     fold-to-0 / no-op) (#499, #502).
 
+  Batch 2b — the remaining builtins in the same class (#500, #503, #504,
+  #506, #507, #508):
+  - `len` — a value with no length (number, fn, `null`, …) raises
+    `type_mismatch` instead of folding to `0`. Callers meaning "empty if
+    absent" already guard with `x != null and len of x`, and `and`
+    short-circuits, so the guarded `len` is never reached (#508).
+  - `append` — a non-list target (including the `append of xs` #405
+    arg-vector footgun, where a 2-element `xs` arrives as `[target, item]`)
+    raises `type_mismatch` instead of a silent no-op. Pass a literal list
+    whole with the paren form: `append of ([ys, item])` (#506).
+  - `regex_match` / `regex_find` / `regex_replace` — an invalid pattern
+    raises `value` (was `[]` / the input unchanged — indistinguishable from
+    a clean no-match) and a non-string operand raises `type_mismatch` (#500).
+  - `substr` — a negative start counts from the end, matching `char_at` and
+    the `[]` operator (was a flat clamp-to-0 — an inconsistency) (#504).
+  - `list_truncate` — a negative length raises `value` instead of silently
+    emptying the list (an undocumented soft clamp) (#503).
+  - `json_path` — an empty path segment (a leading/trailing dot or `..`)
+    raises `value` instead of being silently skipped by `strtok`, which
+    masked a malformed path; a genuine lookup miss still returns `""` (#507).
+
 ### Fixed
 - **Circular `import` / `load_file` no longer crashes (#496).** A mutual or
   self-referential `import` (a→b→a) or `load_file` used to recurse through

@@ -451,6 +451,12 @@ Value* builtin_len(Value *arg) {
         return make_num(arg->data.buffer.count);
     if (arg->type == VAL_TEXT_BUILDER)
         return make_num((double)arg->data.text_builder.len);
+    /* #508: a type with no length (number, fn, null, …) used to fold to 0,
+     * silently masking a wrong value. Raise. Callers that legitimately mean
+     * "empty if absent" already guard with `x != null and len of x` — and
+     * `and` short-circuits, so the guarded len is never reached. */
+    rt_error(EK_TYPE, 0, "len: %s has no length",
+             arg ? val_type_name(arg->type) : "null");
     return make_num(0);
 }
 
@@ -495,12 +501,24 @@ Value* builtin_num(Value *arg) {
 }
 
 Value* builtin_append(Value *arg) {
-    if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    /* #506: append requires exactly a [list, item] pair. Fewer than two
+     * elements (or a non-list arg-vector) was a silent no-op returning the
+     * target unchanged. NB a bare list is the builtin's arg-vector (#405),
+     * so `append of xs` with xs=[a,b] arrives here as target=a, item=b — if
+     * a isn't a list this now raises instead of silently doing nothing. Pass
+     * a literal list whole with the paren form: `append of ([ys, item])`. */
+    if (arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "append requires [list, item]");
+        return make_null();
+    }
     Value *target = arg->data.list.items[0];
     Value *item = arg->data.list.items[1];
-    if (target->type == VAL_LIST) {
-        list_append(target, item);
+    if (target->type != VAL_LIST) {
+        rt_error(EK_TYPE, 0, "append: target must be a list (got %s)",
+                 val_type_name(target->type));
+        return make_null();
     }
+    list_append(target, item);
     return target;
 }
 
@@ -1433,14 +1451,24 @@ Value* builtin_str_replace(Value *arg) {
 /* match of [string, pattern] -> [full_match, group1, ...] or [] */
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_match(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
-    if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR)
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "regex_match requires [string, pattern]");
         return make_list(0);
+    }
+    if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR) {
+        rt_error(EK_TYPE, 0, "regex_match: string and pattern must be strings");
+        return make_list(0);
+    }
     const char *str = arg->data.list.items[0]->data.str;
     const char *pattern = arg->data.list.items[1]->data.str;
 
     regex_t re;
-    if (regcomp(&re, pattern, REG_EXTENDED) != 0) return make_list(0);
+    /* #500: an invalid pattern used to return [] — indistinguishable from a
+     * clean no-match. Raise so a broken pattern is visible. */
+    if (regcomp(&re, pattern, REG_EXTENDED) != 0) {
+        rt_error(EK_VALUE, 0, "regex_match: invalid pattern '%s'", pattern);
+        return make_list(0);
+    }
 
     regmatch_t matches[16];
     if (regexec(&re, str, 16, matches, 0) != 0) {
@@ -1466,14 +1494,22 @@ Value* builtin_match(Value *arg) {
 /* match_all of [string, pattern] -> [match1, match2, ...] */
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_match_all(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
-    if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR)
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "regex_find requires [string, pattern]");
         return make_list(0);
+    }
+    if (arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_STR) {
+        rt_error(EK_TYPE, 0, "regex_find: string and pattern must be strings");
+        return make_list(0);
+    }
     const char *str = arg->data.list.items[0]->data.str;
     const char *pattern = arg->data.list.items[1]->data.str;
 
     regex_t re;
-    if (regcomp(&re, pattern, REG_EXTENDED) != 0) return make_list(0);
+    if (regcomp(&re, pattern, REG_EXTENDED) != 0) {           /* #500 */
+        rt_error(EK_VALUE, 0, "regex_find: invalid pattern '%s'", pattern);
+        return make_list(0);
+    }
 
     Value *result = make_list(16);
     regmatch_t m[1];
@@ -1498,17 +1534,27 @@ Value* builtin_match_all(Value *arg) {
 /* regex_replace of [string, pattern, replacement] -> string */
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_regex_replace(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "regex_replace requires [string, pattern, replacement]");
+        return make_str("");
+    }
     if (arg->data.list.items[0]->type != VAL_STR ||
         arg->data.list.items[1]->type != VAL_STR ||
-        arg->data.list.items[2]->type != VAL_STR)
+        arg->data.list.items[2]->type != VAL_STR) {
+        rt_error(EK_TYPE, 0, "regex_replace: string, pattern and replacement must be strings");
         return make_str("");
+    }
     const char *str = arg->data.list.items[0]->data.str;
     const char *pattern = arg->data.list.items[1]->data.str;
     const char *replacement = arg->data.list.items[2]->data.str;
 
     regex_t re;
-    if (regcomp(&re, pattern, REG_EXTENDED) != 0) return make_str(str);
+    /* #500: an invalid pattern used to return the input unchanged — a silent
+     * no-op that hides the broken pattern. Raise. */
+    if (regcomp(&re, pattern, REG_EXTENDED) != 0) {
+        rt_error(EK_VALUE, 0, "regex_replace: invalid pattern '%s'", pattern);
+        return make_str("");
+    }
 
     strbuf out;
     strbuf_init(&out);
@@ -1585,6 +1631,10 @@ Value* builtin_substr(Value *arg) {
     int slen = strlen(str_val->data.str);
     int start = (int)start_val->data.num;
     int rlen = (int)len_val->data.num;
+    /* #504: a negative start counts from the end, matching char_at and the
+     * [] operator (was a flat clamp-to-0 — inconsistent). A start still
+     * negative after the adjustment (before the string) clamps to 0. */
+    if (start < 0) start += slen;
     if (start < 0) start = 0;
     if (start >= slen) return make_str("");
     if (rlen < 0) rlen = 0;
@@ -2299,6 +2349,18 @@ Value* builtin_json_path(Value *arg) {
     const char *json_str = "", *path = "";
     if (arg->data.list.items[0]->type == VAL_STR) json_str = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_STR) path = arg->data.list.items[1]->data.str;
+
+    /* #507: reject empty path segments (a leading/trailing dot or a `..`).
+     * strtok silently skips them, so "a..b", ".a" and "a." used to resolve
+     * as if the empty piece weren't there — masking a malformed path. An
+     * entirely empty path ("") still means the root document. */
+    if (path[0] != '\0') {
+        size_t plen = strlen(path);
+        if (path[0] == '.' || path[plen - 1] == '.' || strstr(path, "..")) {
+            rt_error(EK_VALUE, 0, "json_path: empty path segment in '%s'", path);
+            return make_str("");
+        }
+    }
 
     int pos = 0;
     Value *root = eigs_json_parse_value(json_str, &pos);
@@ -5402,13 +5464,27 @@ Value* builtin_sign_extend(Value *arg) {
 /* list_truncate of [list, new_len] — shrink list in-place to new_len items.
  * If new_len >= current length, no-op. Returns the list. */
 Value* builtin_list_truncate(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "list_truncate requires [list, new_len]");
+        return make_null();
+    }
     Value *list = arg->data.list.items[0];
     Value *len_val = arg->data.list.items[1];
-    if (!list || list->type != VAL_LIST) return make_null();
-    if (!len_val || len_val->type != VAL_NUM) return list;
+    if (!list || list->type != VAL_LIST) {
+        rt_error(EK_TYPE, 0, "list_truncate: first argument must be a list");
+        return make_null();
+    }
+    if (!len_val || len_val->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "list_truncate: new_len must be a number");
+        return make_null();
+    }
     int new_len = (int)len_val->data.num;
-    if (new_len < 0) new_len = 0;
+    /* #503: a negative new_len used to silently empty the list (an
+     * undocumented soft clamp to 0). Raise instead. */
+    if (new_len < 0) {
+        rt_error(EK_VALUE, 0, "list_truncate: new_len must be >= 0 (got %d)", new_len);
+        return make_null();
+    }
     if (new_len >= list->data.list.count) return list;
     for (int i = new_len; i < list->data.list.count; i++) {
         val_decref(list->data.list.items[i]);
