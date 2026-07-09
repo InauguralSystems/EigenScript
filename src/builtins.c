@@ -2623,7 +2623,10 @@ Value* builtin_load_file(Value *arg) {
     }
 
     if (!source) {
-        fprintf(stderr, "load_file: cannot read '%s'\n", arg->data.str);
+        /* #490: match import's severity — a missing path is a catchable io
+         * error, not a stderr-warn + silent null (rc=0). Callers that ignore
+         * the return otherwise run on half-initialized state. */
+        rt_error(EK_IO, 0, "load_file: cannot read '%s'", arg->data.str);
         return make_null();
     }
 
@@ -4485,10 +4488,16 @@ Value* builtin_send(Value *arg) {
         ch->tail = (ch->tail + 1) % CHANNEL_BUF_SIZE;
         ch->count++;
         pthread_cond_signal(&ch->not_empty);
+        pthread_mutex_unlock(&ch->mutex);
     } else {
+        /* #505: sending to a closed channel drops the value. Failing open
+         * loses messages with rc=0 (producer races a consumer's close). Raise
+         * instead — recv on a closed empty channel still returns null (EOF). */
+        pthread_mutex_unlock(&ch->mutex);
         val_decref(val);
+        rt_error(EK_VALUE, 0, "send: channel is closed");
+        return make_null();
     }
-    pthread_mutex_unlock(&ch->mutex);
     return make_null();
 }
 

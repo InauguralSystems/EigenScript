@@ -232,7 +232,7 @@ Boolean keywords that check the most recently observed value:
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file |
+| `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file. A missing/unreadable path raises a catchable `io` error (matching `import`); a parse/compile failure in the file raises `parse`. |
 | `file_exists` | `file_exists of "path"` | 1 if file exists, 0 otherwise |
 | `read_text` | `read_text of "path"` | Read file contents as string ("" on failure, 10 MB cap) |
 | `read_bytes` | `read_bytes of "path"` | Read a file's raw bytes as a list of integers 0–255 (`null` on failure, 10 MB cap). Trace-recorded, so replay is deterministic |
@@ -562,7 +562,7 @@ Requires full build. Transformer model inference and training.
 | `spawn` | `spawn of fn` or `spawn of [fn, arg1, ...]` | Spawn a thread running `fn`. Bare-fn form passes no args; list form passes `arg1...` positionally. Missing trailing params bind to `null`; extra args are ignored. Args are shared by reference (unlike channel sends, which copy) — see thread-safety note below. Returns a thread handle dict. |
 | `thread_join` | `thread_join of handle` | Block until thread completes. Returns the thread function's return value. |
 | `channel` | `channel of null` | Create a bounded FIFO channel (capacity 64). Returns a channel handle dict. |
-| `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. |
+| `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. Sending to a **closed** channel raises a catchable `value` error (rather than silently dropping the value); `recv` on a closed empty channel returns `null` (EOF-like). |
 | `recv` | `recv of channel` | Receive a value from the channel. **Blocks** until a value is available or the channel is closed. |
 | `try_recv` | `try_recv of channel` | Non-blocking receive. Returns the value if available, `null` if the channel is empty. |
 | `recv_timeout` | `recv_timeout of [channel, ms]` | Bounded-wait receive. Returns the value if one arrives before `ms` milliseconds elapse, else `null`. A close while waiting also returns `null`. Fractional `ms` is honored (ns precision on Linux); negative `ms` degenerates to a `try_recv`. |

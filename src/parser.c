@@ -963,7 +963,18 @@ static ASTNode* parse_primary(Parser *p) {
     }
 
     ASTNode *n = make_node(AST_NULL, p_cur(p)->line);
-    if (t->type != TOK_EOF && t->type != TOK_NEWLINE && t->type != TOK_DEDENT) {
+    if (t->type == TOK_EOF || t->type == TOK_NEWLINE || t->type == TOK_DEDENT) {
+        /* #494: an expression was required but the statement ended. Previously
+         * this "empty expression" silently became null, so truncated input
+         * (`x is`, `print of`, `throw of`, `eval of "x is "`) ran with rc=0 and
+         * wrong nulls — the silent-tolerance class. The one legitimate empty
+         * position, bare `return`, checks the terminator itself before calling
+         * parse_expression and never reaches here. Don't advance: consuming the
+         * NEWLINE/DEDENT would desync statement framing. */
+        fprintf(stderr, "Parse error line %d: expected expression\n", t->line);
+        eigs_record_first_error(t->line, "expected expression");
+        g_parse_errors++;
+    } else {
         fprintf(stderr, "Parse error line %d: unexpected %s in expression",
                 t->line, tok_type_name(t->type));
         if (t->str_val) fprintf(stderr, " ('%s')", t->str_val);
@@ -1534,7 +1545,18 @@ static ASTNode* parse_statement_inner(Parser *p) {
 
     if (t->type == TOK_RETURN) {
         p_advance(p);
-        ASTNode *expr = parse_expression(p);
+        /* Bare `return` yields null. This is the only legitimate empty-
+         * expression position (#494): check the terminator here rather than
+         * letting parse_expression bottom out in parse_primary, which now
+         * raises "expected expression". */
+        Token *rt = p_cur(p);
+        ASTNode *expr;
+        if (rt->type == TOK_NEWLINE || rt->type == TOK_EOF ||
+            rt->type == TOK_DEDENT) {
+            expr = make_node(AST_NULL, rt->line);
+        } else {
+            expr = parse_expression(p);
+        }
         p_end_statement(p);
         ASTNode *n = make_node(AST_RETURN, p_cur(p)->line);
         n->data.ret.expr = expr;

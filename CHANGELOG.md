@@ -73,6 +73,25 @@ All notable changes to EigenScript are documented here.
     the HTTP header/body parsers keep their lenient behavior (they ignore the
     strict-parse flag) (#495).
 
+  Batch 2d — channel/IO/parser silent successes (#505, #490, #494):
+  - `send` to a **closed** channel raises a catchable `value` error instead
+    of silently dropping the value with `rc=0`. A producer that races a
+    consumer's `close_channel` used to lose messages with no signal; now it
+    fails loud. `recv` on a closed empty channel still returns `null`
+    (EOF-like — that half is intended) (#505).
+  - `load_file` of a missing/unreadable path raises a catchable `io` error
+    instead of printing to stderr and returning a silent `null` with `rc=0`.
+    This matches `import`'s severity and the same function's own parse/compile
+    failure paths; a typo'd path is no longer a soft no-op (#490).
+  - **Parser: a missing expression is a parse error, not a silent `null`.**
+    An expression required after `is` / `of` / a unary operator, or as a
+    `throw` / `print` argument, that runs into the end of the line
+    (`x is`, `print of`, `throw of`, `eval of "x is "`) used to bind/emit
+    `null` and continue with `rc=0` — a truncated or generated program looked
+    like a soft no-op. It now raises `Parse error line N: expected expression`
+    (catchable `parse` from `eval`/`import`/`load_file`). Bare `return`
+    (the one legitimate empty-expression position) still yields `null` (#494).
+
 ### Fixed
 - **Circular `import` / `load_file` no longer crashes (#496).** A mutual or
   self-referential `import` (a→b→a) or `load_file` used to recurse through

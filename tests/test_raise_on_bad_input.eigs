@@ -279,5 +279,47 @@ assert_true of [(type of jd_ok_null) == "none", "json_decode of a bare null stil
 jd_ok_obj is json_decode of "{\"a\": 1, \"b\": [2, 3]}"
 assert_true of [jd_ok_obj.a == 1 and (len of jd_ok_obj.b) == 2, "json_decode of a valid nested object still works"]
 
+# ---- #505 send to a closed channel raises (was a silent drop, rc=0) ----
+send_closed is 0
+send_closed_k is ""
+sc_ch is channel of null
+close_channel of sc_ch
+try:
+    send of [sc_ch, 99]
+catch e:
+    send_closed is 1
+    send_closed_k is e.kind
+assert_true of [send_closed == 1 and send_closed_k == "value", "send to closed channel raises value"]
+
+# happy path: send/recv on an open channel still works, and recv on a
+# closed-but-empty channel still returns null (EOF-like — that half is kept)
+sc_ok is channel of null
+send of [sc_ok, 7]
+assert_eq of [recv of sc_ok, 7, "send/recv on an open channel still works"]
+close_channel of sc_ok
+assert_true of [(type of (try_recv of sc_ok)) == "none", "try_recv on a closed empty channel still returns null"]
+
+# ---- #490 load_file of a missing path raises io (was stderr + silent null) ----
+lf_missing is 0
+lf_missing_k is ""
+try:
+    ig is load_file of "/no/such/file_zzz.eigs"
+catch e:
+    lf_missing is 1
+    lf_missing_k is e.kind
+assert_true of [lf_missing == 1 and lf_missing_k == "io", "load_file of a missing path raises io"]
+
+# ---- #494 eval of a truncated expression is a catchable parse error ----
+# (was a silent null — the iLambdaAi generate-then-eval path could emit an
+# incomplete assignment that never failed the generator's smoke test)
+eval_trunc is 0
+eval_trunc_k is ""
+try:
+    ig is eval of "x is "
+catch e:
+    eval_trunc is 1
+    eval_trunc_k is e.kind
+assert_true of [eval_trunc == 1 and eval_trunc_k == "parse", "eval of a truncated expression raises parse"]
+
 print of "ALL_RAISE_TESTS_DONE"
 test_summary of null

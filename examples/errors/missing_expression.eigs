@@ -1,0 +1,9 @@
+# ERROR DEMO — an expression is required but the line ended.
+# `x is` with a dropped right-hand side used to bind null and run with
+# rc=0 (same for `print of`, `throw of`, `eval of "x is "`). A truncated
+# or generated program looked like a soft no-op. Now a parse error (#494).
+# The one legitimate empty-expression position, bare `return`, still yields
+# null and is exercised by the normal suite.
+# expect-error: expected expression
+x is
+print of "unreachable"
