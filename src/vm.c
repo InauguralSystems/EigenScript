@@ -5677,7 +5677,41 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
                 s->main_task.result = NULL;
                 return r ? r : make_null();
             }
-            rt_error(EK_DEADLOCK, 0, "all tasks are blocked — deadlock");
+            /* #509: deadlock is a normal runtime error, not a hang — make it
+             * CATCHABLE. main is guaranteed SUSPENDED here (the DONE/DEAD case
+             * returned above), blocked at a task_join/recv. Build the structured
+             * error at main's blocked line (vm_take_error_value later lazily
+             * turns g_error_kind/raw/line into a {kind,message,line} dict, so
+             * e.kind == "deadlock"). We drive the print/handling ourselves and
+             * do NOT go through rt_error's g_try_depth-gated print: g_try_depth
+             * is a global, not part of a task's saved slice, so a suspended
+             * worker's still-open try can leave it non-zero here. */
+            Task *m = &s->main_task;
+            int catchable = 0;
+            for (int i = 0; i < m->saved_frame_count; i++)
+                if (m->saved_frames[i].try_count > 0) { catchable = 1; break; }
+            g_error_kind = (int)EK_DEADLOCK;
+            g_error_line = m->saved_current_line;
+            snprintf(g_error_raw, sizeof(g_error_raw),
+                     "all tasks are blocked — deadlock");
+            snprintf(g_error_msg, sizeof(g_error_msg),
+                     "Error line %d: all tasks are blocked — deadlock", g_error_line);
+            g_has_error = 1;
+            eigs_clear_error_value();
+            if (catchable) {
+                /* Deliver at main's blocked site: clear the block reason so the
+                 * resume doesn't fill a normal join/recv result, then re-enqueue
+                 * main. The loop resumes it with g_has_error set → CHECK_ERROR
+                 * unwinds to the handler (which reads e.kind == "deadlock"). */
+                m->join_target = 0;
+                m->recv_blocked = 0;
+                m->sleeping = 0;
+                sched_ready_push(s, 0);
+                continue;
+            }
+            /* No handler in main → terminal: print loudly, exit non-zero. (No
+             * stack trace: between tasks g_vm has no live frames.) */
+            fprintf(stderr, "%s\n", g_error_msg);
             return make_null();
         }
         Task *t = sched_lookup(s, id);

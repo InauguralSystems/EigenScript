@@ -2260,7 +2260,8 @@ check_task_exit() {
 check_task_exit task_exit_unjoined_death.eigs 1 "MARK_END"         # #493 strict: main completes, rc 1
 check_task_exit task_exit_join_catch.eigs     0 "undefined_name"   # #493 caught: rc 0
 check_task_exit task_exit_killed.eigs         0 "MARK_END"         # #493 kill: rc 0
-check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 loud
+check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 uncaught loud
+check_task_exit task_deadlock_worker_try.eigs 1 "deadlock"         # #509: deadlock goes to MAIN; a worker's try doesn't catch it
 
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
