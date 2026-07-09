@@ -4731,6 +4731,27 @@ Value* builtin_task_spawn(Value *arg) {
     return make_num((double)id);
 }
 
+/* #488: a `must_not_yield` region asserts atomicity. A critical section under
+ * cooperative scheduling is atomic *only* while it issues no yield — the
+ * implicit mutual exclusion a non-yielding region gets for free. Nothing marked
+ * such a region, so a yield introduced later (directly, or via a builtin that
+ * yields internally) broke atomicity silently. While this depth is nonzero,
+ * any task builtin that would actually SUSPEND raises instead, so the mistake
+ * fails loudly. Only nonzero for the running task — a yield cannot happen
+ * inside, so no task switch occurs while it is set, and a plain counter is
+ * safe. */
+static int g_no_yield_depth = 0;
+
+static int no_yield_forbidden(const char *what) {
+    if (g_no_yield_depth > 0) {
+        rt_error(EK_VALUE, 0,
+                 "%s inside a must_not_yield region — the critical section "
+                 "would suspend, breaking its atomicity", what);
+        return 1;
+    }
+    return 0;
+}
+
 /* task_yield of null — cooperatively hand control to the next ready task.
  * Returns null (the value of the yield expression); the scheduler saves and
  * re-enqueues this task at the tail. Forbidden inside an active arena scope
@@ -4749,6 +4770,7 @@ Value* builtin_task_yield(Value *arg) {
         return make_null();
     }
     if (!g_task_sched) return make_null();   /* no scheduler: yield is a no-op */
+    if (no_yield_forbidden("task_yield")) return make_null();   /* #488 */
     task_request_yield();
     return make_null();   /* placeholder: execution resumes right after this */
 }
@@ -4785,6 +4807,7 @@ Value* builtin_task_join(Value *arg) {
                  "(arena_mark…arena_reset)");
         return make_null();
     }
+    if (no_yield_forbidden("blocking task_join")) return make_null();   /* #488 */
     if (!task_request_join(target)) return make_null();
     return make_null();   /* placeholder: the scheduler fills it with the result on resume */
 }
@@ -4821,6 +4844,7 @@ Value* builtin_task_recv(Value *arg) {
         return make_null();
     }
     if (!g_task_sched) return make_null();   /* no tasks: nothing can arrive */
+    if (no_yield_forbidden("blocking task_recv")) return make_null();   /* #488 */
     task_request_recv();
     return make_null();   /* placeholder: the scheduler delivers the message on resume */
 }
@@ -4871,8 +4895,30 @@ Value* builtin_task_sleep(Value *arg) {
         rt_error(EK_TYPE, 0, "task_sleep requires a number of ticks");
         return make_null();
     }
+    if (no_yield_forbidden("task_sleep")) return make_null();   /* #488 */
     task_request_sleep(arg->data.num);
     return make_null();   /* placeholder: execution resumes when the clock wakes it */
+}
+
+/* must_not_yield of fn — run `fn of null` as an ATOMIC critical section and
+ * assert it issues no scheduler yield (#488). Any suspending task builtin
+ * inside — task_yield, a blocking task_recv/task_join, task_sleep — raises
+ * instead of suspending, so a yield introduced into a region that relies on
+ * cooperative atomicity (e.g. eddy's snapshot-isolation commit loop) fails
+ * loudly rather than corrupting silently under a rare interleaving. Returns
+ * fn's result, or propagates its error; the region depth is balanced even when
+ * the body raises (call_eigs_fn returns control either way). Nestable. */
+Value* builtin_must_not_yield(Value *arg) {
+    if (!arg || (arg->type != VAL_FN && arg->type != VAL_BUILTIN)) {
+        rt_error(EK_TYPE, 0, "must_not_yield requires a function");
+        return make_null();
+    }
+    g_no_yield_depth++;
+    Value *nul = make_null();
+    Value *r = call_eigs_fn(arg, nul);
+    val_decref(nul);
+    g_no_yield_depth--;
+    return r ? r : make_null();
 }
 
 /* task_now of null → the current virtual-clock value (a number, 0 before any
@@ -5948,6 +5994,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_spawn", make_builtin(builtin_task_spawn));
     env_set_local_owned(env, "task_alive", make_builtin(builtin_task_alive));
     env_set_local_owned(env, "task_yield", make_builtin(builtin_task_yield));
+    env_set_local_owned(env, "must_not_yield", make_builtin(builtin_must_not_yield));
     env_set_local_owned(env, "task_join", make_builtin(builtin_task_join));
     env_set_local_owned(env, "task_send", make_builtin(builtin_task_send));
     env_set_local_owned(env, "task_recv", make_builtin(builtin_task_recv));

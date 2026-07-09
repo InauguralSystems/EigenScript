@@ -51,8 +51,19 @@ All notable changes to EigenScript are documented here.
   preemption between the acquire check passing and the claim. Surfaced by the
   `eddy` consumer (concurrency-control DST): a critical section that spans a
   yield needs an explicit lock, since only a non-yielding region is implicitly
-  atomic. Still open under #488: a debug-mode *assertion* that a delimited
-  region issued no scheduler yield (needs VM support).
+  atomic.
+- **`must_not_yield of fn` — assert a critical region is atomic (#488).** The
+  other half of #488: a region relies on cooperative atomicity (mutual
+  exclusion for free) *only* while it issues no yield, but nothing marked such
+  a region, so a `task_yield` — or a builtin that yields internally — introduced
+  later broke atomicity **silently** (a rare, seed-dependent anomaly).
+  `must_not_yield of fn` runs `fn of null` as an atomic section: any suspending
+  task builtin inside (`task_yield`, a blocking `task_recv`/`task_join`,
+  `task_sleep`) raises `value` instead of suspending, so the mistake fails
+  loudly. Non-suspending ops (`task_try_recv`, `task_send`, joining a finished
+  task) are allowed. The region depth is balanced even when the body raises,
+  and it nests. Surfaced by the `eddy` consumer's snapshot-isolation commit
+  loop (atomic only because it contains no yield).
 
 ### Changed
 - **`deadlock` is now catchable (#509).** A cooperative-task deadlock (all
