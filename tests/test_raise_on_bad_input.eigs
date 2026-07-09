@@ -1,0 +1,153 @@
+# test_raise_on_bad_input.eigs — batch-2 of the silent-tolerance audit.
+# Builtins that used to return a silent null / 0 / "" / wrong-order on
+# invalid input now RAISE a catchable error from the closed error-kind
+# set. One block per issue: assert it raises (and the kind where it
+# matters), plus a valid-path sanity check so we didn't break the happy path.
+load_file of "lib/test.eigs"
+
+# ---- #512 matmul: shape / type errors raise (were silent null) ----
+mm_shape is 0
+mm_shape_k is ""
+try:
+    ig is matmul of [[[1, 2]], [[1], [2], [3]]]
+catch e:
+    mm_shape is 1
+    mm_shape_k is e.kind
+assert_true of [mm_shape == 1 and mm_shape_k == "value", "matmul shape mismatch raises value"]
+
+mm_type is 0
+mm_type_k is ""
+try:
+    ig is matmul of [1, 2]
+catch e:
+    mm_type is 1
+    mm_type_k is e.kind
+assert_true of [mm_type == 1 and mm_type_k == "type_mismatch", "matmul non-matrix raises type_mismatch"]
+
+mm_ok is matmul of [[[1, 2], [3, 4]], [[1, 0], [0, 1]]]
+assert_true of [mm_ok[0][0] == 1 and mm_ok[1][1] == 4, "matmul identity still works"]
+
+# ---- #511 sha256 / md5 / hmac: non-string raises (was "") ----
+sha_bad is 0
+try:
+    ig is sha256 of 123
+catch e:
+    sha_bad is 1
+assert_true of [sha_bad == 1, "sha256 of non-string raises"]
+
+md5_bad is 0
+try:
+    ig is md5 of [1, 2]
+catch e:
+    md5_bad is 1
+assert_true of [md5_bad == 1, "md5 of non-string raises"]
+
+hmac_bad is 0
+try:
+    ig is hmac_sha256 of [123, "msg"]
+catch e:
+    hmac_bad is 1
+assert_true of [hmac_bad == 1, "hmac_sha256 non-string key raises"]
+
+assert_eq of [sha256 of "abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "sha256 of a string still works"]
+
+# ---- #497 range: non-numeric argument raises (was silent []) ----
+rng_str is 0
+rng_str_k is ""
+try:
+    ig is range of "hello"
+catch e:
+    rng_str is 1
+    rng_str_k is e.kind
+assert_true of [rng_str == 1 and rng_str_k == "type_mismatch", "range of a string raises type_mismatch"]
+
+rng_elem is 0
+try:
+    ig is range of [0, "x"]
+catch e:
+    rng_elem is 1
+assert_true of [rng_elem == 1, "range with a non-numeric bound raises"]
+
+# ---- #498 range: past the 1M cap raises instead of OOM-building ----
+rng_big is 0
+rng_big_k is ""
+try:
+    ig is range of [0, 5000000]
+catch e:
+    rng_big is 1
+    rng_big_k is e.kind
+assert_true of [rng_big == 1 and rng_big_k == "limit", "range past 1M cap raises limit"]
+
+assert_eq of [len of (range of 3), 3, "range of n still works"]
+
+# ---- #501 sort_by: non-numeric key raises (was coerced to 0.0) ----
+define bad_key(x) as:
+    return "not a number"
+define neg_key(x) as:
+    return 0 - x
+
+sb_bad is 0
+sb_bad_k is ""
+try:
+    ig is sort_by of [[1, 2, 3], bad_key]
+catch e:
+    sb_bad is 1
+    sb_bad_k is e.kind
+assert_true of [sb_bad == 1 and sb_bad_k == "type_mismatch", "sort_by non-numeric key raises type_mismatch"]
+
+sb_ok is sort_by of [[3, 1, 2], neg_key]
+assert_true of [sb_ok[0] == 3 and sb_ok[2] == 1, "sort_by with a numeric key still works"]
+
+# ---- #499 get_at / set_at: OOB raises index_range, non-list raises ----
+xs is [10, 20, 30]
+ga_oob is 0
+ga_oob_k is ""
+try:
+    ig is get_at of [xs, 10]
+catch e:
+    ga_oob is 1
+    ga_oob_k is e.kind
+assert_true of [ga_oob == 1 and ga_oob_k == "index_range", "get_at OOB raises index_range"]
+
+ga_type is 0
+try:
+    ig is get_at of [42, 0]
+catch e:
+    ga_type is 1
+assert_true of [ga_type == 1, "get_at on a non-list raises"]
+
+sa_oob is 0
+sa_oob_k is ""
+try:
+    set_at of [xs, 10, 99]
+catch e:
+    sa_oob is 1
+    sa_oob_k is e.kind
+assert_true of [sa_oob == 1 and sa_oob_k == "index_range", "set_at OOB raises index_range (was a silent no-op)"]
+
+assert_eq of [get_at of [xs, -1], 30, "get_at negative index still counts from the end"]
+set_at of [xs, 0, 99]
+assert_eq of [get_at of [xs, 0], 99, "set_at still writes in range"]
+
+# ---- #502 buf_get / buf_set: OOB raises index_range ----
+b is buf_from_list of [1, 2, 3]
+bg_oob is 0
+bg_oob_k is ""
+try:
+    ig is buf_get of [b, 99]
+catch e:
+    bg_oob is 1
+    bg_oob_k is e.kind
+assert_true of [bg_oob == 1 and bg_oob_k == "index_range", "buf_get OOB raises index_range"]
+
+bs_oob is 0
+try:
+    buf_set of [b, 99, 7]
+catch e:
+    bs_oob is 1
+assert_true of [bs_oob == 1, "buf_set OOB raises"]
+
+assert_eq of [buf_get of [b, 1], 2, "buf_get in range still works"]
+
+print of "ALL_RAISE_TESTS_DONE"
+test_summary of null

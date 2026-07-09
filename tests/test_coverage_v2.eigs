@@ -168,9 +168,8 @@ assert of [(len of r_single) == 5, "CV2-45 range single-elem list (paren form)"]
 r_zero_step is range of [0, 3, 0]
 assert of [(len of r_zero_step) == 3, "CV2-46 range zero step defaults to 1"]
 
-# --- range on non-num/non-list ---
-r_bad is range of "hello"
-assert of [(len of r_bad) == 0, "CV2-47 range bad arg"]
+# --- range on non-num/non-list (#497: raises, was a silent []) ---
+expect_error of [() => range of "hello", "CV2-47 range bad arg raises"]
 
 # --- get_at / set_at 2D ---
 matrix is [[1, 2], [3, 4], [5, 6]]
@@ -181,9 +180,8 @@ set_at of [matrix, 1, 1, 99]
 v2d2 is get_at of [matrix, 1, 1]
 assert of [v2d2 == 99, "CV2-49 set_at 2D"]
 
-# --- get_at out of range ---
-v_oor is get_at of [matrix, 10]
-assert of [v_oor == 0, "CV2-50 get_at out of range"]
+# --- get_at out of range (#499: raises index_range, was a silent 0) ---
+expect_error of [() => get_at of [matrix, 10], "CV2-50 get_at out of range raises"]
 
 # --- coalesce ---
 c1 is coalesce of [null, "default"]

@@ -3890,13 +3890,24 @@ Value* builtin_range(Value *arg) {
         end = (int)arg->data.num;
     } else if (arg->type == VAL_LIST) {
         int argc = arg->data.list.count;
-        if (argc >= 1 && arg->data.list.items[0]->type == VAL_NUM)
+        /* #497: every provided bound must be numeric. A non-number used to
+         * be silently treated as 0 (or fold the whole call to []) — a
+         * silent-wrong loop count. */
+        for (int i = 0; i < argc && i < 3; i++) {
+            if (arg->data.list.items[i]->type != VAL_NUM) {
+                rt_error(EK_TYPE, 0,
+                    "range: argument %d must be a number, got %s", i,
+                    val_type_name(arg->data.list.items[i]->type));
+                return make_list(0);
+            }
+        }
+        if (argc >= 1)
             start = (int)arg->data.list.items[0]->data.num;
-        if (argc >= 2 && arg->data.list.items[1]->type == VAL_NUM)
+        if (argc >= 2)
             end = (int)arg->data.list.items[1]->data.num;
         else
             { end = start; start = 0; } /* single-element list: treat as range of n */
-        if (argc >= 3 && arg->data.list.items[2]->type == VAL_NUM) {
+        if (argc >= 3) {
             step = (int)arg->data.list.items[2]->data.num;
             /* The Euler-like update that feeds step can never produce
              * exactly zero — it trades the zero singularity for infinity.
@@ -3906,6 +3917,11 @@ Value* builtin_range(Value *arg) {
             if (step == 0) step = 1; /* cppcheck-suppress zerodivcond */
         }
     } else {
+        /* #497: a non-num, non-list argument (e.g. a string) is a type
+         * error, not a silent empty range. */
+        rt_error(EK_TYPE, 0,
+            "range requires a number or a list of numbers, got %s",
+            val_type_name(arg->type));
         return make_list(0);
     }
 
@@ -3918,7 +3934,14 @@ Value* builtin_range(Value *arg) {
         count = (start - end - step - 1) / (-step); // cppcheck-suppress zerodivcond
     }
     if (count < 0) count = 0;
-    if (count > 1000000) count = 1000000;
+    /* #498: the 1M cap used to size only the prealloc — the loop below still
+     * ran to the original `end`, growing the list past the cap (unbounded
+     * memory, OOM). Raise loudly instead of silently building a giant list. */
+    if (count > 1000000) {
+        rt_error(EK_LIMIT, 0,
+            "range: too many elements (%d, max 1000000)", count);
+        return make_list(0);
+    }
     /* #292: range builds `count` fresh number Values — charge the sandbox budget
      * so a range-in-a-loop can't aggregate past it. */
     if (!sandbox_charge((size_t)count * (sizeof(Value) + sizeof(Value *)))) return make_list(0);
@@ -3963,75 +3986,119 @@ Value* builtin_fill(Value *arg) {
 /* ==== BUILTIN: set_at — mutate a list element in place ==== */
 /* set_at of [list, index, value] — sets list[index] = value, returns list */
 /* set_at of [list, row, col, value] — sets list[row][col] = value for 2D */
+/* #499: out-of-range / non-list / non-integer index used to be a silent
+ * no-op (set_at) or a fold-to-0 (get_at) — inconsistent with the `xs[i]`
+ * operator, which raises index_range. These helpers raise the same kinds. */
+static int at_index(Value *idx_val, int count, const char *what,
+                    int *out) {
+    if (!idx_val || idx_val->type != VAL_NUM) {
+        rt_error(EK_VALUE, 0, "%s index must be an integer", what);
+        return 0;
+    }
+    int idx = (int)idx_val->data.num;
+    if (idx < 0) idx += count;          /* #312: negative counts from end */
+    if (idx < 0 || idx >= count) {
+        rt_error(EK_INDEX, 0, "index %d out of range (list length %d)",
+                 (int)idx_val->data.num, count);
+        return 0;
+    }
+    *out = idx;
+    return 1;
+}
+
 Value* builtin_set_at(Value *arg) {
-    if (!arg || arg->type != VAL_LIST) return make_null();
+    if (!arg || arg->type != VAL_LIST) {
+        rt_error(EK_TYPE, 0, "set_at requires [list, index, value] or "
+                 "[list, row, col, value]");
+        return make_null();
+    }
     int argc = arg->data.list.count;
     if (argc == 3) {
         /* 1D: set_at of [list, index, value] */
         Value *list = arg->data.list.items[0];
-        int idx = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
         Value *val = arg->data.list.items[2];
-        /* #312: negative indices count from the end, matching []. */
-        if (list->type == VAL_LIST && idx < 0) idx += list->data.list.count;
-        if (list->type == VAL_LIST && idx >= 0 && idx < list->data.list.count) {
-            val_incref(val);
-            val_decref(list->data.list.items[idx]);
-            list->data.list.items[idx] = val;
+        if (!list || list->type != VAL_LIST) {
+            rt_error(EK_TYPE, 0, "set_at: first argument must be a list");
+            return make_null();
         }
+        int idx;
+        if (!at_index(arg->data.list.items[1], list->data.list.count, "set_at", &idx))
+            return make_null();
+        val_incref(val);
+        val_decref(list->data.list.items[idx]);
+        list->data.list.items[idx] = val;
         return list;
     }
     if (argc == 4) {
         /* 2D: set_at of [list, row, col, value] */
         Value *list = arg->data.list.items[0];
-        int row = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
-        int col = (arg->data.list.items[2]->type == VAL_NUM) ? (int)arg->data.list.items[2]->data.num : 0;
         Value *val = arg->data.list.items[3];
-        if (list->type == VAL_LIST && row < 0) row += list->data.list.count;
-        if (list->type == VAL_LIST && row >= 0 && row < list->data.list.count) {
-            Value *rowv = list->data.list.items[row];
-            if (rowv->type == VAL_LIST && col < 0) col += rowv->data.list.count;
-            if (rowv->type == VAL_LIST && col >= 0 && col < rowv->data.list.count) {
-                val_incref(val);
-                val_decref(rowv->data.list.items[col]);
-                rowv->data.list.items[col] = val;
-            }
+        if (!list || list->type != VAL_LIST) {
+            rt_error(EK_TYPE, 0, "set_at: first argument must be a list");
+            return make_null();
         }
+        int row;
+        if (!at_index(arg->data.list.items[1], list->data.list.count, "set_at row", &row))
+            return make_null();
+        Value *rowv = list->data.list.items[row];
+        if (!rowv || rowv->type != VAL_LIST) {
+            rt_error(EK_TYPE, 0, "set_at: row %d is not a list", row);
+            return make_null();
+        }
+        int col;
+        if (!at_index(arg->data.list.items[2], rowv->data.list.count, "set_at col", &col))
+            return make_null();
+        val_incref(val);
+        val_decref(rowv->data.list.items[col]);
+        rowv->data.list.items[col] = val;
         return list;
     }
+    rt_error(EK_TYPE, 0, "set_at takes [list, index, value] or "
+             "[list, row, col, value]");
     return make_null();
 }
 
 /* ==== BUILTIN: get_at — read a list element ==== */
 /* get_at of [list, index] or get_at of [list, row, col] */
 Value* builtin_get_at(Value *arg) {
-    if (!arg || arg->type != VAL_LIST) return make_null();
+    if (!arg || arg->type != VAL_LIST) {
+        rt_error(EK_TYPE, 0, "get_at requires [list, index] or [list, row, col]");
+        return make_null();
+    }
     int argc = arg->data.list.count;
     if (argc == 2) {
         Value *list = arg->data.list.items[0];
-        int idx = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
-        /* #312: negative indices count from the end, matching []. */
-        if (list->type == VAL_LIST && idx < 0) idx += list->data.list.count;
-        if (list->type == VAL_LIST && idx >= 0 && idx < list->data.list.count) {
-            val_incref(list->data.list.items[idx]);
-            return list->data.list.items[idx];
+        if (!list || list->type != VAL_LIST) {
+            rt_error(EK_TYPE, 0, "get_at: first argument must be a list");
+            return make_null();
         }
-        return make_num(0.0);
+        int idx;
+        if (!at_index(arg->data.list.items[1], list->data.list.count, "get_at", &idx))
+            return make_null();
+        val_incref(list->data.list.items[idx]);
+        return list->data.list.items[idx];
     }
     if (argc == 3) {
         Value *list = arg->data.list.items[0];
-        int row = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
-        int col = (arg->data.list.items[2]->type == VAL_NUM) ? (int)arg->data.list.items[2]->data.num : 0;
-        if (list->type == VAL_LIST && row < 0) row += list->data.list.count;
-        if (list->type == VAL_LIST && row >= 0 && row < list->data.list.count) {
-            Value *rowv = list->data.list.items[row];
-            if (rowv->type == VAL_LIST && col < 0) col += rowv->data.list.count;
-            if (rowv->type == VAL_LIST && col >= 0 && col < rowv->data.list.count) {
-                val_incref(rowv->data.list.items[col]);
-                return rowv->data.list.items[col];
-            }
+        if (!list || list->type != VAL_LIST) {
+            rt_error(EK_TYPE, 0, "get_at: first argument must be a list");
+            return make_null();
         }
-        return make_num(0.0);
+        int row;
+        if (!at_index(arg->data.list.items[1], list->data.list.count, "get_at row", &row))
+            return make_null();
+        Value *rowv = list->data.list.items[row];
+        if (!rowv || rowv->type != VAL_LIST) {
+            rt_error(EK_TYPE, 0, "get_at: row %d is not a list", row);
+            return make_null();
+        }
+        int col;
+        if (!at_index(arg->data.list.items[2], rowv->data.list.count, "get_at col", &col))
+            return make_null();
+        val_incref(rowv->data.list.items[col]);
+        return rowv->data.list.items[col];
     }
+    rt_error(EK_TYPE, 0, "get_at takes [list, index] or [list, row, col]");
     return make_null();
 }
 
@@ -5113,22 +5180,44 @@ Value* builtin_reshape(Value *arg) {
 
 /* buf_get of [buf, index] — O(1) indexed read */
 Value* builtin_buf_get(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    /* #502: out-of-range used to fold to 0 — indistinguishable from a real
+     * stored 0. Raise index_range, matching the buffer `[i]` operator. */
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "buf_get requires [buffer, index]");
+        return make_num(0);
+    }
     Value *buf = arg->data.list.items[0];
+    if (!buf || buf->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_get: first argument must be a buffer");
+        return make_num(0);
+    }
     int idx = (int)arg->data.list.items[1]->data.num;
-    if (!buf || buf->type != VAL_BUFFER) return make_num(0);
-    if (idx < 0 || idx >= buf->data.buffer.count) return make_num(0);
+    if (idx < 0 || idx >= buf->data.buffer.count) {
+        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
+                 idx, buf->data.buffer.count);
+        return make_num(0);
+    }
     return make_num(buf->data.buffer.data[idx]);
 }
 
 /* buf_set of [buf, index, value] — O(1) indexed write */
 Value* builtin_buf_set(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {  /* #502 */
+        rt_error(EK_TYPE, 0, "buf_set requires [buffer, index, value]");
+        return make_null();
+    }
     Value *buf = arg->data.list.items[0];
+    if (!buf || buf->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_set: first argument must be a buffer");
+        return make_null();
+    }
     int idx = (int)arg->data.list.items[1]->data.num;
     double val = arg->data.list.items[2]->data.num;
-    if (!buf || buf->type != VAL_BUFFER) return make_null();
-    if (idx < 0 || idx >= buf->data.buffer.count) return make_null();
+    if (idx < 0 || idx >= buf->data.buffer.count) {
+        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
+                 idx, buf->data.buffer.count);
+        return make_null();
+    }
     buf->data.buffer.data[idx] = val;
     return make_null();
 }
@@ -5374,9 +5463,20 @@ Value* builtin_sort_by(Value *arg) {
     if (!pairs) return make_null();
     for (int i = 0; i < n; i++) {
         Value *kv = call_eigs_fn(key_fn, list->data.list.items[i]);
-        pairs[i].key = (kv && kv->type == VAL_NUM) ? kv->data.num : 0.0;
+        /* #501: a non-numeric key used to coerce to 0.0 — a silent wrong
+         * order. Raise instead (mirrors `sort` #368). */
+        if (!kv || kv->type != VAL_NUM) {
+            const char *kt = kv ? val_type_name(kv->type) : "null";
+            if (kv) val_decref(kv);
+            free(pairs);
+            rt_error(EK_TYPE, 0,
+                "sort_by: key function must return a number (element %d "
+                "gave %s)", i, kt);
+            return make_null();
+        }
+        pairs[i].key = kv->data.num;
         pairs[i].index = i;
-        if (kv) val_decref(kv);
+        val_decref(kv);
     }
     qsort(pairs, n, sizeof(SortByPair), sort_by_pair_cmp);
     Value *result = make_list(n);

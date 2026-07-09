@@ -1020,6 +1020,17 @@ else
 fi
 rm -f "$CPG_FILE"
 
+# [116] Silent-tolerance audit batch-2 (#497/#498/#499/#501/#502/#511/#512).
+# Builtins that used to return a silent null/0/""/wrong-order on invalid
+# input now raise a catchable error from the closed error-kind set: matmul
+# (shape/type), sha256/md5/hmac (non-string), range (non-numeric + past the
+# 1M cap), sort_by (non-numeric key), get_at/set_at + buf_get/buf_set (OOB
+# → index_range, matching the [] operator). Each case asserts it raises (and
+# the kind where it matters) plus a happy-path sanity check.
+echo "[116] Silent-Tolerance Batch-2: bad input raises (7 issues)"
+check_eigs_suite "invalid input raises instead of silent null/0/empty" \
+    test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 21
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

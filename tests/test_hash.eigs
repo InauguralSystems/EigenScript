@@ -19,9 +19,31 @@ rm of "/tmp/test_hash.txt"
 # HMAC-SHA256
 assert_eq of [hmac_sha256 of ["key", "hello"], "9307b3b915efb5171ff14d8cb55fbcc798c6c0ef1456d66ded1a6aa723a58b7b", "hmac-sha256"]
 
-# Edge cases
-assert_eq of [sha256 of null, "", "sha256 null returns empty"]
-assert_eq of [md5 of null, "", "md5 null returns empty"]
-assert_eq of [sha256_file of "/nonexistent", "", "sha256_file missing returns empty"]
+# Edge cases — #511: non-string input and a missing file now RAISE (were the
+# empty-string sentinel, i.e. a silent wrong/absent digest).
+sha_null is 0
+sha_null_k is ""
+try:
+    ig is sha256 of null
+catch e:
+    sha_null is 1
+    sha_null_k is e.kind
+assert_true of [sha_null == 1 and sha_null_k == "type_mismatch", "sha256 of null raises type_mismatch"]
+
+md5_null is 0
+try:
+    ig is md5 of null
+catch e:
+    md5_null is 1
+assert_true of [md5_null == 1, "md5 of null raises"]
+
+sfile_miss is 0
+sfile_miss_k is ""
+try:
+    ig is sha256_file of "/nonexistent"
+catch e:
+    sfile_miss is 1
+    sfile_miss_k is e.kind
+assert_true of [sfile_miss == 1 and sfile_miss_k == "io", "sha256_file missing raises io"]
 
 test_summary of null
