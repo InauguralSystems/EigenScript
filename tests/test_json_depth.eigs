@@ -10,9 +10,16 @@ loop while i < 5000:
     deep is "[" + deep
     i is i + 1
 
-# This must return (truncated/null) rather than crash. Reaching the next
-# line at all is the assertion.
-result is json_decode of deep
+# This must not crash (SIGSEGV). #495 made the parser strict, so over-deep
+# nesting now RAISES (catchable) instead of returning a truncated value —
+# either way the security property holds: the process survives. Reaching the
+# line after the catch at all is the assertion.
+deep_raised is 0
+try:
+    result is json_decode of deep
+catch e:
+    deep_raised is 1
+assert of [deep_raised == 1, "over-deep JSON raises rather than crashing"]
 print of "survived deeply nested json"
 
 # Normal nested JSON within the limit still parses correctly.

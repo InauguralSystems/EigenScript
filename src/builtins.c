@@ -827,13 +827,23 @@ char* eigs_json_encode(Value *v) {
 
 Value* eigs_json_parse_value(const char *s, int *pos);
 
+/* #495: strict-parse error flag. The recursive-descent parser has no error
+ * channel (it returns a Value* and, historically, a partial container on
+ * malformed input). This thread-local flag is SET by the parse functions on
+ * any malformed condition (unexpected token, truncation, unterminated
+ * string, over-deep nesting) and CHECKED only by builtin_json_decode, which
+ * resets it on entry and raises. Other callers (json_path, ext_http) ignore
+ * it and keep the historical lenient behavior. Thread-local like g_json_depth
+ * because JSON parsing is per-thread and non-reentrant across threads. */
+static __thread int g_json_parse_err = 0;
+
 static void eigs_json_skip_ws(const char *s, int *pos) {
     while (s[*pos] && (s[*pos] == ' ' || s[*pos] == '\t' || s[*pos] == '\n' || s[*pos] == '\r'))
         (*pos)++;
 }
 
 static Value* eigs_json_parse_string(const char *s, int *pos) {
-    if (s[*pos] != '"') return NULL;
+    if (s[*pos] != '"') { g_json_parse_err = 1; return NULL; }   /* #495 */
     (*pos)++;
     strbuf buf;
     strbuf_init(&buf);
@@ -875,6 +885,7 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
         (*pos)++;
     }
     if (s[*pos] == '"') (*pos)++;
+    else g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
     Value *v = make_str(buf.data);
     strbuf_free(&buf);
     return v;
@@ -906,11 +917,14 @@ static Value* eigs_json_parse_array(const char *s, int *pos) {
         eigs_json_skip_ws(s, pos);
         Value *val = eigs_json_parse_value(s, pos);
         if (val) list_append_owned(list, val);
+        if (g_json_parse_err) return list;         /* #495: propagate */
         eigs_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
-        if (s[*pos] == ']') { (*pos)++; break; }
-        break;
+        if (s[*pos] == ']') { (*pos)++; return list; }
+        g_json_parse_err = 1;    /* #495: expected ',' or ']' */
+        return list;
     }
+    g_json_parse_err = 1;        /* #495: hit EOF before ']' (truncated) */
     return list;
 }
 
@@ -922,37 +936,49 @@ static Value* eigs_json_parse_object(const char *s, int *pos) {
     while (s[*pos]) {
         eigs_json_skip_ws(s, pos);
         Value *key = eigs_json_parse_string(s, pos);
-        if (!key) break;
+        if (!key || g_json_parse_err) {           /* #495: bad/absent key */
+            if (key) val_decref(key);
+            g_json_parse_err = 1;
+            return dict;
+        }
         eigs_json_skip_ws(s, pos);
-        if (s[*pos] == ':') (*pos)++;
+        if (s[*pos] != ':') {                      /* #495: missing colon */
+            val_decref(key);
+            g_json_parse_err = 1;
+            return dict;
+        }
+        (*pos)++;
         eigs_json_skip_ws(s, pos);
         Value *val = eigs_json_parse_value(s, pos);
         dict_set_owned(dict, key->data.str, val ? val : make_null());
         val_decref(key);   /* dict interns its own copy of the key */
+        if (g_json_parse_err) return dict;         /* #495: propagate */
         eigs_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
-        if (s[*pos] == '}') { (*pos)++; break; }
-        break;
+        if (s[*pos] == '}') { (*pos)++; return dict; }
+        g_json_parse_err = 1;    /* #495: expected ',' or '}' */
+        return dict;
     }
+    g_json_parse_err = 1;        /* #495: hit EOF before '}' (truncated) */
     return dict;
 }
 
 Value* eigs_json_parse_value(const char *s, int *pos) {
     eigs_json_skip_ws(s, pos);
-    if (!s[*pos]) return make_null();
+    if (!s[*pos]) { g_json_parse_err = 1; return make_null(); }  /* #495: value expected, hit EOF */
     if (s[*pos] == '"') return eigs_json_parse_string(s, pos);
     /* Refuse to descend past the nesting limit (stack-exhaustion guard).
      * The enclosing array/object loop breaks on the unconsumed bracket, so
      * parsing terminates cleanly instead of crashing. */
     if (s[*pos] == '[') {
-        if (g_json_depth >= JSON_MAX_DEPTH) return make_null();
+        if (g_json_depth >= JSON_MAX_DEPTH) { g_json_parse_err = 1; return make_null(); }
         g_json_depth++;
         Value *v = eigs_json_parse_array(s, pos);
         g_json_depth--;
         return v;
     }
     if (s[*pos] == '{') {
-        if (g_json_depth >= JSON_MAX_DEPTH) return make_null();
+        if (g_json_depth >= JSON_MAX_DEPTH) { g_json_parse_err = 1; return make_null(); }
         g_json_depth++;
         Value *v = eigs_json_parse_object(s, pos);
         g_json_depth--;
@@ -962,6 +988,7 @@ Value* eigs_json_parse_value(const char *s, int *pos) {
     if (strncmp(s + *pos, "null", 4) == 0) { *pos += 4; return make_null(); }
     if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_num(1); }
     if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_num(0); }
+    g_json_parse_err = 1;   /* #495: unrecognized token */
     return make_null();
 }
 
@@ -971,8 +998,22 @@ Value* builtin_json_decode(Value *arg) {
                 arg ? val_type_name(arg->type) : "null");
         return make_null();
     }
+    /* #495: strict decode. Reset the parse-error flag, parse one value, then
+     * require that only whitespace remains. A partial container, a truncated
+     * document, an unterminated string, over-deep nesting, or trailing
+     * garbage after a complete value now raises instead of silently
+     * succeeding (which also made a genuine JSON `null` indistinguishable
+     * from a parse failure). */
+    g_json_parse_err = 0;
     int pos = 0;
-    return eigs_json_parse_value(arg->data.str, &pos);
+    Value *v = eigs_json_parse_value(arg->data.str, &pos);
+    eigs_json_skip_ws(arg->data.str, &pos);
+    if (g_json_parse_err || arg->data.str[pos] != '\0') {
+        if (v) val_decref(v);
+        rt_error(EK_VALUE, 0, "json_decode: invalid JSON at position %d", pos);
+        return make_null();
+    }
+    return v;
 }
 
 Value* builtin_coalesce(Value *arg) {
