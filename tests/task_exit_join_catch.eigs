@@ -1,0 +1,9 @@
+# #493: joining the dead worker and CATCHING its error recovers cleanly (rc 0).
+define die() as:
+    missing
+id is task_spawn of die
+try:
+    task_join of id
+catch e:
+    print of e.kind
+print of "MARK_END"

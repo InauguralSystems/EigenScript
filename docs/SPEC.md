@@ -1171,6 +1171,14 @@ When the main program returns, any tasks still running are torn down
 example two tasks each `task_join`-ing the other — that is a `deadlock`
 error, reported loudly rather than hanging.
 
+A task that **dies of an uncaught error** prints its stack trace, and if
+nothing ever `task_join`s it the **process still exits non-zero** — a
+fire-and-forget worker's failure is never silently swallowed into a
+success exit. `task_join`-ing the dead task and `catch`-ing its error
+recovers normally (exit 0), exactly as for an inline `try`/`catch`. A
+task ended deliberately with `task_kill` is a teardown, not an uncaught
+error, and does not by itself fail the process.
+
 Tasks communicate through **mailboxes**. `task_send of [id, value]`
 appends a deep-copied message to task `id`'s FIFO mailbox (share-
 nothing, like channel sends); `task_recv of null` returns the next

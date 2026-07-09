@@ -1,0 +1,9 @@
+# #493: task_kill is a deliberate teardown, NOT an uncaught error — an unjoined
+# killed worker must NOT fail the process (rc 0).
+define waitmsg() as:
+    m is task_recv of null
+    return 0
+id is task_spawn of waitmsg
+task_yield of null
+task_kill of id
+print of "MARK_END"

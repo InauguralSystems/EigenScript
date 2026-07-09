@@ -83,6 +83,7 @@ result dict gains `"error": {kind, message, line}` when `ok` is 0.
 | File not found | 1 |
 | Syntax / parse errors | 1 |
 | Uncaught runtime error or `throw` | 1 |
+| Unjoined task dies of an uncaught error (fire-and-forget) | 1 |
 | Assertion failure | 1 |
 | Errors caught by `try`/`catch` | 0 |
 | Warnings only | 0 |

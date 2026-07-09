@@ -18,6 +18,35 @@ All notable changes to EigenScript are documented here.
   region issued no scheduler yield (needs VM support).
 
 ### Changed
+- **Cooperative task layer — exit-code and arena-guard fixes (#493, #510).**
+  Two silent-tolerance holes in the #408 task layer:
+  - **#493:** a worker that dies of an uncaught error while nothing
+    `task_join`s it now makes the **process exit non-zero** instead of
+    silently returning 0 — a fire-and-forget worker's death can no longer
+    green a run (`task_spawn` without a join hid failures). Joining and
+    catching still recovers (exit 0); a deliberate `task_kill` is a teardown,
+    not an uncaught error, and does not fail the process. Documented in
+    docs/SPEC.md (task layer) and the docs/DIAGNOSTICS.md exit-code table.
+  - **#510:** the arena guard on the suspending task builtins
+    (`task_yield` / `task_recv` / `task_sleep`) is now checked **before** the
+    no-scheduler short-circuit, so `arena_mark … task_yield … arena_reset`
+    raises `value` even before any `task_spawn` — the "no-op with no tasks"
+    rule no longer hides the documented "forbidden inside an arena" rule.
+
+- **#483 — leak of the suspended main slice on a fatal exit.** When the process
+  ends while task 0 (main) is still **suspended** — a `deadlock`, or main
+  blocked on a join/recv that never resolves — `task_sched_thread_free` freed
+  main's saved-slice arrays on the "main always ran to completion, slice is
+  empty" assumption, which is false here. Main's base module frame owns a
+  counted chunk ref (the script chunk) and its operand stack owns value refs;
+  those leaked (the script chunk plus every nested fn chunk in its constant
+  pool — ~10 KB on the deadlock repro). Now the slice is torn down ref-correctly
+  (mirroring `task_free`'s worker-slice teardown) before the arrays are freed.
+  Worker tasks were already clean (reaped by `handle_table_drain` → `task_free`);
+  only main's slice was missed. Gated by a leak-checked deadlock regression test
+  — which is also what surfaced this: the original repro read clean under a
+  one-shot LSan run (a stale stack slot kept the block reachable — a false
+  negative), and only the in-suite test made it reproduce reliably.
 - **Silent-tolerance audit, batch 2 — invalid input raises instead of
   returning a silent wrong value** (#497, #498, #499, #501, #502, #511,
   #512). Builtins that used to fold bad input to a `null`/`0`/`""`/

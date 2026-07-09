@@ -6,6 +6,27 @@
 
 load_file of "lib/test.eigs"
 
+# --- #510: the arena guard on suspending builtins is independent of whether a
+#     scheduler exists yet. This block runs BEFORE the first task_spawn, so
+#     g_task_sched is still NULL — the "no-op with no tasks" rule must NOT hide
+#     the "raise inside an arena" rule. (Keep this first; a spawn arms the
+#     scheduler permanently.) ---
+define expect_arena_raise(thunk, label) as:
+    arena_mark of null
+    raised is 0
+    try:
+        thunk of null
+    catch e:
+        raised is 1
+        assert_eq of [e.kind, "value", label]
+    arena_reset of null
+    assert_eq of [raised, 1, label]
+expect_arena_raise of [task_yield, "task_yield raises in arena with no scheduler (#510)"]
+expect_arena_raise of [task_recv, "task_recv raises in arena with no scheduler (#510)"]
+define sleep1(x) as:
+    return task_sleep of 1
+expect_arena_raise of [sleep1, "task_sleep raises in arena with no scheduler (#510)"]
+
 # --- spawn returns a numeric id; a fresh task is alive ---
 define worker() as:
     return 42
@@ -138,6 +159,16 @@ define after_arena() as:
     return len of s
 aa is task_spawn of after_arena
 assert_eq of [task_join of aa, 17, "task after an arena-dier gets a clean arena"]
+# Observe the arena-dier's (now DEAD) death so THIS all-pass file exits rc 0.
+# An UNJOINED uncaught task death fails the process by design (#493) — that
+# exit-code contract is asserted by a dedicated suite harness, not here.
+threw_ad is 0
+try:
+    task_join of ad
+catch e:
+    threw_ad is 1
+    assert_eq of [e.kind, "value", "arena-dier died of the arena value-error"]
+assert_eq of [threw_ad, 1, "an arena-dier's death is observable via task_join"]
 
 # ============ increment 2: mailboxes ============
 
