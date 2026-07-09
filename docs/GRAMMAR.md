@@ -319,12 +319,14 @@ From lowest to highest precedence:
 - **Function definition** (`define`) always creates a local binding.
 - **Function call** (`fn of arg`) passes a single value. Multiple arguments
   are passed as a **literal** list: `fn of [a, b, c]`.
-- **Argument spreading** (SPEC.md is normative): only a *literal* list
-  argument with 2+ elements spreads into named parameters. A 1-element
-  literal list does **not** spread (`f of [x]` binds the whole list), and
-  a list passed via a variable never spreads (it binds whole to the first
-  parameter; remaining parameters bind to `null`). For one-argument calls
-  to multi-parameter functions write `f of (x)`.
+- **Argument lists** (#405; SPEC.md is normative): a *literal* bracket
+  after `of` is the call's argument list at every count — `f of []` is
+  zero args, `f of [x]` is one arg (the *element* `x`, not the list), and
+  `f of [a, b]` is two. A list passed via a variable never acts as an
+  argument list (`f of xs` binds the whole list to the first parameter;
+  remaining parameters take defaults or `null`). To pass a literal list
+  whole, or make any one-argument call, parenthesise: `f of ([x])` /
+  `f of (x)`.
 - **Implicit parameter**: `define fn as:` (no parameter list) uses the
   implicit parameter `n`. A zero-parameter lambda `() => expr` mirrors
   this classic style: it also receives the implicit `n`.
