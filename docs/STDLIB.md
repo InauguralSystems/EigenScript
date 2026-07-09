@@ -742,6 +742,16 @@ Statistical functions: `mean`, `median`, `std_dev`, `variance`, `quantile`,
 High-level concurrency: `future`, `await_all`, `parallel_map`,
 `parallel_each`, `worker_pool`.
 
+### lib/sync.eigs
+Cooperative-task synchronization for the #408 task layer. A lock gives
+mutual exclusion **across** `task_yield` points — while one task holds it,
+another that tries to acquire cooperatively yields until it is released
+(correct because there is no preemption between the acquire check passing
+and the claim). `lock_new`, `lock_acquire`, `lock_release`, and
+`with_lock of [lock, fn]` (runs `fn of null` under the lock, releasing even
+if the body raises). Acquire only from within tasks — it spins with
+`task_yield`, so it needs the scheduler active.
+
 ### lib/store.eigs
 EigenStore high-level layer: `find`, `find_one`, `upsert`, `bulk_put`,
 `to_dataframe`.
