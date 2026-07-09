@@ -1035,9 +1035,12 @@ rm -f "$CPG_FILE"
 # Batch-2c adds #495: json_decode rejects truncated / partial / trailing-
 # garbage JSON (was a silent partial value; also made a genuine `null`
 # indistinguishable from a parse failure).
-echo "[116] Silent-Tolerance Batch-2: bad input raises (14 issues)"
+# Batch-2d adds #505 (send to a closed channel raises value, was a silent
+# drop), #490 (load_file of a missing path raises io, was stderr + null), and
+# #494 (eval of a truncated expression raises a catchable parse error).
+echo "[116] Silent-Tolerance Batch-2: bad input raises (17 issues)"
 check_eigs_suite "invalid input raises instead of silent null/0/empty" \
-    test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 43
+    test_raise_on_bad_input.eigs "ALL_RAISE_TESTS_DONE" 48
 
 # [117] for-in snapshots the iteration length at loop entry (#491). Mutating
 # the sequence in the body is well-defined: appending no longer loops forever
@@ -2626,7 +2629,7 @@ echo ""
 
 # [90] Error examples — examples/errors/*.eigs must exit nonzero and
 # print their declared '# expect-error:' message.
-echo "[90] Error Examples (10 checks)"
+echo "[90] Error Examples (14 checks)"
 ERR_OUTPUT=$(bash "$TESTS_DIR/test_error_examples.sh" 2>&1)
 ERR_PASS=$(echo "$ERR_OUTPUT" | grep -c "  PASS:" || true)
 ERR_FAIL=$(echo "$ERR_OUTPUT" | grep -c "  FAIL:" || true)
