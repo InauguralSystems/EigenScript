@@ -1169,7 +1169,12 @@ ab
 When the main program returns, any tasks still running are torn down
 (the program ends). If every task is blocked with none runnable — for
 example two tasks each `task_join`-ing the other — that is a `deadlock`
-error, reported loudly rather than hanging.
+error, reported loudly rather than hanging. The `deadlock` is delivered
+as an ordinary **catchable** error at the main task's blocked join/recv
+site: a `try`/`catch` there binds `e.kind == "deadlock"` and execution
+continues after the block. Only if the main task has no handler is the
+deadlock terminal (loud message, non-zero exit) — a handler inside a
+*worker* does not catch it, since the deadlock is delivered to main.
 
 A task that **dies of an uncaught error** prints its stack trace, and if
 nothing ever `task_join`s it the **process still exits non-zero** — a

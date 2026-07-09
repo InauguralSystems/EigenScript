@@ -18,6 +18,20 @@ All notable changes to EigenScript are documented here.
   region issued no scheduler yield (needs VM support).
 
 ### Changed
+- **`deadlock` is now catchable (#509).** A cooperative-task deadlock (all
+  tasks blocked, none runnable) was raised inside the scheduler trampoline and
+  surfaced as a fatal process error — a `try`/`catch` around `task_join` never
+  ran. It is now delivered as an ordinary catchable error at the **main task's**
+  blocked join/recv site: the handler binds `e.kind == "deadlock"` (message
+  `all tasks are blocked — deadlock`) and execution continues after the block,
+  matching how a killed task's `interrupt` is catchable. A deadlock with no
+  handler on main stays terminal — loud message, non-zero exit — so uncaught
+  behavior is unchanged; a handler inside a *worker* does not catch it (the
+  error goes to main). Implementation note: the fatal print no longer routes
+  through `rt_error`'s `g_try_depth` gate, since a suspended worker's still-open
+  try can leave that global non-zero between task switches (it is not part of a
+  task's saved slice) — the trampoline decides catchable-vs-terminal from main's
+  saved frames directly.
 - **Cooperative task layer — exit-code and arena-guard fixes (#493, #510).**
   Two silent-tolerance holes in the #408 task layer:
   - **#493:** a worker that dies of an uncaught error while nothing

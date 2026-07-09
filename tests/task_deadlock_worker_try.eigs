@@ -1,0 +1,16 @@
+# #509: a deadlock is delivered to the MAIN task's blocked join site. A try
+# inside a WORKER (not main) does NOT catch it — so with main unguarded this
+# stays fatal (loud + rc 1), even though a worker wraps its own join in try.
+gb is 0
+define da as:
+    try:
+        return task_join of gb
+    catch e:
+        return "unreachable"
+define db as:
+    return task_join of ga
+ga is 0
+ga is task_spawn of da
+gb is task_spawn of db
+task_join of ga
+print of "MARK_UNREACHED"

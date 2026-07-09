@@ -360,4 +360,28 @@ catch e:
     assert_eq of [e.kind, "type_mismatch", "task_sched_seed rejects a non-number seed"]
 assert_eq of [seed_threw, 1, "task_sched_seed of a non-number raises"]
 
+# --- #509: a deadlock (mutual join, nothing runnable) is a CATCHABLE runtime
+#     error delivered at main's blocked join site — not a fatal-only hang. The
+#     handler binds e.kind == "deadlock" and code after the try runs. (An
+#     UNCAUGHT deadlock stays loud + non-zero — asserted by the task_deadlock
+#     suite gate.) Placed last: the two mutually-blocked workers stay suspended
+#     (never runnable, reaped at exit), so they can't perturb earlier tests. ---
+dla is 0
+dlb is 0
+define dl_a as:
+    return task_join of dlb
+define dl_b as:
+    return task_join of dla
+dla is task_spawn of dl_a
+dlb is task_spawn of dl_b
+dl_caught is 0
+try:
+    task_join of dla
+    assert of [0, "a deadlocked join must not return normally"]
+catch e:
+    dl_caught is 1
+    assert_eq of [e.kind, "deadlock", "deadlock is catchable at the join site (#509)"]
+    assert_eq of [e.message, "all tasks are blocked — deadlock", "deadlock carries its message"]
+assert_eq of [dl_caught, 1, "the deadlock handler ran and code after the try continues"]
+
 test_summary of null
