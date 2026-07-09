@@ -1198,6 +1198,238 @@ static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
     w017_scan(ast, ctx);
 }
 
+/* ---- W018 (#469): e.kind compared against an out-of-set error kind ---- */
+
+/* The error-kind vocabulary is CLOSED (err_kind_name / the EK_* enum). A catch
+ * handler comparing a caught error's `.kind` against a string that is a
+ * near-miss of a real kind — a case variant, a single-character typo, or a
+ * kind renamed out from under the handler — is dead code that silently never
+ * fires (the silent-tolerance class the lint train fences).
+ *
+ * Zero-false-positive contract, three gates: (1) the `.kind` must be read off a
+ * **catch-bound** variable, so `.kind` on an unrelated user dict never fires;
+ * (2) an exactly-valid kind is silent; (3) we warn ONLY on a near-miss (case
+ * variant or edit distance 1) — a genuinely custom `throw {kind: "..."}` kind,
+ * many edits from every builtin, stays silent. The closed set is derived from
+ * err_kind_name at run time (no hand list to drift when a kind is added). */
+
+#define W018_MAX_CATCH_VARS 64
+typedef struct { const char *names[W018_MAX_CATCH_VARS]; int count; } W018Scope;
+
+static int w018_valid_kind(const char *s) {
+    for (int k = EK_INTERNAL; k <= EK_USER; k++)
+        if (strcmp(s, err_kind_name((ErrKind)k)) == 0) return 1;
+    return 0;
+}
+
+/* Levenshtein bounded by cap; returns min(distance, cap+1). Kind names and
+ * literals are short, so the O(la*lb) DP over two rows is trivial. */
+static int w018_edit_distance(const char *a, const char *b, int cap) {
+    int la = (int)strlen(a), lb = (int)strlen(b);
+    int diff = la - lb; if (diff < 0) diff = -diff;
+    if (diff > cap) return cap + 1;
+    if (lb >= 64) return cap + 1;
+    int prev[64], cur[64];
+    for (int j = 0; j <= lb; j++) prev[j] = j;
+    for (int i = 1; i <= la; i++) {
+        cur[0] = i;
+        int rowmin = cur[0];
+        for (int j = 1; j <= lb; j++) {
+            int cost = (a[i-1] == b[j-1]) ? 0 : 1;
+            int del = prev[j] + 1, ins = cur[j-1] + 1, sub = prev[j-1] + cost;
+            int m = del < ins ? del : ins; if (sub < m) m = sub;
+            cur[j] = m; if (m < rowmin) rowmin = m;
+        }
+        if (rowmin > cap) return cap + 1;   /* whole row already exceeds cap */
+        for (int j = 0; j <= lb; j++) prev[j] = cur[j];
+    }
+    return prev[lb];
+}
+
+/* If `s` (assumed NOT an exact valid kind) is a case variant or an
+ * edit-distance-1 typo of a closed kind, return that canonical kind; else
+ * NULL. Case fold is ASCII-only — every kind name is lowercase ASCII. */
+static const char *w018_near_miss(const char *s) {
+    char low[128];
+    size_t n = strlen(s);
+    if (n && n < sizeof(low)) {
+        int folded = 0;
+        for (size_t i = 0; i < n; i++) {
+            char c = s[i];
+            if (c >= 'A' && c <= 'Z') { c = (char)(c - 'A' + 'a'); folded = 1; }
+            low[i] = c;
+        }
+        low[n] = '\0';
+        if (folded && w018_valid_kind(low)) {
+            for (int k = EK_INTERNAL; k <= EK_USER; k++)
+                if (strcmp(low, err_kind_name((ErrKind)k)) == 0)
+                    return err_kind_name((ErrKind)k);
+        }
+    }
+    for (int k = EK_INTERNAL; k <= EK_USER; k++) {
+        const char *m = err_kind_name((ErrKind)k);
+        if (w018_edit_distance(s, m, 1) <= 1) return m;
+    }
+    return NULL;
+}
+
+static int w018_scope_has(W018Scope *sc, const char *name) {
+    for (int i = 0; i < sc->count; i++)
+        if (strcmp(sc->names[i], name) == 0) return 1;
+    return 0;
+}
+
+static void w018_check_binop(ASTNode *n, LintContext *ctx, W018Scope *sc) {
+    const char *op = n->data.binop.op;
+    if (strcmp(op, "=") != 0 && strcmp(op, "!=") != 0) return;   /* == or != */
+    ASTNode *l = n->data.binop.left, *r = n->data.binop.right;
+    ASTNode *dot = NULL, *str = NULL;
+    if (l && l->type == AST_DOT && r && r->type == AST_STR) { dot = l; str = r; }
+    else if (r && r->type == AST_DOT && l && l->type == AST_STR) { dot = r; str = l; }
+    if (!dot || !str) return;
+    if (!dot->data.dot.key || strcmp(dot->data.dot.key, "kind") != 0) return;
+    ASTNode *obj = dot->data.dot.target;
+    if (!obj || obj->type != AST_IDENT || !obj->data.ident.name) return;
+    if (!w018_scope_has(sc, obj->data.ident.name)) return;
+    const char *lit = str->data.str;
+    if (!lit || w018_valid_kind(lit)) return;       /* valid kind → silent */
+    const char *sugg = w018_near_miss(lit);
+    if (!sugg) return;                              /* far off → custom kind */
+    lint_warn(ctx, n->line, "W018",
+        "'%s.kind %s \"%s\"' compares against an unknown error kind — did you "
+        "mean \"%s\"? error kinds are a closed set (docs/DIAGNOSTICS.md)",
+        obj->data.ident.name, (op[0] == '=' ? "==" : op), lit, sugg);
+}
+
+static void w018_scan(ASTNode *n, LintContext *ctx, W018Scope *sc) {
+    if (!n) return;
+    switch (n->type) {
+        case AST_BINOP:
+            w018_check_binop(n, ctx, sc);
+            w018_scan(n->data.binop.left, ctx, sc);
+            w018_scan(n->data.binop.right, ctx, sc);
+            break;
+        case AST_TRY: {
+            for (int i = 0; i < n->data.trycatch.try_count; i++)
+                w018_scan(n->data.trycatch.try_body[i], ctx, sc);
+            const char *en = n->data.trycatch.err_name;
+            int pushed = 0;
+            if (en && sc->count < W018_MAX_CATCH_VARS) {
+                sc->names[sc->count++] = en; pushed = 1;
+            }
+            for (int i = 0; i < n->data.trycatch.catch_count; i++)
+                w018_scan(n->data.trycatch.catch_body[i], ctx, sc);
+            if (pushed) sc->count--;
+            break;
+        }
+        case AST_RELATION:
+            w018_scan(n->data.relation.left, ctx, sc);
+            w018_scan(n->data.relation.right, ctx, sc);
+            break;
+        case AST_UNARY:
+            w018_scan(n->data.unary.operand, ctx, sc);
+            break;
+        case AST_ASSIGN:
+            w018_scan(n->data.assign.expr, ctx, sc);
+            break;
+        case AST_IF:
+            w018_scan(n->data.cond.cond, ctx, sc);
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w018_scan(n->data.cond.if_body[i], ctx, sc);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w018_scan(n->data.cond.else_body[i], ctx, sc);
+            break;
+        case AST_LOOP:
+            w018_scan(n->data.loop.cond, ctx, sc);
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w018_scan(n->data.loop.body[i], ctx, sc);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < n->data.func.body_count; i++)
+                w018_scan(n->data.func.body[i], ctx, sc);
+            break;
+        case AST_RETURN:
+            w018_scan(n->data.ret.expr, ctx, sc);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w018_scan(n->data.block.stmts[i], ctx, sc);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            w018_scan(n->data.list_pattern_assign.expr, ctx, sc);
+            break;
+        case AST_SLICE:
+            w018_scan(n->data.slice.target, ctx, sc);
+            w018_scan(n->data.slice.start, ctx, sc);
+            w018_scan(n->data.slice.end, ctx, sc);
+            break;
+        case AST_LIST:
+            for (int i = 0; i < n->data.list.count; i++)
+                w018_scan(n->data.list.elems[i], ctx, sc);
+            break;
+        case AST_INDEX:
+            w018_scan(n->data.index.target, ctx, sc);
+            w018_scan(n->data.index.index, ctx, sc);
+            break;
+        case AST_LISTCOMP:
+            w018_scan(n->data.listcomp.expr, ctx, sc);
+            w018_scan(n->data.listcomp.iter, ctx, sc);
+            if (n->data.listcomp.filter)
+                w018_scan(n->data.listcomp.filter, ctx, sc);
+            break;
+        case AST_FOR:
+            w018_scan(n->data.forloop.iter, ctx, sc);
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                w018_scan(n->data.forloop.body[i], ctx, sc);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w018_scan(n->data.program.stmts[i], ctx, sc);
+            break;
+        case AST_DICT:
+            for (int i = 0; i < n->data.dict.count; i++) {
+                w018_scan(n->data.dict.keys[i], ctx, sc);
+                w018_scan(n->data.dict.vals[i], ctx, sc);
+            }
+            break;
+        case AST_DOT:
+            w018_scan(n->data.dot.target, ctx, sc);
+            break;
+        case AST_DOT_ASSIGN:
+            w018_scan(n->data.dot_assign.target, ctx, sc);
+            w018_scan(n->data.dot_assign.expr, ctx, sc);
+            break;
+        case AST_INDEX_ASSIGN:
+            w018_scan(n->data.index_assign.target, ctx, sc);
+            w018_scan(n->data.index_assign.index, ctx, sc);
+            w018_scan(n->data.index_assign.expr, ctx, sc);
+            break;
+        case AST_MATCH:
+            w018_scan(n->data.match.expr, ctx, sc);
+            for (int i = 0; i < n->data.match.case_count; i++) {
+                w018_scan(n->data.match.patterns[i], ctx, sc);
+                for (int j = 0; j < n->data.match.body_counts[i]; j++)
+                    w018_scan(n->data.match.bodies[i][j], ctx, sc);
+            }
+            break;
+        case AST_LAMBDA:
+            w018_scan(n->data.lambda.body, ctx, sc);
+            break;
+        case AST_INTERROGATE:
+            w018_scan(n->data.interrogate.expr, ctx, sc);
+            if (n->data.interrogate.at_expr)
+                w018_scan(n->data.interrogate.at_expr, ctx, sc);
+            break;
+        default: break;
+    }
+}
+
+static void check_error_kind_typo(ASTNode *ast, LintContext *ctx) {
+    W018Scope sc = {0};
+    w018_scan(ast, ctx, &sc);
+}
+
 /* ---- E003 (#404): undefined name — no binding on any path ---- */
 
 /* Increment one of the scope-aware name-resolution pass: a name that is READ
@@ -1670,6 +1902,7 @@ static void lint_run_checks(ASTNode *ast, const char *path,
     check_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
     check_one_element_arg_list(ast, ctx);
+    check_error_kind_typo(ast, ctx);
 #if !EIGENSCRIPT_FREESTANDING
     check_undefined_names(ast, path, source, ctx);
 #else

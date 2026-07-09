@@ -766,6 +766,68 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "E003 silent on scope-precise legal reads" "$OUTPUT" "E003"
 rm -f "$TMPFILE"
 
+# --- #469 (W018): e.kind compared against an out-of-set error kind ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+try:
+    x is [1][9]
+catch e:
+    if e.kind == "index_rage":
+        print of "oops"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W018 fires on a typo'd error kind (index_rage)" "$OUTPUT" "W018"
+check_contains "W018 suggests the near-miss kind" "$OUTPUT" "index_range"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+try:
+    x is 1
+catch e:
+    if e.kind == "IO":
+        print of "io"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W018 fires on a case-variant kind (IO)" "$OUTPUT" "W018"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+try:
+    x is [1][9]
+catch e:
+    if e.kind == "index_range":
+        print of "ok"
+    if e.kind != "deadlock":
+        print of "not dl"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W018 silent on valid kinds (incl. post-#509 deadlock)" "$OUTPUT" "W018"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+try:
+    throw {kind: "payment_declined", message: "no"}
+catch e:
+    if e.kind == "payment_declined":
+        print of "custom"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W018 silent on a genuine custom (far-off) kind" "$OUTPUT" "W018"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+d is {kind: "index_rage"}
+if d.kind == "index_rage":
+    print of "not an error dict"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W018 silent on .kind off a non-catch (user dict) var" "$OUTPUT" "W018"
+rm -f "$TMPFILE"
+
 # --- #455: per-file lint allow-list in eigs.json ---
 # A project can suppress a code for a whole file via eigs.json, without inline
 # comments (generated/vendored code). Resolution walks to the project root
