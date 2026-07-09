@@ -5,6 +5,16 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Per-file lint allow-list in `eigs.json` (#455).** A project can now silence
+  a lint code for a whole file without editing it — an `eigs.json` `lint.allow`
+  map from project-root-relative path to a list of codes (`"all"` silences
+  every code): `{"lint":{"allow":{"lib/generated.eigs":["W003","W017"]}}}`. The
+  escape for generated or vendored modules that shouldn't carry inline
+  `# lint: allow` comments. Resolution walks from the linted file up to the
+  project root (the dir containing `eigs.json`, reusing the module resolver's
+  walk), so it applies regardless of the cwd. A code allowed here filters
+  exactly like a `# lint: allow-file <code>`. Closes the last residual of #399.
+  (`--lint`; the in-file directives still cover the LSP.)
 - **`lib/sync` — cooperative-task locks (#488).** A `lib/sync.eigs` stdlib
   module giving mutual exclusion **across** `task_yield` points for the #408
   task layer: `lock_new` / `lock_acquire` / `lock_release`, plus

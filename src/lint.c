@@ -1783,6 +1783,86 @@ int lint_file_allows(const char *source, const char *code) {
     return 0;
 }
 
+#if !EIGENSCRIPT_FREESTANDING
+/* #455: per-file lint allow-list in eigs.json (residual of #399). Walk up from
+ * the linted file's directory to the project root (the dir containing
+ * eigs.json — the same root the module resolver's walk stops at), read its
+ *   { "lint": { "allow": { "<root-relative path>": ["W003", ...] } } }
+ * map, and return the newly-owned VAL_LIST of codes allowed for `path`
+ * file-wide (or NULL). Caller val_decrefs. A code listed here is filtered
+ * exactly like a `# lint: allow-file <code>` in the file — the escape for
+ * generated/vendored files a project can't sprinkle comments into. */
+static Value *eigs_json_lint_allow_for(const char *path) {
+    char real[4096];
+    if (!realpath(path, real)) return NULL;
+
+    /* Walk dirname(real) upward for eigs.json; the containing dir is root. */
+    char dir[4096];
+    snprintf(dir, sizeof(dir), "%s", real);
+    char *slash = strrchr(dir, '/');
+    if (!slash) return NULL;
+    *slash = '\0';
+
+    char root[4096] = {0};
+    char jsonpath[4200] = {0};
+    for (int i = 0; i < 64; i++) {
+        char probe[4200];
+        snprintf(probe, sizeof(probe), "%.4000s/eigs.json", dir);
+        if (access(probe, F_OK) == 0) {
+            snprintf(root, sizeof(root), "%s", dir);
+            snprintf(jsonpath, sizeof(jsonpath), "%s", probe);
+            break;
+        }
+        char *s = strrchr(dir, '/');
+        if (!s || s == dir) return NULL;
+        *s = '\0';
+    }
+    if (!root[0]) return NULL;
+
+    long sz = 0;
+    char *js = read_file_util(jsonpath, &sz);
+    if (!js) return NULL;
+    int pos = 0;
+    Value *j = eigs_json_parse_value(js, &pos);
+    free(js);
+    if (!j) return NULL;
+
+    Value *result = NULL;
+    if (j->type == VAL_DICT) {
+        Value *lint = dict_get(j, "lint");
+        if (lint && lint->type == VAL_DICT) {
+            Value *allow = dict_get(lint, "allow");
+            if (allow && allow->type == VAL_DICT) {
+                /* real, relative to root ("<root>/lib/x.eigs" → "lib/x.eigs"). */
+                size_t rl = strlen(root);
+                const char *rel = real;
+                if (strncmp(real, root, rl) == 0 && real[rl] == '/')
+                    rel = real + rl + 1;
+                Value *codes = dict_get(allow, rel);
+                if (codes && codes->type == VAL_LIST) {
+                    val_incref(codes);
+                    result = codes;
+                }
+            }
+        }
+    }
+    val_decref(j);
+    return result;
+}
+
+/* Is `code` (or "all") in the eigs.json allow-list `codes` (may be NULL)? */
+static int eigs_json_allows(Value *codes, const char *code) {
+    if (!codes || codes->type != VAL_LIST) return 0;
+    for (int i = 0; i < codes->data.list.count; i++) {
+        Value *c = codes->data.list.items[i];
+        if (c && c->type == VAL_STR &&
+            (strcmp(c->data.str, code) == 0 || strcmp(c->data.str, "all") == 0))
+            return 1;
+    }
+    return 0;
+}
+#endif /* !EIGENSCRIPT_FREESTANDING */
+
 static int lint_suppressed(const char *source, int warn_line, const char *code) {
     static const char MARKER[] = "# lint: allow";
     const size_t MLEN = sizeof(MARKER) - 1;
@@ -1855,16 +1935,20 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     lint_run_checks(ast, path, source, &ctx);
 
     /* #399 inline suppression: drop warnings silenced by a `# lint: allow`
-     * comment on their line (or the line above). Compact in place so the
-     * suppressed diagnostics vanish from both human and JSON output. */
+     * comment on their line (or the line above), a `# lint: allow-file`, or
+     * the #455 per-file eigs.json allow-list. Compact in place so suppressed
+     * diagnostics vanish from both human and JSON output. */
     {
+        Value *ej_allow = eigs_json_lint_allow_for(path);
         int kept = 0;
         for (int w = 0; w < ctx.warning_count; w++) {
             if (!lint_file_allows(source, ctx.warnings[w].code) &&
+                !eigs_json_allows(ej_allow, ctx.warnings[w].code) &&
                 !lint_suppressed(source, ctx.warnings[w].line, ctx.warnings[w].code))
                 ctx.warnings[kept++] = ctx.warnings[w];
         }
         ctx.warning_count = kept;
+        if (ej_allow) val_decref(ej_allow);
     }
 
     /* Emit. JSON goes to stdout (machine-consumable, even when clean →
