@@ -191,6 +191,14 @@ All notable changes to EigenScript are documented here.
     (the one legitimate empty-expression position) still yields `null` (#494).
 
 ### Fixed
+- **`dict_remove` no longer inflates the dict's hash table exponentially.**
+  The re-index rebuild after a removal reused the grow path's blind
+  capacity-doubling, so N removes on one dict grew its table by 2^N —
+  ~25 insert/remove cycles of a single key allocated gigabytes and OOMed
+  the process. The rebuild now sizes the table from the live entry count
+  (identical doubling behavior on the >70%-load grow path). Surfaced by
+  liferaft's per-message pending-registry churn during the #523 task-layer
+  migration; regression-pinned in `tests/test_dict.eigs` (200-cycle churn).
 - **`args` now rides the trace tape (#471).** The `args` builtin returned
   `argv` directly, unwrapped — the last un-taped nondeterminism source
   reachable by a pure script, and a hole in the closed-world invariant behind
