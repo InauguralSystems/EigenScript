@@ -1815,6 +1815,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
          * over mid-thunk. */
         CallFrame *frame = &g_vm.frames[g_vm.frame_count++];
         frame->chunk = fn_chunk;
+        frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
         chunk_incref(fn_chunk);
         frame->ip = fn_chunk->code;
         frame->bp = g_vm.sp;
@@ -2177,6 +2178,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
     }
     frame = &g_vm.frames[g_vm.frame_count++];
     frame->chunk = chunk;
+    frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
     chunk_incref(chunk);   /* frame's ref — released when this frame pops */
     frame->ip = chunk->code;
     frame->bp = g_vm.sp;
@@ -3310,6 +3312,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             frame = &g_vm.frames[g_vm.frame_count++];
             frame->chunk = fn_chunk;
+            frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
             chunk_incref(fn_chunk);   /* frame's ref — the fn value popped
                                        * above may die mid-call */
             frame->ip = fn_chunk->code;
@@ -5107,6 +5110,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             frame = &g_vm.frames[g_vm.frame_count++];
             frame->chunk = fn_chunk;
+            frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
             chunk_incref(fn_chunk);   /* frame's ref */
             frame->ip = fn_chunk->code;
             frame->bp = g_vm.sp;

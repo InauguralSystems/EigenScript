@@ -23,13 +23,14 @@ predicted-not-taken load + branch.
 
 ## Tape Format
 
-The tape is plain text, one record per line, four record kinds:
+The tape is plain text, one record per line, five record kinds:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 1 0.26.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 2 0.29.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `L <line>` | Source-line event (from `OP_LINE`). Adjacent duplicate lines with no `A`/`N` between them are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
-| `A <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and carries the name only (no scope qualifier), so same-named bindings from different scopes share one record stream. |
+| `S <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
+| `A <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
 
 ### Value serialization

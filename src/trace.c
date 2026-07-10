@@ -26,6 +26,7 @@
 
 #include "eigenscript.h"
 #include "trace.h"
+#include "vm.h"   /* #539 v2: CallFrame/g_vm for scope-transition S records */
 
 #include <errno.h>
 #include <stdarg.h>
@@ -444,11 +445,18 @@ static void tp_printf(const char *fmt, ...) {
     tp_write(buf, (size_t)n);
 }
 
+/* #539 v2: scope-transition dedup state. The last frame-instance serial
+ * an S record was emitted for; 0 = none yet (serials start at 1). Reset
+ * at every tape open so each session's first A record is preceded by its
+ * scope. */
+static uint32_t g_last_scope_serial = 0;
+
 /* #411: stamp the version header. Called once per tape-open (EIGS_TRACE
  * fopen, sink install) — a journal appended across several installs
  * carries one V record per session; replay verifies each. */
 static void emit_header(void) {
     tp_printf("V %d %s\n", TRACE_FORMAT_VERSION, EIGENSCRIPT_VERSION);
+    g_last_scope_serial = 0;
 }
 
 void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
@@ -1099,6 +1107,22 @@ void trace_assign(const char *name, EigsSlot value) {
 
     if (!trace_out_active()) return;
     if (!name) name = "?";
+    /* #539 v2: scope-transition record. When the innermost frame differs
+     * from the one the last S record named (by frame-instance serial, so
+     * two invocations of the same function never merge), stamp
+     *   S <fn> <depth> <serial>
+     * before the A record. Dedup mirrors the L-record discipline: scope
+     * transitions only cost tape bytes at call boundaries that actually
+     * assign. Replay skips S like A; only the stepper folds them. */
+    if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
+        CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+        if (f->call_serial != g_last_scope_serial) {
+            g_last_scope_serial = f->call_serial;
+            tp_printf("S %s %d %u\n",
+                      (f->chunk && f->chunk->name) ? f->chunk->name : "?",
+                      g_vm.frame_count - 1, f->call_serial);
+        }
+    }
     tp_puts("A ");
     tp_puts(name);
     tp_putc('=');

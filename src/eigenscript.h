@@ -610,6 +610,10 @@ struct EigsThread {
     int                  loop_stall_count;
     int                  loop_iterations;
     const char          *loop_exit_reason;
+    /* #539 v2: next frame-instance serial — incremented at every frame
+     * push, stamped into CallFrame.call_serial. Per-thread, never reset
+     * (wrap at 2^32 is fine: adjacent frames never collide). */
+    uint32_t             call_serial_next;
     /* Per-thread JIT state — chunk → thunk cache, chunk hotness
      * registry, and stop-opcode diagnostics. Lazily initialized;
      * cache + chunks array freed in eigs_thread_detach. */
@@ -700,6 +704,7 @@ extern __thread EigsThread *eigs_current;
 #define g_loop_stall_count    (eigs_current->loop_stall_count)
 #define g_loop_iterations     (eigs_current->loop_iterations)
 #define g_loop_exit_reason    (eigs_current->loop_exit_reason)
+#define g_call_serial_next    (eigs_current->call_serial_next)
 #define g_jit_cache           (eigs_current->jit_cache)
 #define g_chunks              (eigs_current->jit_chunks)
 #define g_chunks_count        (eigs_current->jit_chunks_count)

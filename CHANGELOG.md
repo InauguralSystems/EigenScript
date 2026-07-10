@@ -24,6 +24,23 @@ All notable changes to EigenScript are documented here.
   5,033ms -> 17.5ms.
 
 ### Added
+- **Tape format v2: scope-qualified locals (#539 v2).** A new `S <fn>
+  <depth> <serial>` scope-transition record qualifies the `A` records
+  that follow, so a function-local binding and a same-named top-level
+  one are separate streams — and two invocations of the same function
+  never merge (`<serial>` is a per-thread frame-instance id stamped at
+  every frame push, `CallFrame.call_serial`). Emitted with the L-record
+  dedup discipline: byte cost lands only at call boundaries that
+  actually assign (worst-case call-heavy fixture: +43% tape bytes, ~8%
+  traced runtime; zero S records in straight-line module code, zero
+  cost untraced). `TRACE_FORMAT_VERSION` 1→2 — v1 tapes refuse per the
+  #411 version-and-reject rule; replay skips `S` like `A` (byte-exact
+  replay determinism unchanged). `--step` reconstructs the call chain
+  from the serials: `p` shows the live chain's bindings innermost-first
+  with `{in fn}` notes and shadowing (dead frames' locals no longer
+  appear), and `t name` resolves to the frame's own stream, so
+  trajectory labels are per-invocation. `tests/test_step.sh` grows six
+  scope checks; docs/TRACE.md documents the record and the v2 history.
 - **Runtime-error carets + token-precise LSP ranges (#407 residual).**
   Uncaught runtime errors now print the same one-line source excerpt +
   `^` caret as parse errors, with the column attributed to the failing
