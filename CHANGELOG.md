@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-10
+
 ### Added
 - **`task_detach` — fire-and-forget tasks reap their handle slot (#530).**
   Finished tasks were never removed from the 255-slot handle table before
