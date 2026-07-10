@@ -289,7 +289,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     g_compile_module_slots = 1;
-    EigsChunk *script_chunk = compile_ast(ast, global);
+    EigsChunk *script_chunk = compile_ast(ast, global, source);
     g_compile_module_slots = 0;
     if (g_parse_errors > 0) {   /* compile-stage error, e.g. un-encodable jump */
         fprintf(stderr, "%d compile error(s) — aborting\n", g_parse_errors);

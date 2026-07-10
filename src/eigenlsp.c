@@ -740,14 +740,18 @@ static void send_diagnostics(Document *doc) {
         snprintf(full, sizeof(full), "syntax error: %s",
                  g_first_error_msg[0] ? g_first_error_msg : "invalid syntax");
 
+        /* #407 residual: token-precise range when the parser recorded the
+         * offending token's length; the old 0..1000 whole-line span only
+         * remains as the unknown-length fallback. */
+        int err_end = g_first_error_len > 0 ? err_col + g_first_error_len : 1000;
         strbuf_append(&sb, "{\"range\":{\"start\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
         strbuf_append(&sb, ",\"character\":");
         strbuf_append_fmt(&sb, "%d", err_col);
         strbuf_append(&sb, "},\"end\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
-        strbuf_append(&sb, ",\"character\":1000}},\"severity\":1,\"code\":\"E002\","
-                            "\"source\":\"eigenscript\",\"message\":");
+        strbuf_append_fmt(&sb, ",\"character\":%d}},\"severity\":1,\"code\":\"E002\","
+                            "\"source\":\"eigenscript\",\"message\":", err_end);
         json_escape_to(&sb, full);
         strbuf_append_char(&sb, '}');
     } else if (doc->ast) {
@@ -767,10 +771,16 @@ static void send_diagnostics(Document *doc) {
             if (ln < 0) ln = 0;
             int sev = strcmp(diags[i].severity, "error") == 0 ? 1 : 2;
             if (emitted++ > 0) strbuf_append_char(&sb, ',');
+            /* #407 residual: E-class diags carry the offending token's
+             * col/len (E003 = the undefined identifier) — publish a
+             * token-precise squiggle. len == 0 keeps the whole-line span
+             * (W-rules that haven't been migrated to positions yet). */
+            int dcol = diags[i].len > 0 ? diags[i].col : 0;
+            int dend = diags[i].len > 0 ? diags[i].col + diags[i].len : 1000;
             strbuf_append_fmt(&sb,
-                "{\"range\":{\"start\":{\"line\":%d,\"character\":0},"
-                "\"end\":{\"line\":%d,\"character\":1000}},\"severity\":%d,\"code\":\"%s\","
-                "\"source\":\"eigenscript\",\"message\":", ln, ln, sev, diags[i].code);
+                "{\"range\":{\"start\":{\"line\":%d,\"character\":%d},"
+                "\"end\":{\"line\":%d,\"character\":%d}},\"severity\":%d,\"code\":\"%s\","
+                "\"source\":\"eigenscript\",\"message\":", ln, dcol, ln, dend, sev, diags[i].code);
             json_escape_to(&sb, diags[i].message);
             strbuf_append_char(&sb, '}');
         }

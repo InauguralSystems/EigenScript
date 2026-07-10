@@ -1,4 +1,5 @@
 # ERROR DEMO — arithmetic on incompatible types.
 # There is no implicit coercion: list - num has no meaning.
-# expect-error: Error line 4: cannot apply '-' to list and num
+# expect-error: Error line 5: cannot apply '-' to list and num
+# expect-caret: |             ^
 x is [1, 2] - 5

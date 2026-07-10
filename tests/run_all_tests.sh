@@ -654,6 +654,13 @@ check_stderr "EM3 unknown char shows character" 'x is @' "unexpected character"
 check_stderr "EM24 parse error prints source excerpt" 'if x > 0
     print of x' "1 | if x > 0"
 check_stderr "EM25 caret lands on the error column" 'x is 2 x is 3' "|        \^"
+# #407 residual: uncaught RUNTIME errors print the same excerpt + caret,
+# with the column attributed to the failing token (the '[' of the failing
+# subscript here) via the per-byte cols[] table + deferred CHECK_ERROR print.
+check_stderr "EM26 runtime error prints source excerpt" 'items is [1,2,3]
+print of items[10]' "2 | print of items\[10\]"
+check_stderr "EM27 runtime caret lands on the failing column" 'items is [1,2,3]
+print of items[10]' "|               \^"
 check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error line 1: cannot apply"
 check_stderr "EM5 index out of bounds" 'items is [1,2,3]
 print of items[10]' "Error line 2: index 10 out of range"

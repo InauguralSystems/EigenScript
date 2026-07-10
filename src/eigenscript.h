@@ -572,6 +572,13 @@ struct EigsThread {
     int          try_depth;
     int          first_error_line;
     int          first_error_col;   /* 0-based column of the first error, or 0 */
+    int          first_error_len;   /* source length of the offending token
+                                     * (0 = unknown → whole-line LSP range) */
+    /* #407 residual: uncaught-error printing raised during VM dispatch is
+     * deferred to the dispatch loop's CHECK_ERROR, which knows the failing
+     * instruction's bytecode offset (→ column) — rt_error/builtin_throw
+     * set this instead of printing when the VM is live. */
+    int          error_print_pending;
     char         error_msg[4096];
     char         first_error_msg[256];
     struct Value *error_value;      /* thrown payload for structured catch */
@@ -677,6 +684,8 @@ extern __thread EigsThread *eigs_current;
 #define g_try_depth         (eigs_current->try_depth)
 #define g_first_error_line  (eigs_current->first_error_line)
 #define g_first_error_col   (eigs_current->first_error_col)
+#define g_first_error_len   (eigs_current->first_error_len)
+#define g_error_print_pending (eigs_current->error_print_pending)
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
@@ -1045,7 +1054,11 @@ void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 void eigs_record_first_error(int line, const char *msg);
-void eigs_record_first_error_at(int line, int col, const char *msg);
+void eigs_record_first_error_at(int line, int col, int len, const char *msg);
+/* #407: one-line source excerpt + `^` caret under `col` (0-based), the
+ * shared format for parse-time and runtime diagnostics. No-op when src is
+ * NULL or the position is out of range. */
+void eigs_print_caret_src(FILE *out, const char *src, int line, int col);
 /* #407: register the compilation unit's raw source so column-carrying parse
  * errors print a one-line excerpt + caret. NULL = no excerpt (unchanged
  * output). Set before parse, clear after — the parser never reads it outside
@@ -1124,8 +1137,11 @@ char* format_source_string(const char *source);  /* malloc'd; caller frees */
 /* Structured lint diagnostic (for non-CLI consumers like the LSP). */
 typedef struct {
     int  line;             /* 1-based source line */
+    int  col;              /* 0-based column of the offending token (0 = unknown) */
+    int  len;              /* token length; 0 = unknown → whole-line range */
     char code[8];          /* stable code, e.g. "W001" */
-    char severity[12];     /* "warning" / "error" */
+    char severity[16];     /* "warning" / "error" — sized to LintWarning.level
+                            * so the copy in lint_collect can't truncate */
     char message[256];
 } LintDiag;
 /* Run all lint checks on an already-parsed AST; fill out[] (up to max),

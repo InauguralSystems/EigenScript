@@ -1,6 +1,7 @@
 # ERROR DEMO — indexing past the end of a list.
 # Indexing is strictly bounds-checked (negative indices count from the
 # end, but only within -len..len-1).
-# expect-error: Error line 6: index 10 out of range (list length 3)
+# expect-error: Error line 7: index 10 out of range (list length 3)
+# expect-caret: |           ^
 items is [1, 2, 3]
 v is items[10]

@@ -2065,6 +2065,29 @@ void vm_print_stack_trace(FILE *out) {
     }
 }
 
+/* #407 residual: print a deferred uncaught-error report (message, source
+ * excerpt + column caret, stack trace). rt_error/builtin_throw set
+ * g_error_print_pending instead of printing while the VM is mid-dispatch;
+ * the dispatch loop's CHECK_ERROR calls this with the live ip, which
+ * points one opcode past the failing instruction — so ip-1 lands inside
+ * the failing instruction's bytes and cols[]/lines[] carry its position.
+ * The lines[off] == g_error_line guard suppresses the caret whenever the
+ * offset disagrees with the reported line (JIT-advanced ip, builtin line
+ * restamps), so a caret only ever prints on the correct source line. */
+static void vm_error_flush_pending(EigsChunk *chunk, const uint8_t *ip) {
+    if (!g_error_print_pending) return;
+    g_error_print_pending = 0;
+    fprintf(stderr, "%s\n", g_error_msg);
+    if (chunk && ip && chunk->cols && chunk->src && chunk->src->text) {
+        long off = ip - chunk->code - 1;
+        if (off >= 0 && off < chunk->lines_len &&
+            chunk->lines[off] == g_error_line)
+            eigs_print_caret_src(stderr, chunk->src->text,
+                                 g_error_line, chunk->cols[off]);
+    }
+    vm_print_stack_trace(stderr);
+}
+
 static int vm_handler_in_range(int base) {
     for (int i = g_vm.frame_count - 1; i >= base; i--)
         if (g_vm.frames[i].try_count > 0) return 1;
@@ -2231,6 +2254,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
     };
     #define CHECK_ERROR() do { \
         while (__builtin_expect(g_has_error, 0)) { \
+            vm_error_flush_pending(chunk, ip);   /* #407: uncaught print + caret */ \
             if (frame->try_count > 0 && !g_exit_requested) { \
                 g_has_error = 0; \
                 g_try_depth--; \
@@ -4849,7 +4873,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         int saved_boundary = g_compile_module_boundary;
         g_compile_module_boundary = 1;                   /* #373 */
-        EigsChunk *mod_chunk = compile_ast(ast, mod_env);
+        EigsChunk *mod_chunk = compile_ast(ast, mod_env, source);
         g_compile_module_boundary = saved_boundary;
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
@@ -5163,6 +5187,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     return make_null();
 
 vm_error_halt:
+    vm_error_flush_pending(chunk, ip);   /* #407: belt — normally flushed by CHECK_ERROR */
     /* Uncaught runtime error: unwind every frame this vm_run owns
      * ([base_frame, frame_count)) the same way OP_RETURN does — drain the
      * frame's stack window, free its env if owned, restore the per-frame

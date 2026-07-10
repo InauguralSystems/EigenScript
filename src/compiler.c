@@ -1572,7 +1572,15 @@ static void compile_node(Compiler *c, ASTNode *node) {
         return;
     }
     g_parse_depth++;
+    /* #407: position cursor for the per-byte cols[] table. Set to this
+     * node's column for everything it emits, restore on exit so a parent
+     * resuming after a child recursion stamps its own ops with its own
+     * column (post-order emission would otherwise leave the last child's
+     * column on the parent's opcode). */
+    int saved_col = c->chunk->cur_col;
+    if (node) c->chunk->cur_col = node->col;
     compile_node_inner(c, node);
+    c->chunk->cur_col = saved_col;
     g_parse_depth--;
 }
 
@@ -2000,6 +2008,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         EigsChunk *fn_chunk = chunk_new(node->data.func.name);
         fn_chunk->param_count = node->data.func.param_count;
         fn_chunk->first_default = node->data.func.first_default;
+        fn_chunk->src = c->chunk->src;           /* #407: share the unit's blob */
+        srcbuf_incref(fn_chunk->src);
 
         Compiler fn_compiler;
         memset(&fn_compiler, 0, sizeof(fn_compiler));
@@ -2090,6 +2100,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         EigsChunk *fn_chunk = chunk_new("<lambda>");
         fn_chunk->param_count = node->data.lambda.param_count;
         fn_chunk->first_default = node->data.lambda.param_count;  /* lambdas don't support defaults */
+        fn_chunk->src = c->chunk->src;           /* #407: share the unit's blob */
+        srcbuf_incref(fn_chunk->src);
 
         Compiler fn_compiler;
         memset(&fn_compiler, 0, sizeof(fn_compiler));
@@ -2646,8 +2658,12 @@ static void compile_block(Compiler *c, ASTNode **stmts, int count) {
 
 /* ---- Public API ---- */
 
-EigsChunk *compile_ast(ASTNode *ast, Env *env) {
+EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     EigsChunk *chunk = chunk_new("<module>");
+    /* #407: retain the unit's source for runtime-error caret excerpts.
+     * Owned copy — callers free their buffers while closures can keep
+     * chunks alive indefinitely. Nested fn chunks share the blob. */
+    chunk->src = srcbuf_new(src);
 
     Compiler compiler;
     memset(&compiler, 0, sizeof(compiler));

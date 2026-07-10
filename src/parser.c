@@ -55,8 +55,10 @@ void parser_set_caret_source(const char *src) {
     g_parse_caret_src = src;
 }
 
-static void p_print_caret(int line, int col) {
-    const char *s = g_parse_caret_src;
+/* Shared with the runtime-error printer (#407 residual): identical excerpt
+ * + caret format for parse-time and runtime diagnostics. */
+void eigs_print_caret_src(FILE *out, const char *src, int line, int col) {
+    const char *s = src;
     if (!s || line < 1 || col < 0) return;
     for (int l = 1; l < line; l++) {
         s = strchr(s, '\n');
@@ -67,14 +69,18 @@ static void p_print_caret(int line, int col) {
     size_t len = e ? (size_t)(e - s) : strlen(s);
     if (len > 200) len = 200;              /* pathological lines stay sane */
     if ((size_t)col > len) return;
-    fprintf(stderr, "  %4d | %.*s\n", line, (int)len, s);
+    fprintf(out, "  %4d | %.*s\n", line, (int)len, s);
     /* pad buffer, not fputc: the freestanding mini-libc has fprintf but no
      * fputc (the symbol gate rejects it). col <= len <= 200 by the guards. */
     char pad[201];
     for (int i = 0; i < col; i++)
         pad[i] = (s[i] == '\t') ? '\t' : ' ';
     pad[col] = '\0';
-    fprintf(stderr, "       | %s^\n", pad);
+    fprintf(out, "       | %s^\n", pad);
+}
+
+static void p_print_caret(int line, int col) {
+    eigs_print_caret_src(stderr, g_parse_caret_src, line, col);
 }
 
 static void p_end_statement(Parser *p) {
@@ -90,7 +96,7 @@ static void p_end_statement(Parser *p) {
         char m[160];
         snprintf(m, sizeof(m), "unexpected %s after statement",
                  tok_type_name(tok->type));
-        eigs_record_first_error_at(tok->line, tok->col, m);
+        eigs_record_first_error_at(tok->line, tok->col, tok->len, m);
     }
     p_print_caret(tok->line, tok->col);
     g_parse_errors++;
@@ -110,7 +116,8 @@ static void p_expect(Parser *p, TokType type) {
             char m[160];
             snprintf(m, sizeof(m), "expected %s, got %s",
                      tok_type_name(type), tok_type_name(p_cur(p)->type));
-            eigs_record_first_error_at(p_cur(p)->line, p_cur(p)->col, m);
+            eigs_record_first_error_at(p_cur(p)->line, p_cur(p)->col,
+                                       p_cur(p)->len, m);
         }
         p_print_caret(p_cur(p)->line, p_cur(p)->col);
         g_parse_errors++;
@@ -614,6 +621,7 @@ static ASTNode** parse_block(Parser *p, int *count) {
  * The bare [expr] form remains AST_INDEX. */
 static ASTNode* parse_subscript_suffix(Parser *p, ASTNode *target) {
     int line = p_cur(p)->line;
+    int col  = p_cur(p)->col;   /* the '[' — runtime caret anchor (#407) */
     p_advance(p); /* skip '[' */
 
     ASTNode *start = NULL, *end = NULL;
@@ -634,13 +642,13 @@ static ASTNode* parse_subscript_suffix(Parser *p, ASTNode *target) {
     p_expect(p, TOK_RBRACKET);
 
     if (is_slice) {
-        ASTNode *n = make_node(AST_SLICE, line);
+        ASTNode *n = make_node_col(AST_SLICE, line, col);
         n->data.slice.target = target;
         n->data.slice.start  = start;
         n->data.slice.end    = end;
         return n;
     }
-    ASTNode *n = make_node(AST_INDEX, line);
+    ASTNode *n = make_node_col(AST_INDEX, line, col);
     n->data.index.target = target;
     n->data.index.index  = start;
     return n;
@@ -659,14 +667,14 @@ static ASTNode* parse_postfix_chain(Parser *p, ASTNode *n) {
             p_advance(p);
             Token *key_tok = p_cur(p);
             p_expect(p, TOK_IDENT);
-            ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
+            ASTNode *dot = make_node_col(AST_DOT, p_cur(p)->line, key_tok->col);
             dot->data.dot.target = n;
             dot->data.dot.key = xstrdup(key_tok->str_val);
             set_name_hash(dot, dot->data.dot.key);
             n = dot;
         } else {
             n = parse_subscript_suffix(p, n);
-        }
+    }
     }
     return n;
 }
@@ -842,7 +850,7 @@ static ASTNode* parse_primary(Parser *p) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
                 p_expect(p, TOK_IDENT);
-                ASTNode *dot = make_node(AST_DOT, key_tok->line);
+                ASTNode *dot = make_node_col(AST_DOT, key_tok->line, key_tok->col);
                 dot->data.dot.target = expr;
                 dot->data.dot.key = xstrdup(key_tok->str_val);
                 set_name_hash(dot, dot->data.dot.key);
@@ -950,7 +958,7 @@ static ASTNode* parse_primary(Parser *p) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
                 p_expect(p, TOK_IDENT);
-                ASTNode *dot = make_node(AST_DOT, p_cur(p)->line);
+                ASTNode *dot = make_node_col(AST_DOT, p_cur(p)->line, key_tok->col);
                 dot->data.dot.target = n;
                 dot->data.dot.key = xstrdup(key_tok->str_val);
                 set_name_hash(dot, dot->data.dot.key);
@@ -1017,14 +1025,14 @@ static ASTNode* parse_relation(Parser *p) {
     ASTNode *left = parse_primary(p);
 
     if (p_cur(p)->type == TOK_OF) {
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         /* RHS is a single unary-or-tighter expression. This preserves
          * `f of -x` (unary minus) and right-associative `f of g of x`
          * (unary falls through to relation), but stops `of` from
          * absorbing trailing infix arithmetic: `len of xs - 1` now
          * parses as `(len of xs) - 1`, not `len of (xs - 1)`. */
         ASTNode *right = parse_unary(p);
-        ASTNode *n = make_node(AST_RELATION, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_RELATION, op_tok->line, op_tok->col);
         n->data.relation.left = left;
         n->data.relation.right = right;
         return n;
@@ -1053,25 +1061,25 @@ static ASTNode* parse_unary(Parser *p) {
 
 static ASTNode* parse_unary_body(Parser *p) {
     if (p_cur(p)->type == TOK_MINUS) {
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
         snprintf(n->data.unary.op, sizeof(n->data.unary.op), "-");
         n->data.unary.operand = operand;
         return n;
     }
     if (p_cur(p)->type == TOK_NOT) {
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
         snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
         n->data.unary.operand = operand;
         return n;
     }
     if (p_cur(p)->type == TOK_TILDE) {
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node(AST_UNARY, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
         snprintf(n->data.unary.op, sizeof(n->data.unary.op), "~");
         n->data.unary.operand = operand;
         return n;
@@ -1087,9 +1095,9 @@ static ASTNode* parse_multiply(Parser *p) {
         if (p_cur(p)->type == TOK_STAR) op[0] = '*';
         else if (p_cur(p)->type == TOK_SLASH) op[0] = '/';
         else op[0] = '%';
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_unary(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1104,9 +1112,9 @@ static ASTNode* parse_addition(Parser *p) {
         if (chain_too_deep(p)) break;
         char op[4] = {0};
         op[0] = (p_cur(p)->type == TOK_PLUS) ? '+' : '-';
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_multiply(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1122,9 +1130,9 @@ static ASTNode* parse_shift(Parser *p) {
         char op[4] = {0};
         if (p_cur(p)->type == TOK_SHL) { op[0] = '<'; op[1] = '<'; }
         else { op[0] = '>'; op[1] = '>'; }
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_addition(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1137,9 +1145,9 @@ static ASTNode* parse_bitand(Parser *p) {
     ASTNode *left = parse_shift(p);
     while (p_cur(p)->type == TOK_AMP) {
         if (chain_too_deep(p)) break;
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_shift(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "&");
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1152,9 +1160,9 @@ static ASTNode* parse_bitxor(Parser *p) {
     ASTNode *left = parse_bitand(p);
     while (p_cur(p)->type == TOK_CARET) {
         if (chain_too_deep(p)) break;
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_bitand(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "^");
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1167,9 +1175,9 @@ static ASTNode* parse_bitor(Parser *p) {
     ASTNode *left = parse_bitxor(p);
     while (p_cur(p)->type == TOK_BITOR) {
         if (chain_too_deep(p)) break;
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_bitxor(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "|");
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1192,9 +1200,9 @@ static ASTNode* parse_comparison(Parser *p) {
             case TOK_NE: snprintf(op, sizeof(op), "!="); break;
             default: break;
         }
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_bitor(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1207,9 +1215,9 @@ static ASTNode* parse_and(Parser *p) {
     ASTNode *left = parse_comparison(p);
     while (p_cur(p)->type == TOK_AND) {
         if (chain_too_deep(p)) break;
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_comparison(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1222,9 +1230,9 @@ static ASTNode* parse_or(Parser *p) {
     ASTNode *left = parse_and(p);
     while (p_cur(p)->type == TOK_OR) {
         if (chain_too_deep(p)) break;
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *right = parse_and(p);
-        ASTNode *n = make_node(AST_BINOP, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "or");
         n->data.binop.left = left;
         n->data.binop.right = right;
@@ -1237,10 +1245,10 @@ static ASTNode* parse_pipe(Parser *p) {
     ASTNode *left = parse_or(p);
     while (p_cur(p)->type == TOK_PIPE) {
         if (chain_too_deep(p)) break;
-        p_advance(p);
+        Token *op_tok = p_advance(p);
         ASTNode *fn = parse_or(p);
         /* a |> b desugars to b of a */
-        ASTNode *n = make_node(AST_RELATION, p_cur(p)->line);
+        ASTNode *n = make_node_col(AST_RELATION, op_tok->line, op_tok->col);
         n->data.relation.left = fn;
         n->data.relation.right = left;
         left = n;
@@ -1706,17 +1714,17 @@ static ASTNode* parse_statement_inner(Parser *p) {
             ASTNode *rhs = parse_expression(p);
             if (compound) {
                 /* Desugar obj.f += expr → obj.f is obj.f + expr */
-                ASTNode *read = make_node(AST_DOT, t->line);
+                ASTNode *read = make_node_col(AST_DOT, t->line, t->col);
                 read->data.dot.target = clone_ast(target->data.dot.target);
                 read->data.dot.key = xstrdup(target->data.dot.key);
                 read->name_hash = target->name_hash;
-                ASTNode *binop = make_node(AST_BINOP, t->line);
+                ASTNode *binop = make_node_col(AST_BINOP, t->line, t->col);
                 memcpy(binop->data.binop.op, cop, 4);
                 binop->data.binop.left = read;
                 binop->data.binop.right = rhs;
                 rhs = binop;
             }
-            ASTNode *n = make_node(AST_DOT_ASSIGN, t->line);
+            ASTNode *n = make_node_col(AST_DOT_ASSIGN, t->line, t->col);
             n->data.dot_assign.target = target->data.dot.target;
             n->data.dot_assign.key = xstrdup(target->data.dot.key);
             n->name_hash = target->name_hash;
@@ -1733,7 +1741,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             if (compound) compound_to_op(p_cur(p)->type, cop);
             p_advance(p); /* skip IS or compound op */
             ASTNode *rhs = parse_expression(p);
-            ASTNode *n = make_node(AST_INDEX_ASSIGN, t->line);
+            ASTNode *n = make_node_col(AST_INDEX_ASSIGN, t->line, t->col);
             n->data.index_assign.target = target->data.index.target;
             n->data.index_assign.index = target->data.index.index;
             n->data.index_assign.expr = rhs;
@@ -1763,7 +1771,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             ASTNode *ident = make_node_col(AST_IDENT, name_tok->line, name_tok->col);
             ident->data.ident.name = xstrdup(name_tok->str_val);
             set_name_hash(ident, ident->data.ident.name);
-            ASTNode *binop = make_node(AST_BINOP, t->line);
+            ASTNode *binop = make_node_col(AST_BINOP, t->line, t->col);
             memcpy(binop->data.binop.op, cop, 4);
             binop->data.binop.left = ident;
             binop->data.binop.right = expr;
