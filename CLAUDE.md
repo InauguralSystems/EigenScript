@@ -125,19 +125,19 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.28.0** (2026-07-08) — the concurrency release: the
-  deterministic cooperative task layer (#408) — `task_spawn`/`task_yield`/
-  `task_join`/`task_alive`, mailboxes (`task_send`/`task_recv`/
-  `task_try_recv`/`task_kill`), virtual time (`task_sleep`/`task_now`), and a
-  seeded scheduling strategy (`task_sched_seed`), all deterministic by
-  construction (byte-identical across runs, zero tape `N` records) on a single
-  OS thread so the JIT stays live; structured runtime errors (#406, BREAKING —
-  `catch` binds `{kind, message, line}`), parse-error source excerpt + caret
-  (#407), scope-precise E003 undefined-name lint (#404), observer surface
-  coherence (#412, unity horizon + real `how` gradient), and correctness fixes
-  (#459 `dispatch` rebinding + builtin-shadow lint derivation, #410 JIT
-  back-edge abort poll, #460 `# lint: loaded-by`). (v0.27.0, 2026-07-06: the
-  tooling-and-contracts release.) Unreleased
+- **Latest release: v0.29.0** (2026-07-10) — the task-layer round-out +
+  hardening release: `task_self` (#526), `task_detach` (#530 — tasks reap at
+  finish/kill, the 255 cap now bounds CONCURRENT tasks, `task_kill` no longer
+  poisons the ready queue), THREE deep scheduler/runtime fixes surfaced by
+  the liferaft #523 migration (JIT task-gate at every entry point #533 — task
+  code truly runs interpreted now; allocation-history-independent sleeper
+  wake order #535; `dict_remove` exponential hash-table inflation), 
+  `lib/supervise` observer-native supervision (#409), `lib/sync` locks +
+  `must_not_yield` (#488), catchable `deadlock` (#509), `args` on the trace
+  tape (#471), per-file lint allow-list (#455), W018 error-kind near-miss
+  lint (#469), the silent-tolerance audit cleared (#490–#512), and the #483
+  suspended-main-slice leak fix. (v0.28.0, 2026-07-08: the concurrency
+  release — the #408 cooperative task layer, structured errors #406; tooling-and-contracts release.) Unreleased
   work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
   **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
   now FAILS the suite when this line falls behind the latest tag). Roadmap:
