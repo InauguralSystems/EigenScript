@@ -439,6 +439,10 @@ typedef struct Task {
      * handle slot released) the moment it finishes or is killed, instead of
      * lingering joinable until process exit. */
     int        detached;
+    /* #535: monotonic spawn stamp (scheduler counter; main is 0). The
+     * same-instant sleeper-wake tie-break orders by THIS, never by handle
+     * id — ids come from a rotating cursor and encode allocation history. */
+    uint64_t   spawn_seq;
 } Task;
 
 /* Free a Task's held refs and the struct. Safe on any state; called by

@@ -1,0 +1,41 @@
+# #535: same-instant sleeper wake order must be a pure function of the run,
+# not of handle-id allocation history. Ids come from a rotating next-fit
+# cursor, so after enough churn a batch of spawns straddles the table
+# wraparound and id order diverges from spawn order. Pre-fix the wake
+# tie-break was ascending handle id — the SAME race observed a different
+# order depending on how much allocation history preceded it. Post-fix the
+# tie-break is spawn order: both observations must be identical.
+g_order is []
+define racer(tagout) as:
+    task_sleep of 1
+    append of [g_order, tagout]
+
+define run_race() as:
+    g_order is []
+    local a is task_spawn of [racer, "a"]
+    task_detach of a
+    local b is task_spawn of [racer, "b"]
+    task_detach of b
+    local c is task_spawn of [racer, "c"]
+    task_detach of c
+    task_sleep of 2
+    return f"{g_order[0]}{g_order[1]}{g_order[2]}"
+
+define churn_w() as:
+    return 1
+
+first is run_race of null
+# March the slot cursor to just before the 255-slot wrap so the second
+# race's three racers get ids like (254, 255, 1) — id order then disagrees
+# with spawn order. 250 = 253 - the 3 slots the first race consumed.
+n is 0
+loop while n < 250:
+    t is task_spawn of churn_w
+    task_detach of t
+    task_yield of null
+    n is n + 1
+second is run_race of null
+if first == second:
+    print of f"sleeper-order: all passed ({first})"
+else:
+    print of f"sleeper-order: FAILED first={first} second={second}"

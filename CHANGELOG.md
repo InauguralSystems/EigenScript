@@ -207,6 +207,15 @@ All notable changes to EigenScript are documented here.
     (the one legitimate empty-expression position) still yields `null` (#494).
 
 ### Fixed
+- **Same-instant sleeper wake order no longer depends on handle IDs (#535).**
+  `sched_wake_sleepers` woke due sleepers in ascending handle-id order, but
+  ids come from a rotating next-fit cursor — so once slots recycle (#530),
+  the tie-break encoded the process's whole allocation history and two
+  identical seeded runs in one process could interleave differently
+  (surfaced by liferaft's in-sweep fault verify failing to reproduce
+  standalone). Tasks now carry a monotonic `spawn_seq` and same-instant
+  wakes order by it — a pure function of the run. Regression-pinned with a
+  wraparound-straddling sleeper race (`tests/test_task_sleep_order.eigs`).
 - **JIT: task code now stays interpreted at EVERY entry point (#533).** The
   #408 ruling ("task code runs interpreted") was enforced only at the
   fresh-entry gate: the OSR back-edge counter/handoff and the OP_CALL /
