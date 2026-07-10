@@ -367,7 +367,7 @@ static double observer_slot_v_get(const ObserverSlot *s, size_t offset_back) {
  * step is RELATIVE (Δv/(1+|v|)) so the thresholds carry the same meaning across
  * value scales: a ±0.6 swing around 5 reads "moving" (~12% steps), the same
  * swing around 1e6 is effectively settled. First value seeds last_value only. */
-static void observer_slot_record_value(ObserverSlot *s, double v) {
+void observer_slot_record_value(ObserverSlot *s, double v) {
     if (s->v_used) {
         double rel = (v - s->last_value) / (1.0 + fabs(v));
         observer_slot_v_push(s, rel);

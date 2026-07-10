@@ -147,8 +147,11 @@ draw, the clock read, the file bytes — so a flake reproduces on the first try.
 
 The canonical loop: **failure → replay → interrogate**. Once you are replaying
 the exact run, the temporal interrogatives read its history — `prev of x`,
-`state_at`, and the `eigsdap` tape-stepper (#418) — so you inspect the trajectory
-that actually failed, not a fresh one that might not.
+`state_at`, and the `--step` tape-stepper ([DEBUGGING.md](DEBUGGING.md)) — so
+you inspect the trajectory that actually failed, not a fresh one that might
+not. The stepper reads the tape directly (no replay needed): step
+forward/back over its L records, reconstruct bindings from its A records,
+and watch each binding's observer-trajectory label at any point.
 
 Under `--json`, each result carries a `"tape"` field for CI to archive as an
 artifact; the human form prints the replay line.

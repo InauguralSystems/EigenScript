@@ -343,6 +343,11 @@ const char *observer_slot_report(const struct ObserverSlot *s);
 /* #294 value-signal report: classify the binding's VALUE trajectory (not its
  * entropy) — "oscillating"/"converged"/"stable"/"moving"/"equilibrium". */
 const char *observer_slot_report_value(const struct ObserverSlot *s);
+/* Fold one numeric value into the slot's #294 value channel (relative step
+ * Δv/(1+|v|)). Exported for the --step tape-stepper (step.c), which rebuilds
+ * per-binding trajectories from tape A records through the SAME classifier
+ * the language uses — a reimplementation there could silently drift. */
+void observer_slot_record_value(struct ObserverSlot *s, double v);
 
 /* Returns the dH at offset back from most recent (0 = most recent).
  * Caller must ensure offset < observer_window_size(v). */
@@ -1095,6 +1100,11 @@ void   handle_release(int id);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
+
+/* ---- Tape-stepper (#418; step.c, CLI-only) ----
+ * Interactive debugger over a recorded trace tape: `--step <tape> [src]`.
+ * Returns the process exit code (3 = version refusal, the replay rule). */
+int eigenscript_step(const char *tape_path, const char *src_path);
 
 /* ---- Formatter & Linter ---- */
 int eigenscript_fmt(const char *path, int write_mode);

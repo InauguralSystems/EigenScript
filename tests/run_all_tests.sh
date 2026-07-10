@@ -1365,6 +1365,23 @@ else
 fi
 echo ""
 
+# [42f] Tape stepper (#418 eigsdap v1: --step forward/back, bindings +
+# trajectory labels, breakpoints, jumps, #411 version refusals)
+echo "[42f] Tape Stepper (16 checks)"
+ST_OUTPUT=$(bash "$TESTS_DIR/test_step.sh" 2>&1)
+ST_PASS=$(echo "$ST_OUTPUT" | grep -c "PASS:" || true)
+ST_FAIL=$(echo "$ST_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + ST_PASS + ST_FAIL))
+PASS=$((PASS + ST_PASS))
+FAIL=$((FAIL + ST_FAIL))
+if [ "$ST_FAIL" -gt 0 ]; then
+    echo "  FAIL: $ST_FAIL stepper check(s) failed"
+    echo "$ST_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $ST_PASS stepper checks"
+fi
+echo ""
+
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
 echo "[42c] REPL editor & piped transcript (16 checks)"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)

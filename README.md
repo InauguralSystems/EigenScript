@@ -425,6 +425,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
+- [docs/DEBUGGING.md](docs/DEBUGGING.md) — the debugging loop and the `--step` tape-stepper (time travel + trajectories)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — lexer → parser → bytecode VM → JIT internals
 - [docs/EMBEDDING.md](docs/EMBEDDING.md) — C embedding API reference (`eigs_embed.h`)
 - [examples/errors/](examples/errors/) — programs that fail on purpose,
