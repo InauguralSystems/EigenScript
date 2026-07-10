@@ -2084,6 +2084,7 @@ static const char *slot_type_name(EigsSlot s) {
 static void task_restore_slice(Task *t);
 static void task_save_slice(Task *t);
 static Task *task_current_running(void);
+static void task_reap(Task *t);   /* #530 */
 static void task_apply_join_result(Task *t);   /* fill a join placeholder on resume */
 static void task_apply_recv_result(Task *t);   /* fill a recv placeholder on resume */
 
@@ -5176,6 +5177,7 @@ typedef struct {
     int   live;                   /* spawned tasks not yet DONE/DEAD */
     int   active;                 /* armed on first spawn */
     int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
+    int   detached_err_count;     /* #530: reaped detached tasks that died unobserved (#493 gate) */
     double now;                   /* inc 3: virtual clock (logical, starts 0) */
     int   seeded;                 /* inc 4: 1 once task_sched_seed installs a seed */
     uint64_t rng_state;           /* inc 4: splitmix64 state for the seeded pick */
@@ -5242,6 +5244,8 @@ static Task *sched_lookup(TaskScheduler *s, int id) {
  * non-zero instead of silently returning 0. */
 int task_any_unobserved_error(void) {
     if (!g_task_sched) return 0;
+    /* #530: reaped detached tasks that died unobserved are counted, not held. */
+    if (((TaskScheduler *)g_task_sched)->detached_err_count > 0) return 1;
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
         if (t && t->err_unobserved) return 1;
@@ -5258,6 +5262,24 @@ static void sched_ready_push(TaskScheduler *s, int id) {
     if (s->rcount >= TASK_READY_MAX) return;   /* ids are table-bounded; can't overflow */
     s->ready[(s->rhead + s->rcount) % TASK_READY_MAX] = id;
     s->rcount++;
+}
+
+/* #530: drop tid's pending ready-queue entry. A task killed while READY (or
+ * woken but not yet run) used to leave its entry behind; the trampoline
+ * skips stale ids, but enough of them FILL the fixed queue and
+ * sched_ready_push silently drops real wakeups — a spurious "deadlock".
+ * A task has at most one entry (recv-wake is idempotent and a task must be
+ * popped before it can re-enqueue), so one compacting pass suffices. */
+static void sched_ready_remove(TaskScheduler *s, int tid) {
+    int w = 0;
+    for (int k = 0; k < s->rcount; k++) {
+        int id = s->ready[(s->rhead + k) % TASK_READY_MAX];
+        if (id != tid) {
+            s->ready[(s->rhead + w) % TASK_READY_MAX] = id;
+            w++;
+        }
+    }
+    s->rcount = w;
 }
 
 /* Inc 4: splitmix64 — a deterministic, platform-independent integer PRNG for
@@ -5500,6 +5522,9 @@ int task_do_kill(int tid) {
     if (!s || tid == 0 || tid == s->current) return 0;
     Task *t = sched_lookup(s, tid);
     if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) return 0;
+    /* #530: a READY/woken victim holds a ready-queue entry — remove it so
+     * dead ids can never fill the queue and starve real wakeups. */
+    sched_ready_remove(s, tid);
     /* Drain the mailbox. */
     while (t->mbox_count > 0) {
         val_decref(t->mbox[t->mbox_head]);
@@ -5541,6 +5566,9 @@ int task_do_kill(int tid) {
     }
     if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == tid)
         sched_ready_push(s, 0);
+    /* #530: kill of a detached task is an explicit discard — reap now. (Kill
+     * is a deliberate teardown, never an uncaught error: no #493 counting.) */
+    if (t->detached) task_reap(t);
     return 1;
 }
 
@@ -5588,6 +5616,35 @@ static Value *task_start(Task *t) {
 /* Record a task that just finished (returned or errored) and wake any joiner
  * blocked on it. `r` is the value vm_run returned (NULL on suspend — not this
  * path). g_has_error distinguishes a normal end from an uncaught error. */
+/* #530: release a task's handle slot and free the struct. Only for tasks
+ * nobody will join (detached) — a reaped id reads as unknown afterwards
+ * (task_alive 0, task_join null) and the slot is immediately reusable. */
+static void task_reap(Task *t) {
+    int id = t->id;
+    task_free(t);
+    handle_release(id);
+}
+
+/* #530: mark `tid` fire-and-forget. A detached task is reaped the moment it
+ * finishes — or immediately here if it already has — so its handle slot
+ * returns to the pool instead of holding the table until process exit. An
+ * already-dead unobserved error moves to the scheduler-level counter so the
+ * #493 exit gate survives the reap. The RUNNING task may detach itself.
+ * Returns 1 on success, 0 for main (task 0) or an unknown id. */
+int task_do_detach(int tid) {
+    TaskScheduler *s = sched_get();
+    if (!s || tid == 0) return 0;
+    Task *t = sched_lookup(s, tid);
+    if (!t) return 0;
+    if (t->state == TASK_DONE || t->state == TASK_DEAD) {
+        if (t->err_unobserved) s->detached_err_count++;
+        task_reap(t);
+        return 1;
+    }
+    t->detached = 1;
+    return 1;
+}
+
 static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
     /* A task that ended (returned OR died) while its per-thread arena is still
      * active — arena_mark with no matching arena_reset, e.g. the arena-suspend
@@ -5625,6 +5682,14 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
     }
     if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == t->id)
         sched_ready_push(s, 0);
+    /* #530: a detached task's outcome is nobody's to consume — reap the slot
+     * now so task-per-message workloads aren't bounded by lifetime spawns.
+     * An uncaught death still fails the process: the #493 flag moves to the
+     * scheduler counter before the slot frees (the trace already printed). */
+    if (t->id != 0 && t->detached) {
+        if (t->err_unobserved) s->detached_err_count++;
+        task_reap(t);
+    }
 }
 
 /* On resuming a task that was blocked in task_join, replace the placeholder

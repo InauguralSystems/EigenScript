@@ -453,4 +453,50 @@ task_join of _self_r
 _self_msg is task_recv of null
 assert_eq of [_self_msg, _self_r, "worker replied its own id to the supervisor's mailbox"]
 
+# --- task_detach (#530): fire-and-forget tasks reap their handle slot ------
+
+# Lifetime-cap regression: 300 detached spawns is impossible pre-#530 (every
+# finished task held its handle slot until process exit; spawn 256 raised
+# EK_LIMIT even when each task was joined).
+define _det_w() as:
+    return 1
+_det_n is 0
+loop while _det_n < 300:
+    _det_t is task_spawn of _det_w
+    task_detach of _det_t
+    task_yield of null
+    _det_n is _det_n + 1
+assert_eq of [_det_n, 300, "300 detached spawns run and reap (no lifetime cap)"]
+
+# Detaching an ALREADY-finished task reaps immediately; the id then reads
+# unknown (join null, alive 0).
+_det_t2 is task_spawn of _det_w
+task_yield of null
+assert_eq of [task_detach of _det_t2, 1, "detach of a finished task reaps it"]
+assert_eq of [task_join of _det_t2, null, "joining a reaped id is null"]
+assert_eq of [task_alive of _det_t2, 0, "a reaped id is not alive"]
+
+# task_kill of a detached live task reaps too: 300 spawn/detach/kill cycles.
+define _det_block() as:
+    return task_recv of null
+_det_n is 0
+loop while _det_n < 300:
+    _det_b is task_spawn of _det_block
+    task_detach of _det_b
+    task_kill of _det_b
+    _det_n is _det_n + 1
+assert_eq of [_det_n, 300, "300 detach+kill cycles reap their slots"]
+
+# A worker can detach ITSELF (the fire-and-forget idiom, via task_self).
+define _det_selfw() as:
+    task_detach of (task_self of null)
+    return 7
+_det_t3 is task_spawn of _det_selfw
+task_yield of null
+assert_eq of [task_join of _det_t3, null, "self-detached task is reaped at finish"]
+
+# main (task 0) cannot be detached; unknown ids refuse.
+assert_eq of [task_detach of 0, 0, "task_detach of main is refused"]
+assert_eq of [task_detach of 99999, 0, "task_detach of an unknown id is refused"]
+
 test_summary of null

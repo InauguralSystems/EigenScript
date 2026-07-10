@@ -4939,6 +4939,22 @@ Value* builtin_task_self(Value *arg) {
     return make_num((double)task_current_id());
 }
 
+/* task_detach of id -> 1 (0 for main/unknown). Marks the task fire-and-forget
+ * (#530, the pthread_detach precedent): it is reaped the moment it finishes —
+ * or immediately if already finished — releasing its handle slot for reuse,
+ * so task-per-message workloads are bounded by CONCURRENT tasks, not lifetime
+ * spawns. A detached task's uncaught death still prints its trace and still
+ * fails the process at exit (#493 — a scheduler counter survives the reap).
+ * Joining a reaped id returns null, like any unknown id. Deterministic; no
+ * tape participation. */
+Value* builtin_task_detach(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "task_detach requires a task id (a number)");
+        return make_null();
+    }
+    return make_num((double)task_do_detach((int)arg->data.num));
+}
+
 /* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO
  * round-robin; with a seed the scheduler picks the next ready task
  * pseudo-randomly from a deterministic PRNG. The interleaving stays
@@ -6004,6 +6020,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_spawn", make_builtin(builtin_task_spawn));
     env_set_local_owned(env, "task_alive", make_builtin(builtin_task_alive));
     env_set_local_owned(env, "task_self", make_builtin(builtin_task_self));
+    env_set_local_owned(env, "task_detach", make_builtin(builtin_task_detach));
     env_set_local_owned(env, "task_yield", make_builtin(builtin_task_yield));
     env_set_local_owned(env, "must_not_yield", make_builtin(builtin_must_not_yield));
     env_set_local_owned(env, "task_join", make_builtin(builtin_task_join));

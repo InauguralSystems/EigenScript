@@ -5,6 +5,22 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`task_detach` — fire-and-forget tasks reap their handle slot (#530).**
+  Finished tasks were never removed from the 255-slot handle table before
+  process exit, so `task_spawn` failed after 255 spawns per process — a
+  LIFETIME cap, even when every task was joined. `task_detach of id`
+  (pthread-detach precedent) marks a task nobody will join: it is reaped the
+  moment it finishes (or immediately if already finished, or when
+  `task_kill`ed), returning its slot to the pool — the cap now bounds
+  *concurrent* tasks, as its message always claimed. A detached task's
+  uncaught death still prints and still fails the process (#493 — the flag
+  survives the reap in a scheduler-level counter). A task may detach itself
+  via `task_self`. Also fixes ready-queue poisoning found by the same
+  workload: a task killed while READY left a stale queue entry, and enough
+  of them filled the fixed 256-slot queue, whose push then SILENTLY dropped
+  real wakeups — a spurious "deadlock". `task_kill` now removes the victim's
+  pending entry. Surfaced by the #523 liferaft migration (a deliverer task
+  per in-flight message; crash-teardown kills pending deliverers in bulk).
 - **`task_self` — a task can learn its own id (#526).** `task_self of null`
   returns the running task's id in the same integer space `task_spawn`
   returns (the main task is 0, including before any task has been spawned).
