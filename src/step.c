@@ -425,7 +425,7 @@ int eigenscript_step(const char *tape_path, const char *src_path) {
         if (!cmd || strcmp(cmd, "s") == 0) {            /* step forward */
             int n = arg ? atoi(arg) : 1;
             if (n < 1) n = 1;
-            if (pos + 1 >= t.nsteps && n > 0) { printf("at end of tape\n"); continue; }
+            if (pos + 1 >= t.nsteps) { printf("at end of tape\n"); continue; }
             pos = (pos + n < t.nsteps) ? pos + n : t.nsteps - 1;
             show_stop(&t, pos);
         } else if (strcmp(cmd, "b") == 0) {             /* step back */
