@@ -5191,6 +5191,7 @@ typedef struct {
     int   active;                 /* armed on first spawn */
     int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
     int   detached_err_count;     /* #530: reaped detached tasks that died unobserved (#493 gate) */
+    uint64_t spawn_counter;       /* #535: monotonically increasing; stamps Task.spawn_seq */
     double now;                   /* inc 3: virtual clock (logical, starts 0) */
     int   seeded;                 /* inc 4: 1 once task_sched_seed installs a seed */
     uint64_t rng_state;           /* inc 4: splitmix64 state for the seeded pick */
@@ -5382,6 +5383,12 @@ void task_sched_on_spawn(int id) {
     TaskScheduler *s = sched_ensure();
     s->active = 1;
     s->live++;
+    /* #535: stamp spawn order. Handle IDs come from a rotating cursor, so
+     * they encode the process's WHOLE allocation history; any id-ordered
+     * tie-break makes the interleaving history-dependent. Spawn order is a
+     * pure function of the run. Main is 0 (spawn_counter starts at 1). */
+    Task *t = sched_lookup(s, id);
+    if (t) t->spawn_seq = ++s->spawn_counter;
     sched_ready_push(s, id);
 }
 
@@ -5510,18 +5517,28 @@ static int sched_wake_sleepers(TaskScheduler *s) {
     }
     if (!have_best) return 0;
     s->now = best;
-    /* Wake main first, then tasks in ascending id order — a fixed tie-break. */
+    /* Wake main first, then tasks in ascending SPAWN order (#535) — NOT id
+     * order: ids come from a rotating next-fit cursor, so id order encodes
+     * the process's whole allocation history and two identical seeded runs
+     * in one process could interleave differently once slots recycle
+     * (surfaced by liferaft's in-sweep fault verify failing to reproduce
+     * standalone). Spawn order is a pure function of the run itself. */
     if (s->main_task.state == TASK_SUSPENDED && s->main_task.sleeping &&
         s->main_task.wake_at <= s->now) {
         s->main_task.sleeping = 0;
         sched_ready_push(s, 0);
     }
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
-        if (t && t->state == TASK_SUSPENDED && t->sleeping && t->wake_at <= s->now) {
-            t->sleeping = 0;
-            sched_ready_push(s, t->id);
+    for (;;) {
+        Task *next = NULL;
+        for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+            Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
+            if (t && t->state == TASK_SUSPENDED && t->sleeping && t->wake_at <= s->now &&
+                (!next || t->spawn_seq < next->spawn_seq))
+                next = t;
         }
+        if (!next) break;
+        next->sleeping = 0;
+        sched_ready_push(s, next->id);
     }
     return 1;
 }

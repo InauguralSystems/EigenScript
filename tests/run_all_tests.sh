@@ -2177,6 +2177,7 @@ check_eigs_suite "cooperative tasks: yield/join/deadlock/teardown (#408)" test_t
 # so the recv loop crosses it fast) — a mid-task OSR compile made task_recv
 # return its placeholder null and corrupted the task at the next call site.
 EIGS_JIT_OSR_THRESHOLD=20 check_eigs_suite "task loops stay interpreted past the OSR threshold (#533)" test_task_osr.eigs "task-osr: all passed" 1
+check_eigs_suite "sleeper wake order is allocation-history-independent (#535)" test_task_sleep_order.eigs "sleeper-order: all passed" 1
 
 # lib/sync — cooperative-task lock gives mutual exclusion across yield points
 # (#488): unlocked non-atomic RMW loses updates, the lock closes the race,
