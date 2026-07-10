@@ -1197,6 +1197,15 @@ null` down as an argument (or a worker sends its own `task_self` up),
 and messages can then flow back to whoever asked — the link pattern
 message-based supervision needs.
 
+A task nobody will ever join can be marked **fire-and-forget** with
+`task_detach of id` (a task may detach itself via `task_self`). A
+detached task releases all its resources the moment it finishes, so a
+long-running program can spawn an unbounded stream of short-lived
+tasks; an undetached task instead stays joinable until the program
+ends. A detached task that dies of an uncaught error still prints its
+trace and still makes the process exit non-zero — fire-and-forget
+never silently swallows a failure.
+
 ```eigenscript
 worker_id is 0
 define worker() as:
