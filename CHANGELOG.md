@@ -4,6 +4,30 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`--step` — the eigsdap v1 CLI tape-stepper (#418).**
+  `eigenscript --step <tape> [source.eigs]` opens a recorded trace tape
+  (from `--trace`, `EIGS_TRACE`, or a `--test --trace-on-fail` failure) in
+  an interactive time-travel debugger: step forward AND backward over line
+  events, breakpoints as line filters with `c`/`rc` continue in both
+  directions, jump-to-line both ways, and binding reconstruction from the
+  tape's assignment deltas at any position. `p` shows each binding's value
+  *plus its observer-trajectory label* — computed by the runtime's own
+  #294 value-channel classifier (`observer_slot_record_value` is now
+  exported so the stepper feeds reconstructed histories through the same
+  `ObserverSlot` the language uses; a mirror implementation could drift,
+  this cannot) — and `t <name>` shows the running label per assignment, so
+  stepping back rewinds the *diagnosis*: walk `rc` backward to the exact
+  step where a binding flipped from `[moving]` to `[oscillating]`. Pure
+  tape reader (nothing executes, step-back is an index decrement); #411
+  version rule enforced exactly like replay (mismatch = refuse, exit 3);
+  CLI-only translation unit (`src/step.c`), excluded from the embed/LSP/
+  freestanding profiles. New suite section [42f] (16 checks,
+  `tests/test_step.sh`) covers stepping, label flips on back-step,
+  breakpoints, jumps, refusals, and driving a `--trace-on-fail` tape.
+  Ships with docs/DEBUGGING.md — the failure→replay→interrogate loop,
+  the stepper, and the temporal interrogatives in one place.
+
 ## [0.29.0] - 2026-07-10
 
 ### Added

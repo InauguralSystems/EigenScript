@@ -14,9 +14,13 @@ OUT="${1:-build}"
 mkdir -p "$OUT"
 
 # Read SOURCES from the Makefile, expand $(SRC_DIR)=src, drop the CLI-only
-# units (main.c + repl.c — repl.c pulls termios, banned in the embed profile).
+# units — read from the Makefile's CLI_ONLY (main.c, repl.c, step.c — they
+# pull termios/isatty/stdio, banned in the embed profile) so the drop list
+# is the same single source of truth as the source list.
+CLI_ONLY=$(grep '^CLI_ONLY :=' Makefile | sed 's/^CLI_ONLY :=//; s/\$(SRC_DIR)/src/g')
 SOURCES=$(grep '^SOURCES :=' Makefile | sed 's/^SOURCES :=//; s/\$(SRC_DIR)/src/g' \
-    | tr ' ' '\n' | grep '\.c$' | grep -v '/main\.c$' | grep -v '/repl\.c$')
+    | tr ' ' '\n' | grep '\.c$')
+for u in $CLI_ONLY; do SOURCES=$(printf '%s\n' "$SOURCES" | grep -v "^$u\$"); done
 
 python3 - "$OUT/eigenscript_all.c" $SOURCES <<'PY'
 import re, sys, os

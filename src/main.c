@@ -84,6 +84,8 @@ int main(int argc, char **argv) {
             "  eigenscript --test [paths...]       run test_*.eigs files (--json for machine-readable results)\n"
             "     ... --trace-on-fail              record each test; a failure prints its EIGS_REPLAY reproducer\n"
             "  eigenscript --trace <tape> <file>   run and record a replay tape (CLI twin of EIGS_TRACE)\n"
+            "  eigenscript --step <tape> [file]    interactive tape-stepper: step forward/back, bindings +\n"
+            "                                      trajectories, breakpoints (docs/DEBUGGING.md)\n"
             "  eigenscript --pkg <cmd> [args...]   package manager (add/install/update/verify; see docs)\n"
             "  eigenscript --version, -v           print the version and exit\n"
             "  eigenscript --help, -h              print this help and exit\n"
@@ -91,6 +93,24 @@ int main(int argc, char **argv) {
             "Docs: https://github.com/InauguralSystems/EigenScript\n",
             EIGENSCRIPT_VERSION);
         return 0;
+    }
+
+    /* --step: the #418 tape-stepper — a pure tape READER (nothing executes).
+     * Handled before trace_init for the same reason as --version: a stale
+     * EIGS_REPLAY in the environment is a fatal header check (#411) and must
+     * not take down a viewer that never replays. It does need an attached
+     * EigsState: the trajectory classifier reads the observer thresholds. */
+    if (argc >= 2 && strcmp(argv[1], "--step") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: eigenscript --step <tape> [source.eigs]\n");
+            return 1;
+        }
+        EigsState *step_st = eigs_state_new();
+        eigs_thread_attach(step_st);
+        int rc = eigenscript_step(argv[2], argc >= 4 ? argv[3] : NULL);
+        eigs_thread_detach();
+        eigs_state_destroy(step_st);
+        return rc;
     }
 
     trace_init();
