@@ -207,6 +207,20 @@ All notable changes to EigenScript are documented here.
     (the one legitimate empty-expression position) still yields `null` (#494).
 
 ### Fixed
+- **JIT: task code now stays interpreted at EVERY entry point (#533).** The
+  #408 ruling ("task code runs interpreted") was enforced only at the
+  fresh-entry gate: the OSR back-edge counter/handoff and the OP_CALL /
+  OP_DISPATCH thunk entries weren't task-gated, so a task's hot loop was
+  JIT-compiled MID-TASK after ~OSR-threshold iterations — and
+  `jit_helper_call` has no suspend check, so a blocking `task_recv`'s
+  placeholder null flowed onward as the received message and the leaked
+  suspend flag suspended the task mid-expression at a later call site.
+  Symptom: mass task death / `null` from `task_recv` / corrupted locals
+  after ~5000 loop iterations (first seen as liferaft's node tasks dying en
+  masse under chaos — reachable at all only once #530 lifted the lifetime
+  spawn cap). All four entry points now check `g_task_sched`;
+  regression-pinned with an OSR-threshold-crossing recv loop
+  (`tests/test_task_osr.eigs`, red pre-fix / green post-fix).
 - **`dict_remove` no longer inflates the dict's hash table exponentially.**
   The re-index rebuild after a removal reused the grow path's blind
   capacity-doubling, so N removes on one dict grew its table by 2^N —
