@@ -1702,6 +1702,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
             !g_trace_hist && vm_leaf_accessor_exec(fn_chunk, argc))
             return 0;
         if (fn_chunk->jit_state != 2 || !fn_chunk->jit_code) return 1;
+        if (g_task_sched) return 1;   /* #533: task code runs interpreted */
         if (g_vm.frame_count >= VM_FRAMES_MAX) return 1;
         if (g_native_call_depth >= JIT_NATIVE_CALL_DEPTH_MAX) return 1;
 
@@ -2913,8 +2914,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * per-chunk JIT state. Compilation is already gated off under MT
          * (#296); skip the counter and the OSR slot scan/execute too while
          * multithreaded so parallel workers running the same chunk don't race
-         * on back_edge_count / jit_osr (they interpret hot loops instead). */
-        if (!g_vm_multithreaded) {
+         * on back_edge_count / jit_osr (they interpret hot loops instead).
+         * #533: ALSO skip while a cooperative task scheduler is active — the
+         * #408 ruling is that task code runs interpreted, but only the
+         * fresh-entry gate enforced it. A task loop crossing the OSR
+         * threshold was JIT'd MID-TASK, and jit_helper_call has no suspend
+         * check: a blocking task_recv's placeholder null flowed on as the
+         * received message and the leaked suspend flag fired at a random
+         * later call site — state corruption after ~OSR-threshold
+         * iterations (first seen as liferaft node tasks dying en masse). */
+        if (!g_vm_multithreaded && !g_task_sched) {
         chunk->back_edge_count++;
 
         /* OSR trigger. For "called once, loops a lot" chunks (the gauntlet
@@ -3295,8 +3304,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * the caller's stack. Resync to the (now-current) caller
              * frame or, if we've fallen below base_frame, hand the
              * result back to C. */
-            if (fn_chunk->jit_state == 0) jit_try_compile_chunk(fn_chunk);
-            if (fn_chunk->jit_code) {
+            if (fn_chunk->jit_state == 0 && !g_task_sched) jit_try_compile_chunk(fn_chunk);
+            /* #533: never enter a thunk while the task scheduler is active,
+             * even one compiled before the first spawn — task code runs
+             * interpreted (suspension points exist only in the interpreter
+             * loop's builtin-call check). */
+            if (fn_chunk->jit_code && !g_task_sched) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* jit_helper_return popped fn_chunk's frame but left
@@ -5043,9 +5056,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             frame->call_argc = 1;
             fn_chunk->exec_count++;
 
-            /* JIT hook (mirror of OP_CALL bytecode-fn path). */
-            if (fn_chunk->jit_state == 0) jit_try_compile_chunk(fn_chunk);
-            if (fn_chunk->jit_code) {
+            /* JIT hook (mirror of OP_CALL bytecode-fn path; #533 task gate). */
+            if (fn_chunk->jit_state == 0 && !g_task_sched) jit_try_compile_chunk(fn_chunk);
+            if (fn_chunk->jit_code && !g_task_sched) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.

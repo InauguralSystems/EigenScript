@@ -2173,6 +2173,10 @@ check_eigs_suite "worker arena return deep-copied before detach" test_spawn_aren
 # #408 cooperative task layer: spawn/alive/yield/join/deadlock + leak-clean
 # teardown of suspended/killed tasks (incl. heap-on-saved-stack + arena-dier).
 check_eigs_suite "cooperative tasks: yield/join/deadlock/teardown (#408)" test_tasks.eigs "All tests passed" 1
+# #533: task loops must stay interpreted past the OSR threshold (lowered here
+# so the recv loop crosses it fast) — a mid-task OSR compile made task_recv
+# return its placeholder null and corrupted the task at the next call site.
+EIGS_JIT_OSR_THRESHOLD=20 check_eigs_suite "task loops stay interpreted past the OSR threshold (#533)" test_task_osr.eigs "task-osr: all passed" 1
 
 # lib/sync — cooperative-task lock gives mutual exclusion across yield points
 # (#488): unlocked non-atomic RMW loses updates, the lock closes the race,

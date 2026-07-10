@@ -1,0 +1,30 @@
+# #533: a task's hot loop must NOT be OSR-compiled mid-task — task code runs
+# interpreted (the #408 ruling). Pre-fix, once a recv-loop crossed the OSR
+# threshold it was JIT'd mid-task and the next blocking task_recv went through
+# jit_helper_call (which has no suspend check): the placeholder null flowed
+# onward as the "received" message and the leaked suspend flag corrupted the
+# task at a later call site. The suite runs this with EIGS_JIT_OSR_THRESHOLD=20
+# so the loops cross the threshold quickly: every received message must still
+# be a real string, all 200 of them.
+define worker() as:
+    local n is 0
+    loop while 1:
+        local m is task_recv of null
+        if m == "stop":
+            return n
+        if (type of m) != "str":
+            return 0 - 1
+        n is n + 1
+
+w is task_spawn of worker
+i is 0
+loop while i < 200:
+    task_send of [w, f"msg{i}"]
+    task_yield of null
+    i is i + 1
+task_send of [w, "stop"]
+got is task_join of w
+if got == 200:
+    print of "task-osr: all passed"
+else:
+    print of f"task-osr: FAILED got={got}"
