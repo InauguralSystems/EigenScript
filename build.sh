@@ -9,7 +9,18 @@ VERSION=$(cat ../VERSION)
 # Compiler is overridable (e.g. CC=clang ./build.sh) so CI can exercise
 # more than one toolchain; defaults to gcc.
 CC="${CC:-gcc}"
-SOURCES="eigenscript.c lexer.c parser.c builtins.c builtins_tensor.c hash.c arena.c state.c strbuf.c ext_store.c fmt.c lint.c chunk.c compiler.c vm.c jit.c trace.c eigs_embed.c repl.c main.c"
+# Anti-drift: the source list is read from the Makefile's SOURCES (the
+# single source of truth), like tools/amalgamate.sh already does. build.sh
+# used to carry its own copy and it silently fell behind every time a new
+# translation unit landed — the CI legs that build through this script
+# (install.sh, bench, the OS matrix) then failed at link while `make` was
+# green (step.c was the latest instance of the class).
+SOURCES=$(grep '^SOURCES :=' ../Makefile | sed 's/^SOURCES :=//; s|\$(SRC_DIR)/||g')
+CLI_ONLY=$(grep '^CLI_ONLY :=' ../Makefile | sed 's/^CLI_ONLY :=//; s|\$(SRC_DIR)/||g')
+if [ -z "$SOURCES" ]; then
+    echo "build.sh: cannot read SOURCES from ../Makefile" >&2
+    exit 1
+fi
 
 # macOS Intel JIT: enabled via the Mach-O TLV-aware prologue (the JIT
 # now calls eigs_jit_load_eigs_current instead of inlining %fs:
@@ -22,11 +33,13 @@ JIT_FLAGS=""
 
 if [ "$1" = "lsp" ]; then
     # Language server (src/eigenlsp) — the editor-intelligence half of the
-    # toolchain. Links eigenlsp.c against the runtime (SOURCES minus main.c),
-    # minimal extensions, gcc-only like the rest of build.sh. Source list reused
-    # from SOURCES above so it can't drift.
-    LSP_SOURCES="${SOURCES/ main.c/}"
-    LSP_SOURCES="${LSP_SOURCES/ repl.c/} eigenlsp.c"   # repl.c is CLI-only, like main.c
+    # toolchain. Links eigenlsp.c against the runtime (SOURCES minus the
+    # CLI-only units, read from the Makefile's CLI_ONLY so the drop list
+    # can't drift either), minimal extensions, gcc-only like the rest of
+    # build.sh.
+    LSP_SOURCES=" $SOURCES "
+    for u in $CLI_ONLY; do LSP_SOURCES="${LSP_SOURCES/ $u / }"; done
+    LSP_SOURCES="$LSP_SOURCES eigenlsp.c"
     $CC -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -o eigenlsp $LSP_SOURCES \
         -DEIGENSCRIPT_EXT_HTTP=0 \
         -DEIGENSCRIPT_EXT_MODEL=0 \
