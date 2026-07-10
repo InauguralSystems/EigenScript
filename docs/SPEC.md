@@ -902,13 +902,16 @@ validation
 -5
 ```
 
-An *uncaught* error prints the error followed by a stack trace —
-every frame between the failure and the top level, innermost first —
-then exits with code 1:
+An *uncaught* error prints the error, a one-line source excerpt with a
+`^` caret under the offending column, and a stack trace — every frame
+between the failure and the top level, innermost first — then exits
+with code 1:
 
 ```eigenscript skip
 # uncaught: stderr shows
 #   Error line 6: index 99 out of range (list length 2)
+#        6 | v is items[99]
+#          |           ^
 #     at inner (line 6)
 #     at middle (line 8)
 #     at <module> (line 9)

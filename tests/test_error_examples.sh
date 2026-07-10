@@ -21,6 +21,10 @@ for f in "$ROOT"/examples/errors/*.eigs; do
         FAIL=$((FAIL + 1))
         continue
     fi
+    # #407 residual: runtime-error cases also pin their caret position with
+    #     # expect-caret: <exact caret line, from the pipe on>
+    # so a column-attribution regression moves the caret and fails here.
+    caret=$(grep -m1 "^# expect-caret:" "$f" | sed 's/^# expect-caret: //')
     out=$("$EIGS" "$f" </dev/null 2>&1)
     rc=$?
     if [ "$rc" = "0" ]; then
@@ -30,6 +34,11 @@ for f in "$ROOT"/examples/errors/*.eigs; do
         echo "  FAIL: $name (missing expected message)"
         echo "    expected substring: $expected"
         printf '%s\n' "$out" | head -3 | sed 's/^/    got: /'
+        FAIL=$((FAIL + 1))
+    elif [ -n "$caret" ] && ! printf '%s' "$out" | grep -qF "$caret"; then
+        echo "  FAIL: $name (caret not at the declared column)"
+        echo "    expected caret line: $caret"
+        printf '%s\n' "$out" | head -4 | sed 's/^/    got: /'
         FAIL=$((FAIL + 1))
     else
         echo "  PASS: $name"

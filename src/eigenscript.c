@@ -47,15 +47,16 @@
  * for consumers that can't see the parser's stderr (the LSP, which turns
  * it into a publishDiagnostics squiggle). Reset at the top of tokenize().
  * g_first_error_line is 1-based and 0 when no error has been recorded. */
-void eigs_record_first_error_at(int line, int col, const char *msg) {
+void eigs_record_first_error_at(int line, int col, int len, const char *msg) {
     if (g_first_error_line) return;   /* keep only the first */
     g_first_error_line = line;
     g_first_error_col = col;
+    g_first_error_len = len;
     snprintf(g_first_error_msg, sizeof(g_first_error_msg), "%s", msg ? msg : "syntax error");
 }
 
 void eigs_record_first_error(int line, const char *msg) {
-    eigs_record_first_error_at(line, 0, msg);
+    eigs_record_first_error_at(line, 0, 0, msg);
 }
 
 /* Structured error payload: set by `throw` so catch can bind the thrown
@@ -116,8 +117,18 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     g_has_error = 1;
     eigs_clear_error_value();   /* a new error supersedes any thrown value */
     if (g_try_depth == 0) {
-        fprintf(stderr, "%s\n", g_error_msg);
-        vm_print_stack_trace(stderr);
+        /* #407 residual: when the VM is mid-dispatch, defer the uncaught
+         * print to CHECK_ERROR, which knows the failing instruction's
+         * bytecode offset and can add a source excerpt + column caret.
+         * Same print decision, same content prefix — the excerpt is
+         * inserted between the message and the stack trace. Outside
+         * dispatch (embed API, teardown) print immediately as before. */
+        if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
+            g_error_print_pending = 1;
+        } else {
+            fprintf(stderr, "%s\n", g_error_msg);
+            vm_print_stack_trace(stderr);
+        }
     }
 }
 

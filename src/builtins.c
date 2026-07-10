@@ -641,8 +641,14 @@ Value* builtin_throw(Value *arg) {
         g_error_value = arg;
     }
     if (g_try_depth == 0) {
-        fprintf(stderr, "%s\n", g_error_msg);
-        vm_print_stack_trace(stderr);
+        /* #407 residual: defer to CHECK_ERROR for the caret excerpt when
+         * the VM is live — mirrors rt_error. */
+        if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
+            g_error_print_pending = 1;
+        } else {
+            fprintf(stderr, "%s\n", g_error_msg);
+            vm_print_stack_trace(stderr);
+        }
     }
     free(msg);
     return make_null();
@@ -2729,7 +2735,7 @@ Value* builtin_load_file(Value *arg) {
     Env *target = g_load_env ? g_load_env : g_global_env;
     int saved_boundary = g_compile_module_boundary;
     g_compile_module_boundary = 1;                       /* #373 */
-    EigsChunk *lf_chunk = compile_ast(ast, target);
+    EigsChunk *lf_chunk = compile_ast(ast, target, source);
     g_compile_module_boundary = saved_boundary;
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
@@ -3683,7 +3689,7 @@ Value* builtin_eval(Value *arg) {
      * diagnostics ('break' outside a loop #337, un-encodable jumps) must
      * fail the eval instead of executing a placeholder chunk. */
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-    EigsChunk *ev_chunk = compile_ast(ast, target);
+    EigsChunk *ev_chunk = compile_ast(ast, target, src);
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
         chunk_free(ev_chunk);

@@ -11,6 +11,35 @@
 
 /* ---- Chunk lifecycle ---- */
 
+/* #407: caret-excerpt source blob — see EigsSrcBuf in vm.h. */
+EigsSrcBuf *srcbuf_new(const char *text) {
+    if (!text) return NULL;
+    EigsSrcBuf *sb = xcalloc(1, sizeof(EigsSrcBuf));
+    sb->text = strdup(text);
+    sb->refcount = 1;
+    return sb;
+}
+
+void srcbuf_incref(EigsSrcBuf *sb) {
+    if (!sb) return;
+    if (__builtin_expect(g_vm_multithreaded, 0))
+        __atomic_add_fetch(&sb->refcount, 1, __ATOMIC_RELAXED);
+    else
+        sb->refcount++;
+}
+
+void srcbuf_decref(EigsSrcBuf *sb) {
+    if (!sb) return;
+    int rc;
+    if (__builtin_expect(g_vm_multithreaded, 0))
+        rc = __atomic_sub_fetch(&sb->refcount, 1, __ATOMIC_ACQ_REL);
+    else
+        rc = --sb->refcount;
+    if (rc > 0) return;
+    free(sb->text);
+    free(sb);
+}
+
 EigsChunk *chunk_new(const char *name) {
     EigsChunk *c = xcalloc(1, sizeof(EigsChunk));
     c->code_cap = 256;
@@ -22,6 +51,7 @@ EigsChunk *chunk_new(const char *name) {
     c->env_ic = xcalloc(c->const_cap, sizeof(EnvIC));
     c->lines_cap = 256;
     c->lines = xcalloc(c->lines_cap, sizeof(int));
+    c->cols = xcalloc(c->lines_cap, sizeof(int));
     c->fn_cap = 8;
     c->functions = xcalloc(c->fn_cap, sizeof(EigsChunk *));
     c->name = name ? strdup(name) : strdup("<module>");
@@ -62,6 +92,8 @@ void chunk_decref(EigsChunk *chunk) {
      * it and drops its owned parent ref). */
     env_decref(chunk->env_cache);
     free(chunk->lines);
+    free(chunk->cols);
+    srcbuf_decref(chunk->src);
     for (int i = 0; i < chunk->fn_count; i++)
         chunk_decref(chunk->functions[i]);   /* release creator refs */
     free(chunk->functions);
@@ -91,9 +123,11 @@ void chunk_emit(EigsChunk *chunk, uint8_t byte, int line) {
     if (chunk->lines_len >= chunk->lines_cap) {
         chunk->lines_cap *= 2;
         chunk->lines = realloc(chunk->lines, chunk->lines_cap * sizeof(int));
+        chunk->cols  = realloc(chunk->cols,  chunk->lines_cap * sizeof(int));
     }
     chunk->code[chunk->code_len] = byte;
     chunk->lines[chunk->lines_len] = line;
+    chunk->cols[chunk->lines_len]  = chunk->cur_col;
     chunk->code_len++;
     chunk->lines_len++;
 }

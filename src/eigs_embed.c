@@ -93,7 +93,7 @@ EigsValue *eigs_eval_string(const char *src) {
     /* REPL-style compilation: top-level names land in the global env
      * (not module-export slots), so the host can read them back through
      * eigs_get_global and successive eigs_eval_string calls accumulate. */
-    EigsChunk *chunk = compile_ast(ast, global);
+    EigsChunk *chunk = compile_ast(ast, global, src);
 
     Value *result = vm_execute(chunk, global);
     chunk_free(chunk);

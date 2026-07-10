@@ -2,4 +2,5 @@
 # `+` requires both operands to be the same kind; convert explicitly
 # with `str of n` or `num of s`.
 # expect-error: cannot apply '+' to str and num
+# expect-caret: |                  ^
 msg is "count: " + 3

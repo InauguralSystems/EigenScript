@@ -200,6 +200,23 @@ typedef struct {
 } EnvIC;
 
 /* ---- Bytecode Chunk ---- */
+
+/* #407: shared source blob for runtime-error caret excerpts. One blob per
+ * compile unit (script, REPL line, eval'd string, imported module); the
+ * root chunk and every nested function chunk hold a ref, so the excerpt
+ * text outlives the caller's source buffer (REPL lines and eval strings
+ * are freed while closures keep their chunks alive). Not a GC edge —
+ * plain owned data like chunk->name. Refcount policy mirrors chunk
+ * refcounts: atomic when g_vm_multithreaded. */
+typedef struct EigsSrcBuf {
+    int   refcount;
+    char *text;
+} EigsSrcBuf;
+
+EigsSrcBuf *srcbuf_new(const char *text);
+void        srcbuf_incref(EigsSrcBuf *sb);
+void        srcbuf_decref(EigsSrcBuf *sb);
+
 typedef struct EigsChunk {
     /* Lifetime: 1 creator ref (compile_ast caller, or the parent chunk's
      * functions[] slot for nested chunks) + 1 per live VAL_FN pointing at
@@ -229,6 +246,17 @@ typedef struct EigsChunk {
     int     *lines;             /* line number per bytecode offset */
     int      lines_len;
     int      lines_cap;
+    int     *cols;              /* #407: 0-based column per bytecode offset
+                                 * (the emitting AST node's col; 0 when
+                                 * unknown). Same length/cap as lines[].
+                                 * Compile-time only data, read on the
+                                 * cold error path — never in dispatch. */
+    int      cur_col;           /* compile-time cursor: column stamped into
+                                 * cols[] by chunk_emit; maintained by
+                                 * compile_node's save/set/restore. */
+    EigsSrcBuf *src;            /* #407: source text for caret excerpts;
+                                 * shared across the unit's chunks. May be
+                                 * NULL (no caret printed then). */
 
     struct EigsChunk **functions; /* nested function chunks */
     int      fn_count;
@@ -501,7 +529,7 @@ const char *op_name(uint8_t op);
 int        chunk_verify(EigsChunk *chunk);
 
 /* Compiler */
-EigsChunk *compile_ast(ASTNode *ast, Env *env);
+EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
 
 /* Sandbox loop-iteration cap (0 = default 100M). Set by builtin_sandbox_run. */
 extern int g_sandbox_loop_max;

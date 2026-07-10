@@ -459,6 +459,22 @@ def main():
           bool(d) and any(x.get("code") == "E003" for x in d))
     check("E003 diagnostic severity is error (1)",
           bool(d) and any(x.get("code") == "E003" and x.get("severity") == 1 for x in d))
+    # #407 residual: the squiggle is token-precise — 'totl' sits at line 2
+    # (0-based), chars 9..13 — not the old whole-line 0..1000 span.
+    e3 = next((x for x in (d or []) if x.get("code") == "E003"), None)
+    check("E003 range is token-precise (start char 9)",
+          bool(e3) and e3["range"]["start"]["character"] == 9)
+    check("E003 range is token-precise (end char 13)",
+          bool(e3) and e3["range"]["end"]["character"] == 13)
+
+    # --- E002 parse-error range is token-precise (#407 residual) ---
+    r = converse([INIT, did_open("x is 2 x is 3\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    e2 = next((x for x in (d or []) if x.get("code") == "E002"), None)
+    check("E002 range starts at the offending token (char 7)",
+          bool(e2) and e2["range"]["start"]["character"] == 7)
+    check("E002 range ends after the token (char 8)",
+          bool(e2) and e2["range"]["end"]["character"] == 8)
 
     # --- '# lint: allow-file' silences the code in the LSP too ---
     r = converse([INIT, did_open("# lint: allow-file E003\nx is 1\nif x > 5:\n    y is totl + 1\n    print of y\n"),

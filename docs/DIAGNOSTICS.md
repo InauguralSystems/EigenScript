@@ -23,16 +23,26 @@ callers, Makefiles, and CI.
 
 ## Stack traces
 
-An uncaught runtime error (or uncaught `throw`) prints the call stack
-to stderr after the error line — every frame between the failure and
-the top level, innermost first:
+An uncaught runtime error (or uncaught `throw`) prints, to stderr: the
+error line, a one-line source excerpt with a `^` caret under the
+offending column (#407 residual — same format as parse errors), then
+the call stack — every frame between the failure and the top level,
+innermost first:
 
 ```
 Error line 6: index 99 out of range (list length 2)
+     6 | v is items[99]
+       |           ^
   at inner (line 6)
   at middle (line 8)
   at <module> (line 9)
 ```
+
+The excerpt block is additive: the `Error line N: ...` message and the
+`  at fn (line N)` trace lines are byte-unchanged, so tools that match
+on them keep working. The caret is suppressed (message + trace only)
+when the failing position can't be attributed confidently — e.g. inside
+JIT-compiled loops or when the unit's source isn't available.
 
 Caught errors print nothing; the handler decides.
 
@@ -120,6 +130,8 @@ print of "reached"
 
 $ eigenscript type_err.eigs
 Error line 2: cannot apply '-' to list and num
+     2 | y is x - 5
+       |        ^
   at <module> (line 2)
 $ echo $?
 1
@@ -402,7 +414,10 @@ in the message (see "Runtime Error Types").
 
 The LSP server (`make lsp` → `src/eigenlsp`) surfaces the first syntax
 or parse error of each open document as a
-`textDocument/publishDiagnostics` squiggle at the failing line
-(`tests/test_lsp.py` pins the protocol behavior). For batch static
-checks, `eigenscript --lint file.eigs` runs the linter and
-`eigenscript --fmt` the formatter.
+`textDocument/publishDiagnostics` squiggle (`tests/test_lsp.py` pins the
+protocol behavior). Ranges are token-precise (#407 residual): parse
+errors (E002) and undefined-name errors (E003) squiggle exactly the
+offending token (`start`/`end` from the token's column and length);
+diagnostics without a tracked position fall back to a whole-line range.
+For batch static checks, `eigenscript --lint file.eigs` runs the linter
+and `eigenscript --fmt` the formatter.

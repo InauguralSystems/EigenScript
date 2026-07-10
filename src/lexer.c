@@ -218,6 +218,8 @@ TokenList tokenize(const char *source) {
      * g_tokenize_depth, so only reset at the outermost pass. */
     if (g_tokenize_depth == 0) {
         g_first_error_line = 0;
+        g_first_error_col = 0;
+        g_first_error_len = 0;
         g_first_error_msg[0] = '\0';
     }
 

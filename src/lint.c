@@ -10,6 +10,8 @@
 
 typedef struct {
     int line;
+    int col;          /* 0-based column of the offending token (0 = unknown) */
+    int len;          /* token length (0 = unknown -> whole-line LSP range) */
     char level[16];   /* "warning" or "error" */
     char code[8];     /* stable diagnostic code, e.g. "W001" */
     char message[256];
@@ -49,11 +51,14 @@ static void json_escape(const char *s, char *out, size_t outsz) {
     out[o] = '\0';
 }
 
-static void lint_vdiag(LintContext *ctx, int line, const char *level,
+static void lint_vdiag(LintContext *ctx, int line, int col, int len,
+                       const char *level,
                        const char *code, const char *fmt, va_list ap) {
     if (ctx->warning_count >= MAX_LINT_WARNINGS) return;
     LintWarning *w = &ctx->warnings[ctx->warning_count++];
     w->line = line;
+    w->col  = col;
+    w->len  = len;
     snprintf(w->level, sizeof(w->level), "%s", level);
     snprintf(w->code, sizeof(w->code), "%s", code);
     vsnprintf(w->message, sizeof(w->message), fmt, ap);
@@ -63,16 +68,18 @@ static void lint_warn(LintContext *ctx, int line, const char *code,
                       const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    lint_vdiag(ctx, line, "warning", code, fmt, ap);
+    lint_vdiag(ctx, line, 0, 0, "warning", code, fmt, ap);
     va_end(ap);
 }
 
-/* Error-severity diagnostic: fails --lint even at --lint-level error. */
-static void lint_error(LintContext *ctx, int line, const char *code,
-                       const char *fmt, ...) {
+/* Error-severity diagnostic (fails --lint even at --lint-level error)
+ * carrying a token position (#407 residual): the LSP publishes
+ * col..col+len as the squiggle range; pass col=0,len=0 when unknown. */
+static void lint_error_at(LintContext *ctx, int line, int col, int len,
+                          const char *code, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    lint_vdiag(ctx, line, "error", code, fmt, ap);
+    lint_vdiag(ctx, line, col, len, "error", code, fmt, ap);
     va_end(ap);
 }
 
@@ -1639,12 +1646,13 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
                     e->dynamic = 1;
             } else if (!env_get(e->scope, n->data.ident.name)) {
                 const char *near = e003_suggest(e->scope, n->data.ident.name);
+                int nlen = (int)strlen(n->data.ident.name);
                 if (near)
-                    lint_error(ctx, n->line, "E003",
+                    lint_error_at(ctx, n->line, n->col, nlen, "E003",
                                "undefined name '%s' — no binding on any path (did you mean '%s'?)",
                                n->data.ident.name, near);
                 else
-                    lint_error(ctx, n->line, "E003",
+                    lint_error_at(ctx, n->line, n->col, nlen, "E003",
                                "undefined name '%s' — no binding on any path",
                                n->data.ident.name);
             }
@@ -1977,6 +1985,8 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
     int n = ctx.warning_count < max ? ctx.warning_count : max;
     for (int i = 0; i < n; i++) {
         out[i].line = ctx.warnings[i].line;
+        out[i].col  = ctx.warnings[i].col;
+        out[i].len  = ctx.warnings[i].len;
         snprintf(out[i].code, sizeof(out[i].code), "%s", ctx.warnings[i].code);
         snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
         snprintf(out[i].message, sizeof(out[i].message), "%s", ctx.warnings[i].message);

@@ -5,6 +5,26 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Runtime-error carets + token-precise LSP ranges (#407 residual).**
+  Uncaught runtime errors now print the same one-line source excerpt +
+  `^` caret as parse errors, with the column attributed to the failing
+  token (the `[` of an out-of-range subscript, the operator of a type
+  mismatch, the undefined identifier, the `of` of a bad call). Mechanism:
+  a per-byte `cols[]` table beside the chunk's `lines[]` (stamped by
+  `compile_node`'s save/set/restore position cursor — zero dispatch-loop
+  cost, no OP_LINE/tape change), a refcounted per-unit source blob shared
+  by nested function chunks (so REPL lines, eval'd strings, and imported
+  modules all excerpt their own source), and uncaught-error printing
+  deferred from raise time to the dispatch loop's `CHECK_ERROR`, which
+  knows the failing instruction's offset. A `lines[off] == error_line`
+  guard suppresses the caret whenever the position can't be attributed
+  confidently (e.g. JIT-advanced ip), so a caret never points at the
+  wrong line. The `Error line N:` message and `  at fn (line N)` trace
+  lines are byte-unchanged. LSP diagnostics are now token-precise:
+  E002 (parse) and E003 (undefined name) squiggle exactly the offending
+  token instead of the whole line (0..1000 span remains only as the
+  no-position fallback). `examples/errors/*` pin runtime carets via a
+  new `# expect-caret:` directive; `tests/test_lsp.py` pins the ranges.
 - **The observer pair: value-channel raw-step signals (#422) + trajectory
   snapshots across call boundaries (#421).**
   - *#422*: relative normalization (`Δv/(1+|v|)`) erased exactly two
