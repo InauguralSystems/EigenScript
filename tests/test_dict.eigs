@@ -59,4 +59,29 @@ assert_eq of [app.db.port, 5432, "nested dot number"]
 msg is f"name={d.name}"
 assert_eq of [msg, "name=eigen", "dict in f-string"]
 
+# Repeated insert/remove on one dict must not inflate its hash table: the
+# re-index rebuild after a remove used to blindly DOUBLE capacity, going
+# exponential (2^N after N removes -- OOM at ~25; caught by liferaft's
+# per-message registry churn, #523 migration). 200 cycles is impossible
+# pre-fix and instant post-fix.
+churn is {}
+ci is 0
+loop while ci < 200:
+    churn["k"] is ci
+    dict_remove of [churn, "k"]
+    ci is ci + 1
+assert_eq of [ci, 200, "200 insert/remove cycles complete (no exponential rebuild)"]
+assert_eq of [len of churn, 0, "churned dict ends empty"]
+
+# Same churn against a dict that keeps OTHER live keys: removes re-index the
+# survivors, lookups must stay correct throughout.
+churn2 is {"keep1": 1, "keep2": 2}
+ci is 0
+loop while ci < 50:
+    churn2["tmp"] is ci
+    dict_remove of [churn2, "tmp"]
+    ci is ci + 1
+assert_eq of [churn2.keep1 + churn2.keep2, 3, "surviving keys resolve after churn"]
+assert_eq of [len of churn2, 2, "only survivors remain"]
+
 test_summary of null

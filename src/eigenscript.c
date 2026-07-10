@@ -1291,8 +1291,15 @@ void env_hash_insert(EnvHash *ht, uint32_t h, int idx) {
 }
 
 static void env_hash_rebuild(EnvHash *ht, char **names, int count) {
-    int new_cap = (ht->mask + 1) * 2;
-    if (new_cap < ENV_HASH_INIT_CAP) new_cap = ENV_HASH_INIT_CAP;
+    /* Size from the live entry count, never by blindly doubling the old
+     * capacity. Every grow-path caller rebuilds at >70% load, so 2x-count
+     * lands on the same doubling as before — but dict_remove rebuilds to
+     * RE-INDEX after a removal, and blind doubling there inflated a
+     * shrinking dict's table by 2^N over N removes: ~25 removes of a single
+     * key OOMed the process (surfaced by liferaft's per-message registry
+     * churn during the #523 task-layer migration). */
+    int new_cap = ENV_HASH_INIT_CAP;
+    while (new_cap < count * 2) new_cap *= 2;
     free(ht->hashes);
     free(ht->indices);
     free(ht->generations);
