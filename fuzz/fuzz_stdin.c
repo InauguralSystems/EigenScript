@@ -61,7 +61,7 @@ int main(void) {
     if (g_parse_errors == 0) {
         ASTNode *ast = parse(&tl);
         if (g_parse_errors == 0 && ast) {
-            EigsChunk *chunk = compile_ast(ast, global);
+            EigsChunk *chunk = compile_ast(ast, global, buf);
             if (chunk) {
                 Value *result = vm_execute(chunk, global);
                 if (result) val_decref(result);
