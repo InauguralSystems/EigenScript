@@ -1,0 +1,149 @@
+# #421 + #422: the observer-pair fixes.
+# #422 — value-channel raw-step signals: additive/polynomial runaway is
+#   'diverging' (was hidden by relative normalization), sub-deadband
+#   perpetual oscillation is 'oscillating' (was invisible to the flip
+#   counter); damped/settled trajectories keep their old labels.
+# #421 — `trajectory of x` snapshots a binding's observer windows into a
+#   dict that survives a call boundary; `classify of t` (and lib/contract's
+#   expect_regime) classifies it with the SAME classifiers.
+# All-pass prints TRAJECTORY_ALL_PASS.
+load_file of "lib/contract.eigs"
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== #422: raw-step signals ==="
+
+# 1. linear runaway (issue repro 1): relative step vanishes, raw step doesn't
+a is 400000.0
+s is 0
+loop while s < 40:
+    a is a + 5000.0
+    s is s + 1
+check of ["linear runaway is diverging", report_value of a, "diverging"]
+
+# 2. sub-deadband perpetual oscillation (issue repro 2)
+b is 0.0004
+s2 is 0
+loop while s2 < 40:
+    b is 0 - b
+    s2 is s2 + 1
+check of ["sub-deadband oscillation is oscillating", report_value of b, "oscillating"]
+
+# 3. large-offset absolute swing (relative ~5e-4, below deadband)
+c is 1000000.0
+s3 is 0
+loop while s3 < 40:
+    if c == 1000000.0:
+        c is 1000500.0
+    else:
+        c is 1000000.0
+    s3 is s3 + 1
+check of ["large-offset swing is oscillating", report_value of c, "oscillating"]
+
+# 4. geometric runaway: fixed relative step, non-vanishing raw
+g is 1.0
+s4 is 0
+loop while s4 < 40:
+    g is g * 2.0
+    s4 is s4 + 1
+check of ["geometric runaway is diverging", report_value of g, "diverging"]
+
+# 5. damped oscillation decays -> settles, must NOT read oscillating
+d is 1.0
+s5 is 0
+loop while s5 < 60:
+    d is (0 - d) * 0.7
+    s5 is s5 + 1
+check of ["damped oscillation settles", report_value of d, "converged"]
+
+# 6. settled constant: zero steps sit below the fp-noise floor
+k is 5.0
+s6 is 0
+loop while s6 < 40:
+    k is k + 0.0
+    s6 is s6 + 1
+check of ["settled constant is converged", report_value of k, "converged"]
+
+# 7. plain halving still converges (no regression)
+h is 64.0
+s7 is 0
+loop while s7 < 40:
+    h is h / 2.0
+    s7 is s7 + 1
+check of ["halving still converges", report_value of h, "converged"]
+
+print of "=== #421: trajectory snapshots ==="
+
+# 8. the issue repro: a callee classifies what the CALLER built
+define classify_elsewhere(t) as:
+    return classify of t
+check of ["snapshot crosses the call boundary", classify_elsewhere of (trajectory of h), "converged"]
+check of ["snapshot agrees with report_value", classify_elsewhere of (trajectory of a), "diverging"]
+
+# 9. entropy channel from the same snapshot
+ch is classify of [(trajectory of h), "entropy"]
+check of ["entropy channel reachable from snapshot", ch, "converged"]
+
+# 10. the snapshot is a transparent dict
+t is trajectory of h
+check of ["snapshot kind field", t["kind"], "trajectory"]
+check of ["snapshot rel window is full", len of (t["rel"]), 10]
+check of ["snapshot raw window is full", len of (t["raw"]), 10]
+
+# 11. unobserved parameter snapshots as an empty trajectory
+define snap_param(v) as:
+    return classify of (trajectory of v)
+check of ["fresh param slot classifies equilibrium", snap_param of 3.0, "equilibrium"]
+
+# 12. classify of a non-snapshot raises type_mismatch (never a silent label)
+caught is 0
+try:
+    x is classify of 42
+catch e:
+    if e["kind"] == "type_mismatch":
+        caught is 1
+check of ["classify of a bare value raises type_mismatch", caught, 1]
+
+# 13. classify of a bogus channel raises value_error
+caught2 is 0
+try:
+    _x2 is classify of [(trajectory of h), "bogus"]
+catch e2:
+    if e2["kind"] == "value":
+        caught2 is 1
+check of ["classify of a bogus channel raises", caught2, 1]
+
+print of "=== expect_regime (lib/contract.eigs) ==="
+
+# 14. snapshot-form contract: pass and mismatch paths
+got is expect_regime of [(trajectory of h), "converged", "halving converges"]
+check of ["expect_regime accepts the built trajectory", got, "converged"]
+caught3 is 0
+try:
+    expect_regime of [(trajectory of a), "converged", "runaway is not converged"]
+catch e3:
+    if e3 != null:
+        caught3 is 1
+check of ["expect_regime throws on regime mismatch", caught3, 1]
+
+# 15. expect_converging fails FAST on a runaway (diverging mid-run)
+define grow_fast(x) as:
+    return x * 2.0
+caught4 is 0
+try:
+    expect_converging of [1.0, grow_fast, 40, "runaway"]
+catch e4:
+    if e4 != null:
+        caught4 is 1
+check of ["expect_converging throws on a runaway", caught4, 1]
+
+if fails == 0:
+    print of "TRAJECTORY_ALL_PASS"
+if fails != 0:
+    print of f"TRAJECTORY_FAILED ({str of fails})"

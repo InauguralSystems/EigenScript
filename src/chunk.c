@@ -287,6 +287,8 @@ const char *op_name(uint8_t op) {
         [OP_PREDICATE_NAME] = "PREDICATE_NAME",
         [OP_REPORT_VALUE_SLOT] = "REPORT_VALUE_SLOT",
         [OP_REPORT_VALUE_NAME] = "REPORT_VALUE_NAME",
+        [OP_TRAJECTORY_SLOT] = "TRAJECTORY_SLOT",
+        [OP_TRAJECTORY_NAME] = "TRAJECTORY_NAME",
         [OP_BREAK] = "BREAK", [OP_CONTINUE] = "CONTINUE",
         [OP_TRY_BEGIN] = "TRY_BEGIN", [OP_TRY_END] = "TRY_END",
         [OP_OBSERVE_ASSIGN] = "OBSERVE_ASSIGN",
@@ -335,6 +337,7 @@ static int op_has_u16(uint8_t op) {
     case OP_IMPORT: case OP_MATCH:
     case OP_LINE:
     case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
+    case OP_TRAJECTORY_SLOT: case OP_TRAJECTORY_NAME:
         return 1;
     case OP_INTERROGATE: case OP_PREDICATE:
         return 1; /* kind:8 but padded to 16 for uniformity */
@@ -407,7 +410,7 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
     case OP_REPORT_NAME: case OP_OBSERVE_VALUE_NAME: case OP_OBSERVE_NAME_POST:
-    case OP_REPORT_VALUE_NAME:
+    case OP_REPORT_VALUE_NAME: case OP_TRAJECTORY_NAME:
     case OP_IMPORT:
         roles[0] = VR_NAME; return 1;
     case OP_CLOSURE:

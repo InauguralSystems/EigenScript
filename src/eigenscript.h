@@ -252,6 +252,10 @@ typedef struct ObserverSlot {
      * as the entropy channel; only the observed signal differs. */
     double  last_value;         /* last observed numeric value (Δv source) */
     double *v_window;           /* lazily allocated, OBSERVER_WINDOW_N relative-deltas */
+    double *vr_window;          /* #422 raw deltas (Δv un-normalized), same head/count:
+                                 * the non-vanishing-step signal that catches additive
+                                 * runaway and sub-deadband oscillation, both of which
+                                 * relative normalization erases */
     uint8_t v_window_head, v_window_count;
     uint8_t v_used;             /* 1 once a numeric value has been recorded */
 } ObserverSlot;
@@ -348,6 +352,13 @@ const char *observer_slot_report_value(const struct ObserverSlot *s);
  * per-binding trajectories from tape A records through the SAME classifier
  * the language uses — a reimplementation there could silently drift. */
 void observer_slot_record_value(struct ObserverSlot *s, double v);
+/* #421 trajectory snapshots: capture a slot's observer windows into a plain
+ * dict Value that survives a call boundary (`trajectory of x`), and rebuild
+ * a classifiable slot from such a dict (`classify of t`). from_trajectory
+ * returns 1 + malloc'd windows in *out (caller frees dh/v/vr_window), 0 on
+ * a non-trajectory dict — the caller raises, never tolerates silently. */
+struct Value *observer_slot_trajectory(const struct ObserverSlot *s);
+int observer_slot_from_trajectory(struct ObserverSlot *out, struct Value *dict);
 
 /* Returns the dH at offset back from most recent (0 = most recent).
  * Caller must ensure offset < observer_window_size(v). */

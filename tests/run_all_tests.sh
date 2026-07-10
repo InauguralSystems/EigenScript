@@ -1813,6 +1813,11 @@ check_eigs_suite "contract: require/ensure + expect_converging/monotone/invarian
     "test_contract.eigs" "CONTRACT_ALL_PASS" 1
 echo ""
 
+echo "[50j2] Observer pair #421/#422: raw-step signals + trajectory snapshots (20 checks)"
+check_eigs_suite "value-channel diverging/sub-deadband oscillation, trajectory-of/classify across call boundaries, expect_regime" \
+    "test_trajectory.eigs" "TRAJECTORY_ALL_PASS" 1
+echo ""
+
 echo "[50k] UTF-8 codepoints (16 checks)"
 check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural validation (published vectors)" \
     "test_utf8.eigs" "UTF8_ALL_PASS" 1

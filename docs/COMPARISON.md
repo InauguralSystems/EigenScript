@@ -373,6 +373,27 @@ loop while not converged:    # EigenScript: the runtime watches e
     e is step of e
 ```
 
+And because the measurement is already paid, a trajectory is a first-class
+thing you can hand to another function — `trajectory of x` snapshots the
+observer's windows into a plain dict, and `classify` reads it on the other
+side of the call (no equivalent exists elsewhere; a debugger watch window
+is the closest analogue, and it can't cross a function boundary either):
+
+```eigenscript
+define diagnose(t) as:
+    return classify of t
+
+r is 1.0
+i is 0
+loop while i < 40:
+    r is r * 2.0
+    i is i + 1
+print of (diagnose of (trajectory of r))
+```
+```output
+diverging
+```
+
 ## Before / after: porting checklist
 
 Transformations you will apply constantly when porting Python code:

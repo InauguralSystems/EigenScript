@@ -172,6 +172,12 @@ typedef enum {
                            * VALUE trajectory (#294), not its entropy. Appended, not mid-list. */
     OP_REPORT_VALUE_NAME, /* [name_idx:16] `report_value of <name>` — resolve the binding's
                            * (env,slot) and classify its value trajectory. */
+    OP_TRAJECTORY_SLOT, /* [slot:16] `trajectory of <local>` (#421) — snapshot the local
+                         * slot's observer windows into a dict VALUE that survives a call
+                         * boundary (the slot itself is binding-identity and cannot).
+                         * Appended, not mid-list. */
+    OP_TRAJECTORY_NAME, /* [name_idx:16] `trajectory of <name>` — resolve the binding's
+                         * (env,slot) and snapshot it. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

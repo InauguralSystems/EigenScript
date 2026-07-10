@@ -265,6 +265,7 @@ static const char *classify_at(const NameHist *h, int pos, int *out_numeric) {
     }
     const char *label = fed ? observer_slot_report_value(&s) : NULL;
     free(s.v_window);
+    free(s.vr_window);
     free(s.dh_window);
     if (out_numeric) *out_numeric = fed;
     return label;
@@ -346,6 +347,7 @@ static void show_trajectory(const Tape *t, int pos, const char *name) {
         printf("\n");
     }
     free(s.v_window);
+    free(s.vr_window);
     free(s.dh_window);
 }
 

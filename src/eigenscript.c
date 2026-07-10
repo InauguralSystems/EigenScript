@@ -4,6 +4,7 @@
  * Compiles with: gcc -O2 -o eigenscript eigenscript.c -lm -lpthread
  */
 
+#include <float.h>   /* DBL_EPSILON — the #422 raw-step fp-noise floor */
 #include "eigenscript.h"
 #include "vm.h"   /* EigsChunk layout: the cycle collector traverses
                    * fn -> chunk -> env_cache / functions[] edges */
@@ -344,14 +345,21 @@ static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back
 }
 
 /* #294 value-signal channel: same ring buffer as the entropy window, but the
- * pushed quantity is the value's own relative step Δv/(1+|v|). */
-static void observer_slot_v_push(ObserverSlot *s, double rel_delta) {
+ * pushed quantity is the value's own relative step Δv/(1+|v|). #422 adds a
+ * parallel RAW-step ring (Δv un-normalized, same head/count): the relative
+ * step is the deliberate primary contract, but normalization erases exactly
+ * two classes — additive/polynomial runaway (Δv/|v| → 0 while Δv doesn't)
+ * and oscillation below the deadband — and both are recoverable from the
+ * raw step's sign/decay structure alone. */
+static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta) {
     if (!s->v_window) {
         s->v_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+        s->vr_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
         s->v_window_head = 0;
         s->v_window_count = 0;
     }
     s->v_window[s->v_window_head] = rel_delta;
+    if (s->vr_window) s->vr_window[s->v_window_head] = raw_delta;
     s->v_window_head = (uint8_t)((s->v_window_head + 1) % OBSERVER_WINDOW_N);
     if (s->v_window_count < OBSERVER_WINDOW_N) s->v_window_count++;
 }
@@ -363,14 +371,66 @@ static double observer_slot_v_get(const ObserverSlot *s, size_t offset_back) {
     return s->v_window[idx];
 }
 
+static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
+    if (!s->vr_window || offset_back >= s->v_window_count) return 0.0;
+    int idx = (int)s->v_window_head - 1 - (int)offset_back;
+    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    return s->vr_window[idx];
+}
+
+/* #422 raw-step structure tests. Both require a FULL window and steps above
+ * the fp-noise floor (a settled double wobbles by ULPs whose signs are
+ * meaningless — 4·ε·(1+|v|) scales the floor to the value's magnitude), and
+ * both hinge on the same question the relative channel cannot ask: are the
+ * raw steps NON-VANISHING (recent-half mean magnitude ≥ half the older-half
+ * mean)? Non-vanishing same-sign steps sum without bound → diverging, no
+ * matter how large |v| already is; non-vanishing sign-alternating steps are
+ * a perpetual oscillation, no matter how small the deadband-relative step.
+ * A damped (decaying-step) trajectory fails non-vanishing and falls through
+ * to the relative verdicts — converging approaches stay 'converged'. */
+static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
+    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+    size_t half = OBSERVER_WINDOW_N / 2;
+    double recent = 0.0, older = 0.0;
+    for (size_t i = 0; i < half; i++)          recent += fabs(observer_slot_vr_get(s, i));
+    for (size_t i = half; i < OBSERVER_WINDOW_N; i++) older += fabs(observer_slot_vr_get(s, i));
+    recent /= (double)half;
+    older  /= (double)(OBSERVER_WINDOW_N - half);
+    if (older <= floor_eps || recent <= floor_eps) return 0;
+    return recent >= 0.5 * older;
+}
+
+static int observer_slot_raw_diverging(const ObserverSlot *s) {
+    if (!observer_slot_raw_nonvanishing(s)) return 0;
+    double first = observer_slot_vr_get(s, 0);
+    for (size_t i = 1; i < OBSERVER_WINDOW_N; i++)
+        if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
+    return 1;
+}
+
+static int observer_slot_raw_oscillating(const ObserverSlot *s) {
+    if (!observer_slot_raw_nonvanishing(s)) return 0;
+    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+    int flips = 0;
+    for (size_t i = 0; i + 1 < OBSERVER_WINDOW_N; i++) {
+        double a = observer_slot_vr_get(s, i);
+        double b = observer_slot_vr_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > floor_eps && fabs(b) > floor_eps) flips++;
+    }
+    return flips >= FLIPS;
+}
+
 /* Fold one observed numeric value into the slot's value channel. The stored
  * step is RELATIVE (Δv/(1+|v|)) so the thresholds carry the same meaning across
  * value scales: a ±0.6 swing around 5 reads "moving" (~12% steps), the same
  * swing around 1e6 is effectively settled. First value seeds last_value only. */
 void observer_slot_record_value(ObserverSlot *s, double v) {
     if (s->v_used) {
-        double rel = (v - s->last_value) / (1.0 + fabs(v));
-        observer_slot_v_push(s, rel);
+        double raw = v - s->last_value;
+        double rel = raw / (1.0 + fabs(v));
+        observer_slot_v_push(s, rel, raw);
     }
     s->last_value = v;
     s->v_used = 1;
@@ -424,6 +484,7 @@ void observer_slot_reset(Env *e) {
     for (int i = 0; i < e->obs_cap; i++) {
         free(e->obs[i].dh_window);
         free(e->obs[i].v_window);   /* #294 value-signal window */
+        free(e->obs[i].vr_window);  /* #422 raw-step window */
     }
     free(e->obs);
     e->obs = NULL;
@@ -542,6 +603,14 @@ const char *observer_slot_report_value(const ObserverSlot *s) {
         }
         if (flips >= FLIPS) return "oscillating";
     }
+    /* #422: the raw-step structure tests run BEFORE the relative verdicts —
+     * relative normalization is exactly what hides these two classes. A
+     * sub-deadband perpetual oscillation (x → -x seeded tiny, or a fixed
+     * absolute swing around a large offset) is 'oscillating'; non-vanishing
+     * same-sign steps (a linear/polynomial runaway whose Δv/|v| → 0) are
+     * 'diverging' — the value channel's first use of that label. */
+    if (observer_slot_raw_oscillating(s)) return "oscillating";
+    if (observer_slot_raw_diverging(s))   return "diverging";
     int all_zero = 1, all_small = 1;
     for (size_t i = 0; i < cnt; i++) {
         double w = fabs(observer_slot_v_get(s, i));
@@ -551,6 +620,108 @@ const char *observer_slot_report_value(const ObserverSlot *s) {
     if (cnt >= OBSERVER_WINDOW_N && all_zero) return "converged";
     if (all_small) return "stable";
     return "moving";
+}
+
+/* ---- #421: trajectory snapshots across call boundaries. ----------------
+ * The observer's state is binding-identity (Env::obs[slot]) — passing x
+ * into a function gives the callee a fresh slot with no history, so a
+ * contract function cannot classify what its caller built up. `trajectory
+ * of x` snapshots the slot's windows into a plain dict VALUE, which does
+ * survive the call; `classify of t` rebuilds a slot from the dict and runs
+ * the same classifiers. The dict is deliberately transparent (inspectable,
+ * JSON-able, tape-visible as <dict:N>) rather than an opaque handle. */
+
+Value *observer_slot_trajectory(const ObserverSlot *s) {
+    Value *out = make_dict(10);
+    if (!out) return NULL;
+    dict_set_owned(out, "kind", make_str("trajectory"));
+    int vcnt = (s && s->v_window)  ? s->v_window_count  : 0;
+    int dcnt = (s && s->dh_window) ? s->dh_window_count : 0;
+    Value *rel = make_list_heap(vcnt > 0 ? vcnt : 1);
+    Value *raw = make_list_heap(vcnt > 0 ? vcnt : 1);
+    Value *dh  = make_list_heap(dcnt > 0 ? dcnt : 1);
+    /* windows read newest-first (offset 0 = most recent); emit oldest-first
+     * so the lists read chronologically, like a history. */
+    for (int i = vcnt - 1; i >= 0; i--) {
+        list_append_owned(rel, make_num(observer_slot_v_get(s, (size_t)i)));
+        list_append_owned(raw, make_num(observer_slot_vr_get(s, (size_t)i)));
+    }
+    for (int i = dcnt - 1; i >= 0; i--)
+        list_append_owned(dh, make_num(observer_slot_window_get(s, (size_t)i)));
+    dict_set_owned(out, "rel", rel);
+    dict_set_owned(out, "raw", raw);
+    dict_set_owned(out, "dh",  dh);
+    dict_set_owned(out, "entropy",      make_num(s ? s->entropy : 0.0));
+    dict_set_owned(out, "dH",           make_num(s ? s->dH : 0.0));
+    dict_set_owned(out, "last_entropy", make_num(s ? s->last_entropy : 0.0));
+    dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
+    dict_set_owned(out, "observed",     make_num(s ? (s->used != 0) : 0));
+    dict_set_owned(out, "numeric",      make_num(s ? (s->v_used != 0) : 0));
+    return out;
+}
+
+/* Rebuild a classifiable slot from a snapshot dict. Returns 1 and fills
+ * *out (windows malloc'd — caller frees dh_window/v_window/vr_window) when
+ * the dict is a well-formed trajectory; 0 otherwise. Wrong shapes are the
+ * CALLER's error to raise loudly — no silent tolerance here. */
+int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
+    memset(out, 0, sizeof *out);
+    if (!dict || dict->type != VAL_DICT) return 0;
+    Value *kind = dict_get(dict, "kind");
+    if (!kind || kind->type != VAL_STR || strcmp(kind->data.str, "trajectory") != 0)
+        return 0;
+    Value *rel = dict_get(dict, "rel");
+    Value *raw = dict_get(dict, "raw");
+    Value *dh  = dict_get(dict, "dh");
+    if (!rel || rel->type != VAL_LIST || !raw || raw->type != VAL_LIST ||
+        !dh || dh->type != VAL_LIST)
+        return 0;
+    /* Only the most recent OBSERVER_WINDOW_N entries matter — a hand-built
+     * longer list classifies identically to its tail, same ring semantics. */
+    int vcnt = rel->data.list.count;
+    if (raw->data.list.count < vcnt) vcnt = raw->data.list.count;
+    int vstart = vcnt > OBSERVER_WINDOW_N ? vcnt - OBSERVER_WINDOW_N : 0;
+    out->v_window  = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+    out->vr_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+    for (int i = vstart; i < vcnt; i++) {
+        Value *a = rel->data.list.items[i], *b = raw->data.list.items[i];
+        if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) {
+            free(out->v_window); free(out->vr_window);
+            memset(out, 0, sizeof *out);
+            return 0;
+        }
+        out->v_window[out->v_window_count]  = a->data.num;
+        out->vr_window[out->v_window_count] = b->data.num;
+        out->v_window_count++;
+    }
+    out->v_window_head = (uint8_t)(out->v_window_count % OBSERVER_WINDOW_N);
+    int dcnt = dh->data.list.count;
+    int dstart = dcnt > OBSERVER_WINDOW_N ? dcnt - OBSERVER_WINDOW_N : 0;
+    out->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+    for (int i = dstart; i < dcnt; i++) {
+        Value *a = dh->data.list.items[i];
+        if (!a || a->type != VAL_NUM) {
+            free(out->v_window); free(out->vr_window); free(out->dh_window);
+            memset(out, 0, sizeof *out);
+            return 0;
+        }
+        out->dh_window[out->dh_window_count++] = a->data.num;
+    }
+    out->dh_window_head = (uint8_t)(out->dh_window_count % OBSERVER_WINDOW_N);
+    Value *v;
+    if ((v = dict_get(dict, "entropy"))      && v->type == VAL_NUM) out->entropy = v->data.num;
+    if ((v = dict_get(dict, "dH"))           && v->type == VAL_NUM) out->dH = v->data.num;
+    if ((v = dict_get(dict, "last_entropy")) && v->type == VAL_NUM) out->last_entropy = v->data.num;
+    if ((v = dict_get(dict, "last_value"))   && v->type == VAL_NUM) out->last_value = v->data.num;
+    v = dict_get(dict, "observed");
+    out->used = (v && v->type == VAL_NUM) ? (v->data.num != 0.0) : 1;
+    v = dict_get(dict, "numeric");
+    out->v_used = (v && v->type == VAL_NUM) ? (v->data.num != 0.0)
+                                            : (out->v_window_count > 0);
+    /* A full slot re-fed through the classifiers needs obs_age > 0 so the
+     * partial-window fallbacks behave like a live slot's. */
+    out->obs_age = out->dh_window_count + out->v_window_count;
+    return 1;
 }
 
 /* g_last_observer, g_builtin_call_env, g_unobserved_depth are EigsThread

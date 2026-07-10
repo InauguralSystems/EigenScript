@@ -5,6 +5,40 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **The observer pair: value-channel raw-step signals (#422) + trajectory
+  snapshots across call boundaries (#421).**
+  - *#422*: relative normalization (`Δv/(1+|v|)`) erased exactly two
+    trajectory classes, and both misread as *accepting* regimes: an
+    additive/polynomial runaway (`x → x + c` seeded large) read
+    `converged`/`stable`, and a perpetual oscillation below the deadband
+    (`x → -x` seeded at 4e-4, or a fixed absolute swing around a large
+    offset) read `stable`/`converged`. The `ObserverSlot` value channel now
+    keeps a parallel window of RAW steps and asks one structural question —
+    are the steps **non-vanishing** (recent-half mean ≥ half the older-half
+    mean, above a `4·ε·(1+|v|)` fp-noise floor)? Non-vanishing same-sign
+    steps classify `diverging` (the value channel's first use of the label;
+    geometric runaway upgrades from `moving` too); non-vanishing alternating
+    steps classify `oscillating`. Damped (decaying-step) trajectories still
+    settle to `converged`. `lib/contract.eigs`: `expect_converging` now
+    fails FAST on a mid-run `diverging`; `invariant_stable` throws on it;
+    the documented #422 blind-spot caveats are gone.
+  - *#421*: observer state is binding-identity, so a value passed into a
+    function arrived with no history — a contract could not classify what
+    its caller built. New special form `trajectory of x` snapshots the
+    binding's observer windows into a plain transparent dict
+    (`kind`/`rel`/`raw`/`dh`/`entropy`/…), and new builtin `classify of t`
+    (or `classify of [t, "entropy"]`) classifies it with the SAME
+    slot machinery `report_value`/`report` use (opcodes
+    OP_TRAJECTORY_SLOT/NAME, appended per the ABI rule). `classify` of a
+    non-snapshot raises `type_mismatch` — a bare value never silently
+    classifies as "no trajectory". `lib/contract.eigs` gains the snapshot
+    form `expect_regime of [trajectory of x, expected, msg]` alongside the
+    step-fn contracts; the lint knows `trajectory` as a special form (E003).
+  - Suite section [50j2] (`tests/test_trajectory.eigs`, 20 checks) pins both
+    issue repros red→green, the damped/settled/halving no-regressions, the
+    call-boundary crossing, both channels, the loud error paths, and
+    `expect_regime`. SPEC.md/COMPARISON.md gain byte-pinned examples;
+    OBSERVER.md documents the raw-step signal and the snapshot model.
 - **`--step` — the eigsdap v1 CLI tape-stepper (#418).**
   `eigenscript --step <tape> [source.eigs]` opens a recorded trace tape
   (from `--trace`, `EIGS_TRACE`, or a `--test --trace-on-fail` failure) in
