@@ -2204,6 +2204,8 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
         [OP_REPORT_NAME] = &&lbl_REPORT_NAME,
         [OP_REPORT_VALUE_SLOT] = &&lbl_REPORT_VALUE_SLOT,
         [OP_REPORT_VALUE_NAME] = &&lbl_REPORT_VALUE_NAME,
+        [OP_TRAJECTORY_SLOT] = &&lbl_TRAJECTORY_SLOT,
+        [OP_TRAJECTORY_NAME] = &&lbl_TRAJECTORY_NAME,
         [OP_OBSERVE_VALUE_SLOT] = &&lbl_OBSERVE_VALUE_SLOT,
         [OP_OBSERVE_VALUE_NAME] = &&lbl_OBSERVE_VALUE_NAME,
         [OP_OBSERVE_NAME_POST] = &&lbl_OBSERVE_NAME_POST,
@@ -4169,6 +4171,37 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         else
             result = make_str("equilibrium");
         vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(TRAJECTORY_SLOT): {
+        /* #421 `trajectory of <local>` — snapshot the local slot's observer
+         * windows into a dict value that survives a call boundary. An
+         * unobserved/out-of-range slot snapshots as an empty trajectory
+         * (classifies "equilibrium", mirroring report_value's fallback). */
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        const ObserverSlot *s = (e && (int)slot < e->obs_cap) ? &e->obs[slot] : NULL;
+        vm_push(observer_slot_trajectory(s));
+        DISPATCH();
+    }
+
+    CASE(TRAJECTORY_NAME): {
+        /* #421 trajectory of a non-local name — resolve (env,slot), snapshot.
+         * Undefined name raises like GET_NAME. */
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        const char *name = chunk->const_interns[name_idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
+        if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
+        int oidx = -1, odepth = 0;
+        Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (!oe) {
+            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        const ObserverSlot *s = (oidx >= 0 && oidx < oe->obs_cap) ? &oe->obs[oidx] : NULL;
+        vm_push(observer_slot_trajectory(s));
         DISPATCH();
     }
 

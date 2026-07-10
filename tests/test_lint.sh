@@ -203,7 +203,7 @@ define transform(items, factor) as:
         total is total + (it * factor)
     return total
 
-define classify(n) as:
+define categorize(n) as:
     label is "?"
     if n > 10:
         label is "big"
@@ -227,7 +227,7 @@ nums is [1, 2, 3, 4, 5]
 squares is [v * v for v in nums]
 total is transform of [nums, config.scale]
 piped is total |> doubler
-tag is classify of 7
+tag is categorize of 7
 dq is safe_div of [10, 2]
 first_name is config.names[0]
 deep is config.nested.k

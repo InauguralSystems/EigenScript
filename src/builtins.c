@@ -710,6 +710,48 @@ Value* builtin_observe(Value *arg) {
     return list;
 }
 
+Value* builtin_classify(Value *arg) {
+    /* #421 `classify of t` — classify a trajectory SNAPSHOT (the dict
+     * `trajectory of x` builds), so a callee can classify what its CALLER
+     * observed: the snapshot crosses the call boundary; the binding slot
+     * cannot. One arg → the #294 value-channel label (same classifier as
+     * `report_value of x`, including the #422 raw-step signals). Two args
+     * `classify of [t, "entropy"]` → the entropy-channel label (same as
+     * `report of x`). A non-trajectory argument is a loud EK_TYPE error —
+     * classifying an arbitrary value would silently mean "no trajectory". */
+    Value *t = arg;
+    const char *channel = "value";
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
+        t = arg->data.list.items[0];
+        if (arg->data.list.count >= 2) {
+            Value *ch = arg->data.list.items[1];
+            if (!ch || ch->type != VAL_STR ||
+                (strcmp(ch->data.str, "value") != 0 &&
+                 strcmp(ch->data.str, "entropy") != 0)) {
+                rt_error(EK_VALUE, 0,
+                         "classify: channel must be \"value\" or \"entropy\"");
+                return make_null();
+            }
+            channel = ch->data.str;
+        }
+    }
+    ObserverSlot s;
+    if (!observer_slot_from_trajectory(&s, t)) {
+        rt_error(EK_TYPE, 0, "classify: expected a trajectory snapshot "
+                 "(from `trajectory of x`), got %s",
+                 t ? val_type_name(t->type) : "none");
+        return make_null();
+    }
+    const char *label = (strcmp(channel, "entropy") == 0)
+                        ? observer_slot_report(&s)
+                        : observer_slot_report_value(&s);
+    Value *out = make_str(label ? label : "equilibrium");
+    free(s.dh_window);
+    free(s.v_window);
+    free(s.vr_window);
+    return out;
+}
+
 Value* builtin_type(Value *arg) {
     if (!arg) return make_str("none");
     switch (arg->type) {
@@ -3804,7 +3846,7 @@ static const char *SANDBOX_ALLOW[] = {
     "type", "coalesce", "num_copy", "secure_equals",
     /* observer READS — touch only the sandbox's own values, never globals
      * (set_observer_thresholds / record_history are intentionally NOT here) */
-    "observe", "report", "get_observer_thresholds", "state_at",
+    "observe", "report", "get_observer_thresholds", "state_at", "classify",
     /* tokenizer / parser introspection (pure over strings) */
     "tokenize_ids", "tokenize_with_names", "token_name", "scan_ints",
     "scan_int_tokens", "scan_tokens", "try_parse",
@@ -5870,6 +5912,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "dict_set", make_builtin(builtin_dict_set));
     env_set_local_owned(env, "dict_remove", make_builtin(builtin_dict_remove));
     env_set_local_owned(env, "observe", make_builtin(builtin_observe));
+    env_set_local_owned(env, "classify", make_builtin(builtin_classify));
     env_set_local_owned(env, "type", make_builtin(builtin_type));
     env_set_local_owned(env, "json_encode", make_builtin(builtin_json_encode));
     env_set_local_owned(env, "json_decode", make_builtin(builtin_json_decode));

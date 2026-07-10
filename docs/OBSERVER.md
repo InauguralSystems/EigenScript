@@ -126,11 +126,26 @@ in the flat-entropy plateau around 5 — see #294.)
 the identical windowed logic and thresholds on the value's relative step
 `Δv/(1+|x|)` (relative, so the bands mean the same across value scales). On the
 same oracle it answers `moving`/`oscillating` — correctly never `converged`.
-Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `converged` (a
-full window of ~zero relative steps), `stable` (small relative steps, no
-flips), `moving` (still changing), and `equilibrium` (no numeric trajectory
-yet / non-numeric binding). Use `report` to ask *how determined*; use
-`report_value` to ask *has the number stopped moving*.
+Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `diverging`
+(non-vanishing same-sign steps — see below), `converged` (a full window of
+~zero relative steps), `stable` (small relative steps, no flips), `moving`
+(still changing), and `equilibrium` (no numeric trajectory yet / non-numeric
+binding). Use `report` to ask *how determined*; use `report_value` to ask
+*has the number stopped moving*.
+
+**The raw-step signal (#422).** Relative normalization erases exactly two
+classes, so the value channel also keeps the window of *raw* steps `Δv` and
+asks one structural question of it: are the steps **non-vanishing** (the
+recent half's mean magnitude at least half the older half's, above an
+fp-noise floor of `4·ε·(1+|x|)`)? Non-vanishing **same-sign** steps sum
+without bound — an additive or polynomial runaway (`x → x + c` seeded large)
+whose `Δv/|x|` vanishes below the deadband is `diverging`, not `converged`.
+Non-vanishing **alternating** steps are a perpetual oscillation no matter how
+small the deadband-relative amplitude — `x → -x` seeded at `4e-4`, or a fixed
+absolute swing around a large offset, is `oscillating`, not `stable`. A
+*damped* oscillation has decaying steps, fails non-vanishing, and settles to
+`converged` as before. These checks run before the relative verdicts; the
+relative step remains the primary contract.
 
 ## The manifold: two basins and a horizon
 
@@ -261,17 +276,24 @@ Five surfaces:
 | `expect_converging of [x0, step_fn, max_obs, msg]` | trajectory settles within budget | value |
 | `expect_monotone of [x0, step_fn, max_obs, msg]` | no sign-flipping steps | value |
 | `invariant_stable of [x0, step_fn, max_obs, msg]` | value never begins moving | value |
+| `expect_regime of [trajectory of x, expected, msg]` | a caller-built history reads as `expected` | value |
 
 Three things the observer's own semantics force on the design — and each is the
 point, not an accident:
 
-- **The trajectory contracts take a *step function*, not a value.** The
-  observer's history lives in the binding slot it was written to (binding
+- **A trajectory crosses a call boundary as a *snapshot*, never as the value.**
+  The observer's history lives in the binding slot it was written to (binding
   identity), so a value handed to a function arrives as a fresh, single-sample
-  slot — its past does not travel. A contract therefore cannot inspect an
-  already-built value; it must *drive* the recurrence in its own scope. The
-  cross-scope gap is filed as [#421](https://github.com/InauguralSystems/EigenScript/issues/421),
-  not papered over.
+  slot — its past does not travel. Two contract forms follow: the *drive* form
+  (a seed + one-arg `step_fn`, applied into the contract's own local slot) when
+  the contract should control the observation budget, and the *snapshot* form
+  ([#421](https://github.com/InauguralSystems/EigenScript/issues/421)):
+  `trajectory of x` captures the binding's observer windows into a plain,
+  inspectable dict that does survive the call, and `classify of t` (or
+  `classify of [t, "entropy"]` for the entropy channel) classifies it with the
+  same machinery `report_value` / `report` use. `classify` of anything that is
+  not a snapshot raises `type_mismatch` — a bare value silently classifying as
+  "no trajectory" is exactly the hole the snapshot exists to close.
 
 - **Convergence is detected on the value channel, not entropy.** A
   monotonically *exploding* value has falling-then-flat entropy, so `report`
@@ -296,16 +318,17 @@ a `max_obs` too small to fill the observer window. Feed them the scalar residual
 you actually want to constrain. A worked example lives in
 `examples/stem/contract_solver.eigs`.
 
-What the contracts inherit and cannot fix — the value channel's resolution floor
-([#422](https://github.com/InauguralSystems/EigenScript/issues/422)). Because
-it classifies the *relative* step `(v-last)/(1+|v|)` against a `1e-3` deadband,
-a runaway whose step-to-magnitude ratio vanishes (additive/polynomial growth,
-`x -> x + c`) can read `converged`, and an oscillation below the deadband is
-invisible to the flip counter. Exponential divergence and supra-deadband
-oscillation *are* caught; for the rest, bound absolute magnitude with an
-explicit `ensure of [(abs of x) < LIMIT]`. The contracts document this and file
-it rather than hiding the instrument's edge behind an ad-hoc heuristic — the
-forcing-function model: a gap surfaces upstream instead of being papered over.
+The resolution floor the contracts once inherited —
+[#422](https://github.com/InauguralSystems/EigenScript/issues/422), where
+additive runaway read `converged` and sub-deadband oscillation read `stable` —
+is closed by the raw-step signal
+([above](#two-signals-entropy-vs-value-report-vs-report_value)): those now
+classify `diverging` and `oscillating`, `expect_converging` fails *fast* on a
+mid-run `diverging`, and `invariant_stable` throws on it. What remains true:
+a drift whose steps *decay* settles by design, and convergence is still not
+correctness — pin the destination with `ensure` on the final residual. (The
+gap was filed upstream and fixed in the instrument rather than papered over in
+`.eigs` — the forcing-function model working as intended.)
 
 ## Settled decisions (formerly "Rough edges")
 

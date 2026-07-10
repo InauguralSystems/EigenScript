@@ -17,17 +17,21 @@
 #   expect_converging of [x0, step_fn, max_obs, msg]
 #   expect_monotone   of [x0, step_fn, max_obs, msg]
 #   invariant_stable  of [x0, step_fn, max_obs, msg]
+#   expect_regime of [trajectory of x, expected, msg]   # caller-built history
 #
-# CONTRACT MODEL — WHY THE STEP FUNCTION.
+# CONTRACT MODEL — TWO FORMS.
 # The observer's trajectory lives in the *binding slot* it is written to, not
-# on the value (Env::obs is binding identity; #262/#294). A value computed in
-# the caller's loop therefore carries NO trajectory across a call boundary —
-# `report of x` inside a contract that merely received `x` sees a fresh,
-# single-sample slot. So a trajectory contract cannot inspect an already-built
-# value; it must DRIVE the trajectory in its own scope. Each contract takes the
-# seed `x0` and a one-arg `step_fn` (x -> x'), applies it up to `max_obs` times
-# into a single local accumulator, and classifies THAT slot. The cross-scope
-# gap is filed upstream (EigenScript #421), not worked around here.
+# on the value (Env::obs is binding identity; #262/#294), so a bare value
+# carries NO trajectory across a call boundary. The two forms handle that
+# two ways:
+#   - DRIVE (expect_converging / expect_monotone / invariant_stable): the
+#     contract takes a seed `x0` + one-arg `step_fn` and applies it up to
+#     `max_obs` times into its own local accumulator, classifying THAT slot.
+#     Use when the contract should control the observation budget.
+#   - SNAPSHOT (expect_regime): the caller passes `trajectory of x` — the
+#     #421 snapshot, a plain dict that DOES survive the call — and the
+#     contract classifies the history the caller already built. Use when
+#     the trajectory already happened.
 #
 # SCALAR ONLY. The value channel (report_value) only carries a numeric
 # trajectory. A step_fn that returns a list/dict has no value trajectory, so a
@@ -37,20 +41,16 @@
 # silently certifying nothing. For a vector solver, have step_fn return the
 # scalar residual/estimate you actually want to constrain.
 #
-# RESOLUTION FLOOR / KNOWN BLIND SPOTS (inherited from the instrument, filed as
-# #422 — do not paper over in .eigs). The value channel classifies the
-# *relative* step (v-last)/(1+|v|) against dh_zero=1e-3 / dh_small=1e-2 over a
-# 10-sample window. Two consequences the contracts cannot see and therefore do
-# not claim to catch:
-#   1. A runaway whose step/magnitude ratio VANISHES — additive or polynomial
-#      growth, e.g. x -> x + c once |x| is large — normalizes below the deadband
-#      and can read "converged". Exponential/geometric divergence IS caught.
-#   2. An oscillation whose relative amplitude sits below dh_zero is invisible
-#      to the flip counter, so expect_monotone passes a tiny (or, after
-#      normalization, a large-but-relatively-tiny) perpetual oscillation.
-# Guard both with an explicit absolute bound: `ensure of [(abs of x) < LIMIT]`.
-# And convergence is not correctness even when caught — pair with `ensure` on
-# the final residual to pin the actual target, not merely the fact of settling.
+# RESOLUTION FLOOR. The value channel classifies the *relative* step
+# (v-last)/(1+|v|) against dh_zero=1e-3 / dh_small=1e-2 over a 10-sample
+# window, PLUS (since #422 was fixed upstream) a raw-step structure test:
+# non-vanishing same-sign steps classify "diverging" (an additive/polynomial
+# runaway no longer hides behind normalization) and non-vanishing alternating
+# steps classify "oscillating" even below the deadband. A damped (decaying-
+# step) oscillation still settles to "converged" — feed the residual if you
+# mean "never rings at all". Convergence is not correctness even when caught —
+# pair with `ensure` on the final residual to pin the actual target, not
+# merely the fact of settling.
 
 # ---- _num_guard: refuse a non-scalar trajectory loudly ----
 # Internal. report_value is blind to non-numeric values, so an unguarded
@@ -99,9 +99,9 @@ define ensure(n) as:
 # converging solver from an exploding one: a monotonically growing value has
 # falling-then-flat entropy, so `report` labels a runaway "converged" (measured:
 # grow x*1.5 for 40 steps -> report=converged). Only the value channel keeps
-# them apart — same run reads report_value=moving. This is the #294 lossy-proxy
-# lesson made load-bearing. (For a runaway the value channel itself does not see,
-# see the #422 blind spots in the header — bound |x| with `ensure`.)
+# them apart — same run reads report_value=moving (or, since #422,
+# "diverging" outright). Runaways now FAIL FAST: a mid-run "diverging"
+# classification throws immediately instead of burning the whole budget.
 define expect_converging(n) as:
     a is n[0]
     step_fn is n[1]
@@ -114,8 +114,11 @@ define expect_converging(n) as:
         a is step_fn of a
         steps is steps + 1
         _num_guard of [a, "expect_converging"]
-        if (report_value of a) == "converged":
+        cstatus is report_value of a
+        if cstatus == "converged":
             return a
+        if cstatus == "diverging":
+            throw of ("expect_converging failed (diverging at obs " + (str of steps) + "): " + msg)
     throw of ("expect_converging failed (did not converge within " + (str of max_obs) + " obs; last value regime '" + (report_value of a) + "'): " + msg)
 
 # ---- expect_monotone of [x0, step_fn, max_obs, msg] ----
@@ -150,8 +153,11 @@ define expect_monotone(n) as:
 # deadband — across the window. For quantities that must stay constant (a
 # conserved energy, a fixed point already reached). Throws on the first "moving"
 # / "oscillating" classification of the value channel. Returns the final value.
-# (A drift SLOWER than the relative deadband reads "stable" and is not caught —
-# the #422 blind spot; bound it with `ensure of [(abs of x) < LIMIT]`.)
+# Also throws on "diverging" (reachable on the value channel since #422: a
+# non-vanishing same-sign drift — additive runaway — is caught even when each
+# relative step sits below the deadband). A drift that VANISHES (decaying
+# steps) still reads "stable"/"converged"; bound the absolute target with
+# `ensure of [(abs of x) < LIMIT]` when the destination matters.
 define invariant_stable(n) as:
     a is n[0]
     step_fn is n[1]
@@ -169,4 +175,24 @@ define invariant_stable(n) as:
             throw of ("invariant_stable violated (moving at obs " + (str of steps) + "): " + msg)
         if vstatus == "oscillating":
             throw of ("invariant_stable violated (oscillating at obs " + (str of steps) + "): " + msg)
+        if vstatus == "diverging":
+            throw of ("invariant_stable violated (diverging at obs " + (str of steps) + "): " + msg)
     return a
+
+# ---- expect_regime of [t, expected, msg] ----
+# The #421 snapshot form: classify a trajectory the CALLER already built.
+# `t` is `trajectory of x` — the caller snapshots its own binding's observer
+# windows into a dict that survives the call — and `expected` is the regime
+# the value channel must report ("converged", "oscillating", "diverging",
+# "stable", "moving", "equilibrium"). Throws with both labels on mismatch,
+# returns the label on success. classify raises type_mismatch on a non-
+# snapshot argument, so a caller passing the bare value fails loudly, not
+# as a silent "equilibrium".
+define expect_regime(n) as:
+    t is n[0]
+    expected is n[1]
+    msg is n[2]
+    got is classify of t
+    if got == expected:
+        return got
+    throw of ("expect_regime failed (expected '" + expected + "', trajectory reads '" + got + "'): " + msg)

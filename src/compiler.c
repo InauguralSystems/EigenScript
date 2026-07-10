@@ -236,6 +236,7 @@ static int op_stack_effect(uint8_t op) {
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
     case OP_REPORT_SLOT: case OP_REPORT_NAME:
     case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
+    case OP_TRAJECTORY_SLOT: case OP_TRAJECTORY_NAME:
     case OP_OBSERVE_VALUE_SLOT: case OP_OBSERVE_VALUE_NAME:
     case OP_PREDICATE_SLOT: case OP_PREDICATE_NAME:
         return 1;
@@ -2192,6 +2193,19 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 if (rslot >= 0) { emit_op_u16(c, OP_REPORT_VALUE_SLOT, (uint16_t)rslot, node->line); break; }
                 int rnidx = add_string_constant(c, arg_node->data.ident.name);
                 emit_op_u16(c, OP_REPORT_VALUE_NAME, (uint16_t)rnidx, node->line);
+                break;
+            }
+            if (fn_node && fn_node->type == AST_IDENT &&
+                strcmp(fn_node->data.ident.name, "trajectory") == 0 &&
+                arg_node && arg_node->type == AST_IDENT) {
+                /* #421 `trajectory of <ident>` — snapshot the binding's observer
+                 * windows into a dict VALUE that survives a call boundary (the
+                 * slot itself is binding-identity). `classify of t` reads it. */
+                uint32_t th = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
+                int tslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, th) : -1;
+                if (tslot >= 0) { emit_op_u16(c, OP_TRAJECTORY_SLOT, (uint16_t)tslot, node->line); break; }
+                int tnidx = add_string_constant(c, arg_node->data.ident.name);
+                emit_op_u16(c, OP_TRAJECTORY_NAME, (uint16_t)tnidx, node->line);
                 break;
             }
             /* #262 Phase-3 D: `observe of <ident>` reads the binding's slot

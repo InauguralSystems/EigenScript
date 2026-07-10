@@ -139,6 +139,8 @@ static int is_builtin_name(const char *name) {
 #undef X
         if (!env_get(e, "report_value"))
             env_set_local_owned(e, "report_value", make_null());
+        if (!env_get(e, "trajectory"))   /* #421 special form, like report_value */
+            env_set_local_owned(e, "trajectory", make_null());
         g_builtin_name_env = e;
     }
     return env_get(g_builtin_name_env, name) != NULL;
@@ -1836,9 +1838,11 @@ static void check_undefined_names(ASTNode *ast, const char *path,
     EIGS_MODEL_BUILTINS(X)
 #undef X
     /* Names the compiler resolves itself, so no registrar ever binds them:
-     * `report_value of x` is a special form (#294), and the observed-loop
-     * machinery injects __loop_exit__ / __loop_iterations__ bindings. */
+     * `report_value of x` is a special form (#294), `trajectory of x` is one
+     * too (#421), and the observed-loop machinery injects __loop_exit__ /
+     * __loop_iterations__ bindings. */
     e003_bind_name(&e, "report_value");
+    e003_bind_name(&e, "trajectory");
     e003_bind_name(&e, "__loop_exit__");
     e003_bind_name(&e, "__loop_iterations__");
     /* load_file resolution anchors at the linted file's directory —

@@ -1069,6 +1069,40 @@ its own condition is false. Both kinds keep an absolute iteration cap
 plain loop can't be cut short by what its body — or a function it calls —
 happens to assign to the global observer.
 
+**The value channel** (`report_value of x`) classifies the value's own
+trajectory rather than its entropy, over a 10-sample window of relative
+steps `Δv/(1+|v|)` — labels `oscillating`, `diverging`, `converged`,
+`stable`, `moving`, `equilibrium`. Two raw-step rules (#422) run before the
+relative verdicts: non-vanishing same-sign steps are `diverging` (an
+additive runaway whose relative step vanishes is still unbounded), and
+non-vanishing alternating steps are `oscillating` (a perpetual oscillation
+below the relative deadband is still an oscillation); decaying steps settle
+as usual.
+
+**Trajectories cross call boundaries as snapshots** (#421). Observer state
+is binding-identity — a value passed to a function arrives with no history —
+so `trajectory of x` captures the binding's observer windows into a plain
+dict, and `classify of t` (value channel; `classify of [t, "entropy"]` for
+the entropy channel) classifies it with the same machinery. `classify` of
+anything that is not a snapshot raises a `type_mismatch` error:
+
+```eigenscript
+define judge(t) as:
+    return classify of t
+
+x is 400000.0
+i is 0
+loop while i < 40:
+    x is x + 5000.0
+    i is i + 1
+print of (report_value of x)
+print of (judge of (trajectory of x))
+```
+```output
+diverging
+diverging
+```
+
 `unobserved:` blocks (and `loop` bodies inside them) skip observer
 updates entirely — use them for hot numeric loops:
 
