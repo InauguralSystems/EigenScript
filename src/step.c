@@ -47,6 +47,11 @@ typedef struct {
                          * (events before the first L clamp to 0) */
     const char *name;   /* A/N: binding / builtin name (into tape buf) */
     const char *value;  /* A/N: serialized value (into tape buf) */
+    uint32_t scope;     /* #539 v2: frame-instance serial this record
+                         * belongs to (from the preceding S record;
+                         * 0 = before any S). L records carry the scope
+                         * current at that point so position queries can
+                         * walk the chain. */
 } StepRec;
 
 typedef struct {
@@ -59,9 +64,24 @@ typedef struct {
 
 typedef struct {
     const char *name;
+    uint32_t scope;     /* #539 v2: one history per (scope-instance, name) —
+                         * a function-local i never merges with the
+                         * top-level i, and two invocations of the same
+                         * function never merge with each other. */
     Assign *a;
     int n, cap;
 } NameHist;
+
+/* #539 v2: one row per frame instance seen on the tape (S records).
+ * parent = the frame instance beneath it on the reconstructed call
+ * stack at push time, 0 for the base frame — position queries walk
+ * this chain to resolve names innermost-first. */
+typedef struct {
+    uint32_t serial;
+    const char *name;   /* chunk name: fn, <module>, <lambda> (into tape buf) */
+    int depth;
+    uint32_t parent;
+} ScopeInfo;
 
 typedef struct {
     char    *tape;      /* whole tape file, lines NUL-split in place */
@@ -71,6 +91,8 @@ typedef struct {
     int      nsteps;
     NameHist *names;
     int      nnames, namecap;
+    ScopeInfo *scopes;              /* #539 v2 */
+    int      nscopes, scopecap;
     char   **src;       /* optional source lines (1-based view) */
     int      nsrc;
     char    *srcbuf;
@@ -96,9 +118,11 @@ static char *read_whole_file(const char *path, long *out_len) {
     return buf;
 }
 
-static NameHist *hist_for(Tape *t, const char *name, int create) {
+static NameHist *hist_for(Tape *t, const char *name, uint32_t scope,
+                          int create) {
     for (int i = 0; i < t->nnames; i++)
-        if (strcmp(t->names[i].name, name) == 0) return &t->names[i];
+        if (t->names[i].scope == scope &&
+            strcmp(t->names[i].name, name) == 0) return &t->names[i];
     if (!create) return NULL;
     if (t->nnames == t->namecap) {
         int nc = t->namecap ? t->namecap * 2 : 16;
@@ -109,6 +133,7 @@ static NameHist *hist_for(Tape *t, const char *name, int create) {
     }
     NameHist *h = &t->names[t->nnames++];
     h->name = name;
+    h->scope = scope;
     h->a = NULL;
     h->n = h->cap = 0;
     return h;
@@ -124,6 +149,36 @@ static int hist_push(NameHist *h, Assign a) {
     }
     h->a[h->n++] = a;
     return 1;
+}
+
+/* #539 v2: scope-instance table + reconstruction stack (parse time).
+ * On S(fn, depth, serial): if the serial is already on the stack we are
+ * RETURNING into that frame — pop to it. Otherwise this is a new frame
+ * instance: pop everything at the same or deeper depth (frames the tape
+ * silently returned out of — they never assigned again), then push with
+ * parent = the new top. Reconstructs the call chain exactly for every
+ * position that has assignments, which is all the fold can show anyway. */
+static ScopeInfo *scope_info(const Tape *t, uint32_t serial) {
+    for (int i = 0; i < t->nscopes; i++)
+        if (t->scopes[i].serial == serial) return &t->scopes[i];
+    return NULL;
+}
+
+static ScopeInfo *scope_add(Tape *t, uint32_t serial, const char *name,
+                            int depth, uint32_t parent) {
+    if (t->nscopes == t->scopecap) {
+        int nc = t->scopecap ? t->scopecap * 2 : 16;
+        ScopeInfo *ns = realloc(t->scopes, (size_t)nc * sizeof(ScopeInfo));
+        if (!ns) return NULL;
+        t->scopes = ns;
+        t->scopecap = nc;
+    }
+    ScopeInfo *si = &t->scopes[t->nscopes++];
+    si->serial = serial;
+    si->name = name;
+    si->depth = depth;
+    si->parent = parent;
+    return si;
 }
 
 /* #411 header check — the replay rule, with "step" wording. */
@@ -174,6 +229,11 @@ static int tape_parse(Tape *t, long len) {
     if (!t->recs || !t->steps) return 0;
 
     int first = 1;
+    uint32_t sstack[256];       /* scope-serial stack (VM depth <= 4096 but
+                                 * only assigning frames appear; overflow
+                                 * degrades to flat scope, never corrupts) */
+    int sdepth = 0;
+    uint32_t cur_scope = 0;
     char *p = t->tape, *end = t->tape + len;
     while (p < end) {
         char *nl = memchr(p, '\n', (size_t)(end - p));
@@ -185,6 +245,7 @@ static int tape_parse(Tape *t, long len) {
         StepRec r = {0};
         r.kind = p[0];
         r.step = t->nsteps > 0 ? t->nsteps - 1 : 0;
+        r.scope = cur_scope;
         switch (p[0]) {
             case 'V':
                 if (!vline_ok(p)) return 0;   /* mid-stream session header */
@@ -202,7 +263,7 @@ static int tape_parse(Tape *t, long len) {
                 r.name  = p + 2;
                 r.value = eq + 1;
                 if (r.kind == 'A') {
-                    NameHist *h = hist_for(t, r.name, 1);
+                    NameHist *h = hist_for(t, r.name, cur_scope, 1);
                     if (h) {
                         Assign a;
                         a.rec = t->nrecs;
@@ -214,6 +275,34 @@ static int tape_parse(Tape *t, long len) {
                         hist_push(h, a);
                     }
                 }
+                break;
+            }
+            case 'S': {                            /* #539 v2 scope transition */
+                char *nm = p + 2;
+                char *sp1 = strchr(nm, ' ');
+                if (!sp1) { r.kind = 0; break; }
+                *sp1 = '\0';
+                int depth = atoi(sp1 + 1);
+                char *sp2 = strchr(sp1 + 1, ' ');
+                uint32_t serial = sp2 ? (uint32_t)strtoul(sp2 + 1, NULL, 10) : 0;
+                int on_stack = -1;
+                for (int k = sdepth - 1; k >= 0; k--)
+                    if (sstack[k] == serial) { on_stack = k; break; }
+                if (on_stack >= 0) {
+                    sdepth = on_stack + 1;         /* returned into it */
+                } else {
+                    while (sdepth > 0) {
+                        ScopeInfo *top = scope_info(t, sstack[sdepth - 1]);
+                        if (top && top->depth < depth) break;
+                        sdepth--;                  /* silently-exited frames */
+                    }
+                    uint32_t parent = sdepth > 0 ? sstack[sdepth - 1] : 0;
+                    scope_add(t, serial, nm, depth, parent);
+                    if (sdepth < (int)(sizeof(sstack)/sizeof(sstack[0])))
+                        sstack[sdepth++] = serial;
+                }
+                cur_scope = serial;
+                r.kind = 0;                        /* folded, not kept */
                 break;
             }
             default:
@@ -280,6 +369,29 @@ static const Assign *latest_at(const NameHist *h, int pos) {
 
 /* ---- display ----------------------------------------------------- */
 
+/* #539 v2: the frame instance current at a stop position = the scope of
+ * the last record in that step's window (A records carry their exact
+ * scope; an assign-free stretch inherits the last transition, which is
+ * also the last point the fold below could differ). */
+static uint32_t scope_at(const Tape *t, int pos) {
+    int bound = (pos + 1 < t->nsteps) ? t->steps[pos + 1] : t->nrecs;
+    for (int i = bound - 1; i >= 0; i--)
+        if (t->recs[i].scope) return t->recs[i].scope;
+    return 0;
+}
+
+/* Resolve a name innermost-first along the reconstructed call chain. */
+static const NameHist *resolve_at(const Tape *t, int pos, const char *name) {
+    uint32_t sc = scope_at(t, pos);
+    for (;;) {
+        const NameHist *h = hist_for((Tape *)t, name, sc, 0);
+        if (h && latest_at(h, pos)) return h;
+        if (sc == 0) return NULL;
+        const ScopeInfo *si = scope_info(t, sc);
+        sc = si ? si->parent : 0;
+    }
+}
+
 static void show_stop(const Tape *t, int pos) {
     int rec = t->steps[pos];
     int line = t->recs[rec].line;
@@ -295,32 +407,74 @@ static void show_stop(const Tape *t, int pos) {
     }
 }
 
+static void print_binding(int pos, const NameHist *h,
+                          const char *scope_note) {
+    const Assign *last = latest_at(h, pos);
+    int count = 0;
+    for (int k = 0; k < h->n && h->a[k].step <= pos; k++) count++;
+    const char *label = classify_at(h, pos, NULL);
+    printf("%s = %s", h->name, last->value);
+    if (label) printf("  [%s]", label);
+    printf("  (%d assign%s)", count, count == 1 ? "" : "s");
+    if (scope_note) printf("  {%s}", scope_note);
+    printf("\n");
+}
+
+/* #539 v2: bindings shown are the live call chain's, innermost frame
+ * first — a function-local i and the top-level i are separate streams
+ * (fn-frame bindings get an {in fn} note; a shadowed outer binding of
+ * the same name is skipped). Dead frames' locals no longer appear. */
 static void show_bindings(const Tape *t, int pos, const char *only) {
     int shown = 0;
-    for (int i = 0; i < t->nnames; i++) {
-        const NameHist *h = &t->names[i];
-        if (only && strcmp(h->name, only) != 0) continue;
-        const Assign *last = latest_at(h, pos);
-        if (!last) continue;                 /* not yet assigned here */
-        int count = 0;
-        for (int k = 0; k < h->n && h->a[k].step <= pos; k++) count++;
-        const char *label = classify_at(h, pos, NULL);
-        printf("%s = %s", h->name, last->value);
-        if (label) printf("  [%s]", label);
-        printf("  (%d assign%s)\n", count, count == 1 ? "" : "s");
-        shown++;
+    if (only) {
+        const NameHist *h = resolve_at(t, pos, only);
+        if (h) {
+            const ScopeInfo *si = scope_info(t, h->scope);
+            char note[160] = "";
+            if (si && si->depth > 0)
+                snprintf(note, sizeof note, "in %s", si->name);
+            print_binding(pos, h, note[0] ? note : NULL);
+            shown = 1;
+        }
+        if (!shown) printf("no binding '%s' at this point\n", only);
+        return;
     }
-    if (!shown) {
-        if (only) printf("no binding '%s' at this point\n", only);
-        else      printf("no bindings yet\n");
+    /* chain walk, innermost first; a name shown once shadows outer ones */
+    const char *seen[512]; int nseen = 0;
+    uint32_t sc = scope_at(t, pos);
+    for (;;) {
+        const ScopeInfo *si = scope_info(t, sc);
+        char note[160] = "";
+        if (si && si->depth > 0) snprintf(note, sizeof note, "in %s", si->name);
+        for (int i = 0; i < t->nnames; i++) {
+            const NameHist *h = &t->names[i];
+            if (h->scope != sc) continue;
+            if (!latest_at(h, pos)) continue;
+            int shadowed = 0;
+            for (int k = 0; k < nseen; k++)
+                if (strcmp(seen[k], h->name) == 0) { shadowed = 1; break; }
+            if (shadowed) continue;
+            if (nseen < (int)(sizeof(seen)/sizeof(seen[0])))
+                seen[nseen++] = h->name;
+            print_binding(pos, h, note[0] ? note : NULL);
+            shown++;
+        }
+        if (sc == 0) break;
+        sc = si ? si->parent : 0;
     }
+    if (!shown) printf("no bindings yet\n");
 }
 
 static void show_trajectory(const Tape *t, int pos, const char *name) {
-    const NameHist *h = hist_for((Tape *)t, name, 0);
-    if (!h || !latest_at(h, pos)) {
+    const NameHist *h = resolve_at(t, pos, name);   /* #539 v2: chain walk */
+    if (!h) {
         printf("no binding '%s' at this point\n", name);
         return;
+    }
+    {
+        const ScopeInfo *si = scope_info(t, h->scope);
+        if (si && si->depth > 0)
+            printf("(%s in %s, frame #%u)\n", name, si->name, h->scope);
     }
     int total = 0;
     for (int i = 0; i < h->n && h->a[i].step <= pos; i++) total++;
@@ -391,6 +545,7 @@ int eigenscript_step(const char *tape_path, const char *src_path) {
         free(t.tape); free(t.recs); free(t.steps);
         for (int i = 0; i < t.nnames; i++) free(t.names[i].a);
         free(t.names);
+        free(t.scopes);
         return 3;
     }
     if (t.nsteps == 0) {
@@ -399,6 +554,7 @@ int eigenscript_step(const char *tape_path, const char *src_path) {
         free(t.tape); free(t.recs); free(t.steps);
         for (int i = 0; i < t.nnames; i++) free(t.names[i].a);
         free(t.names);
+        free(t.scopes);
         return 1;
     }
     if (src_path) load_source(&t, src_path);
@@ -496,6 +652,7 @@ int eigenscript_step(const char *tape_path, const char *src_path) {
     free(t.tape); free(t.recs); free(t.steps);
     for (int i = 0; i < t.nnames; i++) free(t.names[i].a);
     free(t.names);
+    free(t.scopes);
     free(t.src); free(t.srcbuf);
     return 0;
 }

@@ -168,5 +168,56 @@ printf '' | "$EIGS" --step "$TAPE" > /dev/null 2>&1
     && ok "EOF quits cleanly" \
     || fail "EOF quits cleanly"
 
+# ---- 12. #539 v2: scope-qualified locals — a function-local i and the
+# top-level i are separate streams; two invocations of the same function
+# never merge; inside the frame the local shadows the outer binding.
+SCOPE_FIX="$TMPDIR/scope.eigs"
+SCOPE_TAPE="$TMPDIR/scope.tape"
+cat > "$SCOPE_FIX" <<'EOF'
+define work(n) as:
+    i is n * 10
+    i is i + 1
+    return i
+i is 1
+r1 is work of 2
+i is 2
+r2 is work of 3
+i is 3
+EOF
+EIGS_TRACE="$SCOPE_TAPE" "$EIGS" "$SCOPE_FIX" > /dev/null 2>&1
+
+grep -q '^S work 1 ' "$SCOPE_TAPE" \
+    && ok "tape carries S scope-transition records (v2)" \
+    || fail "tape carries S scope-transition records (v2)"
+
+# two work() invocations = two distinct frame serials on their S records
+NSER=$(grep '^S work 1 ' "$SCOPE_TAPE" | sort -u | wc -l)
+[ "$NSER" -eq 2 ] \
+    && ok "same-function invocations get distinct frame serials" \
+    || fail "same-function invocations get distinct frame serials" "got $NSER"
+
+# at module end: module i folded alone (3 assigns, value 3) — the four
+# fn-local writes must not pollute the stream (the v1 merge bug)
+OUT=$(printf 's 20\np i\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
+echo "$OUT" | grep -q "^i = 3 .*(3 assigns)" \
+    && ok "module-level i folds only its own stream" \
+    || fail "module-level i folds only its own stream" \
+            "$(echo "$OUT" | grep '^i =' | head -1)"
+
+# inside the second work frame (step 11 = its 'i is i + 1' line): the
+# frame-local i (31, 2 assigns, {in work}) shadows the module i
+OUT=$(printf 's 10\np\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
+echo "$OUT" | grep -q "^i = 31 .*{in work}" \
+    && ok "frame-local i shadows module i inside the frame" \
+    || fail "frame-local i shadows module i inside the frame" \
+            "$(echo "$OUT" | grep '^i =' | head -1)"
+echo "$OUT" | grep -q "(i in work, frame #" \
+    && ok "trajectory resolves to the frame's own stream" \
+    || fail "trajectory resolves to the frame's own stream"
+# the module i (value 2 at that point) must NOT appear — shadowed
+echo "$OUT" | grep -q "^i = 2 " \
+    && fail "shadowed module i leaks into frame bindings" \
+    || ok "shadowed module i stays hidden inside the frame"
+
 echo "STEP: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

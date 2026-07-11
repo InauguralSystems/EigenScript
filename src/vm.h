@@ -381,6 +381,11 @@ typedef struct {
     int        call_argc;        /* args actually passed to this call; <= chunk->param_count.
                                   * Used by OP_DEFAULT_PARAM to decide if a slot was bound
                                   * by the caller or needs its default expression run. */
+    uint32_t   call_serial;      /* #539 v2: per-thread monotonically increasing
+                                  * frame-instance id, stamped at every frame push.
+                                  * The tape's S records carry it so the stepper can
+                                  * tell two invocations of the same function apart
+                                  * (POD — rides the task save/restore memcpy). */
 } CallFrame;
 
 /* ---- VM State ---- */

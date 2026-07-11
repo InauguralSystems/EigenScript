@@ -28,7 +28,7 @@ typedef union { double d; uint64_t u; } EigsSlot;
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 1
+#define TRACE_FORMAT_VERSION 2   /* v2 (#539): scope-transition S records */
 
 /* 1 when EIGS_TRACE was set and a tape was successfully opened.
  * Hook sites in vm.c gate on this directly so the disabled case
