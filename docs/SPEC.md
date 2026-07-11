@@ -576,6 +576,22 @@ print of app.users[1].id
 2
 ```
 
+Key names are not restricted by the keyword table: after `.` nothing but
+a field name can appear, so any word — including keywords like `loop`,
+`in`, or `when` (common in `json_decode` output) — works as a dot key,
+read or write, at any chain depth.
+
+```eigenscript
+ev is {"when": 3, "loop": 1}
+ev.loop is ev.loop + 1
+print of ev.when
+print of ev.loop
+```
+```output
+3
+2
+```
+
 ## Functions
 
 `define name(params) as:` introduces a function. `return` exits with a

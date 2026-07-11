@@ -1057,6 +1057,13 @@ echo "[117] for-in Length Snapshot (#491, 9 checks)"
 check_eigs_suite "for-in snapshots length; body mutation is bounded + safe" \
     test_for_in_mutation.eigs "FOR_IN_MUTATION_DONE" 9
 
+# [118] Any keyword works as a dot key (#542): keys creatable by literal/
+# dict_set/json_decode were unreachable by `.` — read, write, chains, and
+# all three parser postfix sites (IDENT chain, paren, dict literal).
+echo "[118] Keyword Dot Keys (#542, 49 checks)"
+check_eigs_suite "all 39 keywords + chains/json/paren/literal as dot keys" \
+    test_dict_keyword_keys.eigs "All tests passed" 49
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

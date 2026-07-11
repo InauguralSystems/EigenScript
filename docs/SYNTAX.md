@@ -305,6 +305,11 @@ print of config.host       # "localhost"
 print of config.port       # 8080
 ```
 
+Any word can follow the dot, including keywords — `d.loop`, `d.in`,
+`d.when` all work: the position after `.` is unambiguous, so
+keyword-named keys (e.g. from `json_decode` of external data) are
+reachable by dot as well as by bracket.
+
 **Bracket access:**
 ```eigenscript
 key is "host"

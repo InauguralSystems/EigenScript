@@ -173,8 +173,9 @@ user.field = "computing";
 console.log(user.name, Object.keys(user).length);
 ```
 
-EigenScript — dot access and bracket access are interchangeable;
-assignment creates keys:
+EigenScript — dot access and bracket access are interchangeable
+(keyword-named fields too: `d.loop`, `d.when` — like JavaScript member
+access, the position disambiguates); assignment creates keys:
 
 ```eigenscript
 user is {"name": "Ada", "year": 1815}

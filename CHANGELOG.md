@@ -4,6 +4,20 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Dot access accepts keyword-named fields (#542).** `d.loop`, `d.in`,
+  `d.when` — any word keyword now parses as a dot key (read, write,
+  compound assign, any chain depth, all three parser postfix sites).
+  The position after `.` admits nothing but a field name, so the old
+  `TOK_IDENT`-only check rejected programs with no ambiguity to protect
+  against, leaving keys creatable by literal, `dict_set`, and
+  `json_decode` reachable only by bracket — and contradicted SYNTAX.md's
+  soft-keyword promise for `d.prev`/`d.at`. Found porting a DAW whose
+  data model has `clip.loop` / event `when` fields. Suite [118]
+  (49 checks); SPEC/SYNTAX/GRAMMAR/COMPARISON updated. The ouroboros
+  `frontend.eigs` mirror lands with the next `EIGS_REF` bump
+  (deferred-mirror pattern, #326/#328).
+
 ### Added
 - **`--bundle`: single-file distribution (#413).** `eigenscript
   --bundle app.eigs out [--with-tape tape]` copies the runtime binary
