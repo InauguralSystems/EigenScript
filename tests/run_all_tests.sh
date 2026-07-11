@@ -1374,7 +1374,7 @@ echo ""
 
 # [42f] Tape stepper (#418 eigsdap v1: --step forward/back, bindings +
 # trajectory labels, breakpoints, jumps, #411 version refusals)
-echo "[42f] Tape Stepper (16 checks)"
+echo "[42f] Tape Stepper (22 checks)"
 ST_OUTPUT=$(bash "$TESTS_DIR/test_step.sh" 2>&1)
 ST_PASS=$(echo "$ST_OUTPUT" | grep -c "PASS:" || true)
 ST_FAIL=$(echo "$ST_OUTPUT" | grep -c "FAIL:" || true)
@@ -1386,6 +1386,23 @@ if [ "$ST_FAIL" -gt 0 ]; then
     echo "$ST_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $ST_PASS stepper checks"
+fi
+echo ""
+
+# [42g] --bundle (#413): single-file distribution — script + eigs_modules +
+# stdlib in one executable; tape-attached bundles replay byte-identically.
+echo "[42g] Bundle (8 checks)"
+BN_OUTPUT=$(bash "$TESTS_DIR/test_bundle.sh" 2>&1)
+BN_PASS=$(echo "$BN_OUTPUT" | grep -c "PASS:" || true)
+BN_FAIL=$(echo "$BN_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + BN_PASS + BN_FAIL))
+PASS=$((PASS + BN_PASS))
+FAIL=$((FAIL + BN_FAIL))
+if [ "$BN_FAIL" -gt 0 ]; then
+    echo "  FAIL: $BN_FAIL bundle check(s) failed"
+    echo "$BN_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $BN_PASS bundle checks"
 fi
 echo ""
 

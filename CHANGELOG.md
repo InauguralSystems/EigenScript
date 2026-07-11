@@ -4,6 +4,28 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`--bundle`: single-file distribution (#413).** `eigenscript
+  --bundle app.eigs out [--with-tape tape]` copies the runtime binary
+  and appends an archive — the script, the adjacent `eigs_modules/`
+  tree, the stdlib `lib/` modules, and optionally a trace tape — into
+  one executable that runs on a machine with no EigenScript checkout.
+  Startup detects the trailer magic on the binary's own tail, extracts
+  to a tempdir (removed at exit), and rewrites argv to run the
+  extracted script, so every existing resolution rule just works with
+  no VFS or resolver changes. With a tape attached, `out --replay` is
+  an **executable bug report**: it replays byte-identically, serving
+  every nondet input from the tape — and the #411 version contract is
+  pinned by construction, since the bundle carries the exact binary
+  that recorded the tape. In bundle mode all arguments belong to the
+  script (only `--replay` is intercepted); torn archives refuse with
+  exit 3; re-bundling from a bundle copies only the runtime image.
+  `tests/test_bundle.sh` (suite [42g], 8 checks) covers script+modules+
+  stdlib from a bare cwd, arg passthrough, byte-identical replay of the
+  recorded nondet, no-tape/torn refusals, and re-bundle size stability.
+  docs/BUNDLE.md documents the format and the AOT (ouroboros) tier as
+  the native-speed variant of the same single-file story.
+
 ### Fixed
 - **Builtin calls with a single list argument were O(len(list)) (#546).**
   The direct-borrow heuristic that runs after every builtin call scanned

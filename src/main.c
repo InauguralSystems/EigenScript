@@ -15,6 +15,12 @@ void register_gfx_builtins(Env *env);
 #define EIGENSCRIPT_VERSION "dev"
 #endif
 
+/* #413 bundle entry points (src/bundle.c, CLI-only) — declared at file
+ * scope; block-scope function declarations trip cpp/function-in-block. */
+extern int eigs_bundle_selfexec(int *argc, char ***argv);
+extern int eigs_bundle_create(const char *argv0, const char *script,
+                              const char *outpath, const char *tape);
+
 /* ---- Main ---- */
 /* The REPL (piped loop + the #392 interactive line editor) lives in repl.c. */
 
@@ -47,6 +53,12 @@ static void set_exe_dir(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+    /* #413: a bundled binary (appended archive, trailer magic) extracts
+     * itself and rewrites argv to run the extracted script — before ANY
+     * flag handling, because in bundle mode the arguments belong to the
+     * bundled script (only `--replay` is ours). */
+    eigs_bundle_selfexec(&argc, &argv);
+
     /* `--trace <path> <script...>`: record this run's tape to <path>, the CLI
      * twin of EIGS_TRACE (which trace_init reads below). Set before trace_init
      * and strip the two tokens so the rest of arg handling sees the script at
@@ -87,12 +99,29 @@ int main(int argc, char **argv) {
             "  eigenscript --step <tape> [file]    interactive tape-stepper: step forward/back, bindings +\n"
             "                                      trajectories, breakpoints (docs/DEBUGGING.md)\n"
             "  eigenscript --pkg <cmd> [args...]   package manager (add/install/update/verify; see docs)\n"
+            "  eigenscript --bundle <file> <out> [--with-tape <tape>]\n"
+            "                                      single-file executable: runtime + script + eigs_modules +\n"
+            "                                      stdlib (+ optional tape: `out --replay` re-runs it exactly)\n"
             "  eigenscript --version, -v           print the version and exit\n"
             "  eigenscript --help, -h              print this help and exit\n"
             "\n"
             "Docs: https://github.com/InauguralSystems/EigenScript\n",
             EIGENSCRIPT_VERSION);
         return 0;
+    }
+
+    /* #413 --bundle: pure file I/O — copies our own binary and appends
+     * the archive; nothing executes. Needs g_exe_dir for the stdlib dir. */
+    if (argc >= 2 && strcmp(argv[1], "--bundle") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "Usage: eigenscript --bundle <file.eigs> <out> "
+                            "[--with-tape <tape>]\n");
+            return 1;
+        }
+        const char *bundle_tape = NULL;
+        if (argc >= 6 && strcmp(argv[4], "--with-tape") == 0)
+            bundle_tape = argv[5];
+        return eigs_bundle_create(argv[0], argv[2], argv[3], bundle_tape);
     }
 
     /* --step: the #418 tape-stepper — a pure tape READER (nothing executes).
