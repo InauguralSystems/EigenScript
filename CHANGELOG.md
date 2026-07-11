@@ -4,6 +4,25 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Builtin calls with a single list argument were O(len(list)) (#546).**
+  The direct-borrow heuristic that runs after every builtin call scanned
+  the entire argument list comparing item pointers against the result.
+  For multi-arg calls that list is the small VM-packed temp, but for a
+  single list argument it was the caller's own list — so `len of xs`
+  cost O(len(xs)) and the idiomatic `loop while i < (len of xs):` was
+  quadratic (~520x slower than a hoisted length at 88k elements;
+  surfaced by DeslanStudios audio-buffer rendering). The scan is now
+  factored into `vm_borrow_scan` (shared by CASE(CALL),
+  jit_helper_call, and OP_DISPATCH) and capped at the maximum builtin
+  arity: a borrowing builtin can only return a child it actually read,
+  and every builtin reads its argument vector at small fixed indices,
+  so items past the cap can never be the borrowed result. The borrow
+  contract (coalesce/dict_set returning a child of a raw list variable,
+  a dying-temporary argument, >cap-length raw lists) is pinned in
+  tests/test_call_semantics.eigs. 88k-iteration len-in-condition loop:
+  5,033ms -> 17.5ms.
+
 ### Added
 - **Runtime-error carets + token-precise LSP ranges (#407 residual).**
   Uncaught runtime errors now print the same one-line source excerpt +
