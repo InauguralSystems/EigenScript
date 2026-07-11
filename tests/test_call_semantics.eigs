@@ -86,4 +86,40 @@ y is x
 y is y + 1
 assert of [x == 5, "scalar reassignment does not affect original"]
 
+# #546: the direct-borrow scan is capped at the max builtin arity, so a
+# builtin call with a single LIST argument is O(1), not O(len). These pin
+# the borrow contract the cap must preserve: a builtin returning a direct
+# child of its argument vector keeps that child alive past the arg decref.
+
+# Borrowed child from a raw list VARIABLE argument (not a packed temp)
+pair is [[1, 2, 3], "fallback"]
+borrowed is coalesce of pair
+assert of [borrowed == [1, 2, 3], "coalesce of raw list var borrows items[0]"]
+pair is null
+assert of [borrowed == [1, 2, 3], "borrowed child survives the source list dying"]
+
+# Borrowed child at index 1 (coalesce falls through empty first slot)
+pair2 is ["", [4, 5]]
+b2 is coalesce of pair2
+assert of [b2 == [4, 5], "coalesce borrows items[1] on empty first"]
+
+# Borrowed child of a DYING TEMPORARY argument (refcount hits 0 at the
+# call site's arg decref -- the exact case the scan protects)
+b3 is coalesce of (concat of [[[9, 8]], [["d"]]])
+assert of [b3 == [9, 8], "borrow from freshly built temp argument survives"]
+
+# dict_set returns its container (items[0]) borrowed from a raw arg list
+d546 is {"k": 1}
+args546 is [d546, "k2", 2]
+returned is dict_set of args546
+assert of [returned.k2 == 2, "dict_set of raw arg-list var returns the dict"]
+
+# Raw list longer than the scan cap: the borrowed child sits at index 0,
+# well under the cap, and must still be protected
+big is [[7, 7], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+b4 is coalesce of big
+assert of [b4 == [7, 7], "borrow from >cap-length raw list still protected"]
+big is null
+assert of [b4 == [7, 7], "child of dropped >cap-length list survives"]
+
 print of "All tests passed"

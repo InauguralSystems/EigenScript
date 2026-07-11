@@ -1652,6 +1652,37 @@ void jit_helper_index_get(void) {
     vm_push(result);
 }
 
+/* Direct-borrow heuristic, shared by the three builtin call sites
+ * (CASE(CALL), jit_helper_call, OP_DISPATCH): if a builtin's result is
+ * one of arg's top-level items (coalesce/append/dict_set return
+ * arg->data.list.items[0]), incref it so it survives the arg-decref
+ * that follows. Builtins returning a fresh allocation never match, so
+ * no spurious ref is added; nested borrows (get_at: items[0][idx])
+ * must still incref locally — only direct children are scanned.
+ *
+ * #546: the scan is CAPPED. A borrowing builtin can only return a
+ * child it actually read, and every builtin reads its argument vector
+ * at small fixed indices (max arity in the registry is 7), so items
+ * past the cap can never be the borrowed result. Without the cap, a
+ * single-list-argument call (`len of xs`) scanned the user's entire
+ * list after every call — O(len) per call, turning the idiomatic
+ * `loop while i < (len of xs):` quadratic. Raise the cap if a builtin
+ * with a larger argument vector that RETURNS one of its args is ever
+ * added (the assert-ish comment in builtins.c's registry is the
+ * reminder).
+ */
+#define VM_BORROW_SCAN_CAP 8
+static inline void vm_borrow_scan(Value *arg, Value *result) {
+    if (arg && arg->type == VAL_LIST) {
+        int n = arg->data.list.count;
+        if (n > VM_BORROW_SCAN_CAP) n = VM_BORROW_SCAN_CAP;
+        Value **items = arg->data.list.items;
+        for (int i = 0; i < n; i++) {
+            if (items[i] == result) { val_incref(result); break; }
+        }
+    }
+}
+
 /* JIT Stage 4r/5f: out-of-line helper for OP_CALL.
  *
  * Mirrors the VAL_BUILTIN branch of CASE(CALL), plus (Stage 5f) a
@@ -1859,15 +1890,9 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     if (!result) {
         result = make_null();
     } else if (!consumes_arg && result != arg) {
-        /* Direct-borrow heuristic — see CASE(CALL) for rationale and the
-         * !consumes_arg guard (free_val may have already freed arg). */
-        if (arg && arg->type == VAL_LIST) {
-            int n = arg->data.list.count;
-            Value **items = arg->data.list.items;
-            for (int i = 0; i < n; i++) {
-                if (items[i] == result) { val_incref(result); break; }
-            }
-        }
+        /* Direct-borrow heuristic (capped, #546) — see vm_borrow_scan;
+         * !consumes_arg guard: free_val may have already freed arg. */
+        vm_borrow_scan(arg, result);
     }
     if (!consumes_arg && result != arg) val_decref(arg);
     vm_push(result);
@@ -3154,25 +3179,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!result) {
                 result = make_null();
             } else if (!consumes_arg && result != arg) {
-                /* Direct-borrow heuristic: if result is one of arg's
-                 * top-level items (e.g., coalesce/append/dict_set return
-                 * arg->data.list.items[0]), incref it so it survives the
-                 * arg-decref below. Builtins returning a fresh allocation
-                 * (range, make_*) do not match this scan, so no spurious
-                 * +1 ref is added. Nested borrows (get_at: items[0][idx])
-                 * must still incref locally — only direct children are
-                 * scanned here.
-                 *
-                 * Guarded by !consumes_arg: a consuming builtin like
-                 * free_val may have already freed arg, so reading arg
-                 * here would be a use-after-free. */
-                if (arg && arg->type == VAL_LIST) {
-                    int n = arg->data.list.count;
-                    Value **items = arg->data.list.items;
-                    for (int i = 0; i < n; i++) {
-                        if (items[i] == result) { val_incref(result); break; }
-                    }
-                }
+                /* Direct-borrow heuristic (capped, #546) — see
+                 * vm_borrow_scan for the full rationale. Guarded by
+                 * !consumes_arg: a consuming builtin like free_val may
+                 * have already freed arg, so reading arg here would be
+                 * a use-after-free. */
+                vm_borrow_scan(arg, result);
             }
             if (!consumes_arg && result != arg) val_decref(arg);
             /* If result == arg, the arg's refcount transfers to the result */
@@ -5030,17 +5042,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!result) {
                 result = make_null();
             } else if (!consumes_arg && result != arg) {
-                /* Direct-borrow heuristic — see CASE(CALL) for rationale.
-                 * Must run before val_decref(arg) so the items array is
-                 * still valid, and skipped when the builtin already
-                 * consumed arg (free_val), since arg would be freed. */
-                if (arg && arg->type == VAL_LIST) {
-                    int n = arg->data.list.count;
-                    Value **items = arg->data.list.items;
-                    for (int i = 0; i < n; i++) {
-                        if (items[i] == result) { val_incref(result); break; }
-                    }
-                }
+                /* Direct-borrow heuristic (capped, #546) — see
+                 * vm_borrow_scan. Must run before val_decref(arg) so
+                 * the items array is still valid, and skipped when the
+                 * builtin already consumed arg (free_val). */
+                vm_borrow_scan(arg, result);
             }
             if (!consumes_arg && result != arg) val_decref(arg);
             slot_decref(table_s);
