@@ -1,0 +1,162 @@
+# Regression #542: any keyword works as a dot key — the position after `.`
+# is unambiguous, so keys creatable by literal/dict_set/json_decode must be
+# reachable (read AND write, any chain depth) by dot, not just bracket.
+load_file of "lib/test.eigs"
+
+# Every word keyword (TOK_IS..TOK_LOCAL) as a dot key: literal create,
+# dot-write (read-modify), dot-read.
+d is {"loop": 1}
+d.loop is d.loop + 1
+assert_eq of [d.loop, 2, "dot key: loop"]
+d is {"if": 1}
+d.if is d.if + 1
+assert_eq of [d.if, 2, "dot key: if"]
+d is {"return": 1}
+d.return is d.return + 1
+assert_eq of [d.return, 2, "dot key: return"]
+d is {"of": 1}
+d.of is d.of + 1
+assert_eq of [d.of, 2, "dot key: of"]
+d is {"is": 1}
+d.is is d.is + 1
+assert_eq of [d.is, 2, "dot key: is"]
+d is {"and": 1}
+d.and is d.and + 1
+assert_eq of [d.and, 2, "dot key: and"]
+d is {"or": 1}
+d.or is d.or + 1
+assert_eq of [d.or, 2, "dot key: or"]
+d is {"not": 1}
+d.not is d.not + 1
+assert_eq of [d.not, 2, "dot key: not"]
+d is {"while": 1}
+d.while is d.while + 1
+assert_eq of [d.while, 2, "dot key: while"]
+d is {"for": 1}
+d.for is d.for + 1
+assert_eq of [d.for, 2, "dot key: for"]
+d is {"in": 1}
+d.in is d.in + 1
+assert_eq of [d.in, 2, "dot key: in"]
+d is {"try": 1}
+d.try is d.try + 1
+assert_eq of [d.try, 2, "dot key: try"]
+d is {"catch": 1}
+d.catch is d.catch + 1
+assert_eq of [d.catch, 2, "dot key: catch"]
+d is {"import": 1}
+d.import is d.import + 1
+assert_eq of [d.import, 2, "dot key: import"]
+d is {"local": 1}
+d.local is d.local + 1
+assert_eq of [d.local, 2, "dot key: local"]
+d is {"define": 1}
+d.define is d.define + 1
+assert_eq of [d.define, 2, "dot key: define"]
+d is {"elif": 1}
+d.elif is d.elif + 1
+assert_eq of [d.elif, 2, "dot key: elif"]
+d is {"else": 1}
+d.else is d.else + 1
+assert_eq of [d.else, 2, "dot key: else"]
+d is {"as": 1}
+d.as is d.as + 1
+assert_eq of [d.as, 2, "dot key: as"]
+d is {"null": 1}
+d.null is d.null + 1
+assert_eq of [d.null, 2, "dot key: null"]
+d is {"break": 1}
+d.break is d.break + 1
+assert_eq of [d.break, 2, "dot key: break"]
+d is {"continue": 1}
+d.continue is d.continue + 1
+assert_eq of [d.continue, 2, "dot key: continue"]
+d is {"match": 1}
+d.match is d.match + 1
+assert_eq of [d.match, 2, "dot key: match"]
+d is {"case": 1}
+d.case is d.case + 1
+assert_eq of [d.case, 2, "dot key: case"]
+d is {"unobserved": 1}
+d.unobserved is d.unobserved + 1
+assert_eq of [d.unobserved, 2, "dot key: unobserved"]
+d is {"converged": 1}
+d.converged is d.converged + 1
+assert_eq of [d.converged, 2, "dot key: converged"]
+d is {"stable": 1}
+d.stable is d.stable + 1
+assert_eq of [d.stable, 2, "dot key: stable"]
+d is {"improving": 1}
+d.improving is d.improving + 1
+assert_eq of [d.improving, 2, "dot key: improving"]
+d is {"oscillating": 1}
+d.oscillating is d.oscillating + 1
+assert_eq of [d.oscillating, 2, "dot key: oscillating"]
+d is {"diverging": 1}
+d.diverging is d.diverging + 1
+assert_eq of [d.diverging, 2, "dot key: diverging"]
+d is {"equilibrium": 1}
+d.equilibrium is d.equilibrium + 1
+assert_eq of [d.equilibrium, 2, "dot key: equilibrium"]
+
+# The documented soft keywords (SYNTAX.md promised these worked already).
+d is {"prev": 1}
+d.prev is d.prev + 1
+assert_eq of [d.prev, 2, "dot key: prev"]
+d is {"at": 1}
+d.at is d.at + 1
+assert_eq of [d.at, 2, "dot key: at"]
+d is {"what": 1}
+d.what is d.what + 1
+assert_eq of [d.what, 2, "dot key: what"]
+d is {"who": 1}
+d.who is d.who + 1
+assert_eq of [d.who, 2, "dot key: who"]
+d is {"when": 1}
+d.when is d.when + 1
+assert_eq of [d.when, 2, "dot key: when"]
+d is {"where": 1}
+d.where is d.where + 1
+assert_eq of [d.where, 2, "dot key: where"]
+d is {"why": 1}
+d.why is d.why + 1
+assert_eq of [d.why, 2, "dot key: why"]
+d is {"how": 1}
+d.how is d.how + 1
+assert_eq of [d.how, 2, "dot key: how"]
+
+# Chained access through a keyword key, read/write/compound.
+d2 is {"x": {"when": 7}}
+assert_eq of [d2.x.when, 7, "chained keyword key read"]
+d2.x.when is 8
+assert_eq of [d2.x.when, 8, "chained keyword key write"]
+d2.x.when += 2
+assert_eq of [d2.x.when, 10, "chained keyword key compound assign"]
+
+# json_decode of external data — the original DeslanStudios report.
+j is json_decode of ("{\"in\": 4, \"if\": {\"for\": 5}}")
+assert_eq of [j.in, 4, "json_decode keyword key"]
+assert_eq of [j.if.for, 5, "json_decode nested keyword chain"]
+
+# The parenthesized-expression and dict-literal postfix chains (separate
+# parser sites from the IDENT chain).
+p is ({"at": 9})
+assert_eq of [p.at, 9, "paren postfix keyword key"]
+lit is {"try": 10}.try
+assert_eq of [lit, 10, "dict-literal postfix keyword key"]
+
+# dict_set-created key, dot-read; dot-created key, bracket-read (agreement).
+e is {}
+dict_set of [e, "loop", 5]
+assert_eq of [e.loop, 5, "dict_set key dot-read"]
+e.while is 6
+assert_eq of [e["while"], 6, "dot-created key bracket-read"]
+
+# Keyword still functions as a keyword right next to its key use.
+total is 0
+src is {"in": [1, 2]}
+for x in src.in:
+    total is total + x
+assert_eq of [total, 3, "for-in iterates over d.in"]
+
+test_summary of null

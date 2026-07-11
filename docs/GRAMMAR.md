@@ -249,10 +249,16 @@ lambda      = '(' [ param_list ] ')' '=>' expression
 After any primary expression, zero or more postfix operations:
 
 ```
-postfix     = primary { subscript | '.' IDENT }
+postfix     = primary { subscript | '.' word }
+word        = IDENT | any keyword                         ; #542
 subscript   = '[' expression ']'
             | '[' [ expression ] ':' [ expression ] ']'   ; slice
 ```
+
+The dot-key position accepts any word, keywords included: nothing but a
+field name can appear after `.`, so there is no ambiguity to protect
+against, and keys creatable by literal, `dict_set`, and `json_decode`
+(`"loop"`, `"in"`, `"when"`, …) stay reachable by dot.
 
 Note: which postfix forms a primary accepts depends on the primary.
 IDENT, dict literals, parenthesized expressions, f-strings (which

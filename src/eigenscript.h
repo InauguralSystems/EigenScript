@@ -108,6 +108,8 @@
 
 typedef enum {
     TOK_NUM, TOK_STR, TOK_IDENT,
+    /* Word keywords: TOK_IS..TOK_LOCAL must stay contiguous — the parser's
+     * tok_is_dot_key accepts the whole run as dict field names after `.`. */
     TOK_IS, TOK_OF, TOK_DEFINE, TOK_AS,
     TOK_IF, TOK_ELSE, TOK_ELIF, TOK_LOOP, TOK_WHILE,
     TOK_RETURN, TOK_AND, TOK_OR, TOK_NOT,

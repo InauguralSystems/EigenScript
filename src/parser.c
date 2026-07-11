@@ -153,6 +153,24 @@ static void p_expect_ident_like(Parser *p) {
     p_advance(p);
 }
 
+/* Dot keys: after `.` nothing but a field name can appear, so the position is
+ * unambiguous and ANY word may serve as a key — TOK_IDENT plus every word
+ * keyword (the contiguous TOK_IS..TOK_LOCAL run; all are lexed through the
+ * identifier path, so str_val always carries the source word). Keys like
+ * "loop"/"in"/"when" are creatable via literals, dict_set, and json_decode;
+ * rejecting them here made those fields reachable only by bracket (#542). */
+static int tok_is_dot_key(TokType type) {
+    return type == TOK_IDENT || (type >= TOK_IS && type <= TOK_LOCAL);
+}
+
+static void p_expect_dot_key(Parser *p) {
+    if (!tok_is_dot_key(p_cur(p)->type)) {
+        p_expect(p, TOK_IDENT);   /* raises + advances */
+        return;
+    }
+    p_advance(p);
+}
+
 static void p_skip_newlines(Parser *p) {
     while (p_cur(p)->type == TOK_NEWLINE) p_advance(p);
 }
@@ -666,7 +684,7 @@ static ASTNode* parse_postfix_chain(Parser *p, ASTNode *n) {
         if (p_cur(p)->type == TOK_DOT) {
             p_advance(p);
             Token *key_tok = p_cur(p);
-            p_expect(p, TOK_IDENT);
+            p_expect_dot_key(p);
             ASTNode *dot = make_node_col(AST_DOT, p_cur(p)->line, key_tok->col);
             dot->data.dot.target = n;
             dot->data.dot.key = xstrdup(key_tok->str_val);
@@ -849,7 +867,7 @@ static ASTNode* parse_primary(Parser *p) {
             if (p_cur(p)->type == TOK_DOT) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
-                p_expect(p, TOK_IDENT);
+                p_expect_dot_key(p);
                 ASTNode *dot = make_node_col(AST_DOT, key_tok->line, key_tok->col);
                 dot->data.dot.target = expr;
                 dot->data.dot.key = xstrdup(key_tok->str_val);
@@ -957,7 +975,7 @@ static ASTNode* parse_primary(Parser *p) {
             if (p_cur(p)->type == TOK_DOT) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
-                p_expect(p, TOK_IDENT);
+                p_expect_dot_key(p);
                 ASTNode *dot = make_node_col(AST_DOT, p_cur(p)->line, key_tok->col);
                 dot->data.dot.target = n;
                 dot->data.dot.key = xstrdup(key_tok->str_val);
