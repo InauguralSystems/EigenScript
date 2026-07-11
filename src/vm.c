@@ -1660,26 +1660,68 @@ void jit_helper_index_get(void) {
  * no spurious ref is added; nested borrows (get_at: items[0][idx])
  * must still incref locally — only direct children are scanned.
  *
- * #546: the scan is CAPPED. A borrowing builtin can only return a
- * child it actually read, and every builtin reads its argument vector
- * at small fixed indices (max arity in the registry is 7), so items
- * past the cap can never be the borrowed result. Without the cap, a
- * single-list-argument call (`len of xs`) scanned the user's entire
- * list after every call — O(len) per call, turning the idiomatic
- * `loop while i < (len of xs):` quadratic. Raise the cap if a builtin
- * with a larger argument vector that RETURNS one of its args is ever
- * added (the assert-ish comment in builtins.c's registry is the
- * reminder).
+ * #546: the scan is CAPPED (VM_BORROW_SCAN_CAP, vm.h). A borrowing
+ * builtin can only return a child it actually read, and every builtin
+ * reads its argument vector at small fixed indices (max arity in the
+ * registry is 7), so items past the cap can never be the borrowed
+ * result. Without the cap, a single-list-argument call (`len of xs`)
+ * scanned the user's entire list after every call — O(len) per call,
+ * turning the idiomatic `loop while i < (len of xs):` quadratic.
+ * Raise the cap if a builtin with a larger argument vector that
+ * RETURNS one of its args is ever added.
+ *
+ * #548: in sanitizer builds the invariant is machine-checked — see
+ * EIGS_BORROW_GUARD in vm.h and the guard block below. A violation
+ * aborts naming the builtin instead of surfacing later as a
+ * lifetime-dependent use-after-free.
  */
-#define VM_BORROW_SCAN_CAP 8
-static inline void vm_borrow_scan(Value *arg, Value *result) {
+#if EIGS_BORROW_GUARD
+/* Name a builtin by its fn pointer for the abort diagnostic: walk the
+ * env chain from the call frame to the root scanning bindings. Runs
+ * only on the abort path, so the O(bindings) walk costs nothing. */
+static const char* vm_builtin_name_for(Env *env, BuiltinFn fn) {
+    for (; env; env = env->parent) {
+        for (int i = 0; i < env->count; i++) {
+            EigsSlot s = env->values[i];
+            if (!slot_is_heap(s)) continue;
+            Value *v = slot_as_ptr(s);
+            if (v && v->type == VAL_BUILTIN && v->data.builtin == fn)
+                return env->names[i];
+        }
+    }
+    return "<unknown builtin>";
+}
+#endif
+
+static inline void vm_borrow_scan(Value *arg, Value *result,
+                                  Value *fn_val, Env *env) {
+    (void)fn_val; (void)env;
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         if (n > VM_BORROW_SCAN_CAP) n = VM_BORROW_SCAN_CAP;
         Value **items = arg->data.list.items;
         for (int i = 0; i < n; i++) {
-            if (items[i] == result) { val_incref(result); break; }
+            if (items[i] == result) { val_incref(result); return; }
         }
+#if EIGS_BORROW_GUARD
+        /* #548: the capped scan found no borrow — prove there is none
+         * past the cap. A match here means a missed compensating
+         * incref: the VM would push a result it doesn't own, and the
+         * over-release becomes a heisenbug UAF. Fail loudly instead. */
+        for (int i = n; i < arg->data.list.count; i++) {
+            if (items[i] == result) {
+                fprintf(stderr,
+                    "EigenScript FATAL: borrow-scan guard (#548): builtin "
+                    "'%s' returned a borrowed direct child at arg index %d, "
+                    "past VM_BORROW_SCAN_CAP=%d (line %d). Raise the cap in "
+                    "src/vm.h or incref the child locally in the builtin.\n",
+                    fn_val ? vm_builtin_name_for(env, fn_val->data.builtin)
+                           : "<unknown builtin>",
+                    i, VM_BORROW_SCAN_CAP, g_vm.current_line);
+                abort();
+            }
+        }
+#endif
     }
 }
 
@@ -1893,7 +1935,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     } else if (!consumes_arg && result != arg) {
         /* Direct-borrow heuristic (capped, #546) — see vm_borrow_scan;
          * !consumes_arg guard: free_val may have already freed arg. */
-        vm_borrow_scan(arg, result);
+        vm_borrow_scan(arg, result, fn_val, frame->env);
     }
     if (!consumes_arg && result != arg) val_decref(arg);
     vm_push(result);
@@ -3186,7 +3228,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                  * !consumes_arg: a consuming builtin like free_val may
                  * have already freed arg, so reading arg here would be
                  * a use-after-free. */
-                vm_borrow_scan(arg, result);
+                vm_borrow_scan(arg, result, fn_val, frame->env);
             }
             if (!consumes_arg && result != arg) val_decref(arg);
             /* If result == arg, the arg's refcount transfers to the result */
@@ -5049,7 +5091,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                  * vm_borrow_scan. Must run before val_decref(arg) so
                  * the items array is still valid, and skipped when the
                  * builtin already consumed arg (free_val). */
-                vm_borrow_scan(arg, result);
+                vm_borrow_scan(arg, result, fn, frame->env);
             }
             if (!consumes_arg && result != arg) val_decref(arg);
             slot_decref(table_s);

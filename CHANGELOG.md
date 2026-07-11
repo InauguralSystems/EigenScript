@@ -4,6 +4,22 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Borrow-scan guard in sanitizer builds (#548).** The #546 cap on
+  `vm_borrow_scan` rests on the invariant *"no builtin returns a
+  borrowed direct child past index 7"*, which was enforced only by a
+  comment. In ASan builds the scan now continues past
+  `VM_BORROW_SCAN_CAP` and `abort()`s naming the offending builtin
+  (env-chain reverse lookup) on a match the capped scan missed —
+  converting a future missed compensating incref from a
+  lifetime-dependent use-after-free heisenbug into an immediate red
+  test run. Zero release-build cost (compiler-set ASan macro gate).
+  Validated by a planted fault: `__borrow_guard_selftest` (registered
+  only in sanitizer builds under `EIGS_BORROW_GUARD_SELFTEST`, so
+  fuzzers can't reach a deliberate abort) violates the invariant on
+  purpose; suite [119] proves the abort fires, names the builtin, and
+  that within-cap borrows stay clean. SKIPs on release.
+
 ### Fixed
 - **Dot access accepts keyword-named fields (#542).** `d.loop`, `d.in`,
   `d.when` — any word keyword now parses as a dot key (read, write,

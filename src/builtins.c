@@ -5873,6 +5873,21 @@ static Value* builtin_dot(Value *arg) {
     return make_num(s);
 }
 
+#if EIGS_BORROW_GUARD
+/* #548 planted fault: deliberately violates the borrow-scan invariant by
+ * returning a borrowed direct child PAST VM_BORROW_SCAN_CAP. Exists only
+ * to prove the guard converts a missed borrow into a loud abort — a
+ * checker nobody has watched fail is not a checker. Registered only in
+ * sanitizer builds AND under EIGS_BORROW_GUARD_SELFTEST, so fuzzers
+ * (whose harnesses are ASan builds) can never reach a deliberate abort. */
+static Value* builtin_borrow_guard_selftest(Value *arg) {
+    if (arg && arg->type == VAL_LIST &&
+        arg->data.list.count > VM_BORROW_SCAN_CAP)
+        return arg->data.list.items[arg->data.list.count - 1];
+    return NULL;   /* VM substitutes null: not enough args to violate */
+}
+#endif
+
 void register_builtins(Env *env) {
     /* ---- Core language builtins (always available) ---- */
     env_set_local_owned(env, "print", make_builtin(builtin_print));
@@ -6123,5 +6138,9 @@ void register_builtins(Env *env) {
     register_model_builtins(env);
 #endif
 
-
+#if EIGS_BORROW_GUARD
+    /* #548 guard self-test hook — see builtin_borrow_guard_selftest. */
+    if (getenv("EIGS_BORROW_GUARD_SELFTEST"))
+        env_set_local_owned(env, "__borrow_guard_selftest", make_builtin(builtin_borrow_guard_selftest));
+#endif
 }
