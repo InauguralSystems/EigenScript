@@ -1064,6 +1064,29 @@ echo "[118] Keyword Dot Keys (#542, 49 checks)"
 check_eigs_suite "all 39 keywords + chains/json/paren/literal as dot keys" \
     test_dict_keyword_keys.eigs "All tests passed" 49
 
+# [119] Borrow-scan guard (#548): sanitizer builds full-scan past
+# VM_BORROW_SCAN_CAP and abort naming the builtin on a missed borrow —
+# validated by a planted fault (opt-in selftest builtin). SKIPs on
+# release builds, where the guard is compiled out by design.
+echo "[119] Borrow-Scan Guard (#548, 4 checks; SKIP on release)"
+BG_OUTPUT=$(bash "$TESTS_DIR/test_borrow_guard.sh" 2>&1)
+if echo "$BG_OUTPUT" | grep -q "SKIP:"; then
+    echo "$BG_OUTPUT" | grep "SKIP:"
+else
+    BG_PASS=$(echo "$BG_OUTPUT" | grep -c "PASS:" || true)
+    BG_FAIL=$(echo "$BG_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + BG_PASS + BG_FAIL))
+    PASS=$((PASS + BG_PASS))
+    FAIL=$((FAIL + BG_FAIL))
+    if [ "$BG_FAIL" -gt 0 ]; then
+        echo "  FAIL: $BG_FAIL borrow-guard check(s) failed"
+        echo "$BG_OUTPUT" | grep "FAIL:" | head -5
+    else
+        echo "  PASS: all $BG_PASS borrow-guard checks"
+    fi
+fi
+echo ""
+
 # [23] Named parameters
 echo "[23/27] Named Parameters (9 checks)"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?

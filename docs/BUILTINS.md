@@ -613,3 +613,9 @@ receiver.
 | `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. |
 | `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. |
 | `audio_stop` | `audio_stop of channel` | Stop one mixer channel. Returns `1`, or `0` on a bad/inactive channel. |
+
+## Internal (sanitizer builds only)
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `__borrow_guard_selftest` | `__borrow_guard_selftest of [args...]` | **Not a user builtin.** A planted fault validating the #548 borrow-scan guard: registered only in ASan builds when `EIGS_BORROW_GUARD_SELFTEST` is set, it deliberately returns a borrowed direct child past `VM_BORROW_SCAN_CAP` so the suite can prove the guard aborts loudly (naming the builtin) instead of letting a missed compensating incref become a silent use-after-free. Absent from release builds and from sanitizer builds without the opt-in env var (fuzzers must never reach a deliberate abort). |

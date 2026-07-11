@@ -22,6 +22,27 @@ typedef struct ASTNode ASTNode;
  * includes vm.h before eigenscript.h, slot_incref / slot_decref will
  * be incomplete-typed. All current TUs include eigenscript.h first. */
 
+/* Direct-borrow scan cap (#546): a borrowing builtin can only return an
+ * argument it actually read, and every registered builtin reads its arg
+ * vector at small fixed indices (max arity 7). Shared with builtins.c so
+ * the #548 guard self-test can construct a past-the-cap violation. */
+#define VM_BORROW_SCAN_CAP 8
+
+/* #548: in sanitizer builds the borrow scan keeps scanning past the cap
+ * and aborts on a match the capped scan missed — a builtin returning a
+ * borrowed direct child past index 7 would otherwise become a silent
+ * lifetime-dependent use-after-free. Zero cost in release builds. */
+#if defined(__SANITIZE_ADDRESS__)
+#  define EIGS_BORROW_GUARD 1
+#elif defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#    define EIGS_BORROW_GUARD 1
+#  endif
+#endif
+#ifndef EIGS_BORROW_GUARD
+#  define EIGS_BORROW_GUARD 0
+#endif
+
 /* ---- Opcodes ---- */
 typedef enum {
     /* Constants */
