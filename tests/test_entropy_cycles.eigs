@@ -1,0 +1,94 @@
+# test_entropy_cycles.eigs — #571: the observer's entropy walk detects
+# cycles and shared substructure (visited-once semantics).
+#
+# Before #571 the walk had only a depth-64 cap: one back-referencing dict
+# re-entered the graph 32x (linear, unnoticed), a second made every
+# observed container assignment ~2^32 subtree walks — the DeslanStudio 4d
+# hang. Now each container node contributes its entropy ONCE per
+# computation; a re-encountered container (back-edge or DAG sharing) reads
+# as a 0-entropy leaf. Trees and scalars are unchanged.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+log2_3 is 1.584962500721156
+
+# --- the #571 repro shape: two back-edges must complete (was ~2^32 work) ---
+hub is {"name": "hub", "kids": []}
+b is {"parent": hub}
+append of [hub.kids, b]
+c is {"parent": hub}
+append of [hub.kids, c]
+t0 is monotonic_ms of null
+z2 is {"a": hub}
+elapsed is (monotonic_ms of null) - t0
+check of ["two back-edges: observed assignment completes", elapsed >= 0]
+check of ["two back-edges: entropy is defined and positive", (where is z2) > 0.0]
+
+# --- cyclic dict: exact value under visited-once semantics ---
+# a = {"x": [a]}: H(inner list) = 0/1 + log2(2) = 1 (revisit of a is a
+# 0-entropy leaf); H(a) = 1/1 + log2(2) = 2.
+a is {"x": []}
+append of [a.x, a]
+q is a
+check of ["self-cycle dict entropy == 2.0", (where is q) == 2.0]
+
+# --- DAG with shared substructure: counted once, not per path ---
+sub is [5, 7]
+hsub is where is sub
+pair is [sub, sub]
+hpair is where is pair
+expected is hsub / 2 + log2_3
+diff is hpair - expected
+if diff < 0:
+    diff is 0 - diff
+check of ["shared substructure counted once", diff < 0.000000001]
+
+# --- trees (distinct objects) keep the pre-#571 values ---
+t is [1.0, 1.0]
+ht is where is t
+tdiff is ht - 2.584962500721156
+if tdiff < 0:
+    tdiff is 0 - tdiff
+check of ["tree entropy unchanged: [1.0, 1.0] == 1 + log2(3)", tdiff < 0.000000000001]
+
+# --- shared SCALAR leaves still count per occurrence (only containers
+# --- are visited-once) ---
+one is 1.0
+tt is [one, one]
+htt is where is tt
+sdiff is htt - 2.584962500721156
+if sdiff < 0:
+    sdiff is 0 - sdiff
+check of ["shared scalar leaves count per path", sdiff < 0.000000000001]
+
+# --- scalars unchanged ---
+x is 1.0
+check of ["scalar entropy unchanged: |1.0| is the formula max", (where is x) == 1.0]
+
+# --- big graph: > 16 distinct containers spills the visited set to the
+# --- heap; must complete and stay finite (ASan run covers the free) ---
+big is []
+i is 0
+loop while i < 40:
+    node is {"i": i, "hub": hub}
+    append of [big, node]
+    i is i + 1
+wide is {"kids": big, "hub": hub}
+check of ["40-container graph with shared cyclic hub completes", (where is wide) > 0.0]
+
+total is pass_count + fail_count
+print of f"Entropy cycle/sharing tests: {pass_count}/{total} passed"
+if fail_count == 0:
+    print of "ENTROPY_CYCLES_OK"
+else:
+    assert of [0, "Some entropy cycle tests failed"]

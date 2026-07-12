@@ -57,7 +57,13 @@ Two of these are the load-bearing pair:
 - **`where` — information content (the engine calls it entropy).** For a
   number it is, in spirit, *how many bits it takes to pin the value down*.
   For a string it is the Shannon entropy of its characters; for a list or
-  dict it is the average of its elements plus a size term. It needs no
+  dict it is the average of its elements plus a size term, where each
+  **container** node contributes its entropy **once per computation** —
+  a container re-encountered through a shared reference or a back-edge
+  reads as a 0-entropy leaf (#571). That makes the walk one pass over
+  the distinct nodes: shared substructure is not double-counted, and
+  cyclic graphs are well-defined (and cheap) instead of exponential.
+  Scalar leaves still count once per occurrence. It needs no
   origin and no target — it is a property of the value's own structure.
   That is what makes it computable from inside.
 - **`why` — the change in `where` since you last looked.** Negative means

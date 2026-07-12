@@ -1055,7 +1055,11 @@ print of (how is x)     # stability in [0, 1]
 ## Observer semantics and predicates
 
 Every assignment (outside `unobserved`) updates an observer that tracks
-the value's entropy and its trend. Six bare-keyword predicates query
+the value's entropy and its trend. For lists and dicts the entropy walk
+visits each container node once per computation: a container reached
+again through a shared reference or a cycle contributes 0 (a leaf), so
+shared substructure is not double-counted and cyclic object graphs are
+well-defined (see [OBSERVER.md](OBSERVER.md)). Six bare-keyword predicates query
 the most recently observed variable: `converged`, `stable`,
 `improving`, `oscillating`, `diverging`, `equilibrium`. The canonical
 use is a self-terminating loop:
