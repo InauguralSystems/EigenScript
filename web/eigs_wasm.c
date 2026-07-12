@@ -72,7 +72,7 @@ int eigs_run_source(const char *source) {
     }
 
     g_compile_module_slots = 1;
-    EigsChunk *script_chunk = compile_ast(ast, global);
+    EigsChunk *script_chunk = compile_ast(ast, global, source);
     g_compile_module_slots = 0;
 
     Value *result = vm_execute(script_chunk, global);
