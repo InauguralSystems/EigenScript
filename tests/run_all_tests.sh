@@ -2660,6 +2660,11 @@ check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK"
 # |x|=1.0 is the formula max, never converged) and `how` as the
 # deadband-normalized settledness gradient.
 check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All tests passed" 10
+
+# #571: the entropy walk is visited-once — cyclic/shared container graphs
+# complete (two back-edges used to be ~2^32 subtree walks) and each
+# container contributes once; trees/scalars keep their exact old values.
+check_eigs_suite "entropy cycle/shared-structure detection (#571)" test_entropy_cycles.eigs "ENTROPY_CYCLES_OK" 8
 echo ""
 
 # #366: frameless leaf-accessor call fast path — results, borrows from

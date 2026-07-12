@@ -4,6 +4,26 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Entropy walk: cycle + shared-structure detection (#571).** The
+  observer's container entropy walk (`compute_entropy`) had only a
+  depth-64 cap, so back-references multiplied re-walks: one
+  back-referencing dict was linear (32 re-entries), a second made every
+  observed container assignment ~2^32 subtree walks (0.07 ms → seconds
+  to minutes — found by the DeslanStudio 4d port, whose second
+  shell-back-referencing UI view hung `shell_new` for >10 minutes).
+  The walk now carries a stack-local visited set (open-addressing
+  pointer table, 16 inline slots, heap spill only for larger graphs;
+  containers only — scalars pay nothing, and per-computation stack
+  state can't race when spawn-shared graphs are observed on two
+  threads at once). **Semantics**: each container node contributes its
+  entropy once per computation; a re-encountered container reads as a
+  0-entropy leaf. Trees and scalars are byte-identical to before;
+  DAG-shaped data is no longer double-counted; cyclic graphs are now
+  well-defined (previously depth-truncation-dependent). Suite section
+  gated by `test_entropy_cycles.eigs` (8 checks);
+  SPEC/OBSERVER/COMPARISON updated.
+
 ### Added
 - **Borrow-scan guard in sanitizer builds (#548).** The #546 cap on
   `vm_borrow_scan` rests on the invariant *"no builtin returns a
