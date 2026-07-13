@@ -89,7 +89,6 @@ static const char *builtin_docs[][2] = {
     {"time", "time of null -- seconds since epoch"},
     {"sleep", "sleep of seconds -- pause execution"},
     {"random", "random of null -- random float in [0,1)"},
-    {"input", "input of prompt -- read line from stdin"},
     {"eval", "eval of string -- evaluate EigenScript code string"},
     {NULL, NULL}
 };

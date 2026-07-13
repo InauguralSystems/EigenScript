@@ -198,7 +198,10 @@ load_file: cannot read 'missing.eigs'
 
 ## Informational Messages
 
-Diagnostic messages use bracketed prefixes and are not errors:
+Diagnostic messages use bracketed prefixes and are not errors. They are
+**off by default** (#560 — a shipped CLI must be able to keep stderr clean;
+no successful builtin announces itself). Set `EIGS_VERBOSE_LOAD=1` to enable
+the `load_file` banner during development:
 
 ```
 [load_file] Loading lib/math.eigs (1301 bytes)
@@ -235,6 +238,7 @@ a code's meaning never changes, and retired codes are not reused.
 | `W016` | warning | Bare trajectory predicate **outside a loop condition** (`if stable:`, `ok is converged`, `return diverging`) reads the last-observed binding — an invisible alias (#247/#262) — write `<predicate> of <var>`. Loop conditions are exempt: the single-assign `loop while not converged` form is the documented idiom, and the ambiguous multi-assign case is `W014`. Any explicit subject counts as named, including `stable of (x + 0.0)`; deliberate bare reads carry `# lint: allow W016`. |
 | `W017` | warning | Bare 1-element literal arg list: `f of [x]` passes **one argument** — the element, not the list (#405; the pre-#405 rule meant the opposite, so the form reads ambiguously). Write `f of x` for one argument, or `f of ([x])` (#355) to pass a 1-element list. Doubles as the #405 migration audit: `--lint` over a consumer repo surfaces every behavior-changed call site. |
 | `W018` | warning | A `catch`-bound error's `.kind` is compared (`==`/`!=`) against a string that is a **near-miss** of a real kind — a case variant (`"IO"`) or a single-character typo (`"index_rage"`), or a kind renamed out from under the handler — so the branch is dead code that silently never fires (#469). Kinds are a closed set (below). Zero-false-positive by construction: only near-misses of a closed kind fire, and only off a catch-bound variable — an exactly-valid kind, and a genuinely custom `throw {kind: "..."}` value many edits from every builtin, both stay silent. |
+| `W019` | warning | An interrogative used as a **bare statement** — `why is "..."`, `what is x`, `prev of y` at statement level — evaluates and **discards** its result: a silent no-op (#583). Question words (`what/who/when/where/why/how`) cannot be assigned with `is` — the "assignment" is the interrogative expression form — so when a same-named binding exists in scope the statement is almost certainly a mistaken assignment (the real hit: a catch handler "reassigning" a `local why` that silently kept its stale value). An interrogative inside an expression (`print of (why is x)`, `r is prev of y`) is never flagged. |
 
 The human linter output carries the code inline:
 

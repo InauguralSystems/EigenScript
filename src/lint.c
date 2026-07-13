@@ -612,6 +612,82 @@ static void check_builtin_shadow(ASTNode *node, LintContext *ctx) {
     }
 }
 
+/* ---- Check: statement-level interrogative (result discarded) ---- */
+
+/* #583: `why is "..."` where `why` is a question word parses as the
+ * INTERROGATIVE form (an expression), not an assignment — as a bare
+ * statement its result is always discarded, a silent no-op. When a
+ * same-named binding exists in scope this is almost certainly a mistaken
+ * assignment (the real downstream hit: Tidepool's catch handler). The
+ * discarded form is dead code either way, so every statement-level
+ * AST_INTERROGATE is flagged. `check_disc_interrog` is called only on
+ * nodes sitting directly in a statement list, so an interrogative used
+ * inside an expression (`print of (why is x)`) is never reached. */
+
+static const char *interrog_word(int kind) {
+    static const char *words[] = {"what", "who", "when", "where", "why", "how"};
+    return (kind >= 0 && kind <= 5) ? words[kind] : "prev";
+}
+
+static void check_disc_interrog(ASTNode *node, LintContext *ctx) {
+    if (!node) return;
+    if (node->type == AST_INTERROGATE) {
+        int k = node->data.interrogate.kind;
+        if (k >= 0 && k <= 5)
+            lint_warn(ctx, node->line, "W019",
+                "'%s is ...' is an interrogative (question words cannot be "
+                "assigned with 'is'); as a statement its result is discarded — "
+                "rename the variable, or use the interrogative inside an expression",
+                interrog_word(k));
+        else
+            lint_warn(ctx, node->line, "W019",
+                "interrogative 'prev of ...' as a bare statement discards its result");
+        return;
+    }
+    switch (node->type) {
+        case AST_IF:
+            for (int i = 0; i < node->data.cond.if_count; i++)
+                check_disc_interrog(node->data.cond.if_body[i], ctx);
+            for (int i = 0; i < node->data.cond.else_count; i++)
+                check_disc_interrog(node->data.cond.else_body[i], ctx);
+            break;
+        case AST_LOOP:
+            for (int i = 0; i < node->data.loop.body_count; i++)
+                check_disc_interrog(node->data.loop.body[i], ctx);
+            break;
+        case AST_FOR:
+            for (int i = 0; i < node->data.forloop.body_count; i++)
+                check_disc_interrog(node->data.forloop.body[i], ctx);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < node->data.func.body_count; i++)
+                check_disc_interrog(node->data.func.body[i], ctx);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < node->data.trycatch.try_count; i++)
+                check_disc_interrog(node->data.trycatch.try_body[i], ctx);
+            for (int i = 0; i < node->data.trycatch.catch_count; i++)
+                check_disc_interrog(node->data.trycatch.catch_body[i], ctx);
+            break;
+        case AST_MATCH:
+            for (int c = 0; c < node->data.match.case_count; c++)
+                for (int k2 = 0; k2 < node->data.match.body_counts[c]; k2++)
+                    check_disc_interrog(node->data.match.bodies[c][k2], ctx);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < node->data.block.count; i++)
+                check_disc_interrog(node->data.block.stmts[i], ctx);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < node->data.program.count; i++)
+                check_disc_interrog(node->data.program.stmts[i], ctx);
+            break;
+        default:
+            break;
+    }
+}
+
 /* ---- Check: unreachable code in function bodies ---- */
 
 static void check_func_unreachable(ASTNode *node, LintContext *ctx) {
@@ -1923,6 +1999,7 @@ static void lint_run_checks(ASTNode *ast, const char *path,
     check_empty_blocks(ast, ctx);
     check_dup_keys(ast, ctx);
     check_builtin_shadow(ast, ctx);
+    check_disc_interrog(ast, ctx);
     check_func_unreachable(ast, ctx);
     check_is_conditions(ast, ctx);
     check_unused_params(ast, ctx);

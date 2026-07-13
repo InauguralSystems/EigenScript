@@ -204,9 +204,10 @@ echo "$OUT" | grep -q "^i = 3 .*(3 assigns)" \
     || fail "module-level i folds only its own stream" \
             "$(echo "$OUT" | grep '^i =' | head -1)"
 
-# inside the second work frame (step 11 = its 'i is i + 1' line): the
+# inside the second work frame (step 12 = its 'i is i + 1' line; #556
+# moved the define statement's tape record to the define's own line): the
 # frame-local i (31, 2 assigns, {in work}) shadows the module i
-OUT=$(printf 's 10\np\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
+OUT=$(printf 's 11\np\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
 echo "$OUT" | grep -q "^i = 31 .*{in work}" \
     && ok "frame-local i shadows module i inside the frame" \
     || fail "frame-local i shadows module i inside the frame" \

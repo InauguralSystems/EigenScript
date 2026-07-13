@@ -1373,7 +1373,11 @@ static ASTNode* parse_statement_inner(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_FUNC, p_cur(p)->line);
+        /* #556: the node's line is the `define` line (t), NOT p_cur(p) —
+         * after parse_block the cursor sits on the first statement AFTER
+         * the body, so diagnostics (lint W013) were attributed to innocent
+         * following code and same-line `# lint: allow` pragmas never matched. */
+        ASTNode *n = make_node(AST_FUNC, t->line);
         n->data.func.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         set_name_hash(n, n->data.func.name);
         n->data.func.params = params;
