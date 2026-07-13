@@ -96,6 +96,71 @@ else:
     assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
     assert_eq of [1, 1, "audio_play_loop skipped (no device)"]
 
+# ---- #579: audio capture (recording input) — device-gated like the
+# mixer tests. SDL_AUDIODRIVER=dummy provides a silent capture device;
+# a real driver captures whatever the mic hears. Both satisfy the
+# shape/cap/range/accumulation checks below; with no SDL/device the
+# checks skip with the count held constant.
+assert_eq of [audio_capture_read of null, null, "capture read with no device is null (#579)"]
+capdev is audio_capture_open of [44100, 1]
+if capdev != 0:
+    assert_true of [capdev >= 2, "capture open returns an SDL device id"]
+    chunk is audio_capture_read of null
+    assert_eq of [type of chunk, "buffer", "capture read returns a buffer"]
+    assert_true of [(len of chunk) <= 2048, "per-call cap respected on first read"]
+    # Bounded poll until samples accumulate (the dummy driver fills in
+    # ~23ms chunks at 44100; real drivers vary).
+    tries is 0
+    loop while (len of chunk) == 0 and tries < 80:
+        gfx_delay of 25
+        chunk is audio_capture_read of null
+        tries is tries + 1
+    assert_true of [(len of chunk) > 0, "capture accumulates samples"]
+    assert_true of [(len of chunk) <= 2048, "per-call cap respected on a full chunk"]
+    inrange is 1
+    ci is 0
+    loop while ci < (len of chunk):
+        if chunk[ci] > 1 or chunk[ci] < (0 - 1):
+            inrange is 0
+        ci is ci + 1
+    assert_eq of [inrange, 1, "captured samples are floats in [-1, 1]"]
+    # Drain until empty terminates (each call returns at most 2048).
+    drains is 0
+    more is audio_capture_read of null
+    loop while (len of more) > 0 and drains < 200:
+        more is audio_capture_read of null
+        drains is drains + 1
+    assert_eq of [len of more, 0, "drain-until-empty terminates"]
+    # Monotonic accumulation: new samples appear again after a drain.
+    again is audio_capture_read of null
+    tries2 is 0
+    loop while (len of again) == 0 and tries2 < 80:
+        gfx_delay of 25
+        again is audio_capture_read of null
+        tries2 is tries2 + 1
+    assert_true of [(len of again) > 0, "capture keeps accumulating after a drain"]
+    audio_capture_close of null
+    assert_eq of [audio_capture_read of null, null, "read after close is null"]
+    assert_eq of [audio_capture_close of null, null, "double close is safe"]
+    capdev2 is audio_capture_open of null
+    assert_true of [capdev2 >= 2, "re-open after close works (default args)"]
+    r2 is audio_capture_read of null
+    assert_eq of [type of r2, "buffer", "re-opened device reads buffers"]
+    audio_capture_close of null
+else:
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+    assert_eq of [1, 1, "audio capture skipped (no device)"]
+
 test_summary of null
 
 # ---- Mixer channels (GAP-002/GAP-003): device-gated — SDL_AUDIODRIVER=dummy

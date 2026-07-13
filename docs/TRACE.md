@@ -63,6 +63,24 @@ perspective lands on the tape as an `N` record:
   the live argv; #471)
 - **HTTP extension:** `http_post` (success and all error paths),
   `http_request_body`, `http_session_id`, `http_request_headers`
+- **Audio capture (gfx extension, #579):** `audio_capture_open`,
+  `audio_capture_read`. Captured audio is a device input, so the whole
+  capture chain is TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is
+  taken *before any SDL call* — replay never opens or reads a real
+  microphone; the recorded device id and sample buffers (the `b[…]`
+  encoding) are served instead. `audio_capture_read` returns at most
+  2048 samples per call precisely so every `N` record fits the 64 KiB
+  record budget — an over-budget record would be `…<truncated>` and
+  replay would silently fall back to the live microphone. Drain loops
+  ("read until empty") replay faithfully: one record per call, empties
+  included. (`audio_capture_close` is deterministic — always `null` —
+  and untraced; under replay it is a no-op because no device was
+  opened.) The audio *output* device (`audio_open`) is deliberately
+  untraced: playback is a side effect that replay re-performs live,
+  like `print`. The residual gap — `audio_open`'s
+  environment-dependent return (`0` on a machine with no audio) can
+  steer a branch differently on replay — is accepted for now; closing
+  it would change how existing tapes replay.
 
 The hook is the `TRACE_NONDET_RET` macro in `src/trace.h`, used at
 every nondet return site — adding a new nondet builtin means wrapping

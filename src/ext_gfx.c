@@ -8,6 +8,7 @@
 
 #include "eigenscript.h"
 #include "ext_names.h"
+#include "trace.h"   /* audio capture is a nondet input source (#579) */
 
 #if EIGENSCRIPT_EXT_GFX
 
@@ -119,11 +120,13 @@ static void (*p_SDL_UnlockAudioDevice)(int);
 static void (*p_SDL_PauseAudioDevice)(int, int);
 static Uint32 (*p_SDL_GetQueuedAudioSize)(int);
 static void (*p_SDL_ClearQueuedAudio)(int);
+static Uint32 (*p_SDL_DequeueAudio)(int, void*, Uint32);
 
 /* Audio state */
 static int g_audio_device = 0;
 static int g_audio_freq = 44100;
 static int g_audio_channels = 1;
+static int g_capture_device = 0;   /* #579: microphone/input device */
 
 static int load_sdl2(void) {
     if (g_sdl_lib) return 1;
@@ -160,6 +163,7 @@ static int load_sdl2(void) {
     p_SDL_PauseAudioDevice = dlsym(g_sdl_lib, "SDL_PauseAudioDevice");
     p_SDL_GetQueuedAudioSize = dlsym(g_sdl_lib, "SDL_GetQueuedAudioSize");
     p_SDL_ClearQueuedAudio = dlsym(g_sdl_lib, "SDL_ClearQueuedAudio");
+    p_SDL_DequeueAudio = dlsym(g_sdl_lib, "SDL_DequeueAudio");
     if (!ok) {
         dlclose(g_sdl_lib);
         g_sdl_lib = NULL;
@@ -289,6 +293,7 @@ Value* builtin_gfx_close(Value *arg) {
     (void)arg;
     if (g_fb_texture && p_SDL_DestroyTexture) { p_SDL_DestroyTexture(g_fb_texture); g_fb_texture = NULL; g_fb_w = 0; g_fb_h = 0; }
     if (g_audio_device) { p_SDL_CloseAudioDevice(g_audio_device); g_audio_device = 0; }
+    if (g_capture_device) { p_SDL_CloseAudioDevice(g_capture_device); g_capture_device = 0; }
     if (g_renderer) { p_SDL_DestroyRenderer(g_renderer); g_renderer = NULL; }
     if (g_window) { p_SDL_DestroyWindow(g_window); g_window = NULL; }
     if (g_sdl_lib) {
@@ -857,6 +862,117 @@ Value* builtin_audio_pause(Value *arg) {
     if (!g_audio_device) return make_null();
     int pause = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 1;
     p_SDL_PauseAudioDevice(g_audio_device, pause);
+    return make_null();
+}
+
+/* ================================================================
+ * AUDIO CAPTURE (#579 — DeslanStudio F-DS-17, live recording input)
+ * ================================================================
+ * Pull-model recording: SDL_OpenAudioDevice(iscapture=1) in queue mode
+ * (callback == NULL) accumulates samples in SDL's internal queue;
+ * audio_capture_read drains them with SDL_DequeueAudio. No callback
+ * means no C->eigs re-entry and no new threading surface — the shape
+ * matches the existing polling clients (gfx_poll loops,
+ * DeslanStudio's transport_tick_recording).
+ *
+ * Tape-first: captured audio is the textbook nondeterministic input,
+ * so audio_capture_open and audio_capture_read are TAKE/RECORD
+ * builtins. Under EIGS_REPLAY the TAKE short-circuits before any SDL
+ * call — replay never opens or reads a real microphone; the recorded
+ * device id and sample buffers are served off the tape. The b[…]
+ * buffer encoding round-trips through N records natively.
+ *
+ * AUDIO_CAPTURE_READ_MAX bounds one read at 2048 samples so a single
+ * N record always fits the tape's TRACE_NONDET_MAX (64 KiB) budget:
+ * worst-case %.17g is ~24 bytes/sample + ", " → ~53 KiB. An over-
+ * budget record would be …<truncated> and replay would silently fall
+ * back to the LIVE microphone — the exact divergence the tape exists
+ * to prevent. Callers drain by looping until the read comes back
+ * empty; the loop replays faithfully (one N record per call). */
+#define AUDIO_CAPTURE_READ_MAX 2048
+
+/* Build a VAL_BUFFER of `n` float samples in [-1, 1] from int16 PCM.
+ * 32767 → 1.0 exactly (mirror of audio_convert_samples' s*32767). */
+static Value* capture_samples_to_buffer(const int16_t *pcm, int n) {
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_BUFFER;
+    v->refcount = 1;
+    v->data.buffer.count = n;
+    v->data.buffer.data = xcalloc(n > 0 ? (size_t)n : 1, sizeof(double));
+    for (int i = 0; i < n; i++) {
+        double s = (double)pcm[i] / 32767.0;
+        if (s < -1.0) s = -1.0;   /* only -32768 exceeds */
+        v->data.buffer.data[i] = s;
+    }
+    return v;
+}
+
+/* audio_capture_open of [freq, channels] — open the recording device
+ * (queue mode, iscapture=1). Defaults 44100/1 like audio_open;
+ * allowed_changes=0 so SDL converts to exactly the requested format.
+ * Returns the device id (>= 2), or 0 when SDL/capture is unavailable.
+ * Re-opening closes the previous capture device first. */
+Value* builtin_audio_capture_open(Value *arg) {
+    TRACE_NONDET_TAKE("audio_capture_open");
+    if (!g_sdl_lib) {
+        if (!load_sdl2()) TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+    }
+    if (!p_SDL_OpenAudioDevice || !p_SDL_DequeueAudio) {
+        fprintf(stderr, "audio_capture_open: SDL2 capture symbols not available\n");
+        TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+    }
+    p_SDL_Init(MY_SDL_INIT_AUDIO);
+
+    SDL_AudioSpec want = {0}, have = {0};
+    want.freq = 44100;
+    want.format = MY_SDL_AUDIO_S16LSB;
+    want.channels = 1;
+    want.samples = 1024;
+    want.callback = NULL;   /* queue mode: drain via SDL_DequeueAudio */
+
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        want.freq = (int)arg->data.list.items[0]->data.num;
+        want.channels = (int)arg->data.list.items[1]->data.num;
+    }
+
+    if (g_capture_device) {
+        p_SDL_CloseAudioDevice(g_capture_device);
+        g_capture_device = 0;
+    }
+    g_capture_device = p_SDL_OpenAudioDevice(NULL, 1, &want, &have, 0);
+    if (g_capture_device < 2) {
+        g_capture_device = 0;
+        TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+    }
+    p_SDL_PauseAudioDevice(g_capture_device, 0); /* start recording */
+    TRACE_NONDET_RECORD("audio_capture_open", make_num(g_capture_device));
+}
+
+/* audio_capture_read of null — drain accumulated samples since the
+ * last read as a buffer of floats in [-1, 1] (interleaved when the
+ * device was opened with channels > 1). At most
+ * AUDIO_CAPTURE_READ_MAX samples per call — loop until the returned
+ * buffer is empty to drain fully. Empty buffer = nothing new yet;
+ * null = no capture device open. */
+Value* builtin_audio_capture_read(Value *arg) {
+    (void)arg;
+    TRACE_NONDET_TAKE("audio_capture_read");
+    if (!g_capture_device)
+        TRACE_NONDET_RECORD("audio_capture_read", make_null());
+    int16_t pcm[AUDIO_CAPTURE_READ_MAX];
+    Uint32 got = p_SDL_DequeueAudio(g_capture_device, pcm, sizeof pcm);
+    TRACE_NONDET_RECORD("audio_capture_read",
+                        capture_samples_to_buffer(pcm, (int)(got / 2)));
+}
+
+/* audio_capture_close of null — stop and close the recording device.
+ * Undrained samples are dropped. Safe to call twice / with no device. */
+Value* builtin_audio_capture_close(Value *arg) {
+    (void)arg;
+    if (g_capture_device) {
+        p_SDL_CloseAudioDevice(g_capture_device);
+        g_capture_device = 0;
+    }
     return make_null();
 }
 

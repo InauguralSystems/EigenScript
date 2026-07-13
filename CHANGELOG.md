@@ -4,6 +4,23 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **gfx audio capture: `audio_capture_open` / `audio_capture_read` /
+  `audio_capture_close` (#579).** The gfx extension's audio surface was
+  output-only; a DAW transport (DeslanStudio F-DS-17) could never
+  record a real microphone. Pull-model recording via the already
+  dlopen'd SDL2: `SDL_OpenAudioDevice(iscapture=1)` in queue mode +
+  `SDL_DequeueAudio` — no callback, no C→eigs re-entry, fits the
+  existing polling clients. `audio_capture_read` drains new samples as
+  a **buffer** (the #578 fast type) of floats in `[-1, 1]`, capped at
+  2048 samples per call so each trace record stays under the 64 KiB
+  budget (i.e. replayable); loop until empty to drain fully. Tape-first:
+  open and read are TAKE/RECORD builtins — under `EIGS_REPLAY` no real
+  device is opened or read, the recorded id and sample buffers are
+  served off the tape (docs/TRACE.md). `SDL_AUDIODRIVER=dummy` provides
+  a silent capture device, so the gfx-suite tests run without hardware;
+  graceful `0`/`null` without SDL or a device.
+
 ### Fixed
 - **gfx audio: `audio_play` / `audio_play_loop` accept `VAL_BUFFER`
   samples (#578).** `audio_convert_samples` was list-only, so handing a

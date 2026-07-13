@@ -329,6 +329,53 @@ else
     fail "is_dir replay" "rec='$REC_ID' rep='$REP_ID'"
 fi
 
+# ---- #579: audio capture is a taped nondeterminism source ----
+# Gated: needs a gfx build AND a working capture device (the dummy SDL
+# driver provides a silent one; the CI dev image has no libSDL2, so this
+# skips there and runs wherever SDL exists). Record a capture session,
+# then replay it with the SDL driver deliberately broken — the recorded
+# device id and sample buffers must be served off the tape (replay must
+# never open or read a real device).
+cat > "$TMPDIR/p_cap_probe.eigs" <<'EOF'
+print of (audio_capture_open of [44100, 1])
+EOF
+CAP_PROBE=$(SDL_AUDIODRIVER=dummy "$EIGS" "$TMPDIR/p_cap_probe.eigs" 2>&1)
+
+if ! echo "$CAP_PROBE" | grep -q "undefined variable" \
+   && [ "$(echo "$CAP_PROBE" | tail -1)" != "0" ]; then
+    cat > "$TMPDIR/p_cap.eigs" <<'EOF'
+dev is audio_capture_open of [44100, 1]
+print of (dev != 0)
+chunk is audio_capture_read of null
+tries is 0
+loop while (len of chunk) == 0 and tries < 80:
+    gfx_delay of 25
+    chunk is audio_capture_read of null
+    tries is tries + 1
+print of (len of chunk)
+print of chunk[0]
+audio_capture_close of null
+print of (audio_capture_read of null)
+EOF
+
+    TAPE_C="$TMPDIR/cap.tape"
+    REC_C=$(SDL_AUDIODRIVER=dummy EIGS_TRACE="$TAPE_C" "$EIGS" "$TMPDIR/p_cap.eigs" 2>&1)
+    # Replay with a nonexistent SDL audio driver: a live open would fail
+    # (and a live read would return null), so matching output proves the
+    # values came from the tape, not the device.
+    REP_C=$(SDL_AUDIODRIVER=doesnotexist EIGS_REPLAY="$TAPE_C" "$EIGS" "$TMPDIR/p_cap.eigs" 2>&1)
+    REC_LEN=$(echo "$REC_C" | sed -n '2p')
+
+    if [ "$REC_C" = "$REP_C" ] && [ "$(echo "$REC_C" | sed -n '1p')" = "1" ] \
+       && [ "${REC_LEN:-0}" -gt 0 ] && grep -q '^N audio_capture_read=b\[' "$TAPE_C"; then
+        ok "capture replay: recorded mic session replays without a device (#579)"
+    else
+        fail "capture replay" "rec='$REC_C' rep='$REP_C'"
+    fi
+else
+    echo "  SKIP: capture replay (no gfx build / no capture device)"
+fi
+
 echo
 echo "REPLAY: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ] && exit 0 || exit 1
