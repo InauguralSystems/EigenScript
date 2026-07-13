@@ -2744,9 +2744,9 @@ echo ""
 # [89] Executable documentation — every eigenscript/output block pair in
 # docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
 # the spec cannot drift from the implementation. Skips without python3.
-echo "[89] Doc Examples (SPEC.md + COMPARISON.md + CONCURRENCY.md)"
+echo "[89] Doc Examples (SPEC.md + COMPARISON.md + CONCURRENCY.md + STDLIB.md)"
 if command -v python3 >/dev/null 2>&1; then
-    DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" "$TESTS_DIR/../docs/SPEC.md" "$TESTS_DIR/../docs/COMPARISON.md" "$TESTS_DIR/../docs/CONCURRENCY.md" 2>&1)
+    DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" "$TESTS_DIR/../docs/SPEC.md" "$TESTS_DIR/../docs/COMPARISON.md" "$TESTS_DIR/../docs/CONCURRENCY.md" "$TESTS_DIR/../docs/STDLIB.md" 2>&1)
     DOC_PASS=$(echo "$DOC_OUTPUT" | grep -c "  PASS:" || true)
     DOC_FAIL=$(echo "$DOC_OUTPUT" | grep -c "  FAIL:" || true)
     TOTAL=$((TOTAL + DOC_PASS + DOC_FAIL))

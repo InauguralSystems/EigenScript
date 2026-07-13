@@ -277,7 +277,9 @@ define double as:                        # functions take one argument, n
 doubled is map of [[1, 2, 3], double]    # [2, 4, 6]
 ```
 
-See [docs/STDLIB.md](docs/STDLIB.md) for the full library guide.
+See [docs/STDLIB.md](docs/STDLIB.md) for the full library guide — start at
+its **"Finding Things"** index ("I need to..." → module) so you reach for
+`stats.median` or `data.df_group_by` instead of hand-rolling it.
 
 ## Packages
 

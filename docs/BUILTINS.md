@@ -4,6 +4,16 @@
 Core builtins are always available; extension builtins (HTTP, DB, model,
 gfx, audio) require a full build or the `gfx` target.
 
+> **Builtins vs. library.** This file is the **compiled-in** surface —
+> functions the binary provides directly. The pure-EigenScript `lib/`
+> layer (DataFrames, stats, distributions, matrices, sets, sorting,
+> the GUI toolkit, the STEM shelf, ...) lives in
+> **[STDLIB.md](STDLIB.md)** — start at its "Finding Things" index if you
+> know the task but not the function. Rule of thumb: **file/process/network,
+> tensor math, JSON encode-decode, regex, channels/tasks, and the
+> interrogatives are builtins (here); everything you `import` is library
+> (there).**
+
 New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
 `recv`, `try_recv`, `recv_timeout`, `close_channel`, `channel_closed`),
 streaming subprocess I/O (`proc_spawn`, `proc_write`, `proc_read_line`,
