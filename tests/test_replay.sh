@@ -310,6 +310,25 @@ else
     fail "args replay" "rec='$REC_A' live='$LIVE_A' rep='$REP_A'"
 fi
 
+# ---- #576: is_dir is a taped nondeterminism source ----
+# Record with the directory present, DELETE it, replay — the recorded
+# answer must win (a live stat would now say 0).
+cat > "$TMPDIR/p_isdir.eigs" <<EOF
+print of (is_dir of "$TMPDIR/probe_dir")
+EOF
+
+mkdir -p "$TMPDIR/probe_dir"
+TAPE_D="$TMPDIR/isdir.tape"
+REC_ID=$(EIGS_TRACE="$TAPE_D" "$EIGS" "$TMPDIR/p_isdir.eigs" 2>&1)
+rmdir "$TMPDIR/probe_dir"
+REP_ID=$(EIGS_REPLAY="$TAPE_D" "$EIGS" "$TMPDIR/p_isdir.eigs" 2>&1)
+
+if [ "$REC_ID" = "1" ] && [ "$REP_ID" = "1" ]; then
+    ok "is_dir replay: recorded answer wins after the directory is deleted"
+else
+    fail "is_dir replay" "rec='$REC_ID' rep='$REP_ID'"
+fi
+
 echo
 echo "REPLAY: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ] && exit 0 || exit 1

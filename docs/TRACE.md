@@ -57,7 +57,7 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_bytes_buf`
+  `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576)
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)

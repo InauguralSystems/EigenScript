@@ -115,4 +115,49 @@ assert of [len of three_mid.s == 5, "JH42 3-byte cp surrounded by ASCII"]
 unknown_esc is json_decode of "{\"s\": \"a\\qb\"}"
 assert of [unknown_esc.s == "aqb", "JH43 unknown escape drops backslash"]
 
+# --- RFC 8259 exponent notation (#557) — decode side ---
+e1 is json_decode of "[1e-06]"
+assert of [e1[0] == 0.000001, "JH44 1e-06 decodes"]
+e2 is json_decode of "[1E+5]"
+assert of [e2[0] == 100000, "JH45 1E+5 decodes (capital E, plus sign)"]
+e3 is json_decode of "[2.5e3]"
+assert of [e3[0] == 2500, "JH46 frac+exp decodes"]
+e4 is json_decode of "[-6.179673164297128e-06]"
+assert of [e4[0] < 0, "JH47 negative mantissa + negative exponent sign"]
+assert of [e4[0] > (0 - 0.00001), "JH48 tiny magnitude in range"]
+e5 is json_decode of "{\"v\": 1.5E-3}"
+assert of [e5.v == 0.0015, "JH49 exponent inside object value"]
+
+# --- malformed number tails now raise instead of atof-guessing ---
+bad_exp_err is 0
+try:
+    x1 is json_decode of "[1e]"
+catch err:
+    bad_exp_err is 1
+assert of [bad_exp_err == 1, "JH50 bare 'e' with no digits raises"]
+
+bad_sign_err is 0
+try:
+    x2 is json_decode of "[1e+]"
+catch err2:
+    bad_sign_err is 1
+assert of [bad_sign_err == 1, "JH51 exponent sign with no digits raises"]
+
+bad_frac_err is 0
+try:
+    x3 is json_decode of "[1.]"
+catch err3:
+    bad_frac_err is 1
+assert of [bad_frac_err == 1, "JH52 trailing '.' with no digits raises"]
+
+# --- encode/decode round-trip for tiny and huge magnitudes (#557) ---
+# json_encode emits %.15g, i.e. scientific notation for tiny/huge values;
+# json_decode must accept its own output.
+tiny is json_decode of (json_encode of ([0.000001]))
+assert of [tiny[0] == 0.000001, "JH53 tiny magnitude round-trips"]
+huge is json_decode of (json_encode of ([1.5e300]))
+assert of [huge[0] == 1.5e300, "JH54 huge magnitude round-trips"]
+neg_tiny is json_decode of (json_encode of ([0 - 0.0000000123]))
+assert of [neg_tiny[0] == (0 - 0.0000000123), "JH55 negative tiny round-trips"]
+
 print of "json hard: all passed"

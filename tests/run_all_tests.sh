@@ -1386,6 +1386,22 @@ else
 fi
 echo ""
 
+# [42a2] read_line (#558): stream-safe stdin line read + record/replay
+echo "[42a2] read_line (counted dynamically)"
+RL_OUTPUT=$(bash "$TESTS_DIR/test_read_line.sh" 2>&1)
+RL_PASS=$(echo "$RL_OUTPUT" | grep -c "PASS:" || true)
+RL_FAIL=$(echo "$RL_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + RL_PASS + RL_FAIL))
+PASS=$((PASS + RL_PASS))
+FAIL=$((FAIL + RL_FAIL))
+if [ "$RL_FAIL" -gt 0 ]; then
+    echo "  FAIL: $RL_FAIL read_line check(s) failed"
+    echo "$RL_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $RL_PASS read_line checks"
+fi
+echo ""
+
 # [42b] --test --trace-on-fail (#394): every failure is a replayable tape
 echo "[42b] Trace-on-fail (7 checks)"
 TOF_OUTPUT=$(bash "$TESTS_DIR/test_trace_on_fail.sh" 2>&1)
@@ -2618,7 +2634,7 @@ check_eigs_suite "error propagation" test_error_propagation.eigs "error propagat
 check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
-check_eigs_suite "rename / remove_file (atomic swap, delete)" test_file_rename.eigs "All tests passed" 12
+check_eigs_suite "rename / remove_file / is_dir (atomic swap, delete, dir probe)" test_file_rename.eigs "All tests passed" 17
 check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_bytecode.eigs "All tests passed" 29
 check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sandbox_allow.eigs "SANDBOX_ALLOW_OK" 1
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1

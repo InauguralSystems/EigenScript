@@ -5,6 +5,33 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`read_line` builtin (#558)** — blocking line read from stdin
+  (`getline(3)`): returns the next line without its trailing newline
+  (`\r\n` stripped as one unit), `null` at EOF, `""` for an empty line.
+  The stream-safe stdin primitive: `read_text of "/dev/stdin"` sizes
+  with fseek/ftell and silently reads `""` on a pipe, so a CLI in a
+  shell pipeline (`gen | eigenscript client.eigs`) had no way to
+  receive lines. Tape-first: recorded/replayed like `read_bytes`
+  (TAKE/RECORD — replay serves recorded lines, no live stdin read).
+  Hosted-only (freestanding profile excludes it, like the other IO).
+- **`is_dir` builtin (#576)** — `is_dir of path` → 1/0 via `stat(2)`,
+  replacing the consumer-side `file_exists of f"{path}/."` probe.
+  Trace-recorded (`TRACE_NONDET_RET`), unlike the older untraced fs
+  predicates (`file_exists`, `ls`, `mkdir`, `getcwd` — flagged as a
+  follow-up).
+
+### Fixed
+- **`json_decode` accepts RFC 8259 exponent notation (#557).** The
+  number scanner accepted `e`/`E`/`+` but never the `-` of a negative
+  exponent, so `1e-06` — emitted by Python `json.dumps`, JS
+  `JSON.stringify`, serde, and by EigenScript's own `json_encode`
+  (`%.15g`) for tiny/huge magnitudes — failed to parse: encode→decode
+  did not round-trip. The scanner now implements the exact RFC §6
+  grammar (`[minus] int [frac] [exp]`) and raises on malformed tails
+  (`"1e"`, `"1e+"`, `"1."`) instead of letting `atof()` guess silently.
+  Leading zeros stay accepted (old laxity, unchanged).
+
+### Added
 - **Lint W019 — statement-level interrogative discards its result
   (#583).** `why is "..."` where `why` is a question word parses as the
   interrogative *expression* form, not an assignment — as a bare
