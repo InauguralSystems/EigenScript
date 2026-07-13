@@ -5,6 +5,36 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Lint W019 — statement-level interrogative discards its result
+  (#583).** `why is "..."` where `why` is a question word parses as the
+  interrogative *expression* form, not an assignment — as a bare
+  statement it is a silent no-op (the Tidepool hit: a catch handler
+  "reassigning" a `local why` silently kept the stale value). Every
+  statement-level interrogative (question words and `prev of`) is dead
+  code and now warns; interrogatives inside expressions
+  (`print of (why is x)`) are untouched. docs/DIAGNOSTICS.md documents
+  the code.
+
+### Fixed
+- **Lint W013 attributed to the shadowing `define` line (#556).** The
+  parser stamped `AST_FUNC` nodes with the line of the first statement
+  *after* the body, so W013 pointed at innocent code, the documented
+  same-line `# lint: allow W013` never matched, and consecutive
+  shadowing defines chain-suppressed each other (N shadows → only the
+  last warned). The node now carries the `define` token's line;
+  same-line pragmas work and each shadow warns on its own line.
+- **LSP no longer advertises a phantom `input` builtin (#559).**
+  `eigenlsp` completion offered `input of prompt`, which was never
+  registered in the runtime — accepting the completion produced
+  `undefined variable: input`. Entry removed (#558 tracks a real
+  stdin-read builtin).
+- **`load_file` is silent by default (#560).** Every successful load
+  printed an unconditional `[load_file] Loading ...` banner to stderr —
+  a consumer CLI loading 17 fragments opened with 17 lines of runtime
+  chatter no flag could turn off. No successful builtin announces
+  itself; the banner is now opt-in via `EIGS_VERBOSE_LOAD=1`.
+
+### Added
 - **lib/ui input-event trio (#567, #568, #569)** — first-consumer
   findings from the DeslanStudio arrangement timeline:
   - **#568 — mouse events carry modifier state.** `gfx_poll` now

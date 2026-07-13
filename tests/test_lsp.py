@@ -197,6 +197,11 @@ def main():
           isinstance(items, list) and all("label" in it for it in items[:5]))
     check("completion surfaces a user symbol",
           isinstance(items, list) and any(it.get("label") == "greeting" for it in items))
+    # #559: the list once advertised a phantom `input` builtin that was never
+    # registered in the runtime — accepting the completion produced
+    # `undefined variable: input` at runtime.
+    check("completion does not advertise a phantom 'input' builtin",
+          isinstance(items, list) and not any(it.get("label") == "input" for it in items))
 
     # --- hover over a defined symbol returns contents ---
     hover = {"jsonrpc": "2.0", "id": 3, "method": "textDocument/hover",

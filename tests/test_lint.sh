@@ -859,6 +859,94 @@ OUT_CWD=$( (cd / && "$EIGS" --lint "$LINTPKG/lib/gen.eigs" 2>&1) || true)
 check_not_contains "#455 allow-list resolves from project root, not cwd" "$OUT_CWD" "W017"
 rm -rf "$LINTPKG"
 
+# --- #556: W013 is attributed to the define line itself ---
+# The warning used to land on the first statement AFTER the shadowing define
+# (p_cur had advanced past the body), so a same-line `# lint: allow W013` on
+# the define never matched and consecutive shadows chain-suppressed each other.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+_real is remove_file
+define remove_file(path) as:
+    return _real of path
+r is remove_file of "/nonexistent"
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#556 W013 reported at the define line (2)" "$OUTPUT" ":2: warning\[W013\]"
+check_not_contains "#556 W013 not attributed to the next statement (4)" "$OUTPUT" ":4: warning\[W013\]"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+_real is remove_file
+define remove_file(path) as:   # lint: allow W013
+    return _real of path
+r is remove_file of "/nonexistent"
+print of r
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#556 same-line allow pragma on the define suppresses W013" "$OUTPUT" "W013"
+rm -f "$TMPFILE"
+
+# Consecutive shadowing defines: each warns on its OWN define line (the old
+# attribution made each define's warning land on the NEXT define, where that
+# define's pragma chain-suppressed it).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+_r1 is remove_file
+_r2 is rename
+define remove_file(path) as:
+    return _r1 of path
+define rename(args) as:
+    return _r2 of args
+x is remove_file of "/nonexistent"
+y is rename of ["/a", "/b"]
+print of x
+print of y
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#556 first of two consecutive shadows warns (line 3)" "$OUTPUT" ":3: warning\[W013\]"
+check_contains "#556 second of two consecutive shadows warns (line 5)" "$OUTPUT" ":5: warning\[W013\]"
+rm -f "$TMPFILE"
+
+# --- #583 (W019): statement-level interrogative discards its result ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define f(e) as:
+    local why is "init failed"
+    if e == 1:
+        why is "no builtins"
+    return why
+print of (f of 1)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#583 W019 fires on statement-level 'why is ...'" "$OUTPUT" "W019"
+check_contains "#583 W019 reported at the interrogative's line (4)" "$OUTPUT" ":4: warning\[W019\]"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 5
+x is 7
+prev of x
+print of x
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#583 W019 fires on statement-level 'prev of'" "$OUTPUT" "W019"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 5
+x is 7
+print of (what is x)
+p is prev of x
+print of p
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#583 interrogatives inside expressions are not flagged" "$OUTPUT" "W019"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

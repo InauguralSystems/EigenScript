@@ -2827,6 +2827,31 @@ else
 fi
 echo ""
 
+echo "[115b] load_file quiet by default (#560, 2 checks)"
+# A successful load_file used to print an unconditional "[load_file]
+# Loading ..." banner to stderr per call — 17 lines of runtime chatter
+# before a consumer CLI's own output. Default is silent now (no other
+# successful builtin announces itself); EIGS_VERBOSE_LOAD=1 re-enables
+# the development banner.
+QL_DIR=$(mktemp -d /tmp/eigs_quietload_XXXX)
+printf 'print of "frag"\n'              > "$QL_DIR/frag.eigs"
+printf 'load_file of "frag.eigs"\n'     > "$QL_DIR/main.eigs"
+QL_ERR=$( cd "$QL_DIR" && "$BIN_ABS" main.eigs </dev/null 2>&1 >/dev/null )
+QL_VERB=$( cd "$QL_DIR" && EIGS_VERBOSE_LOAD=1 "$BIN_ABS" main.eigs </dev/null 2>&1 >/dev/null )
+rm -rf "$QL_DIR"
+TOTAL=$((TOTAL + 2))
+if [ -z "$QL_ERR" ]; then
+    echo "  PASS: successful load_file emits nothing on stderr"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: load_file stderr not empty: '$QL_ERR'"; FAIL=$((FAIL + 1))
+fi
+if echo "$QL_VERB" | grep -q '^\[load_file\] Loading'; then
+    echo "  PASS: EIGS_VERBOSE_LOAD=1 re-enables the banner"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: EIGS_VERBOSE_LOAD banner missing: '$QL_VERB'"; FAIL=$((FAIL + 1))
+fi
+echo ""
+
 echo "[92] Module Resolve Base (1 check)"
 # Phase 0b: an `import` inside a module resolves relative to *that
 # module's* directory, not the main script's. Shell-driven because

@@ -2706,7 +2706,11 @@ Value* builtin_load_file(Value *arg) {
         return make_null();
     }
 
-    fprintf(stderr, "[load_file] Loading %s (%ld bytes)\n", path, size);
+    /* #560: silent by default — no other successful builtin announces
+     * itself, and shipped CLI tools built on load_file must be able to keep
+     * stderr clean. Set EIGS_VERBOSE_LOAD=1 for the development banner. */
+    if (getenv("EIGS_VERBOSE_LOAD"))
+        fprintf(stderr, "[load_file] Loading %s (%ld bytes)\n", path, size);
 
     /* A parse error in the loaded file must surface, not be silently run as a
      * partial/incorrect AST. Direct execution aborts on g_parse_errors; mirror
