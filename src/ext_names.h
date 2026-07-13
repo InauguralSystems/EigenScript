@@ -44,6 +44,9 @@
     X(ppu_render_frame, builtin_ppu_render_frame) \
     X(audio_open, builtin_audio_open) \
     X(audio_close, builtin_audio_close) \
+    X(audio_capture_open, builtin_audio_capture_open) \
+    X(audio_capture_read, builtin_audio_capture_read) \
+    X(audio_capture_close, builtin_audio_capture_close) \
     X(audio_volume, builtin_audio_volume) \
     X(audio_stop, builtin_audio_stop) \
     X(audio_pause, builtin_audio_pause) \
