@@ -200,6 +200,16 @@ define _mousedown_splitter(hit, root, mx, my, ev) as:
     _ui.drag_widget is hit
     _ui.drag_ox is hit._ax
 
+define _drag_splitter(w, ev) as:
+    local new_pos is ev.x - _ui.drag_ox
+    if new_pos < 50:
+        new_pos is 50
+    if new_pos > w.w - 50:
+        new_pos is w.w - 50
+    w.split_pos is new_pos
+    if w.on_resize != null:
+        w.on_resize of w
+
 define _mousedown_piano_kb(hit, root, mx, my, ev) as:
     abs_x is hit._ax
     abs_y is hit._ay
@@ -224,6 +234,7 @@ _register_widget of ["splitter", {
     "hit_test": _hit_test_splitter,
     "on_mousedown": _mousedown_splitter,
     "on_mousemove": null,
+    "on_drag": _drag_splitter,
     "clear_hover": _clear_hover_splitter,
     "clear_pressed": null,
     "scroll": null,

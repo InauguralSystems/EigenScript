@@ -12,6 +12,21 @@
 # All widgets are plain dicts with a "type" field.
 # Panels have a "children" list and act as containers.
 # Positions are relative to parent panel origin.
+#
+# Custom-widget event seams (canvas is the reference consumer):
+#   - on_mouse(w, ev): raw event callback. Receives mousedown (via the
+#     registry), hover mousemove, and — after the handler claims the
+#     pointer with claim_drag — every drag mousemove plus the
+#     terminating mouseup. Branch on ev.type.
+#   - on_wheel(w, ev): set the field on any widget to consume wheel
+#     input under the cursor (ev.x/ev.y are the scroll deltas) before
+#     the scroll_panel walk sees it.
+#   - registry "on_drag" entry: per-type drag handler `fn(w, ev)` used
+#     by the built-in draggable types; a registered custom type may
+#     provide its own instead of on_mouse.
+#   Mouse/wheel events from gfx_poll carry shift/ctrl/alt (0/1), same
+#   as key events; headless synthesized event dicts may omit them
+#   (absent keys read null).
 
 load_file of "lib/ui_theme.eigs"
 load_file of "lib/ui_draw.eigs"
@@ -479,6 +494,18 @@ define show_menu(menu_widget, x, y) as:
 define show_dialog(dlg, parent_w, parent_h) as:
     push_modal of [dlg, parent_w, parent_h]
 
+# Pointer capture (#567) — a mousedown handler (e.g. a canvas on_mouse)
+# claims the pointer; every following mousemove and the terminating
+# mouseup are then delivered to the claiming widget (registry on_drag
+# entry if it has one, else its on_mouse callback) instead of the hover
+# path. Capture is released automatically on mouseup.
+
+define claim_drag(widget) as:
+    _ui.drag_widget is widget
+
+define release_drag() as:
+    _ui.drag_widget is null
+
 # Event dispatch — registry-driven
 
 define dispatch(root, ev) as:
@@ -504,54 +531,20 @@ define dispatch(root, ev) as:
                 src.reorder_insert is -1
         return null
 
-    # Handle drag in progress (slider, vslider, or knob)
+    # Handle drag in progress — registry-driven (#567). The widget that
+    # claimed the pointer receives every mousemove until release: through
+    # its registry entry's on_drag handler (slider family, waveform_view,
+    # scrollbar, splitter, color_picker), or — for custom widgets like
+    # canvas that claimed via claim_drag — through its own on_mouse
+    # callback with the raw event dict. A claimant with neither is a
+    # silent no-op (it used to throw type_mismatch in the slider updater).
     if ev.type == "mousemove" and _ui.drag_widget != null:
-        if _ui.drag_widget.type == "knob":
-            _update_knob_drag of [_ui.drag_widget, my]
-        elif _ui.drag_widget.type == "vslider":
-            _update_vdrag of [_ui.drag_widget, my]
-        elif _ui.drag_widget.type == "waveform_view":
-            sample_pos is floor of (_ui.drag_widget.offset + (mx - _ui.drag_ox) * _ui.drag_widget.zoom)
-            _ui.drag_widget.sel_end is sample_pos
-        elif _ui.drag_widget.type == "scrollbar":
-            _update_scrollbar_drag of [_ui.drag_widget, mx, my]
-        elif _ui.drag_widget.type == "splitter":
-            new_pos is mx - _ui.drag_ox
-            if new_pos < 50:
-                new_pos is 50
-            if new_pos > _ui.drag_widget.w - 50:
-                new_pos is _ui.drag_widget.w - 50
-            _ui.drag_widget.split_pos is new_pos
-            if _ui.drag_widget.on_resize != null:
-                _ui.drag_widget.on_resize of _ui.drag_widget
-        elif _ui.drag_widget.type == "color_picker":
-            abs_x is _ui.drag_widget._ax
-            abs_y is _ui.drag_widget._ay
-            if _ui.drag_widget.drag_part == "sv":
-                s_val is (mx - abs_x) / 150.0
-                v_val is 1.0 - (my - abs_y) / 120.0
-                if s_val < 0:
-                    s_val is 0
-                if s_val > 1:
-                    s_val is 1
-                if v_val < 0:
-                    v_val is 0
-                if v_val > 1:
-                    v_val is 1
-                _ui.drag_widget.sat is s_val
-                _ui.drag_widget.val is v_val
-            elif _ui.drag_widget.drag_part == "hue":
-                h_val is (my - abs_y) * 360 / 120.0
-                if h_val < 0:
-                    h_val is 0
-                if h_val > 359:
-                    h_val is 359
-                _ui.drag_widget.hue is h_val
-            _ui.drag_widget.color is _hsv_to_rgb of [_ui.drag_widget.hue, _ui.drag_widget.sat, _ui.drag_widget.val]
-            if _ui.drag_widget.on_change != null:
-                _ui.drag_widget.on_change of _ui.drag_widget
-        else:
-            _update_drag of [_ui.drag_widget, mx]
+        local dw is _ui.drag_widget
+        local entry is _widget_registry[dw.type]
+        if entry != null and entry.on_drag != null:
+            entry.on_drag of [dw, ev]
+        elif dw.on_mouse != null:
+            dw.on_mouse of [dw, ev]
         return null
 
     if ev.type == "mouseup" and _ui.dnd_state.active == 1:
@@ -576,11 +569,17 @@ define dispatch(root, ev) as:
         _ui.dnd_state.text is ""
         return null
 
+    # Drag release — capture ends before the handlers run (a handler may
+    # re-claim). A capturing custom widget sees the terminating mouseup
+    # through on_mouse (#567), so press-move-release gestures complete.
     if ev.type == "mouseup" and _ui.drag_widget != null:
-        _ui.drag_widget.dragging is 0
-        if _ui.drag_widget.on_change != null:
-            _ui.drag_widget.on_change of _ui.drag_widget
+        local dw is _ui.drag_widget
         _ui.drag_widget is null
+        dw.dragging is 0
+        if dw.on_mouse != null:
+            dw.on_mouse of [dw, ev]
+        if dw.on_change != null:
+            dw.on_change of dw
         return null
 
     # Mouse move — update hover + tooltip
@@ -605,6 +604,10 @@ define dispatch(root, ev) as:
             entry is _widget_registry[hit.type]
             if entry != null and entry.on_mousemove != null:
                 entry.on_mousemove of [hit, root, mx, my]
+            # Raw-event seam (#567): a widget exposing on_mouse (canvas)
+            # also receives hover mousemoves with the full event dict.
+            if hit.on_mouse != null:
+                hit.on_mouse of [hit, ev]
         else:
             _ui.tooltip_widget is null
             _ui.tooltip_start_time is gfx_ticks of null
@@ -686,8 +689,15 @@ define dispatch(root, ev) as:
         _clear_pressed of root
         return null
 
-    # Scroll wheel — target the scrollable widget under the cursor
+    # Scroll wheel — a widget under the cursor exposing on_wheel gets
+    # first crack at the raw event (#569: ev.x/ev.y are the scroll
+    # deltas; shift/ctrl/alt ride along); otherwise the scrollable walk
+    # handles it as before.
     if ev.type == "wheel":
+        local whit is _hit_test of [root, 0, 0, _ui.last_mouse_x, _ui.last_mouse_y]
+        if whit != null and whit.on_wheel != null:
+            whit.on_wheel of [whit, ev]
+            return null
         scroll_target is _find_scrollable_at of [root, 0, 0, _ui.last_mouse_x, _ui.last_mouse_y]
         if scroll_target != null:
             _scroll_panels of [scroll_target, ev.x * -20, ev.y * -20]

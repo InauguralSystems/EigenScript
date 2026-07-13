@@ -92,6 +92,7 @@ static int (*p_SDL_RenderDrawLine)(SDL_Renderer*, int, int, int, int);
 static int (*p_SDL_RenderDrawPoint)(SDL_Renderer*, int, int);
 static void (*p_SDL_RenderPresent)(SDL_Renderer*);
 static int (*p_SDL_PollEvent)(SDL_Event*);
+static int (*p_SDL_GetModState)(void);
 static Uint32 (*p_SDL_GetTicks)(void);
 static void (*p_SDL_Delay)(Uint32);
 static int (*p_SDL_RenderSetClipRect)(SDL_Renderer*, const SDL_Rect*);
@@ -145,6 +146,7 @@ static int load_sdl2(void) {
     LOAD(SDL_GetTicks); LOAD(SDL_Delay);
     #undef LOAD
     /* Optional symbols — NULL is fine */
+    p_SDL_GetModState = dlsym(g_sdl_lib, "SDL_GetModState");
     p_SDL_RenderSetClipRect = dlsym(g_sdl_lib, "SDL_RenderSetClipRect");
     p_SDL_CreateTexture = dlsym(g_sdl_lib, "SDL_CreateTexture");
     p_SDL_DestroyTexture = dlsym(g_sdl_lib, "SDL_DestroyTexture");
@@ -441,9 +443,24 @@ Value* builtin_gfx_present(Value *arg) {
     return make_null();
 }
 
+/* Attach keyboard modifier state as shift/ctrl/alt (0/1) dict fields.
+ * KMOD_SHIFT = 0x0003, KMOD_CTRL = 0x00C0, KMOD_ALT = 0x0300.
+ * Key events read the mask from keysym.mod; mouse/wheel events (#568)
+ * pass SDL_GetModState() — SDL keeps it current at mouse-event time. */
+static void poll_set_mods(Value *d, int mod) {
+    dict_set_owned(d, "shift", make_num((mod & 0x03) ? 1 : 0));
+    dict_set_owned(d, "ctrl", make_num((mod & 0xC0) ? 1 : 0));
+    dict_set_owned(d, "alt", make_num((mod & 0x300) ? 1 : 0));
+}
+
+static int poll_mod_state(void) {
+    return p_SDL_GetModState ? p_SDL_GetModState() : 0;
+}
+
 /* gfx_poll of null — return next event as dict, or null if none.
  * {"type": "keydown", "key": "up"} / {"type": "quit"} /
- * {"type": "mousemove", "x": 100, "y": 200} / etc. */
+ * {"type": "mousemove", "x": 100, "y": 200} / etc.
+ * Key, mouse, and wheel events all carry shift/ctrl/alt (0/1). */
 Value* builtin_gfx_poll(Value *arg) {
     (void)arg;
     if (!g_window) return make_null();
@@ -459,39 +476,39 @@ Value* builtin_gfx_poll(Value *arg) {
             dict_set_owned(d, "type", make_str("keydown"));
             dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
             dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
-            dict_set_owned(d, "shift", make_num((ev.key.keysym.mod & 0x03) ? 1 : 0));
-            dict_set_owned(d, "ctrl", make_num((ev.key.keysym.mod & 0xC0) ? 1 : 0));
-            dict_set_owned(d, "alt", make_num((ev.key.keysym.mod & 0x300) ? 1 : 0));
+            poll_set_mods(d, ev.key.keysym.mod);
             break;
         case MY_SDL_KEYUP:
             dict_set_owned(d, "type", make_str("keyup"));
             dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
             dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
-            dict_set_owned(d, "shift", make_num((ev.key.keysym.mod & 0x03) ? 1 : 0));
-            dict_set_owned(d, "ctrl", make_num((ev.key.keysym.mod & 0xC0) ? 1 : 0));
-            dict_set_owned(d, "alt", make_num((ev.key.keysym.mod & 0x300) ? 1 : 0));
+            poll_set_mods(d, ev.key.keysym.mod);
             break;
         case MY_SDL_MOUSEMOTION:
             dict_set_owned(d, "type", make_str("mousemove"));
             dict_set_owned(d, "x", make_num(ev.motion.x));
             dict_set_owned(d, "y", make_num(ev.motion.y));
+            poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEBUTTONDOWN:
             dict_set_owned(d, "type", make_str("mousedown"));
             dict_set_owned(d, "button", make_num(ev.button.button));
             dict_set_owned(d, "x", make_num(ev.button.x));
             dict_set_owned(d, "y", make_num(ev.button.y));
+            poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEBUTTONUP:
             dict_set_owned(d, "type", make_str("mouseup"));
             dict_set_owned(d, "button", make_num(ev.button.button));
             dict_set_owned(d, "x", make_num(ev.button.x));
             dict_set_owned(d, "y", make_num(ev.button.y));
+            poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEWHEEL:
             dict_set_owned(d, "type", make_str("wheel"));
             dict_set_owned(d, "x", make_num(ev.wheel.x));
             dict_set_owned(d, "y", make_num(ev.wheel.y));
+            poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_WINDOWEVENT:
             /* SDL_WINDOWEVENT_RESIZED = 6 */

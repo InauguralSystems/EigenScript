@@ -528,7 +528,7 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 | `gfx_circle` | `gfx_circle of [cx, cy, radius, r, g, b]` | Filled circle (midpoint) |
 | `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Bitmap-font text |
 | `gfx_present` | `gfx_present of null` | Flip backbuffer to screen |
-| `gfx_poll` | `gfx_poll of null` | Return next event as dict (`quit`, `keydown`, `keyup`, `mousemove`, `mousedown`, `mouseup`), or null |
+| `gfx_poll` | `gfx_poll of null` | Return next event as dict (`quit`, `keydown`, `keyup`, `mousemove`, `mousedown`, `mouseup`, `wheel`, `resize`), or null. Key, mouse, and wheel events carry `shift`/`ctrl`/`alt` (0/1); wheel `x`/`y` are scroll deltas |
 | `gfx_ticks` | `gfx_ticks of null` | Milliseconds since `SDL_Init` |
 | `gfx_delay` | `gfx_delay of ms` | Sleep for ms (SDL-coordinated) |
 | `gfx_title` | `gfx_title of "text"` | Update window title |

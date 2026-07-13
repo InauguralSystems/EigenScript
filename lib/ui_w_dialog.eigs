@@ -214,6 +214,33 @@ define _mousedown_color_picker(hit, root, mx, my, ev) as:
     if hit.on_change != null:
         hit.on_change of hit
 
+define _drag_color_picker(w, ev) as:
+    local abs_x is w._ax
+    local abs_y is w._ay
+    if w.drag_part == "sv":
+        local s_val is (ev.x - abs_x) / 150.0
+        local v_val is 1.0 - (ev.y - abs_y) / 120.0
+        if s_val < 0:
+            s_val is 0
+        if s_val > 1:
+            s_val is 1
+        if v_val < 0:
+            v_val is 0
+        if v_val > 1:
+            v_val is 1
+        w.sat is s_val
+        w.val is v_val
+    elif w.drag_part == "hue":
+        local h_val is (ev.y - abs_y) * 360 / 120.0
+        if h_val < 0:
+            h_val is 0
+        if h_val > 359:
+            h_val is 359
+        w.hue is h_val
+    w.color is _hsv_to_rgb of [w.hue, w.sat, w.val]
+    if w.on_change != null:
+        w.on_change of w
+
 # ---- Dialog click handler ----
 
 define _handle_dialog_click(dlg, mx, my) as:
@@ -250,6 +277,7 @@ _register_widget of ["color_picker", {
     "hit_test": null,
     "on_mousedown": _mousedown_color_picker,
     "on_mousemove": null,
+    "on_drag": _drag_color_picker,
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,

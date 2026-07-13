@@ -255,6 +255,22 @@ define _update_scrollbar_drag(widget, mx, my) as:
     if widget.on_change != null:
         widget.on_change of widget
 
+# ---- Registry drag handlers (#567: drag capture is registry-driven) ----
+# Called by dispatch with the raw mousemove event while this widget
+# holds _ui.drag_widget.
+
+define _drag_slider(w, ev) as:
+    _update_drag of [w, ev.x]
+
+define _drag_vslider(w, ev) as:
+    _update_vdrag of [w, ev.y]
+
+define _drag_knob(w, ev) as:
+    _update_knob_drag of [w, ev.y]
+
+define _drag_scrollbar(w, ev) as:
+    _update_scrollbar_drag of [w, ev.x, ev.y]
+
 # ---- Registration ----
 
 _register_widget of ["slider", {
@@ -262,6 +278,7 @@ _register_widget of ["slider", {
     "hit_test": null,
     "on_mousedown": _mousedown_slider,
     "on_mousemove": null,
+    "on_drag": _drag_slider,
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
@@ -274,6 +291,7 @@ _register_widget of ["vslider", {
     "hit_test": null,
     "on_mousedown": _mousedown_vslider,
     "on_mousemove": null,
+    "on_drag": _drag_vslider,
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
@@ -286,6 +304,7 @@ _register_widget of ["knob", {
     "hit_test": null,
     "on_mousedown": _mousedown_knob,
     "on_mousemove": null,
+    "on_drag": _drag_knob,
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
@@ -298,6 +317,7 @@ _register_widget of ["scrollbar", {
     "hit_test": null,
     "on_mousedown": _mousedown_scrollbar,
     "on_mousemove": null,
+    "on_drag": _drag_scrollbar,
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
