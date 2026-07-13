@@ -4,6 +4,18 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **gfx audio: `audio_play` / `audio_play_loop` accept `VAL_BUFFER`
+  samples (#578).** `audio_convert_samples` was list-only, so handing a
+  buffer — the type the language recommends for bulk samples and what a
+  DAW render produces — silently returned channel `0`; consumers had to
+  convert buffer→list per play (a 3-minute stereo render is ~16M
+  appends + VAL_NUM allocations) just for the C side to re-walk it into
+  int16. Buffers now convert directly off their C double array (same
+  clamping and 64 MB cap as lists); empty buffers are rejected like
+  empty lists. Gfx-suite checks cover play, play_loop, clamping, the
+  queued length, and the empty-buffer rejection.
+
 ### Added
 - **`read_line` builtin (#558)** — blocking line read from stdin
   (`getline(3)`): returns the next line without its trailing newline

@@ -117,6 +117,35 @@ if d != 0:
     assert_eq of [audio_stop of chinf, 0, "stop on an inactive channel returns 0"]
     audio_clear of null
     assert_eq of [audio_queue_size of null, 0, "clear empties every channel"]
+
+    # ---- #578: VAL_BUFFER samples accepted (the bulk fast path) ----
+    # A DAW render produces C-backed double buffers; audio_play used to
+    # silently return channel 0 for them, forcing a buffer->list convert
+    # per play. Buffer and list of the same samples must both play.
+    nb is 1000
+    bclip is buffer of nb
+    bi is 0
+    loop while bi < nb:
+        bclip[bi] is 0.1
+        bi += 1
+    chb is audio_play of bclip
+    assert_eq of [(chb > 0), 1, "audio_play accepts a buffer (#578)"]
+    assert_eq of [audio_queue_size of null, nb * 2, "buffer clip queued at full length"]
+    chbl is audio_play_loop of [bclip, 3]
+    assert_eq of [(chbl > 0), 1, "audio_play_loop accepts a buffer (#578)"]
+    assert_eq of [audio_stop of chbl, 1, "buffer loop channel stoppable"]
+    # Buffer values are clamped like list values (out-of-range -> +/-1).
+    hot is buffer of 100
+    hi is 0
+    loop while hi < 100:
+        hot[hi] is 9.5
+        hi += 1
+    chh is audio_play of hot
+    assert_eq of [(chh > 0), 1, "out-of-range buffer samples clamp, still play"]
+    # Empty buffer is still rejected (0), matching the empty-list rule.
+    assert_eq of [audio_play of (buffer of 0), 0, "empty buffer rejected"]
+
+    audio_clear of null
     audio_close of null
     print of "mixer channel tests: ok"
 else:
