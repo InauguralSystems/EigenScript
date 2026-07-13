@@ -135,3 +135,12 @@ define argmin(items) as:
             best_val is items[i]
             best_idx is i
     return best_idx
+
+# ---- log2: base-2 logarithm ----
+define log2(x) as:
+    return (log of x) / 0.6931471805599453
+
+# ---- log10: base-10 logarithm ----
+define log10(x) as:
+    return (log of x) / 2.302585092994046
+    

@@ -142,7 +142,8 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `lcm` | `lcm of [a, b]` | Least common multiple |
 | `argmax` | `argmax of list` | Index of the largest element (first on ties, -1 if empty) |
 | `argmin` | `argmin of list` | Index of the smallest element (first on ties, -1 if empty) |
-
+| `log2` | `log2 of x` | base-2 logarithm |
+| `log10` | `log10 of x` | base-10 logarithm |
 ### lib/list.eigs — Functional List Operations
 
 | Function | Signature | Description |
