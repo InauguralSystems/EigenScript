@@ -730,10 +730,29 @@ static void audio_mix_callback(void *ud, uint8_t *stream, int len) {
     }
 }
 
-/* Convert a sample list (floats -1..1) to an owned int16 buffer.
- * Returns NULL on bad shape or an over-64MB clip. */
+/* Convert samples (floats -1..1) to an owned int16 buffer. Accepts a
+ * VAL_LIST or a VAL_BUFFER (#578 — the buffer is the type the language
+ * recommends for bulk samples and what a DAW render produces; forcing a
+ * buffer→list conversion per play meant millions of appends + VAL_NUM
+ * allocations just to feed the mixer). Returns NULL on bad shape or an
+ * over-64MB clip. */
 static int16_t* audio_convert_samples(Value *samples, int *out_n) {
-    if (!samples || samples->type != VAL_LIST) return NULL;
+    if (!samples) return NULL;
+    if (samples->type == VAL_BUFFER) {
+        int n = samples->data.buffer.count;
+        if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
+        int16_t *buf = xmalloc_array(n, sizeof(int16_t));
+        const double *src = samples->data.buffer.data;
+        for (int i = 0; i < n; i++) {
+            double s = src[i];
+            if (s > 1.0) s = 1.0;
+            if (s < -1.0) s = -1.0;
+            buf[i] = (int16_t)(s * 32767);
+        }
+        *out_n = n;
+        return buf;
+    }
+    if (samples->type != VAL_LIST) return NULL;
     int n = samples->data.list.count;
     if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
     int16_t *buf = xmalloc_array(n, sizeof(int16_t));
