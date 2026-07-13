@@ -1,0 +1,200 @@
+# ============================================================
+# Canvas input-event seams demo — #567 / #568 / #569
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/ui_canvas_events.eigs
+#
+# A minimal timeline-style canvas exercising the three lib/ui seams a
+# DAW arrangement view needs:
+#   - drag capture (#567): press a clip and drag = move it; press empty
+#     space and drag = rubber-band select. The mousedown handler claims
+#     the pointer with ui.claim_drag, so every mousemove and the
+#     terminating mouseup arrive at on_mouse — branch on ev.type.
+#   - modifiers (#568): ctrl+click toggles a clip in/out of the
+#     selection instead of replacing it (ev.ctrl on mouse events).
+#   - wheel (#569): wheel pans the view; ctrl+wheel zooms at the cursor
+#     (cursor tracked from hover mousemoves — also new in #567).
+#
+# Escape quits.
+
+import ui
+
+WINDOW_W is 800
+WINDOW_H is 300
+
+gfx_open of [WINDOW_W, WINDOW_H, "Canvas event seams (#567/#568/#569)"]
+
+# ---- Timeline state (world coordinates: beats) ----
+
+clips is []
+for i in range of 8:
+    append of [clips, {"start": i * 4.0, "len": 3.0, "sel": 0}]
+view_x is 0.0        # left edge of the view, in beats
+px_per_beat is 20.0  # zoom
+last_mx is 0         # cursor x (canvas-relative), from hover mousemoves
+status is "drag clip = move | drag empty = rubber-band | ctrl+click = toggle | wheel = pan | ctrl+wheel = zoom"
+
+# Gesture state: "" | "move" | "rubber"
+gesture is ""
+grab is null
+grab_dx is 0.0
+gx0 is 0
+gy0 is 0
+gx1 is 0
+gy1 is 0
+
+define beat_to_px(b) as:
+    return floor of ((b - view_x) * px_per_beat)
+
+define px_to_beat(px) as:
+    return view_x + px / px_per_beat
+
+define clip_at(mx, my) as:
+    if my < 40 or my >= 100:
+        return null
+    for i in range of (len of clips):
+        local c is clips[i]
+        local x0 is beat_to_px of c.start
+        local x1 is beat_to_px of (c.start + c.len)
+        if mx >= x0 and mx < x1:
+            return c
+    return null
+
+# ---- Canvas callbacks ----
+
+define on_tl_mouse(w, ev) as:
+    local mx is ev.x - w._ax
+    local my is ev.y - w._ay
+    if ev.type == "mousedown":
+        local ctrl is 0
+        if ev.ctrl != null:
+            ctrl is ev.ctrl
+        local c is clip_at of [mx, my]
+        if c != null:
+            if ctrl == 1:
+                # #568: ctrl+click toggles membership
+                c.sel is 1 - c.sel
+                status is "ctrl+click: toggled clip"
+            else:
+                for i in range of (len of clips):
+                    clips[i].sel is 0
+                c.sel is 1
+                grab is c
+                grab_dx is (px_to_beat of mx) - c.start
+                gesture is "move"
+                ui.claim_drag of w
+                status is "moving clip (release to drop)"
+        else:
+            gesture is "rubber"
+            gx0 is mx
+            gy0 is my
+            gx1 is mx
+            gy1 is my
+            ui.claim_drag of w
+            status is "rubber-band select..."
+    elif ev.type == "mousemove":
+        last_mx is mx
+        if gesture == "move" and grab != null:
+            local ns is (px_to_beat of mx) - grab_dx
+            if ns < 0:
+                ns is 0
+            grab.start is ns
+        elif gesture == "rubber":
+            gx1 is mx
+            gy1 is my
+    elif ev.type == "mouseup":
+        if gesture == "rubber":
+            local lo is gx0
+            local hi is gx1
+            if hi < lo:
+                lo is gx1
+                hi is gx0
+            local b_lo is px_to_beat of lo
+            local b_hi is px_to_beat of hi
+            local n_sel is 0
+            for i in range of (len of clips):
+                local c is clips[i]
+                if c.start < b_hi and c.start + c.len > b_lo:
+                    c.sel is 1
+                    n_sel is n_sel + 1
+                else:
+                    c.sel is 0
+            status is f"rubber-band: {n_sel} clip(s) selected"
+        elif gesture == "move":
+            status is "clip dropped"
+        gesture is ""
+        grab is null
+
+define on_tl_wheel(w, ev) as:
+    local ctrl is 0
+    if ev.ctrl != null:
+        ctrl is ev.ctrl
+    if ctrl == 1:
+        # #569 + #568: ctrl+wheel = zoom at the cursor
+        local anchor is px_to_beat of last_mx
+        px_per_beat is px_per_beat * (1.0 + 0.1 * ev.y)
+        if px_per_beat < 4:
+            px_per_beat is 4
+        if px_per_beat > 200:
+            px_per_beat is 200
+        view_x is anchor - last_mx / px_per_beat
+        status is f"zoom: {floor of px_per_beat} px/beat"
+    else:
+        # plain wheel = pan
+        view_x is view_x - ev.y * 2.0
+        status is "pan"
+    if view_x < 0:
+        view_x is 0
+
+define paint_timeline(w, ax, ay) as:
+    gfx_rect of [ax, ay, w.w, w.h, 18, 18, 26]
+    # Beat grid
+    local b0 is floor of view_x
+    local nb is (floor of (w.w / px_per_beat)) + 2
+    for k in range of nb:
+        local bx is ax + (beat_to_px of (b0 + k))
+        if bx >= ax and bx < ax + w.w:
+            gfx_line of [bx, ay, bx, ay + w.h, 30, 30, 42]
+    # Clips
+    for i in range of (len of clips):
+        local c is clips[i]
+        local x0 is ax + (beat_to_px of c.start)
+        local x1 is ax + (beat_to_px of (c.start + c.len))
+        if x1 > ax and x0 < ax + w.w:
+            if c.sel == 1:
+                gfx_rrect of [x0, ay + 40, x1 - x0, 60, 4, 90, 160, 240]
+            else:
+                gfx_rrect of [x0, ay + 40, x1 - x0, 60, 4, 60, 90, 130]
+    # Rubber band overlay
+    if gesture == "rubber":
+        local rx is gx0
+        local rw is gx1 - gx0
+        if rw < 0:
+            rx is gx1
+            rw is 0 - rw
+        local ry is gy0
+        local rh is gy1 - gy0
+        if rh < 0:
+            ry is gy1
+            rh is 0 - rh
+        gfx_rect of [ax + rx, ay + ry, rw, rh, 120, 160, 220, 60]
+
+# ---- Build UI ----
+
+root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
+tl is ui.canvas of ["tl", 8, 8, WINDOW_W - 16, WINDOW_H - 46, paint_timeline, on_tl_mouse]
+tl.on_wheel is on_tl_wheel
+ui.add_child of [root, tl]
+sb is ui.label of ["sb", 8, WINDOW_H - 28, status]
+ui.add_child of [root, sb]
+
+define on_key(ev) as:
+    if ev.type == "keydown" and ev.key == "escape":
+        return 0
+    return 1
+
+define on_tick(r) as:
+    sb.text is status
+
+ui._layout of [root, 0, 0]
+ui.app_loop of [root, on_key, on_tick]
+gfx_close of null

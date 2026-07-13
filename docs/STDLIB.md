@@ -397,6 +397,20 @@ widget families `lib/ui_w_basic.eigs`, `lib/ui_w_button.eigs`,
 Start from `lib/ui.eigs`'s header; the modules document their own
 widget signatures.
 
+Custom-widget input seams (`canvas` is the reference consumer;
+`examples/ui_canvas_events.eigs` exercises all three): a widget's
+`on_mouse(w, ev)` receives mousedown, hover mousemove, and — after the
+mousedown handler claims the pointer with `claim_drag of w` — every
+drag mousemove plus the terminating mouseup (branch on `ev.type`;
+`release_drag of null` abandons a capture early). Setting `on_wheel`
+(`fn(w, ev)`, `ev.x`/`ev.y` are scroll deltas) on any widget consumes
+wheel input under the cursor before the `scroll_panel` walk sees it.
+Drag handling for the built-in draggable types goes through the widget
+registry's `on_drag` entry, so a registered custom type can supply its
+own. Mouse and wheel events from `gfx_poll` carry `shift`/`ctrl`/`alt`
+(0/1) like key events; headless tests synthesize event dicts, where
+absent keys read null.
+
 ### lib/invariant.eigs — Runtime Invariant Checks
 
 Declare-and-check invariants inside programs; see the module header

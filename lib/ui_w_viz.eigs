@@ -55,6 +55,10 @@ define meter(id, x, y, w, h) as:
         "visible": 1
     }
 
+# canvas — the custom-widget escape hatch. on_mouse(w, ev) receives
+# mousedown, hover mousemove, and (after claim_drag from the mousedown
+# handler) drag mousemoves plus the terminating mouseup; branch on
+# ev.type. Set w.on_wheel (fn(w, ev)) to consume wheel input (#569).
 define canvas(id, x, y, w, h, on_paint, on_mouse) as:
     return {
         "type": "canvas",
@@ -62,6 +66,7 @@ define canvas(id, x, y, w, h, on_paint, on_mouse) as:
         "x": x, "y": y, "w": w, "h": h,
         "on_paint": on_paint,
         "on_mouse": on_mouse,
+        "on_wheel": null,
         "hover": 0,
         "visible": 1
     }
@@ -411,6 +416,10 @@ define _mousedown_waveform_view(hit, root, mx, my, ev) as:
     _ui.drag_widget is hit
     _ui.drag_ox is abs_x
 
+define _drag_waveform_view(w, ev) as:
+    local sample_pos is floor of (w.offset + (ev.x - _ui.drag_ox) * w.zoom)
+    w.sel_end is sample_pos
+
 define _mousedown_bar_chart(hit, root, mx, my, ev) as:
     abs_x is hit._ax
     n is len of hit.values
@@ -513,6 +522,7 @@ _register_widget of ["waveform_view", {
     "hit_test": null,
     "on_mousedown": _mousedown_waveform_view,
     "on_mousemove": null,
+    "on_drag": _drag_waveform_view,
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,

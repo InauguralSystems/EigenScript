@@ -25,8 +25,18 @@ define _layout(widget, ox, oy) as:
     else:
         # Recurse into containers but don't reposition their children
         if _is_container of widget.type:
+            local cox is widget._ax
+            local coy is widget._ay
+            if widget.type == "scroll_panel":
+                # #569: children's cached _ax/_ay must account for the
+                # panel's scroll offset — render and hit-test already
+                # subtract it, so a stale cache broke widget mouse math
+                # under scroll. (The cache refreshes on the next _layout
+                # pass; app_loop runs one every frame.)
+                cox is cox - widget.scroll_x
+                coy is coy - widget.scroll_y
             for i in range of (len of widget.children):
-                _layout of [widget.children[i], widget._ax, widget._ay]
+                _layout of [widget.children[i], cox, coy]
         if widget.type == "tabs":
             for i in range of (len of widget.tab_panels):
                 if widget.tab_panels[i] != null:

@@ -4,6 +4,39 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **lib/ui input-event trio (#567, #568, #569)** — first-consumer
+  findings from the DeslanStudio arrangement timeline:
+  - **#568 — mouse events carry modifier state.** `gfx_poll` now
+    attaches `shift`/`ctrl`/`alt` (0/1) to `mousemove`, `mousedown`,
+    `mouseup`, and `wheel` events (via `SDL_GetModState`), mirroring
+    what key events already exposed. Additive dict fields — headless
+    tests that synthesize event dicts are unaffected (absent keys read
+    null).
+  - **#567 — canvas drag/mousemove seam.** `dispatch`'s drag-in-progress
+    path is now registry-driven: each built-in draggable type (slider,
+    vslider, knob, scrollbar, waveform_view, splitter, color_picker)
+    registers an `on_drag(w, ev)` handler, and a custom widget that
+    claimed the pointer (new `claim_drag of w` / `release_drag of null`
+    API) receives every drag mousemove *and the terminating mouseup*
+    through its `on_mouse(w, ev)` callback — press-move-release gestures
+    now complete on a canvas. Hover mousemoves are also delivered to
+    `on_mouse` (branch on `ev.type`). The sharp edge is gone: a claimant
+    outside the old hardcoded type list no longer falls into the slider
+    updater's `type_mismatch`; a claimant with no handler is a silent
+    no-op.
+  - **#569 — wheel seam.** A widget under the cursor exposing
+    `on_wheel(w, ev)` consumes wheel input before the `scroll_panel`
+    walk (`ev.x`/`ev.y` are the scroll deltas; modifiers ride along for
+    ctrl+wheel zoom). Also fixed: `_layout` now subtracts a
+    `scroll_panel`'s scroll offset when caching children's `_ax`/`_ay`,
+    matching render and hit-test, so a canvas inside a scrolled panel
+    keeps correct mouse math.
+  - `examples/ui_canvas_events.eigs` (timeline-style canvas: clip
+    drag-move, rubber-band select, ctrl+click toggle, wheel pan,
+    ctrl+wheel zoom-at-cursor) exercises all three seams; UI suite [63]
+    extended 81 → 115 checks.
+
 ### Fixed
 - **Entropy walk: cycle + shared-structure detection (#571).** The
   observer's container entropy walk (`compute_entropy`) had only a

@@ -368,6 +368,199 @@ _handle_focus_key of [kp, {"key": "return", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_eq of [el.editing, 1, "editable_label enter starts editing"]
 
 # ============================================================
+# 8. Canvas raw-event seam + drag capture (#567)
+# ============================================================
+# NOTE: the gfx_ticks stub above returns a constant, so every repeat
+# mousedown on the SAME widget id reads as a double-click and skips the
+# registry mousedown path — reset _ui.last_click_id between gestures.
+
+print of "--- Canvas Event Seam Tests (#567) ---"
+
+cv_seen is []
+define cv_on_mouse(w, ev) as:
+    append of [cv_seen, ev.type]
+    if ev.type == "mousedown":
+        claim_drag of w
+
+cvroot is panel of ["cvroot", 0, 0, 400, 300]
+cv is canvas of ["cv", 10, 10, 300, 200, null, cv_on_mouse]
+add_child of [cvroot, cv]
+_layout of [cvroot, 0, 0]
+
+# Hover mousemove (no button) reaches on_mouse
+dispatch of [cvroot, {"type": "mousemove", "x": 60, "y": 60}]
+assert_eq of [len of cv_seen, 1, "hover mousemove delivered to canvas on_mouse"]
+assert_eq of [cv_seen[0], "mousemove", "hover event type is mousemove"]
+
+# Full press-move-release gesture with capture (the #567 repro)
+cv_seen is []
+dispatch of [cvroot, {"type": "mousedown", "x": 50, "y": 50, "button": 1}]
+assert_true of [_ui.drag_widget != null, "canvas claimed the pointer via claim_drag"]
+dispatch of [cvroot, {"type": "mousemove", "x": 80, "y": 60}]
+dispatch of [cvroot, {"type": "mousemove", "x": 120, "y": 70}]
+dispatch of [cvroot, {"type": "mouseup", "x": 120, "y": 70, "button": 1}]
+assert_eq of [len of cv_seen, 4, "canvas saw all 4 gesture events"]
+assert_eq of [cv_seen[0], "mousedown", "gesture event 0 = mousedown"]
+assert_eq of [cv_seen[1], "mousemove", "drag mousemove delivered while captured"]
+assert_eq of [cv_seen[3], "mouseup", "terminating mouseup delivered to canvas"]
+assert_true of [_ui.drag_widget == null, "capture released on mouseup"]
+
+# Modifier fields ride along on the event dict (#568 contract)
+cv_mods is []
+define cv_mod_mouse(w, ev) as:
+    append of [cv_mods, ev.shift]
+    append of [cv_mods, ev.ctrl]
+cv.on_mouse is cv_mod_mouse
+_ui.last_click_id is ""
+dispatch of [cvroot, {"type": "mousedown", "x": 50, "y": 50, "button": 1, "shift": 1, "ctrl": 0}]
+assert_eq of [cv_mods[0], 1, "ev.shift passes through dispatch to on_mouse"]
+assert_eq of [cv_mods[1], 0, "ev.ctrl passes through dispatch to on_mouse"]
+_ui.drag_widget is null
+
+# Sharp edge (#567): a claimant with no drag handler and no on_mouse is
+# a silent no-op — this used to throw type_mismatch in the slider updater.
+cv0 is canvas of ["cv0", 10, 10, 100, 100, null, null]
+claim_drag of cv0
+dispatch of [cvroot, {"type": "mousemove", "x": 100, "y": 60}]
+assert_true of [_ui.drag_widget != null, "handler-less claimant keeps capture, no throw"]
+release_drag of null
+assert_true of [_ui.drag_widget == null, "release_drag clears capture"]
+
+# ============================================================
+# 9. Registry-driven drag back-compat (built-in draggable types)
+# ============================================================
+
+print of "--- Drag Registry Back-compat Tests ---"
+
+dr is panel of ["dr", 0, 0, 400, 300]
+sl_changes is 0
+define on_sl_change(w) as:
+    sl_changes is sl_changes + 1
+dsl is slider of ["dsl", 10, 10, 200, 0, 100, 0, on_sl_change]
+dvs is vslider of ["dvs", 10, 50, 100, 0, 100, 0, null]
+dkn is knob of ["dkn", 250, 10, 40, 0, 100, 50, null]
+dsb is scrollbar of ["dsb", 10, 200, 200, 0, null]
+dwv is waveform_view of ["dwv", 10, 220, 200, 60]
+dwv.zoom is 2.0
+dwv.offset is 100
+dcp is color_picker of ["dcp", 220, 60, null]
+add_child of [dr, dsl]
+add_child of [dr, dvs]
+add_child of [dr, dkn]
+add_child of [dr, dsb]
+add_child of [dr, dwv]
+add_child of [dr, dcp]
+_layout of [dr, 0, 0]
+
+# slider: press, drag, release
+dispatch of [dr, {"type": "mousedown", "x": 60, "y": 18, "button": 1}]
+assert_eq of [dsl.value, 25, "slider mousedown sets value"]
+dispatch of [dr, {"type": "mousemove", "x": 110, "y": 18}]
+assert_eq of [dsl.value, 50, "slider drag updates value via registry on_drag"]
+dispatch of [dr, {"type": "mouseup", "x": 110, "y": 18, "button": 1}]
+assert_eq of [dsl.dragging, 0, "slider dragging cleared on release"]
+assert_true of [_ui.drag_widget == null, "slider capture released"]
+assert_eq of [sl_changes, 3, "slider on_change fired on press+drag+release"]
+
+# vslider
+dispatch of [dr, {"type": "mousedown", "x": 18, "y": 100, "button": 1}]
+dispatch of [dr, {"type": "mousemove", "x": 18, "y": 75}]
+assert_eq of [dvs.value, 75, "vslider drag updates value"]
+dispatch of [dr, {"type": "mouseup", "x": 18, "y": 75, "button": 1}]
+
+# knob (vertical relative drag)
+dispatch of [dr, {"type": "mousedown", "x": 260, "y": 30, "button": 1}]
+dispatch of [dr, {"type": "mousemove", "x": 260, "y": 10}]
+assert_near of [dkn.value, 60, 0.0001, "knob drag updates value"]
+dispatch of [dr, {"type": "mouseup", "x": 260, "y": 10, "button": 1}]
+
+# scrollbar (horizontal)
+dispatch of [dr, {"type": "mousedown", "x": 60, "y": 206, "button": 1}]
+dispatch of [dr, {"type": "mousemove", "x": 100, "y": 206}]
+assert_eq of [dsb.value, 0.4375, "scrollbar drag updates value"]
+dispatch of [dr, {"type": "mouseup", "x": 100, "y": 206, "button": 1}]
+
+# waveform_view (sample-space selection)
+dispatch of [dr, {"type": "mousedown", "x": 60, "y": 240, "button": 1}]
+assert_eq of [dwv.sel_start, 200, "waveform mousedown sets sel_start"]
+dispatch of [dr, {"type": "mousemove", "x": 110, "y": 240}]
+assert_eq of [dwv.sel_end, 300, "waveform drag extends sel_end"]
+dispatch of [dr, {"type": "mouseup", "x": 110, "y": 240, "button": 1}]
+
+# color_picker (SV square)
+dispatch of [dr, {"type": "mousedown", "x": 270, "y": 90, "button": 1}]
+dispatch of [dr, {"type": "mousemove", "x": 295, "y": 120}]
+assert_eq of [dcp.sat, 0.5, "color_picker drag updates sat"]
+assert_eq of [dcp.val, 0.5, "color_picker drag updates val"]
+dispatch of [dr, {"type": "mouseup", "x": 295, "y": 120, "button": 1}]
+
+# splitter (own root; hit is the divider bar)
+spl_resizes is 0
+define on_spl_resize(w) as:
+    spl_resizes is spl_resizes + 1
+sroot is panel of ["sroot", 0, 0, 400, 100]
+spl is splitter of ["spl", 0, 0, 400, 100, 100, on_spl_resize]
+add_child of [sroot, spl]
+_layout of [sroot, 0, 0]
+dispatch of [sroot, {"type": "mousedown", "x": 102, "y": 50, "button": 1}]
+dispatch of [sroot, {"type": "mousemove", "x": 150, "y": 50}]
+assert_eq of [spl.split_pos, 150, "splitter drag moves split_pos"]
+assert_eq of [spl_resizes, 1, "splitter on_resize fired during drag"]
+dispatch of [sroot, {"type": "mouseup", "x": 150, "y": 50, "button": 1}]
+
+# ============================================================
+# 10. Wheel seam (#569)
+# ============================================================
+
+print of "--- Wheel Seam Tests (#569) ---"
+
+wheel_seen is []
+define cv_on_wheel(w, ev) as:
+    append of [wheel_seen, ev.y]
+    append of [wheel_seen, ev.ctrl]
+
+wroot is panel of ["wroot", 0, 0, 400, 300]
+wsp is scroll_panel of ["wsp", 0, 0, 200, 100]
+wsp.content_h is 300
+wcv is canvas of ["wcv", 0, 0, 200, 300, null, null]
+wcv.on_wheel is cv_on_wheel
+add_child of [wsp, wcv]
+add_child of [wroot, wsp]
+_layout of [wroot, 0, 0]
+
+# Position the cursor over the canvas, then wheel: on_wheel consumes it
+dispatch of [wroot, {"type": "mousemove", "x": 50, "y": 50}]
+dispatch of [wroot, {"type": "wheel", "x": 0, "y": -3, "ctrl": 1}]
+assert_eq of [len of wheel_seen, 2, "canvas on_wheel received the event"]
+assert_eq of [wheel_seen[0], -3, "on_wheel sees the y delta"]
+assert_eq of [wheel_seen[1], 1, "on_wheel sees ctrl modifier (#568 pairing)"]
+assert_eq of [wsp.scroll_y, 0, "consumed wheel does not scroll the enclosing panel"]
+
+# Without on_wheel the scrollable walk handles it as before
+wcv.on_wheel is null
+dispatch of [wroot, {"type": "wheel", "x": 0, "y": -3}]
+assert_eq of [wsp.scroll_y, 60, "wheel falls through to scroll_panel when unconsumed"]
+
+# ============================================================
+# 11. scroll_panel child _ax/_ay account for scroll offset (#569)
+# ============================================================
+
+print of "--- Scroll Offset Cache Tests (#569) ---"
+
+sp3 is scroll_panel of ["sp3", 0, 0, 200, 100]
+sp3.content_h is 300
+sp3.content_w is 400
+cv3 is canvas of ["cv3", 0, 0, 400, 300, null, null]
+add_child of [sp3, cv3]
+_layout of [sp3, 0, 0]
+assert_eq of [cv3._ay, 0, "unscrolled child _ay"]
+sp3.scroll_y is 50
+sp3.scroll_x is 30
+_layout of [sp3, 0, 0]
+assert_eq of [cv3._ay, 0 - 50, "child _ay accounts for scroll_y"]
+assert_eq of [cv3._ax, 0 - 30, "child _ax accounts for scroll_x"]
+
+# ============================================================
 # Summary
 # ============================================================
 
