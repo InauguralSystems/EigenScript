@@ -239,7 +239,9 @@ Boolean keywords that check the most recently observed value:
 |------|-----------|-------------|
 | `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file. A missing/unreadable path raises a catchable `io` error (matching `import`); a parse/compile failure in the file raises `parse`. |
 | `file_exists` | `file_exists of "path"` | 1 if file exists, 0 otherwise |
+| `is_dir` | `is_dir of "path"` | 1 if the path names a directory, 0 for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic |
 | `read_text` | `read_text of "path"` | Read file contents as string ("" on failure, 10 MB cap) |
+| `read_line` | `read_line of null` | Blocking line read from **stdin**: next line without its trailing newline (`\r\n` stripped as one unit), `null` at EOF; an empty line is `""`. Works on pipes — the stream-safe primitive `read_text of "/dev/stdin"` can't be (fseek fails on unseekable fds, #558). Trace-recorded, so replay is deterministic |
 | `read_bytes` | `read_bytes of "path"` | Read a file's raw bytes as a list of integers 0–255 (`null` on failure, 10 MB cap). Trace-recorded, so replay is deterministic |
 | `proc_read_buf` | `proc_read_buf of [out_fd, max]` | Single `read(2)` of up to `max` bytes from a child fd, returned as a list of integers 0–255 — the byte-list twin of `proc_read`. `null` on EOF / error, 10 MB cap. Replay-gated |
 | `write_text` | `write_text of ["path", text]` | Write string to file (1 on success, 0 on failure) |

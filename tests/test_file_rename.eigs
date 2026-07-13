@@ -33,4 +33,16 @@ assert_eq of [file_exists of B, 0, "file gone after remove_file"]
 assert_eq of [rename of ["/tmp/eigs_no_such_file_zzz", B], 0, "rename of missing -> 0"]
 assert_eq of [remove_file of "/tmp/eigs_no_such_file_zzz", 0, "remove missing -> 0"]
 
+# is_dir (#576): directory detection without the file_exists of "path/." probe
+D is "/tmp/eigs_isdir_probe/nested"
+F is "/tmp/eigs_isdir_file.bin"
+mkdir of D
+write_bytes of [F, [1], 0]
+assert_eq of [is_dir of "/tmp/eigs_isdir_probe", 1, "is_dir: directory -> 1"]
+assert_eq of [is_dir of D, 1, "is_dir: nested directory -> 1"]
+assert_eq of [is_dir of F, 0, "is_dir: plain file -> 0"]
+assert_eq of [is_dir of "/tmp/eigs_no_such_dir_zzz", 0, "is_dir: missing path -> 0"]
+assert_eq of [is_dir of 42, 0, "is_dir: non-string -> 0"]
+remove_file of F
+
 test_summary of null

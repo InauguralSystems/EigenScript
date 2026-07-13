@@ -939,14 +939,45 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
     return v;
 }
 
+/* #557: RFC 8259 §6 number grammar — [ minus ] int [ frac ] [ exp ].
+ * The old scanner accepted 'e'/'E'/'+' but never the '-' of a negative
+ * exponent, so any mainstream producer's scientific notation (Python
+ * json.dumps, JS JSON.stringify, serde: "1e-06") failed at the sign —
+ * including json_encode's OWN %.15g output for tiny/huge magnitudes.
+ * The grammar is scanned exactly; a malformed tail ("1e", "1e+", "1.")
+ * sets g_json_parse_err instead of letting atof() guess silently.
+ * (Deliberately lax vs RFC in one spot: leading zeros ("01") stay
+ * accepted, matching the old scanner.) numbuf caps at 63 chars — beyond
+ * double's ~24-char maximum the extra digits carry no value anyway, and
+ * the scan itself continues so *pos stays correct. */
 static Value* eigs_json_parse_number(const char *s, int *pos) {
     char numbuf[64];
     int len = 0;
-    if (s[*pos] == '-') numbuf[len++] = s[(*pos)++];
-    while (s[*pos] && (isdigit(s[*pos]) || s[*pos] == '.' || s[*pos] == 'e' || s[*pos] == 'E' || s[*pos] == '+') && len < 63) {
-        numbuf[len++] = s[(*pos)++];
+    int p = *pos;
+#define JSON_NUM_PUSH() do { if (len < 63) numbuf[len++] = s[p]; p++; } while (0)
+    if (s[p] == '-') JSON_NUM_PUSH();
+    if (!isdigit((unsigned char)s[p])) {
+        g_json_parse_err = 1; *pos = p; return make_num(0);
     }
+    while (isdigit((unsigned char)s[p])) JSON_NUM_PUSH();
+    if (s[p] == '.') {
+        JSON_NUM_PUSH();
+        if (!isdigit((unsigned char)s[p])) {   /* "1." — frac needs digits */
+            g_json_parse_err = 1; *pos = p; return make_num(0);
+        }
+        while (isdigit((unsigned char)s[p])) JSON_NUM_PUSH();
+    }
+    if (s[p] == 'e' || s[p] == 'E') {
+        JSON_NUM_PUSH();
+        if (s[p] == '+' || s[p] == '-') JSON_NUM_PUSH();
+        if (!isdigit((unsigned char)s[p])) {   /* "1e", "1e+" — exp needs digits */
+            g_json_parse_err = 1; *pos = p; return make_num(0);
+        }
+        while (isdigit((unsigned char)s[p])) JSON_NUM_PUSH();
+    }
+#undef JSON_NUM_PUSH
     numbuf[len] = '\0';
+    *pos = p;
     return make_num(atof(numbuf));
 }
 
@@ -2780,6 +2811,21 @@ Value* builtin_file_exists(Value *arg) {
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
+/* is_dir of path — 1 if path names a directory, 0 for a plain file, a
+ * missing path, or a non-string arg. Replaces the consumer-side
+ * `file_exists of f"{path}/."` probe (#576). Nondeterministic fs read →
+ * trace-recorded per the tape-first rule (NB: the older fs predicates —
+ * file_exists, ls, mkdir, getcwd — predate the tape and are untraced;
+ * that inconsistency is flagged on the PR, not silently copied here). */
+#if !EIGENSCRIPT_FREESTANDING
+Value* builtin_is_dir(Value *arg) {
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("is_dir", make_num(0));
+    struct stat st;
+    TRACE_NONDET_RET("is_dir",
+        make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
+}
+#endif /* !EIGENSCRIPT_FREESTANDING */
+
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
@@ -2888,6 +2934,35 @@ Value* builtin_read_text(Value *arg) {
     Value *result = make_str(buf);
     free(buf);
     TRACE_NONDET_RECORD("read_text", result);
+}
+#endif /* !EIGENSCRIPT_FREESTANDING */
+
+/* ==== BUILTIN: read_line ==== */
+/* read_line of null — blocking line read from stdin via getline(3):
+ * returns the next line without its trailing newline (a "\r\n"
+ * terminator is stripped as one unit), or null at EOF. An empty line is
+ * "" — distinguishable from EOF. The stream-safe stdin primitive
+ * (#558): read_text of "/dev/stdin" sizes with fseek/ftell, which fails
+ * on an unseekable fd, so a PIPE silently reads as "" — any CLI meant to
+ * sit in a shell pipeline needs this instead. Nondeterministic input →
+ * tape-first: TAKE/RECORD like read_bytes, so under EIGS_REPLAY the
+ * recorded lines are served and no live stdin read runs. */
+#if !EIGENSCRIPT_FREESTANDING
+Value* builtin_read_line(Value *arg) {
+    (void)arg;
+    TRACE_NONDET_TAKE("read_line");
+    char *line = NULL;
+    size_t cap = 0;
+    ssize_t n = getline(&line, &cap, stdin);
+    if (n < 0) {
+        free(line);
+        TRACE_NONDET_RECORD("read_line", make_null());
+    }
+    if (n > 0 && line[n - 1] == '\n') line[--n] = '\0';
+    if (n > 0 && line[n - 1] == '\r') line[--n] = '\0';
+    Value *v = make_str(line);
+    free(line);
+    TRACE_NONDET_RECORD("read_line", v);
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
@@ -6003,6 +6078,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "regex_replace", make_builtin(builtin_regex_replace));
     env_set_local_owned(env, "load_file", make_builtin(builtin_load_file));
     env_set_local_owned(env, "file_exists", make_builtin(builtin_file_exists));
+    env_set_local_owned(env, "is_dir", make_builtin(builtin_is_dir));
     env_set_local_owned(env, "rename", make_builtin(builtin_rename));
     env_set_local_owned(env, "remove_file", make_builtin(builtin_remove_file));
 #endif /* !EIGENSCRIPT_FREESTANDING */
@@ -6011,6 +6087,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
     env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));
+    env_set_local_owned(env, "read_line", make_builtin(builtin_read_line));
     env_set_local_owned(env, "write_text", make_builtin(builtin_write_text));
     env_set_local_owned(env, "write_bytes", make_builtin(builtin_write_bytes));
     env_set_local_owned(env, "exec_capture", make_builtin(builtin_exec_capture));
