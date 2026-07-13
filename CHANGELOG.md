@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-07-13
+
 ### Added
 - **gfx audio capture: `audio_capture_open` / `audio_capture_read` /
   `audio_capture_close` (#579).** The gfx extension's audio surface was

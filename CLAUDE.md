@@ -125,19 +125,23 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.29.0** (2026-07-10) — the task-layer round-out +
-  hardening release: `task_self` (#526), `task_detach` (#530 — tasks reap at
-  finish/kill, the 255 cap now bounds CONCURRENT tasks, `task_kill` no longer
-  poisons the ready queue), THREE deep scheduler/runtime fixes surfaced by
-  the liferaft #523 migration (JIT task-gate at every entry point #533 — task
-  code truly runs interpreted now; allocation-history-independent sleeper
-  wake order #535; `dict_remove` exponential hash-table inflation), 
-  `lib/supervise` observer-native supervision (#409), `lib/sync` locks +
-  `must_not_yield` (#488), catchable `deadlock` (#509), `args` on the trace
-  tape (#471), per-file lint allow-list (#455), W018 error-kind near-miss
-  lint (#469), the silent-tolerance audit cleared (#490–#512), and the #483
-  suspended-main-slice leak fix. (v0.28.0, 2026-07-08: the concurrency
-  release — the #408 cooperative task layer, structured errors #406; tooling-and-contracts release.) Unreleased
+- **Latest release: v0.30.0** (2026-07-13) — the debugging-and-distribution +
+  first-consumer release: `--step` time-travel tape stepper (#418, with
+  observer-trajectory labels per step), tape format v2 scope-qualified
+  locals (#539), runtime-error carets + token-precise LSP ranges (#407),
+  `--bundle` single-file distribution with attached-tape executable bug
+  reports (#413), the observer pair (raw-step diverging/oscillating signals
+  #422 + `trajectory of`/`classify of` snapshots across call boundaries
+  #421), and the DeslanStudio first-consumer wave: entropy walk cycle/DAG
+  detection (#571 — visited set, back-references no longer exponential),
+  O(1) borrow scan (#546, len-in-condition loops un-quadratic) + sanitizer
+  borrow guard (#548), keyword dot keys (#542), the lib/ui input-event trio
+  (#567–#569), gfx audio capture (#579) + buffer playback (#578),
+  `read_line` (#558), `is_dir` (#576), RFC 8259 json exponents (#557), and
+  the W013/W019/LSP/load_file tooling batch (#556/#583/#559/#560).
+  (v0.29.0, 2026-07-10: task-layer round-out + hardening — task_self/
+  task_detach, liferaft-surfaced scheduler fixes, lib/supervise, lib/sync,
+  args on the tape.) Unreleased
   work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
   **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
   now FAILS the suite when this line falls behind the latest tag). Roadmap:
