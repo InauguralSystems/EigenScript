@@ -57,7 +57,12 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576)
+  `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576).
+  `read_bytes_buf`'s over-cap **raise** (#601) also rides the tape: the
+  observed file size is recorded as a `VAL_NUM` `N` record (unambiguous —
+  success records a `VAL_BUFFER`, open-failure records null) and the
+  identical `io` error is re-derived from it under `EIGS_REPLAY`, so an
+  over-cap failure replays byte-identically with no live fs access
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)

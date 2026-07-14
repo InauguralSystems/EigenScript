@@ -23,21 +23,25 @@ screen_blk is (sandbox_run of [[[GET_NAME,0,0, CALL,0,0, RETURN], ["screen_clear
 exit_blk   is (sandbox_run of [[[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["exit", 0]], 1000])["ok"] == 0
 seed_blk   is (sandbox_run of [[[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["seed_random", 1]], 1000])["ok"] == 0
 close_blk  is (sandbox_run of [[[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["close_channel", 0]], 1000])["ok"] == 0
+# #601: read_bytes_buf grew a bounded opt-in cap ([path, max_bytes]) — the
+# sandbox posture must NOT widen with it: fs reads stay blocked, bounded or not.
+rbb_blk    is (sandbox_run of [[[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["read_bytes_buf", "/etc/hostname"]], 1000])["ok"] == 0
 
 # (c) ALLOWED pure compute still runs and returns the right value (no over-block).
 r_len is sandbox_run of [[[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 1000]
 allow_ok is (r_len["ok"] == 1) and (r_len["result"] == 5)
 
-if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and allow_ok:
+if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and allow_ok:
     print of "SANDBOX_ALLOW_OK"
 else:
     print of "SANDBOX_ALLOW_FAIL"
     print of "escape_blocked="
     print of escape_blocked
-    print of "screen/exit/seed/close="
+    print of "screen/exit/seed/close/rbb="
     print of screen_blk
     print of exit_blk
     print of seed_blk
     print of close_blk
+    print of rbb_blk
     print of "allow_ok="
     print of allow_ok
