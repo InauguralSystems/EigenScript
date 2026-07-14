@@ -2684,6 +2684,11 @@ check_eigs_suite "split empty" test_split_empty.eigs "split empty: all passed" 1
 check_eigs_suite "split hard" test_split_hard.eigs "split hard: all passed" 1
 check_eigs_suite "tensor overflow guard" test_tensor_overflow.eigs "PASS: tensor overflow guard" 1
 check_eigs_suite "flat-buffer tensors" test_flat_buffer_tensor.eigs "PASS: flat-buffer tensors" 1
+# #597: vectorized buffer kernels (buf_mix/buf_scale_range/buf_fill/buf_peak/
+# buf_dot + buf_copy loud bounds) — correctness, raise-on-bad-window, and the
+# differential leg (builtin exactly equals the interpreted per-sample loop on
+# seeded pseudo-random buffers).
+check_eigs_suite "vectorized buffer kernels (#597)" test_buf_vectorized.eigs "BUF_VEC_OK" 5
 check_eigs_suite "lab" test_lab.eigs "All tests passed." 1
 check_eigs_suite "data" test_data.eigs "All tests passed." 1
 check_eigs_suite "experiment" test_experiment.eigs "All tests passed." 1

@@ -3919,7 +3919,8 @@ static const char *SANDBOX_ALLOW[] = {
     "str", "str_lower", "str_replace", "str_upper", "substr", "trim",
     "regex_find", "regex_match", "regex_replace",
     /* buffers + text builders (in-memory only) */
-    "buffer", "buf_copy", "buf_from_list", "buf_get", "buf_len", "buf_set",
+    "buffer", "buf_copy", "buf_dot", "buf_fill", "buf_from_list", "buf_get",
+    "buf_len", "buf_mix", "buf_peak", "buf_scale_range", "buf_set",
     "str_from_bytes", "text_builder_new", "text_builder_append",
     "text_builder_append_line", "text_builder_extend", "text_builder_clear",
     "text_builder_to_string", "text_builder_part_count",
@@ -5695,26 +5696,202 @@ Value* builtin_write_bytes(Value *arg) {
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
-/* buf_copy of [src, src_off, dst, dst_off, count] — bulk copy between buffers */
+/* ---- Vectorized buffer kernels (#597) ----
+ * Shared window validation for the bulk buf_* family. All of these read
+ * offsets/counts as 64-bit and bound with subtraction (off > n - count),
+ * never addition (off + count > n): the int-add form let two large
+ * offsets overflow negative, pass both checks, and drive memmove out of
+ * bounds. Bounds failures RAISE (index_range / value), matching the
+ * #490-#512 direction (buf_get/buf_set/set_at) — no silent truncation:
+ * a clamped audio mix is a silently wrong render. */
+static int buf_count_arg(const char *who, Value *cnt_val, long long *out) {
+    if (!cnt_val || cnt_val->type != VAL_NUM) {
+        rt_error(EK_VALUE, 0, "%s: count must be a number", who);
+        return 0;
+    }
+    long long c = (long long)cnt_val->data.num;
+    if (c < 0) {
+        rt_error(EK_VALUE, 0, "%s: count must be non-negative (got %lld)",
+                 who, c);
+        return 0;
+    }
+    *out = c;
+    return 1;
+}
+
+static int buf_num_arg(const char *who, const char *what, Value *v,
+                       double *out) {
+    if (!v || v->type != VAL_NUM) {
+        rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
+        return 0;
+    }
+    *out = v->data.num;
+    return 1;
+}
+
+/* Validate one (buffer, offset, count) window. On success writes the
+ * offset and returns 1; on failure raises and returns 0. count must
+ * already be validated non-negative (buf_count_arg). */
+static int buf_window_arg(const char *who, Value *buf, Value *off_val,
+                          long long count, long long *out_off) {
+    if (!buf || buf->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "%s: expected a buffer", who);
+        return 0;
+    }
+    if (!off_val || off_val->type != VAL_NUM) {
+        rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
+        return 0;
+    }
+    long long off = (long long)off_val->data.num;
+    long long n = buf->data.buffer.count;
+    if (off < 0 || off > n - count) {
+        rt_error(EK_INDEX, 0,
+                 "%s: window [%lld, %lld) out of range (length %lld)",
+                 who, off, off + count, n);
+        return 0;
+    }
+    *out_off = off;
+    return 1;
+}
+
+/* buf_copy of [src, src_off, dst, dst_off, count] — bulk copy between buffers.
+ * #597: bad bounds used to return null silently; they now raise like the
+ * rest of the family (the crash-safety guarantee — no OOB memmove — holds
+ * either way). count 0 is a valid no-op. */
 Value* builtin_buf_copy(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_null();
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
+        rt_error(EK_TYPE, 0, "buf_copy requires [src, src_off, dst, dst_off, count]");
+        return make_null();
+    }
     Value *src = arg->data.list.items[0];
     Value *dst = arg->data.list.items[2];
-    if (!src || src->type != VAL_BUFFER || !dst || dst->type != VAL_BUFFER) return make_null();
-    /* Read as 64-bit and bound with subtraction (off > count - n), never
-     * addition (off + n > count): the int-add form let two large offsets
-     * overflow negative, pass both checks, and drive memmove out of bounds. */
-    long long src_off = (long long)arg->data.list.items[1]->data.num;
-    long long dst_off = (long long)arg->data.list.items[3]->data.num;
-    long long count   = (long long)arg->data.list.items[4]->data.num;
-    long long src_n   = src->data.buffer.count;
-    long long dst_n   = dst->data.buffer.count;
-    if (count <= 0) return make_null();
-    if (src_off < 0 || src_off > src_n - count) return make_null();
-    if (dst_off < 0 || dst_off > dst_n - count) return make_null();
+    long long count, src_off, dst_off;
+    if (!buf_count_arg("buf_copy", arg->data.list.items[4], &count) ||
+        !buf_window_arg("buf_copy", src, arg->data.list.items[1], count, &src_off) ||
+        !buf_window_arg("buf_copy", dst, arg->data.list.items[3], count, &dst_off))
+        return make_null();
+    if (count == 0) return make_null();
     memmove(&dst->data.buffer.data[dst_off], &src->data.buffer.data[src_off],
             (size_t)count * sizeof(double));
     return make_null();
+}
+
+/* buf_mix of [dst, src, dst_off, src_off, count, gain] —
+ * dst[dst_off+i] += src[src_off+i] * gain, in place. The audio mix-down
+ * kernel (DeslanStudio's ab_mix_into): one C loop instead of ~441k
+ * dispatched VM iterations per stem pass. Arithmetic mirrors the VM
+ * (num_guard per step) so the result is byte-identical to the
+ * equivalent interpreted loop. dst and src may be the same buffer with
+ * overlapping windows; the loop runs forward in index order (documented,
+ * deterministic). Returns null. */
+Value* builtin_buf_mix(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 6) {
+        rt_error(EK_TYPE, 0, "buf_mix requires [dst, src, dst_off, src_off, count, gain]");
+        return make_null();
+    }
+    Value *dst = arg->data.list.items[0];
+    Value *src = arg->data.list.items[1];
+    long long count, dst_off, src_off;
+    double gain;
+    if (!buf_count_arg("buf_mix", arg->data.list.items[4], &count) ||
+        !buf_window_arg("buf_mix", dst, arg->data.list.items[2], count, &dst_off) ||
+        !buf_window_arg("buf_mix", src, arg->data.list.items[3], count, &src_off) ||
+        !buf_num_arg("buf_mix", "gain", arg->data.list.items[5], &gain))
+        return make_null();
+    double *dd = &dst->data.buffer.data[dst_off];
+    double *sd = &src->data.buffer.data[src_off];
+    for (long long i = 0; i < count; i++)
+        dd[i] = num_guard(dd[i] + num_guard(sd[i] * gain));
+    return make_null();
+}
+
+/* buf_scale_range of [b, off, count, gain] — in-place multiply over a
+ * window: b[off+i] *= gain (num_guard per element, VM-identical).
+ * Fades/normalize. Returns null. */
+Value* builtin_buf_scale_range(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
+        rt_error(EK_TYPE, 0, "buf_scale_range requires [buffer, off, count, gain]");
+        return make_null();
+    }
+    Value *buf = arg->data.list.items[0];
+    long long count, off;
+    double gain;
+    if (!buf_count_arg("buf_scale_range", arg->data.list.items[2], &count) ||
+        !buf_window_arg("buf_scale_range", buf, arg->data.list.items[1], count, &off) ||
+        !buf_num_arg("buf_scale_range", "gain", arg->data.list.items[3], &gain))
+        return make_null();
+    double *d = &buf->data.buffer.data[off];
+    for (long long i = 0; i < count; i++)
+        d[i] = num_guard(d[i] * gain);
+    return make_null();
+}
+
+/* buf_fill of [b, off, count, value] — bulk store over a window:
+ * b[off+i] = value (stored verbatim, like buf_set). Silence gaps,
+ * click-free zeroing. Returns null. */
+Value* builtin_buf_fill(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
+        rt_error(EK_TYPE, 0, "buf_fill requires [buffer, off, count, value]");
+        return make_null();
+    }
+    Value *buf = arg->data.list.items[0];
+    long long count, off;
+    double val;
+    if (!buf_count_arg("buf_fill", arg->data.list.items[2], &count) ||
+        !buf_window_arg("buf_fill", buf, arg->data.list.items[1], count, &off) ||
+        !buf_num_arg("buf_fill", "value", arg->data.list.items[3], &val))
+        return make_null();
+    double *d = &buf->data.buffer.data[off];
+    for (long long i = 0; i < count; i++)
+        d[i] = val;
+    return make_null();
+}
+
+/* buf_peak of [b, off, count] — max |x| over a window (normalize and
+ * meter scans). An empty window peaks at 0. */
+Value* builtin_buf_peak(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "buf_peak requires [buffer, off, count]");
+        return make_num(0);
+    }
+    Value *buf = arg->data.list.items[0];
+    long long count, off;
+    if (!buf_count_arg("buf_peak", arg->data.list.items[2], &count) ||
+        !buf_window_arg("buf_peak", buf, arg->data.list.items[1], count, &off))
+        return make_num(0);
+    double *d = &buf->data.buffer.data[off];
+    double m = 0.0;
+    for (long long i = 0; i < count; i++) {
+        double a = d[i] < 0 ? -d[i] : d[i];
+        if (a > m) m = a;
+    }
+    return make_num(m);
+}
+
+/* buf_dot of [a, b, a_off, b_off, count] — windowed dot product:
+ * sum over i of a[a_off+i] * b[b_off+i]. The YIN-autocorrelation
+ * kernel. Same contract as `dot`: the summation ORDER / ASSOCIATION is
+ * UNSPECIFIED (a backend may reassociate across SIMD lanes) — programs
+ * needing a strict left-to-right reduction write the explicit loop.
+ * no-NaN/Inf is preserved (num_guard at each step). */
+Value* builtin_buf_dot(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
+        rt_error(EK_TYPE, 0, "buf_dot requires [a, b, a_off, b_off, count]");
+        return make_num(0);
+    }
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    long long count, a_off, b_off;
+    if (!buf_count_arg("buf_dot", arg->data.list.items[4], &count) ||
+        !buf_window_arg("buf_dot", a, arg->data.list.items[2], count, &a_off) ||
+        !buf_window_arg("buf_dot", b, arg->data.list.items[3], count, &b_off))
+        return make_num(0);
+    double *ad = &a->data.buffer.data[a_off];
+    double *bd = &b->data.buffer.data[b_off];
+    double s = 0.0;
+    for (long long i = 0; i < count; i++)
+        s = num_guard(s + num_guard(ad[i] * bd[i]));
+    return make_num(s);
 }
 
 /* sign_extend of [val, bits] — sign-extend val from given bit width.
@@ -6196,6 +6373,11 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "f64_to_bytes", make_builtin(builtin_f64_to_bytes));
     env_set_local_owned(env, "f64_from_bytes", make_builtin(builtin_f64_from_bytes));
     env_set_local_owned(env, "buf_copy", make_builtin(builtin_buf_copy));
+    env_set_local_owned(env, "buf_mix", make_builtin(builtin_buf_mix));
+    env_set_local_owned(env, "buf_scale_range", make_builtin(builtin_buf_scale_range));
+    env_set_local_owned(env, "buf_fill", make_builtin(builtin_buf_fill));
+    env_set_local_owned(env, "buf_peak", make_builtin(builtin_buf_peak));
+    env_set_local_owned(env, "buf_dot", make_builtin(builtin_buf_dot));
     env_set_local_owned(env, "sign_extend", make_builtin(builtin_sign_extend));
     env_set_local_owned(env, "sort", make_builtin(builtin_sort));
     env_set_local_owned(env, "list_truncate", make_builtin(builtin_list_truncate));

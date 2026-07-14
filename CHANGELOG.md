@@ -5,6 +5,29 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **Vectorized buffer kernels — `buf_mix`, `buf_scale_range`, `buf_fill`,
+  `buf_peak`, `buf_dot` (#597).** DeslanStudio's render mix-down measured
+  9.6 s for a 5 s arrangement on the N3350 because the mix kernel
+  (`dst[i] += src[j] * gain`) was an interpreted per-sample loop, while
+  stem rendering took 0.16 s riding the C-backed `buf_copy` — the first
+  native-performance demand from a product consumer. These are C bulk
+  ops over explicit `[off, count)` windows of numeric buffers: in-place
+  mix (`buf_mix`), range multiply (`buf_scale_range`), range store
+  (`buf_fill`), max-|x| scan (`buf_peak`), and windowed dot product
+  (`buf_dot`, the YIN-autocorrelation kernel, under `dot`'s
+  unspecified-association contract). Arithmetic mirrors the VM
+  (`num_guard` per step) so each builtin is **exactly equal to the
+  equivalent interpreted loop** — pinned by a differential suite leg on
+  seeded pseudo-random buffers. Bounds are loud: negative count /
+  out-of-range windows raise (`value`/`index_range`) with
+  overflow-immune subtraction-form checks; count 0 is a no-op.
+  `buf_copy`'s silent-null bad-bounds path upgraded to raise the same
+  way (the #490–#512 direction). All five join the sandbox pure-compute
+  allowlist (argument-only, no allocation, tape-neutral).
+  `tests/bench_buf_mix.eigs` (220,500 stereo samples, n=5 medians,
+  N3350): interpreted mix pass 104 ms (JIT) / 198 ms (interpreter) vs
+  `buf_mix` 2.23 ms — **~47x / ~89x**; a 5 s mix-down's kernel cost
+  drops from seconds to milliseconds.
 - **lib/ui: per-widget button colors + hover/pressed shades (#566,
   first slice of #594).** `_render_button` honors optional `bg` /
   `text_color` fields on the button dict with theme fallback (the
