@@ -4,7 +4,26 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-07-14
+
 ### Added
+- **Live audio-streaming primitive — `audio_stream_open` / `audio_stream_push`
+  / `audio_stream_queued` / `audio_stream_clear` / `audio_stream_close`
+  (#612).** A dedicated SDL playback device in queue mode (callback-NULL), fed
+  block-by-block via `SDL_QueueAudio`, coexisting with the callback mixer
+  (`audio_open`) and the SDL_mixer music device (the OS mixes all three). This
+  is what a synth needs that the fixed-buffer mixer channels cannot give:
+  audio generated on the fly as notes start and stop, with no pre-rendered
+  clip — the sustain path behind DeslanStudio musical typing (F-DS-17).
+  `push` is a pure output sink (float→int16 with the `audio_play` size-cap /
+  clamp / NaN guards; SDL copies the block, temp freed immediately; not
+  trace-recorded). `audio_stream_queued` reads a live, timing-dependent value
+  that steers the caller's refill control flow, so it carries the
+  `TRACE_NONDET_TAKE`/`RECORD` tape pair exactly like `audio_capture_read`:
+  under `EIGS_REPLAY` the recorded queue depth replays and the pump makes the
+  same push decisions, keeping sessions byte-deterministic. Registered via the
+  `ext_names.h` X-macro (zero lint/registrar drift); documented in
+  `docs/BUILTINS.md`.
 - **`buf_resample_linear` — C kernel for the endpoint-inclusive linear
   resample (#603).** The third leg of the DAW audio-I/O train:
   DeslanStudio's import spent 3.9 s resampling a 50 s stereo file on
