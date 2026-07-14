@@ -161,6 +161,55 @@ else:
     assert_eq of [1, 1, "audio capture skipped (no device)"]
     assert_eq of [1, 1, "audio capture skipped (no device)"]
 
+# ---- F-DS-17: live audio stream (push/queue playback for musical typing).
+# Ungated safety first: with no stream open, push/queued are 0 and
+# clear/close are safe no-ops (mirrors the capture "no device" contract).
+assert_eq of [audio_stream_push of (audio_sine of [440, 0.01, 0.5]), 0, "push with no stream open returns 0"]
+assert_eq of [audio_stream_queued of null, 0, "queued with no stream open is 0"]
+assert_eq of [audio_stream_clear of null, null, "clear with no stream is safe"]
+assert_eq of [audio_stream_close of null, null, "close with no stream is safe"]
+
+# Device-gated: SDL_AUDIODRIVER=dummy provides a silent queue-mode device.
+sdev is audio_stream_open of [44100, 1]
+if sdev != 0:
+    assert_true of [sdev >= 2, "stream open returns an SDL device id"]
+    assert_eq of [audio_stream_queued of null, 0, "fresh stream queues 0 samples"]
+    # Push a ~50ms block; the device drains at real time, so essentially
+    # all of it is still buffered microseconds later.
+    blk is audio_sine of [220, 0.05, 0.5]
+    assert_eq of [audio_stream_push of blk, 1, "push a float-list block returns 1"]
+    assert_true of [(audio_stream_queued of null) >= 1, "queued reflects the pushed block"]
+    # Buffer blocks accepted too (the bulk-render fast path, like #578).
+    bb is buffer of 441
+    bbi is 0
+    loop while bbi < 441:
+        bb[bbi] is 0.1
+        bbi += 1
+    assert_eq of [audio_stream_push of bb, 1, "push a buffer block returns 1"]
+    # Bad shapes rejected while open; the device stays usable.
+    assert_eq of [audio_stream_push of [], 0, "empty block rejected"]
+    assert_eq of [audio_stream_push of 42, 0, "non-list/buffer block rejected"]
+    # Clear flushes the queue.
+    audio_stream_clear of null
+    assert_eq of [audio_stream_queued of null, 0, "clear empties the stream queue"]
+    # Re-open (default args), then close; double close is safe.
+    sdev2 is audio_stream_open of null
+    assert_true of [sdev2 >= 2, "re-open works (default args)"]
+    assert_eq of [audio_stream_close of null, null, "stream close returns null"]
+    assert_eq of [audio_stream_close of null, null, "double close is safe"]
+else:
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+    assert_eq of [1, 1, "stream skipped (no device)"]
+
 test_summary of null
 
 # ---- Mixer channels (GAP-002/GAP-003): device-gated — SDL_AUDIODRIVER=dummy

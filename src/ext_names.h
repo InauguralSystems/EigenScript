@@ -49,6 +49,11 @@
     X(audio_capture_open, builtin_audio_capture_open) \
     X(audio_capture_read, builtin_audio_capture_read) \
     X(audio_capture_close, builtin_audio_capture_close) \
+    X(audio_stream_open, builtin_audio_stream_open) \
+    X(audio_stream_push, builtin_audio_stream_push) \
+    X(audio_stream_queued, builtin_audio_stream_queued) \
+    X(audio_stream_clear, builtin_audio_stream_clear) \
+    X(audio_stream_close, builtin_audio_stream_close) \
     X(audio_volume, builtin_audio_volume) \
     X(audio_stop, builtin_audio_stop) \
     X(audio_pause, builtin_audio_pause) \
