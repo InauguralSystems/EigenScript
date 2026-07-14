@@ -137,7 +137,12 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `buf_set` | `buf_set of [buf, index, value]` | Write element |
 | `buf_len` | `buf_len of buf` | Return buffer element count |
 | `buf_from_list` | `buf_from_list of list` | Convert numeric list to buffer |
-| `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Bulk copy between buffers |
+| `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Bulk copy between buffers (`memmove`, overlap-safe). Out-of-range windows / negative count raise (`index_range`/`value`); count 0 is a no-op |
+| `buf_mix` | `buf_mix of [dst, src, dst_off, src_off, count, gain]` | In-place mix: `dst[dst_off+i] += src[src_off+i] * gain` over the window — the audio mix-down kernel (#597). VM-identical arithmetic (byte-equal to the interpreted loop); same-buffer overlap runs forward in index order. Bad windows raise |
+| `buf_scale_range` | `buf_scale_range of [b, off, count, gain]` | In-place multiply over a window: `b[off+i] *= gain` (fades, normalize). Bad windows raise |
+| `buf_fill` | `buf_fill of [b, off, count, value]` | Bulk store over a window: `b[off+i] = value`. Bad windows raise |
+| `buf_peak` | `buf_peak of [b, off, count]` | Max absolute value over a window (normalize/meter scans); 0 for an empty window. Bad windows raise |
+| `buf_dot` | `buf_dot of [a, b, a_off, b_off, count]` | Windowed dot product: sum of `a[a_off+i] * b[b_off+i]` (YIN autocorrelation). Like `dot`, summation order/association is **unspecified** (backends may reassociate); no-NaN/Inf preserved. Bad windows raise |
 | `read_bytes_buf` | `read_bytes_buf of path` | Read binary file as buffer (10MB cap) |
 | `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written, 0 on failure. |
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns 1/0. |

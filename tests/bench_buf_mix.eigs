@@ -1,0 +1,49 @@
+# bench_buf_mix.eigs — the #597 mix-down micro-bench.
+#
+# Workload: mixing 220,500 stereo samples (5 s @ 44.1 kHz interleaved =
+# 441,000 doubles), the DeslanStudio arr_mix_stems / ab_mix_into kernel
+# that measured 9.6 s for a 5 s arrangement on the N3350.
+#
+# Modes (first CLI arg; time each externally, n=5 medians):
+#   base     setup only — the startup+alloc floor to subtract
+#   interp   1 interpreted per-sample mix pass (the pre-#597 kernel)
+#   builtin  100 buf_mix passes (x100 so the C kernel rises above the
+#            startup floor; per-pass = (t_builtin - t_base) / 100)
+#
+# Both legs compute the identical dst[i] += src[i] * gain; the peak
+# printed at the end is the same for mode interp and one pass of
+# builtin (differential sanity is test_buf_vectorized.eigs's job).
+
+mode is "interp"
+a is args of null
+if (len of a) > 0:
+    mode is a[0]
+
+frames is 220500
+n is frames * 2
+gain is 0.7071
+
+src is buffer of n
+unobserved:
+    i is 0
+    loop while i < n:
+        src[i] is ((i % 2000) / 1000.0) - 1.0
+        i is i + 1
+
+dst is buffer of n
+
+if mode == "interp":
+    unobserved:
+        i is 0
+        loop while i < n:
+            dst[i] is dst[i] + src[i] * gain
+            i is i + 1
+
+if mode == "builtin":
+    unobserved:
+        pass_i is 0
+        loop while pass_i < 100:
+            buf_mix of [dst, src, 0, 0, n, gain]
+            pass_i is pass_i + 1
+
+print of f"{mode} n={n} peak={buf_peak of [dst, 0, n]}"

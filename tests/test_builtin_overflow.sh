@@ -4,7 +4,8 @@
 # offset bounds in `int`, which overflowed on adversarial sizes — undersizing
 # an allocation (then overrunning it) or slipping a huge offset past the bounds
 # check into an out-of-bounds memmove. Both now compute in wide/size_t math:
-# str_replace caps the result with a catchable error; buf_copy returns null.
+# str_replace caps the result with a catchable error; buf_copy raises
+# index_range (#597 — was a silent null).
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN="$(cd "$TESTS_DIR/.." && pwd)/src/eigenscript"
@@ -44,13 +45,19 @@ print of caught' "1"
 run_case "str_replace normal correctness" \
 'print of (str_replace of ["banana", "a", "X"])' "bXnXnX"
 
-# buf_copy: huge offsets/count that overflowed the int bounds check. Now the
-# subtraction-form check rejects them and it returns null — no OOB memmove.
-run_case "buf_copy offset/count overflow → null" \
+# buf_copy: huge offsets/count that overflowed the int bounds check. The
+# subtraction-form check rejects them — no OOB memmove. #597 upgraded the
+# rejection from a silent null to a catchable index_range (the crash-safety
+# property — survive without corruption — is what this pins).
+run_case "buf_copy offset/count overflow → catchable, no OOB" \
 'a is buffer of 4
 b is buffer of 4
-buf_copy of [a, 2000000000, b, 2000000000, 2000000000]
-print of "survived"' "survived"
+caught is 0
+try:
+    buf_copy of [a, 2000000000, b, 2000000000, 2000000000]
+catch e:
+    caught is 1
+print of f"survived {caught}"' "survived 1"
 
 # matmul: the result element count ar*bc overflowed int into a tiny allocation
 # while the kernel wrote ar*bc doubles (a 65536x1 by 1x65536 product). Now the
