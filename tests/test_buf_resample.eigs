@@ -1,0 +1,133 @@
+# ============================================================
+# buf_resample_linear (#603) — endpoint-inclusive linear resample
+# ============================================================
+# Legs:
+#   1. correctness on known values (up/down/identity/single)
+#   2. loud bounds
+#   3. differential — exactly equals DeslanStudio's interpreted
+#      ab_resample_linear inner loop (src/daw/audio_buf.eigs) across
+#      shapes: upsample, downsample, dst == n, dst == 1, n == 1.
+
+fails is 0
+
+define check(name, ok) as:
+    if ok == 0:
+        print of f"FAIL: {name}"
+        fails is fails + 1
+
+define expect_kind(name, kind, thunk) as:
+    local got is "none"
+    try:
+        thunk of []
+        got is "no-raise"
+    catch e:
+        got is e.kind
+    if got != kind:
+        print of f"FAIL: {name} (wanted {kind}, got {got})"
+        fails is fails + 1
+
+lcg_state is 777
+define lcg_next as:
+    lcg_state is (lcg_state * 16807) % 2147483647
+    return lcg_state
+
+define rand_buf(count) as:
+    local b is buffer of count
+    for i in range of count:
+        b[i] is ((lcg_next of []) % 2000) / 1000.0 - 1.0
+    return b
+
+define bufs_equal(a, b) as:
+    if (buf_len of a) != (buf_len of b):
+        return 0
+    for i in range of (buf_len of a):
+        if a[i] != b[i]:
+            return 0
+    return 1
+
+# the interpreted kernel, verbatim from ab_resample_linear's inner loop
+define interp_resample(chan, n, target) as:
+    local out is buffer of target
+    if target > 0 and n > 0:
+        unobserved:
+            local i is 0
+            loop while i < target:
+                local pos is 0
+                if target > 1:
+                    pos is i * (n - 1) / (target - 1)
+                local lo is floor of pos
+                local hi is lo + 1
+                if hi > n - 1:
+                    hi is n - 1
+                local frac is pos - lo
+                out[i] is chan[lo] * (1 - frac) + chan[hi] * frac
+                i += 1
+    return out
+
+# ============================================================
+# 1. Correctness on known values
+# ============================================================
+
+src is buf_from_list of ([0.0, 1.0, 2.0, 3.0])
+
+up is buf_resample_linear of [src, 7]
+check of ["upsample len", (buf_len of up) == 7]
+check of ["upsample endpoints", (up[0] == 0) and (up[6] == 3)]
+check of ["upsample midpoint", up[3] == 1.5]
+
+down is buf_resample_linear of [src, 2]
+check of ["downsample endpoints", (down[0] == 0) and (down[1] == 3)]
+
+same is buf_resample_linear of [src, 4]
+check of ["identity when dst == n", bufs_equal of [same, src]]
+
+one is buf_resample_linear of [src, 1]
+check of ["dst 1 takes first sample", ((buf_len of one) == 1) and (one[0] == 0)]
+
+empty is buf_resample_linear of [src, 0]
+check of ["dst 0 -> empty buffer", (buf_len of empty) == 0]
+
+n1 is buf_resample_linear of [buf_from_list of ([5.0]), 3]
+check of ["n == 1 stretches constant", (n1[0] == 5) and (n1[1] == 5) and (n1[2] == 5)]
+
+# ============================================================
+# 2. Loud bounds
+# ============================================================
+
+define bad_neg as:
+    buf_resample_linear of [src, 0 - 3]
+expect_kind of ["negative dst_len raises", "value", bad_neg]
+
+define bad_type as:
+    buf_resample_linear of [42, 5]
+expect_kind of ["non-buffer raises", "type_mismatch", bad_type]
+
+define bad_empty_src as:
+    buf_resample_linear of [buffer of 0, 5]
+expect_kind of ["empty src with dst_len > 0 raises", "value", bad_empty_src]
+
+define bad_count_type as:
+    buf_resample_linear of [src, "many"]
+expect_kind of ["non-numeric dst_len raises", "value", bad_count_type]
+
+# ============================================================
+# 3. Differential — builtin == interpreted loop, exactly
+# ============================================================
+
+N is 480
+big is rand_buf of N
+
+shapes is [[N, 733], [N, 217], [N, N], [N, 1], [1, 9], [7, 7], [2, 5]]
+for shape in shapes:
+    local sn is shape[0]
+    local st is shape[1]
+    local chan is rand_buf of sn
+    local want is interp_resample of [chan, sn, st]
+    local got is buf_resample_linear of [chan, st]
+    check of [f"differential: resample {sn} -> {st}", bufs_equal of [got, want]]
+
+# ============================================================
+if fails == 0:
+    print of "BUF_RESAMPLE_OK: all resample tests passed"
+else:
+    print of f"BUF_RESAMPLE_FAILURES: {fails}"
