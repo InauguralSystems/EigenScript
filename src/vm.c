@@ -636,7 +636,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
         ic->slot_idx     = slot_idx;
         ic->walk_depth   = (uint8_t)depth;
     }
-    EigsSlot s = target->values[slot_idx];
+    EigsSlot s = env_values_ptr(target)[slot_idx];   /* #607 */
     slot_incref(s);
     vm_push_slot(s);
 }
@@ -675,7 +675,7 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
     if (target) {
         env_store_slot(target, slot_idx, s);
         if (target->assign_counts && g_unobserved_depth == 0)
-            target->assign_counts[slot_idx]++;
+            env_assign_counts_ptr(target)[slot_idx]++;   /* #607 */
         if (depth <= 1) {
             ic->starting_env = start;
             ic->starting_ver = start->binding_version;
@@ -2852,7 +2852,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             ic->slot_idx     = slot_idx;
             ic->walk_depth   = (uint8_t)depth;
         }
-        EigsSlot s = target->values[slot_idx];
+        EigsSlot s = env_values_ptr(target)[slot_idx];   /* #607: the module
+            env may be concurrently grown by main-thread binding creation;
+            acquire the republished pointer (the old block stays
+            retired-alive). The IC fast paths above stay plain: a worker
+            never fast-path-hits the module env (its ICs are never
+            populated under MT per #297), and main is the grower itself. */
         slot_incref(s);
         vm_push_slot(s);
         DISPATCH();
@@ -2884,7 +2889,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (target) {
             env_store_slot(target, slot_idx, s);
             if (target->assign_counts && g_unobserved_depth == 0)
-                target->assign_counts[slot_idx]++;
+                env_assign_counts_ptr(target)[slot_idx]++;   /* #607 */
             if (!g_vm_multithreaded && depth <= 1) {   /* #297: see above */
                 ic->starting_env = start;
                 ic->starting_ver = start->binding_version;

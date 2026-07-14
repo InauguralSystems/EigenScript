@@ -288,6 +288,13 @@ struct Env {
      * until the first shadow observation under EIGS_OBS_SHADOW. */
     struct ObserverSlot *obs;
     int obs_cap;
+    /* #607: blocks retired during multithreaded module-env growth — a
+     * worker thread may still hold a post-resolve pointer into the old
+     * names/values/assign_counts/bucket arrays, so grows under MT publish
+     * fresh copies and park the old blocks here instead of freeing them.
+     * Freed when the env itself is parked or destroyed. */
+    void **retired;
+    int retired_count, retired_cap;
 };
 
 struct Value {
@@ -891,6 +898,27 @@ static inline void val_decref(Value *v) {
 #include "value_slot.h"
 
 /* ---- Environment ---- */
+
+/* #607: post-resolve array access for an env the MAIN thread may grow
+ * concurrently (the module env under spawn-multithreading — module-level
+ * code is the only runtime creator of new module-env bindings, while
+ * every worker global lookup walks into it). The MT grow path retires
+ * (never frees) the old arrays and republishes the pointers with release
+ * stores; readers outside g_module_env_lock load the pointer with an
+ * acquire atomic so the pointer word itself is synchronized and the
+ * block it addresses is guaranteed alive. Single-threaded: a plain load
+ * behind one predicted-false branch. Use at every values/assign_counts
+ * access that happens AFTER an env_resolve_chain, outside the lock. */
+static inline EigsSlot *env_values_ptr(Env *e) {
+    if (__builtin_expect(g_vm_multithreaded, 0))
+        return __atomic_load_n(&e->values, __ATOMIC_ACQUIRE);
+    return e->values;
+}
+static inline int *env_assign_counts_ptr(Env *e) {
+    if (__builtin_expect(g_vm_multithreaded, 0))
+        return __atomic_load_n(&e->assign_counts, __ATOMIC_ACQUIRE);
+    return e->assign_counts;
+}
 
 Env* env_new(Env *parent);
 void env_set(Env *env, const char *name, Value *val);
