@@ -28,7 +28,9 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_saw`, `audio_sweep`,
 `audio_square`, `audio_noise`, `audio_mix`, `audio_gain`,
 `audio_envelope`, `audio_capture_open`, `audio_capture_read`,
-`audio_capture_close`), and `free_val` for memory management.
+`audio_capture_close`, `audio_stream_open`, `audio_stream_push`,
+`audio_stream_queued`, `audio_stream_clear`, `audio_stream_close`), and
+`free_val` for memory management.
 
 ## Core Language
 
@@ -657,6 +659,11 @@ receiver.
 | `audio_capture_open` | `audio_capture_open of [freq, channels]` | Open the recording (microphone) device and start capturing (#579). Defaults `[44100, 1]`; SDL converts to exactly the requested format. Returns the device id, or `0` when SDL/capture is unavailable. Re-opening closes the previous capture device. Trace-recorded — under `EIGS_REPLAY` no real device is opened. |
 | `audio_capture_read` | `audio_capture_read of null` | Drain samples accumulated since the last read as a **buffer** of floats in `[-1, 1]` (interleaved when `channels > 1`). At most 2048 samples per call — loop until the returned buffer is empty to drain fully (keeps each trace record replayable). Empty buffer = nothing new yet; `null` = no capture device open. Trace-recorded — replay serves the recorded samples, never a live microphone. |
 | `audio_capture_close` | `audio_capture_close of null` | Stop and close the recording device, dropping undrained samples. Safe to call twice or with no device open. |
+| `audio_stream_open` | `audio_stream_open of [freq, channels]` | Open the live streaming playback device (queue mode, F-DS-17 — for on-the-fly synthesis like musical typing). Coexists with the `audio_open` mixer device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Re-opening closes the previous stream device. |
+| `audio_stream_push` | `audio_stream_push of samples` | Queue a block of float samples `[-1, 1]` (**list** or **buffer**) onto the live stream. Same size cap / clamp as `audio_play`. Pure output sink (not trace-recorded). Returns `1` on success, `0` on a closed device or bad shape. |
+| `audio_stream_queued` | `audio_stream_queued of null` | Samples still buffered (not yet played) on the live stream — the refill pump pushes another block only while this stays under its latency target. Returns `0` when no stream is open. Trace-recorded (a live, timing-dependent value) — replay serves the recorded depth, keeping the session deterministic. |
+| `audio_stream_clear` | `audio_stream_clear of null` | Drop any buffered audio on the live stream (flush for a panic / all-notes-off). Safe with no device. |
+| `audio_stream_close` | `audio_stream_close of null` | Stop and close the live stream device, dropping buffered audio. Safe to call twice or with no device open. |
 
 ## Internal (sanitizer builds only)
 

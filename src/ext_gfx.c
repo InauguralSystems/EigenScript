@@ -132,6 +132,9 @@ static int g_audio_device = 0;
 static int g_audio_freq = 44100;
 static int g_audio_channels = 1;
 static int g_capture_device = 0;   /* #579: microphone/input device */
+static int g_stream_device = 0;    /* live push/queue playback (musical typing, F-DS-17) */
+static int g_stream_freq = 44100;
+static int g_stream_channels = 1;
 
 static int load_sdl2(void) {
     if (g_sdl_lib) return 1;
@@ -1172,6 +1175,119 @@ Value* builtin_audio_capture_close(Value *arg) {
     if (g_capture_device) {
         p_SDL_CloseAudioDevice(g_capture_device);
         g_capture_device = 0;
+    }
+    return make_null();
+}
+
+/* ================================================================
+ * LIVE AUDIO STREAM (push/queue playback — DeslanStudio musical
+ * typing, F-DS-17 live-synthesis path)
+ * ================================================================
+ * A dedicated playback device opened in queue mode (callback == NULL),
+ * fed block-by-block via SDL_QueueAudio. It coexists with the callback
+ * mixer device (audio_open) and the SDL_mixer music device — the OS
+ * mixes all three. This is what a synth needs that the fixed-buffer
+ * mixer channels cannot give: audio generated on the fly as notes start
+ * and stop, with no pre-rendered clip. Queue mode (not a callback) keeps
+ * the same no-C->eigs-re-entry / no-new-thread shape as audio_capture.
+ *
+ * Push (audio_stream_push) is a pure output SINK — no value flows back
+ * into the program, so it is NOT traced. audio_stream_queued reads a
+ * LIVE, timing-dependent value (samples still buffered) that steers the
+ * caller's refill control flow, so it IS a nondeterministic input and
+ * carries the TAKE/RECORD tape pair, exactly like audio_capture_read:
+ * under EIGS_REPLAY the recorded queue depth replays and the pump makes
+ * the same push decisions, keeping the session byte-deterministic. */
+
+/* audio_stream_open of [freq, channels] — open the live streaming
+ * playback device (queue mode, iscapture=0). Defaults 44100/1 like
+ * audio_open; allowed_changes=0 so SDL converts to exactly the request.
+ * Returns the device id (>= 2), or 0 when SDL/audio is unavailable.
+ * Re-opening closes the previous stream device first. */
+Value* builtin_audio_stream_open(Value *arg) {
+    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }
+    if (!p_SDL_OpenAudioDevice || !p_SDL_QueueAudio) {
+        fprintf(stderr, "audio_stream_open: SDL2 audio symbols not available\n");
+        return make_num(0);
+    }
+    p_SDL_Init(MY_SDL_INIT_AUDIO);
+
+    SDL_AudioSpec want = {0}, have = {0};
+    want.freq = 44100;
+    want.format = MY_SDL_AUDIO_S16LSB;
+    want.channels = 1;
+    want.samples = 1024;
+    want.callback = NULL;   /* queue mode: feed via SDL_QueueAudio */
+
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
+        && arg->data.list.items[0]->type == VAL_NUM
+        && arg->data.list.items[1]->type == VAL_NUM) {
+        want.freq = (int)arg->data.list.items[0]->data.num;
+        want.channels = (int)arg->data.list.items[1]->data.num;
+    }
+
+    if (g_stream_device) {
+        p_SDL_CloseAudioDevice(g_stream_device);
+        g_stream_device = 0;
+    }
+    g_stream_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+    if (g_stream_device < 2) { g_stream_device = 0; return make_num(0); }
+    g_stream_freq = have.freq;
+    g_stream_channels = have.channels;
+    p_SDL_PauseAudioDevice(g_stream_device, 0);  /* start playing */
+    return make_num(g_stream_device);
+}
+
+/* audio_stream_push of samples — queue a block of float samples [-1, 1]
+ * (VAL_LIST or VAL_BUFFER) onto the live stream. Same size cap / clamp /
+ * NaN handling as audio_play (audio_convert_samples rejects an empty or
+ * >64 MiB block). SDL_QueueAudio copies the block, so the temp buffer is
+ * freed immediately. Pure sink, not traced. Returns 1 on success, 0 on a
+ * closed device, bad shape, or an SDL queue error. */
+Value* builtin_audio_stream_push(Value *arg) {
+    if (!g_stream_device) return make_num(0);
+    int n = 0;
+    int16_t *buf = audio_convert_samples(arg, &n);
+    if (!buf) return make_num(0);
+    int rc = p_SDL_QueueAudio(g_stream_device, buf,
+                              (Uint32)((size_t)n * sizeof(int16_t)));
+    free(buf);
+    return make_num(rc == 0 ? 1 : 0);
+}
+
+/* audio_stream_queued of null — samples still buffered (not yet played)
+ * on the live stream. The refill pump pushes another block only while
+ * this stays under its latency target, so the queue cannot grow
+ * unbounded. LIVE nondeterministic input → TAKE/RECORD tape pair (mirror
+ * of audio_capture_read): the recorded depth replays so the pump is
+ * deterministic under EIGS_REPLAY. Returns 0 when no stream is open.
+ * Samples, not bytes (int16: bytes / 2). */
+Value* builtin_audio_stream_queued(Value *arg) {
+    (void)arg;
+    TRACE_NONDET_TAKE("audio_stream_queued");
+    if (!g_stream_device || !p_SDL_GetQueuedAudioSize)
+        TRACE_NONDET_RECORD("audio_stream_queued", make_num(0));
+    Uint32 bytes = p_SDL_GetQueuedAudioSize(g_stream_device);
+    TRACE_NONDET_RECORD("audio_stream_queued",
+                        make_num((double)(bytes / sizeof(int16_t))));
+}
+
+/* audio_stream_clear of null — drop any buffered audio on the live
+ * stream (flush for a panic / all-notes-off). Safe with no device. */
+Value* builtin_audio_stream_clear(Value *arg) {
+    (void)arg;
+    if (g_stream_device && p_SDL_ClearQueuedAudio)
+        p_SDL_ClearQueuedAudio(g_stream_device);
+    return make_null();
+}
+
+/* audio_stream_close of null — stop and close the live stream device.
+ * Buffered audio is dropped. Safe to call twice / with no device. */
+Value* builtin_audio_stream_close(Value *arg) {
+    (void)arg;
+    if (g_stream_device) {
+        p_SDL_CloseAudioDevice(g_stream_device);
+        g_stream_device = 0;
     }
     return make_null();
 }
