@@ -2102,6 +2102,42 @@ else
     echo ""
 fi
 
+# [120] gfx text metrics (#593 — probe-gated: needs a gfx build). Two runs:
+# a forced-fallback run (EIGS_GFX_FONT pointing nowhere — the deterministic
+# off-switch) must report fallback-mode: 1 and pin the bitmap math exactly;
+# the default-env run must pass under EITHER text renderer (the machine may
+# or may not have libSDL2_ttf + a system font). Both use the dummy video
+# driver for the windowed gfx_text render smoke.
+GT_PROBE_FILE=$(mktemp /tmp/eigs_gt_probe_XXXXXX.eigs)
+cat > "$GT_PROBE_FILE" <<'PROBE'
+print of (gfx_text_width of ["m", 1])
+PROBE
+GT_PROBE_OUT=$(./eigenscript "$GT_PROBE_FILE" 2>&1)
+rm -f "$GT_PROBE_FILE"
+
+if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[120] Gfx Text Metrics (2 runs)"
+    GT_FB=$(SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
+    GT_DEF=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
+    if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
+       && echo "$GT_FB" | grep -q "fallback-mode: 1" \
+       && rc_ok "$GT_DEF_RC" "$GT_DEF" && echo "$GT_DEF" | grep -q "All tests passed"; then
+        TOTAL=$((TOTAL + 2))
+        PASS=$((PASS + 2))
+        echo "  PASS: fallback pinned + active-renderer invariants"
+    else
+        TOTAL=$((TOTAL + 2))
+        FAIL=$((FAIL + 2))
+        echo "  FAIL: gfx text metrics"
+        echo "$GT_FB" | grep -iE "assert|error|FAIL" | head -3
+        echo "$GT_DEF" | grep -iE "assert|error|FAIL" | head -3
+    fi
+    echo ""
+else
+    echo "[120] Gfx text metrics SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    echo ""
+fi
+
 # [64] list_truncate builtin
 echo "[64] List Truncate (9 checks)"
 LT_OUTPUT=$(./eigenscript ../tests/test_list_truncate.eigs 2>&1); LT_OUTPUT_RC=$?

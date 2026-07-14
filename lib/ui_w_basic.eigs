@@ -49,7 +49,7 @@ define color_dot(id, x, y, size, color) as:
 
 define badge(id, x, y, text, color) as:
     bw is (text_width of [text, _theme.font_scale]) + 12
-    bh is _theme.font_scale * 7 + 6
+    bh is (text_height of _theme.font_scale) + 6
     return {
         "type": "badge",
         "id": id,

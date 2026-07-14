@@ -4,6 +4,29 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **gfx: proportional antialiased text via SDL2_ttf (#593).** The
+  DeslanStudio side-by-side against its Qt prototype showed feature
+  parity reading a decade old, and the dominant gap was the 5x7 bitmap
+  monospace font. `gfx_text` now lazily dlopens `libSDL2_ttf-2.0.so.0`
+  (mirroring the SDL2/SDL2_mixer pattern — no headers, no hard
+  dependency) and renders `TTF_RenderUTF8_Blended` through the texture
+  path when a font is available; `EIGS_GFX_FONT` overrides discovery,
+  else DejaVu/Liberation/Noto Sans are probed. `TTF_Font*` cached per
+  size; signature unchanged (`scale` maps to a comparable pixel size).
+  **The fallback is load-bearing**: without the library or a font the
+  bitmap path is byte-identical to before (CI containers may have
+  neither), and a bogus `EIGS_GFX_FONT` is the deterministic off-switch
+  (pinned by suite section [120]). New metrics builtins
+  `gfx_text_width of [text, scale?]` / `gfx_text_height of scale?`
+  return real pixel metrics under the active renderer (bitmap math in
+  fallback); `lib/ui` measurement (`text_width`/`text_height`/
+  `_draw_text_clipped`) routes through them when present — probed once
+  with the catch-undefined pattern so headless stubs keep working — so
+  buttons, labels, menus, tabs, and dialogs center and clip
+  proportional text correctly. Output-only: no trace-tape records in
+  either mode.
+
 ## [0.30.0] - 2026-07-13
 
 ### Added

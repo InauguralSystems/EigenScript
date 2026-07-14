@@ -1,0 +1,73 @@
+# ============================================================
+# gfx_text_width / gfx_text_height metric tests (#593)
+# ============================================================
+# Runs against a gfx build (probe-gated in the runner). Passes in BOTH
+# text-renderer modes:
+#   - bitmap fallback (no SDL2_ttf, no usable font, or a bogus
+#     EIGS_GFX_FONT): widths are exactly len * 6 * scale, heights
+#     exactly 7 * scale — byte-identical to pre-#593 behavior
+#   - TTF active: proportional pixel metrics from the loaded font
+# The invariants below hold in both; the mode line lets the runner's
+# forced-fallback run (EIGS_GFX_FONT=/nonexistent/...) additionally
+# require "fallback-mode: 1", pinning the off-switch.
+
+load_file of "lib/test.eigs"
+
+# ---- Monotonic in text length (both modes) ----
+w_a is gfx_text_width of ["a", 1]
+w_aa is gfx_text_width of ["aa", 1]
+w_aaa is gfx_text_width of ["aaa", 1]
+assert_true of [w_a > 0, "one char has positive width"]
+assert_true of [w_aa > w_a, "width monotonic in length (2 > 1)"]
+assert_true of [w_aaa > w_aa, "width monotonic in length (3 > 2)"]
+
+# ---- Monotonic in scale (both modes) ----
+w_s1 is gfx_text_width of ["hello", 1]
+w_s2 is gfx_text_width of ["hello", 2]
+w_s3 is gfx_text_width of ["hello", 3]
+assert_true of [w_s2 > w_s1, "width monotonic in scale (2 > 1)"]
+assert_true of [w_s3 > w_s2, "width monotonic in scale (3 > 2)"]
+
+h1 is gfx_text_height of 1
+h2 is gfx_text_height of 2
+assert_true of [h1 >= 7, "height at least the bitmap glyph height"]
+assert_true of [h2 > h1, "height monotonic in scale"]
+
+# ---- Degenerate inputs (both modes) ----
+assert_eq of [gfx_text_width of ["", 1], 0, "empty string has width 0"]
+assert_eq of [gfx_text_width of (5), 0, "non-string arg yields width 0"]
+assert_eq of [gfx_text_width of ("x"), gfx_text_width of ["x", 1], "scale defaults to 1"]
+
+# ---- Mode detection ----
+# The bitmap renderer is monospace with exact known math; no proportional
+# font matches all four values simultaneously.
+fb is 0
+if w_a == 6 and (gfx_text_width of ["W", 1]) == 6 and w_s2 == 60 and h1 == 7:
+    fb is 1
+print of f"fallback-mode: {fb}"
+
+if fb == 1:
+    # Bitmap fallback pinned exactly (the pre-#593 metrics)
+    assert_eq of [gfx_text_width of ["iiii", 2], 48, "bitmap: iiii@2 is 4*6*2"]
+    assert_eq of [gfx_text_width of ["MMMM", 2], 48, "bitmap: MMMM@2 is 4*6*2"]
+    assert_eq of [gfx_text_height of 3, 21, "bitmap: height@3 is 7*3"]
+else:
+    # TTF active: metrics must actually be proportional
+    assert_true of [(gfx_text_width of ["iiii", 2]) < (gfx_text_width of ["MMMM", 2]), "ttf: iiii narrower than MMMM"]
+    assert_true of [(gfx_text_width of ["il", 2]) < (gfx_text_width of ["WM", 2]), "ttf: il narrower than WM"]
+    assert_true of [h2 >= 10, "ttf: scale-2 line height is a real font height"]
+
+# ---- Windowed render smoke (SDL dummy driver in the runner) ----
+# gfx_text must not crash in either mode; skipped when no video driver.
+opened is gfx_open of [64, 48, "ttf-smoke"]
+if opened == 1:
+    gfx_clear of [0, 0, 0]
+    gfx_text of [2, 2, "Smoke", 255, 255, 255, 2]
+    gfx_text of [2, 20, "", 255, 255, 255, 1]
+    gfx_present of null
+    gfx_close of null
+    print of "smoke: drew text"
+else:
+    print of "smoke: no video driver (render skipped)"
+
+test_summary of null
