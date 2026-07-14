@@ -40,6 +40,15 @@ All notable changes to EigenScript are documented here.
   pure-compute allowlist; freestanding-safe.
 
 ### Changed
+- **`waveform_view` selection now draws edge markers and clamps the
+  fill to the widget.** The selection fill is a deliberately faint
+  alpha-30 tint, so a selection spanning the whole visible range was a
+  uniform wash with no boundary — imperceptible (DeslanStudio's
+  Select All read as a dead button in driven QA; the model selected,
+  the pixels said nothing). Each selection edge now draws a
+  full-strength vertical line in the widget color when it lies inside
+  the visible span, and the fill rect is clamped to the widget bounds
+  instead of trusting `sel/zoom` arithmetic to stay on-screen.
 - **`read_bytes_buf` over-cap reads now RAISE; `[path, max_bytes]` opt-in
   cap override (#601).** A file over the cap used to return null —
   indistinguishable from "file missing" — so a >10 MB asset died far

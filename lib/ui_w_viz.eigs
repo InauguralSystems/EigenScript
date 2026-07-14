@@ -298,12 +298,28 @@ define _render_waveform_view(widget, ax, ay) as:
     mid_y is ay + floor of (widget.h / 2)
     # Center line
     gfx_line of [ax, mid_y, ax + widget.w, mid_y, 35, 35, 45]
-    # Selection highlight
+    # Selection highlight. The fill is deliberately faint (alpha 30), so
+    # a selection spanning the whole visible range would be a uniform
+    # tint with no visible boundary — imperceptible (select-all looked
+    # like a no-op in DeslanStudio). Bright edge markers make any
+    # selection read as selected; each edge is drawn only when it lies
+    # inside the visible span, and the fill is clamped to the widget.
     if widget.sel_start >= 0 and widget.sel_end >= 0:
         s0 is floor of ((widget.sel_start - widget.offset) / widget.zoom)
         s1 is floor of ((widget.sel_end - widget.offset) / widget.zoom)
         if s1 > s0:
-            gfx_rect of [ax + s0, ay, s1 - s0, widget.h, widget.color[0], widget.color[1], widget.color[2], 30]
+            f0 is s0
+            if f0 < 0:
+                f0 is 0
+            f1 is s1
+            if f1 > widget.w:
+                f1 is widget.w
+            if f1 > f0:
+                gfx_rect of [ax + f0, ay, f1 - f0, widget.h, widget.color[0], widget.color[1], widget.color[2], 30]
+            if s0 >= 0 and s0 < widget.w:
+                gfx_line of [ax + s0, ay, ax + s0, ay + widget.h, widget.color[0], widget.color[1], widget.color[2]]
+            if s1 >= 0 and s1 < widget.w:
+                gfx_line of [ax + s1, ay, ax + s1, ay + widget.h, widget.color[0], widget.color[1], widget.color[2]]
     # Waveform
     n is len of widget.samples
     if n > 0:
