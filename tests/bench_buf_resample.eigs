@@ -1,0 +1,54 @@
+# bench_buf_resample.eigs — the #603 linear-resample micro-bench.
+#
+# Workload: resampling 1,102,500 samples (25 s @ 44.1 kHz) to 1,200,000
+# (25 s @ 48 kHz) — half the 50 s import whose resample leg measured
+# 3.9 s on the N3350.
+#
+# Modes (first CLI arg; time each externally, n=5 medians):
+#   base     setup only — startup+alloc floor to subtract
+#   interp   1 interpreted resample pass (ab_resample_linear inner loop)
+#   builtin  20 buf_resample_linear passes (per-pass = (t - t_base) / 20)
+
+mode is "interp"
+a is args of null
+if (len of a) > 0:
+    mode is a[0]
+
+n is 1102500
+target is 1200000
+
+src is buffer of n
+unobserved:
+    i is 0
+    loop while i < n:
+        src[i] is ((i % 2000) / 1000.0) - 1.0
+        i += 1
+
+sink is 0
+
+if mode == "interp":
+    out is buffer of target
+    unobserved:
+        i is 0
+        loop while i < target:
+            pos is 0
+            if target > 1:
+                pos is i * (n - 1) / (target - 1)
+            lo is floor of pos
+            hi is lo + 1
+            if hi > n - 1:
+                hi is n - 1
+            frac is pos - lo
+            out[i] is src[lo] * (1 - frac) + src[hi] * frac
+            i += 1
+    sink is out[target - 1]
+
+if mode == "builtin":
+    unobserved:
+        k is 0
+        loop while k < 20:
+            out is buf_resample_linear of [src, target]
+            k += 1
+    sink is out[target - 1]
+
+print of f"{mode} n={n} target={target} sink={sink}"

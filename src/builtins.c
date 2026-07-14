@@ -4004,7 +4004,8 @@ static const char *SANDBOX_ALLOW[] = {
     /* buffers + text builders (in-memory only; allocators charge #292) */
     "buffer", "buf_copy", "buf_deinterleave", "buf_dot", "buf_fill",
     "buf_from_list", "buf_from_pcm16le", "buf_get", "buf_len", "buf_mix",
-    "buf_peak", "buf_scale_range", "buf_set", "buf_to_pcm16le",
+    "buf_peak", "buf_resample_linear", "buf_scale_range", "buf_set",
+    "buf_to_pcm16le",
     "str_from_bytes", "text_builder_new", "text_builder_append",
     "text_builder_append_line", "text_builder_extend", "text_builder_clear",
     "text_builder_to_string", "text_builder_part_count",
@@ -6127,6 +6128,69 @@ Value* builtin_buf_deinterleave(Value *arg) {
     return out;
 }
 
+/* ---- buf_resample_linear (#603) ----
+ * buf_resample_linear of [src, dst_len] — endpoint-inclusive linear
+ * resample into a NEW buffer. Exactly DeslanStudio's ab_resample_linear
+ * mapping (src/daw/audio_buf.eigs):
+ *   pos  = i * (n - 1) / (dst_len - 1)      (0 when dst_len == 1)
+ *   lo   = floor(pos); hi = min(lo + 1, n - 1); frac = pos - lo
+ *   out[i] = src[lo] * (1 - frac) + src[hi] * frac
+ * num_guard per step in VM evaluation order — bit-identical to the
+ * interpreted loop (differential-pinned in tests/test_buf_resample.eigs).
+ * The kernel is LINEAR interpolation, not Fourier/sinc resampling (the
+ * consumer-documented divergence from scipy.signal.resample — see
+ * BUILTINS.md). dst_len 0 -> empty buffer; empty src with dst_len > 0
+ * raises `value` (the consumer's wrapper guards n == 0 itself). */
+Value* builtin_buf_resample_linear(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "buf_resample_linear requires [src, dst_len]");
+        return make_null();
+    }
+    Value *src = arg->data.list.items[0];
+    if (!src || src->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_resample_linear: expected a buffer");
+        return make_null();
+    }
+    long long dst_len;
+    if (!buf_count_arg("buf_resample_linear", arg->data.list.items[1], &dst_len))
+        return make_null();
+    if (dst_len > (long long)INT_MAX) {
+        rt_error(EK_LIMIT, 0, "buf_resample_linear: dst_len %lld over the buffer size limit", dst_len);
+        return make_null();
+    }
+    long long n = src->data.buffer.count;
+    if (n == 0 && dst_len > 0) {
+        rt_error(EK_VALUE, 0, "buf_resample_linear: cannot resample an empty buffer to length %lld", dst_len);
+        return make_null();
+    }
+    Value *out = buf_alloc_flat(dst_len);
+    if (!out) return make_null();
+    const double *sd = src->data.buffer.data;
+    double *od = out->data.buffer.data;
+    for (long long i = 0; i < dst_len; i++) {
+        double pos = 0.0;
+        if (dst_len > 1)
+            pos = num_guard(num_guard((double)i * (double)(n - 1)) /
+                            (double)(dst_len - 1));
+        double lo_f = floor(pos);
+        long long lo = (long long)lo_f;
+        long long hi = lo + 1;
+        if (hi > n - 1) hi = n - 1;
+        /* pos is in [0, n-1] by construction (the i = dst_len-1 quotient
+         * is exactly n-1, and an exact-integer product / exact divisor
+         * cannot round past it); the clamps below are pure memory-safety
+         * belts, unreachable for real inputs — the interpreted oracle
+         * would raise index_range where these would fire. */
+        if (lo < 0) lo = 0;
+        if (lo > n - 1) lo = n - 1;
+        if (hi < 0) hi = 0;
+        double frac = num_guard(pos - lo_f);
+        od[i] = num_guard(num_guard(sd[lo] * num_guard(1.0 - frac)) +
+                          num_guard(sd[hi] * frac));
+    }
+    return out;
+}
+
 /* sign_extend of [val, bits] — sign-extend val from given bit width.
  * E.g. sign_extend of [0xFF, 8] → -1 */
 Value* builtin_sign_extend(Value *arg) {
@@ -6614,6 +6678,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "buf_from_pcm16le", make_builtin(builtin_buf_from_pcm16le));
     env_set_local_owned(env, "buf_to_pcm16le", make_builtin(builtin_buf_to_pcm16le));
     env_set_local_owned(env, "buf_deinterleave", make_builtin(builtin_buf_deinterleave));
+    env_set_local_owned(env, "buf_resample_linear", make_builtin(builtin_buf_resample_linear));
     env_set_local_owned(env, "sign_extend", make_builtin(builtin_sign_extend));
     env_set_local_owned(env, "sort", make_builtin(builtin_sort));
     env_set_local_owned(env, "list_truncate", make_builtin(builtin_list_truncate));

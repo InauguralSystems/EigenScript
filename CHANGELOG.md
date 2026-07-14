@@ -5,6 +5,20 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`buf_resample_linear` — C kernel for the endpoint-inclusive linear
+  resample (#603).** The third leg of the DAW audio-I/O train:
+  DeslanStudio's import spent 3.9 s resampling a 50 s stereo file on
+  the N3350 in `ab_resample_linear`'s interpreted per-sample loop.
+  `buf_resample_linear of [src, dst_len]` returns a NEW buffer with
+  exactly that mapping — `pos = i*(n-1)/(dst_len-1)`, lerp between the
+  floor/ceil neighbors, `num_guard` per step in VM evaluation order —
+  bit-identical to the interpreted loop (differential-pinned across
+  upsample/downsample/identity/single-sample shapes). The kernel is
+  LINEAR interpolation, not Fourier/sinc (the consumer-documented
+  divergence from `scipy.signal.resample`). `dst_len` 0 -> empty
+  buffer; empty src with `dst_len > 0` raises `value`; allocation
+  charged to the #292 sandbox budget; sandbox pure-compute allowlist;
+  freestanding-safe.
 - **Bulk PCM16LE codec builtins — `buf_from_pcm16le`, `buf_to_pcm16le`,
   `buf_deinterleave` (#602).** DeslanStudio's WAV import measured 10.8 s
   for a 50 s stereo 48 kHz file on the N3350 because the PCM16 byte

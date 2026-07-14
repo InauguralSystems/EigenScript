@@ -2713,6 +2713,10 @@ check_eigs_suite "vectorized buffer kernels (#597)" test_buf_vectorized.eigs "BU
 # (builtin exactly equals DeslanStudio wavio's interpreted decode/encode/
 # split loops on seeded pseudo-random data, incl. round-trip parity).
 check_eigs_suite "PCM16LE codec kernels (#602)" test_pcm_codec.eigs "PCM_CODEC_OK" 5
+# #603: linear resample kernel — correctness across shapes, loud bounds,
+# and the differential leg (builtin exactly equals DeslanStudio's
+# interpreted ab_resample_linear inner loop, incl. dst 1 / n 1 edges).
+check_eigs_suite "linear resample kernel (#603)" test_buf_resample.eigs "BUF_RESAMPLE_OK" 5
 check_eigs_suite "lab" test_lab.eigs "All tests passed." 1
 check_eigs_suite "data" test_data.eigs "All tests passed." 1
 check_eigs_suite "experiment" test_experiment.eigs "All tests passed." 1
