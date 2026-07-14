@@ -9,6 +9,7 @@
 #include "vm.h"
 #include "builtins_internal.h"
 #include "trace.h"
+#include <limits.h>
 
 /* TRACE_NONDET_RET lives in trace.h — centralized in Phase 3 so the
  * replay short-circuit applies to every nondet builtin uniformly. */
@@ -4000,9 +4001,10 @@ static const char *SANDBOX_ALLOW[] = {
     "char_at", "chr", "ends_with", "hex", "join", "ord", "split", "starts_with",
     "str", "str_lower", "str_replace", "str_upper", "substr", "trim",
     "regex_find", "regex_match", "regex_replace",
-    /* buffers + text builders (in-memory only) */
-    "buffer", "buf_copy", "buf_dot", "buf_fill", "buf_from_list", "buf_get",
-    "buf_len", "buf_mix", "buf_peak", "buf_scale_range", "buf_set",
+    /* buffers + text builders (in-memory only; allocators charge #292) */
+    "buffer", "buf_copy", "buf_deinterleave", "buf_dot", "buf_fill",
+    "buf_from_list", "buf_from_pcm16le", "buf_get", "buf_len", "buf_mix",
+    "buf_peak", "buf_scale_range", "buf_set", "buf_to_pcm16le",
     "str_from_bytes", "text_builder_new", "text_builder_append",
     "text_builder_append_line", "text_builder_extend", "text_builder_clear",
     "text_builder_to_string", "text_builder_part_count",
@@ -5976,6 +5978,155 @@ Value* builtin_buf_dot(Value *arg) {
     return make_num(s);
 }
 
+/* ---- Bulk PCM16LE codec kernels (#602) ----
+ * The byte-decode siblings of the #597 window kernels: DeslanStudio's
+ * WAV import spent 10.8 s decoding a 50 s stereo file sample-by-sample
+ * in the interpreter (src/tools/wavio.eigs). Each kernel mirrors the
+ * consumer's interpreted arithmetic step-for-step (num_guard per VM
+ * operation, same evaluation order), so the result is bit-identical to
+ * the loop it replaces — pinned by the differential leg in
+ * tests/test_pcm_codec.eigs. Pure compute over arguments: sandbox
+ * pure-compute allowlist (allocation charged per #292),
+ * freestanding-safe, tape-neutral. */
+
+/* Allocate a fresh flat VAL_BUFFER of `count` doubles, or NULL if the
+ * sandbox allocation budget (#292) rejects it (sandbox_charge raises). */
+static Value* buf_alloc_flat(long long count) {
+    if (!sandbox_charge((size_t)count * sizeof(double))) return NULL;
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_BUFFER;
+    v->data.buffer.count = (int)count;
+    v->data.buffer.data = xcalloc(count > 0 ? (size_t)count : 1, sizeof(double));
+    v->refcount = 1;
+    return v;
+}
+
+/* buf_from_pcm16le of [bytes, byte_off, count] — decode `count`
+ * little-endian signed 16-bit PCM samples starting at byte_off into a
+ * NEW float buffer. Exactly wavio's wav_read arithmetic:
+ *   v = b0 + 256*b1;  if v >= 32768: v -= 65536;  sample = v / 32767 */
+Value* builtin_buf_from_pcm16le(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "buf_from_pcm16le requires [bytes, byte_off, count]");
+        return make_null();
+    }
+    Value *src = arg->data.list.items[0];
+    long long count, off;
+    if (!buf_count_arg("buf_from_pcm16le", arg->data.list.items[2], &count))
+        return make_null();
+    if (count > (long long)INT_MAX / 2) { /* 2*count below cannot overflow */
+        rt_error(EK_LIMIT, 0, "buf_from_pcm16le: count %lld over the buffer size limit", count);
+        return make_null();
+    }
+    if (!buf_window_arg("buf_from_pcm16le", src, arg->data.list.items[1],
+                        count * 2, &off))
+        return make_null();
+    Value *out = buf_alloc_flat(count);
+    if (!out) return make_null();
+    const double *sd = &src->data.buffer.data[off];
+    double *od = out->data.buffer.data;
+    for (long long i = 0; i < count; i++) {
+        double v = num_guard(sd[2*i] + num_guard(256.0 * sd[2*i + 1]));
+        if (v >= 32768.0) v = num_guard(v - 65536.0);
+        od[i] = num_guard(v / 32767.0);
+    }
+    return out;
+}
+
+/* buf_to_pcm16le of [floats, off, count] — encode `count` samples from
+ * `off` into a NEW byte buffer (2 doubles per sample, LE order).
+ * Exactly wavio's wav_write arithmetic: clamp to [-1, 1] (ds_clamp's
+ * two independent comparisons), v = round(x * 32767), two's complement
+ * via +65536, low byte = v - floor(v/256)*256 (the ds_fmod expansion),
+ * high byte = floor(v/256). */
+Value* builtin_buf_to_pcm16le(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "buf_to_pcm16le requires [floats, off, count]");
+        return make_null();
+    }
+    Value *src = arg->data.list.items[0];
+    long long count, off;
+    if (!buf_count_arg("buf_to_pcm16le", arg->data.list.items[2], &count))
+        return make_null();
+    if (count > (long long)INT_MAX / 2) { /* output is 2*count elements */
+        rt_error(EK_LIMIT, 0, "buf_to_pcm16le: count %lld over the buffer size limit", count);
+        return make_null();
+    }
+    if (!buf_window_arg("buf_to_pcm16le", src, arg->data.list.items[1],
+                        count, &off))
+        return make_null();
+    Value *out = buf_alloc_flat(count * 2);
+    if (!out) return make_null();
+    const double *sd = &src->data.buffer.data[off];
+    double *od = out->data.buffer.data;
+    for (long long i = 0; i < count; i++) {
+        double x = sd[i];
+        if (x < -1.0) x = -1.0;
+        if (x > 1.0) x = 1.0;
+        double v = round(num_guard(x * 32767.0));
+        if (v < 0.0) v = num_guard(v + 65536.0);
+        double q = floor(num_guard(v / 256.0));
+        od[2*i]     = num_guard(v - num_guard(q * 256.0));
+        od[2*i + 1] = q;
+    }
+    return out;
+}
+
+/* buf_deinterleave of [src, channel, nch, count?] — every nch-th sample
+ * starting at index `channel` into a NEW buffer (frame-interleaved
+ * channel split; wavio addresses sample (i, c) at i*nch + c). count
+ * defaults to the full available tail. Pure copy — no arithmetic. */
+Value* builtin_buf_deinterleave(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "buf_deinterleave requires [src, channel, nch, count?]");
+        return make_null();
+    }
+    Value *src = arg->data.list.items[0];
+    if (!src || src->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_deinterleave: expected a buffer");
+        return make_null();
+    }
+    Value *ch_v = arg->data.list.items[1];
+    Value *nch_v = arg->data.list.items[2];
+    if (!ch_v || ch_v->type != VAL_NUM || !nch_v || nch_v->type != VAL_NUM) {
+        rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
+        return make_null();
+    }
+    long long nch = (long long)nch_v->data.num;
+    long long channel = (long long)ch_v->data.num;
+    if (nch < 1) {
+        rt_error(EK_VALUE, 0, "buf_deinterleave: nch must be >= 1 (got %lld)", nch);
+        return make_null();
+    }
+    if (channel < 0 || channel >= nch) {
+        rt_error(EK_VALUE, 0, "buf_deinterleave: channel %lld out of range for %lld channels",
+                 channel, nch);
+        return make_null();
+    }
+    long long n = src->data.buffer.count;
+    long long avail = channel < n ? (n - channel + nch - 1) / nch : 0;
+    long long count = avail;
+    if (arg->data.list.count >= 4 && arg->data.list.items[3] &&
+        arg->data.list.items[3]->type != VAL_NULL) {
+        if (!buf_count_arg("buf_deinterleave", arg->data.list.items[3], &count))
+            return make_null();
+        if (count > avail) {
+            rt_error(EK_INDEX, 0,
+                     "buf_deinterleave: count %lld over the %lld samples available "
+                     "(length %lld, channel %lld of %lld)",
+                     count, avail, n, channel, nch);
+            return make_null();
+        }
+    }
+    Value *out = buf_alloc_flat(count);
+    if (!out) return make_null();
+    const double *sd = src->data.buffer.data;
+    double *od = out->data.buffer.data;
+    for (long long i = 0; i < count; i++)
+        od[i] = sd[channel + i * nch];
+    return out;
+}
+
 /* sign_extend of [val, bits] — sign-extend val from given bit width.
  * E.g. sign_extend of [0xFF, 8] → -1 */
 Value* builtin_sign_extend(Value *arg) {
@@ -6460,6 +6611,9 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "buf_fill", make_builtin(builtin_buf_fill));
     env_set_local_owned(env, "buf_peak", make_builtin(builtin_buf_peak));
     env_set_local_owned(env, "buf_dot", make_builtin(builtin_buf_dot));
+    env_set_local_owned(env, "buf_from_pcm16le", make_builtin(builtin_buf_from_pcm16le));
+    env_set_local_owned(env, "buf_to_pcm16le", make_builtin(builtin_buf_to_pcm16le));
+    env_set_local_owned(env, "buf_deinterleave", make_builtin(builtin_buf_deinterleave));
     env_set_local_owned(env, "sign_extend", make_builtin(builtin_sign_extend));
     env_set_local_owned(env, "sort", make_builtin(builtin_sort));
     env_set_local_owned(env, "list_truncate", make_builtin(builtin_list_truncate));
