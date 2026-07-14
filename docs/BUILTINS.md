@@ -539,7 +539,9 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 | `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment |
 | `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel |
 | `gfx_circle` | `gfx_circle of [cx, cy, radius, r, g, b]` | Filled circle (midpoint) |
-| `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Bitmap-font text |
+| `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Text. Proportional antialiased TTF when libSDL2_ttf + a font are available (#593); the 5x7 bitmap font otherwise — see the font note below the table |
+| `gfx_text_width` | `gfx_text_width of [text, scale?]` or `of "text"` | Pixel width of `text` under the active text renderer: TTF metrics when active, `len * 6 * scale` in bitmap mode. Works before `gfx_open` |
+| `gfx_text_height` | `gfx_text_height of scale?` | Pixel line height under the active text renderer: TTF font height when active, `7 * scale` in bitmap mode |
 | `gfx_present` | `gfx_present of null` | Flip backbuffer to screen |
 | `gfx_poll` | `gfx_poll of null` | Return next event as dict (`quit`, `keydown`, `keyup`, `mousemove`, `mousedown`, `mouseup`, `wheel`, `resize`), or null. Key, mouse, and wheel events carry `shift`/`ctrl`/`alt` (0/1); wheel `x`/`y` are scroll deltas |
 | `gfx_ticks` | `gfx_ticks of null` | Milliseconds since `SDL_Init` |
@@ -547,6 +549,21 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 | `gfx_title` | `gfx_title of "text"` | Update window title |
 | `gfx_fb` | `gfx_fb of [buf, w, h, x, y, scale]` | Blit buffer (palette indices 0-3) as scaled texture |
 | `ppu_render_frame` | `ppu_render_frame of [mem_buf, fb_buf]` | Full Game Boy PPU render (BG/window/sprites) into framebuffer |
+
+**Text rendering and fonts (#593).** `gfx_text` lazily loads
+`libSDL2_ttf-2.0.so.0` on first use and renders proportional antialiased
+text (`TTF_RenderUTF8_Blended`) when both the library and a font file are
+present. Font selection: the `EIGS_GFX_FONT` environment variable
+(absolute path to a `.ttf`) wins; when it is set but unreadable the
+runtime warns once and stays on the bitmap font (a nonexistent path is
+the deterministic off-switch). Otherwise a short list of common system
+fonts is probed (DejaVu Sans, Liberation Sans, Noto Sans under
+`/usr/share/fonts/truetype/`). Without SDL2_ttf or a font, `gfx_text`
+renders through the built-in 5x7 bitmap font exactly as before — the
+fallback is load-bearing (CI containers may have neither). Layout code
+should measure through `gfx_text_width`/`gfx_text_height` (as `lib/ui`
+does) rather than assuming the `6 * scale` monospace advance. Text
+rendering is output-only: no trace-tape records in either mode.
 
 ## Optional: Database Extension
 

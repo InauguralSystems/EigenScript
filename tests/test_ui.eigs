@@ -49,6 +49,15 @@ define gfx_delay(args) as:
 define gfx_ticks(args) as:
     return 1000
 
+# Metrics stubs mirror the bitmap-font math (#593) so every layout
+# assertion below keeps its historical value regardless of the fonts
+# installed on the machine running the suite.
+define gfx_text_width(text, scale) as:
+    return (len of text) * 6 * scale
+
+define gfx_text_height(scale) as:
+    return 7 * scale
+
 # ---- Load UI toolkit ----
 
 load_file of "lib/ui.eigs"

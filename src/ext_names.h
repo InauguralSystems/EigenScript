@@ -40,6 +40,8 @@
     X(gfx_delay, builtin_gfx_delay) \
     X(gfx_title, builtin_gfx_title) \
     X(gfx_text, builtin_gfx_text) \
+    X(gfx_text_width, builtin_gfx_text_width) \
+    X(gfx_text_height, builtin_gfx_text_height) \
     X(gfx_fb, builtin_gfx_fb) \
     X(ppu_render_frame, builtin_ppu_render_frame) \
     X(audio_open, builtin_audio_open) \

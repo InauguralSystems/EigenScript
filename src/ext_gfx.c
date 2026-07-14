@@ -3,7 +3,9 @@
  * Dynamically loads libSDL2 at runtime (no dev headers needed).
  *
  * Builtins: gfx_open, gfx_close, gfx_clear, gfx_rect, gfx_line,
- *           gfx_point, gfx_circle, gfx_present, gfx_poll, gfx_ticks, gfx_delay
+ *           gfx_point, gfx_circle, gfx_present, gfx_poll, gfx_ticks, gfx_delay,
+ *           gfx_text, gfx_text_width, gfx_text_height (proportional
+ *           antialiased text via SDL2_ttf when available, #593)
  */
 
 #include "eigenscript.h"
@@ -106,6 +108,9 @@ static SDL_Texture* (*p_SDL_CreateTexture)(SDL_Renderer*, Uint32, int, int, int)
 static void (*p_SDL_DestroyTexture)(SDL_Texture*);
 static int (*p_SDL_UpdateTexture)(SDL_Texture*, const SDL_Rect*, const void*, int);
 static int (*p_SDL_RenderCopy)(SDL_Renderer*, SDL_Texture*, const SDL_Rect*, const SDL_Rect*);
+static SDL_Texture* (*p_SDL_CreateTextureFromSurface)(SDL_Renderer*, void*);
+static void (*p_SDL_FreeSurface)(void*);
+static int (*p_SDL_QueryTexture)(SDL_Texture*, Uint32*, int*, int*, int*);
 
 /* Framebuffer texture cache */
 static SDL_Texture *g_fb_texture = NULL;
@@ -155,6 +160,9 @@ static int load_sdl2(void) {
     p_SDL_DestroyTexture = dlsym(g_sdl_lib, "SDL_DestroyTexture");
     p_SDL_UpdateTexture = dlsym(g_sdl_lib, "SDL_UpdateTexture");
     p_SDL_RenderCopy = dlsym(g_sdl_lib, "SDL_RenderCopy");
+    p_SDL_CreateTextureFromSurface = dlsym(g_sdl_lib, "SDL_CreateTextureFromSurface");
+    p_SDL_FreeSurface = dlsym(g_sdl_lib, "SDL_FreeSurface");
+    p_SDL_QueryTexture = dlsym(g_sdl_lib, "SDL_QueryTexture");
     p_SDL_OpenAudioDevice = dlsym(g_sdl_lib, "SDL_OpenAudioDevice");
     p_SDL_CloseAudioDevice = dlsym(g_sdl_lib, "SDL_CloseAudioDevice");
     p_SDL_QueueAudio = dlsym(g_sdl_lib, "SDL_QueueAudio");
@@ -213,6 +221,125 @@ static int load_sdl_mixer(void) {
     #undef MLOAD
     if (!ok) { dlclose(g_mixer_lib); g_mixer_lib = NULL; return 0; }
     return 1;
+}
+
+/* ---- SDL2_ttf (proportional antialiased text, #593) ----
+ * Loaded separately and lazily (first gfx_text / gfx_text_width /
+ * gfx_text_height call) so the core graphics binary keeps no hard
+ * dependency on libSDL2_ttf. THE FALLBACK IS LOAD-BEARING: when the lib
+ * or a usable font file is missing (CI containers may have neither),
+ * gfx_text renders through the 5x7 bitmap path exactly as before, and
+ * the metrics builtins return the bitmap math (len*6*scale / 7*scale).
+ *
+ * Font discovery: EIGS_GFX_FONT (absolute path to a .ttf) wins; when it
+ * is set but unreadable we warn once and stay on the bitmap font — a
+ * nonexistent path is the deterministic off-switch the tests pin.
+ * Otherwise a short list of common system fonts is probed. No
+ * fontconfig dependency.
+ *
+ * Text rendering is output-only — no trace-tape records (same class as
+ * gfx_rect); the metrics builtins are environment-dependent (which font
+ * is installed) but untraced, same class as gfx_ticks. */
+typedef struct { Uint8 r, g, b, a; } SDL_Color;
+
+static void *g_ttf_lib = NULL;
+static int g_ttf_state = 0;            /* 0 unprobed, 1 active, -1 unavailable */
+static char g_ttf_font_path[512];
+
+static int  (*p_TTF_Init)(void);
+static void (*p_TTF_Quit)(void);
+static void *(*p_TTF_OpenFont)(const char*, int);
+static void (*p_TTF_CloseFont)(void*);
+static int  (*p_TTF_SizeUTF8)(void*, const char*, int*, int*);
+static int  (*p_TTF_FontHeight)(void*);
+static void *(*p_TTF_RenderUTF8_Blended)(void*, const char*, SDL_Color);
+
+/* TTF_Font* cache, one entry per pixel size actually used. */
+#define TTF_FONT_CACHE_MAX 16
+static struct { int px; void *font; } g_ttf_fonts[TTF_FONT_CACHE_MAX];
+static int g_ttf_font_count = 0;
+
+/* Map the gfx_text bitmap `scale` to a TTF pixel size. 6*scale + 2
+ * keeps the rendered line height close to the bitmap cell (7*scale)
+ * and the average advance narrower than the bitmap's 6*scale, so
+ * existing fixed-width layouts don't overflow (scale 2 → 14 px). */
+static int ttf_scale_to_px(int scale) {
+    if (scale < 1) scale = 1;
+    return 6 * scale + 2;
+}
+
+static int ttf_available(void) {
+    if (g_ttf_state) return g_ttf_state > 0;
+    g_ttf_state = -1;
+
+    const char *env = getenv("EIGS_GFX_FONT");
+    if (env && *env) {
+        if (access(env, R_OK) != 0) {
+            fprintf(stderr, "gfx_text: EIGS_GFX_FONT '%s' is not readable; "
+                    "using the bitmap font\n", env);
+            return 0;
+        }
+        snprintf(g_ttf_font_path, sizeof g_ttf_font_path, "%s", env);
+    } else {
+        static const char *candidates[] = {
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            NULL
+        };
+        const char *found = NULL;
+        for (int i = 0; candidates[i]; i++)
+            if (access(candidates[i], R_OK) == 0) { found = candidates[i]; break; }
+        if (!found) return 0;   /* silent: bitmap is the normal fallback */
+        snprintf(g_ttf_font_path, sizeof g_ttf_font_path, "%s", found);
+    }
+
+    g_ttf_lib = dlopen("libSDL2_ttf-2.0.so.0", RTLD_LAZY);
+    if (!g_ttf_lib) g_ttf_lib = dlopen("libSDL2_ttf.so", RTLD_LAZY);
+    if (!g_ttf_lib) return 0;   /* silent: bitmap is the normal fallback */
+
+    int ok = 1;
+    #define TLOAD(name) do { p_##name = dlsym(g_ttf_lib, #name); \
+        if (!p_##name) { fprintf(stderr, "gfx_text: missing %s\n", #name); ok = 0; } } while(0)
+    TLOAD(TTF_Init); TLOAD(TTF_Quit);
+    TLOAD(TTF_OpenFont); TLOAD(TTF_CloseFont);
+    TLOAD(TTF_SizeUTF8); TLOAD(TTF_FontHeight);
+    TLOAD(TTF_RenderUTF8_Blended);
+    #undef TLOAD
+    if (!ok || p_TTF_Init() != 0) {
+        dlclose(g_ttf_lib);
+        g_ttf_lib = NULL;
+        return 0;
+    }
+    g_ttf_state = 1;
+    return 1;
+}
+
+/* Cached TTF_Font* for a bitmap scale; NULL when the font can't open
+ * (callers fall back to the bitmap path). */
+static void* ttf_font_for_scale(int scale) {
+    int px = ttf_scale_to_px(scale);
+    for (int i = 0; i < g_ttf_font_count; i++)
+        if (g_ttf_fonts[i].px == px) return g_ttf_fonts[i].font;
+    if (g_ttf_font_count >= TTF_FONT_CACHE_MAX)
+        return g_ttf_fonts[0].font;   /* pathological size churn: reuse */
+    void *font = p_TTF_OpenFont(g_ttf_font_path, px);
+    g_ttf_fonts[g_ttf_font_count].px = px;
+    g_ttf_fonts[g_ttf_font_count].font = font;   /* cache NULL too */
+    g_ttf_font_count++;
+    return font;
+}
+
+static void ttf_teardown(void) {
+    if (!g_ttf_lib) { g_ttf_state = 0; g_ttf_font_count = 0; return; }
+    for (int i = 0; i < g_ttf_font_count; i++)
+        if (g_ttf_fonts[i].font) p_TTF_CloseFont(g_ttf_fonts[i].font);
+    g_ttf_font_count = 0;
+    p_TTF_Quit();
+    dlclose(g_ttf_lib);
+    g_ttf_lib = NULL;
+    g_ttf_state = 0;
 }
 
 /* Scancode to key name — SDL2 scancodes */
@@ -291,6 +418,7 @@ Value* builtin_gfx_open(Value *arg) {
 /* gfx_close of null */
 Value* builtin_gfx_close(Value *arg) {
     (void)arg;
+    ttf_teardown();
     if (g_fb_texture && p_SDL_DestroyTexture) { p_SDL_DestroyTexture(g_fb_texture); g_fb_texture = NULL; g_fb_w = 0; g_fb_h = 0; }
     if (g_audio_device) { p_SDL_CloseAudioDevice(g_audio_device); g_audio_device = 0; }
     if (g_capture_device) { p_SDL_CloseAudioDevice(g_capture_device); g_capture_device = 0; }
@@ -650,7 +778,10 @@ static const unsigned char font5x7[95][7] = {
     {0x00,0x04,0x02,0x1F,0x02,0x04,0x00}, /* '~' */
 };
 
-/* gfx_text of [x, y, text, r, g, b] or [x, y, text, r, g, b, scale] */
+/* gfx_text of [x, y, text, r, g, b] or [x, y, text, r, g, b, scale]
+ * Proportional antialiased TTF text when SDL2_ttf + a font are available
+ * (#593); the 5x7 bitmap path below is the exact pre-#593 behavior and
+ * runs whenever any part of the TTF path is missing or fails. */
 Value* builtin_gfx_text(Value *arg) {
     if (!g_renderer || !arg || arg->type != VAL_LIST || arg->data.list.count < 6) return make_null();
     int x = (int)arg->data.list.items[0]->data.num;
@@ -661,6 +792,29 @@ Value* builtin_gfx_text(Value *arg) {
     int b = (int)arg->data.list.items[5]->data.num;
     int scale = (arg->data.list.count >= 7) ? (int)arg->data.list.items[6]->data.num : 1;
     if (scale < 1) scale = 1;
+
+    if (*text && ttf_available() && p_SDL_CreateTextureFromSurface
+        && p_SDL_FreeSurface && p_SDL_QueryTexture && p_SDL_DestroyTexture
+        && p_SDL_RenderCopy) {
+        void *font = ttf_font_for_scale(scale);
+        if (font) {
+            SDL_Color col = { (Uint8)r, (Uint8)g, (Uint8)b, 255 };
+            void *surf = p_TTF_RenderUTF8_Blended(font, text, col);
+            if (surf) {
+                SDL_Texture *tex = p_SDL_CreateTextureFromSurface(g_renderer, surf);
+                p_SDL_FreeSurface(surf);
+                if (tex) {
+                    int tw = 0, th = 0;
+                    p_SDL_QueryTexture(tex, NULL, NULL, &tw, &th);
+                    SDL_Rect dst = { x, y, tw, th };
+                    p_SDL_RenderCopy(g_renderer, tex, NULL, &dst);
+                    p_SDL_DestroyTexture(tex);
+                    return make_null();
+                }
+            }
+        }
+        /* fall through to the bitmap path on any failure */
+    }
 
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     int cx = x;
@@ -684,6 +838,52 @@ Value* builtin_gfx_text(Value *arg) {
         cx += (5 + 1) * scale; /* 5 pixel width + 1 pixel gap */
     }
     return make_null();
+}
+
+/* gfx_text_width of [text, scale?] (or of "text") — pixel width of `text`
+ * under the ACTIVE text renderer: TTF metrics when SDL2_ttf + a font are
+ * loaded, the bitmap advance (len * 6 * scale) otherwise. lib/ui layout
+ * routes through this so proportional text doesn't break centering (#593).
+ * Works without an open window (layout can be computed before gfx_open). */
+Value* builtin_gfx_text_width(Value *arg) {
+    const char *text = NULL;
+    int scale = 1;
+    if (arg && arg->type == VAL_STR) {
+        text = arg->data.str;
+    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
+               && arg->data.list.items[0]->type == VAL_STR) {
+        text = arg->data.list.items[0]->data.str;
+        if (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
+            scale = (int)arg->data.list.items[1]->data.num;
+    }
+    if (!text) return make_num(0);
+    if (scale < 1) scale = 1;
+    if (*text && ttf_available()) {
+        void *font = ttf_font_for_scale(scale);
+        int w = 0, h = 0;
+        if (font && p_TTF_SizeUTF8(font, text, &w, &h) == 0)
+            return make_num((double)w);
+    }
+    return make_num((double)strlen(text) * 6.0 * (double)scale);
+}
+
+/* gfx_text_height of scale? (number, [scale], or null → 1) — pixel line
+ * height under the ACTIVE text renderer: TTF font height when active,
+ * the bitmap glyph height (7 * scale) otherwise. */
+Value* builtin_gfx_text_height(Value *arg) {
+    int scale = 1;
+    if (arg && arg->type == VAL_NUM) {
+        scale = (int)arg->data.num;
+    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
+               && arg->data.list.items[0]->type == VAL_NUM) {
+        scale = (int)arg->data.list.items[0]->data.num;
+    }
+    if (scale < 1) scale = 1;
+    if (ttf_available()) {
+        void *font = ttf_font_for_scale(scale);
+        if (font) return make_num((double)p_TTF_FontHeight(font));
+    }
+    return make_num(7.0 * (double)scale);
 }
 
 /* ---- Audio Builtins ---- */

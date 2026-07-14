@@ -174,7 +174,7 @@ define _render_toasts() as:
             if alpha < 0:
                 alpha is 0
         tw is (text_width of [t.text, _theme.font_scale]) + 16
-        th is _theme.font_scale * 7 + 12
+        th is (text_height of _theme.font_scale) + 12
         tx is _ui.window_w - tw - 12
         # Background
         gfx_rrect of [tx, ty, tw, th, 4, 40, 40, 55, alpha]

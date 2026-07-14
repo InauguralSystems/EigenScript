@@ -13,12 +13,28 @@ define _point_in_rect(px, py, x, y, w, h) as:
     return 0
 
 # ---- Text measurement ----
-# Based on the 5x7 bitmap font: advance = (5+1) * scale
+# Real pixel metrics via gfx_text_width / gfx_text_height when the runtime
+# has them (#593: proportional TTF metrics when SDL2_ttf + a font are
+# active, bitmap math otherwise). Probed once at load with the
+# catch-undefined pattern so a binary without the gfx extension — and
+# headless tests that stub only the drawing calls — keep the 5x7
+# bitmap-font math: advance = (5+1) * scale, height = 7 * scale.
+
+_has_text_metrics is 0
+try:
+    if (gfx_text_width of ["m", 1]) != null:
+        _has_text_metrics is 1
+catch _e:
+    _has_text_metrics is 0
 
 define text_width(text, scale) as:
+    if _has_text_metrics == 1:
+        return gfx_text_width of [text, scale]
     return (len of text) * 6 * scale
 
 define text_height(scale) as:
+    if _has_text_metrics == 1:
+        return gfx_text_height of scale
     return 7 * scale
 
 # ---- Drawing primitives ----
@@ -36,13 +52,17 @@ define _draw_rbox(x, y, w, h, rad, bg, border) as:
             gfx_rrect of [x, y, w, h, rad, bg[0], bg[1], bg[2]]
 
 define _draw_text_clipped(x, y, w, text, color, scale) as:
-    cw is 6 * scale
-    max_chars is floor of (w / cw)
-    if max_chars < 1:
-        return null
-    display is text
-    if (len of text) > max_chars:
-        display is substr of [text, 0, max_chars]
+    # Truncate by MEASURED width (proportional under TTF, len*6*scale in
+    # bitmap mode — where this reduces to the old floor(w / (6*scale))
+    # character clip). Widget text is short; the shrink loop is fine.
+    local display is text
+    if (text_width of [display, scale]) > w:
+        local n is len of display
+        loop while n > 0 and (text_width of [(substr of [display, 0, n]), scale]) > w:
+            n is n - 1
+        if n < 1:
+            return null
+        display is substr of [display, 0, n]
     gfx_text of [x, y, display, color[0], color[1], color[2], scale]
 
 # ---- Focus ring ----
