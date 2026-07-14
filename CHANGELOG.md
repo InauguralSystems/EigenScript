@@ -46,9 +46,11 @@ All notable changes to EigenScript are documented here.
   uniform wash with no boundary — imperceptible (DeslanStudio's
   Select All read as a dead button in driven QA; the model selected,
   the pixels said nothing). Each selection edge now draws a
-  full-strength vertical line in the widget color when it lies inside
-  the visible span, and the fill rect is clamped to the widget bounds
-  instead of trusting `sel/zoom` arithmetic to stay on-screen.
+  full-strength vertical line in the widget color, CLAMPED to the
+  widget edge when the selection reaches past it (select-all lands at
+  exactly `s1 == w`, which a visible-span-only test would skip), and
+  the fill rect is clamped to the widget bounds instead of trusting
+  `sel/zoom` arithmetic to stay on-screen.
 - **`read_bytes_buf` over-cap reads now RAISE; `[path, max_bytes]` opt-in
   cap override (#601).** A file over the cap used to return null —
   indistinguishable from "file missing" — so a >10 MB asset died far

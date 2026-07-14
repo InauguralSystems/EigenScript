@@ -316,10 +316,21 @@ define _render_waveform_view(widget, ax, ay) as:
                 f1 is widget.w
             if f1 > f0:
                 gfx_rect of [ax + f0, ay, f1 - f0, widget.h, widget.color[0], widget.color[1], widget.color[2], 30]
-            if s0 >= 0 and s0 < widget.w:
-                gfx_line of [ax + s0, ay, ax + s0, ay + widget.h, widget.color[0], widget.color[1], widget.color[2]]
-            if s1 >= 0 and s1 < widget.w:
-                gfx_line of [ax + s1, ay, ax + s1, ay + widget.h, widget.color[0], widget.color[1], widget.color[2]]
+            # Markers CLAMP to the widget rather than vanish: a
+            # selection reaching past an edge (select-all lands at
+            # exactly s1 == w) still shows a line AT that edge.
+            e0 is s0
+            if e0 < 0:
+                e0 is 0
+            if e0 > widget.w - 1:
+                e0 is widget.w - 1
+            e1 is s1
+            if e1 < 0:
+                e1 is 0
+            if e1 > widget.w - 1:
+                e1 is widget.w - 1
+            gfx_line of [ax + e0, ay, ax + e0, ay + widget.h, widget.color[0], widget.color[1], widget.color[2]]
+            gfx_line of [ax + e1, ay, ax + e1, ay + widget.h, widget.color[0], widget.color[1], widget.color[2]]
     # Waveform
     n is len of widget.samples
     if n > 0:
