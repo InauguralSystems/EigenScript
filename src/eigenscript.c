@@ -1598,6 +1598,108 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
     return -1;
 }
 
+/* ---- #607: module-env concurrency guard ----
+ * Module-level code (main thread) is the only runtime creator of new
+ * bindings in the module env (parent == NULL — post-#373 a worker fn's
+ * bare assignment creates a fn-local); spawned workers read the module
+ * env on every global name resolution (under MT the inline caches never
+ * populate for worker frames per #297, so every worker global lookup
+ * walks the chain). Unsynchronized, a grow (names/values/assign_counts
+ * realloc) or hash rebuild frees arrays a concurrent worker walk is
+ * still reading — a real use-after-free class, TSan-visible.
+ *
+ * The guard, all gated on g_vm_multithreaded so single-threaded programs
+ * pay only predicted-false branches:
+ *   - g_module_env_lock serializes module-env structural mutation
+ *     against the module-env hop of every chain walker;
+ *   - grown-out arrays are RETIRED on the env (freed only when the env
+ *     is parked/destroyed), so a post-resolve slot load OUTSIDE the lock
+ *     can never touch freed memory (total waste is bounded by geometric
+ *     doubling: < 2x the final array size);
+ *   - the values/assign_counts pointers are published with release
+ *     stores and read at the post-resolve sites via env_values_ptr /
+ *     env_assign_counts_ptr (acquire), so the pointer word itself is
+ *     synchronized.
+ * Out of scope (pre-existing, separate class): two threads racing on
+ * the SAME slot's value or assign-count — that is slot-value semantics,
+ * not memory safety of the arrays. */
+static pthread_mutex_t g_module_env_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static inline int env_mt_shared(const Env *e) {
+    return __builtin_expect(g_vm_multithreaded, 0) && e->parent == NULL;
+}
+static inline void env_shared_lock(const Env *e) {
+    if (env_mt_shared(e)) pthread_mutex_lock(&g_module_env_lock);
+}
+static inline void env_shared_unlock(const Env *e) {
+    if (env_mt_shared(e)) pthread_mutex_unlock(&g_module_env_lock);
+}
+
+/* Park a grown-out block on the env; freed at park/destroy time. */
+static void env_retire_block(Env *env, void *block) {
+    if (!block) return;
+    if (env->retired_count >= env->retired_cap) {
+        int nc = env->retired_cap ? env->retired_cap * 2 : 8;
+        void **nr = realloc(env->retired, nc * sizeof(void *));
+        if (!nr) { fprintf(stderr, "Out of memory retiring env block\n"); exit(1); }
+        env->retired = nr;
+        env->retired_cap = nc;
+    }
+    env->retired[env->retired_count++] = block;
+}
+
+static void env_free_retired(Env *env) {
+    for (int i = 0; i < env->retired_count; i++)
+        free(env->retired[i]);
+    free(env->retired);
+    env->retired = NULL;
+    env->retired_count = env->retired_cap = 0;
+}
+
+/* Grow names/values/assign_counts for a shared env under MT: publish
+ * fresh copies (release) and retire the old blocks. Caller holds
+ * g_module_env_lock. */
+static void env_grow_retire(Env *env, int new_cap) {
+    size_t nsz = (size_t)new_cap * sizeof(char *);
+    size_t vsz = (size_t)new_cap * sizeof(EigsSlot);
+    char **nn = xmalloc(nsz);
+    EigsSlot *nv = xmalloc(vsz);
+    memcpy(nn, env->names, env->count * sizeof(char *));
+    memcpy(nv, env->values, env->count * sizeof(EigsSlot));
+    int *na = NULL;
+    if (env->assign_counts) {
+        na = xmalloc((size_t)new_cap * sizeof(int));
+        memcpy(na, env->assign_counts, env->count * sizeof(int));
+    }
+    env_retire_block(env, env->names);
+    env_retire_block(env, env->values);
+    env_retire_block(env, env->assign_counts);
+    __atomic_store_n(&env->names, nn, __ATOMIC_RELEASE);
+    __atomic_store_n(&env->values, nv, __ATOMIC_RELEASE);
+    __atomic_store_n(&env->assign_counts, na, __ATOMIC_RELEASE);
+    env->capacity = new_cap;
+}
+
+/* Hash rebuild for a shared env under MT: same sizing as
+ * env_hash_rebuild, but the old bucket arrays are retired, not freed —
+ * belt-and-suspenders (probes are lock-serialized, but a freed bucket
+ * array must be impossible even for a future unlocked probe). Caller
+ * holds g_module_env_lock. */
+static void env_hash_rebuild_retire(Env *env) {
+    EnvHash *ht = &env->hash;
+    uint32_t *old_hashes = ht->hashes;
+    int      *old_indices = ht->indices;
+    uint32_t *old_gens = ht->generations;
+    int new_cap = ENV_HASH_INIT_CAP;
+    while (new_cap < env->count * 2) new_cap *= 2;
+    env_hash_init(ht, new_cap);
+    for (int i = 0; i < env->count; i++)
+        if (env->names[i]) env_hash_insert(ht, env_hash_name(env->names[i]), i);
+    env_retire_block(env, old_hashes);
+    env_retire_block(env, old_indices);
+    env_retire_block(env, old_gens);
+}
+
 char *env_intern_name(const char *name) {
     uint32_t h = env_hash_name(name);
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
@@ -1652,6 +1754,7 @@ void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;
     while (e) {
+        env_shared_lock(e);   /* #607: module hop vs main-thread binding creation */
         int idx = env_hash_find(&e->hash, name, h, e->names);
         if (idx >= 0) {
             Value *promoted = promote_if_arena(val);
@@ -1661,8 +1764,10 @@ void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val) {
             e->values[idx] = new_s;
             if (e->assign_counts && g_unobserved_depth == 0)
                 e->assign_counts[idx]++;
+            env_shared_unlock(e);
             return;
         }
+        env_shared_unlock(e);
         e = e->parent;
     }
     env_set_local_hashed(env, name, h, val);
@@ -1674,6 +1779,7 @@ void env_set(Env *env, const char *name, Value *val) {
 
 void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     if (h == 0) h = env_hash_name(name);
+    env_shared_lock(env);   /* #607: vs concurrent worker chain walks */
     int idx = env_hash_find(&env->hash, name, h, env->names);
     if (idx >= 0) {
         Value *promoted = promote_if_arena(val);
@@ -1683,6 +1789,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         env->values[idx] = new_s;
         if (env->assign_counts && g_unobserved_depth == 0)
             env->assign_counts[idx]++;
+        env_shared_unlock(env);
         return;
     }
     if (env->count >= env->capacity) {
@@ -1696,6 +1803,8 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
             memcpy(nv, env->values, env->count * sizeof(EigsSlot));
             env->names  = nn;
             env->values = nv;
+        } else if (env_mt_shared(env)) {
+            env_grow_retire(env, new_cap);   /* #607: publish + retire */
         } else {
             env->names  = realloc(env->names, nsz);
             env->values = realloc(env->values, vsz);
@@ -1717,10 +1826,12 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     env->binding_version++;
 
     /* Insert into hash; rebuild if load factor > 70% */
-    if (env->count * 10 > (env->hash.mask + 1) * 7)
-        env_hash_rebuild(&env->hash, env->names, env->count);
-    else
+    if (env->count * 10 > (env->hash.mask + 1) * 7) {
+        if (env_mt_shared(env)) env_hash_rebuild_retire(env);   /* #607 */
+        else env_hash_rebuild(&env->hash, env->names, env->count);
+    } else
         env_hash_insert(&env->hash, h, env->count - 1);
+    env_shared_unlock(env);
 }
 
 /* ---- Slot-flavored env helpers (Phase B-5 hot path) ----
@@ -1729,6 +1840,9 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
  * slot_to_value + promote_if_arena to preserve the existing arena-safety
  * contract that env never holds arena Values across arena reset. */
 void env_store_slot(Env *env, int idx, EigsSlot s) {
+    env_shared_lock(env);   /* #607: a concurrent module-env grow would
+                             * republish `values`; storing into the retired
+                             * copy would silently lose this update. */
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
         if (v && v->arena) {
@@ -1738,6 +1852,7 @@ void env_store_slot(Env *env, int idx, EigsSlot s) {
                 EigsSlot new_s = slot_from_value(promoted);
                 slot_decref(env->values[idx]);
                 env->values[idx] = new_s;
+                env_shared_unlock(env);
                 return;
             }
         }
@@ -1745,17 +1860,20 @@ void env_store_slot(Env *env, int idx, EigsSlot s) {
     slot_incref(s);
     slot_decref(env->values[idx]);
     env->values[idx] = s;
+    env_shared_unlock(env);
 }
 
 void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;
     while (e) {
+        env_shared_lock(e);   /* #607: module hop vs main-thread binding creation */
         int idx = env_hash_find(&e->hash, name, h, e->names);
+        env_shared_unlock(e); /* env_store_slot re-locks; mutex is non-recursive */
         if (idx >= 0) {
             env_store_slot(e, idx, s);
             if (e->assign_counts && g_unobserved_depth == 0)
-                e->assign_counts[idx]++;
+                env_assign_counts_ptr(e)[idx]++;
             return;
         }
         e = e->parent;
@@ -1773,6 +1891,10 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
             env->assign_counts[idx]++;
         return;
     }
+    env_shared_lock(env);   /* #607: vs concurrent worker chain walks.
+                             * Single writer (module code runs on the main
+                             * thread only), so the unlocked probe above
+                             * cannot go stale between probe and insert. */
     if (env->count >= env->capacity) {
         int new_cap = env->capacity * 2;
         size_t nsz = new_cap * sizeof(char *);
@@ -1784,6 +1906,8 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
             memcpy(nv, env->values, env->count * sizeof(EigsSlot));
             env->names = nn;
             env->values = nv;
+        } else if (env_mt_shared(env)) {
+            env_grow_retire(env, new_cap);   /* #607: publish + retire */
         } else {
             env->names = realloc(env->names, nsz);
             env->values = realloc(env->values, vsz);
@@ -1814,10 +1938,12 @@ store:
         env->assign_counts[env->count] = (g_unobserved_depth == 0) ? 1 : 0;
     env->count++;
     env->binding_version++;
-    if (env->count * 10 > (env->hash.mask + 1) * 7)
-        env_hash_rebuild(&env->hash, env->names, env->count);
-    else
+    if (env->count * 10 > (env->hash.mask + 1) * 7) {
+        if (env_mt_shared(env)) env_hash_rebuild_retire(env);   /* #607 */
+        else env_hash_rebuild(&env->hash, env->names, env->count);
+    } else
         env_hash_insert(&env->hash, h, env->count - 1);
+    env_shared_unlock(env);
 }
 
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
@@ -1879,7 +2005,13 @@ Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
     Env *e = start;
     int depth = 0;
     while (e) {
+        env_shared_lock(e);   /* #607: module hop vs main-thread binding
+                               * creation (grow/rebuild frees the arrays
+                               * this probe walks). Post-resolve slot
+                               * access at the call sites goes through
+                               * env_values_ptr — see eigenscript.h. */
         int idx = env_hash_find(&e->hash, name, h, e->names);
+        env_shared_unlock(e);
         if (idx >= 0) {
             if (out_slot)  *out_slot  = idx;
             if (out_depth) *out_depth = depth;
@@ -1895,11 +2027,15 @@ EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found)
     if (h == 0) h = env_hash_name(name);
     Env *e = env;
     while (e) {
+        env_shared_lock(e);   /* #607: find + load under one hold */
         int idx = env_hash_find(&e->hash, name, h, e->names);
         if (idx >= 0) {
+            EigsSlot s = e->values[idx];
+            env_shared_unlock(e);
             if (found) *found = 1;
-            return e->values[idx];
+            return s;
         }
+        env_shared_unlock(e);
         e = e->parent;
     }
     if (found) *found = 0;
@@ -1910,8 +2046,14 @@ int env_get_assign_count(Env *env, const char *name, uint32_t h) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;
     while (e) {
+        env_shared_lock(e);   /* #607 */
         int idx = env_hash_find(&e->hash, name, h, e->names);
-        if (idx >= 0) return e->assign_counts ? e->assign_counts[idx] : 0;
+        if (idx >= 0) {
+            int c = e->assign_counts ? e->assign_counts[idx] : 0;
+            env_shared_unlock(e);
+            return c;
+        }
+        env_shared_unlock(e);
         e = e->parent;
     }
     return 0;
@@ -1978,11 +2120,13 @@ void env_decref(Env *env) {
         EIGS_POISON_MEM(env->hash.hashes, (env->hash.mask + 1) * sizeof(uint32_t));
         EIGS_POISON_MEM(env->hash.indices, (env->hash.mask + 1) * sizeof(int));
 #endif
+        env_free_retired(env);   /* #607: MT is over by park time */
         env->parent = g_env_freelist;
         g_env_freelist = env;
         g_env_freelist_count++;
         EIGS_VG_NOACCESS(&env->env_refcount, sizeof(env->env_refcount));  /* #297/#298 */
     } else {
+        env_free_retired(env);   /* #607 */
         free(env->names);
         free(env->values);
         free(env->assign_counts);
@@ -2020,6 +2164,7 @@ void env_destroy_final(Env *env) {
     for (int i = 0; i < count; i++)
         slot_decref(vals[i]);
     observer_slot_reset(env);   /* #262 Phase-1 */
+    env_free_retired(env);      /* #607 */
     free(vals);
     free(env->names);
     free(env->assign_counts);
@@ -2695,18 +2840,21 @@ Value* env_get_hashed(Env *env, const char *name, uint32_t h) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;
     while (e) {
+        env_shared_lock(e);   /* #607: find + load/materialize under one hold */
         int idx = env_hash_find(&e->hash, name, h, e->names);
         if (idx >= 0) {
             EigsSlot s = e->values[idx];
-            if (slot_is_ptr(s)) return slot_as_ptr(s);
+            if (slot_is_ptr(s)) { env_shared_unlock(e); return slot_as_ptr(s); }
             /* immediate — materialize a borrowed Value* in the env slot
              * itself so the returned pointer's lifetime matches the slot.
              * This mirrors the legacy semantics where env owned the ref. */
             Value *v = slot_to_value(s);
             slot_decref(e->values[idx]);  /* drop immediate (no-op) */
             e->values[idx] = slot_from_heap(v);  /* env now owns v */
+            env_shared_unlock(e);
             return v;
         }
+        env_shared_unlock(e);
         e = e->parent;
     }
     return NULL;
@@ -2715,15 +2863,18 @@ Value* env_get_hashed(Env *env, const char *name, uint32_t h) {
 Value* env_get_local_hashed(Env *env, const char *name, uint32_t h) {
     if (!env) return NULL;
     if (h == 0) h = env_hash_name(name);
+    env_shared_lock(env);   /* #607 */
     int idx = env_hash_find(&env->hash, name, h, env->names);
     if (idx >= 0) {
         EigsSlot s = env->values[idx];
-        if (slot_is_ptr(s)) return slot_as_ptr(s);
+        if (slot_is_ptr(s)) { env_shared_unlock(env); return slot_as_ptr(s); }
         Value *v = slot_to_value(s);
         slot_decref(env->values[idx]);
         env->values[idx] = slot_from_heap(v);
+        env_shared_unlock(env);
         return v;
     }
+    env_shared_unlock(env);
     return NULL;
 }
 
