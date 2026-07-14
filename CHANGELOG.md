@@ -4,6 +4,25 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **`read_bytes_buf` over-cap reads now RAISE; `[path, max_bytes]` opt-in
+  cap override (#601).** A file over the cap used to return null —
+  indistinguishable from "file missing" — so a >10 MB asset died far
+  downstream with a misleading diagnosis (DeslanStudio: a 3-minute WAV
+  reported *"not a WAV file"*). The #490–#512 direction: over-cap now
+  raises a catchable `io` error naming the actual size and the active
+  cap. The raise survives replay — the observed size rides the tape as a
+  `VAL_NUM` `N` record and the identical error is re-derived under
+  `EIGS_REPLAY` with no live fs access. New bounded opt-in
+  `read_bytes_buf of [path, max_bytes]` raises the ceiling for real
+  assets (hard ceiling 512 MB: a buffer stores one double per byte, an
+  8x fs→RAM amplification, so the ceiling bounds the worst case);
+  bad `max_bytes` raises `value`. The 1-arg form keeps the 10 MB
+  default — existing security posture unchanged — and the fail-closed
+  sandbox allowlist still blocks `read_bytes_buf` entirely (posture
+  pinned in test_sandbox_allow.eigs). Missing/unopenable files still
+  return null.
+
 ### Added
 - **Vectorized buffer kernels — `buf_mix`, `buf_scale_range`, `buf_fill`,
   `buf_peak`, `buf_dot` (#597).** DeslanStudio's render mix-down measured

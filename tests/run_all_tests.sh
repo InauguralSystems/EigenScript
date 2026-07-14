@@ -1370,6 +1370,25 @@ else
 fi
 echo ""
 
+# #601: read_bytes_buf cap policy — over-cap raises a catchable io error
+# (was a silent null masquerading as "file missing"), [path, max_bytes]
+# opt-in up to the 512 MB hard ceiling, missing-file null contract, and
+# the over-cap raise re-derived byte-identical under EIGS_REPLAY.
+echo "read_bytes_buf cap policy (#601)"
+RBC_OUTPUT=$(bash "$TESTS_DIR/test_read_bytes_cap.sh" 2>&1)
+RBC_PASS=$(echo "$RBC_OUTPUT" | grep -c "PASS:" || true)
+RBC_FAIL=$(echo "$RBC_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + RBC_PASS + RBC_FAIL))
+PASS=$((PASS + RBC_PASS))
+FAIL=$((FAIL + RBC_FAIL))
+if [ "$RBC_FAIL" -gt 0 ]; then
+    echo "  FAIL: $RBC_FAIL read_bytes_buf cap check(s) failed"
+    echo "$RBC_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $RBC_PASS read_bytes_buf cap checks"
+fi
+echo ""
+
 # [42a] Replay tape (record/replay determinism for list/dict/buffer)
 echo "[42a/47] Replay Tape (6 checks)"
 RP_OUTPUT=$(bash "$TESTS_DIR/test_replay.sh" 2>&1)

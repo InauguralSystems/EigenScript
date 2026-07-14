@@ -143,7 +143,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `buf_fill` | `buf_fill of [b, off, count, value]` | Bulk store over a window: `b[off+i] = value`. Bad windows raise |
 | `buf_peak` | `buf_peak of [b, off, count]` | Max absolute value over a window (normalize/meter scans); 0 for an empty window. Bad windows raise |
 | `buf_dot` | `buf_dot of [a, b, a_off, b_off, count]` | Windowed dot product: sum of `a[a_off+i] * b[b_off+i]` (YIN autocorrelation). Like `dot`, summation order/association is **unspecified** (backends may reassociate); no-NaN/Inf preserved. Bad windows raise |
-| `read_bytes_buf` | `read_bytes_buf of path` | Read binary file as buffer (10MB cap) |
+| `read_bytes_buf` | `read_bytes_buf of path` / `read_bytes_buf of [path, max_bytes]` | Read binary file as buffer. 1-arg form caps at 10MB; a file over the cap **raises** a catchable `io` error naming size + cap (#601 — was a silent null indistinguishable from "file missing"). `max_bytes` is the bounded opt-in, hard ceiling 512MB (a buffer stores one double per byte — 8x expansion — so the ceiling bounds worst-case memory at the amplification point). Missing/unopenable file returns null |
 | `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written, 0 on failure. |
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns 1/0. |
 | `remove_file` | `remove_file of path` | Delete a file. Returns 1/0. |

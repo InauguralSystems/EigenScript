@@ -2883,19 +2883,101 @@ Value* builtin_read_bytes(Value *arg) {
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* read_bytes_buf of path — read binary file, return VAL_BUFFER of byte values.
- * Zero per-element allocation; O(1) indexed access. */
+ * read_bytes_buf of [path, max_bytes] — opt-in cap override (#601).
+ * Zero per-element allocation; O(1) indexed access.
+ *
+ * Cap policy (#601): the 1-arg form keeps the historical 10 MB cap (the
+ * security posture is unchanged — a script that never asks for more never
+ * gets more). An over-cap file RAISES a catchable `io` error naming the
+ * size and the active cap; the old behavior returned null, which was
+ * indistinguishable from "file missing" and surfaced downstream as a
+ * misleading diagnosis (DeslanStudio: a >10 MB WAV died as "not a WAV
+ * file"). max_bytes is bounded by a 512 MB hard ceiling: a VAL_BUFFER
+ * holds one double per byte (8x expansion — 512 MB of file is already
+ * ~4 GiB resident), so the ceiling keeps the opt-in from becoming an
+ * unbounded fs->RAM amplifier while blocking no realistic asset.
+ * Missing/unopenable file still returns null (existing contract). */
 #if !EIGENSCRIPT_FREESTANDING
+#define READ_BYTES_BUF_DEFAULT_CAP (10LL * 1024 * 1024)
+#define READ_BYTES_BUF_HARD_CAP    (512LL * 1024 * 1024)
+
+/* One raise site shared by the live and replay paths so the message
+ * cannot drift between them. */
+static void read_bytes_buf_cap_raise(const char *path, long long len,
+                                     long long cap) {
+    rt_error(EK_IO, 0,
+             "read_bytes_buf: '%s' is %lld bytes, over the %lld-byte cap — "
+             "pass read_bytes_buf of [path, max_bytes] (hard ceiling %lld) "
+             "to raise it",
+             path, len, cap, READ_BYTES_BUF_HARD_CAP);
+}
+
 Value* builtin_read_bytes_buf(Value *arg) {
-    TRACE_NONDET_TAKE("read_bytes_buf");
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_bytes_buf", make_null());
-    FILE *f = fopen(arg->data.str, "rb");
+    /* Deterministic argument parse, BEFORE the tape boundary: a bad call
+     * shape takes the same path live and under replay, consuming no N
+     * record either way. */
+    Value *path = arg;
+    long long cap = READ_BYTES_BUF_DEFAULT_CAP;
+    if (arg && arg->type == VAL_LIST) {
+        if (arg->data.list.count < 1) {
+            rt_error(EK_TYPE, 0, "read_bytes_buf requires a path: "
+                     "read_bytes_buf of path, or read_bytes_buf of [path, max_bytes]");
+            return make_null();
+        }
+        path = arg->data.list.items[0];
+        if (arg->data.list.count >= 2) {
+            Value *mv = arg->data.list.items[1];
+            if (!mv || mv->type != VAL_NUM) {
+                rt_error(EK_VALUE, 0, "read_bytes_buf: max_bytes must be a number");
+                return make_null();
+            }
+            if (!(mv->data.num >= 1 &&
+                  mv->data.num <= (double)READ_BYTES_BUF_HARD_CAP)) {
+                rt_error(EK_VALUE, 0,
+                         "read_bytes_buf: max_bytes must be in 1..%lld (got %g)",
+                         READ_BYTES_BUF_HARD_CAP, mv ? mv->data.num : 0.0);
+                return make_null();
+            }
+            cap = (long long)mv->data.num;
+        }
+    }
+    if (!path || path->type != VAL_STR) return make_null();
+
+    /* Tape boundary. Success records the VAL_BUFFER; unopenable file
+     * records null; the over-cap raise records the observed SIZE as a
+     * VAL_NUM N record (unambiguous — no other path records a number) so
+     * the identical raise is re-derived under EIGS_REPLAY without
+     * touching the live filesystem. */
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *tv;
+        if (trace_replay_take("read_bytes_buf", &tv)) {
+            if (tv && tv->type == VAL_NUM) {
+                long long len = (long long)tv->data.num;
+                val_decref(tv);
+                read_bytes_buf_cap_raise(path->data.str, len, cap);
+                return make_null();
+            }
+            return tv;
+        }
+    }
+    FILE *f = fopen(path->data.str, "rb");
     if (!f) TRACE_NONDET_RECORD("read_bytes_buf", make_null());
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
+    if (len < 0) { /* unseekable (pipe/fifo): existing null contract */
         fclose(f);
         TRACE_NONDET_RECORD("read_bytes_buf", make_null());
+    }
+    if ((long long)len > cap) {
+        fclose(f);
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *sz = make_num((double)len);
+            trace_nondet_value("read_bytes_buf", sz);
+            val_decref(sz);
+        }
+        read_bytes_buf_cap_raise(path->data.str, (long long)len, cap);
+        return make_null();
     }
     unsigned char *buf = xmalloc(len);
     if (!buf) { fclose(f); TRACE_NONDET_RECORD("read_bytes_buf", make_null()); }
