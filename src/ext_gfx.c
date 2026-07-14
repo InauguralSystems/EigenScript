@@ -25,7 +25,7 @@ typedef int32_t  Sint32;
 typedef struct { int x, y, w, h; } SDL_Rect;
 typedef struct { Sint32 scancode; Sint32 sym; uint16_t mod; Uint32 unused; } SDL_Keysym;
 typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint8 state; Uint8 rep; Uint8 p2; Uint8 p3; SDL_Keysym keysym; } SDL_KeyboardEvent;
-typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint32 which; Sint32 x; Sint32 y; Sint32 xrel; Sint32 yrel; } SDL_MouseMotionEvent;
+typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint32 which; Uint32 state; Sint32 x; Sint32 y; Sint32 xrel; Sint32 yrel; } SDL_MouseMotionEvent;  /* state (button mask) was missing: x/y decoded misaligned, breaking every real-mouse drag/hover (#599) */
 typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint32 which; Uint8 button; Uint8 state; Uint8 clicks; Uint8 p1; Sint32 x; Sint32 y; } SDL_MouseButtonEvent;
 typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint32 which; Sint32 x; Sint32 y; Uint32 direction; } SDL_MouseWheelEvent;
 typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint8 event; Uint8 p1; Uint8 p2; Uint8 p3; Sint32 data1; Sint32 data2; } SDL_WindowEvent;
