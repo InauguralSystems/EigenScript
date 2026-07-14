@@ -101,6 +101,26 @@ t is toggle of ["tog1", 0, 0, 0, null]
 assert_eq of [t.type, "toggle", "toggle type"]
 assert_eq of [t.value, 0, "toggle default off"]
 
+# ---- Per-widget button colors (#566) ----
+# Render every state with custom bg/text_color set: the render path must
+# not error (gfx stubs are no-ops) and must not clobber the overrides.
+bc is button of ["btnc", 0, 0, 80, 24, "Rec", null]
+bc.bg is [200, 40, 40]
+bc.text_color is [255, 255, 255]
+_render_button of [bc, 0, 0]
+bc.hover is 1
+_render_button of [bc, 0, 0]
+bc.pressed is 1
+_render_button of [bc, 0, 0]
+bc.enabled is 0
+_render_button of [bc, 0, 0]
+assert_eq of [bc.bg[0], 200, "custom button bg preserved across renders"]
+assert_eq of [bc.text_color[0], 255, "custom button text color preserved"]
+bd is button of ["btnd", 0, 0, 80, 24, "Plain", null]
+bd.hover is 1
+_render_button of [bd, 0, 0]
+assert_eq of [bd.bg, null, "plain button has no bg override"]
+
 # ============================================================
 # 2. Registry tests
 # ============================================================

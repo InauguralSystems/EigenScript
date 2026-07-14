@@ -2060,15 +2060,15 @@ fi
 echo ""
 
 # [63] UI toolkit unit tests (headless, stubs gfx)
-echo "[63] UI Toolkit (115 checks)"
+echo "[63] UI Toolkit (118 checks)"
 UI_OUTPUT=$(./eigenscript ../tests/test_ui.eigs 2>&1); UI_OUTPUT_RC=$?
 if rc_ok "$UI_OUTPUT_RC" "$UI_OUTPUT" && echo "$UI_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 115))
-    PASS=$((PASS + 115))
-    echo "  PASS: all 115 UI toolkit checks"
+    TOTAL=$((TOTAL + 118))
+    PASS=$((PASS + 118))
+    echo "  PASS: all 118 UI toolkit checks"
 else
-    TOTAL=$((TOTAL + 115))
-    FAIL=$((FAIL + 115))
+    TOTAL=$((TOTAL + 118))
+    FAIL=$((FAIL + 118))
     echo "  FAIL: UI toolkit tests"
     echo "$UI_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi
