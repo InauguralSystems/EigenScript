@@ -1,0 +1,110 @@
+# bench_pcm_codec.eigs — the #602 PCM16LE codec micro-bench.
+#
+# Workload: 2,400,000 stereo-interleaved samples (25 s @ 48 kHz x 2ch,
+# half the 50 s import that measured 10.8 s in wav_read on the N3350 —
+# sized so the interpreted leg stays a single-digit-seconds run).
+#
+# Modes (first CLI arg; time each externally, n=5 medians):
+#   base         setup only — startup+alloc floor to subtract
+#   interp_dec   1 interpreted decode pass (the wav_read inner loop)
+#   builtin_dec  20 buf_from_pcm16le passes (x20 so the C kernel rises
+#                above the floor; per-pass = (t - t_base) / 20)
+#   interp_enc   1 interpreted encode pass (the wav_write inner loop)
+#   builtin_enc  20 buf_to_pcm16le passes
+#   interp_deint 1 interpreted stereo-split pass (stride loop)
+#   builtin_deint 20 buf_deinterleave passes (both channels each)
+
+mode is "interp_dec"
+a is args of null
+if (len of a) > 0:
+    mode is a[0]
+
+nsamp is 2400000
+nbytes is nsamp * 2
+
+bytes is buffer of nbytes
+unobserved:
+    i is 0
+    loop while i < nbytes:
+        bytes[i] is i % 256
+        i += 1
+
+floats is buffer of nsamp
+unobserved:
+    i is 0
+    loop while i < nsamp:
+        floats[i] is ((i % 2500) / 1000.0) - 1.25
+        i += 1
+
+sink is 0
+
+if mode == "interp_dec":
+    out is buffer of nsamp
+    unobserved:
+        i is 0
+        loop while i < nsamp:
+            p is i * 2
+            v is bytes[p] + 256 * bytes[p + 1]
+            if v >= 32768:
+                v -= 65536
+            out[i] is v / 32767
+            i += 1
+    sink is out[nsamp - 1]
+
+if mode == "builtin_dec":
+    unobserved:
+        k is 0
+        loop while k < 20:
+            out is buf_from_pcm16le of [bytes, 0, nsamp]
+            k += 1
+    sink is out[nsamp - 1]
+
+if mode == "interp_enc":
+    out is buffer of nbytes
+    unobserved:
+        i is 0
+        loop while i < nsamp:
+            x is floats[i]
+            if x < 0 - 1.0:
+                x is 0 - 1.0
+            if x > 1.0:
+                x is 1.0
+            v is round of (x * 32767)
+            if v < 0:
+                v += 65536
+            q is floor of (v / 256)
+            out[i * 2] is v - q * 256
+            out[i * 2 + 1] is q
+            i += 1
+    sink is out[nbytes - 1]
+
+if mode == "builtin_enc":
+    unobserved:
+        k is 0
+        loop while k < 20:
+            out is buf_to_pcm16le of [floats, 0, nsamp]
+            k += 1
+    sink is out[nbytes - 1]
+
+if mode == "interp_deint":
+    half is floor of (nsamp / 2)
+    lch is buffer of half
+    rch is buffer of half
+    unobserved:
+        i is 0
+        loop while i < half:
+            lch[i] is floats[i * 2]
+            rch[i] is floats[i * 2 + 1]
+            i += 1
+    sink is lch[half - 1] + rch[half - 1]
+
+if mode == "builtin_deint":
+    unobserved:
+        k is 0
+        loop while k < 20:
+            lch is buf_deinterleave of [floats, 0, 2]
+            rch is buf_deinterleave of [floats, 1, 2]
+            k += 1
+    sink is lch[0] + rch[0]
+
+print of f"{mode} nsamp={nsamp} sink={sink}"

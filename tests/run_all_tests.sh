@@ -2708,6 +2708,11 @@ check_eigs_suite "flat-buffer tensors" test_flat_buffer_tensor.eigs "PASS: flat-
 # differential leg (builtin exactly equals the interpreted per-sample loop on
 # seeded pseudo-random buffers).
 check_eigs_suite "vectorized buffer kernels (#597)" test_buf_vectorized.eigs "BUF_VEC_OK" 5
+# #602: PCM16LE codec kernels (buf_from_pcm16le/buf_to_pcm16le/
+# buf_deinterleave) — correctness, loud bounds, and the differential leg
+# (builtin exactly equals DeslanStudio wavio's interpreted decode/encode/
+# split loops on seeded pseudo-random data, incl. round-trip parity).
+check_eigs_suite "PCM16LE codec kernels (#602)" test_pcm_codec.eigs "PCM_CODEC_OK" 5
 check_eigs_suite "lab" test_lab.eigs "All tests passed." 1
 check_eigs_suite "data" test_data.eigs "All tests passed." 1
 check_eigs_suite "experiment" test_experiment.eigs "All tests passed." 1

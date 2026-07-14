@@ -4,6 +4,27 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Bulk PCM16LE codec builtins — `buf_from_pcm16le`, `buf_to_pcm16le`,
+  `buf_deinterleave` (#602).** DeslanStudio's WAV import measured 10.8 s
+  for a 50 s stereo 48 kHz file on the N3350 because the PCM16 byte
+  decode (two `buf_get`s + two's-complement fold + `/ 32767` per sample,
+  ~4.8 M times) was an interpreted loop; the write path is the same
+  shape in reverse. These are the byte-codec siblings of the #597
+  window kernels: decode a little-endian s16 window into a NEW float
+  buffer, encode a float window into a NEW byte buffer (clamp,
+  `round(x*32767)`, two's complement), and split interleaved frames
+  into a channel buffer. Arithmetic mirrors the consumer's interpreted
+  wavio loops step-for-step (`num_guard` per VM operation, same
+  evaluation order) so each builtin is **bit-identical to the loop it
+  replaces** — pinned by a differential suite leg (decode+deinterleave
+  vs the fused wav_read loop, encode vs the wav_write loop, round-trip
+  parity, deinterleave vs the stride loop) on seeded pseudo-random
+  data. Loud bounds per the #597 family (`value`/`index_range`/
+  `type_mismatch`, count 0 a valid no-op); output sizes charged to the
+  #292 sandbox allocation budget; all three join the sandbox
+  pure-compute allowlist; freestanding-safe.
+
 ### Changed
 - **`read_bytes_buf` over-cap reads now RAISE; `[path, max_bytes]` opt-in
   cap override (#601).** A file over the cap used to return null —

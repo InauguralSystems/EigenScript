@@ -1,0 +1,227 @@
+# ============================================================
+# Bulk PCM16LE codec builtins (#602) — buf_from_pcm16le /
+# buf_to_pcm16le / buf_deinterleave
+# ============================================================
+# Three legs, same shape as test_buf_vectorized.eigs (#597):
+#   1. correctness on known values
+#   2. loud bounds — bad args RAISE, never silently truncate
+#   3. differential — each builtin exactly equals the interpreted
+#      DeslanStudio wavio loop it replaces (bit-identical doubles),
+#      including the fused decode+deinterleave composition and the
+#      encode->decode round trip.
+
+fails is 0
+
+define check(name, ok) as:
+    if ok == 0:
+        print of f"FAIL: {name}"
+        fails is fails + 1
+
+define expect_kind(name, kind, thunk) as:
+    local got is "none"
+    try:
+        thunk of []
+        got is "no-raise"
+    catch e:
+        got is e.kind
+    if got != kind:
+        print of f"FAIL: {name} (wanted {kind}, got {got})"
+        fails is fails + 1
+
+# ---- Park-Miller LCG: deterministic data, exact in doubles ----
+lcg_state is 424242
+define lcg_next as:
+    lcg_state is (lcg_state * 16807) % 2147483647
+    return lcg_state
+
+# random byte buffer (values 0..255, like read_bytes_buf output)
+define rand_bytes(count) as:
+    local b is buffer of count
+    for i in range of count:
+        b[i] is (lcg_next of []) % 256
+    return b
+
+# random float buffer in about [-1.25, 1.25) — crosses the clamp edges
+define rand_floats(count) as:
+    local b is buffer of count
+    for i in range of count:
+        b[i] is ((lcg_next of []) % 2500) / 1000.0 - 1.25
+    return b
+
+define bufs_equal(a, b) as:
+    if (buf_len of a) != (buf_len of b):
+        return 0
+    for i in range of (buf_len of a):
+        if a[i] != b[i]:
+            return 0
+    return 1
+
+# ============================================================
+# 1. Correctness on known values
+# ============================================================
+
+# 0x0001 -> 1/32767; 0xFFFF -> -1/32767; 0x0080 -> -32768/32767 is wrong:
+# bytes little-endian: [1,0] = 1; [255,255] = -1; [0,128] = -32768.
+kb is buf_from_list of ([1.0, 0.0, 255.0, 255.0, 0.0, 128.0, 255.0, 127.0])
+kd is buf_from_pcm16le of [kb, 0, 4]
+check of ["decode +1 sample", kd[0] == 1 / 32767]
+check of ["decode -1 sample", kd[1] == (0 - 1) / 32767]
+check of ["decode s16 min", kd[2] == (0 - 32768) / 32767]
+check of ["decode s16 max", kd[3] == 1.0]
+
+# byte_off: decode starting mid-buffer
+kd2 is buf_from_pcm16le of [kb, 2, 1]
+check of ["decode with byte_off", kd2[0] == (0 - 1) / 32767]
+
+# encode known values: 1.0 -> 0xFF 0x7F; -1.0 -> 0x01 0x80 (round(-32767));
+# 0.0 -> 0x00 0x00; 2.0 clamps to 1.0.
+kf is buf_from_list of ([1.0, 0.0 - 1.0, 0.0, 2.0])
+ke is buf_to_pcm16le of [kf, 0, 4]
+check of ["encode +1", (ke[0] == 255) and (ke[1] == 127)]
+check of ["encode -1", (ke[2] == 1) and (ke[3] == 128)]
+check of ["encode 0", (ke[4] == 0) and (ke[5] == 0)]
+check of ["encode clamps over +1", (ke[6] == 255) and (ke[7] == 127)]
+
+# deinterleave: stereo LRLRLR
+st is buf_from_list of ([1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+lch is buf_deinterleave of [st, 0, 2]
+rch is buf_deinterleave of [st, 1, 2]
+check of ["deinterleave L", (buf_len of lch) == 3 and lch[0] == 1 and lch[1] == 2 and lch[2] == 3]
+check of ["deinterleave R", (buf_len of rch) == 3 and rch[0] == 10 and rch[1] == 20 and rch[2] == 30]
+
+# explicit count + mono passthrough
+lc2 is buf_deinterleave of [st, 0, 2, 2]
+check of ["deinterleave explicit count", (buf_len of lc2) == 2 and lc2[1] == 2]
+mono is buf_deinterleave of [st, 0, 1]
+check of ["deinterleave nch=1 passthrough", bufs_equal of [mono, st]]
+
+# ragged tail: 7 samples, 2 channels -> channel 0 gets 4, channel 1 gets 3
+rag is buf_from_list of ([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+check of ["deinterleave ragged ch0", (buf_len of (buf_deinterleave of [rag, 0, 2])) == 4]
+check of ["deinterleave ragged ch1", (buf_len of (buf_deinterleave of [rag, 1, 2])) == 3]
+
+# count 0 is a valid no-op everywhere
+z1 is buf_from_pcm16le of [kb, 8, 0]
+z2 is buf_to_pcm16le of [kf, 4, 0]
+z3 is buf_deinterleave of [st, 0, 2, 0]
+check of ["count-0 decode/encode/deinterleave", ((buf_len of z1) == 0) and ((buf_len of z2) == 0) and ((buf_len of z3) == 0)]
+
+# ============================================================
+# 2. Loud bounds
+# ============================================================
+
+define bad_dec_window as:
+    buf_from_pcm16le of [kb, 2, 4]
+expect_kind of ["decode window overflow raises", "index_range", bad_dec_window]
+
+define bad_dec_neg as:
+    buf_from_pcm16le of [kb, 0, 0 - 1]
+expect_kind of ["decode negative count raises", "value", bad_dec_neg]
+
+define bad_dec_type as:
+    buf_from_pcm16le of [123, 0, 1]
+expect_kind of ["decode non-buffer raises", "type_mismatch", bad_dec_type]
+
+define bad_enc_window as:
+    buf_to_pcm16le of [kf, 2, 3]
+expect_kind of ["encode window overflow raises", "index_range", bad_enc_window]
+
+define bad_deint_chan as:
+    buf_deinterleave of [st, 2, 2]
+expect_kind of ["deinterleave channel >= nch raises", "value", bad_deint_chan]
+
+define bad_deint_nch as:
+    buf_deinterleave of [st, 0, 0]
+expect_kind of ["deinterleave nch < 1 raises", "value", bad_deint_nch]
+
+define bad_deint_count as:
+    buf_deinterleave of [st, 0, 2, 4]
+expect_kind of ["deinterleave count overrun raises", "index_range", bad_deint_count]
+
+# ============================================================
+# 3. Differential — builtin == interpreted wavio loop, exactly
+# ============================================================
+
+NS is 300              # samples per channel
+NCH is 2
+bytes is rand_bytes of (NS * NCH * 2)
+
+# --- interpreted wav_read inner loop (src/tools/wavio.eigs) ---
+chans_i is []
+c is 0
+loop while c < NCH:
+    append of [chans_i, buffer of NS]
+    c += 1
+unobserved:
+    i is 0
+    loop while i < NS:
+        c is 0
+        loop while c < NCH:
+            p is (i * NCH + c) * 2
+            v is bytes[p] + 256 * bytes[p + 1]
+            if v >= 32768:
+                v -= 65536
+            chan is chans_i[c]
+            chan[i] is v / 32767
+            c += 1
+        i += 1
+
+# --- builtin composition: decode then deinterleave ---
+inter is buf_from_pcm16le of [bytes, 0, NS * NCH]
+l_b is buf_deinterleave of [inter, 0, NCH]
+r_b is buf_deinterleave of [inter, 1, NCH]
+check of ["differential: decode+deinterleave == wav_read loop (L)", bufs_equal of [l_b, chans_i[0]]]
+check of ["differential: decode+deinterleave == wav_read loop (R)", bufs_equal of [r_b, chans_i[1]]]
+
+# --- interpreted wav_write inner loop (per channel, wavio arithmetic) ---
+f_src is rand_floats of NS
+enc_i is buffer of (NS * 2)
+unobserved:
+    i is 0
+    loop while i < NS:
+        x is f_src[i]
+        if x < 0 - 1.0:
+            x is 0 - 1.0
+        if x > 1.0:
+            x is 1.0
+        v is round of (x * 32767)
+        if v < 0:
+            v += 65536
+        q is floor of (v / 256)
+        enc_i[i * 2] is v - q * 256
+        enc_i[i * 2 + 1] is q
+        i += 1
+
+enc_b is buf_to_pcm16le of [f_src, 0, NS]
+check of ["differential: buf_to_pcm16le == wav_write loop", bufs_equal of [enc_b, enc_i]]
+
+# --- round trip: encode -> decode parity with the interpreted round trip ---
+rt_b is buf_from_pcm16le of [enc_b, 0, NS]
+rt_i is buffer of NS
+unobserved:
+    i is 0
+    loop while i < NS:
+        v is enc_i[i * 2] + 256 * enc_i[i * 2 + 1]
+        if v >= 32768:
+            v -= 65536
+        rt_i[i] is v / 32767
+        i += 1
+check of ["differential: round trip parity", bufs_equal of [rt_b, rt_i]]
+
+# --- deinterleave alone vs interpreted stride loop, offset window ---
+big is rand_floats of 257
+d_b is buf_deinterleave of [big, 2, 3]
+d_n is buf_len of d_b
+d_i is buffer of d_n
+unobserved:
+    i is 0
+    loop while i < d_n:
+        d_i[i] is big[2 + i * 3]
+        i += 1
+check of ["differential: buf_deinterleave == stride loop", bufs_equal of [d_b, d_i]]
+
+# ============================================================
+if fails == 0:
+    print of "PCM_CODEC_OK: all PCM codec tests passed"
+else:
+    print of f"PCM_CODEC_FAILURES: {fails}"
