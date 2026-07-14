@@ -125,23 +125,21 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.30.0** (2026-07-13) — the debugging-and-distribution +
-  first-consumer release: `--step` time-travel tape stepper (#418, with
-  observer-trajectory labels per step), tape format v2 scope-qualified
-  locals (#539), runtime-error carets + token-precise LSP ranges (#407),
-  `--bundle` single-file distribution with attached-tape executable bug
-  reports (#413), the observer pair (raw-step diverging/oscillating signals
-  #422 + `trajectory of`/`classify of` snapshots across call boundaries
-  #421), and the DeslanStudio first-consumer wave: entropy walk cycle/DAG
-  detection (#571 — visited set, back-references no longer exponential),
-  O(1) borrow scan (#546, len-in-condition loops un-quadratic) + sanitizer
-  borrow guard (#548), keyword dot keys (#542), the lib/ui input-event trio
-  (#567–#569), gfx audio capture (#579) + buffer playback (#578),
-  `read_line` (#558), `is_dir` (#576), RFC 8259 json exponents (#557), and
-  the W013/W019/LSP/load_file tooling batch (#556/#583/#559/#560).
-  (v0.29.0, 2026-07-10: task-layer round-out + hardening — task_self/
-  task_detach, liferaft-surfaced scheduler fixes, lib/supervise, lib/sync,
-  args on the tape.) Unreleased
+- **Latest release: v0.31.0** (2026-07-14) — the DAW audio-I/O + live-synthesis
+  release: the bulk audio-I/O kernels (`buf_from_pcm16le`/`buf_to_pcm16le`/
+  `buf_deinterleave` #602, `buf_resample_linear` #603 — each bit-identical to
+  the interpreted loop it replaces, cutting DeslanStudio's WAV/beat import from
+  tens of seconds to ~2 s on the N3350), the **live audio-streaming primitive**
+  (`audio_stream_open`/`push`/`queued`/`clear`/`close` #612 — a queue-mode
+  playback device fed block-by-block, the sustain path behind DeslanStudio
+  musical typing; `push` is a pure sink, `queued` is tape-recorded for
+  deterministic replay), and the `waveform_view` selection edge markers
+  (#610/#611). (v0.30.0, 2026-07-13: debugging-and-distribution +
+  first-consumer — `--step` tape stepper #418, tape format v2 #539,
+  error carets/LSP ranges #407, `--bundle` #413, entropy-walk cycle detection
+  #571, gfx audio capture #579 + buffer playback #578, the lib/ui input trio
+  #567–#569. v0.29.0, 2026-07-10: task-layer round-out — task_self/task_detach,
+  lib/supervise, lib/sync, args on the tape.) Unreleased
   work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
   **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
   now FAILS the suite when this line falls behind the latest tag). Roadmap:
