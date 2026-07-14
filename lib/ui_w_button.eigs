@@ -3,6 +3,10 @@
 # UI Widgets — Buttons: button, toggle_button, checkbox, toggle
 # ============================================================
 
+# Optional per-widget color overrides (#566): set `bg` / `text_color`
+# on the returned dict ([r, g, b]) for semantic coloring (record-red,
+# play-green, ...). Absent fields fall back to the theme, matching the
+# toggle_button (color_on/color_off) and label (color) pattern.
 define button(id, x, y, w, h, text, on_click) as:
     return {
         "type": "button",
@@ -60,16 +64,35 @@ define toggle(id, x, y, value, on_change) as:
 # ---- Render functions ----
 
 define _render_button(widget, ax, ay) as:
+    # Per-widget color overrides with theme fallback (#566)
     bg is _theme.btn_bg
     tc is _theme.btn_text
+    if widget.bg != null:
+        bg is widget.bg
+    if widget.text_color != null:
+        tc is widget.text_color
+    custom is 1
+    if widget.bg == null:
+        custom is 0
     if widget.enabled == 0:
         bg is _theme.btn_disabled
         tc is _theme.btn_text_disabled
-    elif widget.pressed == 1:
+    elif custom == 0 and widget.pressed == 1:
         bg is _theme.btn_pressed
-    elif widget.hover == 1:
+    elif custom == 0 and widget.hover == 1:
         bg is _theme.btn_hover
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, bg, _theme.panel_border]
+    # Hover/pressed feedback for custom-colored buttons: an alpha shade
+    # over the custom bg (a theme-color swap would erase the color).
+    # Theme dicts from set_theme may predate these keys — null skips.
+    if custom == 1 and widget.enabled == 1:
+        shade is null
+        if widget.pressed == 1:
+            shade is _theme.pressed_shade
+        elif widget.hover == 1:
+            shade is _theme.hover_shade
+        if shade != null:
+            gfx_rrect of [ax, ay, widget.w, widget.h, _theme.radius_sm, shade[0], shade[1], shade[2], shade[3]]
     # Center text in button
     tw is text_width of [widget.label, _theme.font_scale]
     th is text_height of _theme.font_scale

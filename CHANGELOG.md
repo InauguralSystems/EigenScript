@@ -5,6 +5,18 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **lib/ui: per-widget button colors + hover/pressed shades (#566,
+  first slice of #594).** `_render_button` honors optional `bg` /
+  `text_color` fields on the button dict with theme fallback (the
+  toggle_button/label pattern), so semantic coloring — the record-red /
+  play-green transport buttons DeslanStudio had to drop (F-DS-12) — now
+  works. Custom-colored buttons get hover/pressed feedback as new theme
+  `hover_shade` / `pressed_shade` alpha overlays (a theme-color swap
+  would erase the custom color); theme-colored buttons keep the exact
+  `btn_hover`/`btn_pressed` swap, so existing apps render unchanged.
+  Custom theme dicts without the new keys degrade gracefully (no
+  shade). Docs: `gfx_rrect` and `gfx_clip` were registered but missing
+  from BUILTINS.md (the #393 undiscoverability class) — rows added.
 - **gfx: proportional antialiased text via SDL2_ttf (#593).** The
   DeslanStudio side-by-side against its Qt prototype showed feature
   parity reading a decade old, and the dominant gap was the 5x7 bitmap

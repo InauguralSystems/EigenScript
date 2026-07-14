@@ -539,6 +539,8 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 | `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment |
 | `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel |
 | `gfx_circle` | `gfx_circle of [cx, cy, radius, r, g, b]` | Filled circle (midpoint) |
+| `gfx_rrect` | `gfx_rrect of [x, y, w, h, radius, r, g, b]` or `[..., a]` | Filled rounded rectangle (scanline corner fill); radius clamps to half the smaller dimension, `radius 0` = plain rect |
+| `gfx_clip` | `gfx_clip of [x, y, w, h]` / `gfx_clip of null` | Set / clear the render clip rectangle |
 | `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Text. Proportional antialiased TTF when libSDL2_ttf + a font are available (#593); the 5x7 bitmap font otherwise — see the font note below the table |
 | `gfx_text_width` | `gfx_text_width of [text, scale?]` or `of "text"` | Pixel width of `text` under the active text renderer: TTF metrics when active, `len * 6 * scale` in bitmap mode. Works before `gfx_open` |
 | `gfx_text_height` | `gfx_text_height of scale?` | Pixel line height under the active text renderer: TTF font height when active, `7 * scale` in bitmap mode |
