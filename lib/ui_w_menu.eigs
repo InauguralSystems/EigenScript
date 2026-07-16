@@ -312,6 +312,28 @@ define _close_dropdowns(widget) as:
         if widget.panel_b != null:
             _close_dropdowns of widget.panel_b
 
+# Close every dropdown EXCEPT the one the click landed in (#577). An open
+# dropdown extends its widget's hit bounds, so dispatch hit-tests first and
+# spares the hit widget here — closing it first made the click fall through
+# to whatever sat underneath, and no item could ever be selected by mouse.
+
+define _close_dropdowns_except(widget, keep) as:
+    if widget.type == "dropdown" or widget.type == "combobox":
+        if keep == null or keep.id != widget.id:
+            widget.open is 0
+    elif _is_container of widget.type:
+        for i in range of (len of widget.children):
+            _close_dropdowns_except of [widget.children[i], keep]
+    elif widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _close_dropdowns_except of [widget.tab_panels[i], keep]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _close_dropdowns_except of [widget.panel_a, keep]
+        if widget.panel_b != null:
+            _close_dropdowns_except of [widget.panel_b, keep]
+
 define _close_menus(widget) as:
     if widget.type == "menu":
         widget.visible is 0

@@ -191,14 +191,23 @@ define _mousemove_spinbox(hit, root, mx, my) as:
     else:
         hit.hover_btn is 0
 
+# Which open-dropdown item sits under my — -1 for none (the click is on
+# the closed box itself, or past the last item). Shared by the hover and
+# mousedown paths so a mouse-only click selects the item it landed on
+# rather than whatever hover_index happened to hold (#577).
+
+define _combobox_item_at(widget, my) as:
+    rel_y is my - widget._ay - widget.h - 2
+    if rel_y < 0:
+        return -1
+    idx is floor of (rel_y / 24)
+    if idx >= (len of widget.filtered):
+        return -1
+    return idx
+
 define _mousemove_combobox(hit, root, mx, my) as:
     if hit.open == 1:
-        abs_y is hit._ay
-        rel_y is my - abs_y - hit.h - 2
-        if rel_y >= 0:
-            hit.hover_index is floor of (rel_y / 24)
-        else:
-            hit.hover_index is -1
+        hit.hover_index is _combobox_item_at of [hit, my]
 
 define _mousedown_text_input(hit, root, mx, my, ev) as:
     if hit.enabled == 1:
@@ -232,10 +241,15 @@ define _mousedown_spinbox(hit, root, mx, my, ev) as:
 define _mousedown_combobox(hit, root, mx, my, ev) as:
     if hit.enabled == 1:
         if hit.open == 1:
-            if hit.hover_index >= 0 and hit.hover_index < (len of hit.filtered):
-                hit.filter_text is hit.filtered[hit.hover_index]
+            # Select the item the click actually landed on (#577) — under
+            # plain dispatch no mousemove need precede the click, so
+            # hover_index cannot be trusted as the selection.
+            idx is _combobox_item_at of [hit, my]
+            if idx >= 0:
+                hit.hover_index is idx
+                hit.filter_text is hit.filtered[idx]
                 # Find original index
-                sel_text is hit.filtered[hit.hover_index]
+                sel_text is hit.filtered[idx]
                 for oi in range of (len of hit.items):
                     if hit.items[oi] == sel_text:
                         hit.selected is oi

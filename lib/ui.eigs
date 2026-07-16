@@ -61,7 +61,8 @@ _ui is {
     "last_mouse_y": 0,
     "drag_ox": 0,
     "drag_oy": 0,
-    "focused_input": null
+    "focused_input": null,
+    "quit_requested": 0
 }
 
 # Load sub-modules
@@ -506,9 +507,50 @@ define claim_drag(widget) as:
 define release_drag() as:
     _ui.drag_widget is null
 
+# Quit (#564) — any callback (menu item, button, hotkey) can end app_loop
+# cleanly, so the gfx_close teardown after the loop still runs. app_loop
+# clears the flag on entry, so a later loop is not quit by a stale request.
+
+define request_quit() as:
+    _ui.quit_requested is 1
+
+# Keyboard routing (#563) — the toolkit's keydown handling, public so a
+# headless consumer drives keys exactly like mouse and the priority order
+# below is pinned by tests instead of duplicated inside app_loop. Returns
+# 1 when the toolkit consumed the key, 0 when it is free for the app.
+# Priority: hotkeys > escape-pops-modal > open combobox > focused text
+# input > focus navigation.
+
+define handle_key(root, ev) as:
+    if ev.type != "keydown":
+        return 0
+    if (_match_hotkey of ev) == 1:
+        return 1
+    if ev.key == "escape" and (len of _ui.modal_stack) > 0:
+        pop_modal of null
+        return 1
+    if _ui.focused_widget != null and _ui.focused_widget.type == "combobox" and _ui.focused_widget.open == 1:
+        _handle_combobox_key of [_ui.focused_widget, ev]
+        return 1
+    if _ui.focused_input != null:
+        _handle_text_key of [_ui.focused_input, ev]
+        return 1
+    # Focus navigation reports its own consumption, so a key it ignores
+    # (an unbound letter with a widget merely focused) stays free for the
+    # app rather than being silently swallowed.
+    if ev.key == "tab" or ev.key == "escape":
+        return _handle_focus_key of [root, ev]
+    if _ui.focused_widget != null and _ui.focused_input == null:
+        return _handle_focus_key of [root, ev]
+    return 0
+
 # Event dispatch — registry-driven
 
 define dispatch(root, ev) as:
+    # Keys route through the same public handler app_loop uses (#563), so
+    # dispatch is the single event door for mouse, wheel and keyboard.
+    if ev.type == "keydown" or ev.type == "keyup":
+        return handle_key of [root, ev]
     mx is 0
     my is 0
     if ev.type == "mousemove" or ev.type == "mousedown" or ev.type == "mouseup":
@@ -618,14 +660,18 @@ define dispatch(root, ev) as:
         # Reset tooltip
         _ui.tooltip_widget is null
         _ui.tooltip_start_time is gfx_ticks of null
-        # Close any open dropdowns first
-        _close_dropdowns of root
         # Check modal stack first (they're modal)
         if (len of _ui.modal_stack) > 0:
+            _close_dropdowns of root
             top_modal is _ui.modal_stack[(len of _ui.modal_stack) - 1]
             _handle_dialog_click of [top_modal, mx, my]
             return null
+        # Hit-test BEFORE closing dropdowns (#577). An open dropdown
+        # extends its widget's bounds; closing first dropped the click
+        # onto whatever sat underneath, so a dropdown item could never be
+        # clicked. Only the dropdowns the click is outside of close.
         hit is _hit_test of [root, 0, 0, mx, my]
+        _close_dropdowns_except of [root, hit]
         if hit == null:
             _unfocus_all of root
             _ui.focused_input is null
@@ -648,9 +694,16 @@ define dispatch(root, ev) as:
             return null
         # Sync focus to clicked widget
         _sync_focus_to of hit
-        # Double-click detection
+        # Double-click detection. An open dropdown is exempt (#577): its
+        # open state extends the widget's bounds, so the click that opens
+        # it and the click that picks an item report the SAME id — inside
+        # the 400ms window that reads as a double-click and the selection
+        # is swallowed. Picking from a dropdown is never a double-click.
+        dropdown_open is 0
+        if (hit.type == "combobox" or hit.type == "dropdown") and hit.open == 1:
+            dropdown_open is 1
         now is gfx_ticks of null
-        if hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
+        if dropdown_open == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
             if hit.type == "editable_label":
                 _start_editing of hit
             elif hit.on_dblclick != null:
@@ -714,10 +767,12 @@ define app_loop(root, on_key, on_tick) as:
     _ui.window_w is root.w
     _ui.window_h is root.h
     _running is 1
+    # A request_quit from a previous loop must not quit this one (#564).
+    _ui.quit_requested is 0
     # Build initial focus list
     _ui.focus_list is []
     _build_focus_list of root
-    loop while _running == 1:
+    loop while _running == 1 and _ui.quit_requested == 0:
         ev is gfx_poll of null
         loop while ev != null:
             if ev.type == "quit":
@@ -728,23 +783,9 @@ define app_loop(root, on_key, on_tick) as:
                 root.w is ev.w
                 root.h is ev.h
             elif ev.type == "keydown":
-                # Hotkeys get highest priority
-                hotkey_handled is _match_hotkey of ev
-                if hotkey_handled == 0:
-                    # Escape pops modal stack
-                    if ev.key == "escape" and (len of _ui.modal_stack) > 0:
-                        pop_modal of null
-                    # Combobox key handling when open
-                    elif _ui.focused_widget != null and _ui.focused_widget.type == "combobox" and _ui.focused_widget.open == 1:
-                        _handle_combobox_key of [_ui.focused_widget, ev]
-                    # Text input gets next crack at keys
-                    elif _ui.focused_input != null:
-                        _handle_text_key of [_ui.focused_input, ev]
-                    # Focus navigation (Tab, Enter, Space, arrows, Escape)
-                    elif ev.key == "tab" or ev.key == "escape":
-                        _handle_focus_key of [root, ev]
-                    elif (_ui.focused_widget != null and _ui.focused_input == null):
-                        _handle_focus_key of [root, ev]
+                # Toolkit routing first (hotkeys > modal > combobox >
+                # text input > focus nav) — one shared handler (#563).
+                handle_key of [root, ev]
                 if on_key != null:
                     result is on_key of ev
                     if result == 0:
