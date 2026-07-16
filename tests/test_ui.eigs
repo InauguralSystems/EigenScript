@@ -747,6 +747,30 @@ _layout of [lroot, 0, 0]
 assert_eq of [lhb.children[0].x, 0, "first label at box origin"]
 assert_eq of [lhb.children[1].x, 36, "second label advanced by the first's width"]
 
+# auto_size = 0: the app owns the box and _layout must not overwrite it.
+# The repro is DeslanStudio's modal click-catcher — an EMPTY label
+# stamped to the full window, backing an overlay because containers are
+# hit-transparent where no child sits. Remeasuring an empty label's text
+# collapses it to w=0 and the catcher silently stops catching.
+catcher is label of ["catcher", 0, 0, ""]
+catcher.auto_size is 0
+catcher.w is 800
+catcher.h is 600
+add_child of [lroot, catcher]
+_layout of [lroot, 0, 0]
+assert_eq of [catcher.w, 800, "auto_size 0 keeps the app's width through layout"]
+assert_eq of [catcher.h, 600, "auto_size 0 keeps the app's height through layout"]
+assert_true of [(_hit_test of [lroot, 0, 0, 400, 300]) != null, "the stamped catcher still catches clicks"]
+
+# auto_size = 0 holds even when the text changes — a fixed-width slot
+# for changing text (a padded caption) keeps the box the app chose.
+catcher.text is "now it has text"
+_layout of [lroot, 0, 0]
+assert_eq of [catcher.w, 800, "auto_size 0 survives a text change"]
+
+# Default stays auto: a plain label still tracks its text.
+assert_eq of [lb.auto_size, 1, "labels auto-size by default"]
+
 # ============================================================
 # 16. grid cell ownership + row-label gutter (#572)
 # ============================================================

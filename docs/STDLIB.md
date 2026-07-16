@@ -524,7 +524,12 @@ Notes on widget state, where the toolkit could otherwise shadow yours:
   text changes each frame (a BPM or time display) keeps a box matching
   what is drawn. A label draws no chrome, so its box is exactly its text;
   space between labels in an `hbox`/`toolbar` comes from the container's
-  `gap`.
+  `gap`. Set **`auto_size`** to 0 to own the box yourself — a fixed-width
+  slot for changing text, a padded caption, or a label used as a plain
+  sized rect (an invisible full-window click-catcher backing an overlay,
+  since containers are hit-transparent where no child sits). The
+  constructor measures once either way, so a `null` size never reaches
+  the layout engine.
 - **`grid.owns_cells`** (default 1) decides who owns the pattern. Leave it
   1 and the widget flips `cells[r][c]` itself, then calls `on_cell`. Set
   it 0 and mouse/keyboard report `(row, col)` without touching `cells` —

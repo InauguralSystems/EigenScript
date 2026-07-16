@@ -20,7 +20,10 @@ define _layout(widget, ox, oy) as:
         # A label's text changes at runtime (a BPM or time display
         # restamps every frame), so remeasure here — the box a container
         # lays out against must match what actually gets drawn (#561).
-        _label_measure of widget
+        # Unless the app owns the box: auto_size 0 means a size it
+        # stamped itself, and remeasuring would silently overwrite it.
+        if widget.auto_size != 0:
+            _label_measure of widget
     if widget.type == "hbox":
         _layout_box of [widget, 1]
     elif widget.type == "vbox":
