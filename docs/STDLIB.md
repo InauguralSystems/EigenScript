@@ -500,11 +500,22 @@ module header for the full argument list):
 | `ui_w_container` | `panel`, `hbox`, `vbox`, `toolbar`, `statusbar`, `scroll_panel` |
 | `ui_w_input` | `text_input`, `editable_label`, `spinbox`, `combobox` |
 | `ui_w_slider` | `slider`, `vslider`, `knob`, `scrollbar` |
-| `ui_w_menu` | `dropdown`, `menu`, `radio_group`, `tabs` |
+| `ui_w_menu` | `dropdown`, `menu`, `menu_bar`, `radio_group`, `tabs` |
 | `ui_w_data` | `table`, `tree`, `item_list`, `grid` |
 | `ui_w_viz` | `chart`, `bar_chart`, `gauge`, `meter`, `canvas`, `waveform_view`, `code_view` |
 | `ui_w_dialog` | `dialog`, `color_picker`, `property_editor` |
 | `ui_w_special` | `splitter`, `piano_keyboard` |
+
+**`menu_bar(id, x, y, w, menus)`** is the desktop File/Edit/View strip.
+`menus` is a list of `{"title", "items", "on_select"}`, where `items`
+takes `menu`'s shapes — `"Label"`, `["Label", "Ctrl+S"]`, or `"-"` for a
+separator — and `on_select` is `fn(menu, index)`. It owns the title
+strip, the pull-down placement (clamped so a menu near the right edge
+opens inward), and the open/close state, including hovering across
+titles while open. Its pull-down is drawn by an overlay pass *after* the
+tree walk and hit-tested before it, so it sits above whatever it covers
+no matter where the bar lives in the tree — the z-order a shell used to
+hand-roll by adding every `menu` last to the root.
 
 Notes on widget state, where the toolkit could otherwise shadow yours:
 
