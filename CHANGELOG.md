@@ -57,15 +57,25 @@ All notable changes to EigenScript are documented here.
   loop.
 
 ### Fixed
-- **`label` carries `w`/`h` (#561).** It was the only text widget without
-  them, and `_layout_toolbar`/`_layout_box` read `child.w`/`child.h`
-  unconditionally — so the most natural toolbar child (a caption, a BPM or
-  time display) crashed the layout engine with `cannot apply '-' to num and
-  null`. The box is measured from the text at construction and refreshed on
-  every `_layout` pass, because a label's text changes at runtime and a
-  size fixed at construction goes stale the first time it does. A label
-  draws no chrome, so its box is exactly its text — spacing comes from the
-  container's `gap`.
+- **`label` carries `w`/`h`, and `label.auto_size` (#561).** It was the only
+  text widget without them, and `_layout_toolbar`/`_layout_box` read
+  `child.w`/`child.h` unconditionally — so the most natural toolbar child (a
+  caption, a BPM or time display) crashed the layout engine with `cannot
+  apply '-' to num and null`. The box is measured from the text at
+  construction and, with `auto_size` at its default of 1, refreshed on every
+  `_layout` pass — a label's text changes at runtime, and a size fixed at
+  construction goes stale the first time it does. A label draws no chrome,
+  so its box is exactly its text; spacing comes from the container's `gap`.
+
+  Set `auto_size` to 0 to own the box yourself. Refreshing unconditionally
+  would silently overwrite a size the app stamped — a fixed-width slot for
+  changing text, a padded caption, or a label used as a plain sized rect
+  (an invisible full-window click-catcher backing an overlay, since
+  containers are hit-transparent where no child sits). Caught by running
+  DeslanStudio's suite against this branch: its modal catcher is an *empty*
+  label stamped to the window, and remeasuring collapsed it to `w=0`, so
+  the dialog silently stopped being modal. The constructor measures once
+  regardless, so a `null` size can never reach the layout engine.
 - **A held piano key releases wherever the pointer ends up (#570).** The
   note-off lived in a `piano_kb` special case in `dispatch`'s mouseup that
   only ran when the mouseup hit-tested back to the same widget — so

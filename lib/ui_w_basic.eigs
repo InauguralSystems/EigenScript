@@ -8,9 +8,20 @@
 # label did not, and _layout_toolbar/_layout_box read child.w/child.h
 # unconditionally, so the most natural toolbar child (a caption, a BPM or
 # time display) crashed the layout engine with `cannot apply '-' to num
-# and null`. Measured at construction AND refreshed by _layout, because a
-# label's text changes at runtime — a time display restamps every frame,
-# and a w/h fixed at construction would go stale the first time it did.
+# and null`.
+#
+# `auto_size` (default 1) keeps w/h synced to the text on every _layout
+# pass, because a label's text changes at runtime — a time display
+# restamps every frame, and a size measured only at construction goes
+# stale the first time it does.
+#
+# Set `auto_size` to 0 to own the box yourself: a label deliberately
+# sized larger than its text (a fixed-width slot for changing text, a
+# padded caption) or one used as a plain sized rect (an invisible
+# full-window click-catcher over a container, since containers are
+# hit-transparent where no child sits). The constructor measures once
+# regardless, so a label always has a usable w/h before you stamp one —
+# a size of `null` can never reach the layout engine.
 
 define _label_measure(widget) as:
     widget.w is text_width of [widget.text, widget.scale]
@@ -25,6 +36,7 @@ define label(id, x, y, text) as:
         "text": text,
         "color": _theme.text_color,
         "scale": _theme.font_scale,
+        "auto_size": 1,
         "visible": 1
     }
     _label_measure of lw
