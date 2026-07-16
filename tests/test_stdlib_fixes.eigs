@@ -197,4 +197,16 @@ assert of [(argmin of [3, 1, 4, 1, 5, 9, 2, 6]) == 1, "SF91 argmin first min on 
 assert of [(argmin of [-2, -5, -1]) == 1, "SF92 argmin negatives"]
 assert of [(argmin of []) == -1, "SF93 argmin empty -> -1"]
 
+# --- math.log2 / math.log10 ---
+assert of [(log2 of 8) == 3, "SF94 log2 of 8"]
+assert of [(log2 of 1) == 0, "SF95 log2 of 1"]
+assert of [(log2 of 0.5) == -1, "SF96 log2 of one half"]
+assert of [(log10 of 1) == 0, "SF97 log10 of 1"]
+assert of [(abs of ((log10 of 1000) - 3)) < 0.0000001, "SF98 log10 of 1000"]
+assert of [(pow of [2, log2 of 8]) == 8, "SF99 log2/pow round trip"]
+assert of [(abs of ((pow of [10, log10 of 1000]) - 1000)) < 0.0000001, "SF100 log10/pow round trip"]
+# x <= 0 inherits the log builtin's input floor at 1e-10 — no error.
+assert of [(log10 of 0) == -10, "SF101 log10 floored at 0"]
+assert of [(abs of ((log2 of -1) + 33.219280948873624)) < 0.0000001, "SF102 log2 floored below 0"]
+
 print of "All stdlib-fix tests passed"
