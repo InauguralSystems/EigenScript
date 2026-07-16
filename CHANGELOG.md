@@ -4,6 +4,21 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-07-16
+
+The **desktop-shell release**: lib/ui's gap series, closed. DeslanStudio's
+port is the toolkit's first real consumer, and building a DAW shell on it
+surfaced ten issues (#561–#577, #594) — the things a toolkit only learns
+when an actual application leans on it. Seven were real and are fixed here;
+three had already been fixed or shipped and were closed with the probe
+output rather than re-fixed.
+
+The theme is **the toolkit owning what the consumer had to hand-roll**:
+keyboard through the public event door instead of trapped inside
+`app_loop`, a quit seam instead of `exit of N` skipping teardown, dropdown
+items that can actually be clicked, labels that measure themselves, grids
+that don't shadow your model, and a `menu_bar` that owns its own z-order.
+
 ### Added
 - **`menu_bar` — the desktop File/Edit/View strip (#565).** The toolkit had
   the pull-down half (`menu`, `show_menu`, click-away close) but no bar, so a
