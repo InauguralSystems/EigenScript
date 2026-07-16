@@ -5,6 +5,23 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`menu_bar` — the desktop File/Edit/View strip (#565).** The toolkit had
+  the pull-down half (`menu`, `show_menu`, click-away close) but no bar, so a
+  shell hand-rolled one from a toolbar of title buttons and had to position
+  each menu from a button's cached `_ax` (valid only after a `_layout` pass),
+  add every `menu` LAST to the root's children so it would render above the
+  content it overlaps, and keep the title-button and menu lists paired by
+  hand. `menu_bar(id, x, y, w, menus)` — `menus` a list of
+  `{"title", "items", "on_select"}` — owns the strip, the popup placement
+  (clamped so a menu near the right edge opens inward), and the open/close
+  state, including sliding across titles while open.
+
+  Its pull-down is drawn by a `_render_popups` overlay pass after the tree
+  walk and hit-tested by `_find_open_popup_at` before it, so it sits above
+  whatever it covers regardless of where the bar sits in the tree — that
+  z-order is the widget's job now, not the consumer's. Item selection reads
+  the click's own y and is exempt from double-click detection, so the two
+  traps behind #577 do not recur here.
 - **`grid.owns_cells` — let the app own the pattern (#572).** Default 1
   keeps the old behavior (the widget flips `cells[r][c]` then calls
   `on_cell`). Set it 0 and mouse *and* keyboard report `(row, col)` without

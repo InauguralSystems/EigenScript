@@ -29,6 +29,68 @@ define menu(id, items, on_select) as:
         "visible": 0
     }
 
+# A desktop menu bar: a strip of titles, each owning a pull-down (#565).
+#
+# `menus` is a list of dicts: {"title": str, "items": list, "on_select":
+# fn(menu, index)} — `items` takes the same shapes as `menu`: a plain
+# string, ["Label", "Ctrl+S"] for a shortcut-labelled entry, or "-" for a
+# separator.
+#
+# The toolkit has had the pull-down half (`menu` + `show_menu`) for a
+# while, but no bar, so a shell had to hand-roll one from a toolbar of
+# buttons: position each menu from the button's cached `_ax` (valid only
+# after a _layout pass), add every menu LAST to the root's children so it
+# would render above the content it overlaps, and keep the title-button
+# and menu lists paired by hand. This widget owns all three — the strip,
+# the popup placement (clamped to the window), and the open/close state —
+# and its popup is drawn by the `_render_popups` overlay pass, so z-order
+# no longer depends on where the bar sits in the tree.
+
+define _menu_content_w(items) as:
+    # Widest label + shortcut, so a pull-down fits what it holds rather
+    # than defaulting to menu's 140.
+    best is 120
+    for i in range of (len of items):
+        item is items[i]
+        if (type of item) == "list":
+            iw is (text_width of [item[0], _theme.font_scale]) + (text_width of [item[1], 1]) + 40
+        elif item != "-":
+            iw is (text_width of [item, _theme.font_scale]) + 30
+        else:
+            iw is 0
+        if iw > best:
+            best is iw
+    return best
+
+define menu_bar(id, x, y, w, menus) as:
+    bar_h is (text_height of _theme.font_scale) + 8
+    popups is []
+    title_w is []
+    title_x is []
+    cx is 0
+    for i in range of (len of menus):
+        m is menus[i]
+        tw is (text_width of [m.title, _theme.font_scale]) + 24
+        append of [title_w, tw]
+        append of [title_x, cx]
+        cx is cx + tw
+        p is menu of [id + "_menu_" + (str of i), m.items, m.on_select]
+        p.w is _menu_content_w of m.items
+        append of [popups, p]
+    return {
+        "type": "menu_bar",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": bar_h,
+        "menus": menus,
+        "popups": popups,
+        "title_w": title_w,
+        "title_x": title_x,
+        "open_index": 0 - 1,
+        "hover_index": 0 - 1,
+        "visible": 1,
+        "enabled": 1
+    }
+
 define radio_group(id, x, y, items, selected, on_change) as:
     return {
         "type": "radio_group",
@@ -108,6 +170,123 @@ define _render_menu(widget, ax, ay) as:
                 gfx_text of [ax + widget.w - sw - 10, iy + 8, item[1], _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
             else:
                 _draw_text_clipped of [ax + 10, iy + 5, widget.w - 20, item, _theme.text_color, _theme.font_scale]
+
+# ---- menu_bar geometry, render and input (#565) ----
+
+# Which title sits under mx (bar-relative) — -1 for none.
+define _menu_bar_title_at(widget, rel_x) as:
+    for i in range of (len of widget.menus):
+        if rel_x >= widget.title_x[i] and rel_x < widget.title_x[i] + widget.title_w[i]:
+            return i
+    return 0 - 1
+
+# Absolute top-left of the pull-down under title i, clamped so a menu
+# near the right edge opens inward instead of off-window.
+define _menu_bar_popup_pos(widget, idx) as:
+    px is widget._ax + widget.title_x[idx]
+    py is widget._ay + widget.h
+    pw is widget.popups[idx].w
+    if px + pw > _ui.window_w:
+        px is _ui.window_w - pw
+    if px < 0:
+        px is 0
+    return [px, py]
+
+define _render_menu_bar(widget, ax, ay) as:
+    # Strip background
+    gfx_rect of [ax, ay, widget.w, widget.h, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
+    for i in range of (len of widget.menus):
+        tx is ax + widget.title_x[i]
+        if i == widget.open_index:
+            gfx_rrect of [tx, ay, widget.title_w[i], widget.h, _theme.radius_sm, _theme.menu_hover[0], _theme.menu_hover[1], _theme.menu_hover[2]]
+        elif i == widget.hover_index:
+            gfx_rrect of [tx, ay, widget.title_w[i], widget.h, _theme.radius_sm, _theme.tab_hover[0], _theme.tab_hover[1], _theme.tab_hover[2]]
+        lx is tx + 12
+        ly is ay + floor of ((widget.h - (text_height of _theme.font_scale)) / 2)
+        gfx_text of [lx, ly, widget.menus[i].title, _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
+
+# Drawn by the _render_popups overlay pass, never by _render_menu_bar —
+# a pull-down must sit above whatever the bar overlaps, and the main
+# render walk is in tree order.
+define _render_menu_bar_popup(widget) as:
+    if widget.open_index < 0:
+        return null
+    p is widget.popups[widget.open_index]
+    pos is _menu_bar_popup_pos of [widget, widget.open_index]
+    p.visible is 1
+    _render_menu of [p, pos[0], pos[1]]
+
+define _hit_test_menu_bar(widget, ax, ay, mx, my) as:
+    # The open pull-down extends the bar's hit area, exactly as an open
+    # combobox extends its own (#577) — otherwise the click that picks an
+    # item would fall through to whatever the menu is covering.
+    if widget.open_index >= 0:
+        p is widget.popups[widget.open_index]
+        pos is _menu_bar_popup_pos of [widget, widget.open_index]
+        menu_h is (len of p.items) * 24
+        if _point_in_rect of [mx, my, pos[0], pos[1], p.w, menu_h]:
+            return widget
+    if _point_in_rect of [mx, my, ax, ay, widget.w, widget.h]:
+        return widget
+    return null
+
+define _mousedown_menu_bar(hit, root, mx, my, ev) as:
+    if hit.enabled == 0:
+        return null
+    # A click in the open pull-down selects by its own y — no mousemove
+    # need precede it (the #577 lesson).
+    if hit.open_index >= 0:
+        p is hit.popups[hit.open_index]
+        pos is _menu_bar_popup_pos of [hit, hit.open_index]
+        menu_h is (len of p.items) * 24
+        if _point_in_rect of [mx, my, pos[0], pos[1], p.w, menu_h]:
+            idx is floor of ((my - pos[1]) / 24)
+            if idx >= 0 and idx < (len of p.items):
+                item is p.items[idx]
+                is_sep is 0
+                if (type of item) == "str" and item == "-":
+                    is_sep is 1
+                if is_sep == 0:
+                    _menu_bar_close of hit
+                    if p.on_select != null:
+                        p.on_select of [p, idx]
+                    return null
+            return null
+    # Otherwise a click on a title toggles that pull-down
+    idx is _menu_bar_title_at of [hit, mx - hit._ax]
+    if idx >= 0:
+        if hit.open_index == idx:
+            _menu_bar_close of hit
+        else:
+            _menu_bar_close of hit
+            hit.open_index is idx
+    else:
+        _menu_bar_close of hit
+
+define _mousemove_menu_bar(hit, root, mx, my) as:
+    hit.hover_index is _menu_bar_title_at of [hit, mx - hit._ax]
+    if hit.open_index >= 0:
+        p is hit.popups[hit.open_index]
+        pos is _menu_bar_popup_pos of [hit, hit.open_index]
+        menu_h is (len of p.items) * 24
+        if _point_in_rect of [mx, my, pos[0], pos[1], p.w, menu_h]:
+            p.hover_index is floor of ((my - pos[1]) / 24)
+        else:
+            p.hover_index is 0 - 1
+        # Hovering another title while open slides the pull-down to it,
+        # the way a desktop menu bar behaves once a menu is showing.
+        if hit.hover_index >= 0 and hit.hover_index != hit.open_index:
+            _menu_bar_close of hit
+            hit.open_index is hit.hover_index
+
+define _clear_hover_menu_bar(widget) as:
+    widget.hover_index is 0 - 1
+
+define _menu_bar_close(widget) as:
+    if widget.open_index >= 0:
+        widget.popups[widget.open_index].visible is 0
+        widget.popups[widget.open_index].hover_index is 0 - 1
+    widget.open_index is 0 - 1
 
 define _render_radio_group(widget, ax, ay) as:
     rx is ax
@@ -334,6 +513,83 @@ define _close_dropdowns_except(widget, keep) as:
         if widget.panel_b != null:
             _close_dropdowns_except of [widget.panel_b, keep]
 
+# Close any open menu_bar pull-down the click landed outside of, and
+# render the open one above everything else. Both walk the tree the way
+# _close_dropdowns / _render_toasts do.
+
+define _close_menu_bars(widget, keep) as:
+    if widget.type == "menu_bar":
+        if keep == null or keep.id != widget.id:
+            _menu_bar_close of widget
+    elif _is_container of widget.type:
+        for i in range of (len of widget.children):
+            _close_menu_bars of [widget.children[i], keep]
+    elif widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _close_menu_bars of [widget.tab_panels[i], keep]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _close_menu_bars of [widget.panel_a, keep]
+        if widget.panel_b != null:
+            _close_menu_bars of [widget.panel_b, keep]
+
+# An open pull-down is drawn above the whole tree by _render_popups, so it
+# must hit-test above the whole tree too. _hit_test walks in tree order
+# and lets a later sibling win, which would hand a click that visually
+# landed on the menu to whatever the menu is covering.
+
+define _find_open_popup_at(widget, mx, my) as:
+    if widget.visible == 0:
+        return null
+    if widget.type == "menu_bar":
+        if widget.open_index >= 0:
+            p is widget.popups[widget.open_index]
+            pos is _menu_bar_popup_pos of [widget, widget.open_index]
+            menu_h is (len of p.items) * 24
+            if _point_in_rect of [mx, my, pos[0], pos[1], p.w, menu_h]:
+                return widget
+        return null
+    if _is_container of widget.type:
+        for i in range of (len of widget.children):
+            r is _find_open_popup_at of [widget.children[i], mx, my]
+            if r != null:
+                return r
+    if widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                r is _find_open_popup_at of [widget.tab_panels[i], mx, my]
+                if r != null:
+                    return r
+    if widget.type == "splitter":
+        if widget.panel_a != null:
+            r is _find_open_popup_at of [widget.panel_a, mx, my]
+            if r != null:
+                return r
+        if widget.panel_b != null:
+            r is _find_open_popup_at of [widget.panel_b, mx, my]
+            if r != null:
+                return r
+    return null
+
+define _render_popups(widget) as:
+    if widget.visible == 0:
+        return null
+    if widget.type == "menu_bar":
+        _render_menu_bar_popup of widget
+    elif _is_container of widget.type:
+        for i in range of (len of widget.children):
+            _render_popups of widget.children[i]
+    elif widget.type == "tabs":
+        for i in range of (len of widget.tab_panels):
+            if widget.tab_panels[i] != null:
+                _render_popups of widget.tab_panels[i]
+    elif widget.type == "splitter":
+        if widget.panel_a != null:
+            _render_popups of widget.panel_a
+        if widget.panel_b != null:
+            _render_popups of widget.panel_b
+
 define _close_menus(widget) as:
     if widget.type == "menu":
         widget.visible is 0
@@ -370,6 +626,18 @@ _register_widget of ["menu", {
     "on_mousedown": _mousedown_menu,
     "on_mousemove": _mousemove_menu,
     "clear_hover": null,
+    "clear_pressed": null,
+    "scroll": null,
+    "container": 0,
+    "focusable": 0
+}]
+
+_register_widget of ["menu_bar", {
+    "render": _render_menu_bar,
+    "hit_test": _hit_test_menu_bar,
+    "on_mousedown": _mousedown_menu_bar,
+    "on_mousemove": _mousemove_menu_bar,
+    "clear_hover": _clear_hover_menu_bar,
     "clear_pressed": null,
     "scroll": null,
     "container": 0,

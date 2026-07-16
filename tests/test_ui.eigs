@@ -907,6 +907,120 @@ _render_button of [btn3, 0, 0]
 assert_eq of [len of shade_alphas, 0, "theme-colored button swaps bg rather than shading"]
 
 # ============================================================
+# 19. menu_bar (#565)
+# ============================================================
+
+print of "--- Menu Bar Tests (#565) ---"
+
+# gfx_rrect was replaced above to capture shades; menu_bar's assertions
+# are all state, not paint, so it stays as-is.
+_ui.window_w is 800
+_ui.window_h is 600
+
+mb_picked is []
+define mb_on_file(m, i) as:
+    append of [mb_picked, ["file", i]]
+define mb_on_help(m, i) as:
+    append of [mb_picked, ["help", i]]
+
+mbroot is panel of ["mbroot", 0, 0, 800, 600]
+mbar is menu_bar of ["mbar", 0, 0, 800, [
+    {"title": "File", "items": ["Open", ["Save", "Ctrl+S"], "-", ["Exit", "Ctrl+Q"]], "on_select": mb_on_file},
+    {"title": "Help", "items": ["About"], "on_select": mb_on_help}
+]]
+add_child of [mbroot, mbar]
+_layout of [mbroot, 0, 0]
+
+assert_eq of [mbar.h, 22, "bar height from font metrics"]
+assert_eq of [mbar.title_x[0], 0, "first title at bar origin"]
+assert_eq of [mbar.title_x[1], 72, "second title advanced by the first's width"]
+assert_eq of [mbar.open_index, 0 - 1, "bar starts closed"]
+
+# Clicking a title opens its pull-down
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+assert_eq of [mbar.open_index, 0, "clicking File opens its menu"]
+
+# Picking an item: NOTE no last_click_id reset and no preceding mousemove
+# — this is the real user flow (open, then click an item inside 400ms, on
+# the same widget id). Both traps that bit #577 are asserted here.
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": mbar.h + 24 + 5, "button": 1}]
+assert_eq of [len of mb_picked, 1, "item selected on the click that landed on it"]
+assert_eq of [mb_picked[0][1], 1, "the item under the click was chosen (Save)"]
+assert_eq of [mbar.open_index, 0 - 1, "selecting an item closes the bar"]
+
+# A separator is not selectable
+mb_picked is []
+_ui.last_click_id is ""
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": mbar.h + 2 * 24 + 5, "button": 1}]
+assert_eq of [len of mb_picked, 0, "clicking a separator selects nothing"]
+assert_eq of [mbar.open_index, 0, "clicking a separator leaves the menu open"]
+
+# Clicking the open title again toggles it closed. (No reset needed: the
+# bar is open, so the popup exemption already spares this from the
+# double-click check.)
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+assert_eq of [mbar.open_index, 0 - 1, "clicking the open title closes it"]
+
+# Clicking away closes the bar. Reopening a CLOSED bar is a genuine
+# repeat click on the same id, so it needs the section-8 reset — the
+# gfx_ticks stub makes every click look simultaneous.
+_ui.last_click_id is ""
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+assert_eq of [mbar.open_index, 0, "menu reopened for the click-away case"]
+dispatch of [mbroot, {"type": "mousedown", "x": 400, "y": 400, "button": 1}]
+assert_eq of [mbar.open_index, 0 - 1, "clicking outside closes the bar"]
+
+# Hovering another title while open slides the menu across
+_ui.last_click_id is ""
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+assert_eq of [mbar.open_index, 0, "File open before the slide"]
+dispatch of [mbroot, {"type": "mousemove", "x": 80, "y": 5}]
+assert_eq of [mbar.open_index, 1, "hovering Help while open slides the menu to it"]
+_menu_bar_close of mbar
+
+# An open pull-down is painted above the whole tree, so it must take the
+# click above the whole tree: a widget added LATER (and therefore drawn
+# on top in the tree-order walk) must not steal a click that visually
+# landed on the menu. This is the z-order the consumer used to hand-roll
+# by adding every menu last to the root.
+under_hits is [0]
+define under_click(b) as:
+    under_hits[0] is under_hits[0] + 1
+
+under is button of ["under", 0, 60, 200, 40, "covered", under_click]
+add_child of [mbroot, under]
+_layout of [mbroot, 0, 0]
+
+mb_picked is []
+_ui.last_click_id is ""
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+# y=96 is inside BOTH the open File menu's item 3 ("Exit", spanning
+# 94..117) and the button beneath it (60..100).
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 96, "button": 1}]
+dispatch of [mbroot, {"type": "mouseup", "x": 10, "y": 96, "button": 1}]
+assert_eq of [under_hits[0], 0, "the covered button did not receive the click"]
+assert_eq of [len of mb_picked, 1, "the open menu took the click instead"]
+assert_eq of [mb_picked[0][1], 3, "the item under the click was chosen (Exit)"]
+
+# With the bar closed, the same point reaches the button normally
+_ui.last_click_id is ""
+dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 96, "button": 1}]
+dispatch of [mbroot, {"type": "mouseup", "x": 10, "y": 96, "button": 1}]
+assert_eq of [under_hits[0], 1, "closed bar leaves the widget beneath clickable"]
+
+# A pull-down near the right edge opens inward instead of off-window
+mbar2 is menu_bar of ["mbar2", 700, 0, 100, [
+    {"title": "Help", "items": ["About This Program"], "on_select": mb_on_help}
+]]
+add_child of [mbroot, mbar2]
+_layout of [mbroot, 0, 0]
+mbar2.open_index is 0
+mpos is _menu_bar_popup_pos of [mbar2, 0]
+assert_true of [mpos[0] + mbar2.popups[0].w <= 800, "right-edge menu clamped inside the window"]
+_menu_bar_close of mbar2
+
+# ============================================================
 # Summary
 # ============================================================
 

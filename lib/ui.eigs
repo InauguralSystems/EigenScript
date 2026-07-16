@@ -501,6 +501,20 @@ define show_dialog(dlg, parent_w, parent_h) as:
 # entry if it has one, else its on_mouse callback) instead of the hover
 # path. Capture is released automatically on mouseup.
 
+# Is this widget currently showing a popup that extends its hit bounds?
+# Such a widget reports the same id for the click that opens the popup and
+# the click that picks from it, which the double-click check must not
+# mistake for a repeat click (#577, #565).
+
+define _has_open_popup(widget) as:
+    if widget.type == "combobox" or widget.type == "dropdown":
+        if widget.open == 1:
+            return 1
+    if widget.type == "menu_bar":
+        if widget.open_index >= 0:
+            return 1
+    return 0
+
 define claim_drag(widget) as:
     _ui.drag_widget is widget
 
@@ -629,7 +643,11 @@ define dispatch(root, ev) as:
         _ui.last_mouse_x is mx
         _ui.last_mouse_y is my
         _clear_hover of root
-        hit is _hit_test of [root, 0, 0, mx, my]
+        # Hover follows the same rule as the click: an open pull-down is
+        # above the tree, so it takes the mousemove first (#565).
+        hit is _find_open_popup_at of [root, mx, my]
+        if hit == null:
+            hit is _hit_test of [root, 0, 0, mx, my]
         if hit != null:
             hit.hover is 1
             # Tooltip tracking
@@ -670,8 +688,14 @@ define dispatch(root, ev) as:
         # extends its widget's bounds; closing first dropped the click
         # onto whatever sat underneath, so a dropdown item could never be
         # clicked. Only the dropdowns the click is outside of close.
-        hit is _hit_test of [root, 0, 0, mx, my]
+        # An open pull-down is painted above the whole tree, so it takes
+        # the click above the whole tree (#565) — before the tree-order
+        # walk, which would let a later sibling steal it.
+        hit is _find_open_popup_at of [root, mx, my]
+        if hit == null:
+            hit is _hit_test of [root, 0, 0, mx, my]
         _close_dropdowns_except of [root, hit]
+        _close_menu_bars of [root, hit]
         if hit == null:
             _unfocus_all of root
             _ui.focused_input is null
@@ -694,16 +718,14 @@ define dispatch(root, ev) as:
             return null
         # Sync focus to clicked widget
         _sync_focus_to of hit
-        # Double-click detection. An open dropdown is exempt (#577): its
-        # open state extends the widget's bounds, so the click that opens
-        # it and the click that picks an item report the SAME id — inside
-        # the 400ms window that reads as a double-click and the selection
-        # is swallowed. Picking from a dropdown is never a double-click.
-        dropdown_open is 0
-        if (hit.type == "combobox" or hit.type == "dropdown") and hit.open == 1:
-            dropdown_open is 1
+        # Double-click detection. A widget showing a popup is exempt
+        # (#577, #565): the popup extends the widget's bounds, so the
+        # click that opens it and the click that picks an item report the
+        # SAME id — inside the 400ms window that reads as a double-click
+        # and the selection is swallowed. Picking from a popup is never a
+        # double-click.
         now is gfx_ticks of null
-        if dropdown_open == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
+        if (_has_open_popup of hit) == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
             if hit.type == "editable_label":
                 _start_editing of hit
             elif hit.on_dblclick != null:
@@ -813,6 +835,9 @@ define app_loop(root, on_key, on_tick) as:
         # Render
         gfx_clear of [_theme.bg[0], _theme.bg[1], _theme.bg[2]]
         render of [root, 0, 0]
+        # Pull-downs sit above whatever their bar overlaps, so they are an
+        # overlay pass rather than part of the tree-order walk (#565).
+        _render_popups of root
         # Render modal stack (dim overlay + dialog for each)
         for mi in range of (len of _ui.modal_stack):
             mdlg is _ui.modal_stack[mi]
