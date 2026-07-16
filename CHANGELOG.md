@@ -4,6 +4,40 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`handle_key` — keyboard routing through the public event door (#563).**
+  `app_loop`'s inline keydown block is now a public `handle_key of [root, ev]`
+  that `app_loop` itself calls, and `dispatch` routes `keydown`/`keyup` to it.
+  A headless consumer drives keys exactly like mouse instead of reaching for
+  the private `_match_hotkey`/`_handle_text_key`/`_handle_focus_key` handlers,
+  and the priority order (hotkeys > escape-pops-modal > open combobox >
+  focused text input > focus navigation) is pinned by tests in one place
+  rather than duplicated. Returns 1 when the toolkit consumed the key, 0 when
+  it is free for the app — focus navigation reports its own consumption, so an
+  unbound key with a widget merely focused is no longer silently swallowed.
+  Surfaced by DeslanStudio milestone 4b, whose `tests/test_shell.eigs` had to
+  assert hotkey behavior against the private handler.
+- **`request_quit` — programmatic `app_loop` exit (#564).** Any callback (a
+  File→Exit menu item, a button, a hotkey) can end the loop cleanly via the
+  shared `_ui.quit_requested` flag, so the `gfx_close` teardown after the loop
+  still runs; the previous escape was `exit of N`, which skipped it.
+  `app_loop` clears the flag on entry, so a stale request never quits a later
+  loop.
+
+### Fixed
+- **combobox dropdown items are selectable by mouse (#577).** `dispatch`'s
+  mousedown path ran `_close_dropdowns` *before* `_hit_test`, so an open
+  dropdown's extended bounds were gone by the time the click was tested and
+  the click landed on whatever sat underneath — `selected` never changed. The
+  hit test now runs first and only the dropdowns the click falls outside of
+  close (`_close_dropdowns_except`). Two further defects sat behind that one:
+  `_mousedown_combobox` selected by `hover_index` (set only by a preceding
+  mousemove, which plain `dispatch` need not send) rather than by the click's
+  own y — it now shares `_combobox_item_at` with the hover path; and with the
+  bounds extended, the click that opens a dropdown and the click that picks an
+  item report the SAME widget id, so inside the 400 ms window the selection
+  was swallowed as a double-click — an open dropdown is now exempt.
+
 ## [0.31.0] - 2026-07-14
 
 ### Added

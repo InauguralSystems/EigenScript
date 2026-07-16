@@ -484,7 +484,8 @@ widget signatures.
 **Core (`lib/ui.eigs`):** `panel`, `add_child`, `find_by_id`,
 `stack_vertical`, `stack_horizontal`, `show_toast`, `register_hotkey`,
 `push_modal`/`pop_modal`, `show_menu`, `show_dialog`, `claim_drag`/
-`release_drag`, `dispatch`, `app_loop`. Theme (`lib/ui_theme.eigs`):
+`release_drag`, `dispatch`, `handle_key`, `request_quit`, `app_loop`.
+Theme (`lib/ui_theme.eigs`):
 `theme`, `set_theme`, `theme_dark`/`theme_light`/`theme_high_contrast`.
 Animation (`lib/ui_anim.eigs`): `tween`, `cancel_tweens`. Text metrics
 (`lib/ui_draw.eigs`): `text_width`, `text_height`.
@@ -515,7 +516,22 @@ drag mousemove plus the terminating mouseup (branch on `ev.type`;
 wheel input under the cursor before the `scroll_panel` walk sees it.
 Drag handling for the built-in draggable types goes through the widget
 registry's `on_drag` entry, so a registered custom type can supply its
-own. Mouse and wheel events from `gfx_poll` carry `shift`/`ctrl`/`alt`
+own.
+
+Keyboard goes through the same door: `dispatch of [root, ev]` routes a
+`keydown`/`keyup` event dict to `handle_key of [root, ev]`, the toolkit's
+public key handler that `app_loop` itself calls. It applies hotkeys >
+escape-pops-modal > open combobox > focused text input > focus
+navigation, and returns 1 when the toolkit consumed the key, 0 when it is
+free for the app — so a headless test drives keys exactly like mouse
+instead of reaching for the private handlers.
+
+`request_quit of null` ends `app_loop` from any callback (a File→Exit
+menu item, a button, a hotkey), so the loop's own `gfx_close` teardown
+still runs; `app_loop` clears the flag on entry, so a stale request never
+quits a later loop.
+
+Mouse and wheel events from `gfx_poll` carry `shift`/`ctrl`/`alt`
 (0/1) like key events; headless tests synthesize event dicts, where
 absent keys read null.
 

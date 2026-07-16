@@ -590,6 +590,128 @@ assert_eq of [cv3._ay, 0 - 50, "child _ay accounts for scroll_y"]
 assert_eq of [cv3._ax, 0 - 30, "child _ax accounts for scroll_x"]
 
 # ============================================================
+# 12. Keyboard routing through dispatch (#563)
+# ============================================================
+
+print of "--- Keyboard Routing Tests (#563) ---"
+
+# Earlier sections leave focus state behind; these assertions are about
+# routing, so start from a known-clear focus.
+_ui.focused_input is null
+_ui.focused_widget is null
+
+kroot is panel of ["kroot", 0, 0, 800, 600]
+hk_fired is [0]
+define hk_cb() as:
+    hk_fired[0] is hk_fired[0] + 1
+
+register_hotkey of ["ctrl+s", hk_cb]
+consumed is dispatch of [kroot, {"type": "keydown", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
+assert_eq of [hk_fired[0], 1, "hotkey fires through the public dispatch door"]
+assert_eq of [consumed, 1, "dispatch reports the hotkey as consumed"]
+
+# A key the toolkit does not claim is reported free for the app. Focus
+# navigation reports its own consumption, so an unbound letter is free
+# even while a widget holds focus.
+free is dispatch of [kroot, {"type": "keydown", "key": "j", "ctrl": 0, "shift": 0, "alt": 0}]
+assert_eq of [free, 0, "unclaimed key reported unconsumed"]
+
+# handle_key is the same door app_loop uses — priority is pinned here
+# rather than duplicated inside the loop.
+hk2 is handle_key of [kroot, {"type": "keydown", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
+assert_eq of [hk2, 1, "handle_key consumes a registered hotkey"]
+assert_eq of [hk_fired[0], 2, "handle_key fired the hotkey callback"]
+unregister_hotkey of "ctrl+s"
+
+# keyup is not a toolkit key event — it stays free for the app
+ku is dispatch of [kroot, {"type": "keyup", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
+assert_eq of [ku, 0, "keyup reported unconsumed"]
+
+# Escape pops the modal stack through dispatch
+mdlg is dialog of ["mdlg", 200, 100, "T", "M", ["OK"], null]
+push_modal of [mdlg, 800, 600]
+assert_eq of [len of _ui.modal_stack, 1, "modal pushed"]
+esc is dispatch of [kroot, {"type": "keydown", "key": "escape", "ctrl": 0, "shift": 0, "alt": 0}]
+assert_eq of [len of _ui.modal_stack, 0, "escape pops modal through dispatch"]
+assert_eq of [esc, 1, "escape-pops-modal reported consumed"]
+
+# Focused text input takes keys ahead of focus navigation
+ti is text_input of ["ti", 0, 0, 100, "", null]
+_ui.focused_input is ti
+dispatch of [kroot, {"type": "keydown", "key": "a", "ctrl": 0, "shift": 0, "alt": 0}]
+assert_eq of [ti.text, "a", "focused text input receives keys through dispatch"]
+_ui.focused_input is null
+
+# ============================================================
+# 13. Programmatic quit (#564)
+# ============================================================
+
+print of "--- Quit Seam Tests (#564) ---"
+
+assert_eq of [_ui.quit_requested, 0, "quit_requested starts clear"]
+request_quit of null
+assert_eq of [_ui.quit_requested, 1, "request_quit sets the flag app_loop checks"]
+_ui.quit_requested is 0
+
+# ============================================================
+# 14. Combobox dropdown mouse selection (#577)
+# ============================================================
+# NOTE: reset _ui.last_click_id between gestures (see section 8's note).
+
+print of "--- Combobox Dropdown Selection Tests (#577) ---"
+
+cbroot is panel of ["cbroot", 0, 0, 400, 400]
+cb_changed is [0]
+define cb_on_change(w) as:
+    cb_changed[0] is cb_changed[0] + 1
+
+cbx is combobox of ["cbx", 10, 10, 120, ["alpha", "beta", "gamma"], cb_on_change]
+add_child of [cbroot, cbx]
+_layout of [cbroot, 0, 0]
+
+# Click the closed box — opens the dropdown
+dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+assert_eq of [cbx.open, 1, "mousedown opens the dropdown"]
+
+# Click item 1 ("beta"): items start at _ay + h + 2 = 36, each 24 tall,
+# so item 1 spans y 60..83. This is the #577 repro — before the fix the
+# dropdown closed before the hit test and selected stayed -1.
+dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 62, "button": 1}]
+assert_eq of [cbx.selected, 1, "dropdown item selected by mouse (#577)"]
+assert_eq of [cbx.open, 0, "selecting an item closes the dropdown"]
+assert_eq of [cb_changed[0], 1, "on_change fired once for the selection"]
+
+# Item 0 is reachable too — selection follows the click's own y, not a
+# stale hover_index (no mousemove precedes these clicks).
+_ui.last_click_id is ""
+dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+assert_eq of [cbx.open, 1, "dropdown reopens"]
+dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 40, "button": 1}]
+assert_eq of [cbx.selected, 0, "item 0 selected by its own click position"]
+
+# A click OUTSIDE an open dropdown still closes it and does not select
+_ui.last_click_id is ""
+dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+assert_eq of [cbx.open, 1, "dropdown reopens for the outside-click case"]
+dispatch of [cbroot, {"type": "mousedown", "x": 300, "y": 300, "button": 1}]
+assert_eq of [cbx.open, 0, "click outside closes the dropdown"]
+assert_eq of [cbx.selected, 0, "click outside leaves selection untouched"]
+assert_eq of [cb_changed[0], 2, "click outside fired no extra on_change"]
+
+# A second combobox must not be closed-then-missed either: clicking one
+# closes the OTHER, and still selects in the one clicked.
+cby is combobox of ["cby", 200, 10, 120, ["x", "y"], null]
+add_child of [cbroot, cby]
+_layout of [cbroot, 0, 0]
+_ui.last_click_id is ""
+dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+assert_eq of [cbx.open, 1, "first combobox open"]
+_ui.last_click_id is ""
+dispatch of [cbroot, {"type": "mousedown", "x": 210, "y": 20, "button": 1}]
+assert_eq of [cbx.open, 0, "clicking a sibling closes the first dropdown"]
+assert_eq of [cby.open, 1, "the clicked sibling opens"]
+
+# ============================================================
 # Summary
 # ============================================================
 
