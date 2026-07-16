@@ -5,6 +5,21 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`grid.owns_cells` — let the app own the pattern (#572).** Default 1
+  keeps the old behavior (the widget flips `cells[r][c]` then calls
+  `on_cell`). Set it 0 and mouse *and* keyboard report `(row, col)` without
+  touching `cells`, so an app whose model is the source of truth — undo
+  history, pattern switching, randomize — decides in `on_cell` instead of
+  both sides keeping a copy that drifts. Surfaced by DeslanStudio's 4d drum
+  panel, which had to overwrite `grid.cells` from its model after every
+  click and every model-side change.
+- **`grid.row_label_w` / `grid.row_label_scale` (#572).** The row-label
+  gutter was hardcoded to `ax - 60` at scale 1, so long labels overflowed
+  left and a grid at x < 60 clipped them off the window; DeslanStudio
+  positions its grid at x=76 purely to make the hardcoded gutter land
+  inside its panel. Both are now fields (defaults 60 and 1 preserve the
+  historical rendering), and the label's vertical centering uses the real
+  `text_height` of its scale rather than an assumed 7px.
 - **`handle_key` — keyboard routing through the public event door (#563).**
   `app_loop`'s inline keydown block is now a public `handle_key of [root, ev]`
   that `app_loop` itself calls, and `dispatch` routes `keydown`/`keyup` to it.
@@ -25,6 +40,30 @@ All notable changes to EigenScript are documented here.
   loop.
 
 ### Fixed
+- **`label` carries `w`/`h` (#561).** It was the only text widget without
+  them, and `_layout_toolbar`/`_layout_box` read `child.w`/`child.h`
+  unconditionally — so the most natural toolbar child (a caption, a BPM or
+  time display) crashed the layout engine with `cannot apply '-' to num and
+  null`. The box is measured from the text at construction and refreshed on
+  every `_layout` pass, because a label's text changes at runtime and a
+  size fixed at construction goes stale the first time it does. A label
+  draws no chrome, so its box is exactly its text — spacing comes from the
+  container's `gap`.
+- **A held piano key releases wherever the pointer ends up (#570).** The
+  note-off lived in a `piano_kb` special case in `dispatch`'s mouseup that
+  only ran when the mouseup hit-tested back to the same widget — so
+  pressing a key and dragging off it, or releasing over a button, left the
+  note sounding forever (the button branch returned before the release walk
+  ever ran). `piano_kb` now registers a `clear_pressed` entry and `dispatch`
+  runs the registry release walk on every mouseup, which also retires the
+  special case. Found while verifying #570's original report, whose other
+  two claims no longer reproduced.
+- **`checkbox` and `toggle` show hover feedback (#594).** Both received
+  `hover` from dispatch and their renderers ignored it. They now draw the
+  same translucent `hover_shade`/`pressed_shade` overlay `button` uses,
+  factored into a shared `_draw_hover_shade` — an overlay rather than a
+  color swap, so it composes with a per-widget `bg` (#566) instead of
+  erasing it.
 - **combobox dropdown items are selectable by mouse (#577).** `dispatch`'s
   mousedown path ran `_close_dropdowns` *before* `_hit_test`, so an open
   dropdown's extended bounds were gone by the time the click was tested and

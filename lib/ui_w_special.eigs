@@ -18,6 +18,18 @@ define splitter(id, x, y, w, h, split_pos, on_resize) as:
         "bar_width": 4
     }
 
+# piano_keyboard is a HORIZONTAL trigger strip: octaves run left to
+# right, and a click fires on_note(w, note, 1) with the matching
+# on_note(w, note, 0) on release. That is its whole scope (#570).
+#
+# It is deliberately NOT a piano-roll pitch sidebar. A DAW roll wants one
+# key per MIDI pitch stacked vertically over 128 rows, scrolled in lockstep
+# with the note grid — that is a different widget with different geometry,
+# and both DeslanStudio and the Qt original it ports paint that sidebar on
+# a `canvas` instead. Adding a `vertical: 1` mode here would ship a second
+# geometry with no consumer exercising it; reach for `canvas` for a pitch
+# ruler, and this strip for triggering notes.
+
 define piano_keyboard(id, x, y, octaves, on_note) as:
     # 2 octaves = 24 semitones, white keys are wider
     whites_per_oct is 7
@@ -227,6 +239,19 @@ define _clear_hover_splitter(widget) as:
 define _clear_hover_piano_kb(widget) as:
     widget.hover_note is -1
 
+# Release the held key and fire the note-off (#570). This is the registry
+# seam dispatch's mouseup walk drives, so a press that wanders off its
+# key — or off the widget entirely — still releases. Previously the
+# note-off lived in a piano_kb special case in dispatch that only ran
+# when the mouseup hit-tested back to the same widget, so dragging off a
+# key left the note sounding forever.
+
+define _clear_pressed_piano_kb(widget) as:
+    if widget.pressed_note >= 0:
+        if widget.on_note != null:
+            widget.on_note of [widget, widget.pressed_note, 0]
+        widget.pressed_note is -1
+
 # ---- Registration ----
 
 _register_widget of ["splitter", {
@@ -248,7 +273,7 @@ _register_widget of ["piano_kb", {
     "on_mousedown": _mousedown_piano_kb,
     "on_mousemove": _mousemove_piano_kb,
     "clear_hover": _clear_hover_piano_kb,
-    "clear_pressed": null,
+    "clear_pressed": _clear_pressed_piano_kb,
     "scroll": null,
     "container": 0,
     "focusable": 1

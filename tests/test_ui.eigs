@@ -712,6 +712,201 @@ assert_eq of [cbx.open, 0, "clicking a sibling closes the first dropdown"]
 assert_eq of [cby.open, 1, "the clicked sibling opens"]
 
 # ============================================================
+# 15. label carries w/h (#561)
+# ============================================================
+
+print of "--- Label Metrics Tests (#561) ---"
+
+# Stub metrics: text_width = len*6*scale, text_height = 7*scale.
+lb is label of ["lb", 0, 0, "BPM"]
+assert_eq of [lb.w, 36, "label w measured from its text (3 chars * 6 * 2)"]
+assert_eq of [lb.h, 14, "label h measured from its scale (7 * 2)"]
+
+# The #561 repro: a label in a toolbar crashed _layout_toolbar reading
+# child.h. Survival + vertical centering is the assertion.
+lroot is panel of ["lroot", 0, 0, 800, 600]
+ltb is toolbar of ["ltb", 0, 0, 800]
+add_child of [ltb, label of ["cap", 0, 0, "BPM"]]
+add_child of [lroot, ltb]
+_layout of [lroot, 0, 0]
+assert_eq of [ltb.children[0].y, 13, "label vertically centered in toolbar"]
+
+# A label's text changes at runtime — layout must remeasure, or a time
+# display's box goes stale the first time it restamps.
+tl is ltb.children[0]
+tl.text is "120.00 BPM  00:01:23"
+_layout of [lroot, 0, 0]
+assert_eq of [tl.w, 240, "label remeasured after its text changed"]
+
+# hbox lays labels out against their measured width
+lhb is hbox of ["lhb", 0, 0, 400, 40]
+add_child of [lhb, label of ["la", 0, 0, "one"]]
+add_child of [lhb, label of ["lbb", 0, 0, "two"]]
+add_child of [lroot, lhb]
+_layout of [lroot, 0, 0]
+assert_eq of [lhb.children[0].x, 0, "first label at box origin"]
+assert_eq of [lhb.children[1].x, 36, "second label advanced by the first's width"]
+
+# ============================================================
+# 16. grid cell ownership + row-label gutter (#572)
+# ============================================================
+
+print of "--- Grid Ownership Tests (#572) ---"
+
+groot is panel of ["groot", 0, 0, 400, 400]
+seen_val is [-1]
+define g_on_cell(w, r, c) as:
+    seen_val[0] is w.cells[r][c]
+
+gd is grid of ["gd", 80, 10, 4, 4, 20, 20, g_on_cell]
+add_child of [groot, gd]
+_layout of [groot, 0, 0]
+
+# Default: the widget owns the pattern and flips before reporting
+assert_eq of [gd.owns_cells, 1, "grid owns its cells by default"]
+dispatch of [groot, {"type": "mousedown", "x": 90, "y": 20, "button": 1}]
+assert_eq of [gd.cells[0][0], 1, "owning grid flips the cell itself"]
+assert_eq of [seen_val[0], 1, "on_cell sees the flipped value"]
+
+# owns_cells = 0: input reports the hit and leaves cells alone, so an app
+# whose model is the source of truth decides (the #572 repro).
+gd.owns_cells is 0
+gd.cells[1][1] is 0
+_ui.last_click_id is ""
+dispatch of [groot, {"type": "mousedown", "x": 110, "y": 40, "button": 1}]
+assert_eq of [gd.cells[1][1], 0, "non-owning grid leaves the cell untouched"]
+assert_eq of [seen_val[0], 0, "on_cell still reports the hit"]
+
+# Keyboard must follow the same ownership rule as the mouse
+gd.hover_row is 2
+gd.hover_col is 2
+gd.cells[2][2] is 0
+_ui.focused_widget is gd
+_handle_focus_key of [groot, {"key": "space", "shift": 0, "ctrl": 0, "alt": 0}]
+assert_eq of [gd.cells[2][2], 0, "non-owning grid: keyboard does not flip either"]
+gd.owns_cells is 1
+_handle_focus_key of [groot, {"key": "space", "shift": 0, "ctrl": 0, "alt": 0}]
+assert_eq of [gd.cells[2][2], 1, "owning grid: keyboard flips"]
+_ui.focused_widget is null
+
+# The row-label gutter is configurable rather than a hardcoded -60/scale-1
+assert_eq of [gd.row_label_w, 60, "row-label gutter defaults to the historical 60"]
+assert_eq of [gd.row_label_scale, 1, "row-label scale defaults to the historical 1"]
+
+# ============================================================
+# 17. Piano key release (#570)
+# ============================================================
+
+print of "--- Piano Release Tests (#570) ---"
+
+proot is panel of ["proot", 0, 0, 400, 400]
+pnotes is []
+define p_on_note(w, n, on) as:
+    append of [pnotes, [n, on]]
+
+pk is piano_keyboard of ["pk", 0, 100, 2, p_on_note]
+add_child of [proot, pk]
+_layout of [proot, 0, 0]
+
+# Press and release on the key: note-on then note-off
+dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
+assert_eq of [pk.pressed_note, 0, "mousedown presses the key"]
+dispatch of [proot, {"type": "mouseup", "x": 5, "y": 110, "button": 1}]
+assert_eq of [pk.pressed_note, 0 - 1, "mouseup releases the key"]
+assert_eq of [len of pnotes, 2, "press+release produced two events"]
+assert_eq of [pnotes[1][1], 0, "release fired note-off"]
+
+# The #570 residual: press a key, then release with the pointer OFF the
+# widget entirely. The note-off used to be a dispatch special case that
+# only ran when mouseup hit-tested back to the same widget, so the note
+# stuck on forever.
+pnotes is []
+_ui.last_click_id is ""
+dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
+assert_eq of [pk.pressed_note, 0, "key pressed before dragging off"]
+dispatch of [proot, {"type": "mouseup", "x": 350, "y": 350, "button": 1}]
+assert_eq of [pk.pressed_note, 0 - 1, "key released even though mouseup missed it"]
+assert_eq of [pnotes[1][1], 0, "note-off fired on release-off-widget (#570)"]
+
+# Releasing over ANOTHER widget must also release the key — that path
+# returned early before reaching the release walk.
+pbtn is button of ["pbtn", 200, 200, 80, 30, "x", null]
+add_child of [proot, pbtn]
+_layout of [proot, 0, 0]
+pnotes is []
+_ui.last_click_id is ""
+dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
+dispatch of [proot, {"type": "mouseup", "x": 210, "y": 210, "button": 1}]
+assert_eq of [pk.pressed_note, 0 - 1, "key released when mouseup landed on a button"]
+assert_eq of [pnotes[1][1], 0, "note-off fired when releasing over a button"]
+
+# ============================================================
+# 18. Hover feedback beyond buttons (#594)
+# ============================================================
+# Renders are verified by capturing what the renderer emits: the shade is
+# the only gfx_rrect carrying an alpha (9th) argument, so recording those
+# tells us whether a widget drew hover feedback at all. dispatch already
+# set .hover for checkbox/toggle; only their renderers ignored it.
+
+print of "--- Hover Shade Tests (#594) ---"
+
+shade_alphas is []
+define gfx_rrect(x, y, w, h, r, cr, cg, cb, ca) as:
+    if ca != null:
+        append of [shade_alphas, ca]
+    return null
+
+# checkbox: not hovered -> no shade
+cbx2 is checkbox of ["cbx2", 0, 0, "Snap", 0, null]
+cbx2.hover is 0
+shade_alphas is []
+_render_checkbox of [cbx2, 0, 0]
+assert_eq of [len of shade_alphas, 0, "unhovered checkbox draws no shade"]
+
+# checkbox: hovered -> theme hover_shade alpha
+cbx2.hover is 1
+shade_alphas is []
+_render_checkbox of [cbx2, 0, 0]
+assert_eq of [len of shade_alphas, 1, "hovered checkbox draws a shade (#594)"]
+assert_eq of [shade_alphas[0], 22, "checkbox shade uses theme hover_shade alpha"]
+
+# checkbox: disabled and hovered -> still no shade
+cbx2.enabled is 0
+shade_alphas is []
+_render_checkbox of [cbx2, 0, 0]
+assert_eq of [len of shade_alphas, 0, "disabled checkbox draws no shade even when hovered"]
+cbx2.enabled is 1
+
+# toggle: same treatment
+tg2 is toggle of ["tg2", 0, 0, 0, null]
+tg2.hover is 1
+shade_alphas is []
+_render_toggle of [tg2, 0, 0]
+assert_eq of [len of shade_alphas, 1, "hovered toggle draws a shade (#594)"]
+assert_eq of [shade_alphas[0], 22, "toggle shade uses theme hover_shade alpha"]
+
+tg2.hover is 0
+shade_alphas is []
+_render_toggle of [tg2, 0, 0]
+assert_eq of [len of shade_alphas, 0, "unhovered toggle draws no shade"]
+
+# A custom-colored button prefers the pressed shade over the hover one,
+# and a theme-colored button still swaps bg instead of shading.
+btn2 is button of ["btn2", 0, 0, 60, 24, "Rec", null]
+btn2.bg is [200, 60, 60]
+btn2.hover is 1
+btn2.pressed is 1
+shade_alphas is []
+_render_button of [btn2, 0, 0]
+assert_eq of [shade_alphas[0], 70, "pressed custom button uses pressed_shade alpha"]
+
+btn3 is button of ["btn3", 0, 0, 60, 24, "Play", null]
+btn3.hover is 1
+shade_alphas is []
+_render_button of [btn3, 0, 0]
+assert_eq of [len of shade_alphas, 0, "theme-colored button swaps bg rather than shading"]
+
+# ============================================================
 # Summary
 # ============================================================
 

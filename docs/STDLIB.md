@@ -506,6 +506,32 @@ module header for the full argument list):
 | `ui_w_dialog` | `dialog`, `color_picker`, `property_editor` |
 | `ui_w_special` | `splitter`, `piano_keyboard` |
 
+Notes on widget state, where the toolkit could otherwise shadow yours:
+
+- **`label` measures itself.** Its `w`/`h` come from its text and scale,
+  at construction and again on every `_layout` pass — so a caption whose
+  text changes each frame (a BPM or time display) keeps a box matching
+  what is drawn. A label draws no chrome, so its box is exactly its text;
+  space between labels in an `hbox`/`toolbar` comes from the container's
+  `gap`.
+- **`grid.owns_cells`** (default 1) decides who owns the pattern. Leave it
+  1 and the widget flips `cells[r][c]` itself, then calls `on_cell`. Set
+  it 0 and mouse/keyboard report `(row, col)` without touching `cells` —
+  for an app whose model is the source of truth (undo history, pattern
+  switching, randomize), so both sides don't keep copies that drift.
+  `row_label_w` (60) and `row_label_scale` (1) size the row-label gutter,
+  which is drawn to the *left* of the grid's `x`, outside its own bounds.
+- **`piano_keyboard` is a horizontal trigger strip**, not a piano-roll
+  pitch sidebar: a click fires `on_note(w, note, 1)` and the release
+  fires `on_note(w, note, 0)` — including when the pointer leaves the key
+  or the widget first. For a vertical pitch ruler (one key per MIDI
+  pitch, scrolled with a note grid), paint it on a `canvas`.
+- **Hover/pressed feedback** is a translucent `hover_shade`/`pressed_shade`
+  overlay from the theme, not a color swap — so it composes with a
+  per-widget `bg` (`button`, via #566) instead of erasing it. `button`,
+  `checkbox`, and `toggle` all draw it; a theme-colored `button` still
+  swaps `btn_hover`/`btn_pressed` as before.
+
 Custom-widget input seams (`canvas` is the reference consumer;
 `examples/ui_canvas_events.eigs` exercises all three): a widget's
 `on_mouse(w, ev)` receives mousedown, hover mousemove, and — after the
