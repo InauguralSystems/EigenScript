@@ -169,10 +169,13 @@ define _handle_focus_key(root, ev) as:
             return 1
         if ev.key == "space" or ev.key == "return":
             if w.hover_row >= 0 and w.hover_col >= 0:
-                if w.cells[w.hover_row][w.hover_col] > 0:
-                    w.cells[w.hover_row][w.hover_col] is 0
-                else:
-                    w.cells[w.hover_row][w.hover_col] is 1
+                # Mirror the mouse path's ownership rule (#572), or
+                # keyboard and mouse would disagree about who flips.
+                if w.owns_cells != 0:
+                    if w.cells[w.hover_row][w.hover_col] > 0:
+                        w.cells[w.hover_row][w.hover_col] is 0
+                    else:
+                        w.cells[w.hover_row][w.hover_col] is 1
                 if w.on_cell != null:
                     w.on_cell of [w, w.hover_row, w.hover_col]
             return 1

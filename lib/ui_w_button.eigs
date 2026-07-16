@@ -63,6 +63,25 @@ define toggle(id, x, y, value, on_change) as:
 
 # ---- Render functions ----
 
+# The theme hover/pressed shade as a translucent overlay (#594). Every
+# interactive widget gets the same treatment: an alpha shade rather than
+# a color swap, because a swap to btn_hover would erase a per-widget bg
+# (#566). Widgets without a `pressed` field (checkbox, toggle) read null
+# there and fall through to the hover shade. Theme dicts from set_theme
+# may predate the shade keys — null skips, leaving the widget unshaded
+# rather than throwing.
+
+define _draw_hover_shade(widget, ax, ay, w, h, radius) as:
+    if widget.enabled == 0:
+        return null
+    shade is null
+    if widget.pressed == 1:
+        shade is _theme.pressed_shade
+    elif widget.hover == 1:
+        shade is _theme.hover_shade
+    if shade != null:
+        gfx_rrect of [ax, ay, w, h, radius, shade[0], shade[1], shade[2], shade[3]]
+
 define _render_button(widget, ax, ay) as:
     # Per-widget color overrides with theme fallback (#566)
     bg is _theme.btn_bg
@@ -83,16 +102,10 @@ define _render_button(widget, ax, ay) as:
         bg is _theme.btn_hover
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, bg, _theme.panel_border]
     # Hover/pressed feedback for custom-colored buttons: an alpha shade
-    # over the custom bg (a theme-color swap would erase the color).
-    # Theme dicts from set_theme may predate these keys — null skips.
-    if custom == 1 and widget.enabled == 1:
-        shade is null
-        if widget.pressed == 1:
-            shade is _theme.pressed_shade
-        elif widget.hover == 1:
-            shade is _theme.hover_shade
-        if shade != null:
-            gfx_rrect of [ax, ay, widget.w, widget.h, _theme.radius_sm, shade[0], shade[1], shade[2], shade[3]]
+    # over the custom bg (a theme-color swap would erase the color). The
+    # theme-colored case already swapped bg above, so it skips this.
+    if custom == 1:
+        _draw_hover_shade of [widget, ax, ay, widget.w, widget.h, _theme.radius_sm]
     # Center text in button
     tw is text_width of [widget.label, _theme.font_scale]
     th is text_height of _theme.font_scale
@@ -133,6 +146,9 @@ define _render_checkbox(widget, ax, ay) as:
         gfx_rrect of [ax + 1, ay + 1, 12, 12, 2, box_bg[0], box_bg[1], box_bg[2]]
     # Label
     gfx_text of [ax + 20, ay + 1, widget.label, _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
+    # Hover feedback across the whole row — the full rect is the hit area
+    # (dispatch already sets .hover here; only the renderer ignored it).
+    _draw_hover_shade of [widget, ax, ay, widget.w, widget.h, _theme.radius_sm]
 
 define _render_toggle(widget, ax, ay) as:
     if widget.value == 1:
@@ -149,6 +165,8 @@ define _render_toggle(widget, ax, ay) as:
     else:
         knob_cx is ax + pill_r
     gfx_circle of [knob_cx, ay + pill_r, knob_r, 220, 220, 230]
+    # Hover feedback follows the pill's own radius
+    _draw_hover_shade of [widget, ax, ay, widget.w, widget.h, pill_r]
 
 # ---- Mousedown functions ----
 

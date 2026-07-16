@@ -3,16 +3,32 @@
 # UI Widgets — Basic: label, separator, section, color_dot, badge, progress_bar
 # ============================================================
 
+# A label's box is exactly its text — it draws no chrome, so unlike badge
+# there is nothing to pad (#561). Every other text widget carries w/h;
+# label did not, and _layout_toolbar/_layout_box read child.w/child.h
+# unconditionally, so the most natural toolbar child (a caption, a BPM or
+# time display) crashed the layout engine with `cannot apply '-' to num
+# and null`. Measured at construction AND refreshed by _layout, because a
+# label's text changes at runtime — a time display restamps every frame,
+# and a w/h fixed at construction would go stale the first time it did.
+
+define _label_measure(widget) as:
+    widget.w is text_width of [widget.text, widget.scale]
+    widget.h is text_height of widget.scale
+
 define label(id, x, y, text) as:
-    return {
+    lw is {
         "type": "label",
         "id": id,
         "x": x, "y": y,
+        "w": 0, "h": 0,
         "text": text,
         "color": _theme.text_color,
         "scale": _theme.font_scale,
         "visible": 1
     }
+    _label_measure of lw
+    return lw
 
 define separator(id, x, y, length, vertical) as:
     if vertical == 1:

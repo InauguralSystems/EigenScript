@@ -73,7 +73,19 @@ define grid(id, x, y, cols, rows, cell_w, cell_h, on_cell) as:
         "cell_w": cell_w, "cell_h": cell_h,
         "cells": cells,
         "on_cell": on_cell,
+        # Who owns the pattern (#572). 1 (default): the widget flips
+        # cells[r][c] itself and then reports. 0: input reports (row,
+        # col) and leaves cells untouched, so an app whose model is the
+        # source of truth — with undo history, pattern switching,
+        # randomize — decides in on_cell and pushes the result back,
+        # instead of both sides keeping a copy that can drift.
+        "owns_cells": 1,
         "row_labels": null,
+        # The row-label gutter is drawn to the LEFT of the widget's x, so
+        # it sits outside the widget's own bounds; these make its width
+        # and text scale configurable rather than hardcoded (#572).
+        "row_label_w": 60,
+        "row_label_scale": 1,
         "col_highlight": -1,
         "hover_col": -1, "hover_row": -1,
         "color_on": _theme.accent,
@@ -250,12 +262,15 @@ define _render_grid(widget, ax, ay) as:
                 else:
                     gc is [35, 35, 48]
             gfx_rrect of [cx + 1, cy + 1, widget.cell_w - 2, widget.cell_h - 2, 2, gc[0], gc[1], gc[2]]
-    # Row labels
+    # Row labels — drawn in a gutter left of the widget's x (#572)
     if widget.row_labels != null:
+        lscale is widget.row_label_scale
+        lgw is widget.row_label_w
+        lh is text_height of lscale
         for r in range of widget.rows:
             if r < (len of widget.row_labels):
-                ly is ay + r * widget.cell_h + floor of ((widget.cell_h - 7) / 2)
-                gfx_text of [ax - 60, ly, widget.row_labels[r], _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
+                ly is ay + r * widget.cell_h + floor of ((widget.cell_h - lh) / 2)
+                gfx_text of [ax - lgw, ly, widget.row_labels[r], _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], lscale]
 
 # ---- Mousemove functions ----
 
@@ -367,11 +382,13 @@ define _mousedown_grid(hit, root, mx, my, ev) as:
     gc is floor of ((mx - abs_x) / hit.cell_w)
     gr is floor of ((my - abs_y) / hit.cell_h)
     if gc >= 0 and gc < hit.cols and gr >= 0 and gr < hit.rows:
-        # Toggle cell
-        if hit.cells[gr][gc] > 0:
-            hit.cells[gr][gc] is 0
-        else:
-            hit.cells[gr][gc] is 1
+        # Toggle only if the widget owns the pattern (#572) — otherwise
+        # report the hit and let on_cell decide against the app's model.
+        if hit.owns_cells != 0:
+            if hit.cells[gr][gc] > 0:
+                hit.cells[gr][gc] is 0
+            else:
+                hit.cells[gr][gc] is 1
         if hit.on_cell != null:
             hit.on_cell of [hit, gr, gc]
 

@@ -16,6 +16,11 @@
 define _layout(widget, ox, oy) as:
     widget._ax is ox + widget.x
     widget._ay is oy + widget.y
+    if widget.type == "label":
+        # A label's text changes at runtime (a BPM or time display
+        # restamps every frame), so remeasure here — the box a container
+        # lays out against must match what actually gets drawn (#561).
+        _label_measure of widget
     if widget.type == "hbox":
         _layout_box of [widget, 1]
     elif widget.type == "vbox":

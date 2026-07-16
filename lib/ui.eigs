@@ -724,22 +724,26 @@ define dispatch(root, ev) as:
     # Mouse up — fire button click
     if ev.type == "mouseup":
         hit is _hit_test of [root, 0, 0, mx, my]
+        # Capture the armed button before the release walk disarms it
+        clicked is null
         if hit != null and hit.type == "button" and hit.pressed == 1:
-            hit.pressed is 0
-            if hit.on_click != null and hit.enabled == 1:
-                hit.on_click of hit
-            return null
-        if hit != null and hit.type == "piano_kb":
-            if hit.pressed_note >= 0:
-                if hit.on_note != null:
-                    hit.on_note of [hit, hit.pressed_note, 0]
-                hit.pressed_note is -1
+            clicked is hit
+        # Release every pressed widget, wherever the pointer ended up
+        # (#570). This used to run only when the mouseup missed every
+        # button/piano/canvas, so a piano key pressed and then dragged off
+        # — or released over a button — never got its note-off and the
+        # note sounded forever. The registry's clear_pressed entries own
+        # the per-type release, which is why piano_kb no longer needs a
+        # special case here.
+        _clear_pressed of root
+        if clicked != null:
+            if clicked.on_click != null and clicked.enabled == 1:
+                clicked.on_click of clicked
             return null
         if hit != null and hit.type == "canvas":
             if hit.on_mouse != null:
                 hit.on_mouse of [hit, ev]
             return null
-        _clear_pressed of root
         return null
 
     # Scroll wheel — a widget under the cursor exposing on_wheel gets
