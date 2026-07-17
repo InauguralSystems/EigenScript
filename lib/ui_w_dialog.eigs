@@ -3,6 +3,20 @@
 # UI Widgets — Dialog: dialog, property_editor, toast, color_picker + HSV
 # ============================================================
 
+# A modal dialog. `buttons` is a list of labels laid out right-aligned
+# along the bottom; `on_button(dlg, index)` fires on a click and the
+# dialog hides itself.
+#
+# It is a CONTAINER (#575): `add_child of [dlg, w]` mounts any widget
+# inside it, positioned relative to the dialog's own top-left, and the
+# modal machinery carries it — push_modal centres the dialog, app_loop
+# lays it out and renders it above everything, and dispatch treats the
+# top modal as the root for the event, so children hit-test, hover,
+# drag and take keyboard focus exactly as they would anywhere else.
+# That is what a file picker needs: a text_input and an item_list
+# inside the dialog rather than a hand-rolled overlay panel that has to
+# re-implement modality.
+
 define dialog(id, w, h, title, message, buttons, on_button) as:
     return {
         "type": "dialog",
@@ -12,9 +26,34 @@ define dialog(id, w, h, title, message, buttons, on_button) as:
         "message": message,
         "buttons": buttons,
         "on_button": on_button,
+        "children": [],
         "hover_btn": -1,
         "visible": 0
     }
+
+# Button `i`'s rect as [x, y, w, h] at the dialog's absolute ax/ay — the
+# one place the bottom-right button strip's geometry is defined. Render,
+# hit-test and hover all read it, so they cannot drift apart (they each
+# used to recompute the same right-to-left walk by hand).
+
+define _dialog_btn_rect(widget, i, ax, ay) as:
+    bx is ax + widget.w
+    j is (len of widget.buttons) - 1
+    loop while j >= 0:
+        bw is (text_width of [widget.buttons[j], _theme.font_scale]) + 24
+        bx is bx - bw - 8
+        if j == i:
+            return [bx, ay + widget.h - 40, bw, 28]
+        j is j - 1
+    return null
+
+# Which button is under (mx, my)? -1 for none.
+define _dialog_btn_at(widget, ax, ay, mx, my) as:
+    for i in range of (len of widget.buttons):
+        r is _dialog_btn_rect of [widget, i, ax, ay]
+        if r != null and (_point_in_rect of [mx, my, r[0], r[1], r[2], r[3]]):
+            return i
+    return 0 - 1
 
 define color_picker(id, x, y, on_change) as:
     return {
@@ -132,9 +171,6 @@ define _render_dialog(widget, ax, ay) as:
     if widget.visible == 1:
         # Overlay dims the background
         gfx_rect of [0, 0, 9999, 9999, 0, 0, 0, 140]
-        # Center the dialog
-        dx is ax + floor of ((widget.w - widget.w) / 2)
-        dy is ay + floor of ((widget.h - widget.h) / 2)
         # Dialog background
         gfx_rrect of [ax, ay, widget.w, widget.h, _theme.radius_lg, _theme.panel_bg[0], _theme.panel_bg[1], _theme.panel_bg[2]]
         # Title bar
@@ -142,23 +178,20 @@ define _render_dialog(widget, ax, ay) as:
         gfx_text of [ax + 12, ay + 9, widget.title, _theme.tab_text_active[0], _theme.tab_text_active[1], _theme.tab_text_active[2], _theme.font_scale]
         # Message
         gfx_text of [ax + 16, ay + 48, widget.message, _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
+        # Children, positioned relative to the dialog's top-left (#575)
+        for ci in range of (len of widget.children):
+            render of [widget.children[ci], ax, ay]
         # Buttons
-        btn_y is ay + widget.h - 40
-        btn_x is ax + widget.w
-        i is (len of widget.buttons) - 1
-        loop while i >= 0:
-            btext is widget.buttons[i]
-            bw is (text_width of [btext, _theme.font_scale]) + 24
-            btn_x is btn_x - bw - 8
+        for i in range of (len of widget.buttons):
+            r is _dialog_btn_rect of [widget, i, ax, ay]
             if i == widget.hover_btn:
                 bbg is _theme.btn_hover
             else:
                 bbg is _theme.btn_bg
             if i == 0:
                 bbg is _theme.accent
-            _draw_rbox of [btn_x, btn_y, bw, 28, _theme.radius_sm, bbg, _theme.panel_border]
-            gfx_text of [btn_x + 12, btn_y + 7, btext, 255, 255, 255, _theme.font_scale]
-            i is i - 1
+            _draw_rbox of [r[0], r[1], r[2], r[3], _theme.radius_sm, bbg, _theme.panel_border]
+            gfx_text of [r[0] + 12, r[1] + 7, widget.buttons[i], 255, 255, 255, _theme.font_scale]
 
 define _render_color_picker(widget, ax, ay) as:
     # SV square: 150x120 at top-left
@@ -243,32 +276,54 @@ define _drag_color_picker(w, ev) as:
 
 # ---- Dialog click handler ----
 
-define _handle_dialog_click(dlg, mx, my) as:
-    btn_y is dlg.y + dlg.h - 40
-    btn_x is dlg.x + dlg.w
-    i is (len of dlg.buttons) - 1
+# A dialog hit-tests its children first, topmost (last-added) wins, so a
+# widget mounted inside it takes the click ahead of the dialog's own
+# surface (#575). Falling back to the dialog's whole rect is what makes
+# it modal: a click on its chrome lands on the dialog rather than
+# reaching the tree behind it.
+
+define _hit_test_dialog(widget, ax, ay, mx, my) as:
+    if widget.visible == 0:
+        return null
+    i is (len of widget.children) - 1
     loop while i >= 0:
-        btext is dlg.buttons[i]
-        bw is (text_width of [btext, _theme.font_scale]) + 24
-        btn_x is btn_x - bw - 8
-        if _point_in_rect of [mx, my, btn_x, btn_y, bw, 28]:
-            dlg.visible is 0
-            if dlg.on_button != null:
-                dlg.on_button of [dlg, i]
-            return null
+        hit is _hit_test of [widget.children[i], ax, ay, mx, my]
+        if hit != null:
+            return hit
         i is i - 1
+    if _point_in_rect of [mx, my, ax, ay, widget.w, widget.h]:
+        return widget
+    return null
+
+define _mousedown_dialog(hit, root, mx, my, ev) as:
+    i is _dialog_btn_at of [hit, hit._ax, hit._ay, mx, my]
+    if i >= 0:
+        hit.visible is 0
+        if hit.on_button != null:
+            hit.on_button of [hit, i]
+
+# The dialog's buttons never showed hover: hover_btn was only ever set to
+# -1 by push_modal and read by the renderer, and nothing in between ever
+# assigned it. The modal path bypassed dispatch entirely, so no mousemove
+# could reach a dialog at all (#575).
+
+define _mousemove_dialog(hit, root, mx, my) as:
+    hit.hover_btn is _dialog_btn_at of [hit, hit._ax, hit._ay, mx, my]
+
+define _clear_hover_dialog(widget) as:
+    widget.hover_btn is 0 - 1
 
 # ---- Registration ----
 
 _register_widget of ["dialog", {
     "render": _render_dialog,
-    "hit_test": null,
-    "on_mousedown": null,
-    "on_mousemove": null,
-    "clear_hover": null,
+    "hit_test": _hit_test_dialog,
+    "on_mousedown": _mousedown_dialog,
+    "on_mousemove": _mousemove_dialog,
+    "clear_hover": _clear_hover_dialog,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
+    "container": 1,
     "focusable": 0
 }]
 
@@ -284,3 +339,125 @@ _register_widget of ["color_picker", {
     "container": 0,
     "focusable": 1
 }]
+
+# ============================================================
+# file_dialog — a path picker built on the dialog container (#575)
+# ============================================================
+#
+#   fd is file_dialog of ["open", 460, 340, "Open Session", null, on_ok]
+#   show_dialog of [fd, win_w, win_h]
+#
+# `start_dir` null means the current directory. `on_ok(fd, path)` fires
+# with the full path when Open is clicked; Cancel just closes and does
+# not call back. The chosen path is also on `fd.path_input.text`.
+#
+# The listing shows ".." first, then directories (trailing "/"), then
+# files — each group sorted. Clicking a directory navigates into it;
+# clicking a file puts it in the path box. Everything here is ordinary
+# lib/ui widgets mounted as dialog children, which is the point: before
+# #575 a dialog was title + message + buttons and could host nothing, so
+# a picker had to be a hand-rolled overlay panel re-implementing modality
+# from scratch.
+
+# Join a directory and an entry name into a path, without doubling the
+# separator. ".." walks up by dropping the last component, so navigation
+# stays inside plain string handling — no realpath builtin needed.
+
+define _fd_join(dir, name) as:
+    if name == "..":
+        return _fd_parent of dir
+    base is dir
+    if (ends_with of [base, "/"]) == 1:
+        base is substr of [base, 0, (len of base) - 1]
+    if base == "":
+        return "/" + name
+    return base + "/" + name
+
+define _fd_parent(dir) as:
+    base is dir
+    if (len of base) > 1 and (ends_with of [base, "/"]) == 1:
+        base is substr of [base, 0, (len of base) - 1]
+    cut is 0 - 1
+    for i in range of (len of base):
+        if (char_at of [base, i]) == "/":
+            cut is i
+    if cut < 0:
+        return "."
+    if cut == 0:
+        return "/"
+    return substr of [base, 0, cut]
+
+# Re-read `fd.dir` and rebuild the listing. Unreadable directories list
+# as empty rather than throwing — a picker pointed at a directory it
+# cannot read should say so quietly, not take the app down.
+
+define file_dialog_refresh(fd) as:
+    fd.dir_label.text is fd.dir
+    dirs is []
+    files is []
+    entries is ls of fd.dir
+    if entries != null:
+        for i in range of (len of entries):
+            name is entries[i]
+            if (_fd_is_dir of [fd.dir, name]) == 1:
+                append of [dirs, name + "/"]
+            else:
+                append of [files, name]
+    sort of dirs
+    sort of files
+    items is [".."]
+    for i in range of (len of dirs):
+        append of [items, dirs[i]]
+    for i in range of (len of files):
+        append of [items, files[i]]
+    fd.listing.items is items
+    fd.listing.selected is 0 - 1
+    fd.listing.scroll_y is 0
+    return fd
+
+define _fd_is_dir(dir, name) as:
+    return is_dir of (_fd_join of [dir, name])
+
+define file_dialog(id, w, h, title, start_dir, on_ok) as:
+    dir0 is start_dir
+    if dir0 == null:
+        dir0 is getcwd of null
+
+    fd is dialog of [id, w, h, title, "", ["Open", "Cancel"], null]
+    fd.dir is dir0
+    fd.on_ok is on_ok
+
+    # Current directory, shown above the listing
+    fd.dir_label is label of [id + "_dir", 16, 44, dir0]
+    fd.dir_label.color is _theme.text_dim
+    fd.dir_label.scale is 1
+    add_child of [fd, fd.dir_label]
+
+    define _fd_on_select(lst) as:
+        if lst.selected < 0 or lst.selected >= (len of lst.items):
+            return null
+        name is lst.items[lst.selected]
+        if name == ".." or (ends_with of [name, "/"]) == 1:
+            entry is name
+            if (ends_with of [entry, "/"]) == 1:
+                entry is substr of [entry, 0, (len of entry) - 1]
+            fd.dir is _fd_join of [fd.dir, entry]
+            file_dialog_refresh of fd
+            fd.path_input.text is fd.dir
+        else:
+            fd.path_input.text is _fd_join of [fd.dir, name]
+        fd.path_input.cursor is len of fd.path_input.text
+
+    fd.listing is item_list of [id + "_list", 16, 62, w - 32, h - 62 - 78, [], _fd_on_select]
+    add_child of [fd, fd.listing]
+
+    fd.path_input is text_input of [id + "_path", 16, h - 72, w - 32, dir0, null]
+    add_child of [fd, fd.path_input]
+
+    define _fd_on_button(d, i) as:
+        if i == 0 and fd.on_ok != null:
+            fd.on_ok of [fd, fd.path_input.text]
+    fd.on_button is _fd_on_button
+
+    file_dialog_refresh of fd
+    return fd

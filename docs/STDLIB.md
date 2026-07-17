@@ -503,8 +503,26 @@ module header for the full argument list):
 | `ui_w_menu` | `dropdown`, `menu`, `menu_bar`, `radio_group`, `tabs` |
 | `ui_w_data` | `table`, `tree`, `item_list`, `grid` |
 | `ui_w_viz` | `chart`, `bar_chart`, `gauge`, `meter`, `canvas`, `waveform_view`, `code_view` |
-| `ui_w_dialog` | `dialog`, `color_picker`, `property_editor` |
+| `ui_w_dialog` | `dialog`, `file_dialog`, `color_picker`, `property_editor` |
 | `ui_w_special` | `splitter`, `piano_keyboard` |
+
+**`dialog` is a container** (#575): `add_child of [dlg, w]` mounts any
+widget inside it, positioned relative to the dialog's own top-left. The
+modal machinery carries it — `show_dialog`/`push_modal` centres and lays
+it out, `app_loop` renders it above everything, and `dispatch` treats the
+top modal as the root for each event, so children hit-test, hover, drag
+and take keyboard focus exactly as they do anywhere else, while clicks
+outside the dialog reach nothing behind it.
+
+**`file_dialog(id, w, h, title, start_dir, on_ok)`** is a path picker
+built on that. `start_dir` null means `getcwd`; `on_ok(fd, path)` fires
+with the full path when Open is clicked, Cancel just closes. The listing
+shows `..` first, then directories (trailing `/`), then files, each group
+sorted; clicking a directory navigates into it, clicking a file puts it
+in the path box, and the chosen path is on `fd.path_input.text`. A
+directory it cannot read lists empty rather than throwing.
+`file_dialog_refresh of fd` re-reads `fd.dir` if the tree changed under
+it.
 
 **`menu_bar(id, x, y, w, menus)`** is the desktop File/Edit/View strip.
 `menus` is a list of `{"title", "items", "on_select"}`, where `items`
