@@ -30,14 +30,22 @@ define repeat(s, count) as:
 
 # ---- pad_left: left-pad string to width with character ----
 # pad_left of [string, width, pad_char] -> string
+# An empty pad char returns s unchanged (it can never reach width, so the
+# loop would otherwise spin forever).
 define pad_left(s, width, ch) as:
+    if (len of ch) == 0:
+        return s
     loop while (len of s) < width:
         s is ch + s
     return s
 
 # ---- pad_right: right-pad string to width with character ----
 # pad_right of [string, width, pad_char] -> string
+# An empty pad char returns s unchanged (it can never reach width, so the
+# loop would otherwise spin forever).
 define pad_right(s, width, ch) as:
+    if (len of ch) == 0:
+        return s
     loop while (len of s) < width:
         s is s + ch
     return s
