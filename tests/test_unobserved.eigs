@@ -34,13 +34,13 @@ assert_eq of [g.x, 501.0, "post-unobserved assignment works"]
 
 # Non-numeric assignment still works inside unobserved (no fast path, but
 # correctness preserved)
-unobserved:
+unobserved:  # lint: allow W020 -- dict-only block is the point: tests transparency, not a speedup
     g.label is "set inside"
 assert_eq of [g.label, "set inside", "non-numeric unobserved assignment"]
 
 # Nested unobserved is idempotent (depth counter)
-unobserved:
-    unobserved:
+unobserved:  # lint: allow W020 -- ditto; the nesting is what's under test
+    unobserved:  # lint: allow W020 -- ditto
         g.x is 0
     g.x is g.x + 42
 assert_eq of [g.x, 42, "nested unobserved blocks"]

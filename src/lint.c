@@ -1283,6 +1283,158 @@ static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
     w017_scan(ast, ctx);
 }
 
+/* ---- W020 (#655): unobserved: block that provably does nothing ---- */
+
+/* `unobserved:` skips observer bookkeeping, which is gated on the NAMED env
+ * path (assign_counts in eigenscript.c). A dict field or list element is never
+ * observed in the first place — vm.c calls it "untracked" — so a block whose
+ * only assignments are `d.k is ...` / `xs[i] is ...` has nothing to skip.
+ *
+ * It also does not buy in-place mutation, which is the trap: it USED to. The
+ * tree-walking eval.c gated the dict fast path on g_unobserved_depth, so the
+ * block was a real optimisation when the idiom was written. NaN-boxing B-3a
+ * then made that mutation unconditional for the DMG register-write path
+ * (dict_set_cached_immediate), the gate went away, and every block of this
+ * shape silently became a no-op. Nothing regressed and nothing warned — which
+ * is exactly why this needs a lint and not a doc fix. Our own README shipped
+ * the dead form as the headline example for two months (#655).
+ *
+ * Conservative by construction: g_unobserved_depth is a GLOBAL, so a callee
+ * runs at depth > 0 too and its named assignments ARE skipped (verified:
+ * `when is y` inside a function reads 3 normally, 0 when called from inside a
+ * block). A block containing a call therefore may be doing real work through
+ * the callee and must not be flagged. Same for anything that binds a name —
+ * a for/listcomp variable, a catch name, a match binding. Only a block that is
+ * provably inert warns. */
+
+typedef struct {
+    int inert;   /* dict/index assignment — nothing for the block to skip */
+    int live;    /* named binding or a call — may be doing real work */
+} W020Facts;
+
+static void w020_facts(ASTNode *n, W020Facts *f) {
+    if (!n) return;
+    switch (n->type) {
+        /* Targets the block cannot help: never observed, and mutated in
+         * place with or without it. */
+        case AST_DOT_ASSIGN:
+            f->inert = 1;
+            w020_facts(n->data.dot_assign.target, f);
+            w020_facts(n->data.dot_assign.expr, f);
+            return;
+        case AST_INDEX_ASSIGN:
+            f->inert = 1;
+            w020_facts(n->data.index_assign.target, f);
+            w020_facts(n->data.index_assign.index, f);
+            w020_facts(n->data.index_assign.expr, f);
+            return;
+        /* A named assignment is the whole point of the block. */
+        case AST_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        /* A call inherits the depth, so the callee's named assignments are
+         * skipped — the block is load-bearing from here even if every target
+         * in view is a dict field. */
+        case AST_RELATION:
+        case AST_LAMBDA:
+        /* Name-binding forms: the bound variable takes the named path. */
+        case AST_FOR:
+        case AST_LISTCOMP:
+        case AST_TRY:
+        case AST_MATCH:
+        case AST_IMPORT:
+        case AST_FUNC:
+            f->live = 1;
+            return;
+        default: break;
+    }
+    /* Structural nodes: recurse. Anything not enumerated above cannot make a
+     * block live on its own, so walking children is enough. */
+    switch (n->type) {
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w020_facts(n->data.block.stmts[i], f);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w020_facts(n->data.program.stmts[i], f);
+            break;
+        case AST_IF:
+            w020_facts(n->data.cond.cond, f);
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w020_facts(n->data.cond.if_body[i], f);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w020_facts(n->data.cond.else_body[i], f);
+            break;
+        case AST_LOOP:
+            w020_facts(n->data.loop.cond, f);
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w020_facts(n->data.loop.body[i], f);
+            break;
+        case AST_BINOP:
+            w020_facts(n->data.binop.left, f);
+            w020_facts(n->data.binop.right, f);
+            break;
+        case AST_UNARY:
+            w020_facts(n->data.unary.operand, f);
+            break;
+        case AST_RETURN:
+            w020_facts(n->data.ret.expr, f);
+            break;
+        default: break;
+    }
+}
+
+static void w020_scan(ASTNode *n, LintContext *ctx) {
+    if (!n) return;
+    if (n->type == AST_UNOBSERVED) {
+        W020Facts f = {0, 0};
+        for (int i = 0; i < n->data.block.count; i++)
+            w020_facts(n->data.block.stmts[i], &f);
+        if (f.inert && !f.live)
+            lint_warn(ctx, n->line, "W020",
+                "'unobserved:' block has no effect — every assignment targets "
+                "a dict field or list element, which is never observed and is "
+                "already mutated in place; the block only helps plain "
+                "variables ('x is ...')");
+        /* Fall through and keep walking: nested blocks still get checked. */
+    }
+    switch (n->type) {
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w020_scan(n->data.block.stmts[i], ctx);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w020_scan(n->data.program.stmts[i], ctx);
+            break;
+        case AST_IF:
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w020_scan(n->data.cond.if_body[i], ctx);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w020_scan(n->data.cond.else_body[i], ctx);
+            break;
+        case AST_LOOP:
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w020_scan(n->data.loop.body[i], ctx);
+            break;
+        case AST_FOR:
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                w020_scan(n->data.forloop.body[i], ctx);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < n->data.func.body_count; i++)
+                w020_scan(n->data.func.body[i], ctx);
+            break;
+        default: break;
+    }
+}
+
+static void check_dead_unobserved(ASTNode *ast, LintContext *ctx) {
+    w020_scan(ast, ctx);
+}
+
 /* ---- W018 (#469): e.kind compared against an out-of-set error kind ---- */
 
 /* The error-kind vocabulary is CLOSED (err_kind_name / the EK_* enum). A catch
@@ -1990,6 +2142,7 @@ static void lint_run_checks(ASTNode *ast, const char *path,
     check_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
     check_one_element_arg_list(ast, ctx);
+    check_dead_unobserved(ast, ctx);
     check_error_kind_typo(ast, ctx);
 #if !EIGENSCRIPT_FREESTANDING
     check_undefined_names(ast, path, source, ctx);
