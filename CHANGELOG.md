@@ -5,6 +5,11 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`log2` / `log10` in lib/math.eigs (#545).** Pure-EigenScript base-2 and
+  base-10 logarithms over the `log` builtin, element-wise like the `log`
+  they wrap (`log2 of [8, 4]` -> `[3, 2]`); domain follows that builtin's
+  input floor at 1e-10, so x <= 0 needs no new edge case. Thanks to
+  @Nitjsefnie for the implementation and tests.
 - **`dialog` hosts children, and `file_dialog` (#575).** The last of the
   lib/ui gap series. `dialog` was title + message + buttons and could hold
   nothing: its renderer and hit-test knew no children, and `dispatch`'s
@@ -49,9 +54,6 @@ items that can actually be clicked, labels that measure themselves, grids
 that don't shadow your model, and a `menu_bar` that owns its own z-order.
 
 ### Added
-- **`log2` / `log10` in lib/math.eigs (#545).** Pure-EigenScript base-2 and
-  base-10 logarithms as `(log of x) / ln base`; domain follows the `log`
-  builtin's input floor at 1e-10, so x <= 0 needs no new edge case.
 - **`menu_bar` — the desktop File/Edit/View strip (#565).** The toolkit had
   the pull-down half (`menu`, `show_menu`, click-away close) but no bar, so a
   shell hand-rolled one from a toolbar of title buttons and had to position
