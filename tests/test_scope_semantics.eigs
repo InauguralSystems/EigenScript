@@ -175,4 +175,56 @@ push of lst
 assert of [len of lst == 4, "SS14 list mutated through function call"]
 assert of [lst[3] == 3, "SS15 appended values correct"]
 
+# === #633: LISTCOMP / CATCH VAR MUST NOT DOUBLE-BIND VS A SLOT ===
+# A comprehension variable (and a `catch` name) leaks into the surrounding
+# scope by name (env binding). A same-named plain `x is ...` must route to
+# that SAME binding, never a separate frame slot — otherwise the assignment
+# writes the slot while the comprehension/catch writes the env, the two
+# diverge, and later (even never-executed) code that mentions the name flips
+# an earlier read's result. Invariant: program text after a statement must
+# not change that statement's result.
+#
+# The bound names below (cv633, ev633) appear ONLY inside these functions:
+# a name already live at module scope classifies as a write-through global
+# and never takes the slot path, which is exactly the path that must be fixed.
+
+# The comprehension var leaks and overwrites the earlier `cv633 is 100`.
+define comp_leak as:
+    cv633 is 100
+    ys633 is [cv633 for cv633 in [1, 2]]
+    return cv633
+assert of [comp_leak of null == 2, "SS16 listcomp var leaks over an earlier plain assignment"]
+
+# Byte-identical body plus a never-called closure that merely mentions cv633:
+# it must NOT change what the earlier read of cv633 produced.
+define comp_leak_dead_closure as:
+    cv633 is 100
+    ys633 is [cv633 for cv633 in [1, 2]]
+    seen633 is cv633
+    dead633 is () => cv633
+    return seen633
+assert of [comp_leak_dead_closure of null == 2, "SS17 a never-called closure does not change an earlier listcomp read"]
+
+# Same double-bind class via `catch`: the caught error binds ev633 by name, so
+# the earlier `ev633 is 100` slot must not survive as a stale read.
+define catch_leak as:
+    ev633 is 100
+    try:
+        boom633 is undefined_name_for_633
+    catch ev633:
+        noop633 is 1
+    return ev633 == 100
+assert of [catch_leak of null == 0, "SS18 catch name leaks over an earlier plain assignment"]
+
+define catch_leak_dead_closure as:
+    ev633 is 100
+    try:
+        boom633 is undefined_name_for_633
+    catch ev633:
+        noop633 is 1
+    stale633 is ev633 == 100
+    dead633 is () => ev633
+    return stale633
+assert of [catch_leak_dead_closure of null == 0, "SS19 a never-called closure does not change an earlier catch read"]
+
 print of "scope semantics: all passed"

@@ -70,6 +70,10 @@ typedef struct Compiler {
     int               param_count;  /* number of function params (for local opt) */
     NameSet           captured;     /* names captured by nested closures (slow path) */
     NameSet           interrogated; /* names used in `who/when is x` (slow path for assign_counts) */
+    NameSet           env_bound;    /* #633: names a listcomp var / `catch` name binds into the
+                                     * env by name (OP_SET_NAME_LOCAL) in this scope. A same-named
+                                     * plain `x is ...` must NOT slot-promote, or the slot and the
+                                     * env binding diverge and a slot read returns a stale value. */
     NameSet          *module_names; /* root-compiler-owned: names defined at module scope */
     NameSet           module_slot_names; /* root-compiler-owned: names promoted to module slots */
     ASTNode          *root_ast;     /* root-compiler-owned: full AST for escape analysis */
@@ -1242,6 +1246,115 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
     }
 }
 
+/* #633: collect names that a listcomp variable or a `catch` error-name binds
+ * into the env *by name* (OP_SET_NAME_LOCAL — see AST_LISTCOMP / AST_TRY) in
+ * THIS scope. A plain `x is ...` of the same name must not slot-promote in
+ * emit_assign_for_tos, or the assignment writes a frame slot while the
+ * comprehension/catch writes the env by name — the two bindings diverge and a
+ * slot read returns a stale value that later (even dead) code flips. This is
+ * the mirror of collect_module_names_walk keeping forloop.var off the slot
+ * path. Stops at nested function/lambda boundaries — those introduce their own
+ * scope — by not recursing into AST_FUNC / AST_LAMBDA. */
+static void scan_for_env_bound(ASTNode *node, NameSet *out) {
+    if (!node) return;
+    switch (node->type) {
+    case AST_LISTCOMP:
+        name_set_add(out, node->data.listcomp.var);
+        scan_for_env_bound(node->data.listcomp.expr, out);
+        scan_for_env_bound(node->data.listcomp.iter, out);
+        scan_for_env_bound(node->data.listcomp.filter, out);
+        break;
+    case AST_TRY:
+        for (int i = 0; i < node->data.trycatch.try_count; i++)
+            scan_for_env_bound(node->data.trycatch.try_body[i], out);
+        if (node->data.trycatch.err_name) name_set_add(out, node->data.trycatch.err_name);
+        for (int i = 0; i < node->data.trycatch.catch_count; i++)
+            scan_for_env_bound(node->data.trycatch.catch_body[i], out);
+        break;
+    /* Descend through control flow / blocks to reach nested listcomps/catches */
+    case AST_IF:
+        for (int i = 0; i < node->data.cond.if_count; i++)
+            scan_for_env_bound(node->data.cond.if_body[i], out);
+        for (int i = 0; i < node->data.cond.else_count; i++)
+            scan_for_env_bound(node->data.cond.else_body[i], out);
+        break;
+    case AST_LOOP:
+        for (int i = 0; i < node->data.loop.body_count; i++)
+            scan_for_env_bound(node->data.loop.body[i], out);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < node->data.block.count; i++)
+            scan_for_env_bound(node->data.block.stmts[i], out);
+        break;
+    case AST_FOR:
+        scan_for_env_bound(node->data.forloop.iter, out);
+        for (int i = 0; i < node->data.forloop.body_count; i++)
+            scan_for_env_bound(node->data.forloop.body[i], out);
+        break;
+    case AST_MATCH:
+        scan_for_env_bound(node->data.match.expr, out);
+        for (int i = 0; i < node->data.match.case_count; i++)
+            for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                scan_for_env_bound(node->data.match.bodies[i][j], out);
+        break;
+    /* Expressions that may contain a listcomp */
+    case AST_BINOP:
+        scan_for_env_bound(node->data.binop.left, out);
+        scan_for_env_bound(node->data.binop.right, out);
+        break;
+    case AST_UNARY:
+        scan_for_env_bound(node->data.unary.operand, out);
+        break;
+    case AST_RELATION:
+        scan_for_env_bound(node->data.relation.left, out);
+        scan_for_env_bound(node->data.relation.right, out);
+        break;
+    case AST_ASSIGN:
+        scan_for_env_bound(node->data.assign.expr, out);
+        break;
+    case AST_RETURN:
+        scan_for_env_bound(node->data.ret.expr, out);
+        break;
+    case AST_LIST:
+        for (int i = 0; i < node->data.list.count; i++)
+            scan_for_env_bound(node->data.list.elems[i], out);
+        break;
+    case AST_INDEX:
+        scan_for_env_bound(node->data.index.target, out);
+        scan_for_env_bound(node->data.index.index, out);
+        break;
+    case AST_DICT:
+        for (int i = 0; i < node->data.dict.count; i++) {
+            scan_for_env_bound(node->data.dict.keys[i], out);
+            scan_for_env_bound(node->data.dict.vals[i], out);
+        }
+        break;
+    case AST_DOT:
+        scan_for_env_bound(node->data.dot.target, out);
+        break;
+    case AST_DOT_ASSIGN:
+        scan_for_env_bound(node->data.dot_assign.target, out);
+        scan_for_env_bound(node->data.dot_assign.expr, out);
+        break;
+    case AST_INDEX_ASSIGN:
+        scan_for_env_bound(node->data.index_assign.target, out);
+        scan_for_env_bound(node->data.index_assign.index, out);
+        scan_for_env_bound(node->data.index_assign.expr, out);
+        break;
+    case AST_LIST_PATTERN_ASSIGN:
+        scan_for_env_bound(node->data.list_pattern_assign.expr, out);
+        break;
+    case AST_SLICE:
+        scan_for_env_bound(node->data.slice.target, out);
+        scan_for_env_bound(node->data.slice.start, out);
+        scan_for_env_bound(node->data.slice.end, out);
+        break;
+    default:
+        break;
+    }
+}
+
 /* Collect module-level names (functions defined, top-level assignments).
  * Stops at function/lambda boundaries — those introduce their own scope.
  * Used to decide whether an assignment inside a function is updating a global
@@ -1454,6 +1567,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
         } else {
             int captured     = name_set_has(&c->captured, name);
             int interrogated = name_set_has(&c->interrogated, name);
+            int env_bound    = name_set_has(&c->env_bound, name);
             int in_outer     = name_in_enclosing(c, name);
             int in_module    = c->module_names && name_set_has(c->module_names, name);
             /* #373: whether a pre-existing env binding is a write-through
@@ -1462,7 +1576,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * write-through — the function gets a fresh local instead. */
             int in_globals   = !g_compile_module_boundary &&
                                c->env && env_get_hashed(c->env, name, h) != NULL;
-            int local_eligible = !captured && !interrogated && !in_outer && !in_module && !in_globals;
+            int local_eligible = !captured && !interrogated && !env_bound && !in_outer && !in_module && !in_globals;
 
             if (local_eligible) {
                 int new_slot = add_local(c, name, h);
@@ -1474,7 +1588,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
                     set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
                     obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
                 }
-            } else if (local_only || captured || interrogated) {
+            } else if (local_only || captured || interrogated || env_bound) {
                 int idx = add_string_constant(c, name);
                 set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
                 obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
@@ -2027,6 +2141,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         for (int i = 0; i < node->data.func.body_count; i++) {
             scan_for_captures(node->data.func.body[i], &fn_compiler.captured);
             scan_for_interrogated(node->data.func.body[i], &fn_compiler.interrogated);
+            scan_for_env_bound(node->data.func.body[i], &fn_compiler.env_bound);
         }
         /* Function's own params are never "captured by themselves" */
         for (int i = 0; i < node->data.func.param_count; i++)
@@ -2083,6 +2198,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
+        name_set_free(&fn_compiler.env_bound);
         free(fn_compiler.locals);
 
         chunk_scan_leaf_accessor(fn_chunk);  /* #366 */
@@ -2116,6 +2232,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         scan_for_captures(node->data.lambda.body, &fn_compiler.captured);
         scan_for_interrogated(node->data.lambda.body, &fn_compiler.interrogated);
+        scan_for_env_bound(node->data.lambda.body, &fn_compiler.env_bound);
         for (int i = 0; i < node->data.lambda.param_count; i++) {
             name_set_remove(&fn_compiler.captured, node->data.lambda.params[i]);
         }
@@ -2142,6 +2259,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
+        name_set_free(&fn_compiler.env_bound);
         free(fn_compiler.locals);
 
         chunk_scan_leaf_accessor(fn_chunk);  /* #366 */
