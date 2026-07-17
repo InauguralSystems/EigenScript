@@ -1,15 +1,30 @@
 # Roadmap
 
-Current version: **0.27.0**
+Current version: **0.32.0**
 
-Recently shipped (0.27.0, 2026-07-06): the one call rule (#405, BREAKING —
-bare literal list after `of` is always an argument list, W017 as the
-migration audit), tape format versioning (#411, BREAKING — replay refuses
-mismatched tapes), E003 undefined-name lint (#404 increment one), the
-interactive REPL line editor (#392), `chr` as ord's loud inverse (#435),
-the two-file amalgamation (#397), and four silent-wrong-answer builtin
-fixes. Full per-version detail lives in [CHANGELOG.md](CHANGELOG.md) —
-this file is forward-looking.
+Recently shipped (0.28.0 → 0.32.0, 2026-07-08 → 07-16):
+
+- **0.29.0** — the strategic headline landed: the **deterministic
+  cooperative task layer on the tape** (#408, seeded scheduler, zero
+  extra tape records), `lib/supervise.eigs` observer-native supervision
+  (#409), and `lib/sync.eigs` cross-`task_yield` locks (#488). 0.28.0 was
+  its increment-4 leadup.
+- **0.30.0** — the debugging-and-distribution release: `--step` eigsdap
+  CLI tape-stepper (#418), tape format v2 (#539), runtime-error carets +
+  token-precise LSP ranges (#407 residual), `--bundle` single-file
+  distribution with optional attached tape (#413), entropy-walk cycle
+  detection (#571), and the first gfx audio capture/playback + lib/ui
+  input trio (#567–#569, #578/#579).
+- **0.31.0** — DAW audio-I/O + live synthesis: bulk audio-I/O kernels
+  (#602/#603), the `audio_stream_*` live-streaming primitive (#612), and
+  `waveform_view` selection markers (#610/#611).
+- **0.32.0** — the desktop-shell release: lib/ui's gap series (#561–#577,
+  #594) surfaced by DeslanStudio's port and closed, including `menu_bar`
+  (#565), `handle_key`/`request_quit` (#563/#564), self-measuring `label`
+  (#561), and `dialog` children + `file_dialog` (#575).
+
+Full per-version detail lives in [CHANGELOG.md](CHANGELOG.md) — this file
+is forward-looking.
 
 ## Next
 
@@ -51,15 +66,15 @@ observer/deterministic-replay niche instead of diluting it.**
 
 ### Next (weeks-class, dependency-ordered)
 
-- [~] Scope-aware name-resolution lint (E-class, shared with the LSP) —
-      the highest correctness yield per week available; increment one
-      (E003 undefined-name, whole-file over-approximation) shipped in
-      0.27.0; increment two (scope-precise binding sets — fn-locals
-      invisible to siblings, module for-var loop-scoping, closures,
-      edit-distance-1 did-you-mean; #460 loaded-by shipped separately)
-      landed post-0.27.0 — the path-aware pass and token-precise LSP
-      ranges (waits on #407 columns)
-      remain ([#404](https://github.com/InauguralSystems/EigenScript/issues/404))
+- [x] Scope-aware name-resolution lint (E-class, shared with the LSP) —
+      the highest correctness yield per week available; closed 2026-07-09.
+      Increment one (E003 undefined-name, whole-file over-approximation)
+      shipped in 0.27.0; increment two (scope-precise binding sets —
+      fn-locals invisible to siblings, module for-var loop-scoping,
+      closures, edit-distance-1 did-you-mean; #460 loaded-by separately)
+      landed post-0.27.0; the path-aware pass and token-precise LSP ranges
+      landed once #407 columns shipped in 0.30.0
+      ([#404](https://github.com/InauguralSystems/EigenScript/issues/404))
 - [x] **Language change:** bare literal list after `of` is always an
       argument list — kill the 1-element spread trap while pre-1.0 makes
       it cheap ([#405](https://github.com/InauguralSystems/EigenScript/issues/405), closes #153).
@@ -71,24 +86,26 @@ observer/deterministic-replay niche instead of diluting it.**
       11 kinds (no `arity` — calls pad by design), user throws bind
       untouched, uncaught output byte-unchanged; kind-typo lint is the
       follow-up ([#469](https://github.com/InauguralSystems/EigenScript/issues/469))
-- [~] Column tracking + caret/span diagnostics — parse errors carry
+- [x] Column tracking + caret/span diagnostics — parse errors carry
       line:col (human + `--lint --json` E002 + LSP range) AND print a
-      source excerpt + caret (increment 2); per-warning spans and
-      runtime-error columns remain
+      source excerpt + caret; the residual (runtime-error columns +
+      token-precise LSP ranges) shipped in 0.30.0
       ([#407](https://github.com/InauguralSystems/EigenScript/issues/407))
 - [x] **Trace-tape format versioning decision** — decided and shipped in
       0.27.0 (version-stamped tapes, refuse-on-mismatch, no compat
       promise); unblocks the tape-shipping train (#413 bundle, #418
       eigsdap, #414 sockets, #408's future record kinds)
       ([#411](https://github.com/InauguralSystems/EigenScript/issues/411))
-- [ ] **Deterministic cooperative task layer on the tape** — the
-      strategic headline: byte-identical replay of concurrent programs,
-      closing the #148 contradiction; JIT stays on (no #297 flip);
+- [x] **Deterministic cooperative task layer on the tape** — the
+      strategic headline, shipped 0.29.0: byte-identical replay of
+      concurrent programs on a seeded scheduler (zero extra tape
+      records), closing the #148 contradiction; JIT stays on (no #297
+      flip); `lib/sync.eigs` cross-yield locks (#488) rode with it;
       forcing functions EigenOS + liferaft
       ([#408](https://github.com/InauguralSystems/EigenScript/issues/408))
-- [ ] `lib/supervise.eigs` observer-native supervision — predictive
-      (catches the silently-wedged worker), not crash-reactive; after
-      #408 only ([#409](https://github.com/InauguralSystems/EigenScript/issues/409))
+- [x] `lib/supervise.eigs` observer-native supervision — shipped 0.29.0:
+      predictive (catches the silently-wedged worker), not crash-reactive
+      ([#409](https://github.com/InauguralSystems/EigenScript/issues/409))
 - [x] Observer surface coherence — decided and shipped: unity is the
       horizon (the `|x|=1.0` entropy special case is gone) and `how` is a
       real deadband-normalized 0–1 gradient; #383 was struck earlier
@@ -98,11 +115,11 @@ observer/deterministic-replay niche instead of diluting it.**
       gap was the from-zero thunk only (OSR always re-entered through the
       interpreted back-edge)
       ([#410](https://github.com/InauguralSystems/EigenScript/issues/410))
-- [ ] eigsdap v1 as a CLI tape-stepper; DAP/VS Code deferred until
-      locals ride the tape
+- [x] eigsdap v1 as a CLI tape-stepper (`--step`) — shipped 0.30.0;
+      DAP/VS Code still deferred until locals ride the tape
       ([#418](https://github.com/InauguralSystems/EigenScript/issues/418))
-- [ ] `--bundle` single-file distribution, optional attached tape =
-      a self-replaying bug report
+- [x] `--bundle` single-file distribution, optional attached tape =
+      a self-replaying bug report — shipped 0.30.0
       ([#413](https://github.com/InauguralSystems/EigenScript/issues/413))
 - [ ] `ext_net` raw TCP/UDP sockets as tape-recorded nondet inputs —
       record/replay networking no incumbent stdlib has
@@ -125,10 +142,11 @@ observer/deterministic-replay niche instead of diluting it.**
 
 ### AOT (ouroboros — the native-perf path; not the JIT)
 
-- [ ] Close the F-OURO-23 envelope via `lib/checksum.eigs` as forcing
-      function (ouroboros#64)
-- [ ] `spec_audit` — replayable profile-guided specialization audit;
-      observer trajectories as compiler evidence (ouroboros#65)
+- [x] Close the F-OURO-23 envelope via `lib/checksum.eigs` (CRC-32) as
+      forcing function — closed 2026-07-07 (ouroboros#64)
+- [x] `spec_audit` — replayable profile-guided specialization audit;
+      observer trajectories as compiler evidence — closed 2026-07-07
+      (ouroboros#65)
 
 ### Deliberately NOT doing (survey-critic vetoes — don't re-propose without new facts)
 
