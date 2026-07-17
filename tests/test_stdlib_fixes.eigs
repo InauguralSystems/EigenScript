@@ -208,5 +208,18 @@ assert of [(abs of ((pow of [10, log10 of 1000]) - 1000)) < 0.0000001, "SF100 lo
 # x <= 0 inherits the log builtin's input floor at 1e-10 — no error.
 assert of [(log10 of 0) == -10, "SF101 log10 floored at 0"]
 assert of [(abs of ((log2 of -1) + 33.219280948873624)) < 0.0000001, "SF102 log2 floored below 0"]
+# Element-wise, like the log they wrap: log of [8, 4] works, so these
+# must too. Built on `divide`, not `/`, which is scalar-only.
+lg2 is log2 of [8, 4, 1]
+assert of [(len of lg2) == 3, "SF103 log2 over a list returns a list"]
+assert of [lg2[0] == 3, "SF104 log2 element-wise [0]"]
+assert of [lg2[1] == 2, "SF105 log2 element-wise [1]"]
+assert of [lg2[2] == 0, "SF106 log2 element-wise [2]"]
+lg10 is log10 of [1, 100]
+assert of [lg10[0] == 0, "SF107 log10 element-wise [0]"]
+assert of [(abs of (lg10[1] - 2)) < 0.0000001, "SF108 log10 element-wise [1]"]
+# The scalar path is unchanged by divide — same value as the log it wraps.
+assert of [(log2 of 8) == ((log of 8) / 0.6931471805599453), "SF109 log2 scalar unchanged by divide"]
+assert of [(log10 of 1000) == ((log of 1000) / 2.302585092994046), "SF110 log10 scalar unchanged by divide"]
 
 print of "All stdlib-fix tests passed"

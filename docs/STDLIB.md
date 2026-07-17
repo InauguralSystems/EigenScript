@@ -79,7 +79,7 @@ They already ship — reach for them first:
 | `_pr_median` / your own mean | `stats.median`, `stats.mean` (`lib/stats.eigs`) |
 | `hex4` / `pad2` (fixed-width hex) | `hex of [n, nibbles]` (**builtin** — zero-padded, never truncates) |
 | a byte-to-int / char-code helper | `ord` (read), `chr` / `str_from_bytes` (write) — **builtins** |
-| `_log10` / a log-base helper | *not yet a builtin* — `log2`/`log10` are tracked in **#545**; `lib/chemistry.eigs` has a private `_log10`. Until then use `log of x` (natural) and divide: `(log of x) / (log of 10)` |
+| `_log10` / a log-base helper | `math.log2`, `math.log10` (`lib/math.eigs`, #545) — element-wise like the `log` builtin they wrap. (Several modules still hand-roll `(log of x) / (log of 10)`; adopting them is #625.) |
 | a clamp / lerp | `math.clamp of [v, lo, hi]`, `math.lerp of [a, b, t]` (`lib/math.eigs`) |
 | a CSV reader/writer | `io.read_csv` / `write_csv`, or `data.df_from_csv` for typed columns |
 | a "wait until ready" poll loop | `functional.wait_until of [pred, tries, sleep_fn]` |
@@ -142,8 +142,8 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `lcm` | `lcm of [a, b]` | Least common multiple |
 | `argmax` | `argmax of list` | Index of the largest element (first on ties, -1 if empty) |
 | `argmin` | `argmin of list` | Index of the smallest element (first on ties, -1 if empty) |
-| `log2` | `log2 of value` | Base-2 logarithm (input floored at 1e-10) |
-| `log10` | `log10 of value` | Base-10 logarithm (input floored at 1e-10) |
+| `log2` | `log2 of value` | Base-2 logarithm; element-wise over a list (input floored at 1e-10) |
+| `log10` | `log10 of value` | Base-10 logarithm; element-wise over a list (input floored at 1e-10) |
 
 ### lib/list.eigs — Functional List Operations
 
