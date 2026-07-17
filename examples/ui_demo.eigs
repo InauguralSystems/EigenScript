@@ -4,6 +4,7 @@
 # Run: make gfx && ./src/eigenscript examples/ui_demo.eigs
 #
 # Features demonstrated:
+#   - Menu bar (File/View/Help) with File→Exit (request_quit)
 #   - Theme switching (Ctrl+1/2/3 hotkeys)
 #   - Layout containers (hbox/vbox)
 #   - Table widget
@@ -80,6 +81,17 @@ define on_menu_select(m, idx) as:
         status_text is f"Menu: {item[0]}"
     else:
         status_text is f"Menu: {item}"
+
+define on_file_menu(m, idx) as:
+    item is m.items[idx]
+    label is item
+    if (type of item) == "list":
+        label is item[0]
+    if label == "Exit":
+        # End app_loop cleanly (#564) — the loop's gfx_close still runs.
+        ui.request_quit of null
+    else:
+        status_text is f"Menu: {label}"
 
 define on_scroll(w) as:
     status_text is f"Scroll: {floor of (w.value * 100)}%"
@@ -160,8 +172,15 @@ root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
 root.bg is [25, 25, 35]
 root.border is null
 
+# -- Menu bar (owns its own z-order — its pull-down draws over the tabs) --
+file_menu is {"title": "File", "items": [["Exit", "Ctrl+Q"]], "on_select": on_file_menu}
+view_menu is {"title": "View", "items": ["Statusbar", "Toolbar", "-", "Reset Layout"], "on_select": on_menu_select}
+help_menu is {"title": "Help", "items": ["Documentation", "About"], "on_select": on_menu_select}
+mbar is ui.menu_bar of ["menubar", 0, 0, WINDOW_W, [file_menu, view_menu, help_menu]]
+MENU_H is mbar.h
+
 # -- Toolbar --
-tb is ui.toolbar of ["toolbar", 0, 0, WINDOW_W]
+tb is ui.toolbar of ["toolbar", 0, MENU_H, WINDOW_W]
 ui.add_child of [tb, ui.button of ["play", 0, 0, 60, 24, "Play", on_play]]
 ui.add_child of [tb, ui.button of ["stop", 0, 0, 60, 24, "Stop", on_stop]]
 ui.add_child of [tb, ui.separator of ["sep1", 0, 0, 24, 1]]
@@ -172,10 +191,10 @@ ui.add_child of [tb, ui.separator of ["sep2", 0, 0, 24, 1]]
 ui.add_child of [tb, ui.label of ["title", 0, 0, "UI Demo"]]
 
 # -- Tabs --
-main_tabs is ui.tabs of ["main", 0, 40, WINDOW_W, WINDOW_H - 40 - 24, ["Mix", "Synth", "Wave", "Table", "FX", "Extras", "Data"], on_tab]
+main_tabs is ui.tabs of ["main", 0, MENU_H + 40, WINDOW_W, WINDOW_H - 40 - 24 - MENU_H, ["Mix", "Synth", "Wave", "Table", "FX", "Extras", "Data"], on_tab]
 
 # --- Mix tab (with hbox/vbox layout) ---
-mix_panel is ui.panel of ["mix_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+mix_panel is ui.panel of ["mix_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 mix_panel.border is null
 
 # Left column: sliders in a vbox
@@ -219,7 +238,7 @@ ui.add_child of [mix_panel, left_col]
 ui.add_child of [mix_panel, right_col]
 
 # --- Synth tab ---
-synth_panel is ui.panel of ["synth_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+synth_panel is ui.panel of ["synth_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 synth_panel.border is null
 
 knob_row is ui.hbox of ["knob_row", 10, 10, 400, 80]
@@ -234,13 +253,13 @@ ui.add_child of [knob_row, ui.knob of ["cutoff", 0, 0, 44, 20, 20000, 5000, on_c
 ui.add_child of [synth_panel, knob_row]
 
 # --- Wave tab ---
-wave_panel is ui.panel of ["wave_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+wave_panel is ui.panel of ["wave_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 wave_panel.border is null
 ui.add_child of [wave_panel, ui.canvas of ["waveform", 10, 10, WINDOW_W - 20, 180, paint_waveform, on_wave_mouse]]
 ui.add_child of [wave_panel, ui.label of ["wave_hint", 10, 200, "Click the waveform"]]
 
 # --- Table tab ---
-table_panel is ui.panel of ["table_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+table_panel is ui.panel of ["table_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 table_panel.border is null
 
 cols is [{"name": "Track", "width": 200}, {"name": "Duration", "width": 120}, {"name": "BPM", "width": 80}, {"name": "Key", "width": 80}, {"name": "Genre", "width": 160}]
@@ -271,7 +290,7 @@ ui.add_child of [table_panel, table_ctx]
 ui.add_child of [table_panel, tbl]
 
 # --- FX tab with scrollable panel and checkboxes ---
-fx_panel is ui.panel of ["fx_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+fx_panel is ui.panel of ["fx_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 fx_panel.border is null
 
 fx_scroll is ui.scroll_panel of ["fx_list", 10, 10, 400, 300]
@@ -295,7 +314,7 @@ ctx_menu is ui.menu of ["ctx", ["Cut", "Copy", "Paste", "-", "Delete", "Duplicat
 ui.add_child of [fx_panel, ctx_menu]
 
 # --- Extras tab (tree, combobox, color picker, drag-to-reorder) ---
-extras_panel is ui.panel of ["extras_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+extras_panel is ui.panel of ["extras_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 extras_panel.border is null
 
 # Tree view
@@ -341,7 +360,7 @@ ui.add_child of [extras_panel, ui.label of ["reorder_lbl", 460, 318, "Drag to re
 ui.add_child of [extras_panel, reorder_list]
 
 # --- Data tab (chart, bar_chart, gauge, badge, code_view, property_editor, toasts) ---
-data_panel is ui.panel of ["data_content", 0, 0, WINDOW_W, WINDOW_H - 92]
+data_panel is ui.panel of ["data_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 data_panel.border is null
 
 # Line chart with two series
@@ -424,6 +443,7 @@ sb.sections is [
 ]
 
 # -- Assemble --
+ui.add_child of [root, mbar]
 ui.add_child of [root, tb]
 ui.add_child of [root, main_tabs]
 ui.add_child of [root, sb]
