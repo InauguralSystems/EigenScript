@@ -79,7 +79,7 @@ They already ship — reach for them first:
 | `_pr_median` / your own mean | `stats.median`, `stats.mean` (`lib/stats.eigs`) |
 | `hex4` / `pad2` (fixed-width hex) | `hex of [n, nibbles]` (**builtin** — zero-padded, never truncates) |
 | a byte-to-int / char-code helper | `ord` (read), `chr` / `str_from_bytes` (write) — **builtins** |
-| `_log10` / a log-base helper | *not yet a builtin* — `log2`/`log10` are tracked in **#545**; `lib/chemistry.eigs` has a private `_log10`. Until then use `log of x` (natural) and divide: `(log of x) / (log of 10)` |
+| `_log10` / a log-base helper | `math.log2` / `math.log10` — load `lib/math.eigs`, then use `log2 of x` or `log10 of x` instead of hand-rolled `(log of x) / (log of base)` helpers. |
 | a clamp / lerp | `math.clamp of [v, lo, hi]`, `math.lerp of [a, b, t]` (`lib/math.eigs`) |
 | a CSV reader/writer | `io.read_csv` / `write_csv`, or `data.df_from_csv` for typed columns |
 | a "wait until ready" poll loop | `functional.wait_until of [pred, tries, sleep_fn]` |

@@ -12,6 +12,8 @@
 #
 # All SI units unless otherwise noted.
 
+load_file of "lib/math.eigs"
+
 # ============================================================
 # Unit Conversion — Temperature
 # ============================================================
@@ -165,7 +167,7 @@ define moving_average(signal, window) as:
 
 # Convert amplitude to decibels
 define db_from_amplitude(amplitude) as:
-    return 20 * (log of amplitude) / (log of 10)
+    return 20 * (log10 of amplitude)
 
 # Convert decibels to amplitude
 define amplitude_from_db(db) as:
@@ -173,7 +175,7 @@ define amplitude_from_db(db) as:
 
 # Convert power to decibels
 define db_from_power(power) as:
-    return 10 * (log of power) / (log of 10)
+    return 10 * (log10 of power)
 
 # ============================================================
 # Control Systems
