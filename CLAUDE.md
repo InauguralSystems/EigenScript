@@ -105,8 +105,6 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
   — in **no** default build; compile-check with `make gfx`. All variants
   land on `src/eigenscript`, so never rebuild one while a suite run against
   another is in flight.
-- `make test` must run with stdin available or redirected from /dev/null —
-  `test_terminal.eigs` blocks forever reading a pipe that never EOFs.
 - **A semantics change must update `docs/SPEC.md` + `docs/COMPARISON.md` in
   the same PR** — `tests/test_doc_examples.py` runs their example/output
   pairs byte-for-byte (suite [89]/[90]) and CI fails otherwise.

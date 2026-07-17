@@ -2070,7 +2070,7 @@ echo ""
 
 # [60] Terminal builtins (screen_clear, screen_put, screen_end, screen_render, raw_key)
 echo "[60] Terminal Builtins (10 checks)"
-TM_OUTPUT=$(./eigenscript ../tests/test_terminal.eigs 2>&1); TM_OUTPUT_RC=$?
+TM_OUTPUT=$($EIGS_TMO ./eigenscript ../tests/test_terminal.eigs </dev/null 2>&1); TM_OUTPUT_RC=$?
 if rc_ok "$TM_OUTPUT_RC" "$TM_OUTPUT" && echo "$TM_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 10))
     PASS=$((PASS + 10))
