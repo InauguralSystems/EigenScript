@@ -10,6 +10,49 @@ permissions:
   contents: read
 
 jobs:
+  # Is this PR docs-only? A change touching nothing but *.md cannot alter C or
+  # .eigs behavior, so the legs below that build/run the runtime have nothing to
+  # say about it — they burn ~10 min of a contributor's wall-clock proving that
+  # a paragraph did not break AddressSanitizer.
+  #
+  # The doc gates are NOT skipped: docs/SPEC.md + COMPARISON.md examples are
+  # executed byte-for-byte ([89]/[90]) and doc drift is checked ([98]) inside
+  # run_all_tests.sh, which the linux legs still run in full.
+  #
+  # NOTE: the expensive JOBS still run — only their STEPS are guarded. "asan +
+  # ubsan (full suite)" is a REQUIRED status check on the default branch, and a
+  # required check that is skipped never reports, which blocks the merge
+  # forever. Reporting success in seconds is the only safe shape here.
+  scope:
+    name: scope
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+      - id: detect
+        name: Detect whether any non-docs file changed
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "not a PR — treating as code"
+            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          files=$(git diff --name-only "$base" "$head")
+          echo "changed files:"; echo "$files" | sed 's/^/  /'
+          # Anything not ending in .md means the runtime could be affected.
+          if printf '%s\n' "$files" | grep -qvE '\.md$'; then
+            echo "-> code change present: full CI"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "-> docs-only: runtime legs report green without building"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
   # via `container:`, so the environment Codespaces opens and the environment
@@ -146,7 +189,7 @@ jobs:
   # hosted build of the profile to prove the core language still executes.
   freestanding:
     name: freestanding profile (symbol gate + smoke)
-    needs: dev-image
+    needs: [dev-image, scope]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -159,22 +202,27 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Symbol gate (stage 1 profile, stage 2 mini-libc residue)
+      - if: needs.scope.outputs.code == 'true'
+        name: Symbol gate (stage 1 profile, stage 2 mini-libc residue)
         run: make freestanding-check
 
-      - name: Hosted smoke of the profile
+      - if: needs.scope.outputs.code == 'true'
+        name: Hosted smoke of the profile
         run: bash tools/freestanding_smoke.sh
 
-      - name: Embedded-stack soak (REPL soak in a 64 KiB stack rlimit)
+      - if: needs.scope.outputs.code == 'true'
+        name: Embedded-stack soak (REPL soak in a 64 KiB stack rlimit)
         run: bash tools/embed_stack_soak.sh
 
-      - name: Mini-libc differential vs glibc oracle
+      - if: needs.scope.outputs.code == 'true'
+        name: Mini-libc differential vs glibc oracle
         run: make freestanding-libc-diff
 
   # macOS exercises the BSD/clang toolchain and (on arm64) the non-x86 JIT
   # fallback. Runs natively — a Linux container image can't host these.
   build-and-test-macos:
     name: macos / ${{ matrix.os }}
+    needs: scope
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -183,18 +231,22 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Build
+      - if: needs.scope.outputs.code == 'true'
+        name: Build
         run: CC=clang ./build.sh
 
-      - name: Verify binary
+      - if: needs.scope.outputs.code == 'true'
+        name: Verify binary
         run: ./src/eigenscript --version
 
-      - name: Run test suite
+      - if: needs.scope.outputs.code == 'true'
+        name: Run test suite
         run: cd tests && bash run_all_tests.sh
 
       # Linux LSP coverage lives in the extensions job; this leg exists
       # because the LSP build had macOS-only link failures nothing surfaced.
-      - name: Compile-check LSP (macOS)
+      - if: needs.scope.outputs.code == 'true'
+        name: Compile-check LSP (macOS)
         run: make lsp CC=clang
 
   # Build the http+model variant and run the suite against it: the suite's
@@ -209,7 +261,7 @@ jobs:
   # standalone JIT emitter smoke tests.
   extensions:
     name: extensions (http+model+gfx suite; embed/lsp/jit-smoke)
-    needs: dev-image
+    needs: [dev-image, scope]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -222,37 +274,47 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: JIT emitter smoke tests
+      - if: needs.scope.outputs.code == 'true'
+        name: JIT emitter smoke tests
         run: make jit-smoke
 
-      - name: Embedding API smoke test (linked against the amalgamation)
+      - if: needs.scope.outputs.code == 'true'
+        name: Embedding API smoke test (linked against the amalgamation)
         run: make embed-smoke
 
-      - name: Static embed library (make lib)
+      - if: needs.scope.outputs.code == 'true'
+        name: Static embed library (make lib)
         run: make lib
 
-      - name: Two-file amalgamation drop-in (cc alone, fresh dir)
+      - if: needs.scope.outputs.code == 'true'
+        name: Two-file amalgamation drop-in (cc alone, fresh dir)
         run: bash tests/test_amalgamation.sh
 
-      - name: Build http+model variant
+      - if: needs.scope.outputs.code == 'true'
+        name: Build http+model variant
         run: make http
 
-      - name: Run full suite against http+model build
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against http+model build
         run: cd tests && bash run_all_tests.sh
 
-      - name: Build gfx variant
+      - if: needs.scope.outputs.code == 'true'
+        name: Build gfx variant
         run: make gfx
 
-      - name: Run full suite against gfx build (executes audio section [62])
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against gfx build (executes audio section [62])
         run: cd tests && bash run_all_tests.sh
 
-      - name: Compile-check LSP
+      - if: needs.scope.outputs.code == 'true'
+        name: Compile-check LSP
         run: make lsp
 
       # 44 deterministic adversarial inputs against the ASan-instrumented
       # stdin harness (same compile->vm pipeline as main.c). Seconds to run;
       # any exit other than 0/1 is a crash.
-      - name: Fuzz smoke (ASan harness, curated corpus)
+      - if: needs.scope.outputs.code == 'true'
+        name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
 
   # Build the `full` variant (http+model+db) against a real PostgreSQL service
@@ -263,7 +325,7 @@ jobs:
   # by its label (`db`), not localhost.
   database:
     name: db extension (postgres service)
-    needs: dev-image
+    needs: [dev-image, scope]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -289,10 +351,12 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Build full variant (http+model+db)
+      - if: needs.scope.outputs.code == 'true'
+        name: Build full variant (http+model+db)
         run: make full
 
-      - name: Run full suite with live DATABASE_URL
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite with live DATABASE_URL
         env:
           DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
         run: cd tests && bash run_all_tests.sh
@@ -303,7 +367,7 @@ jobs:
   # separately by tests/test_leak_guard.sh.
   sanitizers:
     name: asan + ubsan (full suite)
-    needs: dev-image
+    needs: [dev-image, scope]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -316,10 +380,12 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Build with AddressSanitizer + UBSan
+      - if: needs.scope.outputs.code == 'true'
+        name: Build with AddressSanitizer + UBSan
         run: make asan
 
-      - name: Run full suite under sanitizers
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite under sanitizers
         env:
           # Leak detection is ON: the suite runs leak-clean since the exit-time
           # teardown + birth-ref adoption fixes, so any new leak fails this job.
@@ -327,7 +393,8 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: cd tests && bash run_all_tests.sh
 
-      - name: Behavior-test the LSP under sanitizers
+      - if: needs.scope.outputs.code == 'true'
+        name: Behavior-test the LSP under sanitizers
         # `make asan` builds the interpreter, not eigenlsp — so the LSP would
         # otherwise never run under a sanitizer in CI. This builds it with
         # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
@@ -345,19 +412,23 @@ jobs:
   # reads *inside* the custom arena, not just at malloc granularity.)
   valgrind:
     name: valgrind (memcheck smoke, JIT off)
+    needs: scope
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Install Valgrind
+      - if: needs.scope.outputs.code == 'true'
+        name: Install Valgrind
         run: sudo apt-get update && sudo apt-get install -y valgrind
 
-      - name: Build (-O1 -g, minimal)
+      - if: needs.scope.outputs.code == 'true'
+        name: Build (-O1 -g, minimal)
         run: make valgrind
 
-      - name: Valgrind memcheck smoke
+      - if: needs.scope.outputs.code == 'true'
+        name: Valgrind memcheck smoke
         run: cd tests && bash valgrind_smoke.sh
 
   # ThreadSanitizer concurrency race gate (#401): the spawn/channel slice must
@@ -366,6 +437,7 @@ jobs:
   # ThreadSanitizer needs here (see CLAUDE.md).
   tsan:
     name: tsan (concurrency race gate)
+    needs: scope
     runs-on: ubuntu-latest
     # Backstop for the per-run timeouts in test_tsan.sh: the seeded-race UB
     # hung ~1/3 of runs overnight (2026-07-05) and burned the 6h default.
@@ -375,23 +447,27 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: ThreadSanitizer build
+      - if: needs.scope.outputs.code == 'true'
+        name: ThreadSanitizer build
         run: make tsan
 
-      - name: Concurrency race gate (setarch -R)
+      - if: needs.scope.outputs.code == 'true'
+        name: Concurrency race gate (setarch -R)
         run: bash tests/test_tsan.sh
 
   # First-run tooling unification (#400): the VS Code tree is canonical and has
   # the LSP client, and a fresh install.sh leaves BOTH binaries on PATH.
   install-smoke:
     name: install.sh (interpreter + eigenlsp on PATH)
+    needs: scope
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Canonical VS Code tree has the LSP client (no drifted duplicate)
+      - if: needs.scope.outputs.code == 'true'
+        name: Canonical VS Code tree has the LSP client (no drifted duplicate)
         run: |
           test -f editors/vscode/extension.js
           test ! -e editor
@@ -404,7 +480,8 @@ jobs:
           print("editors/vscode/ package.json wires the LSP client")
           PY
 
-      - name: Fresh install.sh puts eigenscript AND eigenlsp on PATH
+      - if: needs.scope.outputs.code == 'true'
+        name: Fresh install.sh puts eigenscript AND eigenlsp on PATH
         run: |
           ./install.sh
           test -x "$HOME/.local/bin/eigenscript"
@@ -419,26 +496,32 @@ jobs:
   # docs/PERFORMANCE.md, regenerated from bench/run_bench.sh.
   bench:
     name: bench (instruction-count regression gate)
+    needs: scope
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Install Valgrind
+      - if: needs.scope.outputs.code == 'true'
+        name: Install Valgrind
         run: sudo apt-get update && sudo apt-get install -y valgrind
 
-      - name: Build this commit
+      - if: needs.scope.outputs.code == 'true'
+        name: Build this commit
         run: ./build.sh
 
-      - name: Build origin/main in a worktree (same environment)
+      - if: needs.scope.outputs.code == 'true'
+        name: Build origin/main in a worktree (same environment)
         run: |
           git fetch --no-tags --depth=1 origin main
           git worktree add /tmp/main-ref origin/main
           ( cd /tmp/main-ref && ./build.sh )
 
-      - name: Gate self-test (a 2x pessimization must fail the gate)
+      - if: needs.scope.outputs.code == 'true'
+        name: Gate self-test (a 2x pessimization must fail the gate)
         run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --selftest
 
-      - name: Regression gate — Ir of this commit vs origin/main
+      - if: needs.scope.outputs.code == 'true'
+        name: Regression gate — Ir of this commit vs origin/main
         run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript
