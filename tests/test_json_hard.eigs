@@ -160,4 +160,13 @@ assert of [huge[0] == 1.5e300, "JH54 huge magnitude round-trips"]
 neg_tiny is json_decode of (json_encode of ([0 - 0.0000000123]))
 assert of [neg_tiny[0] == (0 - 0.0000000123), "JH55 negative tiny round-trips"]
 
+# --- #628: long number tokens must not be truncated to 63 chars ---
+# The old scanner capped the token buffer at 63 chars and kept scanning, so
+# the dropped tail was silently discarded and atof parsed a wrong-magnitude
+# prefix (rc=0). strtod over the validated span is correct at any length.
+pad50 is json_decode of "[1.000000000000000000000000000000000000000000000000000000000000e50]"
+assert of [pad50[0] == 1e50, "JH56 zero-padded 1e50 is not truncated to 1"]
+big69 is json_decode of "[1000000000000000000000000000000000000000000000000000000000000000000000]"
+assert of [big69[0] == 1e69, "JH57 70-digit integer is not truncated to 1e62"]
+
 print of "json hard: all passed"

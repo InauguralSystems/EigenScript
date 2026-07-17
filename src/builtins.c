@@ -946,40 +946,63 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
  * json.dumps, JS JSON.stringify, serde: "1e-06") failed at the sign —
  * including json_encode's OWN %.15g output for tiny/huge magnitudes.
  * The grammar is scanned exactly; a malformed tail ("1e", "1e+", "1.")
- * sets g_json_parse_err instead of letting atof() guess silently.
+ * sets g_json_parse_err instead of letting atof()/strtod() guess silently.
  * (Deliberately lax vs RFC in one spot: leading zeros ("01") stay
- * accepted, matching the old scanner.) numbuf caps at 63 chars — beyond
- * double's ~24-char maximum the extra digits carry no value anyway, and
- * the scan itself continues so *pos stays correct. */
+ * accepted, matching the old scanner.)
+ *
+ * #628: the scanner records the token span [start, p) and hands it straight
+ * to strtod for the correctly-rounded double at any length. The previous
+ * fixed 63-char numbuf silently DROPPED the tail of long tokens (a padded
+ * "1.<60 zeros>e50" decoded to 1, a 70-digit integer to 1e62) while the scan
+ * still advanced *pos correctly — so json_decode returned a valid-looking
+ * number of the wrong magnitude with rc=0. strtod over the span has no cap.
+ * The scanner validated a *decimal* JSON number, so strtod cannot "guess";
+ * we still verify strtod's endptr landed exactly on the scanned end. The one
+ * way strtod can disagree is a C99 hex-float prefix ("0x1p0"): strtod reads
+ * "0x…" as hex, but JSON has no hex numbers so the scanner stops at 'x'. On
+ * that (or any) endptr mismatch we re-parse the isolated token, keeping the
+ * value tied to the grammar the scanner accepted. `s` is always a
+ * NUL-terminated C string (the scanner's own `while (s[p])` loops rely on
+ * it), so strtod(s + start) reads within bounds. */
 static Value* eigs_json_parse_number(const char *s, int *pos) {
-    char numbuf[64];
-    int len = 0;
-    int p = *pos;
-#define JSON_NUM_PUSH() do { if (len < 63) numbuf[len++] = s[p]; p++; } while (0)
-    if (s[p] == '-') JSON_NUM_PUSH();
+    int start = *pos;
+    int p = start;
+    if (s[p] == '-') p++;
     if (!isdigit((unsigned char)s[p])) {
         g_json_parse_err = 1; *pos = p; return make_num(0);
     }
-    while (isdigit((unsigned char)s[p])) JSON_NUM_PUSH();
+    while (isdigit((unsigned char)s[p])) p++;
     if (s[p] == '.') {
-        JSON_NUM_PUSH();
+        p++;
         if (!isdigit((unsigned char)s[p])) {   /* "1." — frac needs digits */
             g_json_parse_err = 1; *pos = p; return make_num(0);
         }
-        while (isdigit((unsigned char)s[p])) JSON_NUM_PUSH();
+        while (isdigit((unsigned char)s[p])) p++;
     }
     if (s[p] == 'e' || s[p] == 'E') {
-        JSON_NUM_PUSH();
-        if (s[p] == '+' || s[p] == '-') JSON_NUM_PUSH();
+        p++;
+        if (s[p] == '+' || s[p] == '-') p++;
         if (!isdigit((unsigned char)s[p])) {   /* "1e", "1e+" — exp needs digits */
             g_json_parse_err = 1; *pos = p; return make_num(0);
         }
-        while (isdigit((unsigned char)s[p])) JSON_NUM_PUSH();
+        while (isdigit((unsigned char)s[p])) p++;
     }
-#undef JSON_NUM_PUSH
-    numbuf[len] = '\0';
+    char *endp;
+    double d = strtod(s + start, &endp);
+    if (endp != s + p) {
+        /* strtod ran past (or short of) the scanned decimal token — only
+         * reachable via a C99 hex-float "0x" prefix, which the JSON scanner
+         * stops before. Re-parse just the scanned span so the value matches
+         * the grammar the scanner accepted. */
+        int n = p - start;
+        char *iso = xmalloc((size_t)n + 1);
+        memcpy(iso, s + start, (size_t)n);
+        iso[n] = '\0';
+        d = strtod(iso, NULL);
+        free(iso);
+    }
     *pos = p;
-    return make_num(atof(numbuf));
+    return make_num(d);
 }
 
 /* Bound JSON nesting depth: each array/object descent is a C recursion, so
