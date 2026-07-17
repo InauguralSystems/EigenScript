@@ -13,6 +13,8 @@
 #
 # All SI units unless otherwise noted. Temperatures in Kelvin.
 
+load_file of "lib/math.eigs"
+
 # ============================================================
 # Constants
 # ============================================================
@@ -218,17 +220,13 @@ define daltons_partial_pressure(pressures) as:
 # Acids & Bases
 # ============================================================
 
-# _log10 of x -> log base 10
-define _log10(x) as:
-    return (log of x) / (log of 10)
-
 # ph of H_concentration -> pH = -log10([H+])
 define ph(H_conc) as:
-    return 0 - (_log10 of H_conc)
+    return 0 - (log10 of H_conc)
 
 # poh of OH_concentration -> pOH = -log10([OH-])
 define poh(OH_conc) as:
-    return 0 - (_log10 of OH_conc)
+    return 0 - (log10 of OH_conc)
 
 # ph_to_concentration of ph_val -> [H+] = 10^(-pH)
 define ph_to_concentration(ph_val) as:
@@ -241,7 +239,7 @@ define ph_from_poh(poh_val) as:
 # buffer_ph of [pka, acid_conc, base_conc] -> Henderson-Hasselbalch
 # pH = pKa + log10([A-]/[HA])
 define buffer_ph(pka, acid_conc, base_conc) as:
-    return pka + (_log10 of (base_conc / acid_conc))
+    return pka + (log10 of (base_conc / acid_conc))
 
 # ============================================================
 # Thermochemistry

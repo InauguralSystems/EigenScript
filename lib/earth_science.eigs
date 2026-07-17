@@ -12,6 +12,8 @@
 #
 # All SI units unless otherwise noted.
 
+load_file of "lib/math.eigs"
+
 # ============================================================
 # Atmospheric Science
 # ============================================================
@@ -37,7 +39,7 @@ define temperature_at_altitude(h) as:
 define dew_point(T, RH) as:
     a is 17.27
     b is 237.7
-    alpha is (a * T / (b + T)) + (log of (RH / 100)) / (log of 2.718281828)
+    alpha is (a * T / (b + T)) + (log of (RH / 100))
     return b * alpha / (a - alpha)
 
 # Wind chill index (T in Celsius, V in km/h)
@@ -114,7 +116,7 @@ define schwarzschild_radius(M) as:
 
 # Apparent magnitude: m = M + 5*log10(d/10), d in parsecs
 define apparent_magnitude(M, d) as:
-    return M + 5 * (log of (d / 10)) / (log of 10)
+    return M + 5 * (log10 of (d / 10))
 
 # Luminosity distance: d = 10^((m-M+5)/5) parsecs
 define luminosity_distance(m, M) as:
@@ -144,7 +146,7 @@ define parallax_distance(arcseconds) as:
 # CO2 radiative forcing: dF = 5.35 * ln(C/C0) W/m^2
 # C0 = pre-industrial CO2 (280 ppm typically)
 define co2_radiative_forcing(C, C0) as:
-    return 5.35 * (log of (C / C0)) / (log of 2.718281828)
+    return 5.35 * (log of (C / C0))
 
 # Climate sensitivity: lambda = dT/dF (K per W/m^2)
 define climate_sensitivity(dF, dT) as:

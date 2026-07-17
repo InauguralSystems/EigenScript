@@ -29,6 +29,8 @@
 #   eigen_eval of [ast, env]    -> value
 #   eigen_run of source         -> evaluate source string
 
+load_file of "lib/math.eigs"
+
 # ============================================================
 # Tokenizer
 # ============================================================
@@ -1152,23 +1154,23 @@ define _compute_entropy(val) as:
         p is 1.0 / (1.0 + x)
         if (p <= 0) or (p >= 1):
             return 0
-        return 0 - (p * ((log of p) / (log of 2)) + (1 - p) * ((log of (1 - p)) / (log of 2)))
+        return 0 - (p * (log2 of p) + (1 - p) * (log2 of (1 - p)))
     if t == "str":
         slen is len of val
         if slen == 0:
             return 0
-        return (log of (slen + 1)) / (log of 2)
+        return log2 of (slen + 1)
     if t == "list":
         llen is len of val
         if llen == 0:
             return 0
-        return (log of (llen + 1)) / (log of 2)
+        return log2 of (llen + 1)
     if t == "dict":
         dk is keys of val
         dlen is len of dk
         if dlen == 0:
             return 0
-        return (log of (dlen + 1)) / (log of 2)
+        return log2 of (dlen + 1)
     return 0
 
 define _update_observer(name, val) as:

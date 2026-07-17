@@ -79,7 +79,7 @@ They already ship — reach for them first:
 | `_pr_median` / your own mean | `stats.median`, `stats.mean` (`lib/stats.eigs`) |
 | `hex4` / `pad2` (fixed-width hex) | `hex of [n, nibbles]` (**builtin** — zero-padded, never truncates) |
 | a byte-to-int / char-code helper | `ord` (read), `chr` / `str_from_bytes` (write) — **builtins** |
-| `_log10` / a log-base helper | `math.log2`, `math.log10` (`lib/math.eigs`, #545) — element-wise like the `log` builtin they wrap. (Several modules still hand-roll `(log of x) / (log of 10)`; adopting them is #625.) |
+| `_log10` / a log-base helper | `math.log2`, `math.log10` (`lib/math.eigs`) — `load_file of "lib/math.eigs"`, then `log2 of x` / `log10 of x` instead of a hand-rolled `(log of x) / (log of base)`. Element-wise, like the `log` builtin they wrap. |
 | a clamp / lerp | `math.clamp of [v, lo, hi]`, `math.lerp of [a, b, t]` (`lib/math.eigs`) |
 | a CSV reader/writer | `io.read_csv` / `write_csv`, or `data.df_from_csv` for typed columns |
 | a "wait until ready" poll loop | `functional.wait_until of [pred, tries, sleep_fn]` |
