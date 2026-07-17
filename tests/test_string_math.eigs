@@ -29,11 +29,20 @@ assert of [(index_of of ["hello world", "world"]) == 6, "IO1 found"]
 assert of [(index_of of ["hello world", "xyz"]) == -1, "IO2 not found"]
 assert of [(index_of of ["hello", "h"]) == 0, "IO3 at start"]
 
+# ---- pad_left (lib/string.eigs) ----
+assert of [(pad_left of ["42", 6, "0"]) == "000042", "PL1 pads on the left"]
+assert of [(pad_left of ["hello", 3, "."]) == "hello", "PL2 already wide enough"]
+assert of [(pad_left of ["", 3, "x"]) == "xxx", "PL3 empty string"]
+# Empty pad char can never reach width — must return the source unchanged, not spin (#637).
+assert of [(pad_left of ["x", 5, ""]) == "x", "PL4 empty pad char returns source unchanged"]
+
 # ---- pad_right (lib/string.eigs) ----
 assert of [(pad_right of ["42", 6, "."]) == "42....", "PR1 pads on the right"]
 assert of [(pad_right of ["hello", 3, "."]) == "hello", "PR2 already wide enough"]
 assert of [(pad_right of ["", 3, "x"]) == "xxx", "PR3 empty string"]
 assert of [(pad_right of ["7", 4, "0"]) == "7000", "PR4 zero pad"]
+# Empty pad char can never reach width — must return the source unchanged, not spin (#637).
+assert of [(pad_right of ["x", 5, ""]) == "x", "PR5 empty pad char returns source unchanged"]
 
 # ---- scan_ints ----
 ints is scan_ints of "p cnf 3 4\n1 -2 0\nbad +7 -x 8.5 9\n"

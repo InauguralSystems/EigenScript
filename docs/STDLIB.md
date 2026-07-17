@@ -191,8 +191,8 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 |----------|-----------|-------------|
 | `join` | `join of [list, separator]` | Join elements with separator |
 | `repeat` | `repeat of [string, count]` | Repeat string n times |
-| `pad_left` | `pad_left of [string, width, char]` | Left-pad to width |
-| `pad_right` | `pad_right of [string, width, char]` | Right-pad to width |
+| `pad_left` | `pad_left of [string, width, char]` | Left-pad to width. An empty pad char returns the string unchanged |
+| `pad_right` | `pad_right of [string, width, char]` | Right-pad to width. An empty pad char returns the string unchanged |
 | `capitalize` | `capitalize of string` | Uppercase the first character, leave the rest |
 | `replace_all` | `replace_all of [string, find, replacement]` | Replace every occurrence of `find` |
 
