@@ -3138,6 +3138,82 @@ else
 fi
 echo ""
 
+# [99c] Runaway-guard self-test (#651). Proves the timeout backstop inside
+# check_eigs_suite (the #649 guard) actually fires AND is tallied exactly,
+# cheaply (~2s), by driving a genuinely non-terminating fixture through the
+# REAL check_eigs_suite with a 2s per-call budget instead of the 180s default.
+#
+# INVERTED EXPECTATION: for this block a guard that FIRES is the PASS. The inner
+# check_eigs_suite call is expected to time out (rc=124), print its named
+# timeout-failure line, add its declared count to FAIL and nothing to PASS — and
+# THAT inner failure is inverted into exactly one ordinary suite PASS here.
+#
+# The inner call runs inside a CHILD shell (check_eigs_suite exported into it)
+# so its PASS/FAIL/TOTAL mutations are isolated: the child starts them at 0 and
+# echoes the deltas, we assert on those deltas, and CONVERT — the live counters
+# never absorbed the inner FAIL, so instead of unwinding it we simply credit one
+# self-test PASS. The child runs under the self-test's OWN outer bound (10s,
+# same timeout/gtimeout binary the guard detected) so a broken/removed guard
+# converts to a clean, counted self-test FAILURE within that bound rather than
+# hanging the whole suite. Tally exactness is load-bearing: a guard that fires
+# but miscounts (inner FAIL delta != declared count, or PASS delta != 0) makes
+# this self-test FAIL.
+echo "[99c] Runaway guard self-test (#651)"
+TOTAL=$((TOTAL + 1))
+SELFTEST_FIXTURE="_runaway_guard_selftest.eigs"
+SELFTEST_NAME="runaway guard fires and is tallied as a timeout failure"
+SELFTEST_COUNT=1
+# Reuse the guard's own detection: EIGS_TMO is "" exactly when neither timeout
+# nor gtimeout exists (the guard itself then degrades to no-wrapper), so the
+# self-test degrades identically — a named SKIP counted as a pass, never a
+# false failure. Otherwise take the guard's binary (timeout|gtimeout).
+SELFTEST_TMO="${EIGS_TMO%% *}"
+if [ -z "$SELFTEST_TMO" ]; then
+    PASS=$((PASS + 1))
+    echo "  SKIP: no timeout/gtimeout on PATH — guard and self-test both degrade to no-wrapper (counted as pass)"
+else
+    # Export the real guard machinery into the child shell, drive the fixture
+    # with a 2s inner budget under a 10s outer bound (-k 3: SIGKILL 3s after
+    # SIGTERM if the runaway ignores TERM). GNU/BSD timeout put the command in
+    # its own process group and signal the whole group, so a hung eigenscript
+    # grandchild is killed too — no orphan.
+    export -f check_eigs_suite rc_ok
+    SELFTEST_OUT=$( "$SELFTEST_TMO" -k 3 10 \
+        env EIGS_TEST_TIMEOUT=2 EIGS_TMO="$SELFTEST_TMO 2" \
+        bash -c '
+            PASS=0; FAIL=0; TOTAL=0; LEAKED=0
+            check_eigs_suite "$1" "$2" "__SELFTEST_MARKER_NEVER_PRINTED__" "$3"
+            echo "SELFTEST_DELTAS PASS=$PASS FAIL=$FAIL TOTAL=$TOTAL"
+        ' _ "$SELFTEST_NAME" "$SELFTEST_FIXTURE" "$SELFTEST_COUNT" 2>&1 )
+    SELFTEST_ORC=$?
+    export -fn check_eigs_suite rc_ok
+    if [ "$SELFTEST_ORC" = "124" ]; then
+        # Outer bound tripped: the inner guard never fired, the runaway ran
+        # unbounded, our own bound caught it. Broken/missing guard — clean FAIL.
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: runaway not caught within the 10s outer bound (rc=124) — guard broken/removed; the suite would hang without it"
+    else
+        # Read the inner tally deltas the real check_eigs_suite produced.
+        selftest_deltas=$(printf '%s\n' "$SELFTEST_OUT" | grep '^SELFTEST_DELTAS ' | tail -1)
+        inner_pass=$(printf '%s\n' "$selftest_deltas" | sed -n 's/.*PASS=\([0-9]*\).*/\1/p')
+        inner_fail=$(printf '%s\n' "$selftest_deltas" | sed -n 's/.*FAIL=\([0-9-]*\).*/\1/p')
+        # Assert ALL of: named timeout-failure line carrying the block name +
+        # "timed out after 2s" shape + the fixture filename (one line); inner
+        # FAIL delta EXACTLY the declared count; inner PASS delta exactly 0.
+        if printf '%s\n' "$SELFTEST_OUT" \
+             | grep -qE "FAIL: $SELFTEST_NAME \(timed out after 2s .* runaway in $SELFTEST_FIXTURE\)" \
+           && [ "$inner_fail" = "$SELFTEST_COUNT" ] && [ "$inner_pass" = "0" ]; then
+            PASS=$((PASS + 1))
+            echo "  PASS: guard fired (rc=124), named timeout failure for $SELFTEST_FIXTURE, FAIL+=$SELFTEST_COUNT / PASS+=0 — inverted to one self-test PASS"
+        else
+            FAIL=$((FAIL + 1))
+            echo "  FAIL: guard self-test — expected named 2s-timeout failure for $SELFTEST_FIXTURE with inner FAIL delta=$SELFTEST_COUNT / PASS delta=0; got FAIL delta='$inner_fail' PASS delta='$inner_pass'"
+            printf '%s\n' "$SELFTEST_OUT" | grep -iE 'FAIL|SELFTEST_DELTAS' | head -5 | sed 's/^/      /'
+        fi
+    fi
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then

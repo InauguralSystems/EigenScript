@@ -1,0 +1,15 @@
+# Runaway fixture for the #651 runaway-guard self-test. NOT run by the normal
+# suite: the leading underscore keeps it out of test_*.eigs discovery, and
+# run_all_tests.sh drives it ONLY through the dedicated self-test block.
+#
+# This program never terminates on ANY hardware. EigenScript hard-caps a single
+# loop at 100,000,000 iterations (vm.c eigs_loop_cap_step), so a lone
+# `loop while 1 == 1` would force-exit after the cap (a few seconds) and be a
+# "runaway" only relative to a sub-cap timeout budget. Nesting defeats that: the
+# inner loop force-exits at the cap, the outer loop immediately re-enters it,
+# and total runtime is unbounded -- so the guard's timeout MUST fire, whatever
+# the box speed.
+i is 0
+loop while 1 == 1:
+    loop while 1 == 1:
+        i is i + 1
