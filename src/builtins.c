@@ -1614,14 +1614,29 @@ Value* builtin_match(Value *arg) {
         return make_list(0);
     }
 
-    regmatch_t matches[16];
-    if (regexec(&re, str, 16, matches, 0) != 0) {
+    /* #629: size the match array from the compiled pattern (full match + one
+     * slot per capture group) rather than a fixed 16. A fixed cap silently
+     * dropped groups past 15; a loop CONDITION of `rm_so >= 0` also terminated
+     * emission at the first non-participating optional group, deleting every
+     * later capture. re_nsub is bounded by POSIX pattern complexity;
+     * xmalloc_array guards the +1 and *sizeof against size_t overflow. */
+    size_t ng = re.re_nsub + 1;
+    regmatch_t *matches = xmalloc_array(ng, sizeof(regmatch_t));
+    if (regexec(&re, str, ng, matches, 0) != 0) {
+        free(matches);
         regfree(&re);
         return make_list(0);
     }
 
     Value *result = make_list(8);
-    for (int i = 0; i < 16 && matches[i].rm_so >= 0; i++) {
+    for (size_t i = 0; i < ng; i++) {
+        /* POSIX sets rm_so = -1 for a group that didn't participate (e.g. an
+         * unmatched optional (x)?). Emit null so positional indexing holds —
+         * group n stays at index n — rather than stopping the loop (#629). */
+        if (matches[i].rm_so < 0) {
+            list_append_owned(result, make_null());
+            continue;
+        }
         int len = matches[i].rm_eo - matches[i].rm_so;
         char *buf = xmalloc(len + 1);
         memcpy(buf, str + matches[i].rm_so, len);
@@ -1629,6 +1644,7 @@ Value* builtin_match(Value *arg) {
         list_append_owned(result, make_str(buf));
         free(buf);
     }
+    free(matches);
     regfree(&re);
     return result;
 }

@@ -110,6 +110,14 @@ lazy quantifiers.
 |------|-----------|-------------|
 | `regex_match` | `regex_match of [s, pattern]` | `[full_match, group1, ...]` or `[]` |
 | `regex_find` | `regex_find of [s, pattern]` | All matches as `[match1, match2, ...]` |
+
+On a successful match, group *n* is always at index *n*, for every group in
+the pattern (there is no cap on group count). A capture group that did not
+participate in the match — e.g. an unmatched optional `(x)?` — is emitted as
+`null`, not as `""`, so a non-participating group is distinguishable from one
+that matched the empty string. Example: `regex_match of ["ab", "(x)?(a)(b)"]`
+→ `["ab", null, "a", "b"]` (mirrors Python's `(None, 'a', 'b')`). A complete
+non-match still returns `[]`.
 | `regex_replace` | `regex_replace of [s, pattern, replacement]` | Replace all matches |
 
 ### Bitwise
