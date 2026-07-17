@@ -5,6 +5,50 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`dialog` hosts children, and `file_dialog` (#575).** The last of the
+  lib/ui gap series. `dialog` was title + message + buttons and could hold
+  nothing: its renderer and hit-test knew no children, and `dispatch`'s
+  modal branch called `_handle_dialog_click` directly — bypassing the hit
+  test, the registry, hover and key routing — so a picker had to be a
+  hand-rolled overlay panel re-implementing modality from scratch
+  (DeslanStudio's `src/client/dialogs.eigs`).
+
+  A dialog is now a container: `add_child of [dlg, w]` mounts any widget,
+  positioned relative to the dialog's top-left. Rather than teach the
+  special case about children, **the top modal simply becomes the root for
+  the event** — so hit-testing, the registry walk, focus, hover and drag
+  all run against the dialog's subtree by the ordinary path, while clicks
+  outside it reach nothing behind. `push_modal` and `app_loop` lay the
+  modal out (it is not in the root's tree, so the normal layout pass never
+  reached it). Two things that were impossible now work: **typing into a
+  widget inside a modal**, and **hover on the dialog's own buttons** —
+  `hover_btn` was only ever set to -1 and read by the renderer, with
+  nothing in between ever assigning it, because no mousemove could reach a
+  modal at all.
+
+  `file_dialog(id, w, h, title, start_dir, on_ok)` is the picker on top:
+  `..` first, then directories, then files, each sorted; a directory
+  navigates, a file fills the path box, `on_ok(fd, path)` fires on Open.
+  An unreadable directory lists empty rather than throwing. The dialog's
+  button geometry is now defined once (`_dialog_btn_rect`) instead of
+  being recomputed by render and click separately.
+
+## [0.32.0] - 2026-07-16
+
+The **desktop-shell release**: lib/ui's gap series, closed. DeslanStudio's
+port is the toolkit's first real consumer, and building a DAW shell on it
+surfaced ten issues (#561–#577, #594) — the things a toolkit only learns
+when an actual application leans on it. Seven were real and are fixed here;
+three had already been fixed or shipped and were closed with the probe
+output rather than re-fixed.
+
+The theme is **the toolkit owning what the consumer had to hand-roll**:
+keyboard through the public event door instead of trapped inside
+`app_loop`, a quit seam instead of `exit of N` skipping teardown, dropdown
+items that can actually be clicked, labels that measure themselves, grids
+that don't shadow your model, and a `menu_bar` that owns its own z-order.
+
+### Added
 - **`log2` / `log10` in lib/math.eigs (#545).** Pure-EigenScript base-2 and
   base-10 logarithms as `(log of x) / ln base`; domain follows the `log`
   builtin's input floor at 1e-10, so x <= 0 needs no new edge case.
