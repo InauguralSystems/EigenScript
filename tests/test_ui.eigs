@@ -1045,6 +1045,167 @@ assert_true of [mpos[0] + mbar2.popups[0].w <= 800, "right-edge menu clamped ins
 _menu_bar_close of mbar2
 
 # ============================================================
+# 20. dialog hosts children (#575)
+# ============================================================
+
+print of "--- Dialog Container Tests (#575) ---"
+
+_ui.window_w is 800
+_ui.window_h is 600
+_ui.modal_stack is []
+_ui.focused_input is null
+
+droot is panel of ["droot", 0, 0, 800, 600]
+behind_hits is [0]
+define behind_click(b) as:
+    behind_hits[0] is behind_hits[0] + 1
+behind is button of ["behind", 0, 0, 800, 600, "behind", behind_click]
+add_child of [droot, behind]
+_layout of [droot, 0, 0]
+
+dbtn is []
+define d_on_button(d, i) as:
+    append of [dbtn, i]
+ddlg is dialog of ["ddlg", 400, 300, "Choose", "", ["OK", "Cancel"], d_on_button]
+
+dti is text_input of ["dti", 16, 60, 300, "", null]
+add_child of [ddlg, dti]
+dil is item_list of ["dil", 16, 100, 300, 120, ["alpha", "beta"], null]
+add_child of [ddlg, dil]
+assert_eq of [len of ddlg.children, 2, "a dialog hosts children (#575)"]
+assert_eq of [_widget_registry["dialog"].container, 1, "dialog is a container"]
+
+# push_modal centres it AND lays it out, so children have absolute
+# positions before the first frame
+push_modal of [ddlg, 800, 600]
+assert_eq of [ddlg._ax, 200, "modal centred horizontally"]
+assert_eq of [dti._ax, 216, "child laid out relative to the dialog"]
+
+# A click on a CHILD reaches the child — not the dialog, not the tree
+# behind it. Before #575 the modal path called _handle_dialog_click
+# directly, so a dialog child could never be clicked at all.
+dispatch of [droot, {"type": "mousedown", "x": dti._ax + 5, "y": dti._ay + 5, "button": 1}]
+assert_true of [_ui.focused_input != null, "clicking a dialog child focuses it"]
+assert_eq of [_ui.focused_input.id, "dti", "the child itself took the click"]
+
+# ...so keyboard reaches it too (#563's handle_key + this)
+dispatch of [droot, {"type": "keydown", "key": "h", "ctrl": 0, "shift": 0, "alt": 0}]
+dispatch of [droot, {"type": "keydown", "key": "i", "ctrl": 0, "shift": 0, "alt": 0}]
+assert_eq of [dti.text, "hi", "typing reaches a text_input inside a modal"]
+
+# a second child type, to show it is the general widget path
+_ui.last_click_id is ""
+dispatch of [droot, {"type": "mousedown", "x": dil._ax + 5, "y": dil._ay + 5, "button": 1}]
+assert_eq of [dil.selected, 0, "an item_list inside a modal selects"]
+
+# The dialog's buttons show hover. hover_btn was only ever set to -1 and
+# read by the renderer — nothing assigned it, because no mousemove could
+# reach a modal at all.
+dr0 is _dialog_btn_rect of [ddlg, 0, ddlg._ax, ddlg._ay]
+dispatch of [droot, {"type": "mousemove", "x": dr0[0] + 2, "y": dr0[1] + 2}]
+assert_eq of [ddlg.hover_btn, 0, "dialog button hover tracks the pointer (#575)"]
+dispatch of [droot, {"type": "mousemove", "x": ddlg._ax + 5, "y": ddlg._ay + 5}]
+assert_eq of [ddlg.hover_btn, 0 - 1, "hover clears off the buttons"]
+
+# Modality: a click outside the dialog reaches nothing behind it
+_ui.last_click_id is ""
+dispatch of [droot, {"type": "mousedown", "x": 5, "y": 5, "button": 1}]
+dispatch of [droot, {"type": "mouseup", "x": 5, "y": 5, "button": 1}]
+assert_eq of [behind_hits[0], 0, "a modal swallows clicks meant for the tree behind"]
+
+# The dialog's own buttons still fire and close it
+_ui.last_click_id is ""
+dispatch of [droot, {"type": "mousedown", "x": dr0[0] + 2, "y": dr0[1] + 2, "button": 1}]
+assert_eq of [len of dbtn, 1, "dialog button fired"]
+assert_eq of [dbtn[0], 0, "the button under the click fired (OK)"]
+assert_eq of [ddlg.visible, 0, "the dialog closed itself"]
+_ui.modal_stack is []
+_ui.focused_input is null
+
+# ============================================================
+# 21. file_dialog (#575)
+# ============================================================
+
+print of "--- File Dialog Tests (#575) ---"
+
+FD_ROOT is "/tmp/eigs_fd_probe"
+FD_SUB is "/tmp/eigs_fd_probe/sub"
+mkdir of FD_SUB
+write_text of ["/tmp/eigs_fd_probe/b.txt", "b"]
+write_text of ["/tmp/eigs_fd_probe/a.wav", "a"]
+write_text of ["/tmp/eigs_fd_probe/sub/inner.txt", "i"]
+
+froot is panel of ["froot", 0, 0, 800, 600]
+_layout of [froot, 0, 0]
+fchosen is []
+define fd_ok(d, p) as:
+    append of [fchosen, p]
+
+fd is file_dialog of ["fd", 460, 340, "Open", FD_ROOT, fd_ok]
+
+# ".." first, then directories (trailing /), then files — each sorted
+assert_eq of [len of fd.listing.items, 4, "listing: .. + 1 dir + 2 files"]
+assert_eq of [fd.listing.items[0], "..", "listing[0] is .."]
+assert_eq of [fd.listing.items[1], "sub/", "directories come first, marked with /"]
+assert_eq of [fd.listing.items[2], "a.wav", "files after dirs, sorted"]
+assert_eq of [fd.listing.items[3], "b.txt", "files sorted lexicographically"]
+
+push_modal of [fd, 800, 600]
+
+define fd_click(idx) as:
+    _ui.last_click_id is ""
+    dispatch of [froot, {"type": "mousedown", "x": fd.listing._ax + 5, "y": fd.listing._ay + idx * fd.listing.item_h + 2, "button": 1}]
+
+# clicking a directory navigates into it
+fd_click of 1
+assert_eq of [fd.dir, FD_SUB, "clicking a directory navigates into it"]
+assert_eq of [len of fd.listing.items, 2, "sub/ lists .. + inner.txt"]
+assert_eq of [fd.listing.items[1], "inner.txt", "sub/'s file"]
+
+# .. walks back up
+fd_click of 0
+assert_eq of [fd.dir, FD_ROOT, ".. walks back up"]
+assert_eq of [len of fd.listing.items, 4, "back to the parent listing"]
+
+# clicking a file puts it in the path box and does NOT navigate
+fd_click of 2
+assert_eq of [fd.path_input.text, "/tmp/eigs_fd_probe/a.wav", "clicking a file selects its path"]
+assert_eq of [fd.dir, FD_ROOT, "clicking a file does not navigate"]
+
+# Open fires on_ok with the path; Cancel does not
+fr0 is _dialog_btn_rect of [fd, 0, fd._ax, fd._ay]
+_ui.last_click_id is ""
+dispatch of [froot, {"type": "mousedown", "x": fr0[0] + 2, "y": fr0[1] + 2, "button": 1}]
+assert_eq of [len of fchosen, 1, "Open fired on_ok"]
+assert_eq of [fchosen[0], "/tmp/eigs_fd_probe/a.wav", "on_ok got the chosen path"]
+assert_eq of [fd.visible, 0, "Open closed the dialog"]
+
+fd2 is file_dialog of ["fd2", 460, 340, "Open", FD_ROOT, fd_ok]
+push_modal of [fd2, 800, 600]
+fr1 is _dialog_btn_rect of [fd2, 1, fd2._ax, fd2._ay]
+_ui.last_click_id is ""
+dispatch of [froot, {"type": "mousedown", "x": fr1[0] + 2, "y": fr1[1] + 2, "button": 1}]
+assert_eq of [len of fchosen, 1, "Cancel does not call on_ok"]
+assert_eq of [fd2.visible, 0, "Cancel closed the dialog"]
+
+# path joining does not double the separator, and root is handled
+assert_eq of [_fd_join of ["/tmp", "x"], "/tmp/x", "join: plain"]
+assert_eq of [_fd_join of ["/tmp/", "x"], "/tmp/x", "join: trailing slash not doubled"]
+assert_eq of [_fd_parent of "/tmp/a/b", "/tmp/a", "parent: strips the last component"]
+assert_eq of [_fd_parent of "/tmp", "/", "parent of a top-level dir is /"]
+assert_eq of [_fd_parent of "/", "/", "parent of / stays /"]
+assert_eq of [_fd_parent of "rel", ".", "parent of a bare relative name is ."]
+
+# an unreadable/missing directory lists empty rather than throwing
+fd3 is file_dialog of ["fd3", 460, 340, "Open", "/tmp/eigs_fd_no_such_dir_zzz", null]
+assert_eq of [len of fd3.listing.items, 1, "a missing directory lists just .."]
+
+remove_file of "/tmp/eigs_fd_probe/b.txt"
+remove_file of "/tmp/eigs_fd_probe/a.wav"
+remove_file of "/tmp/eigs_fd_probe/sub/inner.txt"
+_ui.modal_stack is []
+
+# ============================================================
 # Summary
 # ============================================================
 

@@ -473,6 +473,10 @@ define push_modal(dlg, parent_w, parent_h) as:
     dlg.visible is 1
     dlg.hover_btn is -1
     append of [_ui.modal_stack, dlg]
+    # Lay it out now, not on the next frame: a dialog is dispatchable the
+    # moment it is pushed, and its children need absolute positions to be
+    # hit-tested (#575). app_loop re-lays it every frame after this.
+    _layout of [dlg, 0, 0]
 
 define pop_modal() as:
     n is len of _ui.modal_stack
@@ -565,6 +569,15 @@ define dispatch(root, ev) as:
     # dispatch is the single event door for mouse, wheel and keyboard.
     if ev.type == "keydown" or ev.type == "keyup":
         return handle_key of [root, ev]
+    # A modal owns the pointer: the top of the stack becomes the root for
+    # this event, so everything below — hit-testing, the registry walk,
+    # focus, hover, drag — runs against the dialog's subtree and nothing
+    # behind it can be reached. This is also what lets a dialog host
+    # children (#575): they are dispatched to like any other widget
+    # instead of through a special-case click handler that knew only
+    # about the dialog's own buttons.
+    if (len of _ui.modal_stack) > 0:
+        root is _ui.modal_stack[(len of _ui.modal_stack) - 1]
     mx is 0
     my is 0
     if ev.type == "mousemove" or ev.type == "mousedown" or ev.type == "mouseup":
@@ -678,12 +691,9 @@ define dispatch(root, ev) as:
         # Reset tooltip
         _ui.tooltip_widget is null
         _ui.tooltip_start_time is gfx_ticks of null
-        # Check modal stack first (they're modal)
-        if (len of _ui.modal_stack) > 0:
-            _close_dropdowns of root
-            top_modal is _ui.modal_stack[(len of _ui.modal_stack) - 1]
-            _handle_dialog_click of [top_modal, mx, my]
-            return null
+        # (a modal, if any, is already this event's root — see the top of
+        # dispatch; its buttons are handled by the dialog's registry
+        # on_mousedown like any other widget's, #575)
         # Hit-test BEFORE closing dropdowns (#577). An open dropdown
         # extends its widget's bounds; closing first dropped the click
         # onto whatever sat underneath, so a dropdown item could never be
@@ -838,10 +848,14 @@ define app_loop(root, on_key, on_tick) as:
         # Pull-downs sit above whatever their bar overlaps, so they are an
         # overlay pass rather than part of the tree-order walk (#565).
         _render_popups of root
-        # Render modal stack (dim overlay + dialog for each)
+        # Render modal stack (dim overlay + dialog for each). A modal is
+        # not in the root's tree, so the layout pass above never reaches
+        # it — lay each one out here or its children have no absolute
+        # position to hit-test or draw against (#575).
         for mi in range of (len of _ui.modal_stack):
             mdlg is _ui.modal_stack[mi]
             if mdlg.visible == 1:
+                _layout of [mdlg, 0, 0]
                 render of [mdlg, 0, 0]
         _render_tooltip of null
         _render_toasts of null
