@@ -872,6 +872,7 @@ of:
 | `sandbox` | sandbox policy denial or budget exhaustion |
 | `interrupt` | host-requested abort |
 | `assert` | `assert` builtin failure |
+| `deadlock` | every cooperative task is blocked and none is runnable (#408) |
 | `internal` | a VM invariant broke (report it) |
 
 Discriminate on `kind`, not on message text — messages are wording,
