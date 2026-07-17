@@ -43,4 +43,40 @@ prices is regex_find of ["$42 and $7 total $294", "[0-9]+"]
 assert_eq of [len of prices, 3, "extract numbers count"]
 assert_eq of [prices[0], "42", "extract first number"]
 
+# ---- #629: non-participating groups keep positional indexing (null, not dropped) ----
+# A leading optional group that didn't participate must NOT terminate emission.
+# Python: re.match('(x)?(a)(b)', 'ab').groups() -> (None, 'a', 'b').
+opt is regex_match of ["ab", "(x)?(a)(b)"]
+assert_eq of [len of opt, 4, "#629 optional-lead length full+3"]
+assert_eq of [opt[0], "ab", "#629 optional-lead full match"]
+assert_eq of [opt[1], null, "#629 non-participating group is null"]
+assert_eq of [opt[2], "a", "#629 group 2 still at index 2"]
+assert_eq of [opt[3], "b", "#629 group 3 still at index 3"]
+
+# Control: all-participating pattern is unchanged.
+ctrl is regex_match of ["ab", "(a)(b)"]
+assert_eq of [len of ctrl, 3, "#629 control length"]
+assert_eq of [ctrl[1], "a", "#629 control group 1"]
+assert_eq of [ctrl[2], "b", "#629 control group 2"]
+
+# Non-participating group in the MIDDLE.
+mid is regex_match of ["ab", "(a)(x)?(b)"]
+assert_eq of [len of mid, 4, "#629 middle-optional length"]
+assert_eq of [mid[1], "a", "#629 middle-optional group before"]
+assert_eq of [mid[2], null, "#629 middle-optional group is null"]
+assert_eq of [mid[3], "b", "#629 middle-optional group after"]
+
+# Non-participating group at the END.
+endg is regex_match of ["ab", "(a)(b)(x)?"]
+assert_eq of [len of endg, 4, "#629 end-optional length"]
+assert_eq of [endg[1], "a", "#629 end-optional group 1"]
+assert_eq of [endg[2], "b", "#629 end-optional group 2"]
+assert_eq of [endg[3], null, "#629 trailing non-participating group is null"]
+
+# Groups past 15 no longer vanish: 17-group pattern -> full + 17 groups.
+wide is regex_match of ["abcdefghijklmnopq", "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)(m)(n)(o)(p)(q)"]
+assert_eq of [len of wide, 18, "#629 17-group pattern returns all 17 groups"]
+assert_eq of [wide[16], "p", "#629 group 16 present (past old 15-cap)"]
+assert_eq of [wide[17], "q", "#629 group 17 present"]
+
 test_summary of null
