@@ -49,6 +49,9 @@ items that can actually be clicked, labels that measure themselves, grids
 that don't shadow your model, and a `menu_bar` that owns its own z-order.
 
 ### Added
+- **`log2` / `log10` in lib/math.eigs (#545).** Pure-EigenScript base-2 and
+  base-10 logarithms as `(log of x) / ln base`; domain follows the `log`
+  builtin's input floor at 1e-10, so x <= 0 needs no new edge case.
 - **`menu_bar` — the desktop File/Edit/View strip (#565).** The toolkit had
   the pull-down half (`menu`, `show_menu`, click-away close) but no bar, so a
   shell hand-rolled one from a toolbar of title buttons and had to position
