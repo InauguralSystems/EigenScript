@@ -227,4 +227,28 @@ define catch_leak_dead_closure as:
     return stale633
 assert of [catch_leak_dead_closure of null == 0, "SS19 a never-called closure does not change an earlier catch read"]
 
+# SS20 (#642): the OTHER half of the double-binding defect #633's fix closed —
+# and the one SS16-SS19 cannot see. Those all read the name AFTER the
+# comprehension; this reads the comprehension's OWN RESULT. Before the fix the
+# body resolved `i` to the shadowed slot on every iteration, so the whole list
+# came out as (outer i) * 2 — [-2, -2, -2] rather than [2, 4, 6]. rc=0, no
+# diagnostic, every element wrong. Distinct trigger too: #633 needs a closure
+# in the body to manifest, this needs only a same-named local. Without this
+# assertion a refactor could reintroduce #642 with SS16-SS19 all green.
+define comp_body_shadow as:
+    i642 is 0 - 1
+    return [i642 * 2 for i642 in [1, 2, 3]]
+comp642 is comp_body_shadow of null
+assert of [comp642[0] == 2, "SS20 comprehension body sees its own loop var, not a shadowed local (#642)"]
+assert of [comp642[2] == 6, "SS20b and it advances per element, rather than repeating the outer value"]
+
+# SS21 (#642 control): the fresh-var case must keep working — a fix that
+# de-promotes too eagerly would break the ordinary comprehension, and this is
+# the shape every other test in the suite already uses, so nothing else would
+# catch it going wrong in the other direction.
+define comp_body_fresh as:
+    return [j642 * 2 for j642 in [1, 2, 3]]
+fresh642 is comp_body_fresh of null
+assert of [fresh642[2] == 6, "SS21 a comprehension with a fresh loop var is unaffected"]
+
 print of "scope semantics: all passed"
