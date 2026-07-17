@@ -12,6 +12,20 @@ FAIL=0
 TOTAL=0
 LEAKED=0
 
+# Runaway guard for every .eigs invocation (test blocks via check_eigs_suite,
+# and the [97] example programs). GNU `timeout` is the backstop; on a stock
+# macOS (BSD userland) it isn't present, so fall back to gtimeout, or to no
+# wrapper (degrade rather than fail). This is a RUNAWAY backstop, not a latency
+# assertion: the budget is deliberately generous so it never fires on a
+# slow-but-working test on the slow dev box (N3350, examples take up to ~60s
+# under ASan — see #616), only on a genuine hang (an infinite loop in a test
+# file, #648). Override with EIGS_TEST_TIMEOUT (seconds) to demonstrate the
+# guard fast without burning the full budget.
+: "${EIGS_TEST_TIMEOUT:=180}"
+EIGS_TMO=""
+if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout $EIGS_TEST_TIMEOUT"
+elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIMEOUT"; fi
+
 # Exit-code gate for .eigs test programs. rc=0 passes. A nonzero rc whose
 # output carries a LeakSanitizer report is tolerated with a warning tally.
 # The env<->fn closure cycles are reclaimed by the cycle collector now
@@ -76,8 +90,14 @@ check_eigs_suite() {
     local marker="$3"
     local count="$4"
     local out rc
-    out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
-    if rc_ok "$rc" "$out" && echo "$out" | grep -q "$marker"; then
+    out=$($EIGS_TMO ./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
+    if [ "$rc" = "124" ]; then
+        # rc=124 is the runaway guard (GNU/gtimeout both use it): the test file
+        # never terminated. Name the block so the failure points at the culprit
+        # instead of folding into the generic rc path — and let the suite continue.
+        FAIL=$((FAIL + count))
+        echo "  FAIL: $test_name (timed out after ${EIGS_TEST_TIMEOUT}s — runaway in $file)"
+    elif rc_ok "$rc" "$out" && echo "$out" | grep -q "$marker"; then
         PASS=$((PASS + count))
         echo "  PASS: $test_name"
     else
@@ -3067,16 +3087,18 @@ echo ""
 echo "[97] Example programs (examples/*.eigs; gfx demos skipped)"
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
-# GNU `timeout` is the runaway guard, but it isn't on a stock macOS (BSD
-# userland); fall back to gtimeout, or to no wrapper (the examples all
-# terminate quickly, so the guard is belt-and-suspenders).
-EX_TMO=""
-if command -v timeout >/dev/null 2>&1; then EX_TMO="timeout 60"
-elif command -v gtimeout >/dev/null 2>&1; then EX_TMO="gtimeout 60"; fi
+# Runaway guard reuses the shared $EIGS_TMO (defined near the top). The old
+# `timeout 60` here was a latency assertion in disguise: invariant_weak.eigs
+# takes ~60.5s standalone under ASan and tripped the 60s guard under suite load
+# (#616). $EIGS_TMO's generous budget keeps this a runaway backstop, not a perf
+# gate — a genuine hang still fails, a slow-but-working example does not.
 for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
     if grep -q 'gfx_' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
-    EX_OUT=$( cd "$(dirname "$f")" && $EX_TMO "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
-    if rc_ok "$EX_RC" "$EX_OUT"; then
+    EX_OUT=$( cd "$(dirname "$f")" && $EIGS_TMO "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
+    if [ "$EX_RC" = "124" ]; then
+        echo "  FAIL(124): $f (timed out after ${EIGS_TEST_TIMEOUT}s — runaway)"
+        EX_FAIL=$((EX_FAIL + 1))
+    elif rc_ok "$EX_RC" "$EX_OUT"; then
         EX_PASS=$((EX_PASS + 1))
     else
         echo "  FAIL($EX_RC): $f"
