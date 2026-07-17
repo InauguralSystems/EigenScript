@@ -947,6 +947,96 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#583 interrogatives inside expressions are not flagged" "$OUTPUT" "W019"
 rm -f "$TMPFILE"
 
+# --- #655 (W020): an unobserved: block that provably does nothing ---
+# The positive is the shape our own README shipped for two months. The
+# negatives are what keep the rule honest: each is a block that LOOKS inert
+# but is load-bearing, and a rule that flagged any of them would be worse
+# than no rule — it would teach people to delete real optimisations.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+game is {"px": 0.0, "vx": 1.0}
+unobserved:
+    game.px is game.px + game.vx * 0.1
+print of game.px
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#655 W020 fires on a dict-only unobserved block" "$OUTPUT" "W020"
+check_contains "#655 W020 reported at the block's line (2)" "$OUTPUT" ":2: warning\[W020\]"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+xs is [1.0, 2.0]
+unobserved:
+    xs[0] is xs[0] + 1.0
+print of xs[0]
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#655 W020 fires on an index-only unobserved block" "$OUTPUT" "W020"
+rm -f "$TMPFILE"
+
+# A plain variable is the real optimisation — never flag it.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+acc is 0.0
+i is 0
+unobserved:
+    loop while i < 10:
+        acc is acc + 1.0
+        i is i + 1
+print of acc
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#655 a plain-variable unobserved block is not flagged" "$OUTPUT" "W020"
+rm -f "$TMPFILE"
+
+# Mixed (Tidepool's real physics shape): dict writes AND named locals. The
+# named half is doing the work, so the block stays.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+game is {"px": 0.0}
+cx is 0.0
+unobserved:
+    cx is cx + 1.0
+    game.px is game.px + cx
+print of game.px
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#655 a mixed dict+named unobserved block is not flagged" "$OUTPUT" "W020"
+rm -f "$TMPFILE"
+
+# The subtle one: g_unobserved_depth is GLOBAL, so the callee runs unobserved
+# too and its named assignments are skipped. Every target in view is a dict
+# field, yet the block is load-bearing. Verified: `when is y` inside f reads 3
+# normally and 0 when f is called from inside a block.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define f(n) as:
+    y is n + 1
+    y is y * 2
+    return y
+game is {"px": 0.0}
+unobserved:
+    game.px is f of 1
+print of game.px
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#655 a block whose callee assigns names is not flagged" "$OUTPUT" "W020"
+rm -f "$TMPFILE"
+
+# A for-loop binds its variable by name — that binding takes the named path.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+game is {"px": 0.0}
+unobserved:
+    for step in [1, 2, 3]:
+        game.px is game.px + step
+print of game.px
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#655 a block binding a for-loop variable is not flagged" "$OUTPUT" "W020"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

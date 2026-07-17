@@ -5,6 +5,25 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **W020: a lint for `unobserved:` blocks that provably do nothing (#655).**
+  Fires when *every* assignment in the block targets a dict field or list
+  element (`d.k is ...`, `xs[i] is ...`). Observer bookkeeping is gated on
+  the named env path, so a dict field is never observed — vm.c calls it
+  "untracked" — and there is nothing for the block to skip. This shape was
+  a real optimisation once: the tree-walking `eval.c` gated the dict in-place
+  fast path on `g_unobserved_depth`, so Tidepool's 2026-04-17 physics block
+  genuinely bought a zero-allocation tick. NaN-boxing B-3a (2026-05-22) then
+  made that mutation unconditional via `dict_set_cached_immediate` for DMG's
+  register-write path, the gate went away, and every block of this shape
+  silently became a no-op. Nothing regressed and nothing warned — which is
+  the argument for a lint rather than a doc fix; our own README shipped the
+  dead form as its headline example for two months. Conservative by
+  construction: `g_unobserved_depth` is a global, so a **call** inside the
+  block runs the callee unobserved too (verified: `when is y` inside a
+  function reads 3 normally, 0 when called from inside a block) and
+  suppresses the warning, as does any plain-variable assignment or
+  name-binding form (`for` / listcomp / `catch` / `match`). Only a provably
+  inert block fires.
 - **`log2` / `log10` in lib/math.eigs (#545).** Pure-EigenScript base-2 and
   base-10 logarithms over the `log` builtin, element-wise like the `log`
   they wrap (`log2 of [8, 4]` -> `[3, 2]`); domain follows that builtin's
@@ -37,6 +56,22 @@ All notable changes to EigenScript are documented here.
   An unreadable directory lists empty rather than throwing. The dialog's
   button geometry is now defined once (`_dialog_btn_rect`) instead of
   being recomputed by render and click separately.
+
+### Fixed
+- **README's `unobserved` example showed the inert half of a real
+  optimisation (#655).** Reported by email with a full repro. The section
+  paired a dict-field example (`game.px is game.px + game.vx * DT`) with
+  "the observer is skipped ... ~22% faster", and both halves were false for
+  that shape — a dict field is never observed, and it is mutated in place
+  with or without the block. The example was Tidepool's physics block
+  distilled to the half that stopped doing anything (its other 7 named
+  locals — `cx`, `drag`, `thrust` — are where its win lives). The ~22% is
+  real but comes from named variables: iLambdaAi measured it end-to-end on
+  an 18-hour training run, and all five of its blocks are named-variable
+  only. Rewritten around a plain-variable accumulator with the measurement
+  that shape actually produces (834ms -> 307ms, 2.7x, 2M iterations, n=5
+  medians), plus the dict caveat and a note that the depth is global rather
+  than lexical. Now enforced by W020.
 
 ## [0.32.0] - 2026-07-16
 

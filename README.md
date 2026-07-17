@@ -175,13 +175,22 @@ cheap. When you know a hot region won't be interrogated, opt out:
 
 ```eigenscript
 unobserved:
-    game.px is game.px + game.vx * DT
-    game.py is game.py + game.vy * DT
+    loop while i < n:
+        acc is acc + weights[i] * xs[i]
+        i is i + 1
 ```
 
-Inside the block, numeric assignments mutate the existing `Value` in
-place (identity preserved) and the observer is skipped. Outside,
-normal behavior resumes. ~22% faster on a mutation-heavy hot loop.
+Inside the block, assignments to plain variables skip the observer and
+mutate the existing `Value` in place. Outside, normal behavior resumes.
+Measured 2.7x on a 2M-iteration accumulator loop (834ms → 307ms, n=5
+medians); iLambdaAi saw ~22% end-to-end on an 18-hour training run.
+
+The block only helps **plain variables** — `x is ...`. A dict field or
+list element (`d.k is ...`, `xs[i] is ...`) is never observed in the
+first place, and is already mutated in place, so wrapping one buys
+nothing; `--lint` flags a block with no plain-variable assignments as
+W020. Note the depth is global rather than lexical: a function *called*
+inside the block runs unobserved too.
 
 ### Tensor Math
 
