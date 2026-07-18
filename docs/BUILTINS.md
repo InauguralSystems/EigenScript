@@ -268,7 +268,7 @@ Boolean keywords that check the most recently observed value:
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file. A missing/unreadable path raises a catchable `io` error (matching `import`); a parse/compile failure in the file raises `parse`. |
-| `file_exists` | `file_exists of "path"` | 1 if file exists, 0 otherwise |
+| `file_exists` | `file_exists of "path"` | 1 if file exists, 0 otherwise. Trace-recorded, so replay is deterministic (#585) |
 | `is_dir` | `is_dir of "path"` | 1 if the path names a directory, 0 for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic |
 | `read_text` | `read_text of "path"` | Read file contents as string ("" on failure, 10 MB cap) |
 | `read_line` | `read_line of null` | Blocking line read from **stdin**: next line without its trailing newline (`\r\n` stripped as one unit), `null` at EOF; an empty line is `""`. Works on pipes — the stream-safe primitive `read_text of "/dev/stdin"` can't be (fseek fails on unseekable fds, #558). Trace-recorded, so replay is deterministic |
@@ -285,10 +285,10 @@ Boolean keywords that check the most recently observed value:
 | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset) |
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom |
 | `try_parse` | `try_parse of code_string` | 1 if string is valid EigenScript syntax, 0 otherwise |
-| `mkdir` | `mkdir of "path"` | Create directory (and parents). 1 on success, 0 on failure |
-| `ls` | `ls of "path"` | List directory contents as list of strings |
-| `getcwd` | `getcwd of null` | Current working directory as string |
-| `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH |
+| `mkdir` | `mkdir of "path"` | Create directory (and parents). 1 on success, 0 on failure. Trace-recorded: replay serves the recorded bit and does not re-create the directory (#585) |
+| `ls` | `ls of "path"` | List directory contents as list of strings. Trace-recorded, so replay is deterministic (#585) |
+| `getcwd` | `getcwd of null` | Current working directory as string. Trace-recorded, so replay is deterministic (#585) |
+| `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH. Trace-recorded, so replay is deterministic (#585) |
 | `chdir` | `chdir of "path"` | Change working directory. 1 on success, 0 on failure |
 | `mktemp` | `mktemp of null` | Create temporary file, return its path |
 | `rm` | `rm of "path"` | Remove a file. 1 on success, 0 on failure |

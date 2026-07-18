@@ -58,6 +58,19 @@ All notable changes to EigenScript are documented here.
   being recomputed by render and click separately.
 
 ### Fixed
+- **`file_exists` / `ls` / `mkdir` / `getcwd` / `exe_path` are now
+  trace-recorded (#585).** These fs builtins predated the tape and ran live
+  under `EIGS_REPLAY`: a program branching on `file_exists of p` replayed
+  against the current filesystem, not the recorded one, so a tape recorded on
+  one machine silently diverged on another (the closed-world hole #471 closed
+  for `args`). Each is now wrapped with the `TAKE`/`RECORD` pair, so replay
+  serves the recorded answer and never touches the live fs. `mkdir` is
+  Recorded rather than #148-non-replayable — its success bit is pinnable by
+  the tape — and under replay the `TAKE` short-circuits before `mkdir(2)`, so
+  the recorded bit is served and the directory is not created a second time
+  (replay does not re-run the write side effect). Replay tests in
+  `test_replay.sh` mutate the fs between record and replay to prove the value
+  comes from the tape; verified JIT on and off.
 - **`prev of` now binds unary-or-tighter like every other `of` (#634).**
   `prev of x + 1` parsed as `prev of (x + 1)` — the operand parser used
   `parse_expression` where every other `of` uses `parse_unary` — and

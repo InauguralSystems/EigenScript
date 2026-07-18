@@ -329,6 +329,67 @@ else
     fail "is_dir replay" "rec='$REC_ID' rep='$REP_ID'"
 fi
 
+# ---- #585: file_exists / ls / mkdir / getcwd are taped nondeterminism ----
+# Each records with the filesystem in one state, mutates it, then replays;
+# the recorded answer must win (a live probe would now disagree). mkdir also
+# asserts the write side effect does NOT re-run on replay.
+
+# file_exists: record present, delete, replay must still say 1.
+mkdir -p "$TMPDIR/fe585"
+touch "$TMPDIR/fe585/probe"
+cat > "$TMPDIR/p_fe.eigs" <<EOF
+print of (file_exists of "$TMPDIR/fe585/probe")
+EOF
+FE_REC=$(EIGS_TRACE="$TMPDIR/fe.tape" "$EIGS" "$TMPDIR/p_fe.eigs" 2>&1)
+rm -f "$TMPDIR/fe585/probe"
+FE_REP=$(EIGS_REPLAY="$TMPDIR/fe.tape" "$EIGS" "$TMPDIR/p_fe.eigs" 2>&1)
+if [ "$FE_REC" = "1" ] && [ "$FE_REP" = "1" ]; then
+    ok "file_exists replay: recorded 1 wins after the file is deleted (#585)"
+else
+    fail "file_exists replay (#585)" "rec='$FE_REC' rep='$FE_REP'"
+fi
+
+# ls: record two entries, delete them, replay must serve the recorded count.
+mkdir -p "$TMPDIR/ls585"
+touch "$TMPDIR/ls585/a" "$TMPDIR/ls585/b"
+cat > "$TMPDIR/p_ls.eigs" <<EOF
+print of (len of (ls of "$TMPDIR/ls585"))
+EOF
+LS_REC=$(EIGS_TRACE="$TMPDIR/ls.tape" "$EIGS" "$TMPDIR/p_ls.eigs" 2>&1)
+rm -f "$TMPDIR/ls585/a" "$TMPDIR/ls585/b"
+LS_REP=$(EIGS_REPLAY="$TMPDIR/ls.tape" "$EIGS" "$TMPDIR/p_ls.eigs" 2>&1)
+if [ "$LS_REC" = "2" ] && [ "$LS_REP" = "2" ]; then
+    ok "ls replay: recorded listing wins after the entries are deleted (#585)"
+else
+    fail "ls replay (#585)" "rec='$LS_REC' rep='$LS_REP'"
+fi
+
+# mkdir: record success, remove the dir, replay must serve 1 AND not re-create it.
+cat > "$TMPDIR/p_mk.eigs" <<EOF
+print of (mkdir of "$TMPDIR/mk585/sub")
+EOF
+MK_REC=$(EIGS_TRACE="$TMPDIR/mk.tape" "$EIGS" "$TMPDIR/p_mk.eigs" 2>&1)
+rm -rf "$TMPDIR/mk585"
+MK_REP=$(EIGS_REPLAY="$TMPDIR/mk.tape" "$EIGS" "$TMPDIR/p_mk.eigs" 2>&1)
+if [ "$MK_REC" = "1" ] && [ "$MK_REP" = "1" ] && [ ! -d "$TMPDIR/mk585/sub" ]; then
+    ok "mkdir replay: serves recorded bit, does NOT re-create the directory (#585)"
+else
+    fail "mkdir replay (#585)" "rec='$MK_REC' rep='$MK_REP' recreated=$([ -d "$TMPDIR/mk585/sub" ] && echo yes || echo no)"
+fi
+
+# getcwd: record in one directory, replay from another, recorded path must win.
+cat > "$TMPDIR/p_cwd.eigs" <<'EOF'
+print of (getcwd of null)
+EOF
+mkdir -p "$TMPDIR/cwd585"
+CWD_REC=$(cd "$TMPDIR/cwd585" && EIGS_TRACE="$TMPDIR/cwd.tape" "$EIGS" "$TMPDIR/p_cwd.eigs" 2>&1)
+CWD_REP=$(cd / && EIGS_REPLAY="$TMPDIR/cwd.tape" "$EIGS" "$TMPDIR/p_cwd.eigs" 2>&1)
+if [ -n "$CWD_REC" ] && [ "$CWD_REC" = "$CWD_REP" ]; then
+    ok "getcwd replay: recorded cwd wins when replayed from a different directory (#585)"
+else
+    fail "getcwd replay (#585)" "rec='$CWD_REC' rep='$CWD_REP'"
+fi
+
 # ---- #579: audio capture is a taped nondeterminism source ----
 # Gated: needs a gfx build AND a working capture device (the dummy SDL
 # driver provides a silent one; the CI dev image has no libSDL2, so this
