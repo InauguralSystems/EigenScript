@@ -209,6 +209,17 @@ callee's parameters in order:
   `m = 2, v = 3`.
 - Extra elements are ignored; parameters with no matching element take
   their default, else `null`.
+- **Arity-1 carve-out:** the elements-bind-in-order rule above assumes
+  a callee with 2+ parameters. A 1-parameter, non-defaulted callee has
+  only one slot, so a 2+-element list doesn't distribute into it (and
+  doesn't just bind the first element, discarding the rest per "extra
+  elements are ignored") — the whole list re-collects and binds to
+  that one parameter: for `define one(a)`, `one of [3, 4]` binds
+  `a = [3, 4]`, not `a = 3`. This is what keeps `len of [1, 2]`
+  returning `2` and `print of [1, 2]` printing the list. The `f of []`
+  half of this same exception — an empty list still binds `a = []`
+  rather than firing a zero-arg default — is covered under Default
+  parameter values below.
 - **Parentheses always mean one argument** (issue #355). To pass a literal
   list *whole*, parenthesise it: `f of ([a, b])` binds the list `[a, b]`
   to the first parameter, and `f of ([7])` binds the one-element list
