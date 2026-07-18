@@ -69,6 +69,38 @@ All notable changes to EigenScript are documented here.
   button geometry is now defined once (`_dialog_btn_rect`) instead of
   being recomputed by render and click separately.
 
+### Added
+- **`eigen_generate` accepts an optional 4th argument: `top_p` (nucleus
+  sampling).** Keeps the smallest set of tokens whose cumulative probability
+  reaches `p`, so the candidate set adapts to the model's confidence, rather
+  than the fixed top-k=40 that admits 39 near-zero tokens where the
+  distribution is sharp and truncates real choices where it is flat. Absent or
+  outside `(0,1)` keeps the historical top-k path, so existing callers and
+  their recorded numbers are unchanged. Tested by statistical signature rather
+  than by comparing token sequences — generation draws from a global `rand()`,
+  so two calls with the *same* policy already disagree on most positions (3/40
+  identical), and an earlier version of the check "verified" top-p from 0/40
+  matches, which the control shows is meaningless. Suite `[47e]` asserts a
+  restrictive nucleus narrows the emitted candidate set. **Honest scope: this
+  did not fix the repetition it was written for.** The model assigns its
+  repeat-loop continuation p=0.987, so a 0.95 nucleus keeps exactly one token
+  and changes nothing — the degeneracy is a genuine fixed point in the model,
+  not a decoding artifact.
+- **`eigen_eval_loss` — forward-only held-out cross-entropy (model build).**
+  Scores one held-out window without a backward pass, weight update,
+  requantise, or observer write, so evaluating a checkpoint never mutates it.
+  This is the metric a language model should be *selected* on, and it did not
+  previously exist: iLambdaAi ranked checkpoints on a generated-and-parsed
+  rate at n=30, where a 20% score has a 95% interval roughly 8%-39%. That
+  metric could not distinguish two models whose held-out perplexity differed
+  by 7x (39.6 vs 5.76) — it scored both at an identical 60/300, because greedy
+  decoding collapses onto frequency attractors regardless of model quality.
+  A loss gives one datapoint per window on a continuous scale instead of 300
+  binary trials. Pinned by suite `[47d]` against the property that an
+  untrained model must score ln(vocab_size) — measured 7.004 against a
+  predicted 7.011 at vocab=1109 — which simultaneously catches a missing
+  max-subtraction (overflow to inf), a mis-indexed target, and sign errors.
+
 ### Changed
 - **The observer learning-rate gate is now two-channel (entropy *and* drift).**
   `observer_matrix_scale` throttled a weight matrix to 0.5x whenever its

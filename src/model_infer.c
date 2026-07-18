@@ -424,7 +424,14 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     free(x);
 }
 
-static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel *model, double temperature, int max_tokens, int *out_len) {
+/* Descending order, NaN-safe: a NaN comparison yields 0 (treated equal) rather
+ * than an inconsistent ordering, which qsort is allowed to fault on. */
+static int cmp_prob_desc(const void *a, const void *b) {
+    float fa = *(const float *)a, fb = *(const float *)b;
+    return (fa < fb) - (fa > fb);
+}
+
+static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel *model, double temperature, int max_tokens, double top_p, int *out_len) {
     /* temperature controls sampling: < 0.01 = greedy argmax, otherwise top-k sampling
      * Returns a caller-owned int array of generated token IDs. Caller must free. */
     int vocab_size = model->config.vocab_size;
@@ -481,19 +488,51 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
                 for (int i = 0; i < vocab_size; i++) logits[i] /= sum;
             }
 
-            int top_k = 40;
-            if (top_k > vocab_size) top_k = vocab_size;
+            /* Truncate the tail before sampling. Two policies:
+             *
+             * top-p (nucleus): keep the smallest set of tokens whose cumulative
+             * probability reaches p. The candidate set ADAPTS to how confident
+             * the model is -- narrow where the next token is nearly determined
+             * (after `is`, or mid-keyword), wide where it genuinely branches.
+             *
+             * top-k: keep a fixed 40 regardless. That is the failure mode this
+             * model actually hits: where the distribution is sharp, a fixed k
+             * still admits 39 low-probability tokens and renormalises them up,
+             * and where it is flat, k=40 truncates real choices. Generation
+             * collapsed onto the single most frequent identifier (`b is b + 0`
+             * repeated, 7 distinct identifiers in a whole sample) even at
+             * held-out perplexity 5.07, i.e. with the model fitting fine.
+             *
+             * top_p <= 0 or >= 1 keeps the historical top-k path, so existing
+             * callers and their recorded numbers are unchanged. */
             float probs_sorted[VOCAB_SIZE];
-            memcpy(probs_sorted, logits, (size_t)vocab_size * sizeof(float));
-            for (int j = 0; j < top_k; j++) {
-                int max_idx = j;
-                for (int i = j + 1; i < vocab_size; i++)
-                    if (probs_sorted[i] > probs_sorted[max_idx]) max_idx = i;
-                float tmp = probs_sorted[j];
-                probs_sorted[j] = probs_sorted[max_idx];
-                probs_sorted[max_idx] = tmp;
+            float threshold;
+            if (top_p > 0.0 && top_p < 1.0) {
+                memcpy(probs_sorted, logits, (size_t)vocab_size * sizeof(float));
+                qsort(probs_sorted, (size_t)vocab_size, sizeof(float), cmp_prob_desc);
+                float cum = 0.0f;
+                threshold = probs_sorted[0];
+                for (int i = 0; i < vocab_size; i++) {
+                    cum += probs_sorted[i];
+                    if (cum >= (float)top_p) { threshold = probs_sorted[i]; break; }
+                }
+                /* Never empty the candidate set: if rounding leaves the cutoff
+                 * above every probability, the argmax alone must survive. */
+                if (threshold > probs_sorted[0]) threshold = probs_sorted[0];
+            } else {
+                int top_k = 40;
+                if (top_k > vocab_size) top_k = vocab_size;
+                memcpy(probs_sorted, logits, (size_t)vocab_size * sizeof(float));
+                for (int j = 0; j < top_k; j++) {
+                    int max_idx = j;
+                    for (int i = j + 1; i < vocab_size; i++)
+                        if (probs_sorted[i] > probs_sorted[max_idx]) max_idx = i;
+                    float tmp = probs_sorted[j];
+                    probs_sorted[j] = probs_sorted[max_idx];
+                    probs_sorted[max_idx] = tmp;
+                }
+                threshold = probs_sorted[top_k - 1];
             }
-            float threshold = probs_sorted[top_k - 1];
             float filtered_sum = 0.0f;
             for (int i = 0; i < vocab_size; i++) {
                 if (logits[i] < threshold) logits[i] = 0.0f;
@@ -548,8 +587,14 @@ Value* builtin_eigen_generate(Value *arg) {
 
     double temperature = 0.1;
     int max_tokens = 80;
+    /* Optional 4th arg: top_p. Absent (or outside (0,1)) keeps the historical
+     * fixed top-k=40 path, so every existing caller and recorded number is
+     * unchanged -- decoding policy is opt-in, not a silent default flip. */
+    double top_p = 0.0;
     if (arg->data.list.items[1]->type == VAL_NUM) temperature = arg->data.list.items[1]->data.num;
     if (arg->data.list.items[2]->type == VAL_NUM) max_tokens = (int)arg->data.list.items[2]->data.num;
+    if (arg->data.list.count >= 4 && arg->data.list.items[3]->type == VAL_NUM)
+        top_p = arg->data.list.items[3]->data.num;
 
     if (!g_model.loaded) return make_list(0);
 
@@ -575,7 +620,7 @@ Value* builtin_eigen_generate(Value *arg) {
     }
 
     int out_len = 0;
-    int *output_ids = generate_response(prompt_ids, prompt_len, &g_model, temperature, max_tokens, &out_len);
+    int *output_ids = generate_response(prompt_ids, prompt_len, &g_model, temperature, max_tokens, top_p, &out_len);
     free(prompt_ids);
 
     Value *result = make_list(out_len);
@@ -584,6 +629,76 @@ Value* builtin_eigen_generate(Value *arg) {
     }
     free(output_ids);
     return result;
+}
+
+Value* builtin_eigen_eval_loss(Value *arg) {
+    /* Input: [prompt_ids_list, target_id]
+     * Output: cross-entropy of target_id given the prompt, in nats.
+     *
+     * Held-out loss is the selection metric a language model should be ranked
+     * on, and this is the forward-only path that makes it computable. The task
+     * metrics (parse rate) sample 300 generations; this scores one point per
+     * WINDOW, so a few thousand windows give ~10x the samples on a continuous
+     * scale instead of a binary one. That difference is not academic: a night
+     * of A/B runs on the n=30 parse rate could not distinguish two arms whose
+     * accuracy differed by 14 points, because a pass/fail metric at n=30 has a
+     * 95% interval about 30 points wide.
+     *
+     * Forward only -- no backward, no weight update, no requantise, no observer
+     * state, and g_model_age/g_training_samples are untouched, so scoring a
+     * checkpoint never mutates it. */
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        fprintf(stderr, "eigen_eval_loss: requires [prompt_ids, target_id]\n");
+        return make_num(-1.0);
+    }
+    Value *prompt_list = arg->data.list.items[0];
+    if (prompt_list->type != VAL_LIST) {
+        fprintf(stderr, "eigen_eval_loss: prompt_ids must be a list\n");
+        return make_num(-1.0);
+    }
+    if (arg->data.list.items[1]->type != VAL_NUM) {
+        fprintf(stderr, "eigen_eval_loss: target_id must be a number\n");
+        return make_num(-1.0);
+    }
+    int target_id = (int)arg->data.list.items[1]->data.num;
+
+    if (!g_model.loaded) return make_num(-1.0);
+    int vocab_size = g_model.config.vocab_size;
+    if (target_id < 0 || target_id >= vocab_size) {
+        fprintf(stderr, "eigen_eval_loss: target_id %d out of range [0,%d)\n", target_id, vocab_size);
+        return make_num(-1.0);
+    }
+
+    int prompt_len = prompt_list->data.list.count;
+    if (prompt_len <= 0) {
+        fprintf(stderr, "eigen_eval_loss: prompt must be non-empty\n");
+        return make_num(-1.0);
+    }
+
+    int *prompt_ids = xcalloc(prompt_len, sizeof(int));
+    for (int i = 0; i < prompt_len; i++) {
+        Value *v = prompt_list->data.list.items[i];
+        int t = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+        if (t < 0 || t >= vocab_size) t = 0;
+        prompt_ids[i] = t;
+    }
+
+    float *logits = xcalloc(vocab_size, sizeof(float));
+    native_forward(prompt_ids, prompt_len, &g_model, logits);
+    free(prompt_ids);
+
+    /* Numerically stable log-softmax at the target: subtract the max before
+     * exponentiating, or a large logit overflows float and returns inf/nan --
+     * which would silently poison the mean over thousands of windows. */
+    float maxl = logits[0];
+    for (int j = 1; j < vocab_size; j++) if (logits[j] > maxl) maxl = logits[j];
+    double sum = 0.0;
+    for (int j = 0; j < vocab_size; j++) sum += exp((double)(logits[j] - maxl));
+    double loss = -((double)(logits[target_id] - maxl) - log(sum));
+    free(logits);
+
+    if (isnan(loss) || isinf(loss)) return make_num(-1.0);
+    return make_num(loss);
 }
 
 Value* builtin_eigen_model_info(Value *arg) {

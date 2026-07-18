@@ -220,6 +220,7 @@ Value* builtin_eigen_model_save_binary(Value *arg);
 Value* builtin_eigen_checkpoint_info(Value *arg);
 Value* builtin_eigen_generate(Value *arg);
 Value* builtin_eigen_model_loaded(Value *arg);
+Value* builtin_eigen_eval_loss(Value *arg);
 Value* builtin_eigen_model_info(Value *arg);
 Value* builtin_native_train_step(Value *arg);
 

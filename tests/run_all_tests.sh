@@ -1890,6 +1890,36 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
         echo "  PASS: batched training path is gradient-identical to the per-position oracle"
     fi
     echo ""
+
+    echo "[47d/47] eigen_eval_loss held-out cross-entropy (4 checks)"
+    EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
+    EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)
+    EL_FAIL=$(echo "$EL_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + EL_PASS + EL_FAIL))
+    PASS=$((PASS + EL_PASS))
+    FAIL=$((FAIL + EL_FAIL))
+    if [ "$EL_FAIL" -gt 0 ]; then
+        echo "  FAIL: $EL_FAIL eigen_eval_loss check(s) failed"
+        echo "$EL_OUTPUT" | grep "FAIL:" | head -4
+    else
+        echo "  PASS: untrained cross-entropy sits at ln(vocab)"
+    fi
+    echo ""
+
+    echo "[47e/47] eigen_generate top-p nucleus sampling (4 checks)"
+    TP_OUTPUT=$(bash "$TESTS_DIR/test_top_p.sh" 2>&1)
+    TP_PASS=$(echo "$TP_OUTPUT" | grep -c "PASS:" || true)
+    TP_FAIL=$(echo "$TP_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + TP_PASS + TP_FAIL))
+    PASS=$((PASS + TP_PASS))
+    FAIL=$((FAIL + TP_FAIL))
+    if [ "$TP_FAIL" -gt 0 ]; then
+        echo "  FAIL: $TP_FAIL top-p check(s) failed"
+        echo "$TP_OUTPUT" | grep "FAIL:" | head -4
+    else
+        echo "  PASS: top-p narrows the candidate set; out-of-range falls back to top-k"
+    fi
+    echo ""
 else
     echo "[47/47] Model roundtrip SKIPPED (binary built without EIGENSCRIPT_EXT_MODEL)"
     echo ""
