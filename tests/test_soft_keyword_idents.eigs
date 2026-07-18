@@ -74,4 +74,14 @@ sk_v is 1
 sk_v is 5
 assert of [(prev of sk_v) == 1, "SK18 prev of stays temporal with prev bound"]
 
+# SK19 (#634): prev of binds unary-or-tighter like every other `of`, so
+# trailing arithmetic is NOT absorbed. Before the fix `prev of sk_w + 1`
+# parsed as `prev of (sk_w + 1)` and silently returned null. sk_w's value
+# before its last assignment is 10.
+sk_w is 10
+sk_w is 20
+assert of [(prev of sk_w + 1) == 11, "SK19 prev of binds tighter than + (unparenthesized)"]
+assert of [(prev of sk_w * 2) == 20, "SK19b prev of binds tighter than *"]
+assert of [(prev of sk_w - 3) == 7, "SK19c prev of binds tighter than -"]
+
 print of "soft keyword idents: all passed"

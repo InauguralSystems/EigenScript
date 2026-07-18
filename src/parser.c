@@ -566,6 +566,7 @@ static void compound_to_op(TokType t, char op[4]) {
 }
 
 static ASTNode* parse_expression(Parser *p);
+static ASTNode* parse_unary(Parser *p);   /* #634: parse_primary's `prev of` operand */
 static ASTNode* parse_statement(Parser *p);
 static int chain_too_deep(Parser *p);
 
@@ -731,7 +732,24 @@ static ASTNode* parse_primary(Parser *p) {
         p_advance(p);
         if (p_cur(p)->type == TOK_OF) {
             p_advance(p);
-            ASTNode *expr = parse_expression(p);
+            /* #634: unary-or-tighter, like every other `of` (parse_unary at
+             * the OF handler) — so `prev of x + 1` is `(prev of x) + 1`, not
+             * `prev of (x + 1)` (which silently returned null). The `at`
+             * suffix below still takes a full expression. */
+            ASTNode *expr = parse_unary(p);
+            /* #634: prev looks back through a variable's assignment history, so
+             * the operand must be a bare name. A literal, index, dot, or
+             * parenthesised expression has no trajectory — it used to return
+             * null silently (the parser's own "only IDENT operands are
+             * meaningful" comment). Raise instead of tolerating it. */
+            if (expr && expr->type != AST_IDENT) {
+                fprintf(stderr,
+                    "Parse error line %d: 'prev of' requires a variable name\n",
+                    t->line);
+                eigs_record_first_error(t->line,
+                    "'prev of' requires a variable name");
+                g_parse_errors++;
+            }
             ASTNode *at_expr = NULL;
             if (p_cur(p)->type == TOK_AT) {
                 p_advance(p);
