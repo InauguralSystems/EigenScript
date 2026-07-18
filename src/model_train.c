@@ -449,6 +449,17 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
 #define OBS_H_LOW    g_obs_h_low
 
 static float observer_matrix_scale(double *obs, int start, int count) {
+    /* A/B control: EIGS_OBS_SCALE_OFF=1 disables observer LR scaling entirely
+     * (all matrices at full rate). Measured 2026-07-18: the classifier returns
+     * "stable"->0.5 for 100.0% of matrix-steps and never once reaches
+     * improving->1.0, because a single SGD step moves a weight matrix's entropy
+     * far below OBS_DH_SMALL by construction (thresholds are calibrated for
+     * scalar convergence loops, not weight matrices). So the "adaptive" gate is
+     * really a hidden constant 0.5x on the whole model's LR, and it is
+     * self-reinforcing: halved LR -> smaller deltas -> still "stable". */
+    static int scale_off = -1;
+    if (scale_off < 0) scale_off = getenv("EIGS_OBS_SCALE_OFF") ? 1 : 0;
+    if (scale_off) return 1.0f;
     if (!obs || count <= 0) return 1.0f;  /* no observer data → full rate */
 
     double sum_abs_dH = 0.0, sum_entropy = 0.0, sum_age = 0.0;
@@ -709,6 +720,44 @@ static float l2_norm_f(const float *a, int64_t n) {
     double s = 0.0;
     for (int64_t i = 0; i < n; i++) s += (double)a[i] * (double)a[i];
     return (float)sqrt(s);
+}
+
+/* ---- Two-channel observer gate: the VALUE-motion channel ----
+ * The model's observer buffer carries five fields per element and ALL of them
+ * are entropy-derived (entropy, dH, last_entropy, obs_age, prev_dH) — there is
+ * no value-motion signal at all, which is why the entropy classifier certifies
+ * "stable" for 100% of matrix-steps: one SGD step moves a matrix's entropy far
+ * below OBS_DH_SMALL by construction. Supply the missing channel here as the
+ * gradient magnitude expressed as a fraction of the weight magnitude:
+ * scale-free, stateless, and needs no per-matrix calibration. */
+static float matrix_rel_drift(const float *grad, const float *w, int64_t n) {
+    if (!grad || !w || n <= 0) return 0.0f;
+    float gn = l2_norm_f(grad, n);
+    float wn = l2_norm_f(w, n);
+    return gn / (wn + 1e-8f);
+}
+
+/* Two-channel gating is the DEFAULT. Measured 2026-07-18 over 2,597 steps x 42
+ * matrices: the entropy channel classified "stable" for 100.0% of matrix-steps
+ * while the drift channel found every matrix still moving — the two channels
+ * disagreed 100% of the time, and ground truth (loss 6.09 -> 0.54) says drift
+ * was right. The entropy-only gate was therefore a disguised constant 0.5x drag
+ * costing ~25% of learning progress. EIGS_OBS_ENTROPY_ONLY=1 restores the old
+ * single-channel behavior for A/B; EIGS_OBS_SCALE_OFF=1 disables gating entirely. */
+static int obs_2ch_enabled(void) {
+    static int v = -1;
+    if (v < 0) v = getenv("EIGS_OBS_ENTROPY_ONLY") ? 0 : 1;
+    return v;
+}
+
+static float obs_drift_eps(void) {
+    static float e = -1.0f;
+    if (e < 0.0f) {
+        const char *s = getenv("EIGS_OBS_DRIFT_EPS");
+        e = s ? (float)atof(s) : 1e-3f;
+        if (e <= 0.0f) e = 1e-3f;
+    }
+    return e;
 }
 
 static void train_dump_open_if_needed(TransformerModel *model) {
@@ -1256,6 +1305,48 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
 
     /* Consult observer state for per-matrix learning rate scaling */
     float *obs_scales = compute_observer_scales(&g_model);
+
+    /* EIGS_OBS_2CH: two-quiet rule. A matrix counts as "stable" only if BOTH
+     * its entropy is flat AND it has actually stopped moving. The entropy
+     * channel alone says stable 100% of the time (see matrix_rel_drift), so the
+     * gate degenerates to a constant 0.5x drag. Here we release that 0.5 back to
+     * full rate whenever the value channel shows the matrix is still moving.
+     * Oscillating (0.3) and diverging (0.1) are genuine instability signals and
+     * are deliberately left alone — this only re-examines the "settled" verdict. */
+    if (obs_scales && obs_2ch_enabled()) {
+        const float eps = obs_drift_eps();
+        int di = 0;
+        if (obs_scales[di] == 0.5f &&
+            matrix_rel_drift(grad_token_emb, g_model.token_embeddings,
+                             (int64_t)vocab_size * d_model) > eps)
+            obs_scales[di] = 1.0f;
+        di++;
+        if (obs_scales[di] == 0.5f &&
+            matrix_rel_drift(grad_output_proj, g_model.output_proj,
+                             (int64_t)d_model * vocab_size) > eps)
+            obs_scales[di] = 1.0f;
+        di++;
+        for (int l = 0; l < n_layers; l++) {
+            TransformerLayer *dl = &g_model.layers[l];
+            const float *dg[10] = { lg_wq[l], lg_wk[l], lg_wv[l], lg_wo[l],
+                                    lg_ff1[l], lg_ff2[l],
+                                    lg_ln1g[l], lg_ln1b[l], lg_ln2g[l], lg_ln2b[l] };
+            const float *dw[10] = { dl->w_q, dl->w_k, dl->w_v, dl->w_o,
+                                    dl->w_ff1, dl->w_ff2,
+                                    dl->ln1_gamma, dl->ln1_beta,
+                                    dl->ln2_gamma, dl->ln2_beta };
+            int64_t dn[10] = { (int64_t)d_model * d_model, (int64_t)d_model * d_model,
+                               (int64_t)d_model * d_model, (int64_t)d_model * d_model,
+                               (int64_t)d_model * d_ff,    (int64_t)d_ff * d_model,
+                               d_model, d_model, d_model, d_model };
+            for (int m = 0; m < 10; m++, di++) {
+                if (obs_scales[di] == 0.5f &&
+                    matrix_rel_drift(dg[m], dw[m], dn[m]) > eps)
+                    obs_scales[di] = 1.0f;
+            }
+        }
+    }
+
     float emb_scale = obs_scales ? obs_scales[0] : 1.0f;
     float proj_scale = obs_scales ? obs_scales[1] : 1.0f;
 

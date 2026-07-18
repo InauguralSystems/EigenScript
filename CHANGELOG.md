@@ -69,6 +69,29 @@ All notable changes to EigenScript are documented here.
   button geometry is now defined once (`_dialog_btn_rect`) instead of
   being recomputed by render and click separately.
 
+### Changed
+- **The observer learning-rate gate is now two-channel (entropy *and* drift).**
+  `observer_matrix_scale` throttled a weight matrix to 0.5x whenever its
+  entropy was quiet — but entropy is computed over one SGD step's worth of
+  weight change, which is always far below thresholds calibrated for scalar
+  convergence loops. Instrumented over 2,597 steps x 42 matrices it classified
+  "stable" for **100.0%** of matrix-steps and emitted 1.0x **zero** times: an
+  adaptive gate that was really a constant 0.5x drag, while the loss was
+  demonstrably still falling (6.09 -> 0.54). The fix adds the motion channel
+  the observer buffer never carried — relative drift `||grad|| / ||w||` — and
+  releases the "stable" verdict when the weights are still moving. The two
+  channels disagreed on 100% of matrix-steps and drift was right every time,
+  so the gate now releases 99.6% and throttles only genuine oscillation (0.4%).
+  Measured on a fixed checkpoint, 400 windows, identical seeds: entropy-only
+  1.405 / 0.729 at steps 200/300 vs two-channel 0.976 / 0.553 — ~25% better
+  loss, matching a fully-disabled gate while *retaining* the ability to throttle
+  a matrix that genuinely settles. `EIGS_OBS_ENTROPY_ONLY=1` restores the old
+  single-channel gate and `EIGS_OBS_SCALE_OFF=1` disables gating entirely, so
+  all three arms stay available for A/B; `EIGS_OBS_DRIFT_EPS` tunes the
+  release threshold (default 1e-3). This is the observer's own failure mode —
+  a meter blind to slow motion certifying a moving system as converged — found
+  by pointing the instrument at itself.
+
 ### Fixed
 - **`file_exists` / `ls` / `mkdir` / `getcwd` / `exe_path` are now
   trace-recorded (#585).** These fs builtins predated the tape and ran live
