@@ -630,6 +630,24 @@ whole. (Before #405, `f of [x]` bound the whole list `[x]` to the
 first parameter — lint `W017` flags the historically ambiguous
 1-element form and names both unambiguous spellings.)
 
+**Arity-1 carve-out.** "One rule" describes the call site, not what a
+1-parameter, non-defaulted callee does with the list it receives. Such
+a callee has only one slot, so a 2+-element argument list doesn't
+distribute into it — the whole list re-collects and binds to that one
+parameter instead: `one of [3, 4]` (with `define one(a)`) binds
+`a = [3, 4]`, not `a = 3`. This is what keeps `len of [1, 2]` returning
+`2` and `print of [1, 2]` printing the list — removing the carve-out
+would break every 1-parameter function that takes a list.
+
+```eigenscript
+define one(a) as:
+    return a
+print of (type of (one of [3, 4]))
+```
+```output
+list
+```
+
 ```eigenscript
 define first(a, b) as:
     return a
@@ -1471,7 +1489,11 @@ The facts that govern every program, in one place:
    arithmetic: `f of x + 1` is `(f of x) + 1`.
 3. **Argument spreading**: a *literal* list argument with 2+ elements
    spreads into parameters; a 1-element literal list does **not**; a
-   list passed via a variable never spreads.
+   list passed via a variable never spreads. Exception: a 1-parameter,
+   non-defaulted callee has only one parameter to spread into, so a
+   2+-element list doesn't spread there either — it re-collects whole
+   and binds to that one parameter (`one of [3, 4]` binds `a = [3, 4]`
+   for `define one(a)`).
 4. **Scope**: `is` updates the nearest enclosing binding or creates a
    local; `local` forces the current scope. Functions see and may
    mutate their defining environment (closure capture by reference).
