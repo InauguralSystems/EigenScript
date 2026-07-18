@@ -59,20 +59,30 @@ define time_of_flight(v0, a, x) as:
     if a == 0:
         if v0 == 0:
             return 0
-        return x / v0
+        t0 is x / v0
+        # Target behind the direction of travel — never reached going forward.
+        if t0 < 0:
+            return 0
+        return t0
     disc is v0 * v0 + 2 * a * x
     if disc < 0:
         return 0
     sq is sqrt of disc
     t1 is (0 - v0 + sq) / a
     t2 is (0 - v0 - sq) / a
-    if t1 >= 0:
-        if t2 >= 0:
-            if t1 < t2:
-                return t1
-            return t2
-        return t1
-    return t2
+    # Smallest NON-NEGATIVE root. If both roots are negative the target is
+    # never reached in forward time, so return the 0 sentinel — never a
+    # negative "time", which the old min-of-roots logic could hand back (#641).
+    lo is t1
+    hi is t2
+    if t2 < t1:
+        lo is t2
+        hi is t1
+    if lo >= 0:
+        return lo
+    if hi >= 0:
+        return hi
+    return 0
 
 # ============================================================
 # Kinematics (2D — Projectile Motion)

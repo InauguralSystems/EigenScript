@@ -207,6 +207,32 @@ approx of [gs.x, 2, "golden_section min"]
 gd is gradient_descent of [(x) => (x - 3) * (x - 3), 0, 0.1, 200]
 near_tol of [gd.x, 3, 0.05, "gradient_descent min"]
 
+# ---------------- DEGENERATE-INPUT REGRESSIONS (#638-#641) ----------------
+# Each of these returned a plausible-but-wrong number before its fix; the
+# expected values below all FAIL on the pre-fix libraries.
+
+# #639 punnett_square: heterozygotes fold, so Aa x Aa is 1:2:1, not 1:1:1:1.
+psq is punnett_square of ["Aa", "Aa"]
+approx of [psq["AA"], 0.25, "punnett AA (#639)"]
+approx of [psq["Aa"], 0.5, "punnett Aa heterozygote folds aA in (#639)"]
+approx of [psq["aa"], 0.25, "punnett aa (#639)"]
+exact of [has_key of [psq, "aA"], 0, "punnett has no separate aA key (#639)"]
+
+# #640 power_iteration: the dominant eigenvalue of diag(-5, 1) is -5, not |−5|.
+neg_pit is power_iteration of [[[0 - 5, 0], [0, 1]], 200]
+approx of [neg_pit.eigenvalue, 0 - 5, "power_iteration keeps the eigenvalue sign (#640)"]
+
+# #638 correlation: mismatched lengths pair the prefix and must center on it —
+# the unpaired 999 must not enter the mean.
+approx of [correlation of [[1, 2, 3], [2, 4, 6, 999]], 1, "correlation centers on paired prefix (#638)"]
+
+# #641 factorial of a negative is undefined -> 0 sentinel, never a silent 1.
+exact of [factorial of (0 - 3), 0, "factorial of a negative is the 0 sentinel (#641)"]
+
+# #641 time_of_flight: a target never reached in forward time returns 0, not a
+# negative "time" (x=-0.3 with v0=+1, a=+1 has both roots negative).
+approx of [time_of_flight of [1, 1, 0 - 0.3], 0, "time_of_flight returns 0 not a negative time (#641)"]
+
 print of f"STEM accuracy: {pass_count}/{pass_count + fail_count} passed"
 if fail_count == 0:
     print of "All STEM accuracy checks passed"

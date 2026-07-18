@@ -108,12 +108,20 @@ define power_iteration(A, max_iter) as:
                 s is s + A[i][j] * v[j]
             append of [w, s]
 
+        # Rayleigh quotient recovers the SIGNED eigenvalue: with v unit-norm,
+        # lambda = vᵀ(Av) = v·w. Read off |w| instead and the sign is lost —
+        # diag(-5, 1) then reports 5, which is not an eigenvalue at all (#640).
+        # Must be summed from the pre-update v, before v is overwritten below.
+        rq is 0
+        for i in range of n:
+            rq is rq + v[i] * w[i]
+
         norm is 0
         for i in range of n:
             norm is norm + w[i] * w[i]
         norm is sqrt of norm
 
-        eigenvalue is norm
+        eigenvalue is rq
         for i in range of n:
             v[i] is w[i] / norm
 

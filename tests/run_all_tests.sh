@@ -561,12 +561,12 @@ fi
 echo ""
 
 echo "[STEM Accuracy] (123 checks)"
-SA_OUTPUT=$(./eigenscript ../tests/test_stem_accuracy.eigs 2>&1)
-TOTAL=$((TOTAL + 123))
+SA_OUTPUT=$($EIGS_TMO ./eigenscript ../tests/test_stem_accuracy.eigs </dev/null 2>&1)
+TOTAL=$((TOTAL + 131))
 if echo "$SA_OUTPUT" | grep -q "All STEM accuracy checks passed"; then
-    echo "  PASS: all 123 STEM known-answer checks"; PASS=$((PASS + 123))
+    echo "  PASS: all 131 STEM known-answer checks"; PASS=$((PASS + 131))
 else
-    echo "  FAIL: STEM accuracy"; FAIL=$((FAIL + 123))
+    echo "  FAIL: STEM accuracy"; FAIL=$((FAIL + 131))
     echo "$SA_OUTPUT" | grep -iE "FAIL|error" | head -10
 fi
 echo ""

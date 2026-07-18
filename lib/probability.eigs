@@ -17,6 +17,11 @@
 
 # factorial: n!
 define factorial(n) as:
+    # Factorial is undefined for negatives (gamma has poles there). Return 0
+    # as the domain sentinel — matching combinations' return-0-on-invalid, and
+    # impossible for a real factorial (always >= 1), rather than a silent 1 (#641).
+    if n < 0:
+        return 0
     if n <= 1:
         return 1
     result is 1
