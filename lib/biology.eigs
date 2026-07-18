@@ -53,10 +53,18 @@ define punnett_square(parent1, parent2) as:
     a2 is char_at of [parent1, 1]
     b1 is char_at of [parent2, 0]
     b2 is char_at of [parent2, 1]
-    alleles is [a1 + b1, a1 + b2, a2 + b1, a2 + b2]
+    crosses is [[a1, b1], [a1, b2], [a2, b1], [a2, b2]]
     result is {}
     for i in range of 4:
-        g is alleles[i]
+        pair is crosses[i]
+        x is pair[0]
+        y is pair[1]
+        # Canonicalize the genotype so heterozygotes fold together — "aA"
+        # and "Aa" are the SAME genotype. Dominant (uppercase, lower ord)
+        # first. Without this, Aa x Aa reads 1:1:1:1 instead of 1:2:1 (#639).
+        g is x + y
+        if x > y:
+            g is y + x
         if (has_key of [result, g]) == 1:
             cur is result[g]
             dict_set of [result, g, cur + 0.25]

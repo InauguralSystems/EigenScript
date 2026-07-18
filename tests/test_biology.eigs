@@ -68,12 +68,14 @@ assert_near of [hw3[1], 0.0, 0.001, "HW p=1 no heterozygous"]
 
 print of "--- Punnett Square ---"
 
-# Aa x Aa: expected AA=0.25, Aa=0.50, aA=... depends on sorting
+# Aa x Aa: the canonical monohybrid cross is 1 AA : 2 Aa : 1 aa. The two
+# heterozygous boxes ("Aa" and "aA") are the SAME genotype and fold together,
+# so Aa is 0.5 and there is no separate "aA" key (#639).
 ps is punnett_square of ["Aa", "Aa"]
-# Should have genotypes AA, Aa, aA, aa
-# AA=0.25, Aa=0.25, aA=0.25, aa=0.25
 assert_near of [ps["AA"], 0.25, 0.001, "Punnett AA"]
+assert_near of [ps["Aa"], 0.5, 0.001, "Punnett Aa (heterozygote, both boxes)"]
 assert_near of [ps["aa"], 0.25, 0.001, "Punnett aa"]
+assert_eq of [has_key of [ps, "aA"], 0, "Punnett has no separate aA genotype"]
 
 # ============================================================
 # DNA / RNA

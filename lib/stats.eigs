@@ -263,8 +263,16 @@ define correlation(xs, ys) as:
         n is ny
     if n == 0:
         return 0
-    mx is mean of xs
-    my is mean of ys
+    # Center on the PAIRED prefix, not the full lists. With mismatched
+    # lengths, mean of the whole series includes elements that were never
+    # paired, so the covariance is centered on the wrong point (#638).
+    mx is 0
+    my is 0
+    for i in range of n:
+        mx is mx + xs[i]
+        my is my + ys[i]
+    mx is mx / n
+    my is my / n
     sum_xy is 0
     sum_xx is 0
     sum_yy is 0
