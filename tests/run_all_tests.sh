@@ -2386,6 +2386,29 @@ else
 fi
 echo ""
 
+# [70b] prev-of operand must be a bare name (#634). 'prev of' looks back
+# through a variable's assignment history, so a non-name operand (a literal,
+# a parenthesised expression, an index/dot) has no trajectory. It used to
+# return null silently; now it is a clean parse error, and the program does
+# not run. (The precedence half — `prev of x + 1` = `(prev of x) + 1` — is
+# asserted in test_soft_keyword_idents.eigs SK19.)
+echo "[70b] prev-of requires a variable name (#634)"
+PRV_FILE=$(mktemp /tmp/eigs_prev634_XXXX.eigs)
+printf 'x is 5\nx is 9\nr is prev of (x + 1)\nprint of "should-not-run"\n' > "$PRV_FILE"
+PRV_OUT=$(./eigenscript "$PRV_FILE" </dev/null 2>&1); PRV_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$PRV_RC" -ne 0 ] \
+   && echo "$PRV_OUT" | grep -q "requires a variable name" \
+   && ! echo "$PRV_OUT" | grep -q "should-not-run"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: prev of a non-name is a parse error, program does not run"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: prev-of non-name (rc=$PRV_RC)"
+    echo "$PRV_OUT" | head -3
+fi
+rm -f "$PRV_FILE"
+
 # Temporal correctness under JIT/OSR: a deep loop's `at`/`state_at` must not
 # freeze at the OSR point (OP_LINE must stamp g_trace_current_line in the JIT).
 check_eigs_suite "JIT temporal at/state_at under OSR (g_trace_current_line)" test_jit_temporal_osr.eigs "All tests passed" 2

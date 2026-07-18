@@ -58,6 +58,31 @@ All notable changes to EigenScript are documented here.
   being recomputed by render and click separately.
 
 ### Fixed
+- **`prev of` now binds unary-or-tighter like every other `of` (#634).**
+  `prev of x + 1` parsed as `prev of (x + 1)` — the operand parser used
+  `parse_expression` where every other `of` uses `parse_unary` — and
+  silently returned null. It is now `(prev of x) + 1`, matching the spec's
+  Application rule. `prev of` also requires a variable name now: a non-name
+  operand (literal, index/dot, parenthesised expr) has no assignment history
+  and is a clean parse error instead of a silent null.
+- **Source line numbers wrapped at 65536 (#630).** The `OP_LINE` bytecode
+  operand was 16-bit, so every line the VM tracked was `line % 65536`. Two
+  assignments 65536 lines apart collapsed onto one stamp and `what is x at L`
+  returned the wrong value at rc=0; runtime-error/stack-trace lines and the
+  trace-tape line context were also silently wrong past line 65535 (the
+  regime generated programs reach). Widened to 32-bit; no opcode number or
+  on-disk format changed.
+- **`relu`/`leaky_relu`/`softmax`/`log_softmax` returned a silent null on a
+  scalar (#632).** `tensor_to_flat` reports 0 dims for a `VAL_NUM`, and the
+  four did `if (!flat) return make_null()`, so the null poisoned downstream
+  arithmetic far from the cause. Each now has a scalar fast path (the
+  degenerate element-wise case), matching `sqrt`/`exp`/`log`.
+- **A modal dialog blocked the mouse but not the keyboard (#631).** Keyboard
+  focus never consulted `_ui.modal_stack`, so Tab could reach a widget behind
+  an open dialog and Enter/Space would activate it — a confirmation dialog
+  could fire the destructive action it guards. `dispatch` now rebinds to the
+  top modal before routing keys, and `push_modal`/`pop_modal` scope the focus
+  list to the dialog (which also makes a dialog's own children Tab-able, #575).
 - **README's `unobserved` example showed the inert half of a real
   optimisation (#655).** Reported by email with a full repro. The section
   paired a dict-field example (`game.px is game.px + game.vx * DT`) with

@@ -1150,6 +1150,12 @@ x` is the value x held before its latest assignment. `what is x at
 <line>` reads the value x had at a source line. (History recording
 turns on automatically when a program contains a temporal query.)
 
+`prev of` takes a **variable name** — it looks back through that binding's
+history — and binds like any other `of` (tighter than arithmetic, per the
+Application rule above): `prev of x + 1` is `(prev of x) + 1`. A non-name
+operand (a literal, an index/dot, or a parenthesised expression) has no
+trajectory and is a parse error.
+
 ```eigenscript
 score is 10
 score is 25
