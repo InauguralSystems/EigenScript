@@ -586,6 +586,76 @@ Value* builtin_eigen_generate(Value *arg) {
     return result;
 }
 
+Value* builtin_eigen_eval_loss(Value *arg) {
+    /* Input: [prompt_ids_list, target_id]
+     * Output: cross-entropy of target_id given the prompt, in nats.
+     *
+     * Held-out loss is the selection metric a language model should be ranked
+     * on, and this is the forward-only path that makes it computable. The task
+     * metrics (parse rate) sample 300 generations; this scores one point per
+     * WINDOW, so a few thousand windows give ~10x the samples on a continuous
+     * scale instead of a binary one. That difference is not academic: a night
+     * of A/B runs on the n=30 parse rate could not distinguish two arms whose
+     * accuracy differed by 14 points, because a pass/fail metric at n=30 has a
+     * 95% interval about 30 points wide.
+     *
+     * Forward only -- no backward, no weight update, no requantise, no observer
+     * state, and g_model_age/g_training_samples are untouched, so scoring a
+     * checkpoint never mutates it. */
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        fprintf(stderr, "eigen_eval_loss: requires [prompt_ids, target_id]\n");
+        return make_num(-1.0);
+    }
+    Value *prompt_list = arg->data.list.items[0];
+    if (prompt_list->type != VAL_LIST) {
+        fprintf(stderr, "eigen_eval_loss: prompt_ids must be a list\n");
+        return make_num(-1.0);
+    }
+    if (arg->data.list.items[1]->type != VAL_NUM) {
+        fprintf(stderr, "eigen_eval_loss: target_id must be a number\n");
+        return make_num(-1.0);
+    }
+    int target_id = (int)arg->data.list.items[1]->data.num;
+
+    if (!g_model.loaded) return make_num(-1.0);
+    int vocab_size = g_model.config.vocab_size;
+    if (target_id < 0 || target_id >= vocab_size) {
+        fprintf(stderr, "eigen_eval_loss: target_id %d out of range [0,%d)\n", target_id, vocab_size);
+        return make_num(-1.0);
+    }
+
+    int prompt_len = prompt_list->data.list.count;
+    if (prompt_len <= 0) {
+        fprintf(stderr, "eigen_eval_loss: prompt must be non-empty\n");
+        return make_num(-1.0);
+    }
+
+    int *prompt_ids = xcalloc(prompt_len, sizeof(int));
+    for (int i = 0; i < prompt_len; i++) {
+        Value *v = prompt_list->data.list.items[i];
+        int t = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+        if (t < 0 || t >= vocab_size) t = 0;
+        prompt_ids[i] = t;
+    }
+
+    float *logits = xcalloc(vocab_size, sizeof(float));
+    native_forward(prompt_ids, prompt_len, &g_model, logits);
+    free(prompt_ids);
+
+    /* Numerically stable log-softmax at the target: subtract the max before
+     * exponentiating, or a large logit overflows float and returns inf/nan --
+     * which would silently poison the mean over thousands of windows. */
+    float maxl = logits[0];
+    for (int j = 1; j < vocab_size; j++) if (logits[j] > maxl) maxl = logits[j];
+    double sum = 0.0;
+    for (int j = 0; j < vocab_size; j++) sum += exp((double)(logits[j] - maxl));
+    double loss = -((double)(logits[target_id] - maxl) - log(sum));
+    free(logits);
+
+    if (isnan(loss) || isinf(loss)) return make_num(-1.0);
+    return make_num(loss);
+}
+
 Value* builtin_eigen_model_info(Value *arg) {
     (void)arg;
     char buf[512];

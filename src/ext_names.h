@@ -110,6 +110,7 @@
 #define EIGS_MODEL_BUILTINS(X) \
     X(eigen_model_loaded, builtin_eigen_model_loaded) \
     X(eigen_generate, builtin_eigen_generate) \
+    X(eigen_eval_loss, builtin_eigen_eval_loss) \
     X(eigen_model_info, builtin_eigen_model_info) \
     X(native_train_step_builtin, builtin_native_train_step) \
     X(model_save_weights, builtin_model_save_weights) \

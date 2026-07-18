@@ -69,6 +69,22 @@ All notable changes to EigenScript are documented here.
   button geometry is now defined once (`_dialog_btn_rect`) instead of
   being recomputed by render and click separately.
 
+### Added
+- **`eigen_eval_loss` — forward-only held-out cross-entropy (model build).**
+  Scores one held-out window without a backward pass, weight update,
+  requantise, or observer write, so evaluating a checkpoint never mutates it.
+  This is the metric a language model should be *selected* on, and it did not
+  previously exist: iLambdaAi ranked checkpoints on a generated-and-parsed
+  rate at n=30, where a 20% score has a 95% interval roughly 8%-39%. That
+  metric could not distinguish two models whose held-out perplexity differed
+  by 7x (39.6 vs 5.76) — it scored both at an identical 60/300, because greedy
+  decoding collapses onto frequency attractors regardless of model quality.
+  A loss gives one datapoint per window on a continuous scale instead of 300
+  binary trials. Pinned by suite `[47d]` against the property that an
+  untrained model must score ln(vocab_size) — measured 7.004 against a
+  predicted 7.011 at vocab=1109 — which simultaneously catches a missing
+  max-subtraction (overflow to inf), a mis-indexed target, and sign errors.
+
 ### Changed
 - **The observer learning-rate gate is now two-channel (entropy *and* drift).**
   `observer_matrix_scale` throttled a weight matrix to 0.5x whenever its
