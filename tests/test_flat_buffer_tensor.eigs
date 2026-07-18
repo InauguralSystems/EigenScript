@@ -60,4 +60,14 @@ assert of [rsh[1] == 3, "reshape cols == 3"]
 assert of [rs[0] == 7.0, "reshape preserves data[0]"]
 assert of [rs[5] == 9.0, "reshape preserves data[5]"]
 
+# #632: a scalar is the degenerate element-wise case. These four returned a
+# silent null before the fix, which poisoned downstream arithmetic at the
+# wrong line ((relu of -3) + 1 -> "cannot apply '+' to null and num").
+assert of [(relu of (0 - 3)) == 0.0, "#632 relu of negative scalar is 0"]
+assert of [(relu of 5.0) == 5.0, "#632 relu of positive scalar is x"]
+assert of [(leaky_relu of (0 - 10.0)) == (0 - 0.1), "#632 leaky_relu of negative scalar is 0.01x"]
+assert of [(softmax of 1.0) == 1.0, "#632 softmax of a scalar normalizes to 1"]
+assert of [(log_softmax of 1.0) == 0.0, "#632 log_softmax of a scalar is log(1) = 0"]
+assert of [((relu of (0 - 3)) + 1) == 1.0, "#632 scalar relu no longer poisons downstream arithmetic"]
+
 print of "PASS: flat-buffer tensors"

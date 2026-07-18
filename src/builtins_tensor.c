@@ -403,6 +403,8 @@ Value* builtin_tensor_matmul(Value *arg) {
 
 /* ==== BUILTIN: softmax ==== */
 Value* builtin_tensor_softmax(Value *arg) {
+    /* #632: softmax of a single element normalizes to 1.0. */
+    if (arg && arg->type == VAL_NUM) return make_num(1.0);
     int rows, cols;
     double *flat = tensor_to_flat(arg, &rows, &cols);
     if (!flat) return make_null();
@@ -424,6 +426,8 @@ Value* builtin_tensor_log_softmax(Value *arg) {
         Value *first = arg->data.list.items[0];
         if (first->type == VAL_LIST) tensor = first; /* [tensor, dim] form */
     }
+    /* #632: log(softmax(scalar)) = log(1) = 0. */
+    if (tensor && tensor->type == VAL_NUM) return make_num(0.0);
     int rows, cols;
     double *flat = tensor_to_flat(tensor, &rows, &cols);
     if (!flat) return make_null();
@@ -442,6 +446,11 @@ Value* builtin_tensor_log_softmax(Value *arg) {
 /* ==== BUILTIN: relu ==== */
 /* relu of tensor → element-wise max(0, x). Works on 1D or 2D. */
 Value* builtin_tensor_relu(Value *arg) {
+    /* #632: a scalar is the degenerate element-wise case, like sqrt/exp/log. */
+    if (arg && arg->type == VAL_NUM) {
+        double x = arg->data.num;
+        return make_num(x < 0.0 ? 0.0 : x);
+    }
     /* flat-buffer fast path: in-place clamp, shape preserved */
     if (arg && arg->type == VAL_BUFFER) {
         Value *res = make_buffer_like(arg);
@@ -468,6 +477,11 @@ Value* builtin_tensor_relu(Value *arg) {
 /* ==== BUILTIN: leaky_relu ==== */
 /* leaky_relu of tensor → element-wise max(0.01*x, x). Works on 1D or 2D. */
 Value* builtin_tensor_leaky_relu(Value *arg) {
+    /* #632: scalar is the degenerate element-wise case. */
+    if (arg && arg->type == VAL_NUM) {
+        double x = arg->data.num;
+        return make_num(x < 0.0 ? 0.01 * x : x);
+    }
     int rows, cols;
     double *flat = tensor_to_flat(arg, &rows, &cols);
     if (!flat) return make_null();

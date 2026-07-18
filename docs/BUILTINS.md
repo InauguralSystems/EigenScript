@@ -397,10 +397,10 @@ automatically at exit.
 | `sqrt` | `sqrt of t` | Element-wise square root; negative input returns 0 |
 | `exp` | `exp of t` | Element-wise e^x; overflow saturates |
 | `log` | `log of t` | Element-wise natural log; input is floored at 1e-10 |
-| `softmax` | `softmax of t` | Row-wise softmax normalization |
-| `log_softmax` | `log_softmax of t` | Row-wise log(softmax) |
-| `relu` | `relu of t` | Element-wise max(0, x) |
-| `leaky_relu` | `leaky_relu of t` | Element-wise max(0.01x, x) |
+| `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`) |
+| `log_softmax` | `log_softmax of t` | Row-wise log(softmax) (a scalar → `log(1)` = `0.0`) |
+| `relu` | `relu of t` | Element-wise max(0, x) (accepts a scalar) |
+| `leaky_relu` | `leaky_relu of t` | Element-wise max(0.01x, x) (accepts a scalar) |
 
 ### Linear Algebra
 
