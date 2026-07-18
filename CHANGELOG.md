@@ -5,6 +5,18 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 ### Added
+- **`native_train_step` batched causal-mask training path (~10.75x faster).**
+  The transformer trainer (model extension, used by iLambdaAi) re-ran a full
+  forward+backward over the growing prefix for *every* target position in a
+  window — O(seq) redundant passes, since the attention is causal and each
+  position's activations are prefix-length-independent. Replaced with one
+  causal-masked forward + per-position losses + one backward: gradient-identical
+  (proven by matching loss sequences to float precision from a common
+  checkpoint) but ~10.75x less compute (179 -> 16.65 ms/window on the d=32/L=4
+  model). `EIGS_TRAIN_PERPOS=1` restores the per-position path as the
+  gradient-check oracle; `EIGS_TRAIN_PROFILE=1` prints the per-phase split. New
+  regression test `test_native_train_gradcheck.sh` (suite [47c], model build)
+  pins the two paths together forever.
 - **W020: a lint for `unobserved:` blocks that provably do nothing (#655).**
   Fires when *every* assignment in the block targets a dict field or list
   element (`d.k is ...`, `xs[i] is ...`). Observer bookkeeping is gated on

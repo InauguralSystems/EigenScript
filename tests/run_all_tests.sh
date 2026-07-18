@@ -1875,6 +1875,21 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
         echo "  PASS: malicious model checkpoints rejected"
     fi
     echo ""
+
+    echo "[47c/47] native_train_step gradient-check (batched vs per-position, 3 checks)"
+    GC_OUTPUT=$(bash "$TESTS_DIR/test_native_train_gradcheck.sh" 2>&1)
+    GC_PASS=$(echo "$GC_OUTPUT" | grep -c "PASS:" || true)
+    GC_FAIL=$(echo "$GC_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + GC_PASS + GC_FAIL))
+    PASS=$((PASS + GC_PASS))
+    FAIL=$((FAIL + GC_FAIL))
+    if [ "$GC_FAIL" -gt 0 ]; then
+        echo "  FAIL: $GC_FAIL native_train_step gradient-check(s) failed"
+        echo "$GC_OUTPUT" | grep "FAIL:" | head -4
+    else
+        echo "  PASS: batched training path is gradient-identical to the per-position oracle"
+    fi
+    echo ""
 else
     echo "[47/47] Model roundtrip SKIPPED (binary built without EIGENSCRIPT_EXT_MODEL)"
     echo ""
