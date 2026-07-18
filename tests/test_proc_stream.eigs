@@ -77,17 +77,17 @@ h is proc_spawn of ["/bin/echo", "x"]
 proc_close of h[1]
 proc_close of h[2]
 proc_wait of h[0]
-# Spawn a fresh one and let it exit; write after exit should fail.
+# Spawn a fresh one and wait for it to actually exit before writing:
+# proc_wait reaps the child (waitpid on the pid only — it does not close
+# the parent's pipe fds), so the write below deterministically hits
+# EPIPE on a dead child. A spin loop only hopes the child was scheduled
+# in time; under load it isn't (#604).
 h is proc_spawn of (["/bin/true"])
-# Give /bin/true a moment to exit.
-i is 0
-loop while i < 100000:
-    i is i + 1
+proc_wait of h[0]
 n is proc_write of [h[1], "data\n"]
 check of ["8a", n, -1]
 proc_close of h[1]
 proc_close of h[2]
-proc_wait of h[0]
 
 # 9. proc_close is idempotent on a bad fd.
 proc_close of 9999
