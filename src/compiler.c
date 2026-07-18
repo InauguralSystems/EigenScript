@@ -353,6 +353,13 @@ static void emit_op_u16(Compiler *c, uint8_t op, uint16_t arg, int line) {
     adjust_stack(c, op_stack_effect(op));
 }
 
+/* #630: 32-bit operand form (OP_LINE only). */
+static void emit_op_u32(Compiler *c, uint8_t op, uint32_t arg, int line) {
+    chunk_emit(c->chunk, op, line);
+    chunk_emit_u32(c->chunk, arg, line);
+    adjust_stack(c, op_stack_effect(op));
+}
+
 static void emit_op_u16_u16(Compiler *c, uint8_t op, uint16_t arg1, uint16_t arg2, int line) {
     chunk_emit(c->chunk, op, line);
     chunk_emit_u16(c->chunk, arg1, line);
@@ -442,7 +449,7 @@ static int capture_loop_start(Compiler *c) {
  * basic-block boundary so we never *skip* a stamp the runtime needs. */
 static void emit_line(Compiler *c, int line) {
     if (c->last_line == line) return;
-    emit_op_u16(c, OP_LINE, (uint16_t)line, line);
+    emit_op_u32(c, OP_LINE, (uint32_t)line, line);   /* #630: 32-bit — was (uint16_t), wrapped past line 65535 */
     c->last_line = line;
 }
 
