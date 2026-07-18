@@ -1206,6 +1206,62 @@ remove_file of "/tmp/eigs_fd_probe/sub/inner.txt"
 _ui.modal_stack is []
 
 # ============================================================
+# #631: a modal owns the keyboard, not just the pointer
+# ============================================================
+# Before the fix, dispatch returned keys with the real root above the modal
+# rebind, so Tab escaped to a background widget and Enter activated it — an
+# "Are you sure? [Cancel]" dialog could fire the destructive action behind it.
+_ui.modal_stack is []
+_ui.focus_list is []
+_ui.focused_widget is null
+_ui.focused_input is null
+_ui.focus_index is 0 - 1
+
+m631_root is panel of ["m631_root", 0, 0, 800, 600]
+m631_fired is [0]
+define m631_boom(b) as:
+    m631_fired[0] is m631_fired[0] + 1
+m631_bg is button of ["M631_BEHIND", 0, 0, 100, 30, "danger", m631_boom]
+add_child of [m631_root, m631_bg]
+_layout of [m631_root, 0, 0]
+_ui.edit_root is m631_root
+_build_focus_list of m631_root
+
+# A dialog hosting two focusable children of its own (#575).
+m631_dlg is dialog of ["m631_dlg", 400, 300, "Modal", "", ["OK"], null]
+m631_hit is [0]
+define m631_ok(b) as:
+    m631_hit[0] is m631_hit[0] + 1
+m631_c1 is button of ["M631_C1", 0, 0, 60, 24, "One", m631_ok]
+m631_c2 is button of ["M631_C2", 0, 0, 60, 24, "Two", m631_ok]
+add_child of [m631_dlg, m631_c1]
+add_child of [m631_dlg, m631_c2]
+push_modal of [m631_dlg, 800, 600]
+
+# Tab scopes to the dialog, never the background.
+dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
+assert_true of [_ui.focused_widget != null, "#631 Tab under a modal focuses a dialog child, not nothing"]
+assert_eq of [_ui.focused_widget.id, "M631_C1", "#631 Tab lands on the dialog's first child"]
+
+# Enter fires the DIALOG child, never the button behind the modal.
+dispatch of [m631_root, {"type": "keydown", "key": "return", "shift": 0, "ctrl": 0, "alt": 0}]
+assert_eq of [m631_fired[0], 0, "#631 Enter does not fire the button behind the modal"]
+assert_eq of [m631_hit[0], 1, "#631 Enter fires the focused dialog child"]
+
+# Tab again cycles within the dialog (C1 -> C2), still not the background.
+dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
+assert_eq of [_ui.focused_widget.id, "M631_C2", "#631 Tab cycles between the dialog's own children"]
+
+# After pop, focus returns to the background list.
+pop_modal of null
+dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
+assert_eq of [_ui.focused_widget.id, "M631_BEHIND", "#631 after pop_modal, Tab returns to the background widget"]
+assert_eq of [m631_fired[0], 0, "#631 the background button never fired via keyboard"]
+
+_ui.modal_stack is []
+_ui.edit_root is null
+
+# ============================================================
 # Summary
 # ============================================================
 

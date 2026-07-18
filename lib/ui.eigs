@@ -477,6 +477,15 @@ define push_modal(dlg, parent_w, parent_h) as:
     # moment it is pushed, and its children need absolute positions to be
     # hit-tested (#575). app_loop re-lays it every frame after this.
     _layout of [dlg, 0, 0]
+    # Scope keyboard focus to the dialog too (#631): rebuild the focus list
+    # from the dialog's own children and drop any background focus, so Tab
+    # cycles inside the modal and a stray Enter cannot fire a widget behind
+    # it before the user has Tabbed. Mouse modality already scopes via dispatch.
+    _ui.focus_list is []
+    _build_focus_list of dlg
+    _ui.focus_index is 0 - 1
+    _ui.focused_widget is null
+    _ui.focused_input is null
 
 define pop_modal() as:
     n is len of _ui.modal_stack
@@ -488,6 +497,18 @@ define pop_modal() as:
     for i in range of (n - 1):
         append of [new_stack, _ui.modal_stack[i]]
     _ui.modal_stack is new_stack
+    # Restore focus to whatever is now on top (#631): the next modal down, or
+    # the app root once the stack is empty. edit_root is null until app_loop
+    # runs, so a headless push/pop just clears focus rather than erroring.
+    focus_root is _ui.edit_root
+    if (len of new_stack) > 0:
+        focus_root is new_stack[(len of new_stack) - 1]
+    _ui.focus_list is []
+    if focus_root != null:
+        _build_focus_list of focus_root
+    _ui.focus_index is 0 - 1
+    _ui.focused_widget is null
+    _ui.focused_input is null
     return top
 
 define show_menu(menu_widget, x, y) as:
@@ -565,19 +586,21 @@ define handle_key(root, ev) as:
 # Event dispatch — registry-driven
 
 define dispatch(root, ev) as:
+    # A modal owns ALL input — pointer AND keyboard (#631). Rebind the root to
+    # the top of the stack BEFORE routing anything, so hit-testing, the
+    # registry walk, hover, drag AND keyboard focus navigation/activation all
+    # run against the dialog's subtree — nothing behind it can be reached. The
+    # keys previously returned above this rebind (mouse-only modality), which
+    # let a user Tab to a background widget and Enter-activate it through the
+    # dialog. This is also what lets a dialog host children (#575): they are
+    # dispatched to like any other widget. Escape still pops the modal —
+    # handle_key checks the stack directly, so it survives the rebind.
+    if (len of _ui.modal_stack) > 0:
+        root is _ui.modal_stack[(len of _ui.modal_stack) - 1]
     # Keys route through the same public handler app_loop uses (#563), so
     # dispatch is the single event door for mouse, wheel and keyboard.
     if ev.type == "keydown" or ev.type == "keyup":
         return handle_key of [root, ev]
-    # A modal owns the pointer: the top of the stack becomes the root for
-    # this event, so everything below — hit-testing, the registry walk,
-    # focus, hover, drag — runs against the dialog's subtree and nothing
-    # behind it can be reached. This is also what lets a dialog host
-    # children (#575): they are dispatched to like any other widget
-    # instead of through a special-case click handler that knew only
-    # about the dialog's own buttons.
-    if (len of _ui.modal_stack) > 0:
-        root is _ui.modal_stack[(len of _ui.modal_stack) - 1]
     mx is 0
     my is 0
     if ev.type == "mousemove" or ev.type == "mousedown" or ev.type == "mouseup":
