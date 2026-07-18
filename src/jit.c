@@ -840,8 +840,9 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * call, no bail, no sp/env interaction. */
             i += 1; ops++; non_line_ops++;
         } else if (op == OP_LINE) {
-            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
-            i += 3; ops++;
+            /* #630: [op][line:32] = 5 bytes. */
+            if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 5; ops++;
         } else {
             *stop_op = op; *stop_offset = i;
             break;
@@ -3835,8 +3836,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             }
             i += 1;
         } else { /* OP_LINE */
-            uint16_t line = (uint16_t)(chunk->code[i + 1] |
-                                       ((uint16_t)chunk->code[i + 2] << 8));
+            /* #630: 32-bit operand. */
+            uint32_t line = (uint32_t)chunk->code[i + 1] |
+                            ((uint32_t)chunk->code[i + 2] << 8) |
+                            ((uint32_t)chunk->code[i + 3] << 16) |
+                            ((uint32_t)chunk->code[i + 4] << 24);
             w = emit_movl_imm_at_disp32_rbx(w, g_layout.off_current_line,
                                             (int32_t)line);
             /* Also stamp g_trace_current_line (the line prev_record_assign
@@ -3846,7 +3850,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * the line where the thunk took over. %rax is scratch between ops. */
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_current_line);
             w = emit_movl_imm_at_rax(w, (int32_t)line);
-            i += 3;
+            i += 5;   /* #630: [op][line:32] */
         }
         /* Update last_imm in lockstep with the scanner's last_push_immediate.
          * Consumed by OP_POP to decide between the `dec %ecx` peephole and

@@ -140,7 +140,7 @@ typedef enum {
     OP_MATCH,           /* [case_count:16] pattern match dispatch */
     OP_LISTCOMP_BEGIN,  /* push empty list accumulator */
     OP_LISTCOMP_APPEND, /* append TOS to accumulator */
-    OP_LINE,            /* [line:16] update current line number */
+    OP_LINE,            /* [line:32] update current line number (#630: was 16-bit, wrapped past line 65535) */
     OP_WIDE,            /* next operand is 32-bit */
     OP_DISPATCH,        /* pop arg, key, table; call table[key](arg) inline */
 
@@ -544,6 +544,7 @@ void       chunk_decref(EigsChunk *chunk);
 int        chunk_add_constant(EigsChunk *chunk, Value *val);
 void       chunk_emit(EigsChunk *chunk, uint8_t byte, int line);
 void       chunk_emit_u16(EigsChunk *chunk, uint16_t val, int line);
+void       chunk_emit_u32(EigsChunk *chunk, uint32_t val, int line);
 int        chunk_emit_jump(EigsChunk *chunk, uint8_t op, int line);
 void       chunk_patch_jump(EigsChunk *chunk, int offset);
 int        chunk_add_function(EigsChunk *chunk, EigsChunk *fn);

@@ -137,6 +137,15 @@ void chunk_emit_u16(EigsChunk *chunk, uint16_t val, int line) {
     chunk_emit(chunk, (uint8_t)((val >> 8) & 0xFF), line);
 }
 
+/* #630: little-endian 32-bit operand — currently only OP_LINE, whose line
+ * number legitimately exceeds 65535 in generated programs. Read by read_u32. */
+void chunk_emit_u32(EigsChunk *chunk, uint32_t val, int line) {
+    chunk_emit(chunk, (uint8_t)(val & 0xFF), line);
+    chunk_emit(chunk, (uint8_t)((val >> 8) & 0xFF), line);
+    chunk_emit(chunk, (uint8_t)((val >> 16) & 0xFF), line);
+    chunk_emit(chunk, (uint8_t)((val >> 24) & 0xFF), line);
+}
+
 /* Emit a jump instruction with a placeholder 16-bit offset.
  * Returns the offset of the placeholder for later patching. */
 int chunk_emit_jump(EigsChunk *chunk, uint8_t op, int line) {
@@ -369,12 +378,13 @@ static int op_has_u16(uint8_t op) {
     case OP_TRY_BEGIN: case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_IMPORT: case OP_MATCH:
-    case OP_LINE:
     case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
     case OP_TRAJECTORY_SLOT: case OP_TRAJECTORY_NAME:
         return 1;
     case OP_INTERROGATE: case OP_PREDICATE:
         return 1; /* kind:8 but padded to 16 for uniformity */
+    /* OP_LINE has a 32-bit operand (#630) — handled separately by the
+     * disassembler and verifier, never through the u16 path. */
     default:
         return 0;
     }
@@ -389,7 +399,15 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
         uint8_t op = chunk->code[i];
         fprintf(stderr, "%04d [L%d] %-20s", i, line, op_name(op));
         i++;
-        if (op_has_u16(op) && i + 1 < chunk->code_len) {
+        if (op == OP_LINE && i + 3 < chunk->code_len) {
+            /* #630: 32-bit operand. */
+            uint32_t arg = (uint32_t)chunk->code[i] |
+                           ((uint32_t)chunk->code[i + 1] << 8) |
+                           ((uint32_t)chunk->code[i + 2] << 16) |
+                           ((uint32_t)chunk->code[i + 3] << 24);
+            fprintf(stderr, " %u", arg);
+            i += 4;
+        } else if (op_has_u16(op) && i + 1 < chunk->code_len) {
             uint16_t arg = chunk->code[i] | (chunk->code[i + 1] << 8);
             fprintf(stderr, " %d", arg);
             if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
@@ -462,8 +480,10 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
     case OP_REPORT_VALUE_SLOT:
     case OP_INTERROGATE: case OP_PREDICATE:
-    case OP_MATCH: case OP_LINE: case OP_DESTRUCTURE_UNPACK:
+    case OP_MATCH: case OP_DESTRUCTURE_UNPACK:
         roles[0] = VR_RAW; return 1;
+    /* OP_LINE's operand is 32-bit (#630); chunk_verify walks it specially,
+     * so it never reaches this per-operand (u16-strided) role machinery. */
     case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
     case OP_LOCAL_IDX_GET:
@@ -498,6 +518,14 @@ int chunk_verify(EigsChunk *chunk) {
         uint8_t op = code[i];
         if (op >= OP_COUNT) { ok = 0; break; }
         is_start[i] = 1;
+        /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
+         * role machinery below. No index to validate; just skip 4 bytes. */
+        if (op == OP_LINE) {
+            int end = i + 1 + 4;
+            if (end > n) { ok = 0; break; }
+            i = end;
+            continue;
+        }
         VerifyRole roles[3];
         int nops = op_verify_operands(op, roles);
         int end = i + 1 + 2 * nops;
@@ -558,8 +586,8 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
         uint8_t op = *ip++;
         switch (op) {
         case OP_LINE:
-            if (ip + 2 > end) return;
-            ip += 2;
+            if (ip + 4 > end) return;   /* #630: 32-bit operand */
+            ip += 4;
             break;
         case OP_CONST: {
             if (ip + 2 > end) return;

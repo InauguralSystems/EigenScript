@@ -1082,6 +1082,54 @@ else
 fi
 rm -f "$CPG_FILE"
 
+# [120] OP_LINE 32-bit operand (#630). The line operand was u16, so every
+# line past 65535 wrapped (line % 65536) and two assignments exactly 65536
+# lines apart collapsed onto one stamp — 'what is x at L' then returned the
+# wrong value at rc=0, and errors/traces past 65535 misreported the line.
+# Generated at test time (a 70k-line file is not worth committing). Two
+# assignments 65536 apart: x=111 at line A, x=222 at line A+65536. Both
+# tiers must agree, so the JIT tier runs with thresholds forced low.
+echo "[120] OP_LINE 32-bit line operand (#630)"
+LW_FILE=$(mktemp /tmp/eigs_linewrap_XXXX.eigs)
+python3 -c "
+A = 4464
+B = A + 65536
+L = ['pad is 1'] * B
+L[0] = 'x is 0'; L[A-1] = 'x is 111'; L[B-1] = 'x is 222'
+body = ['r1 is what is x at %d' % A, 'print of r1',
+        'r2 is what is x at %d' % B, 'print of r2',
+        'boom is undefined_xyz_at_%d' % B]
+print('\n'.join(L + body))" > "$LW_FILE"
+TOTAL=$((TOTAL + 3))
+# Interpreter tier
+LW_INT=$(EIGS_JIT_OFF=1 ./eigenscript "$LW_FILE" </dev/null 2>&1)
+# JIT tier (thresholds forced low so any hot region compiles)
+LW_JIT=$(EIGS_JIT_ENTRY_THRESHOLD=1 EIGS_JIT_ITER_THRESHOLD=10 EIGS_JIT_OSR_THRESHOLD=50 \
+         ./eigenscript "$LW_FILE" </dev/null 2>&1)
+# 'what is x at 4464' must be 111 (not 222, the value that wrapped onto it).
+LW_R1=$(printf '%s\n' "$LW_INT" | sed -n '1p')
+LW_R2=$(printf '%s\n' "$LW_INT" | sed -n '2p')
+# The error is on a line past 65535; a wrapped operand would report line %
+# 65536 (a small number). The invariant is simply: reported line > 65535.
+LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error line [0-9]+" | head -1 | grep -oE "[0-9]+")
+if [ "$LW_R1" = "111" ] && [ "$LW_R2" = "222" ]; then
+    PASS=$((PASS + 1)); echo "  PASS: 'what is x at L' correct past line 65535 (111, 222)"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: temporal query wrapped (r1='$LW_R1' r2='$LW_R2', want 111/222)"
+fi
+if [ -n "$LW_ERRLINE" ] && [ "$LW_ERRLINE" -gt 65535 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: error line reported as $LW_ERRLINE (> 65535, not wrapped)"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: error line wrapped ('$LW_ERRLINE', want > 65535)"
+fi
+if [ "$(printf '%s\n' "$LW_JIT" | sed -n '1,2p' | tr '\n' ',')" = "111,222," ]; then
+    PASS=$((PASS + 1)); echo "  PASS: JIT tier agrees with interpreter past line 65535"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: JIT/interpreter divergence past line 65535"
+    printf '%s\n' "$LW_JIT" | head -3
+fi
+rm -f "$LW_FILE"
+
 # [116] Silent-tolerance audit batch-2 (#497/#498/#499/#501/#502/#511/#512).
 # Builtins that used to return a silent null/0/""/wrong-order on invalid
 # input now raise a catchable error from the closed error-kind set: matmul

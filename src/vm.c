@@ -496,6 +496,12 @@ static inline uint16_t read_u16(uint8_t *ip) {
     return ip[0] | (ip[1] << 8);
 }
 
+/* #630: little-endian 32-bit operand read (OP_LINE). */
+static inline uint32_t read_u32(uint8_t *ip) {
+    return (uint32_t)ip[0] | ((uint32_t)ip[1] << 8) |
+           ((uint32_t)ip[2] << 16) | ((uint32_t)ip[3] << 24);
+}
+
 /* is_truthy declared in eigenscript.h */
 
 /* Iterator state: stored as a list [iterable, index] */
@@ -1232,7 +1238,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
     for (;;) {
         switch (*ip++) {
         case OP_LINE:
-            ip += 2;
+            ip += 4;   /* #630: 32-bit operand */
             break;
         case OP_CONST: {
             uint16_t idx = read_u16(ip); ip += 2;
@@ -5008,9 +5014,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     }
 
     CASE(LINE): {
-        uint16_t line = read_u16(ip); ip += 2;
-        current_line = line;
-        g_vm.current_line = line;
+        uint32_t line = read_u32(ip); ip += 4;   /* #630: 32-bit operand */
+        current_line = (int)line;
+        g_vm.current_line = (int)line;
         /* History stamping needs the current line whether or not a tape
          * is open — a plain global store is far cheaper than the call
          * (17.8M calls per 500k DMG-shaped steps before this change).
