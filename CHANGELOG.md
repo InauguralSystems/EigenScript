@@ -70,6 +70,22 @@ All notable changes to EigenScript are documented here.
   being recomputed by render and click separately.
 
 ### Added
+- **`eigen_generate` accepts an optional 4th argument: `top_p` (nucleus
+  sampling).** Keeps the smallest set of tokens whose cumulative probability
+  reaches `p`, so the candidate set adapts to the model's confidence, rather
+  than the fixed top-k=40 that admits 39 near-zero tokens where the
+  distribution is sharp and truncates real choices where it is flat. Absent or
+  outside `(0,1)` keeps the historical top-k path, so existing callers and
+  their recorded numbers are unchanged. Tested by statistical signature rather
+  than by comparing token sequences — generation draws from a global `rand()`,
+  so two calls with the *same* policy already disagree on most positions (3/40
+  identical), and an earlier version of the check "verified" top-p from 0/40
+  matches, which the control shows is meaningless. Suite `[47e]` asserts a
+  restrictive nucleus narrows the emitted candidate set. **Honest scope: this
+  did not fix the repetition it was written for.** The model assigns its
+  repeat-loop continuation p=0.987, so a 0.95 nucleus keeps exactly one token
+  and changes nothing — the degeneracy is a genuine fixed point in the model,
+  not a decoding artifact.
 - **`eigen_eval_loss` — forward-only held-out cross-entropy (model build).**
   Scores one held-out window without a backward pass, weight update,
   requantise, or observer write, so evaluating a checkpoint never mutates it.
