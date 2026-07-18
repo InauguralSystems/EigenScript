@@ -2119,8 +2119,15 @@ Value* builtin_path_ext(Value *arg) {
 
 /* mkdir of "path" → 1 on success, 0 on failure. Creates parents. */
 #if !EIGENSCRIPT_FREESTANDING
+/* #585: mkdir's return (a success bit) is filesystem-dependent, so it is a
+ * taped nondeterminism source. Under EIGS_REPLAY the TAKE short-circuits
+ * before any mkdir(2), so the recorded bit is served and the filesystem is
+ * NOT mutated a second time — the same "don't re-run side effects on replay"
+ * rule as the proc-star / audio-capture boundary. Its return IS pinnable by
+ * the tape (unlike a proc fd), so it is Recorded, not #148-non-replayable. */
 Value* builtin_mkdir(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("mkdir", make_num(0));
+    TRACE_NONDET_TAKE("mkdir");
     /* Simple recursive mkdir */
     char *path = xstrdup(arg->data.str);
     int len = strlen(path);
@@ -2134,7 +2141,8 @@ Value* builtin_mkdir(Value *arg) {
     }
     free(path);
     struct stat st;
-    return make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0);
+    TRACE_NONDET_RECORD("mkdir",
+        make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
@@ -2142,17 +2150,21 @@ Value* builtin_mkdir(Value *arg) {
  * Matches `ls -1` default behavior: hidden entries (starting with '.') are excluded. */
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_ls(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_list(0);
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("ls", make_list(0));
+    /* #585: builds its return (a list) via readdir, so under EIGS_REPLAY the
+     * TAKE short-circuits before opendir — the recorded listing is served and
+     * the live directory is never read. */
+    TRACE_NONDET_TAKE("ls");
     Value *list = make_list(0);
     DIR *d = opendir(arg->data.str);
-    if (!d) return list;
+    if (!d) TRACE_NONDET_RECORD("ls", list);
     struct dirent *entry;
     while ((entry = readdir(d))) {
         if (entry->d_name[0] == '.') continue;
         list_append_owned(list, make_str(entry->d_name));
     }
     closedir(d);
-    return list;
+    TRACE_NONDET_RECORD("ls", list);
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
@@ -2160,9 +2172,12 @@ Value* builtin_ls(Value *arg) {
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_getcwd(Value *arg) {
     (void)arg;
+    /* #585: the cwd is process environment, nondeterministic across
+     * invocations and machines — taped so replay serves the recorded path. */
+    TRACE_NONDET_TAKE("getcwd");
     char buf[4096];
-    if (getcwd(buf, sizeof(buf))) return make_str(buf);
-    return make_str("");
+    if (getcwd(buf, sizeof(buf))) TRACE_NONDET_RECORD("getcwd", make_str(buf));
+    TRACE_NONDET_RECORD("getcwd", make_str(""));
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
@@ -2174,14 +2189,18 @@ Value* builtin_getcwd(Value *arg) {
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_exe_path(Value *arg) {
     (void)arg;
+    /* #585: the interpreter path is machine-dependent — taped so replay
+     * serves the recorded path without touching /proc/self/exe. */
+    TRACE_NONDET_TAKE("exe_path");
     char buf[4096];
     ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (n > 0 && n < (ssize_t)sizeof(buf)) {
         buf[n] = '\0';
-        return make_str(buf);
+        TRACE_NONDET_RECORD("exe_path", make_str(buf));
     }
-    if (g_argv && g_argc > 0 && g_argv[0]) return make_str(g_argv[0]);
-    return make_str("eigenscript");
+    if (g_argv && g_argc > 0 && g_argv[0])
+        TRACE_NONDET_RECORD("exe_path", make_str(g_argv[0]));
+    TRACE_NONDET_RECORD("exe_path", make_str("eigenscript"));
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
@@ -2844,10 +2863,14 @@ Value* builtin_load_file(Value *arg) {
 
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_file_exists(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("file_exists", make_num(0));
+    /* #585: fs-dependent read — taped so replay serves the recorded answer.
+     * TAKE short-circuits before the fopen probe under EIGS_REPLAY. */
+    TRACE_NONDET_TAKE("file_exists");
     FILE *f = fopen(arg->data.str, "r");
-    if (f) { fclose(f); return make_num(1); }
-    return make_num(0);
+    int ex = (f != NULL);
+    if (f) fclose(f);
+    TRACE_NONDET_RECORD("file_exists", make_num(ex));
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 

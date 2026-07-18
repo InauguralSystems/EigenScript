@@ -57,7 +57,14 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576).
+  `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576),
+  `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
+  `mkdir` is a *write* whose return (a success bit) is filesystem-dependent:
+  it is Recorded rather than #148-non-replayable because that bit **is**
+  pinnable by the tape (unlike a subprocess fd). Under `EIGS_REPLAY` the
+  `TAKE` short-circuits before the `mkdir(2)` calls, so the recorded bit is
+  served and the directory is **not** created a second time — replay does not
+  re-run the side effect, the same rule as the subprocess/audio boundary.
   `read_bytes_buf`'s over-cap **raise** (#601) also rides the tape: the
   observed file size is recorded as a `VAL_NUM` `N` record (unambiguous —
   success records a `VAL_BUFFER`, open-failure records null) and the
