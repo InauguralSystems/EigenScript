@@ -4941,8 +4941,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         int saved_boundary = g_compile_module_boundary;
         g_compile_module_boundary = 1;                   /* #373 */
+        /* #589: this module's OWN top-level statements compile here too
+         * (mod_env's parent is g_global_env — the importer's scope).
+         * Mark it so a bare top-level `name is expr` binds/updates only
+         * within mod_env and never walks through to the importer's
+         * global — load_file does NOT set this (its documented contract
+         * keeps top-level writes in the caller's current scope). */
+        int saved_import_toplevel = g_compile_import_toplevel;
+        g_compile_import_toplevel = 1;
         EigsChunk *mod_chunk = compile_ast(ast, mod_env, source);
         g_compile_module_boundary = saved_boundary;
+        g_compile_import_toplevel = saved_import_toplevel;
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
             chunk_free(mod_chunk);

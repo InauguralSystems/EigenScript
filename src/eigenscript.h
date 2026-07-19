@@ -643,6 +643,14 @@ struct EigsThread {
      * global that happened to exist at compile time — the write
      * compiles as a fresh local instead. Reads stay dynamic. */
     int                  compile_module_boundary;
+    /* #589: nonzero ONLY while compiling an `import`ed module's own
+     * top-level statements (never for load_file, whose documented
+     * contract is "runs directly in the current scope"). A bare
+     * `name is expr` at that top level must resolve/create in the
+     * module's own fresh env (mod_env) and never walk through to
+     * whatever the importer's scope happens to already bind — the
+     * top-level counterpart of #373's function-body boundary. */
+    int                  compile_import_toplevel;
     /* Per-import resolution base (Phase 0b). Empty = fall back to
      * state->script_dir. OP_IMPORT saves/restores around module body. */
     char                 import_resolve_dir[4096];
@@ -731,6 +739,7 @@ extern __thread EigsThread *eigs_current;
 #define g_exe_dir             (eigs_current->state->exe_dir)
 #define g_load_env            (eigs_current->load_env)
 #define g_compile_module_boundary (eigs_current->compile_module_boundary)
+#define g_compile_import_toplevel (eigs_current->compile_import_toplevel)
 #define g_import_resolve_dir  (eigs_current->import_resolve_dir)
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
 #define g_gc_envs             (eigs_current->state->gc_envs)
