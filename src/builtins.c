@@ -2276,6 +2276,33 @@ Value* builtin_build_corpus(Value *arg) {
 
     int top_n = (int)topn_val->data.num;
     int n_files = file_list->data.list.count;
+
+    /* ---- SLOT MODE (optional 6th arg: slot_count > 0) --------------------
+     * Measured on the 2026-07 ecosystem corpus: of 379,321 identifier
+     * occurrences, only 7.1% are builtin/stdlib names (219 distinct) and
+     * 92.9% are local names (25,355 distinct). A correctness requirement
+     * attaches only to the first group -- you cannot call `pront` -- while
+     * ANY consistent renaming of a local yields an equally correct program.
+     *
+     * Frequency mode spends the whole budget memorising the 25,355 arbitrary
+     * names and still drops 45.7% of occurrences into one fallback token, so
+     * distinct variables become indistinguishable and a correct program is
+     * not expressible: `v0 is v0 + v1` collapses to <ident> is <ident> +
+     * <ident>.
+     *
+     * Slot mode instead gives every builtin an exact token and encodes each
+     * local by WHICH local it is, via an LRU slot table. Distinct locals per
+     * real 32-token window: median 5, p99 10, max 17 -- so 20 slots cover
+     * 100% of windows, and no eviction can occur inside a window (all of a
+     * window's locals are more recently used than anything it would evict).
+     * Total vocabulary lands at ~324 against 341 today, with ZERO identifier
+     * information lost. */
+    int slot_count = 0;
+    if (arg->data.list.count >= 6) {
+        Value *sv = arg->data.list.items[5];
+        if (sv && sv->type == VAL_NUM) slot_count = (int)sv->data.num;
+    }
+    if (slot_count < 0) slot_count = 0;
     /* Source of truth: the size of the TokType enum. Hardcoding 54 (which is
      * what this was before) silently aliases TOK_LBRACKET (=54) onto the most
      * common extended ident slot whenever the enum grows. */
@@ -2342,7 +2369,23 @@ Value* builtin_build_corpus(Value *arg) {
     fprintf(stderr, "\nFiles: %d/%d\n", files_found, n_files);
     fprintf(stderr, "Distinct identifiers: %d\n", n_idents);
 
-    /* ---- Pass 2: pick top-N identifiers ---- */
+    /* ---- Pass 2: pick the exact-token identifiers ----
+     * Slot mode asks the RUNTIME'S OWN registry which names are builtins,
+     * rather than carrying a hardcoded list that would silently drift as
+     * builtins are added. Everything else becomes a slot. */
+    if (slot_count > 0) {
+        int keep = 0;
+        for (int i = 0; i < n_idents; i++) {
+            Value *bv = env_get(g_global_env, idents[i].name);
+            if (bv && (bv->type == VAL_BUILTIN || bv->type == VAL_FN)) {
+                if (keep != i) { IdentEntry tmp = idents[keep]; idents[keep] = idents[i]; idents[i] = tmp; }
+                keep++;
+            }
+        }
+        top_n = keep;
+        fprintf(stderr, "Slot mode: %d builtin names kept exact, %d locals -> %d slots\n",
+                keep, n_idents - keep, slot_count);
+    }
     int actual_top = top_n < n_idents ? top_n : n_idents;
     if (actual_top <= 0) actual_top = 0;
     char **top_names = xcalloc(actual_top > 0 ? actual_top : 1, sizeof(char*));
@@ -2352,17 +2395,36 @@ Value* builtin_build_corpus(Value *arg) {
     int *work_counts = xmalloc_array(n_idents, sizeof(int));
     for (int i = 0; i < n_idents; i++) work_counts[i] = idents[i].count;
 
-    for (int t = 0; t < actual_top; t++) {
-        int best_idx = -1, best_val = -1;
-        for (int j = 0; j < n_idents; j++) {
-            if (work_counts[j] > best_val) { best_val = work_counts[j]; best_idx = j; }
+    if (slot_count > 0) {
+        /* Slot mode already partitioned the builtins to the front; take them
+         * verbatim. Re-selecting by frequency here would hand the exact tokens
+         * to the most COMMON names (which are locals like `total`/`items`) and
+         * push the builtins into slots -- exactly backwards, since a local's
+         * name is arbitrary and a builtin's is not. */
+        for (int t = 0; t < actual_top; t++) {
+            top_names[t] = idents[t].name;
+            top_ids[t] = FIRST_IDENT + t;
         }
-        if (best_idx < 0) break;
-        top_names[t] = idents[best_idx].name;
-        top_ids[t] = FIRST_IDENT + t;
-        work_counts[best_idx] = -1;
+    } else {
+        for (int t = 0; t < actual_top; t++) {
+            int best_idx = -1, best_val = -1;
+            for (int j = 0; j < n_idents; j++) {
+                if (work_counts[j] > best_val) { best_val = work_counts[j]; best_idx = j; }
+            }
+            if (best_idx < 0) break;
+            top_names[t] = idents[best_idx].name;
+            top_ids[t] = FIRST_IDENT + t;
+            work_counts[best_idx] = -1;
+        }
     }
     free(work_counts);
+
+    /* LRU slot table state (slot mode only). */
+    char **slot_names = NULL; long *slot_used = NULL; long slot_clock = 0;
+    if (slot_count > 0) {
+        slot_names = xcalloc(slot_count, sizeof(char*));
+        slot_used  = xcalloc(slot_count, sizeof(long));
+    }
 
     fprintf(stderr, "\nTop %d identifiers:\n", actual_top);
     for (int i = 0; i < 10 && i < actual_top; i++) {
@@ -2407,11 +2469,32 @@ Value* builtin_build_corpus(Value *arg) {
             int tid = tl.tokens[i].type;
             /* Replace known identifiers with extended IDs */
             if (tid == TOK_IDENT && tl.tokens[i].str_val && tl.tokens[i].str_val[0]) {
+                int matched = 0;
                 for (int j = 0; j < actual_top; j++) {
                     if (strcmp(top_names[j], tl.tokens[i].str_val) == 0) {
                         tid = top_ids[j];
+                        matched = 1;
                         break;
                     }
+                }
+                if (!matched && slot_count > 0) {
+                    /* LRU slot table: a name keeps its slot until evicted, so
+                     * every occurrence inside a window maps to the SAME token
+                     * -- which is precisely what lets the model express "the
+                     * variable I just read" and what the fallback destroyed. */
+                    int hit = -1;
+                    for (int j = 0; j < slot_count; j++)
+                        if (slot_names[j] && strcmp(slot_names[j], tl.tokens[i].str_val) == 0) { hit = j; break; }
+                    if (hit < 0) {
+                        int lru = 0;
+                        for (int j = 1; j < slot_count; j++)
+                            if (slot_used[j] < slot_used[lru]) lru = j;
+                        free(slot_names[lru]);
+                        slot_names[lru] = xstrdup(tl.tokens[i].str_val);
+                        hit = lru;
+                    }
+                    slot_used[hit] = ++slot_clock;
+                    tid = FIRST_IDENT + actual_top + hit;
                 }
             }
             double d = (double)tid;
@@ -2424,6 +2507,10 @@ Value* builtin_build_corpus(Value *arg) {
     }
 
     fclose(stream_file);
+    if (slot_names) {
+        for (int j = 0; j < slot_count; j++) free(slot_names[j]);
+        free(slot_names); free(slot_used);
+    }
     fprintf(stderr, "\nWritten: %s (%d tokens)\n", stream_path_val->data.str, stream_pos);
 
     /* ---- Write identifier vocab JSON ----
@@ -2434,8 +2521,9 @@ Value* builtin_build_corpus(Value *arg) {
     FILE *vocab_file = xfopen_write(vocab_path_val->data.str, "w");
     if (vocab_file) {
         fprintf(vocab_file,
-                "{\"first_ident_id\": %d, \"ext_vocab_size\": %d, \"base_vocab\": %d, \"top_n\": %d",
-                FIRST_IDENT, BASE_VOCAB + actual_top, BASE_VOCAB, actual_top);
+                "{\"first_ident_id\": %d, \"ext_vocab_size\": %d, \"base_vocab\": %d, \"slot_count\": %d, \"first_slot_id\": %d, \"top_n\": %d",
+                FIRST_IDENT, BASE_VOCAB + actual_top + slot_count, BASE_VOCAB,
+                slot_count, FIRST_IDENT + actual_top, actual_top);
         fprintf(vocab_file, ", \"structural_ids\": {\"newline\": %d, \"indent\": %d, \"dedent\": %d, \"eof\": %d, \"ident_fallback\": %d}",
                 (int)TOK_NEWLINE, (int)TOK_INDENT, (int)TOK_DEDENT, (int)TOK_EOF, (int)TOK_IDENT);
         fprintf(vocab_file, ", \"base_names\": [");
