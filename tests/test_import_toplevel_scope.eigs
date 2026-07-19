@@ -1,0 +1,48 @@
+# #589: import's own top-level bare assignment must bind in the imported
+# module's own scope, never walking through to a same-named binding that
+# happens to already exist in the importer's scope — the top-level
+# counterpart of #373's function-write boundary (test_module_scope.eigs).
+# Before the fix, a module's `counter is 0` at its own top level rebound the
+# IMPORTER's `counter` instead of creating module state, and every later use
+# of `counter` inside the module's functions then resolved to the importer's
+# variable (the exact cross-wire from the issue's minimal repro).
+#
+# load_file keeps its OLDER, documented "runs directly in the current scope"
+# contract (docs/SPEC.md) completely unchanged — this file proves both
+# directions explicitly, since a regression in either one is the failure
+# mode #589 warns about.
+
+# --- Case 1 (import): module top-level state is insulated from a
+# same-named importer variable, both at import time and across repeated
+# calls into the module's own functions. ---
+write_text of ["tmp_589_cmod.eigs", "counter is 0\ndefine bump() as:\n    counter is counter + 1\n    return counter\n"]
+
+counter is [9, 9, 9]
+import tmp_589_cmod
+assert of [(type of counter) == "list", "I1 importer's counter untouched by module top-level init"]
+assert of [counter == [9, 9, 9], "I2 importer's counter value unchanged by import"]
+assert of [(tmp_589_cmod.bump of null) == 1, "I3 module state starts at 1 in its own scope"]
+assert of [(tmp_589_cmod.bump of null) == 2, "I4 module state accumulates in its own scope"]
+assert of [(tmp_589_cmod.bump of null) == 3, "I5 module state keeps accumulating, still module-local"]
+assert of [(type of counter) == "list", "I6 importer's counter still untouched after repeated module calls"]
+assert of [counter == [9, 9, 9], "I7 importer's counter value still unchanged"]
+
+remove_file of "tmp_589_cmod.eigs"
+
+# --- Case 2 (load_file): documented contract is UNCHANGED — a load_file'd
+# file's top-level statements still execute directly in the CURRENT
+# (caller's) scope, so a same-named top-level assignment DOES bind through
+# and DOES clobber the caller's existing binding. This is load_file's older,
+# intentional semantics, not the #589 bug, and the fix must not touch it. ---
+write_text of ["tmp_589_lfmod.eigs", "counterLF is 0\ndefine bumpLF() as:\n    counterLF is counterLF + 1\n    return counterLF\n"]
+
+counterLF is [9, 9, 9]
+load_file of "tmp_589_lfmod.eigs"
+assert of [(type of counterLF) == "num", "L1 load_file's top-level init binds through to the current scope"]
+assert of [counterLF == 0, "L2 current-scope counterLF now holds the loaded file's value"]
+assert of [(bumpLF of null) == 1, "L3 bumpLF reads/writes the (now shared) current-scope binding"]
+assert of [counterLF == 1, "L4 the write is visible in the current scope too — same binding"]
+
+remove_file of "tmp_589_lfmod.eigs"
+
+print of "All import top-level scope tests passed"

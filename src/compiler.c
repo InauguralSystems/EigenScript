@@ -1617,7 +1617,14 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
         }
         if (!picked) {
             int idx = add_string_constant(c, name);
-            if (local_only) {
+            /* #589: at an IMPORTED module's own top level, a bare write
+             * must never walk past mod_env to rebind whatever the
+             * importer's scope already holds under the same name —
+             * mirrors #373's function-body rule one level up. load_file
+             * doesn't set g_compile_import_toplevel, so its top-level
+             * writes keep walking the chain into the caller's scope,
+             * per its documented "current scope" contract. */
+            if (local_only || g_compile_import_toplevel) {
                 set_op = OP_SET_NAME_LOCAL; set_arg = (uint16_t)idx;
             } else {
                 set_op = OP_SET_NAME; set_arg = (uint16_t)idx;

@@ -1032,8 +1032,15 @@ can read the loader's globals and call its functions, but they can
 never bind a write through to them — a bare `name is expr` inside a
 module function that doesn't refer to a local, a captured name, or the
 module's own top-level state creates a fresh local, regardless of what
-happens to exist in the loader's scope. (Top-level statements in the
-loaded file still execute directly in the current scope.) To share
+happens to exist in the loader's scope. The same boundary applies one
+level up to an **imported** module's own top-level statements: a bare
+`name is expr` at an imported file's top level binds in *that module's
+own scope*, never walking through to a same-named binding the importer
+happens to already have — `counter is 0` at a module's top level can
+never rebind an importer's pre-existing `counter`. `load_file` is the
+one exception, per its older, documented contract above: its top-level
+statements still execute directly in the current (caller's) scope, so
+a same-named top-level assignment there *does* bind through. To share
 mutable state across files, put it in a dict or list and mutate fields
 — reads cross the boundary and field/index writes are value mutations,
 not bindings. The standard library's UI toolkit (`lib/ui.eigs`'s `_ui`
