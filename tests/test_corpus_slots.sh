@@ -36,12 +36,23 @@ define accumulate(total, items) as:
     return total
 SRC
 
+# NOTE: the driver deliberately defines a top-level function whose name also
+# occurs in the corpus. Reading the LIVE global env to decide "is this a
+# builtin?" cannot tell `_driver_helper` from `print`, so it would promote the
+# driver's own helper to an exact token — which is what SL05 pins against.
 cat > "$WORK/build.eigs" <<'DRV'
+define _driver_helper(x) as:
+    return x
+
 a is args of null
 files is [a[0] + "/sample.eigs"]
 r is build_corpus of [files, 4, a[0] + "/s.bin", a[0] + "/v.json", a[0] + "/i.json", 8]
 print of ("TOKENS " + (str of r[0]))
 DRV
+
+# `_driver_helper` must exist in the corpus too, or its absence from the vocab
+# would prove nothing.
+echo '_driver_helper is 1' >> "$WORK/sample.eigs"
 
 if ! "$EIGS" "$WORK/build.eigs" "$WORK" >"$WORK/out.log" 2>&1; then
     fail "SL00 slot-mode build_corpus ran" "see $WORK/out.log"
@@ -109,10 +120,13 @@ fi
 
 # `total` appears 4x and `items` 3x — a repeated slot proves the LRU table
 # returns the SAME token for the same name rather than a fresh one each time.
-if [ "$(g REPEATED)" -ge 1 ] 2>/dev/null; then
-    ok "SL03 a repeated local keeps ONE slot (identity preserved, $(g REPEATED) slot(s) reused)"
+# Exactly two locals clear the 3-occurrence bar, so pin 2: `>= 1` would still
+# pass with half the identity mapping broken, and identity is the one property
+# this whole encoding exists to provide.
+if [ "$(g REPEATED)" = "2" ]; then
+    ok "SL03 both repeated locals keep ONE slot each (identity preserved)"
 else
-    fail "SL03 no slot was reused — identity not preserved" "repeated=$(g REPEATED)"
+    fail "SL03 wrong number of reused slots — identity not preserved" "repeated=$(g REPEATED), want 2"
 fi
 
 # Regression guard: frequency mode (no 6th arg) must be untouched.
@@ -128,6 +142,30 @@ if [ "$FOUT" = "0" ]; then
     ok "SL04 frequency mode unchanged (slot_count 0 when no 6th arg)"
 else
     fail "SL04 frequency mode changed" "slot_count=$FOUT"
+fi
+
+# The exact-token list must be the LANGUAGE's names, not the driver script's.
+# Deciding this from the live global env cannot distinguish them — by the time
+# build_corpus runs, the driver's own `define`s are bound in that same env — so
+# `_driver_helper` would be handed an exact token beside `print` and `len`.
+# Beyond being wrong, it makes the vocabulary depend on whichever script built
+# the corpus: add a helper to the driver and every token id shifts, silently
+# invalidating comparison against models trained on an earlier build.
+cat > "$WORK/vocab.eigs" <<'VOC'
+a is args of null
+v is json_decode of (read_text of (a[0] + "/v.json"))
+names is v["names"]
+hit is 0
+for i in range of (len of names):
+    if names[i] == "_driver_helper":
+        hit is 1
+print of ("DRIVERLEAK " + (str of hit))
+VOC
+VOUT=$("$EIGS" "$WORK/vocab.eigs" "$WORK" 2>/dev/null | sed -n 's/^DRIVERLEAK //p')
+if [ "$VOUT" = "0" ]; then
+    ok "SL05 driver script's own functions stay OUT of the exact-token vocab"
+else
+    fail "SL05 driver-defined function leaked into the builtin vocabulary" "_driver_helper promoted"
 fi
 
 echo "CORPUSSLOTS: $PASS passed, $FAIL failed"

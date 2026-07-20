@@ -29,6 +29,33 @@
 #include "model_internal.h"
 #endif
 
+/* How many bindings the runtime itself installs.
+ *
+ * register_builtins fills the global env from slot 0 upward and nothing in the
+ * language ever unbinds a name, so slots [0, g_builtin_binding_count) are
+ * exactly the runtime's own registry and everything a user script defines lands
+ * after it. Set at the end of register_builtins; 0 until then.
+ *
+ * This exists because "is this name part of the language?" cannot be answered
+ * by looking up the LIVE global env: by the time a script calls a builtin, its
+ * own top-level functions are in that env too, and they are indistinguishable
+ * from stdlib entries by Value type alone. */
+static int g_builtin_binding_count = 0;
+
+/* True iff `name` is a name the runtime registered, as opposed to one the
+ * running script defined. Deliberately allocation-free — the suite gates on a
+ * zero leak tally, and a process-lifetime name snapshot would show up there. */
+int eigs_is_registered_builtin(const char *name) {
+    if (!name || !g_global_env) return 0;
+    int n = g_builtin_binding_count;
+    if (n > g_global_env->count) n = g_global_env->count;
+    for (int i = 0; i < n; i++) {
+        if (g_global_env->names[i] && strcmp(g_global_env->names[i], name) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 /* Internal helpers defined in eigenscript.c. */
 Value* make_num_permanent(double n);
 const char* val_type_name(ValType t);
@@ -2295,8 +2322,12 @@ Value* builtin_build_corpus(Value *arg) {
      * real 32-token window: median 5, p99 10, max 17 -- so 20 slots cover
      * 100% of windows, and no eviction can occur inside a window (all of a
      * window's locals are more recently used than anything it would evict).
-     * Total vocabulary lands at ~324 against 341 today, with ZERO identifier
-     * information lost. */
+     * Vocabulary lands comparable to frequency mode's -- measured 362 on the
+     * 2026-07 ecosystem corpus at slot_count=20, against 341 -- with ZERO
+     * identifier information lost. The win is losslessness, not vocab size.
+     * (That 362 was measured before the registry fix below, so it counts four
+     * driver-defined names that no longer qualify; the corrected figure has not
+     * been re-measured on the full corpus.) */
     int slot_count = 0;
     if (arg->data.list.count >= 6) {
         Value *sv = arg->data.list.items[5];
@@ -2372,12 +2403,22 @@ Value* builtin_build_corpus(Value *arg) {
     /* ---- Pass 2: pick the exact-token identifiers ----
      * Slot mode asks the RUNTIME'S OWN registry which names are builtins,
      * rather than carrying a hardcoded list that would silently drift as
-     * builtins are added. Everything else becomes a slot. */
+     * builtins are added. Everything else becomes a slot.
+     *
+     * The registry is the set captured at REGISTRATION time, not the live
+     * global env. Reading the live env instead promotes the driver script's own
+     * top-level functions to exact tokens — measured: `collect_eigs`,
+     * `_skip_dir`, `_skip_repo` and `_has_pathological_repetition` from
+     * iLambdaAi's build_corpus_v3.eigs landed in the vocabulary beside `print`
+     * and `len`. That is wrong twice over: those names are not part of the
+     * language, and it makes the vocabulary a function of whichever script
+     * built the corpus, so adding a helper to the driver silently renumbers
+     * tokens and quietly invalidates comparison against every model trained on
+     * an earlier build. */
     if (slot_count > 0) {
         int keep = 0;
         for (int i = 0; i < n_idents; i++) {
-            Value *bv = env_get(g_global_env, idents[i].name);
-            if (bv && (bv->type == VAL_BUILTIN || bv->type == VAL_FN)) {
+            if (eigs_is_registered_builtin(idents[i].name)) {
                 if (keep != i) { IdentEntry tmp = idents[keep]; idents[keep] = idents[i]; idents[i] = tmp; }
                 keep++;
             }
@@ -6857,4 +6898,8 @@ void register_builtins(Env *env) {
     if (getenv("EIGS_BORROW_GUARD_SELFTEST"))
         env_set_local_owned(env, "__borrow_guard_selftest", make_builtin(builtin_borrow_guard_selftest));
 #endif
+
+    /* Everything bound above this line is the language; everything bound after
+     * it belongs to whatever program is running. See eigs_is_registered_builtin. */
+    g_builtin_binding_count = env->count;
 }

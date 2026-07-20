@@ -1711,7 +1711,7 @@ check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin
 check_eigs_suite "module-boundary write insulation (#373)" test_module_scope.eigs "All module-scope tests passed" 9
 check_eigs_suite "import top-level scope insulation vs load_file current-scope contract (#589)" test_import_toplevel_scope.eigs "All import top-level scope tests passed" 11
 
-echo "[43a2b] build_corpus slot-mode identifier encoding (5 checks)"
+echo "[43a2b] build_corpus slot-mode identifier encoding (6 checks)"
 CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)
 CS_PASS=$(echo "$CS_OUTPUT" | grep -c "PASS:" || true)
 CS_FAIL=$(echo "$CS_OUTPUT" | grep -c "FAIL:" || true)
