@@ -473,12 +473,21 @@ static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
  * the fp-noise floor (a settled double wobbles by ULPs whose signs are
  * meaningless — 4·ε·(1+|v|) scales the floor to the value's magnitude), and
  * both hinge on the same question the relative channel cannot ask: are the
- * raw steps NON-VANISHING (recent-half mean magnitude ≥ half the older-half
- * mean)? Non-vanishing same-sign steps sum without bound → diverging, no
- * matter how large |v| already is; non-vanishing sign-alternating steps are
- * a perpetual oscillation, no matter how small the deadband-relative step.
- * A damped (decaying-step) trajectory fails non-vanishing and falls through
- * to the relative verdicts — converging approaches stay 'converged'. */
+ * raw steps NON-VANISHING (recent-half mean magnitude not below the
+ * older-half mean)? Non-vanishing same-sign steps sum without bound →
+ * diverging, no matter how large |v| already is; non-vanishing
+ * sign-alternating steps are a perpetual oscillation, no matter how small
+ * the deadband-relative step. A damped (decaying-step) trajectory fails
+ * non-vanishing and falls through to the relative verdicts — converging
+ * approaches stay 'converged'.
+ * #674: the bar is "not shrinking", not "shrinking slower than 2x per
+ * half-window". The old 0.5 factor admitted any geometric decay with ratio
+ * r^half ≥ 0.5 (r ≳ 0.871 for a 10-window) as "non-vanishing", so a
+ * monotone approach to zero — every real iterative solver — read
+ * 'diverging'. A geometric decay's steps DO vanish (their sum converges);
+ * only non-shrinking steps (a linear runaway's constant Δv, a polynomial
+ * or geometric runaway's growing Δv) sum without bound. The 1e-9 slack
+ * absorbs fp rounding in the two half-sums for exactly-constant steps. */
 static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
     if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
@@ -489,7 +498,7 @@ static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
     recent /= (double)half;
     older  /= (double)(OBSERVER_WINDOW_N - half);
     if (older <= floor_eps || recent <= floor_eps) return 0;
-    return recent >= 0.5 * older;
+    return recent >= older * (1.0 - 1e-9);
 }
 
 static int observer_slot_raw_diverging(const ObserverSlot *s) {
