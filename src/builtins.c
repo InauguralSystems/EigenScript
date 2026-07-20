@@ -4056,7 +4056,8 @@ static const char *SANDBOX_ALLOW[] = {
     "bit_and", "bit_not", "bit_or", "bit_shl", "bit_shr", "bit_xor",
     /* list / sequence (operate on the value handed in) */
     "append", "concat", "contains", "copy_into", "get_at", "index_of", "len",
-    "list_remove_at", "list_truncate", "set_at", "sort", "sort_by", "range",
+    "list_insert_at", "list_remove_at", "list_slice", "list_truncate", "set_at",
+    "sort", "sort_by", "range",
     /* dict */
     "dict_set", "dict_remove", "has_key", "keys", "values",
     /* string + regex (pure) */
@@ -4239,6 +4240,38 @@ Value* builtin_copy_into(Value *arg) {
         dest->data.list.items[offset + i] = src->data.list.items[i];
     }
     return dest;
+}
+
+/* ==== BUILTIN: list_slice ==== */
+/* list_slice of [list, start, end] → new list with the elements of [start, end).
+ * Dual of copy_into (which copies a range IN). Negative indices count from the
+ * end (like get_at/set_at, #312); both bounds then clamp to [0, len].
+ * start >= end gives []. Never raises on bounds. */
+Value* builtin_list_slice(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    Value *list = arg->data.list.items[0];
+    if (!list || list->type != VAL_LIST) return make_null();
+    Value *start_v = arg->data.list.items[1];
+    Value *end_v = arg->data.list.items[2];
+    if (!start_v || start_v->type != VAL_NUM || !end_v || end_v->type != VAL_NUM)
+        return make_null();
+    int n = list->data.list.count;
+    int start = (int)start_v->data.num;
+    int end = (int)end_v->data.num;
+    if (start < 0) start += n;
+    if (end < 0) end += n;
+    if (start < 0) start = 0;
+    if (start > n) start = n;
+    if (end < 0) end = 0;
+    if (end > n) end = n;
+    if (start >= end) return make_list(0);
+    int out_n = end - start;
+    /* #292: charge the new slots, same as concat. */
+    if (!sandbox_charge((size_t)out_n * sizeof(Value *))) return make_null();
+    Value *result = make_list(out_n);
+    for (int i = start; i < end; i++)
+        list_append(result, list->data.list.items[i]);
+    return result;
 }
 
 /* ==== BUILTIN: num_copy ==== */
@@ -6319,6 +6352,40 @@ Value* builtin_list_remove_at(Value *arg) {
     return list;
 }
 
+/* list_insert_at of [list, index, value] — insert value at index, shift tail
+ * up. Dual of list_remove_at. index == count appends; any other out-of-bounds
+ * index is a no-op. Returns the list. */
+Value* builtin_list_insert_at(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    Value *list = arg->data.list.items[0];
+    Value *idx_val = arg->data.list.items[1];
+    Value *val = arg->data.list.items[2];
+    if (!list || list->type != VAL_LIST) return make_null();
+    if (!idx_val || idx_val->type != VAL_NUM) return list;
+    int idx = (int)idx_val->data.num;
+    int count = list->data.list.count;
+    if (idx < 0 || idx > count) return list;
+    if (idx == count) {
+        list_append(list, val);
+        return list;
+    }
+    /* Grow by one slot (list_append handles capacity + arena lists), then move
+     * the tail up one place and drop the value into the vacated slot.
+     * list_append increfs the old last element, but the memmove overwrites
+     * its original slot with a raw pointer copy (no decref) — balance that
+     * spurious incref afterwards so old_last keeps exactly the one reference
+     * its single remaining slot owns. It still occupies slot [count] at that
+     * point, so the decref cannot free it. */
+    Value *old_last = list->data.list.items[count - 1];
+    list_append(list, old_last);
+    memmove(&list->data.list.items[idx + 1], &list->data.list.items[idx],
+            (count - idx) * sizeof(Value *));
+    val_incref(val);
+    list->data.list.items[idx] = val;
+    val_decref(old_last);
+    return list;
+}
+
 /* sort_by of [list, key_fn] — sort list by numeric keys from key_fn.
  * Evaluates key_fn once per element, then qsorts by key (ascending).
  * Stable tiebreak by original index. Returns a NEW sorted list. */
@@ -6689,6 +6756,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));
 #endif /* !EIGENSCRIPT_FREESTANDING */
     env_set_local_owned(env, "copy_into", make_builtin(builtin_copy_into));
+    env_set_local_owned(env, "list_slice", make_builtin(builtin_list_slice));
     env_set_local_owned(env, "num_copy", make_builtin(builtin_num_copy));
     env_set_local_owned(env, "concat", make_builtin(builtin_concat));
     env_set_local_owned(env, "range", make_builtin(builtin_range));
@@ -6745,6 +6813,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "sort", make_builtin(builtin_sort));
     env_set_local_owned(env, "list_truncate", make_builtin(builtin_list_truncate));
     env_set_local_owned(env, "list_remove_at", make_builtin(builtin_list_remove_at));
+    env_set_local_owned(env, "list_insert_at", make_builtin(builtin_list_insert_at));
     env_set_local_owned(env, "sort_by", make_builtin(builtin_sort_by));
     env_set_local_owned(env, "close_channel", make_builtin(builtin_close_channel));
     env_set_local_owned(env, "channel_closed", make_builtin(builtin_channel_closed));
