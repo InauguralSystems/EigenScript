@@ -1,0 +1,56 @@
+checks is 0
+passed is 0
+
+# T1: normal range — [start, end)
+a is list_slice of [[1, 2, 3, 4, 5], 1, 4]
+checks += 1
+if (len of a) == 3 and a[0] == 2 and a[1] == 3 and a[2] == 4:
+    passed += 1
+
+# T2: full range
+b is list_slice of [[1, 2, 3], 0, 3]
+checks += 1
+if (len of b) == 3 and b[0] == 1 and b[2] == 3:
+    passed += 1
+
+# T3: start >= end gives []
+c is list_slice of [[1, 2, 3], 2, 2]
+checks += 1
+if (len of c) == 0:
+    passed += 1
+
+# T4: out-of-bounds clamps, never raises — [] for an empty intersection
+d is list_slice of [[1, 2], 5, 9]
+checks += 1
+if (len of d) == 0:
+    passed += 1
+
+# T5: end past length clamps to length
+e is list_slice of [[1, 2, 3], 1, 99]
+checks += 1
+if (len of e) == 2 and e[0] == 2 and e[1] == 3:
+    passed += 1
+
+# T6: negative indices count from the end
+f is list_slice of [[1, 2, 3, 4, 5], -3, -1]
+checks += 1
+if (len of f) == 2 and f[0] == 3 and f[1] == 4:
+    passed += 1
+
+# T7: returns a new list — the source is unchanged
+g is [1, 2, 3, 4]
+s is list_slice of [g, 1, 3]
+checks += 1
+if (len of g) == 4 and (len of s) == 2 and s[0] == 2 and s[1] == 3:
+    passed += 1
+
+# T8: slice of empty list is []
+h is list_slice of [[], 0, 4]
+checks += 1
+if (len of h) == 0:
+    passed += 1
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

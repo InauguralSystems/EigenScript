@@ -2394,6 +2394,36 @@ else
 fi
 echo ""
 
+# [121] list_insert_at builtin
+echo "[121] List Insert At (8 checks)"
+LIA_OUTPUT=$(./eigenscript ../tests/test_list_insert_at.eigs 2>&1); LIA_OUTPUT_RC=$?
+if rc_ok "$LIA_OUTPUT_RC" "$LIA_OUTPUT" && echo "$LIA_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 list_insert_at checks"
+else
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
+    echo "  FAIL: list_insert_at tests"
+    echo "$LIA_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
+# [122] list_slice builtin
+echo "[122] List Slice (8 checks)"
+LSL_OUTPUT=$(./eigenscript ../tests/test_list_slice.eigs 2>&1); LSL_OUTPUT_RC=$?
+if rc_ok "$LSL_OUTPUT_RC" "$LSL_OUTPUT" && echo "$LSL_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 list_slice checks"
+else
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
+    echo "  FAIL: list_slice tests"
+    echo "$LSL_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [65] sort_by builtin
 echo "[65] Sort By (9 checks)"
 SBY_OUTPUT=$(./eigenscript ../tests/test_sort_by.eigs 2>&1); SBY_OUTPUT_RC=$?
