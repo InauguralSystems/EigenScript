@@ -1726,6 +1726,21 @@ else
 fi
 echo ""
 
+echo "[43a2c] build_corpus integer-literal encoding (5 checks)"
+CI_OUTPUT=$(bash "$TESTS_DIR/test_corpus_ints.sh" 2>&1)
+CI_PASS=$(echo "$CI_OUTPUT" | grep -c "PASS:" || true)
+CI_FAIL=$(echo "$CI_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + CI_PASS + CI_FAIL))
+PASS=$((PASS + CI_PASS))
+FAIL=$((FAIL + CI_FAIL))
+if [ "$CI_FAIL" -gt 0 ]; then
+    echo "  FAIL: $CI_FAIL integer-encoding check(s) failed"
+    echo "$CI_OUTPUT" | grep "FAIL:" | head -4
+else
+    echo "  PASS: integer literals get exact tokens; genuine repetition preserved"
+fi
+echo ""
+
 # [43a3] EigenStore header-validation / corruption error paths (ext_store.c)
 echo "[43a3] Store Corruption Errors (12 checks)"
 check_eigs_suite "store corruption errors" test_store_corruption.eigs "All store_corruption tests passed" 12
