@@ -1710,6 +1710,20 @@ echo "[43a2] Builtin Argument Errors (26 checks)"
 check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin_errors tests passed" 30
 check_eigs_suite "module-boundary write insulation (#373)" test_module_scope.eigs "All module-scope tests passed" 9
 check_eigs_suite "import top-level scope insulation vs load_file current-scope contract (#589)" test_import_toplevel_scope.eigs "All import top-level scope tests passed" 11
+
+echo "[43a2b] build_corpus slot-mode identifier encoding (6 checks)"
+CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)
+CS_PASS=$(echo "$CS_OUTPUT" | grep -c "PASS:" || true)
+CS_FAIL=$(echo "$CS_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + CS_PASS + CS_FAIL))
+PASS=$((PASS + CS_PASS))
+FAIL=$((FAIL + CS_FAIL))
+if [ "$CS_FAIL" -gt 0 ]; then
+    echo "  FAIL: $CS_FAIL slot-encoding check(s) failed"
+    echo "$CS_OUTPUT" | grep "FAIL:" | head -4
+else
+    echo "  PASS: slot mode is lossless and preserves identifier identity"
+fi
 echo ""
 
 # [43a3] EigenStore header-validation / corruption error paths (ext_store.c)

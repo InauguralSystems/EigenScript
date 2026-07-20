@@ -14,6 +14,31 @@
  * Existing matmul kernels work unchanged on the result.
  * ================================================================ */
 
+/* Ternary code-flip instrumentation (EIGS_TERNARY_FLIPS=1).
+ *
+ * QAT snaps every weight to {-alpha, 0, +alpha} after each step. A gradient
+ * update smaller than the threshold (alpha*0.5) leaves the code unchanged and
+ * is therefore ERASED as far as the forward pass is concerned -- the master
+ * weight moved, the model did not. If that is happening to most weights most of
+ * the time, the effective model is frozen no matter what the loss curve says.
+ *
+ * Counts how many of the {-1,0,+1} codes actually change per requantise, which
+ * is the only quantity that distinguishes "learning" from "accumulating
+ * sub-threshold noise in the master weights". */
+static int64_t g_tern_flips = 0, g_tern_total = 0;
+static int tern_count_enabled(void) {
+    static int v = -1;
+    if (v < 0) v = getenv("EIGS_TERNARY_FLIPS") ? 1 : 0;
+    return v;
+}
+void eigs_tern_report(int step) {
+    if (!tern_count_enabled() || g_tern_total == 0) return;
+    fprintf(stderr, "[tern] step=%d flips=%lld/%lld (%.4f%%)\n",
+            step, (long long)g_tern_flips, (long long)g_tern_total,
+            100.0 * (double)g_tern_flips / (double)g_tern_total);
+    g_tern_flips = 0; g_tern_total = 0;
+}
+
 void quantize_ternary(float *dst, float *src, int64_t n, float *out_alpha) {
     if (n <= 0) { if (out_alpha) *out_alpha = 0.0f; return; }
     float abs_sum = 0.0f;
@@ -23,16 +48,27 @@ void quantize_ternary(float *dst, float *src, int64_t n, float *out_alpha) {
     }
     float alpha = abs_sum / (float)n;
     float threshold = alpha * 0.5f;
+    int _tc = tern_count_enabled();
     for (int64_t i = 0; i < n; i++) {
         float w = src[i];
         float aw = (w < 0.0f) ? -w : w;
+        float nv;
         if (aw <= threshold) {
-            dst[i] = 0.0f;
+            nv = 0.0f;
         } else if (w > 0.0f) {
-            dst[i] = alpha;
+            nv = alpha;
         } else {
-            dst[i] = -alpha;
+            nv = -alpha;
         }
+        if (_tc) {
+            /* Compare CODES, not values: alpha is recomputed every step, so the
+             * stored magnitude drifts even when the code is unchanged. */
+            int oldc = (dst[i] > 0.0f) ? 1 : ((dst[i] < 0.0f) ? -1 : 0);
+            int newc = (nv    > 0.0f) ? 1 : ((nv    < 0.0f) ? -1 : 0);
+            if (oldc != newc) g_tern_flips++;
+            g_tern_total++;
+        }
+        dst[i] = nv;
     }
     if (out_alpha) *out_alpha = alpha;
 }
@@ -1501,6 +1537,7 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
     /* Re-quantize master weights → ternary copies for next forward pass (if ternary format) */
     if (g_model.weight_format == WEIGHT_FORMAT_TERNARY) {
         requantize_all_layers(&g_model);
+        if ((g_training_samples % 100) == 0) eigs_tern_report(g_training_samples);
     }
 
     g_model_age += num_tokens;
