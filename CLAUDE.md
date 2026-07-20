@@ -6,6 +6,18 @@ copy-and-patch x86-64 JIT, an observer system (entropy/dH tracking on
 every assignment), and a reversibility layer (temporal interrogatives,
 trace tape, deterministic replay).
 
+## When you hit a gap, file an issue — proactively, without being asked
+
+Working here you WILL hit a missing feature, a rough edge, or a bug. The
+standing rule for every agent and contributor: **surface the gap, don't work
+around it silently.** Open a GitHub issue with a minimal repro
+(`gh issue create`), or fold the fix into your PR and reference it. A silent
+workaround discards the one signal this project runs on — real use finding real
+gaps. This is the forcing-function model (see Ecosystem) applied to your own
+session: a gap you route upstream is a contribution; a gap you paper over is
+lost data. Do this without being told, the way you'd run the tests without being
+told.
+
 ## Build & test
 
 ```
