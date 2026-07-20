@@ -2334,6 +2334,32 @@ Value* builtin_build_corpus(Value *arg) {
         if (sv && sv->type == VAL_NUM) slot_count = (int)sv->data.num;
     }
     if (slot_count < 0) slot_count = 0;
+
+    /* ---- INTEGER LITERALS (optional 7th arg: int_count > 0) -------------
+     * Every numeric literal tokenizes to a single TOK_NUM, so the value is
+     * ERASED from the stream: `[1,2,3]` and `[0,0,0]` become the identical
+     * `<num>,<num>,<num>`. Measured on the 2026-07 corpus this is doubly
+     * costly. (1) A spec written as assertions is uninformative -- `(f of 4)
+     * == 1` and `(f of 3) == 0` reach the model as one sequence, so it cannot
+     * learn what the test demands. (2) It MANUFACTURES the degenerate
+     * repetition the model collapses into: measured, essentially all of the
+     * corpus's `0,0,0,0` / `"s","s"` cycles (5.3% of tokens) route through the
+     * collapsed literal tokens, and integers 0..31 are 76% of all numeric
+     * literals. Giving small integers exact tokens both makes tests readable
+     * and breaks that false repetition -- `[1,2,3,4]` stops looking like a
+     * cycle -- without discarding any real code a repetition filter would cut.
+     *
+     * int_count == N gives exact tokens to the integers [0, N). N=32 covers
+     * 76% of numeric-literal occurrences for +32 tokens; larger N has a long
+     * tail (0..255 is 86%). Non-integer, negative, and >=N literals keep the
+     * lossy TOK_NUM fallback -- lossless is not the goal here, breaking the
+     * high-frequency collision is. Opt-in: 0 leaves the stream byte-identical. */
+    int int_count = 0;
+    if (arg->data.list.count >= 7) {
+        Value *iv = arg->data.list.items[6];
+        if (iv && iv->type == VAL_NUM) int_count = (int)iv->data.num;
+    }
+    if (int_count < 0) int_count = 0;
     /* Source of truth: the size of the TokType enum. Hardcoding 54 (which is
      * what this was before) silently aliases TOK_LBRACKET (=54) onto the most
      * common extended ident slot whenever the enum grows. */
@@ -2537,6 +2563,14 @@ Value* builtin_build_corpus(Value *arg) {
                     slot_used[hit] = ++slot_clock;
                     tid = FIRST_IDENT + actual_top + hit;
                 }
+            } else if (int_count > 0 && tid == TOK_NUM) {
+                /* Give small non-negative integer literals exact tokens; the
+                 * region sits directly after the slots. floor==value rejects
+                 * 3.5 etc.; the lexer emits '-' as its own token so num_val is
+                 * never negative for a literal, but guard anyway. */
+                double nv = tl.tokens[i].num_val;
+                if (nv >= 0.0 && nv < (double)int_count && nv == (double)(long)nv)
+                    tid = FIRST_IDENT + actual_top + slot_count + (int)nv;
             }
             double d = (double)tid;
             fwrite(&d, sizeof(double), 1, stream_file);
@@ -2562,9 +2596,10 @@ Value* builtin_build_corpus(Value *arg) {
     FILE *vocab_file = xfopen_write(vocab_path_val->data.str, "w");
     if (vocab_file) {
         fprintf(vocab_file,
-                "{\"first_ident_id\": %d, \"ext_vocab_size\": %d, \"base_vocab\": %d, \"slot_count\": %d, \"first_slot_id\": %d, \"top_n\": %d",
-                FIRST_IDENT, BASE_VOCAB + actual_top + slot_count, BASE_VOCAB,
-                slot_count, FIRST_IDENT + actual_top, actual_top);
+                "{\"first_ident_id\": %d, \"ext_vocab_size\": %d, \"base_vocab\": %d, \"slot_count\": %d, \"first_slot_id\": %d, \"int_count\": %d, \"first_int_id\": %d, \"top_n\": %d",
+                FIRST_IDENT, BASE_VOCAB + actual_top + slot_count + int_count, BASE_VOCAB,
+                slot_count, FIRST_IDENT + actual_top,
+                int_count, FIRST_IDENT + actual_top + slot_count, actual_top);
         fprintf(vocab_file, ", \"structural_ids\": {\"newline\": %d, \"indent\": %d, \"dedent\": %d, \"eof\": %d, \"ident_fallback\": %d}",
                 (int)TOK_NEWLINE, (int)TOK_INDENT, (int)TOK_DEDENT, (int)TOK_EOF, (int)TOK_IDENT);
         fprintf(vocab_file, ", \"base_names\": [");
