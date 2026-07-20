@@ -125,6 +125,20 @@ All notable changes to EigenScript are documented here.
   by pointing the instrument at itself.
 
 ### Fixed
+- **`report_value` no longer calls a monotone converging sequence
+  `diverging` (#674).** The value channel's raw-step divergence test (#422)
+  judged a window's steps "non-vanishing" when the recent half's mean
+  magnitude was at least *half* the older half's — admitting any geometric
+  decay with ratio `r^5 >= 0.5`, i.e. `r ≳ 0.871`, so `x *= 0.90` /
+  `x *= 0.95` (every real iterative solver's operating regime) read
+  `diverging` while converging to zero. A geometric decay's steps DO vanish
+  — their sum converges — so the bar is now "not shrinking": the recent
+  half must be at least the older half (minus 1e-9 of fp-rounding slack).
+  Linear runaways (constant steps) and polynomial/geometric growth (growing
+  steps) still read `diverging`; decaying approaches fall through to the
+  relative verdicts and settle as `converged`. Regression test
+  `test_report_value_convergence.eigs` (suite [50j3]) pins the issue repro
+  (ratios 0.88/0.90/0.95 converge) against the genuine-divergence cases.
 - **`file_exists` / `ls` / `mkdir` / `getcwd` / `exe_path` are now
   trace-recorded (#585).** These fs builtins predated the tape and ran live
   under `EIGS_REPLAY`: a program branching on `file_exists of p` replayed

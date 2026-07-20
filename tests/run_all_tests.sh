@@ -2071,6 +2071,11 @@ check_eigs_suite "value-channel diverging/sub-deadband oscillation, trajectory-o
     "test_trajectory.eigs" "TRAJECTORY_ALL_PASS" 1
 echo ""
 
+echo "[50j3] report_value convergence classification (#674) (6 checks)"
+check_eigs_suite "slow geometric decay converges (not diverging), geometric/linear growth still diverging" \
+    "test_report_value_convergence.eigs" "REPORT_VALUE_CONVERGENCE_ALL_PASS" 1
+echo ""
+
 echo "[50k] UTF-8 codepoints (16 checks)"
 check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural validation (published vectors)" \
     "test_utf8.eigs" "UTF8_ALL_PASS" 1
