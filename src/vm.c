@@ -2481,6 +2481,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_TYPE, current_line,
                     "cannot apply '+' to %s and %s (use an f-string or 'str of' to concatenate)",
                     ta, tb);
+            else if (a->type == VAL_LIST || b->type == VAL_LIST)
+                /* #680: name the fix, don't just diagnose. '+' never joins lists
+                 * (it is numbers-or-strings only); a Python/JS prior lands here. */
+                rt_error(EK_TYPE, current_line,
+                    "cannot apply '+' to %s and %s (use 'append of [xs, v]' to add an element, or 'concat of [a, b]' to join two lists)",
+                    ta, tb);
             else
                 rt_error(EK_TYPE, current_line, "cannot apply '+' to %s and %s", ta, tb);
             vm_push(make_null());

@@ -102,6 +102,14 @@ All notable changes to EigenScript are documented here.
   max-subtraction (overflow to inf), a mis-indexed target, and sign errors.
 
 ### Changed
+- **`+` on two lists now names the fix (#680).** `[1,2] + [3,4]` reported
+  `cannot apply '+' to list and list` — correct but not actionable; a Python/JS
+  prior lands here and has to guess the idiom. The message now prescribes it:
+  `... (use 'append of [xs, v]' to add an element, or 'concat of [a, b]' to join
+  two lists)`, mirroring the existing f-string hint for mixed-type concatenation.
+  First of the prescriptive-error pass (#680) — errors at points where the
+  language diverges from mainstream priors should teach the fix, for humans and
+  AI alike. Regression: `test_error_extra.eigs` EE20b.
 - **The observer learning-rate gate is now two-channel (entropy *and* drift).**
   `observer_matrix_scale` throttled a weight matrix to 0.5x whenever its
   entropy was quiet — but entropy is computed over one SGD step's worth of
