@@ -18,6 +18,16 @@ session: a gap you route upstream is a contribution; a gap you paper over is
 lost data. Do this without being told, the way you'd run the tests without being
 told.
 
+## Before merging your own PR, clear ready contributor PRs first
+
+External contributors work from **forks we cannot push to** — a fork branch is
+theirs. If our merge makes their PR stale, the only remedies are asking them to
+rebase (friction, delay) or the fetch-rebase-reland dance (see #657). Our OWN PRs
+we rebase for free. So before merging one of ours: `gh pr list` and land any
+**ready** contributor PR (green + reviewed, not authored by us) first, then rebase
+ours onto the new main. Rebasing our own costs nothing; asking them does. (Only
+*ready* PRs — never merge an unready contributor PR just to dodge a rebase.)
+
 ## Build & test
 
 ```
