@@ -227,6 +227,18 @@ catch e:
 assert of [caught20 == 1, "EE20 caught '+' on dict and num"]
 assert of [(contains of [msg20.message, "cannot apply '+'"]) == 1, "EE20 message mentions cannot apply '+'"]
 
+# ---- '+' on two lists NAMES THE FIX (#680: prescriptive, not just diagnostic) ----
+caught20b is 0
+msg20b is ""
+try:
+    r is [1, 2] + [3, 4]
+catch e:
+    caught20b is 1
+    msg20b is e
+assert of [caught20b == 1, "EE20b caught '+' on list and list"]
+assert of [(contains of [msg20b.message, "append of"]) == 1, "EE20b list '+' message prescribes append"]
+assert of [(contains of [msg20b.message, "concat of"]) == 1, "EE20b list '+' message prescribes concat"]
+
 # ---- '/' on incompatible types ----
 caught21 is 0
 msg21 is ""
