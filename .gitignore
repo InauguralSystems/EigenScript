@@ -46,3 +46,5 @@ tests/tmp_mod_373*.eigs
 
 # Generated embeddable artifacts (make lib / make amalgamation, #397)
 build/
+# Generated LSP stdlib index (make lsp / build.sh lsp, #590)
+src/lsp_stdlib_index.h

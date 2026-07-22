@@ -127,6 +127,15 @@ static const char *keyword_docs[][2] = {
 };
 
 /* ================================================================
+ * STDLIB (lib/) DOCUMENTATION TABLE — GENERATED
+ * ================================================================
+ * stdlib_docs[][4]: module, name, params, detail (rule-2 signature
+ * comment, else the `define name(params) as:` fallback). Scraped from
+ * the lib/ .eigs modules by tools/gen_lsp_stdlib_index.sh at build
+ * time (#590). */
+#include "lsp_stdlib_index.h"
+
+/* ================================================================
  * SYMBOL TABLE
  * ================================================================ */
 
@@ -699,6 +708,16 @@ static Token* find_token_at(Document *doc, int line, int col) {
  * LSP HANDLERS
  * ================================================================ */
 
+/* Does the document import this module? Scopes the stdlib table (#590):
+ * a module's functions surface only after the file `import`s it. */
+static int doc_imports_module(Document *doc, const char *module) {
+    for (int i = 0; i < doc->symbol_count; i++) {
+        Symbol *s = &doc->symbols[i];
+        if (s->kind == SYM_IMPORT && strcmp(s->name, module) == 0) return 1;
+    }
+    return 0;
+}
+
 static void handle_initialize(int id) {
     lsp_response(id,
         "{"
@@ -931,6 +950,19 @@ static void handle_completion(int id, const char *params) {
                     }
                     strbuf_append_char(&sb, '}');
                 }
+                /* Stdlib functions of the modules this document imports
+                 * (#590): a `stats.` prefix offers stats.* with the
+                 * signature as detail; unimported modules stay invisible. */
+                for (int i = 0; stdlib_docs[i][0]; i++) {
+                    if (!doc_imports_module(doc, stdlib_docs[i][0])) continue;
+                    if (!first) strbuf_append_char(&sb, ',');
+                    first = 0;
+                    strbuf_append(&sb, "{\"label\":\"");
+                    strbuf_append(&sb, stdlib_docs[i][1]);
+                    strbuf_append(&sb, "\",\"kind\":3,\"detail\":");  /* 3 = Function */
+                    json_escape_to(&sb, stdlib_docs[i][3]);
+                    strbuf_append_char(&sb, '}');
+                }
             }
             free(uri);
         }
@@ -1061,6 +1093,35 @@ static void handle_hover(int id, const char *params) {
                     hover_text = hover_buf;
                 }
                 break;
+            }
+        }
+    }
+
+    /* Check stdlib (lib/) functions (#590): import-scoped, like completion.
+     * A dotted `mod.name` pins the module (a dict member access whose
+     * qualifier is not an imported module is left alone); a bare name
+     * matches any imported module's function in table order. */
+    if (!hover_text) {
+        ptrdiff_t ti = tok - doc->tokens.tokens;
+        int dotted = (ti >= 1 && doc->tokens.tokens[ti - 1].type == TOK_DOT);
+        const char *dot_module = NULL;
+        if (dotted && ti >= 2) {
+            Token *t2 = &doc->tokens.tokens[ti - 2];
+            if (t2->type == TOK_IDENT && t2->str_val &&
+                doc_imports_module(doc, t2->str_val))
+                dot_module = t2->str_val;
+        }
+        if (!dotted || dot_module) {
+            for (int i = 0; stdlib_docs[i][0]; i++) {
+                if (dot_module) {
+                    if (strcmp(stdlib_docs[i][0], dot_module) != 0) continue;
+                } else if (!doc_imports_module(doc, stdlib_docs[i][0])) {
+                    continue;
+                }
+                if (strcmp(tok->str_val, stdlib_docs[i][1]) == 0) {
+                    hover_text = stdlib_docs[i][3];
+                    break;
+                }
             }
         }
     }

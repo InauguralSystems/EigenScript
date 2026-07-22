@@ -3139,7 +3139,7 @@ echo ""
 # assert initialize/diagnostics/completion/hover/definition/references/
 # shutdown. The LSP was previously only compile-checked. Skips cleanly
 # without python3 or the eigenlsp build.
-echo "[88] LSP Behavioral (23 checks)"
+echo "[88] LSP Behavioral (80 checks)"
 LSP_OUTPUT=$(bash "$TESTS_DIR/test_lsp.sh" 2>&1)
 if echo "$LSP_OUTPUT" | grep -q "SKIP:"; then
     echo "$LSP_OUTPUT" | grep "SKIP:"
