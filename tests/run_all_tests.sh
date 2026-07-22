@@ -26,6 +26,43 @@ EIGS_TMO=""
 if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout $EIGS_TEST_TIMEOUT"
 elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIMEOUT"; fi
 
+# Binary fingerprint guard (#681). All build variants write to src/eigenscript;
+# a rebuild while the suite is running swaps the binary under us and invalidates
+# the tally. Record a fingerprint at suite start and re-check at section seams.
+EIGS_BIN="./eigenscript"
+
+eigs_binary_fingerprint() {
+    local cksum size mtime
+    cksum=$(cksum "$EIGS_BIN")
+    if stat -c '%s %Y' "$EIGS_BIN" >/dev/null 2>&1; then
+        read -r size mtime <<<"$(stat -c '%s %Y' "$EIGS_BIN")"
+    else
+        read -r size mtime <<<"$(stat -f '%z %m' "$EIGS_BIN")"
+    fi
+    printf '%s %s %s\n' "$cksum" "$size" "$mtime"
+}
+
+record_binary_fingerprint() {
+    if [ ! -f "$EIGS_BIN" ]; then
+        echo "ERROR: $EIGS_BIN not found — cannot run suite"
+        exit 1
+    fi
+    EIGS_BIN_FINGERPRINT=$(eigs_binary_fingerprint)
+}
+
+check_binary_fingerprint() {
+    local current
+    if [ ! -f "$EIGS_BIN" ]; then
+        echo "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."
+        exit 1
+    fi
+    current=$(eigs_binary_fingerprint)
+    if [ "$current" != "$EIGS_BIN_FINGERPRINT" ]; then
+        echo "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."
+        exit 1
+    fi
+}
+
 # Exit-code gate for .eigs test programs. rc=0 passes. A nonzero rc whose
 # output carries a LeakSanitizer report is tolerated with a warning tally.
 # The env<->fn closure cycles are reclaimed by the cycle collector now
@@ -118,6 +155,8 @@ check_eigs_suite() {
     local marker="$3"
     local fallback="$4"
     local out rc n
+    # Guard #681: abort if the binary was rebuilt while a previous block ran.
+    check_binary_fingerprint
     out=$($EIGS_TMO ./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
     if [ "$fallback" -gt 1 ] 2>/dev/null; then
         n=$(derive_count "$out" "$fallback")
@@ -146,7 +185,11 @@ echo "  EigenScript Gen 0 Compliance Test Suite"
 echo "============================================"
 echo ""
 
+# Record the binary fingerprint at suite start; every section seam re-checks it.
+record_binary_fingerprint
+
 echo "[0] Opcode ABI Guard"
+check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
 OP_ABI_OUT=$(${CC:-gcc} -std=c11 -I. \
     -DEIGENSCRIPT_EXT_HTTP=0 \
@@ -165,6 +208,7 @@ fi
 echo ""
 
 echo "[1/15] Gen 0 Baseline (basic language features)"
+check_binary_fingerprint
 OUTPUT=$(./eigenscript ../tests/test_gen0_baseline.eigs 2>&1)
 check "T01 Numeric Assignment" "$(echo "$OUTPUT" | grep -A1 'T01' | tail -1)" "42"
 check "T02 String Assignment" "$(echo "$OUTPUT" | grep -A1 'T02' | tail -1)" "hello world"
@@ -444,6 +488,7 @@ check_eigs_suite "named observer predicates: <pred> of x binds the named slot, n
 echo ""
 
 echo "[9/15] Assert (3 checks)"
+check_binary_fingerprint
 AS_OUTPUT=$(./eigenscript ../tests/test_assert.eigs 2>&1)
 check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"
 check "AS2 assert list passes" "$(echo "$AS_OUTPUT" | grep 'pass2')" "pass2"
@@ -658,6 +703,7 @@ check "TP_I7 rejects lone !" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I7:' | tail -1)
 echo ""
 
 echo "[16/16] Error Messages (6 checks)"
+check_binary_fingerprint
 
 check_stderr() {
     TOTAL=$((TOTAL + 1))
@@ -909,6 +955,7 @@ fi
 
 # [18] File I/O builtins: read_text, write_text, exec_capture
 echo "[18/18] File I/O Builtins (14 checks)"
+check_binary_fingerprint
 FIO_OUTPUT=$(./eigenscript ../tests/test_file_io.eigs 2>&1)
 
 if echo "$FIO_OUTPUT" | grep -q "All file_io tests passed"; then
@@ -941,6 +988,7 @@ echo ""
 
 # [19] String and math builtins
 echo "[19/19] String & Math Builtins (75 checks)"
+check_binary_fingerprint
 SM_OUTPUT=$(./eigenscript ../tests/test_string_math.eigs 2>&1)
 
 if echo "$SM_OUTPUT" | grep -q "All string_math tests passed"; then
@@ -957,6 +1005,7 @@ echo ""
 
 # [20] System builtins (random, args, paths, filesystem)
 echo "[20/21] System Builtins (22 checks)"
+check_binary_fingerprint
 SYS_OUTPUT=$(./eigenscript ../tests/test_system.eigs 2>&1)
 
 if echo "$SYS_OUTPUT" | grep -q "All system tests passed"; then
@@ -973,6 +1022,7 @@ echo ""
 
 # [22] F-string interpolation
 echo "[22/27] F-String Interpolation"
+check_binary_fingerprint
 FS_OUTPUT=$(./eigenscript ../tests/test_fstrings.eigs 2>&1); FS_OUTPUT_RC=$?
 FS_OUTPUT_N=$(derive_count "$FS_OUTPUT" 9 "[22/27] F-Strings")
 if rc_ok "$FS_OUTPUT_RC" "$FS_OUTPUT" && echo "$FS_OUTPUT" | grep -q "All tests passed"; then
@@ -3455,6 +3505,53 @@ else
     fi
 fi
 echo ""
+
+# [99d] Binary-fingerprint guard self-test (#681). Proves the runner aborts
+# with the exact error message if src/eigenscript is replaced mid-suite.
+echo "[99d] Binary-fingerprint guard self-test (#681)"
+TOTAL=$((TOTAL + 1))
+if [ ! -f "$EIGS_BIN" ]; then
+    PASS=$((PASS + 1))
+    echo "  SKIP: no binary to fingerprint"
+else
+    export -f eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok derive_count
+    export EIGS_BIN EIGS_TMO
+    SELFTEST_BIN_BAK="${EIGS_BIN}.orig"
+    cp -p "$EIGS_BIN" "$SELFTEST_BIN_BAK"
+    # Background: wait a moment, then replace the binary with a modified copy.
+    (
+        sleep 1
+        cp "$EIGS_BIN" "${EIGS_BIN}.tmp"
+        printf '\n' >> "${EIGS_BIN}.tmp"
+        mv "${EIGS_BIN}.tmp" "$EIGS_BIN"
+    ) &
+    SWAP_PID=$!
+    SELFTEST_OUT=$( bash -c '
+        record_binary_fingerprint
+        # Tiny suite subset: one real check block, then a pause for the swap.
+        check_eigs_suite "binary-guard self-test block" "test_gen0_baseline.eigs" "T01" 1
+        sleep 2
+        check_binary_fingerprint
+        echo "SELFTEST_REACHED_END"
+    ' 2>&1 )
+    SELFTEST_RC=$?
+    wait "$SWAP_PID" 2>/dev/null || true
+    # Always restore the original binary before the suite continues.
+    mv "$SELFTEST_BIN_BAK" "$EIGS_BIN"
+    export -fn eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok derive_count
+    if [ "$SELFTEST_RC" -ne 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
+        PASS=$((PASS + 1))
+        echo "  PASS: binary-fingerprint guard detected mid-run swap and aborted with the expected error"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: binary-fingerprint guard did not detect mid-run swap (rc=$SELFTEST_RC)"
+        printf '%s\n' "$SELFTEST_OUT" | head -8 | sed 's/^/      /'
+    fi
+fi
+echo ""
+
+# Final guard (#681): if the binary changed during the last block, results are invalid.
+check_binary_fingerprint
 
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
