@@ -1184,8 +1184,9 @@ typedef struct {
     int  col;              /* 0-based column of the offending token (0 = unknown) */
     int  len;              /* token length; 0 = unknown → whole-line range */
     char code[8];          /* stable code, e.g. "W001" */
-    char severity[16];     /* "warning" / "error" — sized to LintWarning.level
-                            * so the copy in lint_collect can't truncate */
+    char severity[16];     /* "warning" / "error" / "hint" — sized to
+                            * LintWarning.level so the copy in lint_collect
+                            * can't truncate */
     char message[256];
 } LintDiag;
 /* Run all lint checks on an already-parsed AST; fill out[] (up to max),

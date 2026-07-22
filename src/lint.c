@@ -12,7 +12,8 @@ typedef struct {
     int line;
     int col;          /* 0-based column of the offending token (0 = unknown) */
     int len;          /* token length (0 = unknown -> whole-line LSP range) */
-    char level[16];   /* "warning" or "error" */
+    char level[16];   /* "warning", "error", or "hint" (#591: advisory, never
+                       * fails --lint) */
     char code[8];     /* stable diagnostic code, e.g. "W001" */
     char message[256];
 } LintWarning;
@@ -69,6 +70,18 @@ static void lint_warn(LintContext *ctx, int line, const char *code,
     va_list ap;
     va_start(ap, fmt);
     lint_vdiag(ctx, line, 0, 0, "warning", code, fmt, ap);
+    va_end(ap);
+}
+
+/* Hint-severity diagnostic (#591): an advisory nudge. Hints print (and
+ * appear in --json / LSP, severity Hint) but never fail --lint under either
+ * --lint-level; the same inline / allow-file / eigs.json suppression
+ * machinery applies as for every other code. */
+static void lint_hint(LintContext *ctx, int line, const char *code,
+                      const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    lint_vdiag(ctx, line, 0, 0, "hint", code, fmt, ap);
     va_end(ap);
 }
 
@@ -611,6 +624,314 @@ static void check_builtin_shadow(ASTNode *node, LintContext *ctx) {
             break;
     }
 }
+
+/* ---- Check: stdlib shadowing (W021, #591) ----
+ *
+ * Sibling of W013 (a define shadowing a compiled-in builtin) for the stdlib
+ * LIBRARY layer: the common discoverability failure is hand-rolling a
+ * function lib/*.eigs already ships (lib/stats.eigs's median/mean; hex4/pad2
+ * hand-rolled twice downstream) — the name is no builtin and the module was
+ * never imported, so nothing else connects the two. Name-only matching has
+ * false positives (a deliberately-different local `mean`), so W021 is a
+ * HINT: advisory, never fails --lint, suppressible like every other code. */
+
+#if !EIGENSCRIPT_FREESTANDING
+
+typedef struct {
+    char *module;   /* module name ("stats") */
+    char *path;     /* realpath of the module file — the self-lint guard */
+} W021Module;
+
+typedef struct {
+    char *func;     /* public function name */
+    int mod;        /* index into g_w021_mods */
+} W021Func;
+
+/* The name table: public (non-'_'-prefixed) top-level defines of every
+ * lib/*.eigs module, scraped from the same directories the import resolver
+ * would find them in. (The shared #590 signature scrape does not exist in
+ * the tree yet; this is the focused scan the issue calls for. The scrape is
+ * line-based — top-level defines sit at column 0 by the STDLIB.md header
+ * convention — so a lib file that doesn't parse still contributes.) Built
+ * once per linted-file base dir and cached for the process: the LSP
+ * re-lints the same document on every publish and ~75 modules is far too
+ * much to re-read per keystroke. Plain malloc'd strings reachable through
+ * these globals, so LeakSanitizer traces them (unlike the tagged-slot
+ * builtin env, which needs the explicit free). */
+static W021Module *g_w021_mods = NULL;
+static int g_w021_mod_count = 0, g_w021_mod_cap = 0;
+static W021Func *g_w021_funcs = NULL;
+static int g_w021_func_count = 0, g_w021_func_cap = 0;
+static char g_w021_base[4096] = "";
+static int g_w021_built = 0;
+
+static void w021_free_table(void) {
+    for (int i = 0; i < g_w021_mod_count; i++) {
+        free(g_w021_mods[i].module);
+        free(g_w021_mods[i].path);
+    }
+    for (int i = 0; i < g_w021_func_count; i++) free(g_w021_funcs[i].func);
+    free(g_w021_mods);
+    g_w021_mods = NULL; g_w021_mod_count = 0; g_w021_mod_cap = 0;
+    free(g_w021_funcs);
+    g_w021_funcs = NULL; g_w021_func_count = 0; g_w021_func_cap = 0;
+}
+
+static int w021_mod_find(const char *module) {
+    for (int i = 0; i < g_w021_mod_count; i++)
+        if (strcmp(g_w021_mods[i].module, module) == 0) return i;
+    return -1;
+}
+
+static int w021_func_find(const char *func) {
+    for (int i = 0; i < g_w021_func_count; i++)
+        if (strcmp(g_w021_funcs[i].func, func) == 0) return i;
+    return -1;
+}
+
+static int w021_ident_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+/* Scrape one module file's public defines into the table. */
+static void w021_scan_file(const char *dirpath, const char *filename) {
+    size_t nl = strlen(filename);
+    if (nl <= 5 || nl - 5 >= 512) return;
+    char module[512];
+    memcpy(module, filename, nl - 5);   /* strip ".eigs" */
+    module[nl - 5] = '\0';
+    if (w021_mod_find(module) >= 0) return;   /* resolved higher in the chain */
+
+    char full[8192];
+    snprintf(full, sizeof(full), "%.4000s/%.500s", dirpath, filename);
+    FILE *f = fopen(full, "r");
+    if (!f) return;
+
+    if (g_w021_mod_count >= g_w021_mod_cap) {
+        g_w021_mod_cap = g_w021_mod_cap ? g_w021_mod_cap * 2 : 64;
+        g_w021_mods = xrealloc(g_w021_mods,
+                               (size_t)g_w021_mod_cap * sizeof(*g_w021_mods));
+    }
+    int mi = g_w021_mod_count++;
+    char real[4096];
+    if (!realpath(full, real)) snprintf(real, sizeof(real), "%s", full);
+    g_w021_mods[mi].module = xstrdup(module);
+    g_w021_mods[mi].path = xstrdup(real);
+
+    char line[2048];
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "define ", 7) != 0) continue;
+        const char *p = line + 7;
+        char name[256];
+        size_t o = 0;
+        while (w021_ident_char(*p) && o + 1 < sizeof(name)) name[o++] = *p++;
+        name[o] = '\0';
+        if (o == 0 || name[0] == '_') continue;   /* private by convention */
+        if (w021_func_find(name) >= 0) continue;  /* first module wins */
+        if (g_w021_func_count >= g_w021_func_cap) {
+            g_w021_func_cap = g_w021_func_cap ? g_w021_func_cap * 2 : 256;
+            g_w021_funcs = xrealloc(g_w021_funcs,
+                                    (size_t)g_w021_func_cap * sizeof(*g_w021_funcs));
+        }
+        g_w021_funcs[g_w021_func_count].func = xstrdup(name);
+        g_w021_funcs[g_w021_func_count].mod = mi;
+        g_w021_func_count++;
+    }
+    fclose(f);
+}
+
+static void w021_scan_dir(const char *dirpath) {
+    struct dirent **ents = NULL;
+    int n = scandir(dirpath, &ents, NULL, alphasort);
+    if (n < 0) return;
+    for (int i = 0; i < n; i++) {
+        const char *nm = ents[i]->d_name;
+        size_t l = strlen(nm);
+        if (l > 5 && strcmp(nm + l - 5, ".eigs") == 0)
+            w021_scan_file(dirpath, nm);
+        free(ents[i]);
+    }
+    free(ents);
+}
+
+/* Build (or reuse) the name table for the linted file's base dir. Candidate
+ * lib dirs mirror the import resolver's priority order for "lib/<mod>.eigs"
+ * (resolve_eigenscript_file_from): CWD first, then the linted file's dir and
+ * its parent, the exe's install root, the user install — first module found
+ * wins, as it does at runtime. */
+static void w021_build(const char *base) {
+    if (g_w021_built && strcmp(g_w021_base, base) == 0) return;
+    w021_free_table();
+    snprintf(g_w021_base, sizeof(g_w021_base), "%s", base);
+    g_w021_built = 1;
+
+    char cand[6][4096];
+    int nc = 0;
+    snprintf(cand[nc++], 4096, "lib");
+    snprintf(cand[nc++], 4096, "%.4000s/lib", base);
+    snprintf(cand[nc++], 4096, "%.4000s/../lib", base);
+    if (g_exe_dir[0]) {
+        snprintf(cand[nc++], 4096, "%.4000s/../lib", g_exe_dir);
+        snprintf(cand[nc++], 4096, "%.4000s/../lib/eigenscript", g_exe_dir);
+    }
+    const char *home = getenv("HOME");
+    if (home)
+        snprintf(cand[nc++], 4096, "%.2000s/.local/lib/eigenscript", home);
+
+    char seen[6][4096];
+    int ns = 0;
+    for (int i = 0; i < nc; i++) {
+        char real[4096];
+        if (!realpath(cand[i], real)) continue;
+        int dup = 0;
+        for (int j = 0; j < ns; j++)
+            if (strcmp(seen[j], real) == 0) { dup = 1; break; }
+        if (dup) continue;
+        snprintf(seen[ns++], 4096, "%s", real);
+        w021_scan_dir(real);
+    }
+}
+
+/* Module names the linted file imported (AST-owned strings). */
+#define W021_MAX_IMPORTS 128
+typedef struct {
+    const char *mods[W021_MAX_IMPORTS];
+    int count;
+} W021Imports;
+
+static void w021_collect_imports(ASTNode *n, W021Imports *im) {
+    if (!n || im->count >= W021_MAX_IMPORTS) return;
+    switch (n->type) {
+        case AST_IMPORT:
+            im->mods[im->count++] = n->data.import.module_name;
+            break;
+        case AST_IF:
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w021_collect_imports(n->data.cond.if_body[i], im);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w021_collect_imports(n->data.cond.else_body[i], im);
+            break;
+        case AST_LOOP:
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w021_collect_imports(n->data.loop.body[i], im);
+            break;
+        case AST_FOR:
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                w021_collect_imports(n->data.forloop.body[i], im);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < n->data.func.body_count; i++)
+                w021_collect_imports(n->data.func.body[i], im);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < n->data.trycatch.try_count; i++)
+                w021_collect_imports(n->data.trycatch.try_body[i], im);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++)
+                w021_collect_imports(n->data.trycatch.catch_body[i], im);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w021_collect_imports(n->data.block.stmts[i], im);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w021_collect_imports(n->data.program.stmts[i], im);
+            break;
+        default:
+            break;
+    }
+}
+
+static int w021_imported(const W021Imports *im, const char *module) {
+    for (int i = 0; i < im->count; i++)
+        if (strcmp(im->mods[i], module) == 0) return 1;
+    return 0;
+}
+
+static void w021_walk(ASTNode *node, LintContext *ctx, const W021Imports *im,
+                      const char *self_real) {
+    if (!node) return;
+    if (node->type == AST_FUNC) {
+        const char *name = node->data.func.name;
+        int fi = w021_func_find(name);
+        /* W012/W013 own the builtin overlap (e.g. `mean`, `sum` are both a
+         * builtin and a lib/stats.eigs public) — never double-report. */
+        if (fi >= 0 && !is_builtin_name(name)) {
+            W021Module *m = &g_w021_mods[g_w021_funcs[fi].mod];
+            /* Not when the module is imported (then it's deliberate), and
+             * not when the linted file IS the module that ships the name. */
+            if (!w021_imported(im, m->module) &&
+                (!self_real[0] || strcmp(self_real, m->path) != 0)) {
+                lint_hint(ctx, node->line, "W021",
+                          "define '%s' shadows lib/%s.eigs '%s' "
+                          "(import %s to use it)",
+                          name, m->module, name, m->module);
+            }
+        }
+    }
+
+    /* Recurse into children (same shape as check_builtin_shadow). */
+    switch (node->type) {
+        case AST_IF:
+            for (int i = 0; i < node->data.cond.if_count; i++)
+                w021_walk(node->data.cond.if_body[i], ctx, im, self_real);
+            for (int i = 0; i < node->data.cond.else_count; i++)
+                w021_walk(node->data.cond.else_body[i], ctx, im, self_real);
+            break;
+        case AST_LOOP:
+            for (int i = 0; i < node->data.loop.body_count; i++)
+                w021_walk(node->data.loop.body[i], ctx, im, self_real);
+            break;
+        case AST_FOR:
+            for (int i = 0; i < node->data.forloop.body_count; i++)
+                w021_walk(node->data.forloop.body[i], ctx, im, self_real);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < node->data.func.body_count; i++)
+                w021_walk(node->data.func.body[i], ctx, im, self_real);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < node->data.trycatch.try_count; i++)
+                w021_walk(node->data.trycatch.try_body[i], ctx, im, self_real);
+            for (int i = 0; i < node->data.trycatch.catch_count; i++)
+                w021_walk(node->data.trycatch.catch_body[i], ctx, im, self_real);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < node->data.program.count; i++)
+                w021_walk(node->data.program.stmts[i], ctx, im, self_real);
+            break;
+        default:
+            break;
+    }
+}
+
+static void check_stdlib_shadow(ASTNode *ast, const char *path,
+                                LintContext *ctx) {
+    /* Anchor the lib-dir search at the linted file's directory — the same
+     * base E003 gives load_file resolution. */
+    char base[4096] = ".";
+    if (path) {
+        const char *slash = strrchr(path, '/');
+        if (slash && slash != path) {
+            size_t d = (size_t)(slash - path);
+            if (d >= sizeof(base)) d = sizeof(base) - 1;
+            memcpy(base, path, d);
+            base[d] = '\0';
+        }
+    }
+    w021_build(base);
+    if (g_w021_func_count == 0) return;   /* no stdlib found — fail open */
+    W021Imports im;
+    im.count = 0;
+    w021_collect_imports(ast, &im);
+    char self_real[4096] = "";
+    if (path && !realpath(path, self_real)) self_real[0] = '\0';
+    w021_walk(ast, ctx, &im, self_real);
+}
+
+#endif /* !EIGENSCRIPT_FREESTANDING */
 
 /* ---- Check: statement-level interrogative (result discarded) ---- */
 
@@ -2146,6 +2467,7 @@ static void lint_run_checks(ASTNode *ast, const char *path,
     check_error_kind_typo(ast, ctx);
 #if !EIGENSCRIPT_FREESTANDING
     check_undefined_names(ast, path, source, ctx);
+    check_stdlib_shadow(ast, path, ctx);
 #else
     (void)path; (void)source;
 #endif
@@ -2462,13 +2784,18 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
      * warning; --lint-level error makes warnings advisory (exit 0) and fails
      * only on error-severity diagnostics — so a consumer can wire
      * `--lint --json` into CI for diagnostics without warnings-as-errors.
-     * (Parse/read errors are E-codes that already returned 1 above.) */
+     * Hint-severity diagnostics (#591) are pure nudges: they print but never
+     * fail either level. (Parse/read errors are E-codes that already
+     * returned 1 above.) */
     if (!fail_on_warning) {
         int errors = 0;
         for (int i = 0; i < ctx.warning_count; i++)
             if (strcmp(ctx.warnings[i].level, "error") == 0) errors++;
         return errors > 0 ? 1 : 0;
     }
-    return ctx.warning_count > 0 ? 1 : 0;
+    int failing = 0;
+    for (int i = 0; i < ctx.warning_count; i++)
+        if (strcmp(ctx.warnings[i].level, "hint") != 0) failing++;
+    return failing > 0 ? 1 : 0;
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }

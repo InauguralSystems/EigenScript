@@ -240,6 +240,7 @@ a code's meaning never changes, and retired codes are not reused.
 | `W018` | warning | A `catch`-bound error's `.kind` is compared (`==`/`!=`) against a string that is a **near-miss** of a real kind — a case variant (`"IO"`) or a single-character typo (`"index_rage"`), or a kind renamed out from under the handler — so the branch is dead code that silently never fires (#469). Kinds are a closed set (below). Zero-false-positive by construction: only near-misses of a closed kind fire, and only off a catch-bound variable — an exactly-valid kind, and a genuinely custom `throw {kind: "..."}` value many edits from every builtin, both stay silent. |
 | `W019` | warning | An interrogative used as a **bare statement** — `why is "..."`, `what is x`, `prev of y` at statement level — evaluates and **discards** its result: a silent no-op (#583). Question words (`what/who/when/where/why/how`) cannot be assigned with `is` — the "assignment" is the interrogative expression form — so when a same-named binding exists in scope the statement is almost certainly a mistaken assignment (the real hit: a catch handler "reassigning" a `local why` that silently kept its stale value). An interrogative inside an expression (`print of (why is x)`, `r is prev of y`) is never flagged. |
 | `W020` | warning | An `unobserved:` block in which **every** assignment targets a dict field or list element (`d.k is ...`, `xs[i] is ...`) — a provable no-op (#655). Observer bookkeeping is gated on the named env path, so a dict field is never observed and there is nothing to skip; the in-place numeric mutation the block used to enable became unconditional with NaN-boxing B-3a (`dict_set_cached_immediate`), so it costs nothing to drop the block. This shape was true when written and expired silently, which is why it needs a lint — our own README shipped the dead form as its headline example for two months. Conservative by construction: `g_unobserved_depth` is a global, so a **call** inside the block runs the callee unobserved too and suppresses the warning; any plain-variable assignment, or a name-binding form (`for` / listcomp / `catch` / `match`), also suppresses it. Only a provably inert block fires. |
+| `W021` | hint | Function definition shadows a **public stdlib function** from a module the file never imported (`define 'median' shadows lib/stats.eigs 'median' (import stats to use it)`) — a discoverability nudge toward `lib/*.eigs` (#591), sibling of `W013` (which covers compiled-in builtins; a name that is both stays `W013`-only). The name table is scraped from the public top-level defines of the same `lib/` directories the import resolver searches; the hint stays silent when the module is imported, and when the linted file *is* the module that ships the name. Name-only matching has false positives (a deliberately-different local `mean`), so this is hint-severity: advisory, **never fails `--lint`** under either `--lint-level`, and suppressible like any other code. |
 
 The human linter output carries the code inline:
 
@@ -274,9 +275,13 @@ not part of `--lint` (it never executes the program).
 
 ## Severity control and suppression
 
-By default `--lint` exits 1 on any warning, which is warnings-as-errors. Two
-escape hatches let a project wire `--lint` into CI without that being all or
-nothing:
+By default `--lint` exits 1 on any warning, which is warnings-as-errors.
+Three mechanisms let a project wire `--lint` into CI without that being all
+or nothing:
+
+- **Hint-severity codes** (currently only `W021`) are advisory nudges: they
+  print (and appear in `--json`, and in the LSP as `Hint`-severity
+  squiggles) but never make `--lint` exit 1, under either `--lint-level`.
 
 - **`--lint-level error|warning`** chooses the exit-1 threshold. `warning` (the
   default) fails on any warning; **`error`** makes warnings advisory — they are

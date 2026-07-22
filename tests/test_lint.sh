@@ -1037,6 +1037,90 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#655 a block binding a for-loop variable is not flagged" "$OUTPUT" "W020"
 rm -f "$TMPFILE"
 
+# --- #591: W021 hint when a define shadows a PUBLIC stdlib function the ---
+# --- file never imported (sibling of W013 for the lib/*.eigs layer)     ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define median(vals) as:
+    return vals[0]
+print of (median of [3, 1, 2])
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#591 hint fires on un-imported stdlib shadow, naming the module" "$OUTPUT" "hint\[W021\]: define 'median' shadows lib/stats.eigs 'median' (import stats to use it)"
+rm -f "$TMPFILE"
+
+# Hint severity never fails --lint, under either --lint-level.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define median(vals) as:
+    return vals[0]
+print of (median of [3, 1, 2])
+EIGS
+RC_H=0; $EIGS --lint "$TMPFILE" >/dev/null 2>&1 || RC_H=$?
+RC_HE=0; $EIGS --lint --lint-level error "$TMPFILE" >/dev/null 2>&1 || RC_HE=$?
+[ "$RC_H" -eq 0 ] && { echo "  PASS: #591 hint-only file exits 0 (default level)"; PASS=$((PASS+1)); } || { echo "  FAIL: #591 hint-only default-level exit was $RC_H"; FAIL=$((FAIL+1)); }
+[ "$RC_HE" -eq 0 ] && { echo "  PASS: #591 hint-only file exits 0 (--lint-level error)"; PASS=$((PASS+1)); } || { echo "  FAIL: #591 hint-only error-level exit was $RC_HE"; FAIL=$((FAIL+1)); }
+TOTAL=$((TOTAL+2))
+rm -f "$TMPFILE"
+
+# Importing the module makes the shadow deliberate: no hint.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+import stats
+define median(vals) as:
+    return vals[0]
+print of (median of [3, 1, 2])
+print of (stats.median of [3, 1, 2])
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#591 no hint when the module is imported" "$OUTPUT" "W021"
+rm -f "$TMPFILE"
+
+# A name that is BOTH a builtin and a lib public stays W013-only (no
+# double-report from the sibling rule).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define mean(vals) as:
+    return vals[0]
+m is mean of [1]
+print of m
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#591 builtin-overlapping name still gets W013" "$OUTPUT" "W013"
+check_not_contains "#591 builtin-overlapping name gets no W021 (W013's territory)" "$OUTPUT" "W021"
+rm -f "$TMPFILE"
+
+# Same-line allow pragma suppresses the hint (mirrors the #556 W013 test).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define median(vals) as:   # lint: allow W021
+    return vals[0]
+print of (median of [3, 1, 2])
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#591 same-line '# lint: allow W021' suppresses the hint" "$OUTPUT" "W021"
+rm -f "$TMPFILE"
+
+# Per-file eigs.json allow-list suppresses the hint (mirrors the #455 test).
+LINTPKG=$(mktemp -d /tmp/lint_pkg_XXXXXX)
+mkdir -p "$LINTPKG/src"
+printf 'define median(vals) as:\n    return vals[0]\nprint of (median of [3, 1, 2])\n' > "$LINTPKG/src/shadow.eigs"
+printf '{ "lint": { "allow": { "src/shadow.eigs": ["W021"] } } }\n' > "$LINTPKG/eigs.json"
+OUT_ALLOW=$($EIGS --lint "$LINTPKG/src/shadow.eigs" 2>&1 || true)
+check_not_contains "#591 eigs.json allow-list suppresses the hint" "$OUT_ALLOW" "W021"
+printf '{ "lint": { "allow": { "src/shadow.eigs": ["W003"] } } }\n' > "$LINTPKG/eigs.json"
+OUT_WRONG=$($EIGS --lint "$LINTPKG/src/shadow.eigs" 2>&1 || true)
+check_contains "#591 allowing a different code leaves the hint firing" "$OUT_WRONG" "W021"
+rm -rf "$LINTPKG"
+
+# A module never hints against its own defines (self-lint guard).
+LINTPKG=$(mktemp -d /tmp/lint_pkg_XXXXXX)
+mkdir -p "$LINTPKG/lib"
+printf 'define w021_selfname(x) as:\n    return x\nprint of (w021_selfname of 1)\n' > "$LINTPKG/lib/selfmod.eigs"
+OUTPUT=$($EIGS --lint "$LINTPKG/lib/selfmod.eigs" 2>&1 || true)
+check_not_contains "#591 a module never hints against its own defines" "$OUTPUT" "W021"
+rm -rf "$LINTPKG"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

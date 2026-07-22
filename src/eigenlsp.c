@@ -770,7 +770,9 @@ static void send_diagnostics(Document *doc) {
             if (lint_file_allows(doc->text, diags[i].code)) continue;
             int ln = diags[i].line - 1;
             if (ln < 0) ln = 0;
-            int sev = strcmp(diags[i].severity, "error") == 0 ? 1 : 2;
+            /* LSP DiagnosticSeverity: 1=Error, 2=Warning, 4=Hint (#591). */
+            int sev = strcmp(diags[i].severity, "error") == 0 ? 1 :
+                      strcmp(diags[i].severity, "hint") == 0 ? 4 : 2;
             if (emitted++ > 0) strbuf_append_char(&sb, ',');
             /* #407 residual: E-class diags carry the offending token's
              * col/len (E003 = the undefined identifier) — publish a
