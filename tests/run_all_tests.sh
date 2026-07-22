@@ -2424,6 +2424,36 @@ else
 fi
 echo ""
 
+# [543] list_index_of builtin
+echo "[543] List Index Of (8 checks)"
+LIO_OUTPUT=$(./eigenscript ../tests/test_list_index_of.eigs 2>&1); LIO_OUTPUT_RC=$?
+if rc_ok "$LIO_OUTPUT_RC" "$LIO_OUTPUT" && echo "$LIO_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 list_index_of checks"
+else
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
+    echo "  FAIL: list_index_of tests"
+    echo "$LIO_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
+# [543] list_contains builtin
+echo "[543] List Contains (8 checks)"
+LCO_OUTPUT=$(./eigenscript ../tests/test_list_contains.eigs 2>&1); LCO_OUTPUT_RC=$?
+if rc_ok "$LCO_OUTPUT_RC" "$LCO_OUTPUT" && echo "$LCO_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 8))
+    PASS=$((PASS + 8))
+    echo "  PASS: all 8 list_contains checks"
+else
+    TOTAL=$((TOTAL + 8))
+    FAIL=$((FAIL + 8))
+    echo "  FAIL: list_contains tests"
+    echo "$LCO_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+fi
+echo ""
+
 # [65] sort_by builtin
 echo "[65] Sort By (9 checks)"
 SBY_OUTPUT=$(./eigenscript ../tests/test_sort_by.eigs 2>&1); SBY_OUTPUT_RC=$?

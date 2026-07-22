@@ -1,0 +1,55 @@
+checks is 0
+passed is 0
+
+# T1: member gives 1 (#543's example)
+a is list_contains of [[10, 20], 20]
+checks += 1
+if a == 1:
+    passed += 1
+
+# T2: non-member gives 0
+b is list_contains of [[10, 20], 99]
+checks += 1
+if b == 0:
+    passed += 1
+
+# T3: empty list gives 0
+c is list_contains of [[], 1]
+checks += 1
+if c == 0:
+    passed += 1
+
+# T4: structural match on a nested list
+d is list_contains of [[[1, 2], [3, 4]], [3, 4]]
+checks += 1
+if d == 1:
+    passed += 1
+
+# T5: structural match on a dict element
+e is list_contains of [[{"a": 1}, {"b": 2}], {"b": 2}]
+checks += 1
+if e == 1:
+    passed += 1
+
+# T6: number vs string never equal
+f is list_contains of [[1], "1"]
+checks += 1
+if f == 0:
+    passed += 1
+
+# T7: string element hit
+g is list_contains of [["a", "b"], "b"]
+checks += 1
+if g == 1:
+    passed += 1
+
+# T8: near-miss structure (different length) gives 0
+h is list_contains of [[[1, 2]], [1, 2, 3]]
+checks += 1
+if h == 0:
+    passed += 1
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

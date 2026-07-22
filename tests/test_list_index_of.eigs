@@ -1,0 +1,55 @@
+checks is 0
+passed is 0
+
+# T1: structural match on a nested list (#543's example)
+a is list_index_of of [[10, [1, 2], 30], [1, 2]]
+checks += 1
+if a == 1:
+    passed += 1
+
+# T2: miss gives -1 (#543's example)
+b is list_index_of of [[10, 20], 99]
+checks += 1
+if b == -1:
+    passed += 1
+
+# T3: hit at index 0
+c is list_index_of of [[5, 7, 9], 5]
+checks += 1
+if c == 0:
+    passed += 1
+
+# T4: hit at the last index
+d is list_index_of of [[5, 7, 9], 9]
+checks += 1
+if d == 2:
+    passed += 1
+
+# T5: empty list gives -1
+e is list_index_of of [[], 1]
+checks += 1
+if e == -1:
+    passed += 1
+
+# T6: structural match on a dict element
+f is list_index_of of [[{"a": 1}, {"b": 2}], {"b": 2}]
+checks += 1
+if f == 1:
+    passed += 1
+
+# T7: number vs string never equal
+g is list_index_of of [[1, 2], "1"]
+checks += 1
+if g == -1:
+    passed += 1
+
+# T8: first match wins on duplicate values
+h is list_index_of of [[5, 7, 5], 5]
+checks += 1
+if h == 0:
+    passed += 1
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

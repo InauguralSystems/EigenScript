@@ -4220,7 +4220,8 @@ static const char *SANDBOX_ALLOW[] = {
     "bit_and", "bit_not", "bit_or", "bit_shl", "bit_shr", "bit_xor",
     /* list / sequence (operate on the value handed in) */
     "append", "concat", "contains", "copy_into", "get_at", "index_of", "len",
-    "list_insert_at", "list_remove_at", "list_slice", "list_truncate", "set_at",
+    "list_contains", "list_index_of", "list_insert_at", "list_remove_at",
+    "list_slice", "list_truncate", "set_at",
     "sort", "sort_by", "range",
     /* dict */
     "dict_set", "dict_remove", "has_key", "keys", "values",
@@ -6550,6 +6551,38 @@ Value* builtin_list_insert_at(Value *arg) {
     return list;
 }
 
+/* list_index_of of [list, value] — index of the first element structurally
+ * equal to value, reusing values_equal (the same comparison `==` uses), so
+ * nested lists and dicts match by structure. -1 when absent. Bad args give
+ * -1, mirroring index_of's miss (no raise mechanism in the builtin layer;
+ * the list builtins return null/-1 rather than erroring). */
+Value* builtin_list_index_of(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(-1);
+    Value *list = arg->data.list.items[0];
+    Value *needle = arg->data.list.items[1];
+    if (!list || list->type != VAL_LIST) return make_num(-1);
+    for (int i = 0; i < list->data.list.count; i++) {
+        if (values_equal(list->data.list.items[i], needle))
+            return make_num((double)i);
+    }
+    return make_num(-1);
+}
+
+/* list_contains of [list, value] — 1 if any element structurally equals
+ * value (same values_equal scan as list_index_of), else 0. Bad args give 0,
+ * mirroring contains. */
+Value* builtin_list_contains(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    Value *list = arg->data.list.items[0];
+    Value *needle = arg->data.list.items[1];
+    if (!list || list->type != VAL_LIST) return make_num(0);
+    for (int i = 0; i < list->data.list.count; i++) {
+        if (values_equal(list->data.list.items[i], needle))
+            return make_num(1);
+    }
+    return make_num(0);
+}
+
 /* sort_by of [list, key_fn] — sort list by numeric keys from key_fn.
  * Evaluates key_fn once per element, then qsorts by key (ascending).
  * Stable tiebreak by original index. Returns a NEW sorted list. */
@@ -6978,6 +7011,8 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "list_truncate", make_builtin(builtin_list_truncate));
     env_set_local_owned(env, "list_remove_at", make_builtin(builtin_list_remove_at));
     env_set_local_owned(env, "list_insert_at", make_builtin(builtin_list_insert_at));
+    env_set_local_owned(env, "list_index_of", make_builtin(builtin_list_index_of));
+    env_set_local_owned(env, "list_contains", make_builtin(builtin_list_contains));
     env_set_local_owned(env, "sort_by", make_builtin(builtin_sort_by));
     env_set_local_owned(env, "close_channel", make_builtin(builtin_close_channel));
     env_set_local_owned(env, "channel_closed", make_builtin(builtin_channel_closed));
