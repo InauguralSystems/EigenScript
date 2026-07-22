@@ -72,7 +72,8 @@ static void obs_dump_num(double n, char *buf, size_t nbuf) {
     } else {
         for (int prec = 15; prec <= 17; prec++) {
             snprintf(buf, nbuf, "%.*g", prec, n);
-            if (strtod(buf, NULL) == n) break;
+            double back = strtod(buf, NULL);
+            if (memcmp(&back, &n, sizeof back) == 0) break;
         }
     }
 }
@@ -95,11 +96,11 @@ static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
             case VAL_STR: {
                 size_t o = 0, i;
                 buf[o++] = '"';
-                for (i = 0; v->data.str[i] && i < 100 && o + 2 < nbuf; i++) {
+                for (i = 0; i < 100 && v->data.str[i] && o + 2 < nbuf; i++) {
                     unsigned char c = (unsigned char)v->data.str[i];
                     buf[o++] = (c >= 32 && c < 127) ? (char)c : ' ';
                 }
-                if (v->data.str[i]) { memcpy(buf + o, "...", 3); o += 3; }
+                if (v->data.str[i] && o + 5 <= nbuf) { memcpy(buf + o, "...", 3); o += 3; }
                 if (o + 2 > nbuf) o = nbuf - 2;
                 buf[o++] = '"'; buf[o] = 0;
                 break;
