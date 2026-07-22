@@ -36,6 +36,21 @@ All notable changes to EigenScript are documented here.
   suppresses the warning, as does any plain-variable assignment or
   name-binding form (`for` / listcomp / `catch` / `match`). Only a provably
   inert block fires.
+- **W021: a hint for defines shadowing an un-imported stdlib function
+  (#591).** Sibling of W013 (which covers compiled-in builtins) for the
+  `lib/*.eigs` layer: when a file `define`s a function whose name matches a
+  public stdlib function from a module it never imported — the repeated
+  downstream hand-roll failure (`median`/`mean` while `lib/stats.eigs` ships
+  both; `hex4`/`pad2` twice) — the linter nudges: `define 'median' shadows
+  lib/stats.eigs 'median' (import stats to use it)`. The name table is
+  scraped from the public top-level defines of the same `lib/` directories
+  the import resolver searches. Name-only matching has false positives by
+  construction, so W021 is the first **hint-severity** diagnostic: it prints
+  (and shows in `--json` and the LSP, as a `Hint` squiggle) but never fails
+  `--lint` under either `--lint-level`. Silent when the module is imported,
+  when the linted file *is* the module, and when the name is also a builtin
+  (W013's territory); respects `# lint: allow` and the eigs.json
+  allow-list like every other code.
 - **`log2` / `log10` in lib/math.eigs (#545).** Pure-EigenScript base-2 and
   base-10 logarithms over the `log` builtin, element-wise like the `log`
   they wrap (`log2 of [8, 4]` -> `[3, 2]`); domain follows that builtin's
