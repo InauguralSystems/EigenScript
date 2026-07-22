@@ -468,6 +468,17 @@ Value* builtin_monotonic_ms(Value *arg) {
     TRACE_NONDET_RET("monotonic_ms", make_num((double)ts.tv_sec * 1e3 + (double)ts.tv_nsec / 1e6));
 }
 
+/* clock_unix of null — seconds since the Unix epoch from CLOCK_REALTIME
+ * (wall clock, sub-second precision). A clock read is nondeterministic, so
+ * the value goes through the tape seam like every other nondet input:
+ * recorded under EIGS_TRACE, served back under EIGS_REPLAY (#683). */
+Value* builtin_clock_unix(Value *arg) {
+    (void)arg;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    TRACE_NONDET_RET("clock_unix", make_num((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));
+}
+
 Value* builtin_len(Value *arg) {
     if (arg->type == VAL_LIST)
         return make_num(arg->data.list.count);
@@ -6778,6 +6789,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "usleep", make_builtin(builtin_usleep));
     env_set_local_owned(env, "monotonic_ns", make_builtin(builtin_monotonic_ns));
     env_set_local_owned(env, "monotonic_ms", make_builtin(builtin_monotonic_ms));
+    env_set_local_owned(env, "clock_unix", make_builtin(builtin_clock_unix));
     env_set_local_owned(env, "join", make_builtin(builtin_join));
     env_set_local_owned(env, "text_builder_new", make_builtin(builtin_text_builder_new));
     env_set_local_owned(env, "text_builder_append", make_builtin(builtin_text_builder_append));

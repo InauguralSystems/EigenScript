@@ -1,0 +1,21 @@
+# Wall-clock tests — clock_unix (#683)
+load_file of "lib/test.eigs"
+
+# Returns seconds since the Unix epoch — a plausible recent value
+# (1.7e9 is 2023-11-14; any live clock must read well past it)
+t is clock_unix of null
+assert_true of [t > 1700000000, "clock_unix returns seconds since the Unix epoch"]
+
+# Non-decreasing across successive calls
+t0 is clock_unix of null
+t1 is clock_unix of null
+assert_true of [t1 >= t0, "clock_unix is non-decreasing across successive calls"]
+
+# Advances after a sleep (sub-second precision: 5 ms of wall time shows up)
+before is clock_unix of null
+usleep of 5000
+after is clock_unix of null
+elapsed is after - before
+assert_true of [elapsed >= 0.001, "clock_unix advances after usleep"]
+
+test_summary of null

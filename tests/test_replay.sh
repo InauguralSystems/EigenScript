@@ -390,6 +390,24 @@ else
     fail "getcwd replay (#585)" "rec='$CWD_REC' rep='$CWD_REP'"
 fi
 
+# ---- #683: clock_unix is a taped nondeterminism source ----
+# Record a wall-clock read, then replay a full second later: the recorded
+# epoch must win byte-for-byte (a live read would return a later time).
+cat > "$TMPDIR/p_clock.eigs" <<'EOF'
+print of (clock_unix of null)
+EOF
+
+TAPE_CU="$TMPDIR/clock.tape"
+REC_CU=$(EIGS_TRACE="$TAPE_CU" "$EIGS" "$TMPDIR/p_clock.eigs" 2>&1)
+sleep 1
+REP_CU=$(EIGS_REPLAY="$TAPE_CU" "$EIGS" "$TMPDIR/p_clock.eigs" 2>&1)
+
+if [ -n "$REC_CU" ] && [ "$REC_CU" = "$REP_CU" ] && grep -q '^N clock_unix=' "$TAPE_CU"; then
+    ok "clock_unix replay: recorded epoch wins on replay (#683)"
+else
+    fail "clock_unix replay" "rec='$REC_CU' rep='$REP_CU'"
+fi
+
 # ---- #579: audio capture is a taped nondeterminism source ----
 # Gated: needs a gfx build AND a working capture device (the dummy SDL
 # driver provides a silent one; the CI dev image has no libSDL2, so this

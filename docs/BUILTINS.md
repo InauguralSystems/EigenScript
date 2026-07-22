@@ -333,15 +333,17 @@ producing tensors too large to materialise in memory.
 |------|-----------|-------------|
 | `monotonic_ns` | `monotonic_ns of null` | Nanoseconds from `CLOCK_MONOTONIC` (jump-free) |
 | `monotonic_ms` | `monotonic_ms of null` | Milliseconds from `CLOCK_MONOTONIC` |
+| `clock_unix` | `clock_unix of null` | Seconds since the Unix epoch (float, wall clock; tape-captured for replay) |
 | `usleep` | `usleep of microseconds` | Pause execution |
 
 ## Trace & Replay
 
-Nondeterministic builtins (`random*`, `monotonic_*`, `env_get`,
-`read_*`, HTTP request/response accessors) are recorded to a tape when
-`EIGS_TRACE=<path>` is set, and served back from a recorded tape when
-`EIGS_REPLAY=<path>` is set — subsequent runs produce byte-identical
-output. Full tape format and replay semantics: [TRACE.md](TRACE.md).
+Nondeterministic builtins (`random*`, `monotonic_*`, `clock_unix`,
+`env_get`, `read_*`, HTTP request/response accessors) are recorded to a
+tape when `EIGS_TRACE=<path>` is set, and served back from a recorded
+tape when `EIGS_REPLAY=<path>` is set — subsequent runs produce
+byte-identical output. Full tape format and replay semantics:
+[TRACE.md](TRACE.md).
 
 ## Terminal
 

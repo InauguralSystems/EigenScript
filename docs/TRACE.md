@@ -55,7 +55,7 @@ Every builtin whose return value is nondeterministic from the script's
 perspective lands on the tape as an `N` record:
 
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
-- **Time:** `monotonic_ns`, `monotonic_ms`
+- **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
   `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576),
   `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
