@@ -45,6 +45,177 @@ void vm_obs_slot_dropped(Env *e) {
     if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
 }
 
+/* ---- #660: SIGUSR1 live observer dump ----
+ * An outside process asks a long-running program whether it is progressing:
+ * `kill -USR1 <pid>` prints one row per live binding to stderr:
+ *     name | value | when=<assign count> | entropy=<H> | dH=<dH> | trajectory
+ * The signal handler (installed by the CLI in main.c, SA_RESTART) ONLY sets
+ * g_eigs_sigusr1_pending — no allocation, no I/O. The dump runs at the next
+ * loop safepoint (the OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK per-iteration
+ * check and the shared eigs_loop_*_step cores the JIT/AOT call), in normal
+ * thread context, on whichever thread sees the flag first. Cost when idle is
+ * one flag test per loop iteration, mirroring eigs_loop_cap_step's profile. */
+volatile sig_atomic_t g_eigs_sigusr1_pending = 0;
+
+void eigs_sigusr1_handler(int sig) {
+    (void)sig;
+    g_eigs_sigusr1_pending = 1;
+}
+
+/* Number formatting mirrors value_to_string's VAL_NUM case: exact integers
+ * print bare, anything else shortest round-trip %.15g..%.17g. The range
+ * check runs BEFORE the long long cast — casting an out-of-range double is
+ * UB and this path sees arbitrary user values under UBSan. */
+static void obs_dump_num(double n, char *buf, size_t nbuf) {
+    if (fabs(n) < 9007199254740992.0 && n == (long long)n) {
+        snprintf(buf, nbuf, "%lld", (long long)n);
+    } else {
+        for (int prec = 15; prec <= 17; prec++) {
+            snprintf(buf, nbuf, "%.*g", prec, n);
+            if (strtod(buf, NULL) == n) break;
+        }
+    }
+}
+
+/* Compact, bounded rendering of a slot's value: numbers inline, strings
+ * truncated to 100 chars with control characters blanked (one row per
+ * binding must stay one line), containers as <type:count> summaries — no
+ * deep walks (a 65k-element list must not dump a megabyte, and walking a
+ * shared container's items while another thread mutates them is the #607
+ * out-of-scope slot-value race class; a summary reads only the header
+ * words). No allocation. */
+static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
+    if (slot_is_num(s)) { obs_dump_num(s.d, buf, nbuf); return; }
+    if (slot_is_null(s)) { snprintf(buf, nbuf, "null"); return; }
+    if (slot_is_bool(s)) { snprintf(buf, nbuf, "%s", slot_as_bool(s) ? "true" : "false"); return; }
+    if (slot_is_ptr(s)) {
+        Value *v = slot_as_ptr(s);
+        switch (v->type) {
+            case VAL_NUM: obs_dump_num(v->data.num, buf, nbuf); break;
+            case VAL_STR: {
+                size_t o = 0, i;
+                buf[o++] = '"';
+                for (i = 0; v->data.str[i] && i < 100 && o + 2 < nbuf; i++) {
+                    unsigned char c = (unsigned char)v->data.str[i];
+                    buf[o++] = (c >= 32 && c < 127) ? (char)c : ' ';
+                }
+                if (v->data.str[i]) { memcpy(buf + o, "...", 3); o += 3; }
+                if (o + 2 > nbuf) o = nbuf - 2;
+                buf[o++] = '"'; buf[o] = 0;
+                break;
+            }
+            case VAL_LIST:   snprintf(buf, nbuf, "<list:%d>", v->data.list.count); break;
+            case VAL_DICT:   snprintf(buf, nbuf, "<dict:%d>", v->data.dict.count); break;
+            case VAL_FN:     snprintf(buf, nbuf, "<fn %s>", v->data.fn.name); break;
+            case VAL_BUILTIN: snprintf(buf, nbuf, "<builtin>"); break;
+            case VAL_BUFFER: snprintf(buf, nbuf, "<buffer:%d>", v->data.buffer.count); break;
+            case VAL_TEXT_BUILDER:
+                snprintf(buf, nbuf, "<text-builder:%zu>", v->data.text_builder.len); break;
+            case VAL_JSON_RAW: snprintf(buf, nbuf, "<json-raw>"); break;
+            default:         snprintf(buf, nbuf, "null"); break;
+        }
+        return;
+    }
+    snprintf(buf, nbuf, "?");   /* sentinel / reserved tag — not a binding value */
+}
+
+/* One scope's rows. `shared` holds the existing #607 module-env lock for the
+ * walk (a no-op single-threaded): only the module env is structurally
+ * mutated cross-thread, and only by the main thread; frame/loop envs are
+ * thread-local and need no lock. Skips runtime-internal `__*` bindings and
+ * builtins (stdlib noise — every registered builtin lives in the module env).
+ * `name_chunk` resolves call-env slots reserved by env_reserve_slots, which
+ * are addressed purely by slot index and carry NULL names in the env — their
+ * names live in the frame chunk's local_names (OP_SET_LOCAL's own name
+ * source, e.g. the trace hook). Every row carries its assign count: when=1
+ * (a fresh per-call binding) must read differently from a settled long-lived
+ * one, and a bare trajectory word with no sample count behind it is the
+ * silent-tolerance failure this feature exists to avoid. An observed slot's
+ * word comes from the same observer_slot_report `report of` uses; a slot
+ * with no observation yet says "unobserved" rather than borrowing a
+ * window-less verdict. */
+static void obs_dump_scope(const char *scope, Env *e, int shared,
+                           const EigsChunk *name_chunk) {
+    if (shared) env_dump_lock(e);
+    fprintf(stderr, "# scope=%s\n", scope);
+    char vbuf[160];
+    for (int i = 0; i < e->count; i++) {
+        const char *name = e->names[i];
+        if (!name && name_chunk && name_chunk->local_names &&
+            i < name_chunk->local_count)
+            name = name_chunk->local_names[i];
+        if (!name) continue;
+        if (name[0] == '_' && name[1] == '_') continue;
+        EigsSlot s = e->values[i];
+        if (slot_is_ptr(s)) {
+            Value *v = slot_as_ptr(s);
+            if (v && v->type == VAL_BUILTIN) continue;
+        }
+        obs_dump_value(s, vbuf, sizeof(vbuf));
+        /* `when` merges the two assignment counters, because neither alone
+         * is complete. env->assign_counts is bumped only by the env write
+         * paths (env_set*, param binding) — the compiler keeps it consistent
+         * for `when is x` by forcing interrogated names onto those paths
+         * (compiler.c "interrogated"), but a plain fn-local's SET_LOCAL fast
+         * path never touches it (reads 0 after thousands of assignments).
+         * The observer slot's obs_age IS bumped once per compiled assignment
+         * (OBSERVE_ASSIGN_LOCAL / OBSERVE_NAME_POST), and recycled call envs
+         * reset both counters (vm_park_call_env), preserving per-call
+         * semantics: max() of the two is the true assignment count. */
+        const ObserverSlot *os = (e->obs && i < e->obs_cap) ? &e->obs[i] : NULL;
+        long when = e->assign_counts ? e->assign_counts[i] : -1;
+        if (os && os->used && os->obs_age > when) when = os->obs_age;
+        char whenbuf[16];
+        if (when >= 0) snprintf(whenbuf, sizeof(whenbuf), "%ld", when);
+        else           snprintf(whenbuf, sizeof(whenbuf), "?");
+        if (os && os->used) {
+            fprintf(stderr, "%s | %s | when=%s | entropy=%.6g | dH=%.6g | %s\n",
+                    name, vbuf, whenbuf, os->entropy, os->dH, observer_slot_report(os));
+        } else {
+            fprintf(stderr, "%s | %s | when=%s | entropy=- | dH=- | unobserved\n",
+                    name, vbuf, whenbuf);
+        }
+    }
+    if (shared) env_dump_unlock(e);
+}
+
+/* Dump module-scope bindings plus the current live call frame's bindings.
+ * The module env is the root of the current env chain (post-#373 a worker
+ * fn's env still chains back to it); the live frame is the dumping thread's
+ * innermost VM frame (fn_env), plus its current loop-child env when that
+ * differs. Under MT the module walk holds the existing #607 lock — no new
+ * locking scheme; frame/loop envs are this thread's own. */
+static void eigs_observer_dump(Env *leaf) {
+    if (!leaf) return;
+    Env *root = leaf;
+    while (root->parent) root = root->parent;
+    fprintf(stderr, "# eigenscript observer dump (SIGUSR1) — module scope + dumping thread's live frame\n");
+    obs_dump_scope("module", root, 1, NULL);
+    Env *fn_env = NULL;
+    const EigsChunk *fn_chunk = NULL;
+    if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
+        fn_env = g_vm.frames[g_vm.frame_count - 1].fn_env;
+        fn_chunk = g_vm.frames[g_vm.frame_count - 1].chunk;
+    }
+    if (fn_env && fn_env != root)
+        obs_dump_scope("frame", fn_env, 0, fn_chunk);
+    /* The leaf differs from fn_env when the safepoint caught a loop-child
+     * env (LOOP_ENV_FRESH); its bindings are hash-named, no chunk needed. */
+    if (leaf != root && leaf != fn_env)
+        obs_dump_scope("loop", leaf, 0, NULL);
+    fprintf(stderr, "# end dump\n");
+    fflush(stderr);
+}
+
+/* Safepoint, tested once per loop iteration alongside the loop-cap check.
+ * The first thread to see the flag set performs the dump (atomic
+ * test-and-clear, so MT dumps exactly once per signal). */
+static inline void eigs_observe_safepoint(Env *e) {
+    if (__builtin_expect(g_eigs_sigusr1_pending != 0, 0) &&
+        __sync_bool_compare_and_swap(&g_eigs_sigusr1_pending, 1, 0))
+        eigs_observer_dump(e);
+}
+
 /* Classify an observer slot's trajectory by predicate kind (0..5), matching the
  * bare OP_PREDICATE dispatch. Shared by the named OP_PREDICATE_SLOT/NAME ops,
  * which read a SPECIFIC binding's slot instead of the global last-observed one. */
@@ -1417,6 +1588,7 @@ static void loop_iter_store(Env *env, double n) {
  * eigenscript.h. The jit_helper_* wrappers below feed them the current frame's
  * env, so interpreter, JIT, and AOT share one implementation (no drift). */
 int eigs_loop_stall_step(Env *e) {
+    eigs_observe_safepoint(e);   /* #660 */
     g_loop_iterations++;
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
@@ -1450,6 +1622,7 @@ int eigs_loop_stall_step(Env *e) {
 }
 
 int eigs_loop_cap_step(Env *e) {
+    eigs_observe_safepoint(e);   /* #660 */
     g_loop_iterations++;
     int should_exit = 0;
     if (g_loop_iterations >= (g_sandbox_loop_max ? g_sandbox_loop_max : 100000000)) {
@@ -4725,6 +4898,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(LOOP_STALL_CHECK): {
         uint16_t exit_offset = read_u16(ip); ip += 2;
+        eigs_observe_safepoint(frame->env);   /* #660: SIGUSR1 dump at the per-iteration safepoint */
         g_loop_iterations++;
         int should_exit = 0;
         if (g_unobserved_depth == 0) {
@@ -4767,6 +4941,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * block; both engines key off the opcode, set at compile time, so the
          * interpreter and JIT can never disagree on the classification. */
         uint16_t exit_offset = read_u16(ip); ip += 2;
+        eigs_observe_safepoint(frame->env);   /* #660: SIGUSR1 dump at the per-iteration safepoint */
         g_loop_iterations++;
         int should_exit = 0;
         if (g_loop_iterations >= (g_sandbox_loop_max ? g_sandbox_loop_max : 100000000)) {

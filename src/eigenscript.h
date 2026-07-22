@@ -341,6 +341,17 @@ void observer_slot_reset(struct Env *e);
  * run the same halting as the interpreter/JIT. (vm.c) */
 int eigs_loop_stall_step(struct Env *e);
 int eigs_loop_cap_step(struct Env *e);
+/* #660 SIGUSR1 live observer dump: `kill -USR1 <pid>` prints one row per
+ * live binding (module scope + the dumping thread's live frame) to stderr at
+ * the next loop safepoint. The handler (installed by the CLI, SA_RESTART)
+ * only sets the flag — no allocation, no I/O; the VM's loop-cap safepoints
+ * test-and-clear it and dump from normal thread context. (vm.c) */
+extern volatile sig_atomic_t g_eigs_sigusr1_pending;
+void eigs_sigusr1_handler(int sig);
+/* #660: hold/release the existing #607 module-env lock for the dump's
+ * module-scope walk under MT; no-op single-threaded. (eigenscript.c) */
+void env_dump_lock(struct Env *e);
+void env_dump_unlock(struct Env *e);
 /* Implemented in vm.c: drops the last-observed-slot tracker if it points at e
  * (called from observer_slot_reset so a torn-down env can't be read stale). */
 void vm_obs_slot_dropped(struct Env *e);

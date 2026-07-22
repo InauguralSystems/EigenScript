@@ -3456,6 +3456,29 @@ else
 fi
 echo ""
 
+# [99d] SIGUSR1 live observer dump (#660) — the only suite check that drives
+# a signal against a live process from OUTSIDE: spawn a long-running
+# program, kill -USR1, assert the stderr dump's row shape (incl. `when=`
+# assign counts distinguishing a fresh when=1 per-call binding from a
+# settled one) and that the program completes normally afterward — once
+# single-threaded, once with a spawned task live. Synchronization inside is
+# on observable state (READY/DONE markers), never sleeps — see
+# tests/test_sigusr1_dump.sh.
+echo "[99d] SIGUSR1 observer dump (#660)"
+OD_OUTPUT=$(bash "$TESTS_DIR/test_sigusr1_dump.sh" 2>&1)
+OD_PASS=$(echo "$OD_OUTPUT" | grep -c "PASS:" || true)
+OD_FAIL=$(echo "$OD_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + OD_PASS + OD_FAIL))
+PASS=$((PASS + OD_PASS))
+FAIL=$((FAIL + OD_FAIL))
+if [ "$OD_FAIL" -gt 0 ]; then
+    echo "  FAIL: $OD_FAIL SIGUSR1 dump check(s) failed"
+    echo "$OD_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $OD_PASS SIGUSR1 dump checks"
+fi
+echo ""
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
 if [ "$LEAKED" -gt 0 ]; then

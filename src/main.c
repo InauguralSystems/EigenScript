@@ -168,6 +168,19 @@ int main(int argc, char **argv) {
     eigs_thread_attach(eigs_st);
     set_exe_dir(argc > 0 ? argv[0] : NULL);
 
+    /* #660: SIGUSR1 live observer dump — an outside process can ask a
+     * long-running program whether it is progressing. SA_RESTART so an
+     * interrupted blocking syscall (channel recv, proc read) resumes; the
+     * handler only raises a flag consumed at the next loop safepoint. */
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = eigs_sigusr1_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        sigaction(SIGUSR1, &sa, NULL);
+    }
+
     /* --lint flag (optionally --lint --json for machine-readable output;
      * --json may appear before or after the path). */
     if (argc >= 2 && strcmp(argv[1], "--lint") == 0) {

@@ -1644,6 +1644,14 @@ static inline void env_shared_unlock(const Env *e) {
     if (env_mt_shared(e)) pthread_mutex_unlock(&g_module_env_lock);
 }
 
+/* #660: exported for the SIGUSR1 observer dump (vm.c) — the dump's
+ * module-scope walk holds the existing #607 module-env lock under MT
+ * (no new locking scheme; a no-op single-threaded via the env_mt_shared
+ * gate). Only the module env is structurally mutated cross-thread, and
+ * only by the main thread; the dump's frame/loop envs are thread-local. */
+void env_dump_lock(Env *e)   { env_shared_lock(e); }
+void env_dump_unlock(Env *e) { env_shared_unlock(e); }
+
 /* Park a grown-out block on the env; freed at park/destroy time. */
 static void env_retire_block(Env *env, void *block) {
     if (!block) return;
