@@ -36,7 +36,9 @@ if [ "$1" = "lsp" ]; then
     # toolchain. Links eigenlsp.c against the runtime (SOURCES minus the
     # CLI-only units, read from the Makefile's CLI_ONLY so the drop list
     # can't drift either), minimal extensions, gcc-only like the rest of
-    # build.sh.
+    # build.sh. The stdlib index header it includes (#590) is generated
+    # from lib/ first — same rule as the Makefile lsp target.
+    bash ../tools/gen_lsp_stdlib_index.sh
     LSP_SOURCES=" $SOURCES "
     for u in $CLI_ONLY; do LSP_SOURCES="${LSP_SOURCES/ $u / }"; done
     LSP_SOURCES="$LSP_SOURCES eigenlsp.c"

@@ -203,6 +203,66 @@ def main():
     check("completion does not advertise a phantom 'input' builtin",
           isinstance(items, list) and not any(it.get("label") == "input" for it in items))
 
+    # --- #590: stdlib (lib/) completion + hover from the generated index ---
+    # Completion is import-aware: the document's own `import`s scope which
+    # modules' functions are offered; the detail is the rule-2 signature
+    # comment, or the `define name(params) as:` shape when a module never
+    # wrote one (stats has none for median; list.zip has one).
+    std_doc = "import stats\nimport list\nresult is stats.mean of [1, 2, 3]\n"
+    comp_std = {"jsonrpc": "2.0", "id": 26, "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 12}}}
+    r = converse([INIT, did_open(std_doc), comp_std, SHUTDOWN, EXIT])
+    res = (by_id(r, 26) or {}).get("result", {})
+    items = res.get("items") if isinstance(res, dict) and isinstance(res.get("items"), list) else []
+    zip_item = next((it for it in items if it.get("label") == "zip"), None)
+    check("stdlib completion offers an imported module's function (list.zip)",
+          isinstance(zip_item, dict) and zip_item.get("kind") == 3)
+    check("stdlib completion detail is the signature comment",
+          isinstance(zip_item, dict)
+          and zip_item.get("detail") == "zip of [list_a, list_b] -> list of [a, b] pairs")
+    median_item = next((it for it in items if it.get("label") == "median"), None)
+    check("stdlib completion falls back to the define shape (stats.median)",
+          isinstance(median_item, dict)
+          and median_item.get("detail") == "define median(vals) as:")
+    check("stdlib completion omits unimported modules (map.map_get absent)",
+          not any(it.get("label") == "map_get" for it in items))
+
+    # No imports in the document → no stdlib items at all.
+    comp_plain = {"jsonrpc": "2.0", "id": 27, "method": "textDocument/completion",
+                  "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0}}}
+    r = converse([INIT, did_open("plain is 1\n"), comp_plain, SHUTDOWN, EXIT])
+    res = (by_id(r, 27) or {}).get("result", {})
+    items = res.get("items") if isinstance(res, dict) and isinstance(res.get("items"), list) else []
+    check("stdlib completion is empty without any import",
+          not any(it.get("label") in ("zip", "median", "map_get") for it in items))
+
+    # Hover over a dotted module call shows the signature comment...
+    hover_zip = {"jsonrpc": "2.0", "id": 28, "method": "textDocument/hover",
+                 "params": {"textDocument": {"uri": URI}, "position": {"line": 1, "character": 11}}}
+    r = converse([INIT, did_open("import list\nz is list.zip of [[1, 2], [3, 4]]\n"),
+                  hover_zip, SHUTDOWN, EXIT])
+    res = (by_id(r, 28) or {}).get("result")
+    value = ((res or {}).get("contents") or {}).get("value", "") if isinstance(res, dict) else ""
+    check("hover over an imported module's call shows the signature",
+          "zip of [list_a, list_b] -> list of [a, b] pairs" in value)
+
+    # ...and the define-shape fallback when the module wrote no comment.
+    hover_mean = {"jsonrpc": "2.0", "id": 29, "method": "textDocument/hover",
+                  "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 17}}}
+    r = converse([INIT, did_open(std_doc), hover_mean, SHUTDOWN, EXIT])
+    res = (by_id(r, 29) or {}).get("result")
+    value = ((res or {}).get("contents") or {}).get("value", "") if isinstance(res, dict) else ""
+    check("hover over a stdlib call without a signature shows the define shape",
+          "define mean(vals) as:" in value)
+
+    # A function from a module the document never imported gets no hover.
+    hover_noimp = {"jsonrpc": "2.0", "id": 30, "method": "textDocument/hover",
+                   "params": {"textDocument": {"uri": URI}, "position": {"line": 1, "character": 7}}}
+    r = converse([INIT, did_open("import stats\nz is map_get of [m, \"k\"]\n"),
+                  hover_noimp, SHUTDOWN, EXIT])
+    check("hover ignores a function from an unimported module",
+          (by_id(r, 30) or {}).get("result") is None)
+
     # --- hover over a defined symbol returns contents ---
     hover = {"jsonrpc": "2.0", "id": 3, "method": "textDocument/hover",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0}}}

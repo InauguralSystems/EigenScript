@@ -114,7 +114,14 @@ install: build lsp
 	@echo "Installed: $(PREFIX)/bin/eigenlsp (v$(VERSION))"
 	@echo "Stdlib:    $(PREFIX)/lib/eigenscript/"
 
-lsp:
+# Generated stdlib index for the LSP (#590): public define/signature-comment
+# table scraped from lib/*.eigs. A build artifact, not committed (the build/
+# amalgamation precedent, #397) — regenerated whenever lib/ or the script
+# changes, before eigenlsp compiles. build.sh's lsp branch does the same.
+$(SRC_DIR)/lsp_stdlib_index.h: $(wildcard lib/*.eigs) tools/gen_lsp_stdlib_index.sh
+	bash tools/gen_lsp_stdlib_index.sh
+
+lsp: $(SRC_DIR)/lsp_stdlib_index.h
 	$(CC) $(CFLAGS) -o $(LSP_BINARY) $(LSP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
