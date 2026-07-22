@@ -2158,6 +2158,22 @@ else
 fi
 echo ""
 
+# [123] Wall clock (clock_unix, #683)
+echo "[123] Wall Clock (clock_unix)"
+CU_OUTPUT=$(./eigenscript ../tests/test_clock_unix.eigs 2>&1); CU_OUTPUT_RC=$?
+CU_OUTPUT_N=$(derive_count "$CU_OUTPUT" 3 "[123] Wall Clock")
+if rc_ok "$CU_OUTPUT_RC" "$CU_OUTPUT" && echo "$CU_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + CU_OUTPUT_N))
+    PASS=$((PASS + CU_OUTPUT_N))
+    echo "  PASS: all $CU_OUTPUT_N clock_unix checks"
+else
+    TOTAL=$((TOTAL + CU_OUTPUT_N))
+    FAIL=$((FAIL + CU_OUTPUT_N))
+    echo "  FAIL: clock_unix tests"
+    echo "$CU_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
+fi
+echo ""
+
 # [55] Concurrency: spawn/join/channel
 echo "[55] Concurrency (6 checks)"
 CC_OUTPUT=$(./eigenscript ../tests/test_concurrent.eigs 2>&1)
