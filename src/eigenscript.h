@@ -24,6 +24,13 @@
 #ifndef EIGENSCRIPT_EXT_GFX
 #define EIGENSCRIPT_EXT_GFX 0
 #endif
+/* DEFLATE codecs (inflate/deflate via the system zlib, -lz). Default OFF
+ * like GFX: the minimal build stays zero-dependency — the four builtins
+ * stay registered but raise "compiled without zlib support" until
+ * `make zlib` opts in (same EIGENSCRIPT_EXT_* gating mechanism as http). */
+#ifndef EIGENSCRIPT_EXT_ZLIB
+#define EIGENSCRIPT_EXT_ZLIB 0
+#endif
 
 /* Freestanding profile (docs/FREESTANDING.md) — the no-libc/EigenOS
  * carve-out. Compiles out everything that needs a host OS beyond the

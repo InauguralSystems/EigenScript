@@ -29,6 +29,10 @@
 #include "model_internal.h"
 #endif
 
+#if EIGENSCRIPT_EXT_ZLIB
+#include <zlib.h>
+#endif
+
 /* How many bindings the runtime itself installs.
  *
  * register_builtins fills the global env from slot 0 upward and nothing in the
@@ -4238,6 +4242,8 @@ static const char *SANDBOX_ALLOW[] = {
     "text_builder_to_string", "text_builder_part_count",
     /* json (string <-> value, pure) */
     "json_build", "json_decode", "json_encode", "json_path", "json_raw",
+    /* DEFLATE codecs (pure bytes <-> bytes; #684) */
+    "deflate", "inflate", "zlib_deflate", "zlib_inflate",
     /* path string manipulation (no fs access) */
     "path_base", "path_dir", "path_ext", "path_join",
     /* type / value utilities */
@@ -5993,6 +5999,224 @@ Value* builtin_f64_from_bytes(Value *arg) {
     return make_num(d);
 }
 
+/* ---- DEFLATE codecs (inflate/deflate, #684) ----
+ * Thin wrappers over the system zlib (-lz), gated behind
+ * EIGENSCRIPT_EXT_ZLIB — the same EIGENSCRIPT_EXT_* mechanism the http
+ * variant uses. Default OFF so the minimal build stays zero-dependency;
+ * compiled without zlib the four names stay registered but raise a
+ * catchable runtime error, so a script can feature-detect with
+ * try/catch instead of dying on "undefined variable".
+ *
+ * Byte representation mirrors read_bytes/write_bytes exactly: input is
+ * a list of ints 0-255 (values taken mod 256, non-numbers read as 0)
+ * or a VAL_BUFFER; output is always a fresh list of ints 0-255.
+ *
+ * inflate/deflate are the RAW DEFLATE pair (windowBits -15) — the ZIP
+ * member format, so .xlsx/.ods entries are readable. zlib_inflate/
+ * zlib_deflate are the zlib-wrapped pair; zlib_inflate uses windowBits
+ * 15+32, which auto-detects zlib AND gzip headers — that is what makes
+ * plain .gz files readable.
+ */
+#if EIGENSCRIPT_EXT_ZLIB
+
+/* Inflate is an amplifier: a few KB of DEFLATE can expand without bound
+ * (zip bomb). Cap the decompressed size like the other size caps
+ * (read_bytes 10 MB, read_bytes_buf 512 MB): over the cap is a loud,
+ * catchable `limit` error, never silent truncation. 256 MiB matches the
+ * sandbox_run default allocation budget. */
+#define EIGS_INFLATE_MAX_OUT ((unsigned long)256 * 1024 * 1024)
+
+/* Shared argument extraction for the four codecs: accept the byte
+ * representations write_bytes accepts and copy them into a malloc'd
+ * byte array. Returns 1 on success; on a wrong-shape argument raises
+ * `type` and returns 0. */
+static int zlib_bytes_arg(Value *arg, const char *who,
+                          unsigned char **out, size_t *out_n) {
+    *out = NULL;
+    *out_n = 0;
+    int n = 0;
+    Value **items = NULL;
+    double *bufd = NULL;
+    if (arg && arg->type == VAL_LIST) {
+        n = arg->data.list.count;
+        items = arg->data.list.items;
+    } else if (arg && arg->type == VAL_BUFFER) {
+        n = arg->data.buffer.count;
+        bufd = arg->data.buffer.data;
+    } else {
+        rt_error(EK_TYPE, 0,
+                 "%s requires a list of byte values (0-255) or a buffer, got %s",
+                 who, val_type_name(arg ? arg->type : VAL_NULL));
+        return 0;
+    }
+    unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
+    for (int i = 0; i < n; i++) {
+        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
+                          : bufd[i];
+        b[i] = (unsigned char)((int)dv & 0xFF);
+    }
+    *out = b;
+    *out_n = (size_t)n;
+    return 1;
+}
+
+/* Wrap a finished byte buffer as the list-of-ints result value (the
+ * read_bytes shape). Takes ownership of nothing; caller still frees. */
+static Value *zlib_bytes_result(const unsigned char *buf, unsigned long n) {
+    Value *result = make_list((int)n);
+    for (unsigned long i = 0; i < n; i++)
+        list_append_owned(result, make_num((double)buf[i]));
+    return result;
+}
+
+/* Shared inflate core. window_bits selects the wrapper (-15 raw,
+ * 15+32 zlib/gzip auto-detect). A corrupt or truncated stream raises a
+ * catchable `value` error; output over EIGS_INFLATE_MAX_OUT raises
+ * `limit` (the zip-bomb bound). */
+static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
+    unsigned char *src;
+    size_t src_n;
+    if (!zlib_bytes_arg(arg, who, &src, &src_n)) return make_null();
+
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    if (inflateInit2(&zs, window_bits) != Z_OK) {
+        free(src);
+        rt_error(EK_INTERNAL, 0, "%s: inflateInit2 failed", who);
+        return make_null();
+    }
+    size_t cap = src_n * 3 + 64;
+    if (cap > EIGS_INFLATE_MAX_OUT) cap = EIGS_INFLATE_MAX_OUT;
+    unsigned char *out = xmalloc(cap);
+    int zrc = Z_OK;
+    for (;;) {
+        if (zs.avail_in == 0 && zs.total_in < src_n) {
+            /* uInt is 32-bit: feed a >4 GiB input in chunks. */
+            zs.next_in = src + zs.total_in;
+            unsigned long rem = src_n - zs.total_in;
+            zs.avail_in = (uInt)(rem > UINT_MAX ? UINT_MAX : rem);
+        }
+        if (zs.total_out == cap) {
+            if (cap >= EIGS_INFLATE_MAX_OUT) break; /* limit raise below */
+            size_t ncap = cap * 2;
+            if (ncap > EIGS_INFLATE_MAX_OUT) ncap = EIGS_INFLATE_MAX_OUT;
+            out = xrealloc(out, ncap);
+            cap = ncap;
+        }
+        zs.next_out = out + zs.total_out;
+        zs.avail_out = (uInt)(cap - zs.total_out);
+        zrc = inflate(&zs, Z_NO_FLUSH);
+        if (zrc == Z_STREAM_END) break;
+        if (zrc != Z_OK) break;
+        if (zs.avail_out != 0 && zs.total_in == src_n) {
+            /* Output not full yet zlib made no progress: input ran out
+             * mid-stream — truncated. */
+            zrc = Z_BUF_ERROR;
+            break;
+        }
+    }
+    if (zrc != Z_STREAM_END) {
+        if (zrc == Z_OK && zs.total_out >= EIGS_INFLATE_MAX_OUT) {
+            inflateEnd(&zs);
+            free(out);
+            free(src);
+            rt_error(EK_LIMIT, 0,
+                     "%s: decompressed output exceeds the %lu-byte cap",
+                     who, EIGS_INFLATE_MAX_OUT);
+            return make_null();
+        }
+        const char *msg = zs.msg;
+        inflateEnd(&zs);
+        free(out);
+        free(src);
+        rt_error(EK_VALUE, 0, "%s: invalid or truncated compressed stream (%s)",
+                 who, msg ? msg : "unexpected end of input");
+        return make_null();
+    }
+    unsigned long n = zs.total_out;
+    inflateEnd(&zs);
+    free(src);
+    Value *result = zlib_bytes_result(out, n);
+    free(out);
+    return result;
+}
+
+/* Shared deflate core (dual of zlib_inflate_impl). The output buffer is
+ * deflateBound-sized up front, so a single Z_FINISH pass always fits. */
+static Value *zlib_deflate_impl(const char *who, int window_bits, Value *arg) {
+    unsigned char *src;
+    size_t src_n;
+    if (!zlib_bytes_arg(arg, who, &src, &src_n)) return make_null();
+
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, window_bits,
+                     8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        free(src);
+        rt_error(EK_INTERNAL, 0, "%s: deflateInit2 failed", who);
+        return make_null();
+    }
+    uLong bound = deflateBound(&zs, (uLong)src_n);
+    unsigned char *out = xmalloc(bound > 0 ? bound : 1);
+    size_t pos = 0;
+    int zrc = Z_OK;
+    for (;;) {
+        if (zs.avail_in == 0 && pos < src_n) {
+            unsigned long rem = src_n - pos;
+            uInt chunk = (uInt)(rem > UINT_MAX ? UINT_MAX : rem);
+            zs.next_in = src + pos;
+            zs.avail_in = chunk;
+            pos += chunk;
+        }
+        int flush = (pos == src_n && zs.avail_in == 0) ? Z_FINISH : Z_NO_FLUSH;
+        zs.next_out = out + zs.total_out;
+        zs.avail_out = (uInt)(bound - zs.total_out);
+        zrc = deflate(&zs, flush);
+        if (zrc == Z_STREAM_END) break;
+        if (zrc != Z_OK && zrc != Z_BUF_ERROR) break;
+        if (flush == Z_FINISH) break; /* cannot happen with bound space */
+    }
+    if (zrc != Z_STREAM_END) {
+        const char *msg = zs.msg;
+        deflateEnd(&zs);
+        free(out);
+        free(src);
+        rt_error(EK_INTERNAL, 0, "%s: deflate failed (%s)",
+                 who, msg ? msg : "unknown zlib error");
+        return make_null();
+    }
+    unsigned long n = zs.total_out;
+    deflateEnd(&zs);
+    free(src);
+    Value *result = zlib_bytes_result(out, n);
+    free(out);
+    return result;
+}
+
+Value* builtin_inflate(Value *arg)      { return zlib_inflate_impl("inflate", -15, arg); }
+Value* builtin_zlib_inflate(Value *arg) { return zlib_inflate_impl("zlib_inflate", 15 + 32, arg); }
+Value* builtin_deflate(Value *arg)      { return zlib_deflate_impl("deflate", -15, arg); }
+Value* builtin_zlib_deflate(Value *arg) { return zlib_deflate_impl("zlib_deflate", 15, arg); }
+
+#else /* !EIGENSCRIPT_EXT_ZLIB */
+
+/* Minimal build: the names exist so scripts can feature-detect (and the
+ * sandbox allowlist can name real builtins), but every call raises a
+ * clear catchable error pointing at the zlib build. */
+static Value *zlib_unavailable(const char *who) {
+    rt_error(EK_VALUE, 0,
+             "%s: compiled without zlib support (rebuild with `make zlib`)",
+             who);
+    return make_null();
+}
+
+Value* builtin_inflate(Value *arg)      { (void)arg; return zlib_unavailable("inflate"); }
+Value* builtin_zlib_inflate(Value *arg) { (void)arg; return zlib_unavailable("zlib_inflate"); }
+Value* builtin_deflate(Value *arg)      { (void)arg; return zlib_unavailable("deflate"); }
+Value* builtin_zlib_deflate(Value *arg) { (void)arg; return zlib_unavailable("zlib_deflate"); }
+
+#endif /* EIGENSCRIPT_EXT_ZLIB */
+
 /* write_bytes of [path, data, append?] — write raw bytes to a file.
  * `data` is a list of byte ints or a buffer (values taken mod 256). `append`
  * (optional, default 0): 0 truncates the file, nonzero appends. Returns the
@@ -6963,6 +7187,12 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "str_from_bytes", make_builtin(builtin_str_from_bytes));
     env_set_local_owned(env, "f64_to_bytes", make_builtin(builtin_f64_to_bytes));
     env_set_local_owned(env, "f64_from_bytes", make_builtin(builtin_f64_from_bytes));
+    /* DEFLATE codecs (#684) — registered unconditionally; the bodies
+     * raise "compiled without zlib support" when EIGENSCRIPT_EXT_ZLIB=0. */
+    env_set_local_owned(env, "inflate", make_builtin(builtin_inflate));
+    env_set_local_owned(env, "zlib_inflate", make_builtin(builtin_zlib_inflate));
+    env_set_local_owned(env, "deflate", make_builtin(builtin_deflate));
+    env_set_local_owned(env, "zlib_deflate", make_builtin(builtin_zlib_deflate));
     env_set_local_owned(env, "buf_copy", make_builtin(builtin_buf_copy));
     env_set_local_owned(env, "buf_mix", make_builtin(builtin_buf_mix));
     env_set_local_owned(env, "buf_scale_range", make_builtin(builtin_buf_scale_range));
