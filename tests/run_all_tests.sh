@@ -2469,6 +2469,46 @@ else
     echo "$LCO_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi
 echo ""
+# [124] DEFLATE codecs (inflate/deflate + zlib-wrapped duals, #684) —
+# probe-gated like [44] HTTP: the minimal build keeps the names as
+# "compiled without zlib support" stubs (zero-dependency posture), so the
+# real-codec suite only runs under the `make zlib` binary.
+ZLIB_PROBE_FILE=$(mktemp /tmp/eigs_zlib_probe_XXXXXX.eigs)
+cat > "$ZLIB_PROBE_FILE" <<'PROBE'
+d is deflate of [0]
+print of d
+PROBE
+ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1)
+rm -f "$ZLIB_PROBE_FILE"
+
+if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
+    echo "[124] DEFLATE Codecs (#684, 22 checks)"
+    INF_OUTPUT=$(./eigenscript ../tests/test_inflate.eigs 2>&1); INF_OUTPUT_RC=$?
+    if rc_ok "$INF_OUTPUT_RC" "$INF_OUTPUT" && echo "$INF_OUTPUT" | grep -q "DEFLATE_ALL_PASS"; then
+        TOTAL=$((TOTAL + 22))
+        PASS=$((PASS + 22))
+        echo "  PASS: all 22 inflate/deflate checks"
+    else
+        TOTAL=$((TOTAL + 22))
+        FAIL=$((FAIL + 22))
+        echo "  FAIL: inflate/deflate tests"
+        echo "$INF_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+    fi
+    echo ""
+else
+    # Minimal build: the four names stay registered but must raise the
+    # documented catchable error (the zero-dependency gating contract).
+    echo "[124] DEFLATE Codecs (#684) — minimal build, stub check (1 check)"
+    TOTAL=$((TOTAL + 1))
+    if echo "$ZLIB_PROBE_OUT" | grep -q "deflate: compiled without zlib support"; then
+        PASS=$((PASS + 1))
+        echo "  PASS: zlib-gated stub raises 'compiled without zlib support'"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: zlib stub missing or mis-phrased (probe: '$ZLIB_PROBE_OUT')"
+    fi
+    echo ""
+fi
 
 # [65] sort_by builtin
 echo "[65] Sort By (9 checks)"

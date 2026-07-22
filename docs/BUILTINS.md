@@ -188,6 +188,28 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
 compound assignment (`buf[i] += val`).
 
+### Compression
+
+DEFLATE codecs (#684), thin wrappers over the system zlib. Byte
+representation mirrors `read_bytes`/`write_bytes`: input is a list of
+ints 0–255 (values taken mod 256) or a buffer; output is always a fresh
+list of ints 0–255. Corrupt or truncated input raises a catchable
+`value` error; decompressed output is capped at 256 MiB (`limit`,
+zip-bomb bound).
+
+Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
+-lz`) — the minimal build stays zero-dependency: the four names are
+still registered there (so `type of inflate` is `builtin` and the
+sandbox allowlist can name them) but every call raises `value`:
+"compiled without zlib support". Feature-detect with try/catch.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `inflate` | `inflate of <list\|buffer>` | Raw DEFLATE decompression (windowBits −15) — the ZIP member format, so `.xlsx`/`.ods` entries are readable. Dual of `deflate`. |
+| `deflate` | `deflate of <list\|buffer>` | Raw DEFLATE compression (windowBits −15, default level). Dual of `inflate`. |
+| `zlib_inflate` | `zlib_inflate of <list\|buffer>` | Wrapped decompression with windowBits 15+32: auto-detects **zlib AND gzip** headers — this is what makes plain `.gz` files readable (`read_bytes of path` then `zlib_inflate`). Dual of `zlib_deflate`. |
+| `zlib_deflate` | `zlib_deflate of <list\|buffer>` | zlib-wrapped compression (RFC 1950 header, default level). Dual of `zlib_inflate`. |
+
 ### JSON
 
 | Name | Signature | Description |
