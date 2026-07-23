@@ -33,6 +33,7 @@ RUN apt-get update \
         ca-certificates \
         git \
         libpq-dev \
+        zlib1g-dev \
         postgresql-client \
         python3 \
         gdb \
