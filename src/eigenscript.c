@@ -1458,7 +1458,7 @@ char* value_to_string(Value *v) {
             double n = v->data.num;
             /* Exact integers up to 2^53 (the largest integer all doubles
              * represent exactly) print without a decimal point or exponent. */
-            if (n == (long long)n && fabs(n) < 9007199254740992.0) {
+            if (fabs(n) < 9007199254740992.0 && n == (long long)n) {
                 snprintf(buf, sizeof(buf), "%lld", (long long)n);
             } else {
                 /* Shortest representation that round-trips: try 15..17
