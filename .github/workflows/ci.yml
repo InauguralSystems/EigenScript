@@ -307,6 +307,14 @@ jobs:
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
+        name: Build zlib variant
+        run: make zlib
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against zlib build (executes DEFLATE section [124])
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true'
         name: Compile-check LSP
         run: make lsp
 
