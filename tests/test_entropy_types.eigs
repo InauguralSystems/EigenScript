@@ -1,0 +1,61 @@
+# test_entropy_types.eigs — every ValType the observer can be handed must be
+# measured, not assigned a plausible-looking constant.
+#
+# VAL_JSON_RAW returned a flat 0.0 while holding the very bytes VAL_STR
+# measures properly. The failure mode is the dangerous one: 0.0 is not an
+# obviously wrong number, it is the number a *quiet* binding has. So a
+# json_raw document could grow without bound and the observer reported
+# entropy 0, dH exactly 0, and classified it `equilibrium` forever — a
+# confident wrong answer rather than a visible gap.
+#
+# The compile-time half of this guard lives in compute_entropy_impl: the
+# switch has no `default:` and no trailing fallthrough value, so under
+# -Werror=switch a new ValType is a BUILD failure instead of a silent 0.0.
+# That cannot be tested from here; this file covers the runtime half.
+
+pass_count is 0
+total is 0
+
+define check(label, cond) as:
+    total is total + 1
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        print of f"FAIL: {label}"
+
+# --- 1. identical bytes measure identically whichever type holds them ---
+doc is "{\"a\":1,\"b\":[2,3,4],\"name\":\"widget\",\"desc\":\"a longer string\"}"
+s is doc
+j is json_raw of doc
+hs is (observe of s)[1]
+hj is (observe of j)[1]
+check of ["json_raw measures the same bytes as str", abs of (hs - hj) < 0.000000001]
+check of ["and that measurement is not zero", hj > 0.0]
+
+# --- 2. a growing document must move the entropy channel ---
+# Pre-fix this was 0 at every step, so `dH stays 0` passed vacuously and the
+# binding classified `equilibrium` while the payload doubled.
+pad is ""
+moved is 0
+prev_h is 0.0
+for i in range of 5:
+    pad is pad + "abcdefghijklmnopqrstuvwxyz0123456789"
+    g is json_raw of ("{\"payload\":\"" + pad + "\"}")
+    h is (observe of g)[1]
+    if i > 0:
+        if abs of (h - prev_h) > 0.000000001:
+            moved is moved + 1
+    prev_h is h
+check of ["a growing json_raw moves entropy across iterations", moved >= 3]
+
+# --- 3. empty / absent content is still legitimately zero ---
+# Guards the fix from overcorrecting: 0.0 must stay the answer where 0.0 is
+# the truth, so the value keeps meaning "quiet" rather than "unmeasured".
+e is json_raw of ""
+check of ["an empty json_raw is genuinely 0", (observe of e)[1] == 0.0]
+
+print of f"Entropy type coverage: {pass_count}/{total} passed"
+if pass_count == total:
+    print of "ENTROPY_TYPES_ALL_PASS"
+else:
+    assert of [0, "Some entropy type tests failed"]
