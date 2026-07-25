@@ -947,6 +947,33 @@ static inline int *env_assign_counts_ptr(Env *e) {
     return e->assign_counts;
 }
 
+/* #694: bounds-checked observer-slot access for an env the MAIN thread may
+ * grow concurrently. Same class as env_values_ptr, but obs needs the CAP and
+ * the POINTER to be read consistently, so the two are ordered against each
+ * other: the writer (observer_obs_grow) publishes the new block with a
+ * release store and only THEN the new cap, also release. A reader that loads
+ * cap first (acquire) and the pointer second (acquire) therefore sees either
+ *   - the old cap, with an old-or-new block — both hold >= old_cap slots,
+ *     since the new block is a superset copy and the old one is retired, or
+ *   - the new cap, which by the release/acquire chain guarantees the new
+ *     block is already visible.
+ * Reading them in the other order would admit new-cap-with-old-block, i.e. an
+ * out-of-bounds read of the retired array. Returns NULL when idx is out of
+ * range, so callers replace the `idx < e->obs_cap && e->obs[idx].used` idiom
+ * with a null check. Single-threaded: plain loads behind one predicted-false
+ * branch. */
+static inline struct ObserverSlot *env_obs_slot(Env *e, int idx) {
+    if (!e || idx < 0) return NULL;
+    if (__builtin_expect(g_vm_multithreaded, 0)) {
+        int cap = __atomic_load_n(&e->obs_cap, __ATOMIC_ACQUIRE);
+        if (idx >= cap) return NULL;
+        struct ObserverSlot *o = __atomic_load_n(&e->obs, __ATOMIC_ACQUIRE);
+        return o ? &o[idx] : NULL;
+    }
+    if (idx >= e->obs_cap || !e->obs) return NULL;
+    return &e->obs[idx];
+}
+
 Env* env_new(Env *parent);
 void env_set(Env *env, const char *name, Value *val);
 Value* env_get(Env *env, const char *name);

@@ -31,11 +31,8 @@ Value* builtin_observe(Value *arg);
  * disagree on loop classification (the same lockstep invariant the opcode
  * encoding enforces). Returns 1 if (*dH, *ent) were filled. */
 static inline int obs_stall_trajectory(double *dH, double *ent) {
-    if (g_last_obs_slot_env &&
-        g_last_obs_slot_idx >= 0 &&
-        g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap &&
-        g_last_obs_slot_env->obs[g_last_obs_slot_idx].used) {
-        const ObserverSlot *s = &g_last_obs_slot_env->obs[g_last_obs_slot_idx];
+    const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
+    if (s && s->used) {
         *dH = s->dH; *ent = s->entropy;
         return 1;
     }
@@ -163,7 +160,7 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
          * (OBSERVE_ASSIGN_LOCAL / OBSERVE_NAME_POST), and recycled call envs
          * reset both counters (vm_park_call_env), preserving per-call
          * semantics: max() of the two is the true assignment count. */
-        const ObserverSlot *os = (e->obs && i < e->obs_cap) ? &e->obs[i] : NULL;
+        const ObserverSlot *os = env_obs_slot(e, i);
         long when = e->assign_counts ? e->assign_counts[i] : -1;
         if (os && os->used && os->obs_age > when) when = os->obs_age;
         char whenbuf[16];
@@ -1260,8 +1257,9 @@ void jit_helper_report_slot(int slot) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *result;
-    if (e && slot < e->obs_cap && e->obs[slot].used) {
-        result = make_str(observer_slot_report(&e->obs[slot]));
+    const ObserverSlot *os_r = env_obs_slot(e, (int)slot);
+    if (os_r && os_r->used) {
+        result = make_str(observer_slot_report(os_r));
     } else {
         result = make_str("equilibrium");  /* unobserved binding — no trajectory */
     }
@@ -1291,8 +1289,8 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
         /* #262 Phase-3 D2: slot-source the temporal snapshot — mirror of the
          * interpreter CASE(OBSERVE_NAME_POST). */
         if (__builtin_expect(g_trace_obs_hist, 0)) {
-            const ObserverSlot *os = &oe->obs[oidx];
-            trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
+            const ObserverSlot *os = env_obs_slot(oe, oidx);
+            if (os) trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
         }
     }
 }
@@ -4374,8 +4372,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *result;
-        if (e && (int)slot < e->obs_cap && e->obs[slot].used) {
-            result = make_str(observer_slot_report(&e->obs[slot]));
+        const ObserverSlot *os_l = env_obs_slot(e, (int)slot);
+        if (os_l && os_l->used) {
+            result = make_str(observer_slot_report(os_l));
         } else {
             result = make_str("equilibrium");  /* unobserved binding */
         }
@@ -4399,8 +4398,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         Value *result;
-        if (oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
-            result = make_str(observer_slot_report(&oe->obs[oidx]));
+        const ObserverSlot *os_n = env_obs_slot(oe, oidx);
+        if (os_n && os_n->used) {
+            result = make_str(observer_slot_report(os_n));
         } else {
             result = make_str("equilibrium");  /* unobserved binding */
         }
@@ -4415,8 +4415,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *result;
-        if (e && (int)slot < e->obs_cap)
-            result = make_str(observer_slot_report_value(&e->obs[slot]));
+        const ObserverSlot *vs_l = env_obs_slot(e, (int)slot);
+        if (vs_l)
+            result = make_str(observer_slot_report_value(vs_l));
         else
             result = make_str("equilibrium");
         vm_push(result);
@@ -4438,8 +4439,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         Value *result;
-        if (oidx >= 0 && oidx < oe->obs_cap)
-            result = make_str(observer_slot_report_value(&oe->obs[oidx]));
+        const ObserverSlot *vs_n = env_obs_slot(oe, oidx);
+        if (vs_n)
+            result = make_str(observer_slot_report_value(vs_n));
         else
             result = make_str("equilibrium");
         vm_push(result);
@@ -4453,7 +4455,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * (classifies "equilibrium", mirroring report_value's fallback). */
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
-        const ObserverSlot *s = (e && (int)slot < e->obs_cap) ? &e->obs[slot] : NULL;
+        const ObserverSlot *s = env_obs_slot(e, (int)slot);
         vm_push(observer_slot_trajectory(s));
         DISPATCH();
     }
@@ -4472,7 +4474,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push_slot(slot_null());
             DISPATCH();
         }
-        const ObserverSlot *s = (oidx >= 0 && oidx < oe->obs_cap) ? &oe->obs[oidx] : NULL;
+        const ObserverSlot *s = env_obs_slot(oe, oidx);
         vm_push(observer_slot_trajectory(s));
         DISPATCH();
     }
@@ -4482,8 +4484,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * from the local's slot trajectory; no-observation tuple if unpopulated. */
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
-        if (e && (int)slot < e->obs_cap && e->obs[slot].used) {
-            const ObserverSlot *s = &e->obs[slot];
+        const ObserverSlot *s = env_obs_slot(e, (int)slot);
+        if (s && s->used) {
             Value *list = make_list(4);
             list_append_owned(list, make_str(observer_slot_report(s)));
             list_append_owned(list, make_num(s->entropy));
@@ -4505,8 +4507,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
-        if (oe && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
-            const ObserverSlot *s = &oe->obs[oidx];
+        const ObserverSlot *s = env_obs_slot(oe, oidx);
+        if (s && s->used) {
             Value *list = make_list(4);
             list_append_owned(list, make_str(observer_slot_report(s)));
             list_append_owned(list, make_num(s->entropy));
@@ -4546,8 +4548,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                      * fresh; its history entry was created by the SET's
                      * trace_assign). */
                     if (__builtin_expect(g_trace_obs_hist, 0)) {
-                        const ObserverSlot *os = &oe->obs[oidx];
-                        trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
+                        const ObserverSlot *os = env_obs_slot(oe, oidx);
+                        if (os) trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
                     }
                 }
             }
@@ -4623,8 +4625,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * yet, so the answer matches the value path. */
             int oidx = -1, odepth = 0;
             Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
-            if (oe && oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used) {
-                const ObserverSlot *s = &oe->obs[oidx];
+            const ObserverSlot *s = env_obs_slot(oe, oidx);
+            if (s && s->used) {
                 if (kind == 3)      result = make_num(s->entropy);
                 else if (kind == 4) result = make_num(s->dH);
                 else                result = make_num(observer_settledness(s->dH));
@@ -4835,9 +4837,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * the predicate is false. */
         uint16_t kind = read_u16(ip); ip += 2;
         int result = 0;
-        if (g_last_obs_slot_idx >= 0 && g_last_obs_slot_env &&
-            g_last_obs_slot_idx < g_last_obs_slot_env->obs_cap) {
-            const ObserverSlot *s = &g_last_obs_slot_env->obs[g_last_obs_slot_idx];
+        const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
+        if (s) {
             switch (kind) {
             case 0: result = observer_slot_converged(s);   break;
             case 1: result = observer_slot_stable(s);      break;
@@ -4859,8 +4860,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         int result = 0;
-        if (e && (int)slot < e->obs_cap && e->obs[slot].used)
-            result = vm_slot_predicate(&e->obs[slot], kind);
+        const ObserverSlot *ps_l = env_obs_slot(e, (int)slot);
+        if (ps_l && ps_l->used)
+            result = vm_slot_predicate(ps_l, kind);
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }
@@ -4881,8 +4883,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         int result = 0;
-        if (oidx >= 0 && oidx < oe->obs_cap && oe->obs[oidx].used)
-            result = vm_slot_predicate(&oe->obs[oidx], kind);
+        const ObserverSlot *ps_n = env_obs_slot(oe, oidx);
+        if (ps_n && ps_n->used)
+            result = vm_slot_predicate(ps_n, kind);
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }
