@@ -1,0 +1,163 @@
+# Observer behavior on LARGE containers (#706).
+#
+# Every other observer test uses small values, so nothing in the suite exercised
+# how compute_entropy treats a container with many children. That blind spot is
+# not theoretical: a deliberately broken entropy walk — one that estimates a
+# container's entropy from a bounded sample of K children instead of all of them
+# — passed all 3196 checks at both K=256 and K=64, while reporting a dH 44-58x
+# too large on a growing container. A confidently wrong instrument, green.
+#
+# These checks pin the two properties such a break violates, in both directions:
+#
+#   GROWTH IS QUIET   appending one element to a large container is a tiny,
+#                     gray-band change. An estimator whose sample SHIFTS when
+#                     the count changes (e.g. stride sampling) manufactures dH
+#                     an order of magnitude above dh_small, turning a quietly
+#                     growing sheet into a false `diverging`.
+#
+#   DEPTH IS VISIBLE  changing an element far past any plausible sampling cap
+#                     must move entropy. An estimator that only reads the first
+#                     K children (head truncation) is stable under growth but
+#                     reports EXACTLY zero here — a false `stable` over real
+#                     change, which is the failure eigen-sheet would hit, since
+#                     recalc mutates values spread throughout a large dict.
+#
+# The two are deliberately in tension: the cheap fixes each satisfy one and fail
+# the other. Passing both is what says the walk is still exhaustive.
+#
+# Thresholds are the documented defaults (docs/PREDICATES.md):
+#   dh_zero = 0.001   dh_small = 0.01
+
+load_file of "lib/test.eigs"
+
+DH_SMALL is 0.01
+BIG is 1200          # comfortably past any plausible per-container sample cap
+DEEP is 900          # an index far past one, too
+STEPS is 40          # enough growth steps that a shifting sample accumulates
+
+# TRAP (cost me a false pass while writing this): a binding assigned inside a
+# LOOP BODY gets a fresh loop env each iteration, so its observer slot resets
+# and `(observe of it)[2]` reads 0 EVERY time. An assertion of the form
+# "dH stays small" over such a binding passes because the channel is dead, not
+# because the value is quiet. So the growth checks below difference the ENTROPY
+# channel (o[1]) across iterations themselves rather than trusting o[2] from a
+# loop-local binding.
+
+define log2(v) as:
+    return (log of v) / (log of 2)
+
+# ---------------------------------------------------------------------------
+# 1. GROWTH IS QUIET — one append to a large list is a gray-band change
+# ---------------------------------------------------------------------------
+l is []
+for i in range of BIG:
+    append of [l, i * 7 % 101]
+
+growth_max is 0
+prev_h is 0
+for step in range of STEPS:
+    append of [l, step * 13 % 101]
+    lx is l
+    h is (observe of lx)[1]
+    if step > 0:
+        d is h - prev_h
+        if d < 0:
+            d is 0 - d
+        if d > growth_max:
+            growth_max is d
+    prev_h is h
+
+assert_true of [growth_max < DH_SMALL, f"list: one append to a {BIG}-element list stays under dh_small (got {growth_max})"]
+
+# same for a dict
+d1 is {}
+for i in range of BIG:
+    dict_set of [d1, str of i, i * 7 % 101]
+
+dgrowth_max is 0
+dprev_h is 0
+for step in range of STEPS:
+    dict_set of [d1, f"new{step}", step * 13 % 101]
+    dx is d1
+    dh is (observe of dx)[1]
+    if step > 0:
+        dd is dh - dprev_h
+        if dd < 0:
+            dd is 0 - dd
+        if dd > dgrowth_max:
+            dgrowth_max is dd
+    dprev_h is dh
+
+assert_true of [dgrowth_max < DH_SMALL, f"dict: one insert into a {BIG}-key dict stays under dh_small (got {dgrowth_max})"]
+
+# ---------------------------------------------------------------------------
+# 2. DEPTH IS VISIBLE — a change past any sample cap must move entropy
+# ---------------------------------------------------------------------------
+# All-identical content, so the ONLY thing that can move entropy is the one
+# element we change. A walk that never reads index DEEP reports exactly 0.
+flat is []
+for i in range of BIG:
+    append of [flat, 5]
+fa is flat
+h_before is (observe of fa)[1]
+set_at of [flat, DEEP, 999999]
+fb is flat
+h_after is (observe of fb)[1]
+delta is h_after - h_before
+if delta < 0:
+    delta is 0 - delta
+assert_true of [delta > 0, f"list: changing element {DEEP} of {BIG} moves entropy (got {delta})"]
+
+dflat is {}
+for i in range of BIG:
+    dict_set of [dflat, str of i, 5]
+da is dflat
+dh_before is (observe of da)[1]
+dict_set of [dflat, str of DEEP, 999999]
+db is dflat
+dh_after is (observe of db)[1]
+ddelta is dh_after - dh_before
+if ddelta < 0:
+    ddelta is 0 - ddelta
+assert_true of [ddelta > 0, f"dict: changing key {DEEP} of {BIG} moves entropy (got {ddelta})"]
+
+# ---------------------------------------------------------------------------
+# 3. THE SIZE TERM IS EXACT — derived, not a magic constant
+# ---------------------------------------------------------------------------
+# A container's entropy is mean(children) + log2(count+1). With all-identical
+# children the mean is the same at both sizes, so the difference between a
+# size-N and a size-2N container is PURELY the size term — a value this test
+# computes itself. Any change to the formula, or an estimator that perturbs the
+# mean as the count changes, breaks this without needing a hardcoded baseline.
+n1 is 500
+n2 is 1000
+s1 is []
+for i in range of n1:
+    append of [s1, 5]
+s2 is []
+for i in range of n2:
+    append of [s2, 5]
+a1 is s1
+a2 is s2
+measured is (observe of a2)[1] - (observe of a1)[1]
+expected is (log2 of (n2 + 1)) - (log2 of (n1 + 1))
+assert_near of [measured, expected, 0.000000001, "list: size term is exactly log2(count+1) across a 2x size change"]
+
+# identical content at identical size must give identical entropy — no
+# order/sampling dependence sneaking in
+t1 is []
+t2 is []
+for i in range of 700:
+    append of [t1, 3]
+    append of [t2, 3]
+b1 is t1
+b2 is t2
+assert_eq of [(observe of b1)[1], (observe of b2)[1], "list: identical large containers have identical entropy"]
+
+# and an unchanged large container re-observed gives EXACTLY zero dH
+u is t1
+u is t1
+assert_eq of [(observe of u)[2], 0, "list: re-observing an unchanged large container gives dH exactly 0"]
+
+test_summary of null
+print of "OBSERVER_LARGE_ALL_PASS"
