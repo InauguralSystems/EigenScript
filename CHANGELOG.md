@@ -25,6 +25,15 @@ bounds every block against a runaway, and derives its own tally from block
 output after the hand-synced literals were caught under-reporting by 169
 asserts (#654).
 
+**Upgrade notes.** Two changes are observable from outside. (1) `OP_LINE`'s
+operand widened from 16 to 32 bits (#630), which breaks any external producer
+of bytecode — see the entry below; `ouroboros` and `iLambdaAi` needed a
+downstream emitter fix. (2) `regex_match` now emits null for a
+non-participating capture group and continues, where it previously truncated
+the result there (#629) — correct per the documented "group n at index n"
+invariant, but code that consumed the truncated shape (such as EigenRegex's
+`compat_match` shim, which mirrored it deliberately) needs updating.
+
 ### Added
 - **DEFLATE codecs: `inflate` / `deflate` / `zlib_inflate` / `zlib_deflate`
   (#684).** Four thin wrappers over the system zlib, two dual pairs. `inflate`/
@@ -463,8 +472,20 @@ asserts (#654).
   assignments 65536 lines apart collapsed onto one stamp and `what is x at L`
   returned the wrong value at rc=0; runtime-error/stack-trace lines and the
   trace-tape line context were also silently wrong past line 65535 (the
-  regime generated programs reach). Widened to 32-bit; no opcode number or
-  on-disk format changed.
+  regime generated programs reach). Widened to 32-bit; no opcode number
+  changed. **Breaking for external bytecode producers**, which the original
+  fix did not call out: any program that hands the VM a chunk it built itself
+  — via `vm_run_bytecode` — must now emit a 4-byte `OP_LINE` operand. A 2-byte
+  emission leaves the VM reading the next instruction's first two bytes as the
+  high half of the line number and resuming misaligned, so the chunk executes
+  as garbage **silently, at rc=0**. Caught by the pre-bump consumer sweep, not
+  by CI: `ouroboros`'s self-hosted codegen (every behavioral-parity program
+  produced empty output while the bootstrap fixed point still passed) and
+  `iLambdaAi`'s grading ladder (every "runs" rung scored 1 instead of 2 — a
+  grader that quietly lost the ability to award its top grade). Both are fixed
+  downstream by emitting u32. Nothing upstream gates this class: consumers pin
+  a release, so a mid-release operand-width change cannot fail their CI until
+  the bump.
 - **`relu`/`leaky_relu`/`softmax`/`log_softmax` returned a silent null on a
   scalar (#632).** `tensor_to_flat` reports 0 dims for a `VAL_NUM`, and the
   four did `if (!flat) return make_null()`, so the null poisoned downstream
