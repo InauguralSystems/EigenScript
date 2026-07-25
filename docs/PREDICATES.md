@@ -36,8 +36,12 @@ assigned top-level value (`g_last_observer`):
 | `obs_age` | number of observations since the value first existed | `update_observer` |
 
 The ring buffer is allocated lazily on the *second* observation (the
-first push only happens once `obs_age >= 1`), so a binding that is never
-interrogated anywhere in the program pays no allocation. Arena values skip the buffer entirely —
+first push only happens once `obs_age >= 1`), so a binding
+assigned exactly once pays no allocation. Note the gate is the second
+*observation*, not interrogation: a binding nothing ever queries still allocates
+its window on its second assignment, because the observe op is emitted
+unconditionally (see [OBSERVER.md](OBSERVER.md#cost)). `unobserved:` is what
+avoids it. Arena values skip the buffer entirely —
 they cannot be tracked across resets.
 
 `window` below means the `dh_window` contents oldest→newest;

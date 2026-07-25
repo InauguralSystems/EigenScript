@@ -394,8 +394,10 @@ Absolute paths (starting with `/`) are used verbatim with no fallback.
 
 ## Interrogatives — Ask Your Code
 
-Every value in EigenScript tracks its own observer state. Interrogatives
-are the query interface — zero cost when you don't ask:
+Every value in EigenScript tracks its own observer state. Interrogatives are
+the query interface. Asking costs nothing extra — the state is maintained as
+you go — but that maintenance is paid on every assignment outside
+`unobserved:`, whether or not anything asks ([OBSERVER.md](OBSERVER.md#cost)):
 
 | Keyword | Returns | Example |
 |---------|---------|---------|

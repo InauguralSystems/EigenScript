@@ -6,6 +6,40 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **The observer's entropy walk now stops at a reference (#685).** A list or
+  dict computes entropy over its own elements; an element that is itself a
+  container contributes only its size term `log2(count+1)` and is not entered.
+  This is the rule buffers and text builders always followed — they hold raw
+  bytes and doubles, so there were never child values to recurse into — and a
+  dict holding a 5-element list now measures exactly as one holding a
+  5-element buffer.
+
+  An observed assignment therefore costs the value's *own* size, never
+  everything it can reach. The reported case (a short-lived binding
+  referencing a large live structure) went from 4.93s to 0.049s at N=8000 and
+  is linear in N rather than merely faster. Cyclic and shared object graphs
+  are well-defined because they are never traversed, so #571's visited set and
+  the depth-64 cap are removed rather than ported.
+
+  **This is a semantics change**: a container's entropy no longer reflects the
+  contents of what it points at, only that thing's size. It could not
+  meaningfully reflect them before — nothing re-observes a binding when a
+  referenced structure is mutated in place, so a reachability-wide reading
+  went stale on the first such write (measured at 6.2M mutations onto
+  already-summarized values per fleet run). Flat containers, scalars and
+  trajectories are unchanged; only reference-bearing values move.
+
+- **`json_raw` values are measured instead of reported as 0 (#709).**
+  `VAL_JSON_RAW` holds the same `data.str` a string does, but the entropy walk
+  returned a flat `0.0` for it — so a `json_raw` document could grow without
+  bound while the observer reported entropy 0, dH exactly 0, and classified it
+  `equilibrium`. It now shares the string byte-frequency entropy.
+
+  The walk's `switch` also lost its silent catch-all: it has no `default:` and
+  no trailing fallthrough value, and the build gains `-Werror=switch`, so a new
+  value type is a compile error at that switch rather than a plausible-looking
+  `0.0`. `VAL_FN` still returns a constant `1.0` — tracked as #708.
+
 - **Bytecode chunk descriptors now carry an ABI revision (#704).**
   `vm_run_bytecode` and `sandbox_run` take
   `[abi, code, constants, functions?, param_count?, name?, local_names?]`, where
