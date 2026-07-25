@@ -2,6 +2,40 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **Bytecode chunk descriptors now carry an ABI revision (#704).**
+  `vm_run_bytecode` and `sandbox_run` take
+  `[abi, code, constants, functions?, param_count?, name?, local_names?]`, where
+  `abi` is the `EIGS_BYTECODE_ABI` (currently `1`) the producer was built
+  against. A missing or mismatched revision raises (kind `value`) — or, through
+  `sandbox_run`, returns `{ok: 0}` with a message naming the revision — instead
+  of executing. Nested function descriptors are unchanged and carry no stamp.
+
+  This closes the half of the bytecode ABI that was never guarded. Opcode
+  *numbers* have had a `_Static_assert` guard since #262; operand *widths* had
+  nothing, so v0.33.0 widening `OP_LINE` 16→32 bits (#630) renumbered no opcode,
+  kept every upstream guard green, and still misaligned every external
+  producer's chunks — ouroboros emitted empty output for all 44 parity programs
+  at exit 0 with its byte-comparing `bootstrap fixed point` still passing, and
+  iLambdaAi's grading ladder silently lost its top rung. Consumers pin a
+  release, so their CI structurally cannot warn before the bump. A stale
+  producer is now refused by name.
+
+  Bump `EIGS_BYTECODE_ABI` (src/vm.h) on any opcode renumbering, mid-enum
+  insert, or operand-width change; appending a new opcode at the end does not
+  need one. Producers hardcode the revision as a literal — a producer that read
+  the runtime's current value back would always agree, which is why no builtin
+  exposes it.
+
+  **Breaking for external bytecode producers**, which must add the stamp:
+  `ouroboros/src/codegen.eigs` and its vendored copy
+  `iLambdaAi/lib/ouro_codegen.eigs`, landing with their `EIGS_REF` bump.
+  Also breaking in one smaller way: a non-list descriptor now raises instead of
+  returning `null`.
+
 ## [0.33.0] - 2026-07-24
 
 The **silent-wrong-answer release**, plus the primitives the app fleet forced.
