@@ -265,7 +265,7 @@ goal was never something it could see.
 A static type proves *shape* — `num`, `list`, `str`. It cannot state *"this
 solver converges"* or *"this residual shrinks without oscillating."* Those are
 properties of a **trajectory**, and the observer already classifies them on
-every assignment, for free. `lib/contract.eigs` turns that classification into a
+every assignment, without you writing the check. `lib/contract.eigs` turns that classification into a
 machine-checked assertion — the affirmative answer to "what replaces static
 types here."
 
@@ -377,15 +377,31 @@ One observation stands (not a defect — a property to know):
   computed then and there. So `report of x` after a batch of writes reflects the
   whole window, not just the last value, and `loop while not converged` sees
   each step because each `x is …` sampled it. `unobserved:` is the only thing
-  that skips the push. "Zero cost until you ask" holds at compile-flag
-  granularity — a binding you *never* interrogate anywhere is never tracked —
-  not per-read.
+  that skips the push — and the only thing that does. A binding you never
+  interrogate anywhere is still sampled on every assignment; see **Cost**.
 
 ## Cost
 
-Zero until you ask, at compile-flag granularity: a binding no part of the
-program ever interrogates is never sampled and allocates nothing. Once a binding
-*is* interrogated somewhere, every assignment to it (outside `unobserved:`)
-pushes a window sample and computes entropy/dH in O(1). So you pay per-write for
-the bindings you observe and nothing for the rest; an `unobserved:` block opts a
-hot region back out.
+**Every assignment outside `unobserved:` pays, whether or not anything ever
+interrogates the binding.** The compiler emits an observe op for every
+assignment unconditionally (`emit_assign_for_tos`, src/compiler.c) — nothing in
+the emission consults whether the name is queried. A program containing zero
+observer queries still computes an entropy per assignment; the #685 reproducer
+asks nothing and paid 16M entropy-node visits before the walk was bounded.
+
+Per assignment the entropy costs:
+
+| value | cost |
+|---|---|
+| number | O(1) |
+| string / `json_raw` | O(length) — 256-bin frequency count |
+| buffer / text builder | O(1) — the size term alone |
+| list / dict | **O(its own element count)** — a nested container contributes only its size term and is not entered (#685) |
+
+A container assignment is linear in that container's *own* size, never in
+everything it can reach; that distinction is what #685 was. The dH ring buffer
+is allocated lazily on a binding's **second** observation — again regardless of
+interrogation.
+
+`unobserved:` is the only opt-out, and it is a real one: it skips the emission,
+so a hot region inside it pays nothing.

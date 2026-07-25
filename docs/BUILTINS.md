@@ -232,7 +232,10 @@ sandbox allowlist can name them) but every call raises `value`:
 
 ## Interrogatives
 
-Six keywords for querying a value's observer state. Zero cost when unused.
+Six keywords for querying a value's observer state. Asking is cheap — the
+state is already there — but note that maintaining it is not free: every
+assignment outside `unobserved:` is sampled whether or not you ever ask. See
+[OBSERVER.md](OBSERVER.md#cost).
 
 | Name | Syntax | Returns |
 |------|--------|---------|
