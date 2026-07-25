@@ -148,6 +148,27 @@ All notable changes to EigenScript are documented here.
   by pointing the instrument at itself.
 
 ### Fixed
+- **MT use-after-free: module-env observer-slot growth raced unlocked worker
+  reads (#694).** `observer_slot_update_e` grew `env->obs` with a bare
+  `realloc` + non-atomic pointer store while holding no lock, and the
+  `report of` / `when is` / predicate opcodes read a chain-resolved env's
+  `obs` array outside any lock. A worker reading a MODULE binding's observer
+  slot concurrently with the main thread first-observing a NEW module binding
+  therefore walked a freed array — the exact use-after-free class #607 fixed
+  for `names`/`values`/`assign_counts`, which `obs` was never brought into.
+  The window is narrow (module obs grows only on a binding's *first*
+  observation, only on the main thread), which is why it never bit in
+  practice. `obs` now follows the same #607 discipline: growth on a shared
+  module env copies into a fresh block under `g_module_env_lock`, RETIRES the
+  old one (freed at park/destroy) instead of freeing it, and publishes the
+  pointer with a release store — then the cap, also release. Readers go
+  through the new `env_obs_slot()` accessor, which loads cap *then* pointer
+  with acquires; the reverse order would admit new-cap-with-old-block, an
+  out-of-bounds read of the retired array. Single-threaded and thread-local
+  frame envs keep the plain realloc and plain loads behind one
+  predicted-false branch, so there is no cost off the MT path. New TSan
+  regression `test_obs_mt_race.eigs` (in the `test_tsan.sh` race-free slice)
+  reports 5 data races without the fix and 0 with it.
 - **`report_value` no longer calls a monotone converging sequence
   `diverging` (#674).** The value channel's raw-step divergence test (#422)
   judged a window's steps "non-vanishing" when the recent half's mean

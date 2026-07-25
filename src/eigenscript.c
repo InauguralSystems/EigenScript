@@ -536,18 +536,22 @@ void observer_slot_record_value(ObserverSlot *s, double v) {
     s->v_used = 1;
 }
 
+/* #694: grow e->obs to cover `idx`. Defined with the #607 module-env MT
+ * helpers below (it needs the lock + retire machinery). Returns 0 on OOM. */
+static int observer_obs_grow(Env *e, int idx);
+
 /* Core: fold a precomputed entropy into binding slot `idx` of env `e`. */
 static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     if (!e || idx < 0) return;
-    if (idx >= e->obs_cap) {
-        int ncap = idx + 8;
-        ObserverSlot *no = realloc(e->obs, (size_t)ncap * sizeof(ObserverSlot));
-        if (!no) return;
-        memset(no + e->obs_cap, 0, (size_t)(ncap - e->obs_cap) * sizeof(ObserverSlot));
-        e->obs = no;
-        e->obs_cap = ncap;
-    }
-    ObserverSlot *s = &e->obs[idx];
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    /* Acquire-load the (possibly just-republished) block rather than reading
+     * e->obs plainly: a worker assigning a module binding can reach here while
+     * the main thread grows. Which block a racing writer lands in is #607's
+     * declared out-of-scope case (same-slot value semantics, not array memory
+     * safety) — retirement keeps either block alive — but the POINTER word
+     * itself must still be synchronized. */
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (!s) return;
     s->prev_dH = s->dH;
     if (!s->used || s->obs_age == 0) {
         s->dH = 0;                 /* first observation of this binding */
@@ -565,8 +569,10 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
     observer_slot_update_e(e, idx, compute_entropy(newval));
     /* #294 also fold the raw value into the value-signal channel (numbers only:
      * the relative-delta step is only defined for a scalar trajectory). */
-    if (newval && newval->type == VAL_NUM && e && idx >= 0 && idx < e->obs_cap)
-        observer_slot_record_value(&e->obs[idx], newval->data.num);
+    if (newval && newval->type == VAL_NUM) {
+        ObserverSlot *s = env_obs_slot(e, idx);
+        if (s) observer_slot_record_value(s, newval->data.num);
+    }
 }
 
 /* #262 Phase-3 D: update a binding's observer slot from a raw immediate
@@ -574,8 +580,8 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
  * tracked Value. Same trajectory math as observer_slot_update. */
 void observer_slot_update_num(Env *e, int idx, double num) {
     observer_slot_update_e(e, idx, entropy_of_num(num));
-    if (e && idx >= 0 && idx < e->obs_cap)      /* #294 value-signal channel */
-        observer_slot_record_value(&e->obs[idx], num);
+    ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
+    if (vs) observer_slot_record_value(vs, num);
 }
 
 void observer_slot_reset(Env *e) {
@@ -1695,6 +1701,50 @@ static void env_grow_retire(Env *env, int new_cap) {
     __atomic_store_n(&env->values, nv, __ATOMIC_RELEASE);
     __atomic_store_n(&env->assign_counts, na, __ATOMIC_RELEASE);
     env->capacity = new_cap;
+}
+
+/* #694: grow the observer-slot array to cover binding `idx`.
+ *
+ * Single-threaded (and for every thread-local frame/loop env) this stays the
+ * plain realloc it always was. On a SHARED module env under MT it mirrors the
+ * #607 discipline exactly, because the hazard is identical: worker threads
+ * read a chain-resolved module env's obs array with no lock held (report of /
+ * when is on a module binding), while the main thread first-observes a new
+ * module binding and grows it. A realloc there frees the block a worker is
+ * still walking — the same use-after-free class #607 fixed for
+ * names/values/assign_counts, and the reason this one survived is that module
+ * obs grows only on the FIRST observation of a binding, so the window is
+ * narrow enough never to have been hit in practice.
+ *
+ * So: copy into a fresh block, RETIRE the old one (freed at park/destroy,
+ * bounded by the same geometric-waste argument), publish the pointer with a
+ * release store, and only then publish the wider cap — see env_obs_slot for
+ * why that store order is load-bearing. */
+static int observer_obs_grow(Env *e, int idx) {
+    int ncap = idx + 8;
+    size_t nsz = (size_t)ncap * sizeof(ObserverSlot);
+    size_t osz = (size_t)e->obs_cap * sizeof(ObserverSlot);
+    if (!env_mt_shared(e)) {
+        ObserverSlot *no = realloc(e->obs, nsz);
+        if (!no) return 0;
+        memset((char *)no + osz, 0, nsz - osz);
+        e->obs = no;
+        e->obs_cap = ncap;
+        return 1;
+    }
+    pthread_mutex_lock(&g_module_env_lock);
+    if (idx >= e->obs_cap) {              /* re-check: another grow may have won */
+        osz = (size_t)e->obs_cap * sizeof(ObserverSlot);
+        ObserverSlot *no = malloc(nsz);
+        if (!no) { pthread_mutex_unlock(&g_module_env_lock); return 0; }
+        if (e->obs) memcpy(no, e->obs, osz);
+        memset((char *)no + osz, 0, nsz - osz);
+        env_retire_block(e, e->obs);
+        __atomic_store_n(&e->obs, no, __ATOMIC_RELEASE);
+        __atomic_store_n(&e->obs_cap, ncap, __ATOMIC_RELEASE);
+    }
+    pthread_mutex_unlock(&g_module_env_lock);
+    return 1;
 }
 
 /* Hash rebuild for a shared env under MT: same sizing as
