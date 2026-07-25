@@ -465,10 +465,12 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
             Value *promoted = promote_if_arena(val);
             if (promoted != val) {
                 val_decref(dict->data.dict.vals[ce->index]);
+                ent_cache_invalidate(dict);   /* #685 */
                 dict->data.dict.vals[ce->index] = promoted;
             } else {
                 val_incref(val);
                 val_decref(dict->data.dict.vals[ce->index]);
+                ent_cache_invalidate(dict);   /* #685 */
                 dict->data.dict.vals[ce->index] = val;
             }
             return;
@@ -1687,6 +1689,7 @@ void jit_helper_index_set(void) {
                     existing->data.num = val_s.d;
                 } else {
                     val_decref(existing);
+                    ent_cache_invalidate(target);   /* #685 */
                     target->data.list.items[i] = make_num(val_s.d);
                 }
             } else {
@@ -1709,6 +1712,7 @@ void jit_helper_index_set(void) {
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             val_incref(val);
             val_decref(target->data.list.items[i]);
+            ent_cache_invalidate(target);   /* #685 */
             target->data.list.items[i] = val;
         } else {
             rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
@@ -3875,6 +3879,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         existing->data.num = val_s.d;
                     } else {
                         val_decref(existing);
+                        ent_cache_invalidate(target);   /* #685 */
                         target->data.list.items[i] = make_num(val_s.d);
                     }
                 } else {
@@ -3897,6 +3902,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 val_incref(val);
                 val_decref(target->data.list.items[i]);
+                ent_cache_invalidate(target);   /* #685 */
                 target->data.list.items[i] = val;
             } else {
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);

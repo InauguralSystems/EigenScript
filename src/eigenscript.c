@@ -386,7 +386,7 @@ static int ent_visited_add(EntVisited *vis, Value *v) {
 static double compute_entropy_impl(Value *v, int depth, EntVisited *vis);
 
 #define ENT_CACHE_SLOTS 1024u
-typedef struct { Value *key; double h; } EntCacheEnt;
+typedef struct { Value *key; double h; int n; } EntCacheEnt;
 static EntCacheEnt g_ent_cache[ENT_CACHE_SLOTS];
 
 static inline uint32_t ent_cache_slot(const Value *v) {
@@ -440,7 +440,17 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
             /* #685: depth 64 is the C-stack cutoff — children there return 0.0,
              * so a value computed at that depth is NOT the same function of the
              * container and must never enter the cache. */
-            int cacheable = !g_vm_multithreaded && !v->arena && depth < 64;
+            /* #685: DICTS ONLY. Every dict write funnels through
+             * dict_set_hashed, so one hook makes invalidation provably
+             * complete. List element stores are scattered across many
+             * unfunnelled sites (vm.c, builtins, extensions) and the verifier
+             * caught one that survived hooking every site I could find — so
+             * lists stay uncached rather than shipping a memo whose
+             * invalidation I cannot prove. This still covers the reported
+             * workload end to end: eigen-sheet's `vals` and `cells` are both
+             * flat dicts, as is the issue's repro. */
+            int cacheable = v->type == VAL_DICT &&
+                            !g_vm_multithreaded && !v->arena && depth < 64;
             uint32_t cs = ent_cache_slot(v);
             if (cacheable && g_ent_cache[cs].key == v) {
                 double hit = g_ent_cache[cs].h;
@@ -453,10 +463,14 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
                 double check = ent_flat_mean(v, depth, vis);
                 if (!(fabs(check - hit) <= 1e-12 * (fabs(check) + 1.0))) {
                     fprintf(stderr,
-                            "[ent-cache] STALE ENTRY for %p: cached mean %.17g, "
-                            "recomputed %.17g — a container mutation site is "
-                            "missing an ent_cache_invalidate() call (#685)\n",
-                            (void *)v, hit, check);
+                            "[ent-cache] STALE ENTRY for %p (%s): cached mean "
+                            "%.17g over n=%d, recomputed %.17g over n=%d — %s "
+                            "path is missing an ent_cache_invalidate() (#685)\n",
+                            (void *)v,
+                            v->type == VAL_LIST ? "list" : "dict",
+                            hit, g_ent_cache[cs].n, check, n,
+                            g_ent_cache[cs].n == n ? "an in-place element-write"
+                                                   : "a resize (append/insert/remove)");
                     abort();
                 }
 #endif
@@ -478,7 +492,7 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
                 }
             }
             double mean = sum / n;
-            if (cacheable && flat) { g_ent_cache[cs].key = v; g_ent_cache[cs].h = mean; }
+            if (cacheable && flat) { g_ent_cache[cs].key = v; g_ent_cache[cs].h = mean; g_ent_cache[cs].n = n; }
             return mean + size_term;
         }
         case VAL_FN: return 1.0;
@@ -1290,6 +1304,11 @@ Value* make_dict(int capacity) {
 
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
     if (!dict || dict->type != VAL_DICT) return;
+    /* #685: THE funnel for every dict write — dict_set/dict_set_owned and the
+     * VM's dot/index assignment (which calls here directly with a precomputed
+     * hash) all land here. Hooking the funnel rather than its callers is what
+     * makes the memo's invalidation complete. */
+    ent_cache_invalidate(dict);
     if (h == 0) h = env_hash_name(key);
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx >= 0) {
