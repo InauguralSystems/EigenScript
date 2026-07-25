@@ -377,6 +377,32 @@ __attribute__((destructor)) static void obs_stats_dump(void) {
 }
 #endif
 
+static double compute_entropy_impl(Value *v, int depth, EntVisited *vis);
+
+#ifdef EIGS_OBS_STATS
+/* #685 SHALLOW-ENTROPY EXPERIMENT (measurement build only). EIGS_OBS_SHALLOW=1
+ * stops the walk at a REFERENCE: a container's entropy is still computed over
+ * its own slots (scalar children contribute exactly as today), but a child
+ * that is itself a container contributes only its O(1) size term instead of
+ * fanning out into everything it reaches. Cost becomes O(own size) rather than
+ * O(reachable), which is the #685 shape. The question this build answers is
+ * what the deep recursion is currently load-bearing FOR. */
+static int obs_shallow(void) {
+    static int v = -1;
+    if (v < 0) { const char *e = getenv("EIGS_OBS_SHALLOW"); v = (e && *e == '1'); }
+    return v;
+}
+static double ent_child(Value *c, int depth, EntVisited *vis) {
+    if (obs_shallow() && c && (c->type == VAL_LIST || c->type == VAL_DICT)) {
+        int n = (c->type == VAL_LIST) ? c->data.list.count : c->data.dict.count;
+        return log2((double)n + 1.0);
+    }
+    return compute_entropy_impl(c, depth + 1, vis);
+}
+#else
+#define ent_child(c, depth, vis) compute_entropy_impl((c), (depth) + 1, (vis))
+#endif
+
 static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
 #ifdef EIGS_OBS_STATS
     g_obs_ent_nodes++;
@@ -402,7 +428,7 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
             if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
             double sum = 0.0;
             for (int i = 0; i < v->data.list.count; i++)
-                sum += compute_entropy_impl(v->data.list.items[i], depth + 1, vis);
+                sum += ent_child(v->data.list.items[i], depth, vis);
             return sum / v->data.list.count + log2(v->data.list.count + 1);
         }
         case VAL_DICT: {
@@ -410,7 +436,7 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
             if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
             double sum = 0.0;
             for (int i = 0; i < v->data.dict.count; i++)
-                sum += compute_entropy_impl(v->data.dict.vals[i], depth + 1, vis);
+                sum += ent_child(v->data.dict.vals[i], depth, vis);
             return sum / v->data.dict.count + log2(v->data.dict.count + 1);
         }
         case VAL_FN: return 1.0;
