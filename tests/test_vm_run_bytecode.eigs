@@ -1,7 +1,14 @@
 # vm_run_bytecode — the self-hosting bootstrap bridge. Assemble a chunk from
 # EigenScript values (code bytes + constant pool) and run it on the C VM.
-# Opcodes/operands are exactly what compile_ast emits (16-bit operands are
-# little-endian); this is what an EigenScript-written compiler will produce.
+# Opcodes/operands are exactly what compile_ast emits (operands are
+# little-endian, 16-bit except OP_LINE's, which is 32-bit since #630); this is
+# what an EigenScript-written compiler will produce.
+#
+# This file is the ABI contract for external bytecode producers (ouroboros'
+# self-hosted codegen, iLambdaAi's vendored copy of it). Changing an opcode's
+# NUMBER or its OPERAND WIDTH breaks every one of them silently — a misaligned
+# chunk runs as garbage at rc=0 — and their CI cannot see it, because they pin
+# a release. So any such change belongs here, in the same PR (#704).
 
 load_file of "lib/test.eigs"
 
@@ -152,5 +159,26 @@ catch es348:
     sl348 is 1
 assert_eq of [sl348, 1, "SET_LOCAL out-of-range slot raises (#348)"]
 assert_eq of [vm_run_bytecode of [[GET_LOCAL,255,255, RETURN], []], null, "GET_LOCAL out-of-range reads null (missing-param semantics)"]
+
+# --- #630/#704: OP_LINE's operand is 32-bit, and that width IS the ABI ---
+# #630 widened this operand from 16 to 32 bits. No opcode number changed, so
+# nothing here failed — this file emitted no OP_LINE at all — and the break
+# only surfaced at the next consumer bump, where ouroboros produced empty
+# output for every program and iLambdaAi's grader lost its top rung. Both were
+# silent: rc=0, no error, just a chunk executing misaligned garbage.
+LINE is 68
+# well-formed: OP_LINE <line:32> then 2 + 3. A 4-byte operand keeps the stream
+# aligned, so this is 5. Emit three bytes instead and ADD lands on the wrong
+# byte — which is exactly what every external producer did on the v0.33.0 bump.
+assert_eq of [vm_run_bytecode of [[LINE,7,0,0,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "OP_LINE 32-bit operand keeps the stream aligned"]
+# the pre-#630 shape — OP_LINE + 2 operand bytes — must NOT still evaluate to 5.
+# It is either verifier-rejected or misaligned garbage; either way the contract
+# is that it is no longer the arithmetic the producer intended.
+old_shape is vm_run_bytecode of [[LINE,7,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
+assert of [old_shape != 5, "pre-#630 16-bit OP_LINE emission no longer silently works"]
+# a line number past 65535 — the regime #630 exists for — survives the operand.
+assert_eq of [vm_run_bytecode of [[LINE,161,134,1,0, CONST,0,0, RETURN], [99]], 99, "OP_LINE carries a line past 65535 (#630)"]
+# truncated 32-bit operand is rejected by the verifier, not read off the end.
+assert_eq of [vm_run_bytecode of [[LINE,7,0,0], []], null, "verify: truncated OP_LINE operand rejected"]
 
 test_summary of null

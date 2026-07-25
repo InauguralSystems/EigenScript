@@ -1,8 +1,8 @@
 # Roadmap
 
-Current version: **0.32.0**
+Current version: **0.33.0**
 
-Recently shipped (0.28.0 → 0.32.0, 2026-07-08 → 07-16):
+Recently shipped (0.28.0 → 0.33.0, 2026-07-08 → 07-24):
 
 - **0.29.0** — the strategic headline landed: the **deterministic
   cooperative task layer on the tape** (#408, seeded scheduler, zero
@@ -22,6 +22,13 @@ Recently shipped (0.28.0 → 0.32.0, 2026-07-08 → 07-16):
   #594) surfaced by DeslanStudio's port and closed, including `menu_bar`
   (#565), `handle_key`/`request_quit` (#563/#564), self-measuring `label`
   (#561), and `dialog` children + `file_dialog` (#575).
+- **0.33.0** — the silent-wrong-answer release plus the primitives the app
+  fleet forced: the plausible-but-wrong-at-rc=0 sweep (`regex_match` #629,
+  `json_decode` #628, four stdlib math bugs #638–#641, import top-level scope
+  #673, the listcomp/local double binding #633/#642, `report_value` #674), the
+  DEFLATE codecs behind `make zlib` (#684), tape-captured `clock_unix` (#683),
+  four C-backed list operations (#543/#544), `kill -USR1` live observer dumps
+  (#660), and the test-runner integrity pass (#681/#648/#654).
 
 Full per-version detail lives in [CHANGELOG.md](CHANGELOG.md) — this file
 is forward-looking.

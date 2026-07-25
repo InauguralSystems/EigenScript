@@ -2,9 +2,88 @@
 
 All notable changes to EigenScript are documented here.
 
-## [Unreleased]
+## [0.33.0] - 2026-07-24
+
+The **silent-wrong-answer release**, plus the primitives the app fleet forced.
+Two threads run through it. The first is a sweep of the highest-yield failure
+class — a plausible-but-wrong value returned at rc=0, where nothing warns and
+nothing crashes: `regex_match` deleting every capture after a non-participating
+group (#629), `json_decode` silently truncating long numbers by 50 orders of
+magnitude (#628), four stdlib math functions returning confidently wrong numbers
+(#638-#641), a module's top-level assignment rebinding its *importer's* global
+(#673), a comprehension variable and a same-named local splitting into two
+bindings so program text after a statement changed that statement's result
+(#633/#642), and the observer itself calling a converging sequence `diverging`
+(#674) while its learning-rate gate certified a still-moving system as settled.
+The second is the primitive layer: four DEFLATE codecs (#684), a tape-captured
+`clock_unix` (#683), and four C-backed list operations (#543/#544) — every one
+of them requested by a consumer that had hit the wall (`.xlsx` import, `TODAY()`,
+interpreter-speed list scans) rather than speculated. `kill -USR1` now makes a
+running process report how each of its bindings is progressing (#660), and the
+test runner learned to distrust itself: it fingerprints the binary mid-run,
+bounds every block against a runaway, and derives its own tally from block
+output after the hand-synced literals were caught under-reporting by 169
+asserts (#654).
+
+**Upgrade notes.** Two changes are observable from outside. (1) `OP_LINE`'s
+operand widened from 16 to 32 bits (#630), which breaks any external producer
+of bytecode — see the entry below; `ouroboros` and `iLambdaAi` needed a
+downstream emitter fix. (2) `regex_match` now emits null for a
+non-participating capture group and continues, where it previously truncated
+the result there (#629) — correct per the documented "group n at index n"
+invariant, but code that consumed the truncated shape (such as EigenRegex's
+`compat_match` shim, which mirrored it deliberately) needs updating.
 
 ### Added
+- **DEFLATE codecs: `inflate` / `deflate` / `zlib_inflate` / `zlib_deflate`
+  (#684).** Four thin wrappers over the system zlib, two dual pairs. `inflate`/
+  `deflate` are raw DEFLATE (windowBits -15) — the ZIP member format, so
+  `.xlsx`/`.ods` entries are readable from script; `zlib_inflate`/`zlib_deflate`
+  are zlib-wrapped, and the inflate side auto-detects zlib *and* gzip headers
+  (windowBits 15+32), which is what makes a plain `.gz` readable. Byte
+  representation mirrors `read_bytes`/`write_bytes` exactly: a list of ints
+  0-255 or a buffer in, a fresh list of ints 0-255 out. Corrupt or truncated
+  input raises a catchable `value` error rather than crashing, and decompressed
+  output is capped at 256 MiB — a zip-bomb bound matching the `sandbox_run`
+  default budget. The zero-dependency minimal build is preserved through the
+  existing `EIGENSCRIPT_EXT_*` gate (default OFF, `make zlib` opts in, same
+  pattern as `make http`): compiled without zlib the four names stay
+  *registered*, so scripts can feature-detect with try/catch and the
+  fail-closed sandbox allowlist can name real builtins, but every call raises
+  "compiled without zlib support". All four are pure bytes-to-bytes and join
+  `SANDBOX_ALLOW`. `tests/test_inflate.eigs` (22 checks) covers round-trip
+  identity for both pairs including empty and 8 KB inputs, plus fixed known
+  vectors; CI runs them for real on a `make zlib` leg (#697) instead of the
+  probe-gated stub.
+- **`clock_unix` — a wall clock that still replays (#683).** Seconds since the
+  Unix epoch, routed through the trace-tape nondeterminism seam
+  (`eigs_trace_record_nondet` / `eigs_replay_take`), so a program that reads
+  the time replays byte-for-byte from its tape. The standing tape-first rule
+  applied to a new nondeterministic source: no untraced clock.
+- **`list_index_of` and `list_contains` (#543); `list_insert_at` and
+  `list_slice` (#544).** C-backed value search and range operations over lists,
+  using the VM's structural `value_equals` — the same comparison `==` uses — so
+  membership and index lookup no longer route a per-element closure call
+  through the interpreter. `list_insert_at of [list, i, v]` is the dual of
+  `list_remove_at`, `list_slice of [list, start, end]` the dual of `copy_into`,
+  so reorder and range-copy stop being hand-rolled interpreter-speed loops.
+- **`kill -USR1 <pid>` dumps the live observer state (#660).** Ask a running
+  process how it is progressing: one row per live binding to stderr —
+  `name | value | when=<assigns> | entropy=<H> | dH=<dH> | trajectory` — at the
+  next loop safepoint. The `sigaction` handler (SA_RESTART, installed by the
+  CLI) only sets a `volatile sig_atomic_t`; the dump itself runs in normal
+  thread context at the loop-cap per-iteration check, so the idle cost is one
+  flag test — unmeasurable on `bench_dmg_shape` (166ms -> 163ms, n=5 medians),
+  hence no `EIGS_OBSERVE` gate. The first thread to see the flag dumps (atomic
+  test-and-clear), covering module scope plus that thread's live call frame;
+  the module walk takes the existing #607 `g_module_env_lock` under MT, no new
+  locking scheme. Every row carries its assign count, so a fresh per-call
+  binding (`when=1`) reads differently from a settled one — the silent-tolerance
+  failure mode the issue was about. `env->assign_counts` alone cannot back that
+  (the SET_LOCAL fast path never bumps it), so the dump prints
+  `max(assign_counts, obs_age)`; unobserved slots say `unobserved` rather than
+  borrowing a window-less verdict. Driven against a live process by
+  `tests/test_sigusr1_dump.sh` with observable barriers rather than sleeps.
 - **`native_train_step` batched causal-mask training path (~10.75x faster).**
   The transformer trainer (model extension, used by iLambdaAi) re-ran a full
   forward+backward over the growing prefix for *every* target position in a
@@ -84,7 +163,6 @@ All notable changes to EigenScript are documented here.
   button geometry is now defined once (`_dialog_btn_rect`) instead of
   being recomputed by render and click separately.
 
-### Added
 - **`eigen_generate` accepts an optional 4th argument: `top_p` (nucleus
   sampling).** Keeps the smallest set of tokens whose cumulative probability
   reaches `p`, so the candidate set adapts to the model's confidence, rather
@@ -115,6 +193,26 @@ All notable changes to EigenScript are documented here.
   untrained model must score ln(vocab_size) — measured 7.004 against a
   predicted 7.011 at vocab=1109 — which simultaneously catches a missing
   max-subtraction (overflow to inf), a mis-indexed target, and sign errors.
+- **`build_corpus`: lossless slot-mode identifier encoding (#675) and exact
+  tokens for small integer literals (#678).** Both are optional args that stop
+  the corpus builder from erasing the information a model would need. Frequency
+  mode promoted the top-N identifiers and collapsed every other one onto a
+  single fallback token — 45.7% of all identifier occurrences at top_n=256 on
+  the 2026-07 ecosystem corpus. That is not a quality loss but an
+  *expressiveness* loss: `total is total + items[i]` encodes as `<ident> is
+  <ident> + <ident>[<ident>]`, so "assign the variable I just read" — the
+  property separating well-formed output from correct output — is not statable,
+  and no amount of training recovers it. Slot mode (6th arg) encodes local
+  names losslessly by position. Separately, every numeric literal tokenized to
+  one `TOK_NUM`, so `[1,2,3]` and `[0,0,0]` were indistinguishable; the 7th arg
+  `int_count=N` gives exact tokens to integers `[0, N)`. That erasure was
+  costly twice over: a specification written as assertions carried no
+  information (`(f of 4) == 1` and `(f of 3) == 0` arrive identical, so a model
+  graded on satisfying them has nothing to learn), and it manufactured
+  degenerate repetition — 5.3% of the corpus sits inside a short literal cycle
+  repeated 3+ times, essentially all of it routed through the collapsed literal
+  tokens. Integers 0-31 are 76% of numeric-literal occurrences and 7.7% of the
+  whole corpus.
 
 ### Changed
 - **`+` on two lists now names the fix (#680).** `[1,2] + [3,4]` reported
@@ -146,8 +244,159 @@ All notable changes to EigenScript are documented here.
   release threshold (default 1e-3). This is the observer's own failure mode —
   a meter blind to slow motion certifying a moving system as converged — found
   by pointing the instrument at itself.
+- **The test runner no longer trusts its own binary, its own liveness, or its
+  own arithmetic.** Three integrity gaps closed in one pass, all of the shape
+  "the suite reports success it did not earn":
+  - **Mid-run rebuild detection (#681).** Every build variant writes to the
+    same `src/eigenscript` path, so rebuilding while a suite runs silently
+    swaps the binary underneath it. The runner now records cksum+size+mtime at
+    start, re-checks at section boundaries and at the end, and aborts loudly
+    on mismatch. Section `[99d]` swaps the binary from a background step and
+    asserts the guard fires.
+  - **Runaway guards (#648, #616, #651, #656).** `check_eigs_suite` ran each
+    file with no timeout, so one infinite loop hung the whole suite until the
+    CI hard limit instead of reporting a failure. A shared `$EIGS_TMO`
+    (timeout -> gtimeout -> none, mirroring `[97]`) now wraps it and reports
+    rc=124 as a named failure that lets subsequent blocks run; the budget is a
+    deliberately generous 180s (`EIGS_TEST_TIMEOUT`) — a backstop, not a
+    latency assertion, so it never fires on a slow-but-working test on the
+    N3350. `[97]`'s own too-tight `timeout 60` is fixed in the same pass
+    (`invariant_weak.eigs` is ~60.5s standalone under ASan). Section `[99c]`
+    drives a genuinely non-terminating fixture through the real
+    `check_eigs_suite` to prove the guard fires *and* is tallied exactly. The
+    last unguarded interpreter call — `[60]` Terminal Builtins — got the same
+    shape plus `</dev/null` (#656): it reads stdin, so any environment holding
+    stdin open wedged the suite forever rather than failing.
+  - **Derived tallies (#654).** 23 blocks hard-coded a "(N checks)" label and a
+    `TOTAL/PASS += N` literal kept in sync by hand. The literals had drifted
+    **169 asserts below reality** (headline 2890, true 3059) — and the same
+    mechanism could as easily over-report, which would be a coverage lie. Each
+    block's count is now parsed from its own output, with the historical
+    literal as a documented fallback and a visible stderr NOTE whenever a
+    self-reporting block falls back unexpectedly.
+- **A docs-only fast lane in CI (#643).** A `.md`-only PR ran all 15 legs —
+  ~10 minutes of a contributor's wall-clock, set almost entirely by one 8m36s
+  ASan run, plus two macOS runners, a postgres service and the freestanding
+  symbol gate, to prove a paragraph did not break the sanitizers. Both external
+  contributions that week paid it in full. A `scope` job now diffs the PR
+  against its base and guards the expensive *steps*. Steps rather than jobs is
+  the only safe shape: `asan + ubsan (full suite)` is a required status check,
+  and a required check that is SKIPPED never reports — GitHub treats
+  never-reported as unsatisfied, so an `if:` on the job would block the merge
+  forever. The jobs still run and report green in seconds.
 
 ### Fixed
+- **`regex_match` deleted every capture after a non-participating group
+  (#629).** The builtin used a fixed `regmatch_t[16]` and a loop whose
+  *condition* tested `matches[i].rm_so >= 0`. POSIX sets `rm_so = -1` for a
+  group that did not participate — an unmatched optional `(x)?` — so the first
+  such group terminated emission and dropped every later capture:
+  `regex_match of ["ab", "(x)?(a)(b)"]` returned `["ab"]` instead of the full
+  match plus three groups. Independently, groups past 15 vanished silently (a
+  17-group pattern returned 16 elements). Both broke the docs/BUILTINS.md
+  invariant that group *n* sits at index *n*. The array is now sized from the
+  compiled pattern (`re.re_nsub + 1`) through the overflow-guarded
+  `xmalloc_array` — `re_nsub` is attacker-controlled through the pattern but
+  POSIX-bounded — that count is passed to `regexec`, the allocation is freed on
+  every path, and the participation test moved into the loop body, so a
+  non-participating group emits null and the ones after it still arrive.
+- **`json_decode` silently truncated long number tokens (#628).** A number
+  token was capped at 63 chars while the scanner kept going, so the dropped
+  tail vanished and `atof` parsed a wrong-magnitude prefix at rc=0: a
+  zero-padded `1.<60 zeros>e50` decoded to `1` — off by 50 orders of magnitude
+  — and a 70-digit integer to 1e62 instead of 1e69, diverging from the
+  runtime's own lexer. The `numbuf` is gone: the scanner already validates the
+  decimal JSON number grammar, so the token span is recorded and `strtod` runs
+  directly over it, correct at any length. The existing early returns for
+  malformed tails (`1e`, `1e+`, `1.`) are unchanged. `strtod` could only
+  overrun the scanned token via a C99 hex-float `0x` prefix — JSON has no hex
+  numbers, so the scanner stops at `x` — and that is guarded by verifying
+  `endptr` landed on the scanned end, re-parsing the isolated span on any
+  mismatch so the value stays tied to the grammar the scanner accepted.
+- **`pad_left` / `pad_right` hung forever on an empty pad char (#637).** Both
+  looped until the string reached `width`, growing it by the pad char each
+  pass; an empty pad char never grows it, so `pad_left of ["x", 5, ""]` never
+  terminated. The degenerate case now returns the string unchanged — the honest
+  reading of "pad with nothing" — matching the empty-arg guards `capitalize`
+  and `replace_all` already carry in the same file. Contract documented in
+  docs/STDLIB.md, with regression tests plus the previously-missing `pad_left`
+  normal-path coverage.
+- **Four stdlib functions returned confidently wrong numbers (#638, #639,
+  #640, #641).** Each produced a plausible-but-wrong value at rc=0 — the
+  highest-yield failure class — and each fix ships with a regression test
+  verified to fail on the pre-fix library.
+  - `punnett_square`: Aa x Aa read 1:1:1:1 instead of the canonical 1:2:1. The
+    heterozygous boxes "Aa" and "aA" are the same genotype but were keyed
+    distinctly; genotypes are now canonicalized so they fold.
+  - `power_iteration`: returned |lambda|, not lambda — it read the eigenvalue
+    off `|w| = |A v|`, which drops the sign, so `diag(-5, 1)` reported 5, a
+    number that is not an eigenvalue of that matrix at all. Now the Rayleigh
+    quotient over the pre-update vector. Positive spectra are unaffected.
+  - `correlation`: with mismatched lengths it paired `min(len)` elements but
+    centered them on the **full**-list means, so unpaired tail elements
+    corrupted the covariance. Centers on the paired prefix now.
+  - Two degenerate-input contracts: `factorial` of a negative returned 1 (via
+    `n <= 1`) though it is undefined — it now returns the 0 sentinel,
+    impossible for a real factorial and matching `combinations`' convention —
+    and `time_of_flight` could return a **negative** time when both roots of
+    `x = v0 t + ½ a t²` are negative; it returns the smallest non-negative
+    root, or the same 0 sentinel it already used for the no-real-root case.
+- **An imported module's top-level assignment rebound the importer's global
+  (#673).** A module's top-level `name is expr` walked `mod_env`'s parent chain
+  and rebound a same-named global in the **importer's** scope instead of
+  creating module state, so the module's own functions — and any later use in
+  the importer — resolved to the wrong binding. This is the top-level
+  counterpart of #373's function-write boundary, one level up: `import`'s own
+  compile of a module's top-level statements now forces `OP_SET_NAME_LOCAL`,
+  binding strictly within `mod_env`, gated by a compile-time flag set only
+  around that call. `load_file` is untouched — it shares #373's
+  function-boundary flag but never sets the new one — so its documented
+  "top-level statements execute directly in the current scope" contract still
+  holds, and docs/SPEC.md's module write boundary now states both rules
+  explicitly.
+- **A comprehension/`catch` name and a same-named assignment split into two
+  bindings (#633, #642).** A comprehension variable and a `catch` name bind by
+  name into the function env via `OP_SET_NAME_LOCAL`, but a plain `x is ...` of
+  the same name is slot-promoted to `OP_SET_LOCAL`. The two never met: the env
+  held one binding while the slot kept a stale value, so a slot read returned
+  the pre-comprehension value, and #642's half corrupted the comprehension's
+  own result — the body resolved `i` to the shadowed slot every iteration, so
+  `[-2, -2, -2]` came back instead of `[2, 4, 6]`, rc=0 with every element
+  wrong. Worse, `c->captured` was the only thing suppressing slot promotion, so
+  adding any closure or interrogative that merely *mentioned* the name —
+  anywhere in the body, never executed — flipped which binding an earlier read
+  saw: program text after a statement changed that statement's result.
+  Listcomp vars and catch names are now collected into a per-scope env-bound
+  name set (the mechanism that already keeps for-loop vars off the slot path),
+  routing a same-named plain assignment to `OP_SET_FN_NAME_LOCAL`. Thanks to
+  @Nitjsefnie for the fix. Its tests could not see #642 — all four read the
+  name *after* the comprehension — so SS20/SS20b now pin the body's own result
+  and SS21 is the control in the other direction, since a fix that de-promotes
+  too eagerly would break the ordinary comprehension.
+- **Undefined behavior in the float-to-`long long` cast in `value_to_string`
+  (#695).** The `VAL_NUM` case tested `n == (long long)n && fabs(n) < 2^53`,
+  evaluating the cast in the left conjunct *before* the magnitude guard; for
+  |n| >= 2^63 that conversion is UB (float-cast-overflow, flagged by
+  UBSan/CodeQL). The conjuncts are swapped so the range check short-circuits
+  and guards the cast; in-range behavior is unchanged. The observer dump's
+  string scan got the same treatment — range-check before dereference, and a
+  bounded truncation marker.
+- **`test_proc_stream` 8a raced the child instead of waiting for it (#604).** A
+  100k spin loop only *hoped* the child had been scheduled; under load it had
+  not, and the write returned 5. It now waits for child exit — `proc_wait`
+  waitpid()s the pid and leaves the parent's pipe fds open, so waiting before
+  writing pins the intended property: EPIPE from a dead child, not EBADF from a
+  closed handle.
+- **Three stale documented contracts a reader would have coded against
+  (#645).** `type`'s doc listed `"null"` as a return value, which
+  `builtin_type` never produces — it returns `"none"` — so `if type of x ==
+  "null":`, written straight from the doc, is silently and permanently false
+  (SPEC.md's CI-gated example had pinned the truth while BUILTINS.md
+  contradicted it); the four omitted types are now enumerated too. `buf_get`'s
+  doc promised "0 on out-of-bounds" long after #502 deliberately made it raise
+  `index_range`, so an unguarded scan loop written on that promise gets a hard
+  abort. And SPEC.md's error-kind table, introduced as a **closed** set,
+  omitted `deadlock` — which SPEC.md itself tells you to catch 350 lines later.
 - **LSP `import ` completion offered 34 of 75 stdlib modules (#692).** The
   completion list was a hand-maintained array in `src/eigenlsp.c` that had
   fallen 41 modules behind `lib/` — every `ui_w_*` widget module, the whole
@@ -223,8 +472,20 @@ All notable changes to EigenScript are documented here.
   assignments 65536 lines apart collapsed onto one stamp and `what is x at L`
   returned the wrong value at rc=0; runtime-error/stack-trace lines and the
   trace-tape line context were also silently wrong past line 65535 (the
-  regime generated programs reach). Widened to 32-bit; no opcode number or
-  on-disk format changed.
+  regime generated programs reach). Widened to 32-bit; no opcode number
+  changed. **Breaking for external bytecode producers**, which the original
+  fix did not call out: any program that hands the VM a chunk it built itself
+  — via `vm_run_bytecode` — must now emit a 4-byte `OP_LINE` operand. A 2-byte
+  emission leaves the VM reading the next instruction's first two bytes as the
+  high half of the line number and resuming misaligned, so the chunk executes
+  as garbage **silently, at rc=0**. Caught by the pre-bump consumer sweep, not
+  by CI: `ouroboros`'s self-hosted codegen (every behavioral-parity program
+  produced empty output while the bootstrap fixed point still passed) and
+  `iLambdaAi`'s grading ladder (every "runs" rung scored 1 instead of 2 — a
+  grader that quietly lost the ability to award its top grade). Both are fixed
+  downstream by emitting u32. Nothing upstream gates this class: consumers pin
+  a release, so a mid-release operand-width change cannot fail their CI until
+  the bump.
 - **`relu`/`leaky_relu`/`softmax`/`log_softmax` returned a silent null on a
   scalar (#632).** `tensor_to_flat` reports 0 dims for a `VAL_NUM`, and the
   four did `if (!flat) return make_null()`, so the null poisoned downstream

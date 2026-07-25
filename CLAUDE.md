@@ -146,28 +146,30 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.32.0** (2026-07-16) — the desktop-shell release:
-  lib/ui's gap series (#561–#577, #594), surfaced by DeslanStudio's port —
-  the toolkit's first real consumer — and closed. The toolkit now owns what
-  the shell hand-rolled: `handle_key` (#563, keyboard through `dispatch`
-  instead of trapped inside `app_loop`, priority pinned in one place),
-  `request_quit` (#564, ending the loop from a callback instead of `exit of
-  N` skipping `gfx_close`), clickable combobox dropdown items (#577 —
-  hit-test before closing, select by the click's own y, and exempt popups
-  from double-click detection), self-measuring `label` w/h + `auto_size`
-  (#561), `grid.owns_cells` + a configurable row-label gutter (#572),
-  piano-key release wherever the pointer lands (#570), hover feedback on
-  checkbox/toggle (#594), and **`menu_bar`** (#565 — owning its popup's
-  z-order via the `_render_popups` overlay pass + `_find_open_popup_at`,
-  since rendering above the tree is only half of z-order). Three of the ten
-  filed issues had already been fixed and were closed with probe output, not
-  re-fixed. (v0.31.0, 2026-07-14: DAW audio-I/O + live-synthesis — bulk
-  audio-I/O kernels #602/#603, the live audio-streaming primitive
-  `audio_stream_*` #612, `waveform_view` selection markers #610/#611.
-  v0.30.0, 2026-07-13: debugging-and-distribution + first-consumer —
-  `--step` tape stepper #418, tape format v2 #539, error carets/LSP ranges
-  #407, `--bundle` #413, entropy-walk cycle detection #571, gfx audio
-  capture #579 + buffer playback #578, the lib/ui input trio #567–#569.)
+- **Latest release: v0.33.0** (2026-07-24) — the silent-wrong-answer release,
+  plus the primitives the app fleet forced. A sweep of the plausible-but-wrong-
+  at-rc=0 class: `regex_match` dropping every capture after a non-participating
+  group (#629), `json_decode` truncating long numbers by 50 orders of magnitude
+  (#628), four stdlib math functions returning confidently wrong values
+  (#638–#641), a module's top-level assignment rebinding its *importer's*
+  global (#673), a comprehension var and a same-named local splitting into two
+  bindings so later program text changed an earlier statement's result
+  (#633/#642), `report_value` calling a converging sequence `diverging` (#674),
+  and an observer LR gate that measured 100% "stable" while the loss was still
+  falling. Primitives, each requested by a consumer that hit the wall: four
+  DEFLATE codecs behind `make zlib` (#684 — `.xlsx`/`.gz` readable from
+  script), tape-captured `clock_unix` (#683), and C-backed `list_index_of` /
+  `list_contains` / `list_insert_at` / `list_slice` (#543/#544). Plus
+  `kill -USR1` live observer dumps (#660) and a test runner that fingerprints
+  its own binary mid-run, bounds every block against a runaway, and derives its
+  tally from block output after the hand-synced literals were caught
+  under-reporting by 169 asserts (#654). (v0.32.0, 2026-07-16: the
+  desktop-shell release — lib/ui's gap series #561–#577/#594, surfaced by
+  DeslanStudio's port and closed, incl. `menu_bar` #565 and `handle_key` #563.
+  v0.31.0, 2026-07-14: DAW audio-I/O + live-synthesis — bulk audio-I/O kernels
+  #602/#603, `audio_stream_*` #612, `waveform_view` markers #610/#611.
+  v0.30.0, 2026-07-13: debugging-and-distribution — `--step` tape stepper #418,
+  tape format v2 #539, error carets/LSP ranges #407, `--bundle` #413.)
   Unreleased
   work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
   **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
