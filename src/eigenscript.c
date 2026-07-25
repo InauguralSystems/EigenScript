@@ -397,6 +397,18 @@ static int obs_shallow(void) {
     if (v < 0) { const char *e = getenv("EIGS_OBS_SHALLOW"); v = (e && *e == '1'); }
     return v;
 }
+/* #685 O(1) FLOOR. EIGS_OBS_SIZEONLY=1 records a container as *only* its size
+ * term log2(count+1) — no child is read at all, at any depth. This is the
+ * cheapest possible eager record, and the point of running it is to find out
+ * whether the trajectory channel (dH) survives on a record that never reads
+ * content. If it does, the eager cost can be driven to O(1) and deep-vs-shallow
+ * stops mattering for dH. If it doesn't, content must be read eagerly and
+ * shallow is the floor, not a compromise. */
+static int obs_sizeonly(void) {
+    static int v = -1;
+    if (v < 0) { const char *e = getenv("EIGS_OBS_SIZEONLY"); v = (e && *e == '1'); }
+    return v;
+}
 static double ent_child(Value *c, int depth, EntVisited *vis) {
     if (obs_shallow() && c && (c->type == VAL_LIST || c->type == VAL_DICT)) {
         int n = (c->type == VAL_LIST) ? c->data.list.count : c->data.dict.count;
@@ -430,6 +442,9 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
         }
         case VAL_LIST: {
             if (v->data.list.count == 0) return 0.0;
+#ifdef EIGS_OBS_STATS
+            if (obs_sizeonly()) return log2((double)v->data.list.count + 1.0);
+#endif
             if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
             double sum = 0.0;
             for (int i = 0; i < v->data.list.count; i++)
@@ -438,6 +453,9 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
         }
         case VAL_DICT: {
             if (v->data.dict.count == 0) return 0.0;
+#ifdef EIGS_OBS_STATS
+            if (obs_sizeonly()) return log2((double)v->data.dict.count + 1.0);
+#endif
             if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
             double sum = 0.0;
             for (int i = 0; i < v->data.dict.count; i++)
