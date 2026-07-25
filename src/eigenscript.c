@@ -423,6 +423,18 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
 }
 
 double compute_entropy(Value *v) {
+#ifdef EIGS_OBS_STATS
+    /* #685 CEILING PROBE (measurement build only). EIGS_OBS_NOENT=1 skips the
+     * O(reachable) walk while leaving the eager fold's bookkeeping intact
+     * (slot update, dH/window machinery, opcode dispatch). Two uses: timing
+     * delta bounds any fix that removes the walk, and as a PLANTED FAULT — any
+     * gate that claims to constrain container entropy must go red under it.
+     * Scalars observed via observer_slot_update_num reach entropy_of_num
+     * directly and are deliberately unaffected: the walk is container-only. */
+    static int noent = -1;
+    if (noent < 0) { const char *e = getenv("EIGS_OBS_NOENT"); noent = (e && *e == '1'); }
+    if (noent) return 0.0;
+#endif
     /* Scalar fast path: no container can be reached, so never touch (or
      * zero) the visited table — observed scalar assignments pay nothing. */
     if (!v || (v->type != VAL_LIST && v->type != VAL_DICT))
