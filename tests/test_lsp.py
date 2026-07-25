@@ -227,6 +227,31 @@ def main():
     check("stdlib completion omits unimported modules (map.map_get absent)",
           not any(it.get("label") == "map_get" for it in items))
 
+    # --- #692: `import ` completion offers EVERY lib/ module ---
+    # Asserted against the actual lib/*.eigs file set rather than a number,
+    # so adding a module can never silently fall out of completion again —
+    # which is exactly how the old hand-maintained array drifted 41 behind.
+    lib_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib")
+    want = sorted(f[:-5] for f in os.listdir(lib_dir) if f.endswith(".eigs"))
+    comp_imp = {"jsonrpc": "2.0", "id": 29, "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": URI},
+                           "position": {"line": 0, "character": 7}}}
+    r = converse([INIT, did_open("import \n"), comp_imp, SHUTDOWN, EXIT])
+    res = (by_id(r, 29) or {}).get("result", {})
+    items = res.get("items") if isinstance(res, dict) and isinstance(res.get("items"), list) else []
+    got = sorted(it.get("label") for it in items if it.get("kind") == 9)
+    missing = [m for m in want if m not in got]
+    check("import completion offers every lib/ module (%d, none missing)" % len(want),
+          not missing and len(want) > 0)
+    if missing:
+        print("    missing from completion: " + ", ".join(missing))
+    # The five that a stdlib_docs-derived list would have dropped: their
+    # defines are all private (ui_layout) or absent at top level
+    # (text_builder), so they have no docs rows but ARE importable.
+    check("import completion includes modules with no public defines",
+          all(m in got for m in
+              ("text_builder", "ui_dnd", "ui_focus", "ui_layout", "ui_registry")))
+
     # No imports in the document → no stdlib items at all.
     comp_plain = {"jsonrpc": "2.0", "id": 27, "method": "textDocument/completion",
                   "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 0}}}

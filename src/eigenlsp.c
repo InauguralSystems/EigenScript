@@ -987,21 +987,17 @@ static void handle_completion(int id, const char *params) {
                     /* Check if line starts with "import " */
                     while (*lp == ' ' || *lp == '\t') lp++;
                     if (strncmp(lp, "import ", 7) == 0) {
-                        /* List available modules */
-                        static const char *modules[] = {
-                            "args", "auth", "concurrent", "config", "data", "datetime",
-                            "eigen", "format", "functional", "http", "io", "json",
-                            "list", "log", "map", "math", "observer", "queue",
-                            "sanitize", "set", "sort", "state", "stats", "store",
-                            "string", "template", "tensor", "test", "ui",
-                            "ui_anim", "ui_draw", "ui_layout", "ui_theme", "validate",
-                            NULL
-                        };
-                        for (int i = 0; modules[i]; i++) {
+                        /* #692: offer EVERY lib/ module, from the generated
+                         * stdlib_modules[] (one entry per .eigs file in lib/).
+                         * This was a hand-maintained 34-name array that had
+                         * silently fallen 41 modules behind lib/ — the drift a
+                         * build-time-generated list makes structurally
+                         * impossible. */
+                        for (int i = 0; stdlib_modules[i]; i++) {
                             if (!first) strbuf_append_char(&sb, ',');
                             first = 0;
                             strbuf_append(&sb, "{\"label\":\"");
-                            strbuf_append(&sb, modules[i]);
+                            strbuf_append(&sb, stdlib_modules[i]);
                             strbuf_append(&sb, "\",\"kind\":9}");  /* 9 = Module */
                         }
                     }
