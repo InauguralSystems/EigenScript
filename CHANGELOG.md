@@ -148,6 +148,21 @@ All notable changes to EigenScript are documented here.
   by pointing the instrument at itself.
 
 ### Fixed
+- **LSP `import ` completion offered 34 of 75 stdlib modules (#692).** The
+  completion list was a hand-maintained array in `src/eigenlsp.c` that had
+  fallen 41 modules behind `lib/` — every `ui_w_*` widget module, the whole
+  science set (`physics`, `chemistry`, `biology`, `calculus`, `linalg`,
+  `numerics`, `optimize`, `probability`, `geometry`, `earth_science`,
+  `engineering`), `audio`, `utf8`, `sync`, `pkg`, and more were simply
+  invisible in the editor. `tools/gen_lsp_stdlib_index.sh` (added by #590 for
+  symbol completion/hover) now also emits `stdlib_modules[]`, and completion
+  iterates that. The list is generated from the `lib/` **file set**, not
+  derived from the `stdlib_docs` rows: a module whose defines are all private
+  (`ui_layout`) or that declares none at top level (`text_builder`) has no
+  docs rows but is still importable, so deriving it would have silently
+  dropped 5 real modules — including one the old hardcoded list did offer.
+  `tests/test_lsp.py` now asserts completion against the actual `lib/*.eigs`
+  listing rather than a count, so a new module can never fall out again.
 - **MT use-after-free: module-env observer-slot growth raced unlocked worker
   reads (#694).** `observer_slot_update_e` grew `env->obs` with a bare
   `realloc` + non-atomic pointer store while holding no lock, and the
