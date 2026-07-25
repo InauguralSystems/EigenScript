@@ -38,14 +38,38 @@ MODULES_DIR is "eigs_modules"
 
 # ---- git helpers -----------------------------------------------------
 
+# The literal git flags this file passes. EVERY other argv position is
+# filled from eigs.json / eigs.lock.json — data a repo hands us — and git
+# parses a leading '-' as an option wherever it appears, including after
+# positionals. A lockfile `commit` of "--upload-pack=<cmd>; git-upload-pack"
+# makes `git fetch --depth 1 origin <commit>` execute <cmd>: arbitrary code
+# from `--pkg install` alone, which is exactly what the header's "No code
+# from the package runs during install" promises can't happen. Gating at
+# this one chokepoint covers every call site, present and future, instead
+# of sprinkling `--` separators and hoping each new one remembers.
+GIT_ALLOWED_FLAGS is ["-C", "--depth", "--branch", "--porcelain"]
+
 # Returns 1 on success, 0 on failure. Streams git's stderr+stdout to
 # stdout on failure so the user sees what went wrong.
 define run_git(arg_list) as:
+    argn is len of arg_list
+    for i in range of argn:
+        a is arg_list[i]
+        if (type of a) != "str":
+            throw of "git argument must be a string"
+        if (len of a) > 0:
+            if a[0] == "-" and (list_contains of [GIT_ALLOWED_FLAGS, a]) == 0:
+                throw of f"refusing option-shaped git argument '{a}' — a value from eigs.json/eigs.lock.json in an option position can execute code (--upload-pack)"
     cmd is concat of [["git"], arg_list]
     result is exec_capture of cmd
     if result[0] != 0:
         print of "git command failed:"
-        print of "  " + (join of [cmd, " "])
+        # `of` binds tighter than `+`, so the old `print of "  " + (join ...)`
+        # parsed as `(print of "  ") + (join ...)` and threw "cannot apply '+'
+        # to null and str" — the failure handler crashed instead of reporting
+        # which git command failed.
+        joined is join of [cmd, " "]
+        print of f"  {joined}"
         print of result[1]
         return 0
     return 1
