@@ -4113,9 +4113,50 @@ Value* builtin_eval(Value *arg) {
 }
 
 /* ==== BUILTIN: vm_run_bytecode ==== */
-/* Build an EigsChunk from a descriptor list, recursively for nested functions:
+/* #704: the ABI revision stamp on a top-level chunk descriptor.
+ *
+ * An external bytecode producer (ouroboros' self-hosted codegen, iLambdaAi's
+ * vendored copy of it) hardcodes the EIGS_BYTECODE_ABI it was written against
+ * as element 0; anything else is refused. See the constant in src/vm.h for why
+ * this exists and when to bump it. Element 0 discriminates by TYPE — a stamped
+ * descriptor has a number there, an unstamped (pre-#704) one has the code list
+ * — so a stale producer is detected with certainty, never guessed at.
+ *
+ * Nested function descriptors carry NO stamp: the revision describes the chunk
+ * handed across the boundary, not every chunk nested inside it.
+ *
+ * Returns NULL when the stamp is present and current, else the reason (written
+ * into buf). */
+static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
+    if (!desc || desc->type != VAL_LIST || desc->data.list.count < 1)
+        return "chunk descriptor must be a list";
+    Value *rev = desc->data.list.items[0];
+    if (!rev || rev->type != VAL_NUM) {
+        snprintf(buf, buflen,
+                 "chunk descriptor carries no bytecode ABI revision (element 0 "
+                 "must be the number %d, found %s) — this producer predates the "
+                 "revision stamp and its operand widths are unverifiable",
+                 EIGS_BYTECODE_ABI, rev ? val_type_name(rev->type) : "nothing");
+        return buf;
+    }
+    if ((int)rev->data.num != EIGS_BYTECODE_ABI) {
+        snprintf(buf, buflen,
+                 "chunk was produced for bytecode ABI revision %d, but this "
+                 "runtime speaks revision %d — regenerate it with a matching "
+                 "producer",
+                 (int)rev->data.num, EIGS_BYTECODE_ABI);
+        return buf;
+    }
+    return NULL;
+}
+
+/* Build an EigsChunk from a descriptor list, recursively for nested functions.
+ * `off` skips the leading ABI-revision stamp: 1 at the top level (where
+ * vm_desc_abi_error has already validated it), 0 for nested descriptors, which
+ * carry no stamp. After the offset the layout is:
  *   [ code, constants, functions?, param_count?, name?, local_names? ]
- *   - code        : list of byte ints (opcodes + little-endian 16-bit operands)
+ *   - code        : list of byte ints (opcodes + little-endian operands; 16-bit
+ *                   except OP_LINE's, which is 32-bit since #630)
  *   - constants   : constant pool (numbers/strings; strings double as
  *                   GET_NAME/SET_NAME names)
  *   - functions   : (optional) list of descriptors for nested function chunks,
@@ -4125,11 +4166,12 @@ Value* builtin_eval(Value *arg) {
  *   - local_names : (optional) names for local slots in slot order; the count
  *                   sizes the call frame, and the first param_count are the
  *                   parameter names OP_CLOSURE binds.
- * The 2-element form [code, constants] still works (a flat module chunk). */
-static EigsChunk *vm_build_chunk_desc(Value *desc) {
-    if (!desc || desc->type != VAL_LIST || desc->data.list.count < 2) return NULL;
-    Value **d = desc->data.list.items;
-    int n = desc->data.list.count;
+ * The minimal form is code+constants (a flat module chunk). */
+static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
+    if (!desc || desc->type != VAL_LIST || desc->data.list.count < off + 2)
+        return NULL;
+    Value **d = desc->data.list.items + off;
+    int n = desc->data.list.count - off;
     Value *code = d[0], *consts = d[1];
     if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST)
         return NULL;
@@ -4153,7 +4195,7 @@ static EigsChunk *vm_build_chunk_desc(Value *desc) {
      * to (wrong function, or out of range). */
     if (n >= 3 && d[2] && d[2]->type == VAL_LIST) {
         for (int i = 0; i < d[2]->data.list.count; i++) {
-            EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i]);
+            EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i], 0);
             if (!fn) { chunk_free(chunk); return NULL; }
             chunk_add_function(chunk, fn);
         }
@@ -4189,9 +4231,13 @@ static EigsChunk *vm_build_chunk_desc(Value *desc) {
  * self-hosting bootstrap bridge: a compiler written in EigenScript emits
  * bytecode as data, and this hands it to the same vm_execute the C compiler's
  * output runs through — reusing the bytecode VM and its JIT. The caller is
- * responsible for a well-formed chunk ending in OP_RETURN. */
+ * responsible for a well-formed chunk ending in OP_RETURN, stamped with the
+ * bytecode ABI revision it was built against (#704). */
 Value* builtin_vm_run_bytecode(Value *arg) {
-    EigsChunk *chunk = vm_build_chunk_desc(arg);
+    char abibuf[256];
+    const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
+    if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
+    EigsChunk *chunk = vm_build_chunk_desc(arg, 1);
     if (!chunk) return make_null();
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
     Value *result = vm_execute(chunk, target);
@@ -4302,7 +4348,12 @@ Value* builtin_sandbox_run(Value *arg) {
         arg->data.list.items[2]->data.num > 0)
         max_bytes = (size_t)arg->data.list.items[2]->data.num;
 
-    EigsChunk *chunk = vm_build_chunk_desc(desc);
+    /* #704: an ABI-revision mismatch is a build failure like any other, but it
+     * gets its own message — a grading ladder must be able to tell "your
+     * producer is stale" from "your bytecode is malformed" without re-running. */
+    char abibuf[256];
+    const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
+    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1);
     Value *out = make_dict(2);
     if (!chunk) {
         Value *zero = make_num(0);
@@ -4313,7 +4364,8 @@ Value* builtin_sandbox_run(Value *arg) {
          * runtime failure's error field. */
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_VALUE)));
-        dict_set_owned(ev, "message", make_str("invalid chunk descriptor"));
+        dict_set_owned(ev, "message",
+                       make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
         return out;

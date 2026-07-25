@@ -9,6 +9,10 @@
 # NUMBER or its OPERAND WIDTH breaks every one of them silently — a misaligned
 # chunk runs as garbage at rc=0 — and their CI cannot see it, because they pin
 # a release. So any such change belongs here, in the same PR (#704).
+#
+# Since #704 every top-level descriptor is stamped with the bytecode ABI
+# revision it was built against: [ABI, code, constants, ...]. A producer that
+# predates a revision bump is now refused by name instead of running garbage.
 
 load_file of "lib/test.eigs"
 
@@ -21,28 +25,34 @@ JUMP_IF_FALSE is 31
 CALL is 39
 RETURN is 40
 
+# #704: the bytecode ABI revision this file was written against. Deliberately a
+# LITERAL, exactly as an external producer must hardcode it — never read back
+# from the runtime, which would always agree and make the guard decoration. When
+# EIGS_BYTECODE_ABI is bumped in src/vm.h, this constant is bumped in the same
+# PR and the bump is the reminder that every external producer needs one too.
+ABI is 1
+
 # 2 + 3 -> 5
-assert_eq of [vm_run_bytecode of [[CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "arith add"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "arith add"]
 
 # string concat "a" + "b" -> "ab"
-assert_eq of [vm_run_bytecode of [[CONST,0,0, CONST,1,0, ADD, RETURN], ["a", "b"]], "ab", "string concat via ADD"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], ["a", "b"]], "ab", "string concat via ADD"]
 
 # comparison 10 > 3 -> 1
-assert_eq of [vm_run_bytecode of [[CONST,0,0, CONST,1,0, GT, RETURN], [10, 3]], 1, "comparison GT"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, GT, RETURN], [10, 3]], 1, "comparison GT"]
 
 # builtin call: len of "hello" -> 5  (GET_NAME resolves "len" in the global env)
-assert_eq of [vm_run_bytecode of [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 5, "builtin call via GET_NAME+CALL"]
+assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 5, "builtin call via GET_NAME+CALL"]
 
 # control flow: max(a, b) via JUMP_IF_FALSE (relative forward offset)
 #   CONST a; CONST b; GT; JUMP_IF_FALSE +4; CONST a; RETURN; CONST b; RETURN
 maxcode is [CONST,0,0, CONST,1,0, GT, JUMP_IF_FALSE,4,0, CONST,0,0, RETURN, CONST,1,0, RETURN]
-assert_eq of [vm_run_bytecode of [maxcode, [10, 3]], 10, "max(10,3) fall-through branch"]
-assert_eq of [vm_run_bytecode of [maxcode, [3, 10]], 10, "max(3,10) jump-taken branch"]
-assert_eq of [vm_run_bytecode of [maxcode, [7, 2]], 7, "max(7,2)"]
+assert_eq of [vm_run_bytecode of [ABI, maxcode, [10, 3]], 10, "max(10,3) fall-through branch"]
+assert_eq of [vm_run_bytecode of [ABI, maxcode, [3, 10]], 10, "max(3,10) jump-taken branch"]
+assert_eq of [vm_run_bytecode of [ABI, maxcode, [7, 2]], 7, "max(7,2)"]
 
-# bad args degrade to null, not a crash
-assert_eq of [vm_run_bytecode of [42, []], null, "non-list code -> null"]
-assert_eq of [vm_run_bytecode of 5, null, "non-list arg -> null"]
+# bad args degrade to null, not a crash — once past the ABI stamp
+assert_eq of [vm_run_bytecode of [ABI, 42, []], null, "non-list code -> null"]
 
 # nested function chunk: define double(x) = x + x; double of 21 -> 42
 CLOSURE is 38
@@ -51,10 +61,12 @@ GET_LOCAL is 23
 RETURN_NULL is 41
 POP is 35
 # function body: GET_LOCAL 0; GET_LOCAL 0; ADD; RETURN; RETURN_NULL
+# NOTE: nested descriptors carry NO ABI stamp — the revision describes the chunk
+# handed across the boundary, not every chunk nested inside it.
 dbl_desc is [[GET_LOCAL,0,0, GET_LOCAL,0,0, ADD, RETURN, RETURN_NULL], [], [], 1, "double", ["x"]]
 # module: CLOSURE 0; SET_NAME_LOCAL 0("double"); POP; GET_NAME 0; CONST 1(21); CALL 1; RETURN
 mod_code is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, POP, GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN]
-assert_eq of [vm_run_bytecode of [mod_code, ["double", 21], [dbl_desc], 0, "<module>", []], 42, "nested function call"]
+assert_eq of [vm_run_bytecode of [ABI, mod_code, ["double", 21], [dbl_desc], 0, "<module>", []], 42, "nested function call"]
 
 # record_history toggles per-assignment history recording (for prev / at queries
 # in self-hosted programs) and returns the previous setting.
@@ -81,8 +93,8 @@ assert of [rh_str_caught == 1, "record_history: string flag raises (no silent di
 record_history of 0
 
 # sandbox_run: safe code runs and returns {ok, result}. The arg is
-# [descriptor, max_iter] where descriptor is [code, constants].
-safe_desc is [[CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
+# [descriptor, max_iter] where descriptor is [ABI, code, constants].
+safe_desc is [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
 sr_safe is sandbox_run of [safe_desc, 100000]
 assert_eq of [sr_safe["ok"], 1, "sandbox: safe code ok"]
 assert_eq of [sr_safe["result"], 5, "sandbox: safe result"]
@@ -90,7 +102,7 @@ assert_eq of [sr_safe["result"], 5, "sandbox: safe result"]
 # sandbox_run: a dangerous builtin (write_text) is shadowed -> blocked, ok=0,
 # and no file is written.
 remove_file of "/tmp/eigs_sandbox_breach"
-block_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["write_text", "/tmp/eigs_sandbox_breach"]]
+block_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["write_text", "/tmp/eigs_sandbox_breach"]]
 sr_block is sandbox_run of [block_desc, 100000]
 assert_eq of [sr_block["ok"], 0, "sandbox: dangerous builtin blocked"]
 assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", 0, "sandbox: nothing written"]
@@ -101,19 +113,19 @@ assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", 0, "sandbox: nothing wr
 # -> {ok:0}, NOT executed. If any regresses, this run HANGS (the suite timeout
 # is the backstop): usleep would sleep 30s, raw_key would read() stdin, recv
 # would wait on a channel condvar forever.
-usleep_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["usleep", 30000000]]
+usleep_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["usleep", 30000000]]
 assert_eq of [(sandbox_run of [usleep_desc, 100000])["ok"], 0, "sandbox: usleep blocked (no 30s hang)"]
-rawkey_desc is [[GET_NAME,0,0, CALL,0,0, RETURN], ["raw_key"]]
+rawkey_desc is [ABI, [GET_NAME,0,0, CALL,0,0, RETURN], ["raw_key"]]
 assert_eq of [(sandbox_run of [rawkey_desc, 100000])["ok"], 0, "sandbox: raw_key blocked (no stdin read)"]
-recv_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["recv", 0]]
+recv_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["recv", 0]]
 assert_eq of [(sandbox_run of [recv_desc, 100000])["ok"], 0, "sandbox: recv blocked (no channel-wait hang)"]
-send_desc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["send", 0]]
+send_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["send", 0]]
 assert_eq of [(sandbox_run of [send_desc, 100000])["ok"], 0, "sandbox: send blocked"]
 
 # sandbox_run: a runaway loop is bounded by the iteration cap (returns, no hang).
 # NUM_ONE; JUMP_IF_FALSE +6; LOOP_CAP_CHECK +3; JUMP_BACK 10; RETURN_NULL
 loopcode is [3, 31,6,0, 63,3,0, 30,10,0, 41]
-sr_loop is sandbox_run of [[loopcode, []], 1000]
+sr_loop is sandbox_run of [[ABI, loopcode, []], 1000]
 assert_eq of [sr_loop["ok"], 1, "sandbox: runaway loop bounded (returned)"]
 
 # --- bytecode verifier: out-of-range operands are rejected, not run ---
@@ -122,27 +134,27 @@ assert_eq of [sr_loop["ok"], 1, "sandbox: runaway loop bounded (returned)"]
 # (vm_run_bytecode -> null; sandbox_run -> {ok:0}) instead of segfaulting.
 
 # constant index past the pool (0xFFFF) — was an OOB read of constants[]
-assert_eq of [vm_run_bytecode of [[CONST,255,255, RETURN], [42]], null, "verify: OOB const index rejected"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,255,255, RETURN], [42]], null, "verify: OOB const index rejected"]
 # forward jump target past the end of code
-assert_eq of [vm_run_bytecode of [[CONST,0,0, JUMP_IF_FALSE,255,255, RETURN], [1]], null, "verify: OOB jump target rejected"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, JUMP_IF_FALSE,255,255, RETURN], [1]], null, "verify: OOB jump target rejected"]
 # CLOSURE referencing a function index with no functions present
-assert_eq of [vm_run_bytecode of [[CLOSURE,0,0, RETURN], []], null, "verify: OOB function index rejected"]
+assert_eq of [vm_run_bytecode of [ABI, [CLOSURE,0,0, RETURN], []], null, "verify: OOB function index rejected"]
 # truncated operand (opcode with no room for its 2 operand bytes)
-assert_eq of [vm_run_bytecode of [[CONST], [42]], null, "verify: truncated operand rejected"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST], [42]], null, "verify: truncated operand rejected"]
 # unknown opcode byte
-assert_eq of [vm_run_bytecode of [[254, RETURN], []], null, "verify: unknown opcode rejected"]
+assert_eq of [vm_run_bytecode of [ABI, [254, RETURN], []], null, "verify: unknown opcode rejected"]
 # same, through the sandbox: a bad descriptor returns ok=0, no crash
-sr_bad is sandbox_run of [[[CONST,255,255, RETURN], [42]], 1000]
+sr_bad is sandbox_run of [[ABI, [CONST,255,255, RETURN], [42]], 1000]
 assert_eq of [sr_bad["ok"], 0, "verify: sandbox rejects OOB const (ok=0)"]
 
 # a name-consuming opcode (GET_NAME) whose constant index points at a NUMERIC
 # constant — the interned-name pointer is NULL for non-strings, so the VM
 # dereferenced NULL. The verifier now requires name operands to be strings.
 DICT is 43
-assert_eq of [vm_run_bytecode of [[GET_NAME,0,0, RETURN], [42]], null, "verify: name op on numeric const rejected"]
+assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, RETURN], [42]], null, "verify: name op on numeric const rejected"]
 # OP_DICT with a count larger than the live stack — was an out-of-bounds stack
 # read; now bounded to the pairs actually present (here none -> empty dict).
-dr is vm_run_bytecode of [[DICT,255,255, RETURN], []]
+dr is vm_run_bytecode of [ABI, [DICT,255,255, RETURN], []]
 assert_eq of [type of dr, "dict", "verify: OP_DICT oversized count bounded (no OOB)"]
 
 # --- #348: an out-of-range SET_LOCAL raises instead of silently dropping ---
@@ -154,11 +166,11 @@ GET_LOCAL is 23
 SET_LOCAL is 24
 sl348 is 0
 try:
-    rs348 is vm_run_bytecode of [[CONST,0,0, SET_LOCAL,255,255, RETURN], [7]]
+    rs348 is vm_run_bytecode of [ABI, [CONST,0,0, SET_LOCAL,255,255, RETURN], [7]]
 catch es348:
     sl348 is 1
 assert_eq of [sl348, 1, "SET_LOCAL out-of-range slot raises (#348)"]
-assert_eq of [vm_run_bytecode of [[GET_LOCAL,255,255, RETURN], []], null, "GET_LOCAL out-of-range reads null (missing-param semantics)"]
+assert_eq of [vm_run_bytecode of [ABI, [GET_LOCAL,255,255, RETURN], []], null, "GET_LOCAL out-of-range reads null (missing-param semantics)"]
 
 # --- #630/#704: OP_LINE's operand is 32-bit, and that width IS the ABI ---
 # #630 widened this operand from 16 to 32 bits. No opcode number changed, so
@@ -170,15 +182,73 @@ LINE is 68
 # well-formed: OP_LINE <line:32> then 2 + 3. A 4-byte operand keeps the stream
 # aligned, so this is 5. Emit three bytes instead and ADD lands on the wrong
 # byte — which is exactly what every external producer did on the v0.33.0 bump.
-assert_eq of [vm_run_bytecode of [[LINE,7,0,0,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "OP_LINE 32-bit operand keeps the stream aligned"]
+assert_eq of [vm_run_bytecode of [ABI, [LINE,7,0,0,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "OP_LINE 32-bit operand keeps the stream aligned"]
 # the pre-#630 shape — OP_LINE + 2 operand bytes — must NOT still evaluate to 5.
 # It is either verifier-rejected or misaligned garbage; either way the contract
 # is that it is no longer the arithmetic the producer intended.
-old_shape is vm_run_bytecode of [[LINE,7,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
+old_shape is vm_run_bytecode of [ABI, [LINE,7,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
 assert of [old_shape != 5, "pre-#630 16-bit OP_LINE emission no longer silently works"]
 # a line number past 65535 — the regime #630 exists for — survives the operand.
-assert_eq of [vm_run_bytecode of [[LINE,161,134,1,0, CONST,0,0, RETURN], [99]], 99, "OP_LINE carries a line past 65535 (#630)"]
+assert_eq of [vm_run_bytecode of [ABI, [LINE,161,134,1,0, CONST,0,0, RETURN], [99]], 99, "OP_LINE carries a line past 65535 (#630)"]
 # truncated 32-bit operand is rejected by the verifier, not read off the end.
-assert_eq of [vm_run_bytecode of [[LINE,7,0,0], []], null, "verify: truncated OP_LINE operand rejected"]
+assert_eq of [vm_run_bytecode of [ABI, [LINE,7,0,0], []], null, "verify: truncated OP_LINE operand rejected"]
+
+# --- #704: the ABI revision stamp itself ---
+# The canary above catches an operand-width change only for the ONE opcode it
+# happens to emit, and only in this repo. The stamp is the general gate: a
+# producer built against a different revision is refused BY NAME, whatever it
+# emits. These assertions are the planted faults that prove the gate is live —
+# without them a stamp that was never checked would look identical to one that
+# is. Each stale form must fail, and fail loudly.
+
+# an unstamped descriptor — every pre-#704 producer — raises, and does NOT
+# quietly return null the way a malformed chunk does. This is the exact shape
+# ouroboros shipped at the v0.33.0 bump.
+abi_unstamped is 0
+abi_unstamped_msg is ""
+try:
+    ru is vm_run_bytecode of [[CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
+catch eu:
+    abi_unstamped is 1
+    abi_unstamped_msg is eu["kind"]
+assert_eq of [abi_unstamped, 1, "#704: unstamped (pre-revision) descriptor raises"]
+assert_eq of [abi_unstamped_msg, "value", "#704: unstamped descriptor raises kind=value"]
+
+# a descriptor stamped with a revision this runtime does not speak raises. Both
+# directions: a producer older than us, and one newer.
+abi_old is 0
+try:
+    ro is vm_run_bytecode of [ABI - 1, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
+catch eo:
+    abi_old is 1
+assert_eq of [abi_old, 1, "#704: descriptor from an older ABI revision raises"]
+abi_new is 0
+try:
+    rn is vm_run_bytecode of [ABI + 1, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
+catch en:
+    abi_new is 1
+assert_eq of [abi_new, 1, "#704: descriptor from a newer ABI revision raises"]
+
+# a non-list argument is refused by name too — previously a silent null.
+abi_notlist is 0
+try:
+    rl is vm_run_bytecode of 5
+catch el:
+    abi_notlist is 1
+assert_eq of [abi_notlist, 1, "#704: non-list descriptor raises (was a silent null)"]
+
+# sandbox_run does not throw — it reports the mismatch structurally, and with a
+# message distinct from a malformed chunk's, so a grading ladder can tell
+# "your producer is stale" from "your bytecode is wrong" without re-running.
+sr_stale is sandbox_run of [[ABI + 1, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 1000]
+assert_eq of [sr_stale["ok"], 0, "#704: sandbox_run rejects a stale-revision chunk"]
+assert_eq of [sr_stale["error"]["kind"], "value", "#704: sandbox_run reports kind=value"]
+assert of [sr_stale["error"]["message"] != "invalid chunk descriptor", "#704: stale revision is distinguishable from a malformed chunk"]
+assert of [contains of [sr_stale["error"]["message"], "ABI revision"], "#704: the message names the ABI revision"]
+
+# and the current revision still runs through the sandbox unchanged.
+sr_ok is sandbox_run of [[ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 1000]
+assert_eq of [sr_ok["ok"], 1, "#704: current-revision chunk still runs in the sandbox"]
+assert_eq of [sr_ok["result"], 5, "#704: current-revision sandbox result"]
 
 test_summary of null

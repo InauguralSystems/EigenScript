@@ -8,6 +8,10 @@
 load_file of "lib/test.eigs"
 
 # Bytecode opcodes (see test_vm_run_bytecode.eigs).
+# #704: every descriptor carries the bytecode ABI revision. Unstamped, each is
+# refused before the budget is ever armed — and every "must be denied" check
+# here would then pass for the wrong reason.
+ABI is 1
 CONST is 0
 GET_NAME is 25
 POP is 35
@@ -16,9 +20,9 @@ RETURN is 40
 
 # zeros of N  /  fill of [N, v]  descriptors (GET_NAME fn; CONST arg; CALL 1).
 define zeros_desc(n) as:
-    return [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["zeros", n]]
+    return [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["zeros", n]]
 define fill_desc(n) as:
-    return [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [n, 0.0]]]
+    return [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [n, 0.0]]]
 
 # --- 1. A big allocation under a tiny budget is rejected (ok=0), not aborted ---
 ok_big is (sandbox_run of [zeros_desc of 1000000, 1000000, 1000])["ok"]
@@ -39,7 +43,7 @@ assert_eq of [ok_default, 0, "budget: default budget bounds zeros(9M) -> {ok:0},
 
 # --- 5. CUMULATIVE (F2): two fills that each fit but together exceed the budget.
 #        Each fill(600k) = 4.8MB; budget 6MB admits one, denies the second. ---
-two_fills is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
+two_fills is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
                GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [600000, 0.0]]]
 ok_two_tight is (sandbox_run of [two_fills, 1000000, 6000000])["ok"]
 assert_eq of [ok_two_tight, 0, "budget: two fills (9.6MB) under 6MB -> {ok:0} (cumulative)"]
@@ -54,7 +58,7 @@ assert_eq of [ok_after, 1, "budget: resets per run (generous run after a tight o
 #        charged on its output too. `la` (50 elems) is built outside the sandbox;
 #        concat of [la, la] = 100 slots = 800 bytes. ---
 la is range of 50
-cdesc is [[GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["concat", [la, la]]]
+cdesc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["concat", [la, la]]]
 ok_concat_tight is (sandbox_run of [cdesc, 1000000, 100])["ok"]
 assert_eq of [ok_concat_tight, 0, "budget: concat(100 slots) under 100-byte budget -> {ok:0}"]
 ok_concat_loose is (sandbox_run of [cdesc, 1000000, 100000])["ok"]

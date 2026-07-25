@@ -17,6 +17,7 @@ ABI_ASSERT(OP_NUM_ONE, 3);
 ABI_ASSERT(OP_ADD, 4);
 ABI_ASSERT(OP_GT, 20);
 ABI_ASSERT(OP_GET_LOCAL, 23);
+ABI_ASSERT(OP_SET_LOCAL, 24);
 ABI_ASSERT(OP_GET_NAME, 25);
 ABI_ASSERT(OP_SET_NAME_LOCAL, 27);
 ABI_ASSERT(OP_JUMP_BACK, 30);
@@ -26,7 +27,21 @@ ABI_ASSERT(OP_CLOSURE, 38);
 ABI_ASSERT(OP_CALL, 39);
 ABI_ASSERT(OP_RETURN, 40);
 ABI_ASSERT(OP_RETURN_NULL, 41);
+ABI_ASSERT(OP_DICT, 43);
 ABI_ASSERT(OP_LOOP_CAP_CHECK, 63);
+ABI_ASSERT(OP_LINE, 68);
+
+/* #704: the revision the ABI-stamped descriptors in tests/*.eigs declare. Those
+ * files carry `ABI is 1` as a literal (as an external producer must), so a bump
+ * in vm.h that forgets them would otherwise surface as a pile of runtime
+ * failures instead of one build error naming the cause. Bump both together. */
+/* ASCII only in the message: gcc escapes non-ASCII bytes octally in a failed
+ * static-assertion diagnostic, which turns punctuation into line noise. */
+_Static_assert(EIGS_BYTECODE_ABI == 1,
+               "EIGS_BYTECODE_ABI changed - bump `ABI is N` in "
+               "tests/test_vm_run_bytecode.eigs, tests/test_sandbox_allow.eigs, "
+               "tests/test_sandbox_budget.eigs, and re-stamp every external "
+               "producer (ouroboros, iLambdaAi) with its EIGS_REF bump");
 
 int main(void) {
     return 0;

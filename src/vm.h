@@ -203,6 +203,31 @@ typedef enum {
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
+/* #704: the bytecode ABI revision.
+ *
+ * Opcode NUMBERS are an ABI (see the append-at-the-end rule above) and so is
+ * every operand's WIDTH — but only the numbers were ever guarded. v0.33.0
+ * widened OP_LINE's operand 16->32 bits (#630) without renumbering anything,
+ * so `test_opcode_abi.c`'s static asserts stayed green while every external
+ * producer's chunks ran misaligned: ouroboros emitted empty output for all 44
+ * parity programs at exit 0, and iLambdaAi's grading ladder silently lost its
+ * top rung. Consumers pin a release, so their CI structurally cannot warn us
+ * before the bump.
+ *
+ * So: an external producer stamps the revision it was BUILT against as element
+ * 0 of the top-level descriptor, and vm_run_bytecode / sandbox_run refuse any
+ * other value. A stale producer now gets a named error instead of executing
+ * garbage.
+ *
+ * BUMP THIS whenever an opcode's number changes, an opcode is inserted
+ * mid-enum, or any operand's width changes. (Appending a NEW opcode at the end
+ * does not require a bump — existing chunks stay byte-identical.)
+ *
+ * The stamp must be a LITERAL in the producer. Do NOT expose this value as a
+ * builtin for producers to read back: a producer that asks the runtime which
+ * revision it speaks always matches, and the guard becomes decoration. */
+#define EIGS_BYTECODE_ABI 1
+
 /* ---- Inline cache for env name resolution ----
  * One entry per string constant, populated lazily by GET_NAME/SET_NAME/
  * SET_NAME_LOCAL on cache miss. Validates via:
