@@ -338,6 +338,11 @@ struct Value {
 size_t observer_window_size(const Value *v);
 
 /* #262 Phase-1 prototype slot-keyed observer API (behind EIGS_OBS_SHADOW). */
+/* #685: drop v's memoized flat-container entropy. MUST be called by every
+ * site that mutates a LIST/DICT's contents, or that container's observed
+ * entropy goes silently stale. Sanitizer builds verify this on every hit. */
+void ent_cache_invalidate(Value *v);
+
 void observer_slot_update(struct Env *e, int idx, Value *newval);
 /* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
 void observer_slot_update_num(struct Env *e, int idx, double num);

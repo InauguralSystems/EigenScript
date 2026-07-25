@@ -350,6 +350,70 @@ static int ent_visited_add(EntVisited *vis, Value *v) {
     return 1;
 }
 
+/* ===== #685: memoized entropy for FLAT containers =====
+ *
+ * compute_entropy walks every child on EVERY observed assignment, so assigning
+ * a small object that merely REFERENCES a large container re-walks that
+ * container each time — O(reachable) per assignment, quadratic over a loop
+ * (eigen-sheet #29: a formula state `st` holding the sheet's `vals` dict).
+ *
+ * Only FLAT containers are cached — ones whose children are all scalars. That
+ * restriction is not conservatism, it is correctness: #571 made each container
+ * contribute ONCE per computation, so a subtree's entropy depends on what the
+ * walk already visited. Returning a cached value without walking would leave
+ * the subtree's containers out of the visited set, and a descendant referenced
+ * again elsewhere in the same walk would then be counted twice. A flat
+ * container's "subtree container set" is exactly itself, which the visited
+ * check above already handles — so the cache cannot perturb the semantics.
+ * (eigen-sheet's `vals` and `cells` are both flat dicts of scalars, so this
+ * covers the reporting consumer completely.)
+ *
+ * Direct-mapped, fixed size, keyed on the Value pointer. NOT stored in the
+ * Value header: sizeof(Value) is 72 with the union sized by the `fn` variant,
+ * and the dict variant already fills it, so an in-header cache would push every
+ * Value to 88 (+22% peak) to speed up one path. Peak memory outranks cycles
+ * here.
+ *
+ * Three ways a stale entry could be read, and what stops each:
+ *   - the container is MUTATED  -> ent_cache_invalidate at the mutation helpers
+ *   - the container is FREED and its address recycled by the freelist
+ *                               -> ent_cache_invalidate in free_value
+ *   - ARENA values, which are reclaimed wholesale without free_value
+ *                               -> never cached (v->arena)
+ * Plus: off entirely when multithreaded, which answers #571's objection to
+ * Value-header stamps (spawn passes by reference, so two threads can walk the
+ * same graph) structurally rather than by argument. */
+static double compute_entropy_impl(Value *v, int depth, EntVisited *vis);
+
+#define ENT_CACHE_SLOTS 1024u
+typedef struct { Value *key; double h; } EntCacheEnt;
+static EntCacheEnt g_ent_cache[ENT_CACHE_SLOTS];
+
+static inline uint32_t ent_cache_slot(const Value *v) {
+    return (uint32_t)(((uintptr_t)v * 0x9E3779B97F4A7C15ull) >> 40) & (ENT_CACHE_SLOTS - 1);
+}
+
+/* Drop v's entry if it holds one. O(1), no hashing beyond the slot index, so
+ * this is cheap enough to call from every container mutation. */
+void ent_cache_invalidate(Value *v) {
+    if (!v || (v->type != VAL_LIST && v->type != VAL_DICT)) return;
+    uint32_t s = ent_cache_slot(v);
+    if (g_ent_cache[s].key == v) g_ent_cache[s].key = NULL;
+}
+
+/* Mean of a flat container's scalar children — the part the cache stores. */
+static double ent_flat_mean(Value *v, int depth, EntVisited *vis) {
+    double sum = 0.0;
+    if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++)
+            sum += compute_entropy_impl(v->data.list.items[i], depth + 1, vis);
+        return sum / v->data.list.count;
+    }
+    for (int i = 0; i < v->data.dict.count; i++)
+        sum += compute_entropy_impl(v->data.dict.vals[i], depth + 1, vis);
+    return sum / v->data.dict.count;
+}
+
 static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
     if (!v || depth > 64) return 0.0;
     switch (v->type) {
@@ -367,21 +431,55 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
             }
             return h;
         }
-        case VAL_LIST: {
-            if (v->data.list.count == 0) return 0.0;
-            if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
-            double sum = 0.0;
-            for (int i = 0; i < v->data.list.count; i++)
-                sum += compute_entropy_impl(v->data.list.items[i], depth + 1, vis);
-            return sum / v->data.list.count + log2(v->data.list.count + 1);
-        }
+        case VAL_LIST:
         case VAL_DICT: {
-            if (v->data.dict.count == 0) return 0.0;
+            int n = (v->type == VAL_LIST) ? v->data.list.count : v->data.dict.count;
+            if (n == 0) return 0.0;
             if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
+            double size_term = log2(n + 1);
+            /* #685: depth 64 is the C-stack cutoff — children there return 0.0,
+             * so a value computed at that depth is NOT the same function of the
+             * container and must never enter the cache. */
+            int cacheable = !g_vm_multithreaded && !v->arena && depth < 64;
+            uint32_t cs = ent_cache_slot(v);
+            if (cacheable && g_ent_cache[cs].key == v) {
+                double hit = g_ent_cache[cs].h;
+#if EIGS_BORROW_GUARD
+                /* Sanitizer builds re-derive on every hit and abort on
+                 * mismatch. A memo is only as good as its invalidation, and the
+                 * mutation sites are scattered; this turns "a hook was missed"
+                 * from silently stale entropy — the worst failure class for an
+                 * instrument — into a loud abort under the full suite. */
+                double check = ent_flat_mean(v, depth, vis);
+                if (!(fabs(check - hit) <= 1e-12 * (fabs(check) + 1.0))) {
+                    fprintf(stderr,
+                            "[ent-cache] STALE ENTRY for %p: cached mean %.17g, "
+                            "recomputed %.17g — a container mutation site is "
+                            "missing an ent_cache_invalidate() call (#685)\n",
+                            (void *)v, hit, check);
+                    abort();
+                }
+#endif
+                return hit + size_term;
+            }
             double sum = 0.0;
-            for (int i = 0; i < v->data.dict.count; i++)
-                sum += compute_entropy_impl(v->data.dict.vals[i], depth + 1, vis);
-            return sum / v->data.dict.count + log2(v->data.dict.count + 1);
+            int flat = 1;
+            if (v->type == VAL_LIST) {
+                for (int i = 0; i < n; i++) {
+                    Value *c = v->data.list.items[i];
+                    if (c && (c->type == VAL_LIST || c->type == VAL_DICT)) flat = 0;
+                    sum += compute_entropy_impl(c, depth + 1, vis);
+                }
+            } else {
+                for (int i = 0; i < n; i++) {
+                    Value *c = v->data.dict.vals[i];
+                    if (c && (c->type == VAL_LIST || c->type == VAL_DICT)) flat = 0;
+                    sum += compute_entropy_impl(c, depth + 1, vis);
+                }
+            }
+            double mean = sum / n;
+            if (cacheable && flat) { g_ent_cache[cs].key = v; g_ent_cache[cs].h = mean; }
+            return mean + size_term;
         }
         case VAL_FN: return 1.0;
         case VAL_BUILTIN: return 0.0;
@@ -886,6 +984,7 @@ void eigs_thread_drain_caches(EigsThread *th) {
 }
 
 void free_value(Value *v) {
+    ent_cache_invalidate(v);   /* #685: freelist recycles addresses */
     if (!v || v->arena) return;
     if (v->type == VAL_NUM) {
         /* Route freed NUMs to freelist for reuse by make_num */
@@ -1224,6 +1323,7 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
 }
 
 void dict_set(Value *dict, const char *key, Value *val) {
+    ent_cache_invalidate(dict);   /* #685 */
     dict_set_hashed(dict, key, env_hash_name(key), val);
 }
 
@@ -1232,6 +1332,7 @@ void dict_set(Value *dict, const char *key, Value *val) {
  * call). This consumes the birth ref — use it whenever the caller
  * does not keep its own pointer to the value. */
 void dict_set_owned(Value *dict, const char *key, Value *val) {
+    ent_cache_invalidate(dict);   /* #685 */
     dict_set(dict, key, val);
     val_decref(val);
 }
@@ -1343,6 +1444,7 @@ int dict_has(Value *dict, const char *key) {
 }
 
 void dict_remove(Value *dict, const char *key) {
+    ent_cache_invalidate(dict);   /* #685 */
     if (!dict || dict->type != VAL_DICT) return;
     uint32_t h = env_hash_name(key);
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
@@ -1359,6 +1461,7 @@ void dict_remove(Value *dict, const char *key) {
 }
 
 void list_append(Value *list, Value *item) {
+    ent_cache_invalidate(list);   /* #685 */
     if (!list || list->type != VAL_LIST) return;
     if (list->data.list.count >= list->data.list.capacity) {
         int new_cap = list->data.list.capacity * 2;
@@ -1381,6 +1484,7 @@ void list_append(Value *list, Value *item) {
  * per element). This consumes the birth ref — use it whenever the
  * caller does not keep its own pointer to the item. */
 void list_append_owned(Value *list, Value *item) {
+    ent_cache_invalidate(list);   /* #685 */
     list_append(list, item);
     val_decref(item);
 }

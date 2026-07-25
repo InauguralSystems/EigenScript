@@ -4462,6 +4462,10 @@ Value* builtin_record_history(Value *arg) {
  * Copies elements from src into dest starting at dest_offset.
  * Both must be 1D lists. Mutates dest in-place, returns dest. */
 Value* builtin_copy_into(Value *arg) {
+    /* #685: in-place container mutation invalidates the memoized entropy. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count > 0)
+        ent_cache_invalidate(arg->data.list.items[0]);
+    ent_cache_invalidate(arg);
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *dest = arg->data.list.items[0];
     int offset = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
@@ -4666,6 +4670,10 @@ static int at_index(Value *idx_val, int count, const char *what,
 }
 
 Value* builtin_set_at(Value *arg) {
+    /* #685: in-place container mutation invalidates the memoized entropy. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count > 0)
+        ent_cache_invalidate(arg->data.list.items[0]);
+    ent_cache_invalidate(arg);
     if (!arg || arg->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "set_at requires [list, index, value] or "
                  "[list, row, col, value]");
@@ -6755,6 +6763,10 @@ Value* builtin_sign_extend(Value *arg) {
 /* list_truncate of [list, new_len] — shrink list in-place to new_len items.
  * If new_len >= current length, no-op. Returns the list. */
 Value* builtin_list_truncate(Value *arg) {
+    /* #685: in-place container mutation invalidates the memoized entropy. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count > 0)
+        ent_cache_invalidate(arg->data.list.items[0]);
+    ent_cache_invalidate(arg);
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "list_truncate requires [list, new_len]");
         return make_null();
@@ -6788,6 +6800,10 @@ Value* builtin_list_truncate(Value *arg) {
 /* list_remove_at of [list, index] — remove element at index, shift tail down.
  * Out-of-bounds index is a no-op. Returns the list. */
 Value* builtin_list_remove_at(Value *arg) {
+    /* #685: in-place container mutation invalidates the memoized entropy. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count > 0)
+        ent_cache_invalidate(arg->data.list.items[0]);
+    ent_cache_invalidate(arg);
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *list = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
@@ -6808,6 +6824,10 @@ Value* builtin_list_remove_at(Value *arg) {
  * up. Dual of list_remove_at. index == count appends; any other out-of-bounds
  * index is a no-op. Returns the list. */
 Value* builtin_list_insert_at(Value *arg) {
+    /* #685: in-place container mutation invalidates the memoized entropy. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count > 0)
+        ent_cache_invalidate(arg->data.list.items[0]);
+    ent_cache_invalidate(arg);
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *list = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
@@ -6884,6 +6904,10 @@ static int sort_by_pair_cmp(const void *a, const void *b) {
 }
 
 Value* builtin_sort_by(Value *arg) {
+    /* #685: in-place container mutation invalidates the memoized entropy. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count > 0)
+        ent_cache_invalidate(arg->data.list.items[0]);
+    ent_cache_invalidate(arg);
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *list = arg->data.list.items[0];
     Value *key_fn = arg->data.list.items[1];
@@ -6935,6 +6959,10 @@ static int sort_cmp_str(const void *a, const void *b) {
 }
 
 Value* builtin_sort(Value *arg) {
+    /* #685: in-place container mutation invalidates the memoized entropy. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count > 0)
+        ent_cache_invalidate(arg->data.list.items[0]);
+    ent_cache_invalidate(arg);
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return arg ? arg : make_null();
     ValType t = arg->data.list.items[0] ? arg->data.list.items[0]->type
