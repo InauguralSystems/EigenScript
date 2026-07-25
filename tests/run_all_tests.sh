@@ -2155,6 +2155,11 @@ check_eigs_suite "slow geometric decay converges (not diverging), geometric/line
     "test_report_value_convergence.eigs" "REPORT_VALUE_CONVERGENCE_ALL_PASS" 1
 echo ""
 
+echo "[50j4] Large-container observer (#706) (7 checks)"
+check_eigs_suite "large containers: growth stays gray-band, a change past any sample cap is seen, size term exact" \
+    "test_observer_large.eigs" "OBSERVER_LARGE_ALL_PASS" 7
+echo ""
+
 echo "[50k] UTF-8 codepoints (16 checks)"
 check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural validation (published vectors)" \
     "test_utf8.eigs" "UTF8_ALL_PASS" 1
