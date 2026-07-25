@@ -4326,6 +4326,34 @@ static int sandbox_name_allowed(const char *name) {
     return 0;
 }
 
+/* Does `v` carry a callable? A VAL_FN made inside the sandbox closes over the
+ * sandbox env, and handing one back to the host is an escape hatch: the host
+ * calls it AFTER sandbox_run has already restored the loop cap and the
+ * allocation budget, so sandbox-authored code runs unbounded.
+ *
+ * Bounded by a NODE budget, not just by depth: containers may be cyclic, and a
+ * depth-only bound is exponential on a self-referential list (a list holding
+ * itself k times explores k^depth nodes) — the walk itself would become the
+ * DoS the sandbox exists to prevent. Exhausting either bound returns "yes",
+ * the fail-closed direction: an unwalkable result is refused, not trusted. */
+#define SANDBOX_RESULT_MAX_DEPTH 32
+#define SANDBOX_RESULT_MAX_NODES 100000
+static int sandbox_value_has_callable(Value *v, int depth, long *budget) {
+    if (!v) return 0;
+    if (v->type == VAL_FN || v->type == VAL_BUILTIN) return 1;
+    if (depth > SANDBOX_RESULT_MAX_DEPTH || --(*budget) <= 0) return 1;
+    if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++)
+            if (sandbox_value_has_callable(v->data.list.items[i], depth + 1, budget))
+                return 1;
+    } else if (v->type == VAL_DICT) {
+        for (int i = 0; i < v->data.dict.count; i++)
+            if (sandbox_value_has_callable(v->data.dict.vals[i], depth + 1, budget))
+                return 1;
+    }
+    return 0;
+}
+
 /* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
  * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
@@ -4371,12 +4399,35 @@ Value* builtin_sandbox_run(Value *arg) {
         return out;
     }
 
-    /* Restricted env: parent is the real global so the allowed builtins still
-     * resolve, but every global name NOT on the allowlist — every other
-     * builtin, the http_/db_/model_ extension surface, and any host module
-     * global — is shadowed by the blocked stub. Fail-closed: a name we never
-     * classified is denied by default, not exposed. */
-    Env *sbox = env_new(g_global_env);
+    /* SEALED restricted env. The parent link is NULL, not g_global_env: the
+     * sandbox env is a root, and the allowed builtins are COPIED into it.
+     *
+     * Parenting at the global env leaked in two directions, both confirmed
+     * escapes rather than theory:
+     *
+     *   (1) WRITE-THROUGH. `is` is an outward assignment (OP_SET_NAME), and
+     *       env_set walks the parent chain and writes to the first env that
+     *       already binds the name. Allowlisted names were deliberately NOT
+     *       shadowed, so they resolved straight through — a sandboxed
+     *       `sum is 42`, or `len is <closure>`, rebound the HOST's global.
+     *       Planting a closure that way ran sandbox-authored code in the host
+     *       the next time the host called that builtin, with the loop cap and
+     *       allocation budget already torn down.
+     *
+     *   (2) STALE SNAPSHOT. The stub shadows were a snapshot of the global env
+     *       taken at entry, so any name the host defined AFTER this call had no
+     *       shadow and stayed reachable through the parent link.
+     *
+     * Copying the allowlist into a root env closes both at once: there is no
+     * outer binding to write through to, and no chain to fall through. The
+     * blocked stub is still bound over every other name the global env holds,
+     * purely for the diagnostic — an EK_SANDBOX "blocked in sandbox" is far
+     * more useful to a grading ladder than a bare undefined-variable error. */
+    Env *sbox = env_new(NULL);
+    for (int i = 0; SANDBOX_ALLOW[i]; i++) {
+        Value *v = env_get(g_global_env, SANDBOX_ALLOW[i]);
+        if (v) env_set_local(sbox, SANDBOX_ALLOW[i], v);
+    }
     Value *stub = make_builtin(builtin_sandbox_blocked);
     for (int i = 0; i < g_global_env->count; i++) {
         const char *nm = g_global_env->names[i];
@@ -4423,6 +4474,24 @@ Value* builtin_sandbox_run(Value *arg) {
 
     chunk_free(chunk);
     env_decref(sbox);
+
+    /* A callable in the result is a containment break, not a value: calling it
+     * from the host runs sandbox-authored code with the caps already restored.
+     * Drop the result and report it as a sandbox denial — same {kind, message,
+     * line} shape as any other refusal, so a grading ladder sees it. */
+    long scan_budget = SANDBOX_RESULT_MAX_NODES;
+    if (ok && result && sandbox_value_has_callable(result, 0, &scan_budget)) {
+        val_decref(result);
+        result = NULL;
+        ok = 0;
+        Value *ev = make_dict(3);
+        dict_set_owned(ev, "kind", make_str(err_kind_name(EK_SANDBOX)));
+        dict_set_owned(ev, "message",
+                       make_str("sandbox result contains a callable; "
+                                "functions cannot cross the sandbox boundary"));
+        dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(out, "error", ev);
+    }
 
     Value *okv = make_num((double)ok);
     dict_set(out, "ok", okv);   /* dict_set increfs; drop our ref */

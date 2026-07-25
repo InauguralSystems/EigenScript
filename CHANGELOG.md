@@ -4,6 +4,70 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- **`sandbox_run` did not contain (#713).** The sandbox is the runtime's only
+  advertised containment boundary — it filters *names* in the environment, and
+  three things reach past a name filter. All three were confirmed by working
+  repro, not inferred.
+
+  **Write-through.** The sandbox env was a child of the host global env, and
+  `is` is an *outward* assignment (`OP_SET_NAME`): `env_set` walks the parent
+  chain and writes to the first env already holding the name. Allowlisted names
+  were deliberately unshadowed, so they resolved straight through — a sandboxed
+  `sum is 42` rebound the *host's* `sum`. Planting a closure that way was
+  worse: replacing `secure_equals` with `fn(a, b): return 1` made the host's
+  token comparison answer 1, and the plant ran in host context the next time
+  the host called that builtin, with the loop cap and allocation budget already
+  torn down. This needed no hand-assembled bytecode: ouroboros' own codegen
+  emits `OP_SET_NAME` for a plain top-level `is`.
+
+  **Stale snapshot.** The blocked-stub shadows were a snapshot taken at entry,
+  so any name the host defined *after* the call had no shadow and stayed
+  reachable through the parent link.
+
+  **`import` is an opcode, not a name** — the allowlist never saw it. A
+  sandboxed `OP_IMPORT` read any `.eigs` on the box (the request is built as
+  `lib/<name>.eigs` with no validation, so `../` traverses out of the script
+  tree), ran its body with the *full* builtin set, and handed back a dict of
+  its functions, all while reporting `ok: 1`.
+
+  The env is now a **sealed root**: `env_new(NULL)` with the allowlist copied
+  in. There is no outer binding to write through to and no chain to fall
+  through, so both the write-through and the snapshot staleness are closed
+  structurally rather than patched. `import` is gated at the opcode alongside
+  the name policy — any future opcode that touches the outside world needs the
+  same gate. A callable in the result is refused (`{ok: 0, error: {kind:
+  "sandbox"}}`), because a fn made inside closes over the sandbox env and the
+  host would call it after the caps are restored; that scan is bounded by node
+  count, not depth, since a self-referential list makes a depth-only bound
+  exponential.
+
+  In-ecosystem reachability is real: `iLambdaAi/lib/validate.eigs` grades
+  model-generated code with `sandbox_run`.
+
+- **`--pkg install` executed arbitrary commands from a lockfile (#714).**
+  `eigs.json` / `eigs.lock.json` are data a repo hands us, and git parses a
+  leading `-` as an option *even after positionals*. A lockfile carrying
+  `"commit": "--upload-pack=<cmd>; git-upload-pack"` turned `cmd_install`'s
+  `git fetch --depth 1 origin <commit>` into command execution — arbitrary code
+  from `eigenscript --pkg install` alone, contradicting `lib/pkg.eigs`'s own
+  header guarantee that no code from a package runs during install. The
+  lockfile is exactly the artifact a supply-chain attacker edits. `run_git` now
+  refuses any option-shaped argument that isn't one of the four literal flags
+  the file itself passes — one chokepoint covering every call site, present and
+  future, rather than sprinkling `--` separators and hoping each new one
+  remembers. (The `ext::` transport-helper vector was also tested; git's own
+  default `protocol.ext.allow=never` already blocks it.)
+
+### Fixed
+
+- **`lib/pkg.eigs` crashed in its own git-failure handler.** `of` binds tighter
+  than `+`, so `print of "  " + (join of [cmd, " "])` parsed as
+  `(print of "  ") + (join ...)` and threw "cannot apply '+' to null and str" —
+  a failed git command reported the wrong error and never named the command
+  that failed.
+
 ### Changed
 
 - **The observer's entropy walk now stops at a reference (#685).** A list or

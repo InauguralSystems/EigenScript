@@ -37,7 +37,44 @@ rbb_blk    is (sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN]
 r_len is sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 1000]
 allow_ok is (r_len["ok"] == 1) and (r_len["result"] == 5)
 
-if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and allow_ok:
+# ---- Containment of the SANDBOX ENV ITSELF, not just the name policy ----
+# The allowlist is a filter over NAMES. These three cover the ways a sandboxed
+# chunk reached past it while every "blocked builtin" check above still passed.
+SET_NAME is 26
+CLOSURE is 38
+IMPORT is 64
+RETURN_NULL is 41
+NUM_ONE is 3
+
+# (d) NO WRITE-THROUGH. `is` is an outward assignment (OP_SET_NAME) and env_set
+# walks the parent chain, so with the sandbox env parented at the global env a
+# sandboxed `sum is 42` rebound the HOST's `sum`. The sandbox env is now a
+# sealed root with the allowlist copied in: the assignment must land inside the
+# sandbox and leave the host binding alone.
+# (Compare the BINDING, not a call: pre-fix `sum` became the number 42, and
+# calling it aborts the program before the checks below ever run.)
+sandbox_run of [[ABI, [CONST,0,0, SET_NAME,1,0, RETURN], [42, "sum"]], 1000]
+no_writethrough is (type of sum) == "builtin"
+
+# (e) NO CALLABLE ACROSS THE BOUNDARY. A fn made in the sandbox closes over the
+# sandbox env; handing it back lets the host call sandbox-authored code AFTER
+# the loop cap and allocation budget have been restored. Returning one is a
+# denial, and the result must not be callable.
+ret_fn is [[NUM_ONE, RETURN, RETURN_NULL], [], [], 0, "f", []]
+r_fn is sandbox_run of [[ABI, [CLOSURE,0,0, RETURN], [], [ret_fn], 0, "<mod>", []], 1000]
+no_fn_escape is (r_fn["ok"] == 0) and ((type of r_fn["result"]) != "fn")
+
+# (f) IMPORT IS AN OPCODE, NOT A NAME — the allowlist never saw it. A sandboxed
+# OP_IMPORT read any .eigs on the box (the request is "lib/<name>.eigs", so
+# `../` traverses out of the script tree) and ran its body with FULL builtins,
+# then handed back a dict of its functions. Gated in the VM alongside the name
+# policy. Import a module that genuinely RESOLVES (`math`) and assert the
+# denial KIND: a non-existent path would return ok==0 for the wrong reason
+# (not-found, not denied) and pass even with the gate removed.
+r_imp is sandbox_run of [[ABI, [IMPORT,0,0, RETURN], ["math"], [], 0, "<mod>", []], 1000]
+no_import is (r_imp["ok"] == 0) and (r_imp["error"]["kind"] == "sandbox")
+
+if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and allow_ok and no_writethrough and no_fn_escape and no_import:
     print of "SANDBOX_ALLOW_OK"
 else:
     print of "SANDBOX_ALLOW_FAIL"
@@ -51,3 +88,7 @@ else:
     print of rbb_blk
     print of "allow_ok="
     print of allow_ok
+    print of "no_writethrough/no_fn_escape/no_import="
+    print of no_writethrough
+    print of no_fn_escape
+    print of no_import

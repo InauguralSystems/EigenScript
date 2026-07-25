@@ -4971,6 +4971,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t idx = read_u16(ip); ip += 2;
         const char *name = chunk->const_interns[idx];
 
+        /* Sandbox capability gate. builtin_sandbox_run's allowlist filters
+         * NAMES in the environment; `import` is an OPCODE, so it bypassed the
+         * allowlist entirely — a sandboxed chunk could emit OP_IMPORT, read any
+         * .eigs file on the box (the request is "lib/%s.eigs" with no
+         * validation, so `../../` traverses out of the script tree) and run its
+         * body with the FULL builtin set, then call the returned module dict's
+         * functions with the same reach. The name gate and the opcode gate have
+         * to move together: any future opcode that touches the outside world
+         * needs this check too. */
+        if (g_sandbox_active) {
+            rt_error(EK_SANDBOX, current_line,
+                     "import '%s' blocked in sandbox", name);
+            vm_push(make_null());
+            DISPATCH();
+        }
+
         extern TokenList tokenize(const char *source);
         extern ASTNode *parse(TokenList *tl);
         extern void free_tokenlist(TokenList *tl);

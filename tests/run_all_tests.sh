@@ -3452,6 +3452,29 @@ else
 fi
 echo ""
 
+echo "[96b] --pkg argv injection (3 checks)"
+# Security regression: eigs.json / eigs.lock.json values reach git argv, and a
+# leading '-' is parsed as an option even after positionals — a lockfile
+# "commit": "--upload-pack=<cmd>; git-upload-pack" made `--pkg install` execute
+# <cmd>, contradicting pkg.eigs's "no code runs during install" guarantee.
+# Third check guards against over-blocking a legitimate install.
+TOTAL=$((TOTAL + 3))
+PKG4_OUT=$(EIGENSCRIPT="./eigenscript" bash "$TESTS_DIR/test_pkg_argv_injection.sh" 2>&1); PKG4_RC=$?
+PKG4_PASS=$(echo "$PKG4_OUT" | grep -c "^  PASS:" || true)
+PKG4_SKIP=$(echo "$PKG4_OUT" | grep -c "^  SKIP:" || true)
+if [ "$PKG4_RC" = "0" ] && [ "$PKG4_PASS" = "3" ]; then
+    echo "$PKG4_OUT" | grep "^  PASS:"
+    PASS=$((PASS + 3))
+elif [ "$PKG4_SKIP" -gt "0" ]; then
+    echo "$PKG4_OUT" | grep "^  SKIP:"
+    PASS=$((PASS + 3))
+else
+    echo "  FAIL: --pkg argv injection (rc=$PKG4_RC, passes=$PKG4_PASS)"
+    echo "$PKG4_OUT" | head -20
+    FAIL=$((FAIL + 3))
+fi
+echo ""
+
 # ---- stdlib parse-check: every lib/*.eigs must parse clean ----
 # Regression guard for the keyword-shadow class: an identifier shadowing a
 # reserved keyword (lab.eigs's `stable`, functional.eigs's `when`) is a parse
