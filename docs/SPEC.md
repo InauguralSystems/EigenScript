@@ -1081,11 +1081,15 @@ print of (how is x)     # stability in [0, 1]
 ## Observer semantics and predicates
 
 Every assignment (outside `unobserved`) updates an observer that tracks
-the value's entropy and its trend. For lists and dicts the entropy walk
-visits each container node once per computation: a container reached
-again through a shared reference or a cycle contributes 0 (a leaf), so
-shared substructure is not double-counted and cyclic object graphs are
-well-defined (see [OBSERVER.md](OBSERVER.md)). Six bare-keyword predicates query
+the value's entropy and its trend. The entropy walk **stops at a
+reference**: a list or dict computes over its own elements, and an element
+that is itself a container contributes only its size term `log2(count+1)`
+rather than being entered. This is the rule buffers and text builders
+have always followed, so a dict holding a 5-element list measures exactly
+as one holding a 5-element buffer. The cost of an observed assignment is
+therefore proportional to the value's own size, never to everything it can
+reach, and cyclic or shared object graphs are well-defined because they are
+never traversed (see [OBSERVER.md](OBSERVER.md)). Six bare-keyword predicates query
 the most recently observed variable: `converged`, `stable`,
 `improving`, `oscillating`, `diverging`, `equilibrium`. The canonical
 use is a self-terminating loop:

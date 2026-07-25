@@ -334,8 +334,9 @@ works; you can reach for it long before you need the theory.
 ## What has no equivalent elsewhere: the observer
 
 Every assignment (outside `unobserved` blocks) updates an observer
-tracking the value's entropy and trend (for containers, one pass over
-the distinct nodes — shared or cyclic references read as leaves, #571). You can ask a variable about
+tracking the value's entropy and trend (for containers, one pass over the
+value's own elements — the walk stops at a reference, so a nested container
+contributes only its size term, #685). You can ask a variable about
 itself, terminate loops on *convergence* instead of a hand-written
 epsilon test, and read a variable's past:
 
