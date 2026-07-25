@@ -285,71 +285,6 @@ double observer_settledness(double dH) {
     return 1.0 - r;
 }
 
-/* #571: visited set for the container entropy walk. Without it the walk had
- * only a depth-64 cap, so SHARED or CYCLIC references re-walked whole
- * subgraphs: one back-referencing dict re-entered the graph 32x (linear,
- * unnoticed), a second made every observed assignment ~2^32 subtree walks
- * (0.07 ms -> seconds-to-minutes, found by the DeslanStudio 4d port).
- *
- * Mechanism: a stack-local open-addressing pointer set, containers only.
- *  - Scalars pay ZERO: compute_entropy only materializes the set when the
- *    root is a list/dict, and only list/dict nodes are inserted.
- *  - No heap allocation for graphs with <= ENT_VISITED_INLINE distinct
- *    containers (the common case); larger graphs spill to one xcalloc,
- *    negligible next to the O(elements) walk they already pay for.
- *  - MT-safe by construction: the set is per-computation stack state. A
- *    visit-stamp on the Value header was rejected because spawn passes args
- *    by REFERENCE (incref, not clone), so two threads can run
- *    compute_entropy over the SAME graph concurrently — header stamps
- *    would race (and an epoch scheme would need an impossible global
- *    clearing pass on wrap).
- *
- * Semantics (documented in docs/OBSERVER.md): each container node
- * contributes its entropy ONCE per computation; a re-encountered container
- * (back-edge or DAG sharing) reads as a 0-entropy leaf. Trees and scalars
- * are byte-identical to the old walk; DAG-shaped data is no longer
- * double-counted; cyclic data is now defined (it was depth-truncation-
- * dependent before). The depth-64 cap stays as the C-stack bound. */
-#define ENT_VISITED_INLINE 16   /* power of two */
-
-typedef struct {
-    Value **slots;      /* open-addressing table, NULL = empty slot */
-    uint32_t cap;       /* power of two */
-    uint32_t count;
-    Value *inline_slots[ENT_VISITED_INLINE];
-} EntVisited;
-
-static inline uint32_t ent_visited_hash(const Value *v, uint32_t cap) {
-    /* Fibonacci hash of the pointer; low bits of a Value* are alignment. */
-    return (uint32_t)(((uintptr_t)v * 0x9E3779B97F4A7C15ull) >> 32) & (cap - 1);
-}
-
-/* Insert v; returns 1 if newly added, 0 if already present. */
-static int ent_visited_add(EntVisited *vis, Value *v) {
-    if (vis->count * 4 >= vis->cap * 3) {   /* grow at 75% load */
-        uint32_t ncap = vis->cap * 2;
-        Value **ns = xcalloc(ncap, sizeof(Value *));
-        for (uint32_t i = 0; i < vis->cap; i++) {
-            Value *e = vis->slots[i];
-            if (!e) continue;
-            uint32_t j = ent_visited_hash(e, ncap);
-            while (ns[j]) j = (j + 1) & (ncap - 1);
-            ns[j] = e;
-        }
-        if (vis->slots != vis->inline_slots) free(vis->slots);
-        vis->slots = ns;
-        vis->cap = ncap;
-    }
-    uint32_t i = ent_visited_hash(v, vis->cap);
-    while (vis->slots[i]) {
-        if (vis->slots[i] == v) return 0;
-        i = (i + 1) & (vis->cap - 1);
-    }
-    vis->slots[i] = v;
-    vis->count++;
-    return 1;
-}
-
 /* Shannon entropy over a NUL-terminated byte string (256-bin frequency count).
  * Shared by VAL_STR and VAL_JSON_RAW: both hold `data.str`, so the same bytes
  * must measure the same either way. VAL_JSON_RAW used to return a flat 0.0 —
@@ -368,8 +303,37 @@ static double entropy_of_cstr(const char *sp) {
     return h;
 }
 
-static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
-    if (!v || depth > 64) return 0.0;
+static double compute_entropy_impl(Value *v);
+
+/* A container child contributes only its own size term: the walk STOPS at a
+ * reference. This is the rule VAL_BUFFER and VAL_TEXT_BUILDER have always
+ * used — they hold raw bytes/doubles, so there were never child Values to
+ * recurse into — and #685 extends it to the two types that could. A dict
+ * holding a 5-element list now measures exactly as one holding a 5-element
+ * buffer.
+ *
+ * Consequences, all of them the point:
+ *  - cost is O(own size), never O(reachable), so a short-lived binding that
+ *    references a large structure is no longer quadratic (#685: 4.93s -> 0.06s
+ *    at N=8000, and linear rather than merely faster);
+ *  - cycles and shared substructure are STRUCTURALLY unreachable rather than
+ *    defended against, which is why #571's visited set and the depth-64 cap
+ *    are gone rather than ported;
+ *  - the promise shrinks to one the runtime can keep. Deep semantics claimed a
+ *    container's entropy reflected everything it reached, but nothing
+ *    re-observed a binding when a referenced structure was mutated, so that
+ *    claim was already broken on the first in-place write (measured: 6.2M
+ *    mutations onto already-summarized values per fleet run). */
+static double ent_child(Value *c) {
+    if (c && (c->type == VAL_LIST || c->type == VAL_DICT)) {
+        int n = (c->type == VAL_LIST) ? c->data.list.count : c->data.dict.count;
+        return log2((double)n + 1.0);
+    }
+    return compute_entropy_impl(c);
+}
+
+static double compute_entropy_impl(Value *v) {
+    if (!v) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
         case VAL_NUM: return entropy_of_num(v->data.num);
@@ -377,23 +341,21 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
         case VAL_JSON_RAW: return entropy_of_cstr(v->data.str);
         case VAL_LIST: {
             if (v->data.list.count == 0) return 0.0;
-            if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
             double sum = 0.0;
             for (int i = 0; i < v->data.list.count; i++)
-                sum += compute_entropy_impl(v->data.list.items[i], depth + 1, vis);
-            return sum / v->data.list.count + log2(v->data.list.count + 1);
+                sum += ent_child(v->data.list.items[i]);
+            return sum / v->data.list.count + log2((double)v->data.list.count + 1.0);
         }
         case VAL_DICT: {
             if (v->data.dict.count == 0) return 0.0;
-            if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
             double sum = 0.0;
             for (int i = 0; i < v->data.dict.count; i++)
-                sum += compute_entropy_impl(v->data.dict.vals[i], depth + 1, vis);
-            return sum / v->data.dict.count + log2(v->data.dict.count + 1);
+                sum += ent_child(v->data.dict.vals[i]);
+            return sum / v->data.dict.count + log2((double)v->data.dict.count + 1.0);
         }
-        case VAL_FN: return 1.0;
+        case VAL_FN: return 1.0;          /* #708: a constant, so dH never moves */
         case VAL_BUILTIN: return 0.0;
-        case VAL_BUFFER: return log2(v->data.buffer.count + 1);
+        case VAL_BUFFER: return log2((double)v->data.buffer.count + 1.0);
         case VAL_TEXT_BUILDER: return log2((double)v->data.text_builder.len + 1.0);
     }
     /* No `default:` above, and no fallthrough value here: with -Werror=switch a
@@ -407,18 +369,7 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
 }
 
 double compute_entropy(Value *v) {
-    /* Scalar fast path: no container can be reached, so never touch (or
-     * zero) the visited table — observed scalar assignments pay nothing. */
-    if (!v || (v->type != VAL_LIST && v->type != VAL_DICT))
-        return compute_entropy_impl(v, 0, NULL);
-    EntVisited vis;
-    memset(vis.inline_slots, 0, sizeof(vis.inline_slots));
-    vis.slots = vis.inline_slots;
-    vis.cap = ENT_VISITED_INLINE;
-    vis.count = 0;
-    double h = compute_entropy_impl(v, 0, &vis);
-    if (vis.slots != vis.inline_slots) free(vis.slots);
-    return h;
+    return compute_entropy_impl(v);
 }
 
 

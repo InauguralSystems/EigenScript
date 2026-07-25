@@ -2160,6 +2160,11 @@ check_eigs_suite "large containers: growth stays gray-band, a change past any sa
     "test_observer_large.eigs" "OBSERVER_LARGE_ALL_PASS" 7
 echo ""
 
+echo "[50j6] Entropy stops at a reference (#685) (5 checks)"
+check_eigs_suite "a reference contributes its size term, never its contents" \
+    "test_entropy_reference_stop.eigs" "ENTROPY_REF_STOP_ALL_PASS" 5
+echo ""
+
 echo "[50j5] Entropy type coverage (4 checks)"
 check_eigs_suite "every ValType is measured, not given a plausible constant" \
     "test_entropy_types.eigs" "ENTROPY_TYPES_ALL_PASS" 4
@@ -3155,9 +3160,11 @@ check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK"
 check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All tests passed" 10
 
 # #571: the entropy walk is visited-once — cyclic/shared container graphs
-# complete (two back-edges used to be ~2^32 subtree walks) and each
-# container contributes once; trees/scalars keep their exact old values.
-check_eigs_suite "entropy cycle/shared-structure detection (#571)" test_entropy_cycles.eigs "ENTROPY_CYCLES_OK" 8
+# complete (two back-edges used to be ~2^32 subtree walks). Since #685 the
+# walk stops at a reference, so cycles and DAG sharing cannot be traversed
+# twice because they are not traversed at all — these cases pin that they
+# stay well-defined now that #571's visited set is gone.
+check_eigs_suite "cyclic/shared structure stays defined without a visited set (#685)" test_entropy_cycles.eigs "ENTROPY_CYCLES_OK" 9
 echo ""
 
 # #366: frameless leaf-accessor call fast path — results, borrows from

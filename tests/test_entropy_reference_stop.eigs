@@ -1,0 +1,81 @@
+# test_entropy_reference_stop.eigs — #685: the entropy walk stops at a
+# reference, so an observed assignment costs the value's OWN size and never
+# everything it can reach.
+#
+# The bug this pins: a short-lived binding that referenced a large live
+# structure re-walked that structure on every assignment. N assignments x
+# O(N) reachable = O(N^2). Measured 4.93s at N=8000, 0.06s after — and
+# linear rather than merely faster, which is what these assertions check.
+#
+# Deliberately NOT a timing test. The asymptotic claim is pinned as a
+# semantic invariant instead: if what a reference points at cannot affect the
+# parent's entropy, the parent cannot be paying to walk it.
+
+pass_count is 0
+total is 0
+
+define check(label, cond) as:
+    total is total + 1
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        print of f"FAIL: {label}"
+
+define close(a, b) as:
+    d is a - b
+    if d < 0:
+        d is 0 - d
+    return d < 0.000000001
+
+# --- build two large containers: same size, wildly different contents ---
+big_a is {}
+big_b is {}
+for i in range of 400:
+    dict_set of [big_a, str of i, 1.0]
+    dict_set of [big_b, str of i, i * 977.25]
+
+ref_a is {"ref": big_a, "x": 1.0}
+ref_b is {"ref": big_b, "x": 1.0}
+check of ["a reference's CONTENTS do not reach the parent",
+          close of [(observe of ref_a)[1], (observe of ref_b)[1]]]
+
+# --- but its SIZE does: the size term is what a reference contributes ---
+small is {}
+for i in range of 10:
+    dict_set of [small, str of i, 1.0]
+ref_small is {"ref": small, "x": 1.0}
+check of ["a reference's SIZE does reach the parent",
+          not (close of [(observe of ref_a)[1], (observe of ref_small)[1]])]
+
+# --- a container reference measures as a buffer of the same size ---
+# Buffers never had child Values to walk, so they always contributed their
+# size term alone. #685 makes list/dict references agree with them.
+buf is zeros of 400
+ref_buf is {"ref": buf, "x": 1.0}
+check of ["a dict reference measures as a buffer of the same size",
+          close of [(observe of ref_a)[1], (observe of ref_buf)[1]]]
+
+# --- own elements are still fully measured (the floor, not size-only) ---
+# Same size, different scalar contents => different entropy. Without this the
+# walk could be driven to O(1) and go blind to content entirely.
+flat_a is [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+flat_b is [1.0, 900.0, 0.004, 77.0, 3.25, 12.5]
+check of ["own scalar elements are still measured",
+          not (close of [(observe of flat_a)[1], (observe of flat_b)[1]])]
+
+# --- depth: the stop is at the FIRST reference, not merely bounded ---
+# l3 -> l2 -> l1: swapping l1's contents must not reach l3 either.
+l1_a is [1.0, 1.0, 1.0]
+l1_b is [900.0, 0.004, 77.0]
+l2_a is [l1_a, 2.0]
+l2_b is [l1_b, 2.0]
+l3_a is [l2_a, 3.0]
+l3_b is [l2_b, 3.0]
+check of ["the stop holds at depth, not just one level",
+          close of [(observe of l3_a)[1], (observe of l3_b)[1]]]
+
+print of f"Reference-stop: {pass_count}/{total} passed"
+if pass_count == total:
+    print of "ENTROPY_REF_STOP_ALL_PASS"
+else:
+    assert of [0, "Some reference-stop tests failed"]

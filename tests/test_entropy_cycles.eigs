@@ -1,12 +1,16 @@
-# test_entropy_cycles.eigs — #571: the observer's entropy walk detects
-# cycles and shared substructure (visited-once semantics).
+# test_entropy_cycles.eigs — cycles and shared substructure in the entropy
+# walk, now that the walk STOPS at a reference (#685).
 #
-# Before #571 the walk had only a depth-64 cap: one back-referencing dict
-# re-entered the graph 32x (linear, unnoticed), a second made every
-# observed container assignment ~2^32 subtree walks — the DeslanStudio 4d
-# hang. Now each container node contributes its entropy ONCE per
-# computation; a re-encountered container (back-edge or DAG sharing) reads
-# as a 0-entropy leaf. Trees and scalars are unchanged.
+# History: pre-#571 the walk had only a depth-64 cap, so one back-referencing
+# dict re-entered the graph 32x and a second made every observed container
+# assignment ~2^32 subtree walks — the DeslanStudio 4d hang. #571 answered
+# that with a visited set: each container contributed once per computation.
+#
+# #685 removed the premise instead. A container child now contributes only
+# its size term log2(count+1) and is never entered, so a cycle or a shared
+# reference cannot be traversed twice because it cannot be traversed at all.
+# The visited set is gone — not ported — and these cases are checked here to
+# pin that they stay well-defined without it.
 
 pass_count is 0
 fail_count is 0
@@ -42,16 +46,30 @@ append of [a.x, a]
 q is a
 check of ["self-cycle dict entropy == 2.0", (where is q) == 2.0]
 
-# --- DAG with shared substructure: counted once, not per path ---
+# --- a reference contributes its size term, not its contents (#685) ---
+# Entropy stops at a reference, so each slot of [sub, sub] contributes
+# log2(2+1) — the same as a reference to ANY 2-element container, and the
+# same as VAL_BUFFER has always contributed. H(pair) = (log2_3 + log2_3)/2
+# + log2_3 = 2*log2_3.
 sub is [5, 7]
-hsub is where is sub
 pair is [sub, sub]
 hpair is where is pair
-expected is hsub / 2 + log2_3
+expected is log2_3 + log2_3
 diff is hpair - expected
 if diff < 0:
     diff is 0 - diff
-check of ["shared substructure counted once", diff < 0.000000001]
+check of ["a reference contributes its size term", diff < 0.000000001]
+
+# The load-bearing consequence: what a reference POINTS AT cannot change the
+# parent's entropy. Same sizes, wildly different contents, same answer — this
+# is what makes the walk O(own size) instead of O(reachable) (#685).
+other is [900.0, 0.004]
+mixed is [sub, other]
+hmixed is where is mixed
+diff2 is hmixed - hpair
+if diff2 < 0:
+    diff2 is 0 - diff2
+check of ["a reference's contents do not reach the parent", diff2 < 0.000000001]
 
 # --- trees (distinct objects) keep the pre-#571 values ---
 t is [1.0, 1.0]

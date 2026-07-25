@@ -28,6 +28,21 @@ EIGS_OBS_SHADOW=1 ./run.sh    # validate the slot model vs the value-path golden
 Exit 0 iff every program reproduces its golden. A divergence names the program;
 inspect with `diff <(cd programs && BIN prog.eigs) golden/prog.out`.
 
+## Coverage note (#685)
+
+Until 2026-07-25 every program here observed **scalars**. All 13 therefore
+produced byte-identical output under deep, shallow and size-only container
+entropy walks — and under a build with container entropy destroyed outright.
+The oracle whose job is catching consumer-visible observer changes could not
+see the container-entropy axis at all.
+
+`EigenScript__container_observer` closes that: it observes containers
+directly (flat content, content-change at fixed size, nesting through a
+reference, a buffer reference for contrast, shared substructure, and a
+trajectory over a growing container). Keep at least one container-observing
+program in the corpus — a scalar-only corpus is silently narrower than it
+looks.
+
 ## Sources (same-owner repos; vendored with provenance)
 - **dynamics** — `solve`/`physics`/`life`: real solvers and trajectory demos
   using `report`, the six predicates, `unobserved`, and `prev`.

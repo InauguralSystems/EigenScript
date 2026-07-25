@@ -57,13 +57,19 @@ Two of these are the load-bearing pair:
 - **`where` — information content (the engine calls it entropy).** For a
   number it is, in spirit, *how many bits it takes to pin the value down*.
   For a string it is the Shannon entropy of its characters; for a list or
-  dict it is the average of its elements plus a size term, where each
-  **container** node contributes its entropy **once per computation** —
-  a container re-encountered through a shared reference or a back-edge
-  reads as a 0-entropy leaf (#571). That makes the walk one pass over
-  the distinct nodes: shared substructure is not double-counted, and
-  cyclic graphs are well-defined (and cheap) instead of exponential.
-  Scalar leaves still count once per occurrence. It needs no
+  dict it is the average of its elements plus a size term, and the walk
+  **stops at a reference** — an element that is itself a container
+  contributes only its size term `log2(count+1)` rather than being entered
+  (#685). That is the rule buffers and text builders always followed, and
+  it means a container's entropy costs its own size, never everything it
+  can reach. Shared substructure and cycles are well-defined because they
+  are never traversed. Scalar leaves count once per occurrence.
+
+  What this deliberately does *not* claim: a container's entropy does not
+  reflect the contents of what it points at. It cannot — nothing
+  re-observes a binding when a referenced structure is mutated in place, so
+  a reachability-wide reading would go stale on the first such write
+  (#685). It needs no
   origin and no target — it is a property of the value's own structure.
   That is what makes it computable from inside.
 - **`why` — the change in `where` since you last looked.** Negative means

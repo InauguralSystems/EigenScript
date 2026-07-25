@@ -1,0 +1,61 @@
+# Container-observing drill — the axis this corpus could not see.
+#
+# Every other program here observes SCALARS, so all 13 produced identical
+# output under deep, shallow and size-only entropy walks alike — including a
+# build where a container's entropy was destroyed outright. An oracle whose
+# job is catching consumer-visible observer changes was blind to the entire
+# container-entropy axis.
+#
+# This program observes containers directly, so a change to how the walk
+# treats nested structure, shared references, cycles, or size shows up as a
+# golden diff rather than passing silently.
+
+# ---- flat containers: content and size both visible ----
+la is [1.0, 2.0, 3.0, 4.0]
+print of (observe of la)[1]
+
+lb is [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+print of (observe of lb)[1]
+
+da is {"a": 1.0, "b": 2.0}
+print of (observe of da)[1]
+
+# ---- content change at fixed size must move the channel ----
+lc is [1.0, 1.0, 1.0, 1.0]
+h1 is (observe of lc)[1]
+lc is [1.0, 900.0, 0.004, 77.0]
+h2 is (observe of lc)[1]
+print of h1
+print of h2
+
+# ---- nesting: a container reached through a reference ----
+inner is [1.0, 2.0, 3.0, 4.0, 5.0]
+outer is {"ref": inner, "x": 1.0}
+print of (observe of outer)[1]
+
+# same shape, but the referenced container's CONTENTS differ
+inner2 is [900.0, 0.004, 77.0, 12.5, 3.25]
+outer2 is {"ref": inner2, "x": 1.0}
+print of (observe of outer2)[1]
+
+# same reference count, different referenced SIZE
+inner3 is [1.0, 2.0]
+outer3 is {"ref": inner3, "x": 1.0}
+print of (observe of outer3)[1]
+
+# ---- a buffer reference, for comparison with a container reference ----
+buf is zeros of 5
+outer4 is {"ref": buf, "x": 1.0}
+print of (observe of outer4)[1]
+
+# ---- shared substructure reached by two paths ----
+shared is [1.0, 2.0, 3.0]
+twice is {"p": shared, "q": shared}
+print of (observe of twice)[1]
+
+# ---- a trajectory over a growing container ----
+g is []
+for i in range of 6:
+    g is concat of [g, [1.0]]
+    o is observe of g
+    print of f"{o[1]} {o[2]} {o[0]}"
