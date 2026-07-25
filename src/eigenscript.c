@@ -354,6 +354,7 @@ static int ent_visited_add(EntVisited *vis, Value *v) {
 /* #685 measurement build ONLY. See obs_slot_read in eigenscript.h. */
 uint64_t g_obs_assigns = 0, g_obs_reads = 0, g_obs_ent_nodes = 0;
 uint64_t g_obs_dead_slots = 0, g_obs_live_slots = 0;
+uint64_t g_obs_mut_total = 0, g_obs_mut_observed = 0, g_obs_went_stale = 0;
 uint64_t g_obs_wasted_assigns = 0, g_obs_used_assigns = 0;
 
 __attribute__((destructor)) static void obs_stats_dump(void) {
@@ -367,12 +368,16 @@ __attribute__((destructor)) static void obs_stats_dump(void) {
     if (!f) return;
     fprintf(f,
         "[obs-stats] assigns=%llu reads=%llu ent_nodes=%llu "
-        "dead_slots=%llu live_slots=%llu wasted_assigns=%llu used_assigns=%llu\n",
+        "dead_slots=%llu live_slots=%llu wasted_assigns=%llu used_assigns=%llu "
+        "mut_total=%llu mut_observed=%llu went_stale=%llu\n",
         (unsigned long long)g_obs_assigns, (unsigned long long)g_obs_reads,
         (unsigned long long)g_obs_ent_nodes,
         (unsigned long long)g_obs_dead_slots, (unsigned long long)g_obs_live_slots,
         (unsigned long long)g_obs_wasted_assigns,
-        (unsigned long long)g_obs_used_assigns);
+        (unsigned long long)g_obs_used_assigns,
+        (unsigned long long)g_obs_mut_total,
+        (unsigned long long)g_obs_mut_observed,
+        (unsigned long long)g_obs_went_stale);
     fclose(f);
 }
 #endif
@@ -638,6 +643,11 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
 }
 
 void observer_slot_update(Env *e, int idx, Value *newval) {
+#ifdef EIGS_OBS_STATS
+    /* #685: this value is now what an ObserverSlot claims to describe, and the
+     * description is fresh as of right now. */
+    if (newval) { newval->st_obs = 1; newval->st_dirty = 0; }
+#endif
     observer_slot_update_e(e, idx, compute_entropy(newval));
     /* #294 also fold the raw value into the value-signal channel (numbers only:
      * the relative-delta step is only defined for a scalar trajectory). */
@@ -1276,6 +1286,7 @@ Value* make_dict(int capacity) {
 
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
     if (!dict || dict->type != VAL_DICT) return;
+    OBS_MUT(dict);   /* #685: every dict write funnels here */
     if (h == 0) h = env_hash_name(key);
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx >= 0) {
@@ -1445,6 +1456,7 @@ void dict_remove(Value *dict, const char *key) {
 
 void list_append(Value *list, Value *item) {
     if (!list || list->type != VAL_LIST) return;
+    OBS_MUT(list);   /* #685 */
     if (list->data.list.count >= list->data.list.capacity) {
         int new_cap = list->data.list.capacity * 2;
         if (list->arena) {

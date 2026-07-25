@@ -334,6 +334,13 @@ struct Value {
      * struct's tail padding (no size change) and is zero-initialized by every
      * Value allocator (xcalloc / arena_alloc memset / freelist reuse memset). */
     unsigned char gc_buffered;
+#ifdef EIGS_OBS_STATS
+    /* #685 measurement build ONLY. st_obs: this Value is currently an observed
+     * binding's value (set when folded into an ObserverSlot). st_dirty: it has
+     * been mutated since that fold, i.e. the slot's stored entropy no longer
+     * describes it. Lives in the struct's tail padding. */
+    unsigned char st_obs, st_dirty;
+#endif
 };
 
 /* Window length for the per-Value dH ring buffer. Predicates require
@@ -994,6 +1001,23 @@ extern uint64_t g_obs_dead_slots;   /* slots torn down having never been read */
 extern uint64_t g_obs_live_slots;   /* slots torn down having been read >= once */
 extern uint64_t g_obs_wasted_assigns; /* folds charged to never-read slots */
 extern uint64_t g_obs_used_assigns;   /* folds charged to read-at-least-once slots */
+extern uint64_t g_obs_mut_total;      /* instrumented container mutations */
+extern uint64_t g_obs_mut_observed;   /* ...of a value that IS an observed binding's value */
+extern uint64_t g_obs_went_stale;     /* first such mutation since that value's last fold */
+/* #685: a mutation reaching a value an ObserverSlot has already summarized
+ * makes the slot's stored entropy wrong, with no assignment to re-observe it.
+ * Counting these answers whether the observer observes VALUES (as documented)
+ * or merely ASSIGNMENTS (as implemented). Lower bound: only the directly
+ * observed container is marked, so staleness inherited through a reference
+ * (deep semantics) is NOT counted. */
+static inline void obs_mut_note(struct Value *t) {
+    g_obs_mut_total++;
+    if (t && t->st_obs) {
+        g_obs_mut_observed++;
+        if (!t->st_dirty) { t->st_dirty = 1; g_obs_went_stale++; }
+    }
+}
+#define OBS_MUT(t) obs_mut_note(t)
 static inline struct ObserverSlot *obs_slot_read(Env *e, int idx) {
     struct ObserverSlot *s = env_obs_slot(e, idx);
     g_obs_reads++;
@@ -1001,6 +1025,7 @@ static inline struct ObserverSlot *obs_slot_read(Env *e, int idx) {
     return s;
 }
 #else
+#define OBS_MUT(t) ((void)0)
 #define obs_slot_read(e, idx) env_obs_slot((e), (idx))
 #endif
 

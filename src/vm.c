@@ -492,6 +492,7 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
             if (existing && existing->type == VAL_NUM &&
                 existing->refcount == 1 &&
                 !existing->arena) {
+                OBS_MUT(dict);   /* #685: in-place scalar write, no assignment */
                 existing->data.num = num;
                 return 1;
             }
@@ -1681,6 +1682,7 @@ void jit_helper_index_set(void) {
         if (target->type == VAL_LIST && slot_is_num(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 Value *existing = target->data.list.items[i];
+                OBS_MUT(target);   /* #685: list element store */
                 if (existing && existing->type == VAL_NUM &&
                     existing->refcount == 1 &&
                     !existing->arena) {
