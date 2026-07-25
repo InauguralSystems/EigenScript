@@ -267,6 +267,13 @@ typedef struct ObserverSlot {
                                  * relative normalization erases */
     uint8_t v_window_head, v_window_count;
     uint8_t v_used;             /* 1 once a numeric value has been recorded */
+#ifdef EIGS_OBS_STATS
+    /* #685 measurement build ONLY (-DEIGS_OBS_STATS). Per-slot query-rate
+     * accounting: how many eager entropy folds this binding paid for, and how
+     * many times anything actually interrogated it. Never compiled into a
+     * shipped binary. */
+    uint64_t st_assigns, st_reads;
+#endif
 } ObserverSlot;
 
 struct Env {
@@ -973,6 +980,29 @@ static inline struct ObserverSlot *env_obs_slot(Env *e, int idx) {
     if (idx >= e->obs_cap || !e->obs) return NULL;
     return &e->obs[idx];
 }
+
+/* #685 measurement build ONLY (-DEIGS_OBS_STATS). obs_slot_read marks an
+ * INTERROGATION of an observer slot — the VM's report/trajectory/observe/
+ * predicate opcodes — as distinct from the eager fold done at assignment.
+ * The whole question #685 turns on is the ratio between the two. In a normal
+ * build this is exactly env_obs_slot, so the shipped binary is unchanged. */
+#ifdef EIGS_OBS_STATS
+extern uint64_t g_obs_assigns;      /* eager entropy folds (one per observed assign) */
+extern uint64_t g_obs_reads;        /* slot interrogations */
+extern uint64_t g_obs_ent_nodes;    /* compute_entropy_impl node visits (cost proxy) */
+extern uint64_t g_obs_dead_slots;   /* slots torn down having never been read */
+extern uint64_t g_obs_live_slots;   /* slots torn down having been read >= once */
+extern uint64_t g_obs_wasted_assigns; /* folds charged to never-read slots */
+extern uint64_t g_obs_used_assigns;   /* folds charged to read-at-least-once slots */
+static inline struct ObserverSlot *obs_slot_read(Env *e, int idx) {
+    struct ObserverSlot *s = env_obs_slot(e, idx);
+    g_obs_reads++;
+    if (s) s->st_reads++;
+    return s;
+}
+#else
+#define obs_slot_read(e, idx) env_obs_slot((e), (idx))
+#endif
 
 Env* env_new(Env *parent);
 void env_set(Env *env, const char *name, Value *val);

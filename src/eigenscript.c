@@ -350,7 +350,37 @@ static int ent_visited_add(EntVisited *vis, Value *v) {
     return 1;
 }
 
+#ifdef EIGS_OBS_STATS
+/* #685 measurement build ONLY. See obs_slot_read in eigenscript.h. */
+uint64_t g_obs_assigns = 0, g_obs_reads = 0, g_obs_ent_nodes = 0;
+uint64_t g_obs_dead_slots = 0, g_obs_live_slots = 0;
+uint64_t g_obs_wasted_assigns = 0, g_obs_used_assigns = 0;
+
+__attribute__((destructor)) static void obs_stats_dump(void) {
+    /* EIGS_OBS_STATS names an APPEND FILE, not a boolean: writing to stderr
+     * perturbs consumer harnesses that diff combined output (it broke
+     * eigen-sheet's smoke oracle on the first run). The instrument must not
+     * change what it measures. */
+    const char *path = getenv("EIGS_OBS_STATS");
+    if (!path || !*path) return;
+    FILE *f = fopen(path, "a");
+    if (!f) return;
+    fprintf(f,
+        "[obs-stats] assigns=%llu reads=%llu ent_nodes=%llu "
+        "dead_slots=%llu live_slots=%llu wasted_assigns=%llu used_assigns=%llu\n",
+        (unsigned long long)g_obs_assigns, (unsigned long long)g_obs_reads,
+        (unsigned long long)g_obs_ent_nodes,
+        (unsigned long long)g_obs_dead_slots, (unsigned long long)g_obs_live_slots,
+        (unsigned long long)g_obs_wasted_assigns,
+        (unsigned long long)g_obs_used_assigns);
+    fclose(f);
+}
+#endif
+
 static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
+#ifdef EIGS_OBS_STATS
+    g_obs_ent_nodes++;
+#endif
     if (!v || depth > 64) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
@@ -552,6 +582,10 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
      * itself must still be synchronized. */
     ObserverSlot *s = env_obs_slot(e, idx);
     if (!s) return;
+#ifdef EIGS_OBS_STATS
+    g_obs_assigns++;
+    s->st_assigns++;
+#endif
     s->prev_dH = s->dH;
     if (!s->used || s->obs_age == 0) {
         s->dH = 0;                 /* first observation of this binding */
@@ -587,6 +621,19 @@ void observer_slot_update_num(Env *e, int idx, double num) {
 void observer_slot_reset(Env *e) {
     if (!e || !e->obs) return;
     vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
+#ifdef EIGS_OBS_STATS
+    /* #685: charge each slot's eager folds to "ever interrogated" or not. A
+     * loop-local binding resets per iteration, which is the honest unit — an
+     * iteration that never asked genuinely wasted that iteration's folds. */
+    for (int i = 0; i < e->obs_cap; i++) {
+        if (!e->obs[i].st_assigns) continue;
+        if (e->obs[i].st_reads) {
+            g_obs_live_slots++; g_obs_used_assigns += e->obs[i].st_assigns;
+        } else {
+            g_obs_dead_slots++; g_obs_wasted_assigns += e->obs[i].st_assigns;
+        }
+    }
+#endif
     for (int i = 0; i < e->obs_cap; i++) {
         free(e->obs[i].dh_window);
         free(e->obs[i].v_window);   /* #294 value-signal window */
