@@ -350,23 +350,31 @@ static int ent_visited_add(EntVisited *vis, Value *v) {
     return 1;
 }
 
+/* Shannon entropy over a NUL-terminated byte string (256-bin frequency count).
+ * Shared by VAL_STR and VAL_JSON_RAW: both hold `data.str`, so the same bytes
+ * must measure the same either way. VAL_JSON_RAW used to return a flat 0.0 —
+ * a document could grow without bound and the observer still reported it as
+ * `equilibrium` with dH exactly 0 forever. */
+static double entropy_of_cstr(const char *sp) {
+    if (!sp || !sp[0]) return 0.0;
+    int freq[256] = {0};
+    int len = 0;
+    for (const char *c = sp; *c; c++) { freq[(unsigned char)*c]++; len++; }
+    if (len == 0) return 0.0;
+    double h = 0.0;
+    for (int i = 0; i < 256; i++) {
+        if (freq[i] > 0) { double p = (double)freq[i] / len; h -= p * log2(p); }
+    }
+    return h;
+}
+
 static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
     if (!v || depth > 64) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
         case VAL_NUM: return entropy_of_num(v->data.num);
-        case VAL_STR: {
-            if (!v->data.str || !v->data.str[0]) return 0.0;
-            int freq[256] = {0};
-            int len = 0;
-            for (const char *c = v->data.str; *c; c++) { freq[(unsigned char)*c]++; len++; }
-            if (len == 0) return 0.0;
-            double h = 0.0;
-            for (int i = 0; i < 256; i++) {
-                if (freq[i] > 0) { double p = (double)freq[i] / len; h -= p * log2(p); }
-            }
-            return h;
-        }
+        case VAL_STR:      return entropy_of_cstr(v->data.str);
+        case VAL_JSON_RAW: return entropy_of_cstr(v->data.str);
         case VAL_LIST: {
             if (v->data.list.count == 0) return 0.0;
             if (!ent_visited_add(vis, v)) return 0.0;   /* #571: counted once */
@@ -385,11 +393,17 @@ static double compute_entropy_impl(Value *v, int depth, EntVisited *vis) {
         }
         case VAL_FN: return 1.0;
         case VAL_BUILTIN: return 0.0;
-        case VAL_JSON_RAW: return 0.0;
         case VAL_BUFFER: return log2(v->data.buffer.count + 1);
         case VAL_TEXT_BUILDER: return log2((double)v->data.text_builder.len + 1.0);
     }
-    return 0.0;
+    /* No `default:` above, and no fallthrough value here: with -Werror=switch a
+     * new ValType is a BUILD failure at this switch rather than a silent 0.0.
+     * A plausible number for a type nobody measured is the worst outcome — it
+     * reads as "perfectly quiet" and pins dH at 0, so the binding classifies
+     * `equilibrium` no matter what it does. That is how VAL_JSON_RAW went
+     * unnoticed. Reaching here at runtime means a corrupted type tag. */
+    fprintf(stderr, "eigenscript: compute_entropy: unhandled ValType %d\n", (int)v->type);
+    abort();
 }
 
 double compute_entropy(Value *v) {

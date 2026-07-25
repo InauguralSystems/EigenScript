@@ -2160,6 +2160,11 @@ check_eigs_suite "large containers: growth stays gray-band, a change past any sa
     "test_observer_large.eigs" "OBSERVER_LARGE_ALL_PASS" 7
 echo ""
 
+echo "[50j5] Entropy type coverage (4 checks)"
+check_eigs_suite "every ValType is measured, not given a plausible constant" \
+    "test_entropy_types.eigs" "ENTROPY_TYPES_ALL_PASS" 4
+echo ""
+
 echo "[50k] UTF-8 codepoints (16 checks)"
 check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural validation (published vectors)" \
     "test_utf8.eigs" "UTF8_ALL_PASS" 1
