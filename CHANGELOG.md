@@ -6,6 +6,39 @@ All notable changes to EigenScript are documented here.
 
 ### Security
 
+- **`chunk_verify` let an untrusted chunk run off the end of its code
+  (#721).** The verifier checked opcodes, operand bounds and jump targets but
+  never that execution *terminates* — "the caller supplies a chunk ending in
+  `OP_RETURN`" was documented as a caller obligation, which is precisely the
+  trust `sandbox_run` exists to remove. A chunk with no terminator ran into the
+  zeroed slack of the code buffer, where byte `0` decodes as `OP_CONST[0]` and
+  the VM pushed `constants[0]` with no NULL check: `vm_run_bytecode of ([1, [1],
+  []])` was a one-line segfault. Verification now requires the last instruction
+  to be a return or an unconditional jump. Two more holes on the same surface,
+  both reachable only from a hand-built descriptor, closed with it: `OP_ITER_NEXT`
+  read its index slot as a number with no type check and bounds-checked only the
+  *upper* end, so a negative index read below the list and `val_incref`'d an
+  arbitrary pointer; and a descriptor's constant pool was loaded through the
+  *deduplicating* add, so a repeated number or string collapsed two entries into
+  one, shifted every later index down, and the code then loaded the wrong
+  constant with no error anywhere (descriptor pools are now positional, and a
+  hole in one is rejected rather than renumbered).
+
+- **`--lint` on a machine-sized file overflowed the stack (#723).** The
+  top-level function-name collector wrote into a fixed 512-entry stack array,
+  but `program.count` has been unbounded since #327 removed the fixed statement
+  caps — so the write was bounded only by the input. 600 top-level `define`s
+  is a confirmed stack-buffer-overflow under ASan, and it is reachable twice
+  over: `eigenscript --lint`, and the LSP's `lint_collect`, which means opening
+  a generated file in an editor corrupted the language server's stack. 512 is
+  an ordinary size for generated EigenScript. The collector now sizes to the
+  statement count. Same file, same rule: `check_unused_params` declared an
+  ~85 KiB `LintContext` *by value* inside a function that recurses into nested
+  `AST_FUNC`s — the PR #361 class, reintroduced in the lint pass — now
+  heap-allocated. (Not currently crashable: the parser's depth limit caps the
+  recursion below what an 8 MiB stack needs. The 64 KiB EigenOS boot stack has
+  far less headroom, which is how #361 surfaced.)
+
 - **HTTP slow-loris: one source could deny all service (#718).** The HTTP
   extension is thread-per-connection with a hard ceiling of 256 workers and,
   until now, only a single *global* connection counter. Pointing a real client
@@ -89,6 +122,32 @@ All notable changes to EigenScript are documented here.
   default `protocol.ext.allow=never` already blocks it.)
 
 ### Fixed
+
+- **Leaving a `try` by `break`, `continue`, or `return` did not unregister its
+  handler (#726).** The compiler emitted `OP_TRY_END` only at the *normal* end
+  of a try body, so every non-local exit jumped out with the handler still
+  live — and the failure was silent in three different ways. After a `break`
+  out of a `try`, a later error resolved to that dead handler: execution
+  re-entered the already-finished catch body with a stale `catch_bp`, and the
+  env restored from the wrong frame lost its bindings (the repro's next line
+  reported `undefined variable 'print'`). `continue` was worse — it re-entered
+  `TRY_BEGIN` every iteration while its `TRY_END` never ran, so the handler
+  stack climbed once per iteration until it pinned at the cap. And `return`
+  from inside a `try` leaked the *process* global `g_try_depth`, whose
+  `== 0` gate in `rt_error` is what decides whether an uncaught error prints
+  at all: after one such return, every later uncaught error in the process
+  exited nonzero with **no diagnostic whatsoever**. All three now emit one
+  `OP_TRY_END` per try block being left, the way `break` already emitted the
+  loop-env cleanup.
+
+  The originally-reported half of the same issue — nesting *past* the 8-deep
+  per-frame handler stack — was a mis-pair rather than a leak: `TRY_BEGIN`
+  registered nothing while its `TRY_END` still popped, so from the 9th `try`
+  onward every raise took the wrong catch, with no error and no warning (9
+  nested tries caught at depth 7). Deeper nesting is now a compile error the
+  way a stray `break` is (#337), and `TRY_BEGIN` re-checks at runtime and
+  raises, because an untrusted chunk reaches it without a compiler in the
+  path. 8-deep still dispatches to the innermost catch.
 
 - **Builtins called from outside the VM freed live values (#720).** A builtin
   may return a *borrow* of its argument with no compensating incref — `num`

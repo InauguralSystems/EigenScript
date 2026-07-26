@@ -146,4 +146,91 @@ catch e3:
 assert_eq of [superseded.kind, "undefined_name", "runtime error supersedes stale value"]
 assert_true of [contains of [superseded.message, "undefined variable"], "superseding message intact"]
 
+
+# ---- #726: a try block left by a NON-LOCAL exit must unregister its handler.
+# The compiler emits OP_TRY_END only at the normal end of the try body, so
+# `break`/`continue` jumped out with the handler still live. A later error then
+# resolved to that dead handler: it re-entered the catch body with a stale
+# catch_bp, and the env restored from the wrong frame lost its bindings (the
+# repro printed "undefined variable 'print'").
+
+stale_break is "none"
+for i in [1, 2]:
+    try:
+        break
+    catch eb:
+        stale_break is "DEAD-CATCH-RAN"
+
+after_break is "none"
+try:
+    throw of {"kind": "after-break"}
+catch e_ab:
+    after_break is e_ab.kind
+assert_eq of [stale_break, "none", "#726: break out of try never runs its catch"]
+assert_eq of [after_break, "after-break", "#726: later throw reaches the live handler, not the broken-out-of one"]
+
+# `continue` re-entered TRY_BEGIN every iteration while its TRY_END never ran,
+# so the handler stack climbed once per iteration.
+stale_cont is "none"
+for j in [1, 2, 3]:
+    try:
+        continue
+    catch ec:
+        stale_cont is "DEAD-CATCH-RAN"
+
+after_cont is "none"
+try:
+    throw of {"kind": "after-continue"}
+catch e_ac:
+    after_cont is e_ac.kind
+assert_eq of [stale_cont, "none", "#726: continue out of try never runs its catch"]
+assert_eq of [after_cont, "after-continue", "#726: continue does not accumulate handlers"]
+
+# `return` from inside a try, then a catch in the caller still works. (The
+# g_try_depth half of this leak is only observable on an UNCAUGHT error's
+# diagnostic — covered by the shell section in run_all_tests.sh.)
+define ret_from_try() as:
+    try:
+        return "returned"
+    catch er:
+        return "caught"
+rv is ret_from_try of []
+after_ret is "none"
+try:
+    throw of {"kind": "after-return"}
+catch e_ar:
+    after_ret is e_ar.kind
+assert_eq of [rv, "returned", "#726: return from inside try returns normally"]
+assert_eq of [after_ret, "after-return", "#726: caller's handler intact after return-from-try"]
+
+# Boundary: exactly MAX_TRY_HANDLERS (8) deep still dispatches to the INNERMOST
+# catch. 9 is a compile error (run_all_tests.sh); 8 must keep working.
+deep8 is "none"
+try:
+    try:
+        try:
+            try:
+                try:
+                    try:
+                        try:
+                            try:
+                                throw of {"kind": "d8"}
+                            catch d8:
+                                deep8 is "depth-8"
+                        catch d7:
+                            deep8 is "depth-7"
+                    catch d6:
+                        deep8 is "depth-6"
+                catch d5:
+                    deep8 is "depth-5"
+            catch d4:
+                deep8 is "depth-4"
+        catch d3:
+            deep8 is "depth-3"
+    catch d2:
+        deep8 is "depth-2"
+catch d1:
+    deep8 is "depth-1"
+assert_eq of [deep8, "depth-8", "#726: 8-deep nesting still catches at the innermost try"]
+
 test_summary of null

@@ -937,6 +937,12 @@ validation
 -5
 ```
 
+`try` blocks nest up to **8 deep within one function body** (each
+function gets its own handler stack, so nesting across a call is not
+counted). Going deeper is a compile error rather than a silent
+mis-dispatch. Leaving a `try` by `break`, `continue`, or `return`
+unregisters its handler, exactly as reaching the end of the block does.
+
 An *uncaught* error prints the error, a one-line source excerpt with a
 `^` caret under the offending column, and a stack trace — every frame
 between the failure and the top level, innermost first — then exits

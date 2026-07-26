@@ -418,6 +418,11 @@ typedef struct EigsChunk {
 } EigsChunk;
 
 /* ---- Call Frame ---- */
+
+/* Max `try` blocks live at once in a single frame. Both the compiler (source)
+ * and TRY_BEGIN (untrusted chunks) reject going past it — see #726. */
+#define MAX_TRY_HANDLERS 8
+
 typedef struct {
     EigsChunk *chunk;
     uint8_t   *ip;              /* instruction pointer */
@@ -427,8 +432,11 @@ typedef struct {
     Value     *closure_val;     /* the VAL_FN that was called */
     int        owns_env;        /* 1 if frame owns its env (free on return) */
     int        is_try;          /* 1 if any try handler active */
-    /* Try handler stack (supports nested try/catch within a frame) */
-    struct { uint8_t *catch_ip; int catch_bp; } try_handlers[8];
+    /* Try handler stack (supports nested try/catch within a frame). The
+     * compiler rejects source that nests deeper than MAX_TRY_HANDLERS; the
+     * VM re-checks because untrusted chunks (vm_run_bytecode / sandbox_run)
+     * reach TRY_BEGIN without going through the compiler at all (#726). */
+    struct { uint8_t *catch_ip; int catch_bp; } try_handlers[MAX_TRY_HANDLERS];
     int        try_count;       /* number of active try handlers */
     /* Saved loop-stall globals (so a callee's loops don't inherit caller's
      * accumulated stall count / iteration count). Scoped per call frame. */
@@ -577,6 +585,7 @@ void       chunk_free(EigsChunk *chunk);   /* alias of chunk_decref */
 void       chunk_incref(EigsChunk *chunk);
 void       chunk_decref(EigsChunk *chunk);
 int        chunk_add_constant(EigsChunk *chunk, Value *val);
+int        chunk_add_constant_positional(EigsChunk *chunk, Value *val);
 void       chunk_emit(EigsChunk *chunk, uint8_t byte, int line);
 void       chunk_emit_u16(EigsChunk *chunk, uint16_t val, int line);
 void       chunk_emit_u32(EigsChunk *chunk, uint32_t val, int line);

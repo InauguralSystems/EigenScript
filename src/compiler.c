@@ -30,6 +30,9 @@ typedef struct {
     int  continue_target;
     int  scope_depth;
     int  has_fresh_env; /* 1 if loop emits OP_LOOP_ENV_FRESH per iteration (for-loops) */
+    int  try_depth_at_entry; /* c->try_depth when the loop opened — break/continue
+                              * must emit one OP_TRY_END per try block they jump
+                              * out of, or the handler stays registered (#726) */
 } LoopCtx;
 
 /* Dynamic set of name pointers used for escape analysis & module-name tracking.
@@ -89,6 +92,12 @@ typedef struct Compiler {
                                      * normal name-call path honors the user
                                      * binding, and the builtin fallback is
                                      * semantically identical (fail-open). */
+    int               try_depth;    /* #726: lexical `try` nesting at this point in
+                                     * THIS function's body (a nested AST_FUNC gets
+                                     * its own Compiler, so it restarts at 0 —
+                                     * matching the per-CallFrame handler stack).
+                                     * Drives the non-local-exit OP_TRY_END
+                                     * unwinding and the MAX_TRY_HANDLERS cap. */
 } Compiler;
 
 int g_compile_module_slots = 0;
@@ -183,6 +192,7 @@ static LoopCtx *loop_push(Compiler *c) {
         c->loops = xrealloc_array(c->loops, c->loop_cap, sizeof(LoopCtx*));
     }
     LoopCtx *lp = xcalloc(1, sizeof(LoopCtx));
+    lp->try_depth_at_entry = c->try_depth;
     c->loops[c->loop_depth++] = lp;
     return lp;
 }
@@ -2085,6 +2095,13 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     case AST_BREAK: {
         if (c->loop_depth > 0) {
             LoopCtx *lp = c->loops[c->loop_depth - 1];
+            /* Unwind any `try` blocks this break jumps out of, innermost
+             * first. Without this the handler stays registered after the
+             * loop: a later error jumped back into the dead catch body with
+             * a stale catch_bp, and the restored env lost its bindings
+             * (#726). Mirrors the loop-env cleanup below. */
+            for (int t = c->try_depth; t > lp->try_depth_at_entry; t--)
+                emit(c, OP_TRY_END, node->line);
             /* Clean up loop env before jumping out, but ONLY if the loop allocated
              * a per-iteration env. While-loops don't — emitting OP_LOOP_ENV_END
              * there would free the surrounding env (often the global one). */
@@ -2114,6 +2131,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     case AST_CONTINUE: {
         if (c->loop_depth > 0) {
             LoopCtx *lp = c->loops[c->loop_depth - 1];
+            /* Same handler unwinding as break (#726) — a `continue` inside a
+             * try re-entered TRY_BEGIN each iteration while its TRY_END never
+             * ran, so try_count climbed until it pinned at the cap. */
+            for (int t = c->try_depth; t > lp->try_depth_at_entry; t--)
+                emit(c, OP_TRY_END, node->line);
             emit_loop(c, lp->continue_target, node->line);
             /* Phantom +1 for stack accounting (dead code follows jump) */
             adjust_stack(c, 1);
@@ -2284,12 +2306,16 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     }
 
     case AST_RETURN: {
-        if (node->data.ret.expr) {
+        if (node->data.ret.expr)
             compile_node(c, node->data.ret.expr);
-            emit(c, OP_RETURN, node->line);
-        } else {
-            emit(c, OP_RETURN_NULL, node->line);
-        }
+        /* Leave every enclosing `try` before the frame goes away. The frame's
+         * try_count dies with the CallFrame, but g_try_depth is a PROCESS
+         * global: a `return` from inside a try leaked it permanently, and
+         * rt_error's `g_try_depth == 0` gate then swallowed the message of
+         * every later uncaught error in the process (#726). */
+        for (int t = c->try_depth; t > 0; t--)
+            emit(c, OP_TRY_END, node->line);
+        emit(c, node->data.ret.expr ? OP_RETURN : OP_RETURN_NULL, node->line);
         break;
     }
 
@@ -2610,8 +2636,24 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     /* ---- Error handling / observer (Stage 7) ---- */
 
     case AST_TRY: {
+        /* The VM's per-frame handler stack is a fixed MAX_TRY_HANDLERS array.
+         * Past it, TRY_BEGIN used to register nothing while its TRY_END still
+         * popped — silently mis-pairing every handler from there out, so a
+         * raise took the WRONG catch with no diagnostic (#726). Reject at
+         * compile time instead, the way `break` outside a loop is (#337). */
+        if (c->try_depth >= MAX_TRY_HANDLERS) {
+            fprintf(stderr, "Compile error line %d: 'try' nested more than %d "
+                            "deep (handler stack limit)\n",
+                    node->line, MAX_TRY_HANDLERS);
+            eigs_record_first_error(node->line, "'try' nested too deep");
+            g_parse_errors++;
+            emit(c, OP_NULL, node->line);
+            break;
+        }
         int catch_jump = emit_jump(c, OP_TRY_BEGIN, node->line);
+        c->try_depth++;
         compile_block(c, node->data.trycatch.try_body, node->data.trycatch.try_count);
+        c->try_depth--;
         emit(c, OP_TRY_END, node->line);
         int end_jump = emit_jump(c, OP_JUMP, node->line);
 

@@ -225,7 +225,7 @@ static void const_dedup_grow(EigsChunk *c) {
     }
 }
 
-int chunk_add_constant(EigsChunk *chunk, Value *val) {
+static int chunk_add_constant_ex(EigsChunk *chunk, Value *val, int dedup) {
     /* Deduplicate numbers and strings via the hash index — the linear
      * scan here was O(pool) per add: 92% of compile time on a 12k-name
      * generated program (#341). */
@@ -239,7 +239,7 @@ int chunk_add_constant(EigsChunk *chunk, Value *val) {
         uint32_t s = h & mask;
         while (chunk->const_dedup[s]) {
             int idx = chunk->const_dedup[s] - 1;
-            if (const_equal(val, chunk->constants[idx]))
+            if (dedup && const_equal(val, chunk->constants[idx]))
                 return idx;
             s = (s + 1) & mask;
         }
@@ -277,6 +277,22 @@ int chunk_add_constant(EigsChunk *chunk, Value *val) {
     if (hashable)
         const_dedup_insert(chunk, h, chunk->const_count);
     return chunk->const_count++;
+}
+
+int chunk_add_constant(EigsChunk *chunk, Value *val) {
+    return chunk_add_constant_ex(chunk, val, 1);
+}
+
+/* Append without dedup, so the returned index always equals the value's
+ * position in the order it was added. For pools that arrive already indexed
+ * by position — a bytecode DESCRIPTOR, whose code stream refers to constants
+ * positionally. Routing those through the deduplicating add collapsed a
+ * repeated number/string, shifted every later index down, and the code then
+ * loaded the wrong constant with no error anywhere (#721).
+ * (Leaving duplicates in the dedup index is harmless: a later lookup can
+ * return either copy, and const_equal guarantees they are interchangeable.) */
+int chunk_add_constant_positional(EigsChunk *chunk, Value *val) {
+    return chunk_add_constant_ex(chunk, val, 0);
 }
 
 /* ---- Nested functions ---- */
@@ -511,6 +527,7 @@ int chunk_verify(EigsChunk *chunk) {
     int *targets = malloc((size_t)n * sizeof(int));
     if (!is_start || !targets) { free(is_start); free(targets); return 0; }
     int ntargets = 0, ok = 1, i = 0;
+    uint8_t last_op = OP_NULL;   /* opcode of the instruction ending at code_len */
 
     /* Pass 1: validate opcodes/operands/pool indices; mark instruction starts;
      * stash jump targets (validated in pass 2 once is_start[] is complete). */
@@ -518,6 +535,7 @@ int chunk_verify(EigsChunk *chunk) {
         uint8_t op = code[i];
         if (op >= OP_COUNT) { ok = 0; break; }
         is_start[i] = 1;
+        last_op = op;
         /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
          * role machinery below. No index to validate; just skip 4 bytes. */
         if (op == OP_LINE) {
@@ -553,6 +571,21 @@ int chunk_verify(EigsChunk *chunk) {
         int tgt = targets[t];
         if (tgt < 0 || tgt >= n || !is_start[tgt]) ok = 0;
     }
+
+    /* Pass 3: execution must not be able to run off the end. Pass 2 pins every
+     * jump inside the code, and every other instruction falls through to the
+     * next instruction start — so the ONLY escape is the last instruction
+     * falling through past code_len, into the zeroed slack of the code buffer.
+     * Byte 0 decodes as OP_CONST[0], which the VM pushes with no NULL check,
+     * and from there ip marches through unowned heap. `chunk ends in RETURN`
+     * was documented as a caller obligation (builtins.c), but for
+     * vm_run_bytecode — and above all sandbox_run, the advertised containment
+     * boundary since #717 — removing exactly that trust is this function's
+     * job. Require a terminator: return, or an unconditional jump (a bare
+     * infinite loop is stall-capped by the VM, not a memory-safety fault). */
+    if (ok && last_op != OP_RETURN && last_op != OP_RETURN_NULL &&
+        last_op != OP_JUMP && last_op != OP_JUMP_BACK)
+        ok = 0;
 
     free(is_start);
     free(targets);
