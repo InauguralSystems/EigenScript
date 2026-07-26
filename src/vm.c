@@ -4248,7 +4248,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(ITER_NEXT): {
         uint16_t exit_offset = read_u16(ip); ip += 2;
         Value *state = vm_peek(0);
-        if (!state || state->type != VAL_LIST || state->data.list.count < 2) {
+        /* The index slot must be a number: make_iter_state always builds one,
+         * but an untrusted chunk (vm_run_bytecode / sandbox_run) can reach a
+         * bare ITER_NEXT with any list on TOS, and reading ->data.num off a
+         * VAL_STR is a type confusion whose result then indexes items[] (#721). */
+        if (!state || state->type != VAL_LIST || state->data.list.count < 2 ||
+            !state->data.list.items[1] ||
+            state->data.list.items[1]->type != VAL_NUM) {
             ip += exit_offset;
             DISPATCH();
         }
@@ -4266,7 +4272,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (snap < len) len = snap;
         }
 
-        if (idx >= len) {
+        /* Unsigned compare bounds BOTH ends in one branch: a negative index
+         * (only reachable from a hand-built state, but the old code checked
+         * the upper end only) reached items[idx] below the array and then
+         * val_incref'd whatever pointer it found there (#721). */
+        if ((unsigned)idx >= (unsigned)len) {
             ip += exit_offset;
         } else {
             /* Update index — mutate in place when the existing slot is
@@ -4353,12 +4363,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(TRY_BEGIN): {
         uint16_t catch_offset = read_u16(ip); ip += 2;
-        g_try_depth++;
-        if (frame->try_count < 8) {
-            frame->try_handlers[frame->try_count].catch_ip = ip + catch_offset;
-            frame->try_handlers[frame->try_count].catch_bp = g_vm.sp;
-            frame->try_count++;
+        /* Full handler stack: raise instead of registering nothing. The old
+         * code incremented g_try_depth and skipped the push, so this try's
+         * TRY_END popped the *enclosing* handler — every later raise in the
+         * frame took the wrong catch, silently (#726). Compiled source can't
+         * get here (the compiler caps nesting); an untrusted chunk can.
+         * Check BEFORE touching g_try_depth so BEGIN/END stay balanced. */
+        if (frame->try_count >= MAX_TRY_HANDLERS) {
+            rt_error(EK_LIMIT, g_vm.current_line,
+                     "too many nested try blocks (max %d)", MAX_TRY_HANDLERS);
+            DISPATCH();   /* DISPATCH runs CHECK_ERROR first — unwinds to the
+                           * nearest enclosing handler, or halts */
         }
+        g_try_depth++;
+        frame->try_handlers[frame->try_count].catch_ip = ip + catch_offset;
+        frame->try_handlers[frame->try_count].catch_bp = g_vm.sp;
+        frame->try_count++;
         frame->is_try = 1;
         DISPATCH();
     }
@@ -5942,9 +5962,16 @@ int task_do_kill(int tid) {
     if (t->saved_frames) {
         for (int i = 0; i < t->saved_frame_count; i++) {
             CallFrame *f = &t->saved_frames[i];
+            /* A task killed while suspended INSIDE a try never runs the
+             * matching TRY_ENDs, and g_try_depth is a process global, not
+             * per-task: leaving it elevated makes rt_error's `g_try_depth == 0`
+             * gate suppress the diagnostic of every later uncaught error in
+             * the process — confirmed, the program exits 1 in silence (#726). */
+            g_try_depth -= f->try_count;
             if (f->owns_env && f->env) env_decref(f->env);
             if (f->chunk) chunk_decref(f->chunk);
         }
+        if (g_try_depth < 0) g_try_depth = 0;
         free(t->saved_frames); t->saved_frames = NULL; t->saved_frame_count = 0;
     }
     if (t->run_env) { env_decref(t->run_env); t->run_env = NULL; }

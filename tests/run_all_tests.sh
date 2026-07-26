@@ -3721,6 +3721,114 @@ else
 fi
 echo ""
 
+# [99g] lint on a machine-sized file (#723). The top-level function-name
+# collector wrote into a fixed 512-entry STACK array while program.count has
+# been unbounded since #327 removed the fixed statement caps — a
+# stack-buffer-overflow driven purely by input length, reachable both via
+# `--lint` and via the LSP's lint_collect (so opening a generated file in an
+# editor corrupted the language server's stack). 512+ top-level defines is an
+# ordinary size for generated EigenScript. Generated at test time.
+echo "[99g] Lint Scales Past 512 Top-Level Defines (#723)"
+LNT_FILE=$(mktemp /tmp/eigs_lint723_XXXX.eigs)
+python3 -c "
+print('\n'.join('define f%d() as:\n    return %d' % (i, i) for i in range(600)))" > "$LNT_FILE"
+LNT_OUTPUT=$(./eigenscript --lint "$LNT_FILE" </dev/null 2>&1); LNT_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$LNT_RC" -eq 0 ] \
+   && ! echo "$LNT_OUTPUT" | grep -qi "AddressSanitizer\|runtime error:\|out of bounds"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: 600 top-level defines lint cleanly (was a stack-buffer-overflow)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: lint on 600 defines (rc=$LNT_RC)"
+    echo "$LNT_OUTPUT" | head -5
+fi
+rm -f "$LNT_FILE"
+echo ""
+
+# [99f] try-handler pairing (#726). The per-frame handler stack is 8 deep; past
+# it TRY_BEGIN registered nothing while its TRY_END still popped, so every later
+# raise in the frame took the WRONG catch with no diagnostic at all. Now a
+# compile error. Second check: `return` from inside a try leaked the PROCESS
+# global g_try_depth, and rt_error's `g_try_depth == 0` gate then swallowed the
+# message of every later uncaught error — a silent exit-1 with empty output.
+echo "[99f] Try-Handler Pairing (#726)"
+TRY_DIR=$(mktemp -d /tmp/eigs_try726_XXXX)
+
+python3 -c "
+n = 9
+L = []
+for i in range(n):
+    L.append('    '*i + 'try:')
+    L.append('    '*(i+1) + 'q%d is %d' % (i, i))
+L.append('    '*n + 'throw of \"boom\"')
+for i in range(n-1, -1, -1):
+    L.append('    '*i + 'catch e%d:' % i)
+    L.append('    '*(i+1) + 'print of \"CAUGHT-AT-DEPTH-%d\"' % i)
+print('\n'.join(L))" > "$TRY_DIR/deep.eigs"
+
+T9_OUTPUT=$(./eigenscript "$TRY_DIR/deep.eigs" </dev/null 2>&1); T9_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$T9_RC" -ne 0 ] \
+   && echo "$T9_OUTPUT" | grep -q "nested more than 8 deep" \
+   && ! echo "$T9_OUTPUT" | grep -q "CAUGHT-AT-DEPTH"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: 9-deep try is a compile error (was: caught at depth 7, silently)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: 9-deep try nesting (rc=$T9_RC)"
+    echo "$T9_OUTPUT" | head -3
+fi
+
+# `return` inside a try, then an uncaught error: the diagnostic must survive.
+cat > "$TRY_DIR/ret.eigs" <<'RETEOF'
+define f() as:
+    try:
+        return 1
+    catch e:
+        return 2
+print of (f of [])
+x is no_such_variable_at_all
+RETEOF
+TR_OUTPUT=$(./eigenscript "$TRY_DIR/ret.eigs" </dev/null 2>&1); TR_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$TR_RC" -ne 0 ] && echo "$TR_OUTPUT" | grep -q "undefined variable"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: uncaught error after a return-from-try still reports (was silent)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: return-from-try swallowed the uncaught diagnostic (rc=$TR_RC)"
+    echo "$TR_OUTPUT" | head -3
+fi
+
+# Same suppression via a task killed while suspended INSIDE a try: its frames
+# never run their TRY_ENDs, and g_try_depth is a process global, not per-task.
+cat > "$TRY_DIR/kill.eigs" <<'KILLEOF'
+define worker() as:
+    try:
+        task_yield of null
+        task_yield of null
+    catch e:
+        print of "worker caught"
+
+w is task_spawn of worker
+task_yield of null
+task_kill of w
+x is no_such_variable_at_all
+KILLEOF
+TK_OUTPUT=$(./eigenscript "$TRY_DIR/kill.eigs" </dev/null 2>&1); TK_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$TK_RC" -ne 0 ] && echo "$TK_OUTPUT" | grep -q "undefined variable"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: uncaught error after killing a task suspended in a try still reports"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: killed-in-try task swallowed the uncaught diagnostic (rc=$TK_RC)"
+    echo "$TK_OUTPUT" | head -3
+fi
+rm -rf "$TRY_DIR"
+echo ""
+
 # Final guard (#681): if the binary changed during the last block, results are invalid.
 check_binary_fingerprint
 

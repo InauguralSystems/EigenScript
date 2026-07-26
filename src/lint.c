@@ -1105,29 +1105,30 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
             if (param[0] == '_') continue;
             if (strcmp(param, "n") == 0) continue;
 
-            /* Build a temporary ref context for this function body */
-            LintContext body_ctx = {0};
+            /* Build a temporary ref context for this function body. On the
+             * HEAP, not the stack: LintContext is ~85 KiB (warnings[256] plus
+             * four 512-entry arrays) and check_unused_params recurses into
+             * nested AST_FUNCs below, so a by-value local here costs that much
+             * C stack per nesting level — exactly the pattern the CLAUDE.md
+             * "no big by-value structs in recursive functions" rule names
+             * (PR #361). A hosted 8 MiB stack hides it; EigenOS boots on
+             * 64 KiB, which is how #361 surfaced in the first place. */
+            LintContext *body_ctx = xcalloc(1, sizeof *body_ctx);
             for (int i = 0; i < node->data.func.body_count; i++)
-                collect_refs(node->data.func.body[i], &body_ctx);
+                collect_refs(node->data.func.body[i], body_ctx);
 
             int found = 0;
-            for (int r = 0; r < body_ctx.ref_count; r++) {
-                if (strcmp(body_ctx.refs[r], param) == 0) { found = 1; break; }
+            for (int r = 0; r < body_ctx->ref_count; r++) {
+                if (strcmp(body_ctx->refs[r], param) == 0) { found = 1; break; }
             }
             /* Also check assignments that reference the param on the RHS */
             if (!found) {
-                for (int r = 0; r < body_ctx.ref_count; r++) {
-                    free(body_ctx.refs[r]);
-                }
-                for (int r = 0; r < body_ctx.assign_count; r++) {
-                    free(body_ctx.assigns[r]);
-                }
                 lint_warn(ctx, node->line, "W002", "unused parameter '%s' in function '%s'",
                           param, node->data.func.name);
-                continue;
             }
-            for (int r = 0; r < body_ctx.ref_count; r++) free(body_ctx.refs[r]);
-            for (int r = 0; r < body_ctx.assign_count; r++) free(body_ctx.assigns[r]);
+            for (int r = 0; r < body_ctx->ref_count; r++) free(body_ctx->refs[r]);
+            for (int r = 0; r < body_ctx->assign_count; r++) free(body_ctx->assigns[r]);
+            free(body_ctx);
         }
     }
 
@@ -2486,8 +2487,15 @@ static void lint_run_checks(ASTNode *ast, const char *path,
     /* Unused variables (top-level, conservative). Function-defined names
      * are intentional exports — never flagged. */
     int func_name_count = 0;
-    char *func_names[MAX_VARS];
-    if (ast && ast->type == AST_PROGRAM) {
+    char **func_names = NULL;
+    if (ast && ast->type == AST_PROGRAM && ast->data.program.count > 0) {
+        /* Sized to the statement count, not a fixed MAX_VARS: program.count
+         * has been unbounded since #327 removed the fixed statement caps, so
+         * a 512-entry stack array was a stack-buffer-overflow driven purely
+         * by input length — reachable via `--lint` and via the LSP's
+         * lint_collect, on exactly the machine-generated shape (#397's
+         * `make lib` amalgamation, iLambdaAi's output) that gets big. */
+        func_names = xcalloc((size_t)ast->data.program.count, sizeof(char *));
         for (int i = 0; i < ast->data.program.count; i++) {
             ASTNode *s = ast->data.program.stmts[i];
             if (s && s->type == AST_FUNC)
@@ -2507,6 +2515,7 @@ static void lint_run_checks(ASTNode *ast, const char *path,
             lint_warn(ctx, ctx->assign_lines[i], "W001", "unused variable '%s'", name);
         }
     }
+    free(func_names);
 
     /* Sort warnings by line number */
     for (int i = 0; i < ctx->warning_count - 1; i++) {

@@ -251,4 +251,48 @@ sr_ok is sandbox_run of [[ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 100
 assert_eq of [sr_ok["ok"], 1, "#704: current-revision chunk still runs in the sandbox"]
 assert_eq of [sr_ok["result"], 5, "#704: current-revision sandbox result"]
 
+# ---- #721: chunk_verify is the boundary, so it must reject a chunk that can
+# run PAST its last instruction. Opcodes, operand bounds and jump targets were
+# all checked; fall-through off the end was not. The VM then decoded the zeroed
+# slack of the code buffer as OP_CONST[0] and dereferenced constants[0] with no
+# NULL check — an immediate segfault, driven entirely by sandboxed input.
+JUMP is 29
+RETURN_NULL is 41
+LIST is 42
+ITER_NEXT is 49
+TRY_BEGIN is 54
+
+assert_eq of [vm_run_bytecode of [ABI, [1], []], null, "#721: chunk with no terminator is refused (was a SEGV)"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0], [7]], null, "#721: trailing CONST falls off the end — refused"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, RETURN], [7]], 7, "#721: the same chunk WITH a terminator still runs"]
+assert_eq of [vm_run_bytecode of [ABI, [RETURN_NULL], []], null, "#721: RETURN_NULL terminates too"]
+
+sr_fall is sandbox_run of [[ABI, [1], []], 1000]
+assert_eq of [sr_fall["ok"], 0, "#721: sandbox_run refuses an unterminated chunk"]
+
+# The constant pool of a DESCRIPTOR is indexed positionally by the code stream,
+# but it was loaded through the deduplicating add: a repeated number collapsed
+# two entries into one and shifted every later index down, so the code silently
+# loaded the wrong constant. Here idx 2 must be 3 (not the deduped 2).
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,2,0, ADD, RETURN], [2, 2, 3]], 5, "#721: duplicate constants keep positional indices"]
+assert_eq of [vm_run_bytecode of [ABI, [CONST,1,0, RETURN], ["a", "a"]], "a", "#721: duplicate strings do not shift the pool"]
+
+# A bare OP_ITER_NEXT runs against whatever list is on TOS, so the index slot is
+# attacker-chosen. It was read as ->data.num with no type check and bounds-checked
+# only at the upper end: a negative index reached items[idx] BELOW the array and
+# val_incref'd whatever pointer it found there.
+iter_neg is [CONST,0,0, CONST,1,0, LIST,2,0, ITER_NEXT,1,0, RETURN, CONST,2,0, RETURN]
+assert_eq of [vm_run_bytecode of [ABI, iter_neg, [[10, 20, 30], -5, "EXITED"]], "EXITED", "#721: negative iterator index exits instead of reading out of bounds"]
+assert_eq of [vm_run_bytecode of [ABI, iter_neg, [[10, 20, 30], "nan", "EXITED"]], "EXITED", "#721: non-numeric iterator index is not type-confused"]
+assert_eq of [vm_run_bytecode of [ABI, iter_neg, [[10, 20, 30], 1, "EXITED"]], 20, "#721: a valid iterator index still yields its element"]
+
+# ---- #726: the per-frame handler stack is MAX_TRY_HANDLERS deep. Compiled
+# source can no longer nest deeper, but a descriptor reaches TRY_BEGIN with no
+# compiler involved. The 9th TRY_BEGIN must RAISE rather than register nothing
+# and let its TRY_END pop the 8th try's still-live handler. Nine TRY_BEGINs,
+# all catching at byte 30: with the guard the 9th raises and handler #8 catches
+# ("CAUGHT8"); without it, execution fell through the JUMP to "NOERR".
+try9 is [TRY_BEGIN,27,0, TRY_BEGIN,24,0, TRY_BEGIN,21,0, TRY_BEGIN,18,0, TRY_BEGIN,15,0, TRY_BEGIN,12,0, TRY_BEGIN,9,0, TRY_BEGIN,6,0, TRY_BEGIN,3,0, JUMP,4,0, CONST,1,0, RETURN, CONST,0,0, RETURN]
+assert_eq of [vm_run_bytecode of [ABI, try9, ["NOERR", "CAUGHT8"]], "CAUGHT8", "#726: the 9th TRY_BEGIN raises instead of silently mis-pairing"]
+
 test_summary of null

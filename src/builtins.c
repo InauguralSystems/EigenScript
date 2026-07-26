@@ -4185,9 +4185,13 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
         int byte = (b && b->type == VAL_NUM) ? ((int)b->data.num & 0xFF) : 0;
         chunk_emit(chunk, (uint8_t)byte, 1);
     }
-    for (int i = 0; i < consts->data.list.count; i++)
-        if (consts->data.list.items[i])
-            chunk_add_constant(chunk, consts->data.list.items[i]);
+    /* Positional: the code stream indexes this pool by position, so neither
+     * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
+     * in the pool is a malformed descriptor — reject rather than renumber. */
+    for (int i = 0; i < consts->data.list.count; i++) {
+        if (!consts->data.list.items[i]) { chunk_free(chunk); return NULL; }
+        chunk_add_constant_positional(chunk, consts->data.list.items[i]);
+    }
 
     /* nested function chunks (creator ref transfers into functions[]). A
      * nested descriptor that fails to build/verify invalidates the whole
@@ -5302,9 +5306,14 @@ void task_free(Task *t) {
     if (t->saved_frames) {
         for (int i = 0; i < t->saved_frame_count; i++) {
             CallFrame *f = &t->saved_frames[i];
+            /* Same rebalance as task_do_kill: a task torn down while suspended
+             * inside a try never runs its TRY_ENDs, and the leftover process-
+             * global depth silences every later uncaught error (#726). */
+            g_try_depth -= f->try_count;
             if (f->owns_env && f->env) env_decref(f->env);
             if (f->chunk) chunk_decref(f->chunk);
         }
+        if (g_try_depth < 0) g_try_depth = 0;
         free(t->saved_frames);
     }
     free(t);
