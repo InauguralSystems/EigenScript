@@ -1880,6 +1880,22 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
         echo "  PASS: all $HS_PASS HTTP server checks"
     fi
     echo ""
+
+    # [45b] HTTP slow-loris hardening (per-IP cap + header-phase timeout/min-rate)
+    echo "[45b/47] HTTP slow-loris hardening (4 checks)"
+    SL_OUTPUT=$(bash "$TESTS_DIR/test_http_slowloris.sh" 2>&1)
+    SL_PASS=$(echo "$SL_OUTPUT" | grep -c "PASS:" || true)
+    SL_FAIL=$(echo "$SL_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + SL_PASS + SL_FAIL))
+    PASS=$((PASS + SL_PASS))
+    FAIL=$((FAIL + SL_FAIL))
+    if [ "$SL_FAIL" -gt 0 ]; then
+        echo "  FAIL: $SL_FAIL HTTP slow-loris check(s) failed"
+        echo "$SL_OUTPUT" | grep "FAIL:" | head -5
+    else
+        echo "  PASS: all $SL_PASS HTTP slow-loris checks"
+    fi
+    echo ""
 else
     echo "[44-45/47] HTTP tests SKIPPED (binary built without EIGENSCRIPT_EXT_HTTP)"
     echo ""

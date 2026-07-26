@@ -57,6 +57,88 @@ static __thread int tls_suppress_body = 0;
 #define HTTP_MAX_CONCURRENT_CONNS 256
 static volatile int g_conn_count = 0;
 
+/* Per-source-IP concurrent-connection cap. HTTP_MAX_CONCURRENT_CONNS is a
+ * single global counter, so one source can hold every worker slot with cheap
+ * slow connections (a slow-loris) and shut out every other client — verified
+ * live: 256 partial-header connections from one address deny all service. This
+ * bounds how many of the global slots any single source IP may hold at once, so
+ * an attacker must source from many addresses to exhaust the pool. Default 48
+ * (well above a browser's ~6 parallel connections, far below the global cap);
+ * override via EIGS_HTTP_MAX_CONN_PER_IP, 0 = disabled.
+ *
+ * ASSUMES the runtime sees real client IPs. Behind a reverse proxy every
+ * connection carries the PROXY's address, so this cap would throttle the proxy
+ * to N and break everyone — deploy behind a proxy means set this to 0 and do
+ * the per-IP limiting at the proxy (which is the recommended posture for a
+ * directly-exposed thread-per-connection server anyway). */
+#define HTTP_DEFAULT_MAX_CONN_PER_IP 48
+static long g_http_max_conn_per_ip = -1;   /* -1 = uninitialised */
+
+static long http_max_conn_per_ip(void) {
+    if (g_http_max_conn_per_ip >= 0) return g_http_max_conn_per_ip;
+    const char *env = getenv("EIGS_HTTP_MAX_CONN_PER_IP");
+    if (env && *env) {
+        char *end = NULL;
+        long v = strtol(env, &end, 10);
+        if (end != env && v >= 0) { g_http_max_conn_per_ip = v; return v; }
+    }
+    g_http_max_conn_per_ip = HTTP_DEFAULT_MAX_CONN_PER_IP;
+    return g_http_max_conn_per_ip;
+}
+
+/* Live per-IP connection counts. At most HTTP_MAX_CONCURRENT_CONNS distinct
+ * sources can be active at once (one slot each, minimum), so a fixed array
+ * sized to the global cap can always hold every active source. Linear scan is
+ * fine at accept rate. Guarded by its own mutex — the accept loop acquires, the
+ * worker releases on exit. */
+typedef struct { uint32_t addr; int count; } IpConnSlot;
+static IpConnSlot g_ip_conns[HTTP_MAX_CONCURRENT_CONNS];
+static int g_ip_conns_len = 0;
+static pthread_mutex_t g_ip_conns_mu = PTHREAD_MUTEX_INITIALIZER;
+
+/* Reserve a slot for `addr`. Returns 1 if the source is under the per-IP cap
+ * (and increments its count), 0 if already at the cap. cap==0 disables the
+ * check. Fails OPEN if the table is somehow full (cannot happen: distinct
+ * active IPs <= the global cap, which gates this call). */
+static int ip_conn_acquire(uint32_t addr) {
+    long cap = http_max_conn_per_ip();
+    if (cap == 0) return 1;
+    pthread_mutex_lock(&g_ip_conns_mu);
+    int free_idx = -1;
+    for (int i = 0; i < g_ip_conns_len; i++) {
+        if (g_ip_conns[i].count == 0) { if (free_idx < 0) free_idx = i; continue; }
+        if (g_ip_conns[i].addr == addr) {
+            if (g_ip_conns[i].count >= cap) {
+                pthread_mutex_unlock(&g_ip_conns_mu);
+                return 0;
+            }
+            g_ip_conns[i].count++;
+            pthread_mutex_unlock(&g_ip_conns_mu);
+            return 1;
+        }
+    }
+    if (free_idx < 0 && g_ip_conns_len < HTTP_MAX_CONCURRENT_CONNS)
+        free_idx = g_ip_conns_len++;
+    if (free_idx >= 0) {
+        g_ip_conns[free_idx].addr = addr;
+        g_ip_conns[free_idx].count = 1;
+    }
+    pthread_mutex_unlock(&g_ip_conns_mu);
+    return 1;
+}
+
+static void ip_conn_release(uint32_t addr) {
+    if (http_max_conn_per_ip() == 0) return;
+    pthread_mutex_lock(&g_ip_conns_mu);
+    for (int i = 0; i < g_ip_conns_len; i++) {
+        if (g_ip_conns[i].count > 0 && g_ip_conns[i].addr == addr) {
+            g_ip_conns[i].count--;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_ip_conns_mu);
+}
+
 /* Maximum allowed request body in bytes. Default 16 MiB; override via
  * EIGS_HTTP_MAX_BODY env var. Initialised lazily on first request. */
 #define EIGS_HTTP_DEFAULT_MAX_BODY (16L * 1024L * 1024L)
@@ -787,6 +869,47 @@ static void generate_session_id(char *buf, int len) {
 #define HTTP_REQUEST_DEADLINE_SEC 30
 #define HTTP_READ_TIMEOUT_SEC 5
 
+/* Header-phase controls (slow-loris). The client has nothing to compute before
+ * sending its request headers, so a slow HEADER phase is a slow-loris, not a
+ * slow upload — it gets a tighter budget than the 30s total-request deadline
+ * (which must accommodate a legitimately large body). Two independent bounds,
+ * both applied only until the "\r\n\r\n" terminator is seen:
+ *
+ *   - a hard header deadline (default 10s), and
+ *   - a minimum sustained byte rate (Apache mod_reqtimeout's MinRate): after a
+ *     short grace period the connection must have averaged at least this many
+ *     bytes/sec toward its headers. A fixed deadline alone lets a ~1 byte/sec
+ *     trickle hold a worker for the FULL deadline; the rate floor drops it in
+ *     one read cycle (~grace+timeout) instead. A real client sends its whole
+ *     header block in one packet and exits the header phase before either bound
+ *     is ever evaluated.
+ *
+ * Both overridable (EIGS_HTTP_HEADER_TIMEOUT / EIGS_HTTP_HEADER_MIN_RATE);
+ * min-rate 0 disables the rate floor (the hard deadline still applies). */
+#define HTTP_HEADER_DEADLINE_SEC 10
+#define HTTP_HEADER_MIN_RATE     256   /* bytes/sec */
+#define HTTP_HEADER_GRACE_SEC    2
+
+static long http_header_deadline(void) {
+    const char *env = getenv("EIGS_HTTP_HEADER_TIMEOUT");
+    if (env && *env) {
+        char *end = NULL;
+        long v = strtol(env, &end, 10);
+        if (end != env && v > 0) return v;
+    }
+    return HTTP_HEADER_DEADLINE_SEC;
+}
+
+static long http_header_min_rate(void) {
+    const char *env = getenv("EIGS_HTTP_HEADER_MIN_RATE");
+    if (env && *env) {
+        char *end = NULL;
+        long v = strtol(env, &end, 10);
+        if (end != env && v >= 0) return v;
+    }
+    return HTTP_HEADER_MIN_RATE;
+}
+
 static double monotonic_now(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -798,7 +921,10 @@ static void handle_request(int fd) {
     struct timeval tv = { .tv_sec = HTTP_READ_TIMEOUT_SEC, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    double deadline = monotonic_now() + HTTP_REQUEST_DEADLINE_SEC;
+    double start = monotonic_now();
+    double total_deadline  = start + HTTP_REQUEST_DEADLINE_SEC;
+    double header_deadline = start + (double)http_header_deadline();
+    long   header_min_rate = http_header_min_rate();
 
     long max_body = http_max_body();
     long max_body_total = http_max_body_total();
@@ -812,9 +938,31 @@ static void handle_request(int fd) {
     int header_end = -1;
 
     for (;;) {
+        double now = monotonic_now();
         /* Enforce total request deadline */
-        if (monotonic_now() >= deadline) {
+        if (now >= total_deadline) {
             goto done;
+        }
+        /* Header-phase bounds (slow-loris): only while the header terminator
+         * has not been seen. A legitimate client clears this in one read. */
+        if (header_end < 0) {
+            if (now >= header_deadline) {
+                const char *m = "Request header timeout";
+                send_response(fd, 408, "Request Timeout", "text/plain",
+                              m, (long)strlen(m));
+                goto done;
+            }
+            double elapsed = now - start;
+            if (header_min_rate > 0 && elapsed > HTTP_HEADER_GRACE_SEC &&
+                (double)total < (double)header_min_rate * elapsed) {
+                /* Below the minimum header byte-rate after the grace period —
+                 * a trickle. Drop it now instead of letting it hold a worker
+                 * slot until the total deadline. */
+                const char *m = "Request header too slow";
+                send_response(fd, 408, "Request Timeout", "text/plain",
+                              m, (long)strlen(m));
+                goto done;
+            }
         }
         /* Grow when less than 4KB headroom, subject to max_body + 64KB header slack. */
         if ((size_t)total + 4096 >= cap) {
@@ -1110,12 +1258,14 @@ done:
 typedef struct {
     int fd;
     Server *server;
+    uint32_t client_addr;   /* for the per-IP connection cap release */
 } ConnArg;
 
 static void *http_conn_thread(void *arg) {
     ConnArg *ca = arg;
     int fd = ca->fd;
     Server *main_server = ca->server;
+    uint32_t client_addr = ca->client_addr;
     free(ca);
 
     EigsState *worker = eigs_state_new();
@@ -1151,6 +1301,7 @@ drop:
     if (fd >= 0) close(fd);
 done:
     __atomic_sub_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
+    ip_conn_release(client_addr);
     return NULL;
 }
 
@@ -1250,13 +1401,32 @@ void http_serve_blocking(int port) {
             continue;
         }
 
+        /* Per-source-IP cap: one address may not hold all the global slots.
+         * Shed with 503 before spending a worker on it. */
+        uint32_t caddr = client_addr.sin_addr.s_addr;
+        if (!ip_conn_acquire(caddr)) {
+            const char *busy =
+                "HTTP/1.1 503 Service Unavailable\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: 21\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "Too many connections\n";
+            ssize_t bw = write(client_fd, busy, strlen(busy));
+            (void)bw;
+            close(client_fd);
+            continue;
+        }
+
         ConnArg *ca = xmalloc(sizeof(*ca));
         ca->fd = client_fd;
         ca->server = eigs_http_active;
+        ca->client_addr = caddr;
         pthread_t tid;
         __atomic_add_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
         if (pthread_create(&tid, &worker_attr, http_conn_thread, ca) != 0) {
             __atomic_sub_fetch(&g_conn_count, 1, __ATOMIC_RELAXED);
+            ip_conn_release(caddr);
             free(ca);
             close(client_fd);
         }

@@ -511,6 +511,24 @@ request-body bytes in flight across *all* connections with
 connections are shed with `503` rather than letting concurrency × per-request
 size exhaust host memory.
 
+**Slow-loris bounds.** The server is thread-per-connection with a global cap of
+256 workers, so slow clients that each hold a worker are a denial-of-service
+axis. Three controls bound it:
+
+- `EIGS_HTTP_MAX_CONN_PER_IP` (default 48) — the maximum concurrent connections
+  from a single source IP; further connections from that address get `503`, so
+  one source can't hold all 256 slots. **Set to `0` when deploying behind a
+  reverse proxy** — every connection then carries the proxy's address, and a
+  nonzero cap would throttle the proxy to N; do the per-IP limiting at the proxy
+  instead (the recommended posture for a directly-exposed server).
+- `EIGS_HTTP_HEADER_TIMEOUT` (default 10s) — a request's headers must arrive
+  within this window (separate from, and shorter than, the 30s total-request
+  deadline that must accommodate a large body); otherwise `408`.
+- `EIGS_HTTP_HEADER_MIN_RATE` (default 256 bytes/sec, `0` disables) — after a
+  short grace period the header phase must sustain at least this byte rate, so a
+  byte-per-second trickle is dropped (`408`) in a couple of seconds instead of
+  holding a worker until the deadline.
+
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `http_route` | `http_route of [method, path, handler]` or `[method, path, "code", source]` | Register route handler (literal body or per-request `code` source) |
