@@ -2136,6 +2136,19 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * ran, so try_count climbed until it pinned at the cap. */
             for (int t = c->try_depth; t > lp->try_depth_at_entry; t--)
                 emit(c, OP_TRY_END, node->line);
+            /* End this iteration's env before jumping back, exactly as break
+             * does below — the back-edge target sits BEFORE the per-iteration
+             * OP_LOOP_ENV_FRESH, so without this the env is never torn down:
+             * each continue nests another env under the live one, and a
+             * continue on the final iteration leaves frame->env pointing at
+             * the loop env for everything that follows. At module top level
+             * that meant every definition after the loop landed in the leaked
+             * loop env instead of the module env and silently vanished from
+             * the export dict (#722). Same has_fresh_env gate as break: the
+             * env-skip path has no env, and the persist path ends its single
+             * reused env at the loop exit. */
+            if (lp->has_fresh_env)
+                emit(c, OP_LOOP_ENV_END, node->line);
             emit_loop(c, lp->continue_target, node->line);
             /* Phantom +1 for stack accounting (dead code follows jump) */
             adjust_stack(c, 1);
