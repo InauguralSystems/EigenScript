@@ -90,6 +90,55 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Builtins called from outside the VM freed live values (#720).** A builtin
+  may return a *borrow* of its argument with no compensating incref — `num`
+  returns its argument unchanged for `VAL_NUM`, `sort` returns its arg, and
+  `append` / `dict_set` / `set_at` / `coalesce` return their target. The VM's
+  three call sites compensated for this; the three that call a builtin from
+  outside the dispatch loop did not, and returned the raw result. So the
+  natural "sort numerically" idiom —
+
+  ```eigenscript
+  xs is [3, 1, 2]
+  r is sort_by of [xs, num]
+  ```
+
+  printed `[4.36961373427899e-310, 4.36961373428453e-310, 0]` instead of
+  `[1, 2, 3]`: `sort_by` hands the key function a *borrowed* list element,
+  `num` hands it straight back, and `sort_by`'s own decref then dropped the
+  list's reference to every element in turn. A silent wrong answer in release
+  and a heap-use-after-free under ASan. Three distinct instances, each with a
+  confirmed repro: `call_eigs_fn` (`sort_by`, and the gradient helpers'
+  loss-function calls), `thread_entry` (`spawn of [append, xs, 5]` and
+  `spawn of [num, 42]` — the second freeing the worker's own return value),
+  and `builtin_dispatch` (the C fallback reached when `dispatch` is called
+  indirectly; a direct call compiles to `OP_DISPATCH`, which was correct).
+
+  The protocol now lives in one place — `vm_borrow_compensate` in `vm.c`, used
+  by all six sites — with the two halves written down: a builtin returning a
+  borrow *deeper* than a direct child increfs it itself (as `get_at` always
+  did), which is what makes the call sites' capped direct-child scan
+  sufficient rather than a guess; and the `caller_owns_arg` flag distinguishes
+  the VM's contract (`result == arg` transfers the ref) from the out-of-VM one
+  (the caller only borrows `arg`, so identity needs an incref too). Found by
+  full-repo review, not by the suite: `num` is explicitly accepted as a
+  `sort_by` key, but no test had ever paired a borrow-returning builtin with
+  an out-of-VM call site, and the #548 borrow guard only instruments the VM
+  path.
+
+- **`free_val` consumed a reference it did not own.** Same review, same three
+  sites, opposite direction: `free_val` is the runtime's one *consuming*
+  builtin, and where the argument was only borrowed it dropped the caller's
+  reference — `sort_by of [xs, free_val]` raised correctly and left `xs`
+  pointing at freed elements. Those sites now lend it a reference of their own.
+
+- **A release-build regression in the borrow protocol would not have been
+  counted.** Suite section [119] short-circuited on the `SKIP:` line that the
+  sanitizer-only #548 guard emits on release builds, discarding every other
+  result in the block — including failures. The tally is now derived from the
+  block's own `PASS:`/`FAIL:` lines (#654's rule) and a skip is reported
+  without suppressing the count.
+
 - **`lib/pkg.eigs` crashed in its own git-failure handler.** `of` binds tighter
   than `+`, so `print of "  " + (join of [cmd, " "])` parsed as
   `(print of "  ") + (join ...)` and threw "cannot apply '+' to null and str" —

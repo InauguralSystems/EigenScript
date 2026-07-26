@@ -1217,26 +1217,32 @@ echo "[118] Keyword Dot Keys (#542, 49 checks)"
 check_eigs_suite "all 39 keywords + chains/json/paren/literal as dot keys" \
     test_dict_keyword_keys.eigs "All tests passed" 49
 
-# [119] Borrow-scan guard (#548): sanitizer builds full-scan past
+# [119] Borrow protocol. Part A (#720): every call site that invokes a
+# builtin compensates a borrowed return — the out-of-VM sites (call_eigs_fn,
+# builtin_dispatch, thread_entry) had drifted from the VM's three and freed
+# live values. Runs on EVERY build; the wrong answers are visible without a
+# sanitizer. Part B (#548): sanitizer builds full-scan past
 # VM_BORROW_SCAN_CAP and abort naming the builtin on a missed borrow —
-# validated by a planted fault (opt-in selftest builtin). SKIPs on
+# validated by a planted fault (opt-in selftest builtin). Part B SKIPs on
 # release builds, where the guard is compiled out by design.
-echo "[119] Borrow-Scan Guard (#548, 4 checks; SKIP on release)"
+#
+# The tally is derived from the block's own PASS:/FAIL: lines, never a
+# hand-synced literal (#654), and a SKIP is reported WITHOUT short-
+# circuiting the count — Part B's skip used to discard Part A's results,
+# so a release-build protocol regression would have gone untallied.
+echo "[119] Borrow Protocol (#720 all builds, #548 guard SKIPs on release)"
 BG_OUTPUT=$(bash "$TESTS_DIR/test_borrow_guard.sh" 2>&1)
-if echo "$BG_OUTPUT" | grep -q "SKIP:"; then
-    echo "$BG_OUTPUT" | grep "SKIP:"
+echo "$BG_OUTPUT" | grep "SKIP:" || true
+BG_PASS=$(echo "$BG_OUTPUT" | grep -c "PASS:" || true)
+BG_FAIL=$(echo "$BG_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + BG_PASS + BG_FAIL))
+PASS=$((PASS + BG_PASS))
+FAIL=$((FAIL + BG_FAIL))
+if [ "$BG_FAIL" -gt 0 ]; then
+    echo "  FAIL: $BG_FAIL borrow-protocol check(s) failed"
+    echo "$BG_OUTPUT" | grep "FAIL:" | head -5
 else
-    BG_PASS=$(echo "$BG_OUTPUT" | grep -c "PASS:" || true)
-    BG_FAIL=$(echo "$BG_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + BG_PASS + BG_FAIL))
-    PASS=$((PASS + BG_PASS))
-    FAIL=$((FAIL + BG_FAIL))
-    if [ "$BG_FAIL" -gt 0 ]; then
-        echo "  FAIL: $BG_FAIL borrow-guard check(s) failed"
-        echo "$BG_OUTPUT" | grep "FAIL:" | head -5
-    else
-        echo "  PASS: all $BG_PASS borrow-guard checks"
-    fi
+    echo "  PASS: all $BG_PASS borrow-protocol checks"
 fi
 echo ""
 

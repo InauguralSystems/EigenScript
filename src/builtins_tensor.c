@@ -13,6 +13,8 @@
 
 /* Forward decls for helpers shared with the arena/observer machinery. */
 Value* make_num_permanent(double n);
+/* The one consuming builtin — call_eigs_fn must not touch `arg` after it. */
+extern Value* builtin_free_val(Value *arg);
 
 /* Stdlib fallbacks for tensor math kernels. When MODEL extension is
  * enabled the non-static versions from model_infer.c take over via the
@@ -643,9 +645,30 @@ Value* builtin_tensor_gather(Value *arg) {
     return make_num(0.0);
 }
 
-/* ==== Helper: call a user-defined EigenScript function from C ==== */
+/* ==== Helper: call a user-defined EigenScript function from C ====
+ *
+ * Contract: `arg` is BORROWED (every caller — sort_by's list element, the
+ * gradient helpers' `nul` — keeps its own ref), and the returned value is
+ * OWNED by the caller. The VAL_FN path satisfies that naturally; the
+ * VAL_BUILTIN path must run the borrow protocol with caller_owns_arg=0
+ * (#720), or `sort_by of [xs, num]` frees every element of xs. */
 Value* call_eigs_fn(Value *fn, Value *arg) {
-    if (fn->type == VAL_BUILTIN) return fn->data.builtin(arg);
+    if (fn->type == VAL_BUILTIN) {
+        /* free_val CONSUMES a reference. Our caller only lends us `arg`, so
+         * hand the builtin one of our own making — otherwise it drops the
+         * caller's, and `sort_by of [xs, free_val]` leaves xs pointing at
+         * freed elements. `arg` is gone afterwards either way, so never
+         * read it below (the VM sites guard the same way). */
+        if (fn->data.builtin == builtin_free_val) {
+            if (arg) val_incref(arg);
+            Value *consumed = fn->data.builtin(arg);
+            return consumed ? consumed : make_null();
+        }
+        Value *result = fn->data.builtin(arg);
+        if (!result) return make_null();
+        vm_borrow_compensate(arg, result, 0, fn, NULL);
+        return result;
+    }
     if (fn->type != VAL_FN) return make_null();
     Env *call_env = env_new(fn->data.fn.closure);
     if (fn->data.fn.param_count > 1 && arg && arg->type == VAL_LIST) {
