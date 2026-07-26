@@ -123,6 +123,26 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`continue` never ended its loop iteration's env, silently truncating a
+  module's exports (#722).** `AST_BREAK` emits `OP_LOOP_ENV_END` before its
+  jump when the loop allocated a per-iteration env — the pairing #335's
+  double-free motivated — but `AST_CONTINUE` emitted only the back-jump. The
+  back-edge target sits *before* the per-iteration `OP_LOOP_ENV_FRESH`, so the
+  env was never torn down: each `continue` nested another env under the live
+  one, and a `continue` on the final iteration left `frame->env` pointing at
+  the loop env for everything that followed. Visibly, the loop variable
+  outlived its loop (lint E003 documents reading it after the loop as a runtime
+  error). Silently — and far worse — a module whose top-level loop contains a
+  `continue` executed every later definition in that leaked loop env instead of
+  the module env, so none of them reached the export dict: the import reported
+  success and the module's API was simply missing everything after the loop.
+  The fix mirrors `break`, under the same `has_fresh_env` gate (the env-skip
+  path has no env; the persist path ends its single reused env at the loop
+  exit, which is why an unguarded emit would have torn down the surrounding —
+  often global — env of a `loop while`). Only reproducible when something in
+  the body captures the loop variable, since that is what forces the
+  fresh-env-per-iteration path.
+
 - **`--fmt` split multi-char operators, so `--write` corrupted the source
   file (#729).** The formatter's spacing pass is character-level, and its
   multi-char operator table knew only `==`, `!=`, `<=` and `>=`. Everything

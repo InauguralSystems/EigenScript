@@ -3829,6 +3829,91 @@ fi
 rm -rf "$TRY_DIR"
 echo ""
 
+# [99h] loop-env pairing on `continue` (#722). AST_BREAK emitted OP_LOOP_ENV_END
+# before its jump when the loop allocated a per-iteration env; AST_CONTINUE
+# emitted only the back-jump, so the iteration's env was never torn down. The
+# loop variable then outlived its loop, and — the silent consequence — a module
+# whose top-level loop contains a `continue` executed everything after that loop
+# in the leaked loop env instead of the module env, so those definitions never
+# reached the export dict. The import still reported success.
+echo "[99h] Loop-Env Pairing on continue (#722)"
+CONT_DIR=$(mktemp -d /tmp/eigs_cont722_XXXX)
+
+# A per-iteration env exists only when something captures the loop var, so the
+# closure in the body is load-bearing: without it the loop takes the env-skip
+# path and the bug does not reproduce.
+cat > "$CONT_DIR/escape.eigs" <<'ESCEOF'
+fs is []
+for i in [1, 2, 3]:
+    if i == 2:
+        continue
+    append of [fs, (x) => x + i]
+print of "loop done"
+print of i
+ESCEOF
+CE_OUTPUT=$(./eigenscript "$CONT_DIR/escape.eigs" </dev/null 2>&1); CE_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$CE_RC" -ne 0 ] && echo "$CE_OUTPUT" | grep -q "undefined variable 'i'"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: loop var does not outlive a loop containing continue"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: loop var escaped its loop after continue (rc=$CE_RC)"
+    echo "$CE_OUTPUT" | head -3
+fi
+
+# The severe shape: definitions after such a loop must still be exported.
+cat > "$CONT_DIR/mymod.eigs" <<'MODEOF'
+for i in [1, 2, 3]:
+    if i == 2:
+        continue
+    f is (x) => x + i
+
+define exported_after() as:
+    return 42
+MODEOF
+cat > "$CONT_DIR/usemod.eigs" <<'USEEOF'
+import mymod
+print of (mymod.exported_after of [])
+USEEOF
+CM_OUTPUT=$(./eigenscript "$CONT_DIR/usemod.eigs" </dev/null 2>&1); CM_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$CM_RC" -eq 0 ] && echo "$CM_OUTPUT" | grep -q "^42$"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: module exports after a continue-loop survive (was: silently dropped)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: module export dropped after a loop containing continue (rc=$CM_RC)"
+    echo "$CM_OUTPUT" | head -3
+fi
+
+# continue in a while-loop must NOT emit the cleanup — while-loops allocate no
+# per-iteration env, so an unguarded OP_LOOP_ENV_END would tear down the
+# surrounding (often global) env. Guards the fix against over-application.
+cat > "$CONT_DIR/whileloop.eigs" <<'WHEOF'
+n is 0
+total is 0
+loop while n < 5:
+    n is n + 1
+    if n == 3:
+        continue
+    total is total + n
+print of total
+WHEOF
+CW_OUTPUT=$(./eigenscript "$CONT_DIR/whileloop.eigs" </dev/null 2>&1); CW_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$CW_RC" -eq 0 ] && echo "$CW_OUTPUT" | grep -q "^12$"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: continue in a while-loop leaves the surrounding env intact"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: while-loop continue regressed (rc=$CW_RC, want 12)"
+    echo "$CW_OUTPUT" | head -3
+fi
+
+rm -rf "$CONT_DIR"
+echo ""
+
 # Final guard (#681): if the binary changed during the last block, results are invalid.
 check_binary_fingerprint
 
