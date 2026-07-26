@@ -123,6 +123,25 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`--fmt` split multi-char operators, so `--write` corrupted the source
+  file (#729).** The formatter's spacing pass is character-level, and its
+  multi-char operator table knew only `==`, `!=`, `<=` and `>=`. Everything
+  else fell through to the single-char branches, which append a space after
+  `+` and around `<`/`>`: `x += 1` became `x + = 1`, `x <<= 2` became
+  `x < <= 2`, `>>` became `> >`, `=>` became `= >`, `|>` became `| >`, and the
+  exponent in `1.5e+10` became `1.5e + 10`. Under `--fmt --write` that was
+  written back over the user's file — a working program destroyed in place by
+  the tool whose job is to leave it working. 31 of the repo's own `.eigs`
+  files, `lib/checksum.eigs` among them, stopped parsing after being
+  formatted. `-=`, `&=`, `|=` and `^=` escaped only because `-`, `&`, `|` and
+  `^` happen to be in neither branch. The operator table is now the lexer's
+  full set, matched longest-first and emitted atomically, and a numeric
+  literal's exponent sign is no longer read as an operator. The suite gained
+  the assertion that was missing rather than a case per operator: every
+  `.eigs` in the repo that parses before `--fmt` must still parse after it —
+  the formatter was already *idempotently* wrong, so idempotence alone never
+  caught this.
+
 - **Leaving a `try` by `break`, `continue`, or `return` did not unregister its
   handler (#726).** The compiler emitted `OP_TRY_END` only at the *normal* end
   of a try body, so every non-local exit jumped out with the handler still

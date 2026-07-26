@@ -111,6 +111,75 @@ EXPECTED=$(printf 'x is 1 + 2\n')
 check "--write mode" "$ACTUAL" "$EXPECTED"
 rm -f "$TMPFILE"
 
+# --- Multi-char operators must not be split (#729) ---
+# The third pass of fix_spacing is character-level; any operator missing from
+# its multi-char table gets split by the single-char branches, which silently
+# corrupts the file under --write. One case per operator that was broken.
+ACTUAL=$(fmt_str "$(printf 'x += 1\n')")
+check "+= preserved" "$ACTUAL" "$(printf 'x += 1\n')"
+
+ACTUAL=$(fmt_str "$(printf 'x <<= 2\n')")
+check "<<= preserved" "$ACTUAL" "$(printf 'x <<= 2\n')"
+
+ACTUAL=$(fmt_str "$(printf 'x >>= 2\n')")
+check ">>= preserved" "$ACTUAL" "$(printf 'x >>= 2\n')"
+
+ACTUAL=$(fmt_str "$(printf 'y is x >> 1\n')")
+check ">> preserved" "$ACTUAL" "$(printf 'y is x >> 1\n')"
+
+ACTUAL=$(fmt_str "$(printf 'y is x << 1\n')")
+check "<< preserved" "$ACTUAL" "$(printf 'y is x << 1\n')"
+
+ACTUAL=$(fmt_str "$(printf 'f is (n) => n + 1\n')")
+check "=> preserved" "$ACTUAL" "$(printf 'f is (n) => n + 1\n')"
+
+ACTUAL=$(fmt_str "$(printf 'g is [1, 2, 3] |> len\n')")
+check "|> preserved" "$ACTUAL" "$(printf 'g is [1, 2, 3] |> len\n')"
+
+ACTUAL=$(fmt_str "$(printf 'b is 1.5e+10\n')")
+check "exponent literal preserved" "$ACTUAL" "$(printf 'b is 1.5e+10\n')"
+
+ACTUAL=$(fmt_str "$(printf 'b is 1.5e-10\n')")
+check "negative exponent preserved" "$ACTUAL" "$(printf 'b is 1.5e-10\n')"
+
+# The same operators, unspaced on input: the formatter should ADD the outer
+# spaces without splitting the operator itself.
+ACTUAL=$(fmt_str "$(printf 'x+=1\n')")
+check "+= spaced, not split" "$ACTUAL" "$(printf 'x += 1\n')"
+
+ACTUAL=$(fmt_str "$(printf 'x<<=2\n')")
+check "<<= spaced, not split" "$ACTUAL" "$(printf 'x <<= 2\n')"
+
+ACTUAL=$(fmt_str "$(printf 'y is a>>b\n')")
+check ">> spaced, not split" "$ACTUAL" "$(printf 'y is a >> b\n')"
+
+ACTUAL=$(fmt_str "$(printf 'f is (n)=>n+1\n')")
+check "=> spaced, not split" "$ACTUAL" "$(printf 'f is (n) => n + 1\n')"
+
+# --- Corpus property: formatting a valid program must leave it valid (#729) ---
+# The unit cases above cover the operators we know about; this covers the ones
+# we don't. A character-level formatter regenerates this bug class easily, so
+# the standing assertion is behavioural, not case-by-case: every .eigs in the
+# repo that parses before --fmt must still parse after it. This one check
+# catches all 28 files the +=/<</>>/=>/|> splitting broke.
+# Gated on the A/B — files that do not parse to begin with (examples/errors/)
+# are excluded, so a pre-existing parse error can never mask a formatter bug.
+CORPUS_BROKEN=""
+CORPUS_N=0
+FMT_TMP=$(mktemp /tmp/fmt_corpus_XXXXXX.eigs)
+for f in "$TESTS_DIR"/../examples/*.eigs "$TESTS_DIR"/../lib/*.eigs "$TESTS_DIR"/*.eigs; do
+    [ -f "$f" ] || continue
+    $EIGS --lint --lint-level error "$f" >/dev/null 2>&1 || continue
+    CORPUS_N=$((CORPUS_N + 1))
+    $EIGS --fmt "$f" > "$FMT_TMP" 2>/dev/null
+    if ! $EIGS --lint --lint-level error "$FMT_TMP" >/dev/null 2>&1; then
+        CORPUS_BROKEN="$CORPUS_BROKEN $(basename "$f")"
+    fi
+done
+rm -f "$FMT_TMP"
+check "--fmt preserves parseability across $CORPUS_N repo files" \
+      "broken:$CORPUS_BROKEN" "broken:"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 [ "$FAIL" -eq 0 ]

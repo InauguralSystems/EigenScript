@@ -21,6 +21,44 @@ static int measure_indent(const char *line) {
     return col;
 }
 
+/* Multi-char operators, longest match first.
+ *
+ * This table must stay in sync with the lexer's symbol switch (lexer.c):
+ * an operator the lexer accepts but this table omits falls through to the
+ * single-char branches in pass 3, which insert a space *inside* it and
+ * silently corrupt the program under --fmt --write (#729). */
+static const char *const MULTI_OPS[] = {
+    "<<=", ">>=",
+    "==", "!=", "<=", ">=", "<<", ">>",
+    "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
+    "=>", "|>",
+    NULL
+};
+
+/* True if s[i] (a '+' or '-') is the sign of a numeric literal's exponent, as
+ * in 1.5e+10, where treating it as an operator would corrupt the literal.
+ *
+ * Requires a digit run (with at most one '.') before the 'e', not itself
+ * preceded by an identifier character, and a digit after the sign — so `1.5e+1`
+ * is an exponent while `a1e+1` (an identifier plus an operator) is not. */
+static int is_exponent_sign(const char *s, int len, int i) {
+    if (s[i] != '+' && s[i] != '-') return 0;
+    if (i < 2 || i + 1 >= len) return 0;
+    if (s[i - 1] != 'e' && s[i - 1] != 'E') return 0;
+    if (!isdigit((unsigned char)s[i + 1])) return 0;
+
+    int j = i - 2;
+    int seen_digit = 0, seen_dot = 0;
+    while (j >= 0) {
+        if (isdigit((unsigned char)s[j])) { seen_digit = 1; j--; }
+        else if (s[j] == '.' && !seen_dot) { seen_dot = 1; j--; }
+        else break;
+    }
+    if (!seen_digit) return 0;
+    if (j >= 0 && (isalnum((unsigned char)s[j]) || s[j] == '_')) return 0;
+    return 1;
+}
+
 /* Fix operator spacing on a single line.
  * Processes character by character, tracking string literals. */
 static void fix_spacing(const char *line, strbuf *out) {
@@ -169,16 +207,24 @@ static void fix_spacing(const char *line, strbuf *out) {
             continue;
         }
 
-        /* Two-char operators */
-        if (i + 1 < len) {
-            char two[3] = {s[i], s[i+1], 0};
-            if (strcmp(two, "==") == 0 || strcmp(two, "!=") == 0 ||
-                strcmp(two, "<=") == 0 || strcmp(two, ">=") == 0) {
+        /* Multi-char operators, emitted atomically so no branch below can
+         * split one. Longest match first (<<= before <<, before <). */
+        {
+            const char *op = NULL;
+            int oplen = 0;
+            for (int k = 0; MULTI_OPS[k]; k++) {
+                int klen = (int)strlen(MULTI_OPS[k]);
+                if (i + klen <= len && strncmp(s + i, MULTI_OPS[k], klen) == 0) {
+                    op = MULTI_OPS[k];
+                    oplen = klen;
+                    break;
+                }
+            }
+            if (op) {
                 if (tmp3.len > 0 && tmp3.data[tmp3.len - 1] != ' ')
                     strbuf_append_char(&tmp3, ' ');
-                strbuf_append_char(&tmp3, s[i]);
-                strbuf_append_char(&tmp3, s[i+1]);
-                i++;
+                strbuf_append_n(&tmp3, op, oplen);
+                i += oplen - 1;
                 if (i + 1 < len && s[i + 1] != ' ')
                     strbuf_append_char(&tmp3, ' ');
                 continue;
@@ -195,6 +241,11 @@ static void fix_spacing(const char *line, strbuf *out) {
         }
         /* Arithmetic: +, *, /, % */
         if (s[i] == '+' || s[i] == '*' || s[i] == '/' || s[i] == '%') {
+            /* ...but the '+' of 1.5e+10 is part of the literal, not an operator */
+            if (is_exponent_sign(s, len, i)) {
+                strbuf_append_char(&tmp3, s[i]);
+                continue;
+            }
             if (tmp3.len > 0 && tmp3.data[tmp3.len - 1] != ' ')
                 strbuf_append_char(&tmp3, ' ');
             strbuf_append_char(&tmp3, s[i]);
