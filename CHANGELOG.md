@@ -6,6 +6,34 @@ All notable changes to EigenScript are documented here.
 
 ### Security
 
+- **HTTP slow-loris: one source could deny all service (#718).** The HTTP
+  extension is thread-per-connection with a hard ceiling of 256 workers and,
+  until now, only a single *global* connection counter. Pointing a real client
+  at a live `eigen-site` host (the audit-vs-attack pass) showed the cap is the
+  weapon, not the shield: **256 partial-header connections from one address —
+  6.4 KB sent, then silence — take every worker slot and every legitimate client
+  gets `503`**, and a byte-per-second trickle holds a slot for the full 30s
+  deadline (measured 31.5s). Path traversal, malformed framing, and memory-
+  safety all held (RSS flat, no crash); availability did not. Three bounds now
+  close it, all env-tunable:
+  - **per-source-IP connection cap** (`EIGS_HTTP_MAX_CONN_PER_IP`, default 48) —
+    one address may not hold all 256 slots; excess gets `503`. Set to `0` behind
+    a reverse proxy (where every connection carries the proxy's address).
+  - **header-phase deadline** (`EIGS_HTTP_HEADER_TIMEOUT`, default 10s) —
+    separate from and shorter than the 30s total-request deadline, because a
+    slow *header* phase is a slow-loris, not a slow upload.
+  - **minimum header data-rate** (`EIGS_HTTP_HEADER_MIN_RATE`, default
+    256 B/s, Apache `mod_reqtimeout`'s MinRate) — a trickle that clears neither
+    the deadline nor the rate floor is dropped (`408`) in ~a read cycle instead
+    of holding a worker for 30s. A real client sends its header block in one
+    packet and never reaches either bound.
+
+  These raise the bar for a single-source attack sharply but do **not** make a
+  thread-per-connection server slow-loris-proof against a *distributed* attack —
+  the structural fix is an event-driven connection layer or a reverse proxy in
+  front. `eigen-site`'s README now recommends the proxy posture for any
+  internet-facing deployment.
+
 - **`sandbox_run` did not contain (#713).** The sandbox is the runtime's only
   advertised containment boundary — it filters *names* in the environment, and
   three things reach past a name filter. All three were confirmed by working
