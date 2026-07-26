@@ -4898,10 +4898,22 @@ static void *thread_entry(void *arg) {
                 list_append(l, h->fn_args[i]);
             bin_arg = l;
         }
-        h->result = fn->data.builtin(bin_arg);
-        val_decref(bin_arg);
-        /* builtin returns an owned ref; the handle takes it over (see the
-         * VAL_FN path above) — no extra incref, which would leak. */
+        int consumes_arg = (fn->data.builtin == builtin_free_val);
+        Value *result = fn->data.builtin(bin_arg);
+        /* #720: this site owns bin_arg (increfed above, or freshly built)
+         * and drops it below, so it runs the VM's own contract —
+         * caller_owns_arg=1, and `result == bin_arg` transfers rather than
+         * being decrefed. `spawn of [append, xs, 5]` returns a borrowed
+         * direct child and used to hand the handle a ref it never held. */
+        if (!result) {
+            result = make_null();
+        } else if (!consumes_arg) {
+            vm_borrow_compensate(bin_arg, result, 1, fn, NULL);
+        }
+        if (!consumes_arg && result != bin_arg) val_decref(bin_arg);
+        /* The handle takes over the now-owned ref (see the VAL_FN path
+         * above) — no extra incref, which would leak. */
+        h->result = result;
     }
     /* #302: the return value may be arena-allocated (or a heap container with
      * arena children) if the worker left g_arena.active — eigs_thread_detach
@@ -7057,7 +7069,26 @@ Value* builtin_dispatch(Value *arg) {
     }
 
     if (fn->type == VAL_BUILTIN) {
-        return fn->data.builtin(fn_arg);
+        /* free_val CONSUMES a reference, and fn_arg is a child of our own
+         * arg vector, which still points at it — lend it a ref of our own
+         * making rather than the arg vector's (#720). */
+        if (fn->data.builtin == builtin_free_val) {
+            if (fn_arg) val_incref(fn_arg);
+            Value *consumed = fn->data.builtin(fn_arg);
+            return consumed ? consumed : make_null();
+        }
+        Value *result = fn->data.builtin(fn_arg);
+        if (!result) return make_null();
+        /* #720: the inner builtin may return a borrow of fn_arg, which is a
+         * *grandchild* of our own arg vector — one level deeper than any
+         * caller's direct-child scan can see. Own it here, per the protocol's
+         * rule that a deeper-than-direct-child borrow is the builtin's to
+         * incref. caller_owns_arg=1 deliberately leaves `result == fn_arg`
+         * a raw borrow: that IS a direct child of our arg, so our own
+         * caller's compensation covers it, and increfing here would
+         * double-count into a leak. */
+        vm_borrow_compensate(fn_arg, result, 1, fn, NULL);
+        return result;
     }
 
     if (fn->type == VAL_FN) {

@@ -1903,6 +1903,47 @@ static inline void vm_borrow_scan(Value *arg, Value *result,
     }
 }
 
+/* #720: the one place the builtin-result borrow protocol is written down.
+ *
+ * A builtin's raw return may BORROW from its argument vector with no
+ * compensating incref: `num` returns its argument unchanged for VAL_NUM,
+ * `sort` returns its arg, and `append` / `dict_set` / `set_at` / `coalesce`
+ * return their target — a direct child of the arg vector. Whoever receives
+ * that result must compensate, or it over-releases into a use-after-free.
+ *
+ * The protocol, in two halves:
+ *   1. A builtin returning a borrow DEEPER than a direct child increfs it
+ *      itself (see builtin_get_at). Only identity and direct-child borrows
+ *      are left for the call site — that is what makes the capped scan
+ *      above sufficient rather than a guess.
+ *   2. Every call site — the three VM sites plus the out-of-VM ones
+ *      (call_eigs_fn, builtin_dispatch, thread_entry) — runs THIS function.
+ *      They had drifted apart, and the out-of-VM paths returned the raw
+ *      result: `sort_by of [xs, num]` freed every element of xs while the
+ *      list still pointed at them.
+ *
+ * caller_owns_arg = 1 — the caller holds a counted ref to `arg` that it
+ *   drops right after this returns (the VM sites: `arg` was built or
+ *   increfed for the call; thread_entry's bin_arg). `result == arg` is then
+ *   a TRANSFER: that ref becomes the result's, so the caller must skip its
+ *   decref and nothing is increfed here.
+ * caller_owns_arg = 0 — the caller only BORROWS `arg`; the ref belongs to
+ *   someone else and outlives the call (sort_by hands call_eigs_fn a list
+ *   element it keeps). `result == arg` then needs an incref like any other
+ *   borrow.
+ *
+ * Callers must NOT invoke this for a consuming builtin (builtin_free_val),
+ * which may already have freed `arg`. */
+void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
+                          Value *fn_val, Env *env) {
+    if (!result || !arg) return;
+    if (result == arg) {
+        if (!caller_owns_arg) val_incref(result);
+        return;
+    }
+    vm_borrow_scan(arg, result, fn_val, env);
+}
+
 /* JIT Stage 4r/5f: out-of-line helper for OP_CALL.
  *
  * Mirrors the VAL_BUILTIN branch of CASE(CALL), plus (Stage 5f) a
@@ -2110,10 +2151,10 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
 
     if (!result) {
         result = make_null();
-    } else if (!consumes_arg && result != arg) {
-        /* Direct-borrow heuristic (capped, #546) — see vm_borrow_scan;
+    } else if (!consumes_arg) {
+        /* Borrow protocol (#546/#720) — see vm_borrow_compensate;
          * !consumes_arg guard: free_val may have already freed arg. */
-        vm_borrow_scan(arg, result, fn_val, frame->env);
+        vm_borrow_compensate(arg, result, 1, fn_val, frame->env);
     }
     if (!consumes_arg && result != arg) val_decref(arg);
     vm_push(result);
@@ -3411,13 +3452,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
             if (!result) {
                 result = make_null();
-            } else if (!consumes_arg && result != arg) {
-                /* Direct-borrow heuristic (capped, #546) — see
-                 * vm_borrow_scan for the full rationale. Guarded by
-                 * !consumes_arg: a consuming builtin like free_val may
-                 * have already freed arg, so reading arg here would be
-                 * a use-after-free. */
-                vm_borrow_scan(arg, result, fn_val, frame->env);
+            } else if (!consumes_arg) {
+                /* Borrow protocol (#546/#720) — see vm_borrow_compensate
+                 * for the full rationale. Guarded by !consumes_arg: a
+                 * consuming builtin like free_val may have already freed
+                 * arg, so reading arg here would be a use-after-free. */
+                vm_borrow_compensate(arg, result, 1, fn_val, frame->env);
             }
             if (!consumes_arg && result != arg) val_decref(arg);
             /* If result == arg, the arg's refcount transfers to the result */
@@ -5307,12 +5347,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             g_builtin_call_env = saved;
             if (!result) {
                 result = make_null();
-            } else if (!consumes_arg && result != arg) {
-                /* Direct-borrow heuristic (capped, #546) — see
-                 * vm_borrow_scan. Must run before val_decref(arg) so
-                 * the items array is still valid, and skipped when the
-                 * builtin already consumed arg (free_val). */
-                vm_borrow_scan(arg, result, fn, frame->env);
+            } else if (!consumes_arg) {
+                /* Borrow protocol (#546/#720) — see vm_borrow_compensate.
+                 * Must run before val_decref(arg) so the items array is
+                 * still valid, and skipped when the builtin already
+                 * consumed arg (free_val). */
+                vm_borrow_compensate(arg, result, 1, fn, frame->env);
             }
             if (!consumes_arg && result != arg) val_decref(arg);
             slot_decref(table_s);

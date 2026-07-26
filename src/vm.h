@@ -43,6 +43,16 @@ typedef struct ASTNode ASTNode;
 #  define EIGS_BORROW_GUARD 0
 #endif
 
+/* #720: the builtin-result borrow protocol, shared by the three VM call
+ * sites and the out-of-VM ones (call_eigs_fn, builtin_dispatch,
+ * thread_entry) so they cannot drift apart again. caller_owns_arg=1 means
+ * `result == arg` transfers the caller's ref; 0 means the caller only
+ * borrows `arg` and identity needs an incref too. Never call this for a
+ * consuming builtin (builtin_free_val) — it may have freed `arg`. Full
+ * rationale at the definition in vm.c. */
+void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
+                          Value *fn_val, Env *env);
+
 /* ---- Opcodes ---- */
 typedef enum {
     /* Constants */
