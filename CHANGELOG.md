@@ -6,6 +6,24 @@ All notable changes to EigenScript are documented here.
 
 ### Security
 
+- **`json_encode` had no depth bound, so a cyclic value segfaulted the process
+  (#730).** The decoder has been bounded at `JSON_MAX_DEPTH` since #495; the
+  encoder walked the Value graph with no counter and no cycle check. A Value
+  graph *can* contain cycles — the cycle collector exists because it can — and
+  building one takes two lines (`dict_set of [d, "self", d]`, or
+  `append of [a, a]` by accident). The walk then recursed until the C stack was
+  gone. The crash was **uncatchable**: `try`/`catch` does nothing against a
+  SIGSEGV. `print` already handled cycles, which made `json_encode` the
+  surprise. Reachable from `json_path` and, more seriously, from
+  `shared_set` — an HTTP handler storing a self-referential value took the
+  whole server down. Both directions now share one limit, so a document that
+  decodes always re-encodes; exceeding it raises a catchable `EK_VALUE` error
+  rather than emitting truncated JSON, which would have been the
+  silent-wrong-answer class this audit was closing. Depth rides the C stack as
+  a parameter rather than a thread-local counter, so it cannot leak across a
+  bail-out. `eigs_json_encode` now returns NULL on refusal and its two
+  `ext_http.c` callers check it instead of `strlen`-ing the result.
+
 - **Content-Length was matched by substring, so a header value could frame the
   body (#715).** The read loop located the header with a single
   `strcasestr(reqbuf, "Content-Length:")` over the whole header block, so the

@@ -818,11 +818,37 @@ Value* builtin_type(Value *arg) {
     return make_str("none");
 }
 
-static void eigs_json_encode_value(Value *v, strbuf *out) {
+/* Bound JSON nesting depth: each array/object descent is a C recursion, so
+ * untrusted input like "[[[[...]]]]" would otherwise exhaust the C stack and
+ * crash (SIGSEGV). 200 is far beyond any legitimate document. Shared by the
+ * decoder (which has enforced it since #495) and the encoder (#730). */
+#define JSON_MAX_DEPTH 200
+
+/* The encoder walks a Value graph, and a Value graph can contain cycles — the
+ * cycle collector exists precisely because it can. `d is {}` then
+ * `dict_set of [d, "self", d]` is two lines, and `append of [a, a]` builds one
+ * by accident. Without a bound the walk recurses until the C stack is gone: a
+ * SIGSEGV, which `try`/`catch` cannot catch because it is not a runtime error.
+ *
+ * The decoder has been bounded at JSON_MAX_DEPTH since #495; the encoder is the
+ * asymmetry. Same limit here so the two directions agree: a document that
+ * decodes must re-encode.
+ *
+ * Depth rides the C stack rather than a thread-local counter — it cannot leak
+ * across a bail-out and it is reentrant for free. Returns 0, or -1 once the
+ * limit is hit; every caller propagates so the walk unwinds instead of
+ * finishing a truncated document. The entry points turn the -1 into a catchable
+ * rt_error rather than emitting `null`: a silently truncated document here
+ * would be the exact silent-wrong-answer class the 0.33.0 audit was closing. */
+#define JSON_ENCODE_MAX_DEPTH JSON_MAX_DEPTH
+
+static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
     if (!v || v->type == VAL_NULL || v->type == VAL_FN || v->type == VAL_BUILTIN) {
         strbuf_append(out, "null");
-        return;
+        return 0;
     }
+    if ((v->type == VAL_LIST || v->type == VAL_DICT) && depth >= JSON_ENCODE_MAX_DEPTH)
+        return -1;
     switch (v->type) {
         case VAL_NUM: {
             double n = v->data.num;
@@ -860,7 +886,8 @@ static void eigs_json_encode_value(Value *v, strbuf *out) {
             strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
-                eigs_json_encode_value(v->data.list.items[i], out);
+                if (eigs_json_encode_value(v->data.list.items[i], out, depth + 1) != 0)
+                    return -1;
             }
             strbuf_append_char(out, ']');
             break;
@@ -887,7 +914,8 @@ static void eigs_json_encode_value(Value *v, strbuf *out) {
                 }
                 strbuf_append_char(out, '"');
                 strbuf_append_char(out, ':');
-                eigs_json_encode_value(v->data.dict.vals[i], out);
+                if (eigs_json_encode_value(v->data.dict.vals[i], out, depth + 1) != 0)
+                    return -1;
             }
             strbuf_append_char(out, '}');
             break;
@@ -896,21 +924,40 @@ static void eigs_json_encode_value(Value *v, strbuf *out) {
             strbuf_append(out, "null");
             break;
     }
+    return 0;
+}
+
+/* Shared by every entry point so the message is written once. */
+static void json_encode_depth_error(const char *who) {
+    rt_error(EK_VALUE, 0,
+             "%s: value nests deeper than %d levels "
+             "(a self-referential value will always exceed this)",
+             who, JSON_ENCODE_MAX_DEPTH);
 }
 
 Value* builtin_json_encode(Value *arg) {
     strbuf out;
     strbuf_init(&out);
-    eigs_json_encode_value(arg, &out);
+    if (eigs_json_encode_value(arg, &out, 0) != 0) {
+        strbuf_free(&out);
+        json_encode_depth_error("json_encode");
+        return make_null();
+    }
     Value *result = make_str(out.data);
     strbuf_free(&out);
     return result;
 }
 
+/* Returns NULL when the value is too deep to encode, having already raised.
+ * Callers must check — the C-string entry point has no other way to say no. */
 char* eigs_json_encode(Value *v) {
     strbuf out;
     strbuf_init(&out);
-    eigs_json_encode_value(v, &out);
+    if (eigs_json_encode_value(v, &out, 0) != 0) {
+        strbuf_free(&out);
+        json_encode_depth_error("json_encode");
+        return NULL;
+    }
     char *result = xstrdup(out.data);
     strbuf_free(&out);
     return result;
@@ -1047,11 +1094,8 @@ static Value* eigs_json_parse_number(const char *s, int *pos) {
     return make_num(d);
 }
 
-/* Bound JSON nesting depth: each array/object descent is a C recursion, so
- * untrusted input like "[[[[...]]]]" would otherwise exhaust the C stack and
- * crash (SIGSEGV). 200 is far beyond any legitimate document. */
-#define JSON_MAX_DEPTH 200
-/* g_json_depth lives on EigsThread (Phase 8); bridge macro from eigenscript.h. */
+/* JSON_MAX_DEPTH is defined above the encoder, which shares it (#730).
+ * g_json_depth lives on EigsThread (Phase 8); bridge macro from eigenscript.h. */
 
 static Value* eigs_json_parse_array(const char *s, int *pos) {
     (*pos)++;
@@ -2789,7 +2833,12 @@ Value* builtin_json_path(Value *arg) {
     /* For complex types, json_encode them */
     strbuf out;
     strbuf_init(&out);
-    eigs_json_encode_value(current, &out);
+    if (eigs_json_encode_value(current, &out, 0) != 0) {
+        strbuf_free(&out);
+        val_decref(root);
+        json_encode_depth_error("json_path");
+        return make_null();
+    }
     Value *r = make_str(out.data);
     strbuf_free(&out);
     val_decref(root);

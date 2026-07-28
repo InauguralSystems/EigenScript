@@ -529,7 +529,12 @@ Value* builtin_shared_set(Value *arg) {
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
+    /* NULL when the value is cyclic or deeper than JSON_MAX_DEPTH (#730). A
+     * handler storing a self-referential value used to segfault the server
+     * here; reject the store instead. eigs_json_encode has already raised, so
+     * the route sees a catchable error rather than a silent no-op. */
     char *json = eigs_json_encode(val);
+    if (!json) return make_null();
     long new_json_len = (long)strlen(json);
     long key_len = (long)strlen(key_v->data.str);
     long cap = shared_max_bytes();
@@ -601,6 +606,9 @@ Value* builtin_shared_incr(Value *arg) {
     Value *new_v = make_num(new_val);
     char *new_json = eigs_json_encode(new_v);
     val_decref(new_v);
+    /* A number can't exceed the depth bound, but don't leave a bare strlen on
+     * a documented-nullable return. */
+    if (!new_json) { pthread_mutex_unlock(&s->shared_mu); return make_null(); }
     long new_json_len = (long)strlen(new_json);
     long key_len = (long)strlen(key_v->data.str);
     long old_bytes = (idx >= 0) ? (long)strlen(s->shared[idx].json) : 0;
