@@ -214,8 +214,8 @@ sandbox allowlist can name them) but every call raises `value`:
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `json_encode` | `json_encode of value` | Serialize value to JSON string |
-| `json_decode` | `json_decode of s` | Parse JSON string to value |
+| `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
+| `json_decode` | `json_decode of s` | Parse JSON string to value. Raises past the same 200-level limit, so a document that decodes always re-encodes. |
 | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs |
 | `json_raw` | `json_raw of s` | Wrap raw JSON string (skip encoding) |
 | `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value by dot-notation path |
@@ -558,9 +558,12 @@ shared store.
 JSON-serialized map living on the `EigsHttpServer`, mutex-guarded.
 Values cross worker boundaries by being encoded on write and re-parsed
 on read into a value owned by the caller's state. Function values
-can't be stored (encoded as `null` per `json_encode`). Total bytes are
-bounded by `EIGS_HTTP_SHARED_MAX_BYTES` (default 64 MiB); over-cap
-writes return `null` without mutating.
+can't be stored (encoded as `null` per `json_encode`). A cyclic or
+over-deep value can't be stored either — `shared_set` rejects it and
+`json_encode` raises, rather than the crash that used to take the whole
+server down with it. Total bytes are bounded by
+`EIGS_HTTP_SHARED_MAX_BYTES` (default 64 MiB); over-cap writes return
+`null` without mutating.
 
 | Name | Signature | Description |
 |------|-----------|-------------|

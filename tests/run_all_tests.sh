@@ -583,13 +583,13 @@ else
 fi
 echo ""
 
-echo "[JSON Depth / DoS guard] (3 checks)"
+echo "[JSON Depth / DoS guard] (9 checks)"
 JD_OUTPUT=$(./eigenscript ../tests/test_json_depth.eigs 2>&1)
-TOTAL=$((TOTAL + 3))
+TOTAL=$((TOTAL + 9))
 if echo "$JD_OUTPUT" | grep -q "All tests passed"; then
-    echo "  PASS: deep-JSON guard + nested parsing"; PASS=$((PASS + 3))
+    echo "  PASS: deep-JSON guard (decode + encode) + nested parsing"; PASS=$((PASS + 9))
 else
-    echo "  FAIL: json-depth (possible crash/regression)"; FAIL=$((FAIL + 3))
+    echo "  FAIL: json-depth (possible crash/regression)"; FAIL=$((FAIL + 9))
     echo "$JD_OUTPUT" | grep -iE "ASSERT|error" | head -5
 fi
 echo ""

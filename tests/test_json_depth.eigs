@@ -31,4 +31,60 @@ assert of [(len of inner) == 2, "second-level array parses"]
 obj is json_decode of "{\"a\": {\"b\": 42}}"
 assert of [obj.a.b == 42, "nested object parses"]
 
+# ---- The ENCODER half (#730) ----
+# The decoder was bounded by #495; json_encode was not, so encoding a cyclic
+# or over-deep value recursed until the C stack was gone. That is a SIGSEGV,
+# which try/catch cannot catch — the process just died. A value cycle takes
+# two lines to build and `print` already handles one, so json_encode was the
+# surprise. Reaching the line after each catch is the assertion.
+
+# A self-referential DICT.
+cyc_raised is 0
+d is {"x": 1}
+dict_set of [d, "self", d]
+try:
+    s is json_encode of d
+catch e:
+    cyc_raised is 1
+assert of [cyc_raised == 1, "cyclic dict raises rather than crashing"]
+
+# A self-referential LIST — `append of [a, a]` builds one by accident.
+list_raised is 0
+a is [1]
+append of [a, a]
+try:
+    s2 is json_encode of a
+catch e:
+    list_raised is 1
+assert of [list_raised == 1, "cyclic list raises rather than crashing"]
+
+# Non-cyclic but past the 200 limit.
+deep_enc_raised is 0
+nest is [1]
+i2 is 0
+loop while i2 < 300:
+    nest is ([nest])
+    i2 is i2 + 1
+try:
+    s3 is json_encode of nest
+catch e:
+    deep_enc_raised is 1
+assert of [deep_enc_raised == 1, "over-deep value raises rather than crashing"]
+
+# CONTROL: a legitimately deep value UNDER the limit must still encode. Without
+# this, a bound of 1 would pass every check above.
+ok_nest is [1]
+i3 is 0
+loop while i3 < 150:
+    ok_nest is ([ok_nest])
+    i3 is i3 + 1
+encoded is json_encode of ok_nest
+# 151 levels deep (the seed plus 150 wrappers): 151 '[' + "1" + 151 ']'.
+assert of [(len of encoded) == 303, "151-deep value still encodes"]
+assert of [(len of (json_decode of encoded)) == 1, "and decodes back"]
+
+# The two directions agree: what decodes must re-encode.
+round is json_encode of (json_decode of "[1,[2,[3]]]")
+assert of [round == "[1,[2,[3]]]", "decode/encode round-trips at shared depth"]
+
 print of "All tests passed"
