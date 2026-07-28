@@ -70,6 +70,12 @@ r_acleanup is http_route of ["GET", "/acleanup", "code", "shared_delete of \"req
 # The authed route itself: returns "top secret" iff auth passes.
 secret is http_route_authed of ["GET", "/secret", "code", "\"top secret\""]
 
+# Echoes the request body back — the framing oracle for HS29/HS30.
+r_echo is http_route of ["POST", "/echo", "code", "http_request_body of null"]
+
+# Echoes the raw request header block — the injection oracle for HS32.
+r_hdrs is http_route of ["POST", "/hdrs", "code", "http_request_headers of null"]
+
 # Serve forever.
 serve is http_serve of $PORT
 EIGS
@@ -500,6 +506,101 @@ fi
 # Clean up the require_auth key so it doesn't bleed into later tests
 # that may rerun with a different cap.
 curl -s --max-time 2 "http://127.0.0.1:$PORT/acleanup" > /dev/null
+
+# ---- Content-Length is matched per header line, not by substring (#715) ----
+# Content-Length used to be found with strcasestr() over the whole header
+# block, so the first hit anywhere won: inside another header's VALUE, as a
+# suffix of another header's NAME, or in the request target. The server framed
+# the body at the decoy's length and dispatched the route with an empty body.
+#
+# The headers and the body MUST go in separate writes. Sent as one packet the
+# body is already in reqbuf when the loop breaks early, so the bug is invisible
+# — the pre-fix build passes a single-write version of this test.
+ECHO_BODY='HELLO-REAL-BODY-0123456789'   # 26 bytes
+if command -v timeout >/dev/null 2>&1; then
+    send_split() { # $1 = request target, $2 = extra header lines before Content-Length
+        timeout 5 bash -c "
+            exec 3<>/dev/tcp/127.0.0.1/$PORT
+            printf 'POST $1 HTTP/1.1\r\nHost: localhost\r\n$2Content-Length: 26\r\n\r\n' >&3
+            sleep 0.3
+            printf '%s' '$ECHO_BODY' >&3
+            cat <&3
+            exec 3<&-
+        " 2>/dev/null || true
+    }
+
+    # Control first: if the plain split-write case fails, the two decoy cases
+    # below prove nothing about framing.
+    GOT=$(send_split "/echo" "" | tr -d '\r' | tail -1)
+    if [ "$GOT" = "$ECHO_BODY" ]; then
+        ok "HS29a split-write body arrives intact (control)"
+    else
+        fail "HS29a split-write control" "got '$GOT'"
+    fi
+
+    FRAMED=0
+    # Fields are '|'-separated: a ':' delimiter would split the target case,
+    # whose whole point is that it contains a colon.
+    for CASE in "value|/echo|X-Note: Content-Length: 0\r\n" \
+                "name-suffix|/echo|X-Content-Length: 0\r\n" \
+                "target|/echo?q=Content-Length:0|"; do
+        NAME=${CASE%%|*}; REST=${CASE#*|}
+        TARGET=${REST%%|*}; EXTRA=${REST#*|}
+        GOT=$(send_split "$TARGET" "$EXTRA" | tr -d '\r' | tail -1)
+        if [ "$GOT" != "$ECHO_BODY" ]; then
+            fail "HS29 decoy Content-Length in $NAME framed the body" "got '$GOT'"
+            FRAMED=1
+        fi
+    done
+    [ "$FRAMED" -eq 0 ] && ok "HS29 decoy Content-Length (header value / name suffix / target) does not frame the body"
+
+    # Two Content-Length headers that disagree used to let the first silently
+    # win. Reject the request instead.
+    GOT=$(send_split "/echo" "Content-Length: 0\r\n" | head -1)
+    if echo "$GOT" | grep -q "400"; then
+        ok "HS30 conflicting duplicate Content-Length rejected with 400"
+    else
+        fail "HS30 conflicting duplicate Content-Length" "got '$GOT'"
+    fi
+
+    # The real header must still be honoured after all that.
+    RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/ping")
+    if [ "$RESP" = "pong" ]; then
+        ok "HS31 server still healthy after framing probes"
+    else
+        fail "HS31 server health after framing probes" "got '$RESP'"
+    fi
+else
+    echo "  SKIP: HS29/HS30/HS31 (timeout not available)"
+fi
+
+# ---- http_post strips CR/LF from outbound header names and values (#716) ----
+# hk/hv reached curl's -H verbatim, so a CR/LF in either injected additional
+# headers into the outbound request. Loopback: post to /hdrs, which echoes the
+# raw header block the server received, and assert the injected name never
+# appears at the START of a line. (Grepping for the name alone would false-pass
+# — after stripping, the text survives inside X-Test's value, on one line,
+# which is exactly the point.)
+# Headers go as a flat JSON ARRAY of alternating name/value — http_post only
+# reads the VAL_LIST shape, and a JSON object silently delivers no headers
+# at all (filed separately).
+CLI=$(mktemp /tmp/eigs_http_cli_XXXXXX.eigs)
+cat > "$CLI" <<EIGSCLI
+hdrs is "[\"X-Test\", \"probe\\\\r\\\\nX-Injected: yes\"]"
+resp is http_post of ["http://127.0.0.1:$PORT/hdrs", hdrs, "b"]
+print of resp
+EIGSCLI
+POSTED=$("$EIGS" "$CLI" 2>/dev/null | tr -d '\r')
+rm -f "$CLI"
+if [ -z "$POSTED" ]; then
+    fail "HS32 outbound header CRLF injection" "client got no response from /hdrs"
+elif echo "$POSTED" | grep -q '^X-Injected:'; then
+    fail "HS32 outbound header CRLF injection" "injected header reached the wire as its own line"
+elif echo "$POSTED" | grep -q '^X-Test: probeX-Injected: yes$'; then
+    ok "HS32 http_post strips CR/LF from header values (no injected header line)"
+else
+    fail "HS32 outbound header CRLF injection" "X-Test not delivered as expected: $(echo "$POSTED" | grep -i '^X-' | tr '\n' '|')"
+fi
 
 # ---- Summary ----
 echo ""

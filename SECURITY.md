@@ -50,13 +50,23 @@ Out of scope:
 - Anything an EigenScript program can already do by virtue of running on the
   host (reading `~/.ssh/id_rsa`, deleting files, etc.). If the threat is
   "malicious script", the fix is "do not run malicious scripts".
+- **The destination of an outbound request.** `http_get`/`http_post` check only
+  that the URL is `http://` or `https://` and is not a curl option; there is no
+  loopback, link-local, or private-range blocklist. A script that builds a URL
+  out of request data is therefore an SSRF pivot — reaching `127.0.0.1` or
+  `169.254.169.254` is the script's decision, and the script is trusted.
+  Stated explicitly because the transport side *is* guarded (`--proto` and
+  `--proto-redir` are pinned to `http,https`, which closes `file://` via
+  redirect), and a half-guarded client invites the assumption that the
+  destination is guarded too. **If you write a route that forwards a
+  client-supplied URL, you must validate the destination yourself.**
 
 ## Supported Versions
 
 | Version | Supported |
 |---------|-----------|
-| 0.26.x  | Yes      |
-| < 0.26  | No       |
+| 0.33.x  | Yes      |
+| < 0.33  | No       |
 
 ## Contact Routing
 
