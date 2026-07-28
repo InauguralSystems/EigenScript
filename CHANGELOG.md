@@ -6,6 +6,36 @@ All notable changes to EigenScript are documented here.
 
 ### Security
 
+- **Content-Length was matched by substring, so a header value could frame the
+  body (#715).** The read loop located the header with a single
+  `strcasestr(reqbuf, "Content-Length:")` over the whole header block, so the
+  first hit anywhere won — inside another header's *value*
+  (`X-Note: Content-Length: 0`), as a suffix of another header's *name*
+  (`X-Content-Length: 0`), or in the request target
+  (`POST /x?q=Content-Length:0`). The server framed the body at the decoy's
+  length, left the read loop early, and dispatched the `code` route with an
+  empty body; it also let a client hide an oversized real length behind a small
+  fake one and dodge the `> max_body` 400. The header block is now walked line
+  by line, matching only at a line start with the colon required immediately
+  after the name, and two `Content-Length` headers that disagree are rejected
+  with 400 instead of the first silently winning. Reachable only when the body
+  arrives in a *separate* write from the headers — sent as one packet the body
+  is already buffered when the loop breaks, which is why the pre-fix build
+  passes a single-write version of the same test (HS29–HS31).
+
+- **`http_post` did not strip CR/LF from outbound header names or values
+  (#716).** Both halves reached curl's `-H` verbatim, so a `\r\n` in either
+  injected additional headers into the outbound request — the class the
+  runtime already recognised one screen away in `http_cors`. Script-controlled,
+  so not a vulnerability on its own under the SECURITY.md threat model, but a
+  `code` route that forwards a client-supplied header value into an
+  `http_post` makes it one. Both now run through a shared `http_strip_crlf`,
+  which `http_cors` was rewritten onto so there is one implementation (HS32).
+  SECURITY.md now also states outright that the *destination* of an outbound
+  request is out of scope — there is no loopback/link-local blocklist, and the
+  guarded transport (`--proto`/`--proto-redir` pinned to `http,https`) was
+  inviting the assumption that the destination was guarded too.
+
 - **`chunk_verify` let an untrusted chunk run off the end of its code
   (#721).** The verifier checked opcodes, operand bounds and jump targets but
   never that execution *terminates* — "the caller supplies a chunk ending in

@@ -352,6 +352,19 @@ Value* builtin_http_session_id(Value *arg) {
 }
 
 
+/* Remove CR and LF in place. A CR or LF inside a header name or value ends the
+ * header early on the wire, so whatever follows is read by the peer as further
+ * headers (or as the start of the body) — header injection. Callers that build
+ * a header from script-supplied text must run both halves through this. */
+static void http_strip_crlf(char *s) {
+    if (!s) return;
+    char *w = s;
+    for (const char *r = s; *r; r++) {
+        if (*r != '\r' && *r != '\n') *w++ = *r;
+    }
+    *w = '\0';
+}
+
 static int http_url_is_allowed(const char *url) {
     if (!url || !url[0] || url[0] == '-') return 0;
     return strncmp(url, "http://", 7) == 0 || strncmp(url, "https://", 8) == 0;
@@ -400,6 +413,13 @@ Value* builtin_http_post(Value *arg) {
         for (int i = 0; i + 1 < hdr_obj->data.list.count && hdr_count < 32 && argc < 90; i += 2) {
             char *hk = value_to_string(hdr_obj->data.list.items[i]);
             char *hv = value_to_string(hdr_obj->data.list.items[i + 1]);
+            /* Both halves reach curl's -H verbatim, so a CR/LF in either injects
+             * extra headers into the outbound request. Script-controlled and so
+             * not a vulnerability on its own under SECURITY.md's threat model,
+             * but a `code` route that forwards a client-supplied header value
+             * into an http_post makes it one. */
+            http_strip_crlf(hk);
+            http_strip_crlf(hv);
             snprintf(header_bufs[hdr_count], sizeof(header_bufs[0]), "%s: %s", hk, hv);
             free(hk); free(hv);
             argv[argc++] = "-H";
@@ -929,6 +949,61 @@ static double monotonic_now(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 
+/* Find the request's Content-Length by walking the header block LINE BY LINE.
+ *
+ * The previous strcasestr() over the whole block took the first match anywhere,
+ * so a decoy anywhere earlier framed the body: inside another header's VALUE
+ * (`X-Note: Content-Length: 0`), as a suffix of another header's NAME
+ * (`X-Content-Length: 0`), or in the request target
+ * (`POST /x?q=Content-Length:0`). The server then framed the body at the decoy's
+ * length and broke out of the read loop, dispatching a `code` route with an
+ * empty or partial body — and let a client hide an oversized real length behind
+ * a small fake one, dodging the `> max_body` 400.
+ *
+ * Matching only at a line start, with the colon required immediately after the
+ * name (RFC 7230 forbids whitespace there), closes all three. The request line
+ * is skipped outright rather than relying on it never starting with the name.
+ *
+ * Returns 1 and sets *out_len when present, 0 when absent, -1 when malformed —
+ * unparseable, trailing garbage, or two Content-Length headers that disagree
+ * (previously the first silently won).
+ *
+ * `block` is NUL-terminated at the end of the header block, terminator included.
+ */
+static int http_find_content_length(const char *block, long *out_len) {
+    const char *p = strstr(block, "\r\n");
+    if (!p) return 0;                       /* request line only, no headers */
+    p += 2;
+
+    int found = 0;
+    long value = 0;
+
+    while (*p) {
+        if (p[0] == '\r' && p[1] == '\n') break;      /* blank line: block ends */
+        const char *eol = strstr(p, "\r\n");
+        size_t linelen = eol ? (size_t)(eol - p) : strlen(p);
+
+        if (linelen > 14 && strncasecmp(p, "Content-Length", 14) == 0 && p[14] == ':') {
+            const char *v = p + 15;
+            while (*v == ' ' || *v == '\t') v++;
+            char *end = NULL;
+            long n = strtol(v, &end, 10);
+            if (end == v) return -1;                  /* no digits at all */
+            while (*end == ' ' || *end == '\t') end++;
+            if (end != p + linelen) return -1;        /* trailing garbage */
+            if (found && n != value) return -1;       /* conflicting duplicates */
+            found = 1;
+            value = n;
+        }
+
+        if (!eol) break;
+        p = eol + 2;
+    }
+
+    if (found) *out_len = value;
+    return found;
+}
+
 static void handle_request(int fd) {
     /* Per-read timeout (backstop for fully idle sockets) */
     struct timeval tv = { .tv_sec = HTTP_READ_TIMEOUT_SEC, .tv_usec = 0 };
@@ -1024,16 +1099,16 @@ static void handle_request(int fd) {
             /* Search only within headers (before \r\n\r\n), not in body */
             char saved = reqbuf[header_end];
             reqbuf[header_end] = '\0';
-            char *cl = strcasestr(reqbuf, "Content-Length:");
+            long content_length = 0;
+            int cl = http_find_content_length(reqbuf, &content_length);
             reqbuf[header_end] = saved;
-            if (cl) {
-                /* atoi silently accepts negative and non-numeric input; a
-                 * negative Content-Length would make body_received trivially
-                 * >= content_length and exit the read loop mid-body. Parse
-                 * with strtol and reject anything outside [0, max_body]. */
-                char *clend = NULL;
-                long content_length = strtol(cl + 15, &clend, 10);
-                if (clend == cl + 15 || content_length < 0 || content_length > max_body) {
+            if (cl != 0) {
+                /* strtol rather than atoi, which silently accepts negative and
+                 * non-numeric input; a negative Content-Length would make
+                 * body_received trivially >= content_length and exit the read
+                 * loop mid-body. Reject anything outside [0, max_body], and any
+                 * header the line parser flagged as malformed. */
+                if (cl < 0 || content_length < 0 || content_length > max_body) {
                     /* Malformed or oversized Content-Length — answer 400 so
                      * the client sees a real error instead of hanging until
                      * the per-connection deadline. */
@@ -1463,15 +1538,8 @@ static Value* builtin_http_cors(Value *arg) {
     if (arg->type != VAL_STR) return make_null();
     free(g_server.cors_origin);
     /* Strip CR/LF to prevent header injection */
-    const char *raw = arg->data.str;
-    size_t len = strlen(raw);
-    char *clean = xmalloc(len + 1);
-    size_t j = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (raw[i] != '\r' && raw[i] != '\n')
-            clean[j++] = raw[i];
-    }
-    clean[j] = '\0';
+    char *clean = xstrdup(arg->data.str);
+    http_strip_crlf(clean);
     g_server.cors_origin = clean;
     return make_str(clean);
 }
