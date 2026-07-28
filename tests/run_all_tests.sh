@@ -1902,6 +1902,29 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
         echo "  PASS: all $SL_PASS HTTP slow-loris checks"
     fi
     echo ""
+
+    # [45c] Per-request leak gate by RSS growth (#731, #752). Not covered by the
+    # ASan job: LSan runs atexit and the test server is killed, so a per-request
+    # leak in ext_http.c is invisible to every sanitizer build.
+    echo "[45c/47] HTTP per-request leak gate (RSS growth, 2 checks)"
+    RSS_OUTPUT=$(bash "$TESTS_DIR/test_http_rss_growth.sh" 2>&1)
+    RSS_PASS=$(echo "$RSS_OUTPUT" | grep -c "PASS:" || true)
+    RSS_FAIL=$(echo "$RSS_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + RSS_PASS + RSS_FAIL))
+    PASS=$((PASS + RSS_PASS))
+    FAIL=$((FAIL + RSS_FAIL))
+    if [ "$RSS_FAIL" -gt 0 ]; then
+        echo "  FAIL: $RSS_FAIL HTTP RSS-growth check(s) failed"
+        echo "$RSS_OUTPUT" | grep "FAIL:" | head -5
+    elif [ "$RSS_PASS" -eq 0 ]; then
+        # Print WHY nothing ran. "PASS: all 0 checks" reads as a pass while
+        # meaning the gate never executed — the skip is legitimate (sanitizer
+        # build, no curl, no procfs) but it must not look like coverage.
+        echo "$RSS_OUTPUT" | grep "SKIP:" | head -1
+    else
+        echo "  PASS: all $RSS_PASS HTTP RSS-growth checks"
+    fi
+    echo ""
 else
     echo "[44-45/47] HTTP tests SKIPPED (binary built without EIGENSCRIPT_EXT_HTTP)"
     echo ""
