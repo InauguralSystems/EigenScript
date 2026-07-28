@@ -123,6 +123,28 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`ext_http.c` leaked a `Value` on three request paths (#731).** Every
+  `eigs_json_parse_value` call site in the file was audited after #731 reported
+  the first; three of five leaked. `shared_incr` dropped two per call — the
+  parsed counter on *both* the success and the type-mismatch early return, plus
+  the `make_num` handed to `eigs_json_encode`, which borrows rather than takes
+  ownership. `builtin_http_post` never released the parsed headers object, and
+  `http_route_authed`'s shared-store auth branch never released the parsed
+  `require_auth` string. The last two were found by auditing the class rather
+  than the instance, and are per-request leaks on the same footing as the
+  reported one. Measured on a release build against a live server: `shared_incr`
+  159 B/req → **0**, an authenticated route 188 B/req → **0**.
+
+  Gated by `tests/test_http_rss_growth.sh` (suite [45c]), which measures RSS
+  growth between two steady-state checkpoints. This shape is deliberate: no
+  sanitizer can catch this class here, because LeakSanitizer reports from an
+  `atexit` handler and the test server is torn down with `kill` against no
+  SIGTERM handler — the ASan suite reported 32/32 green over the leak for as
+  long as it existed. The gate skips itself on a sanitizer build, where ASan's
+  own redzones and quarantine produce 567 B/req of growth on a *fixed* binary
+  and would swamp the signal. Threshold validated by planting the fault back:
+  both checks fail without the fix and pass with it (#752).
+
 - **`continue` never ended its loop iteration's env, silently truncating a
   module's exports (#722).** `AST_BREAK` emits `OP_LOOP_ENV_END` before its
   jump when the loop allocated a per-iteration env — the pairing #335's

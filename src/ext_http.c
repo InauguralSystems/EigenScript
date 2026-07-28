@@ -407,6 +407,10 @@ Value* builtin_http_post(Value *arg) {
             hdr_count++;
         }
     }
+    /* Released here rather than at the end of the function: the pipe/fork
+     * failure paths below return through TRACE_NONDET_RECORD, and hdr_obj is
+     * not used past this point. */
+    val_decref(hdr_obj);
 
     char data_arg[512];
     snprintf(data_arg, sizeof(data_arg), "@%s", req_path);
@@ -560,14 +564,23 @@ Value* builtin_shared_incr(Value *arg) {
     if (idx >= 0) {
         int pos = 0;
         Value *parsed = eigs_json_parse_value(s->shared[idx].json, &pos);
-        if (!parsed || parsed->type != VAL_NUM) {
+        /* Read the number out BEFORE dropping the ref — decref may free it —
+         * and drop it on the mismatch path too, which is the one an early
+         * return makes easy to miss. */
+        int bad = (!parsed || parsed->type != VAL_NUM);
+        if (!bad) cur = parsed->data.num;
+        val_decref(parsed);
+        if (bad) {
             pthread_mutex_unlock(&s->shared_mu);
             return make_null();
         }
-        cur = parsed->data.num;
     }
     double new_val = cur + delta;
-    char *new_json = eigs_json_encode(make_num(new_val));
+    /* eigs_json_encode borrows its argument, so the Value handed to it is
+     * ours to release. */
+    Value *new_v = make_num(new_val);
+    char *new_json = eigs_json_encode(new_v);
+    val_decref(new_v);
     long new_json_len = (long)strlen(new_json);
     long key_len = (long)strlen(key_v->data.str);
     long old_bytes = (idx >= 0) ? (long)strlen(s->shared[idx].json) : 0;
@@ -1171,6 +1184,7 @@ static void handle_request(int fd) {
                             if (parsed && parsed->type == VAL_STR) {
                                 auth_src = xstrdup(parsed->data.str);
                             }
+                            val_decref(parsed);
                         }
                         pthread_mutex_unlock(&srv->shared_mu);
                     }

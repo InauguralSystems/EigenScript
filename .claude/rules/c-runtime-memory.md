@@ -52,6 +52,14 @@ iteration, or a collector that quietly stops working).
   gate.** LeakSanitizer runs atexit, and the server is torn down with `kill`
   against no SIGTERM handler, so LSan never runs in the server process —
   `make asan-http` catches UAF/overflow/UB (those report at the moment of the
-  bug) but not leaks. Verify a request path with RSS growth instead: drive N
-  requests and sample `VmRSS` from `/proc/<pid>/status` in batches. Steady-state
-  growth per request is the signal (#731 measures at 160 B/request this way).
+  bug) but not leaks. The gate for this class is
+  `tests/test_http_rss_growth.sh` (suite [45c]): RSS growth between two
+  **steady-state** checkpoints, never baseline-to-end (the first requests carry
+  ~1.4 MB of one-time arena warmup, ~18x the real rate). Add a check there when
+  you add a request path that allocates. It **skips on sanitizer builds** by
+  design — ASan's redzones/quarantine grow RSS 567 B/req on a leak-free binary.
+- **`eigs_json_encode` borrows its argument and `eigs_json_parse_value` returns
+  an owned ref.** `eigs_json_encode(make_num(x))` leaks the `make_num`; a parsed
+  Value must be decref'd on *every* path including early returns, and the value
+  read out of it before the decref. Three of the five call sites in
+  `ext_http.c` had this wrong (#731) — if you touch one, re-audit the rest.
