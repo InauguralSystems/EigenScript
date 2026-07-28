@@ -245,6 +245,20 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **`make asan-http` puts the HTTP + model extensions under a sanitizer for the
+  first time, and CI runs the suite that way.** `make asan` compiles those
+  extensions out, so `ext_http.c` — a network-facing server and client, the most
+  exposed code in the repo — had never been compiled into any sanitizer build,
+  local or CI. That is the structural reason #239's remote DoS reached `main`
+  through a green CI. The suite's HTTP sections are probe-gated on `http_route`,
+  so the new variant pulls them in with no test changes. Scoped to the `http`
+  variant rather than `full` deliberately: `ext_db.c` needs libpq headers, which
+  would make the target unbuildable without postgres — so ext_db remains
+  unsanitized. This gate catches use-after-free, buffer overflow and UB, which
+  report at the moment of the bug; it does **not** catch per-request leaks,
+  because LeakSanitizer runs atexit and the test server is torn down with `kill`
+  against no SIGTERM handler. That class needs an RSS-growth measurement (#731).
+
 - **The observer's entropy walk now stops at a reference (#685).** A list or
   dict computes entropy over its own elements; an element that is itself a
   container contributes only its size term `log2(count+1)` and is not entered.

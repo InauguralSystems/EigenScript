@@ -33,7 +33,8 @@ ours onto the new main. Rebasing our own costs nothing; asking them does. (Only
 ```
 make            # release build -> src/eigenscript (HTTP/MODEL/DB off)
 make test       # build + full suite (tests/run_all_tests.sh)
-make asan       # ASan+UBSan build (same binary path!)
+make asan       # ASan+UBSan build (same binary path!) — extensions OFF
+make asan-http  # ASan+UBSan *with* ext_http+model (CI gate; leaks still need RSS, see #731)
 make http       # http+model variant — run tests/test_http_server.sh
 make zlib       # DEFLATE codecs (inflate/deflate builtins) via system zlib (-lz)
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)

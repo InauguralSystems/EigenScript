@@ -409,6 +409,31 @@ jobs:
         # sanitizer report from the LSP process (leaks, UB).
         run: cd tests && bash test_lsp_asan.sh
 
+      # The extension surface under sanitizers. `make asan` above compiles the
+      # HTTP + model extensions OUT, so ext_http.c — a network-facing server
+      # and client, the most exposed code in the repo — was never sanitized
+      # anywhere. #239 (a remote DoS) reached main through a green CI for
+      # exactly this reason. The suite's HTTP sections [44]/[45]/[45b] are
+      # probe-gated on the binary exposing http_route, so building the http
+      # variant is all it takes to pull them in.
+      #
+      # NOTE on what this does and does not catch: ASan's immediate checks
+      # (use-after-free, buffer overflow, UB) report at the moment of the bug,
+      # so they fire here. LeakSanitizer runs atexit — and test_http_server.sh
+      # ends by `kill`ing the server, which installs no SIGTERM handler, so
+      # LSan never runs in the server process. Per-request leaks in a request
+      # path (#731) are therefore NOT caught by this step; that class needs an
+      # RSS-growth gate, measured separately.
+      #
+      # Runs last in this job: every Makefile variant writes src/eigenscript,
+      # so this must not clobber the binary the steps above are using.
+      - if: needs.scope.outputs.code == 'true'
+        name: Run suite under sanitizers with the HTTP+model extensions
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: make asan-http && cd tests && bash run_all_tests.sh
+
   # Valgrind/Memcheck over a representative spread of programs — the
   # uninitialised-read / use-after-free / definite+indirect-leak net at the
   # system-allocator granularity, complementing the ASan+UBSan job (and the
