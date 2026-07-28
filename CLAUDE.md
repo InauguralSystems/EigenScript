@@ -76,46 +76,19 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 
 ## Hard-won rules (violations have bitten before)
 
-- **Refcounts**: `env_set_local`, `list_append`, `dict_set` incref
-  internally. Storing a freshly made value? Use the adopting variants
-  `env_set_local_owned` / `list_append_owned` / `dict_set_owned`, or
-  decref after storing. The bare `store(make_x(...))` idiom is a leak.
-- **Chunks are refcounted** (creator + per-VAL_FN + per-call-frame).
-  `chunk_free` = drop creator ref. JIT return thunks write
-  `chunk->jit_advance` *after* `jit_helper_return` — the popped frame's
-  chunk ref is dropped in vm_run's `-1` sentinel handlers, never in the
-  helpers.
-- **Env refcounts are honest and the cycle collector depends on it**:
-  every owner of an `Env` — frame/creator, closure (`make_fn`), child env
-  (`parent` is an owned edge), parked `chunk->env_cache` — holds a counted
-  ref via `env_incref`/`env_decref`. Never stash a bare `Env*` that
-  outlives its creator. The collector's `GC_FOR_EACH_CHILD` walker and
-  `gc_clear_node` (eigenscript.c) must move in lockstep with the ownership
-  model: a new owning edge out of Value/Env/Chunk goes into both, and only
-  *counted* edges may be traversed (an uncounted edge trips the accounting
-  abort and collection silently stops working). Conservative direction:
-  missing an edge leaks; inventing one frees live memory.
-- **Trace gating**: `g_trace_hist` (assignment history) and
-  `g_trace_obs_hist` (observer snapshots) are compiler-set flags —
-  recording is off unless the program contains a temporal query
-  (`prev of`, `at`, `state_at`) or `EIGS_TRACE` is set. Don't add always-on
-  per-assign work; it cost ~1/3 of dispatch-heavy runtime once before.
-- **Suite sections gate on exit codes too** (`rc_ok` in run_all_tests.sh):
-  marker-grep alone used to let a crash *after* correct output pass. New
-  .eigs sections should use `check_eigs_suite` (rc + marker). The one
-  tolerated nonzero exit is a LeakSanitizer report (see the leak tally
-  above; section [87] deliberately opts out of that tolerance).
-- **No big by-value arrays/structs in recursive functions.** The C stack is
-  a resource axis no hosted gate bounds (8 MiB + guard page hides it); the
-  `Compiler`'s inline `Local[512]` cost ~12.7 KiB of stack per AST level for
-  23 versions until EigenOS's 64 KiB boot stack exposed it as a
-  layout-sensitive heisenbug (PR #361). Audit with `gcc -fstack-usage`
-  (≥ ~2 KiB in a recursive path is suspect); `tools/embed_stack_soak.sh`
-  (CI) is the regression gate and also the only multi-eval-per-EigsState
-  coverage in the repo.
-- **`tests/test_temporal.eigs` is line-number-sensitive** — its `at`
-  queries hardcode line numbers. Append only before the final if/else, and
-  re-verify the `grep -n` markers in the file.
+Two sets load on demand instead of every session — same rules, scoped to
+where they bite:
+
+- **Editing `src/*.c`/`*.h`?** → `.claude/rules/c-runtime-memory.md`
+  (refcount/adopting variants, chunk + Env ownership and the cycle
+  collector's lockstep requirement, trace gating, the C-stack rule, the
+  ext_http/ext_gfx compile-check split).
+- **Editing `tests/`?** → `.claude/rules/test-suite.md` (`rc_ok` exit-code
+  gating and `check_eigs_suite`, `test_temporal.eigs`'s line-number
+  sensitivity, the SPEC/COMPARISON byte-for-byte rule, the benchmarks).
+
+Always-on:
+
 - **Brackets after `of` are an argument list; parentheses are one
   argument** (#405, closed #153): a bare literal list is an arg list at
   EVERY count — `f of []` zero args, `f of [x]` one arg (the element,
@@ -123,11 +96,6 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
   parenthesise (#355): `f of ([x])`. Lint W017 flags the 1-element bare
   form (pre-#405 it meant the opposite). (More `.eigs`-writing gotchas:
   the `write-eigenscript` skill.)
-- The Makefile `asan` target compiles with `EIGENSCRIPT_EXT_HTTP=0`; if you
-  touch `ext_http.c`, compile-check with `make http`. Same for `ext_gfx.c`
-  — in **no** default build; compile-check with `make gfx`. All variants
-  land on `src/eigenscript`, so never rebuild one while a suite run against
-  another is in flight.
 - **A semantics change must update `docs/SPEC.md` + `docs/COMPARISON.md` in
   the same PR** — `tests/test_doc_examples.py` runs their example/output
   pairs byte-for-byte (suite [89]/[90]) and CI fails otherwise.
@@ -143,38 +111,15 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 - **Changing the AOT compiler** (separate `ouroboros` repo)? → the
   **`aot-differential`** skill (VM as byte-exact oracle).
 - **Writing `.eigs` code**? → the **`write-eigenscript`** skill.
+- **Cutting a release** (tag/dispatch path, the doc-drift "Latest release"
+  gate, the tap)? → the **`release`** skill.
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.33.0** (2026-07-24) — the silent-wrong-answer release,
-  plus the primitives the app fleet forced. A sweep of the plausible-but-wrong-
-  at-rc=0 class: `regex_match` dropping every capture after a non-participating
-  group (#629), `json_decode` truncating long numbers by 50 orders of magnitude
-  (#628), four stdlib math functions returning confidently wrong values
-  (#638–#641), a module's top-level assignment rebinding its *importer's*
-  global (#673), a comprehension var and a same-named local splitting into two
-  bindings so later program text changed an earlier statement's result
-  (#633/#642), `report_value` calling a converging sequence `diverging` (#674),
-  and an observer LR gate that measured 100% "stable" while the loss was still
-  falling. Primitives, each requested by a consumer that hit the wall: four
-  DEFLATE codecs behind `make zlib` (#684 — `.xlsx`/`.gz` readable from
-  script), tape-captured `clock_unix` (#683), and C-backed `list_index_of` /
-  `list_contains` / `list_insert_at` / `list_slice` (#543/#544). Plus
-  `kill -USR1` live observer dumps (#660) and a test runner that fingerprints
-  its own binary mid-run, bounds every block against a runaway, and derives its
-  tally from block output after the hand-synced literals were caught
-  under-reporting by 169 asserts (#654). (v0.32.0, 2026-07-16: the
-  desktop-shell release — lib/ui's gap series #561–#577/#594, surfaced by
-  DeslanStudio's port and closed, incl. `menu_bar` #565 and `handle_key` #563.
-  v0.31.0, 2026-07-14: DAW audio-I/O + live-synthesis — bulk audio-I/O kernels
-  #602/#603, `audio_stream_*` #612, `waveform_view` markers #610/#611.
-  v0.30.0, 2026-07-13: debugging-and-distribution — `--step` tape stepper #418,
-  tape format v2 #539, error carets/LSP ranges #407, `--bundle` #413.)
-  Unreleased
-  work on `main`: see CHANGELOG.md `[Unreleased]`. Full version history:
-  **CHANGELOG.md** (don't re-narrate it here — tools/doc_drift_check.sh
-  now FAILS the suite when this line falls behind the latest tag). Roadmap:
-  **ROADMAP.md**.
+- **Latest release: v0.33.0** (2026-07-24). Unreleased work on `main`: see
+  CHANGELOG.md `[Unreleased]`. Full version history: **CHANGELOG.md** (don't
+  re-narrate it here — tools/doc_drift_check.sh FAILS the suite when this line
+  falls behind the latest tag). Roadmap: **ROADMAP.md**.
 - **Design phase:** the VM tier is the deliberate correctness-first phase —
   its malleability keeps semantics cheap to change; the native path is the
   **AOT compiler in the sibling `ouroboros` repo** (the VM is its byte-exact
@@ -209,15 +154,3 @@ model — don't work around a gap, surface it).
 - **Infra**: **eigen-site** (inauguralsystems.com landing + the self-owned HTTP
   attack target), **homebrew-eigenscript** (tap), **eigs-package-template**,
   **awesome-eigenscript** (curated index — a list, not a registry).
-
-## Releasing
-
-Push a `v*` tag **or** dispatch the Release workflow (Actions → Release → Run
-workflow), which creates the tag and builds in the same run. This
-environment's git proxy **cannot push tags**, and GITHUB_TOKEN-pushed tags
-don't retrigger workflows — so use the dispatch path. **The cut PR must update
-this file's "Latest release" line to the new version**: doc-drift rule 2
-compares it to the latest tag, and the release build runs *after* the tag is
-created — a stale line fails the release's own suite (bit the v0.27.0 cut).
-Homebrew tap: github.com/InauguralSystems/homebrew-eigenscript (tracks the
-latest release).
