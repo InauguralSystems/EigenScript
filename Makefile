@@ -39,7 +39,7 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff print-%
+.PHONY: all build full http gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff asan-http print-%
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -189,6 +189,29 @@ asan:
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		-lm -lpthread
 	@echo "EigenScript $(VERSION) (asan+ubsan) built. Binary: $(BINARY)"
+
+# ASan+UBSan over the EXTENSION surface — same variant as `make http`
+# (ext_http.c + model_*.c), which `make asan` above compiles out via
+# -DEIGENSCRIPT_EXT_HTTP=0/-DEIGENSCRIPT_EXT_MODEL=0. Until this target
+# existed, no sanitizer build anywhere — local or CI — ever compiled
+# ext_http.c, so the repo's most exposed code (a network-facing server and
+# client) was also its least instrumented. That is the structural reason
+# #239's remote DoS reached main through a green CI, and why #731's leak
+# (2 Values per shared_incr call) sat unnoticed in a request path.
+# Deliberately NOT the `full` variant: ext_db.c needs libpq headers, which
+# would make this unbuildable on a machine without postgres. ext_db.c
+# therefore remains unsanitized — a separate, smaller gap.
+#   make asan-http && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
+asan-http:
+	$(CC) -fsanitize=address,undefined -g -O1 -o $(BINARY) $(SOURCES) \
+		$(SRC_DIR)/ext_http.c \
+		$(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c \
+		-DEIGENSCRIPT_EXT_HTTP=1 \
+		-DEIGENSCRIPT_EXT_MODEL=1 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+		-lm -lpthread
+	@echo "EigenScript $(VERSION) (asan+ubsan, http+model) built. Binary: $(BINARY)"
 
 # ThreadSanitizer build for the concurrency race gate (tests/test_tsan.sh).
 # Complements ASan (which is not run with the thread checker). Run the tests

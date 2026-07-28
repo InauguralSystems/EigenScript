@@ -42,7 +42,16 @@ iteration, or a collector that quietly stops working).
   (CI) is the regression gate and also the only multi-eval-per-EigsState
   coverage in the repo.
 - The Makefile `asan` target compiles with `EIGENSCRIPT_EXT_HTTP=0`; if you
-  touch `ext_http.c`, compile-check with `make http`. Same for `ext_gfx.c`
-  — in **no** default build; compile-check with `make gfx`. All variants
-  land on `src/eigenscript`, so never rebuild one while a suite run against
-  another is in flight.
+  touch `ext_http.c`, compile-check with `make http` — and **sanitize** it with
+  `make asan-http` (ext_http + model under ASan/UBSan; CI runs the suite that
+  way, and the HTTP sections are probe-gated so they pull in automatically).
+  Same for `ext_gfx.c` — in **no** default build; compile-check with
+  `make gfx`. All variants land on `src/eigenscript`, so never rebuild one
+  while a suite run against another is in flight.
+- **A per-request leak in `ext_http.c` will not be caught by any sanitizer
+  gate.** LeakSanitizer runs atexit, and the server is torn down with `kill`
+  against no SIGTERM handler, so LSan never runs in the server process —
+  `make asan-http` catches UAF/overflow/UB (those report at the moment of the
+  bug) but not leaks. Verify a request path with RSS growth instead: drive N
+  requests and sample `VmRSS` from `/proc/<pid>/status` in batches. Steady-state
+  growth per request is the signal (#731 measures at 160 B/request this way).
