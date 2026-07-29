@@ -1906,7 +1906,7 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     # [45c] Per-request leak gate by RSS growth (#731, #752). Not covered by the
     # ASan job: LSan runs atexit and the test server is killed, so a per-request
     # leak in ext_http.c is invisible to every sanitizer build.
-    echo "[45c/47] HTTP per-request leak gate (RSS growth, 2 checks)"
+    echo "[45c/47] HTTP per-request leak gate (RSS growth, 2 checks + verdict self-test)"
     RSS_OUTPUT=$(bash "$TESTS_DIR/test_http_rss_growth.sh" 2>&1)
     RSS_PASS=$(echo "$RSS_OUTPUT" | grep -c "PASS:" || true)
     RSS_FAIL=$(echo "$RSS_OUTPUT" | grep -c "FAIL:" || true)
