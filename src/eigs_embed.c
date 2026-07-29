@@ -73,6 +73,15 @@ EigsValue *eigs_eval_string(const char *src) {
 
     g_parse_errors = 0;
     g_has_error = 0;
+    /* #739: don't carry a prior eval's `exit` into this one. CHECK_ERROR makes
+     * an exit unwind uncatchable — correct — but the request was never
+     * cleared, so after any script called `exit of N` every later eval in this
+     * process ran with exception handling silently disabled: a raise inside
+     * `try` went to vm_error_halt instead of the catch handler. One line of
+     * script permanently corrupted the semantics for a long-lived host running
+     * untrusted snippets. g_exit_code needs no reset — builtin_exit always
+     * writes it before setting the flag, so it can never be read stale. */
+    g_exit_requested = 0;
 
     TokenList tl = tokenize(src);
     if (g_parse_errors > 0) {

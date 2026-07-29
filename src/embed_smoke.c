@@ -391,6 +391,31 @@ int main(void) {
     eigs_value_release(r);
     eigs_set_abort_flag(NULL);
 
+    /* #739: `exit of N` must not permanently disable try/catch for the state.
+     * The exit request is deliberately uncatchable, but it was a process global
+     * that nothing ever reset — so after ANY script called exit, every later
+     * eval in the process ran with exception handling silently off: a raise
+     * inside `try` went to vm_error_halt instead of the catch handler. This is
+     * the shape a long-lived host running untrusted snippets hits, and it is
+     * only reachable through the embed API (on the CLI, exit ends the process).
+     * The first CHECK is the control: catching must work BEFORE the exit. */
+    const char *catcher = "try:\n    throw of \"boom\"\ncatch e:\n    \"CAUGHT\"";
+    r = eigs_eval_string(catcher);
+    CHECK(r != NULL && eigs_value_as_string(r) &&
+          strcmp(eigs_value_as_string(r), "CAUGHT") == 0,
+          "try/catch works before any exit (control)");
+    if (r) eigs_value_release(r);
+
+    r = eigs_eval_string("exit of 0");
+    if (r) eigs_value_release(r);
+    eigs_clear_error();
+
+    r = eigs_eval_string(catcher);
+    CHECK(r != NULL && eigs_value_as_string(r) &&
+          strcmp(eigs_value_as_string(r), "CAUGHT") == 0,
+          "try/catch still works after a script called exit (#739)");
+    if (r) eigs_value_release(r);
+
     /* Leave a recv-blocked, never-joined worker for eigs_close to reap — this
      * hangs (or leaks/UAFs) unless eigs_close drains (close+wake+join, #303). */
     r = eigs_eval_string(
