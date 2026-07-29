@@ -331,7 +331,7 @@ producing tensors too large to materialise in memory.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `stream_open` | `stream_open of ["path", count]` | Open file, write header for `count` float64 values. 1 on success, 0 on failure |
+| `stream_open` | `stream_open of ["path", count]` | Open file, write header for `count` float64 values. 1 on success, 0 on failure. One stream per **thread**: opening a second closes the first, and an unclosed stream is flushed and closed when the thread ends (#739) |
 | `stream_write` | `stream_write of value` | Append one float64 to the open stream. 1 on success, 0 on failure |
 | `stream_close` | `stream_close of null` | Close the stream. 1 on success, 0 on failure |
 

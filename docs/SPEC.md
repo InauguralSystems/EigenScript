@@ -1255,6 +1255,14 @@ result (or re-raises its uncaught error as the same `{kind, message,
 line}` dict — see [Error handling](#error-handling)). `task_alive of
 id` is 1 until the task finishes.
 
+Tasks are scoped to the OS thread that spawned them: each thread has its
+own scheduler and its own ready queue, so `task_yield` hands control to
+the next task **on this thread** and never disturbs another. Mixing the
+two models is therefore well-defined — a `spawn`ed worker runs its own
+program while the parent interleaves tasks. (Before #739 the suspend
+request was process-wide, so one thread's `task_yield` made every other
+thread's next call return `null` mid-evaluation.)
+
 ```eigenscript
 order is []
 define step(tag) as:

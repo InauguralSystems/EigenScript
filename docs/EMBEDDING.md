@@ -254,6 +254,17 @@ act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live
 sources; when the tape runs out they fall back to live.
 
+**Per-state resources are released at `eigs_state_destroy`** (#739). The
+HTTP server's route table and the libpq connection are owned by the
+state that created them and torn down with it
+(`ext_http_state_destroy`, `ext_db_state_destroy`). Sandbox budgets,
+the `stream_open` file handle, the JIT's OSR threshold, and the
+cooperative task scheduler are per-**thread** and released at
+`eigs_thread_detach`. Two co-located states therefore do not share a
+sandbox budget, close each other's stream, or freeze each other's JIT
+tuning — all of which they did while those lived in process globals.
+The trace tape and sink remain per-process by design (below).
+
 **A script's `exit` does not outlive its eval** (#739). `exit of N` is
 deliberately uncatchable — `CHECK_ERROR` refuses to route it to a `try`
 handler — but the request is per-thread and cleared at the top of

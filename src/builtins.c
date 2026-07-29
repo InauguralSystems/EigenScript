@@ -2067,7 +2067,9 @@ Value* builtin_seed_random(Value *arg) {
  *         then count × float64 values (written one at a time via stream_write)
  */
 
-static FILE *g_stream_file = NULL;
+/* g_stream_file is a per-thread bridge macro (eigenscript.h, #739): one FILE*
+ * per PROCESS meant stream_open's unconditional close tore down another
+ * state's in-flight stream. */
 
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_stream_open(Value *arg) {

@@ -588,6 +588,13 @@ struct EigsState {
      * run yet. Carried as an opaque pointer so eigenscript.h stays
      * independent of the ext_http internal layout. */
     struct EigsHttpServer *ext_http_server;
+    /* #739: this state's libpq connection (ext_db.c). Was a process global,
+     * so with a state per HTTP connection one worker's db_connect replaced
+     * the connection another worker was querying through, and nothing ever
+     * closed it — the connection leaked at every state teardown. Opaque
+     * (PGconn*) so this header stays independent of libpq; ext_db_internal.h
+     * defines the accessor. */
+    void                  *ext_db_conn;
 };
 
 struct EigsThread {
@@ -725,6 +732,31 @@ struct EigsThread {
      * first task_spawn, freed at thread detach. Per-OS-thread because tasks
      * are single-threaded by construction. */
     void                *task_sched;
+    /* #739: the suspend request that drives task_sched. Per-OS-thread for the
+     * same reason the scheduler is — it was a plain global, so a task_yield on
+     * one thread drove EVERY other thread's next CALL into vm_suspend_halt:
+     * with no scheduler of its own the victim saved nothing and its vm_run
+     * silently returned NULL mid-evaluation, frames deliberately undrained.
+     * Lives here rather than inside TaskScheduler so the CASE(CALL) poll stays
+     * one load off the already-hot eigs_current, with no NULL check. */
+    int                  task_suspend_request;
+    /* #739: sandbox_run's caps and budget. Per-OS-thread: the save/restore in
+     * builtin_sandbox_run is correct for one thread's nesting, but the
+     * premise it documented — "sandbox_run is synchronous / single-threaded" —
+     * is true per-thread and false the moment two states run concurrently,
+     * which ext_http does per connection. As process globals, one worker
+     * entering a sandbox capped every other worker's loops and charged their
+     * allocations against its budget. */
+    int                  sandbox_loop_max;   /* 0 = default 100M */
+    int                  sandbox_active;
+    size_t               sandbox_bytes_used;
+    size_t               sandbox_byte_max;   /* 0 = no budget */
+    /* #739: stream_open/stream_write/stream_close target. Per-OS-thread: it
+     * was one FILE* per process and stream_open unconditionally closes
+     * whatever is already open, so two states streaming at once closed each
+     * other's file mid-write. Closed at thread detach so an unclosed stream
+     * is not leaked. Opaque (FILE*) to keep stdio out of this header. */
+    void                *stream_file;
     /* Registry list — set by eigs_thread_attach. */
     EigsThread *next;
 };
@@ -808,6 +840,12 @@ extern __thread EigsThread *eigs_current;
 #define g_json_depth          (eigs_current->json_depth)
 #define g_native_call_depth   (eigs_current->native_call_depth)
 #define g_task_sched          (eigs_current->task_sched)
+#define g_task_suspend_request (eigs_current->task_suspend_request)
+#define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
+#define g_sandbox_active      (eigs_current->sandbox_active)
+#define g_sandbox_bytes_used  (eigs_current->sandbox_bytes_used)
+#define g_sandbox_byte_max    (eigs_current->sandbox_byte_max)
+#define g_stream_file         (*(FILE **)&eigs_current->stream_file)
 #define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
 #define g_iter_threshold      (eigs_current->state->jit_iter_threshold)
 #define g_osr_threshold       (eigs_current->state->jit_osr_threshold)
