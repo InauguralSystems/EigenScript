@@ -97,7 +97,17 @@ typedef struct {
 #define HIST_SEG_SHIFT 6
 #define HIST_SEG       (1 << HIST_SEG_SHIFT)
 
-typedef struct {
+/* #739: the prev-table lives on EigsThread, not in a file static. It is keyed
+ * by INTERNED NAME POINTER, and the intern table is itself per-thread
+ * (`g_env_name_interns` -> `eigs_current->env_name_interns`), so two threads'
+ * "x" were never the same key and a shared table could not have merged them
+ * anyway — process-global storage bought nothing and cost ownership. The
+ * entries hold slots allocated by their own thread, so per-thread is also the
+ * only scope on which "release these" is a well-defined operation, and it needs
+ * no lock: only the owning thread ever touches its table. The tape itself
+ * (FILE*, sink, replay reader, enable flags) stays process-wide below — one
+ * process, one tape — which is the distinction `trace_shutdown` got wrong. */
+typedef struct TracePrevEntry {
     const char    *name;
     EigsSlot       prev;
     EigsSlot       current;
@@ -115,9 +125,9 @@ typedef struct {
     int            obs_cap;
 } PrevEntry;
 
-static PrevEntry *g_prev_tab = NULL;
-static int        g_prev_cap = 0;   /* power of two */
-static int        g_prev_count = 0;
+/* g_prev_tab / g_prev_cap / g_prev_count are bridge macros onto EigsThread
+ * (eigenscript.h), reached only with a thread attached. Every read path below
+ * that can run during teardown or from atexit guards on `eigs_current` first. */
 
 /* g_trace_current_line (exported, see trace.h) replaces the old static
  * line cache: OP_LINE stores it directly instead of paying a call. */
@@ -161,7 +171,7 @@ static void prev_grow(void) {
 }
 
 static void prev_record_assign(const char *name, EigsSlot value) {
-    if (!name) return;
+    if (!eigs_current || !name) return;
     if (g_prev_count * PREV_LOAD_DEN >= g_prev_cap * PREV_LOAD_NUM) {
         prev_grow();
         if (!g_prev_tab) return;
@@ -253,7 +263,7 @@ static void prev_record_assign(const char *name, EigsSlot value) {
  * Gated by g_trace_obs_hist at the call site. */
 void trace_record_obs(const char *name, double entropy, double dH,
                       double last_entropy) {
-    if (!g_prev_tab || !name) return;
+    if (!eigs_current || !name || !g_prev_tab) return;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
     if (!e->name || e->hist_count == 0 || !e->obs) return;
     int idx = e->hist_count - 1;
@@ -267,7 +277,7 @@ void trace_record_obs(const char *name, double entropy, double dH,
 }
 
 int trace_query_prev(const char *interned_name, EigsSlot *out) {
-    if (!interned_name || !out || !g_prev_tab) return 0;
+    if (!eigs_current || !interned_name || !out || !g_prev_tab) return 0;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, interned_name);
     if (!e->name || !e->has_prev) return 0;
     *out = e->prev;
@@ -311,7 +321,7 @@ static int find_hist_idx_at_or_before(PrevEntry *e, int line) {
 }
 
 int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out) {
-    if (!interned_name || !out || !g_prev_tab) return 0;
+    if (!eigs_current || !interned_name || !out || !g_prev_tab) return 0;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, interned_name);
     if (!e->name) return 0;
 
@@ -1022,6 +1032,46 @@ int trace_replay_take(const char *fn, Value **out) {
     }
 }
 
+/* #739: release THIS THREAD's prev-table. Idempotent, and a no-op with no
+ * thread attached (the atexit path runs detached). Must run while
+ * `eigs_current` still points at the owning thread — the slots it drops are
+ * that thread's, and their destructors read the bridge macros — which is why
+ * eigs_thread_detach calls it beside the other Phase-5 destructors, and why
+ * eigs_close calls trace_shutdown before the global env dies.
+ *
+ * This is the half that used to be fused into trace_shutdown, and the fusion
+ * was the bug: every ext_http connection worker called trace_shutdown when it
+ * finished a request, so one process-wide teardown ran per HTTP request —
+ * closing the tape after the FIRST request (every later request's records
+ * silently lost), unregistering an embedder's sink, and decref'ing prev-table
+ * slots recorded by other, still-live threads. */
+void trace_thread_release(void) {
+    if (!eigs_current || !g_prev_tab) return;
+    PrevEntry *tab = g_prev_tab;
+    int cap = g_prev_cap;
+    /* Clear the thread's view FIRST: a destructor reached from slot_decref
+     * below must not find a half-freed table through the bridge macros. */
+    g_prev_tab = NULL;
+    g_prev_cap = 0;
+    g_prev_count = 0;
+    for (int i = 0; i < cap; i++) {
+        PrevEntry *e = &tab[i];
+        if (!e->name) continue;
+        if (e->has_prev)    slot_decref(e->prev);
+        if (e->has_current) slot_decref(e->current);
+        for (int j = 0; j < e->hist_count; j++)
+            slot_decref(e->history[j].value);
+        free(e->history);
+        free(e->seg_min);
+        free(e->obs);
+    }
+    free(tab);
+}
+
+/* Process-wide teardown: the tape, the sink, the replay reader. One process,
+ * one tape — so this belongs to whoever owns the process (main / eigs_close /
+ * atexit), NEVER to a per-connection or per-task worker. A worker that wants
+ * to clean up after itself wants trace_thread_release. */
 void trace_shutdown(void) {
 #if !EIGENSCRIPT_FREESTANDING
     if (g_trace_fp) {
@@ -1035,23 +1085,7 @@ void trace_shutdown(void) {
     g_trace_sink_ud = NULL;
     g_trace_enabled = 0;
 
-    if (g_prev_tab) {
-        for (int i = 0; i < g_prev_cap; i++) {
-            PrevEntry *e = &g_prev_tab[i];
-            if (!e->name) continue;
-            if (e->has_prev)    slot_decref(e->prev);
-            if (e->has_current) slot_decref(e->current);
-            for (int j = 0; j < e->hist_count; j++)
-                slot_decref(e->history[j].value);
-            free(e->history);
-            free(e->seg_min);
-            free(e->obs);
-        }
-        free(g_prev_tab);
-        g_prev_tab = NULL;
-        g_prev_cap = 0;
-        g_prev_count = 0;
-    }
+    trace_thread_release();
 
     replay_shutdown();
 }

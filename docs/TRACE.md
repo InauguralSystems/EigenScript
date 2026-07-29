@@ -284,6 +284,26 @@ in-run time travel.
   resolve in O(history/64) instead of O(history). The index adds one
   `int` per 64 history entries and an O(1) min-update per assign.
 - Per-assign cost of the history: one cache line + a pointer compare.
+- **The history is per-thread; the tape is per-process** (#739). The
+  history table is keyed by *interned name pointer*, and the intern
+  table lives on `EigsThread`, so two threads' `x` were never the same
+  key — per-thread is the only scope on which the table is coherent,
+  and it needs no lock because only its owning thread touches it. It is
+  released by `eigs_thread_detach` (and by `trace_shutdown` for the
+  process owner's own thread, which must run before the global env dies
+  — the slots it drops can reach the env).
+- **`trace_shutdown()` is process-wide and a worker must never call
+  it.** It closes the one tape, drops the embed sink, and shuts down
+  the replay reader. Every `ext_http` connection worker used to call it
+  on finishing a request: the first request served closed the tape, so
+  every later request's records were silently dropped (measured: one
+  record for four hundred requests), an embedder's sink was
+  unregistered by whichever request arrived first, and prev-table slots
+  recorded by other still-live threads were decref'd. A worker that
+  wants to clean up after itself wants `trace_thread_release()`, which
+  touches only its own history. Nothing about the tape *encoding*
+  changed here, so no format-version bump: this was an ownership bug,
+  not a format one.
 
 Language-level syntax and examples: [SYNTAX.md](SYNTAX.md),
 [GRAMMAR.md](GRAMMAR.md).

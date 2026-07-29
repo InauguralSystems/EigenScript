@@ -67,8 +67,18 @@ extern int g_trace_obs_hist;
  * multiple times — second and later calls no-op. */
 void trace_init(void);
 
-/* Called at process exit to flush and close the tape. */
+/* Called at process exit to flush and close the tape. PROCESS-WIDE: it closes
+ * the one tape, drops the embed sink, and shuts down the replay reader. A
+ * per-connection or per-task worker must NOT call this — see #739, where every
+ * ext_http worker did and the tape died after the first request. */
 void trace_shutdown(void);
+
+/* #739: release the CURRENT thread's prev-table (`prev of x` / `at` /
+ * `state_at` history) without touching the process tape. Idempotent; a no-op
+ * with no thread attached. Called by eigs_thread_detach for every thread, and
+ * by trace_shutdown for the process owner's own thread (which must run before
+ * the global env dies — the slots it drops can reach the env). */
+void trace_thread_release(void);
 
 /* ---- Embed tape seam (the freestanding tape path; see eigs_embed.h).
  * trace_set_sink installs a byte sink for tape records and enables

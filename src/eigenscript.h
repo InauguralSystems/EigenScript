@@ -586,6 +586,15 @@ struct EigsState {
 struct EigsThread {
     EigsState  *state;
     Arena       arena;
+    /* #739: temporal prev-table (`prev of x`, `at <line>`, `state_at`).
+     * Per-THREAD because it is keyed by interned name pointer and the
+     * intern table above is per-thread — a shared table could never have
+     * merged two threads' "x". Opaque here; the layout is trace.c's.
+     * Released by eigs_thread_detach (and by trace_shutdown, which must
+     * run before the global env dies — see eigs_close). */
+    struct TracePrevEntry *prev_tab;
+    int          prev_cap;      /* power of two */
+    int          prev_count;
     /* Control-flow propagation (return/break/continue out of nested
      * blocks). All three are checked + cleared by the interpreter
      * walk and the VM dispatch loop. */
@@ -773,6 +782,9 @@ extern __thread EigsThread *eigs_current;
 #define g_env_freelist        (eigs_current->env_freelist)
 #define g_env_freelist_count  (eigs_current->env_freelist_count)
 #define g_env_name_interns    (eigs_current->env_name_interns)
+#define g_prev_tab            (eigs_current->prev_tab)
+#define g_prev_cap            (eigs_current->prev_cap)
+#define g_prev_count          (eigs_current->prev_count)
 #define g_parse_depth         (eigs_current->parse_depth)
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)

@@ -5,6 +5,7 @@
 #include "state.h"
 #include "vm.h"
 #include "jit.h"
+#include "trace.h"   /* #739: trace_thread_release on detach */
 
 #if EIGENSCRIPT_EXT_HTTP
 /* Forward-declared here to avoid pulling ext_http_internal.h (and its
@@ -145,6 +146,7 @@ void eigs_thread_detach(void) {
     jit_thread_destroy(th);
     vm_thread_destroy(th);
     task_sched_thread_free();   /* #408: release the cooperative task scheduler */
+    trace_thread_release();     /* #739: this thread's prev-table (NOT the tape) */
 
     /* Phase 8: release freelist + intern memory before the EigsThread
      * struct itself goes. Must run while eigs_current still points at th

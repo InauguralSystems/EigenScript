@@ -19,8 +19,42 @@ if ! command -v curl >/dev/null 2>&1; then
     exit 0
 fi
 
-# Pick a random high port to avoid collisions in CI.
-PORT=$(( (RANDOM % 10000) + 40000 ))
+# ---- Server-start helpers (#760) ----------------------------------------
+# Both defects below made a SETUP failure look like a feature failure: HS27/HS28
+# reported "aggregate body budget (got 000)" when the truth was that the server
+# was never reachable.
+#
+# 1. Pick a listen port BELOW the kernel's ephemeral range. The old
+#    `(RANDOM % 10000) + 50000` window sits INSIDE it (32768-60999 on Linux),
+#    and this suite's own curl clients take ephemeral ports from that window —
+#    so a server could lose the bind to the test's own traffic.
+# 2. Wait on a WALL-CLOCK deadline. `30 x (curl --max-time 1; sleep 0.1)` reads
+#    like ~33s but is ~3.6s measured: a refused connection returns instantly, so
+#    --max-time only ever bounded the case where something WAS listening.
+pick_port() {
+    local lo hi
+    lo=$(awk '{print $1}' /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null)
+    case "$lo" in ''|*[!0-9]*) lo=32768 ;; esac
+    hi=$((lo - 1))
+    lo=$((hi - 11999))
+    [ "$lo" -lt 1024 ] && lo=1024
+    echo $(( (RANDOM % (hi - lo + 1)) + lo ))
+}
+
+# wait_ready <url> [deadline_seconds] -> 0 ready, 1 timed out
+wait_ready() {
+    local url=$1 limit=${2:-15} start=$SECONDS
+    while [ $((SECONDS - start)) -lt "$limit" ]; do
+        curl -s --max-time 1 "$url" >/dev/null 2>&1 && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+# Pick a listen port below the kernel's ephemeral range (#760) — the old
+# 40000-49999 window sits inside it, so this suite's own curl clients could
+# hold the port the server then failed to bind.
+PORT=$(pick_port)
 
 # Static directory for static-file serving.
 STATIC_DIR=$(mktemp -d /tmp/eigs_http_static_XXXXXX)
@@ -95,13 +129,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Wait for server to accept connections (up to ~3 seconds).
-for _ in $(seq 1 30); do
-    if curl -s --max-time 1 "http://127.0.0.1:$PORT/ping" > /dev/null 2>&1; then
-        break
-    fi
-    sleep 0.1
-done
+# Wait for the server on a wall-clock deadline (#760): the old 30-iteration
+# loop was ~3.6s, not the ~33s its --max-time suggested.
+wait_ready "http://127.0.0.1:$PORT/ping" 15 || true
 
 if ! curl -s --max-time 1 "http://127.0.0.1:$PORT/ping" > /dev/null 2>&1; then
     echo "  FAIL: server never came up on port $PORT"
@@ -612,7 +642,7 @@ echo ""
 # tests (HS12's 17 MiB header probe needs the default 128 MiB budget). A single
 # upload larger than the budget must be shed with 503 DURING the read (before
 # routing), and the server must stay alive for the next request.
-PORT2=$(( (RANDOM % 10000) + 50000 ))
+PORT2=$(pick_port)
 SRV2=$(mktemp /tmp/eigs_http_srv2_XXXXXX.eigs)
 cat > "$SRV2" <<EIGS2
 rp is http_route of ["GET", "/ping", "pong"]
@@ -620,10 +650,12 @@ sv is http_serve of $PORT2
 EIGS2
 EIGS_HTTP_MAX_BODY_TOTAL=1048576 "$EIGS" "$SRV2" > /tmp/eigs_http_srv2_$$.log 2>&1 &
 SRV2_PID=$!
-for _ in $(seq 1 30); do
-    curl -s --max-time 1 "http://127.0.0.1:$PORT2/ping" > /dev/null 2>&1 && break
-    sleep 0.1
-done
+if ! wait_ready "http://127.0.0.1:$PORT2/ping" 15; then
+    # #760: say what actually happened. Reporting the budget check as failed
+    # here sent a reader hunting a DoS-gate regression that did not exist.
+    fail "HS27/HS28 setup: server never came up on port $PORT2" \
+         "$(tail -3 /tmp/eigs_http_srv2_$$.log 2>/dev/null | tr '\n' ' ')"
+fi
 BIGBODY=$(mktemp /tmp/eigs_http_big_XXXXXX)
 head -c 2097152 /dev/zero | tr '\0' 'a' > "$BIGBODY"   # 2 MiB > 1 MiB budget
 STATUS=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" \
@@ -644,6 +676,93 @@ fi
 kill "$SRV2_PID" 2>/dev/null || true
 wait "$SRV2_PID" 2>/dev/null || true
 rm -f "$SRV2" /tmp/eigs_http_srv2_$$.log
+
+# ---- HS34: http_post header shapes (#755) --------------------------------
+# The signature is `http_post of [url, headers, body]` and a JSON OBJECT is what
+# a caller reaches for first. It used to send NO headers: the code tested
+# VAL_LIST while eigs_json_parse_object returns VAL_DICT, so the loop never ran
+# and the request went out bare — no error, normal-looking response. An
+# Authorization header silently not sent is the worst version of that. Both
+# shapes must work, and a shape that is neither must say so rather than
+# quietly dropping the headers. /hdrs echoes the raw request header block.
+CLI=$(mktemp /tmp/eigs_http_cli_XXXXXX.eigs)
+cat > "$CLI" <<EIGSCLI
+obj is http_post of ["http://127.0.0.1:$PORT/hdrs", "{\"X-Shape\": \"object\"}", "b"]
+arr is http_post of ["http://127.0.0.1:$PORT/hdrs", "[\"X-Shape\", \"array\"]", "b"]
+print of ("OBJ:" + (str of (contains of [obj, "X-Shape: object"])))
+print of ("ARR:" + (str of (contains of [arr, "X-Shape: array"])))
+EIGSCLI
+SHAPES=$("$EIGS" "$CLI" 2>/dev/null | tr -d '\r')
+rm -f "$CLI"
+if echo "$SHAPES" | grep -q "^OBJ:1$"; then
+    ok "HS34 http_post sends headers given as a JSON object"
+else
+    fail "HS34 http_post object headers" "header did not reach the wire ($(echo "$SHAPES" | tr '\n' ' '))"
+fi
+if echo "$SHAPES" | grep -q "^ARR:1$"; then
+    ok "HS34 http_post still sends headers given as a flat array"
+else
+    fail "HS34 http_post array headers" "regressed ($(echo "$SHAPES" | tr '\n' ' '))"
+fi
+CLI=$(mktemp /tmp/eigs_http_cli_XXXXXX.eigs)
+cat > "$CLI" <<EIGSCLI
+r is http_post of ["http://127.0.0.1:$PORT/hdrs", "\"just-a-string\"", "b"]
+print of "NO_ERROR"
+EIGSCLI
+BAD=$("$EIGS" "$CLI" 2>&1 | tr -d '\r')
+rm -f "$CLI"
+if echo "$BAD" | grep -q "headers must be a JSON object"; then
+    ok "HS34 a headers argument of the wrong shape raises instead of dropping"
+else
+    fail "HS34 wrong-shape headers" "expected a type error, got: $(echo "$BAD" | head -1)"
+fi
+
+# ---- HS33: the tape survives more than one request (#739) ----------------
+# Every connection worker owns its own EigsState and used to call
+# trace_shutdown() when it finished — a PROCESS-wide teardown run per request.
+# The first request served closed the tape, so every later request's records
+# were silently dropped (measured: 1 record for 400 requests). The tape is the
+# process's execution record; a worker never owns it.
+#
+# Observation is content-based on purpose: no /proc (macOS runs this suite too)
+# and no assumption about stdio buffer size. Each request stamps a distinct
+# marker from the shared store FIRST, then writes ~400 padding assignments that
+# push the marker out of the buffer — so a marker on disk means that request's
+# records really reached the tape.
+PORT3=$(pick_port)
+SRV3=$(mktemp /tmp/eigs_http_srv3_XXXXXX.eigs)
+TAPE3=$(mktemp /tmp/eigs_http_tape3_XXXXXX.tape)
+cat > "$SRV3" <<EIGS3
+rp is http_route of ["GET", "/hit", "code", "zz is shared_incr of [\"hits\", 1]\npad is 0\nloop while pad < 400:\n    filler is \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"\n    pad is pad + 1"]
+sv is http_serve of $PORT3
+EIGS3
+EIGS_TRACE="$TAPE3" "$EIGS" "$SRV3" > /tmp/eigs_http_srv3_$$.log 2>&1 &
+SRV3_PID=$!
+if ! wait_ready "http://127.0.0.1:$PORT3/hit" 15; then
+    fail "HS33 setup: trace server never came up on port $PORT3" \
+         "$(tail -3 /tmp/eigs_http_srv3_$$.log 2>/dev/null | tr '\n' ' ')"
+else
+    for _ in 1 2 3; do
+        curl -s --max-time 5 "http://127.0.0.1:$PORT3/hit" > /dev/null 2>&1
+    done
+    sleep 0.5
+    MARKERS=$(grep -c '^A zz=' "$TAPE3" 2>/dev/null || echo 0)
+    # The readiness probe is request 1, so requests 2+ are what the bug ate.
+    if [ "$MARKERS" -ge 3 ]; then
+        ok "HS33 tape keeps recording after the first request ($MARKERS markers)"
+    else
+        fail "HS33 tape stopped after the first request" \
+             "got $MARKERS request markers (expected >= 3)"
+    fi
+    if grep -q '^A zz=3' "$TAPE3" 2>/dev/null; then
+        ok "HS33 a later request's records reach the tape"
+    else
+        fail "HS33 later request missing from tape" "no 'A zz=3' record"
+    fi
+fi
+kill "$SRV3_PID" 2>/dev/null || true
+wait "$SRV3_PID" 2>/dev/null || true
+rm -f "$SRV3" "$TAPE3" /tmp/eigs_http_srv3_$$.log
 
 echo "HTTP_SERVER: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then exit 1; fi
