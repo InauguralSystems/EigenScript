@@ -254,6 +254,16 @@ act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live
 sources; when the tape runs out they fall back to live.
 
+**The sink and the tape are per-PROCESS, not per-state** (#739). With
+several states co-located, one sink serves them all, and the teardown
+that drops it — `trace_shutdown()`, which `eigs_close` calls — belongs
+to whoever owns the process. A per-request or per-task state must not
+call it: `ext_http`'s connection worker did, so the first request served
+closed the tape and unregistered the host's sink. A worker that wants to
+release its own temporal history calls `trace_thread_release()`, which
+`eigs_thread_detach` already does for every thread. The per-name history
+behind `prev of x` / `at` / `state_at` is per-thread and never shared.
+
 Host builtins participate with the take/record pair, the same contract
 the runtime's own nondet builtins use:
 

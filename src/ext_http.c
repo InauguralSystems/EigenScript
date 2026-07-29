@@ -409,7 +409,27 @@ Value* builtin_http_post(Value *arg) {
     int hdr_count = 0;
     int jpos = 0;
     Value *hdr_obj = eigs_json_parse_value(headers_json, &jpos);
-    if (hdr_obj && hdr_obj->type == VAL_LIST) {
+    /* #755: a JSON OBJECT is the shape a caller reaches for first, and it used
+     * to send NO headers at all — this tested only VAL_LIST, while
+     * eigs_json_parse_object returns a VAL_DICT, so the loop never ran and the
+     * request went out bare with no error and a normal-looking response. An
+     * Authorization header silently not sent is the worst version of that. Both
+     * shapes are accepted now: object (natural) and flat alternating array
+     * (what already worked). Anything else that PARSED is a caller mistake, not
+     * a no-header request — it says so instead of dropping the headers. */
+    if (hdr_obj && hdr_obj->type == VAL_DICT) {
+        for (int i = 0; i < hdr_obj->data.dict.count && hdr_count < 32 && argc < 90; i++) {
+            char *hk = xstrdup(hdr_obj->data.dict.keys[i]);
+            char *hv = value_to_string(hdr_obj->data.dict.vals[i]);
+            http_strip_crlf(hk);
+            http_strip_crlf(hv);
+            snprintf(header_bufs[hdr_count], sizeof(header_bufs[0]), "%s: %s", hk, hv);
+            free(hk); free(hv);
+            argv[argc++] = "-H";
+            argv[argc++] = header_bufs[hdr_count];
+            hdr_count++;
+        }
+    } else if (hdr_obj && hdr_obj->type == VAL_LIST) {
         for (int i = 0; i + 1 < hdr_obj->data.list.count && hdr_count < 32 && argc < 90; i += 2) {
             char *hk = value_to_string(hdr_obj->data.list.items[i]);
             char *hv = value_to_string(hdr_obj->data.list.items[i + 1]);
@@ -426,6 +446,18 @@ Value* builtin_http_post(Value *arg) {
             argv[argc++] = header_bufs[hdr_count];
             hdr_count++;
         }
+    } else if (hdr_obj && hdr_obj->type != VAL_NULL) {
+        /* Parsed, but neither shape — e.g. a bare string or number. Silently
+         * sending nothing is the #755 failure mode; say so. An unparseable
+         * headers argument (including "") still means "no headers", which is
+         * the documented idiom. */
+        rt_error(EK_TYPE, 0,
+                 "http_post: headers must be a JSON object or a flat "
+                 "[key, value, ...] array (got %s)",
+                 val_type_name(hdr_obj->type));
+        val_decref(hdr_obj);
+        unlink(req_path);
+        TRACE_NONDET_RECORD("http_post", make_str(""));
     }
     /* Released here rather than at the end of the function: the pipe/fork
      * failure paths below return through TRACE_NONDET_RECORD, and hdr_obj is
@@ -1386,7 +1418,12 @@ static void *http_conn_thread(void *arg) {
     handle_request(fd);
     fd = -1;  /* handle_request closed it */
 
-    trace_shutdown();
+    /* #739: NO trace_shutdown() here. This worker owns one connection, not the
+     * process — calling it closed the process tape after the FIRST request
+     * (every later request's records silently lost), dropped an embedder's
+     * trace sink, and decref'd prev-table slots recorded by other still-live
+     * threads. This thread's own prev-table is released by eigs_thread_detach
+     * below, beside the other per-thread destructors. */
     gc_collect_at_exit(global);
     env_decref(global);
     g_global_env = NULL;

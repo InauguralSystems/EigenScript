@@ -171,6 +171,42 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Every HTTP connection worker tore down the process trace tape, so the tape
+  died after the first request (#739).** `trace_shutdown()` is a process-wide
+  teardown — it closes the one tape, drops an embedder's trace sink, and shuts
+  down the replay reader — and `ext_http.c`'s per-connection worker called it
+  when it finished a request. Each worker owns its own `EigsState`, but the
+  tape belongs to the process, so the *first* request served closed it and
+  every later request's records were silently dropped. Measured on the
+  unfixed runtime: **one record for four hundred requests**, with the server's
+  tape fd already closed; after the fix, 336 records had reached disk mid-run
+  and the fd was still open. The same teardown freed the temporal prev-table,
+  running `slot_decref` on entries recorded by other, still-live threads. The
+  teardown is now split: `trace_shutdown()` keeps the process-wide half, and a
+  new `trace_thread_release()` releases only the calling thread's history —
+  called by `eigs_thread_detach` for every thread, so the HTTP worker no longer
+  touches the trace subsystem at all. The prev-table moved onto `EigsThread`
+  behind bridge macros, which is the scope it always effectively had: it is
+  keyed by *interned name pointer* and the intern table is per-thread, so two
+  threads' `x` were never the same key — process-global storage bought nothing
+  and cost ownership. It needs no lock, since only the owning thread touches
+  its table. The tape encoding is untouched, so no format-version bump — this
+  was an ownership bug, not a format one. (Corrects one premise in the issue:
+  cross-state history reads were *not* possible, because pointer-keying already
+  separated them.)
+
+- **`http_post` silently sent NO headers when `headers` was a JSON object
+  (#755).** The documented signature is `http_post of [url, headers, body]`,
+  and an object is the shape a caller reaches for first — but the code tested
+  `VAL_LIST` while `eigs_json_parse_object` returns a `VAL_DICT`, so the loop
+  never ran and the request went out bare. No error, no warning, a normal
+  response body: an `Authorization` header silently not sent. Only the flat
+  alternating array form worked, and `docs/BUILTINS.md` never said which shape
+  was expected. Both shapes are accepted now, and a headers argument that
+  parses to neither raises `type_mismatch` instead of quietly dropping them
+  (an unparseable argument, including `""`, still means "no headers" — the
+  documented idiom). BUILTINS.md now states the accepted shapes.
+
 - **`report` labelled a still-moving value "equilibrium" at a full window,
   violating the agreement guarantee it documents (#735).** `report of x`
   resolves the six windowed bands in priority order and then, if none is true,
@@ -380,6 +416,23 @@ All notable changes to EigenScript are documented here.
   that failed.
 
 ### Changed
+
+- **`tests/test_http_server.sh` no longer reports a setup failure as a feature
+  failure (#760).** `HS27`/`HS28` failed one CI run with "aggregate body budget
+  (got 000)" — a DoS-gate regression that had not happened. Both checks had
+  simply received *empty* responses, because the server was never reachable.
+  Three defects, each measured: the listen port was drawn from `50000-59999`,
+  entirely inside the kernel's ephemeral range (`32768-60999` on Linux), so the
+  suite's own `curl` clients could hold the port the next server tried to bind;
+  the readiness loop's real budget was **3.58s**, not the ~33s its
+  `--max-time 1` implied, because a refused connection returns instantly; and
+  neither failure was detected, so the test proceeded against a server that
+  was not there and the log naming the real cause was written to `/tmp` and
+  never read. There is now a shared `pick_port` (below the ephemeral floor,
+  read from `/proc` where available) and a `wait_ready` with a wall-clock
+  deadline, and a server that never comes up fails as a **setup** failure
+  quoting its own log. The main server in the same file had both defects too
+  and now uses the helpers.
 
 - **`make asan-http` puts the HTTP + model extensions under a sanitizer for the
   first time, and CI runs the suite that way.** `make asan` compiles those
