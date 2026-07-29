@@ -261,7 +261,7 @@ Query a binding's assignment history. Always on for top-level bindings;
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `report` | `report of value` | Classify change trajectory: "improving", "diverging", "stable", "equilibrium", "oscillating", "converged" |
+| `report` | `report of value` | Classify change trajectory: "improving", "diverging", "stable", "equilibrium", "oscillating", "converged" — or "moving" when a full window matches none of them (#735) |
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
 | `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
 

@@ -171,6 +171,64 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`report` labelled a still-moving value "equilibrium" at a full window,
+  violating the agreement guarantee it documents (#735).** `report of x`
+  resolves the six windowed bands in priority order and then, if none is true,
+  falls back to an instantaneous label read off the last `dH` alone. That
+  fallback exists for a *partial* window — where the full-window predicates are
+  false by rule and `report` still has to say something — but it was never
+  gated on `count < N`, so it also ran at a full window. The bands are not
+  exhaustive: a full window of steady gray-band drift at *low* entropy fires
+  nothing (every step under `dh_small` excludes improving/diverging by the #187
+  rule, a mean over `dh_zero` excludes equilibrium/converged, and `stable`
+  requires `entropy >= h_low`), and every such window was reported
+  `equilibrium`. A decaying residual — `d is d * 0.5`, twenty times — is in
+  exactly that state, so a convergence loop written the way `PREDICATES.md`
+  recommends, keyed on `report`, exited early at rc=0 with a plausible answer.
+  `docs/PREDICATES.md:328-335` states the opposite guarantee explicitly and
+  names the partial window as the only exception; found by an agent that
+  reimplemented the published formulas as an independent oracle, which
+  confirmed the six predicates were right and `report` was wrong. The fallback
+  is now gated on a partial window, and a full window with no band true reports
+  **`moving`** — the residual label the value channel already uses for this
+  state, so both channels answer "not settled, not in any named band" the same
+  way. The invariant (at a full window, `report` names a band whose predicate
+  is true, or `moving`) is now asserted in `tests/test_predicate_matrix.eigs`
+  across every full-window shape; it had been prose only, which is why this
+  survived. `lib/experiment.eigs` was relying on the wrong answer: all five of
+  its analyzers seeded `tracker is 0` *observed*, putting a synthetic
+  `0 -> values[0]` entropy jump in the first window, and
+  `is_measurement_stable` scored ten identical readings as stable only because
+  the fallback overrode the resulting window. The sentinel is now seeded inside
+  `unobserved:`, so the trajectory is the data.
+
+- **Observer papercuts: a discarded query was silent, `state_at` leaked a
+  runtime-internal binding, and two doc rows had gone stale (#736).** Four
+  small independent defects on the observer surface, from the same review as
+  #735. (1) A bare `report of x` as a *statement* evaluates the query and
+  throws the answer away — nothing printed, nothing raised, exit 0. `W019`
+  already covered the interrogatives (`where is x`, `prev of y`); it now covers
+  the query special forms over an ident (`report`/`report_value`/`observe`/
+  `trajectory`) too. It stays zero-false-positive: over an ident those are
+  compiler-resolved and never reach a user function even when one shadows the
+  name (#459), and a non-ident argument is an ordinary call the check never
+  sees. This was the worst affordance the observer had — silence reads as "the
+  observer had nothing to say", and the bare form is the one issue bodies and
+  READMEs reach for. (2) `state_at of <line>` returned `__loop_exit__` in its
+  user-visible dict; the observed-loop machinery's own bindings are now
+  filtered from it and from `--step`'s bindings pane (an explicit
+  `p __loop_exit__` still answers, and the tape's binding count stays honest).
+  (3) `docs/SYNTAX.md` still described `how` as degenerate, returning 0 with 1
+  only at zero *entropy*; #412 made it a real gradient
+  (`1 - min(1, |dH| / dh_zero)`, settledness of the last step). (4)
+  `docs/PREDICATES.md` still claimed entropy is exactly `0` at `|x| ∈ {0, 1}`;
+  #412 deleted the `|x| == 1` special case, so unity is the *maximum* — the
+  horizon — and only `0` is the home point. That one was stale in the maximally
+  confusing direction: 0 vs 1 is the difference between "fully converged" and
+  "maximally undecided". A worked `at` example inside a loop was also added,
+  since "the last assignment at or before this line" answers with the loop's
+  final pass, which is exactly where the rule stops matching intuition.
+
 - **`ext_http.c` leaked a `Value` on three request paths (#731).** Every
   `eigs_json_parse_value` call site in the file was audited after #731 reported
   the first; three of five leaked. `shared_incr` dropped two per call — the

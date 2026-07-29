@@ -950,8 +950,37 @@ static const char *interrog_word(int kind) {
     return (kind >= 0 && kind <= 5) ? words[kind] : "prev";
 }
 
+/* #736: the same silent no-op through the other door. `report of x` /
+ * `observe of x` / `report_value of x` / `trajectory of x` over an IDENT are
+ * compiler-resolved special forms (REPORT_SLOT/NAME &c) — pure queries with no
+ * side effect, so at statement level they evaluate and throw the answer away,
+ * printing nothing and raising nothing. That is the worst affordance the
+ * observer has: silence is indistinguishable from "nothing to say", and the
+ * bare form is what issue bodies and READMEs reach for. Zero false positives by
+ * construction: over an ident these names never reach a user function even when
+ * one shadows them (#459, see W013), and a non-ident argument (`report of (x +
+ * 0.0)`) is an ordinary call this check never sees. */
+static const char *disc_observer_query(ASTNode *node) {
+    static const char *names[] = {"report", "report_value", "observe",
+                                  "trajectory"};
+    if (!node || node->type != AST_RELATION) return NULL;
+    ASTNode *l = node->data.relation.left, *r = node->data.relation.right;
+    if (!l || l->type != AST_IDENT || !r || r->type != AST_IDENT) return NULL;
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (strcmp(l->data.ident.name, names[i]) == 0) return names[i];
+    return NULL;
+}
+
 static void check_disc_interrog(ASTNode *node, LintContext *ctx) {
     if (!node) return;
+    const char *q = disc_observer_query(node);
+    if (q) {
+        lint_warn(ctx, node->line, "W019",
+            "'%s of ...' is an observer query; as a statement its result is "
+            "discarded and nothing is printed — wrap it in "
+            "'print of (%s of ...)'", q, q);
+        return;
+    }
     if (node->type == AST_INTERROGATE) {
         int k = node->data.interrogate.kind;
         if (k >= 0 && k <= 5)
