@@ -266,6 +266,11 @@ int main(int argc, char **argv) {
         register_store_builtins(global);
 
         eigenscript_repl(global);
+        /* #739: take the exit code BEFORE teardown. It is a bridge macro now
+         * (state latch, reached through eigs_current), so eigs_thread_detach
+         * below leaves nothing to read it through — the script path at the
+         * bottom of main already captures it first, for the same reason. */
+        int repl_exit_code = g_exit_latched ? g_exit_latch_code : 0;
         trace_shutdown();
         /* Drop the global scope's bindings (closures defined at top level
          * die here), then collect the env<->fn cycles those closures left
@@ -277,7 +282,7 @@ int main(int argc, char **argv) {
         g_global_env = NULL;
         eigs_thread_detach();
         eigs_state_destroy(eigs_st);
-        return g_exit_requested ? g_exit_code : 0;
+        return repl_exit_code;
     }
 
     /* Extract script directory for load_file resolution. g_script_dir
@@ -360,7 +365,11 @@ int main(int argc, char **argv) {
     /* `exit of N` requests a specific code (and unwound via g_has_error); it
      * takes precedence over the generic uncaught-error code. Clear the unwind
      * flag so the teardown below sees a clean state. */
-    int exit_code = g_exit_requested ? g_exit_code
+    /* #739: the CODE comes from the state latch, so `exit of N` inside a
+     * spawned worker still decides the process's exit status; the unwind flag
+     * is cleared off THIS thread's request, so a worker's exit never erases a
+     * genuine main-thread error. */
+    int exit_code = g_exit_latched ? g_exit_latch_code
                     : ((g_has_error || unobserved_task_error) ? 1 : 0);
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release

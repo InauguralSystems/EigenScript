@@ -254,6 +254,15 @@ act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live
 sources; when the tape runs out they fall back to live.
 
+**A script's `exit` does not outlive its eval** (#739). `exit of N` is
+deliberately uncatchable — `CHECK_ERROR` refuses to route it to a `try`
+handler — but the request is per-thread and cleared at the top of
+`eigs_eval_string`, so it applies to the eval that raised it and no
+later one. Before that it was a process global nothing ever reset: one
+untrusted snippet calling `exit` left every subsequent eval in the
+process running with exception handling silently disabled, in any state.
+A host that wants the exit code reads it from the eval that requested it.
+
 **The sink and the tape are per-PROCESS, not per-state** (#739). With
 several states co-located, one sink serves them all, and the teardown
 that drops it — `trace_shutdown()`, which `eigs_close` calls — belongs

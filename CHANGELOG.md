@@ -171,6 +171,29 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **One `exit of N` permanently disabled `try`/`catch` for the rest of the
+  process (#739 item 2).** `exit` is deliberately uncatchable: `builtin_exit`
+  sets `g_exit_requested` and `CHECK_ERROR` consults it to refuse routing the
+  unwind to a `try` handler. But the flag was a **process global that nothing
+  ever reset** — not `eigs_close`, not `eigs_state_destroy`, and `main` leaves
+  it set on purpose. So once any script in any state called `exit`, every later
+  `eigs_eval_string` in the process ran with exception handling silently off: a
+  raise inside `try` went to `vm_error_halt` instead of the catch handler. For a
+  long-lived embedder running untrusted snippets — the `sandbox_run` case, and
+  the seam EigenOS M11 consumes — one line of script corrupted the semantics
+  permanently. Unreachable from the CLI, where `exit` ends the process, which is
+  why it had never been seen. `g_exit_requested`/`g_exit_code` now live on
+  `EigsThread` beside the `g_has_error`/`g_try_depth` they are read with, and
+  the request is cleared at host eval entry, so it applies to the eval that
+  raised it and no later one. `exit` stays uncatchable and still returns its
+  code from the CLI and the REPL. The exit **code** is additionally latched on
+  the `EigsState`: per-thread alone would have silently dropped `exit of N`
+  inside a *spawned worker* to 0 while `main` returned success, so the thread
+  flag drives the uncatchable unwind and the state latch decides the process's
+  status — which also means a worker's exit no longer erases a genuine
+  main-thread error. `tests/test_exit.sh` covers the worker case; the embed
+  smoke harness covers the try/catch recovery with a before-exit control.
+
 - **Every HTTP connection worker tore down the process trace tape, so the tape
   died after the first request (#739).** `trace_shutdown()` is a process-wide
   teardown — it closes the one tape, drops an embedder's trace sink, and shuts

@@ -621,14 +621,15 @@ Value* builtin_get_observer_thresholds(Value *arg) {
     return result;
 }
 
-/* Process-global exit request (declared in eigenscript.h). */
-int g_exit_requested = 0;
-int g_exit_code = 0;
-
 /* exit of N — request a clean process exit with code N (default 0). Sets the
  * unwind flag (g_has_error) so vm_run returns to main, plus g_exit_requested so
  * the unwind is UNCATCHABLE (a `try` must not swallow `exit`) and main exits
- * with the code after its normal teardown — leak-clean, unlike a raw exit(). */
+ * with the code after its normal teardown — leak-clean, unlike a raw exit().
+ * #739: the request lives on EigsThread, beside the g_has_error / g_try_depth
+ * it is consulted with — as a process global nothing ever reset it, so one
+ * script's `exit` disabled try/catch for every later eval in the PROCESS, in
+ * any state. The exit CODE is additionally latched at the EigsState, so `exit`
+ * inside a spawned worker still decides the process's status. */
 Value* builtin_exit(Value *arg) {
     int code = 0;
     if (arg && arg->type == VAL_NUM) {
@@ -639,7 +640,9 @@ Value* builtin_exit(Value *arg) {
         code = (int)arg->data.list.items[0]->data.num;
     }
     g_exit_code = code;
-    g_exit_requested = 1;
+    g_exit_requested = 1;      /* this thread's unwind: uncatchable */
+    g_exit_latch_code = code;  /* the state's: what main reports as the */
+    g_exit_latched = 1;        /* process exit code, incl. from a worker */
     g_has_error = 1;   /* triggers CHECK_ERROR -> unwind to main */
     return make_null();
 }

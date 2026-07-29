@@ -37,4 +37,17 @@ check_exit "exit unwinds out of a function and loop" 'define f() as:
 f of null
 print of "no"' 7 ""
 
+# #739: `exit of N` inside a SPAWNED worker still decides the process's exit
+# code. The request drives an uncatchable unwind on the raising thread, so it
+# is per-thread — but the exit CODE is latched at the state, or a worker's exit
+# silently becomes 0 while main returns success. (Main is not interrupted here:
+# it runs to completion and then reports the worker's code, which is the
+# behavior that has always shipped.)
+check_exit "exit inside a spawned worker sets the process exit code" 'define worker(n) as:
+    exit of 9
+    return 1
+w is spawn of [worker, 1]
+r is join of w
+print of "main continued"' 9 "main continued"
+
 echo ""

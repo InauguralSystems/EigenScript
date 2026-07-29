@@ -550,6 +550,13 @@ struct EigsState {
      * threaded states (the common case — DMG, MiniSat, Tidepool, REPL)
      * keep it at 0 and skip the atomic ~20-cycle penalty on x86. */
     int             multithreaded;
+    /* #739: process-exit request, LATCHED at the state. The per-thread flag
+     * above drives CHECK_ERROR's uncatchable unwind and is cleared at host
+     * eval entry; this latch is what `main` reports as the process exit code,
+     * so `exit of N` inside a spawned worker still sets it — the per-thread
+     * flag alone would have silently dropped a worker's exit code to 0. */
+    int             exit_latched;
+    int             exit_latch_code;
     /* Cycle-collector registry — the intrusive list of captured envs and its
      * live count. Per-STATE (not per-thread) so candidates created on any
      * thread survive that thread's death and stay collectable at exit; gc_lock
@@ -606,6 +613,12 @@ struct EigsThread {
     int          parse_errors;
     int          has_error;
     int          try_depth;
+    /* #739: `exit of N` request. Sits with has_error/try_depth because
+     * CHECK_ERROR reads all three together — an exit unwind is uncatchable.
+     * Cleared at host eval entry (eigs_eval_string) so a second eval on this
+     * thread is not stuck with the first one's exit. */
+    int          exit_requested;
+    int          exit_code;
     int          first_error_line;
     int          first_error_col;   /* 0-based column of the first error, or 0 */
     int          first_error_len;   /* source length of the offending token
@@ -738,6 +751,8 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
 #define g_error_kind        (eigs_current->error_kind)
+#define g_exit_requested    (eigs_current->exit_requested)
+#define g_exit_code         (eigs_current->exit_code)
 #define g_error_line        (eigs_current->error_line)
 #define g_error_raw         (eigs_current->error_raw)
 #define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
@@ -769,6 +784,8 @@ extern __thread EigsThread *eigs_current;
 #define g_compile_import_toplevel (eigs_current->compile_import_toplevel)
 #define g_import_resolve_dir  (eigs_current->import_resolve_dir)
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
+#define g_exit_latched        (eigs_current->state->exit_latched)
+#define g_exit_latch_code     (eigs_current->state->exit_latch_code)
 #define g_gc_envs             (eigs_current->state->gc_envs)
 #define g_gc_captured_live    (eigs_current->state->gc_captured_live)
 #define g_gc_val_buf          (eigs_current->state->gc_val_buf)
@@ -1055,13 +1072,18 @@ void env_reserve_slots(Env *env, int total);
  * leave it off so cross-chunk env lookups continue to work. */
 extern int g_compile_module_slots;
 
-/* `exit of N` requests a clean process exit with code N. Process-global (exit
- * terminates the whole process). The builtin sets these + g_has_error to unwind
- * vm_run to main via the existing error path; CHECK_ERROR treats the request as
- * uncatchable (a `try` must not swallow `exit`), and main exits with the code
- * after its normal teardown — so exit is leak-clean, unlike a raw exit(). */
-extern int g_exit_requested;
-extern int g_exit_code;
+/* `exit of N` requests a clean process exit with code N. The builtin sets
+ * g_exit_requested/g_exit_code + g_has_error to unwind vm_run to main via the
+ * existing error path; CHECK_ERROR treats the request as uncatchable (a `try`
+ * must not swallow `exit`), and main exits with the code after its normal
+ * teardown — so exit is leak-clean, unlike a raw exit().
+ *
+ * #739: the request is per-THREAD (bridge macros above, beside the
+ * g_has_error / g_try_depth CHECK_ERROR reads it with) and cleared at host
+ * eval entry. It was process-global and never reset, so one `exit of N` in any
+ * state left every later eval in the process running with exception handling
+ * silently disabled. A reader of the request must take it BEFORE
+ * eigs_thread_detach — there is no thread to read it through afterwards. */
 
 /* ---- Parser / Evaluator ---- */
 

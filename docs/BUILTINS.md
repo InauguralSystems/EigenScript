@@ -44,7 +44,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `num` | `num of value` | Convert to number (parse string or coerce) |
 | `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
-| `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. |
+| `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
 | `eval` | `eval of code_string` | Execute EigenScript code, return result |
 | `throw` | `throw of message` | Raise catchable error |
