@@ -171,6 +171,36 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The RSS leak gate called a one-off allocator step a leak, and it was the
+  step that moves (#768, follow-up to #765).** #765 made the gate judge the
+  *second* of two measured batches, on the premise that the process's one-time
+  memory cost is front-loaded and therefore spent by then. It is not. Every
+  connection is served by a fresh `EigsState` on its own thread, so the first
+  time two workers' lifetimes overlap, glibc allocates a second per-thread
+  malloc arena and RSS steps by roughly one worker's footprint — ~2.7 MB, once,
+  after which arenas are recycled and RSS is flat. That overlap is scheduled by
+  wall clock, not by request count: on the dev box the step lands at request
+  400, 500, 600 and 700 across four identical runs, and on a slower CI runner it
+  lands past 3000 — inside the batch #765 had just made the verdict. Run
+  30439602640 failed that way (2876 kB, "first batch 0 kB") while attempt 2 of
+  the same commit passed. It was never a leak: a 24,000-request soak grows 0 kB
+  after warmup, which bounds any real per-request leak at <3 B/req against the
+  1472 B/req reported. The tell was already in the failure text — a leak of
+  1472 B/req cannot be absent from the immediately preceding identical batch.
+  The gate now runs three measured batches and judges their **median**, so one
+  step, wherever it lands, moves at most one of the three while a real leak
+  moves all three. The threshold is unchanged at 64 kB. The verdict rule is a
+  pure function of the three numbers and is now self-tested against ten planted
+  faults on every run (both historical leak rates, the step in each of the three
+  positions it can land in, and a leak with a step on top); the rule was also
+  validated end-to-end against a real 256 B/req heap leak planted in
+  `shared_incr`, which it reports as 272 B/req with all three batches grown.
+  That last check matters more than it looks: the first fault planted to
+  validate it — dropping a `val_decref` — leaked nothing measurable, because
+  `make_num` serves request-path Values from the arena and they die at arena
+  reset regardless of refcount. A gate this class depends on has to be shown
+  turning red by something that actually leaks.
+
 - **Four more process-globals that contradict the multi-state contract (#739
   item 4).** Each is a resource the runtime scopes per state or per thread
   everywhere else, held in one process-wide slot:

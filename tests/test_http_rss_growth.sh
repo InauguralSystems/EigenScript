@@ -77,7 +77,7 @@ batch_200s() { # $1 = url with glob
     curl -s -o /dev/null -w '%{http_code}\n' "$1" 2>/dev/null | grep -c '^200$'
 }
 
-# TWO consecutive measured batches, and the verdict is the SECOND one (#765).
+# THREE consecutive measured batches, and the verdict is their MEDIAN (#768).
 #
 # A single warmup-then-measure is only valid if the warmup actually reached
 # steady state, and it cannot tell whether it did. When it doesn't, B-A
@@ -88,18 +88,55 @@ batch_200s() { # $1 = url with glob
 # machine* produces the identical signature, so counting requests is not enough:
 # WARMUP=5 completes 5/5 and is still wrong.
 #
-# The discriminator is physical rather than statistical: **one-time warmup
-# decays, a per-request leak does not.** A leak of N bytes/req leaks the same N
-# in every subsequent batch, forever; arena warmup is spent and does not recur.
-# So run two identical measured batches and judge the second. By then WARMUP +
-# MEASURE requests have run, so any warmup tail is behind us — and a real leak is
-# entirely unaffected by which batch you measure it in.
+# The discriminator is physical rather than statistical: **a one-off allocator
+# step happens once, a per-request leak happens in every batch.** A leak of N
+# bytes/req leaks the same N in every subsequent batch, forever.
 #
-# This is why a slow or contended runner can no longer produce a phantom leak,
-# and it does not loosen the threshold by a single byte. That matters: this is
-# the only instrument that sees per-request leaks at all (LSan never runs in a
+# #765 implemented that as "judge the SECOND batch", on the assumption that the
+# one-time cost is front-loaded and therefore already spent by then. It is not.
+# Each connection is served by a fresh EigsState on its own thread
+# (ext_http.c:~1400), so the first time two workers' lifetimes overlap, glibc
+# allocates a second per-thread malloc arena and RSS steps by one worker's
+# footprint — ~2.7 MB, once, after which arenas are recycled and RSS is flat
+# forever. That overlap is governed by wall-clock scheduling, not by request
+# count: measured on the dev box the step lands at request 400, 500, 600 and 700
+# across four otherwise identical runs, and on a slower or contended CI runner it
+# lands past 3000 — i.e. inside measured batch 2, which #765 made the verdict.
+# That is exactly how run 30439602640 failed (2876 kB, "first batch 0 kB") while
+# attempt 2 of the same commit passed, and it is not a leak: a soak of 24,000
+# requests grows 0 kB after warmup, bounding any real per-request leak at
+# <3 B/req, versus the 1472 B/req the gate reported.
+#
+# Note the fingerprint #765 could already have used: batch 1 was 0 kB. A leak of
+# 1472 B/req cannot be absent from the immediately preceding identical batch. So
+# take three batches and judge the median — one step, wherever it lands, moves
+# at most one of the three, while a real leak moves all three and the median with
+# them. This does not loosen the threshold by a single byte. That matters: this
+# is the only instrument that sees per-request leaks at all (LSan never runs in a
 # signal-killed server), so a gate that cries wolf gets quietened, and then the
 # class goes unwatched.
+
+median3() { printf '%s\n%s\n%s\n' "$1" "$2" "$3" | sort -n | sed -n 2p; }
+max3()    { printf '%s\n%s\n%s\n' "$1" "$2" "$3" | sort -n | tail -1; }
+
+# Verdict over three consecutive measured batches (kB each). Echoes the reason
+# and returns 0 = clean, 1 = leak. Kept as a pure function of the three numbers
+# so it can be self-tested against planted faults below without a server.
+leak_verdict() {
+    local g1="$1" g2="$2" g3="$3" med hi
+    med=$(median3 "$g1" "$g2" "$g3")
+    hi=$(max3 "$g1" "$g2" "$g3")
+    if [ "$med" -gt "$THRESHOLD_KB" ]; then
+        echo "leaked ${med} kB over ${MEASURE} reqs ($(( med * 1024 / MEASURE )) B/req; threshold ${THRESHOLD_KB} kB; batches ${g1}/${g2}/${g3} kB — the median batch grew, so this is a leak, not a one-off step)"
+        return 1
+    fi
+    if [ "$hi" -gt "$THRESHOLD_KB" ]; then
+        echo "steady-state growth ${med} kB over ${MEASURE} reqs (<= ${THRESHOLD_KB} kB; batches ${g1}/${g2}/${g3} kB — the ${hi} kB batch is a one-off allocator step, absorbed by the median)"
+    else
+        echo "steady-state growth ${med} kB over ${MEASURE} reqs (<= ${THRESHOLD_KB} kB; batches ${g1}/${g2}/${g3} kB)"
+    fi
+    return 0
+}
 
 # $1 = label, $2 = route path, $3 = server script body
 run_growth_check() {
@@ -125,42 +162,39 @@ run_growth_check() {
         sleep 0.1
     done
 
-    local warm m1 m2 c growth1
+    # `reason` and `rc` are declared here but assigned separately: `local x=$(f)`
+    # would make $? the exit status of `local`, not of f, and the verdict would
+    # always read as clean.
+    local warm m1 m2 m3 d reason rc
     warm=$(batch_200s "http://127.0.0.1:$port$route?[1-$WARMUP]")
     a=$(rss_of "$srv_pid")
     m1=$(batch_200s "http://127.0.0.1:$port$route?[1-$MEASURE]")
     b=$(rss_of "$srv_pid")
     m2=$(batch_200s "http://127.0.0.1:$port$route?[1-$MEASURE]")
     c=$(rss_of "$srv_pid")
+    m3=$(batch_200s "http://127.0.0.1:$port$route?[1-$MEASURE]")
+    d=$(rss_of "$srv_pid")
 
     kill "$srv_pid" 2>/dev/null || true
     wait "$srv_pid" 2>/dev/null || true
     rm -f "$srv_file" "/tmp/eigs_rss_srv_$$.log"
 
-    if [ "$warm" -ne "$WARMUP" ] || [ "$m1" -ne "$MEASURE" ] || [ "$m2" -ne "$MEASURE" ]; then
+    if [ "$warm" -ne "$WARMUP" ] || [ "$m1" -ne "$MEASURE" ] || [ "$m2" -ne "$MEASURE" ] \
+       || [ "$m3" -ne "$MEASURE" ]; then
         fail "$label INSTRUMENT: batch incomplete, RSS deltas are meaningless" \
-             "warmup $warm/$WARMUP, batches $m1/$MEASURE and $m2/$MEASURE — not a leak measurement"
+             "warmup $warm/$WARMUP, batches $m1/$MEASURE, $m2/$MEASURE and $m3/$MEASURE — not a leak measurement"
         return
     fi
 
-    if [ -z "$a" ] || [ -z "$b" ] || [ -z "$c" ]; then
-        fail "$label could not read VmRSS" "a='$a' b='$b' c='$c'"
+    if [ -z "$a" ] || [ -z "$b" ] || [ -z "$c" ] || [ -z "$d" ]; then
+        fail "$label could not read VmRSS" "a='$a' b='$b' c='$c' d='$d'"
         return
     fi
-    growth1=$((b - a))
-    growth=$((c - b))
-    if [ "$growth" -le "$THRESHOLD_KB" ]; then
-        # growth1 is reported only when it disagrees — that is the fingerprint of
-        # a warmup that had not finished, and it is worth seeing in the log
-        # before someone re-diagnoses it as an intermittent leak (#765).
-        if [ "$growth1" -gt "$THRESHOLD_KB" ]; then
-            ok "$label steady-state growth ${growth} kB over $MEASURE reqs (<= ${THRESHOLD_KB} kB; first batch ${growth1} kB = unfinished warmup, decayed as expected)"
-        else
-            ok "$label steady-state growth ${growth} kB over $MEASURE reqs (<= ${THRESHOLD_KB} kB)"
-        fi
+    reason=$(leak_verdict "$((b - a))" "$((c - b))" "$((d - c))"); rc=$?
+    if [ "$rc" -eq 0 ]; then
+        ok "$label $reason"
     else
-        fail "$label leaked ${growth} kB over $MEASURE reqs" \
-             "$(( growth * 1024 / MEASURE )) B/req; threshold ${THRESHOLD_KB} kB; first batch ${growth1} kB — growth did NOT decay, so this is a leak, not warmup"
+        fail "$label $reason"
     fi
 }
 
@@ -194,20 +228,19 @@ if curl -s "http://127.0.0.1:$PORT_A/asetup" | grep -q "ok" \
     B=$(rss_of "$AUTH_PID")
     M2=$(batch_200s "http://127.0.0.1:$PORT_A/secret?[1-$MEASURE]")
     C=$(rss_of "$AUTH_PID")
-    GROWTH1=$((B - A))
-    GROWTH=$((C - B))
-    if [ "$WARM" -ne "$WARMUP" ] || [ "$M1" -ne "$MEASURE" ] || [ "$M2" -ne "$MEASURE" ]; then
+    M3=$(batch_200s "http://127.0.0.1:$PORT_A/secret?[1-$MEASURE]")
+    D=$(rss_of "$AUTH_PID")
+    if [ "$WARM" -ne "$WARMUP" ] || [ "$M1" -ne "$MEASURE" ] || [ "$M2" -ne "$MEASURE" ] \
+       || [ "$M3" -ne "$MEASURE" ]; then
         fail "RSS2 authed route INSTRUMENT: batch incomplete, RSS deltas are meaningless" \
-             "warmup $WARM/$WARMUP, batches $M1/$MEASURE and $M2/$MEASURE — not a leak measurement"
-    elif [ "$GROWTH" -le "$THRESHOLD_KB" ]; then
-        if [ "$GROWTH1" -gt "$THRESHOLD_KB" ]; then
-            ok "RSS2 authed route steady-state growth ${GROWTH} kB over $MEASURE reqs (<= ${THRESHOLD_KB} kB; first batch ${GROWTH1} kB = unfinished warmup, decayed as expected)"
-        else
-            ok "RSS2 authed route steady-state growth ${GROWTH} kB over $MEASURE reqs (<= ${THRESHOLD_KB} kB)"
-        fi
+             "warmup $WARM/$WARMUP, batches $M1/$MEASURE, $M2/$MEASURE and $M3/$MEASURE — not a leak measurement"
     else
-        fail "RSS2 authed route leaked ${GROWTH} kB over $MEASURE reqs" \
-             "$(( GROWTH * 1024 / MEASURE )) B/req; first batch ${GROWTH1} kB — growth did NOT decay, so this is a leak, not warmup"
+        REASON=$(leak_verdict "$((B - A))" "$((C - B))" "$((D - C))"); RC=$?
+        if [ "$RC" -eq 0 ]; then
+            ok "RSS2 authed route $REASON"
+        else
+            fail "RSS2 authed route $REASON"
+        fi
     fi
 else
     fail "RSS2 authed route did not come up" "port $PORT_A"
@@ -215,6 +248,39 @@ fi
 kill "$AUTH_PID" 2>/dev/null || true
 wait "$AUTH_PID" 2>/dev/null || true
 rm -f "$AUTH_SRV" "/tmp/eigs_rss_auth_$$.log"
+
+# Self-test the verdict against planted faults, in BOTH directions. A gate is
+# only evidence if a real fault turns it red and a known non-fault does not, and
+# neither half can be checked by watching it pass on a healthy binary: #765
+# shipped a rule that was green here and false-failed CI within a day. These are
+# the real numbers — the two leak rates this gate was built to catch, and the
+# one-off step that produced run 30439602640's phantom leak, in each of the three
+# positions it can land in.
+st_fail=0
+expect_verdict() { # $1 = clean|leak, $2 = label, $3 $4 $5 = batch kB
+    local want="$1" label="$2" got
+    if leak_verdict "$3" "$4" "$5" >/dev/null 2>&1; then got=clean; else got=leak; fi
+    if [ "$got" != "$want" ]; then
+        echo "    verdict self-test: '$label' (${3}/${4}/${5} kB) expected $want, got $got"
+        st_fail=$((st_fail + 1))
+    fi
+}
+expect_verdict clean "flat, leak-free"                        0 0 0
+expect_verdict clean "sub-threshold page jitter"              8 0 16
+expect_verdict clean "arena step in batch 1"               2856 0 0
+expect_verdict clean "arena step in batch 2 (run 30439602640)"  0 2876 0
+expect_verdict clean "arena step in batch 3"                  0 0 2668
+expect_verdict clean "RSS can fall as well as rise"       -1204 0 1204
+expect_verdict leak  "#731 shared_incr, 160 B/req"          312 312 312
+expect_verdict leak  "#752 authed route, 136 B/req"         265 265 265
+expect_verdict leak  "a real leak WITH a step on top"       312 3000 312
+expect_verdict leak  "leak at 1472 B/req sustained"        2876 2876 2876
+if [ "$st_fail" -eq 0 ]; then
+    ok "verdict self-test: 10 planted faults classified correctly (6 clean, 4 leak)"
+else
+    fail "verdict self-test: $st_fail planted fault(s) misclassified" \
+         "the gate's decision rule is wrong — its verdicts above are not evidence"
+fi
 
 echo "HTTP_RSS: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
