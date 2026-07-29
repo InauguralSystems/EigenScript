@@ -102,7 +102,6 @@ void jit_state_init_thresholds(struct EigsState *st);
 /* OSR threshold accessor for vm.c. vm.c caches the result thread-local
  * on the first JUMP_BACK so the dispatch loop doesn't pay a getenv per
  * iteration. The value is honors-EIGS_JIT_OSR_THRESHOLD env var. */
-int eigs_jit_get_osr_threshold(void);
 
 /* Register a chunk so its exec_count can be dumped at shutdown when
  * EIGS_JIT_HOT=1. Idempotent. Called from vm_run on top-level entry

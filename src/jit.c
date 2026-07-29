@@ -2196,12 +2196,6 @@ void jit_state_init_thresholds(EigsState *st) {
     if (st->jit_osr_threshold < 1) st->jit_osr_threshold = 1;
 }
 
-/* Exposed so vm.c can read the OSR threshold once per thread on the
- * first back-edge rather than getenv-checking inside the hot loop. */
-int eigs_jit_get_osr_threshold(void) {
-    return g_osr_threshold;
-}
-
 /* Phase 2b: the body of jit_try_compile_chunk is now this static helper,
  * parameterized on entry_offset and on output pointers for the
  * state/code/advance/stop_op slots so the same emitter can drive both

@@ -171,6 +171,39 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Four more process-globals that contradict the multi-state contract (#739
+  item 4).** Each is a resource the runtime scopes per state or per thread
+  everywhere else, held in one process-wide slot:
+  - `s_osr_threshold` (`vm.c`) was a *function static* filled by whichever
+    state crossed a back edge first and then frozen for the life of the
+    process, defeating the per-state JIT tuning `eigenscript.h` explicitly
+    advertises ("so two co-located embedded states can tune independently") —
+    entry and iter thresholds were already per-state; only OSR opted out. It
+    now reads `g_osr_threshold` directly. `eigs_jit_get_osr_threshold()`
+    existed only to fill that cache and is deleted; its comment claimed it was
+    read "once per thread", which was never true — it was once per process.
+  - `g_sandbox_active` / `g_sandbox_bytes_used` / `g_sandbox_byte_max` /
+    `g_sandbox_loop_max` are now per-thread. The save/restore in
+    `builtin_sandbox_run` is correct for one thread's nesting, but the premise
+    it documented — "sandbox_run is synchronous" — holds *per thread* and
+    breaks the moment two states run concurrently, which `ext_http` does per
+    connection: one worker entering a sandbox capped every other worker's
+    loops and charged their allocations against its budget.
+  - `g_stream_file` is now per-thread and closed at `eigs_thread_detach`. One
+    `FILE*` per process meant `stream_open`'s unconditional close tore down
+    another state's in-flight stream, and an unclosed stream lost its buffered
+    tail at exit rather than being flushed.
+  - `g_db_conn` moved onto `EigsState`, closed by a new `ext_db_state_destroy`
+    called from `eigs_state_destroy` — the same shape `ext_http_state_destroy`
+    already had. Previously one worker's `db_connect` replaced the connection
+    another worker was querying through, and nothing ever closed it.
+
+  `g_model` was deliberately left process-wide. Its allocations are reachable
+  from a global at exit, so they are still-reachable rather than leaked; the
+  real defect would be cross-state clobber, and per-state transformer weights
+  would multiply memory by the number of states. That is a design decision
+  about model isolation, not a mechanical scope move.
+
 - **A `task_yield` on one thread silently made every other thread return `null`
   (#739 item 3).** The cooperative scheduler lives on `EigsThread` — tasks are
   single-threaded by construction — but the suspend request that drives it was

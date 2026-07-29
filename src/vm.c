@@ -704,11 +704,10 @@ static Value *make_iter_state(Value *iterable) {
  * g_vm fields without indirection through helper functions. */
 #include <stddef.h>
 
-/* Sandbox loop-iteration cap. 0 = use the default 100,000,000 (normal runs are
- * unaffected); builtin_sandbox_run sets a low value to bound untrusted generated
- * code, then restores it. Read by the LOOP_CAP/STALL checks (interp + JIT
- * helpers). A plain process global: sandbox_run is synchronous. */
-int g_sandbox_loop_max = 0;
+/* Sandbox loop-iteration cap (0 = default 100,000,000) and byte budget live on
+ * EigsThread — see eigenscript.h. #739: they were process globals on the
+ * premise "sandbox_run is synchronous", which holds per-thread and breaks the
+ * moment two states run concurrently (ext_http, one state per connection). */
 
 /* Async abort seam (eigs_set_abort_flag): the embedder registers a flag it
  * may set from an interrupt/signal context; the interpreter polls it on
@@ -752,10 +751,6 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * inputs are charged), and the text_builder growth path — all bounded by the
  * loop-iteration cap × per-op size, not the byte budget. Extending the budget to
  * them is a one-line sandbox_charge() at each; left out to match #292's scope. */
-int    g_sandbox_active     = 0;
-size_t g_sandbox_bytes_used = 0;
-size_t g_sandbox_byte_max   = 0;   /* 0 = no budget */
-
 int sandbox_charge(size_t bytes) {
     if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant
@@ -3266,8 +3261,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * loop ran interpreted for good. Failed offsets keep their slot
          * (state 1) so they cannot retry-storm; when all slots are taken,
          * additional loop headers simply stay interpreted. */
-        static int s_osr_threshold = 0;
-        if (s_osr_threshold == 0) s_osr_threshold = eigs_jit_get_osr_threshold();
+        /* #739: read the per-STATE threshold, don't cache it in a function
+         * static. The static was filled by whichever state crossed a back edge
+         * FIRST and then froze process-wide, defeating the per-state JIT tuning
+         * eigenscript.h advertises ("so two co-located embedded states can tune
+         * independently") — entry and iter thresholds are per-state; only OSR
+         * opted out. g_osr_threshold is a bridge macro, so this is one load off
+         * eigs_current, not the getenv the static was avoiding. */
         {
             int t_off = (int)(ip - chunk->code);
             int osr_hit = -1, osr_free = -1;
@@ -3280,7 +3280,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 }
             }
             if (osr_hit == -1 && osr_free >= 0 &&
-                chunk->back_edge_count >= (uint32_t)s_osr_threshold) {
+                chunk->back_edge_count >= (uint32_t)g_osr_threshold) {
                 jit_try_compile_chunk_osr(chunk, t_off, osr_free);
                 if (chunk->jit_osr[osr_free].state == 2)
                     osr_hit = osr_free;

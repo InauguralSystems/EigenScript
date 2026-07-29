@@ -7,7 +7,6 @@
 #include "ext_names.h"
 #if EIGENSCRIPT_EXT_DB
 
-PGconn *g_db_conn = NULL;
 
 #define DB_MAX_PARAMS 16
 
@@ -161,6 +160,14 @@ Value* builtin_db_query_json(Value *arg) {
     Value *result = make_str(sb.data);
     strbuf_free(&sb);
     return result;
+}
+
+/* #739: close this state's connection at teardown. Nothing closed it before,
+ * so every state that ever called db_connect leaked its PGconn. */
+void ext_db_state_destroy(EigsState *st) {
+    if (!st || !st->ext_db_conn) return;
+    PQfinish((PGconn *)st->ext_db_conn);
+    st->ext_db_conn = NULL;
 }
 
 void register_db_builtins(Env *env) {

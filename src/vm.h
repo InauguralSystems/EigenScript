@@ -604,8 +604,8 @@ int        chunk_verify(EigsChunk *chunk);
 /* Compiler */
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
 
-/* Sandbox loop-iteration cap (0 = default 100M). Set by builtin_sandbox_run. */
-extern int g_sandbox_loop_max;
+/* Sandbox loop-iteration cap (0 = default 100M). Set by builtin_sandbox_run.
+ * Per-thread bridge macro in eigenscript.h (#739). */
 
 /* Async abort seam: embedder-registered flag polled on every loop
  * back-edge — interpreter AND JIT (#410) — see the definition in vm.c and
@@ -617,10 +617,12 @@ extern volatile int g_vm_abort_never;
 /* #292: sandbox allocation budget. Set by builtin_sandbox_run; size-controlled
  * allocators call sandbox_charge() before allocating. Returns 1 if the charge
  * fits (and commits it), 0 if it would exceed the budget (after raising a
- * catchable runtime_error). No-op when g_sandbox_active is 0. */
-extern int    g_sandbox_active;
-extern size_t g_sandbox_bytes_used;
-extern size_t g_sandbox_byte_max;
+ * catchable runtime_error). No-op when g_sandbox_active is 0.
+ *
+ * g_sandbox_active / _bytes_used / _byte_max are per-thread bridge macros in
+ * eigenscript.h (#739): as process globals, two states running concurrently
+ * (ext_http, one state per connection) shared one budget and one active
+ * flag. */
 int sandbox_charge(size_t bytes);
 
 /* VM execution */

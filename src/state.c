@@ -12,6 +12,10 @@
  * pthread/socket includes) into core runtime TUs. Defined in ext_http.c. */
 extern void ext_http_state_destroy(EigsState *st);
 #endif
+#if EIGENSCRIPT_EXT_DB
+/* Same reason — declared here rather than including libpq. #739. */
+extern void ext_db_state_destroy(EigsState *st);
+#endif
 
 __thread EigsThread *eigs_current = NULL;
 
@@ -43,6 +47,9 @@ void eigs_state_destroy(EigsState *st) {
 #if EIGENSCRIPT_EXT_HTTP
     /* No-op if the state never registered http builtins. */
     ext_http_state_destroy(st);
+#endif
+#if EIGENSCRIPT_EXT_DB
+    ext_db_state_destroy(st);   /* #739: close this state's libpq connection */
 #endif
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
@@ -147,6 +154,13 @@ void eigs_thread_detach(void) {
     vm_thread_destroy(th);
     task_sched_thread_free();   /* #408: release the cooperative task scheduler */
     trace_thread_release();     /* #739: this thread's prev-table (NOT the tape) */
+#if !EIGENSCRIPT_FREESTANDING
+    /* #739: an unclosed stream_open belongs to this thread; close it here so
+     * it is neither leaked nor left for another thread to inherit. Carved out
+     * of the freestanding profile with the stream_* builtins themselves —
+     * fclose is not in the allowlist and there is no stream to close there. */
+    if (th->stream_file) { fclose((FILE *)th->stream_file); th->stream_file = NULL; }
+#endif
 
     /* Phase 8: release freelist + intern memory before the EigsThread
      * struct itself goes. Must run while eigs_current still points at th
