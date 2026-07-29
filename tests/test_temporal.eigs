@@ -71,6 +71,17 @@ check of ["where at latest", (where is ox at 66) == (where is ox)]
 check of ["why at miss", (why is ox at 61) == null]
 check of ["how at", (how is ox at 63) == (how is ox)]
 
+# ---- #736: state_at must not leak the loop machinery's own bindings.
+#      Queried at a line past the end, so this block stays line-insensitive. ----
+lv is 1
+li is 0
+loop while li < 3:
+    lv is lv + 1
+    li is li + 1
+st is state_at of 999
+check of ["state_at hides __loop_exit__", (has_key of [st, "__loop_exit__"]) == 0]
+check of ["state_at keeps user bindings", st["lv"] == 4]
+
 if fail_count == 0:
     print of "All tests passed"
 else:

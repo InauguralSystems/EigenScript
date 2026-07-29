@@ -2,7 +2,10 @@
 
 The bare predicate words — `converged`, `equilibrium`, `stable`,
 `improving`, `diverging`, `oscillating` — and the `report of x` builtin
-classify a value's recent trajectory into one of those bands. Each
+classify a value's recent trajectory into one of those bands (`report` adds
+one label the predicates don't have: `moving`, for a full window in which
+none of the six is true — see [The `report` builtin](#the-report-builtin)).
+Each
 predicate also has a **named form**, `converged of x` (and so on), that
 binds to a specific value rather than the last-observed one — the
 preferred form, especially in a loop condition (see
@@ -304,8 +307,15 @@ the most specific via its priority order.
     `equilibrium`).
   So `equilibrium` never fires alone — it is always accompanied by
   `converged` (low H) or `stable` (high H). A `stable` window that is *not*
-  equilibrium is one with steady directional drift (mean `|dH| > dh_zero`):
-  moving a little, but settled.
+  equilibrium is one with steady directional drift (mean `|dH| > dh_zero`)
+  **at high entropy**: moving a little, but settled.
+- **The bands are not exhaustive.** A full window with steady gray-band
+  drift at *low* entropy fires nothing: the steps are under `dh_small` so
+  `improving`/`diverging` are excluded by the #187 rule, the mean is over
+  `dh_zero` so `equilibrium`/`converged` are excluded, and `stable`'s
+  `entropy >= h_low` clause excludes it too. That state is real (a value
+  decaying toward zero is in it) and it has no predicate — `report` names
+  it `moving` (#735). Do not read "no band fired" as "at rest".
 
 This makes `report`'s priority order load-bearing: `oscillating` →
 `diverging` → `improving` → `converged` → `equilibrium` → `stable` returns
@@ -324,16 +334,37 @@ band, tested in priority order:
 5. `equilibrium`
 6. `stable`
 
+…and, when none of the six is true at a full window, the residual band:
+
+7. `moving`
+
 These all use the same windowed helpers as the predicates, so
 `report of x == "converged"` agrees with `if converged:` on the same value
-— **at a full window**. For a *partial* window (`count < N`), the
-full-window predicates (`converged`/`equilibrium`/`stable`) are all false
-by the partial-window rule, but `report` still needs to say something, so
-it falls back to an instantaneous best-effort label: `equilibrium` if the
-last `|dH| < dh_zero`, else `stable` if `|dH| < dh_small` at high entropy,
-else `stable`. This is the one place `report` can disagree with the bare
+— **at a full window**. That agreement is the contract: at a full window
+the windowed helpers are the *only* authority, so `report` either names a
+band whose bare predicate is true, or says `moving`. It never names a band
+the predicates deny. (`moving` is also the value channel's residual label,
+so both channels answer "not settled, not in any named band" the same way.)
+
+For a *partial* window (`count < N`), the full-window predicates
+(`converged`/`equilibrium`/`stable`) are all false by the partial-window
+rule, but `report` still needs to say something, so it falls back to an
+instantaneous best-effort label: `equilibrium` if the last
+`|dH| < dh_zero`, else `stable` if `|dH| < dh_small` at high entropy, else
+`stable`. This is the one place `report` can disagree with the bare
 predicates, and only while observations are still accumulating — by the
 time the window fills, the windowed helpers decide and the two agree.
+
+**#735**: that fallback used to run at *any* window fill, so a full window
+in which no band fired was still labelled from the last `dH` alone — a
+low-entropy gray-band drift (every step under `dh_small`, so not
+improving/diverging; mean over `dh_zero`, so not equilibrium/converged;
+entropy under `h_low`, so not stable) reported `equilibrium` while nothing
+had settled. A convergence loop written exactly as the settled-plus-hold
+recipe below recommends therefore exited early, at rc=0, with a plausible
+answer. The fallback is now gated on `count < N`, and the agreement
+invariant is asserted directly in `tests/test_predicate_matrix.eigs`
+rather than stated only here — which is how it survived.
 
 ## Canonical examples
 
@@ -431,9 +462,15 @@ oscillation all read `equilibrium` alike).
 ### Entropy peaks at `|value| = 1`, so a shrinking value can read `diverging`
 
 Entropy is the binary entropy of `p = 1/(1+|x|)`
-(`compute_entropy_impl`, eigenscript.c): it is **highest near `|x| = 1`**
-and falls toward 0 as `|x| → 0` or `|x| → ∞` (and is defined as exactly `0`
-at `|x| ∈ {0, 1}`). So a value decaying from a large magnitude *toward* 1
+(`compute_entropy_impl`, eigenscript.c): it is **highest at `|x| = 1`**,
+where it reaches the maximum `1.0` — the *horizon* — and falls toward 0 as
+`|x| → 0` or `|x| → ∞`. It is exactly `0` at `|x| = 0`, the home point,
+which is the formula's own limit there. (Before #412 the runtime
+special-cased `|x| == 1.0` to entropy `0`, the opposite of the formula's
+value; that special case is gone — see
+[OBSERVER.md](OBSERVER.md#settled-decisions-formerly-rough-edges). `0` and
+`1` are the two ends of the scale, not two names for the same thing.)
+So a value decaying from a large magnitude *toward* 1
 has **rising** entropy — `dH > 0` — and reads `diverging`, not `improving`,
 even though it is "getting smaller":
 

@@ -406,7 +406,7 @@ you go — but that maintenance is paid on every assignment outside
 | `when is x` | Observation age (number of assignments) | `when is loss` → `4` |
 | `where is x` | Entropy (information content) | `where is loss` → `0.832` |
 | `why is x` | dH (rate of entropy change; negative while descending into a basin = improving) | `why is loss` → `-0.27` |
-| `how is x` | Currently degenerate — returns 0 (1 only at zero entropy); see OBSERVER.md, #412 | `how is loss` → `0` |
+| `how is x` | Settledness of the last step, `1 - min(1, \|dH\| / dh_zero)` — a real gradient in `[0, 1]` since #412: `1` when the step is inside the deadband, `0` when it clears it | `how is loss` → `0` |
 
 ```eigenscript
 loss is 0.9
@@ -415,7 +415,7 @@ loss is 0.2
 
 print of (what is loss)    # 0.2
 print of (why is loss)     # negative — descending into a basin (entropy falling)
-print of (how is loss)     # 0 — how is currently degenerate (see OBSERVER.md)
+print of (how is loss)     # 0 — the last step is far outside the deadband
 print of (when is loss)    # 3 — three assignments
 ```
 
@@ -464,6 +464,23 @@ print of (where is x at 2)   # entropy as of the line-2 assign
 print of (why is x at 2)     # dH as of the line-2 assign
 ```
 
+**A line inside a loop is asked once, not per iteration.** "The last value
+bound at or before that line" is a statement about the *run*, so a line the
+loop executed four times answers with the fourth assignment — the final one,
+not the first (#736). This is where the rule stops matching intuition:
+
+```eigenscript
+total is 0
+for i in range of 4:
+    total is total + i     # line 3, runs four times
+print of (what is total at 3)   # 6 — the LAST pass (0+1+2+3), not the first
+print of (when is total at 3)   # 5 — all five assignments, seed included
+```
+
+To pin a single iteration, record it yourself (`snapshots[i] is total`);
+`at` addresses source lines, and a loop body's line has one history, not one
+per pass.
+
 All seven temporal forms support `at`. The observer-derived three
 (`where`/`why`/`how`) answer from per-assign observer snapshots that
 are captured only when the compiled program actually contains such a
@@ -473,7 +490,11 @@ assignment to the name return `null`.
 **`state_at of line`** — the whole-program version: returns a dict
 mapping every tracked binding to the value it held at or before `line`
 (names not yet assigned by then are omitted). See
-[BUILTINS.md](BUILTINS.md).
+[BUILTINS.md](BUILTINS.md). Names of the form `__name__` are reserved for
+the runtime — the observed-loop machinery binds `__loop_exit__` and
+`__loop_iterations__` there — and are filtered out of `state_at` and of
+`--step`'s bindings listing (#736). Don't use that form for your own
+variables; they would be hidden from both.
 
 `prev`, and `at` inside an interrogative, are soft keywords — outside
 these positions they parse as ordinary identifiers, so existing code

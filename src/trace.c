@@ -368,12 +368,24 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
     return 0;
 }
 
+/* #736: the observed-loop machinery injects bindings of its own
+ * (`__loop_exit__`, `__loop_iterations__` — vm.c) into the env the assignment
+ * history folds over. They are implementation detail and must not surface in
+ * a user-visible binding dump. The dunder form is the runtime's own
+ * convention for these — lint.c pre-binds the same names for E003. */
+int trace_name_is_internal(const char *n) {
+    size_t len = n ? strlen(n) : 0;
+    return (len > 4 && n[0] == '_' && n[1] == '_' &&
+            n[len - 1] == '_' && n[len - 2] == '_') ? 1 : 0;
+}
+
 Value *trace_state_at(int line) {
     Value *out = make_dict(g_prev_count > 0 ? g_prev_count : 8);
     if (!out || !g_prev_tab) return out;
     for (int i = 0; i < g_prev_cap; i++) {
         PrevEntry *e = &g_prev_tab[i];
         if (!e->name || e->hist_count == 0) continue;
+        if (trace_name_is_internal(e->name)) continue;
         int idx = find_hist_idx_at_or_before(e, line);
         if (idx < 0) continue;
         Value *v = slot_to_value(e->history[idx].value);

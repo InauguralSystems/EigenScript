@@ -647,6 +647,18 @@ const char *observer_slot_report(const ObserverSlot *s) {
     if (observer_slot_converged(s))   return "converged";
     if (observer_slot_equilibrium(s)) return "equilibrium";
     if (observer_slot_stable(s))      return "stable";
+    /* #735: the instantaneous fallback is for a PARTIAL window only. Ungated,
+     * it let a full window whose six predicates are all false still be labelled
+     * from the last dH alone — a low-entropy gray-band drift (every step under
+     * dh_small, so not improving/diverging per #187; mean over dh_zero, so not
+     * equilibrium/converged; entropy under h_low, so not stable) reported
+     * "equilibrium" while nothing was settled. PREDICATES.md guarantees report
+     * agrees with the bare predicates at a full window, so at a full window the
+     * windowed helpers are the ONLY authority: no band true means the residual
+     * band, "moving" — the same label the value channel uses for exactly this
+     * state. Reporting a still-moving value as settled is what broke the
+     * documented settled-plus-hold recipe. */
+    if (s->dh_window_count >= OBSERVER_WINDOW_N) return "moving";
     /* Partial-window best-effort label (mirrors builtin_report's tail). */
     if (fabs(s->dH) < g_obs_dh_zero) return "equilibrium";
     if (fabs(s->dH) < g_obs_dh_small && s->entropy >= g_obs_h_low) return "stable";

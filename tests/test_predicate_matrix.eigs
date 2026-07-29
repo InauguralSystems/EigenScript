@@ -187,6 +187,52 @@ assert of [tr[1] == 1, f"threshold-raised: equilibrium expected 1 got {tr[1]}"]
 print of "  PASS: threshold-raised dh_zero -> equilibrium"
 set_observer_thresholds of [0.001, 0.01, 0.1]
 
+# --- #735: FULL window, low-entropy gray-band drift -> NO band fires.
+#     Every |dH| is under dh_small (not improving/diverging, the #187 gray-band
+#     rule), the window mean is over dh_zero (not equilibrium/converged), and
+#     entropy is under h_low (not stable). `report` used to fall through to the
+#     PARTIAL-window instantaneous label and answer "equilibrium" here —
+#     declaring a value that is still moving settled, which breaks the
+#     settled-plus-hold recipe PREDICATES.md recommends. At a full window the
+#     windowed helpers are the only authority; the residual band is "moving". ---
+m is 0.9
+mi is 0
+loop while mi < 20:
+    m is m * 0.5
+    mi is mi + 1
+pm is [converged of m, stable of m, improving of m, diverging of m, oscillating of m, equilibrium of m, report of m]
+expect of ["full-window residual drift (#735)", pm, 0, 0, 0, 0, 0, 0, "moving"]
+
+# --- The full-window agreement guarantee (PREDICATES.md "The report builtin"),
+#     asserted directly instead of in prose. At a full window `report of x` must
+#     name a band whose bare predicate is TRUE, or "moving" when none is. #735
+#     survived because this invariant was documented and never checked: a report
+#     that names a band the predicates deny is the silent-wrong-answer class.
+#     Only full-window shapes qualify — a partial window is explicitly allowed to
+#     disagree (the instantaneous fallback). ---
+define agrees(tag, p) as:
+    local names is ["oscillating", "diverging", "improving", "converged", "equilibrium", "stable"]
+    local idx is [4, 3, 2, 0, 5, 1]     # each band's index in p
+    local r is p[6]
+    local ok is 0
+    local n_true is p[0] + p[1] + p[2] + p[3] + p[4] + p[5]
+    local i is 0
+    loop while i < 6:
+        if names[i] == r:
+            ok is p[idx[i]]
+        i is i + 1
+    if r == "moving":
+        if n_true == 0:
+            ok is 1
+    assert of [ok == 1, f"{tag}: report={r} is not backed by a true predicate (p={p})"]
+    print of f"  PASS: full-window agreement {tag} (report={r})"
+
+agrees of ["stable", pe]
+agrees of ["equilibrium+stable", pg]
+agrees of ["converged", pk]
+agrees of ["converged-at-boundary", ph]
+agrees of ["residual drift (#735)", pm]
+
 # --- Newton sqrt correctness (independent of predicates): pin that the math
 #     still converges across magnitudes. |result^2 - n| < 1e-6 (two-sided). ---
 define check_sqrt(n) as:

@@ -1128,6 +1128,16 @@ its own condition is false. Both kinds keep an absolute iteration cap
 plain loop can't be cut short by what its body — or a function it calls —
 happens to assign to the global observer.
 
+**`report of x`** names the most specific band true of the same entropy
+trajectory, resolving `oscillating` → `diverging` → `improving` →
+`converged` → `equilibrium` → `stable`. At a full window it agrees with the
+bare predicates by construction: it either names a band whose predicate is
+true, or — when a full window matches none of them — returns `moving`. The
+bands are not exhaustive, and `moving` is the honest answer for the gap
+(#735); only while the window is still filling may `report` fall back to an
+instantaneous label the predicates don't yet confirm. See
+[PREDICATES.md](PREDICATES.md).
+
 **The value channel** (`report_value of x`) classifies the value's own
 trajectory rather than its entropy, over a 10-sample window of relative
 steps `Δv/(1+|v|)` — labels `oscillating`, `diverging`, `converged`,

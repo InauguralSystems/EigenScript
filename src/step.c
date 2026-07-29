@@ -449,6 +449,11 @@ static void show_bindings(const Tape *t, int pos, const char *only) {
         for (int i = 0; i < t->nnames; i++) {
             const NameHist *h = &t->names[i];
             if (h->scope != sc) continue;
+            /* #736: the loop machinery's own bindings are implementation
+             * detail — keep them out of the unfiltered listing. `p
+             * __loop_exit__` still answers: an explicit request is not a
+             * leak, and the tape's binding count stays honest. */
+            if (trace_name_is_internal(h->name)) continue;
             if (!latest_at(h, pos)) continue;
             int shadowed = 0;
             for (int k = 0; k < nseen; k++)

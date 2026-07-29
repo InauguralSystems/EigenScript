@@ -947,6 +947,38 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#583 interrogatives inside expressions are not flagged" "$OUTPUT" "W019"
 rm -f "$TMPFILE"
 
+# --- #736 (W019): a bare observer query as a statement prints nothing ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 100.0
+x is 50.0
+report of x
+observe of x
+report_value of x
+trajectory of x
+print of x
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#736 W019 fires on bare 'report of x' (line 3)" "$OUTPUT" ":3: warning\[W019\]"
+check_contains "#736 W019 fires on bare 'observe of x' (line 4)" "$OUTPUT" ":4: warning\[W019\]"
+check_contains "#736 W019 fires on bare 'report_value of x' (line 5)" "$OUTPUT" ":5: warning\[W019\]"
+check_contains "#736 W019 fires on bare 'trajectory of x' (line 6)" "$OUTPUT" ":6: warning\[W019\]"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 100.0
+x is 50.0
+print of (report of x)
+s is report of x
+o is observe of x
+print of s
+print of o[0]
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#736 observer queries inside expressions are not flagged" "$OUTPUT" "W019"
+rm -f "$TMPFILE"
+
 # --- #655 (W020): an unobserved: block that provably does nothing ---
 # The positive is the shape our own README shipped for two months. The
 # negatives are what keep the rule honest: each is a block that LOOKS inert

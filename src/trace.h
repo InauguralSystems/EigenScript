@@ -151,6 +151,10 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
  * plain O(H) backward scan. */
 struct Value *trace_state_at(int line);
 
+/* #736: 1 for a runtime-internal binding name (the `__name__` form the
+ * observed-loop machinery injects) — filtered out of user-visible dumps. */
+int trace_name_is_internal(const char *name);
+
 /* Phase 3 — replay.
  *
  * When EIGS_REPLAY=<path> is set at startup, the named tape is opened

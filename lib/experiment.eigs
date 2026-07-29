@@ -15,10 +15,17 @@
 # entropy spikes reveal anomalies, trajectory classification
 # identifies behavioral regimes, and convergence detection
 # determines when measurements have stabilized.
+#
+# Each analyzer declares its `tracker` inside `unobserved:` (#735). Seeding it
+# with an OBSERVED sentinel put a synthetic `0 -> values[0]` entropy jump at
+# the head of the trajectory, which is a real step to every windowed predicate:
+# ten identical readings then carried one large dH and no band fired. The
+# sentinel is a declaration, not a measurement, so it must not be observed.
 
 # ---- track_measurements: annotate each measurement with observer state ----
 define track_measurements(values) as:
-    tracker is 0
+    unobserved:
+        tracker is 0        # seed unobserved — see the note above
     results is []
 
     for i in range of (len of values):
@@ -36,7 +43,8 @@ define track_measurements(values) as:
 
 # ---- is_measurement_stable: check if recent measurements are stable ----
 define is_measurement_stable(values, min_stable_count) as:
-    tracker is 0
+    unobserved:
+        tracker is 0        # seed unobserved — see the note above
     stable_count is 0
 
     for i in range of (len of values):
@@ -51,7 +59,8 @@ define is_measurement_stable(values, min_stable_count) as:
 
 # ---- detect_entropy_spikes: find anomalies via entropy derivative ----
 define detect_entropy_spikes(values, threshold) as:
-    tracker is 0
+    unobserved:
+        tracker is 0        # seed unobserved — see the note above
     spikes is []
 
     for i in range of (len of values):
@@ -65,7 +74,8 @@ define detect_entropy_spikes(values, threshold) as:
 
 # ---- convergence_rate: estimate how fast a sequence converges ----
 define convergence_rate(values) as:
-    tracker is 0
+    unobserved:
+        tracker is 0        # seed unobserved — see the note above
     dH_values is []
 
     for i in range of (len of values):
@@ -90,7 +100,8 @@ define convergence_rate(values) as:
 
 # ---- detect_regimes: identify behavioral phase transitions ----
 define detect_regimes(values) as:
-    tracker is 0
+    unobserved:
+        tracker is 0        # seed unobserved — see the note above
     regimes is []
     current_status is ""
     regime_start is 0
