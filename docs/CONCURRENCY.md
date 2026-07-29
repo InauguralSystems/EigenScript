@@ -49,6 +49,23 @@ unsafe pattern — unsynchronized read-modify-write on a shared list from two
 workers — is caught by the ThreadSanitizer gate below
 (`tests/tsan_seeded_race.eigs`).
 
+## Cooperative tasks are per-thread
+
+`task_spawn`/`task_yield` (#408) are a *different* model from `spawn`:
+one OS thread, round-robin, deterministic by construction. The two
+compose, and the scoping is what makes that safe — the scheduler, its
+ready queue, and the suspend request that drives it all live on
+`EigsThread`. A `task_yield` hands control to the next task **on the
+calling thread only**; a `spawn`ed worker with no tasks of its own is
+never suspended by someone else's yield.
+
+That last part was a bug until #739: the suspend request was a plain
+global polled by every `vm_run` at `CASE(CALL)`, so one thread's
+`task_yield` sent an unrelated worker into the suspend path. Having no
+scheduler, the victim saved no slice and its `vm_run` returned `null`
+mid-evaluation — a worker silently produced `null` instead of its
+result. `tests/test_tasks.eigs` now runs both models at once.
+
 ## The multithreaded performance cliff
 
 The first `spawn` in a program permanently flips the runtime into

@@ -171,6 +171,25 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A `task_yield` on one thread silently made every other thread return `null`
+  (#739 item 3).** The cooperative scheduler lives on `EigsThread` — tasks are
+  single-threaded by construction — but the suspend request that drives it was
+  a plain global, set at four sites and polled by every `vm_run` on every
+  thread at `CASE(CALL)`. So a `task_yield` on the main thread drove an
+  unrelated OS worker's next call into `vm_suspend_halt`. Having no scheduler
+  of its own, the victim's `task_save_slice(task_current_running())` was handed
+  NULL and saved nothing, and `vm_run` returned NULL mid-evaluation with its
+  frames deliberately undrained (the suspend path preserves them on purpose) —
+  so a spawned worker silently produced `null` instead of its result. Measured:
+  a worker computing 400000 returned `null` on 3 of 3 runs while main was
+  yielding, and 400000 on 3 of 3 with the identical program minus the yields.
+  The flag is now per-thread. It sits on `EigsThread` beside the `task_sched`
+  it drives rather than inside `TaskScheduler` as first sketched, so the hot
+  `CASE(CALL)` poll stays a single load off the already-hot `eigs_current`
+  with no NULL check for the (overwhelmingly common) no-scheduler thread.
+  `tests/test_tasks.eigs` covers it; the suite had no case where cooperative
+  tasks and OS threads ran at the same time.
+
 - **One `exit of N` permanently disabled `try`/`catch` for the rest of the
   process (#739 item 2).** `exit` is deliberately uncatchable: `builtin_exit`
   sets `g_exit_requested` and `CHECK_ERROR` consults it to refuse routing the

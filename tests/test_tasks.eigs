@@ -499,4 +499,31 @@ assert_eq of [task_join of _det_t3, null, "self-detached task is reaped at finis
 assert_eq of [task_detach of 0, 0, "task_detach of main is refused"]
 assert_eq of [task_detach of 99999, 0, "task_detach of an unknown id is refused"]
 
+# #739 item 3: a task_yield on THIS thread must not suspend another OS thread.
+# The suspend request used to be a plain global while the scheduler it drives
+# is per-thread, so every other thread's next CALL saw the flag and jumped to
+# vm_suspend_halt. Having no scheduler of its own, the victim saved no slice
+# and its vm_run returned NULL mid-evaluation — a spawned worker silently
+# produced `null` instead of its result, with its frames deliberately
+# undrained. Measured before the fix: null on 3 of 3 runs; 400000 after.
+# The counts are sized so main is still yielding while the workers run.
+define _susp_busy(n) as:
+    local acc is 0
+    local i is 0
+    loop while i < 400000:
+        acc is acc + (abs of (0 - 1))
+        i is i + 1
+    return acc
+
+_susp_w1 is spawn of [_susp_busy, 1]
+_susp_w2 is spawn of [_susp_busy, 2]
+_susp_m is 0
+loop while _susp_m < 100000:
+    task_yield of null
+    _susp_m is _susp_m + 1
+assert_eq of [thread_join of _susp_w1, 400000,
+              "task_yield does not suspend another OS thread (#739)"]
+assert_eq of [thread_join of _susp_w2, 400000,
+              "second worker also unaffected by a foreign suspend request"]
+
 test_summary of null

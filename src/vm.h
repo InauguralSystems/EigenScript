@@ -557,7 +557,9 @@ void task_free(Task *t);
  * above the outermost vm_execute, so C-stack depth stays flat across any
  * number of task switches. Suspension is deterministic-by-construction — no
  * tape records. */
-extern int g_task_suspend_request;   /* set by a suspending builtin; actioned at CASE(CALL) */
+/* g_task_suspend_request (set by a suspending builtin, actioned at CASE(CALL))
+ * is a per-thread bridge macro in eigenscript.h — #739: as a global it drove
+ * other threads' CALL sites into a suspend they never asked for. */
 void task_sched_on_spawn(int id);    /* enqueue a freshly spawned task, arm the scheduler */
 void task_request_yield(void);       /* current task → tail of the ready queue */
 int  task_request_join(int target);  /* current task blocks on `target`; 0 = bad target */

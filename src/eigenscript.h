@@ -725,6 +725,14 @@ struct EigsThread {
      * first task_spawn, freed at thread detach. Per-OS-thread because tasks
      * are single-threaded by construction. */
     void                *task_sched;
+    /* #739: the suspend request that drives task_sched. Per-OS-thread for the
+     * same reason the scheduler is — it was a plain global, so a task_yield on
+     * one thread drove EVERY other thread's next CALL into vm_suspend_halt:
+     * with no scheduler of its own the victim saved nothing and its vm_run
+     * silently returned NULL mid-evaluation, frames deliberately undrained.
+     * Lives here rather than inside TaskScheduler so the CASE(CALL) poll stays
+     * one load off the already-hot eigs_current, with no NULL check. */
+    int                  task_suspend_request;
     /* Registry list — set by eigs_thread_attach. */
     EigsThread *next;
 };
@@ -808,6 +816,7 @@ extern __thread EigsThread *eigs_current;
 #define g_json_depth          (eigs_current->json_depth)
 #define g_native_call_depth   (eigs_current->native_call_depth)
 #define g_task_sched          (eigs_current->task_sched)
+#define g_task_suspend_request (eigs_current->task_suspend_request)
 #define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
 #define g_iter_threshold      (eigs_current->state->jit_iter_threshold)
 #define g_osr_threshold       (eigs_current->state->jit_osr_threshold)

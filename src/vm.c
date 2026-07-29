@@ -5570,8 +5570,6 @@ static Value *vm_run(EigsChunk *chunk, Env *env) {
  * interleaving is a pure function of program order.
  * ======================================================================== */
 
-int g_task_suspend_request = 0;
-
 #define TASK_READY_MAX HANDLE_TABLE_SIZE
 
 typedef struct {
