@@ -196,10 +196,18 @@ All notable changes to EigenScript are documented here.
   validated end-to-end against a real 256 B/req heap leak planted in
   `shared_incr`, which it reports as 272 B/req with all three batches grown.
   That last check matters more than it looks: the first fault planted to
-  validate it — dropping a `val_decref` — leaked nothing measurable, because
-  `make_num` serves request-path Values from the arena and they die at arena
-  reset regardless of refcount. A gate this class depends on has to be shown
-  turning red by something that actually leaks.
+  validate it — dropping a `val_decref`, the literal #731 shape — left the gate
+  green. That is not because the fault is harmless. It leaks 72 heap bytes per
+  request (probed: `g_arena.active=0`, `new_v->arena=0`, so it is not an
+  arena-served Value), and at 20,000-request batches it shows as ~145 B/req
+  sustained and unbounded. The gate misses it because its whole decision happens
+  inside the first 7,000 requests, which for that rate is still inside the window
+  where the leak is absorbed by resident free heap the process already owns. So
+  the gate remains blind to a real leak of the exact class it is the sole
+  instrument for — tracked as #770, with exact allocator accounting
+  (`mallinfo2().uordblks`) as the proposed replacement for the RSS proxy. A gate
+  this class depends on has to be shown turning red by something that actually
+  leaks, and this one only turns red for some of them.
 
 - **Four more process-globals that contradict the multi-state contract (#739
   item 4).** Each is a resource the runtime scopes per state or per thread
