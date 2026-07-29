@@ -25,9 +25,9 @@ Step 45: value=0.06665790455522187 status=improving
 Step 50: value=0.02957646637126989 status=improving
 Step 55: value=0.013123235253910044 status=improving
 Step 60: value=0.005822849199347172 status=improving
-Step 65: value=0.0025836291236367107 status=stable
-Step 70: value=0.0011463699676873278 status=stable
-Step 75: value=0.0005086504447533207 status=equilibrium
+Step 65: value=0.0025836291236367107 status=moving
+Step 70: value=0.0011463699676873278 status=moving
+Step 75: value=0.0005086504447533207 status=moving
 Step 80: value=0.00022569090454253608 status=equilibrium
 Converged at step 84 with value 0.00011781206273935721
 

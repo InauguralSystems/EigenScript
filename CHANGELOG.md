@@ -200,7 +200,15 @@ All notable changes to EigenScript are documented here.
   `0 -> values[0]` entropy jump in the first window, and
   `is_measurement_stable` scored ten identical readings as stable only because
   the fallback overrode the resulting window. The sentinel is now seeded inside
-  `unobserved:`, so the trajectory is the data.
+  `unobserved:`, so the trajectory is the data. The cross-repo observer corpus
+  (#262) caught the consumer-visible half and is the best evidence the fix is
+  right: `dynamics`' Jacobi, Gauss-Seidel and PageRank solvers all drive
+  `status is report of change` and stop on `"equilibrium"`, so all three were
+  terminating early on the false label — Jacobi at 14 iterations and
+  `0.9999995231628418`, now 21 and `0.9999999997671694`; Gauss-Seidel 11 → 18;
+  PageRank 27 → 32. A real downstream solver was silently returning a
+  less-accurate answer. Three goldens were recaptured for that reason (the
+  other eleven programs are byte-identical).
 
 - **Observer papercuts: a discarded query was silent, `state_at` leaked a
   runtime-internal binding, and two doc rows had gone stale (#736).** Four

@@ -8,15 +8,15 @@ sqrt(0.01) = 0.1
   step 30: diverging signal=8.196620357733826
   step 40: diverging signal=3.5605172470539532
   step 50: diverging signal=1.5466475831843494
-  step 60: stable signal=0.6718458528881662
+  step 60: moving signal=0.6718458528881662
   step 70: improving signal=0.2918420815126484
   step 80: improving signal=0.12677283066568665
   step 90: improving signal=0.05506865395042193
   step 100: improving signal=0.023921187465699906
-  step 110: stable signal=0.010391087646419113
-  step 120: stable signal=0.004513768500430279
-  step 130: stable signal=0.0019607289216252324
-  step 140: equilibrium signal=0.0008517180054163542
+  step 110: moving signal=0.010391087646419113
+  step 120: moving signal=0.004513768500430279
+  step 130: moving signal=0.0019607289216252324
+  step 140: moving signal=0.0008517180054163542
 Converged at step 145 signal=0.0005613516003466767
 
 --- stable as early detection ---
@@ -30,16 +30,15 @@ Converged at step 113 value=0.00033757756092487343
   step 50: improving, value=0.023661173097015924
   step 55: improving, value=0.010498588203128042
   step 60: improving, value=0.0046582793594777405
-  step 70: stable, value=0.0009170959741498628
 Done at step 83 value=0.00011088194140174804 status=converged
 
 --- regime detection ---
 Step 1: start -> stable
 Step 3: stable -> diverging
-Step 34: diverging -> stable
-Step 38: stable -> improving
-Step 70: improving -> stable
-Step 88: stable -> equilibrium
+Step 34: diverging -> moving
+Step 38: moving -> improving
+Step 70: improving -> moving
+Step 93: moving -> equilibrium
 Step 97: equilibrium -> converged
 Total regime changes: 7
 Final loss: 0.00020596299710139924
