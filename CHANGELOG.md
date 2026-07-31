@@ -14,9 +14,11 @@ All notable changes to EigenScript are documented here.
   combined per RFC 8259; an unpaired surrogate, an escaped NUL (strings cannot
   carry 0x00 — see EMBEDDING.md), and a malformed `\u` escape (non-hex digit
   or fewer than four digits, previously accepted as garbage) now raise under
-  strict decode, while lenient callers (`json_path`, the HTTP extension) get
-  valid UTF-8 with U+FFFD per the #495 flag contract. Previously accepted
-  garbage escapes raising is an intentional strictness change, not a
+  strict decode, while lenient callers (`json_path`, the HTTP extension)
+  receive the complete document with U+FFFD in place of the one bad scalar —
+  the substitution rides a separate recoverable-error flag, so it never trips
+  the #495 propagation checks that abort a container parse. Previously
+  accepted garbage escapes raising is an intentional strictness change, not a
   regression.
 
 ## [0.34.0] - 2026-07-31

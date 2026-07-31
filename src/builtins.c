@@ -978,6 +978,24 @@ Value* eigs_json_parse_value(const char *s, int *pos);
  * because JSON parsing is per-thread and non-reentrant across threads. */
 static __thread int g_json_parse_err = 0;
 
+/* #724: recoverable-parse flag — a SECOND channel, parallel to
+ * g_json_parse_err, for conditions the parser can repair in place: an
+ * unpaired surrogate, an escaped NUL, or a malformed \u escape inside a
+ * string. Those denote one bad scalar, not a broken document, so the parser
+ * substitutes U+FFFD and keeps going. The split matters: the #495
+ * propagation checks in eigs_json_parse_array/object abort the container
+ * parse on g_json_parse_err, which is right for structural damage (there is
+ * nothing sensible past a truncation) but would silently DROP every sibling
+ * after the offending string for lenient callers (json_path, ext_http) —
+ * trading the old CESU-8-in-one-field bug for a lost-fields bug. Recoverable
+ * conditions therefore never touch g_json_parse_err: lenient callers receive
+ * the complete document with U+FFFD in the one bad string, and only
+ * builtin_json_decode reads this flag (reset on entry, alongside
+ * g_json_parse_err) to raise under strict decode. A side benefit: a strict
+ * decode that raises on a recoverable condition leaves g_json_parse_err
+ * CLEAR, so it does not poison the next lenient parse in the same thread. */
+static __thread int g_json_parse_recoverable = 0;
+
 static void eigs_json_skip_ws(const char *s, int *pos) {
     while (s[*pos] && (s[*pos] == ' ' || s[*pos] == '\t' || s[*pos] == '\n' || s[*pos] == '\r'))
         (*pos)++;
@@ -1047,7 +1065,7 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
                          * closing quote / EOF before four digits). Strict
                          * decode raises; lenient callers get U+FFFD and the
                          * offending text is parsed normally from here. */
-                        g_json_parse_err = 1;
+                        g_json_parse_recoverable = 1;
                         eigs_json_append_cp(&buf, 0xFFFD);
                         break;
                     }
@@ -1071,17 +1089,17 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
                             cp = 0x10000u + ((cp - 0xD800u) << 10) + (lo - 0xDC00u);
                             eigs_json_append_cp(&buf, cp);
                         } else {
-                            g_json_parse_err = 1;
+                            g_json_parse_recoverable = 1;
                             eigs_json_append_cp(&buf, 0xFFFD);
                         }
                     } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                         /* #724: lone low surrogate — strict raise + U+FFFD */
-                        g_json_parse_err = 1;
+                        g_json_parse_recoverable = 1;
                         eigs_json_append_cp(&buf, 0xFFFD);
                     } else if (cp == 0) {
                         /* #724: NUL cannot live in a C-terminated string
                          * (EMBEDDING.md) — strict raise + lenient U+FFFD. */
-                        g_json_parse_err = 1;
+                        g_json_parse_recoverable = 1;
                         eigs_json_append_cp(&buf, 0xFFFD);
                     } else {
                         eigs_json_append_cp(&buf, cp);
@@ -1267,10 +1285,12 @@ Value* builtin_json_decode(Value *arg) {
      * succeeding (which also made a genuine JSON `null` indistinguishable
      * from a parse failure). */
     g_json_parse_err = 0;
+    g_json_parse_recoverable = 0;   /* #724: also raise on repaired scalars */
     int pos = 0;
     Value *v = eigs_json_parse_value(arg->data.str, &pos);
     eigs_json_skip_ws(arg->data.str, &pos);
-    if (g_json_parse_err || arg->data.str[pos] != '\0') {
+    if (g_json_parse_err || g_json_parse_recoverable ||
+        arg->data.str[pos] != '\0') {
         if (v) val_decref(v);
         rt_error(EK_VALUE, 0, "json_decode: invalid JSON at position %d", pos);
         return make_null();

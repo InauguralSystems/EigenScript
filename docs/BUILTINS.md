@@ -215,7 +215,7 @@ sandbox allowlist can name them) but every call raises `value`:
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
-| `json_decode` | `json_decode of s` | Parse JSON string to value. Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise. |
+| `json_decode` | `json_decode of s` | Parse JSON string to value. Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise (strict decode — lenient callers such as `json_path` receive the complete document with U+FFFD in place of the bad scalar). |
 | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs |
 | `json_raw` | `json_raw of s` | Wrap raw JSON string (skip encoding) |
 | `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value by dot-notation path |

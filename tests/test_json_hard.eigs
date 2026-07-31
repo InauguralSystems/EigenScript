@@ -252,4 +252,33 @@ catch err_u7:
     short_hex_err is 1
 assert of [short_hex_err == 1, "JH80 short \\u escape raises"]
 
+# --- #724: lenient callers (json_path) get the COMPLETE document with ---
+# U+FFFD in the one bad string. A recoverable substitution must not abort
+# the enclosing container parse: before the two-flag split, the substituted
+# string set the structural flag and the #495 propagation checks silently
+# dropped every sibling after it (k2 below decoded to "").
+len_obj is "{\"k\": \"x\\ude00y\", \"k2\": \"v2\"}"
+assert of [json_path of [len_obj, "k2"] == "v2", "JH81 sibling after bad string survives"]
+
+len_k is json_path of [len_obj, "k"]
+assert of [len_k == "x�y", "JH82 bad string carries U+FFFD for lenient callers"]
+assert of [len of len_k == 5, "JH83 lenient value is 5 bytes"]
+assert of [ord of (char_at of [len_k, 0]) == 120, "JH84 byte 0 is 'x'"]
+assert of [ord of (char_at of [len_k, 1]) == 239, "JH85 byte 1 is 0xEF"]
+assert of [ord of (char_at of [len_k, 2]) == 191, "JH86 byte 2 is 0xBF"]
+assert of [ord of (char_at of [len_k, 3]) == 189, "JH87 byte 3 is 0xBD"]
+assert of [ord of (char_at of [len_k, 4]) == 121, "JH88 byte 4 is 'y'"]
+
+len_arr is "[\"a\\u0000b\", 42]"
+assert of [json_path of [len_arr, "1"] == "42", "JH89 array sibling after escaped NUL survives"]
+len_a0 is json_path of [len_arr, "0"]
+assert of [len_a0 == "a�b", "JH90 NUL case carries U+FFFD, no truncation"]
+assert of [len of len_a0 == 5, "JH91 NUL-case value is 5 bytes"]
+
+len_hex is "{\"k\": \"\\uzzzz\", \"k2\": \"ok\"}"
+assert of [json_path of [len_hex, "k2"] == "ok", "JH92 sibling after malformed escape survives"]
+
+len_before is "{\"k0\": \"v0\", \"k\": \"x\\ude00y\"}"
+assert of [json_path of [len_before, "k0"] == "v0", "JH93 sibling before bad string survives"]
+
 print of "json hard: all passed"
