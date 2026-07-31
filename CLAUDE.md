@@ -117,7 +117,7 @@ Always-on:
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.33.0** (2026-07-24). Unreleased work on `main`: see
+- **Latest release: v0.34.0** (2026-07-31). Unreleased work on `main`: see
   CHANGELOG.md `[Unreleased]`. Full version history: **CHANGELOG.md** (don't
   re-narrate it here — tools/doc_drift_check.sh FAILS the suite when this line
   falls behind the latest tag). Roadmap: **ROADMAP.md**.
