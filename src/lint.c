@@ -302,7 +302,15 @@ static void collect_refs(ASTNode *node, LintContext *ctx) {
         case AST_IMPORT:
             /* import names become available */
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_NULL:
+        case AST_PREDICATE:
+        case AST_BREAK:
+        case AST_CONTINUE:
             break;
     }
 }
@@ -353,7 +361,32 @@ static void collect_assigns(ASTNode *node, LintContext *ctx) {
         case AST_IMPORT:
             add_assign(ctx, node->data.import.module_name, node->line);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -387,8 +420,41 @@ static int cond_has_bare_predicate(const ASTNode *n) {
                 return 0;   /* the named form — not bare */
             return cond_has_bare_predicate(n->data.relation.left) ||
                    cond_has_bare_predicate(n->data.relation.right);
-        default: return 0;
+        /* These take the fallback the deleted `default:` supplied. Enumerated
+         * rather than covered by a `default:` so that -Werror=switch (Makefile
+         * CFLAGS) makes a new ASTType a build error here. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_ASSIGN:
+        case AST_IF:
+        case AST_LOOP:
+        case AST_FUNC:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_FOR:
+        case AST_PROGRAM:
+        case AST_INTERROGATE:
+        case AST_TRY:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
+            break;
     }
+    return 0;
 }
 
 /* Collect distinct assignment-target names directly in a loop body (and its
@@ -416,7 +482,39 @@ static void collect_loop_assign_names(ASTNode *n, const char *seen[], int cap, i
             for (int i = 0; i < n->data.block.count; i++)
                 collect_loop_assign_names(n->data.block.stmts[i], seen, cap, count);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_RELATION:
+        case AST_LOOP:
+        case AST_FUNC:
+        case AST_RETURN:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_FOR:
+        case AST_PROGRAM:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_TRY:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
+            break;
     }
 }
 
@@ -484,7 +582,36 @@ static void check_empty_blocks(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.program.count; i++)
                 check_empty_blocks(node->data.program.stmts[i], ctx);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -552,7 +679,32 @@ static void check_dup_keys(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.list.count; i++)
                 check_dup_keys(node->data.list.elems[i], ctx);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_UNARY:
+        case AST_RELATION:
+        case AST_BLOCK:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -620,7 +772,36 @@ static void check_builtin_shadow(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.program.count; i++)
                 check_builtin_shadow(node->data.program.stmts[i], ctx);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -839,7 +1020,33 @@ static void w021_collect_imports(ASTNode *n, W021Imports *im) {
             for (int i = 0; i < n->data.program.count; i++)
                 w021_collect_imports(n->data.program.stmts[i], im);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -902,7 +1109,36 @@ static void w021_walk(ASTNode *node, LintContext *ctx, const W021Imports *im,
             for (int i = 0; i < node->data.program.count; i++)
                 w021_walk(node->data.program.stmts[i], ctx, im, self_real);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -1033,7 +1269,33 @@ static void check_disc_interrog(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.program.count; i++)
                 check_disc_interrog(node->data.program.stmts[i], ctx);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -1075,7 +1337,36 @@ static void check_func_unreachable(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.program.count; i++)
                 check_func_unreachable(node->data.program.stmts[i], ctx);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -1117,7 +1408,36 @@ static void check_is_conditions(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.program.count; i++)
                 check_is_conditions(node->data.program.stmts[i], ctx);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -1181,7 +1501,38 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.program.count; i++)
                 check_unused_params(node->data.program.stmts[i], ctx);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_LOOP:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_TRY:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -1262,7 +1613,34 @@ static void w015_collect_locals(ASTNode *n, char *locals[], int *count) {
                 for (int k = 0; k < n->data.match.body_counts[c]; k++)
                     w015_collect_locals(n->data.match.bodies[c][k], locals, count);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_RELATION:
+        case AST_FUNC:
+        case AST_RETURN:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_PROGRAM:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_SLICE:
+            break;
     }
 }
 
@@ -1303,7 +1681,36 @@ static void w015_flag(ASTNode *n, char *const module[], int module_n,
         case AST_UNOBSERVED:
             for (int i = 0; i < n->data.block.count; i++) w015_flag(n->data.block.stmts[i], module, module_n, locals, locals_n, ctx);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_RELATION:
+        case AST_FUNC:
+        case AST_RETURN:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_PROGRAM:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
+            break;
     }
 }
 
@@ -1479,7 +1886,17 @@ static void w016_scan(ASTNode *n, LintContext *ctx) {
             if (n->data.interrogate.at_expr)
                 w016_scan(n->data.interrogate.at_expr, ctx);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_IMPORT:
+            break;
     }
 }
 
@@ -1626,7 +2043,18 @@ static void w017_scan(ASTNode *n, LintContext *ctx) {
             if (n->data.interrogate.at_expr)
                 w017_scan(n->data.interrogate.at_expr, ctx);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_PREDICATE:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_IMPORT:
+            break;
     }
 }
 
@@ -1696,7 +2124,31 @@ static void w020_facts(ASTNode *n, W020Facts *f) {
         case AST_FUNC:
             f->live = 1;
             return;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_IF:
+        case AST_LOOP:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_PROGRAM:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_UNOBSERVED:
+        case AST_SLICE:
+            break;
     }
     /* Structural nodes: recurse. Anything not enumerated above cannot make a
      * block live on its own, so walking children is enough. */
@@ -1732,7 +2184,35 @@ static void w020_facts(ASTNode *n, W020Facts *f) {
         case AST_RETURN:
             w020_facts(n->data.ret.expr, f);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_FUNC:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_FOR:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_TRY:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
+            break;
     }
 }
 
@@ -1778,7 +2258,36 @@ static void w020_scan(ASTNode *n, LintContext *ctx) {
             for (int i = 0; i < n->data.func.body_count; i++)
                 w020_scan(n->data.func.body[i], ctx);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_ASSIGN:
+        case AST_RELATION:
+        case AST_RETURN:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_TRY:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
+            break;
     }
 }
 
@@ -2009,7 +2518,18 @@ static void w018_scan(ASTNode *n, LintContext *ctx, W018Scope *sc) {
             if (n->data.interrogate.at_expr)
                 w018_scan(n->data.interrogate.at_expr, ctx, sc);
             break;
-        default: break;
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_PREDICATE:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_IMPORT:
+            break;
     }
 }
 
@@ -2399,7 +2919,15 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
             e003_walk(n->data.interrogate.expr, e, ctx, mode);
             e003_walk(n->data.interrogate.at_expr, e, ctx, mode);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_NULL:
+        case AST_PREDICATE:
+        case AST_BREAK:
+        case AST_CONTINUE:
             break;
     }
 }
