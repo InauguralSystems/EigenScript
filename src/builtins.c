@@ -1351,7 +1351,7 @@ Value* builtin_json_build(Value *arg) {
             if (d == (double)(int)d && d >= -1e9 && d <= 1e9)
                 strbuf_append_fmt(&out, "%d", (int)d);
             else
-                strbuf_append_fmt(&out, "%.6f", d);
+                strbuf_append_fmt(&out, "%.15g", d);
         } else if (val->type == VAL_NULL) {
             strbuf_append(&out, "null");
         } else if (val->type == VAL_JSON_RAW) {
@@ -2920,7 +2920,7 @@ Value* builtin_json_path(Value *arg) {
         if (d == (double)(int)d && fabs(d) < 1e9)
             snprintf(buf, sizeof(buf), "%d", (int)d);
         else
-            snprintf(buf, sizeof(buf), "%.6f", d);
+            snprintf(buf, sizeof(buf), "%.15g", d);
         val_decref(root);
         return make_str(buf);
     }

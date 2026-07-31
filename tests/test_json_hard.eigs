@@ -280,5 +280,15 @@ assert of [json_path of [len_hex, "k2"] == "ok", "JH92 sibling after malformed e
 
 len_before is "{\"k0\": \"v0\", \"k\": \"x\\ude00y\"}"
 assert of [json_path of [len_before, "k0"] == "v0", "JH93 sibling before bad string survives"]
+# --- #725: json_build/json_path must keep magnitude (%.15g, like json_encode) ---
+# The old %.6f destroyed tiny values ({"v": 0.000000}) and printed huge ones
+# as 22-char fixed-point blobs. json_encode already used %.15g.
+jb_tiny is json_build of ["v", 0.000000001]
+assert of [jb_tiny == "{\"v\": 1e-09}", "JH94 json_build keeps tiny magnitude"]
+rt_enc is json_encode of {"k": 0.000000001}
+assert of [rt_enc == "{\"k\":1e-09}", "JH95 json_encode writes tiny magnitude"]
+assert of [json_path of [rt_enc, "k"] == "1e-09", "JH96 json_path round-trips what json_encode wrote"]
+jb_huge is json_build of ["v", 1.23e15]
+assert of [jb_huge == "{\"v\": 1.23e+15}", "JH97 json_build renders huge values compactly"]
 
 print of "json hard: all passed"
