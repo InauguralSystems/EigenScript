@@ -524,7 +524,23 @@ static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int dep
         case AST_DOT:
             walk_ast_symbols(node->data.dot.target, symbols, count, depth);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_LISTCOMP:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_LAMBDA:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
@@ -644,7 +660,20 @@ static void collect_references(ASTNode *node, const char *name, Location *locs, 
             collect_references(node->data.index_assign.index, name, locs, count, max);
             collect_references(node->data.index_assign.expr, name, locs, count, max);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_IMPORT:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
             break;
     }
 }
