@@ -2,6 +2,31 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **`-Werror=switch` was paid for in `CFLAGS` and then opted out of at almost
+  every `ASTType` switch, so adding a node type was a silent no-op (#738).**
+  `Makefile:9` puts `-Werror=switch` in `CFLAGS`, but a `switch` carrying a
+  `default:` arm is exhaustive by definition and `-Wswitch` has nothing to say
+  about it. Measured at v0.34.0: of the **37** switches over `ASTType`, **36**
+  ended in a `default:` and only `parser.c`'s `copy_ast` was exhaustive without
+  one — so a 34th enumerator produced exactly **one** build error, while the
+  compile dispatch, all 22 linter walkers and both LSP walkers skipped the new
+  node without a word. Those `default:` arms are gone and the **617**
+  enumerators they silently absorbed are written out, in enum-declaration order
+  so they diff against the enum by eye, across `src/lint.c`, `src/compiler.c`,
+  `src/parser.c` and `src/eigenlsp.c`. Adding an `ASTType` now fails the build
+  at all **37** sites — 35 in the default `make` build plus the two `eigenlsp.c`
+  walkers under `make lsp` — each naming the file and line that has not been
+  taught about it. Strictly mechanical: every grouped arm does exactly what the
+  `default:` it replaced did, so no emitted opcode, no lint W-code and no LSP
+  answer moves and the suite output is byte-identical. One caveat worth knowing:
+  `build.sh`, which CI's primary Linux and macOS legs use, has its own flag list
+  and does **not** carry `-Werror=switch`, so the gate bites in the `make` legs
+  (`full`/`http`/`zlib`/`gfx`/`lsp`) rather than everywhere.
+
 ## [0.34.0] - 2026-07-31
 
 ### Security
