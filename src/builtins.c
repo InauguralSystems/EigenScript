@@ -983,6 +983,48 @@ static void eigs_json_skip_ws(const char *s, int *pos) {
         (*pos)++;
 }
 
+/* #724: encode one Unicode scalar as UTF-8 (1–4 bytes). Never called with
+ * cp == 0 (strings are C-terminated and cannot carry NUL — EMBEDDING.md)
+ * or with a surrogate-range cp (those are rejected by the caller). */
+static void eigs_json_append_cp(strbuf *buf, unsigned int cp) {
+    if (cp < 0x80) {
+        strbuf_append_char(buf, (char)cp);
+    } else if (cp < 0x800) {
+        strbuf_append_char(buf, (char)(0xC0 | (cp >> 6)));
+        strbuf_append_char(buf, (char)(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        strbuf_append_char(buf, (char)(0xE0 | (cp >> 12)));
+        strbuf_append_char(buf, (char)(0x80 | ((cp >> 6) & 0x3F)));
+        strbuf_append_char(buf, (char)(0x80 | (cp & 0x3F)));
+    } else {
+        strbuf_append_char(buf, (char)(0xF0 | (cp >> 18)));
+        strbuf_append_char(buf, (char)(0x80 | ((cp >> 12) & 0x3F)));
+        strbuf_append_char(buf, (char)(0x80 | ((cp >> 6) & 0x3F)));
+        strbuf_append_char(buf, (char)(0x80 | (cp & 0x3F)));
+    }
+}
+
+/* #724: read exactly four hex digits at s[*pos+1 .. *pos+4] (RFC 8259 §7).
+ * On success *pos advances to the fourth digit, the scalar is returned via
+ * *out, and the return is 1. On any non-hex digit — including the closing
+ * quote or EOF arriving early — *pos is left unchanged and the return is 0.
+ * Validating before converting matters: strtoul turns "zzzz" into 0,
+ * indistinguishable from a real \u0000 escape, and the old read loop even
+ * consumed the closing quote into the hex buffer on a short escape. */
+static int eigs_json_read_hex4(const char *s, int *pos, unsigned int *out) {
+    unsigned int cp = 0;
+    for (int i = 1; i <= 4; i++) {
+        char c = s[*pos + i];
+        if (c >= '0' && c <= '9') cp = (cp << 4) | (unsigned int)(c - '0');
+        else if (c >= 'a' && c <= 'f') cp = (cp << 4) | (unsigned int)(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') cp = (cp << 4) | (unsigned int)(c - 'A' + 10);
+        else return 0;
+    }
+    *pos += 4;
+    *out = cp;
+    return 1;
+}
+
 static Value* eigs_json_parse_string(const char *s, int *pos) {
     if (s[*pos] != '"') { g_json_parse_err = 1; return NULL; }   /* #495 */
     (*pos)++;
@@ -999,22 +1041,50 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
                 case 't': strbuf_append_char(&buf, '\t'); break;
                 case '/': strbuf_append_char(&buf, '/'); break;
                 case 'u': {
-                    char hex[5] = {0};
-                    for (int hi = 0; hi < 4; hi++) {
-                        (*pos)++;
-                        if (!s[*pos]) break;
-                        hex[hi] = s[*pos];
+                    unsigned int cp;
+                    if (!eigs_json_read_hex4(s, pos, &cp)) {
+                        /* #724: malformed escape (non-hex digit, or the
+                         * closing quote / EOF before four digits). Strict
+                         * decode raises; lenient callers get U+FFFD and the
+                         * offending text is parsed normally from here. */
+                        g_json_parse_err = 1;
+                        eigs_json_append_cp(&buf, 0xFFFD);
+                        break;
                     }
-                    unsigned int cp = (unsigned int)strtoul(hex, NULL, 16);
-                    if (cp < 0x80) {
-                        strbuf_append_char(&buf, (char)cp);
-                    } else if (cp < 0x800) {
-                        strbuf_append_char(&buf, (char)(0xC0 | (cp >> 6)));
-                        strbuf_append_char(&buf, (char)(0x80 | (cp & 0x3F)));
+                    if (cp >= 0xD800 && cp <= 0xDBFF) {
+                        /* #724: high surrogate — combine with an immediately
+                         * following \uDC00-\uDFFF low-surrogate escape into one
+                         * astral scalar (RFC 8259 / Unicode). Otherwise the
+                         * surrogate is unpaired: strict raise + lenient
+                         * U+FFFD, and the next escape/char parses normally. */
+                        unsigned int lo = 0;
+                        int paired = 0;
+                        if (s[*pos + 1] == '\\' && s[*pos + 2] == 'u') {
+                            int p2 = *pos + 2;
+                            if (eigs_json_read_hex4(s, &p2, &lo) &&
+                                lo >= 0xDC00 && lo <= 0xDFFF) {
+                                *pos = p2;
+                                paired = 1;
+                            }
+                        }
+                        if (paired) {
+                            cp = 0x10000u + ((cp - 0xD800u) << 10) + (lo - 0xDC00u);
+                            eigs_json_append_cp(&buf, cp);
+                        } else {
+                            g_json_parse_err = 1;
+                            eigs_json_append_cp(&buf, 0xFFFD);
+                        }
+                    } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                        /* #724: lone low surrogate — strict raise + U+FFFD */
+                        g_json_parse_err = 1;
+                        eigs_json_append_cp(&buf, 0xFFFD);
+                    } else if (cp == 0) {
+                        /* #724: NUL cannot live in a C-terminated string
+                         * (EMBEDDING.md) — strict raise + lenient U+FFFD. */
+                        g_json_parse_err = 1;
+                        eigs_json_append_cp(&buf, 0xFFFD);
                     } else {
-                        strbuf_append_char(&buf, (char)(0xE0 | (cp >> 12)));
-                        strbuf_append_char(&buf, (char)(0x80 | ((cp >> 6) & 0x3F)));
-                        strbuf_append_char(&buf, (char)(0x80 | (cp & 0x3F)));
+                        eigs_json_append_cp(&buf, cp);
                     }
                     break;
                 }
