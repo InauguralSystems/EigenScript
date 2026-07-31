@@ -441,7 +441,7 @@ typedef struct {
     /* Saved loop-stall globals (so a callee's loops don't inherit caller's
      * accumulated stall count / iteration count). Scoped per call frame. */
     int        saved_stall_count;
-    int        saved_loop_iter;
+    long long  saved_loop_iter;   /* #772: matches EigsState.loop_iterations */
     int        call_argc;        /* args actually passed to this call; <= chunk->param_count.
                                   * Used by OP_DEFAULT_PARAM to decide if a slot was bound
                                   * by the caller or needs its default expression run. */

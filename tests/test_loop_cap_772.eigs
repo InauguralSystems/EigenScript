@@ -1,0 +1,16 @@
+# EigenScript #772 regression: ordinary execution must never truncate a loop.
+# Pre-fix, an unconditional 100,000,000-iteration default cap (the sandbox
+# arm's fallback) silently broke the running loop every 1e8 cumulative
+# in-frame iterations — wrong results with exit 0. Found by polymethod's
+# brute-force differential oracle (4 corrupted outputs in 524,288 at n=19).
+# This loop crosses the old boundary; the armed sandbox cap keeps its own
+# coverage in test_vm_run_bytecode.eigs.
+i is 0
+unobserved:
+    loop while i < 105000000:
+        i is i + 1
+if i == 105000000:
+    print of "cap772: loop crossed 1e8 uncapped PASS"
+else:
+    print of f"cap772 FAIL: loop stopped at {i}"
+    exit of 1

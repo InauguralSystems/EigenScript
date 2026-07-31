@@ -2284,6 +2284,12 @@ else
 fi
 echo ""
 
+echo "[124] Uncapped Plain Loops Past 1e8 (#772)"
+# Pre-#772 the sandbox cap's 100M default arm fired outside any sandbox and
+# silently broke the running loop (exit 0, wrong results). ~8s release.
+check_eigs_suite "plain loop crosses the old 1e8 default cap uncapped" "test_loop_cap_772.eigs" "cap772: loop crossed 1e8 uncapped PASS" 1
+echo ""
+
 # [55] Concurrency: spawn/join/channel
 echo "[55] Concurrency (6 checks)"
 CC_OUTPUT=$(./eigenscript ../tests/test_concurrent.eigs 2>&1)
