@@ -2954,10 +2954,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         break;
     }
 
-    default:
-        fprintf(stderr, "compiler: unhandled AST type %d at line %d\n", node->type, node->line);
-        emit(c, OP_NULL, node->line);
-        break;
+    /* No `default:` on purpose: every ASTType is handled above, so the arm
+     * could only ever run for an out-of-range value, while its presence
+     * disabled -Wswitch for the main compile dispatch — the one switch where
+     * a silently uncompiled new node type is most expensive. */
     }
 }
 
