@@ -9,6 +9,11 @@ ri is random_int of [5, 10]
 assert of [ri >= 5, "RI1 random_int >= lo"]
 assert of [ri <= 10, "RI2 random_int <= hi"]
 
+# #725: span exactly 2^31 is the widest range lrand48 can serve — must NOT raise
+ri_max is random_int of [0, 2147483647]
+assert of [ri_max >= 0, "RI3 random_int boundary span >= lo"]
+assert of [ri_max <= 2147483647, "RI4 random_int boundary span <= hi"]
+
 seed_random of 99
 a is random of null
 seed_random of 99

@@ -321,5 +321,17 @@ catch e:
     eval_trunc_k is e.kind
 assert_true of [eval_trunc == 1 and eval_trunc_k == "parse", "eval of a truncated expression raises parse"]
 
+# ---- #725 random_int: a range span over 2^31 raises value ----
+# (was signed int overflow in the span arithmetic — UBSan halt in CI;
+# lrand48 supplies only 31 bits, so wider spans cannot be served unbiased)
+ri_wide is 0
+ri_wide_k is ""
+try:
+    ig is random_int of [-2000000000, 2000000000]
+catch e:
+    ri_wide is 1
+    ri_wide_k is e.kind
+assert_true of [ri_wide == 1 and ri_wide_k == "value", "random_int range span over 2^31 raises value"]
+
 print of "ALL_RAISE_TESTS_DONE"
 test_summary of null

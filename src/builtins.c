@@ -2132,10 +2132,33 @@ Value* builtin_random_int(Value *arg) {
     if (!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM)
         TRACE_NONDET_RET("random_int", make_num(0));
     ensure_random_seeded();
-    int lo_i = (int)lo->data.num;
-    int hi_i = (int)hi->data.num;
+    /* Range-check as doubles before any integer cast — a double outside the
+     * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
+     * same cast-before-range-check class in value_to_string). */
+    double lo_d = lo->data.num;
+    double hi_d = hi->data.num;
+    if (!isfinite(lo_d) || !isfinite(hi_d) ||
+        lo_d < -9223372036854775808.0 || hi_d < -9223372036854775808.0 ||
+        lo_d >= 9223372036854775808.0 || hi_d >= 9223372036854775808.0) {
+        rt_error(EK_VALUE, 0,
+                 "random_int: bounds must be finite and within int64 range");
+        return make_null();
+    }
+    int64_t lo_i = (int64_t)lo_d;
+    int64_t hi_i = (int64_t)hi_d;
     if (hi_i < lo_i) TRACE_NONDET_RET("random_int", make_num(lo_i));
-    TRACE_NONDET_RET("random_int", make_num(lo_i + (lrand48() % (hi_i - lo_i + 1))));
+    /* Span in uint64_t: a wide-but-legal int64 range (e.g. INT64_MIN..0) would
+     * overflow a signed int64 subtraction before the rejection below. Cannot
+     * wrap uint64: the double guard above keeps hi_d < 2^63, and the largest
+     * double below 2^63 is 2^63 - 1024, so hi_i - lo_i + 1 <= 2^64 - 1023. */
+    uint64_t span = (uint64_t)hi_i - (uint64_t)lo_i + 1;
+    if (span > (uint64_t)INT32_MAX + 1) {
+        rt_error(EK_VALUE, 0,
+                 "random_int: range span %llu exceeds 2^31 (lrand48 supplies 31 bits)",
+                 (unsigned long long)span);
+        return make_null();
+    }
+    TRACE_NONDET_RET("random_int", make_num(lo_i + (lrand48() % (int64_t)span)));
 }
 
 /* seed_random of n → seeds the RNG, returns 1 */
