@@ -2,6 +2,25 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **`json_decode` mangled escaped astral characters and silently truncated at
+  an escaped NUL (#724).** Every `\uXXXX` escape was UTF-8-encoded on its own,
+  so a surrogate pair came out as 6-byte CESU-8 (invalid UTF-8) instead of one
+  4-byte scalar — and `\u0000` appended a 0x00 byte into a C-terminated
+  string, dropping the rest of it with no error. Surrogate pairs are now
+  combined per RFC 8259; an unpaired surrogate, an escaped NUL (strings cannot
+  carry 0x00 — see EMBEDDING.md), and a malformed `\u` escape (non-hex digit
+  or fewer than four digits, previously accepted as garbage) now raise under
+  strict decode, while lenient callers (`json_path`, the HTTP extension)
+  receive the complete document with U+FFFD in place of the one bad scalar —
+  the substitution rides a separate recoverable-error flag, so it never trips
+  the #495 propagation checks that abort a container parse. Previously
+  accepted garbage escapes raising is an intentional strictness change, not a
+  regression.
+
 ## [0.34.0] - 2026-07-31
 
 ### Security

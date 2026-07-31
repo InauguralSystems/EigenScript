@@ -58,6 +58,35 @@ assert of [esc2.lt == "<", "JH23 \\u003c is less-than"]
 esc3 is json_decode of "{\"q\": \"\\u0022\"}"
 assert of [esc3.q == "\"", "JH24 \\u0022 is double quote"]
 
+# --- #724: surrogate pairs combine into one astral code point ---
+# Before the fix each half was UTF-8-encoded independently, yielding 6-byte
+# CESU-8 (ED A0 BD ED B8 80) — invalid UTF-8. Correct: F0 9F 98 80 (U+1F600).
+pair is json_decode of "\"\\ud83d\\ude00\""
+assert of [pair == "😀", "JH58 surrogate pair combines to U+1F600"]
+assert of [len of pair == 4, "JH59 pair is 4 UTF-8 bytes, not 6-byte CESU-8"]
+assert of [ord of (char_at of [pair, 0]) == 240, "JH60 pair byte 0 is 0xF0"]
+assert of [ord of (char_at of [pair, 1]) == 159, "JH61 pair byte 1 is 0x9F"]
+assert of [ord of (char_at of [pair, 2]) == 152, "JH62 pair byte 2 is 0x98"]
+assert of [ord of (char_at of [pair, 3]) == 128, "JH63 pair byte 3 is 0x80"]
+
+pair_mid is json_decode of "\"a\\ud83d\\ude00b\""
+assert of [pair_mid == "a😀b", "JH64 pair mid-string keeps neighbors"]
+assert of [len of pair_mid == 6, "JH65 pair mid-string length"]
+assert of [ord of (char_at of [pair_mid, 0]) == 97, "JH66 leading 'a' intact"]
+assert of [ord of (char_at of [pair_mid, 5]) == 98, "JH67 trailing 'b' intact"]
+
+# BMP 3-byte escape must stay exact (guard against over-correction).
+bmp3 is json_decode of "\"\\u4e2d\""
+assert of [len of bmp3 == 3, "JH68 BMP escape is 3 UTF-8 bytes"]
+assert of [ord of (char_at of [bmp3, 0]) == 228, "JH69 BMP byte 0 is 0xE4"]
+assert of [ord of (char_at of [bmp3, 1]) == 184, "JH70 BMP byte 1 is 0xB8"]
+assert of [ord of (char_at of [bmp3, 2]) == 173, "JH71 BMP byte 2 is 0xAD"]
+
+# Literal (unescaped) astral character still round-trips.
+lit_astral is json_decode of "\"😀\""
+assert of [lit_astral == "😀", "JH72 literal astral char round-trips"]
+assert of [len of lit_astral == 4, "JH73 literal astral is 4 bytes"]
+
 # --- json_path must work with dict-based decode ---
 path_json is "{\"user\": {\"name\": \"bob\", \"score\": 99}}"
 assert of [json_path of [path_json, "user.name"] == "bob", "JH25 json_path through nested dicts"]
@@ -168,5 +197,88 @@ pad50 is json_decode of "[1.0000000000000000000000000000000000000000000000000000
 assert of [pad50[0] == 1e50, "JH56 zero-padded 1e50 is not truncated to 1"]
 big69 is json_decode of "[1000000000000000000000000000000000000000000000000000000000000000000000]"
 assert of [big69[0] == 1e69, "JH57 70-digit integer is not truncated to 1e62"]
+
+# --- #724: unpaired surrogates raise under strict decode ---
+lone_low_err is 0
+try:
+    u1 is json_decode of "\"\\ude00\""
+catch err_u1:
+    lone_low_err is 1
+assert of [lone_low_err == 1, "JH74 lone low surrogate raises"]
+
+high_end_err is 0
+try:
+    u2 is json_decode of "\"\\ud83d\""
+catch err_u2:
+    high_end_err is 1
+assert of [high_end_err == 1, "JH75 high surrogate at end of string raises"]
+
+high_char_err is 0
+try:
+    u3 is json_decode of "\"\\ud83dx\""
+catch err_u3:
+    high_char_err is 1
+assert of [high_char_err == 1, "JH76 high surrogate + non-escape char raises"]
+
+high_nonlow_err is 0
+try:
+    u4 is json_decode of "\"\\ud83d\\u0041\""
+catch err_u4:
+    high_nonlow_err is 1
+assert of [high_nonlow_err == 1, "JH77 high surrogate + non-low escape raises"]
+
+# --- #724: an escaped NUL code point raises ---
+# Strings are C-terminated (EMBEDDING.md) and cannot carry a 0x00 byte;
+# before the fix this silently truncated the decoded string.
+nul_err is 0
+try:
+    u5 is json_decode of "\"a\\u0000b\""
+catch err_u5:
+    nul_err is 1
+assert of [nul_err == 1, "JH78 escaped NUL raises instead of truncating"]
+
+# --- #724: malformed \\u escapes raise (exactly four hex digits, RFC 8259) ---
+garbage_hex_err is 0
+try:
+    u6 is json_decode of "\"\\uzzzz\""
+catch err_u6:
+    garbage_hex_err is 1
+assert of [garbage_hex_err == 1, "JH79 non-hex \\u digits raise"]
+
+short_hex_err is 0
+try:
+    u7 is json_decode of "\"\\u12\""
+catch err_u7:
+    short_hex_err is 1
+assert of [short_hex_err == 1, "JH80 short \\u escape raises"]
+
+# --- #724: lenient callers (json_path) get the COMPLETE document with ---
+# U+FFFD in the one bad string. A recoverable substitution must not abort
+# the enclosing container parse: before the two-flag split, the substituted
+# string set the structural flag and the #495 propagation checks silently
+# dropped every sibling after it (k2 below decoded to "").
+len_obj is "{\"k\": \"x\\ude00y\", \"k2\": \"v2\"}"
+assert of [json_path of [len_obj, "k2"] == "v2", "JH81 sibling after bad string survives"]
+
+len_k is json_path of [len_obj, "k"]
+assert of [len_k == "x�y", "JH82 bad string carries U+FFFD for lenient callers"]
+assert of [len of len_k == 5, "JH83 lenient value is 5 bytes"]
+assert of [ord of (char_at of [len_k, 0]) == 120, "JH84 byte 0 is 'x'"]
+assert of [ord of (char_at of [len_k, 1]) == 239, "JH85 byte 1 is 0xEF"]
+assert of [ord of (char_at of [len_k, 2]) == 191, "JH86 byte 2 is 0xBF"]
+assert of [ord of (char_at of [len_k, 3]) == 189, "JH87 byte 3 is 0xBD"]
+assert of [ord of (char_at of [len_k, 4]) == 121, "JH88 byte 4 is 'y'"]
+
+len_arr is "[\"a\\u0000b\", 42]"
+assert of [json_path of [len_arr, "1"] == "42", "JH89 array sibling after escaped NUL survives"]
+len_a0 is json_path of [len_arr, "0"]
+assert of [len_a0 == "a�b", "JH90 NUL case carries U+FFFD, no truncation"]
+assert of [len of len_a0 == 5, "JH91 NUL-case value is 5 bytes"]
+
+len_hex is "{\"k\": \"\\uzzzz\", \"k2\": \"ok\"}"
+assert of [json_path of [len_hex, "k2"] == "ok", "JH92 sibling after malformed escape survives"]
+
+len_before is "{\"k0\": \"v0\", \"k\": \"x\\ude00y\"}"
+assert of [json_path of [len_before, "k0"] == "v0", "JH93 sibling before bad string survives"]
 
 print of "json hard: all passed"
