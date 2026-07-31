@@ -2,7 +2,7 @@
 
 All notable changes to EigenScript are documented here.
 
-## [Unreleased]
+## [0.34.0] - 2026-07-31
 
 ### Security
 
