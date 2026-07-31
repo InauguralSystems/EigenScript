@@ -341,8 +341,14 @@ void free_ast(ASTNode *node) {
         case AST_IMPORT:
             free(node->data.import.module_name);
             break;
-        default:
-            /* AST_NUM, AST_NULL, AST_PREDICATE, AST_BREAK, AST_CONTINUE — no owned memory */
+        /* No owned memory. Enumerated rather than covered by a `default:` so
+         * that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silently leaked child. */
+        case AST_NUM:
+        case AST_NULL:
+        case AST_PREDICATE:
+        case AST_BREAK:
+        case AST_CONTINUE:
             break;
     }
     free(node);
