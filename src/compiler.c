@@ -672,7 +672,16 @@ static void collect_referenced_names_skip(ASTNode *node, ASTNode *skip, NameSet 
         for (int i = 0; i < node->data.program.count; i++)
             collect_referenced_names_skip(node->data.program.stmts[i], skip, out);
         break;
-    default:
+    /* Nothing to do for these. Enumerated rather than covered by a `default:`
+     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+     * error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_NULL:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_IMPORT:
         break;
     }
 }
@@ -805,7 +814,15 @@ static void collect_referenced_names(ASTNode *node, NameSet *out) {
         for (int i = 0; i < node->data.program.count; i++)
             collect_referenced_names(node->data.program.stmts[i], out);
         break;
-    default:
+    /* Nothing to do for these. Enumerated rather than covered by a `default:`
+     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+     * error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_NULL:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_IMPORT:
         break;
     }
 }
@@ -936,7 +953,19 @@ static void scan_for_captures(ASTNode *node, NameSet *out) {
         scan_for_captures(node->data.slice.start, out);
         scan_for_captures(node->data.slice.end, out);
         break;
-    default:
+    /* Nothing to do for these. Enumerated rather than covered by a `default:`
+     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+     * error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL:
+    case AST_PROGRAM:
+    case AST_INTERROGATE:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_IMPORT:
         break;
     }
 }
@@ -1030,7 +1059,18 @@ static int ast_has_closure(ASTNode *node) {
     case AST_INTERROGATE:
         ANY(node->data.interrogate.expr); ANY(node->data.interrogate.at_expr);
         break;
-    default:
+    /* Nothing to do for these. Enumerated rather than covered by a `default:`
+     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+     * error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL:
+    case AST_PROGRAM:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_IMPORT:
         break;
     }
 #undef ANY
@@ -1102,7 +1142,10 @@ static int subtree_overwrite_safe(ASTNode *n, NameSet *bound, Env *env) {
     case AST_IDENT: case AST_NUM: case AST_STR: case AST_NULL:
     case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE:
         break;
-    default:
+    /* These take the fallback the deleted `default:` supplied. Enumerated
+     * rather than covered by a `default:` so that -Werror=switch (Makefile
+     * CFLAGS) makes a new ASTType a build error here. */
+    case AST_PROGRAM:
         return 0;
     }
 #undef SAFE
@@ -1258,7 +1301,21 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
         scan_for_interrogated(node->data.slice.start, out);
         scan_for_interrogated(node->data.slice.end, out);
         break;
-    default:
+    /* Nothing to do for these. Enumerated rather than covered by a `default:`
+     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+     * error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL:
+    case AST_FUNC:
+    case AST_LISTCOMP:
+    case AST_PROGRAM:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_IMPORT:
+    case AST_LAMBDA:
         break;
     }
 }
@@ -1367,7 +1424,21 @@ static void scan_for_env_bound(ASTNode *node, NameSet *out) {
         scan_for_env_bound(node->data.slice.start, out);
         scan_for_env_bound(node->data.slice.end, out);
         break;
-    default:
+    /* Nothing to do for these. Enumerated rather than covered by a `default:`
+     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+     * error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL:
+    case AST_FUNC:
+    case AST_PROGRAM:
+    case AST_INTERROGATE:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_IMPORT:
+    case AST_LAMBDA:
         break;
     }
 }
@@ -1420,7 +1491,31 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
     case AST_PROGRAM:
         collect_module_names_block(node->data.program.stmts, node->data.program.count, out);
         break;
-    default:
+    /* Nothing to do for these. Enumerated rather than covered by a `default:`
+     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+     * error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL:
+    case AST_BINOP:
+    case AST_UNARY:
+    case AST_RELATION:
+    case AST_RETURN:
+    case AST_LIST:
+    case AST_INDEX:
+    case AST_LISTCOMP:
+    case AST_INTERROGATE:
+    case AST_PREDICATE:
+    case AST_DICT:
+    case AST_DOT:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_DOT_ASSIGN:
+    case AST_IMPORT:
+    case AST_LAMBDA:
+    case AST_INDEX_ASSIGN:
+    case AST_SLICE:
         break;
     }
 }
@@ -1534,9 +1629,18 @@ static int scan_dispatch_rebind(ASTNode *n) {
         return scan_dispatch_rebind(n->data.slice.target) ||
                scan_dispatch_rebind(n->data.slice.start) ||
                scan_dispatch_rebind(n->data.slice.end);
-    default: /* NUM, STR, NULL, PREDICATE, BREAK, CONTINUE */
-        return 0;
+    /* These take the fallback the deleted `default:` supplied. Enumerated
+     * rather than covered by a `default:` so that -Werror=switch (Makefile
+     * CFLAGS) makes a new ASTType a build error here. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_NULL:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+        break;
     }
+    return 0;
 }
 static int scan_dispatch_rebind_block(ASTNode **stmts, int count) {
     for (int i = 0; i < count; i++)
@@ -1694,8 +1798,41 @@ static int cond_is_observer_based(const ASTNode *n) {
             }
             return cond_is_observer_based(n->data.relation.left) ||
                    cond_is_observer_based(n->data.relation.right);
-        default:           return 0;
+        /* These take the fallback the deleted `default:` supplied. Enumerated
+         * rather than covered by a `default:` so that -Werror=switch (Makefile
+         * CFLAGS) makes a new ASTType a build error here. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_ASSIGN:
+        case AST_IF:
+        case AST_LOOP:
+        case AST_FUNC:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_LISTCOMP:
+        case AST_FOR:
+        case AST_PROGRAM:
+        case AST_INTERROGATE:
+        case AST_TRY:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_IMPORT:
+        case AST_MATCH:
+        case AST_LAMBDA:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN:
+        case AST_SLICE:
+            break;
     }
+    return 0;
 }
 
 static void compile_node(Compiler *c, ASTNode *node) {
