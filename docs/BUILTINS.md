@@ -349,7 +349,7 @@ producing tensors too large to materialise in memory.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `random` | `random of null` | Random float in [0, 1) |
-| `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive |
+| `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive; raises on non-finite or out-of-int64 bounds and on a span over 2^31 |
 | `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences |
 
 ## Time

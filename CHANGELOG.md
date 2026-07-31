@@ -44,6 +44,23 @@ All notable changes to EigenScript are documented here.
   accepted garbage escapes raising is an intentional strictness change, not a
   regression.
 
+- **`random_int` returned a wrapped garbage value for bounds it could not
+  serve, and `json_build`/`json_path` printed floats with `%.6f` (#725).**
+  The bounds went straight through an `int` cast, so a non-finite or
+  out-of-int64 bound was undefined behaviour at the cast itself, and any span
+  wider than the 31 bits `lrand48` supplies was silently wrapped by the
+  modulo. `random_int` now range-checks the bounds as doubles before any
+  integer cast and raises a catchable `EK_VALUE` error on a non-finite or
+  out-of-int64 bound and on a span over 2^31 — a span of exactly 2^31 stays
+  legal, since `lrand48` yields exactly 31 bits — and the span is computed in
+  `uint64_t` so a wide-but-legal int64 range (e.g. `INT64_MIN..0`) cannot
+  overflow the check itself. In the same PR, `json_build` and `json_path`
+  now print non-integral floats with `%.15g`, unifying them with
+  `json_encode`: `%.6f` flattened tiny magnitudes to `0.000000` and rendered
+  huge ones as 22-character fixed-point blobs. The raise is an intentional
+  strictness change, not a regression — a caller that depended on the
+  wrapped value was already wrong.
+
 ## [0.34.0] - 2026-07-31
 
 ### Security
