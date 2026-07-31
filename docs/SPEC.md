@@ -1123,10 +1123,11 @@ observer convergence (a settled, high-entropy value for ~100 iterations)
 predicate, as in `loop while not converged`. A plain loop whose
 condition is an ordinary expression (`loop while i < n`,
 `loop while not done`) is **never** halted by the observer; it runs until
-its own condition is false. Both kinds keep an absolute iteration cap
-(the runaway-loop guard). This keeps loop termination compositional: a
-plain loop can't be cut short by what its body — or a function it calls —
-happens to assign to the global observer.
+its own condition is false. An absolute iteration cap exists only under an
+explicitly armed sandbox budget (`sandbox_run`'s `max_iter`); ordinary
+execution never truncates a loop. This keeps loop termination
+compositional: a plain loop can't be cut short by what its body — or a
+function it calls — happens to assign to the global observer.
 
 **`report of x`** names the most specific band true of the same entropy
 trajectory, resolving `oscillating` → `diverging` → `improving` →

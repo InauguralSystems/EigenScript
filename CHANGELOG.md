@@ -171,6 +171,28 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Every loop was silently broken at 100,000,000 cumulative in-frame
+  iterations — wrong results with exit 0 (#772).** The sandbox iteration
+  cap's default arm (`g_sandbox_loop_max ? … : 100000000`, in the
+  stall-check/cap-check helpers and both VM opcode bodies) fired with no
+  sandbox configured: on crossing 1e8 the running loop exited early with
+  only `__loop_exit__ = "limit"` as a trace, the counter reset, and
+  execution continued. Any program past 1e8 iterations computed
+  "program + periodic loop truncation" — the overnight EigenMiniSat runs
+  (~1e11 iterations) contained on the order of a thousand silent early
+  exits each. Found on polymethod's first day by its full-vector
+  brute-force differential (4 corrupted outputs in 524,288 at n=19;
+  corrupted indices in the arithmetic progression the cap predicts;
+  minimal repro: a loop to 1.5e8 stopped at exactly 1e8). The cap now
+  fires **only** when a sandbox budget is explicitly armed
+  (`sandbox_run`'s `max_iter`, unchanged and still covered by
+  `test_vm_run_bytecode.eigs`); ordinary execution never truncates a
+  loop. `EigsState.loop_iterations` / `CallFrame.saved_loop_iter` widen
+  to `long long` — an uncapped frame can exceed `int` range, which was
+  signed-overflow UB. Regression: suite [124]
+  (`test_loop_cap_772.eigs`, a 1.05e8-iteration loop run to completion).
+  SPEC's loop-termination passage updated to match.
+
 - **The RSS leak gate called a one-off allocator step a leak, and it was the
   step that moves (#768, follow-up to #765).** #765 made the gate judge the
   *second* of two measured batches, on the premise that the process's one-time

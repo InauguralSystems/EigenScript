@@ -4495,7 +4495,7 @@ Value* builtin_sandbox_run(Value *arg) {
     val_decref(stub);
 
     int saved_max = g_sandbox_loop_max;
-    int saved_iters = g_loop_iterations;
+    long long saved_iters = g_loop_iterations;
     g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
     g_loop_iterations = 0;
     /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a

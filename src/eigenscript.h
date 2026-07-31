@@ -664,7 +664,7 @@ struct EigsThread {
     struct VM           *vm;
     /* Loop-stall accounting (scoped per call frame via CallFrame.saved_*). */
     int                  loop_stall_count;
-    int                  loop_iterations;
+    long long            loop_iterations;   /* #772: uncapped frames exceed int range */
     const char          *loop_exit_reason;
     /* #539 v2: next frame-instance serial — incremented at every frame
      * push, stamped into CallFrame.call_serial. Per-thread, never reset
