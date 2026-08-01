@@ -1,0 +1,46 @@
+# net_echo — raw TCP sockets on the trace tape (#414).
+# Requires a `make net` build (the net_* builtins are in no default build).
+#
+# One process plays both ends of a TCP connection over loopback: the
+# dial completes against the listen backlog, so no threads are needed.
+# Every nondeterministic outcome — the kernel's ephemeral port, the
+# accepted connection, the received bytes, the bytes-sent counts —
+# enters through the trace tape, which makes this session replayable
+# with no network at all:
+#
+#   $ EIGS_TRACE=echo.tape  eigenscript net_echo.eigs   > first.out
+#   $ EIGS_REPLAY=echo.tape eigenscript net_echo.eigs   > second.out
+#   $ diff first.out second.out                         # identical
+#
+# The replay run performs zero socket syscalls — the tape pins what the
+# network said, so the network is no longer required to say it.
+
+# Ask the kernel for an ephemeral port (0), then read back its pick.
+server is net_listen of 0
+port is net_port of server
+print of "listening"
+
+# Dial ourselves. On loopback the connect lands in the listen backlog
+# immediately, before we ever call accept.
+client is net_dial of ["127.0.0.1", port]
+conn is net_accept of [server, 2000]
+
+# Client -> server. net_recv returns a buffer of byte values (binary-
+# safe); str_from_bytes decodes text. The 2000 is a timeout in ms —
+# a timeout returns null, a closed peer returns an empty buffer.
+sent is net_send of [client, "ping over the tape"]
+print of sent
+data is net_recv of [conn, 256, 2000]
+msg is str_from_bytes of (data)
+print of msg
+
+# Server echoes it back.
+echoed is net_send of [conn, msg]
+print of echoed
+back is net_recv of [client, 256, 2000]
+print of str_from_bytes of (back)
+
+net_close of client
+net_close of conn
+net_close of server
+print of "echo complete"

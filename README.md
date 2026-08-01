@@ -485,6 +485,7 @@ get made and how contributors can earn commit access over time.
 make                  # build
 make test             # build and run the full suite (2,500+ checks)
 make gfx              # build with SDL2 graphics (UI toolkit, games)
+make net              # build with raw TCP sockets (record/replay-able)
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts
 ```

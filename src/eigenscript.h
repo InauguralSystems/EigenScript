@@ -24,6 +24,11 @@
 #ifndef EIGENSCRIPT_EXT_GFX
 #define EIGENSCRIPT_EXT_GFX 0
 #endif
+/* Raw TCP sockets on the trace tape (#414). Default OFF like GFX: in no
+ * default build — `make net` opts in (src/ext_net.c). */
+#ifndef EIGENSCRIPT_EXT_NET
+#define EIGENSCRIPT_EXT_NET 0
+#endif
 /* DEFLATE codecs (inflate/deflate via the system zlib, -lz). Default OFF
  * like GFX: the minimal build stays zero-dependency — the four builtins
  * stay registered but raise "compiled without zlib support" until
@@ -473,7 +478,8 @@ typedef enum {
     HANDLE_STORE,
     HANDLE_THREAD,
     HANDLE_CHANNEL,
-    HANDLE_TASK      /* #408 cooperative task — id-keyed, drained at teardown */
+    HANDLE_TASK,     /* #408 cooperative task — id-keyed, drained at teardown */
+    HANDLE_NET       /* #414 ext_net socket (listener or connection) */
 } HandleType;
 
 typedef struct {

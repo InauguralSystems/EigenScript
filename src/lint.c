@@ -156,6 +156,7 @@ static int is_builtin_name(const char *name) {
         EIGS_HTTP_REQUEST_BUILTINS(X)
         EIGS_DB_BUILTINS(X)
         EIGS_MODEL_BUILTINS(X)
+        EIGS_NET_BUILTINS(X)
 #undef X
         if (!env_get(e, "report_value"))
             env_set_local_owned(e, "report_value", make_null());
@@ -2958,6 +2959,7 @@ static void check_undefined_names(ASTNode *ast, const char *path,
     EIGS_HTTP_REQUEST_BUILTINS(X)
     EIGS_DB_BUILTINS(X)
     EIGS_MODEL_BUILTINS(X)
+    EIGS_NET_BUILTINS(X)
 #undef X
     /* Names the compiler resolves itself, so no registrar ever binds them:
      * `report_value of x` is a special form (#294), `trajectory of x` is one

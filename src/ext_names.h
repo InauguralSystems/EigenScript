@@ -97,6 +97,16 @@
     X(http_serve, builtin_http_serve) \
     X(http_cors, builtin_http_cors)
 
+/* ---- ext_net.c: raw TCP sockets on the tape (EIGENSCRIPT_EXT_NET) ---- */
+#define EIGS_NET_BUILTINS(X) \
+    X(net_listen, builtin_net_listen) \
+    X(net_port, builtin_net_port) \
+    X(net_accept, builtin_net_accept) \
+    X(net_dial, builtin_net_dial) \
+    X(net_recv, builtin_net_recv) \
+    X(net_send, builtin_net_send) \
+    X(net_close, builtin_net_close)
+
 /* ---- ext_db.c: SQLite bridge (EIGENSCRIPT_EXT_DB) ---- */
 #define EIGS_DB_BUILTINS(X) \
     X(db_connect, builtin_db_connect) \

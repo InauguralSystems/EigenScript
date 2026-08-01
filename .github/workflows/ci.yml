@@ -315,6 +315,14 @@ jobs:
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
+        name: Build net variant
+        run: make net
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against net build (executes network section [125])
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true'
         name: Compile-check LSP
         run: make lsp
 

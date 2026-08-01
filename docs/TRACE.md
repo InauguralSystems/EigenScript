@@ -75,6 +75,27 @@ perspective lands on the tape as an `N` record:
   the live argv; #471)
 - **HTTP extension:** `http_post` (success and all error paths),
   `http_request_body`, `http_session_id`, `http_request_headers`
+- **Network extension (#414):** `net_listen`, `net_port`, `net_accept`,
+  `net_dial`, `net_recv`, `net_send`. Every environment outcome is a
+  recorded *value* — `null` for failure/timeout, a number or buffer for
+  success — never a live-path-only raise, so a `catch` cannot desync
+  the record stream (the `read_bytes_buf` lesson). The whole family is
+  TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is taken **before
+  any socket call** — the replay run creates, binds, connects, reads,
+  and writes **nothing** (verified by strace: zero socket-family
+  syscalls), which is what "replay last night's flaky network failure
+  with the network gone" means. `net_recv` caps at 8192 bytes per call
+  so every `N` record fits the 64 KiB budget, the same discipline as
+  `audio_capture_read`. `net_send` is a *recorded write*, like `mkdir`:
+  its observable effect on the program is its result (bytes sent), and
+  the peer's future responses are themselves on the tape — so under
+  replay the send is **suppressed** (recorded count served, nothing
+  written) and the replayed world stays consistent. That is the
+  deliberate contrast with the #148 subprocess family below: a
+  `proc_write` feeds a live child whose behavior the tape does not pin,
+  so suppressing it would be meaningless. (`net_close` is deterministic
+  and untraced — under replay no socket exists and it is a natural
+  no-op, the `audio_capture_close` shape.)
 - **Audio capture (gfx extension, #579):** `audio_capture_open`,
   `audio_capture_read`. Captured audio is a device input, so the whole
   capture chain is TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is

@@ -4,6 +4,29 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`ext_net`: raw TCP sockets as tape-recorded nondeterministic inputs
+  (#414).** Seven builtins — `net_listen` / `net_port` / `net_accept` /
+  `net_dial` / `net_recv` / `net_send` / `net_close`, with timeouts —
+  behind `make net` (`EIGENSCRIPT_EXT_NET=1`, in no default build; also
+  compiled into `make asan-http` so the sanitizer gate covers it). The
+  differentiating contract: every nondeterministic outcome (accepted
+  connections, received bytes, bytes-sent counts, dial results,
+  kernel-assigned ephemeral ports) enters through the trace-tape seam,
+  so a recorded session replays **byte-identically with no network
+  present** — the replay run performs zero socket-family syscalls
+  (strace-verified; suite section [125] pins the byte-diff and the
+  tape's N-record count). Environment failures are recorded *values*
+  (`null` / `-1` / empty buffer), never live-path-only raises, so a
+  `catch` cannot desync replay; `net_send` is a suppressed recorded
+  write (the `mkdir` rule, documented in docs/TRACE.md as the deliberate
+  contrast to the #148 subprocess family). Sockets live in the process
+  handle table (`HANDLE_NET`) and are closed by `handle_table_drain` at
+  exit. `examples/net_echo.eigs` is a single-threaded both-ends echo
+  session over the loopback backlog. TCP only for now — UDP stays open
+  in #414.
+
 ### Changed
 
 - **`-Werror=switch` was paid for in `CFLAGS` and then opted out of at almost
