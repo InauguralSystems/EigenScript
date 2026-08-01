@@ -684,6 +684,18 @@ static void check_dup_keys(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.list.count; i++)
                 check_dup_keys(node->data.list.elems[i], ctx);
             break;
+        case AST_MATCH:
+            check_dup_keys(node->data.match.expr, ctx);
+            for (int i = 0; i < node->data.match.case_count; i++) {
+                check_dup_keys(node->data.match.patterns[i], ctx);
+                for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                    check_dup_keys(node->data.match.bodies[i][j], ctx);
+            }
+            break;
+        case AST_UNOBSERVED:
+            for (int i = 0; i < node->data.block.count; i++)
+                check_dup_keys(node->data.block.stmts[i], ctx);
+            break;
         /* Nothing to do for these. Enumerated rather than covered by a `default:`
          * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
          * error here instead of a silent no-op. */
@@ -704,9 +716,7 @@ static void check_dup_keys(ASTNode *node, LintContext *ctx) {
         case AST_CONTINUE:
         case AST_DOT_ASSIGN:
         case AST_IMPORT:
-        case AST_MATCH:
         case AST_LAMBDA:
-        case AST_UNOBSERVED:
         case AST_INDEX_ASSIGN:
         case AST_LIST_PATTERN_ASSIGN:
         case AST_SLICE:

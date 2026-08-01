@@ -90,6 +90,63 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "duplicate dict key" "$OUTPUT" "duplicate dict key 'a'"
 rm -f "$TMPFILE"
 
+# --- #783: W010 (duplicate dict key) recurses into unobserved blocks ---
+# check_dup_keys used to break on AST_UNOBSERVED, so a dict literal inside
+# an unobserved: block was never reached and never warned on.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+unobserved:
+    w010_d is {"a": 1, "a": 2}
+print of w010_d
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#783 W010 fires inside an unobserved block" "$OUTPUT" "W010.*'a'"
+rm -f "$TMPFILE"
+
+# --- #783: W010 (duplicate dict key) recurses into match arms ---
+# check_dup_keys used to break on AST_MATCH, so a dict literal inside a
+# match arm was never reached and never warned on.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match 1:
+    case 1:
+        w010_d is {"a": 1, "a": 2}
+    case _:
+        x is 0
+print of 1
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#783 W010 fires inside a match arm" "$OUTPUT" "W010.*'a'"
+rm -f "$TMPFILE"
+
+# --- #783: W010 (duplicate dict key) recurses into the match scrutinee ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match {"a": 1, "a": 2}:
+    case _:
+        print of "fallback"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#783 W010 fires in the match scrutinee" "$OUTPUT" "W010.*'a'"
+rm -f "$TMPFILE"
+
+# --- #783: W010 (duplicate dict key) recurses into match patterns ---
+# Patterns are full expressions (parser.c parses them with parse_expression),
+# so a dict literal used as a case pattern must be walked too. The wildcard
+# case _ stores a NULL pattern; check_dup_keys' !node guard covers it.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 1
+match x:
+    case {"a": 1, "a": 2}:
+        print of "dict"
+    case _:
+        print of "other"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#783 W010 fires in a match pattern" "$OUTPUT" "W010.*'a'"
+rm -f "$TMPFILE"
+
 # --- Multiple warnings on one file ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
