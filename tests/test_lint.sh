@@ -1153,6 +1153,53 @@ OUTPUT=$($EIGS --lint "$LINTPKG/lib/selfmod.eigs" 2>&1 || true)
 check_not_contains "#591 a module never hints against its own defines" "$OUTPUT" "W021"
 rm -rf "$LINTPKG"
 
+# --- #784/#785: W012/W013 recurse into unobserved blocks and match arms ---
+# check_builtin_shadow used to break on AST_UNOBSERVED/AST_MATCH, so shadows
+# inside those scopes lint'd clean while top-level ones warned.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+unobserved:
+    chr is 7
+print of "hi"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#784 W012 fires inside an unobserved block" "$OUTPUT" "W012.*'chr'"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match 1:
+    case 1:
+        chr is 7
+print of "hi"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#784 W012 fires inside a match arm" "$OUTPUT" "W012.*'chr'"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+unobserved:
+    define chr(a) as:
+        return a
+print of "hi"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#785 W013 fires inside an unobserved block" "$OUTPUT" "W013.*'chr'"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match 1:
+    case 1:
+        define chr(a) as:
+            return a
+print of "hi"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#785 W013 fires inside a match arm" "$OUTPUT" "W013.*'chr'"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL
