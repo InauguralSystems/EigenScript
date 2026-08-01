@@ -167,8 +167,13 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
         if (when >= 0) snprintf(whenbuf, sizeof(whenbuf), "%ld", when);
         else           snprintf(whenbuf, sizeof(whenbuf), "?");
         if (os && os->used) {
+            const char *band = observer_slot_report(os);
+            if (slot_is_ptr(s)) {
+                Value *sv = slot_as_ptr(s);
+                if (sv && sv->type == VAL_FN) band = "opaque";   /* #708 */
+            }
             fprintf(stderr, "%s | %s | when=%s | entropy=%.6g | dH=%.6g | %s\n",
-                    name, vbuf, whenbuf, os->entropy, os->dH, observer_slot_report(os));
+                    name, vbuf, whenbuf, os->entropy, os->dH, band);
         } else {
             fprintf(stderr, "%s | %s | when=%s | entropy=- | dH=- | unobserved\n",
                     name, vbuf, whenbuf);
@@ -227,6 +232,33 @@ static int vm_slot_predicate(const ObserverSlot *s, uint16_t kind) {
     case 5: return observer_slot_equilibrium(s);
     }
     return 0;
+}
+
+/* #708: 1 when the binding's CURRENT value is a function or builtin. A
+ * function has no content the observer can sample — its entropy is a
+ * constant — so every classification surface (report, report_value, the
+ * predicates, observe's band) answers "opaque" / false instead of a
+ * confident "equilibrium" that never moves. The entropy constant itself
+ * is deliberately unchanged: container averages, tapes, and every
+ * numeric trajectory measure byte-identically; only the classification
+ * of a binding you ask about DIRECTLY becomes the visible gap. */
+static int vm_slot_value_opaque(Env *e, int idx) {
+    if (!e || idx < 0) return 0;
+    /* The slot read must hold the #607 module-env lock under MT: a worker's
+     * env_set_local_pre_interned_slot writes the same word under it, and an
+     * unlocked read here is the data race CI TSan caught (test_obs_mt_race).
+     * No-op single-threaded (env_mt_shared gate), like the SIGUSR1 dump. */
+    env_dump_lock(e);
+    int r = 0;
+    if (idx < e->count) {
+        EigsSlot s = e->values[idx];
+        if (slot_is_ptr(s)) {
+            Value *v = slot_as_ptr(s);
+            r = v && (v->type == VAL_FN || v->type == VAL_BUILTIN);
+        }
+    }
+    env_dump_unlock(e);
+    return r;
 }
 
 /* Phase 5: VM execution state (g_vm), loop-stall accounting
@@ -1253,7 +1285,9 @@ void jit_helper_report_slot(int slot) {
     Env *e = frame->fn_env;
     Value *result;
     const ObserverSlot *os_r = env_obs_slot(e, (int)slot);
-    if (os_r && os_r->used) {
+    if (vm_slot_value_opaque(e, (int)slot)) {
+        result = make_str("opaque");       /* #708 — mirrors CASE(REPORT_SLOT) */
+    } else if (os_r && os_r->used) {
         result = make_str(observer_slot_report(os_r));
     } else {
         result = make_str("equilibrium");  /* unobserved binding — no trajectory */
@@ -4437,7 +4471,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         Value *result;
         const ObserverSlot *os_l = env_obs_slot(e, (int)slot);
-        if (os_l && os_l->used) {
+        if (vm_slot_value_opaque(e, (int)slot)) {
+            result = make_str("opaque");       /* #708: fn/builtin binding */
+        } else if (os_l && os_l->used) {
             result = make_str(observer_slot_report(os_l));
         } else {
             result = make_str("equilibrium");  /* unobserved binding */
@@ -4463,7 +4499,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         Value *result;
         const ObserverSlot *os_n = env_obs_slot(oe, oidx);
-        if (os_n && os_n->used) {
+        if (vm_slot_value_opaque(oe, oidx)) {
+            result = make_str("opaque");       /* #708: fn/builtin binding */
+        } else if (os_n && os_n->used) {
             result = make_str(observer_slot_report(os_n));
         } else {
             result = make_str("equilibrium");  /* unobserved binding */
@@ -4480,7 +4518,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         Value *result;
         const ObserverSlot *vs_l = env_obs_slot(e, (int)slot);
-        if (vs_l)
+        if (vm_slot_value_opaque(e, (int)slot))
+            result = make_str("opaque");       /* #708 */
+        else if (vs_l)
             result = make_str(observer_slot_report_value(vs_l));
         else
             result = make_str("equilibrium");
@@ -4504,7 +4544,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         Value *result;
         const ObserverSlot *vs_n = env_obs_slot(oe, oidx);
-        if (vs_n)
+        if (vm_slot_value_opaque(oe, oidx))
+            result = make_str("opaque");       /* #708 */
+        else if (vs_n)
             result = make_str(observer_slot_report_value(vs_n));
         else
             result = make_str("equilibrium");
@@ -4550,8 +4592,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         const ObserverSlot *s = env_obs_slot(e, (int)slot);
         if (s && s->used) {
+            /* #708: the band is "opaque" for a fn/builtin binding; the
+             * entropy/dH numbers stay as recorded — they are honest
+             * measurements of the constant, and hiding them would make
+             * the tuple's shape value-dependent. */
             Value *list = make_list(4);
-            list_append_owned(list, make_str(observer_slot_report(s)));
+            list_append_owned(list, make_str(
+                vm_slot_value_opaque(e, (int)slot) ? "opaque"
+                                                   : observer_slot_report(s)));
             list_append_owned(list, make_num(s->entropy));
             list_append_owned(list, make_num(s->dH));
             list_append_owned(list, make_num(s->prev_dH));
@@ -4574,7 +4622,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         const ObserverSlot *s = env_obs_slot(oe, oidx);
         if (s && s->used) {
             Value *list = make_list(4);
-            list_append_owned(list, make_str(observer_slot_report(s)));
+            list_append_owned(list, make_str(
+                vm_slot_value_opaque(oe, oidx) ? "opaque"     /* #708 */
+                                               : observer_slot_report(s)));
             list_append_owned(list, make_num(s->entropy));
             list_append_owned(list, make_num(s->dH));
             list_append_owned(list, make_num(s->prev_dH));
@@ -4901,7 +4951,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * the predicate is false. */
         uint16_t kind = read_u16(ip); ip += 2;
         int result = 0;
-        const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
+        const ObserverSlot *s =
+            vm_slot_value_opaque(g_last_obs_slot_env, g_last_obs_slot_idx)
+                ? NULL   /* #708: fn/builtin binding — nothing claimable */
+                : env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
         if (s) {
             switch (kind) {
             case 0: result = observer_slot_converged(s);   break;
@@ -4925,8 +4978,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         int result = 0;
         const ObserverSlot *ps_l = env_obs_slot(e, (int)slot);
-        if (ps_l && ps_l->used)
-            result = vm_slot_predicate(ps_l, kind);
+        if (ps_l && ps_l->used && !vm_slot_value_opaque(e, (int)slot))
+            result = vm_slot_predicate(ps_l, kind);          /* #708 */
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }
@@ -4948,8 +5001,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         int result = 0;
         const ObserverSlot *ps_n = env_obs_slot(oe, oidx);
-        if (ps_n && ps_n->used)
-            result = vm_slot_predicate(ps_n, kind);
+        if (ps_n && ps_n->used && !vm_slot_value_opaque(oe, oidx))
+            result = vm_slot_predicate(ps_n, kind);          /* #708 */
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }

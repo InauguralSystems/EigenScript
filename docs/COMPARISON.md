@@ -336,7 +336,10 @@ works; you can reach for it long before you need the theory.
 Every assignment (outside `unobserved` blocks) updates an observer
 tracking the value's entropy and trend (for containers, one pass over the
 value's own elements — the walk stops at a reference, so a nested container
-contributes only its size term, #685). You can ask a variable about
+contributes only its size term, #685). The boundary is explicit too: a
+binding holding a function classifies `opaque` — a function has no content
+to sample, and the observer names its blind spots (#708) rather than
+reporting a band it cannot defend. You can ask a variable about
 itself, terminate loops on *convergence* instead of a hand-written
 epsilon test, and read a variable's past:
 

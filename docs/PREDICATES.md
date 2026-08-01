@@ -79,6 +79,21 @@ and `3` for the trajectory predicates (`improving`, `diverging`,
 this is the single most important difference from the old pointwise rule,
 which fired on the first step.
 
+## Opaque rule (#708): function-valued bindings
+
+A binding whose CURRENT value is a function or builtin is outside what
+the observer measures — a function has no content to sample, so its
+entropy is a constant and dH can never move. On such a binding **every
+predicate returns `false`** and `report`/`report_value`/`observe`'s
+band answer **`opaque`** (a label outside the six-band lattice, like
+`moving`). Rebinding `f` from one function to another therefore no
+longer classifies `equilibrium`; it names the gap. The entropy constant
+itself is unchanged: functions inside containers contribute exactly the
+size/average terms they always did, and no numeric trajectory measures
+differently. The check reads the binding's current value at ask time —
+rebind `f` to a number and its numeric trajectory (which was recorded
+all along) answers normally again.
+
 ## Implementation status
 
 All six predicates are now windowed (the #202 series is complete):

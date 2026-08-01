@@ -123,6 +123,13 @@ treated as noise. The outer band is the *deterministic* one: the signal is
 taken as fact. Which band a given motion lands in is set entirely by where
 you put the thresholds — see [Resolution](#resolution).
 
+- **`opaque`** (#708) — the binding currently holds a function or
+  builtin. A function has no content the observer can sample, so no band
+  can honestly be claimed: `report`/`report_value` answer `opaque` and
+  every predicate is false. This is a statement about the observer's
+  coverage, not the value's motion — the same visible-gap rule as
+  `moving`.
+
 ### Two signals: entropy vs. value (`report` vs. `report_value`)
 
 `report`/the bare predicates classify the trajectory of **`entropy(value)`** —
