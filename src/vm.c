@@ -243,11 +243,22 @@ static int vm_slot_predicate(const ObserverSlot *s, uint16_t kind) {
  * numeric trajectory measure byte-identically; only the classification
  * of a binding you ask about DIRECTLY becomes the visible gap. */
 static int vm_slot_value_opaque(Env *e, int idx) {
-    if (!e || idx < 0 || idx >= e->count) return 0;
-    EigsSlot s = e->values[idx];
-    if (!slot_is_ptr(s)) return 0;
-    Value *v = slot_as_ptr(s);
-    return v && (v->type == VAL_FN || v->type == VAL_BUILTIN);
+    if (!e || idx < 0) return 0;
+    /* The slot read must hold the #607 module-env lock under MT: a worker's
+     * env_set_local_pre_interned_slot writes the same word under it, and an
+     * unlocked read here is the data race CI TSan caught (test_obs_mt_race).
+     * No-op single-threaded (env_mt_shared gate), like the SIGUSR1 dump. */
+    env_dump_lock(e);
+    int r = 0;
+    if (idx < e->count) {
+        EigsSlot s = e->values[idx];
+        if (slot_is_ptr(s)) {
+            Value *v = slot_as_ptr(s);
+            r = v && (v->type == VAL_FN || v->type == VAL_BUILTIN);
+        }
+    }
+    env_dump_unlock(e);
+    return r;
 }
 
 /* Phase 5: VM execution state (g_vm), loop-stall accounting
