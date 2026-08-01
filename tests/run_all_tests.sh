@@ -3335,6 +3335,32 @@ else
 fi
 echo ""
 
+# [126] DAP behavioral tests (#539 v3) — drive src/eigsdap over the real
+# Content-Length-framed Debug Adapter Protocol against a tape recorded
+# by this suite's eigenscript binary: initialize capabilities
+# (supportsStepBack), launch + the #411 version refusal, breakpoint
+# verification against L records, stack frames from the v2 scope chain,
+# variables with trajectory child nodes, evaluate, stepBack and
+# reverseContinue. Skips cleanly without python3 or the eigsdap build.
+echo "[126] DAP Behavioral (30 checks)"
+DAPT_OUTPUT=$(bash "$TESTS_DIR/test_dap.sh" 2>&1)
+if echo "$DAPT_OUTPUT" | grep -q "SKIP:"; then
+    echo "$DAPT_OUTPUT" | grep "SKIP:"
+else
+    DAPT_PASS=$(echo "$DAPT_OUTPUT" | grep -c "PASS:" || true)
+    DAPT_FAIL=$(echo "$DAPT_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + DAPT_PASS + DAPT_FAIL))
+    PASS=$((PASS + DAPT_PASS))
+    FAIL=$((FAIL + DAPT_FAIL))
+    if [ "$DAPT_FAIL" -gt 0 ]; then
+        echo "  FAIL: $DAPT_FAIL DAP check(s) failed"
+        echo "$DAPT_OUTPUT" | grep "FAIL:" | head -5
+    else
+        echo "  PASS: all $DAPT_PASS DAP checks"
+    fi
+fi
+echo ""
+
 # [89] Executable documentation — every eigenscript/output block pair in
 # docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
 # the spec cannot drift from the implementation. Skips without python3.

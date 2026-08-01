@@ -6,6 +6,26 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **`eigsdap`: a DAP server with first-class time travel (#539 v3,
+  closing the #418 train).** `make dap` builds `src/eigsdap`, a Debug
+  Adapter Protocol server over stdio that drives the SAME tape model as
+  the CLI stepper — the model moved verbatim from `step.c` into
+  `src/tape_read.c`, shared by both front-ends so they cannot drift.
+  Because a tape is never executed, `stepBack`/`reverseContinue` are
+  advertised capabilities and cost the same as forward: VS Code's
+  reverse buttons work on every recorded run. Breakpoints verify
+  against the tape's `L` records (a line the run never executed shows
+  unverified); the call stack is the v2 scope chain; the variables pane
+  shows each binding's folded value plus its #294 trajectory label and
+  expands into its assign history as child nodes; `evaluate` resolves
+  names innermost-first for hover/watch. The #411 version rule holds at
+  `launch` — a tape from another version refuses loudly. The
+  `editors/vscode` extension contributes the `eigenscript-tape`
+  debugger type (adapter = `eigsdap` on PATH). Protocol coverage is
+  pinned by `tests/test_dap.py` (suite [126], the DAP twin of
+  `test_lsp.py`); CI compile-checks `make dap`. Docs:
+  `docs/DEBUGGING.md`.
+
 - **`ext_net`: raw TCP sockets as tape-recorded nondeterministic inputs
   (#414).** Seven builtins — `net_listen` / `net_port` / `net_accept` /
   `net_dial` / `net_recv` / `net_send` / `net_close`, with timeouts —

@@ -1,7 +1,7 @@
 {
   "name": "eigenscript",
   "displayName": "EigenScript",
-  "description": "EigenScript language support (.eigs): syntax highlighting plus the eigenlsp language server — diagnostics, symbols, hover, go-to-definition, rename.",
+  "description": "EigenScript language support (.eigs): syntax highlighting plus the eigenlsp language server — diagnostics, symbols, hover, go-to-definition, rename — and the eigsdap tape debugger (step back / reverse continue over a recorded trace tape).",
   "version": "0.14.0",
   "publisher": "inauguralsystems",
   "license": "MIT",
@@ -15,7 +15,7 @@
   },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
-  "activationEvents": ["onLanguage:eigenscript"],
+  "activationEvents": ["onLanguage:eigenscript", "onDebugResolve:eigenscript-tape"],
   "contributes": {
     "languages": [
       {
@@ -30,6 +30,38 @@
         "language": "eigenscript",
         "scopeName": "source.eigenscript",
         "path": "./syntaxes/eigenscript.tmLanguage.json"
+      }
+    ],
+    "breakpoints": [{ "language": "eigenscript" }],
+    "debuggers": [
+      {
+        "type": "eigenscript-tape",
+        "label": "EigenScript Tape (time-travel over a recorded trace)",
+        "languages": ["eigenscript"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["tape"],
+            "properties": {
+              "tape": {
+                "type": "string",
+                "description": "Path to a recorded trace tape (EIGS_TRACE=run.tape eigenscript prog.eigs). A tape is valid only for the EigenScript version that recorded it."
+              },
+              "source": {
+                "type": "string",
+                "description": "Path to the .eigs source the tape was recorded from (enables source highlighting)."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "eigenscript-tape",
+            "request": "launch",
+            "name": "Step a recorded tape",
+            "tape": "${workspaceFolder}/run.tape",
+            "source": "${file}"
+          }
+        ]
       }
     ]
   },

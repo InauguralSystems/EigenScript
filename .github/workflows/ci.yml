@@ -326,6 +326,10 @@ jobs:
         name: Compile-check LSP
         run: make lsp
 
+      - if: needs.scope.outputs.code == 'true'
+        name: Compile-check DAP server
+        run: make dap
+
       # 44 deterministic adversarial inputs against the ASan-instrumented
       # stdin harness (same compile->vm pipeline as main.c). Seconds to run;
       # any exit other than 0/1 is a crash.

@@ -19,14 +19,14 @@ LDFLAGS := -pie -Wl,-z,relro,-z,now -lm -lpthread
 endif
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 BINARY  := $(SRC_DIR)/eigenscript
 
 # CLI-only translation units: linked into the binary, never into the
 # runtime library (repl.c pulls termios/isatty — banned in the
 # freestanding/embed profile, same footing as main.c; step.c is the
 # --step tape-stepper, stdio+isatty, same footing).
-CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/bundle.c
+CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c
 
 FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c $(SRC_DIR)/ext_net.c \
                 $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
@@ -39,7 +39,14 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff asan-http print-%
+# The DAP server (#539 v3): the tape model TU plus the runtime it needs
+# (observer_slot classification, trace_name_is_internal). Same link
+# shape as the LSP — the whole runtime minus the CLI-only units, so it
+# cannot bitrot against a hand-picked subset.
+DAP_SOURCES := $(SRC_DIR)/eigsdap.c $(SRC_DIR)/tape_read.c $(filter-out $(CLI_ONLY),$(SOURCES))
+DAP_BINARY  := $(SRC_DIR)/eigsdap
+
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff asan-http print-%
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -130,15 +137,17 @@ install-gfx: gfx lsp
 	@echo "Installed: $(PREFIX)/bin/eigenlsp (v$(VERSION))"
 	@echo "Stdlib:    $(PREFIX)/lib/eigenscript/"
 
-install: build lsp
+install: build lsp dap
 	mkdir -p $(PREFIX)/bin
 	mkdir -p $(PREFIX)/lib/eigenscript
 	cp $(BINARY) $(PREFIX)/bin/eigenscript
 	cp $(LSP_BINARY) $(PREFIX)/bin/eigenlsp
-	chmod +x $(PREFIX)/bin/eigenscript $(PREFIX)/bin/eigenlsp
+	cp $(DAP_BINARY) $(PREFIX)/bin/eigsdap
+	chmod +x $(PREFIX)/bin/eigenscript $(PREFIX)/bin/eigenlsp $(PREFIX)/bin/eigsdap
 	cp lib/*.eigs $(PREFIX)/lib/eigenscript/
 	@echo "Installed: $(PREFIX)/bin/eigenscript (v$(VERSION))"
 	@echo "Installed: $(PREFIX)/bin/eigenlsp (v$(VERSION))"
+	@echo "Installed: $(PREFIX)/bin/eigsdap (v$(VERSION))"
 	@echo "Stdlib:    $(PREFIX)/lib/eigenscript/"
 
 # Generated stdlib index for the LSP (#590): public define/signature-comment
@@ -156,6 +165,15 @@ lsp: $(SRC_DIR)/lsp_stdlib_index.h
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
 	@echo "EigenScript LSP $(VERSION) built. Binary: $$(du -sh $(LSP_BINARY) | cut -f1)"
+
+dap:
+	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
+		-DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+		$(LDFLAGS)
+	@echo "EigenScript DAP $(VERSION) built. Binary: $$(du -sh $(DAP_BINARY) | cut -f1)"
 
 jit-smoke:
 	$(CC) -Wall -Wextra -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
