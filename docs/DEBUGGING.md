@@ -131,10 +131,52 @@ you want to scrub the timeline from outside.
 | "When did this variable go wrong?" | `--step`, breakpoint the line, `rc` backward, watch `p`'s label flip |
 | A program should react to its own history | temporal interrogatives in the source |
 | Meta-circular debugging with a UI | `examples/debugger.eigs` (its own history, not the tape) |
+| Time-travel in a standard debugger UI | `eigsdap` in VS Code (below) |
 
-## Roadmap (#418)
+## The DAP server: `eigsdap` (VS Code time-travel)
 
-This CLI stepper is eigsdap **v1**. Blocked behind it: function-local
-frames as first-class scopes (v2) and a DAP server over stdio —
-`stepBack`/`reverseContinue` in VS Code with trajectory child nodes in
-the variables pane (v3).
+`make dap` builds `src/eigsdap`, a Debug Adapter Protocol server over
+stdio wrapping the SAME tape model as `--step` (`src/tape_read.c`), so
+the two can never disagree about what a tape says. Because the tape is
+never executed, **Step Back and Reverse Continue are first-class** —
+VS Code's reverse buttons light up and cost the same as forward.
+
+Setup: put `eigsdap` on your `PATH` (next to `eigenlsp`), install the
+`editors/vscode` extension, record a tape, and launch:
+
+```jsonc
+// .vscode/launch.json
+{
+  "type": "eigenscript-tape",
+  "request": "launch",
+  "name": "Step a recorded tape",
+  "tape": "${workspaceFolder}/run.tape",
+  "source": "${workspaceFolder}/prog.eigs"
+}
+```
+
+What you get, mapped from the stepper:
+
+- **Breakpoints** verify against the tape's `L` records — a breakpoint
+  on a line the recorded run never executed shows as unverified, which
+  is the honest answer only a tape debugger can give.
+- **Call stack** is the v2 scope chain (a function-local `i` and the
+  top-level `i` never merge); the variables pane shows each binding's
+  folded value plus its live trajectory label (`[equilibrium]`,
+  `[oscillating]`, …) from the runtime's own #294 classifier.
+- **Expanding a variable** reveals its assign history — the `t <name>`
+  view as child nodes: `#1 line 4: 1`, `#2 line 5: 2`, each with the
+  label the observer would have reported at that moment.
+- **Hover / watch** (`evaluate`) resolves bare names innermost-first
+  along the reconstructed call chain at the current position.
+- The #411 version rule holds: launching a tape recorded by another
+  EigenScript version fails loudly rather than showing
+  plausible-but-wrong state.
+
+Protocol coverage is pinned by `tests/test_dap.py` (suite [126]), the
+DAP twin of `test_lsp.py`.
+
+## Roadmap (#418 → #539)
+
+The CLI stepper was eigsdap **v1**; scope-qualified locals on the tape
+were **v2**; the DAP server above is **v3**, completing #539.
