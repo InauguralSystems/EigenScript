@@ -2626,6 +2626,65 @@ else
     echo ""
 fi
 
+# [125] ext_net TCP sockets on the trace tape (#414) — probe-gated like
+# [44] HTTP: the net_* builtins exist only under `make net` / `make
+# asan-http` (in no default build), so a default binary skips cleanly.
+# Two parts: the loopback echo suite, then the definition-of-done —
+# the same file recorded under EIGS_TRACE must replay byte-identically
+# under EIGS_REPLAY (the tape pins every socket outcome; the replay run
+# performs zero socket syscalls). The N-record count is pinned: an
+# unexplained change in tape accounting is a regression, not noise.
+NET_PROBE_FILE=$(mktemp /tmp/eigs_net_probe_XXXXXX.eigs)
+cat > "$NET_PROBE_FILE" <<'PROBE'
+print of net_close
+PROBE
+NET_PROBE_OUT=$(./eigenscript "$NET_PROBE_FILE" 2>&1)
+rm -f "$NET_PROBE_FILE"
+
+if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
+    echo "[125] Network Extension (#414, 25 checks + record/replay)"
+    NET_OUTPUT=$(./eigenscript ../tests/test_net.eigs 2>&1); NET_OUTPUT_RC=$?
+    if rc_ok "$NET_OUTPUT_RC" "$NET_OUTPUT" && echo "$NET_OUTPUT" | grep -q "All net tests passed"; then
+        TOTAL=$((TOTAL + 25))
+        PASS=$((PASS + 25))
+        echo "  PASS: all 25 net builtin checks"
+    else
+        TOTAL=$((TOTAL + 25))
+        FAIL=$((FAIL + 25))
+        echo "  FAIL: net builtin tests"
+        echo "$NET_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+    fi
+    NET_TAPE=$(mktemp /tmp/eigs_net_tape_XXXXXX)
+    NET_REC=$(EIGS_TRACE=$NET_TAPE ./eigenscript ../tests/test_net.eigs 2>&1); NET_REC_RC=$?
+    NET_REP=$(EIGS_REPLAY=$NET_TAPE ./eigenscript ../tests/test_net.eigs 2>&1); NET_REP_RC=$?
+    NET_NREC=$(grep -c '^N net_' "$NET_TAPE")
+    rm -f "$NET_TAPE"
+    TOTAL=$((TOTAL + 3))
+    if [ "$NET_REC_RC" = "0" ] && echo "$NET_REC" | grep -q "All net tests passed"; then
+        PASS=$((PASS + 1))
+        echo "  PASS: records under EIGS_TRACE"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: record run broke (rc=$NET_REC_RC)"
+    fi
+    if [ "$NET_REP_RC" = "0" ] && [ "$NET_REP" = "$NET_REC" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: replay is byte-identical with no network"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: replay diverged from record (rc=$NET_REP_RC)"
+        diff <(printf '%s\n' "$NET_REC") <(printf '%s\n' "$NET_REP") | head -5
+    fi
+    if [ "$NET_NREC" = "17" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: tape carries the pinned 17 net N records"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: tape N-record count $NET_NREC != 17 (accounting drift)"
+    fi
+    echo ""
+fi
+
 # [65] sort_by builtin
 echo "[65] Sort By (9 checks)"
 SBY_OUTPUT=$(./eigenscript ../tests/test_sort_by.eigs 2>&1); SBY_OUTPUT_RC=$?
@@ -3549,7 +3608,9 @@ echo ""
 
 # [97] Example programs — every examples/*.eigs (and examples/stem/*.eigs)
 # must run to a clean exit. examples/errors/ is covered by [90]; the gfx
-# demos (gfx_* builtins) need `make gfx` and are skipped on the default build.
+# demos (gfx_* builtins) need `make gfx`, the net demos (net_listen) need
+# `make net`, and both are skipped unconditionally here — their dedicated
+# sections ([62], [125]) exercise them under the right build.
 # Each runs from its own directory (so relative paths resolve) with stdin
 # closed. rc_ok tolerates the spawn-thread LeakSanitizer floor; no non-gfx
 # example uses spawn, so this stays leak-clean.
@@ -3562,7 +3623,7 @@ EIGS_ABS="$(pwd)/eigenscript"
 # (#616). $EIGS_TMO's generous budget keeps this a runaway backstop, not a perf
 # gate — a genuine hang still fails, a slow-but-working example does not.
 for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
-    if grep -q 'gfx_' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
+    if grep -qE 'gfx_|net_listen' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
     EX_OUT=$( cd "$(dirname "$f")" && $EIGS_TMO "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
     if [ "$EX_RC" = "124" ]; then
         echo "  FAIL(124): $f (timed out after ${EIGS_TEST_TIMEOUT}s — runaway)"

@@ -498,6 +498,35 @@ automatically at exit.
 |------|-----------|-------------|
 | `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs |
 
+## Optional: Network Extension (TCP sockets)
+
+Requires a `make net` build (`EIGENSCRIPT_EXT_NET=1`; in no default
+build). Raw TCP sockets whose every nondeterministic outcome — accepted
+connections, received bytes, bytes-sent counts, dial results,
+kernel-assigned ports — rides the trace tape: a session recorded under
+`EIGS_TRACE` replays byte-identically under `EIGS_REPLAY` with **no
+network present** (the replay run performs zero socket syscalls). See
+[TRACE.md](TRACE.md).
+
+| Builtin | Form | Returns |
+|---------|------|---------|
+| `net_listen` | `net_listen of port` | listener handle, or `null` (bind failed). Port `0` = kernel-assigned ephemeral port |
+| `net_port` | `net_port of listener` | the locally bound port (the kernel's pick for port 0), or `null` |
+| `net_accept` | `net_accept of listener` / `net_accept of [listener, timeout_ms]` | connection handle, or `null` on timeout |
+| `net_dial` | `net_dial of [host, port]` / `net_dial of [host, port, timeout_ms]` | connection handle, or `null` (refused / unresolvable / timeout) |
+| `net_recv` | `net_recv of [conn, max_bytes]` / `net_recv of [conn, max_bytes, timeout_ms]` | buffer of byte values (empty buffer = connection over), or `null` on timeout. `max_bytes` is clamped to 8192 per call — loop to drain; decode text with `str_from_bytes` |
+| `net_send` | `net_send of [conn, data]` — `data` is a string, buffer, or byte list | bytes sent, or `-1` (peer gone / bad handle) |
+| `net_close` | `net_close of handle` | `null`; idempotent |
+
+Environment failures are *values* (`null` / `-1` / empty buffer), never
+raises, so every outcome lands on the tape and a `catch` cannot desync
+replay; argument-shape mistakes (wrong type or arity) raise
+deterministically. A single-threaded program can be both ends of a
+connection: on loopback, `net_dial` completes against the listen
+backlog before `net_accept` runs (see `examples/net_echo.eigs`).
+Sockets left open at exit are closed by the runtime's handle-table
+drain. UDP is not yet exposed (#414 tracks it).
+
 ## Optional: HTTP Extension
 
 Requires full build. Provides an embedded HTTP server.

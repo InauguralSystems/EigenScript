@@ -1,0 +1,92 @@
+# ext_net TCP socket tests (#414). Loopback only — a single process is
+# both ends: dial lands in the listen backlog before accept runs, which
+# is what lets this stay single-threaded. Runs only when the binary is
+# compiled with EIGENSCRIPT_EXT_NET=1 (gated by run_all_tests.sh).
+# Section [125] additionally re-runs this file under EIGS_TRACE and
+# EIGS_REPLAY and byte-diffs the outputs.
+
+# ---- listen on an ephemeral port ----
+lid is net_listen of 0
+assert of [(lid == null) == 0, "NET01 net_listen returns a handle"]
+port is net_port of lid
+assert of [port > 0, "NET02 net_port reports the kernel's ephemeral pick"]
+
+# ---- dial + accept ----
+cid is net_dial of ["127.0.0.1", port]
+assert of [(cid == null) == 0, "NET03 net_dial connects via the backlog"]
+sid is net_accept of [lid, 2000]
+assert of [(sid == null) == 0, "NET04 net_accept returns a connection"]
+
+# ---- string send, byte-buffer recv, round-trip ----
+n1 is net_send of [cid, "hello, tape"]
+assert of [n1 == 11, "NET05 net_send reports bytes sent"]
+data is net_recv of [sid, 64, 2000]
+assert of [(len of data) == 11, "NET06 net_recv returns the sent bytes"]
+msg is str_from_bytes of (data)
+assert of [msg == "hello, tape", "NET07 bytes decode back to the string"]
+
+# ---- echo back over the other direction ----
+n2 is net_send of [sid, msg]
+assert of [n2 == 11, "NET08a echo send reports bytes sent"]
+back is net_recv of [cid, 64, 2000]
+assert of [(str_from_bytes of (back)) == "hello, tape", "NET08 echo round-trip"]
+
+# ---- byte-list send (binary-safe path) ----
+n3 is net_send of [cid, [7, 0, 255]]
+assert of [n3 == 3, "NET09 net_send accepts a byte list"]
+raw is net_recv of [sid, 64, 2000]
+assert of [(len of raw) == 3, "NET10 binary bytes arrive intact"]
+assert of [raw[0] == 7, "NET11 first byte"]
+assert of [raw[1] == 0, "NET12 NUL byte survives (buffer, not string)"]
+assert of [raw[2] == 255, "NET13 high byte"]
+
+# ---- timeouts are a distinct recorded outcome: null ----
+t1 is net_recv of [cid, 64, 50]
+assert of [t1 == null, "NET14 recv timeout returns null"]
+t2 is net_accept of [lid, 50]
+assert of [t2 == null, "NET15 accept timeout returns null"]
+
+# ---- EOF: peer closed → empty buffer, not null ----
+net_close of cid
+eof is net_recv of [sid, 64, 2000]
+assert of [(len of eof) == 0, "NET16 recv after peer close is an empty buffer"]
+
+# ---- environment failures are values, not raises ----
+d1 is net_send of [sid, "into the void"]
+assert of [(d1 == -1) or (d1 == 13), "NET17 send to a closed peer is -1 or last flush"]
+net_close of sid
+net_close of lid
+gone is net_dial of ["127.0.0.1", port]
+assert of [gone == null, "NET18 dial to a closed port returns null"]
+r1 is net_recv of [sid, 64, 50]
+assert of [r1 == null, "NET19 recv on a closed handle returns null"]
+noname is net_dial of ["definitely-not-a-real-host.invalid", 80]
+assert of [noname == null, "NET20 unresolvable host returns null"]
+
+# ---- net_close is idempotent and always null ----
+c1 is net_close of sid
+assert of [c1 == null, "NET21 double close is a quiet null"]
+
+# ---- argument-SHAPE errors raise deterministically (before the tape) ----
+caught is 0
+try:
+    bad is net_recv of [sid]
+catch e:
+    caught is 1
+assert of [caught == 1, "NET22 net_recv missing max_bytes raises"]
+
+caught2 is 0
+try:
+    bad2 is net_recv of [sid, 0, 50]
+catch e:
+    caught2 is 1
+assert of [caught2 == 1, "NET23 net_recv max_bytes < 1 raises"]
+
+caught3 is 0
+try:
+    bad3 is net_listen of "nope"
+catch e:
+    caught3 is 1
+assert of [caught3 == 1, "NET24 net_listen non-numeric port raises"]
+
+print of "All net tests passed"

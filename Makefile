@@ -28,7 +28,7 @@ BINARY  := $(SRC_DIR)/eigenscript
 # --step tape-stepper, stdio+isatty, same footing).
 CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/bundle.c
 
-FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c \
+FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c $(SRC_DIR)/ext_net.c \
                 $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 
 PREFIX  := $(HOME)/.local
@@ -39,7 +39,7 @@ PREFIX  := $(HOME)/.local
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
 
-.PHONY: all build full http gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff asan-http print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff asan-http print-%
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -62,6 +62,7 @@ build:
 full:
 	$(CC) $(CFLAGS) -o $(BINARY) $(FULL_SOURCES) \
 		-I/usr/include/postgresql \
+		-DEIGENSCRIPT_EXT_NET=1 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS) -lpq
 	@echo "EigenScript $(VERSION) (full) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
@@ -92,6 +93,18 @@ zlib:
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS) -lz
 	@echo "EigenScript $(VERSION) (zlib) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+
+# Raw TCP sockets on the trace tape (#414). Same opt-in pattern as gfx:
+# in no default build, no extra library needed (plain POSIX sockets).
+net:
+	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) $(SRC_DIR)/ext_net.c \
+		-DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_EXT_NET=1 \
+		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
+		$(LDFLAGS)
+	@echo "EigenScript $(VERSION) (net) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
 
 gfx:
 	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) $(SRC_DIR)/ext_gfx.c \
@@ -204,14 +217,15 @@ asan:
 #   make asan-http && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
 asan-http:
 	$(CC) -fsanitize=address,undefined -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
-		$(SRC_DIR)/ext_http.c \
+		$(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c \
 		$(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c \
 		-DEIGENSCRIPT_EXT_HTTP=1 \
 		-DEIGENSCRIPT_EXT_MODEL=1 \
 		-DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_EXT_NET=1 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		-lm -lpthread
-	@echo "EigenScript $(VERSION) (asan+ubsan, http+model) built. Binary: $(BINARY)"
+	@echo "EigenScript $(VERSION) (asan+ubsan, http+model+net) built. Binary: $(BINARY)"
 
 # ThreadSanitizer build for the concurrency race gate (tests/test_tsan.sh).
 # Complements ASan (which is not run with the thread checker). Run the tests

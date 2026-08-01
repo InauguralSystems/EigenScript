@@ -25,6 +25,11 @@
 #include "ext_db_internal.h"
 #endif
 
+#if EIGENSCRIPT_EXT_NET
+#include "ext_net_internal.h"
+#include <unistd.h>   /* close() in handle_table_drain's HANDLE_NET pass */
+#endif
+
 #if EIGENSCRIPT_EXT_MODEL
 #include "model_internal.h"
 #endif
@@ -5834,6 +5839,20 @@ void handle_table_drain(EigsState *st) {
         free(ch);
         st->handle_table[i].ptr = NULL;
     }
+#if EIGENSCRIPT_EXT_NET
+    /* #414 sockets: an outstanding listener/connection at exit is an OS fd
+     * plus one malloc'd row — close and free. No thread can still be using
+     * it: every worker was joined above. */
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_NET) continue;
+        EigsNetSock *ns = (EigsNetSock*)st->handle_table[i].ptr;
+        if (!ns) continue;
+        close(ns->fd);
+        free(ns);
+        st->handle_table[i].ptr = NULL;
+    }
+#endif
+
     /* #408 tasks: cooperative, single-thread, no OS resource — just held
      * refs. An outstanding task at exit (never joined, or the program ended
      * with it still live) is reclaimed here. Its held entry_fn/args/result
@@ -7596,6 +7615,10 @@ void register_builtins(Env *env) {
 
 #if EIGENSCRIPT_EXT_DB
     register_db_builtins(env);
+#endif
+
+#if EIGENSCRIPT_EXT_NET
+    register_net_builtins(env);
 #endif
 
 #if EIGENSCRIPT_EXT_MODEL
