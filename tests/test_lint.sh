@@ -1200,6 +1200,34 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "#785 W013 fires inside a match arm" "$OUTPUT" "W013.*'chr'"
 rm -f "$TMPFILE"
 
+# --- #780: W001 (unused variable) recurses into match arms ---
+# collect_assigns used to break on AST_MATCH, so a variable assigned only
+# inside a match arm was never recorded and never warned on.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match 1:
+    case 1:
+        w001_inmatch is 5
+print of "done"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#780 W001 fires inside a match arm" "$OUTPUT" "W001.*'w001_inmatch'"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match 2:
+    case 1:
+        print of "one"
+    case _:
+        w001_inmatch2 is 6
+print of "done"
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#780 W001 fires in the fallback match arm" "$OUTPUT" "W001.*'w001_inmatch2'"
+rm -f "$TMPFILE"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL
