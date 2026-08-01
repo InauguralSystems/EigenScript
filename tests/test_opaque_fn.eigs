@@ -1,0 +1,50 @@
+# #708: function-valued bindings are opaque to the observer.
+# A function has no content to sample — its entropy is a constant — so
+# classification surfaces answer "opaque" (and predicates false) instead
+# of a confident "equilibrium" that can never move. The entropy constant
+# itself is unchanged: containers and numeric trajectories measure as
+# before; this file pins both halves.
+
+define a() as:
+    return 1
+define b(p, q, r) as:
+    return p + q + r
+
+# ---- report/report_value/predicates/observe on a rebound fn binding ----
+f is a
+f is b
+assert of [(report of f) == "opaque", "OP01 report of a fn binding is opaque"]
+assert of [(report_value of f) == "opaque", "OP02 report_value is opaque too"]
+assert of [(equilibrium of f) == 0, "OP03 equilibrium predicate is false"]
+assert of [(converged of f) == 0, "OP04 converged predicate is false"]
+assert of [(stable of f) == 0, "OP05 stable predicate is false"]
+obs is observe of f
+assert of [obs[0] == "opaque", "OP06 observe band is opaque"]
+
+# ---- a function named directly, and a builtin binding ----
+assert of [(report of a) == "opaque", "OP07 report of a define'd name is opaque"]
+g is print
+assert of [(report of g) == "opaque", "OP08 a builtin binding is opaque"]
+
+# ---- the value-operand fallback path (no binding) ----
+hs is [a]
+assert of [(report of hs[0]) == "opaque", "OP09 fn value operand is opaque"]
+
+# ---- bare predicate reads the last-observed binding ----
+f2 is a
+f2 is b
+assert of [equilibrium == 0, "OP10 bare predicate on a fn binding is false"]
+
+# ---- the check is ask-time: rebinding to a number answers again ----
+f is 42
+assert of [((report of f) == "opaque") == 0, "OP11 number rebind is not opaque"]
+
+# ---- numeric bindings and containers are untouched ----
+n is 1
+n is 2
+n is 3
+assert of [((report of n) == "opaque") == 0, "OP12 numeric binding classifies"]
+d is {"h": a}
+assert of [((report of d) == "opaque") == 0, "OP13 container holding a fn is not opaque"]
+
+print of "All tests passed"

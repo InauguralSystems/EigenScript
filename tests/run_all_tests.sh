@@ -3361,6 +3361,14 @@ else
 fi
 echo ""
 
+# [127] #708: function-valued bindings are opaque to the observer —
+# report/report_value/predicates/observe answer "opaque"/false instead of
+# a confident "equilibrium" that can never move; numeric bindings and
+# containers holding functions are pinned unchanged.
+echo "[127] Observer Opaque Fn Bindings (13 checks)"
+check_eigs_suite "all 13 opaque-classification checks" test_opaque_fn.eigs "All tests passed" 13
+echo ""
+
 # [89] Executable documentation — every eigenscript/output block pair in
 # docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
 # the spec cannot drift from the implementation. Skips without python3.

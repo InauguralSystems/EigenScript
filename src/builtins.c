@@ -576,8 +576,11 @@ Value* builtin_report(Value *arg) {
      * Value. `report of <ident>` is a slot-keyed special form (REPORT_SLOT/
      * REPORT_NAME); this builtin is reached only for a value-based operand with
      * no binding (a computed expr, or an unobserved param), which has no
-     * trajectory → the no-observation band, "equilibrium". */
-    (void)arg;
+     * trajectory → the no-observation band, "equilibrium".
+     * #708: a function/builtin operand answers "opaque" here too, matching
+     * the slot-keyed forms — a fn has no content the observer can sample. */
+    if (arg && (arg->type == VAL_FN || arg->type == VAL_BUILTIN))
+        return make_str("opaque");
     return make_str("equilibrium");
 }
 

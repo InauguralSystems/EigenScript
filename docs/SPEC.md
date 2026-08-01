@@ -1139,6 +1139,32 @@ bands are not exhaustive, and `moving` is the honest answer for the gap
 instantaneous label the predicates don't yet confirm. See
 [PREDICATES.md](PREDICATES.md).
 
+**Function values are `opaque`** (#708). A function has no content the
+observer can sample — its entropy is a constant — so a binding whose
+current value is a function (or builtin) sits outside what the observer
+measures. Rather than reporting a confident `equilibrium` that could
+never move, `report`, `report_value`, and `observe`'s band answer
+`opaque`, and every predicate is false. This is the same honesty rule
+as `moving`: name the gap instead of picking a plausible band. The
+entropy *constant* is unchanged — containers holding functions measure
+exactly as before; only the direct classification of a function-valued
+binding names the gap:
+
+```eigenscript
+define a() as:
+    return 1
+define b(p, q, r) as:
+    return p + q + r
+f is a
+f is b
+print of report of f
+print of (equilibrium of f)
+```
+```output
+opaque
+0
+```
+
 **The value channel** (`report_value of x`) classifies the value's own
 trajectory rather than its entropy, over a 10-sample window of relative
 steps `Δv/(1+|v|)` — labels `oscillating`, `diverging`, `converged`,

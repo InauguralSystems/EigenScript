@@ -4,6 +4,28 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Function-valued bindings classify `opaque` instead of `equilibrium`
+  (#708).** A function has no content the observer can sample — its
+  entropy is a constant — so rebinding `f` from one function to a
+  genuinely different one showed dH = 0 and `equilibrium` forever: a
+  confident wrong answer on the surface whose claim is that it measures.
+  Now every classification surface names the gap: `report`,
+  `report_value`, and `observe`'s band answer `"opaque"`, and all six
+  predicates are false, for a binding whose CURRENT value is a function
+  or builtin (ask-time check — rebind to a number and its trajectory
+  answers normally). The same visible-gap rule as `moving` (#735), and
+  the same arm-by-arm review that fixed `VAL_JSON_RAW`'s flat 0.0. The
+  entropy *constant* is deliberately unchanged: containers holding
+  functions (dispatch tables everywhere downstream) measure
+  byte-identically, tapes replay unchanged, and no numeric trajectory
+  moves — only direct classification of a function binding changes, and
+  its old answer was vacuous. Docs: SPEC.md (executable example),
+  PREDICATES.md ("Opaque rule"), OBSERVER.md, COMPARISON.md. Suite
+  [127] pins all surfaces plus the not-opaque half (numbers,
+  containers, rebind-back).
+
 ### Added
 
 - **`eigsdap`: a DAP server with first-class time travel (#539 v3,
