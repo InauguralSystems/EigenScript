@@ -182,7 +182,7 @@ embed-smoke: amalgamation
 # The full suite runs leak-clean, so leave leak detection on:
 #   make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
 asan:
-	$(CC) -fsanitize=address,undefined -g -O1 -o $(BINARY) $(SOURCES) \
+	$(CC) -fsanitize=address,undefined -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
 		-DEIGENSCRIPT_EXT_DB=0 \
@@ -203,7 +203,7 @@ asan:
 # therefore remains unsanitized — a separate, smaller gap.
 #   make asan-http && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
 asan-http:
-	$(CC) -fsanitize=address,undefined -g -O1 -o $(BINARY) $(SOURCES) \
+	$(CC) -fsanitize=address,undefined -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
 		$(SRC_DIR)/ext_http.c \
 		$(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c \
 		-DEIGENSCRIPT_EXT_HTTP=1 \
@@ -217,7 +217,7 @@ asan-http:
 # Complements ASan (which is not run with the thread checker). Run the tests
 # under `setarch -R` — ThreadSanitizer needs ASLR disabled here (CLAUDE.md).
 tsan:
-	$(CC) -fsanitize=thread -g -O1 -o $(BINARY) $(SOURCES) \
+	$(CC) -fsanitize=thread -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
 		-DEIGENSCRIPT_EXT_DB=0 \
@@ -231,7 +231,7 @@ tsan:
 # system without instrumented libs. -O1 keeps optimizer-induced false positives
 # down while giving usable stacks. Same minimal extension surface as asan.
 valgrind:
-	$(CC) -g -O1 -o $(BINARY) $(SOURCES) \
+	$(CC) -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
 		-DEIGS_VALGRIND \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \

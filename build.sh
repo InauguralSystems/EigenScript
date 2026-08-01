@@ -42,7 +42,7 @@ if [ "$1" = "lsp" ]; then
     LSP_SOURCES=" $SOURCES "
     for u in $CLI_ONLY; do LSP_SOURCES="${LSP_SOURCES/ $u / }"; done
     LSP_SOURCES="$LSP_SOURCES eigenlsp.c"
-    $CC -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -o eigenlsp $LSP_SOURCES \
+    $CC -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -O2 -fstack-protector-strong -o eigenlsp $LSP_SOURCES \
         -DEIGENSCRIPT_EXT_HTTP=0 \
         -DEIGENSCRIPT_EXT_MODEL=0 \
         -DEIGENSCRIPT_EXT_DB=0 \
@@ -52,7 +52,7 @@ if [ "$1" = "lsp" ]; then
     echo "EigenScript LSP $VERSION built. Binary: $(du -sh eigenlsp | cut -f1)"
 elif [ "$1" = "full" ]; then
     # Full build: all extensions. Requires libpq-dev.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_http.c ext_db.c \
+    $CC -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_http.c ext_db.c \
         model_io.c model_infer.c model_train.c \
         -I/usr/include/postgresql \
         -DEIGENSCRIPT_EXT_HTTP=1 \
@@ -64,7 +64,7 @@ elif [ "$1" = "full" ]; then
     echo "EigenScript $VERSION (full) built. Binary: $(du -sh eigenscript | cut -f1)"
 else
     # Minimal build: language + stdlib only.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration -O2 -fstack-protector-strong -o eigenscript $SOURCES \
+    $CC -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -O2 -fstack-protector-strong -o eigenscript $SOURCES \
         -DEIGENSCRIPT_EXT_HTTP=0 \
         -DEIGENSCRIPT_EXT_MODEL=0 \
         -DEIGENSCRIPT_EXT_DB=0 \
