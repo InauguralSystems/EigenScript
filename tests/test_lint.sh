@@ -191,6 +191,36 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "func unreachable after return" "$OUTPUT" "unreachable code after return"
 rm -f "$TMPFILE"
 
+# --- #782: W003 (unreachable code) recurses into unobserved blocks and match arms ---
+# check_func_unreachable used to break on AST_UNOBSERVED/AST_MATCH, so a
+# function defined there never had its body scanned for dead code.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+unobserved:
+    define w003_u() as:
+        return 1
+        dead_stmt is 2
+w003_u of null
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#782 W003 fires inside an unobserved block" "$OUTPUT" "W003.*unreachable code after return"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match 1:
+    case 1:
+        define w003_m() as:
+            return 1
+            dead_stmt is 2
+    case _:
+        x is 0
+w003_m of null
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#782 W003 fires inside a match arm" "$OUTPUT" "W003.*unreachable code after return"
+rm -f "$TMPFILE"
+
 # --- Feature-rich CLEAN file: walks every AST node kind through the lint
 #     collectors (collect_refs / collect_assigns / check_builtin_shadow /
 #     check_dup_keys / check_unused_params) without tripping a warning.
