@@ -351,6 +351,11 @@ static void collect_assigns(ASTNode *node, LintContext *ctx) {
             for (int i = 0; i < node->data.program.count; i++)
                 collect_assigns(node->data.program.stmts[i], ctx);
             break;
+        case AST_MATCH:
+            for (int i = 0; i < node->data.match.case_count; i++)
+                for (int j = 0; j < node->data.match.body_counts[i]; j++)
+                    collect_assigns(node->data.match.bodies[i][j], ctx);
+            break;
         case AST_TRY:
             if (node->data.trycatch.err_name)
                 add_assign(ctx, node->data.trycatch.err_name, node->line);
@@ -383,7 +388,6 @@ static void collect_assigns(ASTNode *node, LintContext *ctx) {
         case AST_BREAK:
         case AST_CONTINUE:
         case AST_DOT_ASSIGN:
-        case AST_MATCH:
         case AST_LAMBDA:
         case AST_INDEX_ASSIGN:
         case AST_LIST_PATTERN_ASSIGN:
