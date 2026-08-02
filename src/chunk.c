@@ -373,14 +373,30 @@ const char *op_name(uint8_t op) {
         [OP_DEFAULT_PARAM] = "DEFAULT_PARAM",
         [OP_DESTRUCTURE_UNPACK] = "DESTRUCTURE_UNPACK",
         [OP_SLICE_GET] = "SLICE_GET",
+        /* #737: these four drifted out of the table and disassembled as
+         * "???" — their siblings (REPORT_VALUE_*, OBSERVE_ASSIGN*) were
+         * present, which is exactly how the omission went unnoticed. */
+        [OP_REPORT_SLOT] = "REPORT_SLOT",
+        [OP_REPORT_NAME] = "REPORT_NAME",
+        [OP_OBSERVE_VALUE_SLOT] = "OBSERVE_VALUE_SLOT",
+        [OP_OBSERVE_VALUE_NAME] = "OBSERVE_VALUE_NAME",
     };
     if (op < OP_COUNT && names[op]) return names[op];
     return "???";
 }
 
-/* Returns 1 if opcode has a 16-bit operand */
-static int op_has_u16(uint8_t op) {
+/* Number of 16-bit operands an opcode carries (0..3). Mirrors the operand
+ * layout the VM decodes in vm.c — keep in lockstep if an opcode changes.
+ * (Was op_has_u16, a boolean — which structurally could not express the
+ * multi-operand superinstructions, so chunk_disassemble desynchronized on
+ * them and on the operand-carrying opcodes missing here entirely, #737.)
+ *
+ * Deliberately switched on OpCode with NO default arm: -Werror=switch
+ * (Makefile:9) then makes a missing case — e.g. a newly added opcode — a
+ * BUILD ERROR instead of a silently wrong operand width. */
+static int op_u16_operand_count(OpCode op) {
     switch (op) {
+    /* One u16 operand */
     case OP_CONST: case OP_GET_LOCAL: case OP_SET_LOCAL:
     case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL:
@@ -394,16 +410,50 @@ static int op_has_u16(uint8_t op) {
     case OP_TRY_BEGIN: case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_IMPORT: case OP_MATCH:
+    case OP_DESTRUCTURE_UNPACK:
+    case OP_REPORT_SLOT: case OP_REPORT_NAME:
+    case OP_OBSERVE_VALUE_SLOT: case OP_OBSERVE_VALUE_NAME:
+    case OP_OBSERVE_NAME_POST:
     case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
     case OP_TRAJECTORY_SLOT: case OP_TRAJECTORY_NAME:
         return 1;
     case OP_INTERROGATE: case OP_PREDICATE:
         return 1; /* kind:8 but padded to 16 for uniformity */
+    /* Two u16 operands */
+    case OP_PREDICATE_SLOT: case OP_PREDICATE_NAME:
+    case OP_DEFAULT_PARAM:
+    case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
+    case OP_LOCAL_IDX_GET:
+    case OP_INTERROGATE_NAMED: case OP_INTERROGATE_NAMED_AT:
+        return 2;
+    /* Three u16 operands */
+    case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
+        return 3;
     /* OP_LINE has a 32-bit operand (#630) — handled separately by the
-     * disassembler and verifier, never through the u16 path. */
-    default:
+     * disassembler and verifier, never through the u16 path. OP_WIDE is an
+     * unimplemented placeholder, never emitted. The rest carry no operand. */
+    case OP_LINE: case OP_WIDE:
+    case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
+    case OP_NEG: case OP_NOT: case OP_BNOT:
+    case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
+    case OP_POP: case OP_DUP: case OP_DUP2:
+    case OP_RETURN: case OP_RETURN_NULL:
+    case OP_INDEX_GET: case OP_INDEX_SET:
+    case OP_ITER_SETUP:
+    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
+    case OP_BREAK: case OP_CONTINUE:
+    case OP_TRY_END:
+    case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+    case OP_LISTCOMP_BEGIN: case OP_LISTCOMP_APPEND:
+    case OP_DISPATCH: case OP_SLICE_GET:
+    case OP_COUNT:   /* sentinel, never an instruction */
         return 0;
     }
+    /* Unreachable for any valid enumerator; guards an out-of-enum byte
+     * (NOT a default arm — -Werror=switch still fires on a missing case). */
+    return 0;
 }
 
 void chunk_disassemble(EigsChunk *chunk, const char *label) {
@@ -423,17 +473,26 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
                            ((uint32_t)chunk->code[i + 3] << 24);
             fprintf(stderr, " %u", arg);
             i += 4;
-        } else if (op_has_u16(op) && i + 1 < chunk->code_len) {
-            uint16_t arg = chunk->code[i] | (chunk->code[i + 1] << 8);
-            fprintf(stderr, " %d", arg);
-            if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
-                Value *v = chunk->constants[arg];
-                if (v->type == VAL_NUM)
-                    fprintf(stderr, " (%.6g)", v->data.num);
-                else if (v->type == VAL_STR)
-                    fprintf(stderr, " (\"%s\")", v->data.str);
+        } else if (op < OP_COUNT) {
+            /* #737: skip ALL of the opcode's u16 operands, not just one —
+             * the multi-operand superinstructions desynchronized every
+             * following byte under the old boolean op_has_u16. The op <
+             * OP_COUNT guard keeps a crafted out-of-range byte (which
+             * op_name above prints as "???") out of the enum-typed switch:
+             * it has no default arm, by design. */
+            int nops = op_u16_operand_count(op);
+            for (int k = 0; k < nops && i + 1 < chunk->code_len; k++) {
+                uint16_t arg = chunk->code[i] | (chunk->code[i + 1] << 8);
+                fprintf(stderr, " %d", arg);
+                if (k == 0 && op == OP_CONST && arg < (uint16_t)chunk->const_count) {
+                    Value *v = chunk->constants[arg];
+                    if (v->type == VAL_NUM)
+                        fprintf(stderr, " (%.6g)", v->data.num);
+                    else if (v->type == VAL_STR)
+                        fprintf(stderr, " (\"%s\")", v->data.str);
+                }
+                i += 2;
             }
-            i += 2;
         }
         fprintf(stderr, "\n");
     }
@@ -470,8 +529,17 @@ typedef enum {
 } VerifyRole;
 
 /* Fill roles[] for op; return its operand count (0..3). Mirrors the operand
- * layout the VM decodes in vm.c — keep in lockstep if an opcode changes. */
-static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
+ * layout the VM decodes in vm.c — keep in lockstep if an opcode changes.
+ *
+ * Deliberately switched on OpCode with NO default arm: -Werror=switch
+ * (Makefile:9) then makes a missing case a BUILD ERROR. The old
+ * `default: return 0` silently absorbed OP_TRAJECTORY_SLOT (#737): its
+ * 3-byte instruction was walked as 1 byte, so is_start[] marked the
+ * operand's bytes as instruction boundaries and a crafted jump could land
+ * mid-instruction and still pass pass 2 — in the untrusted-chunk sandbox
+ * gate. The caller (chunk_verify) rejects op >= OP_COUNT before calling,
+ * so every value reaching here is a valid enumerator. */
+static int op_verify_operands(OpCode op, VerifyRole roles[3]) {
     switch (op) {
     case OP_CONST:
         roles[0] = VR_CONST; return 1;
@@ -494,12 +562,10 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_LIST: case OP_DICT:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
-    case OP_REPORT_VALUE_SLOT:
+    case OP_REPORT_VALUE_SLOT: case OP_TRAJECTORY_SLOT:
     case OP_INTERROGATE: case OP_PREDICATE:
     case OP_MATCH: case OP_DESTRUCTURE_UNPACK:
         roles[0] = VR_RAW; return 1;
-    /* OP_LINE's operand is 32-bit (#630); chunk_verify walks it specially,
-     * so it never reaches this per-operand (u16-strided) role machinery. */
     case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
     case OP_LOCAL_IDX_GET:
@@ -514,9 +580,32 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
         roles[0] = VR_RAW; roles[1] = VR_JFWD; return 2;    /* slot, skip */
     case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_NAME; return 3;
-    default:
+    /* OP_LINE's operand is 32-bit (#630); chunk_verify walks it specially and
+     * never calls here — the case exists only to keep the switch exhaustive.
+     * OP_WIDE is an unimplemented placeholder, never emitted. The rest carry
+     * no operand. */
+    case OP_LINE: case OP_WIDE:
+    case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
+    case OP_NEG: case OP_NOT: case OP_BNOT:
+    case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
+    case OP_POP: case OP_DUP: case OP_DUP2:
+    case OP_RETURN: case OP_RETURN_NULL:
+    case OP_INDEX_GET: case OP_INDEX_SET:
+    case OP_ITER_SETUP:
+    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
+    case OP_BREAK: case OP_CONTINUE:
+    case OP_TRY_END:
+    case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+    case OP_LISTCOMP_BEGIN: case OP_LISTCOMP_APPEND:
+    case OP_DISPATCH: case OP_SLICE_GET:
+    case OP_COUNT:   /* sentinel, never an instruction */
         return 0;   /* no operand */
     }
+    /* Unreachable — chunk_verify rejects op >= OP_COUNT before calling; not
+     * a default arm, so -Werror=switch still fires on a missing case. */
+    return 0;
 }
 
 int chunk_verify(EigsChunk *chunk) {

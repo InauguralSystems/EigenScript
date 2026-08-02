@@ -4094,6 +4094,17 @@ fi
 rm -rf "$CONT_DIR"
 echo ""
 
+echo "[99i] Opcode layout tables complete (#737)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/opcode_layout_check.sh" && bash "$TESTS_DIR/../tools/opcode_layout_check.sh" --selftest >/dev/null; then
+    PASS=$((PASS + 1))
+    echo "  PASS: all four opcode metadata tables cover every opcode (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: opcode metadata table drift, or gate self-test broke (see lines above)"
+fi
+echo ""
+
 # Final guard (#681): if the binary changed during the last block, results are invalid.
 check_binary_fingerprint
 

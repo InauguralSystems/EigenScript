@@ -241,8 +241,12 @@ static void adjust_stack(Compiler *c, int delta) {
 
 /* ---- Emit helpers ---- */
 
-/* Stack effect of each opcode */
-static int op_stack_effect(uint8_t op) {
+/* Stack effect of each opcode.
+ *
+ * Deliberately switched on OpCode with NO default arm: -Werror=switch
+ * (Makefile:9) then makes a missing case — e.g. a newly added opcode — a
+ * BUILD ERROR instead of a silently wrong stack depth (#737). */
+static int op_stack_effect(OpCode op) {
     switch (op) {
     /* Push 1 */
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
@@ -346,10 +350,26 @@ static int op_stack_effect(uint8_t op) {
     /* DISPATCH: pop 3 (table, key, arg), push 1 = -2 */
     case OP_DISPATCH:
         return -2;
-    /* CALL, LIST, DICT: dynamic — handled separately */
-    default:
+    /* MATCH: vm.c decodes it as push-null (net +1), but the compiler never
+     * emits it (match is compiled as DUP+compare+jump) — the case exists so
+     * the switch stays exhaustive, not because it runs. */
+    case OP_MATCH:
+        return 1;
+    /* Loop guards: iteration checks only, no stack change */
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
+        return 0;
+    /* WIDE: unimplemented placeholder, never emitted */
+    case OP_WIDE:
+        return 0;
+    /* CALL, LIST, DICT: dynamic — handled separately by the emit sites */
+    case OP_CALL: case OP_LIST: case OP_DICT:
+        return 0;
+    case OP_COUNT:   /* sentinel, never an instruction */
         return 0;
     }
+    /* Unreachable for any valid enumerator; not a default arm, so
+     * -Werror=switch still fires on a missing case. */
+    return 0;
 }
 
 static void emit(Compiler *c, uint8_t op, int line) {

@@ -295,4 +295,18 @@ assert_eq of [vm_run_bytecode of [ABI, iter_neg, [[10, 20, 30], 1, "EXITED"]], 2
 try9 is [TRY_BEGIN,27,0, TRY_BEGIN,24,0, TRY_BEGIN,21,0, TRY_BEGIN,18,0, TRY_BEGIN,15,0, TRY_BEGIN,12,0, TRY_BEGIN,9,0, TRY_BEGIN,6,0, TRY_BEGIN,3,0, JUMP,4,0, CONST,1,0, RETURN, CONST,0,0, RETURN]
 assert_eq of [vm_run_bytecode of [ABI, try9, ["NOERR", "CAUGHT8"]], "CAUGHT8", "#726: the 9th TRY_BEGIN raises instead of silently mis-pairing"]
 
+# ---- #737: op_verify_operands was missing OP_TRAJECTORY_SLOT (91) — the
+# default arm walked its 3-byte instruction as 1 byte, so the operand's bytes
+# were marked instruction starts and a crafted jump could land mid-instruction
+# and still pass pass 2. A legit TRAJECTORY_SLOT chunk must now verify and run
+# (unobserved slot snapshots as an empty trajectory dict), and a jump into its
+# operand bytes must be REJECTED. The crafted chunk is exploit-shaped: under
+# the old 1-byte walk its operand bytes re-decode as a valid stream
+# (NUM_ZERO; CONST 0; RETURN), so the pre-fix verifier ACCEPTED it and
+# executed it (returned "x"); the post-fix verifier rejects it outright.
+TRAJ_SLOT is 91
+NUM_ZERO is 2
+assert_eq of [type of (vm_run_bytecode of [ABI, [TRAJ_SLOT,0,0, RETURN], []]), "dict", "#737: TRAJECTORY_SLOT verifies as a 3-byte instruction"]
+assert_eq of [vm_run_bytecode of [ABI, [JUMP,1,0, TRAJ_SLOT,NUM_ZERO,0, 0,0, RETURN], ["x"]], null, "#737: jump into TRAJECTORY_SLOT's operand is rejected"]
+
 test_summary of null
