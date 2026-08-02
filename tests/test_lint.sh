@@ -1353,6 +1353,73 @@ check_contains "#780 W001 fires in the fallback match arm" "$OUTPUT" "W001.*'w00
 rm -f "$TMPFILE"
 rm -f "$TMPFILE"
 
+# --- W022 (#733): literal arg list longer than the callee's params ---
+# Over-arity is silent at runtime (two of [1, 2, 99] drops 99, rc=0);
+# W022 fires only when the callee name provably has one meaning in the
+# file (one define, no other binding).
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define two(a, b) as:
+    return a + b
+print of (two of [1, 2, 99])
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W022 fires on over-arity to a unique define" "$OUTPUT" "W022.*passes 3 arguments but 'two' takes 2"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define one(a) as:
+    return a
+define two(a, b) as:
+    return a + b
+print of (one of [5, 6])
+print of (two of [1, 2])
+print of (two of ([1, 2, 3]))
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W022 silent: 1-param variadic, exact arity, parenthesized" "$OUTPUT" "W022"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define two(a, b) as:
+    return a + b
+two is 7
+x is two of [1, 2, 99]
+print of x
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W022 silent when the name is rebound (poisoned)" "$OUTPUT" "W022"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define dup(a, b) as:
+    return a
+define dup(a, b, c) as:
+    return a
+y is dup of [1, 2, 3, 4]
+print of y
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W022 silent when the name is defined twice" "$OUTPUT" "W022"
+rm -f "$TMPFILE"
+
+# NOTE: there is no 0-param case — `define f()` / `define f` both get the
+# implicit single param `n` (parser.c), so every define has arity >= 1 and
+# the arity-1 whole-list exemption covers the "no params" shape too.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define three(a, b, c is 9) as:
+    return a + b + c
+print of (three of [1, 2, 3, 4])
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W022 counts defaulted params in the arity" "$OUTPUT" "W022.*passes 4 arguments but 'three' takes 3"
+rm -f "$TMPFILE"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 exit $FAIL

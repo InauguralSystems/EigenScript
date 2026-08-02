@@ -2098,6 +2098,267 @@ static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
     w017_scan(ast, ctx);
 }
 
+/* ---- W022 (#733): literal arg list longer than the callee's params ---- */
+
+/* Generic direct-child iterator: expands STMT once per non-NULL child of
+ * n, with `childvar` bound to it. The switch has NO default arm on
+ * purpose — -Werror=switch then forces a new ASTType to be added here,
+ * instead of silently pruning that subtree from every walk using this. */
+#define LINT_FOR_EACH_CHILD(n, childvar, STMT) do {                          \
+    ASTNode *childvar;                                                       \
+    int _lfe_i, _lfe_j;                                                      \
+    (void)_lfe_i; (void)_lfe_j;                                              \
+    switch ((n)->type) {                                                     \
+    case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL:               \
+    case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT:  \
+        break;                                                               \
+    case AST_BINOP:                                                          \
+        if ((childvar = (n)->data.binop.left))  { STMT; }                    \
+        if ((childvar = (n)->data.binop.right)) { STMT; }                    \
+        break;                                                               \
+    case AST_UNARY:                                                          \
+        if ((childvar = (n)->data.unary.operand)) { STMT; }                  \
+        break;                                                               \
+    case AST_ASSIGN:                                                         \
+        if ((childvar = (n)->data.assign.expr)) { STMT; }                    \
+        break;                                                               \
+    case AST_RELATION:                                                       \
+        if ((childvar = (n)->data.relation.left))  { STMT; }                 \
+        if ((childvar = (n)->data.relation.right)) { STMT; }                 \
+        break;                                                               \
+    case AST_IF:                                                             \
+        if ((childvar = (n)->data.cond.cond)) { STMT; }                      \
+        for (_lfe_i = 0; _lfe_i < (n)->data.cond.if_count; _lfe_i++)         \
+            if ((childvar = (n)->data.cond.if_body[_lfe_i])) { STMT; }       \
+        for (_lfe_i = 0; _lfe_i < (n)->data.cond.else_count; _lfe_i++)       \
+            if ((childvar = (n)->data.cond.else_body[_lfe_i])) { STMT; }     \
+        break;                                                               \
+    case AST_LOOP:                                                           \
+        if ((childvar = (n)->data.loop.cond)) { STMT; }                      \
+        for (_lfe_i = 0; _lfe_i < (n)->data.loop.body_count; _lfe_i++)       \
+            if ((childvar = (n)->data.loop.body[_lfe_i])) { STMT; }          \
+        break;                                                               \
+    case AST_FUNC:                                                           \
+        if ((n)->data.func.param_defaults)                                   \
+            for (_lfe_i = 0; _lfe_i < (n)->data.func.param_count; _lfe_i++)  \
+                if ((childvar = (n)->data.func.param_defaults[_lfe_i]))      \
+                    { STMT; }                                                \
+        for (_lfe_i = 0; _lfe_i < (n)->data.func.body_count; _lfe_i++)       \
+            if ((childvar = (n)->data.func.body[_lfe_i])) { STMT; }          \
+        break;                                                               \
+    case AST_RETURN:                                                         \
+        if ((childvar = (n)->data.ret.expr)) { STMT; }                       \
+        break;                                                               \
+    case AST_BLOCK: case AST_UNOBSERVED:                                     \
+        for (_lfe_i = 0; _lfe_i < (n)->data.block.count; _lfe_i++)           \
+            if ((childvar = (n)->data.block.stmts[_lfe_i])) { STMT; }        \
+        break;                                                               \
+    case AST_LIST:                                                           \
+        for (_lfe_i = 0; _lfe_i < (n)->data.list.count; _lfe_i++)            \
+            if ((childvar = (n)->data.list.elems[_lfe_i])) { STMT; }         \
+        break;                                                               \
+    case AST_INDEX:                                                          \
+        if ((childvar = (n)->data.index.target)) { STMT; }                   \
+        if ((childvar = (n)->data.index.index))  { STMT; }                   \
+        break;                                                               \
+    case AST_LISTCOMP:                                                       \
+        if ((childvar = (n)->data.listcomp.expr))   { STMT; }                \
+        if ((childvar = (n)->data.listcomp.iter))   { STMT; }                \
+        if ((childvar = (n)->data.listcomp.filter)) { STMT; }                \
+        break;                                                               \
+    case AST_FOR:                                                            \
+        if ((childvar = (n)->data.forloop.iter)) { STMT; }                   \
+        for (_lfe_i = 0; _lfe_i < (n)->data.forloop.body_count; _lfe_i++)    \
+            if ((childvar = (n)->data.forloop.body[_lfe_i])) { STMT; }       \
+        break;                                                               \
+    case AST_PROGRAM:                                                        \
+        for (_lfe_i = 0; _lfe_i < (n)->data.program.count; _lfe_i++)         \
+            if ((childvar = (n)->data.program.stmts[_lfe_i])) { STMT; }      \
+        break;                                                               \
+    case AST_INTERROGATE:                                                    \
+        if ((childvar = (n)->data.interrogate.expr))    { STMT; }            \
+        if ((childvar = (n)->data.interrogate.at_expr)) { STMT; }            \
+        break;                                                               \
+    case AST_TRY:                                                            \
+        for (_lfe_i = 0; _lfe_i < (n)->data.trycatch.try_count; _lfe_i++)    \
+            if ((childvar = (n)->data.trycatch.try_body[_lfe_i])) { STMT; }  \
+        for (_lfe_i = 0; _lfe_i < (n)->data.trycatch.catch_count; _lfe_i++)  \
+            if ((childvar = (n)->data.trycatch.catch_body[_lfe_i])) { STMT; }\
+        break;                                                               \
+    case AST_DICT:                                                           \
+        for (_lfe_i = 0; _lfe_i < (n)->data.dict.count; _lfe_i++) {          \
+            if ((childvar = (n)->data.dict.keys[_lfe_i])) { STMT; }          \
+            if ((childvar = (n)->data.dict.vals[_lfe_i])) { STMT; }          \
+        }                                                                    \
+        break;                                                               \
+    case AST_DOT:                                                            \
+        if ((childvar = (n)->data.dot.target)) { STMT; }                     \
+        break;                                                               \
+    case AST_DOT_ASSIGN:                                                     \
+        if ((childvar = (n)->data.dot_assign.target)) { STMT; }              \
+        if ((childvar = (n)->data.dot_assign.expr))   { STMT; }              \
+        break;                                                               \
+    case AST_INDEX_ASSIGN:                                                   \
+        if ((childvar = (n)->data.index_assign.target)) { STMT; }            \
+        if ((childvar = (n)->data.index_assign.index))  { STMT; }            \
+        if ((childvar = (n)->data.index_assign.expr))   { STMT; }            \
+        break;                                                               \
+    case AST_MATCH:                                                          \
+        if ((childvar = (n)->data.match.expr)) { STMT; }                     \
+        for (_lfe_i = 0; _lfe_i < (n)->data.match.case_count; _lfe_i++) {    \
+            if ((childvar = (n)->data.match.patterns[_lfe_i])) { STMT; }     \
+            for (_lfe_j = 0; _lfe_j < (n)->data.match.body_counts[_lfe_i];   \
+                 _lfe_j++)                                                   \
+                if ((childvar = (n)->data.match.bodies[_lfe_i][_lfe_j]))     \
+                    { STMT; }                                                \
+        }                                                                    \
+        break;                                                               \
+    case AST_LAMBDA:                                                         \
+        if ((childvar = (n)->data.lambda.body)) { STMT; }                    \
+        break;                                                               \
+    case AST_LIST_PATTERN_ASSIGN:                                            \
+        if ((childvar = (n)->data.list_pattern_assign.expr)) { STMT; }       \
+        break;                                                               \
+    case AST_SLICE:                                                          \
+        if ((childvar = (n)->data.slice.target)) { STMT; }                   \
+        if ((childvar = (n)->data.slice.start))  { STMT; }                   \
+        if ((childvar = (n)->data.slice.end))    { STMT; }                   \
+        break;                                                               \
+    }                                                                        \
+} while (0)
+
+/* Over-arity is silent at runtime: `two of [1, 2, 99]` binds a=1, b=2 and
+ * DISCARDS 99 — rc=0, no diagnostic at any stage (under-arity at least
+ * null-fills, which tends to fail later; over-arity returns a plausible
+ * answer). This is the silent-wrong-answer class, so it gets a lint.
+ *
+ * Conservative by construction — the warning fires only when the callee
+ * name provably has one meaning in this file: exactly one `define` of the
+ * name anywhere, and NO other binding of it (assignment, param, lambda
+ * param, loop/comprehension var, catch name, list-pattern name, import,
+ * or an identifier inside a match pattern). Anything else drops the name
+ * from the table (false negatives are fine for a lint; a false positive
+ * is not). One-parameter callees are exempt by the #405 semantics
+ * themselves: a 2+-element bare list binds WHOLE to a single param —
+ * nothing is dropped, and that shape is the deliberate variadic idiom
+ * (`reverse of [1, 2, 3]`). */
+
+typedef struct { char *name; int param_count; int defs; int poisoned; } W022Fn;
+typedef struct { W022Fn *fns; int count; int cap; } W022Table;
+
+static W022Fn* w022_find(W022Table *t, const char *name) {
+    for (int i = 0; i < t->count; i++)
+        if (strcmp(t->fns[i].name, name) == 0) return &t->fns[i];
+    return NULL;
+}
+
+static void w022_poison(W022Table *t, const char *name) {
+    W022Fn *f = name ? w022_find(t, name) : NULL;
+    if (f) f->poisoned = 1;
+}
+
+static void w022_collect_defines(ASTNode *n, W022Table *t) {
+    if (!n) return;
+    if (n->type == AST_FUNC && n->data.func.name) {
+        W022Fn *f = w022_find(t, n->data.func.name);
+        if (f) {
+            f->defs++;
+        } else {
+            if (t->count == t->cap) {
+                t->cap = t->cap ? t->cap * 2 : 16;
+                t->fns = realloc(t->fns, (size_t)t->cap * sizeof(W022Fn));
+            }
+            t->fns[t->count].name = strdup(n->data.func.name);
+            t->fns[t->count].param_count = n->data.func.param_count;
+            t->fns[t->count].defs = 1;
+            t->fns[t->count].poisoned = 0;
+            t->count++;
+        }
+    }
+    LINT_FOR_EACH_CHILD(n, child, w022_collect_defines(child, t));
+}
+
+/* Poison every NON-define binding of a collected name. Match patterns are
+ * walked as opaque expressions: any identifier inside one poisons (a
+ * pattern ident may bind depending on shape — conservative either way). */
+static void w022_poison_idents(ASTNode *n, W022Table *t) {
+    if (!n) return;
+    if (n->type == AST_IDENT) w022_poison(t, n->data.ident.name);
+    LINT_FOR_EACH_CHILD(n, child, w022_poison_idents(child, t));
+}
+
+static void w022_collect_bindings(ASTNode *n, W022Table *t) {
+    if (!n) return;
+    switch (n->type) {
+        case AST_ASSIGN:
+            w022_poison(t, n->data.assign.name);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+                w022_poison(t, n->data.list_pattern_assign.names[i]);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < n->data.func.param_count; i++)
+                w022_poison(t, n->data.func.params[i]);
+            break;
+        case AST_LAMBDA:
+            for (int i = 0; i < n->data.lambda.param_count; i++)
+                w022_poison(t, n->data.lambda.params[i]);
+            break;
+        case AST_FOR:
+            w022_poison(t, n->data.forloop.var);
+            break;
+        case AST_LISTCOMP:
+            w022_poison(t, n->data.listcomp.var);
+            break;
+        case AST_TRY:
+            w022_poison(t, n->data.trycatch.err_name);
+            break;
+        case AST_IMPORT:
+            w022_poison(t, n->data.import.module_name);
+            break;
+        case AST_MATCH:
+            for (int c = 0; c < n->data.match.case_count; c++)
+                w022_poison_idents(n->data.match.patterns[c], t);
+            break;
+        default:
+            break;
+    }
+    LINT_FOR_EACH_CHILD(n, child, w022_collect_bindings(child, t));
+}
+
+static void w022_scan(ASTNode *n, W022Table *t, LintContext *ctx) {
+    if (!n) return;
+    if (n->type == AST_RELATION) {
+        ASTNode *fn = n->data.relation.left;
+        ASTNode *arg = n->data.relation.right;
+        if (fn && fn->type == AST_IDENT &&
+            arg && arg->type == AST_LIST && !arg->parenthesized) {
+            W022Fn *f = w022_find(t, fn->data.ident.name);
+            if (f && f->defs == 1 && !f->poisoned &&
+                f->param_count != 1 &&
+                arg->data.list.count > f->param_count) {
+                lint_warn(ctx, arg->line, "W022",
+                    "'%s of [...]' passes %d arguments but '%s' takes %d — "
+                    "the extras are silently dropped (write '%s of ([...])' "
+                    "to pass the list whole)",
+                    f->name, arg->data.list.count, f->name,
+                    f->param_count, f->name);
+            }
+        }
+    }
+    LINT_FOR_EACH_CHILD(n, child, w022_scan(child, t, ctx));
+}
+
+static void check_over_arity(ASTNode *ast, LintContext *ctx) {
+    W022Table t = {NULL, 0, 0};
+    w022_collect_defines(ast, &t);
+    w022_collect_bindings(ast, &t);
+    w022_scan(ast, &t, ctx);
+    for (int i = 0; i < t.count; i++) free(t.fns[i].name);
+    free(t.fns);
+}
+
 /* ---- W020 (#655): unobserved: block that provably does nothing ---- */
 
 /* `unobserved:` skips observer bookkeeping, which is gated on the NAMED env
@@ -3058,6 +3319,7 @@ static void lint_run_checks(ASTNode *ast, const char *path,
     check_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
     check_one_element_arg_list(ast, ctx);
+    check_over_arity(ast, ctx);
     check_dead_unobserved(ast, ctx);
     check_error_kind_typo(ast, ctx);
 #if !EIGENSCRIPT_FREESTANDING

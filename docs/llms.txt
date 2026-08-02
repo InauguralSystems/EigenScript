@@ -11,14 +11,24 @@
 ## Calls use `of`, never `f(x)`
 
 - Apply a function or builtin with `of`: `print of x`, `sqrt of n`, `len of xs`.
-- Multiple arguments are passed as a list, which spreads: `f of [a, b]` calls `f(a, b)`.
-- **THE #1 TRAP: `f of [x]` (a ONE-element list) does NOT spread** — it binds the
-  whole list to the first parameter. For a single argument to a multi-parameter
-  (or defaulted) function, write `f of (x)`. A bare single value `f of x` is
-  also fine. This silently produces wrong results, not an error.
+- A **bare literal list** after `of` is an argument list at every element
+  count: `f of []` zero arguments, `f of [x]` ONE argument (x itself, not a
+  1-element list), `f of [a, b]` two.
+- **THE #1 TRAP — the receiving side is arity-sensitive.** A 1-parameter
+  callee has only one slot, so a 2+-element argument list does NOT
+  distribute into it: the whole list re-collects and binds to that one
+  parameter. With `define one(a)`: `one of [5]` binds `a = 5`, but
+  `one of [5, 6]` binds `a = [5, 6]` (not `a = 5` with `6` dropped). This
+  carve-out is what makes `len of [1, 2]` return `2` and
+  `reverse of [1, 2, 3]` reverse the list — but it means you cannot predict
+  a binding from the call site alone; you need the callee's arity.
+- **Over-arity is SILENT** on 2+-parameter callees: with `define two(a, b)`,
+  `two of [1, 2, 99]` drops `99` with no error at any stage (lint `W022`
+  catches it when the callee is defined in the same file). Under-arity
+  null-fills, also silently.
 - **Parentheses always mean exactly one argument**: `f of ([a, b])` passes the
-  literal 2-element list as one argument (the escape hatch). `f of []` is the
-  zero-argument form.
+  literal 2-element list as one argument (the escape hatch), and `f of (x)`
+  is an unambiguous single argument.
 - `of` binds tighter than infix arithmetic: `sqrt of x + 1` means `(sqrt of x) + 1`.
   Parenthesize the operand when you mean otherwise: `sqrt of (x + 1)`.
 
@@ -117,6 +127,10 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
 xs is [1, 2, 3]
 append of [xs, 4]                       # in-place
 doubled is [v * 2 for v in xs]          # comprehension (its var leaks!)
+evens is [v for v in xs if v % 2 == 0]  # comprehension filter clause
+inc is (x) => x + 1                     # lambda: params NEED the parens
+add is (a, b) => a + b
+srt is sort_by of [xs, (v) => 0 - v]    # sort by key fn (builtin, no import)
 d is {"a": 1, "b": 2}
 print of d["a"]
 
@@ -149,10 +163,19 @@ match x:
 ## Before hand-rolling a helper
 
 The runtime has ~255 builtins and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
-`str_upper`/`char_at`/`index_of`/`hex of [n, nibbles]` are builtins (there is no
-bare `lower` — it's `str_lower`). `lib/` has `string.pad_left`, `format.fmt_*`,
-`checksum.crc32`, and civil-date math in `datetime`. See docs/BUILTINS.md and
-docs/STDLIB.md before writing your own.
+`str_upper`/`char_at`/`index_of`/`hex of [n, nibbles]`/`sort_by` are builtins
+(there is no bare `lower` — it's `str_lower`; `sort_by of [items, key_fn]` is
+the record-shaped sort and needs no import). `lib/` has `string.pad_left`,
+`format.fmt_*`, `checksum.crc32`, civil-date math in `datetime`, and
+`list.filter`/`list.reduce`. **`lib/` functions are NOT ambient** — reach them
+one of two ways:
+
+```eigenscript
+import list                              # namespaced: list.filter of [xs, fn]
+load_file of "lib/list.eigs"             # bare names: filter of [xs, fn]
+```
+
+See docs/BUILTINS.md and docs/STDLIB.md before writing your own.
 
 ## The generation-validation ladder (always run what you generate)
 

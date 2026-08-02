@@ -95,7 +95,12 @@ Always-on:
   EVERY count — `f of []` zero args, `f of [x]` one arg (the element,
   not the list), `f of [a, b]` two. To pass a literal list whole,
   parenthesise (#355): `f of ([x])`. Lint W017 flags the 1-element bare
-  form (pre-#405 it meant the opposite). (More `.eigs`-writing gotchas:
+  form (pre-#405 it meant the opposite). **Arity-1 carve-out (#733)**:
+  that rule describes the call site, not the binding — a 1-parameter
+  callee re-collects a 2+-element arg list WHOLE (`one of [5, 6]` binds
+  `a = [5, 6]`, not `a = 5`; this is what keeps `len of [1, 2]`
+  working). Over-arity on 2+-param callees is silently dropped — W022
+  flags it for same-file callees. (More `.eigs`-writing gotchas:
   the `write-eigenscript` skill.)
 - **A semantics change must update `docs/SPEC.md` + `docs/COMPARISON.md` in
   the same PR** — `tests/test_doc_examples.py` runs their example/output
