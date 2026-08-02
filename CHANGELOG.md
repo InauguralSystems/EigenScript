@@ -4,7 +4,40 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Lint `W022`: over-arity literal calls (#733).** With
+  `define two(a, b)`, `two of [1, 2, 99]` binds `a=1, b=2` and silently
+  DISCARDS `99` — rc=0, no diagnostic at any stage (under-arity at
+  least null-fills and tends to fail later on a type error). W022 flags
+  a bare literal argument list with more elements than the callee's
+  parameters, conservatively: only when the callee name has exactly one
+  `define` in the file and no other binding anywhere (assignment,
+  param, loop/comprehension var, catch name, list-pattern name, import,
+  or a match-pattern identifier all poison it). One-parameter callees
+  never fire — a 2+-element bare list binds WHOLE to a single param by
+  the #405 arity-1 carve-out (nothing is dropped; it's the variadic
+  idiom), and `define f()`/`define f` both carry the implicit `n`, so
+  every define has arity ≥ 1. Built on a new `LINT_FOR_EACH_CHILD`
+  generic AST child iterator whose switch has no `default:` arm, so
+  `-Werror=switch` forces new node kinds to update it.
+
 ### Fixed
+
+- **The AI-facing spread-rule docs now state the arity-sensitive rule
+  the runtime actually has (#733).** `docs/llms.txt`'s "#1 TRAP"
+  paragraph still described the PRE-#405 semantics (claimed
+  `f of [x]` binds the whole list — the opposite of today's runtime),
+  and its "which spreads" framing predicted the wrong binding for every
+  2+-element call to a 1-parameter function (`one of [5, 6]` binds
+  `a = [5, 6]`, not `a = 5`). The call section now states both halves —
+  bare-list-is-an-arg-list at the call site, arity-1 re-collection at
+  the binding — plus the silent over-arity behavior and W022.
+  `CLAUDE.md`'s always-on rule gains the same carve-out sentence
+  (docs/SPEC.md already had it). llms.txt also gains the four gaps the
+  #733 experiment hit: `lib/` is NOT ambient (`import list` namespaced
+  vs `load_file of "lib/list.eigs"` bare), lambda syntax, `sort_by`
+  (a builtin, no import), and the comprehension `if` clause.
 
 - **The leftover-token parse error diagnoses the actual mistake instead
   of always saying "one statement per line" (#732).** The four most
