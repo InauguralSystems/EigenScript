@@ -166,6 +166,44 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "_prefixed param no warning" "$OUTPUT" "unused parameter '_unused'"
 rm -f "$TMPFILE"
 
+# --- #781: W002 recurses into unobserved blocks and match arms ---
+# check_unused_params used to break on AST_UNOBSERVED/AST_MATCH, so a define
+# inside those scopes never had its params checked.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define w002_ctrl(unusedparam) as:
+    return 1
+w002_ctrl of 9
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#781 W002 still fires at top level" "$OUTPUT" "W002.*'unusedparam' in function 'w002_ctrl'"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+unobserved:
+    define w002_u(unusedparam) as:
+        return 1
+w002_u of 9
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#781 W002 fires inside an unobserved block" "$OUTPUT" "W002.*'unusedparam' in function 'w002_u'"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+match 1:
+    case 1:
+        define w002_m(unusedparam) as:
+            return 1
+    case _:
+        print of "none"
+w002_m of 9
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#781 W002 fires inside a match arm" "$OUTPUT" "W002.*'unusedparam' in function 'w002_m'"
+rm -f "$TMPFILE"
+
 # --- Builtin shadowing via function DEFINITION (distinct from assignment) ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
