@@ -9,10 +9,16 @@ gfx, audio) require a full build or the `gfx` target.
 > layer (DataFrames, stats, distributions, matrices, sets, sorting,
 > the GUI toolkit, the STEM shelf, ...) lives in
 > **[STDLIB.md](STDLIB.md)** — start at its "Finding Things" index if you
-> know the task but not the function. Rule of thumb: **file/process/network,
+> know the task but not the function. In particular **`map`, `filter`,
+> and `reduce` are NOT builtins** — they are `lib/list.eigs`
+> (`import list` → `list.filter of [xs, fn]`, or
+> `load_file of "lib/list.eigs"` for bare names), even though `sort_by`
+> IS a builtin (#734). Rule of thumb: **file/process/network,
 > tensor math, JSON encode-decode, regex, channels/tasks, and the
 > interrogatives are builtins (here); everything you `import` is library
-> (there).**
+> (there).** To resolve a name mechanically, `eigenscript --api [--json]`
+> dumps the full surface — every builtin, extension (by group), and lib
+> function with its parameter list — in one call.
 
 New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
 `recv`, `try_recv`, `recv_timeout`, `close_channel`, `channel_closed`),

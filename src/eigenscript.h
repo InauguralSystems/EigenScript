@@ -1339,5 +1339,10 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
  * the loaded-by directive feeds its INPUT via the `source` param above. */
 int lint_file_allows(const char *source, const char *code);
 int eigenscript_lint(const char *path, int json_mode, int fail_on_warning);
+/* #734: the --api surface index — builtins from the live registry,
+ * extensions from ext_names.h by group, lib/*.eigs public defines with
+ * their parameter lists. Name resolution in one call; conventions stay
+ * in docs/BUILTINS.md / docs/STDLIB.md. Hosted-only (lint.c). */
+int eigs_api_dump(FILE *out, int json);
 
 #endif /* EIGENSCRIPT_H */
