@@ -5,6 +5,16 @@
 
 #include "model_internal.h"
 
+/* Process-wide BY DESIGN — a documented opt-out from the per-EigsState seam
+ * (#739 item 4, decided 2026-08-02). Per-state weights would multiply a
+ * transformer's memory by the number of live states, and no consumer needs
+ * two states with different models in one process. Consequences accepted:
+ * eigen_model_load in one state replaces every state's weights, and the
+ * allocations are reclaimed by the OS at exit (still-reachable, not leaked —
+ * LSan is silent). If a consumer ever forces multi-state model isolation,
+ * that is a design change (per-state weights + a sharing story), not a
+ * mechanical move onto EigsState. Same reasoning covers g_model_age and
+ * g_training_samples. */
 TransformerModel g_model = {0};
 
 static void model_free_allocations(TransformerModel *model);
