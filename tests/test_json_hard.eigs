@@ -252,6 +252,50 @@ catch err_u7:
     short_hex_err is 1
 assert of [short_hex_err == 1, "JH80 short \\u escape raises"]
 
+# --- #776: an escape backslash as the final byte raises, no OOB read ---
+# The escape branch stepped onto the terminating NUL, the default arm
+# appended it, and the loop-bottom increment advanced past it — the loop
+# guard then read one byte past the allocation (ASan heap-buffer-overflow).
+# An unterminated escape is truncation: it must raise the SAME structural
+# error as any other unterminated string, from every nesting level.
+trail_err is 0
+trail_msg is ""
+try:
+    t1 is json_decode of "\"\\"
+catch e1:
+    trail_err is 1
+    trail_msg is e1.message
+assert of [trail_err == 1, "JH98 trailing backslash at EOF raises"]
+assert of [contains of [trail_msg, "invalid JSON"], "JH99 raise is the structural truncation error"]
+
+trail_arr_err is 0
+try:
+    t2 is json_decode of "[\"a\\"
+catch e2:
+    trail_arr_err is 1
+assert of [trail_arr_err == 1, "JH100 trailing backslash inside array raises"]
+
+trail_obj_err is 0
+try:
+    t3 is json_decode of "{\"k\": \"v\\"
+catch e3:
+    trail_obj_err is 1
+assert of [trail_obj_err == 1, "JH101 trailing backslash inside object raises"]
+
+# A caught raise must not poison the next decode — the error flag resets.
+after_ok is json_decode of "[1, 2]"
+assert of [type of after_ok == "list", "JH102 valid decode still works after the raise"]
+assert of [len of after_ok == 2, "JH103 valid decode after raise is complete"]
+
+# Guards against over-correction: a PROPERLY CLOSED escape at the end of the
+# string content is legal JSON and must still decode exactly.
+closed_bs is json_decode of "\"a\\\\\""
+assert of [closed_bs == "a\\", "JH104 escaped backslash before closing quote decodes"]
+assert of [len of closed_bs == 2, "JH105 escaped-backslash string is 2 chars"]
+
+closed_nl is json_decode of "\"a\\n\""
+assert of [closed_nl == "a\n", "JH106 trailing \\n escape before closing quote decodes"]
+
 # --- #724: lenient callers (json_path) get the COMPLETE document with ---
 # U+FFFD in the one bad string. A recoverable substitution must not abort
 # the enclosing container parse: before the two-flag split, the substituted
