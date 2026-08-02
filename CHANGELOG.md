@@ -6,6 +6,24 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`json_decode` no longer reads past the allocation on a string ending
+  in an escape backslash (#776).** The escape branch stepped onto the
+  terminating NUL, appended it, and the loop guard then read one byte
+  past the input (ASan heap-buffer-overflow). A trailing escape is
+  truncation: it now raises the same structural `invalid JSON` error as
+  any other unterminated string, from every nesting level. First
+  external contribution — reported with an ASan repro and fixed by
+  @Nitjsefnie (#799), tests JH98–JH106.
+- **One malformed lenient parse no longer poisons the next JSON parse on
+  the same thread (#777).** The parser checks `g_json_parse_err`
+  mid-parse, but only `json_decode` ever cleared it — a stale flag from
+  a failed `json_path`/`ext_http` parse truncated the next parse's
+  arrays after one element and emptied its objects at the first key. A
+  new single owner, `eigs_json_parse_root`, clears both parse flags at
+  every top-level entry (`json_decode`, `json_path`, and the four
+  ext_http sites); callers no longer touch the flags. Also by
+  @Nitjsefnie (#798), tests JH118–JH127; the seventh root it uncovered
+  in `lint.c` is tracked as #797.
 - **JIT thunk invocation is gated on `g_vm_multithreaded`, matching the
   OSR site (#728).** #296 gated JIT *compilation* off under MT, but a
   chunk compiled on main before the first `spawn` was still runnable
