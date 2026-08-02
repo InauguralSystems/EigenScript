@@ -1269,6 +1269,13 @@ void eigs_loading_leave(const char *abs_path);
  * history reader (trace.c) so `how is x at L` matches the live reading. */
 double observer_settledness(double dH);
 
+/* #711: entropy of the binding's CURRENT value, computed at query time —
+ * the current-state channel of the entropy/dH split. Returns 1 + fills
+ * *out when the slot holds a measurable value; never writes the slot. */
+int observer_entropy_now(struct Env *e, int idx, double *out);
+double observer_entropy_of_num(double num);   /* lock-free shim for dump sites */
+double compute_entropy(Value *v);             /* the #685 O(own-size) fold */
+
 /* ---- Cross-file functions for MODEL tensor builtins ---- */
 /* When MODEL is enabled, these are defined in model_infer.c.
  * When disabled, eigenscript.c provides static stubs. */

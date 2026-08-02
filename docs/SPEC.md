@@ -1139,6 +1139,29 @@ bands are not exhaustive, and `moving` is the honest answer for the gap
 instantaneous label the predicates don't yet confirm. See
 [PREDICATES.md](PREDICATES.md).
 
+**Entropy is current-state; dH is the assignment trajectory** (#711).
+`where is x` — and the entropy every classification surface reads
+(`report`, the predicates, `observe`'s band, `trajectory` snapshots) —
+is recomputed from the binding's **current value at ask time**, so an
+in-place mutation (`dict_set`, `append`, an indexed store) is visible:
+two containers with identical contents answer identical entropies, no
+matter how each got there. `why is x` (dH) and its windows are a
+**trajectory of assignments** — recorded when the binding is assigned,
+deliberately untouched by mutation and never perturbed by a query
+(asking never writes anything back):
+
+```eigenscript
+d is {"k": 1}
+dict_set of [d, "k", 999999]
+e is {"k": 999999}
+print of ((where is d) == (where is e))
+print of why is d
+```
+```output
+1
+0
+```
+
 **Function values are `opaque`** (#708). A function has no content the
 observer can sample — its entropy is a constant — so a binding whose
 current value is a function (or builtin) sits outside what the observer

@@ -6,6 +6,30 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **Entropy is now the current-state channel — recomputed at query time —
+  and dH is the assignment-recorded trajectory (#711).** The stored slot
+  entropy was a snapshot taken at the last assignment, so an in-place
+  mutation (`dict_set`, `append`, an indexed scalar store) left it
+  silently stale: two containers with identical contents reported
+  different entropies decided purely by assignment history — measured
+  fleet-wide at 1.42% of all folds (~127 stale observations per question
+  asked). The split ends the class structurally for the channel people
+  query: `where is x`, `report`, all six predicates, `observe`'s
+  band/entropy elements, and `trajectory` snapshots now read the entropy
+  of the value present at ask time (`observer_entropy_now`, O(own size)
+  post-#685, slot read under the #607 lock, the value held across the
+  walk). The fresh value is **never stored back** — a query cannot
+  perturb the trajectory, so `why`/dH and its windows keep their
+  assignment-sequence meaning (now documented as the deliberate
+  contract, the narrow half of the issue's option 4 applied only where
+  it is true by nature). No hooks were added to any mutation funnel —
+  the hot paths are untouched; the recompute runs at the measured
+  1-in-112,000 query rate (and per-iteration in observer-conditioned
+  loops, same O as the assignment fold already paid there). Docs:
+  SPEC.md (executable example), OBSERVER.md, PREDICATES.md. Suite [128]
+  pins the issue's repro, indexed stores, observe/trajectory refresh,
+  query purity, and the dH contract.
+
 - **Function-valued bindings classify `opaque` instead of `equilibrium`
   (#708).** A function has no content the observer can sample — its
   entropy is a constant — so rebinding `f` from one function to a
