@@ -45,6 +45,7 @@ if [ "$1" = "lsp" ]; then
     # build.sh. The stdlib index header it includes (#590) is generated
     # from lib/ first — same rule as the Makefile lsp target.
     bash ../tools/gen_lsp_stdlib_index.sh
+    bash ../tools/gen_lsp_builtin_index.sh   # builtin half, #742 — same rule
     LSP_SOURCES=" $SOURCES "
     for u in $CLI_ONLY; do LSP_SOURCES="${LSP_SOURCES/ $u / }"; done
     LSP_SOURCES="$LSP_SOURCES eigenlsp.c"

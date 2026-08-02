@@ -48,4 +48,5 @@ tests/tmp_mod_373*.eigs
 build/
 # Generated LSP stdlib index (make lsp / build.sh lsp, #590)
 src/lsp_stdlib_index.h
+src/lsp_builtin_index.h
 src/eigsdap

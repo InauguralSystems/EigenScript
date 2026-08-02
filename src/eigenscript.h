@@ -1304,6 +1304,10 @@ void   handle_release(int id);
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
 
+/* ---- gfx extension registrar (ext_gfx.c; TU only compiled when
+ * EIGENSCRIPT_EXT_GFX — call sites keep the #if, matching http/db). ---- */
+void register_gfx_builtins(Env *env);
+
 /* ---- Tape-stepper (#418; step.c, CLI-only) ----
  * Interactive debugger over a recorded trace tape: `--step <tape> [src]`.
  * Returns the process exit code (3 = version refusal, the replay rule). */

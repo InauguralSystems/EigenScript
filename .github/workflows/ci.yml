@@ -283,6 +283,10 @@ jobs:
         run: make embed-smoke
 
       - if: needs.scope.outputs.code == 'true'
+        name: Embedding API smoke, gfx variant (one registration seam, #742)
+        run: make embed-smoke-gfx
+
+      - if: needs.scope.outputs.code == 'true'
         name: Static embed library (make lib)
         run: make lib
 

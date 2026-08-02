@@ -1405,8 +1405,7 @@ static void *http_conn_thread(void *arg) {
     }
 
     Env *global = env_new(NULL);
-    register_builtins(global);
-    register_store_builtins(global);
+    register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
     g_global_env = global;
 
     /* register_http_builtins allocated a scratch Server on the worker
