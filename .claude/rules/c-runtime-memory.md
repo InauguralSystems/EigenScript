@@ -24,14 +24,18 @@ iteration, or a collector that quietly stops working).
   ref via `env_incref`/`env_decref`. Never stash a bare `Env*` that
   outlives its creator. The collector's `GC_FOR_EACH_CHILD` walker and
   `gc_clear_node` (eigenscript.c) must move in lockstep with the ownership
-  model: a new owning edge out of Value/Env/Chunk goes into both, and only
-  *counted* edges may be traversed (an uncounted edge trips the accounting
-  abort and collection silently stops working). Conservative direction:
-  missing an edge leaks; inventing one frees live memory. A new `ValType`
-  or `ASTType` is a **build error** at every switch that must learn about
-  it (#737/#738: no `default:` arms on closed-enum switches —
-  `-Werror=switch` enforces exhaustiveness; don't add a `default:` back,
-  enumerate the no-op cases instead).
+  model, so both are generated from ONE table: `GC_EDGE_TABLE`
+  (eigenscript.c). A new owning edge out of Value/Env/Chunk is one new row
+  there, and only *counted* edges may be walked (an uncounted edge trips
+  the accounting abort and collection silently stops working).
+  Conservative direction: missing an edge leaks; inventing one frees live
+  memory. A new `ValType` or `ASTType` is a **build error** at every switch
+  that must learn about it (#737/#738: no `default:` arms on closed-enum
+  switches — `-Werror=switch` enforces exhaustiveness; don't add a
+  `default:` back, enumerate the no-op cases instead). The table's rows are
+  selected by `_v->type == VAL_x` guards, which `-Werror=switch` cannot
+  see, so `gc_value_is_node` carries that gate for it: its switch is
+  exhaustive, and a value type is a node exactly when it has rows.
 - **Trace gating**: `g_trace_hist` (assignment history) and
   `g_trace_obs_hist` (observer snapshots) are compiler-set flags —
   recording is off unless the program contains a temporal query

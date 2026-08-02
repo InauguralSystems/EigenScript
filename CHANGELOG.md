@@ -4,6 +4,46 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The GC's two lockstep dispatches are generated from one table, and
+  `CallFrame` init/release have one definition each (#743).** The
+  lockstep between `GC_FOR_EACH_CHILD` and `gc_clear_node` was enforced
+  only by prose, and had already drifted: the walker reported a
+  `VAL_FN`'s compiled-chunk edge (`body_count == -1`, the ref taken in
+  `OP_CLOSURE`) that `gc_clear_node` never cleared, so that ref was
+  recovered only later by the value destructor in the unpin pass — a
+  third mirror the comment never named. Both dispatches now expand one
+  `GC_EDGE_TABLE` X-macro (one row per owned edge, walk predicate and
+  clear action side by side), so a new owning edge out of
+  Value/Env/Chunk is written once and the two cannot drift; the
+  destructor is documented as the non-cycle mirror, and the two safety
+  invariants of the chunk row's clear are spelled out at the table
+  (`make_fn` leaves `body = NULL`, which is what makes the
+  unconditional `chunk_decref` type-safe; the `body = NULL` in the
+  clear is load-bearing against a later double-decref). Since rows are
+  selected by `_v->type == VAL_x` guards, which `-Werror=switch` cannot
+  see, `gc_value_is_node` carries #738's build-error property for the
+  table: its switch is exhaustive and a value type is a node exactly
+  when it has rows (verified by planting an 11th enumerator).
+  Alongside it, `CallFrame` had five hand-written init/teardown sites:
+  all four push sites (`jit_helper_call`, `vm_run_ex` entry, `OP_CALL`,
+  `OP_DISPATCH`) now use `callframe_init`, and all three saved-frame
+  teardown loops (`task_sched_thread_free` and `task_do_kill` in vm.c,
+  `task_free` in builtins.c) share `callframe_release` — declared in
+  vm.h, the one definition of the owned-field set {env iff `owns_env`,
+  chunk}. The live-frame POP paths keep their inline drops on purpose
+  (they also drain the operand-stack window, restore the per-frame
+  stall globals, and park reusable envs — a plain release would be a
+  subset), and vm.h now flags them for audit. The refactor fixes the
+  bug it was designed to catch: the `OP_DISPATCH` push never stamped
+  `saved_stall_count`/`saved_loop_iter`, so interpreted dispatch
+  restored unstamped counters on RETURN — a dispatch-per-iteration
+  loop's `__loop_iterations__` froze at 1 after the first dispatch
+  return, and now tracks the loop. Contributed by @Nitjsefnie (#810);
+  section [87]'s strict closure-cycle leak gate covers the collector
+  half.
+
 ### Changed
 
 - **Build variants now coexist: per-variant objdirs with dependency
