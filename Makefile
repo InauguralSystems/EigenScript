@@ -46,7 +46,7 @@ LSP_BINARY  := $(SRC_DIR)/eigenlsp
 DAP_SOURCES := $(SRC_DIR)/eigsdap.c $(SRC_DIR)/tape_read.c $(filter-out $(CLI_ONLY),$(SOURCES))
 DAP_BINARY  := $(SRC_DIR)/eigsdap
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -211,7 +211,15 @@ install: build lsp dap
 $(SRC_DIR)/lsp_stdlib_index.h: $(wildcard lib/*.eigs) tools/gen_lsp_stdlib_index.sh
 	bash tools/gen_lsp_stdlib_index.sh
 
-lsp: $(SRC_DIR)/lsp_stdlib_index.h
+# Builtin half of the same idea (#742): names from the registration seams +
+# ext_names.h, hover detail from the signature comments. Also a build
+# artifact, never committed.
+$(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_host.c \
+		$(SRC_DIR)/hash.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/ext_names.h \
+		tools/gen_lsp_builtin_index.sh
+	bash tools/gen_lsp_builtin_index.sh
+
+lsp: $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h
 	$(CC) $(CFLAGS) -o $(LSP_BINARY) $(LSP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -260,6 +268,16 @@ embed-smoke: amalgamation
 	$(CC) $(CFLAGS) -Ibuild -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c build/eigenscript_all.c \
 		-lm -lpthread
 	/tmp/embed_smoke
+
+# Same smoke against the gfx variant's objects: pins that the embed API's
+# env is composed by the ONE registration seam (#742 — pre-fix, only the
+# CLI registered gfx, so this exact link had no gfx builtins). Registration
+# needs no SDL init, so this runs headless.
+embed-smoke-gfx: gfx
+	$(CC) $(FLAGS_gfx) -o /tmp/embed_smoke_gfx $(SRC_DIR)/embed_smoke.c \
+		$(filter-out build/gfx/main.o,$(wildcard build/gfx/*.o)) \
+		-lm -lpthread $(LIBS_gfx)
+	/tmp/embed_smoke_gfx
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that

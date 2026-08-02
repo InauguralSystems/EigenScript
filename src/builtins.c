@@ -5887,6 +5887,18 @@ void register_builtins(Env *env) {
     register_model_builtins(env);
 #endif
 
+#if EIGENSCRIPT_EXT_GFX
+    register_gfx_builtins(env);
+#endif
+
+    /* EigenStore — always compiled (ext_store.c; freestanding builds get
+     * its linkable no-op). gfx and store used to be registered by hand at
+     * every entry point (#742): main.c only for gfx, so `make gfx` used
+     * through the embed API had NO gfx builtins. Every entry point now
+     * composes the global env through this one seam — new registrars go
+     * HERE, never at a call site. */
+    register_store_builtins(env);
+
 #if EIGS_BORROW_GUARD
     /* #548 guard self-test hook — see builtin_borrow_guard_selftest. */
     if (getenv("EIGS_BORROW_GUARD_SELFTEST"))

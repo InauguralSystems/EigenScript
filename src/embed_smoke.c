@@ -88,6 +88,25 @@ int main(void) {
     CHECK(eigs_value_as_num(r) == 35.0, "5 * 7 == 35");
     eigs_value_release(r);
 
+    /* --- Composition seam (#742): the embed API builds the global env
+     * through register_builtins alone, so every compiled-in extension is
+     * present here, not just through the CLI. store is always compiled;
+     * gfx rides when built with EIGENSCRIPT_EXT_GFX (pre-#742 only main.c
+     * registered gfx, so a gfx build used through this API had no gfx
+     * builtins at all — `make embed-smoke-gfx` pins that leg). ---------- */
+    r = eigs_eval_string("type of store_open");
+    CHECK(r != NULL && eigs_value_type(r) == EIGS_TYPE_STR &&
+              strcmp(eigs_value_as_string(r), "builtin") == 0,
+          "store_open composed via the embed seam");
+    eigs_value_release(r);
+#if EIGENSCRIPT_EXT_GFX
+    r = eigs_eval_string("type of gfx_open");
+    CHECK(r != NULL && eigs_value_type(r) == EIGS_TYPE_STR &&
+              strcmp(eigs_value_as_string(r), "builtin") == 0,
+          "gfx_open composed via the embed seam (#742)");
+    eigs_value_release(r);
+#endif
+
     /* --- Read it back through the globals API. ----------------------- */
     EigsValue *y = eigs_get_global("y");
     CHECK(y != NULL, "get_global y");

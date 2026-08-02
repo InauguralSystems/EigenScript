@@ -7,9 +7,6 @@
 #include "vm.h"
 #include "trace.h"
 #include "repl.h"
-#if EIGENSCRIPT_EXT_GFX
-void register_gfx_builtins(Env *env);
-#endif
 
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
@@ -271,13 +268,8 @@ int main(int argc, char **argv) {
         eigenscript_set_args(argc, argv);
 
         Env *global = env_new(NULL);
-        register_builtins(global);
+        register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
         g_global_env = global;
-
-#if EIGENSCRIPT_EXT_GFX
-        register_gfx_builtins(global);
-#endif
-        register_store_builtins(global);
 
         eigenscript_repl(global);
         /* #739: take the exit code BEFORE teardown. It is a bridge macro now
@@ -327,12 +319,7 @@ int main(int argc, char **argv) {
 
     Env *global = env_new(NULL);
     register_builtins(global);
-    g_global_env = global;
-
-#if EIGENSCRIPT_EXT_GFX
-    register_gfx_builtins(global);
-#endif
-    register_store_builtins(global);
+    g_global_env = global;   /* register_builtins above composed store/gfx too (#742) */
 
     g_parse_errors = 0;
     TokenList tl = tokenize(source);

@@ -20,80 +20,16 @@ extern const char* tok_type_name(TokType t);
 extern void free_tokenlist(TokenList *tl);
 
 /* ================================================================
- * BUILTIN DOCUMENTATION TABLE
- * ================================================================ */
-
-static const char *builtin_docs[][2] = {
-    {"print", "print of value -- write value to stdout"},
-    {"len", "len of value -- length of string, list, or dict"},
-    {"append", "append of [list, value] -- add element to end of list"},
-    {"type", "type of value -- returns type name (\"num\", \"str\", \"list\", \"dict\", \"fn\", \"null\")"},
-    {"range", "range of n -- list [0, 1, ..., n-1]; range of [start, end] or [start, end, step]"},
-    {"str", "str of value -- convert to string"},
-    {"num", "num of value -- convert to number"},
-    {"keys", "keys of dict -- list of key names"},
-    {"values", "values of dict -- list of values"},
-    {"has_key", "has_key of [dict, key] -- 1 if key exists, 0 otherwise"},
-    {"dict_set", "dict_set of [dict, key, value] -- set key in dict"},
-    {"floor", "floor of n -- round down"},
-    {"ceil", "ceil of n -- round up"},
-    {"round", "round of n -- round to nearest integer"},
-    {"abs", "abs of n -- absolute value"},
-    {"min", "min of [a, b] -- smaller value"},
-    {"max", "max of [a, b] -- larger value"},
-    {"sqrt", "sqrt of n -- square root"},
-    {"sin", "sin of n -- sine"},
-    {"cos", "cos of n -- cosine"},
-    {"split", "split of [string, delimiter] -- split string into list"},
-    {"scan_ints", "scan_ints of text or [text, comment_marker] -- scan whitespace-delimited signed integers"},
-    {"scan_tokens", "scan_tokens of text or [text, comment_marker] -- scan whitespace-delimited token spans"},
-    {"scan_int_tokens", "scan_int_tokens of text or [text, comment_marker] -- token spans with integer classification"},
-    {"join", "join of [list, separator] -- join list into string"},
-    {"text_builder_new", "text_builder_new of null -- create a native growable text builder"},
-    {"text_builder_append", "text_builder_append of [builder, value] -- append value as text"},
-    {"text_builder_append_line", "text_builder_append_line of [builder, value] -- append value and newline"},
-    {"text_builder_extend", "text_builder_extend of [builder, values] -- append each list item as text"},
-    {"text_builder_part_count", "text_builder_part_count of builder -- number of appended parts"},
-    {"text_builder_clear", "text_builder_clear of builder -- clear builder contents"},
-    {"text_builder_to_string", "text_builder_to_string of builder -- render builder text"},
-    {"trim", "trim of string -- strip whitespace"},
-    {"contains", "contains of [string, substring] -- 1 if found"},
-    {"substr", "substr of [string, start, length] -- extract substring"},
-    {"index_of", "index_of of [string, substring] -- first index or -1"},
-    {"str_replace", "str_replace of [string, old, new] -- replace all occurrences"},
-    {"read_text", "read_text of path -- read file as string"},
-    {"read_line", "read_line of null -- read next line from stdin (null at EOF)"},
-    {"write_text", "write_text of [path, text] -- write string to file"},
-    {"file_exists", "file_exists of path -- 1 if file exists"},
-    {"is_dir", "is_dir of path -- 1 if path is a directory"},
-    {"json_encode", "json_encode of value -- encode as JSON string"},
-    {"json_decode", "json_decode of string -- parse JSON to value"},
-    {"spawn", "spawn of fn -- create thread running function, returns handle"},
-    {"thread_join", "thread_join of handle -- block until thread completes, returns result"},
-    {"channel", "channel of null -- create bounded message channel"},
-    {"send", "send of [channel, value] -- send value into channel"},
-    {"recv", "recv of channel -- receive value from channel"},
-    {"store_open", "store_open of path -- open/create EigenStore database"},
-    {"store_put", "store_put of [db, collection, record] -- insert record, returns key"},
-    {"store_get", "store_get of [db, collection, key] -- get record by key"},
-    {"store_query", "store_query of [db, collection] -- get all records"},
-    {"store_close", "store_close of db -- close database"},
-    {"assert", "assert of value -- abort if value is falsy"},
-    {"observe", "observe of var -- snapshot entropy report"},
-    {"report", "report of var -- return entropy state as string"},
-    {"sort", "sort of list -- sort list in ascending order"},
-    {"reverse", "reverse of list -- reverse list"},
-    {"map", "map of [fn, list] -- apply fn to each element"},
-    {"filter", "filter of [fn, list] -- keep elements where fn returns truthy"},
-    {"reduce", "reduce of [fn, initial, list] -- fold list with fn"},
-    {"exec", "exec of command -- run shell command, return stdout"},
-    {"exit", "exit of code -- exit process with code"},
-    {"time", "time of null -- seconds since epoch"},
-    {"sleep", "sleep of seconds -- pause execution"},
-    {"random", "random of null -- random float in [0,1)"},
-    {"eval", "eval of string -- evaluate EigenScript code string"},
-    {NULL, NULL}
-};
+ * BUILTIN DOCUMENTATION TABLE — generated (#742)
+ * ================================================================
+ * builtin_docs[][2] comes from tools/gen_lsp_builtin_index.sh: names from
+ * the registration seams + ext_names.h, hover detail from the signature
+ * comment above each C definition. The hand-written table this replaced
+ * was the repo's cleanest natural experiment in gating: the two gated
+ * registries (SANDBOX_ALLOW, the docs) sat at zero drift while this one —
+ * ungated — fell to 68 of 235 builtins plus a phantom `exec`. A build
+ * artifact, not committed; the Makefile lsp target regenerates it. */
+#include "lsp_builtin_index.h"
 
 /* ---- Keyword descriptions for hover ---- */
 static const char *keyword_docs[][2] = {
@@ -1071,16 +1007,27 @@ static void handle_hover(int id, const char *params) {
     const char *hover_text = NULL;
     char hover_buf[1024];
 
+    /* A dotted token (`x.name`) is a member access — never a bare builtin,
+     * keyword, or document symbol, so those lookups are skipped for it and
+     * only the module-qualified stdlib branch below may claim it. Became
+     * load-bearing with the generated builtin table (#742): every builtin
+     * is in builtin_docs now, so `stats.mean` would otherwise hover as the
+     * tensor builtin `mean` — the exact builtin/stdlib name collision the
+     * old 29%-complete hand table hid by omission. */
+    ptrdiff_t ti = tok - doc->tokens.tokens;
+    int dotted = (ti >= 1 && doc->tokens.tokens[ti - 1].type == TOK_DOT);
+
     /* Check builtins */
-    for (int i = 0; builtin_docs[i][0]; i++) {
-        if (strcmp(tok->str_val, builtin_docs[i][0]) == 0) {
-            hover_text = builtin_docs[i][1];
-            break;
+    if (!dotted)
+        for (int i = 0; builtin_docs[i][0]; i++) {
+            if (strcmp(tok->str_val, builtin_docs[i][0]) == 0) {
+                hover_text = builtin_docs[i][1];
+                break;
+            }
         }
-    }
 
     /* Check keywords */
-    if (!hover_text) {
+    if (!hover_text && !dotted) {
         for (int i = 0; keyword_docs[i][0]; i++) {
             if (strcmp(tok->str_val, keyword_docs[i][0]) == 0) {
                 hover_text = keyword_docs[i][1];
@@ -1090,7 +1037,7 @@ static void handle_hover(int id, const char *params) {
     }
 
     /* Check document symbols */
-    if (!hover_text) {
+    if (!hover_text && !dotted) {
         for (int i = 0; i < doc->symbol_count; i++) {
             Symbol *s = &doc->symbols[i];
             if (strcmp(tok->str_val, s->name) == 0) {
@@ -1127,8 +1074,7 @@ static void handle_hover(int id, const char *params) {
      * qualifier is not an imported module is left alone); a bare name
      * matches any imported module's function in table order. */
     if (!hover_text) {
-        ptrdiff_t ti = tok - doc->tokens.tokens;
-        int dotted = (ti >= 1 && doc->tokens.tokens[ti - 1].type == TOK_DOT);
+        /* ti/dotted computed above, before the builtin lookup. */
         const char *dot_module = NULL;
         if (dotted && ti >= 2) {
             Token *t2 = &doc->tokens.tokens[ti - 2];

@@ -21,8 +21,7 @@ int eigs_state_init_runtime(EigsState *st) {
     if (g_global_env) return 0;
     Env *global = env_new(NULL);
     if (!global) return -1;
-    register_builtins(global);
-    register_store_builtins(global);
+    register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
     g_global_env = global;
     return 0;
 }

@@ -157,8 +157,7 @@ static void builtin_name_env_free(void) {
 static int is_builtin_name(const char *name) {
     if (!g_builtin_name_env) {
         Env *e = env_new(NULL);
-        register_builtins(e);
-        register_store_builtins(e);
+        register_builtins(e);   /* store/gfx-when-built ride inside (#742) */
 #define X(nm, fn) if (!env_get(e, #nm)) env_set_local_owned(e, #nm, make_null());
         EIGS_GFX_BUILTINS(X)
         EIGS_HTTP_BUILTINS(X)
@@ -1142,8 +1141,7 @@ static int api_is_ext_name(const char *nm) {
 int eigs_api_dump(FILE *out, int json) {
     /* Core registry on a scratch env (#459: never a hand list). */
     Env *core = env_new(NULL);
-    register_builtins(core);
-    register_store_builtins(core);
+    register_builtins(core);   /* store/gfx-when-built ride inside (#742) */
 
     /* Lib scan over the resolver's candidate dirs. */
     ApiLibFn *fns = NULL;
@@ -3512,8 +3510,7 @@ static void check_undefined_names(ASTNode *ast, const char *path,
     e.bind = env_new(NULL);
     e.module_scope = env_new(e.bind);
     e.scope = e.module_scope;
-    register_builtins(e.bind);
-    register_store_builtins(e.bind);
+    register_builtins(e.bind);   /* store/gfx-when-built ride inside (#742) */
     /* Extension builtins bind by NAME regardless of this binary's build
      * flags (ext_names.h, the same lists their registrars expand): the lint
      * describes the language surface, not the build — a consumer linting
