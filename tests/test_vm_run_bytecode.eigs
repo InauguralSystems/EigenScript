@@ -270,6 +270,38 @@ assert_eq of [vm_run_bytecode of [ABI, [RETURN_NULL], []], null, "#721: RETURN_N
 sr_fall is sandbox_run of [[ABI, [1], []], 1000]
 assert_eq of [sr_fall["ok"], 0, "#721: sandbox_run refuses an unterminated chunk"]
 
+# ---- #737: the verifier's operand-layout table had DRIFTED. OP_TRAJECTORY_SLOT
+# (91) was missing from op_verify_operands while its NAME sibling was present,
+# so it fell through the old `default: return 0` and the verifier walked the
+# 3-byte instruction as 1 byte — marking its two OPERAND bytes as valid
+# instruction starts. A jump could then land mid-instruction and pass pass 2
+# (the #721 surface, reopened). Fixed by making op_verify_operands an
+# exhaustive switch on OpCode with no default arm (-Werror=switch keeps it
+# closed). Red-then-green: on the drifted table the first assert returned 7.
+TRAJECTORY_SLOT is 91
+
+# The trajectory operand bytes are 1,1 (OP_NULL, a 0-operand op) so that on the
+# DRIFTED table — where TRAJECTORY_SLOT was walked as a 1-byte op — the walk
+# stayed synced (two clean OP_NULLs) and the outcome turns purely on whether
+# those bytes are instruction boundaries. That isolates the bug.
+NULLOP is 1
+
+# Positive control — a jump to offset 6 (the CONST, one instruction PAST the
+# 2-byte trajectory operand) is a real boundary and is accepted under both
+# tables (it returns 7 either way; it proves the fix doesn't blanket-reject a
+# chunk that merely CONTAINS a trajectory op).
+# Layout: 0:JUMP 3:TRAJ_SLOT[operand] 6:CONST[7] 9:RETURN. JUMP end=3, off=3 -> 6.
+traj_ok is [JUMP,3,0, TRAJECTORY_SLOT,NULLOP,NULLOP, CONST,0,0, RETURN]
+assert_eq of [vm_run_bytecode of [ABI, traj_ok, [7]], 7, "#737: a jump PAST the trajectory operand is a valid boundary — accepted"]
+
+# The drift — same chunk, JUMP off=1 -> target 4, the SECOND byte of
+# TRAJECTORY_SLOT's operand. With the operand correctly counted, offset 4 is not
+# an instruction boundary and the chunk is refused (null). On the drifted table
+# offset 4 was a start (the 1-byte walk), the jump passed pass 2, and execution
+# fell through the two OP_NULLs into the CONST -> returned 7.
+traj_mid is [JUMP,1,0, TRAJECTORY_SLOT,NULLOP,NULLOP, CONST,0,0, RETURN]
+assert_eq of [vm_run_bytecode of [ABI, traj_mid, [7]], null, "#737: a jump INTO the trajectory operand is not a boundary — refused (was 7)"]
+
 # The constant pool of a DESCRIPTOR is indexed positionally by the code stream,
 # but it was loaded through the deduplicating add: a repeated number collapsed
 # two entries into one and shifted every later index down, so the code silently

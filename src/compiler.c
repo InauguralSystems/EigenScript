@@ -241,9 +241,14 @@ static void adjust_stack(Compiler *c, int delta) {
 
 /* ---- Emit helpers ---- */
 
-/* Stack effect of each opcode */
-static int op_stack_effect(uint8_t op) {
-    switch (op) {
+/* Stack effect of each opcode.
+ * #737: exhaustive switch on OpCode, NO default arm — -Werror=switch
+ * makes a new opcode a build error here instead of a silent depth-0
+ * assumption (a wrong depth surfaces as stack corruption far from the
+ * cause). Dynamic-effect opcodes are listed explicitly and return 0;
+ * their emit sites adjust the depth with the real operand. */
+static int op_stack_effect(uint8_t op8) {
+    switch ((OpCode)op8) {
     /* Push 1 */
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
@@ -325,6 +330,10 @@ static int op_stack_effect(uint8_t op) {
     /* Try: no stack change */
     case OP_TRY_BEGIN: case OP_TRY_END:
         return 0;
+    /* Loop guards: exit-jump only, no stack change. (#737: these two fell
+     * through the old default arm — right answer, by accident.) */
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
+        return 0;
     /* Observer blocks: no stack change */
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
         return 0;
@@ -346,10 +355,18 @@ static int op_stack_effect(uint8_t op) {
     /* DISPATCH: pop 3 (table, key, arg), push 1 = -2 */
     case OP_DISPATCH:
         return -2;
-    /* CALL, LIST, DICT: dynamic — handled separately */
-    default:
+    /* Dynamic — the emit site adjusts by the real operand count. */
+    case OP_CALL:    /* pops argc + fn, pushes result */
+    case OP_LIST:    /* pops count, pushes list */
+    case OP_DICT:    /* pops 2*count, pushes dict */
+    case OP_MATCH:   /* dispatch; compiled arms manage their own depth */
+        return 0;
+    case OP_WIDE:    /* placeholder — never emitted */
+        return 0;
+    case OP_COUNT:   /* sentinel — never emitted */
         return 0;
     }
+    return 0;   /* unreachable */
 }
 
 static void emit(Compiler *c, uint8_t op, int line) {
