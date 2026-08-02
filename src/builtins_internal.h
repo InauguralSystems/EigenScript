@@ -41,4 +41,19 @@ Value* builtin_sgd_update_cols(Value *arg);
 Value* builtin_tensor_save(Value *arg);
 Value* builtin_tensor_load(Value *arg);
 
+/* builtins_host.c (#741) — every builtin needing a real OS underneath.
+ * Whole-TU gated: under EIGENSCRIPT_FREESTANDING this registers nothing. */
+void register_host_builtins(Env *env);
+
+/* builtins.c — shared with builtins_host.c's subprocess builtins: the #148
+ * "fail loudly under EIGS_REPLAY" boundary check (channels use it too). */
+int replay_blocks(const char *fn);
+
+/* builtins.c — shared with builtins_host.c: the process argv snapshot
+ * (exe_path's argv[0] fallback) and the "is this name the language's?"
+ * predicate (build_corpus skips registered builtins). */
+extern int g_argc;
+extern char **g_argv;
+int eigs_is_registered_builtin(const char *name);
+
 #endif /* EIGENSCRIPT_BUILTINS_INTERNAL_H */
