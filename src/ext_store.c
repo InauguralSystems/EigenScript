@@ -84,6 +84,77 @@ static void store_json_encode(Value *v, strbuf *out);
 
 static int page_data_used(Page *page);
 
+/* ---- Tagged VAL_BUFFER encoding (#805) ---------------------------------
+ *
+ * JSON has no buffer type, so a stored buffer used to encode as `null` and a
+ * load returned null where bytes were saved — silent data loss. A buffer now
+ * rides as a two-key object:
+ *
+ *     {"_eigs_buffer":[<elements>],"_eigs_shape":[rows,cols]}
+ *
+ * The encoder always writes both keys in that order; the decoder looks them
+ * up by name, so key order is not load-bearing. `_eigs_shape` carries the
+ * value's own rows/cols ([0,0] for an unshaped 1-D buffer — `shape of` reads
+ * those back, so dropping them would be data loss of the same class).
+ * Encoding as a bare numeric array was the alternative; it round-trips as a
+ * VAL_LIST, and a store that silently changes a value's type is the bug being
+ * fixed.
+ *
+ * A stored buffer now costs real bytes, where before it cost four (`null`),
+ * so a large buffer can push a record past STORE_MAX_RECORD_SIZE and make
+ * store_put raise "record exceeds page size". That is the same per-record
+ * limit a long list already hits, and a raise is the outcome this issue is
+ * about: a loud refusal instead of a silent null.
+ *
+ * There is no pre-existing type-tag convention in this file to follow: the
+ * only reserved names are the `_`-prefixed handle/record fields (`_id`,
+ * `_store`, `_store_id`, `_type`), and trace.c's `b[...]` buffer form belongs
+ * to the tape's own non-JSON grammar. The `_eigs_` prefix is new here and
+ * matches that `_`-prefixed reserved-name shape.
+ *
+ * COLLISION — the cost of any tagged encoding, stated plainly: a user dict
+ * with exactly these two keys, `_eigs_buffer` holding a list whose every
+ * element is a number or one of the three sentinels below, and `_eigs_shape`
+ * holding exactly two integral numbers that satisfy the shape invariant
+ * (rows==0 && cols==0, or rows*cols == element count), now decodes as a
+ * buffer. Nothing else does — a third key, a missing key, a non-list body, a
+ * string element that is not a sentinel, or an inconsistent shape all leave
+ * the value a plain dict. The top-level record is never at risk either:
+ * store_put stamps `_id` onto it, so it always carries a third key.
+ *
+ * BACKWARD COMPATIBILITY — the store is a file (`store_open of path`), so
+ * databases written by older builds do exist. The old encoder never emitted
+ * this shape (buffers became `null`), so old records decode exactly as
+ * before, apart from the collision above. STORE_VERSION is deliberately NOT
+ * bumped: store_read_header rejects any other version outright, so a bump
+ * would make every existing database unopenable to fix a value that was
+ * already lost. An older binary reading a new file sees the tag as a plain
+ * dict rather than failing.
+ */
+#define STORE_BUF_TAG   "_eigs_buffer"
+#define STORE_SHAPE_TAG "_eigs_shape"
+
+/* Non-finite buffer elements. JSON has no nan/infinity literal, and emitting
+ * a bare `nan` would make the whole record unparseable — turning one lost
+ * buffer into one lost record. They ride as these three strings, which are
+ * meaningful only inside a tag body. Returns 1 and (if `out`) the value. */
+static int store_nonfinite_sentinel(const char *s, double *out) {
+    if (strcmp(s, "nan") == 0)  { if (out) *out = (double)NAN; return 1; }
+    if (strcmp(s, "inf") == 0)  { if (out) *out = (double)INFINITY; return 1; }
+    if (strcmp(s, "-inf") == 0) { if (out) *out = -(double)INFINITY; return 1; }
+    return 0;
+}
+
+/* Buffer elements use the 17-significant-digit form, as trace.c's buffer tape
+ * encoding does: %.17g is the shortest width that round-trips a double
+ * bit-exactly, and a buffer holding samples or weights would otherwise come
+ * back subtly altered. (VAL_NUM's own %d/%.15g encoding is untouched.) */
+static void store_json_encode_buf_elem(strbuf *out, double d) {
+    if (isnan(d)) { strbuf_append(out, "\"nan\""); return; }
+    if (isinf(d)) { strbuf_append(out, d < 0 ? "\"-inf\"" : "\"inf\""); return; }
+    strbuf_append_fmt(out, "%.17g", d);
+}
+
 static void store_json_encode(Value *v, strbuf *out) {
     if (!v || v->type == VAL_NULL || v->type == VAL_FN || v->type == VAL_BUILTIN) {
         strbuf_append(out, "null");
@@ -127,18 +198,28 @@ static void store_json_encode(Value *v, strbuf *out) {
             strbuf_append_char(out, '}');
             break;
         }
+        case VAL_BUFFER: {
+            /* Tagged so the decoder rebuilds a VAL_BUFFER rather than a list
+             * or a null — see the STORE_BUF_TAG block above for the shape,
+             * its collision surface, and the compatibility argument. */
+            strbuf_append(out, "{\"" STORE_BUF_TAG "\":[");
+            for (int i = 0; i < v->data.buffer.count; i++) {
+                if (i > 0) strbuf_append_char(out, ',');
+                store_json_encode_buf_elem(out, v->data.buffer.data[i]);
+            }
+            strbuf_append_fmt(out, "],\"" STORE_SHAPE_TAG "\":[%d,%d]}",
+                              v->data.buffer.rows, v->data.buffer.cols);
+            break;
+        }
         /* VAL_NULL/VAL_FN/VAL_BUILTIN are handled by the guard above; raw
-         * JSON, text builders and buffers have no store encoding (buffers
-         * silently store as null — a data-loss gap this enumeration made
-         * visible; tracked upstream). Enumerated rather than covered by a
-         * `default:` so -Werror=switch forces a new ValType to choose its
-         * store-JSON encoding here. */
+         * JSON and text builders have no store encoding. Enumerated rather
+         * than covered by a `default:` so -Werror=switch forces a new ValType
+         * to choose its store-JSON encoding here. */
         case VAL_NULL:
         case VAL_FN:
         case VAL_BUILTIN:
         case VAL_JSON_RAW:
         case VAL_TEXT_BUILDER:
-        case VAL_BUFFER:
             strbuf_append(out, "null");
             break;
     }
@@ -220,6 +301,73 @@ static Value* store_json_parse_array(const char *s, int *pos) {
     }
 }
 
+/* If `dict` is exactly the STORE_BUF_TAG shape, build the VAL_BUFFER it
+ * encodes; otherwise return NULL and leave `dict` alone. Every clause here is
+ * a collision guard — the tighter the match, the less user data the tag can
+ * swallow (see the STORE_BUF_TAG block for the surface that remains).
+ * Ownership: the returned buffer is a fresh owned ref; the caller drops the
+ * dict. */
+static Value* store_buffer_from_tag(Value *dict) {
+    if (dict->data.dict.count != 2) return NULL;
+    Value *body  = dict_get(dict, STORE_BUF_TAG);
+    Value *shape = dict_get(dict, STORE_SHAPE_TAG);
+    if (!body || body->type != VAL_LIST) return NULL;
+    if (!shape || shape->type != VAL_LIST || shape->data.list.count != 2) return NULL;
+
+    Value *rv = shape->data.list.items[0];
+    Value *cv = shape->data.list.items[1];
+    if (!rv || rv->type != VAL_NUM || !cv || cv->type != VAL_NUM) return NULL;
+
+    /* Range-gate BEFORE narrowing. A stored shape is whatever double the file
+     * holds, and (int)d is undefined when d is outside int's range (C11
+     * 6.3.1.4p1) — reachable here with e.g. [1e300, 0]. The negated form also
+     * rejects a NaN, which fails every comparison. Only once the value is
+     * known in-range is the exact `==` below meaningful: it is an INTEGRALITY
+     * test (is this dimension a whole number?), so exact equality is the
+     * correct operator and a tolerance would be the bug — 2.0000000000000004
+     * is not a row count. This also establishes rows/cols >= 0. */
+    double rd = rv->data.num, cd = cv->data.num;
+    if (!(rd >= 0 && rd <= (double)INT_MAX)) return NULL;
+    if (!(cd >= 0 && cd <= (double)INT_MAX)) return NULL;
+    int rows = (int)rd, cols = (int)cd;
+    if (rd != (double)rows || cd != (double)cols) return NULL;
+
+    /* Accept exactly the (rows, cols, count) triples the buffer constructors
+     * can produce, no more. rows>0 is a real 2-D shape, so rows*cols must be
+     * the element count. rows==0 with cols>0 is `buffer of [0, n]` — a
+     * degenerate shape that yields an empty buffer, so the count must be 0.
+     * rows==0 && cols==0 is the unshaped 1-D buffer, any count. */
+    int count = body->data.list.count;
+    if (rows > 0) {
+        if ((int64_t)rows * (int64_t)cols != (int64_t)count) return NULL;
+    } else if (cols > 0) {
+        if (count != 0) return NULL;
+    }
+    for (int i = 0; i < count; i++) {
+        Value *e = body->data.list.items[i];
+        if (!e) return NULL;
+        if (e->type == VAL_NUM) continue;
+        if (e->type == VAL_STR && store_nonfinite_sentinel(e->data.str, NULL)) continue;
+        return NULL;
+    }
+
+    Value *buf = xcalloc(1, sizeof(Value));
+    buf->type = VAL_BUFFER;
+    buf->refcount = 1;
+    buf->data.buffer.count = count;
+    buf->data.buffer.rows = rows;
+    buf->data.buffer.cols = cols;
+    buf->data.buffer.data = xcalloc(count > 0 ? (size_t)count : 1, sizeof(double));
+    for (int i = 0; i < count; i++) {
+        Value *e = body->data.list.items[i];
+        double d = 0;
+        if (e->type == VAL_NUM) d = e->data.num;
+        else store_nonfinite_sentinel(e->data.str, &d);
+        buf->data.buffer.data[i] = d;
+    }
+    return buf;
+}
+
 static Value* store_json_parse_object(const char *s, int *pos) {
     if (s[*pos] != '{') return NULL;
     (*pos)++;
@@ -244,7 +392,14 @@ static Value* store_json_parse_object(const char *s, int *pos) {
         val_decref(key);
         store_json_skip_ws(s, pos);
         if (s[*pos] == ',') { (*pos)++; continue; }
-        if (s[*pos] == '}') { (*pos)++; return dict; }
+        if (s[*pos] == '}') {
+            (*pos)++;
+            /* A completed object may be the buffer tag (#805) — at any depth,
+             * so the check lives here rather than at the record root. */
+            Value *buf = store_buffer_from_tag(dict);
+            if (buf) { val_decref(dict); return buf; }
+            return dict;
+        }
         val_decref(dict); return NULL;  /* expected , or } */
     }
 }

@@ -84,12 +84,110 @@ assert_eq of [li.tags[2], "blue", "list last element"]
 assert_eq of [li.scores[1], 20, "numeric list element"]
 assert_eq of [len of li.empty, 0, "empty list field round-trips"]
 
+# Buffer-valued fields — #805. store_json_encode wrote VAL_BUFFER as JSON
+# `null`, so a stored buffer came back as null and the bytes were silently
+# gone. The tagged encoding restores both the type and the exact contents.
+# The interesting bytes are a zero byte and bytes that are not valid UTF-8
+# (0xFF/0xFE): those are exactly where a naive string encoding breaks.
+bz is buffer of 5
+bz[0] is 0
+bz[1] is 65
+bz[2] is 0
+bz[3] is 255
+bz[4] is 254
+bk is store_put of [db2, "blobs", {"name": "raw", "bytes": bz}]
+bi is store_get of [db2, "blobs", bk]
+assert_eq of [type of bi.bytes, "buffer", "buffer field decodes as a buffer"]
+assert_eq of [len of bi.bytes, 5, "buffer field length"]
+assert_eq of [bi.bytes[0], 0, "buffer keeps a leading zero byte"]
+assert_eq of [bi.bytes[1], 65, "buffer keeps an ASCII byte"]
+assert_eq of [bi.bytes[2], 0, "buffer keeps an interior zero byte"]
+assert_eq of [bi.bytes[3], 255, "buffer keeps 0xFF (invalid UTF-8)"]
+assert_eq of [bi.bytes[4], 254, "buffer keeps 0xFE (invalid UTF-8)"]
+assert_eq of [bi.name, "raw", "sibling field survives next to a buffer"]
+
+# Non-integral elements round-trip bit-exactly (the element encoder uses the
+# 17-significant-digit form, as trace.c's buffer tape encoding does).
+fb is buffer of 2
+fb[0] is 0.1
+fb[1] is 0 - 2.5
+fk is store_put of [db2, "blobs", {"f": fb}]
+fi is store_get of [db2, "blobs", fk]
+assert_eq of [fi.f[0], 0.1, "fractional buffer element is exact"]
+assert_eq of [fi.f[1], 0 - 2.5, "negative buffer element is exact"]
+
+# A non-finite element survives too. It is reachable — the flat-buffer matmul
+# kernel accumulates without num_guard, so a large enough product overflows to
+# +Inf — and `inf` is not a JSON literal, so encoding it bare would cost the
+# whole RECORD, not just the buffer. It rides as a sentinel string instead.
+nb is buffer of 4
+nb[0] is 1e300
+nb[1] is 1e300
+nb[2] is 1e300
+nb[3] is 1e300
+nm is reshape of [nb, 2, 2]
+np is matmul of [nm, nm]
+assert_true of [np[0] > 1e308, "matmul overflow really is non-finite"]
+nk is store_put of [db2, "blobs", {"n": np}]
+ni is store_get of [db2, "blobs", nk]
+assert_eq of [type of ni.n, "buffer", "non-finite buffer still decodes as a buffer"]
+assert_eq of [ni.n[0], np[0], "non-finite buffer element round-trips"]
+
+# An empty buffer stays an empty buffer, not a null and not an empty list.
+eb is buffer of 0
+ek is store_put of [db2, "blobs", {"e": eb}]
+ei is store_get of [db2, "blobs", ek]
+assert_eq of [type of ei.e, "buffer", "empty buffer decodes as a buffer"]
+assert_eq of [len of ei.e, 0, "empty buffer length"]
+
+# The degenerate shapes `buffer of` accepts — [0, n] (rows 0, cols kept, no
+# elements) and [n, 0] — are still buffers on the way back. The decoder's
+# shape check has to accept every triple the constructors can build, or it
+# quietly hands back a dict.
+zb is buffer of [0, 5]
+wb is buffer of [3, 0]
+zk is store_put of [db2, "blobs", {"z": zb, "w": wb}]
+zi is store_get of [db2, "blobs", zk]
+assert_eq of [type of zi.z, "buffer", "buffer of [0, n] decodes as a buffer"]
+assert_eq of [type of zi.w, "buffer", "buffer of [n, 0] decodes as a buffer"]
+
+# A 2-D shaped buffer keeps its shape (rows/cols are part of the value —
+# `shape of` reads them back, so dropping them is data loss too).
+gb is buffer of 4
+gb[0] is 1
+gb[1] is 2
+gb[2] is 3
+gb[3] is 4
+gs is reshape of [gb, 2, 2]
+gk is store_put of [db2, "blobs", {"m": gs}]
+gi is store_get of [db2, "blobs", gk]
+assert_eq of [type of gi.m, "buffer", "shaped buffer decodes as a buffer"]
+assert_eq of [len of (shape of gi.m), 2, "shaped buffer stays 2-D"]
+assert_eq of [(shape of gi.m)[0], 2, "shaped buffer rows"]
+assert_eq of [(shape of gi.m)[1], 2, "shaped buffer cols"]
+assert_eq of [gi.m[3], 4, "shaped buffer contents"]
+assert_eq of [len of (shape of bi.bytes), 1, "unshaped buffer stays 1-D"]
+
+# The buffer tag must not swallow ordinary values: a plain dict field and a
+# plain list field still decode as dict and list.
+dk is store_put of [db2, "blobs", {"d": {"a": 1}, "l": [1, 2]}]
+di is store_get of [db2, "blobs", dk]
+assert_eq of [type of di.d, "dict", "an ordinary dict field is still a dict"]
+assert_eq of [di.d.a, 1, "ordinary dict field contents"]
+assert_eq of [type of di.l, "list", "an ordinary list field is still a list"]
+
 # Nested list survives a close/reopen too (parsed from disk, not cache).
 store_close of db2
 db3 is store_open of "/tmp/test_eigenstore.db"
 li2 is store_get of [db3, "items", lk]
 assert_eq of [len of li2.tags, 3, "list field persists across reopen"]
 assert_eq of [li2.scores[2], 30, "numeric list persists"]
+bi2 is store_get of [db3, "blobs", bk]
+assert_eq of [type of bi2.bytes, "buffer", "buffer field persists as a buffer"]
+assert_eq of [bi2.bytes[0], 0, "buffer zero byte persists"]
+assert_eq of [bi2.bytes[3], 255, "buffer 0xFF persists"]
+gi2 is store_get of [db3, "blobs", gk]
+assert_eq of [(shape of gi2.m)[1], 2, "buffer shape persists"]
 store_close of db3
 
 # --- Corruption recovery: store_open rejects invalid files cleanly ---

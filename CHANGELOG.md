@@ -36,6 +36,36 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **EigenStore round-trips buffers instead of dropping them (#805).**
+  `store_json_encode` wrote a `VAL_BUFFER` as JSON `null`, so
+  `store_put of [db, "c", {"b": buf}]` followed by `store_get` handed
+  back a null and the bytes were gone — the data-loss gap the #738
+  exhaustiveness sweep made visible. A buffer now encodes as a tagged
+  object, `{"_eigs_buffer":[…],"_eigs_shape":[rows,cols]}`, that the
+  store's decoder rebuilds as a `VAL_BUFFER` at any nesting depth. The
+  alternative — a bare numeric array — round-trips as a **list**, and a
+  store that silently changes a value's type is the same class of bug.
+  Shape travels with it (`shape of` reads rows/cols back, so dropping
+  them is data loss too), elements use `%.17g` so a non-integral buffer
+  comes back bit-exact (as trace.c's tape encoding already did), and a
+  non-finite element — reachable, the flat-buffer matmul kernel
+  accumulates unguarded — rides as `"inf"`/`"-inf"`/`"nan"` rather than
+  as a bare `inf` that would make the whole *record* unparseable.
+  **The tag's cost, stated plainly:** a user dict with exactly the two
+  tag keys, a body list of numbers (or those sentinels), and a shape
+  list of two integers satisfying `rows*cols == count` (or `[0,0]`) now
+  decodes as a buffer. Nothing else does — a third key, a missing key, a
+  non-list body, a foreign string element, or an inconsistent shape all
+  stay a dict, and a top-level record is never at risk because
+  `store_put` stamps `_id` onto it. `STORE_VERSION` is deliberately not
+  bumped (`store_read_header` rejects any other version, so a bump would
+  make every existing database unopenable); old files decode exactly as
+  before, and an older binary reading a new file sees a plain dict
+  rather than failing. One consequence: a buffer costs real bytes where
+  `null` cost four, so a large one can push a record past
+  `STORE_MAX_RECORD_SIZE` and raise "record exceeds page size" — the
+  limit a long list already hits, and a loud refusal beats a silent null.
+
 - **The `ValType` switches are now exhaustive too, closing out the #738
   sweep — and the first build immediately caught real drift (#738).**
   The ASTType half of #738 landed earlier (see below); this finishes the
