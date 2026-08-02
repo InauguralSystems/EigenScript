@@ -1121,6 +1121,24 @@ static void api_emit_params_json(FILE *out, const char *params) {
     fprintf(out, "]");
 }
 
+/* Is `nm` an extension-surface name (any ext_names.h group)? Used to keep
+ * the builtins list build-INDEPENDENT: in a build that compiled an
+ * extension in (e.g. make net registers net_dial), that name is in the
+ * core env too, but --api must still report it as an extension, not a
+ * plain builtin — the ext groups are the LANGUAGE surface, not this
+ * binary's flags, so the same name lands in the same section every build. */
+static int api_is_ext_name(const char *nm) {
+#define API_ISX(n, fn) if (strcmp(nm, #n) == 0) return 1;
+    EIGS_GFX_BUILTINS(API_ISX)
+    EIGS_HTTP_BUILTINS(API_ISX)
+    EIGS_HTTP_REQUEST_BUILTINS(API_ISX)
+    EIGS_DB_BUILTINS(API_ISX)
+    EIGS_MODEL_BUILTINS(API_ISX)
+    EIGS_NET_BUILTINS(API_ISX)
+#undef API_ISX
+    return 0;
+}
+
 int eigs_api_dump(FILE *out, int json) {
     /* Core registry on a scratch env (#459: never a hand list). */
     Env *core = env_new(NULL);
@@ -1152,11 +1170,13 @@ int eigs_api_dump(FILE *out, int json) {
     if (json) {
         fprintf(out, "{\"version\": \"%s\",\n \"builtins\": [",
                 EIGENSCRIPT_VERSION);
+        int b_first = 1;
         for (int i = 0; i < core->count; i++) {
             char esc[600];
-            if (!core->names[i]) continue;
+            if (!core->names[i] || api_is_ext_name(core->names[i])) continue;
             json_escape(core->names[i], esc, sizeof(esc));
-            fprintf(out, "%s\"%s\"", i ? ", " : "", esc);
+            fprintf(out, "%s\"%s\"", b_first ? "" : ", ", esc);
+            b_first = 0;
         }
         fprintf(out, "],\n \"extensions\": {");
         int g_first = 1;
@@ -1164,15 +1184,12 @@ int eigs_api_dump(FILE *out, int json) {
         fprintf(out, "%s\"%s\": [", g_first ? "" : ", ", label);             \
         g_first = 0;                                                         \
         int e_first = 1;                                                     \
-        (void)e_first;                                                       \
         LIST(API_X)                                                          \
         fprintf(out, "]");                                                   \
     } while (0)
 #define API_X(nm, fn) do {                                                   \
-        if (!env_get(core, #nm)) {                                           \
-            fprintf(out, "%s\"%s\"", e_first ? "" : ", ", #nm);              \
-            e_first = 0;                                                     \
-        }                                                                    \
+        fprintf(out, "%s\"%s\"", e_first ? "" : ", ", #nm);                  \
+        e_first = 0;                                                         \
     } while (0);
         API_GROUP("gfx",   EIGS_GFX_BUILTINS);
         API_GROUP("http",  EIGS_HTTP_BUILTINS);
@@ -1195,12 +1212,10 @@ int eigs_api_dump(FILE *out, int json) {
         fprintf(out, "\n]}\n");
     } else {
         for (int i = 0; i < core->count; i++)
-            if (core->names[i])
+            if (core->names[i] && !api_is_ext_name(core->names[i]))
                 fprintf(out, "builtin %s\n", core->names[i]);
-#define API_X(nm, fn) do {                                                   \
-        if (!env_get(core, #nm))                                             \
-            fprintf(out, "extension %s %s\n", api_group_label, #nm);         \
-    } while (0);
+#define API_X(nm, fn) \
+        fprintf(out, "extension %s %s\n", api_group_label, #nm);
 #define API_GROUP(label, LIST) do {                                          \
         const char *api_group_label = label;                                 \
         (void)api_group_label;                                               \
