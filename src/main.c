@@ -93,6 +93,8 @@ int main(int argc, char **argv) {
             "  eigenscript --lint [--json] [--lint-level error|warning] <file>\n"
             "                                      lint a source file (--json machine-readable; --lint-level error = warnings advisory;\n"
             "                                      '# lint: allow W001' suppresses a code inline)\n"
+            "  eigenscript --api [--json]          surface index: every builtin, extension (by group), and\n"
+            "                                      lib function with params — 'does X exist' in one call\n"
             "  eigenscript --test [paths...]       run test_*.eigs files (--json for machine-readable results)\n"
             "     ... --trace-on-fail              record each test; a failure prints its EIGS_REPLAY reproducer\n"
             "  eigenscript --trace <tape> <file>   run and record a replay tape (CLI twin of EIGS_TRACE)\n"
@@ -213,6 +215,18 @@ int main(int argc, char **argv) {
             return 1;
         }
         int rc = eigenscript_lint(lint_path, json_mode, fail_on_warning);
+        eigs_thread_detach();
+        eigs_state_destroy(eigs_st);
+        return rc;
+    }
+
+    /* #734 --api: the machine-readable surface index. Answers "does X
+     * exist, and is it builtin / extension / lib" in one call instead of
+     * a text search across BUILTINS.md + STDLIB.md. Same shape as --lint:
+     * --json for machines, plain lines (greppable) otherwise. */
+    if (argc >= 2 && strcmp(argv[1], "--api") == 0) {
+        int api_json = (argc >= 3 && strcmp(argv[2], "--json") == 0);
+        int rc = eigs_api_dump(stdout, api_json);
         eigs_thread_detach();
         eigs_state_destroy(eigs_st);
         return rc;

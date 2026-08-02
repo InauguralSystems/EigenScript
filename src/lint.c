@@ -958,22 +958,20 @@ static void w021_scan_dir(const char *dirpath) {
     free(ents);
 }
 
-/* Build (or reuse) the name table for the linted file's base dir. Candidate
- * lib dirs mirror the import resolver's priority order for "lib/<mod>.eigs"
- * (resolve_eigenscript_file_from): CWD first, then the linted file's dir and
- * its parent, the exe's install root, the user install — first module found
- * wins, as it does at runtime. */
-static void w021_build(const char *base) {
-    if (g_w021_built && strcmp(g_w021_base, base) == 0) return;
-    w021_free_table();
-    snprintf(g_w021_base, sizeof(g_w021_base), "%s", base);
-    g_w021_built = 1;
-
+/* Candidate lib dirs, mirroring the import resolver's priority order for
+ * "lib/<mod>.eigs" (resolve_eigenscript_file_from): CWD first, then the
+ * base file's dir and its parent, the exe's install root, the user
+ * install. Realpath-deduplicated; first module found wins, as at runtime.
+ * Shared by W021 and the --api index (#734). Returns the number of
+ * resolved dirs written into `out` (each 4096 bytes). */
+static int lib_candidate_dirs(const char *base, char (*out)[4096], int max) {
     char cand[6][4096];
     int nc = 0;
     snprintf(cand[nc++], 4096, "lib");
-    snprintf(cand[nc++], 4096, "%.4000s/lib", base);
-    snprintf(cand[nc++], 4096, "%.4000s/../lib", base);
+    if (base && base[0]) {
+        snprintf(cand[nc++], 4096, "%.4000s/lib", base);
+        snprintf(cand[nc++], 4096, "%.4000s/../lib", base);
+    }
     if (g_exe_dir[0]) {
         snprintf(cand[nc++], 4096, "%.4000s/../lib", g_exe_dir);
         snprintf(cand[nc++], 4096, "%.4000s/../lib/eigenscript", g_exe_dir);
@@ -982,18 +980,246 @@ static void w021_build(const char *base) {
     if (home)
         snprintf(cand[nc++], 4096, "%.2000s/.local/lib/eigenscript", home);
 
-    char seen[6][4096];
     int ns = 0;
-    for (int i = 0; i < nc; i++) {
+    for (int i = 0; i < nc && ns < max; i++) {
         char real[4096];
         if (!realpath(cand[i], real)) continue;
         int dup = 0;
         for (int j = 0; j < ns; j++)
-            if (strcmp(seen[j], real) == 0) { dup = 1; break; }
+            if (strcmp(out[j], real) == 0) { dup = 1; break; }
         if (dup) continue;
-        snprintf(seen[ns++], 4096, "%s", real);
-        w021_scan_dir(real);
+        snprintf(out[ns++], 4096, "%s", real);
     }
+    return ns;
+}
+
+/* Build (or reuse) the name table for the linted file's base dir. */
+static void w021_build(const char *base) {
+    if (g_w021_built && strcmp(g_w021_base, base) == 0) return;
+    w021_free_table();
+    snprintf(g_w021_base, sizeof(g_w021_base), "%s", base);
+    g_w021_built = 1;
+
+    char dirs[6][4096];
+    int nd = lib_candidate_dirs(base, dirs, 6);
+    for (int i = 0; i < nd; i++)
+        w021_scan_dir(dirs[i]);
+}
+
+/* ---- #734: --api — the machine-readable surface index ---- */
+
+/* One call answers "does X exist, and is it builtin, extension, or lib":
+ *   - "builtins": the compiled-in core registry, enumerated from a scratch
+ *     register_builtins env — never a hand list (#459: the old hand-copied
+ *     array drifted ~120 names behind the binary);
+ *   - "extensions": the ext_names.h surface BY GROUP (gfx/http/db/model/
+ *     net) — the surface of the LANGUAGE, independent of this binary's
+ *     build flags (a name here may need `make http`/`make gfx`);
+ *   - "lib": every public top-level define of lib/*.eigs WITH its
+ *     parameter list as written (defaults included), scraped from the same
+ *     directories the import resolver searches, first module wins.
+ * Name resolution only — calling conventions live in docs/BUILTINS.md
+ * (builtins/extensions) and docs/STDLIB.md (lib). */
+
+typedef struct { char *module; char *name; char *params; } ApiLibFn;
+
+static int api_mod_seen(char **mods, int count, const char *m) {
+    for (int i = 0; i < count; i++)
+        if (strcmp(mods[i], m) == 0) return 1;
+    return 0;
+}
+
+static void api_scan_file(const char *dirpath, const char *filename,
+                          ApiLibFn **fns, int *fc, int *fcap,
+                          char ***mods, int *mc, int *mcap) {
+    size_t nl = strlen(filename);
+    if (nl <= 5 || nl - 5 >= 512) return;
+    char module[512];
+    memcpy(module, filename, nl - 5);
+    module[nl - 5] = '\0';
+    if (api_mod_seen(*mods, *mc, module)) return;  /* higher dir won */
+
+    char full[8192];
+    snprintf(full, sizeof(full), "%.4000s/%.500s", dirpath, filename);
+    FILE *f = fopen(full, "r");
+    if (!f) return;
+    if (*mc == *mcap) {
+        *mcap = *mcap ? *mcap * 2 : 64;
+        *mods = xrealloc(*mods, (size_t)*mcap * sizeof(char *));
+    }
+    (*mods)[(*mc)++] = xstrdup(module);
+
+    char line[2048];
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "define ", 7) != 0) continue;
+        const char *p = line + 7;
+        char name[256];
+        size_t o = 0;
+        while (w021_ident_char(*p) && o + 1 < sizeof(name)) name[o++] = *p++;
+        name[o] = '\0';
+        if (o == 0 || name[0] == '_') continue;   /* private by convention */
+        /* Parameter list as written; a define with no paren list carries
+         * the implicit single parameter `n` (parser.c) — say so. */
+        char params[1024];
+        if (*p == '(') {
+            p++;
+            size_t q = 0;
+            while (*p && *p != ')' && q + 1 < sizeof(params)) params[q++] = *p++;
+            params[q] = '\0';
+        } else {
+            snprintf(params, sizeof(params), "n");
+        }
+        int dup = 0;   /* within-module redefine: first wins */
+        for (int i = 0; i < *fc; i++)
+            if (strcmp((*fns)[i].module, module) == 0 &&
+                strcmp((*fns)[i].name, name) == 0) { dup = 1; break; }
+        if (dup) continue;
+        if (*fc == *fcap) {
+            *fcap = *fcap ? *fcap * 2 : 256;
+            *fns = xrealloc(*fns, (size_t)*fcap * sizeof(ApiLibFn));
+        }
+        (*fns)[*fc].module = xstrdup(module);
+        (*fns)[*fc].name = xstrdup(name);
+        (*fns)[*fc].params = xstrdup(params);
+        (*fc)++;
+    }
+    fclose(f);
+}
+
+/* Emit one params string as a JSON array of trimmed comma-split entries. */
+static void api_emit_params_json(FILE *out, const char *params) {
+    fprintf(out, "[");
+    const char *p = params;
+    int first = 1;
+    while (*p) {
+        while (*p == ' ' || *p == '\t') p++;
+        const char *start = p;
+        while (*p && *p != ',') p++;
+        const char *end = p;
+        while (end > start && (end[-1] == ' ' || end[-1] == '\t')) end--;
+        if (end > start) {
+            char raw[512], esc[1100];
+            size_t l = (size_t)(end - start);
+            if (l >= sizeof(raw)) l = sizeof(raw) - 1;
+            memcpy(raw, start, l);
+            raw[l] = '\0';
+            json_escape(raw, esc, sizeof(esc));
+            fprintf(out, "%s\"%s\"", first ? "" : ", ", esc);
+            first = 0;
+        }
+        if (*p == ',') p++;
+    }
+    fprintf(out, "]");
+}
+
+int eigs_api_dump(FILE *out, int json) {
+    /* Core registry on a scratch env (#459: never a hand list). */
+    Env *core = env_new(NULL);
+    register_builtins(core);
+    register_store_builtins(core);
+
+    /* Lib scan over the resolver's candidate dirs. */
+    ApiLibFn *fns = NULL;
+    int fc = 0, fcap = 0;
+    char **mods = NULL;
+    int mc = 0, mcap = 0;
+    char dirs[6][4096];
+    int nd = lib_candidate_dirs(".", dirs, 6);
+    for (int d = 0; d < nd; d++) {
+        struct dirent **ents = NULL;
+        int n = scandir(dirs[d], &ents, NULL, alphasort);
+        if (n < 0) continue;
+        for (int i = 0; i < n; i++) {
+            const char *nm = ents[i]->d_name;
+            size_t l = strlen(nm);
+            if (l > 5 && strcmp(nm + l - 5, ".eigs") == 0)
+                api_scan_file(dirs[d], nm, &fns, &fc, &fcap,
+                              &mods, &mc, &mcap);
+            free(ents[i]);
+        }
+        free(ents);
+    }
+
+    if (json) {
+        fprintf(out, "{\"version\": \"%s\",\n \"builtins\": [",
+                EIGENSCRIPT_VERSION);
+        for (int i = 0; i < core->count; i++) {
+            char esc[600];
+            if (!core->names[i]) continue;
+            json_escape(core->names[i], esc, sizeof(esc));
+            fprintf(out, "%s\"%s\"", i ? ", " : "", esc);
+        }
+        fprintf(out, "],\n \"extensions\": {");
+        int g_first = 1;
+#define API_GROUP(label, LIST) do {                                          \
+        fprintf(out, "%s\"%s\": [", g_first ? "" : ", ", label);             \
+        g_first = 0;                                                         \
+        int e_first = 1;                                                     \
+        (void)e_first;                                                       \
+        LIST(API_X)                                                          \
+        fprintf(out, "]");                                                   \
+    } while (0)
+#define API_X(nm, fn) do {                                                   \
+        if (!env_get(core, #nm)) {                                           \
+            fprintf(out, "%s\"%s\"", e_first ? "" : ", ", #nm);              \
+            e_first = 0;                                                     \
+        }                                                                    \
+    } while (0);
+        API_GROUP("gfx",   EIGS_GFX_BUILTINS);
+        API_GROUP("http",  EIGS_HTTP_BUILTINS);
+        API_GROUP("http_request", EIGS_HTTP_REQUEST_BUILTINS);
+        API_GROUP("db",    EIGS_DB_BUILTINS);
+        API_GROUP("model", EIGS_MODEL_BUILTINS);
+        API_GROUP("net",   EIGS_NET_BUILTINS);
+#undef API_X
+#undef API_GROUP
+        fprintf(out, "},\n \"lib\": [");
+        for (int i = 0; i < fc; i++) {
+            char me[600], ne[600];
+            json_escape(fns[i].module, me, sizeof(me));
+            json_escape(fns[i].name, ne, sizeof(ne));
+            fprintf(out, "%s\n  {\"module\": \"%s\", \"name\": \"%s\", "
+                         "\"params\": ", i ? "," : "", me, ne);
+            api_emit_params_json(out, fns[i].params);
+            fprintf(out, "}");
+        }
+        fprintf(out, "\n]}\n");
+    } else {
+        for (int i = 0; i < core->count; i++)
+            if (core->names[i])
+                fprintf(out, "builtin %s\n", core->names[i]);
+#define API_X(nm, fn) do {                                                   \
+        if (!env_get(core, #nm))                                             \
+            fprintf(out, "extension %s %s\n", api_group_label, #nm);         \
+    } while (0);
+#define API_GROUP(label, LIST) do {                                          \
+        const char *api_group_label = label;                                 \
+        (void)api_group_label;                                               \
+        LIST(API_X)                                                          \
+    } while (0)
+        API_GROUP("gfx",   EIGS_GFX_BUILTINS);
+        API_GROUP("http",  EIGS_HTTP_BUILTINS);
+        API_GROUP("http_request", EIGS_HTTP_REQUEST_BUILTINS);
+        API_GROUP("db",    EIGS_DB_BUILTINS);
+        API_GROUP("model", EIGS_MODEL_BUILTINS);
+        API_GROUP("net",   EIGS_NET_BUILTINS);
+#undef API_GROUP
+#undef API_X
+        for (int i = 0; i < fc; i++)
+            fprintf(out, "lib %s.%s(%s)\n",
+                    fns[i].module, fns[i].name, fns[i].params);
+    }
+
+    for (int i = 0; i < fc; i++) {
+        free(fns[i].module); free(fns[i].name); free(fns[i].params);
+    }
+    free(fns);
+    for (int i = 0; i < mc; i++) free(mods[i]);
+    free(mods);
+    /* LeakSanitizer cannot trace the env's tagged slots — free explicitly
+     * (same rule as builtin_name_env_free above). */
+    env_decref(core);
+    return 0;
 }
 
 /* Module names the linted file imported (AST-owned strings). */

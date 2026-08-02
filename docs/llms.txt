@@ -175,7 +175,9 @@ import list                              # namespaced: list.filter of [xs, fn]
 load_file of "lib/list.eigs"             # bare names: filter of [xs, fn]
 ```
 
-See docs/BUILTINS.md and docs/STDLIB.md before writing your own.
+See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
+a name mechanically: `eigenscript --api --json` dumps every builtin,
+extension (by group), and lib function with its parameter list in one call.
 
 ## The generation-validation ladder (always run what you generate)
 

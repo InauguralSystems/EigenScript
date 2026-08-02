@@ -116,7 +116,12 @@ Always-on:
   sites" checklists — silent capture/replay/ABI bugs).
 - **Changing the AOT compiler** (separate `ouroboros` repo)? → the
   **`aot-differential`** skill (VM as byte-exact oracle).
-- **Writing `.eigs` code**? → the **`write-eigenscript`** skill.
+- **Writing `.eigs` code**? → the **`write-eigenscript`** skill, and
+  **`docs/llms.txt`** — the whole language in one 190-line file (call
+  syntax, scope, observer, validation ladder); an agent primed with it
+  has written correct programs from it alone (#734). Resolve "does
+  function X exist" with `eigenscript --api` (or `--api --json`) — the
+  full builtin/extension/lib surface index in one call.
 - **Cutting a release** (tag/dispatch path, the doc-drift "Latest release"
   gate, the tap)? → the **`release`** skill.
 

@@ -6,6 +6,27 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **`eigenscript --api [--json]`: the machine-readable surface index
+  (#734).** One call answers "does X exist, and is it builtin,
+  extension, or lib" instead of a text search across 729 lines of
+  BUILTINS.md plus 1491 of STDLIB.md — the missing third leg beside
+  `--lint --json` and `--test --json`. Builtins are enumerated from the
+  live registry (never a hand list — the #459 lesson), extensions from
+  `ext_names.h` by group (`gfx`/`http`/`http_request`/`db`/`model`/
+  `net` — the LANGUAGE surface, independent of this binary's build
+  flags), and every public `lib/*.eigs` define ships WITH its parameter
+  list as written (defaults included; the no-paren form reports its
+  implicit `n`), scraped from the same directories the import resolver
+  searches. Text mode is greppable (`builtin sort_by`,
+  `extension net net_dial`, `lib list.filter(items, fn)`); suite [131]
+  pins the kinds, the params, JSON validity, and the
+  sort_by-is-a-builtin / filter-is-lib split that misled agents.
+  Discoverability fixes from the same issue: `CLAUDE.md` now routes
+  `.eigs`-writing work to `docs/llms.txt` (the repo's best AI-facing
+  reference was reachable only from README line 424), and BUILTINS.md's
+  builtins-vs-library note now names `map`/`filter`/`reduce` explicitly
+  — the exact greps that returned zero hits.
+
 - **Lint `W022`: over-arity literal calls (#733).** With
   `define two(a, b)`, `two of [1, 2, 99]` binds `a=1, b=2` and silently
   DISCARDS `99` — rc=0, no diagnostic at any stage (under-arity at

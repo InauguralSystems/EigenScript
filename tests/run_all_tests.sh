@@ -3425,6 +3425,53 @@ else
 fi
 echo ""
 
+# [131] --api surface index (#734). One call answers "does X exist, and is
+# it builtin / extension / lib". Builtins come from the live registry
+# (never a hand list, #459), extensions from ext_names.h by group, lib
+# functions from lib/*.eigs with their parameter lists. Pins the three
+# kinds, the params capture, the sort_by-is-a-builtin / filter-is-lib
+# split that misled agents, and that --json is valid JSON when python3
+# is present.
+echo "[131] --api Surface Index (#734)"
+API_OUT=$(./eigenscript --api 2>&1); API_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$API_RC" = "0" ] \
+   && echo "$API_OUT" | grep -q "^builtin sort_by$" \
+   && echo "$API_OUT" | grep -q "^extension net net_dial$" \
+   && echo "$API_OUT" | grep -q "^lib list.filter(items, fn)$" \
+   && ! echo "$API_OUT" | grep -q "^builtin filter$"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: builtin/extension/lib kinds + params + the filter/sort_by split"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: --api text surface (rc=$API_RC)"
+    echo "$API_OUT" | head -3
+fi
+TOTAL=$((TOTAL + 1))
+if command -v python3 >/dev/null 2>&1; then
+    API_JSON_OK=$(./eigenscript --api --json 2>/dev/null | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+ok = ('sort_by' in d['builtins']
+      and 'filter' not in d['builtins']
+      and 'net_dial' in d['extensions']['net']
+      and any(e['module'] == 'list' and e['name'] == 'filter'
+              and e['params'] == ['items', 'fn'] for e in d['lib']))
+print('OK' if ok else 'BAD')
+" 2>&1)
+    if [ "$API_JSON_OK" = "OK" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: --api --json parses and carries the same facts"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: --api --json ($API_JSON_OK)"
+    fi
+else
+    PASS=$((PASS + 1))
+    echo "  SKIP (counted as pass): python3 not available for JSON validation"
+fi
+echo ""
+
 # [89] Executable documentation — every eigenscript/output block pair in
 # docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
 # the spec cannot drift from the implementation. Skips without python3.
