@@ -297,42 +297,17 @@ static int vm_slot_value_opaque(Env *e, int idx) {
  * fields; the g_* identifiers are macros in eigenscript.h. No extern
  * decls needed here. */
 
-/* ---- Helpers from eigenscript.c ---- */
-extern void val_incref(Value *v);
-extern void val_decref(Value *v);
-extern Value* make_num(double n);
-extern Value* make_str(const char *s);
-extern Value* make_null(void);
-extern Value* make_list(int cap);
-extern Value* make_dict(int cap);
-extern Value* make_fn(const char *name, char **params, int param_count,
-                       Env *closure);
-extern Value* make_builtin(Value* (*fn)(Value*));
-extern void list_append(Value *list, Value *item);
-extern void dict_set(Value *dict, const char *key, Value *val);
-extern Value* dict_get(Value *dict, const char *key);
-extern Env* env_new(Env *parent);
-extern void env_incref(Env *env);
-extern void env_decref(Env *env);
-extern void env_mark_captured(Env *env);
-extern void env_reserve_slots(Env *env, int total);
-extern void env_set_local(Env *env, const char *name, Value *val);
-extern void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val);
-extern void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
-extern Value* env_get_hashed(Env *env, const char *name, uint32_t h);
-extern Value* env_get(Env *env, const char *name);
-extern double num_guard(double x);
-extern Value* promote_if_arena(Value *v);
-/* Observer helper — declared in eval.c, needs to be exposed for VM.
- * For now, call the eval.c version via a non-static wrapper. */
-extern void observer_ensure_fresh(Value *v);
-extern Value* builtin_free_val(Value *arg);
-extern const char* val_type_name(ValType t);
-extern Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
-extern void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
-extern int env_hash_find_dict(Value *dict, const char *key, uint32_t h);
-extern int env_get_assign_count(Env *env, const char *name, uint32_t h);
-extern void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
+/* ---- Cross-TU helpers that no header declares (#744) ----
+ * The value/env/dict constructors and accessors this file calls are all
+ * declared in eigenscript.h — the re-declarations that used to sit here
+ * were redundant copies free to drift from it (one still claimed
+ * `observer_ensure_fresh` came from eval.c, a TU the bytecode VM replaced,
+ * and `val_incref`/`val_decref`/`num_guard` are `static inline` in the
+ * header, so the extern was inert). These three are the ones with no
+ * header declaration to defer to; they stay until they get a home. */
+extern Value* builtin_free_val(Value *arg);                              /* builtins.c */
+extern int env_hash_find_dict(Value *dict, const char *key, uint32_t h); /* eigenscript.c */
+extern int env_get_assign_count(Env *env, const char *name, uint32_t h); /* eigenscript.c */
 
 /* Inline fast-path for binding a single param into a fresh call env.
  * Caller guarantees `env->count == slot_idx` and `env->capacity > slot_idx`
