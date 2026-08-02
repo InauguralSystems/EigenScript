@@ -488,6 +488,7 @@ automatically at exit.
 | `arena_mark` | `arena_mark of null` | Snapshot arena allocation point |
 | `arena_reset` | `arena_reset of null` | Reclaim all allocations since mark |
 | `arena_stats` | `arena_stats of null` | Return total bytes allocated |
+| `heap_inuse` | `heap_inuse of null` | Return bytes currently in use by the C allocator (glibc `mallinfo2().uordblks`, main arena; null on non-glibc). Debug surface |
 | `free_val` | `free_val of value` | Free a heap-allocated value tree (no-op while arena is active). Advanced use only |
 
 ## Tokenizer Introspection
