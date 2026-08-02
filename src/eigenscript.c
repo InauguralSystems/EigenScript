@@ -705,6 +705,62 @@ const char *observer_slot_report_value(const ObserverSlot *s) {
     return "moving";
 }
 
+/* ---- #711: query-time entropy — the current-state channel. -------------
+ * The stored slot entropy is a snapshot taken at the last ASSIGNMENT, so an
+ * in-place mutation (dict_set, append, an indexed scalar store) left it
+ * stale — measured fleet-wide at 1.42% of folds, ~127 stale observations
+ * per question asked. The split: `entropy` is a pure function of the
+ * binding's CURRENT value and is recomputed here at ask time (post-#685
+ * that is O(own size)); `dH` is a trajectory and stays recorded at
+ * assignment. The fresh value is NEVER stored back into the slot — a
+ * query must not perturb the recorded trajectory (dH/last_entropy keep
+ * their assignment-sequence meaning, and adding a query to a program
+ * cannot change what the next assignment's dH will be).
+ *
+ * Returns 1 and fills *out when the slot currently holds a measurable
+ * value (number or heap value); 0 otherwise (caller falls back to the
+ * stored snapshot). The slot word is read under the #607 module-env lock
+ * (the #708/TSan discipline); a heap value is incref'd under the lock and
+ * walked after release, so a concurrent rebind cannot free it mid-walk.
+ * Concurrent mutation of a shared container's INTERIOR during the walk is
+ * the pre-existing slot-value-semantics class (see the #607 comment), the
+ * same exposure every assignment-time fold already has. */
+/* #711: exported for call sites that already hold the module-env lock
+ * (the SIGUSR1 dump) and so cannot go through observer_entropy_now —
+ * the mutex is not recursive. Single source of truth stays entropy_of_num. */
+double observer_entropy_of_num(double num) { return entropy_of_num(num); }
+
+int observer_entropy_now(Env *e, int idx, double *out) {
+    if (!e || idx < 0) return 0;
+    int kind = 0;              /* 0 = none, 1 = num, 2 = heap */
+    double num = 0.0;
+    Value *held = NULL;
+    env_dump_lock(e);          /* exported #607 lock wrapper (defined below) */
+    if (idx < e->count) {
+        EigsSlot s = e->values[idx];
+        if (slot_is_num(s)) {
+            kind = 1;
+            num = s.d;
+        } else if (slot_is_ptr(s)) {
+            Value *v = slot_as_ptr(s);
+            if (v && v->type != VAL_NULL) {
+                held = v;
+                val_incref(held);
+                kind = 2;
+            }
+        }
+    }
+    env_dump_unlock(e);
+    if (kind == 0) return 0;
+    if (kind == 1) {
+        *out = entropy_of_num(num);
+    } else {
+        *out = compute_entropy(held);
+        val_decref(held);
+    }
+    return 1;
+}
+
 /* ---- #421: trajectory snapshots across call boundaries. ----------------
  * The observer's state is binding-identity (Env::obs[slot]) — passing x
  * into a function gives the callee a fresh slot with no history, so a

@@ -54,7 +54,13 @@ history — never from an external reference:
 
 Two of these are the load-bearing pair:
 
-- **`where` — information content (the engine calls it entropy).** For a
+- **`where` — information content (the engine calls it entropy).** It is
+  a pure function of the value **currently** bound, recomputed when you
+  ask (#711) — so an in-place mutation (`dict_set`, `append`, an indexed
+  store) is visible, and two bindings with identical contents answer
+  identically regardless of how each got there. (`why`/dH, by contrast,
+  is a trajectory of *assignments*: mutation does not move it, and
+  asking never writes anything back.) For a
   number it is, in spirit, *how many bits it takes to pin the value down*.
   For a string it is the Shannon entropy of its characters; for a list or
   dict it is the average of its elements plus a size term, and the walk

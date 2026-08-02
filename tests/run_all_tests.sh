@@ -3369,6 +3369,14 @@ echo "[127] Observer Opaque Fn Bindings (13 checks)"
 check_eigs_suite "all 13 opaque-classification checks" test_opaque_fn.eigs "All tests passed" 13
 echo ""
 
+# [128] #711: entropy is query-time (current state), dH is the recorded
+# assignment trajectory — the issue's stale-fold repro, indexed stores,
+# observe/trajectory refresh, query purity (asking never perturbs dH),
+# and scalar-path sanity.
+echo "[128] Observer Query-Time Entropy (12 checks)"
+check_eigs_suite "all 12 query-time entropy checks" test_entropy_query_time.eigs "All tests passed" 12
+echo ""
+
 # [89] Executable documentation — every eigenscript/output block pair in
 # docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
 # the spec cannot drift from the implementation. Skips without python3.

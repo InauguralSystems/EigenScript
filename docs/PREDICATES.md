@@ -32,8 +32,8 @@ assigned top-level value (`g_last_observer`):
 
 | Field | What it is | Computed by |
 |-------|-----------|-------------|
-| `entropy` | current information content `where is x` | `compute_entropy_impl` |
-| `dH` | change since previous observation `why is x` | `update_observer` (`new − last`) |
+| `entropy` | current information content `where is x` — **recomputed from the value present at ask time** (#711), so in-place mutation is visible | `compute_entropy_impl` via `observer_entropy_now` |
+| `dH` | change since previous observation `why is x` — a trajectory of **assignments**; mutation does not move it, and a query never writes back | `update_observer` (`new − last`) |
 | `prev_dH` | the previous step's `dH` | `update_observer` |
 | `dh_window` | ring buffer of the last `OBSERVER_WINDOW_N` (=10) `dH` values | `observer_window_push` in `update_observer` |
 | `obs_age` | number of observations since the value first existed | `update_observer` |

@@ -167,13 +167,24 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
         if (when >= 0) snprintf(whenbuf, sizeof(whenbuf), "%ld", when);
         else           snprintf(whenbuf, sizeof(whenbuf), "?");
         if (os && os->used) {
-            const char *band = observer_slot_report(os);
+            /* #711: show query-time entropy (we already hold the env lock,
+             * so refresh inline — observer_entropy_now would self-deadlock).
+             * The band classifies the same refreshed view. */
+            ObserverSlot qs = *os;
+            if (slot_is_num(s)) {
+                qs.entropy = observer_entropy_of_num(s.d);
+            } else if (slot_is_ptr(s)) {
+                Value *sv0 = slot_as_ptr(s);
+                if (sv0 && sv0->type != VAL_NULL)
+                    qs.entropy = compute_entropy(sv0);
+            }
+            const char *band = observer_slot_report(&qs);
             if (slot_is_ptr(s)) {
                 Value *sv = slot_as_ptr(s);
                 if (sv && sv->type == VAL_FN) band = "opaque";   /* #708 */
             }
             fprintf(stderr, "%s | %s | when=%s | entropy=%.6g | dH=%.6g | %s\n",
-                    name, vbuf, whenbuf, os->entropy, os->dH, band);
+                    name, vbuf, whenbuf, qs.entropy, os->dH, band);
         } else {
             fprintf(stderr, "%s | %s | when=%s | entropy=- | dH=- | unobserved\n",
                     name, vbuf, whenbuf);
@@ -232,6 +243,20 @@ static int vm_slot_predicate(const ObserverSlot *s, uint16_t kind) {
     case 5: return observer_slot_equilibrium(s);
     }
     return 0;
+}
+
+/* #711: a query-time view of a slot — shallow copy with the entropy field
+ * swapped for the CURRENT value's entropy, so every classification surface
+ * (report, the predicates, observe's band) answers about the value that is
+ * there NOW, mutations included. The stored field is never written back: a
+ * query must not perturb the recorded trajectory, so dH and its windows
+ * keep their assignment-sequence meaning. Falls back to the stored
+ * snapshot when the slot holds nothing measurable. */
+static ObserverSlot vm_slot_query_view(Env *e, int idx, const ObserverSlot *s) {
+    ObserverSlot q = *s;
+    double h;
+    if (observer_entropy_now(e, idx, &h)) q.entropy = h;
+    return q;
 }
 
 /* #708: 1 when the binding's CURRENT value is a function or builtin. A
@@ -1288,7 +1313,8 @@ void jit_helper_report_slot(int slot) {
     if (vm_slot_value_opaque(e, (int)slot)) {
         result = make_str("opaque");       /* #708 — mirrors CASE(REPORT_SLOT) */
     } else if (os_r && os_r->used) {
-        result = make_str(observer_slot_report(os_r));
+        ObserverSlot q = vm_slot_query_view(e, (int)slot, os_r);      /* #711 */
+        result = make_str(observer_slot_report(&q));
     } else {
         result = make_str("equilibrium");  /* unobserved binding — no trajectory */
     }
@@ -4474,7 +4500,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (vm_slot_value_opaque(e, (int)slot)) {
             result = make_str("opaque");       /* #708: fn/builtin binding */
         } else if (os_l && os_l->used) {
-            result = make_str(observer_slot_report(os_l));
+            ObserverSlot q = vm_slot_query_view(e, (int)slot, os_l);  /* #711 */
+            result = make_str(observer_slot_report(&q));
         } else {
             result = make_str("equilibrium");  /* unobserved binding */
         }
@@ -4502,7 +4529,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (vm_slot_value_opaque(oe, oidx)) {
             result = make_str("opaque");       /* #708: fn/builtin binding */
         } else if (os_n && os_n->used) {
-            result = make_str(observer_slot_report(os_n));
+            ObserverSlot q = vm_slot_query_view(oe, oidx, os_n);      /* #711 */
+            result = make_str(observer_slot_report(&q));
         } else {
             result = make_str("equilibrium");  /* unobserved binding */
         }
@@ -4562,7 +4590,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         const ObserverSlot *s = env_obs_slot(e, (int)slot);
-        vm_push(observer_slot_trajectory(s));
+        if (s) {
+            /* #711: snapshot the query-time view — the snapshot IS a
+             * query, so its entropy field reflects the current value. */
+            ObserverSlot q = vm_slot_query_view(e, (int)slot, s);
+            vm_push(observer_slot_trajectory(&q));
+        } else {
+            vm_push(observer_slot_trajectory(s));
+        }
         DISPATCH();
     }
 
@@ -4581,7 +4616,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         const ObserverSlot *s = env_obs_slot(oe, oidx);
-        vm_push(observer_slot_trajectory(s));
+        if (s) {
+            ObserverSlot q = vm_slot_query_view(oe, oidx, s);         /* #711 */
+            vm_push(observer_slot_trajectory(&q));
+        } else {
+            vm_push(observer_slot_trajectory(s));
+        }
         DISPATCH();
     }
 
@@ -4593,14 +4633,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         const ObserverSlot *s = env_obs_slot(e, (int)slot);
         if (s && s->used) {
             /* #708: the band is "opaque" for a fn/builtin binding; the
-             * entropy/dH numbers stay as recorded — they are honest
-             * measurements of the constant, and hiding them would make
-             * the tuple's shape value-dependent. */
+             * dH numbers stay as recorded. #711: the entropy element and
+             * the band read the query-time view — mutations included. */
+            ObserverSlot q = vm_slot_query_view(e, (int)slot, s);
             Value *list = make_list(4);
             list_append_owned(list, make_str(
                 vm_slot_value_opaque(e, (int)slot) ? "opaque"
-                                                   : observer_slot_report(s)));
-            list_append_owned(list, make_num(s->entropy));
+                                                   : observer_slot_report(&q)));
+            list_append_owned(list, make_num(q.entropy));
             list_append_owned(list, make_num(s->dH));
             list_append_owned(list, make_num(s->prev_dH));
             vm_push(list);
@@ -4621,11 +4661,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         const ObserverSlot *s = env_obs_slot(oe, oidx);
         if (s && s->used) {
+            ObserverSlot q = vm_slot_query_view(oe, oidx, s);         /* #711 */
             Value *list = make_list(4);
             list_append_owned(list, make_str(
                 vm_slot_value_opaque(oe, oidx) ? "opaque"     /* #708 */
-                                               : observer_slot_report(s)));
-            list_append_owned(list, make_num(s->entropy));
+                                               : observer_slot_report(&q)));
+            list_append_owned(list, make_num(q.entropy));
             list_append_owned(list, make_num(s->dH));
             list_append_owned(list, make_num(s->prev_dH));
             vm_push(list);
@@ -4741,7 +4782,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
             const ObserverSlot *s = env_obs_slot(oe, oidx);
             if (s && s->used) {
-                if (kind == 3)      result = make_num(s->entropy);
+                if (kind == 3) {
+                    /* #711: `where is x` is the current-state channel —
+                     * recomputed from the value that is there NOW, so an
+                     * in-place mutation is visible. dH (why/how) is the
+                     * assignment-recorded trajectory and stays as stored. */
+                    double h_now;
+                    result = make_num(observer_entropy_now(oe, oidx, &h_now)
+                                          ? h_now : s->entropy);
+                }
                 else if (kind == 4) result = make_num(s->dH);
                 else                result = make_num(observer_settledness(s->dH));
             } else {
@@ -4956,14 +5005,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 ? NULL   /* #708: fn/builtin binding — nothing claimable */
                 : env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
         if (s) {
-            switch (kind) {
-            case 0: result = observer_slot_converged(s);   break;
-            case 1: result = observer_slot_stable(s);      break;
-            case 2: result = observer_slot_improving(s);   break;
-            case 3: result = observer_slot_oscillating(s); break;
-            case 4: result = observer_slot_diverging(s);   break;
-            case 5: result = observer_slot_equilibrium(s); break;
-            }
+            ObserverSlot q = vm_slot_query_view(g_last_obs_slot_env,
+                                                g_last_obs_slot_idx, s); /* #711 */
+            result = vm_slot_predicate(&q, kind);
         }
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
@@ -4978,8 +5022,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         int result = 0;
         const ObserverSlot *ps_l = env_obs_slot(e, (int)slot);
-        if (ps_l && ps_l->used && !vm_slot_value_opaque(e, (int)slot))
-            result = vm_slot_predicate(ps_l, kind);          /* #708 */
+        if (ps_l && ps_l->used && !vm_slot_value_opaque(e, (int)slot)) {
+            ObserverSlot q = vm_slot_query_view(e, (int)slot, ps_l);  /* #711 */
+            result = vm_slot_predicate(&q, kind);            /* #708 */
+        }
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }
@@ -5001,8 +5047,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         int result = 0;
         const ObserverSlot *ps_n = env_obs_slot(oe, oidx);
-        if (ps_n && ps_n->used && !vm_slot_value_opaque(oe, oidx))
-            result = vm_slot_predicate(ps_n, kind);          /* #708 */
+        if (ps_n && ps_n->used && !vm_slot_value_opaque(oe, oidx)) {
+            ObserverSlot q = vm_slot_query_view(oe, oidx, ps_n);      /* #711 */
+            result = vm_slot_predicate(&q, kind);            /* #708 */
+        }
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }

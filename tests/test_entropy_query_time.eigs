@@ -1,0 +1,77 @@
+# #711: entropy is the CURRENT-STATE channel (recomputed at query time);
+# dH is the assignment-recorded trajectory. Before this split, the stored
+# entropy was a snapshot taken at the last assignment, so an in-place
+# mutation (dict_set, append, indexed store) left it stale — two
+# containers with identical contents reported different entropies,
+# decided purely by assignment history (measured fleet-wide at 1.42% of
+# folds). This file pins the split from both sides.
+
+# ---- the issue's repro: mutation moves entropy, history does not ----
+d is {"k": 1}
+h0 is where is d
+dict_set of [d, "k", 999999]
+h1 is where is d
+e is {"k": 999999}
+he is where is e
+assert of [(h0 == h1) == 0, "QT01 dict_set moves where"]
+assert of [h1 == he, "QT02 identical contents => identical entropy"]
+
+l is [1.0, 1.0, 1.0]
+append of [l, 900.0]
+m is [1.0, 1.0, 1.0, 900.0]
+assert of [(where is l) == (where is m), "QT03 append moves the size term too"]
+
+# ---- indexed in-place store ----
+v is [1.0, 1.0, 1.0]
+hv0 is where is v
+v[0] is 900.0
+w is [900.0, 1.0, 1.0]
+assert of [(where is v) == (where is w), "QT04 indexed store is visible"]
+assert of [((where is v) == hv0) == 0, "QT05 ...and moved from the snapshot"]
+
+# ---- dH is the assignment trajectory: mutation does NOT move it ----
+t is {"k": 1}
+t is {"k": 1}
+dh0 is why is t
+dict_set of [t, "k", 999999]
+assert of [(why is t) == dh0, "QT06 mutation leaves dH untouched (contract)"]
+
+# ---- a query never perturbs the trajectory (no write-back) ----
+a is 1.5
+a is 2.5
+q1 is where is a
+q2 is report of a
+a is 3.5
+dha is why is a
+b is 1.5
+b is 2.5
+b is 3.5
+dhb is why is b
+assert of [dha == dhb, "QT07 querying between assigns does not change dH"]
+
+# ---- observe: entropy element is query-time, dH element is recorded ----
+o is {"k": 1}
+o is {"k": 1}
+obs0 is observe of o
+dict_set of [o, "k", 999999]
+obs1 is observe of o
+assert of [(obs0[1] == obs1[1]) == 0, "QT08 observe entropy element refreshes"]
+assert of [obs0[2] == obs1[2], "QT09 observe dH element stays recorded"]
+
+# ---- trajectory snapshot carries query-time entropy ----
+s is {"k": 1}
+s is {"k": 1}
+dict_set of [s, "k", 999999]
+snap is trajectory of s
+fresh is {"k": 999999}
+fsnap is trajectory of fresh
+assert of [snap["entropy"] == fsnap["entropy"], "QT10 snapshot entropy is fresh"]
+
+# ---- numbers still classify as before (scalar path sanity) ----
+n is 5
+loop while not converged:
+    n is n * 0.5
+assert of [(n < 0.001), "QT11 converged loop still terminates"]
+assert of [converged == 1, "QT12 converged still reads true after the loop"]
+
+print of "All tests passed"
