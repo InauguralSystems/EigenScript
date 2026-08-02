@@ -208,7 +208,7 @@ belongs there by construction. The entry point is
 `eigs_embed.h` with **source strings** — `main.c` (the POSIX CLI) is not part
 of the profile.
 
-Two CI gates keep it honest:
+Three CI gates keep it honest:
 
 - **`make freestanding-check`** (`tools/freestanding_check.sh`) — stage 1
   compiles the profile with `-ffreestanding -fno-stack-protector
@@ -222,6 +222,53 @@ Two CI gates keep it honest:
   behind an embed-API harness and proves the core language (functions, lists,
   dicts, f-strings, observer predicates) still runs while the carved surfaces
   fail loudly (undefined variable / profile-specific import error).
+- **`tools/embed_stack_soak.sh`** — builds the same hosted binary behind the
+  REPL-soak harness (`tools/embed_stack_soak_main.c`) and runs it under a
+  clamped stack rlimit, where per-AST-level C stack cost stops being invisible.
+  Two runs: the REPL soak at 64 KiB, and a depth-guard probe at 256 KiB. What
+  those two numbers mean is the next section.
+
+### Stack budget and the depth guards
+
+The soak's 64 KiB rlimit is a **per-level regression budget, not a stack
+size anyone ships on.** It is deliberately tighter than the real target: its
+job is to make a jump in stack cost per AST level fail loudly (that is what
+caught #361 — a by-value `Compiler` costing ~12.7 KiB of C stack per AST
+level), and a budget with little slack detects that fastest. Read it as a
+tripwire, not as a worst-case bound, and do not derive anything from it. It
+used to be described as "the EigenOS boot-stack size"; per #758 the EigenOS
+boot stack was raised (to 1 MiB) as part of the #361 fix, so that reading is
+stale. EigenOS lives in its own repository, so that figure is #758's
+measurement rather than one this repo's CI can check — which is exactly why
+the soak budget should not be described in terms of it.
+
+**The depth guards are sized for the roomy boot stack, and the constrained
+profile relies on the stack canary, not on the guards.** `PARSE_MAX_DEPTH`
+(256, `src/parser.c`) and `COMPILE_MAX_DEPTH` (128, `src/compiler.c`) bound
+C recursion so that deeply nested source — `eval` of untrusted input, say —
+is rejected instead of running off the stack. They are fixed counts, chosen
+against a stack with room, and they are **not** reachable on an
+arbitrarily small stack: measured on the soak harness, the 64 KiB run
+SIGSEGVs on deeply nested source long before `PARSE_MAX_DEPTH` trips, and
+the guard needs roughly 144 KiB to reject cleanly and reliably. So on a
+genuinely tiny stack the guard is not the binding constraint — the stack
+is, and an embedder there is protected by the platform's overflow detection,
+not by a depth count: hosted, the guard page (an instant SIGSEGV); bare
+metal, the boot stack's own canary word (#758). Note that is a canary the
+*kernel* places, not a compiler-inserted one — the profile compiles with
+`-fno-stack-protector`, as the gate above shows.
+
+That is a deliberate choice, not an oversight. The alternative — deriving
+the guards from the stack at runtime — is a behavioural change to shipped
+guards on every profile, in exchange for a bound that is still only as good
+as its estimate of per-level cost. Anyone lowering the soak budget, or
+relying on a depth guard on a constrained target, needs to know which of the
+two is actually holding.
+
+Both halves are tested rather than assumed: run 2 of the soak feeds the
+parser source nested past `PARSE_MAX_DEPTH` at a stack with the headroom to
+reach it, and requires the guard's own diagnostic plus a still-usable state
+afterwards — a SIGSEGV there fails the gate.
 
 ## Mini-libc/libm (EXISTS since 2026-07-02)
 
