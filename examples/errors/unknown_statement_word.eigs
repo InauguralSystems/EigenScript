@@ -1,0 +1,6 @@
+# ERROR DEMO — a bare word used like a statement keyword (#732).
+# `say` is not a builtin or keyword; the statement parses as the lone
+# identifier `say` and `x` is the leftover token. The hint suggests the
+# call form and a name check instead of "one statement per line".
+# expect-error: 'say' is not a statement keyword; a call is written 'say of x'
+say x

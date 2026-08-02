@@ -1,0 +1,6 @@
+# ERROR DEMO — paren-style call (#732).
+# The single most likely model/newcomer mistake: Python/JS call syntax.
+# The old blanket hint said "one statement per line", which names a rule
+# this input did not break; the hint now states the actual fix.
+# expect-error: calls use 'of', not parentheses: write print of x
+print("hello")

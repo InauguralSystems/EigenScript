@@ -1,0 +1,5 @@
+# ERROR DEMO — unparenthesized lambda parameter (#732).
+# `x => x + 1` is the JS reflex; EigenScript lambda params need parens.
+# The statement parses as `f is x`, leaving `=>` as the leftover token.
+# expect-error: lambda parameters need parentheses: (x) => ...
+f is x => x + 1

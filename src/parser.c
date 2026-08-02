@@ -83,16 +83,71 @@ static void p_print_caret(int line, int col) {
     eigs_print_caret_src(stderr, g_parse_caret_src, line, col);
 }
 
+/* #732: statement-entry snapshots, set by parse_statement_inner.
+ * g_stmt_err_base lets p_end_statement tell "this statement already
+ * reported" (suppress the cascade); g_stmt_start_pos lets it tell "the
+ * whole statement was one bare identifier" (the `say x` / `def f(a):`
+ * shapes). __thread like the lexer/JSON parser state — eval can run on
+ * worker threads. */
+static __thread int g_stmt_err_base  = 0;
+static __thread int g_stmt_start_pos = -1;
+
 static void p_end_statement(Parser *p) {
     if (p_match(p, TOK_NEWLINE)) return;
     TokType t = p_cur(p)->type;
     if (t == TOK_EOF || t == TOK_DEDENT) return;
     Token *tok = p_cur(p);
+    /* #732: if this statement already reported a parse error, the leftover
+     * tokens are that error's debris, not a second statement — resync
+     * silently instead of stacking a spurious "unexpected X after
+     * statement" on top (the `add2 of (1, 2)` shape: "expected ')', got
+     * ','" was followed by exactly that). */
+    if (g_parse_errors > g_stmt_err_base) {
+        while (p_cur(p)->type != TOK_NEWLINE && p_cur(p)->type != TOK_EOF &&
+               p_cur(p)->type != TOK_DEDENT)
+            p_advance(p);
+        p_match(p, TOK_NEWLINE);
+        return;
+    }
+    /* #732: specialize the hint on what is actually in hand. The four most
+     * likely model-generated mistakes (paren calls, `def`, bare-word
+     * statements, unparenthesized lambda params) all land here, and the
+     * blanket "one statement per line" named a rule none of them broke —
+     * while docs/llms.txt taught the same misdiagnosis, so the reference
+     * and the diagnostic wrongly confirmed each other. */
+    Token *prev = (p->pos > 0) ? &p->tl->tokens[p->pos - 1] : NULL;
+    const char *prev_name = (prev && prev->type == TOK_IDENT && prev->str_val)
+                                ? prev->str_val : NULL;
+    int lone_ident_stmt = prev_name && (p->pos == g_stmt_start_pos + 1);
+    char hint[192];
+    if (t == TOK_LPAREN && prev_name) {
+        snprintf(hint, sizeof hint,
+                 " — calls use 'of', not parentheses: write %.32s of x "
+                 "(or %.32s of [a, b] for several arguments)",
+                 prev_name, prev_name);
+    } else if (t == TOK_ARROW) {
+        snprintf(hint, sizeof hint,
+                 " — lambda parameters need parentheses: (x) => ...");
+    } else if (t == TOK_IDENT && lone_ident_stmt &&
+               strcmp(prev_name, "def") == 0) {
+        snprintf(hint, sizeof hint,
+                 " — function definitions are written 'define %.32s(...) as:'",
+                 tok->str_val ? tok->str_val : "name");
+    } else if (t == TOK_IDENT && lone_ident_stmt) {
+        snprintf(hint, sizeof hint,
+                 " — '%.32s' is not a statement keyword; a call is written "
+                 "'%.32s of %.32s', and check the name for typos",
+                 prev_name, prev_name, tok->str_val ? tok->str_val : "x");
+    } else {
+        snprintf(hint, sizeof hint, " — one statement per line");
+    }
     fprintf(stderr, "Parse error line %d:%d: unexpected %s after statement",
             tok->line, tok->col + 1, tok_type_name(tok->type));
     if (tok->str_val) fprintf(stderr, " ('%s')", tok->str_val);
-    fprintf(stderr, " — one statement per line\n");
+    fprintf(stderr, "%s\n", hint);
     {
+        /* The recorded (--lint --json / LSP) message stays the stable
+         * "unexpected X after statement" — the hint is display-layer. */
         char m[160];
         snprintf(m, sizeof(m), "unexpected %s after statement",
                  tok_type_name(tok->type));
@@ -1329,6 +1384,14 @@ static ASTNode* parse_statement_inner(Parser *p) {
     Token *t = p_cur(p);
 
     if (t->type == TOK_EOF || t->type == TOK_DEDENT) return NULL;
+
+    /* #732: snapshots for p_end_statement's cascade guard + hint
+     * specialization. Nested statements (block bodies) overwrite these;
+     * that is fine — each p_end_statement call belongs to the innermost
+     * statement being terminated, and a stale-low err_base after an
+     * erroring nested block only suppresses a lower-confidence cascade. */
+    g_stmt_err_base  = g_parse_errors;
+    g_stmt_start_pos = p->pos;
 
     if (t->type == TOK_DEFINE) {
         p_advance(p);
