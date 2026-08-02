@@ -11,6 +11,10 @@
 #include "trace.h"
 #include <limits.h>
 
+#if defined(__GLIBC__) && !EIGENSCRIPT_FREESTANDING
+#include <malloc.h>   /* mallinfo2, for builtin_heap_inuse (#770) */
+#endif
+
 /* TRACE_NONDET_RET lives in trace.h — centralized in Phase 3 so the
  * replay short-circuit applies to every nondet builtin uniformly. */
 
@@ -3995,6 +3999,35 @@ Value* builtin_arena_stats(Value *arg) {
     return make_num((double)g_arena.total_allocated);
 }
 
+/* ==== BUILTIN: heap_inuse ==== */
+/* heap_inuse of null — bytes currently in use by the C allocator
+ * (glibc mallinfo2().uordblks): LIVE allocated bytes, so unlike RSS it is
+ * immune to resident free-heap slack — a fresh leak shows up in the very
+ * first batch, not only after the slack is exhausted (#770). Debug
+ * surface; exists so the per-request leak gate
+ * (tests/test_http_rss_growth.sh) can watch exact accounting instead of
+ * the RSS proxy.
+ *
+ * Constraints, both inherited by that gate (which is already Linux-only
+ * because it reads /proc):
+ *   - glibc only. Returns null where mallinfo2 does not exist (musl,
+ *     macOS, freestanding libc). The freestanding profile is carved out
+ *     explicitly (not just by __GLIBC__): it compiles on a glibc host,
+ *     so the host's mallinfo2 would otherwise leak into its import
+ *     surface and no HAL/mini-libc provides it (tools/freestanding_check.sh).
+ *   - mallinfo2 reports the MAIN arena only. Sequential request traffic
+ *     (what the gate drives) is served on the main arena, so per-request
+ *     leaks on that path are fully counted; allocations pinned to a
+ *     contended per-thread arena are not. */
+Value* builtin_heap_inuse(Value *arg) {
+    (void)arg;
+#if defined(__GLIBC__) && !EIGENSCRIPT_FREESTANDING
+    return make_num((double)mallinfo2().uordblks);
+#else
+    return make_null();
+#endif
+}
+
 /* Free a TokenList's malloc'd storage (token array and str_vals) */
 void free_tokenlist(TokenList *tl) {
     if (!tl->tokens) return;
@@ -7575,6 +7608,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "arena_mark", make_builtin(builtin_arena_mark));
     env_set_local_owned(env, "arena_reset", make_builtin(builtin_arena_reset));
     env_set_local_owned(env, "arena_stats", make_builtin(builtin_arena_stats));
+    env_set_local_owned(env, "heap_inuse", make_builtin(builtin_heap_inuse));
 
     /* ---- Concurrency builtins ---- */
     env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));
