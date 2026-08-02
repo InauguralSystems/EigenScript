@@ -408,7 +408,7 @@ Value* builtin_http_post(Value *arg) {
     char header_bufs[32][256]; /* up to 32 headers */
     int hdr_count = 0;
     int jpos = 0;
-    Value *hdr_obj = eigs_json_parse_value(headers_json, &jpos);
+    Value *hdr_obj = eigs_json_parse_root(headers_json, &jpos);   /* #777 */
     /* #755: a JSON OBJECT is the shape a caller reaches for first, and it used
      * to send NO headers at all — this tested only VAL_LIST, while
      * eigs_json_parse_object returns a VAL_DICT, so the loop never ran and the
@@ -620,7 +620,7 @@ Value* builtin_shared_incr(Value *arg) {
     double cur = 0;
     if (idx >= 0) {
         int pos = 0;
-        Value *parsed = eigs_json_parse_value(s->shared[idx].json, &pos);
+        Value *parsed = eigs_json_parse_root(s->shared[idx].json, &pos);   /* #777 */
         /* Read the number out BEFORE dropping the ref — decref may free it —
          * and drop it on the mismatch path too, which is the one an early
          * return makes easy to miss. */
@@ -679,7 +679,7 @@ Value* builtin_shared_get(Value *arg) {
     pthread_mutex_unlock(&s->shared_mu);
     if (!json_copy) return make_null();
     int pos = 0;
-    Value *v = eigs_json_parse_value(json_copy, &pos);
+    Value *v = eigs_json_parse_root(json_copy, &pos);   /* #777 */
     free(json_copy);
     return v ? v : make_null();
 }
@@ -1295,7 +1295,7 @@ static void handle_request(int fd) {
                         int idx = shared_find(srv, "require_auth");
                         if (idx >= 0) {
                             int jpos = 0;
-                            Value *parsed = eigs_json_parse_value(srv->shared[idx].json, &jpos);
+                            Value *parsed = eigs_json_parse_root(srv->shared[idx].json, &jpos);   /* #777 */
                             if (parsed && parsed->type == VAL_STR) {
                                 auth_src = xstrdup(parsed->data.str);
                             }
