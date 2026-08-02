@@ -6,6 +6,31 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The `ValType` switches are now exhaustive too, closing out the #738
+  sweep — and the first build immediately caught real drift (#738).**
+  The ASTType half of #738 landed earlier (see below); this finishes the
+  issue: the remaining `default:` arms over closed enums are gone from
+  `val_type_name`, the Value destructor, `values_equal`,
+  `chan_clone_rec`, `GC_FOR_EACH_CHILD`, `gc_clear_node`,
+  `eigs_value_type` (embed API), `store_json_encode`, both trace-tape
+  value formatters, the observer dump, and `OP_SLICE`'s type check — a
+  new `ValType` is now a build error at 16 sites (verified by planting
+  an 11th enumerator), instead of a silent leak in the destructor plus a
+  wrong answer everywhere else. One `ASTType` straggler is also cleared:
+  W022's binding collector, added *after* the sweep, had reintroduced a
+  `default:` arm — the exact drift mode the issue predicted. The
+  enforcement's first compile found real drift: `store_json_encode` did
+  not handle `VAL_BUFFER`, so a buffer stored through ext_store silently
+  encodes as `null` (data loss — kept behavior-preserving here, tracked
+  as #805), and the trace tape's full nondet formatter renders
+  `VAL_JSON_RAW`/`VAL_TEXT_BUILDER` as opaque `<heap>` where the short
+  form has `<json>`/`<text>` (latent; noted in #805). All grouped arms
+  are otherwise strictly mechanical — suite output is byte-identical.
+  Legitimately open switches keep their `default:`: untrusted bytecode
+  bytes (the leaf-accessor scan, the non-GNU dispatch arm), guarded
+  subsets (JIT binop/cmparm emitters, compound-assign tokens), and
+  `TokType` (out of #738's scope).
+
 - **The opcode operand-layout tables are now exhaustive switches on
   `OpCode`, closing a verifier drift (#737).** `op_name`,
   `op_verify_operands`, and `op_stack_effect` each switched on `uint8_t`

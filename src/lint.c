@@ -2571,7 +2571,33 @@ static void w022_collect_bindings(ASTNode *n, W022Table *t) {
             for (int c = 0; c < n->data.match.case_count; c++)
                 w022_poison_idents(n->data.match.patterns[c], t);
             break;
-        default:
+        /* Nothing to do for these. Enumerated rather than covered by a `default:`
+         * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
+         * error here instead of a silent no-op. */
+        case AST_NUM:
+        case AST_STR:
+        case AST_IDENT:
+        case AST_NULL:
+        case AST_BINOP:
+        case AST_UNARY:
+        case AST_RELATION:
+        case AST_IF:
+        case AST_LOOP:
+        case AST_RETURN:
+        case AST_BLOCK:
+        case AST_LIST:
+        case AST_INDEX:
+        case AST_PROGRAM:
+        case AST_INTERROGATE:
+        case AST_PREDICATE:
+        case AST_DICT:
+        case AST_DOT:
+        case AST_BREAK:
+        case AST_CONTINUE:
+        case AST_DOT_ASSIGN:
+        case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN:
+        case AST_SLICE:
             break;
     }
     LINT_FOR_EACH_CHILD(n, child, w022_collect_bindings(child, t));

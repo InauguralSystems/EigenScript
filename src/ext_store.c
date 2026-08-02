@@ -127,7 +127,18 @@ static void store_json_encode(Value *v, strbuf *out) {
             strbuf_append_char(out, '}');
             break;
         }
-        default:
+        /* VAL_NULL/VAL_FN/VAL_BUILTIN are handled by the guard above; raw
+         * JSON, text builders and buffers have no store encoding (buffers
+         * silently store as null — a data-loss gap this enumeration made
+         * visible; tracked upstream). Enumerated rather than covered by a
+         * `default:` so -Werror=switch forces a new ValType to choose its
+         * store-JSON encoding here. */
+        case VAL_NULL:
+        case VAL_FN:
+        case VAL_BUILTIN:
+        case VAL_JSON_RAW:
+        case VAL_TEXT_BUILDER:
+        case VAL_BUFFER:
             strbuf_append(out, "null");
             break;
     }

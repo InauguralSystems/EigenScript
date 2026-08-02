@@ -27,7 +27,11 @@ iteration, or a collector that quietly stops working).
   model: a new owning edge out of Value/Env/Chunk goes into both, and only
   *counted* edges may be traversed (an uncounted edge trips the accounting
   abort and collection silently stops working). Conservative direction:
-  missing an edge leaks; inventing one frees live memory.
+  missing an edge leaks; inventing one frees live memory. A new `ValType`
+  or `ASTType` is a **build error** at every switch that must learn about
+  it (#737/#738: no `default:` arms on closed-enum switches —
+  `-Werror=switch` enforces exhaustiveness; don't add a `default:` back,
+  enumerate the no-op cases instead).
 - **Trace gating**: `g_trace_hist` (assignment history) and
   `g_trace_obs_hist` (observer snapshots) are compiler-set flags —
   recording is off unless the program contains a temporal query

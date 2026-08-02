@@ -221,8 +221,10 @@ const char* val_type_name(ValType t) {
         case VAL_DICT: return "dict";
         case VAL_BUFFER: return "buffer";
         case VAL_TEXT_BUILDER: return "text_builder";
-        default: return "?";
+        /* No `default:` — -Werror=switch (Makefile CFLAGS) makes a new
+         * ValType a build error here instead of printing "?". */
     }
+    return "?";   /* unreachable for valid ValType values */
 }
 /* g_global_env is an EigsState field — see eigenscript.h bridge macros. */
 
@@ -981,7 +983,12 @@ void free_value(Value *v) {
         case VAL_TEXT_BUILDER:
             free(v->data.text_builder.data);
             break;
-        default:
+        /* No owned memory. Enumerated rather than covered by a `default:` so
+         * that -Werror=switch (Makefile CFLAGS) makes a new ValType a build
+         * error here instead of a silent leak. */
+        case VAL_NUM:
+        case VAL_BUILTIN:
+        case VAL_NULL:
             break;
     }
     free(v);
@@ -1338,10 +1345,19 @@ static Value *chan_clone_rec(Value *v, int depth) {
                 out->data.dict.keys[i] = (char *)chan_intern_key(out->data.dict.keys[i]);
             return out;
         }
-        default:
-            val_incref(v);   /* share fn/builtin/buffer/text_builder/json by refcount */
+        /* Shared by refcount, not cloned. Enumerated rather than covered by a
+         * `default:` so that -Werror=switch (Makefile CFLAGS) forces a new
+         * ValType to choose clone-vs-share here. */
+        case VAL_FN:
+        case VAL_BUILTIN:
+        case VAL_BUFFER:
+        case VAL_TEXT_BUILDER:
+        case VAL_JSON_RAW:
+            val_incref(v);
             return v;
     }
+    val_incref(v);   /* unreachable for valid ValType values */
+    return v;
 }
 
 /* Deep-copy a value for cross-thread channel transfer (see chan_clone_rec).
@@ -1480,9 +1496,14 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
             return a->data.text_builder.len == b->data.text_builder.len &&
                    memcmp(a->data.text_builder.data, b->data.text_builder.data,
                           a->data.text_builder.len) == 0;
-        default: /* VAL_FN, VAL_BUILTIN, VAL_JSON_RAW — identity */
+        /* Identity comparison. Enumerated rather than covered by a `default:`
+         * so -Werror=switch forces a new ValType to choose its equality. */
+        case VAL_FN:
+        case VAL_BUILTIN:
+        case VAL_JSON_RAW:
             return a == b;
     }
+    return a == b;   /* unreachable for valid ValType values */
 }
 
 int values_equal(Value *a, Value *b) { return values_equal_impl(a, b, 0); }
@@ -2514,7 +2535,13 @@ static int gc_env_is_node(Env *e) {
                     }                                                         \
                 }                                                             \
                 break;                                                        \
-            default: break;                                                   \
+            /* Leaf types: no outgoing edges. Enumerated rather than          \
+             * covered by a `default:` so -Werror=switch makes a new          \
+             * ValType a build error at every expansion of this macro. */     \
+            case VAL_NUM: case VAL_STR: case VAL_NULL:                        \
+            case VAL_JSON_RAW: case VAL_BUILTIN:                              \
+            case VAL_BUFFER: case VAL_TEXT_BUILDER:                           \
+                break;                                                        \
             }                                                                 \
         }                                                                     \
     } while (0)
@@ -2569,7 +2596,13 @@ static void gc_clear_node(void *obj, int kind) {
                 val_decref(v->data.dict.vals[i]);
             v->data.dict.count = 0;
             break;
-        default: break;
+        /* Leaf types: no outgoing edges to clear. Enumerated rather than
+         * covered by a `default:` so -Werror=switch keeps this in lockstep
+         * with GC_FOR_EACH_CHILD when a ValType is added. */
+        case VAL_NUM: case VAL_STR: case VAL_NULL:
+        case VAL_JSON_RAW: case VAL_BUILTIN:
+        case VAL_BUFFER: case VAL_TEXT_BUILDER:
+            break;
         }
     }
 }
