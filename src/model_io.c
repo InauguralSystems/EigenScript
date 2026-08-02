@@ -297,13 +297,26 @@ int load_model_weights(const char *path, TransformerModel *model) {
     printf("Model file loaded: %ld bytes\n", size);
     fflush(stdout);
 
+    /* #727: the JSON path now mirrors the .eigen loader's validate-then-
+     * commit discipline. Parse into a stack temporary; enforce that
+     * `config` precedes every weight array (sizes were previously taken
+     * from whatever config happened to be current when a key was met, so
+     * key ORDER changed allocation sizes — a heap-OOB read at inference);
+     * check every json_parse_layer return (a short `layers` array used to
+     * leave w_q == NULL and requantize_all_layers dereferenced it); and
+     * require every section present before committing. On any failure the
+     * live model is untouched and tmp is freed. */
+    TransformerModel tmp;
+    memset(&tmp, 0, sizeof(tmp));
+
     const char *p = data;
     json_skip_ws(&p);
-    if (*p != '{') { free(data); return -1; }
+    if (*p != '{') goto fail;
     p++;
 
     int format_version = 0;
-    model->weight_format = WEIGHT_FORMAT_TERNARY;  /* default for v2 models */
+    int seen_config = 0, seen_token = 0, seen_output = 0, seen_layers = 0;
+    tmp.weight_format = WEIGHT_FORMAT_TERNARY;  /* default for v2 models */
     while (*p && *p != '}') {
         json_skip_ws(&p);
         char key[64];
@@ -318,42 +331,80 @@ int load_model_weights(const char *path, TransformerModel *model) {
             char wf[64];
             json_parse_string(&p, wf, sizeof(wf));
             if (strcmp(wf, "fp32_dense") == 0) {
-                model->weight_format = WEIGHT_FORMAT_FP32;
+                tmp.weight_format = WEIGHT_FORMAT_FP32;
             } else {
-                model->weight_format = WEIGHT_FORMAT_TERNARY;
+                tmp.weight_format = WEIGHT_FORMAT_TERNARY;
             }
         } else if (strcmp(key, "config") == 0) {
-            if (json_parse_config(&p, &model->config) != 0) {
-                free(data);
-                return -1;
+            if (seen_config) {
+                fprintf(stderr, "Model rejected: duplicate config section\n");
+                goto fail;
             }
+            if (json_parse_config(&p, &tmp.config) != 0) goto fail;
+            if (tmp.config.vocab_size <= 0 || tmp.config.d_model <= 0 ||
+                tmp.config.d_ff <= 0 || tmp.config.n_layers <= 0 ||
+                tmp.config.n_layers > MAX_LAYERS) {
+                fprintf(stderr,
+                    "Model rejected: config out of range (vocab=%d d_model=%d "
+                    "n_layers=%d d_ff=%d, max layers %d)\n",
+                    tmp.config.vocab_size, tmp.config.d_model,
+                    tmp.config.n_layers, tmp.config.d_ff, MAX_LAYERS);
+                goto fail;
+            }
+            seen_config = 1;
             printf("Config: vocab=%d d_model=%d n_layers=%d d_ff=%d\n",
-                model->config.vocab_size, model->config.d_model,
-                model->config.n_layers, model->config.d_ff);
+                tmp.config.vocab_size, tmp.config.d_model,
+                tmp.config.n_layers, tmp.config.d_ff);
             fflush(stdout);
         } else if (strcmp(key, "token_embeddings") == 0) {
-            int vs = model->config.vocab_size;
-            int dm = model->config.d_model;
-            model->token_embeddings = xcalloc_array(safe_size_mul(vs, dm), sizeof(float));
-            json_parse_2d_array(&p, model->token_embeddings, vs, dm);
+            if (!seen_config || seen_token) {
+                fprintf(stderr, "Model rejected: %s token_embeddings\n",
+                        seen_token ? "duplicate" : "config must precede");
+                goto fail;
+            }
+            int vs = tmp.config.vocab_size;
+            int dm = tmp.config.d_model;
+            tmp.token_embeddings = xcalloc_array(safe_size_mul(vs, dm), sizeof(float));
+            json_parse_2d_array(&p, tmp.token_embeddings, vs, dm);
+            seen_token = 1;
         } else if (strcmp(key, "output_proj") == 0) {
-            int dm = model->config.d_model;
-            int vs = model->config.vocab_size;
-            model->output_proj = xcalloc_array(safe_size_mul(dm, vs), sizeof(float));
-            json_parse_2d_array(&p, model->output_proj, dm, vs);
+            if (!seen_config || seen_output) {
+                fprintf(stderr, "Model rejected: %s output_proj\n",
+                        seen_output ? "duplicate" : "config must precede");
+                goto fail;
+            }
+            int dm = tmp.config.d_model;
+            int vs = tmp.config.vocab_size;
+            tmp.output_proj = xcalloc_array(safe_size_mul(dm, vs), sizeof(float));
+            json_parse_2d_array(&p, tmp.output_proj, dm, vs);
+            seen_output = 1;
         } else if (strcmp(key, "layers") == 0) {
+            if (!seen_config || seen_layers) {
+                fprintf(stderr, "Model rejected: %s layers\n",
+                        seen_layers ? "duplicate" : "config must precede");
+                goto fail;
+            }
             json_skip_ws(&p);
-            if (*p == '[') {
-                p++;
-                for (int l = 0; l < model->config.n_layers && l < MAX_LAYERS; l++) {
-                    json_skip_ws(&p);
-                    json_parse_layer(&p, &model->layers[l], model->config.d_model, model->config.d_ff);
-                    json_skip_ws(&p);
-                    if (*p == ',') p++;
+            if (*p != '[') {
+                fprintf(stderr, "Model rejected: layers is not an array\n");
+                goto fail;
+            }
+            p++;
+            for (int l = 0; l < tmp.config.n_layers; l++) {
+                json_skip_ws(&p);
+                if (json_parse_layer(&p, &tmp.layers[l], tmp.config.d_model,
+                                     tmp.config.d_ff) != 0) {
+                    fprintf(stderr,
+                        "Model rejected: layer %d of %d missing or malformed\n",
+                        l, tmp.config.n_layers);
+                    goto fail;
                 }
                 json_skip_ws(&p);
-                if (*p == ']') p++;
+                if (*p == ',') p++;
             }
+            json_skip_ws(&p);
+            if (*p == ']') p++;
+            seen_layers = 1;
         } else {
             json_skip_value(&p);
         }
@@ -361,30 +412,46 @@ int load_model_weights(const char *path, TransformerModel *model) {
         if (*p == ',') p++;
     }
 
-    free(data);
-
     if (format_version != MODEL_FORMAT_VERSION) {
         fprintf(stderr,
             "Model format mismatch: file is version %d, runtime expects %d.\n"
             "  Version 0 models were byte-vocab; version 1 uses runtime token IDs.\n"
             "  Retrain or rebuild the checkpoint with the current runtime.\n",
             format_version, MODEL_FORMAT_VERSION);
-        model->loaded = 0;
-        return -1;
+        goto fail;
+    }
+    if (!seen_config || !seen_token || !seen_output || !seen_layers) {
+        fprintf(stderr,
+            "Model rejected: incomplete checkpoint (config=%d token_embeddings=%d "
+            "output_proj=%d layers=%d)\n",
+            seen_config, seen_token, seen_output, seen_layers);
+        goto fail;
     }
 
-    /* Project master FP32 weights to ternary for forward passes (if ternary format) */
-    if (model->weight_format == WEIGHT_FORMAT_TERNARY) {
-        requantize_all_layers(model);
+    free(data);
+    data = NULL;
+
+    /* Project master FP32 weights to ternary for forward passes (if ternary
+     * format). Safe now: every layer pointer was validated above. */
+    if (tmp.weight_format == WEIGHT_FORMAT_TERNARY) {
+        requantize_all_layers(&tmp);
     }
 
-    model->loaded = 1;
+    tmp.loaded = 1;
+    model_free_allocations(model);
+    *model = tmp;
+
     const char *wf_name = model->weight_format == WEIGHT_FORMAT_TERNARY
         ? "ternary-weight-only" : "fp32-dense";
     printf("Model loaded successfully: v%d (%s), %d layers, d_model=%d\n",
         format_version, wf_name, model->config.n_layers, model->config.d_model);
     fflush(stdout);
     return 0;
+
+fail:
+    free(data);
+    model_free_allocations(&tmp);
+    return -1;
 }
 
 int save_model_weights(const char *path, TransformerModel *model) {
