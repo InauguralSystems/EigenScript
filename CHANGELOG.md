@@ -6,6 +6,28 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The leftover-token parse error diagnoses the actual mistake instead
+  of always saying "one statement per line" (#732).** The four most
+  likely model/newcomer mistakes — `print("hello")`, `def f(a):`,
+  `f is x => x + 1`, `say x` — all landed in `p_end_statement`, whose
+  blanket hint named a rule none of them broke (and `docs/llms.txt`
+  taught the same misdiagnosis, so the reference and the diagnostic
+  wrongly confirmed each other). The hint is now specialized on the
+  leftover/predecessor tokens: paren-style calls get "calls use 'of':
+  write f of x", a bare `=>` gets the parenthesized-lambda form, a
+  lone-identifier statement gets a name-check hint (with `def`
+  specifically pointed at `define … as:`), and everything else keeps the
+  original text — `x is 2 x is 3` still says "one statement per line".
+  Also from the same pass: a statement that already reported a parse
+  error no longer stacks a spurious "unexpected X after statement" on
+  its debris (`add2 of (1, 2)` now gets exactly one error, the real
+  one), and the llms.txt validation-ladder entries for this signature
+  now describe the specialized hints (including that the caret sits one
+  token AFTER the mistake). The recorded `--lint --json`/LSP message is
+  unchanged (`unexpected X after statement`) — the hint is
+  display-layer. Five new `examples/errors/` demos pin the hints, plus
+  an `# expect-error-count:` harness extension pinning the
+  single-error cascade behavior (suite [90], now 19 checks).
 - **`json_decode` no longer reads past the allocation on a string ending
   in an escape backslash (#776).** The escape branch stepped onto the
   terminating NUL, appended it, and the loop guard then read one byte

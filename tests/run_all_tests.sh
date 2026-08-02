@@ -3449,7 +3449,7 @@ echo ""
 
 # [90] Error examples — examples/errors/*.eigs must exit nonzero and
 # print their declared '# expect-error:' message.
-echo "[90] Error Examples (14 checks)"
+echo "[90] Error Examples (19 checks)"
 ERR_OUTPUT=$(bash "$TESTS_DIR/test_error_examples.sh" 2>&1)
 ERR_PASS=$(echo "$ERR_OUTPUT" | grep -c "  PASS:" || true)
 ERR_FAIL=$(echo "$ERR_OUTPUT" | grep -c "  FAIL:" || true)

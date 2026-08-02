@@ -25,6 +25,10 @@ for f in "$ROOT"/examples/errors/*.eigs; do
     #     # expect-caret: <exact caret line, from the pipe on>
     # so a column-attribution regression moves the caret and fails here.
     caret=$(grep -m1 "^# expect-caret:" "$f" | sed 's/^# expect-caret: //')
+    # #732: cascade cases pin the NUMBER of "Parse error" lines with
+    #     # expect-error-count: <n>
+    # so a suppressed spurious follow-on error can't silently come back.
+    errcount=$(grep -m1 "^# expect-error-count:" "$f" | sed 's/^# expect-error-count: //')
     out=$("$EIGS" "$f" </dev/null 2>&1)
     rc=$?
     if [ "$rc" = "0" ]; then
@@ -34,6 +38,12 @@ for f in "$ROOT"/examples/errors/*.eigs; do
         echo "  FAIL: $name (missing expected message)"
         echo "    expected substring: $expected"
         printf '%s\n' "$out" | head -3 | sed 's/^/    got: /'
+        FAIL=$((FAIL + 1))
+    elif [ -n "$errcount" ] && \
+         [ "$(printf '%s\n' "$out" | grep -c 'Parse error')" != "$errcount" ]; then
+        echo "  FAIL: $name (wrong parse-error count)"
+        echo "    expected $errcount, got $(printf '%s\n' "$out" | grep -c 'Parse error')"
+        printf '%s\n' "$out" | head -4 | sed 's/^/    got: /'
         FAIL=$((FAIL + 1))
     elif [ -n "$caret" ] && ! printf '%s' "$out" | grep -qF "$caret"; then
         echo "  FAIL: $name (caret not at the declared column)"

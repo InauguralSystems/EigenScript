@@ -1,0 +1,11 @@
+# ERROR DEMO — parenthesized "tuple" argument list (#732 note 1).
+# `add2 of (1, 2)` gets exactly ONE error: the real one. Before #732 the
+# leftover tokens after the failed expression re-triggered a second,
+# spurious "unexpected number after statement" with the misleading
+# one-statement-per-line hint; p_end_statement now resyncs silently when
+# the statement already reported.
+# expect-error: expected ')', got ','
+# expect-error-count: 1
+define add2(a, b) as:
+    return a + b
+add2 of (1, 2)

@@ -1,0 +1,7 @@
+# ERROR DEMO — `def` instead of `define ... as:` (#732).
+# `def` is not a keyword, so the statement parses as a lone identifier and
+# the function name is the leftover token; the hint now points at the
+# actual definition syntax instead of "one statement per line".
+# expect-error: function definitions are written 'define f(...) as:'
+def f(a):
+    return a + 1
