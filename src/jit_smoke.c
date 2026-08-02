@@ -32,6 +32,9 @@ __thread EigsThread *eigs_current = NULL;
  * invokes the emitter. Stub returns void. */
 typedef struct Value Value;
 void free_value(Value *v) { (void)v; }
+/* #728: the decref tail also bakes &gc_note_possible_root (the #307
+ * possible-cycle-root hook arm). Lives in eigenscript.c for real. */
+void gc_note_possible_root(Value *v) { (void)v; }
 
 /* Stage 5b references &g_trace_hist as an immediate in the SET-name
  * inline trace gate. Lives in trace.c in the real binary. */
