@@ -4,6 +4,28 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The JSON model loader validates before committing (#727).** The
+  `.eigen` binary loader always parsed into a temporary, checked every
+  section present, and committed only on success; the JSON path parsed
+  straight into the live model and set `loaded = 1` with `format_version`
+  as its only gate. Three concrete failures, all now rejected loudly
+  (and all reproduced by the planted-fault run of the new tests against
+  the old code): a `layers` array shorter than `config.n_layers` left
+  weight pointers NULL — a **segfault** in `requantize_all_layers` at
+  load time (`json_parse_layer`'s return was discarded); a weight array
+  placed before `config` was allocated from a zeroed config, then
+  indexed by the real `vocab_size` at inference — heap-OOB read; and a
+  checkpoint missing whole sections still marked itself loaded. The JSON
+  path now mirrors the `.eigen` discipline: stack temporary,
+  config-must-precede-arrays ordering, per-layer parse-return checks,
+  config range validation (`n_layers ≤ MAX_LAYERS`, positive dims),
+  completeness check, commit-on-success only — a failed load leaves the
+  live model untouched (pinned by test MI5). Loading untrusted weight
+  files is in scope per SECURITY.md. Suite [47d]
+  (`test_model_incomplete.sh`, 5 checks).
+
 ### Changed
 
 - **Entropy is now the current-state channel — recomputed at query time —

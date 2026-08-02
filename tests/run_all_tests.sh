@@ -2001,6 +2001,25 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
+    echo "[47d/47] Model Incomplete-Checkpoint Rejection (#727, 5 checks)"
+    MI_OUTPUT=$(bash "$TESTS_DIR/test_model_incomplete.sh" 2>&1)
+    if echo "$MI_OUTPUT" | grep -q "SKIP:"; then
+        echo "$MI_OUTPUT" | grep "SKIP:"
+    else
+        MI_PASS=$(echo "$MI_OUTPUT" | grep -c "PASS:" || true)
+        MI_FAIL=$(echo "$MI_OUTPUT" | grep -c "FAIL:" || true)
+        TOTAL=$((TOTAL + MI_PASS + MI_FAIL))
+        PASS=$((PASS + MI_PASS))
+        FAIL=$((FAIL + MI_FAIL))
+        if [ "$MI_FAIL" -gt 0 ]; then
+            echo "  FAIL: $MI_FAIL incomplete-checkpoint check(s) failed"
+            echo "$MI_OUTPUT" | grep "FAIL:" | head -3
+        else
+            echo "  PASS: incomplete/misordered JSON checkpoints rejected"
+        fi
+    fi
+    echo ""
+
     echo "[47c/47] native_train_step gradient-check (batched vs per-position, 3 checks)"
     GC_OUTPUT=$(bash "$TESTS_DIR/test_native_train_gradcheck.sh" 2>&1)
     GC_PASS=$(echo "$GC_OUTPUT" | grep -c "PASS:" || true)
