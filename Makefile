@@ -107,7 +107,7 @@ FLAGS_valgrind := -Werror=switch -g -O1 -DEIGS_VALGRIND $(DEFS_OFF) $(VERDEF)
 LIBS_valgrind  := -lm -lpthread
 
 SRC_V_poison := $(SOURCES)
-FLAGS_poison := -g -O1 -DEIGS_POISON $(DEFS_OFF) $(VERDEF)
+FLAGS_poison := -Werror=switch -g -O1 -DEIGS_POISON $(DEFS_OFF) $(VERDEF)
 LIBS_poison  := -lm -lpthread
 
 VARIANTS := release full http zlib net gfx asan asan-http tsan valgrind poison
@@ -230,7 +230,7 @@ dap:
 	@echo "EigenScript DAP $(VERSION) built. Binary: $$(du -sh $(DAP_BINARY) | cut -f1)"
 
 jit-smoke:
-	$(CC) -Wall -Wextra -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
+	$(CC) -Wall -Wextra -Werror=switch -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
 
 EMBED_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
@@ -349,7 +349,7 @@ coverage-clean:
 coverage: coverage-clean
 	@for src in $(SOURCES); do \
 		obj=$${src%.c}.o; \
-		$(CC) -O0 -g --coverage -Wall -Wextra -c $$src -o $$obj \
+		$(CC) -O0 -g --coverage -Wall -Wextra -Werror=switch -c $$src -o $$obj \
 			-DEIGENSCRIPT_EXT_HTTP=0 \
 			-DEIGENSCRIPT_EXT_MODEL=0 \
 			-DEIGENSCRIPT_EXT_DB=0 \
@@ -377,7 +377,7 @@ coverage: coverage-clean
 FUZZ_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
 fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
-	$(CC) -g -fsanitize=address,undefined -o fuzz/fuzz_stdin \
+	$(CC) -g -fsanitize=address,undefined -Werror=switch -o fuzz/fuzz_stdin \
 		fuzz/fuzz_stdin.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -394,7 +394,7 @@ fuzz-run: fuzz
 # $$LIB_FUZZING_ENGINE provides main(). Locally we just pass everything
 # explicitly so a clean clone can reproduce the OSS-Fuzz build.
 fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
-	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
+	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -Werror=switch \
 		-o fuzz/fuzz_eigenscript \
 		fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
@@ -419,7 +419,7 @@ freestanding-check:
 # for mem/str/ctype/strtol/strtod/qsort/rand48/snprintf and the exact libm
 # subset; ulp-bounded for the transcendentals (bounds pinned in the harness).
 freestanding-libc-diff:
-	$(CC) -O2 -fno-builtin -ffp-contract=off -Wall -Wextra \
+	$(CC) -O2 -fno-builtin -ffp-contract=off -Wall -Wextra -Werror=switch \
 		-o /tmp/eigs_libc_diff tests/freestanding_libc_diff.c \
 		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
