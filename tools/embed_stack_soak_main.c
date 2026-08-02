@@ -1,6 +1,12 @@
 /* embed_stack_soak_main.c — hosted twin of the EigenOS boot-to-REPL session,
- * run by tools/embed_stack_soak.sh under a 64 KiB stack rlimit (the EigenOS
- * boot-stack size).
+ * run by tools/embed_stack_soak.sh under a 64 KiB stack rlimit (a deliberately
+ * tight per-level regression budget, NOT a measured EigenOS stack size — see
+ * the header of that script and docs/FREESTANDING.md).
+ *
+ * Two modes, both driven by the script:
+ *   (no argument)  the REPL soak — shallow programs, tiny stack.
+ *   `depth-guard`  the parse-depth guard probe — deep source, roomier stack
+ *                  (see guard_probe below).
  *
  * One eigs_open, then a long sequence of eigs_eval_string calls on the SAME
  * state — the accumulation pattern the test suite never exercises (every
@@ -33,9 +39,78 @@ static void eval_line(const char *src) {
     if (v) eigs_value_release(v);
 }
 
-int main(void) {
+/* --- the depth-guard probe (#758) ----------------------------------
+ *
+ * The REPL soak above only ever runs shallow programs, so it proves the
+ * per-level stack cost is small — it never reaches a depth guard, and under
+ * the soak's 64 KiB rlimit it cannot: the C stack runs out long before
+ * PARSE_MAX_DEPTH does (this probe's input is SIGSEGV 20/20 there). "The
+ * guard fires cleanly" was therefore assumed, not tested.
+ *
+ * This mode tests it, at a stack size where the guard IS the binding
+ * constraint. GUARD_LEVELS is past PARSE_MAX_DEPTH (256) counted either as
+ * source levels or as parser recursion levels, so the guard trips whichever
+ * way that counter is bumped — measured, it is bumped twice per parenthesis
+ * level (parse_expression and parse_unary each bump), so 256 parser levels
+ * is the 129th '(' and the guard rejects from 128 source levels up. The
+ * assertions:
+ *
+ *   1. the eval is REJECTED (NULL) rather than crashing the process — an
+ *      expression that parsed would evaluate to 1;
+ *   2. the state still works afterwards, i.e. the guard unwound cleanly
+ *      instead of leaving the runtime wedged;
+ *
+ * and the script additionally requires the guard's own diagnostic on stderr,
+ * so a rejection for some unrelated reason cannot pass this vacuously.
+ *
+ * The nested source lives in .bss on purpose: building it on the stack would
+ * charge the probe for its own input.
+ */
+#define GUARD_LEVELS 300
+static char guard_src[2 * GUARD_LEVELS + 2];
+
+static int guard_probe(void) {
+    int n = 0;
+    for (int i = 0; i < GUARD_LEVELS; i++) guard_src[n++] = '(';
+    guard_src[n++] = '1';
+    for (int i = 0; i < GUARD_LEVELS; i++) guard_src[n++] = ')';
+    guard_src[n] = '\0';
+
+    EigsValue *v = eigs_eval_string(guard_src);
+    if (v) {
+        fprintf(stderr, "depth-guard: %d nested levels were ACCEPTED — the "
+                        "parse-depth guard did not fire\n", GUARD_LEVELS);
+        eigs_value_release(v);
+        return 1;
+    }
+    /* A parse rejection returns NULL without setting the embed error slot
+     * (eigs_eval_string bails before the VM runs), so this clears nothing
+     * today — it is here so the probe stays correct if that ever changes. */
+    eigs_clear_error();
+
+    /* The guard is only "clean" if the runtime survives it. */
+    v = eigs_eval_string("6 * 7");
+    if (!v || eigs_value_as_num(v) != 42.0) {
+        fprintf(stderr, "depth-guard: state unusable after the guard fired\n");
+        if (v) eigs_value_release(v);
+        return 1;
+    }
+    eigs_value_release(v);
+
+    printf("embed_stack_soak: depth-guard OK (%d levels rejected, state live)\n",
+           GUARD_LEVELS);
+    return 0;
+}
+
+int main(int argc, char **argv) {
     EigsState *st = eigs_open();
     if (!st) { fprintf(stderr, "eigs_open failed\n"); return 2; }
+
+    if (argc > 1 && strcmp(argv[1], "depth-guard") == 0) {
+        int rc = guard_probe();
+        eigs_close(st);
+        return rc;
+    }
 
     /* --- the EigenOS M5 demo pair --- */
     eval_line("6 * 7");

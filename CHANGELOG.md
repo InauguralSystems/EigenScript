@@ -70,7 +70,30 @@ All notable changes to EigenScript are documented here.
   import, and the fix is structural — define it in the host TU. The
   matching extraction for `lint.c`'s 6 blocks (the E003 binding base,
   `--api`, `check_undefined_names`) is tracked separately.
-
+- **The embedded-stack soak states what its 64 KiB budget is, and now
+  tests the depth guard instead of assuming it (#758).** The gate's
+  header called 64 KiB "the EigenOS boot-stack size"; per #758 EigenOS
+  raised its boot stack as part of the #361 fix, so that reading was
+  stale (EigenOS is a separate repo, so that is the issue's measurement,
+  not one this repo's CI can check), and the budget was left tight on
+  purpose — it is a per-AST-level regression tripwire, not a worst-case
+  bound. Both the script header and
+  docs/FREESTANDING.md now say so, and the doc records the policy the
+  stale comment obscured: `PARSE_MAX_DEPTH` / `COMPILE_MAX_DEPTH` are
+  fixed counts sized for a roomy boot stack, so on a constrained profile
+  the binding constraint is the stack (caught by the guard page hosted,
+  the canary bare-metal), not the depth count. Deriving the guards from
+  the live stack was considered and rejected: it is a behavioural change
+  to shipped guards on every profile, in exchange for a bound only as
+  good as its per-level cost estimate, while the soak's value is exactly
+  as a per-level regression detector. Because the guards are therefore
+  *not* reachable under the soak's rlimit — measured, deeply nested
+  source is SIGSEGV 20/20 at 64 KiB and needs ~144 KiB before the guard
+  rejects it reliably — "the guard fires cleanly" had never been tested.
+  The soak binary gains a `depth-guard` mode (source nested past
+  `PARSE_MAX_DEPTH`, run at 256 KiB) and the gate now requires the
+  guard's own diagnostic, a non-crashing exit, and a still-usable state
+  afterwards.
 - **Build variants now coexist: per-variant objdirs with dependency
   tracking (#740).** Every runtime variant (`build`/`full`/`http`/`zlib`/
   `net`/`gfx`/`asan`/`asan-http`/`tsan`/`valgrind`/`poison`) was a single
