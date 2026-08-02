@@ -456,6 +456,60 @@ static inline Env *vm_take_call_env(EigsChunk *fn_chunk, Env *closure,
     return NULL;
 }
 
+/* ---- CallFrame init / release (#743) ------------------------------------
+ * CallFrame rides the task save/restore memcpy as POD (vm.h), but two of
+ * its fields carry COUNTED refs — env (only when owns_env) and chunk —
+ * and every push must stamp the rest (ip, bp, call_serial, try state,
+ * saved loop-stall counters, call_argc). This init used to be open-coded
+ * at every frame-push site and the release at every saved-frame teardown
+ * loop: a field added to the struct could be missed at one site with no
+ * compiler check (saved_stall_count/saved_loop_iter were never stamped
+ * at the OP_DISPATCH push, so RETURN restored stale counters there).
+ * callframe_init is the single init used by every push site;
+ * callframe_release the single release used by the teardown loops. */
+
+/* Push-time init: stamps every field and takes the frame's chunk ref
+ * (this chunk_incref pairs with the chunk_decref in callframe_release /
+ * the OP_RETURN family). env is ADOPTED, not incref'd: the caller hands
+ * over the call-env ref it made (owns_env=1) or lends a borrowed env it
+ * does not own (base frames, owns_env=0). try_handlers stay unstamped on
+ * purpose — POD garbage guarded by try_count == 0, as before. */
+static void callframe_init(CallFrame *f, EigsChunk *chunk, Env *env,
+                           Value *closure_val, int owns_env, int call_argc) {
+    f->chunk = chunk;
+    f->call_serial = ++g_call_serial_next;   /* #539 v2 */
+    chunk_incref(chunk);   /* frame's ref — released when this frame pops */
+    f->ip = chunk->code;
+    f->bp = g_vm.sp;
+    f->env = env;
+    f->fn_env = env;
+    f->closure_val = closure_val;
+    f->owns_env = owns_env;
+    f->is_try = 0;
+    f->try_count = 0;
+    /* Scope loop-stall globals per call frame: a callee's loops must not
+     * inherit caller's accumulated stall count, or a hot helper (e.g.
+     * fmt_num's padding loop) called from a converging outer loop will
+     * exit early once the global crosses the threshold. Call sites that
+     * grant the callee a fresh budget zero the globals right after this
+     * returns; the base frame and OP_DISPATCH keep the incoming values. */
+    f->saved_stall_count = g_loop_stall_count;
+    f->saved_loop_iter   = g_loop_iterations;
+    f->call_argc = call_argc;
+}
+
+/* Pop/teardown-time release: drop the frame's counted refs — its env iff
+ * owned, and its chunk ref. The owned-field set has exactly this one
+ * definition. The OP_RETURN family deliberately does NOT use it: Stage
+ * 5i parks reusable call envs instead of decref'ing, and the JIT return
+ * helpers defer the chunk ref to vm_run's -1 sentinel handler. Declared in
+ * vm.h (non-static): builtins.c's task_free is the third saved-frame teardown
+ * loop and calls the same helper across the translation unit. */
+void callframe_release(CallFrame *f) {
+    if (f->owns_env && f->env) env_decref(f->env);
+    if (f->chunk) chunk_decref(f->chunk);
+}
+
 /* ---- Dict field inline cache ----
  *
  * Stage 5h: 2-way set-associative (64 sets × 2 ways = the same 128
@@ -2143,20 +2197,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
          * only on the deep-bail paths, where the interpreter takes
          * over mid-thunk. */
         CallFrame *frame = &g_vm.frames[g_vm.frame_count++];
-        frame->chunk = fn_chunk;
-        frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
-        chunk_incref(fn_chunk);
-        frame->ip = fn_chunk->code;
-        frame->bp = g_vm.sp;
-        frame->env = call_env;
-        frame->fn_env = call_env;
-        frame->closure_val = fn_val;
-        frame->owns_env = 1;
-        frame->is_try = 0;
-        frame->try_count = 0;
-        frame->saved_stall_count = g_loop_stall_count;
-        frame->saved_loop_iter   = g_loop_iterations;
-        frame->call_argc = argc;
+        callframe_init(frame, fn_chunk, call_env, fn_val, 1, argc);
         g_loop_stall_count = 0;
         g_loop_iterations  = 0;
         fn_chunk->exec_count++;
@@ -2506,26 +2547,13 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
         env_reserve_slots(env, chunk->local_count);
     }
     frame = &g_vm.frames[g_vm.frame_count++];
-    frame->chunk = chunk;
-    frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
-    chunk_incref(chunk);   /* frame's ref — released when this frame pops */
-    frame->ip = chunk->code;
-    frame->bp = g_vm.sp;
-    frame->env = env;
-    frame->fn_env = env;
-    frame->closure_val = NULL;
-    frame->owns_env = 0;
-    frame->is_try = 0;
-    frame->try_count = 0;
-    frame->saved_stall_count = g_loop_stall_count;
-    frame->saved_loop_iter   = g_loop_iterations;
     /* Entry paths via vm_execute (thread_entry, call_eigs_fn, dispatch,
      * HTTP handlers, module-level) have already bound every param in
-     * env before getting here. Mark all slots as caller-supplied so
-     * OP_DEFAULT_PARAM doesn't re-fire defaults over them — and so a
-     * stale value left by a prior frame at this depth can't clobber
-     * explicit args. */
-    frame->call_argc = chunk->param_count;
+     * env before getting here. call_argc = param_count marks all slots
+     * as caller-supplied so OP_DEFAULT_PARAM doesn't re-fire defaults
+     * over them — and so a stale value left by a prior frame at this
+     * depth can't clobber explicit args. */
+    callframe_init(frame, chunk, env, NULL, 0, chunk->param_count);
     /* #297: JIT hotness bookkeeping is shared per-chunk state and feeds JIT
      * compilation, which is gated off under MT (#296). Skip it while
      * multithreaded — pointless work, and the bare ++ / registry write race
@@ -3655,25 +3683,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 DISPATCH();
             }
             frame = &g_vm.frames[g_vm.frame_count++];
-            frame->chunk = fn_chunk;
-            frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
-            chunk_incref(fn_chunk);   /* frame's ref — the fn value popped
-                                       * above may die mid-call */
-            frame->ip = fn_chunk->code;
-            frame->bp = g_vm.sp;
-            frame->env = call_env;
-            frame->fn_env = call_env;
-            frame->closure_val = fn_val;
-            frame->owns_env = 1; /* OP_CALL created this env, free on return */
-            frame->is_try = 0;
-            frame->try_count = 0;
-            /* Scope loop-stall globals per call frame: a callee's loops must
-             * not inherit caller's accumulated stall count, or a hot helper
-             * (e.g. fmt_num's padding loop) called from a converging outer
-             * loop will exit early once the global crosses the threshold. */
-            frame->saved_stall_count = g_loop_stall_count;
-            frame->saved_loop_iter   = g_loop_iterations;
-            frame->call_argc = (int)argc;
+            callframe_init(frame, fn_chunk, call_env, fn_val, 1, (int)argc);
             g_loop_stall_count = 0;
             g_loop_iterations  = 0;
             if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
@@ -5559,18 +5569,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 DISPATCH();
             }
             frame = &g_vm.frames[g_vm.frame_count++];
-            frame->chunk = fn_chunk;
-            frame->call_serial = ++g_call_serial_next;   /* #539 v2 */
-            chunk_incref(fn_chunk);   /* frame's ref */
-            frame->ip = fn_chunk->code;
-            frame->bp = g_vm.sp;
-            frame->env = call_env;
-            frame->fn_env = call_env;
-            frame->closure_val = fn;
-            frame->owns_env = 1;
-            frame->is_try = 0;
-            frame->try_count = 0;
-            frame->call_argc = 1;
+            /* callframe_init also stamps saved_stall_count/saved_loop_iter,
+             * which this site used to leave unset — RETURN then restored
+             * stale counters from a previous frame at this depth (#743).
+             * The globals are deliberately NOT zeroed here (dispatch keeps
+             * the caller's budget, matching pre-#743 behavior). */
+            callframe_init(frame, fn_chunk, call_env, fn, 1, 1);
             if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
 
             /* JIT hook (mirror of OP_CALL bytecode-fn path; #533 task gate,
@@ -5747,11 +5751,8 @@ void task_sched_thread_free(void) {
         free(m->saved_stack);
     }
     if (m->saved_frames) {
-        for (int i = 0; i < m->saved_frame_count; i++) {
-            CallFrame *f = &m->saved_frames[i];
-            if (f->owns_env && f->env) env_decref(f->env);
-            if (f->chunk) chunk_decref(f->chunk);
-        }
+        for (int i = 0; i < m->saved_frame_count; i++)
+            callframe_release(&m->saved_frames[i]);
         free(m->saved_frames);
     }
     if (m->mbox) {
@@ -6095,8 +6096,7 @@ int task_do_kill(int tid) {
              * gate suppress the diagnostic of every later uncaught error in
              * the process — confirmed, the program exits 1 in silence (#726). */
             g_try_depth -= f->try_count;
-            if (f->owns_env && f->env) env_decref(f->env);
-            if (f->chunk) chunk_decref(f->chunk);
+            callframe_release(f);
         }
         if (g_try_depth < 0) g_try_depth = 0;
         free(t->saved_frames); t->saved_frames = NULL; t->saved_frame_count = 0;

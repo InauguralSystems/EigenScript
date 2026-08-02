@@ -5,7 +5,8 @@
 # are always immediate-num and dropped the slow path — exposed by DMG's
 # per-instruction `dispatch of [_op_table, op, _exec_ctx]` where `op`
 # comes from a fetch8 call). Also pins the float-discipline promise on
-# the dispatch key.
+# the dispatch key, and the loop counters the OP_DISPATCH push owes its
+# CallFrame (#743).
 
 pass_count is 0
 fail_count is 0
@@ -107,6 +108,55 @@ try:
 catch e:
     caught_var is e
 check of ["literal/variable forms agree", contains of [caught_var.message, "table must be a list"]]
+
+# ---- #743: the OP_DISPATCH push must stamp the frame's loop counters ----
+# The push left saved_stall_count/saved_loop_iter unset, so every dispatch
+# RETURN restored an unstamped value over the live counters and a
+# dispatch-per-iteration loop's __loop_iterations__ froze at 1.
+#
+# __loop_iterations__ is cumulative across loops, so the invariant is on the
+# DELTA a loop contributes: exactly its own iteration count. That is the
+# property a plain loop already has, asserted here for both — pinning the
+# dispatch loop against its no-dispatch twin rather than against a constant
+# the convergence heuristic could retune (pre-fix the delta is 1 whatever
+# the loop does; the count itself is machine-dependent).
+
+define d743(x) as:
+    return x
+
+t743 is [d743]
+
+# Warm-up loop: __loop_iterations__ is undefined until a loop has run, so
+# this one exists to establish the baseline the two measured loops subtract.
+w743 is 1
+w743 is 100
+loop while not converged:
+    w743 is w743 * 2
+plain_before is __loop_iterations__
+
+plain_n is 0
+p743 is 1
+p743 is 100
+loop while not converged:
+    p743 is p743 * 2
+    plain_n is plain_n + 1
+plain_delta is __loop_iterations__ - plain_before
+
+disp_before is __loop_iterations__
+disp_n is 0
+v743 is 1
+v743 is 100
+loop while not converged:
+    v743 is v743 * 2
+    disp_n is disp_n + 1
+    junk743 is dispatch of [t743, 0, v743]
+disp_delta is __loop_iterations__ - disp_before
+
+check of ["plain loop contributes its own iteration count", plain_delta == plain_n]
+check of ["dispatch loop contributes its own iteration count", disp_delta == disp_n]
+# Guards the pin against vacuity: a 1-iteration loop would satisfy the
+# check above even with the counter frozen at 1.
+check of ["dispatch loop ran more than one iteration", disp_n > 1]
 
 # #459 facet 3: the parenthesized #355 form is ONE argument on the normal
 # call path (never OP_DISPATCH); builtin_dispatch given a single 3-element

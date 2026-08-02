@@ -424,6 +424,19 @@ typedef struct EigsChunk {
 #define MAX_TRY_HANDLERS 8
 
 typedef struct {
+    /* #743: the OWNED fields of a frame are exactly {env (iff owns_env),
+     * chunk}; their init and release have a single definition in vm.c —
+     * callframe_init (every frame push) and callframe_release (declared
+     * below, non-static for cross-TU use). callframe_release covers ALL
+     * THREE saved-frame teardown loops: task_sched_thread_free and
+     * task_do_kill (vm.c) and task_free (builtins.c). Add an owned field to
+     * one of those two helpers, never to an individual teardown site. The
+     * live-frame POP paths — the OP_RETURN family, vm_error_halt, and the
+     * CHECK_ERROR unwind — deliberately inline the same drops because they
+     * ALSO drain the operand-stack window and restore the per-frame
+     * loop-stall globals (and OP_RETURN parks reusable envs / defers the
+     * chunk ref to a -1 sentinel); a new owned field must be audited there
+     * too. */
     EigsChunk *chunk;
     uint8_t   *ip;              /* instruction pointer */
     int        bp;              /* base pointer into value stack */
@@ -451,6 +464,12 @@ typedef struct {
                                   * tell two invocations of the same function apart
                                   * (POD — rides the task save/restore memcpy). */
 } CallFrame;
+
+/* #743: drop a saved frame's owned refs — env iff owns_env, then chunk. The
+ * single release definition (see the CallFrame comment above for the owned-set
+ * invariant); non-static so builtins.c's task_free reaches the same helper as
+ * the two vm.c teardown loops. Live-frame POP paths do NOT use it. */
+void callframe_release(CallFrame *f);
 
 /* ---- VM State ---- */
 #define VM_STACK_MAX  65536

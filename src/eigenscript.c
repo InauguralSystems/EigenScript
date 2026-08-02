@@ -968,7 +968,12 @@ void free_value(Value *v) {
                 free(v->data.fn.body);
             }
             /* body_count == -1 means bytecode fn: body is a chunk ptr;
-             * this fn holds a ref on it (taken in OP_CLOSURE). */
+             * this fn holds a ref on it (taken in OP_CLOSURE). This is the
+             * non-cycle mirror of the VAL_FN rows of GC_EDGE_TABLE (the
+             * collector section below): a fn collected as cyclic garbage already
+             * dropped this ref in gc_clear_node (which NULLs body first),
+             * so the decref below is a no-op for collected fns and the
+             * real drop for fns that die by ordinary refcounting. */
             if (v->data.fn.body_count == -1)
                 chunk_decref((struct EigsChunk *)v->data.fn.body);
             {
@@ -2454,10 +2459,35 @@ static int gcu_add(GcU *u, void *obj, int kind) {
 
 /* Only these value types can hold references (and so participate in an
  * env-involving cycle). Everything else is a leaf: dropped by ordinary
- * decrefs when its garbage owner is cleared. */
+ * decrefs when its garbage owner is cleared.
+ *
+ * A value type is a node EXACTLY WHEN it has rows in GC_EDGE_TABLE below,
+ * so this switch is also the ValType exhaustiveness gate for that table:
+ * the table's rows are selected by `_v->type == VAL_x` guards, which
+ * -Werror=switch cannot see, so without this a new ValType would compile
+ * silently against both dispatches (the #737/#738 build-error property —
+ * closed-enum switches carry no `default:` arm; enumerate no-op cases
+ * instead). Adding a ValType breaks the build here: decide node vs leaf,
+ * and give a node its GC_EDGE_TABLE rows. */
 static int gc_value_is_node(Value *v) {
-    return v && !v->arena &&
-           (v->type == VAL_LIST || v->type == VAL_DICT || v->type == VAL_FN);
+    if (!v || v->arena) return 0;
+    switch (v->type) {
+    /* Nodes: each has one or more GC_EDGE_TABLE rows. */
+    case VAL_LIST:
+    case VAL_DICT:
+    case VAL_FN:
+        return 1;
+    /* Leaves: no owned edges out, so no rows and never a cycle member. */
+    case VAL_NUM:
+    case VAL_STR:
+    case VAL_NULL:
+    case VAL_JSON_RAW:
+    case VAL_BUILTIN:
+    case VAL_BUFFER:
+    case VAL_TEXT_BUILDER:
+        return 0;
+    }
+    return 0;   /* unreachable for valid ValType values */
 }
 
 /* An env child edge worth traversing: real, heap, and not the global
@@ -2466,144 +2496,163 @@ static int gc_env_is_node(Env *e) {
     return e && e->heap_allocated && e != g_global_env;
 }
 
-/* Invoke BODY for every OWNED edge out of node n. Each edge reported
- * here corresponds to exactly one counted reference; reporting anything
- * uncounted here would corrupt the root derivation (the abort check
- * below catches that as internal > refcount). Chunk edges: a VAL_FN owns
- * one ref on its compiled chunk (taken in OP_CLOSURE); a chunk owns one
- * creator ref per nested functions[] entry and one ref on its parked
- * env_cache. Chunk constants are literal leaves (never containers/fns)
- * and are not traversed. */
-#define GC_FOR_EACH_CHILD(u, n, CHILD_OBJ, CHILD_KIND, BODY)                  \
-    do {                                                                      \
-        if ((u)->kind[n] == GC_KIND_ENV) {                                    \
-            Env *_e = (Env *)(u)->objs[n];                                    \
-            if (gc_env_is_node(_e->parent)) {                                 \
-                void *CHILD_OBJ = _e->parent;                                 \
-                int CHILD_KIND = GC_KIND_ENV; BODY                            \
-            }                                                                 \
-            for (int _i = 0; _i < _e->count; _i++) {                          \
-                EigsSlot _s = _e->values[_i];                                 \
-                if (slot_is_ptr(_s)) {                                        \
-                    Value *_v = slot_as_ptr(_s);                              \
-                    if (gc_value_is_node(_v)) {                               \
-                        void *CHILD_OBJ = _v;                                 \
-                        int CHILD_KIND = GC_KIND_VAL; BODY                    \
-                    }                                                         \
-                }                                                             \
-            }                                                                 \
-        } else if ((u)->kind[n] == GC_KIND_CHUNK) {                           \
-            EigsChunk *_c = (EigsChunk *)(u)->objs[n];                        \
-            for (int _i = 0; _i < _c->fn_count; _i++) {                       \
-                if (_c->functions[_i]) {                                      \
-                    void *CHILD_OBJ = _c->functions[_i];                      \
-                    int CHILD_KIND = GC_KIND_CHUNK; BODY                      \
-                }                                                             \
-            }                                                                 \
-            if (gc_env_is_node(_c->env_cache)) {                              \
-                void *CHILD_OBJ = _c->env_cache;                              \
-                int CHILD_KIND = GC_KIND_ENV; BODY                            \
-            }                                                                 \
-        } else {                                                              \
-            Value *_v = (Value *)(u)->objs[n];                                \
-            switch (_v->type) {                                               \
-            case VAL_FN:                                                      \
-                if (gc_env_is_node(_v->data.fn.closure)) {                    \
-                    void *CHILD_OBJ = _v->data.fn.closure;                    \
-                    int CHILD_KIND = GC_KIND_ENV; BODY                        \
-                }                                                             \
-                if (_v->data.fn.body_count == -1 && _v->data.fn.body) {       \
-                    void *CHILD_OBJ = (EigsChunk *)_v->data.fn.body;          \
-                    int CHILD_KIND = GC_KIND_CHUNK; BODY                      \
-                }                                                             \
-                break;                                                        \
-            case VAL_LIST:                                                    \
-                for (int _i = 0; _i < _v->data.list.count; _i++) {            \
-                    Value *_c2 = _v->data.list.items[_i];                     \
-                    if (gc_value_is_node(_c2)) {                              \
-                        void *CHILD_OBJ = _c2;                                \
-                        int CHILD_KIND = GC_KIND_VAL; BODY                    \
-                    }                                                         \
-                }                                                             \
-                break;                                                        \
-            case VAL_DICT:                                                    \
-                for (int _i = 0; _i < _v->data.dict.count; _i++) {            \
-                    Value *_c2 = _v->data.dict.vals[_i];                      \
-                    if (gc_value_is_node(_c2)) {                              \
-                        void *CHILD_OBJ = _c2;                                \
-                        int CHILD_KIND = GC_KIND_VAL; BODY                    \
-                    }                                                         \
-                }                                                             \
-                break;                                                        \
-            /* Leaf types: no outgoing edges. Enumerated rather than          \
-             * covered by a `default:` so -Werror=switch makes a new          \
-             * ValType a build error at every expansion of this macro. */     \
-            case VAL_NUM: case VAL_STR: case VAL_NULL:                        \
-            case VAL_JSON_RAW: case VAL_BUILTIN:                              \
-            case VAL_BUFFER: case VAL_TEXT_BUILDER:                           \
-                break;                                                        \
+/* =========================================================================
+ * GC edge table — the SINGLE definition of every owned edge out of a GC
+ * node (#743). The two dispatches that must move in lockstep are both
+ * generated from this table:
+ *
+ *   - GC_FOR_EACH_CHILD, the collector's walker (U build, internal
+ *     refcounting, root marking), expands GC_EDGE_WALK over the rows;
+ *   - gc_clear_node, the cycle-breaker, expands GC_EDGE_CLEAR.
+ *
+ * A new owning edge out of Value/Env/Chunk is ONE new row here, so the
+ * two can no longer drift apart (previously the walker reported VAL_FN's
+ * compiled-chunk edge while gc_clear_node never cleared it).
+ *
+ * Row: X(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR)
+ *   GUARD      which container the row belongs to (_e/_c/_v alias the
+ *              node, _k is its GC_KIND_*)
+ *   COUNT      number of edge slots (1 for a scalar edge)
+ *   CHILD      child object expr (evaluated only when IS_NODE holds)
+ *   CHILD_KIND GC_KIND_* of the child
+ *   IS_NODE    counted-edge-and-worth-traversing predicate. Each reported
+ *              edge corresponds to exactly one counted reference;
+ *              reporting anything uncounted would corrupt the root
+ *              derivation (the abort check below catches that as
+ *              internal > refcount). Slots failing IS_NODE are leaf refs:
+ *              never walked, but the clear still drops them.
+ *   CLEAR      per-slot statement dropping the edge (leaf refs included)
+ *
+ * Chunk edges: a VAL_FN owns one ref on its compiled chunk (taken in
+ * OP_CLOSURE); a chunk owns one creator ref per nested functions[] entry
+ * and one ref on its parked env_cache. Chunk constants are literal leaves
+ * (never containers/fns) and are not traversed. A fn that dies by ordinary
+ * refcounting (never cycle-broken) instead drops its closure/chunk refs
+ * from free_value — the value destructor is the non-cycle mirror of this
+ * table for VAL_FN's two edges.
+ * ========================================================================= */
+#define GC_EDGE_TABLE(X, ...)                                                 \
+    /* Env: the parent link, then every value slot. */                        \
+    X((_k == GC_KIND_ENV), 1,                                                 \
+      _e->parent, GC_KIND_ENV,                                                \
+      gc_env_is_node(_e->parent),                                             \
+      { Env *_o = _e->parent;                                                 \
+        _e->parent = NULL;                                                    \
+        env_decref(_o); }, __VA_ARGS__)                                       \
+    X((_k == GC_KIND_ENV), _e->count,                                         \
+      slot_as_ptr(_e->values[_i]), GC_KIND_VAL,                               \
+      (slot_is_ptr(_e->values[_i]) &&                                         \
+       gc_value_is_node(slot_as_ptr(_e->values[_i]))),                        \
+      { EigsSlot _o = _e->values[_i];                                         \
+        _e->values[_i] = slot_null();                                         \
+        slot_decref(_o); }, __VA_ARGS__)                                      \
+    /* Chunk: creator refs on nested functions[], parked env_cache. */        \
+    X((_k == GC_KIND_CHUNK), _c->fn_count,                                    \
+      _c->functions[_i], GC_KIND_CHUNK,                                       \
+      (_c->functions[_i] != NULL),                                            \
+      { EigsChunk *_o = _c->functions[_i];                                    \
+        _c->functions[_i] = NULL;                                             \
+        chunk_decref(_o); }, __VA_ARGS__)                                     \
+    X((_k == GC_KIND_CHUNK), 1,                                               \
+      _c->env_cache, GC_KIND_ENV,                                             \
+      gc_env_is_node(_c->env_cache),                                          \
+      { Env *_o = _c->env_cache;                                              \
+        _c->env_cache = NULL;                                                 \
+        env_decref(_o); }, __VA_ARGS__)                                       \
+    /* VAL_FN: closure env, then the compiled-chunk ref taken in             \
+     * OP_CLOSURE (body_count == -1 — the edge gc_clear_node once missed).   \
+     * Two invariants keep the chunk row's CLEAR safe (GC_EDGE_CLEAR ignores \
+     * IS_NODE — see its macro — so the CLEAR statement runs for EVERY        \
+     * cleared VAL_FN regardless of body_count, unlike the guarded WALK):     \
+     *  (1) chunk_decref((EigsChunk *)fn.body) runs unconditionally, but is   \
+     *      type-safe ONLY because make_fn sets body = NULL (body_count == 0) \
+     *      and OP_CLOSURE is the sole writer that makes it a real chunk (and \
+     *      sets body_count == -1); chunk_decref(NULL) no-ops for the         \
+     *      never-closured case. A future VAL_FN constructor that put a       \
+     *      NON-chunk pointer in body (e.g. reviving AST bodies, body_count   \
+     *      != -1) would turn this into a type-confused decref — guard the    \
+     *      CLEAR on body_count == -1 if that ever happens.                   \
+     *  (2) The `body = NULL` below is LOAD-BEARING: it makes free_value's    \
+     *      later `body_count == -1` chunk_decref a no-op instead of a        \
+     *      double-decref (use-after-free) when a collected fn is then freed. \
+     *      A "simplification" that drops it reintroduces the double free. */ \
+    X((_k == GC_KIND_VAL && _v->type == VAL_FN), 1,                           \
+      _v->data.fn.closure, GC_KIND_ENV,                                       \
+      gc_env_is_node(_v->data.fn.closure),                                    \
+      { Env *_o = _v->data.fn.closure;                                        \
+        _v->data.fn.closure = NULL;                                           \
+        env_decref(_o); }, __VA_ARGS__)                                       \
+    X((_k == GC_KIND_VAL && _v->type == VAL_FN), 1,                           \
+      (EigsChunk *)_v->data.fn.body, GC_KIND_CHUNK,                           \
+      (_v->data.fn.body_count == -1 && _v->data.fn.body != NULL),             \
+      { EigsChunk *_o = (EigsChunk *)_v->data.fn.body;                        \
+        _v->data.fn.body = NULL;      /* invariant (2): load-bearing */       \
+        chunk_decref(_o); }, __VA_ARGS__)                                     \
+    /* VAL_LIST / VAL_DICT: every element slot. */                            \
+    X((_k == GC_KIND_VAL && _v->type == VAL_LIST), _v->data.list.count,       \
+      _v->data.list.items[_i], GC_KIND_VAL,                                   \
+      gc_value_is_node(_v->data.list.items[_i]),                              \
+      { Value *_o = _v->data.list.items[_i];                                  \
+        _v->data.list.items[_i] = NULL;                                       \
+        val_decref(_o); }, __VA_ARGS__)                                       \
+    X((_k == GC_KIND_VAL && _v->type == VAL_DICT), _v->data.dict.count,       \
+      _v->data.dict.vals[_i], GC_KIND_VAL,                                    \
+      gc_value_is_node(_v->data.dict.vals[_i]),                               \
+      { Value *_o = _v->data.dict.vals[_i];                                   \
+        _v->data.dict.vals[_i] = NULL;                                        \
+        val_decref(_o); }, __VA_ARGS__)
+
+#define GC_EDGE_WALK(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,         \
+                     OUT_OBJ, OUT_KIND, BODY)                                 \
+    if (GUARD) {                                                              \
+        for (int _i = 0; _i < (COUNT); _i++) {                                \
+            if (IS_NODE) {                                                    \
+                void *OUT_OBJ = (void *)(CHILD);                              \
+                int OUT_KIND = (CHILD_KIND);                                  \
+                BODY                                                          \
             }                                                                 \
         }                                                                     \
+    }
+
+#define GC_EDGE_CLEAR(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,        \
+                      _x1, _x2, _x3)                                          \
+    if (GUARD) {                                                              \
+        for (int _i = 0; _i < (COUNT); _i++)                                  \
+            CLEAR                                                             \
+    }
+
+/* Invoke BODY for every OWNED node edge out of node n (the GC_EDGE_TABLE
+ * rows whose IS_NODE predicate holds). */
+#define GC_FOR_EACH_CHILD(u, n, CHILD_OBJ, CHILD_KIND, BODY)                  \
+    do {                                                                      \
+        int _k = (u)->kind[n];                                                \
+        Env *_e = (Env *)(u)->objs[n];                                        \
+        EigsChunk *_c = (EigsChunk *)(u)->objs[n];                            \
+        Value *_v = (Value *)(u)->objs[n];                                    \
+        GC_EDGE_TABLE(GC_EDGE_WALK, CHILD_OBJ, CHILD_KIND, BODY)              \
     } while (0)
 
 /* Clear every outgoing edge of a garbage node (exactly the edges
- * GC_FOR_EACH_CHILD reports, plus leaf refs) so the cycle is broken;
- * the node itself stays allocated (pinned) until the unpin pass. */
+ * GC_EDGE_TABLE lists, leaf refs included) so the cycle is broken; the
+ * node itself stays allocated (pinned) until the unpin pass. */
 static void gc_clear_node(void *obj, int kind) {
+    int _k = kind;
+    Env *_e = (Env *)obj;
+    EigsChunk *_c = (EigsChunk *)obj;
+    Value *_v = (Value *)obj;
+    GC_EDGE_TABLE(GC_EDGE_CLEAR, 0, 0, 0)
+    /* Container bookkeeping that is not an edge. */
     if (kind == GC_KIND_ENV) {
-        Env *e = obj;
-        for (int i = 0; i < e->count; i++) {
-            EigsSlot s = e->values[i];
-            e->values[i] = slot_null();
-            slot_decref(s);
+        _e->count = 0;
+        _e->binding_version++;
+        if (++_e->hash.generation == 0) {
+            memset(_e->hash.generations, 0,
+                   (_e->hash.mask + 1) * sizeof(uint32_t));
+            _e->hash.generation = 1;
         }
-        e->count = 0;
-        e->binding_version++;
-        if (++e->hash.generation == 0) {
-            memset(e->hash.generations, 0,
-                   (e->hash.mask + 1) * sizeof(uint32_t));
-            e->hash.generation = 1;
-        }
-        Env *p = e->parent;
-        e->parent = NULL;
-        env_decref(p);
-    } else if (kind == GC_KIND_CHUNK) {
-        EigsChunk *c = obj;
-        for (int i = 0; i < c->fn_count; i++) {
-            EigsChunk *fc = c->functions[i];
-            c->functions[i] = NULL;     /* chunk_decref(NULL) no-ops later */
-            chunk_decref(fc);
-        }
-        Env *cached = c->env_cache;
-        c->env_cache = NULL;
-        env_decref(cached);
-    } else {
-        Value *v = obj;
-        switch (v->type) {
-        case VAL_FN: {
-            Env *clo = v->data.fn.closure;
-            v->data.fn.closure = NULL;
-            env_decref(clo);
-            break;
-        }
-        case VAL_LIST:
-            for (int i = 0; i < v->data.list.count; i++)
-                val_decref(v->data.list.items[i]);
-            v->data.list.count = 0;
-            break;
-        case VAL_DICT:
-            for (int i = 0; i < v->data.dict.count; i++)
-                val_decref(v->data.dict.vals[i]);
-            v->data.dict.count = 0;
-            break;
-        /* Leaf types: no outgoing edges to clear. Enumerated rather than
-         * covered by a `default:` so -Werror=switch keeps this in lockstep
-         * with GC_FOR_EACH_CHILD when a ValType is added. */
-        case VAL_NUM: case VAL_STR: case VAL_NULL:
-        case VAL_JSON_RAW: case VAL_BUILTIN:
-        case VAL_BUFFER: case VAL_TEXT_BUILDER:
-            break;
-        }
+    } else if (kind == GC_KIND_VAL) {
+        if (_v->type == VAL_LIST) _v->data.list.count = 0;
+        else if (_v->type == VAL_DICT) _v->data.dict.count = 0;
     }
 }
 

@@ -5545,10 +5545,13 @@ void task_free(Task *t) {
             CallFrame *f = &t->saved_frames[i];
             /* Same rebalance as task_do_kill: a task torn down while suspended
              * inside a try never runs its TRY_ENDs, and the leftover process-
-             * global depth silences every later uncaught error (#726). */
+             * global depth silences every later uncaught error (#726). The
+             * g_try_depth fixup is frame bookkeeping, not an owned ref, so it
+             * stays here; the owned-field drop (env iff owns_env, then chunk)
+             * goes through vm.c's shared callframe_release (#743) — this is the
+             * third saved-frame teardown loop, matching the two in vm.c. */
             g_try_depth -= f->try_count;
-            if (f->owns_env && f->env) env_decref(f->env);
-            if (f->chunk) chunk_decref(f->chunk);
+            callframe_release(f);
         }
         if (g_try_depth < 0) g_try_depth = 0;
         free(t->saved_frames);
