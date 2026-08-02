@@ -6,6 +6,15 @@
 #include "eigenscript.h"
 #include "ext_names.h"
 
+/* #734: eigs_api_dump stamps the surface index with the version. The
+ * Makefile passes -DEIGENSCRIPT_VERSION for its own targets, but the
+ * amalgamation/embed build (build/eigenscript_all.c, no main.c) does not —
+ * same per-file fallback the other amalgamated TUs use (main.c, trace.c,
+ * eigenlsp.c). */
+#ifndef EIGENSCRIPT_VERSION
+#define EIGENSCRIPT_VERSION "dev"
+#endif
+
 /* ---- Lint warning storage ---- */
 
 typedef struct {
