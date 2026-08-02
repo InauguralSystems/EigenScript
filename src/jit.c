@@ -1518,57 +1518,9 @@ static uint8_t *emit_overflow_check_rax(uint8_t *w, uint64_t max_bits,
     return emit_ja_rel32(w, patch);
 }
 
-/* Emit inline conditional decref of a slot held in %rsi.
- *
- * Sequence (~58 bytes worst case, including helper call site):
- *   mov %rsi, %rdx;  shr $48, %rdx;
- *   cmp $0xFFFB, %edx;  jb .skip
- *   mov %rsi, %rdi;  shl $16, %rdi;  shr $16, %rdi
- *   testb $1, off_arena(%rdi);  jnz .skip
- *   lock subl $1, off_refcount(%rdi);  jg .skip
- *   push %rcx                      // save sp cache + align stack
- *   movabs $free_value, %rax;  call *%rax
- *   pop %rcx
- *  .skip:
- *
- * Uses %rax/%rdx/%rdi/%rsi as scratch — caller must not depend on
- * these surviving. Returns advanced write pointer; sets *bail=1 on
- * rel8 overflow. */
-static uint8_t *emit_conditional_decref_rsi(uint8_t *w, int *bail) {
-    w = emit_mov_rsi_rdx(w);
-    w = emit_shr_48_rdx(w);
-    w = emit_cmp_imm32_edx(w, 0xFFFB);
-    uint8_t *jb_patch;
-    w = emit_jb_rel8(w, &jb_patch);
-    uint8_t *jb_after = w;
-    w = emit_mov_rsi_rdi(w);
-    w = emit_shl_16_rdi(w);
-    w = emit_shr_16_rdi(w);
-    w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
-    uint8_t *jnz_patch;
-    w = emit_jnz_rel8(w, &jnz_patch);
-    uint8_t *jnz_after = w;
-    w = emit_lock_subl_1_disp32_rdi(w, (int32_t)offsetof(Value, refcount));
-    uint8_t *jg_patch;
-    w = emit_jg_rel8(w, &jg_patch);
-    uint8_t *jg_after = w;
-    /* refcount went to 0 (or negative): free_value(%rdi). %rdi already
-     * holds the Value*. Save %rcx (caller-saved sp cache) and align. */
-    w = emit_push_rcx(w);
-    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&free_value);
-    w = emit_call_rax(w);
-    w = emit_pop_rcx(w);
-    int jb_rel = (int)(w - jb_after);
-    int jnz_rel = (int)(w - jnz_after);
-    int jg_rel = (int)(w - jg_after);
-    if (jb_rel > 127 || jnz_rel > 127 || jg_rel > 127) {
-        *bail = 1; return w;
-    }
-    *jb_patch = (uint8_t)jb_rel;
-    *jnz_patch = (uint8_t)jnz_rel;
-    *jg_patch = (uint8_t)jg_rel;
-    return w;
-}
+/* emit_conditional_decref_rsi / emit_decref_tail_rdi live after the
+ * je/jmp rel8 primitives below — the #307 hook arm they emit needs
+ * emit_cmpl_imm32_disp32_rdi / emit_je_rel8 / emit_jmp_rel8 in scope. */
 
 /* ---- Stage 5: inline fast-path encodings ---- */
 
@@ -1771,6 +1723,148 @@ static uint8_t *emit_je_rel8(uint8_t *w, uint8_t **patch) {
 /* jmp rel8 (2 bytes) */
 static uint8_t *emit_jmp_rel8(uint8_t *w, uint8_t **patch) {
     *w++ = 0xEB; *patch = w; *w++ = 0x00; return w;
+}
+/* jle rel8 (2 bytes) — jump if signed less-or-equal (take the free_value
+ * arm when the decremented refcount reached zero). */
+static uint8_t *emit_jle_rel8(uint8_t *w, uint8_t **patch) {
+    *w++ = 0x7E; *patch = w; *w++ = 0x00; return w;
+}
+
+/* Shared decref tail: %rdi = heap Value* (caller already peeled tags).
+ * With with_hook, mirrors slot_decref (value_slot.h) INCLUDING the #307
+ * possible-cycle-root hook — a LIST/DICT that lost a ref but stayed
+ * alive may now root a garbage cycle. Without the hook, a cycle whose
+ * registration was cleared by a collection (gc_collect_cycles unbuffers
+ * live candidates) and whose last external ref is then dropped by
+ * emitted code is invisible to the exit collector and leaks (#728; the
+ * C paths re-buffer on every rc>0 decref, this path did not).
+ *
+ * with_hook=1 at the sites that drop ARBITRARY values: OP_POP, the
+ * SET_LOCAL swap, and the inline SET_NAME old-binding decref. The binop
+ * commit decrefs and INDEX_SET pass 0 — their type guards bail non-num
+ * (non-buffer) operands to the interpreter BEFORE any commit decref
+ * runs, so a list/dict can never reach those decrefs and the hook arm
+ * would be pure I-cache bloat in the hottest templates (measured ~12%
+ * on bench_dmg_shape when emitted unconditionally).
+ *
+ * Sequence (~76 bytes worst case with the hook arm):
+ *   testb $1, off_arena(%rdi);  jnz .skip
+ *   lock subl $1, off_refcount(%rdi);  jle .free
+ *   cmpl $VAL_LIST, off_type(%rdi);  je .note
+ *   cmpl $VAL_DICT, off_type(%rdi);  jne .skip
+ *  .note:
+ *   testb $1, off_gc_buffered(%rdi);  jnz .skip
+ *   push %rcx;  movabs $gc_note_possible_root, %rax;  call *%rax;
+ *   pop %rcx;  jmp .skip
+ *  .free:
+ *   push %rcx;  movabs $free_value, %rax;  call *%rax;  pop %rcx
+ *  .skip:
+ *
+ * gc_note_possible_root re-checks enabled/in-gc/MT/buffered itself; the
+ * inline type + buffered guards only keep the common case call-free.
+ * gc_buffered is a 0/1 unsigned char, so testb $1 is exact. Both call
+ * arms use the free_value push-%rcx alignment wrapper. Clobbers
+ * %rax/%rdx/%rdi/%rsi. Sets *bail=1 on rel8 overflow. */
+static uint8_t *emit_decref_tail_rdi(uint8_t *w, int *bail, int with_hook) {
+    uint8_t *jnz_arena_p;
+    w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
+    w = emit_jnz_rel8(w, &jnz_arena_p);
+    uint8_t *jnz_arena_after = w;
+    w = emit_lock_subl_1_disp32_rdi(w, (int32_t)offsetof(Value, refcount));
+
+    if (!with_hook) {
+        /* Pre-#728 shape: rc>0 skips straight past the free arm. */
+        uint8_t *jg_p;
+        w = emit_jg_rel8(w, &jg_p);
+        uint8_t *jg_after = w;
+        w = emit_push_rcx(w);
+        w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&free_value);
+        w = emit_call_rax(w);
+        w = emit_pop_rcx(w);
+        int jg_rel = (int)(w - jg_after);
+        int jnz_rel = (int)(w - jnz_arena_after);
+        if (jg_rel > 127 || jnz_rel > 127) { *bail = 1; return w; }
+        *jg_p = (uint8_t)jg_rel;
+        *jnz_arena_p = (uint8_t)jnz_rel;
+        return w;
+    }
+
+    uint8_t *jle_p, *je_p, *jne_p, *jnz_buf_p, *jmp_p;
+    w = emit_jle_rel8(w, &jle_p);
+    uint8_t *jle_after = w;
+    /* rc survived: #307 hook arm. */
+    w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
+                                   (uint32_t)VAL_LIST);
+    w = emit_je_rel8(w, &je_p);
+    uint8_t *je_after = w;
+    w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
+                                   (uint32_t)VAL_DICT);
+    w = emit_jnz_rel8(w, &jne_p);   /* jne == jnz */
+    uint8_t *jne_after = w;
+    /* .note: */
+    int je_rel = (int)(w - je_after);
+    w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, gc_buffered));
+    w = emit_jnz_rel8(w, &jnz_buf_p);
+    uint8_t *jnz_buf_after = w;
+    w = emit_push_rcx(w);
+    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&gc_note_possible_root);
+    w = emit_call_rax(w);
+    w = emit_pop_rcx(w);
+    w = emit_jmp_rel8(w, &jmp_p);
+    uint8_t *jmp_after = w;
+    /* .free: refcount hit 0 — free_value(%rdi). */
+    int jle_rel = (int)(w - jle_after);
+    w = emit_push_rcx(w);
+    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&free_value);
+    w = emit_call_rax(w);
+    w = emit_pop_rcx(w);
+    /* .skip: */
+    int jnz_arena_rel = (int)(w - jnz_arena_after);
+    int jne_rel  = (int)(w - jne_after);
+    int jnz_buf_rel = (int)(w - jnz_buf_after);
+    int jmp_rel  = (int)(w - jmp_after);
+    if (jnz_arena_rel > 127 || jle_rel > 127 || je_rel > 127 ||
+        jne_rel > 127 || jnz_buf_rel > 127 || jmp_rel > 127) {
+        *bail = 1; return w;
+    }
+    *jnz_arena_p = (uint8_t)jnz_arena_rel;
+    *jle_p = (uint8_t)jle_rel;
+    *je_p  = (uint8_t)je_rel;
+    *jne_p = (uint8_t)jne_rel;
+    *jnz_buf_p = (uint8_t)jnz_buf_rel;
+    *jmp_p = (uint8_t)jmp_rel;
+    return w;
+}
+
+/* Emit inline conditional decref of a slot held in %rsi.
+ *
+ * Tag-peels the slot (immediates skip), masks the payload into %rdi,
+ * then runs the shared decref tail above (~92 bytes worst case with
+ * the #307 hook arm, ~66 without — see emit_decref_tail_rdi for when
+ * with_hook is required). Uses %rax/%rdx/%rdi/%rsi as scratch — caller
+ * must not depend on these surviving. Returns advanced write pointer;
+ * sets *bail=1 on rel8 overflow. */
+static uint8_t *emit_conditional_decref_rsi_hook(uint8_t *w, int *bail,
+                                                 int with_hook) {
+    w = emit_mov_rsi_rdx(w);
+    w = emit_shr_48_rdx(w);
+    w = emit_cmp_imm32_edx(w, 0xFFFB);
+    uint8_t *jb_patch;
+    w = emit_jb_rel8(w, &jb_patch);
+    uint8_t *jb_after = w;
+    w = emit_mov_rsi_rdi(w);
+    w = emit_shl_16_rdi(w);
+    w = emit_shr_16_rdi(w);
+    w = emit_decref_tail_rdi(w, bail, with_hook);
+    int jb_rel = (int)(w - jb_after);
+    if (jb_rel > 127) { *bail = 1; return w; }
+    *jb_patch = (uint8_t)jb_rel;
+    return w;
+}
+/* Hookless variant: only for decrefs whose value is type-guarded away
+ * from LIST/DICT before the decref can run (binop commit decrefs). */
+static uint8_t *emit_conditional_decref_rsi(uint8_t *w, int *bail) {
+    return emit_conditional_decref_rsi_hook(w, bail, 0);
 }
 /* add $16, %rsi  (4 bytes) — step to dict-cache way 1. */
 static uint8_t *emit_add_16_rsi(uint8_t *w) {
@@ -2116,29 +2210,14 @@ static uint8_t *emit_commit_binop(uint8_t *w, int32_t off_stack,
     return w;
 }
 
-/* Inline decref of the Value* in %rdi: skip when arena-owned,
- * `lock subl` otherwise, call free_value when the count reaches zero.
- * Tail of emit_conditional_decref_rsi without the slot tag check —
- * caller already proved %rdi is a heap Value*. */
+/* Inline decref of the Value* in %rdi: the shared tail of
+ * emit_conditional_decref_rsi without the slot tag check — caller
+ * already proved %rdi is a heap Value*. Includes the #307 hook (see
+ * emit_decref_tail_rdi). */
 static uint8_t *emit_decref_value_rdi(uint8_t *w, int *bail) {
-    w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
-    uint8_t *jnz_patch;
-    w = emit_jnz_rel8(w, &jnz_patch);
-    uint8_t *jnz_after = w;
-    w = emit_lock_subl_1_disp32_rdi(w, (int32_t)offsetof(Value, refcount));
-    uint8_t *jg_patch;
-    w = emit_jg_rel8(w, &jg_patch);
-    uint8_t *jg_after = w;
-    w = emit_push_rcx(w);
-    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&free_value);
-    w = emit_call_rax(w);
-    w = emit_pop_rcx(w);
-    int jnz_rel = (int)(w - jnz_after);
-    int jg_rel = (int)(w - jg_after);
-    if (jnz_rel > 127 || jg_rel > 127) { *bail = 1; return w; }
-    *jnz_patch = (uint8_t)jnz_rel;
-    *jg_patch = (uint8_t)jg_rel;
-    return w;
+    /* Hookless: the only caller is INDEX_SET's inline fast path, whose
+     * target is type-guarded VAL_BUFFER — never a LIST/DICT. */
+    return emit_decref_tail_rdi(w, bail, 0);
 }
 #endif
 
@@ -2701,9 +2780,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_incl_rdi_r9_4(w);
             *nb1_p = (uint8_t)(w - nb1_after);
             *nb2_p = (uint8_t)(w - nb2_after);
-            /* Old-slot decref (immediate no-op / arena skip / free at 0). */
+            /* Old-slot decref (immediate no-op / arena skip / free at 0).
+             * with_hook: the old binding can be any type (#728). */
             int set_bail = 0;
-            w = emit_conditional_decref_rsi(w, &set_bail);
+            w = emit_conditional_decref_rsi_hook(w, &set_bail, 1);
             if (set_bail) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3089,8 +3169,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 JIT_BAIL_AND_RETURN();
             }
             /* Decref old (%rsi). Note: bounds check on slot < e->count
-             * is omitted — compiler-emitted bytecode never overruns. */
-            w = emit_conditional_decref_rsi(w, &bail);
+             * is omitted — compiler-emitted bytecode never overruns.
+             * with_hook: the displaced local can be any type (#728). */
+            w = emit_conditional_decref_rsi_hook(w, &bail, 1);
             if (bail) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3823,7 +3904,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 w = emit_mov_rax_rsi(w);
                 w = emit_dec_ecx(w);
                 int bail = 0;
-                w = emit_conditional_decref_rsi(w, &bail);
+                /* with_hook: a popped TOS can be any type (#728). */
+                w = emit_conditional_decref_rsi_hook(w, &bail, 1);
                 if (bail) {
                     JIT_BAIL_AND_RETURN();
                 }
@@ -3991,8 +4073,12 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
      * leaves chunk->jit_code dangling into munmap'd memory; the next caller
      * jumps into it → SEGV. Leave jit_state at 0 so compilation resumes once the
      * program is single-threaded again. (Code main compiled before/after the MT
-     * window lives in main's arena, alive until exit, and is safe to run from a
-     * worker — only freshly-compiled worker code is the hazard.) */
+     * window lives in main's arena, alive until exit, and is MEMORY-safe to run
+     * from a worker — but running it is gated off too, see #728: every thunk
+     * epilogue writes the shared chunk->jit_advance, and the in-thunk name
+     * helpers fill the shared env_ic/const_hashes caches ungated. vm_run's
+     * invocation sites and jit_helper_call check g_vm_multithreaded, matching
+     * the OSR gate.) */
     if (g_vm_multithreaded) return;
 #if defined(EIGENSCRIPT_JIT_FORCE_OFF) && EIGENSCRIPT_JIT_FORCE_OFF
     /* Build-time JIT disable. macos-x86_64 binaries ship with this set

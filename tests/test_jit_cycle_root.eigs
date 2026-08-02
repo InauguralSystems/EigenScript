@@ -1,0 +1,52 @@
+# Regression for #728: the JIT's inline decref must run the #307
+# possible-cycle-root hook (gc_note_possible_root), like slot_decref does.
+#
+# The leak shape needs all three steps — a cycle is registered at creation
+# by C-path decrefs, so a fresh drop alone can't reproduce it:
+#   1. `spin of (mk of [])` — the arg-pop registers the cycle (C decref, rc>0)
+#   2. churn pushes >1024 candidates -> gc_collect_cycles runs, finds the
+#      cycle LIVE (param ref) and clears its gc_buffered flag
+#   3. spin's loop OSR-compiles (>5000 back edges); iteration 5990 drops the
+#      last external ref via the EMITTED decref. Without the hook the orphan
+#      is invisible to the exit collector: 136 bytes leaked, LSan exit.
+# Run under ASan with detect_leaks=1 and a STRICT exit gate (suite [130]).
+
+define mk() as:
+    local l is []
+    append of [l, l]
+    return l
+
+define churn() as:
+    local i is 0
+    loop while i < 1200:
+        local t is mk of []
+        t is 0
+        i is i + 1
+    return 0
+
+define spin(c) as:
+    churn of []
+    local i is 0
+    local dropped is 0
+    loop while i < 6000:
+        if i == 5990:
+            c is 0
+            dropped is 1
+        i is i + 1
+    return dropped
+
+checks is 0
+passed is 0
+define check(label, got, want) as:
+    checks is checks + 1
+    if got == want:
+        passed is passed + 1
+    else:
+        print of ("MISMATCH " + label + ": got=" + str of got + " want=" + str of want)
+
+check of ["native drop executed", spin of (mk of []), 1]
+
+if passed == checks:
+    print of "All tests passed"
+else:
+    print of f"FAIL: {passed}/{checks} passed"

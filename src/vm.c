@@ -2054,6 +2054,13 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
             return 0;
         if (fn_chunk->jit_state != 2 || !fn_chunk->jit_code) return 1;
         if (g_task_sched) return 1;   /* #533: task code runs interpreted */
+        /* #728: a running thunk can flip the flag mid-flight (spawn is a
+         * builtin, reachable via the VAL_BUILTIN path below) — after that,
+         * don't enter NESTED thunks: their epilogues write the shared
+         * chunk->jit_advance and their helpers fill shared ICs, racing
+         * against workers interpreting the same chunks. Mirrors the
+         * vm_run invocation gates. */
+        if (g_vm_multithreaded) return 1;
         if (g_vm.frame_count >= VM_FRAMES_MAX) return 1;
         if (g_native_call_depth >= JIT_NATIVE_CALL_DEPTH_MAX) return 1;
 
@@ -3680,12 +3687,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * the caller's stack. Resync to the (now-current) caller
              * frame or, if we've fallen below base_frame, hand the
              * result back to C. */
-            if (fn_chunk->jit_state == 0 && !g_task_sched) jit_try_compile_chunk(fn_chunk);
+            if (fn_chunk->jit_state == 0 && !g_vm_multithreaded && !g_task_sched)
+                jit_try_compile_chunk(fn_chunk);
             /* #533: never enter a thunk while the task scheduler is active,
              * even one compiled before the first spawn — task code runs
              * interpreted (suspension points exist only in the interpreter
-             * loop's builtin-call check). */
-            if (fn_chunk->jit_code && !g_task_sched) {
+             * loop's builtin-call check).
+             * #728: nor while multithreaded — #296 only gates COMPILING
+             * (main-compiled code is memory-safe to run from a worker), but
+             * every thunk epilogue writes the shared chunk->jit_advance, and
+             * in-thunk helpers (jit_helper_get_name/set_name*) fill the
+             * shared env_ic/const_hashes caches ungated — the interpreter's
+             * twins are #297-gated. Two workers running one warm thunk raced
+             * write/write on both (TSan gate: test_spawn_jit_warm.eigs).
+             * Workers interpret shared chunks instead, matching the OSR
+             * gate at CASE(JUMP_BACK). */
+            if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* jit_helper_return popped fn_chunk's frame but left
@@ -5549,11 +5566,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             frame->is_try = 0;
             frame->try_count = 0;
             frame->call_argc = 1;
-            fn_chunk->exec_count++;
+            if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
 
-            /* JIT hook (mirror of OP_CALL bytecode-fn path; #533 task gate). */
-            if (fn_chunk->jit_state == 0 && !g_task_sched) jit_try_compile_chunk(fn_chunk);
-            if (fn_chunk->jit_code && !g_task_sched) {
+            /* JIT hook (mirror of OP_CALL bytecode-fn path; #533 task gate,
+             * #728 MT gate — see the OP_CALL hook). */
+            if (fn_chunk->jit_state == 0 && !g_vm_multithreaded && !g_task_sched)
+                jit_try_compile_chunk(fn_chunk);
+            if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.

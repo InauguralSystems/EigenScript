@@ -3396,6 +3396,35 @@ echo "[128] Observer Query-Time Entropy (12 checks)"
 check_eigs_suite "all 12 query-time entropy checks" test_entropy_query_time.eigs "All tests passed" 12
 echo ""
 
+# [129] Warm-thunk invocation under MT (#728). A chunk JIT-compiled on main
+# BEFORE the first spawn was runnable from workers (#296 gates compiling
+# only); every invocation wrote the shared chunk->jit_advance and the
+# in-thunk name helpers filled the shared inline caches — write/write races
+# across workers. Invocation is now gated on !g_vm_multithreaded (matching
+# the OSR site); workers interpret. Values pinned here; race-freedom is
+# gated by test_tsan.sh (same program in its slice).
+echo "[129] Warm-Thunk MT Invocation Gate (#728)"
+check_eigs_suite "warm thunk not entered by workers, exact results" test_spawn_jit_warm.eigs "All tests passed" 1
+echo ""
+
+# [130] JIT decref runs the #307 cycle-root hook (#728). A cycle whose
+# registration was cleared by a mid-run collection and whose last external
+# ref then drops in EMITTED code (OSR loop body) was invisible to the exit
+# collector — 136 bytes leaked. STRICT exit gate like [106]: a LeakSanitizer
+# exit here is the regression, not a tolerated leak.
+echo "[130] JIT Decref Cycle-Root Hook (#728)"
+TOTAL=$((TOTAL + 1))
+JCR_OUTPUT=$(./eigenscript ../tests/test_jit_cycle_root.eigs </dev/null 2>&1); JCR_RC=$?
+if [ "$JCR_RC" = "0" ] && echo "$JCR_OUTPUT" | grep -q "All tests passed"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: natively-dropped cycle re-registered and collected (leak-clean)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: JIT cycle-root hook (rc=$JCR_RC — must be leak-clean)"
+    echo "$JCR_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
+fi
+echo ""
+
 # [89] Executable documentation — every eigenscript/output block pair in
 # docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
 # the spec cannot drift from the implementation. Skips without python3.

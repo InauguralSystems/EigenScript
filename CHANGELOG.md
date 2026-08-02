@@ -6,6 +6,41 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **JIT thunk invocation is gated on `g_vm_multithreaded`, matching the
+  OSR site (#728).** #296 gated JIT *compilation* off under MT, but a
+  chunk compiled on main before the first `spawn` was still runnable
+  from workers — and every thunk epilogue writes the shared
+  `chunk->jit_advance`, while in-thunk helpers
+  (`jit_helper_get_name`/`set_name*`) fill the shared
+  `env_ic`/`const_hashes` caches that the interpreter only touches under
+  `!g_vm_multithreaded` (#297). Two workers running one warm thunk raced
+  write/write on both (TSan-visible in the IC fill; the epilogue store is
+  uninstrumented emitted code, which is why no repro existed before).
+  The OP_CALL and OP_DISPATCH invocation sites now carry the same
+  `!g_vm_multithreaded` gate as OSR, `jit_helper_call` refuses nested
+  thunk entry after a mid-thunk `spawn` flips the flag, and OP_DISPATCH's
+  `exec_count++` picked up the #297 gate its OP_CALL twin already had.
+  Workers interpret shared chunks — the same ruling as OSR/compilation.
+  New warm-then-spawn-parallel shape pinned by suite [129]
+  (`test_spawn_jit_warm.eigs`) and the `test_tsan.sh` race-free slice.
+- **The JIT's inline decref runs the #307 possible-cycle-root hook
+  (#728).** The emitted decref decremented and freed at zero but never
+  called `gc_note_possible_root` on a surviving LIST/DICT — the hook
+  `slot_decref`/`val_decref` always run. Ordinarily masked because every
+  cycle is registered at creation by C-path decrefs, but
+  `gc_collect_cycles` *unbuffers* live candidates, so a cycle that
+  survived a collection and then lost its last external ref in emitted
+  code (an OSR-compiled loop rebinding the variable) was invisible to
+  the exit collector: 136 bytes leaked per orphan, reproduced and
+  planted-fault-verified. The decref tail now emits the hook arm at the
+  sites that drop arbitrary values (OP_POP, SET_LOCAL swap, inline
+  SET_NAME old-binding); the binop commit decrefs and INDEX_SET stay
+  hookless — their type guards bail non-num/non-buffer operands to the
+  interpreter before any commit decref, and the arm would be pure
+  I-cache bloat there (measured ~12% on `bench_dmg_shape` when emitted
+  unconditionally, flat with the split). Strict-leak-gated by suite
+  [130] (`test_jit_cycle_root.eigs`), the JIT analogue of [106].
+
 - **The JSON model loader validates before committing (#727).** The
   `.eigen` binary loader always parsed into a temporary, checked every
   section present, and committed only on success; the JSON path parsed
