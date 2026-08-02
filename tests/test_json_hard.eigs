@@ -280,6 +280,84 @@ assert of [json_path of [len_hex, "k2"] == "ok", "JH92 sibling after malformed e
 
 len_before is "{\"k0\": \"v0\", \"k\": \"x\\ude00y\"}"
 assert of [json_path of [len_before, "k0"] == "v0", "JH93 sibling before bad string survives"]
+
+# --- #777: one malformed parse must not poison the NEXT parse in the same ---
+# thread. g_json_parse_err is thread-global and the parser CHECKS it mid-parse
+# (object first-key guard, array element guard); before the fix only
+# json_decode reset it, so a stale flag EMPTIED objects and TRUNCATED arrays
+# for every lenient caller that followed. Each case below poisons the flag
+# first, then parses a fresh, well-formed document through json_path.
+
+# Shape: lenient-after-lenient (the issue's own repro).
+pois1 is json_path of ["{\"a\": \"unterminated", "a"]
+assert of [json_path of ["{\"user\": {\"name\": \"bob\"}}", "user.name"] == "bob", "JH118 lenient json_path after malformed json_path"]
+
+pois2 is json_path of ["{\"a\": \"unterminated", "a"]
+assert of [json_path of ["[10, 20, 30]", "2"] == "30", "JH119 array element after malformed json_path"]
+
+# Shape: lenient-after-strict-raise — a raising json_decode leaves the flag
+# set; the next lenient parse must still start fresh. (The left half of each
+# assert confirms the raise really happened, so the case cannot pass
+# vacuously.)
+pois3_err is 0
+try:
+    pois3 is json_decode of "\"abc"
+catch pois3_e:
+    pois3_err is 1
+assert of [(pois3_err == 1) == (json_path of ["{\"user\": {\"name\": \"alice\"}}", "user.name"] == "alice"), "JH120 lenient json_path after strict raise"]
+
+pois4_err is 0
+try:
+    pois4 is json_decode of "[1, 2"
+catch pois4_e:
+    pois4_err is 1
+assert of [(pois4_err == 1) == (json_path of ["[7, 8, 9]", "1"] == "8"), "JH121 array element after strict raise"]
+
+# Shape: object-empty — the stale flag fired the object first-key guard, so
+# a well-formed object decoded to an EMPTY dict and every lookup missed.
+pois5 is json_path of ["{\"k\": ", "k"]
+assert of [json_path of ["{\"k1\": \"v1\", \"k2\": \"v2\"}", "k1"] == "v1", "JH122 first key of object survives"]
+
+# Shape: array-truncate — the stale flag fired the array element guard after
+# the first element, so a well-formed array decoded to a ONE-ELEMENT list.
+pois6 is json_path of ["{\"k\": ", "k"]
+assert of [json_path of ["[\"x\", \"y\"]", "1"] == "y", "JH123 second element of array survives"]
+
+# The poison source can be any malformed document shape — a truncated array
+# sets the flag just like an unterminated string does.
+pois7 is json_path of ["[1, 2", "0"]
+assert of [json_path of ["{\"ok\": \"yes\"}", "ok"] == "yes", "JH124 object survives poison from truncated array"]
+
+# Two malformed parses in a row must not compound: the next good parse is
+# still a fresh one.
+pois8a is json_path of ["{\"a\": ", "a"]
+pois8b is json_path of ["[", "0"]
+assert of [json_path of ["{\"deep\": {\"leaf\": 42}}", "deep.leaf"] == "42", "JH125 nested path after double poison"]
+
+# A bare non-JSON token poisons too; a three-level path must still resolve.
+pois9 is json_path of ["not json at all", "x"]
+assert of [json_path of ["{\"m\": {\"n\": {\"o\": \"end\"}}}", "m.n.o"] == "end", "JH126 three-level path after poison"]
+
+# The RECOVERABLE channel is load-bearing in the wrapper too: a lenient
+# parse over a recoverable document (unpaired surrogate, U+FFFD substituted)
+# leaves g_json_parse_recoverable set, and a STRICT decode of a perfectly
+# clean document that follows must still start fresh and NOT raise. This
+# fails if the "g_json_parse_recoverable = 0;" line is removed from
+# eigs_json_parse_root. (On pre-#777 code json_decode cleared both flags on
+# its own entry, so this exact scenario was safe then — this test guards the
+# wrapper, not the old reset site.)
+rec_doc is "{\"k\": \"x\\ude00y\"}"
+rec_lenient is json_path of [rec_doc, "k"]
+rec_strict_err is 0
+try:
+    rec_strict is json_decode of "{\"clean\": 1}"
+catch rec_strict_e:
+    rec_strict_err is 1
+assert of [rec_strict_err == 0, "JH127 clean strict decode after recoverable lenient parse"]
+
+# Leave the flags clean for the tests that follow even on an unfixed build:
+# json_decode resets them on entry (that reset is the pre-#777 behavior).
+pois_cleanup is json_decode of "{}"
 # --- #725: json_build/json_path must keep magnitude (%.15g, like json_encode) ---
 # The old %.6f destroyed tiny values ({"v": 0.000000}) and printed huge ones
 # as 22-char fixed-point blobs. json_encode already used %.15g.

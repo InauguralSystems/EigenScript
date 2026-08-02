@@ -981,9 +981,12 @@ Value* eigs_json_parse_value(const char *s, int *pos);
  * malformed input). This thread-local flag is SET by the parse functions on
  * any malformed condition (unexpected token, truncation, unterminated
  * string, over-deep nesting) and CHECKED only by builtin_json_decode, which
- * resets it on entry and raises. Other callers (json_path, ext_http) ignore
- * it and keep the historical lenient behavior. Thread-local like g_json_depth
- * because JSON parsing is per-thread and non-reentrant across threads. */
+ * raises on it. It is also checked mid-parse by the array/object propagation
+ * guards, so it must be CLEAR at the start of every fresh parse — that reset
+ * is owned by eigs_json_parse_root (#777), never by individual callers.
+ * Callers other than json_decode don't read it after parsing and keep the
+ * historical lenient behavior. Thread-local like g_json_depth because JSON
+ * parsing is per-thread and non-reentrant across threads. */
 static __thread int g_json_parse_err = 0;
 
 /* #724: recoverable-parse flag — a SECOND channel, parallel to
@@ -998,11 +1001,30 @@ static __thread int g_json_parse_err = 0;
  * trading the old CESU-8-in-one-field bug for a lost-fields bug. Recoverable
  * conditions therefore never touch g_json_parse_err: lenient callers receive
  * the complete document with U+FFFD in the one bad string, and only
- * builtin_json_decode reads this flag (reset on entry, alongside
- * g_json_parse_err) to raise under strict decode. A side benefit: a strict
- * decode that raises on a recoverable condition leaves g_json_parse_err
- * CLEAR, so it does not poison the next lenient parse in the same thread. */
+ * builtin_json_decode reads this flag to raise under strict decode. A side
+ * benefit: a strict decode that raises on a recoverable condition leaves
+ * g_json_parse_err CLEAR, so it does not poison the next lenient parse in
+ * the same thread. Like g_json_parse_err it is reset by
+ * eigs_json_parse_root (#777), never by individual callers. */
 static __thread int g_json_parse_recoverable = 0;
+
+/* #777: the one non-recursive entry point for a top-level JSON parse, and
+ * the single owner of the parse flags' lifetime. eigs_json_parse_value is
+ * recursive, so it cannot clear the flags itself — but the parser CHECKS
+ * g_json_parse_err mid-parse (the array element and object first-key
+ * propagation guards), so a flag left set by one malformed parse silently
+ * truncated arrays and emptied objects for the NEXT caller in the same
+ * thread (json_path, ext_http). Per-caller resets are how that bug happened
+ * — json_decode remembered, every other caller forgot — so both channels are
+ * cleared here instead: this wrapper is the one place that defines "fresh
+ * parse". Callers must not touch the flags directly; builtin_json_decode
+ * still reads them after the call to decide whether to raise, exactly as
+ * before. */
+Value* eigs_json_parse_root(const char *s, int *pos) {
+    g_json_parse_err = 0;
+    g_json_parse_recoverable = 0;
+    return eigs_json_parse_value(s, pos);
+}
 
 static void eigs_json_skip_ws(const char *s, int *pos) {
     while (s[*pos] && (s[*pos] == ' ' || s[*pos] == '\t' || s[*pos] == '\n' || s[*pos] == '\r'))
@@ -1286,16 +1308,15 @@ Value* builtin_json_decode(Value *arg) {
                 arg ? val_type_name(arg->type) : "null");
         return make_null();
     }
-    /* #495: strict decode. Reset the parse-error flag, parse one value, then
-     * require that only whitespace remains. A partial container, a truncated
+    /* #495: strict decode. Parse one value via eigs_json_parse_root (#777:
+     * the wrapper resets both parse flags), then require that only
+     * whitespace remains. A partial container, a truncated
      * document, an unterminated string, over-deep nesting, or trailing
      * garbage after a complete value now raises instead of silently
      * succeeding (which also made a genuine JSON `null` indistinguishable
      * from a parse failure). */
-    g_json_parse_err = 0;
-    g_json_parse_recoverable = 0;   /* #724: also raise on repaired scalars */
     int pos = 0;
-    Value *v = eigs_json_parse_value(arg->data.str, &pos);
+    Value *v = eigs_json_parse_root(arg->data.str, &pos);
     eigs_json_skip_ws(arg->data.str, &pos);
     if (g_json_parse_err || g_json_parse_recoverable ||
         arg->data.str[pos] != '\0') {
@@ -2902,7 +2923,7 @@ Value* builtin_json_path(Value *arg) {
     }
 
     int pos = 0;
-    Value *root = eigs_json_parse_value(json_str, &pos);
+    Value *root = eigs_json_parse_root(json_str, &pos);   /* #777: fresh parse */
     if (!root) return make_str("");
     Value *current = root;   /* walks borrowed children of root */
 

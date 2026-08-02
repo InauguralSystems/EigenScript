@@ -1208,6 +1208,11 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
 int resolve_eigenscript_file_from(const char *base, const char *path,
                                    char *resolved, size_t resolved_cap);
 Value* eigs_json_parse_value(const char *s, int *pos);
+/* #777: the ONLY entry point for a top-level (non-recursive) JSON parse.
+ * Clears both thread-local parse flags (g_json_parse_err,
+ * g_json_parse_recoverable) before delegating to eigs_json_parse_value, so
+ * one malformed parse cannot poison the next parse in the same thread. */
+Value* eigs_json_parse_root(const char *s, int *pos);
 /* Encode any Value as JSON. Returns heap-owned string (caller frees).
  * Functions/builtins emit "null" (matches the json_encode builtin). */
 char* eigs_json_encode(Value *v);
