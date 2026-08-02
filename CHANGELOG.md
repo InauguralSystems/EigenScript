@@ -4,6 +4,30 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The opcode operand-layout tables are now exhaustive switches on
+  `OpCode`, closing a verifier drift (#737).** `op_name`,
+  `op_verify_operands`, and `op_stack_effect` each switched on `uint8_t`
+  with a `default:` arm, so `-Werror=switch` (already in CFLAGS) could
+  not see a missing opcode — and three had already drifted:
+  `op_verify_operands` was missing `OP_TRAJECTORY_SLOT` (its NAME
+  sibling was present), so the untrusted-chunk verifier walked that
+  3-byte instruction as 1 byte and marked its two operand bytes as valid
+  instruction boundaries — a crafted jump could land mid-instruction and
+  still pass verification (the #721 surface, reopened); `op_name` printed
+  four opcodes as `"???"`; and the disassembler's separate `op_has_u16`
+  boolean had drifted on 8 opcodes and structurally could not express the
+  multi-operand superinstructions, desyncing on 15. All three now switch
+  on `OpCode` with no `default:` arm (a new opcode is a build error, not
+  a silent gap), `op_name`'s strings are derived from the enum spellings
+  so they can't drift from their opcodes, `OP_TRAJECTORY_SLOT` is
+  verified, and the disassembler is driven off the verifier's operand
+  table (one layout source, not two). The verifier hole is
+  planted-fault-gated by `test_vm_run_bytecode.eigs` (a jump into
+  `OP_TRAJECTORY_SLOT`'s operand: refused now, ran to `7` on the drifted
+  table).
+
 ### Added
 
 - **`eigenscript --api [--json]`: the machine-readable surface index

@@ -309,102 +309,71 @@ int chunk_add_function(EigsChunk *chunk, EigsChunk *fn) {
 
 /* ---- Disassembler ---- */
 
+/* #737: an exhaustive switch on OpCode with NO default arm —
+ * -Werror=switch (already in CFLAGS) turns a missing opcode into a build
+ * error instead of a silent "???". The strings are derived from the enum
+ * spellings themselves (#o + 3 strips "OP_"), so a name can't drift from
+ * its opcode either. The old designated-initializer array was missing
+ * four opcodes and nothing could notice. */
 const char *op_name(uint8_t op) {
-    /* Explicit [OP_COUNT] size keeps designated initializers from
-     * shrinking the array — otherwise any opcode above the highest
-     * designator would read out of bounds. */
-    static const char *names[OP_COUNT] = {
-        [OP_CONST] = "CONST", [OP_NULL] = "NULL",
-        [OP_NUM_ZERO] = "NUM_ZERO", [OP_NUM_ONE] = "NUM_ONE",
-        [OP_ADD] = "ADD", [OP_SUB] = "SUB", [OP_MUL] = "MUL",
-        [OP_DIV] = "DIV", [OP_MOD] = "MOD",
-        [OP_BAND] = "BAND", [OP_BOR] = "BOR", [OP_BXOR] = "BXOR",
-        [OP_SHL] = "SHL", [OP_SHR] = "SHR",
-        [OP_NEG] = "NEG", [OP_NOT] = "NOT", [OP_BNOT] = "BNOT",
-        [OP_EQ] = "EQ", [OP_NE] = "NE", [OP_LT] = "LT",
-        [OP_GT] = "GT", [OP_LE] = "LE", [OP_GE] = "GE",
-        [OP_GET_LOCAL] = "GET_LOCAL", [OP_SET_LOCAL] = "SET_LOCAL",
-        [OP_GET_NAME] = "GET_NAME", [OP_SET_NAME] = "SET_NAME",
-        [OP_SET_NAME_LOCAL] = "SET_NAME_LOCAL",
-        [OP_SET_FN_NAME_LOCAL] = "SET_FN_NAME_LOCAL",
-        [OP_JUMP] = "JUMP", [OP_JUMP_BACK] = "JUMP_BACK",
-        [OP_JUMP_IF_FALSE] = "JUMP_IF_FALSE",
-        [OP_JUMP_IF_TRUE] = "JUMP_IF_TRUE",
-        [OP_JUMP_IF_FALSE_PEEK] = "JUMP_IF_FALSE_PEEK",
-        [OP_JUMP_IF_TRUE_PEEK] = "JUMP_IF_TRUE_PEEK",
-        [OP_POP] = "POP", [OP_DUP] = "DUP", [OP_DUP2] = "DUP2",
-        [OP_CLOSURE] = "CLOSURE", [OP_CALL] = "CALL",
-        [OP_RETURN] = "RETURN", [OP_RETURN_NULL] = "RETURN_NULL",
-        [OP_LIST] = "LIST", [OP_DICT] = "DICT",
-        [OP_INDEX_GET] = "INDEX_GET", [OP_INDEX_SET] = "INDEX_SET",
-        [OP_DOT_GET] = "DOT_GET", [OP_DOT_SET] = "DOT_SET",
-        [OP_ITER_SETUP] = "ITER_SETUP", [OP_ITER_NEXT] = "ITER_NEXT",
-        [OP_LOOP_ENV_FRESH] = "LOOP_ENV_FRESH",
-        [OP_LOOP_ENV_END] = "LOOP_ENV_END",
-        [OP_LOOP_ENV_CLEAR] = "LOOP_ENV_CLEAR",
-        [OP_PREDICATE_SLOT] = "PREDICATE_SLOT",
-        [OP_PREDICATE_NAME] = "PREDICATE_NAME",
-        [OP_REPORT_VALUE_SLOT] = "REPORT_VALUE_SLOT",
-        [OP_REPORT_VALUE_NAME] = "REPORT_VALUE_NAME",
-        [OP_TRAJECTORY_SLOT] = "TRAJECTORY_SLOT",
-        [OP_TRAJECTORY_NAME] = "TRAJECTORY_NAME",
-        [OP_BREAK] = "BREAK", [OP_CONTINUE] = "CONTINUE",
-        [OP_TRY_BEGIN] = "TRY_BEGIN", [OP_TRY_END] = "TRY_END",
-        [OP_OBSERVE_ASSIGN] = "OBSERVE_ASSIGN",
-        [OP_OBSERVE_ASSIGN_LOCAL] = "OBSERVE_ASSIGN_LOCAL",
-        [OP_OBSERVE_NAME_POST] = "OBSERVE_NAME_POST",
-        [OP_INTERROGATE] = "INTERROGATE", [OP_PREDICATE] = "PREDICATE",
-        [OP_UNOBSERVED_BEGIN] = "UNOBSERVED_BEGIN",
-        [OP_UNOBSERVED_END] = "UNOBSERVED_END",
-        [OP_LOOP_STALL_CHECK] = "LOOP_STALL_CHECK",
-        [OP_LOOP_CAP_CHECK] = "LOOP_CAP_CHECK",
-        [OP_IMPORT] = "IMPORT", [OP_MATCH] = "MATCH",
-        [OP_LISTCOMP_BEGIN] = "LISTCOMP_BEGIN",
-        [OP_LISTCOMP_APPEND] = "LISTCOMP_APPEND",
-        [OP_LINE] = "LINE", [OP_WIDE] = "WIDE",
-        [OP_DISPATCH] = "DISPATCH",
-        [OP_LOCAL_DOT_GET] = "LOCAL_DOT_GET",
-        [OP_LOCAL_DOT_SET] = "LOCAL_DOT_SET",
-        [OP_LOCAL_IDX_GET] = "LOCAL_IDX_GET",
-        [OP_LOCAL_IDX_DOT_GET] = "LOCAL_IDX_DOT_GET",
-        [OP_LOCAL_IDX_DOT_SET] = "LOCAL_IDX_DOT_SET",
-        [OP_INTERROGATE_NAMED] = "INTERROGATE_NAMED",
-        [OP_INTERROGATE_NAMED_AT] = "INTERROGATE_NAMED_AT",
-        [OP_DEFAULT_PARAM] = "DEFAULT_PARAM",
-        [OP_DESTRUCTURE_UNPACK] = "DESTRUCTURE_UNPACK",
-        [OP_SLICE_GET] = "SLICE_GET",
-    };
-    if (op < OP_COUNT && names[op]) return names[op];
+    if (op >= OP_COUNT) return "???";
+    switch ((OpCode)op) {
+#define N(o) case o: return #o + 3;
+    N(OP_CONST) N(OP_NULL) N(OP_NUM_ZERO) N(OP_NUM_ONE)
+    N(OP_ADD) N(OP_SUB) N(OP_MUL) N(OP_DIV) N(OP_MOD)
+    N(OP_BAND) N(OP_BOR) N(OP_BXOR) N(OP_SHL) N(OP_SHR)
+    N(OP_NEG) N(OP_NOT) N(OP_BNOT)
+    N(OP_EQ) N(OP_NE) N(OP_LT) N(OP_GT) N(OP_LE) N(OP_GE)
+    N(OP_GET_LOCAL) N(OP_SET_LOCAL) N(OP_GET_NAME) N(OP_SET_NAME)
+    N(OP_SET_NAME_LOCAL) N(OP_SET_FN_NAME_LOCAL)
+    N(OP_JUMP) N(OP_JUMP_BACK) N(OP_JUMP_IF_FALSE) N(OP_JUMP_IF_TRUE)
+    N(OP_JUMP_IF_FALSE_PEEK) N(OP_JUMP_IF_TRUE_PEEK)
+    N(OP_POP) N(OP_DUP) N(OP_DUP2)
+    N(OP_CLOSURE) N(OP_CALL) N(OP_RETURN) N(OP_RETURN_NULL)
+    N(OP_LIST) N(OP_DICT) N(OP_INDEX_GET) N(OP_INDEX_SET)
+    N(OP_DOT_GET) N(OP_DOT_SET)
+    N(OP_ITER_SETUP) N(OP_ITER_NEXT)
+    N(OP_LOOP_ENV_FRESH) N(OP_LOOP_ENV_END) N(OP_LOOP_ENV_CLEAR)
+    N(OP_BREAK) N(OP_CONTINUE)
+    N(OP_TRY_BEGIN) N(OP_TRY_END)
+    N(OP_OBSERVE_ASSIGN) N(OP_OBSERVE_ASSIGN_LOCAL) N(OP_OBSERVE_NAME_POST)
+    N(OP_INTERROGATE) N(OP_PREDICATE)
+    N(OP_UNOBSERVED_BEGIN) N(OP_UNOBSERVED_END)
+    N(OP_LOOP_STALL_CHECK) N(OP_LOOP_CAP_CHECK)
+    N(OP_IMPORT) N(OP_MATCH)
+    N(OP_LISTCOMP_BEGIN) N(OP_LISTCOMP_APPEND)
+    N(OP_LINE) N(OP_WIDE) N(OP_DISPATCH)
+    N(OP_LOCAL_DOT_GET) N(OP_LOCAL_DOT_SET) N(OP_LOCAL_IDX_GET)
+    N(OP_LOCAL_IDX_DOT_GET) N(OP_LOCAL_IDX_DOT_SET)
+    N(OP_INTERROGATE_NAMED) N(OP_INTERROGATE_NAMED_AT)
+    N(OP_DEFAULT_PARAM) N(OP_DESTRUCTURE_UNPACK) N(OP_SLICE_GET)
+    N(OP_REPORT_SLOT)
+    N(OP_REPORT_NAME) N(OP_OBSERVE_VALUE_SLOT) N(OP_OBSERVE_VALUE_NAME)
+    N(OP_PREDICATE_SLOT) N(OP_PREDICATE_NAME)
+    N(OP_REPORT_VALUE_SLOT) N(OP_REPORT_VALUE_NAME)
+    N(OP_TRAJECTORY_SLOT) N(OP_TRAJECTORY_NAME)
+#undef N
+    case OP_COUNT: break;   /* unreachable: bounds-checked above */
+    }
     return "???";
 }
 
-/* Returns 1 if opcode has a 16-bit operand */
-static int op_has_u16(uint8_t op) {
-    switch (op) {
-    case OP_CONST: case OP_GET_LOCAL: case OP_SET_LOCAL:
-    case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
-    case OP_SET_FN_NAME_LOCAL:
-    case OP_JUMP: case OP_JUMP_BACK:
-    case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
-    case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
-    case OP_CLOSURE: case OP_CALL:
-    case OP_LIST: case OP_DICT:
-    case OP_DOT_GET: case OP_DOT_SET:
-    case OP_ITER_NEXT:
-    case OP_TRY_BEGIN: case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
-    case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
-    case OP_IMPORT: case OP_MATCH:
-    case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
-    case OP_TRAJECTORY_SLOT: case OP_TRAJECTORY_NAME:
-        return 1;
-    case OP_INTERROGATE: case OP_PREDICATE:
-        return 1; /* kind:8 but padded to 16 for uniformity */
-    /* OP_LINE has a 32-bit operand (#630) — handled separately by the
-     * disassembler and verifier, never through the u16 path. */
-    default:
-        return 0;
-    }
-}
+/* Forward decls: the operand-layout table lives with the verifier below;
+ * the disassembler is driven off the SAME table (#737 — the old separate
+ * op_has_u16 boolean had drifted on 8 single-operand opcodes and could not
+ * express the multi-operand superinstructions at all, so chunk_disassemble
+ * desynchronized on 15 opcodes). */
+typedef enum {
+    VR_RAW = 0,   /* count / kind / line / runtime-guarded slot — no bound */
+    VR_CONST,     /* constant-pool index — any value type (OP_CONST push) */
+    VR_NAME,      /* constant-pool index that MUST be a string: the VM derefs it
+                   * as an interned name (const_interns[idx]), which is NULL for
+                   * a non-string constant → NULL deref. Bound AND type-check. */
+    VR_FN,        /* index into nested functions[] */
+    VR_JFWD,      /* forward jump: target = end_of_instruction + offset */
+    VR_JBACK      /* backward jump: target = end_of_instruction - offset */
+} VerifyRole;
+static int op_verify_operands(uint8_t op8, VerifyRole roles[3]);
 
 void chunk_disassemble(EigsChunk *chunk, const char *label) {
     fprintf(stderr, "=== %s (%s, %d bytes, %d constants) ===\n",
@@ -423,17 +392,21 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
                            ((uint32_t)chunk->code[i + 3] << 24);
             fprintf(stderr, " %u", arg);
             i += 4;
-        } else if (op_has_u16(op) && i + 1 < chunk->code_len) {
-            uint16_t arg = chunk->code[i] | (chunk->code[i + 1] << 8);
-            fprintf(stderr, " %d", arg);
-            if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
-                Value *v = chunk->constants[arg];
-                if (v->type == VAL_NUM)
-                    fprintf(stderr, " (%.6g)", v->data.num);
-                else if (v->type == VAL_STR)
-                    fprintf(stderr, " (\"%s\")", v->data.str);
+        } else if (op < OP_COUNT) {
+            VerifyRole roles[3];
+            int nops = op_verify_operands(op, roles);
+            for (int k = 0; k < nops && i + 1 < chunk->code_len; k++) {
+                uint16_t arg = chunk->code[i] | (chunk->code[i + 1] << 8);
+                fprintf(stderr, " %d", arg);
+                if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
+                    Value *v = chunk->constants[arg];
+                    if (v->type == VAL_NUM)
+                        fprintf(stderr, " (%.6g)", v->data.num);
+                    else if (v->type == VAL_STR)
+                        fprintf(stderr, " (\"%s\")", v->data.str);
+                }
+                i += 2;
             }
-            i += 2;
         }
         fprintf(stderr, "\n");
     }
@@ -458,21 +431,20 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
  * every jump target lands on an instruction boundary inside code. NOT checked:
  * local/observer slot operands — the VM already guards every slot access
  * (slot < env->count; observer slots auto-grow), so they cannot fault. */
-typedef enum {
-    VR_RAW = 0,   /* count / kind / line / runtime-guarded slot — no bound */
-    VR_CONST,     /* constant-pool index — any value type (OP_CONST push) */
-    VR_NAME,      /* constant-pool index that MUST be a string: the VM derefs it
-                   * as an interned name (const_interns[idx]), which is NULL for
-                   * a non-string constant → NULL deref. Bound AND type-check. */
-    VR_FN,        /* index into nested functions[] */
-    VR_JFWD,      /* forward jump: target = end_of_instruction + offset */
-    VR_JBACK      /* backward jump: target = end_of_instruction - offset */
-} VerifyRole;
-
 /* Fill roles[] for op; return its operand count (0..3). Mirrors the operand
- * layout the VM decodes in vm.c — keep in lockstep if an opcode changes. */
-static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
-    switch (op) {
+ * layout the VM decodes in vm.c — keep in lockstep if an opcode changes.
+ *
+ * #737: this is now an EXHAUSTIVE switch on OpCode with NO default arm, so
+ * -Werror=switch turns a missing opcode into a build error. The old
+ * `default: return 0` silently walked an unknown 3-byte instruction as
+ * 1 byte, which marked its operand bytes as valid instruction boundaries —
+ * a crafted jump could land mid-instruction and still pass pass 2 (the
+ * #721 surface; OP_TRAJECTORY_SLOT had already drifted out this way while
+ * its NAME sibling was present). Callers must bounds-check op < OP_COUNT
+ * first (chunk_verify pass 1 and the disassembler both do). This is also
+ * the disassembler's stepping table — one layout source, not two. */
+static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
+    switch ((OpCode)op8) {
     case OP_CONST:
         roles[0] = VR_CONST; return 1;
     case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
@@ -495,11 +467,10 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
     case OP_REPORT_VALUE_SLOT:
+    case OP_TRAJECTORY_SLOT:   /* #737: was missing — the drift this fixes */
     case OP_INTERROGATE: case OP_PREDICATE:
     case OP_MATCH: case OP_DESTRUCTURE_UNPACK:
         roles[0] = VR_RAW; return 1;
-    /* OP_LINE's operand is 32-bit (#630); chunk_verify walks it specially,
-     * so it never reaches this per-operand (u16-strided) role machinery. */
     case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
     case OP_LOCAL_IDX_GET:
@@ -514,9 +485,36 @@ static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
         roles[0] = VR_RAW; roles[1] = VR_JFWD; return 2;    /* slot, skip */
     case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_NAME; return 3;
-    default:
-        return 0;   /* no operand */
+    /* Operand-free opcodes — every one listed, so a new opcode cannot
+     * silently walk wrong. */
+    case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
+    case OP_NEG: case OP_NOT: case OP_BNOT:
+    case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
+    case OP_POP: case OP_DUP: case OP_DUP2:
+    case OP_RETURN: case OP_RETURN_NULL:
+    case OP_INDEX_GET: case OP_INDEX_SET:
+    case OP_ITER_SETUP:
+    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
+    case OP_BREAK: case OP_CONTINUE:
+    case OP_TRY_END:
+    case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+    case OP_LISTCOMP_BEGIN: case OP_LISTCOMP_APPEND:
+    case OP_WIDE:      /* placeholder — the VM decodes no operand either */
+    case OP_DISPATCH:
+    case OP_SLICE_GET:
+        return 0;
+    /* OP_LINE's operand is 32-bit (#630); chunk_verify and the
+     * disassembler both special-case it BEFORE consulting this u16-strided
+     * table, so this arm is unreachable — listed for the exhaustiveness
+     * gate, not for behavior. */
+    case OP_LINE:
+        return 0;
+    case OP_COUNT:     /* sentinel — callers bounds-check first */
+        return 0;
     }
+    return 0;   /* unreachable; silences non-GCC fallthrough warnings */
 }
 
 int chunk_verify(EigsChunk *chunk) {
