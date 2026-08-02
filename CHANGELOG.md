@@ -4,6 +4,36 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Build variants now coexist: per-variant objdirs with dependency
+  tracking (#740).** Every runtime variant (`build`/`full`/`http`/`zlib`/
+  `net`/`gfx`/`asan`/`asan-http`/`tsan`/`valgrind`/`poison`) was a single
+  whole-program `gcc` invocation writing `src/eigenscript`, so an ASan
+  build destroyed the release binary, any edit cost a full 22-TU rebuild,
+  and the project paid for the collision twice over — the test runner's
+  binary-fingerprint guard (#681) and a standing CLAUDE.md prohibition.
+  Each variant now compiles into its own `build/<variant>/` objdir with
+  `-MMD`/`-MP` header-dependency tracking and links
+  `build/<variant>/eigenscript`; `src/eigenscript` becomes a **hard
+  link** the phony target re-points, so every existing consumer of that
+  path works unchanged — hard rather than symbolic because the runtime
+  resolves the stdlib relative to `/proc/self/exe`, which dereferences a
+  symlink into `build/` and loses `lib/` (a symlink prototype failed 58
+  suite checks exactly there; the hard link keeps the exec'd path in
+  `src/`). Measured: switching `make asan` → `make` went from a ~90 s
+  full rebuild to a 0.2 s relink; touching `vm.c` recompiles one TU;
+  touching `vm.h` recompiles exactly its 12 includers. Target names,
+  flags per variant, and output messages are unchanged. `pgo`/`coverage`
+  (whole-program by nature) and `build.sh` now `rm -f` the alias first
+  so they write a fresh regular file rather than truncating the shared
+  inode under a variant. The fingerprint guard stays: re-pointing the
+  alias or relinking the same variant mid-suite is still a mid-run swap,
+  and the guard is what catches it (the guard's stat now uses `-L` so
+  its metadata half describes the same file its cksum half reads) — what
+  is retired is the cross-variant half of the prohibition, not the
+  guard.
+
 ### Fixed
 
 - **The `ValType` switches are now exhaustive too, closing out the #738

@@ -46,7 +46,95 @@ LSP_BINARY  := $(SRC_DIR)/eigenlsp
 DAP_SOURCES := $(SRC_DIR)/eigsdap.c $(SRC_DIR)/tape_read.c $(filter-out $(CLI_ONLY),$(SOURCES))
 DAP_BINARY  := $(SRC_DIR)/eigsdap
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke asan valgrind pgo freestanding-check freestanding-libc-diff asan-http print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http print-%
+
+# ---- Per-variant objdir engine (#740) -------------------------------------
+# The engine's rules are defined before `all`, so pin the default goal.
+.DEFAULT_GOAL := all
+# Every runtime variant compiles into its own build/<variant>/ objdir with
+# -MMD/-MP header-dependency tracking, links build/<variant>/eigenscript,
+# and the phony target re-points src/eigenscript at it (hard link — see
+# RELINK below for why not a symlink). So: variants COEXIST (make asan no
+# longer destroys the release binary — and switching back is an instant
+# relink, not a 22-TU rebuild), and rebuilds within a variant are
+# incremental. The alias keeps every existing consumer of src/eigenscript
+# working unchanged. The suite's fingerprint guard (#681) still applies:
+# re-pointing the alias or relinking the same variant mid-suite is caught
+# at the next section seam.
+VERDEF   := -DEIGENSCRIPT_VERSION='"$(VERSION)"'
+DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
+MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
+ASAN_FLAGS := -fsanitize=address,undefined -Werror=switch -g -O1
+
+SRC_V_release := $(SOURCES)
+FLAGS_release := $(CFLAGS) $(DEFS_OFF) $(VERDEF)
+LIBS_release  := $(LDFLAGS)
+
+SRC_V_full := $(FULL_SOURCES)
+FLAGS_full := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
+LIBS_full  := $(LDFLAGS) -lpq
+
+SRC_V_http := $(SOURCES) $(SRC_DIR)/ext_http.c $(MODEL_SRC)
+FLAGS_http := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 $(VERDEF)
+LIBS_http  := $(LDFLAGS)
+
+SRC_V_zlib := $(SOURCES)
+FLAGS_zlib := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_ZLIB=1 $(VERDEF)
+LIBS_zlib  := $(LDFLAGS) -lz
+
+SRC_V_net := $(SOURCES) $(SRC_DIR)/ext_net.c
+FLAGS_net := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
+LIBS_net  := $(LDFLAGS)
+
+SRC_V_gfx := $(SOURCES) $(SRC_DIR)/ext_gfx.c
+FLAGS_gfx := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_gfx  := $(LDFLAGS) -ldl
+
+SRC_V_asan := $(SOURCES)
+FLAGS_asan := $(ASAN_FLAGS) $(DEFS_OFF) $(VERDEF)
+LIBS_asan  := -lm -lpthread
+
+SRC_V_asan-http := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(MODEL_SRC)
+FLAGS_asan-http := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
+LIBS_asan-http  := -lm -lpthread
+
+SRC_V_tsan := $(SOURCES)
+FLAGS_tsan := -fsanitize=thread -Werror=switch -g -O1 $(DEFS_OFF) $(VERDEF)
+LIBS_tsan  := -lm -lpthread
+
+SRC_V_valgrind := $(SOURCES)
+FLAGS_valgrind := -Werror=switch -g -O1 -DEIGS_VALGRIND $(DEFS_OFF) $(VERDEF)
+LIBS_valgrind  := -lm -lpthread
+
+SRC_V_poison := $(SOURCES)
+FLAGS_poison := -g -O1 -DEIGS_POISON $(DEFS_OFF) $(VERDEF)
+LIBS_poison  := -lm -lpthread
+
+VARIANTS := release full http zlib net gfx asan asan-http tsan valgrind poison
+
+# Objects depend on Makefile+VERSION so a flag or version-string change
+# rebuilds; header edits are covered by the generated .d files.
+define VARIANT_RULES
+OBJ_$(1) := $$(patsubst $(SRC_DIR)/%.c,build/$(1)/%.o,$$(SRC_V_$(1)))
+build/$(1)/%.o: $(SRC_DIR)/%.c Makefile VERSION | build/$(1)
+	$$(CC) $$(FLAGS_$(1)) -MMD -MP -c $$< -o $$@
+build/$(1)/eigenscript: $$(OBJ_$(1))
+	$$(CC) $$(FLAGS_$(1)) -o $$@ $$(OBJ_$(1)) $$(LIBS_$(1))
+build/$(1):
+	@mkdir -p $$@
+-include $$(OBJ_$(1):.o=.d)
+endef
+$(foreach V,$(VARIANTS),$(eval $(call VARIANT_RULES,$(V))))
+
+# The retarget lives in the phony targets below (not the link recipe) so
+# `make <variant>` always points src/eigenscript at that variant, even
+# when its binary was already up to date. HARD link, not symlink: the
+# runtime resolves lib/ relative to /proc/self/exe, which dereferences a
+# symlink to build/<variant>/ and would lose the executable-relative
+# stdlib; a hard link keeps the exec'd path at src/eigenscript.
+define RELINK
+@ln -f build/$(1)/eigenscript $(BINARY)
+endef
 
 # Introspection helper: `make print-SOURCES` echoes a variable's value.
 # tests/test_leak_guard.sh derives its ASan build source list from the
@@ -57,71 +145,37 @@ print-%:
 
 all: build
 
-build:
-	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		$(LDFLAGS)
-	@echo "EigenScript $(VERSION) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+build: build/release/eigenscript
+	$(call RELINK,release)
+	@echo "EigenScript $(VERSION) built. Binary: $$(du -sh build/release/eigenscript | cut -f1)"
 
-full:
-	$(CC) $(CFLAGS) -o $(BINARY) $(FULL_SOURCES) \
-		-I/usr/include/postgresql \
-		-DEIGENSCRIPT_EXT_NET=1 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		$(LDFLAGS) -lpq
-	@echo "EigenScript $(VERSION) (full) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+full: build/full/eigenscript
+	$(call RELINK,full)
+	@echo "EigenScript $(VERSION) (full) built. Binary: $$(du -sh build/full/eigenscript | cut -f1)"
 
 # Build with HTTP + model extensions but without DB (no libpq-dev required).
 # Useful for running HTTP test suites on systems without PostgreSQL headers.
-http:
-	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) \
-		$(SRC_DIR)/ext_http.c \
-		$(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c \
-		-DEIGENSCRIPT_EXT_HTTP=1 \
-		-DEIGENSCRIPT_EXT_MODEL=1 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		$(LDFLAGS)
-	@echo "EigenScript $(VERSION) (http+model, no db) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+http: build/http/eigenscript
+	$(call RELINK,http)
+	@echo "EigenScript $(VERSION) (http+model, no db) built. Binary: $$(du -sh build/http/eigenscript | cut -f1)"
 
 # Build with the DEFLATE codecs (inflate/deflate builtins, #684) linked
 # against the system zlib. Same opt-in pattern as `make http`: the
 # default build stays zero-dependency and the four builtins raise
 # "compiled without zlib support" there.
-zlib:
-	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_EXT_ZLIB=1 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		$(LDFLAGS) -lz
-	@echo "EigenScript $(VERSION) (zlib) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+zlib: build/zlib/eigenscript
+	$(call RELINK,zlib)
+	@echo "EigenScript $(VERSION) (zlib) built. Binary: $$(du -sh build/zlib/eigenscript | cut -f1)"
 
 # Raw TCP sockets on the trace tape (#414). Same opt-in pattern as gfx:
 # in no default build, no extra library needed (plain POSIX sockets).
-net:
-	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) $(SRC_DIR)/ext_net.c \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_EXT_NET=1 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		$(LDFLAGS)
-	@echo "EigenScript $(VERSION) (net) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+net: build/net/eigenscript
+	$(call RELINK,net)
+	@echo "EigenScript $(VERSION) (net) built. Binary: $$(du -sh build/net/eigenscript | cut -f1)"
 
-gfx:
-	$(CC) $(CFLAGS) -o $(BINARY) $(SOURCES) $(SRC_DIR)/ext_gfx.c \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_EXT_GFX=1 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		$(LDFLAGS) -ldl
-	@echo "EigenScript $(VERSION) (gfx) built. Binary: $$(du -sh $(BINARY) | cut -f1)"
+gfx: build/gfx/eigenscript
+	$(call RELINK,gfx)
+	@echo "EigenScript $(VERSION) (gfx) built. Binary: $$(du -sh build/gfx/eigenscript | cut -f1)"
 
 test: build
 	cd tests && bash run_all_tests.sh
@@ -212,13 +266,8 @@ embed-smoke: amalgamation
 # the normal -O2 build silently tolerates. ~2x slower; for testing only.
 # The full suite runs leak-clean, so leave leak detection on:
 #   make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
-asan:
-	$(CC) -fsanitize=address,undefined -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		-lm -lpthread
+asan: build/asan/eigenscript
+	$(call RELINK,asan)
 	@echo "EigenScript $(VERSION) (asan+ubsan) built. Binary: $(BINARY)"
 
 # ASan+UBSan over the EXTENSION surface — same variant as `make http`
@@ -233,28 +282,15 @@ asan:
 # would make this unbuildable on a machine without postgres. ext_db.c
 # therefore remains unsanitized — a separate, smaller gap.
 #   make asan-http && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
-asan-http:
-	$(CC) -fsanitize=address,undefined -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
-		$(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c \
-		$(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c \
-		-DEIGENSCRIPT_EXT_HTTP=1 \
-		-DEIGENSCRIPT_EXT_MODEL=1 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_EXT_NET=1 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		-lm -lpthread
+asan-http: build/asan-http/eigenscript
+	$(call RELINK,asan-http)
 	@echo "EigenScript $(VERSION) (asan+ubsan, http+model+net) built. Binary: $(BINARY)"
 
 # ThreadSanitizer build for the concurrency race gate (tests/test_tsan.sh).
 # Complements ASan (which is not run with the thread checker). Run the tests
 # under `setarch -R` — ThreadSanitizer needs ASLR disabled here (CLAUDE.md).
-tsan:
-	$(CC) -fsanitize=thread -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		-lm -lpthread
+tsan: build/tsan/eigenscript
+	$(call RELINK,tsan)
 	@echo "EigenScript $(VERSION) (tsan) built. Binary: $(BINARY)"
 
 # Plain -O1 -g minimal build for Valgrind/Memcheck (tests/valgrind_smoke.sh).
@@ -262,14 +298,8 @@ tsan:
 # complements ASan/UBSan/TSan (uninit reads, UAF, definite/indirect leaks) on a
 # system without instrumented libs. -O1 keeps optimizer-induced false positives
 # down while giving usable stacks. Same minimal extension surface as asan.
-valgrind:
-	$(CC) -Werror=switch -g -O1 -o $(BINARY) $(SOURCES) \
-		-DEIGS_VALGRIND \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		-lm -lpthread
+valgrind: build/valgrind/eigenscript
+	$(call RELINK,valgrind)
 	@echo "EigenScript $(VERSION) (valgrind -O1 -g) built. Binary: $(BINARY)"
 
 # Uninitialized-read hunter (the EigenOS #UD heisenbug class, see
@@ -279,14 +309,8 @@ valgrind:
 # benign zero pages. Run the suite against it, with the raw-malloc boundary
 # poisoned too:
 #   make poison && cd tests && MALLOC_PERTURB_=170 bash run_all_tests.sh
-poison:
-	$(CC) -g -O1 -o $(BINARY) $(SOURCES) \
-		-DEIGS_POISON \
-		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
-		-DEIGENSCRIPT_EXT_DB=0 \
-		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
-		-lm -lpthread
+poison: build/poison/eigenscript
+	$(call RELINK,poison)
 	@echo "EigenScript $(VERSION) (poison 0xAA -O1 -g) built. Binary: $(BINARY)"
 
 # Profile-guided optimization. Builds an instrumented binary, runs the
@@ -298,6 +322,7 @@ PGO_DIR ?= /tmp/eigs-pgo
 PGO_RUN ?= cd $(HOME)/DMG && $(CURDIR)/$(BINARY) dmg.eigs roms/cpu_instrs.gb --cycles 200000 >/dev/null
 pgo:
 	@rm -rf $(PGO_DIR) && mkdir -p $(PGO_DIR)
+	@rm -f $(BINARY)   # may be a variant symlink — never write through it
 	$(CC) $(CFLAGS) -fprofile-generate=$(PGO_DIR) -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -330,6 +355,7 @@ coverage: coverage-clean
 			-DEIGENSCRIPT_EXT_DB=0 \
 			-DEIGENSCRIPT_VERSION='"$(VERSION)"' || exit 1; \
 	done
+	@rm -f $(BINARY)   # may be a variant symlink — never write through it
 	$(CC) --coverage -o $(BINARY) $(SOURCES:.c=.o) $(LDFLAGS)
 	-cd tests && bash run_all_tests.sh > /dev/null 2>&1 || true
 	@cd $(SRC_DIR) && gcov -n -b $(notdir $(SOURCES)) > ../coverage.txt 2>&1 || true
