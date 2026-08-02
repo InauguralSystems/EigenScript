@@ -46,6 +46,31 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **Host-only builtins moved to one whole-TU-gated file,
+  `src/builtins_host.c` (#741).** `EIGENSCRIPT_FREESTANDING` was carved
+  into `builtins.c` inline — 52 `#ifdef` blocks gating ~1,500 lines, with
+  host-only builtins interleaved among portable ones, so the only feedback
+  that a new builtin had leaked a host dependency was the freestanding
+  symbol gate failing on a stray libc import. Everything needing a real OS
+  underneath — filesystem (`read_text`/`write_bytes`/`ls`/… and the module
+  resolver's host arm), subprocess (`exec_capture`, the `proc_*` family),
+  terminal raw mode, POSIX regex (`match`/`match_all`/`regex_replace`),
+  streams, `random_hex`, `build_corpus`, `read_file_util` — now lives in
+  `builtins_host.c` behind a single `#if` (the `ext_store.c` pattern:
+  under the profile the TU compiles to a no-op `register_host_builtins`
+  plus the resolver stub). `builtins.c` keeps 5 conditional sites, all
+  genuine dual-behavior carve-outs (glibc allocator introspection, the
+  `getpid` seed term, `try_parse`'s stderr fd-plumbing), and its
+  registration table calls the host registrar unconditionally inside the
+  `[0, g_builtin_binding_count)` builtin band. Zero behavior change under
+  the host profile; the freestanding surface is byte-identical (both
+  `freestanding_check.sh` stages pass unchanged, allowlist untouched). A
+  builtin that quietly grows a host dependency now fails the symbol gate
+  by NAME (`builtin_foo` undefined in the profile) instead of by stray
+  import, and the fix is structural — define it in the host TU. The
+  matching extraction for `lint.c`'s 6 blocks (the E003 binding base,
+  `--api`, `check_undefined_names`) is tracked separately.
+
 - **Build variants now coexist: per-variant objdirs with dependency
   tracking (#740).** Every runtime variant (`build`/`full`/`http`/`zlib`/
   `net`/`gfx`/`asan`/`asan-http`/`tsan`/`valgrind`/`poison`) was a single

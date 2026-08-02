@@ -199,7 +199,12 @@ DROP rows above name: the filesystem builtins (incl. `load_file`/`import`,
 which raise a profile-specific error), subprocess, terminal raw mode, libc
 regex (route: EigenRegex's `regex_compat`), the page store, the trace-tape
 file sinks, and the JIT (`EIGS_JIT_ENABLED` gates every arch check;
-interpreter-only until the `map_exec` root exists). The entry point is
+interpreter-only until the `map_exec` root exists). The host-only builtins
+live in one whole-TU-gated file, `src/builtins_host.c` (#741, the
+`ext_store.c` pattern — under the profile it compiles to a no-op registrar
+plus the resolver stub), so the drop is a single gate rather than ~50
+scattered `#ifdef` pairs, and a builtin that grows a host dependency
+belongs there by construction. The entry point is
 `eigs_embed.h` with **source strings** — `main.c` (the POSIX CLI) is not part
 of the profile.
 
