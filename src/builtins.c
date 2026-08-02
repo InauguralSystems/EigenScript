@@ -1059,6 +1059,14 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
     while (s[*pos] && s[*pos] != '"') {
         if (s[*pos] == '\\') {
             (*pos)++;
+            /* #776: a backslash as the final byte leaves s[*pos] on the NUL
+             * terminator. Stop here — the default arm would append it and the
+             * loop-bottom (*pos)++ would step past the NUL, so the loop guard
+             * reads one byte off the end of the buffer (heap overflow). An
+             * escape with nothing after it is truncation: the unterminated
+             * string check below then raises, exactly as in the #304 lexer
+             * fix one layer down. */
+            if (s[*pos] == '\0') break;
             switch (s[*pos]) {
                 case '"': strbuf_append_char(&buf, '"'); break;
                 case '\\': strbuf_append_char(&buf, '\\'); break;
