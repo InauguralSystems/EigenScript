@@ -26,18 +26,24 @@ EIGS_TMO=""
 if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout $EIGS_TEST_TIMEOUT"
 elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIMEOUT"; fi
 
-# Binary fingerprint guard (#681). All build variants write to src/eigenscript;
-# a rebuild while the suite is running swaps the binary under us and invalidates
-# the tally. Record a fingerprint at suite start and re-check at section seams.
+# Binary fingerprint guard (#681). src/eigenscript is a hard link to the
+# last `make` variant target (#740); re-pointing it mid-suite — or relinking
+# the same variant — swaps the binary under us and invalidates the tally.
+# Record a fingerprint at suite start and re-check at section seams. (stat
+# -L and the symlink-aware [99d] restore below cost nothing on a hard link
+# and keep the guard correct if the alias is ever a symlink.)
 EIGS_BIN="./eigenscript"
 
 eigs_binary_fingerprint() {
+    # -L: dereference — cksum reads through a symlink, so the size/mtime
+    # half must describe the same file the cksum half does (#740 made
+    # src/eigenscript a symlink to build/<variant>/eigenscript).
     local cksum size mtime
     cksum=$(cksum "$EIGS_BIN")
-    if stat -c '%s %Y' "$EIGS_BIN" >/dev/null 2>&1; then
-        read -r size mtime <<<"$(stat -c '%s %Y' "$EIGS_BIN")"
+    if stat -L -c '%s %Y' "$EIGS_BIN" >/dev/null 2>&1; then
+        read -r size mtime <<<"$(stat -L -c '%s %Y' "$EIGS_BIN")"
     else
-        read -r size mtime <<<"$(stat -f '%z %m' "$EIGS_BIN")"
+        read -r size mtime <<<"$(stat -L -f '%z %m' "$EIGS_BIN")"
     fi
     printf '%s %s %s\n' "$cksum" "$size" "$mtime"
 }
@@ -3892,6 +3898,10 @@ else
     export -f eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok derive_count
     export EIGS_BIN EIGS_TMO
     SELFTEST_BIN_BAK="${EIGS_BIN}.orig"
+    # If the binary is the #740 variant symlink, remember its target so the
+    # restore can re-create the link (the swap's mv replaces it with a
+    # regular file; the link's target file itself is never touched).
+    SELFTEST_LINK_TARGET=$(readlink "$EIGS_BIN" 2>/dev/null || true)
     cp -p "$EIGS_BIN" "$SELFTEST_BIN_BAK"
     # Background: wait a moment, then replace the binary with a modified copy.
     (
@@ -3912,7 +3922,12 @@ else
     SELFTEST_RC=$?
     wait "$SWAP_PID" 2>/dev/null || true
     # Always restore the original binary before the suite continues.
-    mv "$SELFTEST_BIN_BAK" "$EIGS_BIN"
+    if [ -n "$SELFTEST_LINK_TARGET" ]; then
+        rm -f "$EIGS_BIN" "$SELFTEST_BIN_BAK"
+        ln -s "$SELFTEST_LINK_TARGET" "$EIGS_BIN"
+    else
+        mv "$SELFTEST_BIN_BAK" "$EIGS_BIN"
+    fi
     export -fn eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok derive_count
     if [ "$SELFTEST_RC" -ne 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
         PASS=$((PASS + 1))

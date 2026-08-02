@@ -50,8 +50,11 @@ iteration, or a collector that quietly stops working).
   `make asan-http` (ext_http + model under ASan/UBSan; CI runs the suite that
   way, and the HTTP sections are probe-gated so they pull in automatically).
   Same for `ext_gfx.c` — in **no** default build; compile-check with
-  `make gfx`. All variants land on `src/eigenscript`, so never rebuild one
-  while a suite run against another is in flight.
+  `make gfx`. Variants coexist in per-variant `build/<variant>/` objdirs
+  (#740); `src/eigenscript` is a hard link to the last-built one, so a
+  rebuild no longer destroys another variant's binary — but running any
+  `make` variant target mid-suite still re-points the alias under the
+  suite (the #681 guard catches it).
 - **A per-request leak in `ext_http.c` will not be caught by any sanitizer
   gate.** LeakSanitizer runs atexit, and the server is torn down with `kill`
   against no SIGTERM handler, so LSan never runs in the server process —

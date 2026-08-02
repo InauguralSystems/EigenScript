@@ -31,9 +31,9 @@ ours onto the new main. Rebasing our own costs nothing; asking them does. (Only
 ## Build & test
 
 ```
-make            # release build -> src/eigenscript (HTTP/MODEL/DB off)
+make            # release build -> build/release/, src/eigenscript hard-links to it (HTTP/MODEL/DB off)
 make test       # build + full suite (tests/run_all_tests.sh)
-make asan       # ASan+UBSan build (same binary path!) — extensions OFF
+make asan       # ASan+UBSan build — extensions OFF
 make asan-http  # ASan+UBSan *with* ext_http+model (CI gate; leaks still need RSS, see #731)
 make http       # http+model variant — run tests/test_http_server.sh
 make zlib       # DEFLATE codecs (inflate/deflate builtins) via system zlib (-lz)
@@ -69,7 +69,14 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
   transition, and the JIT counters / OSR / inline-cache writes / trace-line are
   gated off under MT, name hashes precomputed at compile time. ThreadSanitizer
   here needs `setarch -R` to disable ASLR.)
-- `make asan` overwrites `src/eigenscript` — rebuild with `make` before timing.
+- Variants build into per-variant `build/<variant>/` objdirs (#740) and
+  coexist; `src/eigenscript` is a hard link to the last `make` target
+  (hard, not symbolic — `/proc/self/exe`-relative stdlib resolution must
+  keep seeing `src/`), so switching variants is an instant relink (`make`
+  after `make asan` costs ~0.2s, not a rebuild). Don't run any `make`
+  variant target while a suite is in flight — it re-points the alias
+  under the suite (the #681 fingerprint guard catches it at the next
+  section seam).
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
   (dispatch-table interpreter shape, the DMG/cpu_instrs stand-in),
   `tests/bench_idxset.eigs` (fn-local buffer/list write loop — one JIT thunk,

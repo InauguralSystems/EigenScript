@@ -31,6 +31,12 @@ fi
 # JIT_FLAGS=-DEIGENSCRIPT_JIT_FORCE_OFF=1`).
 JIT_FLAGS=""
 
+# The Makefile's objdir engine (#740) leaves src/eigenscript as a hard link
+# to build/<variant>/eigenscript. Remove the name before compiling so
+# build.sh writes a fresh file instead of truncating the shared inode under
+# that variant's binary.
+rm -f eigenscript
+
 if [ "$1" = "lsp" ]; then
     # Language server (src/eigenlsp) — the editor-intelligence half of the
     # toolchain. Links eigenlsp.c against the runtime (SOURCES minus the
