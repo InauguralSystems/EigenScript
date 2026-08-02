@@ -9,12 +9,6 @@
 #include "vm.h"   /* EigsChunk layout: the cycle collector traverses
                    * fn -> chunk -> env_cache / functions[] edges */
 #include <pthread.h>
-#if EIGENSCRIPT_EXT_DB
-#include "ext_db_internal.h"
-#endif
-#if EIGENSCRIPT_EXT_MODEL
-#include "model_internal.h"
-#endif
 
 /* #298 follow-up: surface use-after-recycle on the per-thread Value/Env
  * freelists to Valgrind. A num/env whose refcount hits 0 is recycled onto a
