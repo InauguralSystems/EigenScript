@@ -110,7 +110,9 @@ static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
             case VAL_TEXT_BUILDER:
                 snprintf(buf, nbuf, "<text-builder:%zu>", v->data.text_builder.len); break;
             case VAL_JSON_RAW: snprintf(buf, nbuf, "<json-raw>"); break;
-            default:         snprintf(buf, nbuf, "null"); break;
+            /* No `default:` — -Werror=switch (Makefile CFLAGS) forces a new
+             * ValType to choose its observer-dump rendering here. */
+            case VAL_NULL:   snprintf(buf, nbuf, "null"); break;
         }
         return;
     }
@@ -4912,7 +4914,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             case VAL_LIST:   len = target->data.list.count; break;
             case VAL_STR:    len = (int)strlen(target->data.str); break;
             case VAL_BUFFER: len = target->data.buffer.count; break;
-            default:
+            /* Not sliceable. Enumerated rather than covered by a `default:`
+             * so -Werror=switch forces a new ValType to choose here. */
+            case VAL_NUM: case VAL_FN: case VAL_BUILTIN: case VAL_NULL:
+            case VAL_JSON_RAW: case VAL_DICT: case VAL_TEXT_BUILDER:
                 rt_error(EK_TYPE, g_vm.current_line, "cannot slice %s",
                               val_type_name(target->type));
                 slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
