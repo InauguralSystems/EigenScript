@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-08-03
+
 ### Fixed
 
 - **The temporal assignment history is bounded, and it no longer arms on
@@ -44,7 +46,20 @@ All notable changes to EigenScript are documented here.
     names, and assignments to any other name record nothing. `state_at`
     (it queries every name), an open tape, and turning recording on
     without naming a name (the REPL, `record_history of 1`) still arm the
-    wildcard. The dead-code repro went 53,120 kB -> 2,944 kB.
+    wildcard. The dead-code repro went 53,120 kB -> 2,944 kB. Under
+    `spawn` the narrowing is deliberately given up: the armed-name set is
+    a process-global array the compiler grows with `realloc`, and a worker
+    calling `eval`/`load_file` compiles *concurrently* with other workers
+    recording assignments, so the realloc could land under a reader
+    walking the array. `spawn` therefore widens to the wildcard as its
+    last single-threaded act, before the first `pthread_create` — the
+    value is published to every worker by the same happens-before #297
+    relies on, and the name array is never touched again. It widens
+    *without* switching recording on, so a program with no temporal query
+    does not start recording just because it made a thread (verified flat
+    at the 2,944 kB floor from 200k to 1.6M iterations). Narrowing was
+    only ever a per-assignment CPU filter; the history is bounded either
+    way.
 
   **Semantics are unchanged and the tape is untouched.** The pruning drops
   only entries no query could reach, which is why
@@ -60,6 +75,20 @@ All notable changes to EigenScript are documented here.
   (semantics) and [70d] (`tests/test_temporal_memory.sh` — peak RSS
   ceiling *and* flatness across an 8x iteration range, which goes red on
   the pre-fix binary and on an answer-preserving-but-unbounded prune).
+  [70d] probes for GNU `/usr/bin/time -f %M` *and* `/proc` and SKIPs
+  where either is missing (BSD `time` has no `%M` and `ulimit -v` is a
+  no-op there), because its thresholds are calibrated against Linux
+  VmRSS accounting — so it is a Linux-only gate, verified to skip on a
+  BSD-`time` stub and to still fail loudly on a genuinely missing binary.
+
+  **Consumers should take this release.** This is a machine-freeze-class
+  bug rather than a slow leak: on a 4 GB box the kernel thrashed instead
+  of OOM-killing, so the machine had to be power-cycled. Every runtime
+  through v0.35.0 is affected, and merely *mentioning* `prev of`, an
+  `at`-qualified interrogative or `state_at` anywhere in a program —
+  including in code that is never executed — was enough to trigger it.
+  Workarounds pinned in place to dodge it (`dynamics` ships a
+  `record_history of 0`) can be dropped once pinned at v0.35.1.
 
 ## [0.35.0] - 2026-08-02
 
