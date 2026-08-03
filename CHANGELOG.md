@@ -2,6 +2,65 @@
 
 All notable changes to EigenScript are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **The temporal assignment history is bounded, and it no longer arms on
+  dead code (#827).** The per-name history that backs `prev of x`,
+  `<kw> is x at <line>` and `state_at` was append-only, uncapped, and held
+  a *reference* to every value it recorded. Any long-running program that
+  so much as mentioned `prev of` grew linearly until the machine died —
+  `dynamics`' orbit lab retained 3.9 MB per rendered frame and hit 859 MB
+  by frame 300; the minimal repro froze a 4 GB box for ~20 minutes with no
+  OOM kill (power-cycle to recover). LeakSanitizer never saw a byte of it:
+  every allocation was reachable from the history table and freed at exit,
+  so this was unbounded *retention*, not a leak. Two independent defects,
+  both fixed, with **no change to any temporal answer**:
+  - **Unbounded retention.** The history is now pruned at append time,
+    because a backward query makes most entries provably unreachable:
+    entry `i` is dead exactly when some later entry `j` has
+    `line[j] <= line[i]` (any `L` that admits `i` admits `j` too, and `j`
+    wins for being later). What survives are the strict suffix minima of
+    the line sequence, so the live entries are line-sorted and can never
+    outnumber the distinct source lines that assign that name — bounded by
+    program *text*, not by runtime. A loop reassigning one name a billion
+    times now keeps one entry and pins one value. Two facts pruning would
+    otherwise lose are carried explicitly so the answers are identical:
+    each live entry stores its own execution-order predecessor (which is
+    what `prev of x at L` returns, and it is usually a pruned entry), and
+    a per-name `(line -> count)` histogram carries `when is x at L`, which
+    counts pruned assignments. Backward queries became a binary search
+    over the sorted live array, retiring the periodic line-floor segment
+    index that existed only to make scanning an unbounded array
+    survivable. Measured, 1.6M iterations: a live `prev of` went
+    203,008 kB -> 2,944 kB, a live `at` query 53,248 kB -> 2,944 kB, both
+    now flat in iteration count and equal to the no-temporal-query floor.
+  - **Whole-program arming.** `g_trace_hist` was set by a source scan, so
+    a `prev of v` inside a function nothing ever called switched on
+    recording for every name in the program. Both history-reading forms
+    compile to a NAMED opcode carrying a compile-time identifier, so the
+    reachable name set is exactly known: the compiler now arms only those
+    names, and assignments to any other name record nothing. `state_at`
+    (it queries every name), an open tape, and turning recording on
+    without naming a name (the REPL, `record_history of 1`) still arm the
+    wildcard. The dead-code repro went 53,120 kB -> 2,944 kB.
+
+  **Semantics are unchanged and the tape is untouched.** The pruning drops
+  only entries no query could reach, which is why
+  `tests/test_temporal_pruning.eigs` — including the backward-line-jump
+  counterexample that a line-keyed table gets wrong — passes on the
+  pre-fix binary too, and why a 200-seed differential fuzz of every query
+  form (`what`/`who`/`when`/`where`/`why`/`how`/`prev`, with and without
+  `at`, plus `state_at`) against the pre-fix binary shows zero
+  divergences on both execution tiers. `A` records are written
+  independently of the history table, so tapes recorded before and after
+  are byte-identical and a pre-fix tape replays byte-identically on the
+  fixed binary — no format-version bump (#411). New gates: suite [70c]
+  (semantics) and [70d] (`tests/test_temporal_memory.sh` — peak RSS
+  ceiling *and* flatness across an 8x iteration range, which goes red on
+  the pre-fix binary and on an answer-preserving-but-unbounded prune).
+
 ## [0.35.0] - 2026-08-02
 
 ### Added

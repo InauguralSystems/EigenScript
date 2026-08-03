@@ -1,0 +1,100 @@
+# test_temporal_pruning.eigs — #827.
+#
+# The assignment history is reachability-pruned (trace.c): an entry that no
+# backward query could ever reach is dropped at append time, which is what
+# bounds the history. These checks pin the four cases a naive prune breaks.
+#
+# LINE-NUMBER SENSITIVE: every `at <line>` below hardcodes a line of this
+# file. Append new checks at the END, before the final if/else, and re-verify
+# the annotated line numbers with `grep -n`.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+# ---- (1) The backward-jump counterexample.
+#
+# `at L` walks the history TEMPORALLY BACKWARD — the most recent assignment
+# whose line is <= L — which is NOT "the value at the greatest line <= L".
+# `back` is assigned at line 38, and then again at the LOWER line 32 (calling
+# a function defined above the call site). A line-keyed table would answer the
+# line-38 value for L=40; the correct answer is the line-32 one, because it
+# happened later.
+define bump() as:                      # line 31
+    back is 200                        # line 32  <- assigned SECOND, lower line
+
+back is 100                            # line 34  (declare before the call)
+bump of 0                              # line 35
+check of ["backward-jump seeds", (what is back at 40) == 200]
+
+back is 300                            # line 38  <- assigned THIRD, higher line
+bump of 0                              # line 39  <- assigns at line 32
+
+check of ["backward: latest wins at L=40", (what is back at 40) == 200]
+check of ["backward: latest wins at L=34", (what is back at 34) == 200]
+check of ["backward: latest wins at L=33", (what is back at 33) == 200]
+check of ["backward: miss before first", (what is back at 31) == null]
+check of ["backward: when counts all", (when is back at 40) == 4]
+check of ["backward: when below line 34", (when is back at 33) == 2]
+
+# ---- (2) `prev of x at L` after the predecessor was pruned.
+#
+# `r` is assigned three times at the SAME line (57) inside a loop. Only the
+# last of those is reachable, so the middle one is pruned — but it is exactly
+# the answer `prev of r at 60` must give, so each surviving entry has to carry
+# its own execution-order predecessor.
+r is 0
+j is 0
+loop while j < 3:
+    r is (j + 1) * 7                   # line 57: 7, 14, 21
+    j is j + 1
+
+check of ["pruned prev: at line", (prev of r at 60) == 14]
+check of ["pruned prev: live chain", (prev of r) == 14]
+check of ["pruned what: latest", (what is r at 60) == 21]
+check of ["pruned when: counts pruned", (when is r at 60) == 4]
+
+# ---- (3) A long same-line run must stay exact (and must not grow).
+big is 0
+k is 0
+loop while k < 5000:
+    big is k                           # line 69
+    k is k + 1
+
+check of ["long run: what", (what is big at 75) == 4999]
+check of ["long run: prev", (prev of big at 75) == 4998]
+check of ["long run: when", (when is big at 75) == 5001]
+check of ["long run: miss before", (what is big at 65) == null]
+bs is state_at of 75
+check of ["long run: state_at", bs["big"] == 4999]
+
+# ---- (4) Alternating lines — the case a same-line-run collapse would miss.
+#
+# `alt` alternates between lines 85 and 87. Only the last pair is reachable.
+alt is 0
+m is 0
+loop while m < 400:
+    alt is m                           # line 85
+    # (this comment holds line 86 so `alt` alternates 85/87)
+    alt is m + 1000                    # line 87
+    m is m + 1
+
+check of ["alt: at 85", (what is alt at 85) == 399]
+check of ["alt: at 87", (what is alt at 87) == 1399]
+check of ["alt: prev at 87", (prev of alt at 87) == 399]
+check of ["alt: prev at 85", (prev of alt at 85) == 1398]
+check of ["alt: when at 85", (when is alt at 85) == 401]
+check of ["alt: when at 87", (when is alt at 87) == 801]
+
+if fail_count == 0:
+    print of "All tests passed"
+else:
+    print of fail_count

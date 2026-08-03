@@ -69,33 +69,67 @@ int g_trace_current_line = 0;
  * not a debug-tape feature. Per-assign cost is ~one cache line read +
  * a pointer-equality compare. */
 
+/* ----- #827: the history is REACHABILITY-PRUNED, not append-only.
+ *
+ * Every backward query (`what/prev is x at L`, `state_at of L`) answers with
+ * the LATEST assignment whose line stamp is <= L — a temporal-backward walk,
+ * not "the greatest line <= L". That is the whole contract, and it makes most
+ * recorded entries provably unreachable:
+ *
+ *   entry i is dead  <=>  exists j > i with line[j] <= line[i]
+ *
+ * because any L that admits i (line[i] <= L) also admits the later j, and j
+ * wins for being later. The surviving entries are exactly the strict suffix
+ * minima of the line sequence, so read left-to-right their lines are STRICTLY
+ * INCREASING — and therefore the live history for one name can never exceed
+ * the number of distinct source lines that assign it. Bounded by program TEXT,
+ * independent of how long the program runs.
+ *
+ * Maintenance is one pop-while at append: a new entry stamped `line` kills
+ * exactly the trailing live entries whose line is >= it. Nothing that could
+ * ever have been an answer is dropped, so NO query changes its answer — the
+ * two facts the raw array carried that pruning would otherwise lose are kept
+ * explicitly:
+ *
+ *   - `prev of x at L` wants the value of the assignment immediately
+ *     preceding (in EXECUTION order) the one that answers L. That predecessor
+ *     is usually a pruned entry, so each live entry carries its own
+ *     `prev_value` — captured at append time, exact regardless of pruning.
+ *   - `when is x at L` wants the COUNT of assignments with line <= L, which
+ *     depends on the pruned entries too. Counting is order-independent, so a
+ *     per-name (line -> count) histogram carries it exactly. Its size is also
+ *     bounded by the number of distinct assigning lines.
+ *
+ * The observer snapshot (`where/why/how is x at L`) rides inside the live
+ * entry: it is patched onto the most recent entry by trace_record_obs, which
+ * always targets a live one (the newest entry is always live).
+ *
+ * Because the live array is sorted by line, the backward walk is a binary
+ * search — which replaced the old periodic line-floor segment index (that
+ * index existed only to make scanning an unbounded array survivable). */
 typedef struct {
     int      line;
     EigsSlot value;
+    EigsSlot prev_value;      /* value of the immediately preceding assign */
+    uint8_t  has_prev_value;
+    /* Observer-state snapshot, captured only while g_trace_obs_hist is set.
+     * obs_valid == 0 marks assigns whose slot had no observer state
+     * (untracked immediates, e.g. writes inside `unobserved` blocks) and
+     * every entry recorded before the flag flipped on mid-run (eval/REPL
+     * compiling a historical observer query). */
+    uint8_t  obs_valid;
+    double   entropy;
+    double   dH;
+    double   last_entropy;
 } HistoryEntry;
 
-/* Observer-state snapshot per assignment, captured only while
- * g_trace_obs_hist is set. Parallel to the history array: history[i]
- * pairs with obs[i - obs_start] when i >= obs_start (obs_start is the
- * history index of the first captured assign — the flag can flip on
- * mid-run when eval/REPL compiles a historical observer query).
- * valid == 0 marks assigns whose slot had no observer state (untracked
- * immediates, e.g. writes inside `unobserved` blocks). */
+/* (line -> assignment count) histogram, kept sorted by line so `when is x
+ * at L` is an exact sum over a bounded array. `count` is 64-bit: a hot loop
+ * can genuinely assign one line more than 2^31 times. */
 typedef struct {
-    double  entropy;
-    double  dH;
-    double  last_entropy;
-    uint8_t valid;
-} ObsHistEntry;
-
-/* Phase 4 snapshot cache: a periodic line-floor index over the history.
- * Segment k summarizes history[k<<HIST_SEG_SHIFT .. (k+1)<<HIST_SEG_SHIFT)
- * as the minimum line stamp in that range. Backward queries skip whole
- * segments whose floor exceeds the query line, turning the per-name scan
- * from O(H) into O(H/SEG + SEG). 64 entries/segment keeps the index at
- * ~1.5% of history size while bounding the residual scan at one segment. */
-#define HIST_SEG_SHIFT 6
-#define HIST_SEG       (1 << HIST_SEG_SHIFT)
+    int       line;
+    long long count;
+} LineCount;
 
 /* #739: the prev-table lives on EigsThread, not in a file static. It is keyed
  * by INTERNED NAME POINTER, and the intern table is itself per-thread
@@ -113,17 +147,80 @@ typedef struct TracePrevEntry {
     EigsSlot       current;
     uint8_t        has_current;
     uint8_t        has_prev;
-    uint8_t        seg_dead;    /* index alloc failed — it is stale; fall
-                                 * back to plain linear scan for this name */
-    HistoryEntry  *history;     /* append-only, indexed by assign order */
+    uint8_t        armed;       /* #827: this name is a compile-time target of
+                                 * some temporal query (or the wildcard is on) */
+    uint32_t       armed_gen;   /* g_arm_gen when `armed` was computed */
+    HistoryEntry  *history;     /* live entries only — line-sorted (see above) */
     int            hist_count;
     int            hist_cap;
-    int           *seg_min;     /* per-segment minimum line stamp */
-    int            seg_cap;
-    ObsHistEntry  *obs;         /* observer snapshots; see ObsHistEntry */
-    int            obs_start;
-    int            obs_cap;
+    LineCount     *lc;          /* (line -> count) histogram, sorted by line */
+    int            lc_count;
+    int            lc_cap;
 } PrevEntry;
+
+/* ----- #827 (defect A): per-name arming.
+ *
+ * `g_trace_hist` is a whole-program flag, so a `prev of v` inside a function
+ * that is never called used to switch on recording for EVERY name in the
+ * program. The set of names a temporal query can ever reach is known at
+ * compile time, though: `prev of x` and `<kw> is x at L` both compile to a
+ * NAMED opcode carrying the identifier, and only those named forms consult
+ * the history (the bare value form, OP_INTERROGATE, never does). So the
+ * compiler arms the names it actually mentions, and an assignment to any
+ * other name records nothing.
+ *
+ * Sound by construction: a name no temporal query names cannot be asked
+ * about, so skipping it cannot change an answer. Two things force the
+ * wildcard instead — `state_at` (queries every name) and a tape being open
+ * (EIGS_TRACE / an embed sink) — plus anything that turns recording on
+ * without naming a name (the REPL, `record_history of 1`).
+ *
+ * The set is process-global because it records compile-time facts, while the
+ * table it filters is per-thread (#739). `g_arm_gen` bumps whenever the set
+ * changes, so each PrevEntry caches its decision and rechecks only after a
+ * mid-run arming (eval / REPL / a later `record_history`). */
+static char   **g_arm_names = NULL;
+static int      g_arm_count = 0;
+static int      g_arm_cap   = 0;
+static int      g_arm_all   = 0;
+static uint32_t g_arm_gen   = 1;
+
+static int arm_set_has(const char *name) {
+    for (int i = 0; i < g_arm_count; i++)
+        if (strcmp(g_arm_names[i], name) == 0) return 1;
+    return 0;
+}
+
+void trace_arm_history_all(void) {
+    g_trace_hist = 1;
+    if (g_arm_all) return;
+    g_arm_all = 1;
+    g_arm_gen++;
+}
+
+void trace_arm_history_name(const char *name) {
+    g_trace_hist = 1;
+    if (!name || g_arm_all) return;
+    if (arm_set_has(name)) return;
+    if (g_arm_count >= g_arm_cap) {
+        int nc = g_arm_cap ? g_arm_cap * 2 : 8;
+        char **nn = realloc(g_arm_names, (size_t)nc * sizeof(char *));
+        if (!nn) { trace_arm_history_all(); return; }  /* OOM: never narrow */
+        g_arm_names = nn;
+        g_arm_cap = nc;
+    }
+    size_t len = strlen(name) + 1;
+    char *copy = malloc(len);
+    if (!copy) { trace_arm_history_all(); return; }    /* OOM: never narrow */
+    memcpy(copy, name, len);
+    g_arm_names[g_arm_count++] = copy;
+    g_arm_gen++;
+}
+
+void trace_history_disable(void) {
+    g_trace_hist = 0;
+    g_trace_obs_hist = 0;
+}
 
 /* g_prev_tab / g_prev_cap / g_prev_count are bridge macros onto EigsThread
  * (eigenscript.h), reached only with a thread attached. Every read path below
@@ -170,6 +267,35 @@ static void prev_grow(void) {
     g_prev_cap = new_cap;
 }
 
+/* Bump the (line -> count) histogram for `when is x at L`. Sorted insert;
+ * after the first few assigns this is a pure binary-search hit. */
+static void lc_bump(PrevEntry *e, int line) {
+    int lo = 0, hi = e->lc_count - 1;
+    while (lo <= hi) {
+        int mid = (int)(((unsigned)lo + (unsigned)hi) >> 1);
+        if (e->lc[mid].line == line) { e->lc[mid].count++; return; }
+        if (e->lc[mid].line < line) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    if (e->lc_count >= e->lc_cap) {
+        int nc = e->lc_cap ? e->lc_cap * 2 : 8;
+        LineCount *nl = realloc(e->lc, (size_t)nc * sizeof(LineCount));
+        if (!nl) return;   /* `when at L` under-counts rather than aborting */
+        e->lc = nl;
+        e->lc_cap = nc;
+    }
+    memmove(&e->lc[lo + 1], &e->lc[lo],
+            (size_t)(e->lc_count - lo) * sizeof(LineCount));
+    e->lc[lo].line  = line;
+    e->lc[lo].count = 1;
+    e->lc_count++;
+}
+
+static void hist_drop(HistoryEntry *h) {
+    slot_decref(h->value);
+    if (h->has_prev_value) slot_decref(h->prev_value);
+}
+
 static void prev_record_assign(const char *name, EigsSlot value) {
     if (!eigs_current || !name) return;
     if (g_prev_count * PREV_LOAD_DEN >= g_prev_cap * PREV_LOAD_NUM) {
@@ -181,6 +307,13 @@ static void prev_record_assign(const char *name, EigsSlot value) {
         e->name = name;
         g_prev_count++;
     }
+    /* #827 defect A: names no temporal query can name record nothing. */
+    if (__builtin_expect(e->armed_gen != g_arm_gen, 0)) {
+        e->armed_gen = g_arm_gen;
+        e->armed = (uint8_t)(g_arm_all || arm_set_has(name));
+    }
+    if (!e->armed) return;
+
     if (e->has_current) {
         /* Shift current -> prev; drop the old prev. */
         if (e->has_prev) slot_decref(e->prev);
@@ -191,8 +324,16 @@ static void prev_record_assign(const char *name, EigsSlot value) {
     e->current = value;
     e->has_current = 1;
 
-    /* Append to history for `at <line>` queries. Stamp with the
-     * current VM line as cached by trace_line. */
+    /* Stamp with the current VM line as cached by trace_line. */
+    int line = g_trace_current_line;
+    lc_bump(e, line);
+
+    /* Reserve BEFORE pruning, so an allocation failure leaves the history
+     * exactly as it was. Pruning first and then failing to append would
+     * retire entries that are only unreachable once the new one exists —
+     * turning an OOM into a stale (wrong) answer instead of an unchanged
+     * one. Capacity reserved for the pre-prune count always covers the
+     * post-prune count plus this entry, since pruning only shrinks. */
     if (e->hist_count >= e->hist_cap) {
         int new_cap = e->hist_cap ? e->hist_cap * 2 : 8;
         HistoryEntry *nh = realloc(e->history, (size_t)new_cap * sizeof(HistoryEntry));
@@ -200,55 +341,31 @@ static void prev_record_assign(const char *name, EigsSlot value) {
         e->history = nh;
         e->hist_cap = new_cap;
     }
+
+    /* #827 defect B: retire the entries this assignment makes unreachable —
+     * every trailing live entry stamped at or after `line` (see the header
+     * comment on HistoryEntry). This is what bounds the history. */
+    while (e->hist_count > 0 && e->history[e->hist_count - 1].line >= line) {
+        e->hist_count--;
+        hist_drop(&e->history[e->hist_count]);
+    }
+
+    HistoryEntry *h = &e->history[e->hist_count++];
     slot_incref(value);
-    int idx = e->hist_count;
-    e->history[idx].line  = g_trace_current_line;
-    e->history[idx].value = value;
-    e->hist_count++;
-
-    /* Maintain the periodic line-floor index. */
-    if (!e->seg_dead) {
-        int seg = idx >> HIST_SEG_SHIFT;
-        if (seg >= e->seg_cap) {
-            int nc = e->seg_cap ? e->seg_cap * 2 : 4;
-            int *ns = realloc(e->seg_min, (size_t)nc * sizeof(int));
-            if (!ns) {
-                e->seg_dead = 1;   /* keep history; queries go linear */
-            } else {
-                e->seg_min = ns;
-                e->seg_cap = nc;
-            }
-        }
-        if (!e->seg_dead) {
-            if ((idx & (HIST_SEG - 1)) == 0 || g_trace_current_line < e->seg_min[seg])
-                e->seg_min[seg] = g_trace_current_line;
-        }
+    h->line  = line;
+    h->value = value;
+    /* The execution-order predecessor — `prev of x at L`'s answer. The
+     * current->prev shift above already put it in e->prev. */
+    h->has_prev_value = e->has_prev;
+    if (e->has_prev) {
+        h->prev_value = e->prev;
+        slot_incref(h->prev_value);
     }
-
-    /* Observer-state capture for `where/why/how ... at <line>`. The
-     * OBSERVE op ran before this hook and left a tracked Value with
-     * carried-over (dirty) observer state on the stack, so forcing
-     * freshness here computes exactly what a live interrogative at
-     * this point would see. */
-    if (__builtin_expect(g_trace_obs_hist, 0)) {
-        if (!e->obs) e->obs_start = idx;
-        int oi = idx - e->obs_start;
-        if (oi >= 0) {
-            if (oi >= e->obs_cap) {
-                int nc = e->obs_cap ? e->obs_cap * 2 : 8;
-                while (nc <= oi) nc *= 2;
-                ObsHistEntry *no = realloc(e->obs, (size_t)nc * sizeof(ObsHistEntry));
-                if (no) { e->obs = no; e->obs_cap = nc; }
-            }
-            if (oi < e->obs_cap) {
-                /* #262 Step E: observer state lives on the Env slot, not the
-                 * Value — leave the snapshot empty here; OBSERVE_NAME_POST fills
-                 * it from the fresh slot via trace_record_obs (runs after the
-                 * SET that created this history entry). */
-                e->obs[oi].valid = 0;
-            }
-        }
-    }
+    /* #262 Step E: observer state lives on the Env slot, not the Value —
+     * leave the snapshot empty here; OBSERVE_NAME_POST fills it from the
+     * fresh slot via trace_record_obs (runs after the SET that created this
+     * entry), which is why the newest entry must stay live. */
+    h->obs_valid = 0;
 }
 
 /* #262 Phase-3 D2: patch the observer snapshot for `name`'s most recent
@@ -265,15 +382,12 @@ void trace_record_obs(const char *name, double entropy, double dH,
                       double last_entropy) {
     if (!eigs_current || !name || !g_prev_tab) return;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
-    if (!e->name || e->hist_count == 0 || !e->obs) return;
-    int idx = e->hist_count - 1;
-    int oi = idx - e->obs_start;
-    if (oi < 0 || oi >= e->obs_cap) return;
-    ObsHistEntry *o = &e->obs[oi];
-    o->entropy = entropy;
-    o->dH = dH;
-    o->last_entropy = last_entropy;
-    o->valid = 1;
+    if (!e->name || e->hist_count == 0) return;
+    HistoryEntry *h = &e->history[e->hist_count - 1];
+    h->entropy = entropy;
+    h->dH = dH;
+    h->last_entropy = last_entropy;
+    h->obs_valid = 1;
 }
 
 int trace_query_prev(const char *interned_name, EigsSlot *out) {
@@ -285,39 +399,21 @@ int trace_query_prev(const char *interned_name, EigsSlot *out) {
     return 1;
 }
 
-/* Walk history backward — entries are appended in execution order, so
- * the array is monotone-ish but not strictly sorted (a backward jump
- * could in principle re-execute earlier lines; the latest such write
- * is the answer, which is exactly what backward scan from the end
- * gives us).
+/* The latest live assignment stamped at or before `line`.
  *
- * The line-floor index prunes the walk: a segment whose minimum line
- * stamp exceeds the query line cannot contain a hit, so it is skipped
- * in one compare. When a segment's floor is ≤ the query line it holds
- * at least one qualifying entry, and the backward scan inside it finds
- * the latest one — which is the global answer, since all later segments
- * were ruled out. Loop-heavy histories (many assigns stamped with the
- * same few lines) skip in O(H/SEG); the residual scan is ≤ SEG entries. */
+ * The live array is sorted strictly increasing by line (#827 — see the
+ * HistoryEntry header), and pruning removed only entries that no query could
+ * reach, so the answer is the LAST entry with line <= L: one binary search.
+ * This replaces the old periodic line-floor segment index, which existed to
+ * make a backward scan over an unbounded append-only array survivable. */
 static int find_hist_idx_at_or_before(PrevEntry *e, int line) {
-    int i = e->hist_count - 1;
-    if (e->seg_min && !e->seg_dead) {
-        while (i >= 0) {
-            int seg = i >> HIST_SEG_SHIFT;
-            int seg_start = seg << HIST_SEG_SHIFT;
-            if (e->seg_min[seg] > line) {
-                i = seg_start - 1;
-                continue;
-            }
-            for (; i >= seg_start; i--) {
-                if (e->history[i].line <= line) return i;
-            }
-        }
-        return -1;
+    int lo = 0, hi = e->hist_count - 1, ans = -1;
+    while (lo <= hi) {
+        int mid = (int)(((unsigned)lo + (unsigned)hi) >> 1);
+        if (e->history[mid].line <= line) { ans = mid; lo = mid + 1; }
+        else hi = mid - 1;
     }
-    for (; i >= 0; i--) {
-        if (e->history[i].line <= line) return i;
-    }
-    return -1;
+    return ans;
 }
 
 int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out) {
@@ -333,44 +429,43 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
     }
 
     if (kind == 2) {
-        /* `when is x at L` — count of assignments with line ≤ L. */
-        int count = 0;
-        for (int i = 0; i < e->hist_count; i++) {
-            if (e->history[i].line <= line) count++;
-        }
+        /* `when is x at L` — count of assignments with line ≤ L. Summed
+         * from the histogram, which counts pruned assignments too (#827). */
+        long long count = 0;
+        for (int i = 0; i < e->lc_count && e->lc[i].line <= line; i++)
+            count += e->lc[i].count;
         *out = slot_from_num((double)count);
         return 1;
     }
 
     int idx = find_hist_idx_at_or_before(e, line);
     if (idx < 0) return 0;
+    HistoryEntry *h = &e->history[idx];
 
     if (kind >= 3 && kind <= 5) {
         /* where/why/how — read the observer snapshot captured at that
          * assign. Mirrors the live INTERROGATE formulas. */
-        if (!e->obs || idx < e->obs_start ||
-            idx - e->obs_start >= e->obs_cap) return 0;
-        ObsHistEntry *o = &e->obs[idx - e->obs_start];
-        if (!o->valid) return 0;
-        double r = (kind == 3) ? o->entropy
-                 : (kind == 4) ? o->dH
-                 : observer_settledness(o->dH);   /* #412: how = f(dH) */
+        if (!h->obs_valid) return 0;
+        double r = (kind == 3) ? h->entropy
+                 : (kind == 4) ? h->dH
+                 : observer_settledness(h->dH);   /* #412: how = f(dH) */
         *out = slot_from_num(r);
         return 1;
     }
 
     if (kind == 0) {
         /* `what is x at L` — value at most recent assign ≤ L. */
-        *out = e->history[idx].value;
+        *out = h->value;
         slot_incref(*out);
         return 1;
     }
 
     if (kind == 6) {
         /* `prev of x at L` — value at the assign immediately preceding
-         * the one that produced `x`'s state at L. */
-        if (idx < 1) return 0;
-        *out = e->history[idx - 1].value;
+         * the one that produced `x`'s state at L. Carried on the entry
+         * because that predecessor is usually pruned (#827). */
+        if (!h->has_prev_value) return 0;
+        *out = h->prev_value;
         slot_incref(*out);
         return 1;
     }
@@ -489,7 +584,7 @@ void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
         g_last_line = -1;
         g_line_dirty = 0;
         g_trace_enabled = 1;
-        g_trace_hist = 1;
+        trace_arm_history_all();   /* a tape records every name's assigns */
         emit_header();
     } else {
         sink_flush();
@@ -543,7 +638,7 @@ void trace_init(void) {
     }
     setvbuf(g_trace_fp, NULL, _IOFBF, 64 * 1024);
     g_trace_enabled = 1;
-    g_trace_hist = 1;
+    trace_arm_history_all();   /* a tape records every name's assigns */
     emit_header();
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }
@@ -1060,10 +1155,9 @@ void trace_thread_release(void) {
         if (e->has_prev)    slot_decref(e->prev);
         if (e->has_current) slot_decref(e->current);
         for (int j = 0; j < e->hist_count; j++)
-            slot_decref(e->history[j].value);
+            hist_drop(&e->history[j]);
         free(e->history);
-        free(e->seg_min);
-        free(e->obs);
+        free(e->lc);
     }
     free(tab);
 }
@@ -1086,6 +1180,18 @@ void trace_shutdown(void) {
     g_trace_enabled = 0;
 
     trace_thread_release();
+
+    /* #827: drop the compile-time armed-name set and fall back to the
+     * wildcard. Widening, never narrowing — a state opened after a
+     * process-wide teardown must not inherit a narrowing whose compile-time
+     * evidence has been freed. (Recording still needs g_trace_hist.) */
+    for (int i = 0; i < g_arm_count; i++) free(g_arm_names[i]);
+    free(g_arm_names);
+    g_arm_names = NULL;
+    g_arm_count = 0;
+    g_arm_cap = 0;
+    g_arm_all = 1;
+    g_arm_gen++;
 
     replay_shutdown();
 }
