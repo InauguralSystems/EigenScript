@@ -2766,8 +2766,8 @@ check_eigs_suite "dispatch rebind (module scope + paren form)" test_dispatch_reb
 check_eigs_suite "dispatch rebind (fn-body write-through)" test_dispatch_rebind_fn.eigs "All tests passed" 2
 check_eigs_suite "dispatch rebind (eval escape)" test_dispatch_rebind_eval.eigs "All tests passed" 1
 
-# [70] Temporal interrogatives (prev of, at, state_at) + the line-floor
-# index in trace.c (deep loop histories must skip segments correctly).
+# [70] Temporal interrogatives (prev of, at, state_at). Deep loop histories
+# must still answer early-line queries correctly after #827's pruning.
 echo "[70] Temporal Interrogatives (23 checks)"
 TT_OUTPUT=$(./eigenscript ../tests/test_temporal.eigs 2>&1); TT_OUTPUT_RC=$?
 if rc_ok "$TT_OUTPUT_RC" "$TT_OUTPUT" && echo "$TT_OUTPUT" | grep -q "All tests passed"; then
@@ -2808,6 +2808,35 @@ rm -f "$PRV_FILE"
 # Temporal correctness under JIT/OSR: a deep loop's `at`/`state_at` must not
 # freeze at the OSR point (OP_LINE must stamp g_trace_current_line in the JIT).
 check_eigs_suite "JIT temporal at/state_at under OSR (g_trace_current_line)" test_jit_temporal_osr.eigs "All tests passed" 2
+
+# [70c] #827 — the assignment history is reachability-pruned, so an entry no
+# backward query can reach is dropped at append time. These pin the four cases
+# a naive prune silently breaks: the backward-line-jump counterexample (`at L`
+# is a TEMPORAL walk, not "greatest line <= L"), `prev of x at L` when the
+# execution-order predecessor was pruned, `when is x at L` counting pruned
+# assignments, and alternating lines (which a same-line-run collapse misses).
+# These answers are UNCHANGED by #827 — the file passes on the pre-fix binary
+# too. It is the semantic half; the memory half is [70d].
+check_eigs_suite "temporal history pruning keeps every answer (#827)" test_temporal_pruning.eigs "All tests passed" 22
+
+# [70d] #827 — and the history must stay BOUNDED. Peak RSS at two iteration
+# counts 8x apart, ceiling + flatness, for a dead-code `prev of`, a live
+# `prev of`, and a live `at` query. Pre-fix this ran 203 MB and climbing; it
+# froze a 4 GB box. Not a leak — every byte was reachable and freed at exit,
+# so no sanitizer sees it. Skips on sanitizer builds (ASan overhead swamps it).
+echo "[70d] Temporal history is bounded (#827)"
+TMEM_OUTPUT=$(bash "$TESTS_DIR/test_temporal_memory.sh" 2>&1); TMEM_RC=$?
+echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|SKIP|baseline|dead|live|at_live)"
+TMEM_N=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: \([0-9]*\) passed.*/\1/p')
+TMEM_F=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: [0-9]* passed, \([0-9]*\) failed.*/\1/p')
+TMEM_N=${TMEM_N:-0}; TMEM_F=${TMEM_F:-0}
+TOTAL=$((TOTAL + TMEM_N + TMEM_F))
+PASS=$((PASS + TMEM_N))
+FAIL=$((FAIL + TMEM_F))
+if [ "$TMEM_RC" -ne 0 ]; then
+    echo "  FAIL: temporal history memory gate (rc=$TMEM_RC)"
+fi
+echo ""
 
 # [98] Cross-thread channel dict-key survival (#293).
 echo "[98] Cross-thread Channel Dict Keys (7 checks)"

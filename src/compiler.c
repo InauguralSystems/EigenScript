@@ -1908,7 +1908,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * seen; recording then starts at the aliasing program's own
          * temporal queries, or never. Documented in TRACE.md.) */
         if (strcmp(node->data.ident.name, "state_at") == 0)
-            g_trace_hist = 1;
+            trace_arm_history_all();   /* #827: state_at queries every name */
         /* Try local slot resolution for params (fast path) */
         if (c->enclosing) {
             uint32_t h = node->name_hash;
@@ -2842,9 +2842,18 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         ASTNode *at_expr = node->data.interrogate.at_expr;
 
         /* `prev of x` and every `at <line>` form answer from the
-         * per-assign history — enable recording. */
-        if (kind == 6 || at_expr)
-            g_trace_hist = 1;
+         * per-assign history — enable recording. #827: arm only the NAME
+         * this query can reach. Both history-reading forms compile to a
+         * NAMED opcode carrying a compile-time identifier, so the reachable
+         * set is exact; a non-ident operand never reads the history at all
+         * (bare OP_INTERROGATE) but arms the wildcard anyway — widening is
+         * the safe direction. */
+        if (kind == 6 || at_expr) {
+            if (expr && expr->type == AST_IDENT)
+                trace_arm_history_name(expr->data.ident.name);
+            else
+                trace_arm_history_all();
+        }
 
         if (at_expr && expr && expr->type == AST_IDENT) {
             /* `<kw> is x at <expr>` — operand value is not needed; only

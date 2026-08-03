@@ -42,8 +42,46 @@ extern int g_trace_enabled;
  * records) gates on this, so programs that never ask temporal questions
  * pay nothing per assign. Profiling the DMG-shaped dispatch workload
  * showed the always-on variant cost ~17.8M trace_line + 2.5M
- * trace_assign calls per 500k interpreted steps (~1/3 of runtime). */
+ * trace_assign calls per 500k interpreted steps (~1/3 of runtime).
+ *
+ * #827: this flag alone is too coarse — it is whole-program, so a
+ * `prev of v` inside a function nothing ever calls used to arm recording
+ * for every name. Set it only through the two arming entry points below,
+ * which also record WHICH names a temporal query can reach. Never write
+ * `g_trace_hist = 1` directly: an armed flag with no armed name records
+ * nothing. */
 extern int g_trace_hist;
+
+/* #827: turn history recording on.
+ *
+ * trace_arm_history_name(n) — narrow: record only assignments to `n` (plus
+ * any other armed name). Use when the query's target is a compile-time
+ * identifier, which is every form that actually reads the history
+ * (`prev of x`, `<kw> is x at L` — both compile to a NAMED opcode).
+ *
+ * trace_arm_history_all() — wildcard: record every name. Required by
+ * `state_at` (it queries all names), by an open tape, and by anything that
+ * turns recording on without naming a name (the REPL, `record_history of 1`).
+ * Widening is always safe; narrowing after the fact is not, so the arming
+ * set only ever grows within a session.
+ *
+ * trace_history_disable() — the `record_history of 0` opt-out; clears both
+ * g_trace_hist and g_trace_obs_hist.
+ *
+ * trace_arm_history_all_mt() — widen to the wildcard WITHOUT enabling
+ * recording. `spawn` calls this as its last single-threaded act: the armed-name
+ * set is process-global and the compiler grows it, so a worker running
+ * eval/load_file would realloc it under another worker reading it (a UAF, not
+ * a torn read). After widening, the filter reads only two ints and the name
+ * array is never touched again. A program with no temporal query must not
+ * start recording just because it made a thread, hence the separate entry
+ * point. The narrowing is a per-assign CPU optimization for the
+ * single-threaded long-running programs #827 was about; the history is
+ * bounded either way. */
+void trace_arm_history_all(void);
+void trace_arm_history_all_mt(void);
+void trace_arm_history_name(const char *name);
+void trace_history_disable(void);
 
 /* Source line currently being executed. Written by OP_LINE (a plain global
  * store — cheaper than a call; the JIT also stamps it via a flat-address
@@ -136,6 +174,12 @@ int trace_query_prev(const char *interned_name, EigsSlot *out);
  * value last bound to `name` at or before `line`. Returns 1 + fills
  * *out on hit, 0 on miss.
  *
+ * TEMPORAL-BACKWARD, not line-keyed: assign at line 12, then at line 5,
+ * then query at L=15 — the answer is the line-5 value, because it is the
+ * most recent assignment whose line is <= 15. A line-keyed map would
+ * wrongly answer with the line-12 value. #827's pruning preserves this
+ * exactly (see the HistoryEntry comment in trace.c).
+ *
  * `kind` mirrors the interrogative encoding:
  *   0 (what), 6 (prev)  → return historical slot
  *   2 (when)             → return assignment count up to that line (as immediate num)
@@ -152,13 +196,12 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
  * are omitted. Result is a fresh VAL_DICT owned by the caller; returns
  * NULL only on allocation failure.
  *
- * Cost is O(N · (H/64 + 64)) where N = distinct names and H = avg history
- * depth: each name's backward walk consults a periodic line-floor index
- * (min line stamp per 64-entry segment) that skips whole segments which
- * cannot contain a hit, then scans at most one segment linearly. Histories
- * dominated by loop re-assigns — the debugger-scrub worst case — skip in
- * O(H/64). If the index allocation ever fails the name falls back to the
- * plain O(H) backward scan. */
+ * Cost is O(N · log D) where N = distinct names and D = the number of
+ * distinct source lines that assign a given name: #827 prunes each name's
+ * history down to the entries a backward query can actually reach, leaving
+ * a line-sorted array that binary-searches. D is a property of the program
+ * TEXT, so neither the cost nor the memory grows with how long the program
+ * runs — a loop that reassigns one name a billion times keeps one entry. */
 struct Value *trace_state_at(int line);
 
 /* #736: 1 for a runtime-internal binding name (the `__name__` form the

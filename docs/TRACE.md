@@ -289,6 +289,18 @@ in-run time travel.
   *first* temporal query starts recording at that point, so assigns
   executed earlier are not visible to it. Aliasing `state_at` through
   a dict or eval-built string also hides it from the compiler's scan.
+- The gate is **per name**, not whole-program (#827). Both history-reading
+  forms — `prev of x` and `<kw> is x at L` — compile to a NAMED opcode
+  carrying a compile-time identifier, so the set of names a temporal query
+  can ever reach is known exactly, and assignments to any other name record
+  nothing. This is what stops a `prev of v` sitting in a function nothing
+  ever calls from taxing every assignment in the program. Three things
+  force the wildcard instead, because they can reach a name the compiler
+  cannot enumerate: `state_at` (it queries every tracked name), an open
+  tape (`EIGS_TRACE` or an embed sink), and turning recording on without
+  naming a name (the REPL, `record_history of 1`). Arming only ever widens
+  within a session — a name armed mid-run by `eval` starts recording from
+  that point, the same edge the whole-program gate already had.
 - When the compiled program contains a `where`/`why`/`how ... at`
   query, each history entry also stamps an observer snapshot
   (entropy, dH) at assign time, so the observer-derived
@@ -297,14 +309,42 @@ in-run time travel.
   no such query in the program, no per-assign cost.
 - `state_at of line` walks every tracked name's history backward and
   returns a dict of each binding's value at or before `line`.
-- Backward queries (`at`, `state_at`) are pruned by a periodic
-  line-floor index: each 64-entry segment of a name's history caches
-  its minimum line stamp, so segments that cannot contain a hit are
-  skipped in one compare. Loop-heavy histories — thousands of assigns
-  stamped with the same few lines, the debugger-scrub worst case —
-  resolve in O(history/64) instead of O(history). The index adds one
-  `int` per 64 history entries and an O(1) min-update per assign.
-- Per-assign cost of the history: one cache line + a pointer compare.
+- **A backward query is TEMPORAL, not line-keyed.** `<kw> is x at L`
+  returns the value from the most recent assignment whose line is `<= L`
+  — which is *not* "the value at the greatest line `<= L`". Assign at
+  line 12, then at line 5, then ask at L=15: the answer is the line-5
+  value, because that assignment happened later. Any representation that
+  keys the history by line answers the line-12 value and is wrong.
+- **The history is bounded by the program TEXT, not by runtime** (#827).
+  It used to be append-only and uncapped, holding a reference to every
+  value ever assigned: a program that merely mentioned `prev of` grew
+  linearly until the machine died. It is now pruned at append time, with
+  no change to any answer, because most entries are provably unreachable:
+
+      entry i is dead  <=>  some later entry j has line[j] <= line[i]
+
+  (any `L` that admits `i` also admits `j`, and `j` wins for being later).
+  What survives are the strict suffix minima of the line sequence, so the
+  live entries are sorted by line and can never outnumber the distinct
+  source lines that assign that name. A loop that reassigns one name a
+  billion times keeps ONE entry — and pins one value instead of a billion.
+  Two facts that pruning would otherwise lose are carried explicitly, so
+  the answers are identical: each live entry stores its own
+  execution-order predecessor (`prev of x at L` wants a value that is
+  usually pruned), and a per-name `(line -> count)` histogram carries
+  `when is x at L`, which counts pruned assignments too.
+  **Nothing about the tape changed**: `A` records are written by
+  `trace_assign` independently of the history table, one per assignment
+  as before, and an open tape arms every name anyway. Tapes recorded
+  before and after #827 are byte-identical, so no format-version bump
+  (#411) — this was a retention bug, not a format one.
+- Backward queries (`at`, `state_at`) are therefore a binary search over
+  a line-sorted array — `O(log D)` where `D` is the number of distinct
+  assigning lines. This replaced the periodic line-floor segment index,
+  which existed only to make scanning an unbounded array survivable.
+- Per-assign cost of the history: one cache line + a pointer compare,
+  plus the pop-while that retires the entries the new assignment kills
+  (amortized O(1) — an entry is pushed once and popped once).
 - **The history is per-thread; the tape is per-process** (#739). The
   history table is keyed by *interned name pointer*, and the intern
   table lives on `EigsThread`, so two threads' `x` were never the same

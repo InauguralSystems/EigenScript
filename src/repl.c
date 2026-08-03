@@ -585,7 +585,9 @@ static void repl_interactive(Env *env) {
      * by line — `x is 5` would record nothing and a later `prev of x` finds
      * no history. Interactive sessions record from the start (the piped
      * path is left untouched: byte-identical output is its contract). */
-    g_trace_hist = 1;
+    /* #827: a REPL line can name any binding assigned by an earlier line,
+     * so the narrow per-name arming cannot apply here — wildcard. */
+    trace_arm_history_all();
     g_trace_obs_hist = 1;
 
     hist_load();
