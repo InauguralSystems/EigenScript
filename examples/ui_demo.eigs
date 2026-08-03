@@ -363,21 +363,46 @@ ui.add_child of [extras_panel, reorder_list]
 data_panel is ui.panel of ["data_content", 0, 0, WINDOW_W, WINDOW_H - 92 - MENU_H]
 data_panel.border is null
 
-# Line chart with two series
+# x-y plot: two runs on their OWN x axes (run B logged every 3rd step),
+# plus event markers. Drag to pan, wheel to zoom about the cursor.
 demo_chart is ui.chart of ["demo_chart", 10, 10, 400, 200]
-loss_data is []
-acc_data is []
+run_a_x is []
+run_a_y is []
+run_b_x is []
+run_b_y is []
 for i in range of 30:
-    v is 2.0 - i * 0.05 + (sin of (i * 0.5)) * 0.2
-    append of [loss_data, v]
-    a is 0.3 + i * 0.02 + (cos of (i * 0.3)) * 0.05
-    append of [acc_data, a]
-demo_chart.series is [
-    {"label": "Loss", "data": loss_data, "color": [220, 80, 80]},
-    {"label": "Accuracy", "data": acc_data, "color": [80, 200, 120]}
-]
-demo_chart.x_label is "Epoch"
+    append of [run_a_x, i]
+    append of [run_a_y, 2.0 - i * 0.05 + (sin of (i * 0.5)) * 0.2]
+    if i % 3 == 0:
+        append of [run_b_x, i]
+        append of [run_b_y, 2.2 - i * 0.045 + (cos of (i * 0.4)) * 0.15]
+ui.chart_add_series of [demo_chart, ui.chart_series of ["run A", run_a_x, run_a_y, null]]
+ui.chart_add_series of [demo_chart, ui.chart_series of ["run B", run_b_x, run_b_y, null]]
+demo_chart.series[1].style is "both"
+ui.chart_add_marker of [demo_chart, ui.chart_marker of ["vline", 12, 0, "restart", [220, 120, 60]]]
+ui.chart_add_marker of [demo_chart, ui.chart_marker of ["hline", 0, 1.0, "target", [120, 180, 120]]]
+demo_chart.x_label is "step  —  drag to pan, wheel to zoom"
+demo_chart.y_label is "loss"
 ui.add_child of [data_panel, demo_chart]
+
+# Fixed-aspect phase portrait — x and y units are equal per pixel, so the
+# spiral is not stretched by the widget's shape.
+phase is ui.chart of ["phase", 730, 180, 220, 220]
+phase.fixed_aspect is 1
+phase.legend is 0
+phase.pad_frac is 0.05
+phase_x is []
+phase_y is []
+for i in range of 240:
+    decay is 1.0 - i * 0.0035
+    append of [phase_x, (cos of (i * 0.09)) * decay]
+    append of [phase_y, (sin of (i * 0.09)) * decay]
+ui.chart_add_series of [phase, ui.chart_series of ["orbit", phase_x, phase_y, null]]
+ui.chart_add_marker of [phase, ui.chart_marker of ["point", 0, 0, "fixed pt", [220, 200, 90]]]
+ui.add_child of [data_panel, phase]
+phase_lbl is ui.label of ["phase_lbl", 730, 404, "fixed_aspect keeps circles round"]
+phase_lbl.color is [120, 120, 150]
+ui.add_child of [data_panel, phase_lbl]
 
 # Bar chart
 bar_labels is ["Mon", "Tue", "Wed", "Thu", "Fri"]

@@ -130,12 +130,6 @@ define stack_horizontal(widgets, x, y, gap) as:
         cx is cx + widgets[i].w + gap
     return widgets
 
-# Chart helper
-
-define add_point(ch, series_idx, value) as:
-    if series_idx >= 0 and series_idx < (len of ch.series):
-        append of [ch.series[series_idx].data, value]
-
 # Toast system
 
 define show_toast(text, duration) as:

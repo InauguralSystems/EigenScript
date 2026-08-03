@@ -6,6 +6,20 @@
 load_file of "lib/test.eigs"
 
 # ---- Stub gfx functions (no-ops for headless testing) ----
+#
+# The drawing stubs also RECORD, gated on _gfx_rec (0 by default, so the
+# rest of the suite is unchanged). A stubbed gfx layer cannot observe
+# whether gfx_clip was honoured — so the containment claim for the chart
+# widget (#819/#823) is proved on the recorded primitives instead: every
+# call the render path makes is checked against the widget rect. That is
+# a property of the render code, not of the renderer.
+
+_gfx_rec is 0
+_gfx_log is []
+
+define _gfx_note(kind, args) as:
+    if _gfx_rec == 1:
+        append of [_gfx_log, [kind, args]]
 
 define gfx_open(args) as:
     return 1
@@ -17,24 +31,31 @@ define gfx_clear(args) as:
     return null
 
 define gfx_rect(args) as:
+    _gfx_note of ["rect", args]
     return null
 
 define gfx_rrect(args) as:
+    _gfx_note of ["rrect", args]
     return null
 
 define gfx_line(args) as:
+    _gfx_note of ["line", args]
     return null
 
 define gfx_point(args) as:
+    _gfx_note of ["point", args]
     return null
 
 define gfx_circle(args) as:
+    _gfx_note of ["circle", args]
     return null
 
 define gfx_text(args) as:
+    _gfx_note of ["text", args]
     return null
 
 define gfx_clip(args) as:
+    _gfx_note of ["clip", args]
     return null
 
 define gfx_present(args) as:
@@ -1260,6 +1281,473 @@ assert_eq of [m631_fired[0], 0, "#631 the background button never fired via keyb
 
 _ui.modal_stack is []
 _ui.edit_root is null
+
+# ============================================================
+# #819: chart is an x-y plot — series, scales, clipping, pan/zoom
+# ============================================================
+
+print of "--- Chart x-y Plot Tests (#819) ---"
+
+# ---- Primitive extents, for the containment proof ----
+# Bounding box [x0, y0, x1, y1) of a recorded call, in the same pixel
+# convention _point_in_rect uses (x1/y1 exclusive).
+
+define _prim_extent(rec) as:
+    local k is rec[0]
+    local a is rec[1]
+    if k == "clip":
+        return null
+    if a == null:
+        return null
+    if k == "rect":
+        return [a[0], a[1], a[0] + a[2], a[1] + a[3]]
+    if k == "rrect":
+        return [a[0], a[1], a[0] + a[2], a[1] + a[3]]
+    if k == "line":
+        return [(min of [a[0], a[2]]), (min of [a[1], a[3]]), (max of [a[0], a[2]]) + 1, (max of [a[1], a[3]]) + 1]
+    if k == "point":
+        return [a[0], a[1], a[0] + 1, a[1] + 1]
+    if k == "circle":
+        return [a[0] - a[2], a[1] - a[2], a[0] + a[2] + 1, a[1] + a[2] + 1]
+    if k == "text":
+        local sc is a[6]
+        if sc == null:
+            sc is 1
+        return [a[0], a[1], a[0] + (text_width of [a[2], sc]), a[1] + (text_height of sc)]
+    return null
+
+# How many recorded primitives poke outside [rx, ry, rw, rh]?
+define _outside(rx, ry, rw, rh) as:
+    local bad is 0
+    for i in range of (len of _gfx_log):
+        local e is _prim_extent of (_gfx_log[i])
+        if e != null:
+            if e[0] < rx:
+                bad is bad + 1
+            elif e[1] < ry:
+                bad is bad + 1
+            elif e[2] > rx + rw:
+                bad is bad + 1
+            elif e[3] > ry + rh:
+                bad is bad + 1
+    return bad
+
+define _record_render(w, ax, ay) as:
+    _gfx_log is []
+    _gfx_rec is 1
+    _render_chart of [w, ax, ay]
+    _gfx_rec is 0
+    return len of _gfx_log
+
+define _count_kind(k) as:
+    local n is 0
+    for i in range of (len of _gfx_log):
+        if _gfx_log[i][0] == k:
+            n is n + 1
+    return n
+
+# ---- Constructor ----
+pl is chart of ["pl", 0, 0, 300, 200]
+assert_eq of [pl.type, "chart", "chart type"]
+assert_eq of [len of pl.series, 0, "chart starts with no series"]
+assert_eq of [len of pl.markers, 0, "chart starts with no markers"]
+assert_eq of [pl.zoom, 1.0, "chart zoom default 1"]
+assert_eq of [pl.pan_x, 0.0, "chart pan_x default 0"]
+assert_eq of [pl.fixed_aspect, 0, "chart fixed_aspect off by default"]
+assert_eq of [pl.x_min, null, "chart x_min null means auto"]
+assert_true of [pl.on_wheel != null, "chart owns wheel input for cursor-anchored zoom"]
+
+# ---- Series and markers are plain builders ----
+s0 is chart_series of ["alpha", null, [0, 1, 2, 3], null]
+assert_eq of [s0.label, "alpha", "chart_series label"]
+assert_eq of [s0.x, null, "chart_series null x keeps index-x"]
+assert_eq of [s0.style, "line", "chart_series default style"]
+i0 is chart_add_series of [pl, s0]
+assert_eq of [i0, 0, "chart_add_series returns the index"]
+mk is chart_marker of ["vline", 2, 0, "restart", [255, 0, 0]]
+assert_eq of [mk.kind, "vline", "chart_marker kind"]
+assert_eq of [chart_add_marker of [pl, mk], 0, "chart_add_marker returns the index"]
+
+# ---- Scale math: index-x, y padded by pad_frac ----
+b0 is chart_bounds of pl
+assert_eq of [b0.x0, 0, "index-x lower bound is 0"]
+assert_eq of [b0.x1, 3, "index-x upper bound is n-1"]
+assert_near of [b0.y0, 0 - 0.3, 0.000001, "y auto lower bound is min - 10%"]
+assert_near of [b0.y1, 3.3, 0.000001, "y auto upper bound is max + 10%"]
+
+# Explicit bounds win over auto-scale, per axis.
+pl.y_min is 0
+pl.y_max is 10
+b1 is chart_bounds of pl
+assert_eq of [b1.y0, 0, "explicit y_min overrides auto-scale"]
+assert_eq of [b1.y1, 10, "explicit y_max overrides auto-scale"]
+assert_eq of [b1.x0, 0, "an explicit y bound leaves x on auto"]
+pl.y_min is null
+pl.y_max is null
+
+# ---- Data-coordinate x ----
+xy is chart of ["xy", 0, 0, 300, 200]
+xy.pad_frac is 0
+si is chart_add_series of [xy, chart_series of ["p", [10, 20, 40], [1, 2, 3], null]]
+bx is chart_bounds of xy
+assert_eq of [bx.x0, 10, "data-coord x lower bound comes from the x list"]
+assert_eq of [bx.x1, 40, "data-coord x upper bound comes from the x list"]
+assert_eq of [bx.y0, 1, "y bounds unpadded when pad_frac is 0"]
+assert_eq of [bx.y1, 3, "y upper bound"]
+
+# ---- data -> pixel mapping at known coordinates ----
+# 300x200 at (0,0): plot rect is [44, 8, 248, 174] from the default pads.
+v is chart_view of xy
+assert_eq of [v.px, 44, "plot rect x = pad_left"]
+assert_eq of [v.py, 8, "plot rect y = pad_top"]
+assert_eq of [v.pw, 248, "plot rect w = w - pad_left - pad_right"]
+assert_eq of [v.ph, 166, "plot rect h = h - pad_top - pad_bottom"]
+tl is chart_to_pixel of [xy, 10, 3]
+assert_near of [tl[0], 44, 0.000001, "x0 maps to the left edge of the plot"]
+assert_near of [tl[1], 8, 0.000001, "y1 maps to the top edge of the plot"]
+br is chart_to_pixel of [xy, 40, 1]
+assert_near of [br[0], 292, 0.000001, "x1 maps to the right edge of the plot"]
+assert_near of [br[1], 174, 0.000001, "y0 maps to the bottom edge of the plot"]
+mid is chart_to_pixel of [xy, 25, 2]
+assert_near of [mid[0], 168, 0.000001, "x midpoint maps to the plot centre"]
+assert_near of [mid[1], 91, 0.000001, "y midpoint maps to the plot centre"]
+# Round trip.
+rt is chart_from_pixel of [xy, 168, 91]
+assert_near of [rt[0], 25, 0.000001, "pixel -> data round trips x"]
+assert_near of [rt[1], 2, 0.000001, "pixel -> data round trips y"]
+
+# ---- Fixed aspect: one data unit is the same number of pixels on both axes ----
+fa is chart of ["fa", 0, 0, 300, 200]
+fa.pad_frac is 0
+chart_add_series of [fa, chart_series of ["circle", [0 - 1, 1, 0, 0], [0, 0, 0 - 1, 1], null]]
+fa.fixed_aspect is 0
+o1 is chart_to_pixel of [fa, 0, 0]
+ox1 is chart_to_pixel of [fa, 1, 0]
+oy1 is chart_to_pixel of [fa, 0, 1]
+assert_true of [(abs of (ox1[0] - o1[0])) != (abs of (oy1[1] - o1[1])), "without fixed_aspect the axes scale independently"]
+fa.fixed_aspect is 1
+f1 is chart_to_pixel of [fa, 0, 0]
+fx1 is chart_to_pixel of [fa, 1, 0]
+fy1 is chart_to_pixel of [fa, 0, 1]
+assert_near of [(abs of (fx1[0] - f1[0])), (abs of (fy1[1] - f1[1])), 0.000001, "fixed_aspect makes one unit the same pixel span on x and y"]
+# The correction only ever GROWS an axis, so no data is pushed out of view.
+fav is chart_view of fa
+assert_true of [fav.x0 <= 0 - 1, "fixed_aspect keeps the x data range covered"]
+assert_true of [fav.y1 >= 1, "fixed_aspect keeps the y data range covered"]
+
+# ---- Incremental append ----
+# add_point / add_xy widen the cached bounds in place; the render-time
+# scan then has nothing left to do for the points already accounted for.
+inc is chart of ["inc", 0, 0, 300, 200]
+inc.pad_frac is 0
+chart_add_series of [inc, chart_series of ["live", null, [], null]]
+add_point of [inc, 0, 5]
+bi is chart_bounds of inc
+assert_eq of [bi.y0, 4, "a lone sample gets a degenerate range widened by one"]
+assert_eq of [bi.y1, 6, "a lone sample's upper bound"]
+add_point of [inc, 0, 9]
+assert_eq of [inc.series[0]._scanned, 2, "add_point accounts for its own sample — no rescan pending"]
+assert_eq of [(chart_bounds of inc).y1, 9, "an appended maximum widens the bound in O(1)"]
+add_point of [inc, 0, 20]
+assert_eq of [inc.series[0]._scanned, 3, "a further append stays accounted for"]
+assert_eq of [(chart_bounds of inc).y1, 20, "and again, without a rescan"]
+# The incrementality is load-bearing, so prove it directly: edit an
+# ALREADY-SCANNED sample in place to a value that would move the bound,
+# then append. The bound does not move — the history was not re-walked.
+# (The tail sample is left alone; changing THAT is what the staleness
+# check watches for.)
+inc.series[0].data[0] is 0 - 999
+add_point of [inc, 0, 21]
+assert_eq of [(chart_bounds of inc).y0, 5, "an appended point does not re-walk the scanned history"]
+chart_invalidate of inc
+assert_eq of [(chart_bounds of inc).y0, 0 - 999, "chart_invalidate re-walks and picks the in-place edit up"]
+inc.series[0].data[0] is 5
+chart_invalidate of inc
+chart_bounds of inc
+add_xy of [inc, 0, 100, 1]
+assert_eq of [(chart_bounds of inc).x1, 100, "add_xy promotes the series to data-coord x"]
+assert_eq of [(chart_bounds of inc).y0, 1, "add_xy widens the lower y bound"]
+assert_eq of [len of inc.series[0].x, 5, "promoting to data-coord x backfills the index positions"]
+assert_eq of [inc.series[0].x[0], 0, "backfilled x starts at 0"]
+# Replacing the data wholesale is detected and forces one full rescan, so
+# a bound can shrink again.
+inc.series[0].data is [1, 2]
+inc.series[0].x is null
+bnew is chart_bounds of inc
+assert_eq of [bnew.y1, 2, "a replaced series forces a rescan and the bound shrinks"]
+assert_eq of [bnew.x1, 1, "a replaced series rescans x too"]
+# Assigning a whole new series list is detected the same way.
+inc.series is [{"label": "raw", "data": [7, 8], "color": [1, 2, 3]}]
+assert_eq of [(chart_bounds of inc).y0, 7, "a wholesale series assignment is rescanned"]
+# A same-length in-place data rewrite is caught by the end-of-data mark...
+inc.series is [{"label": "raw", "data": [7, 8], "color": [1, 2, 3]}]
+chart_bounds of inc
+inc.series[0].data is [30, 40]
+assert_eq of [(chart_bounds of inc).y1, 40, "a same-length in-place data rewrite is detected by the tail mark"]
+# ...and chart_invalidate is the explicit escape hatch when it is not
+# (a rewrite that happens to keep the same final sample).
+inc.series[0].data is [0 - 5, 40]
+chart_invalidate of inc
+assert_eq of [(chart_bounds of inc).y0, 0 - 5, "chart_invalidate forces a rescan"]
+
+# ---- Rolling window ----
+tr is chart of ["tr", 0, 0, 300, 200]
+tr.pad_frac is 0
+chart_add_series of [tr, chart_series of ["w", null, [], null]]
+for i in range of 10:
+    add_point of [tr, 0, i]
+chart_trim of [tr, 0, 4]
+assert_eq of [len of tr.series[0].data, 4, "chart_trim keeps the newest max_n samples"]
+assert_eq of [tr.series[0].data[0], 6, "chart_trim drops the oldest"]
+assert_eq of [(chart_bounds of tr).y0, 6, "chart_trim rescans so the bound shrinks with the window"]
+
+# ---- Ticks ----
+tk is chart_ticks of [0, 10, 5]
+assert_eq of [len of tk, 6, "chart_ticks covers [0,10] at step 2"]
+assert_eq of [tk[0], 0, "first tick"]
+assert_eq of [tk[1], 2, "ticks land on a 1/2/5 x power-of-ten step"]
+assert_eq of [tk[5], 10, "last tick"]
+tk2 is chart_ticks of [0.13, 0.42, 4]
+assert_true of [len of tk2 > 0, "chart_ticks handles a sub-unit range"]
+assert_near of [tk2[0], 0.2, 0.000001, "sub-unit ticks land on a round 1/2/5 step, not on the range edge"]
+assert_true of [tk2[0] >= 0.13, "no tick below the range"]
+assert_true of [tk2[(len of tk2) - 1] <= 0.42, "no tick above the range"]
+tk3 is chart_ticks of [5, 5, 4]
+assert_true of [len of tk3 <= 1, "a zero-width range does not spin"]
+
+# ---- Pan: the data under the cursor follows the drag ----
+pz is chart of ["pz", 0, 0, 300, 200]
+pz.pad_frac is 0
+chart_add_series of [pz, chart_series of ["d", [0, 100], [0, 100], null]]
+d_before is chart_from_pixel of [pz, 100, 100]
+chart_pan_by of [pz, 30, 0 - 20]
+d_after is chart_from_pixel of [pz, 130, 80]
+assert_near of [d_after[0], d_before[0], 0.000001, "drag-pan carries the data point with the cursor in x"]
+assert_near of [d_after[1], d_before[1], 0.000001, "drag-pan carries the data point with the cursor in y"]
+chart_reset_view of pz
+assert_eq of [pz.pan_x, 0.0, "chart_reset_view clears pan"]
+assert_eq of [pz.zoom, 1.0, "chart_reset_view restores zoom"]
+
+# ---- Zoom is anchored on the cursor ----
+anchor_before is chart_from_pixel of [pz, 120, 60]
+chart_zoom_at of [pz, 2.0, 120, 60]
+anchor_after is chart_from_pixel of [pz, 120, 60]
+assert_eq of [pz.zoom, 2.0, "chart_zoom_at scales the zoom"]
+assert_near of [anchor_after[0], anchor_before[0], 0.000001, "the data under the anchor pixel does not move in x"]
+assert_near of [anchor_after[1], anchor_before[1], 0.000001, "the data under the anchor pixel does not move in y"]
+# A point away from the anchor DOES move — otherwise nothing zoomed.
+away_after is chart_from_pixel of [pz, 250, 150]
+assert_true of [(abs of (away_after[0] - anchor_before[0])) > 0, "zoom actually changed the view away from the anchor"]
+# Zooming in halves the visible span.
+zv is chart_view of pz
+assert_near of [zv.x1 - zv.x0, 50, 0.000001, "zoom 2 halves the visible x span"]
+chart_reset_view of pz
+
+# ---- The wheel path reads the pointer out of _ui, so no consumer shadows it (#822) ----
+wroot is panel of ["wroot", 0, 0, 400, 300]
+wpl is chart of ["wpl", 0, 0, 300, 200]
+wpl.pad_frac is 0
+chart_add_series of [wpl, chart_series of ["d", [0, 100], [0, 100], null]]
+add_child of [wroot, wpl]
+_layout of [wroot, 0, 0]
+dispatch of [wroot, {"type": "mousemove", "x": 120, "y": 60}]
+assert_eq of [_ui.last_mouse_x, 120, "dispatch caches the pointer for the wheel path"]
+w_before is chart_from_pixel of [wpl, 120, 60]
+dispatch of [wroot, {"type": "wheel", "x": 0, "y": 1}]
+assert_true of [wpl.zoom > 1.0, "a wheel over the chart zooms in"]
+w_after is chart_from_pixel of [wpl, 120, 60]
+assert_near of [w_after[0], w_before[0], 0.000001, "wheel zoom is anchored on the cached cursor position, not the widget centre"]
+assert_near of [w_after[1], w_before[1], 0.000001, "wheel zoom anchor holds in y"]
+dispatch of [wroot, {"type": "wheel", "x": 0, "y": 0 - 1}]
+assert_near of [wpl.zoom, 1.0, 0.000001, "an opposite wheel step returns to the original zoom"]
+chart_reset_view of wpl
+
+# ---- Drag to pan, through the real dispatch path ----
+dispatch of [wroot, {"type": "mousedown", "x": 120, "y": 60, "button": 1}]
+assert_true of [_ui.drag_widget != null, "mousedown on a chart claims the pointer"]
+assert_eq of [_ui.drag_widget.id, "wpl", "the chart itself is the claimant"]
+p_before is chart_from_pixel of [wpl, 120, 60]
+dispatch of [wroot, {"type": "mousemove", "x": 150, "y": 60}]
+p_after is chart_from_pixel of [wpl, 150, 60]
+assert_near of [p_after[0], p_before[0], 0.000001, "a drag through dispatch pans the chart with the cursor"]
+dispatch of [wroot, {"type": "mouseup", "x": 150, "y": 60, "button": 1}]
+assert_eq of [_ui.drag_widget, null, "mouseup releases the chart's pointer capture"]
+chart_reset_view of wpl
+# interactive 0 opts out of both.
+wpl.interactive is 0
+dispatch of [wroot, {"type": "mousemove", "x": 120, "y": 60}]
+dispatch of [wroot, {"type": "wheel", "x": 0, "y": 1}]
+assert_eq of [wpl.zoom, 1.0, "interactive 0 disables wheel zoom"]
+dispatch of [wroot, {"type": "mousedown", "x": 120, "y": 60, "button": 1}]
+assert_eq of [_ui.drag_widget, null, "interactive 0 disables drag-pan"]
+wpl.interactive is 1
+
+# ---- Hover picks the nearest sample in PIXEL space ----
+hv is chart of ["hv", 0, 0, 300, 200]
+hv.pad_frac is 0
+hv._ax is 0
+hv._ay is 0
+chart_add_series of [hv, chart_series of ["h", [0, 10, 100], [0, 0, 0], null]]
+hv.y_min is 0 - 1
+hv.y_max is 1
+# x=10 sits at 44 + 10/100*248 = 68.8 px; x=0 sits at 44.
+_mousemove_chart of [hv, null, 69, 91]
+assert_eq of [hv.hover_series, 0, "hover reports the series"]
+assert_eq of [hv.hover_index, 1, "hover picks the nearest sample by pixel distance, not by index-from-x"]
+_mousemove_chart of [hv, null, 45, 91]
+assert_eq of [hv.hover_index, 0, "hover moves to the nearer sample"]
+_mousemove_chart of [hv, null, 170, 91]
+assert_eq of [hv.hover_index, -1, "no sample within the snap radius clears hover"]
+_clear_hover_chart of hv
+assert_eq of [hv.hover_series, -1, "clear_hover clears the series too"]
+hv.hover_enabled is 0
+_mousemove_chart of [hv, null, 69, 91]
+assert_eq of [hv.hover_index, -1, "hover_enabled 0 skips the nearest-sample scan"]
+
+# ============================================================
+# #819/#823: the plot is CLIPPED — data leaving the view never
+# paints over the surrounding chrome
+# ============================================================
+
+clip_ch is chart of ["clip_ch", 10, 20, 300, 200]
+clip_ch.pad_frac is 0
+clip_ch.x_min is 0
+clip_ch.x_max is 10
+clip_ch.y_min is 0
+clip_ch.y_max is 10
+# One sample inside the window, the rest far outside it in every
+# direction — including a segment that crosses the whole plot area.
+chart_add_series of [clip_ch, chart_series of ["wild", [0 - 500, 5, 900, 5, 5], [5, 5, 5, 0 - 800, 700], null]]
+clip_ch.series[0].style is "both"
+chart_add_marker of [clip_ch, chart_marker of ["vline", 0 - 40, 0, "way left", null]]
+chart_add_marker of [clip_ch, chart_marker of ["point", 400, 400, "way out", null]]
+chart_add_marker of [clip_ch, chart_marker of ["hline", 0 - 90, 0, "way below", null]]
+clip_ch.x_label is "an x caption long enough to overflow this widget several times over"
+clip_ch.y_label is "and a y caption that is also far too long for the gutter it sits in"
+n_prims is _record_render of [clip_ch, 10, 20]
+assert_true of [n_prims > 10, "the clipping probe actually rendered something"]
+assert_eq of [_outside of [10, 20, 300, 200], 0, "#819 no primitive is drawn outside the chart rect"]
+
+# The same, panned so far that every sample is off-screen.
+clip_ch.pan_x is 100000
+clip_ch.pan_y is 0 - 100000
+_record_render of [clip_ch, 10, 20]
+assert_eq of [_outside of [10, 20, 300, 200], 0, "#819 an extreme pan draws nothing outside the chart rect"]
+# ...and zoomed so far in that the visible window is a sliver.
+clip_ch.pan_x is 0
+clip_ch.pan_y is 0
+clip_ch.zoom is 5000
+_record_render of [clip_ch, 10, 20]
+assert_eq of [_outside of [10, 20, 300, 200], 0, "#819 an extreme zoom draws nothing outside the chart rect"]
+clip_ch.zoom is 0.0001
+_record_render of [clip_ch, 10, 20]
+assert_eq of [_outside of [10, 20, 300, 200], 0, "#819 an extreme zoom-out draws nothing outside the chart rect"]
+chart_reset_view of clip_ch
+
+# The gate is real: the same probe on an UNCLIPPED draw of the same data
+# is red. This is the planted fault — if _outside could not see an
+# escaping primitive, every assertion above would be vacuous.
+_gfx_log is []
+_gfx_rec is 1
+esc is chart_to_pixel of [clip_ch, 900, 700]
+gfx_line of [44, 28, floor of esc[0], floor of esc[1], 1, 2, 3]
+_gfx_rec is 0
+assert_true of [_outside of [10, 20, 300, 200] > 0, "#819 the containment probe DOES flag an unclipped primitive (planted fault)"]
+
+# gfx_clip is set for the real renderer as well, and cleared afterwards.
+_record_render of [clip_ch, 10, 20]
+assert_true of [(_count_kind of "clip") >= 2, "#819 the render sets and clears a renderer clip rect"]
+clip_last is null
+for ci in range of (len of _gfx_log):
+    if _gfx_log[ci][0] == "clip":
+        clip_last is _gfx_log[ci][1]
+assert_eq of [clip_last, null, "#819 the renderer clip rect is cleared before the render returns"]
+
+# Series geometry is confined to the PLOT rect, tighter than the widget.
+_record_render of [clip_ch, 10, 20]
+cv is chart_view of clip_ch
+line_out is 0
+for li in range of (len of _gfx_log):
+    if _gfx_log[li][0] == "line":
+        le is _prim_extent of (_gfx_log[li])
+        if le[0] < cv.px:
+            line_out is line_out + 1
+        elif le[1] < cv.py:
+            line_out is line_out + 1
+        elif le[2] > cv.px + cv.pw:
+            line_out is line_out + 1
+        elif le[3] > cv.py + cv.ph:
+            line_out is line_out + 1
+assert_eq of [line_out, 0, "#819 every drawn segment stays inside the plot rect"]
+
+# ---- Marker placement lands on the data coordinate ----
+mk_ch is chart of ["mk_ch", 0, 0, 300, 200]
+mk_ch.pad_frac is 0
+mk_ch.grid is 0
+mk_ch.axes is 0
+mk_ch.legend is 0
+chart_add_series of [mk_ch, chart_series of ["m", [0, 100], [0, 100], null]]
+mk_ch.series[0].style is "points"
+chart_add_marker of [mk_ch, chart_marker of ["vline", 25, 0, "", [9, 9, 9]]]
+_record_render of [mk_ch, 0, 0]
+mk_px is chart_to_pixel of [mk_ch, 25, 0]
+assert_near of [mk_px[0], 106, 0.000001, "the marker's data x maps to the expected column"]
+found_marker is 0
+for mi in range of (len of _gfx_log):
+    if _gfx_log[mi][0] == "line":
+        ma is _gfx_log[mi][1]
+        if ma[4] == 9 and ma[0] == (floor of mk_px[0]) and ma[2] == (floor of mk_px[0]):
+            found_marker is 1
+assert_eq of [found_marker, 1, "#819 a vline marker is drawn as a full-height rule at its data x"]
+
+# ---- Theme keying: the data surface restyles with the chrome (#820) ----
+saved_theme is theme of null
+set_theme of (theme_light of null)
+_record_render of [mk_ch, 0, 0]
+lt is theme of null
+bg_ok is 0
+for bi in range of (len of _gfx_log):
+    if _gfx_log[bi][0] == "rect":
+        ba is _gfx_log[bi][1]
+        if ba[0] == 0 and ba[1] == 0 and ba[2] == 300 and ba[3] == 200:
+            if ba[4] == lt.plot_bg[0] and ba[5] == lt.plot_bg[1] and ba[6] == lt.plot_bg[2]:
+                bg_ok is 1
+assert_eq of [bg_ok, 1, "#820 the plot background comes from the theme, not a literal"]
+set_theme of saved_theme
+_record_render of [mk_ch, 0, 0]
+dt is theme of null
+bg_dark is 0
+for bi in range of (len of _gfx_log):
+    if _gfx_log[bi][0] == "rect":
+        ba is _gfx_log[bi][1]
+        if ba[0] == 0 and ba[1] == 0 and ba[2] == 300 and ba[3] == 200:
+            if ba[4] == dt.plot_bg[0]:
+                bg_dark is 1
+assert_eq of [bg_dark, 1, "#820 switching the theme back switches the plot surface back"]
+# Series colors default off the theme palette, and an explicit color wins.
+assert_eq of [(_chart_series_color of [mk_ch, 0])[0], dt.plot_series[0][0], "series color defaults to the theme palette by position"]
+mk_ch.series[0].color is [7, 7, 7]
+assert_eq of [(_chart_series_color of [mk_ch, 0])[0], 7, "an explicit series color overrides the palette"]
+# A theme dict predating these keys still renders (fallback defaults).
+old_theme is {}
+for k in ["bg", "text_color", "text_dim", "accent", "font_scale", "char_h", "char_w", "focus_ring", "radius_sm", "disabled_overlay"]:
+    old_theme[k] is dt[k]
+set_theme of old_theme
+assert_eq of [_record_render of [mk_ch, 0, 0] > 0, 1, "#820 a theme dict without the plot keys falls back instead of crashing"]
+set_theme of saved_theme
+
+# ---- The two in-repo consumers of the old y-vs-index chart still work ----
+legacy is chart of ["legacy", 0, 0, 200, 100]
+legacy.series is [{"label": "Avg H", "data": [], "color": [80, 180, 220]}]
+for i in range of 5:
+    append of [legacy.series[0].data, i * 0.5]
+lb is chart_bounds of legacy
+assert_eq of [lb.x0, 0, "a bare y-list series still spans index 0..n-1"]
+assert_eq of [lb.x1, 4, "a bare y-list series upper index bound"]
+assert_eq of [_record_render of [legacy, 0, 0] > 0, 1, "a bare y-list series still renders"]
+assert_eq of [_outside of [0, 0, 200, 100], 0, "a bare y-list series stays inside its rect too"]
+
+_gfx_log is []
 
 # ============================================================
 # Summary
