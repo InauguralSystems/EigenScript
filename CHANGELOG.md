@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.35.2] - 2026-08-03
+
 ### Fixed
 
 - **Temporal reads work again for producers that are not the bytecode
@@ -58,6 +60,40 @@ All notable changes to EigenScript are documented here.
   (ouroboros's own `EIGS_REF` bump also needs its `aot/build.sh` `CORE`
   list to pick up `src/builtins_host.c` — tracked in ouroboros#88, and it
   lands there with the bump, not here.)
+
+  **The tape is untouched.** The provenance stamp gates only the in-memory
+  history update (`prev_record_assign`); everything downstream of
+  `trace_out_active()` — the `S`/`L`/`A` record writers — is unchanged, so
+  `TRACE_FORMAT_VERSION` stays 2 and there is **no format-version bump
+  (#411)**. Tapes recorded before and after are byte-identical and replay
+  across the two binaries in either direction.
+
+  **This narrows one claim in the v0.35.1 entry below.** That entry says
+  the compiler "arms only those names, and assignments to any other name
+  record nothing." As of this release that holds *only* for chunks the
+  bytecode compiler produced (`EigsChunk.compiler_scanned`); on any other
+  producer every assignment is recorded, because nothing scanned that
+  chunk to arm it. The v0.35.1 text was accurate for the only producer it
+  considered — that omission is the bug.
+
+  **Who should take this release.** Anyone whose program reaches the
+  runtime by a route other than `eigenscript prog.eigs`, together with
+  `prev of` or an `at`-qualified interrogative
+  (`what/who/when/where/why/how ... at L`) — concretely: the **AOT**
+  (sibling `ouroboros` repo), the **embed API**
+  (`docs/EMBEDDING.md`), and any **`vm_run_bytecode` / `sandbox_run`**
+  producer driving a chunk it assembled itself. Those reads returned
+  `null` instead of the recorded value: a **silent wrong answer**, with no
+  error, no warning, and a plausible-looking result. Programs run through
+  the normal CLI or `eval`/`load_file` were never affected, and bare
+  (unqualified) interrogatives read observer state and were correct
+  throughout. **Only v0.35.1 is affected** — the armed-name set arrived
+  with #827, which first shipped in v0.35.1, so v0.35.0 and every earlier
+  release answer correctly and this is not a reason to skip past them.
+  A *separate* and older gap is still open: a `vm_run_bytecode` descriptor
+  cannot turn recording **on** by itself, so it answers `null` when the
+  host program contains no temporal query of its own. That is **#831**, it
+  reproduces on v0.34.0, and it is **not fixed here**.
 
 ## [0.35.1] - 2026-08-03
 
