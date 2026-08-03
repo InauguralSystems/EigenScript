@@ -14,6 +14,20 @@
 #include <string.h>
 #include <math.h>
 
+/* #830: route an assignment to the history through the entry point the
+ * running chunk's provenance warrants. A compiler-produced chunk was scanned
+ * for temporal queries and its names armed, so #827's armed-name filter is a
+ * sound per-assign CPU saving there; a chunk assembled from a descriptor
+ * (vm_run_bytecode / sandbox_run) was never scanned, so filtering it drops
+ * assignments the chunk's own `prev of` / `at` reads then miss. Both callers
+ * are already behind the `g_trace_hist` branch, so this costs the hot path
+ * nothing. */
+static inline void vm_trace_assign(const EigsChunk *chunk, const char *name,
+                                   EigsSlot value) {
+    if (chunk->compiler_scanned) trace_assign_filtered(name, value);
+    else                         trace_assign(name, value);
+}
+
 /* #262 slot-keyed observer shadow. Off unless EIGS_OBS_SHADOW is set;
  * -1 = not yet probed. When on, every observe site records the binding's
  * trajectory on its env slot (keyed by env+index, independent of the Value
@@ -909,7 +923,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
  * captured/interrogated name runs one. */
 void jit_helper_set_name(EigsChunk *chunk, int idx) {
     if (__builtin_expect(g_trace_hist, 0)) {
-        trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
+        vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
     }
     EnvIC *ic = &chunk->env_ic[idx];
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
@@ -956,7 +970,7 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
 
 void jit_helper_set_name_local(EigsChunk *chunk, int idx) {
     if (__builtin_expect(g_trace_hist, 0)) {
-        trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
+        vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
     }
     EnvIC *ic = &chunk->env_ic[idx];
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
@@ -988,7 +1002,7 @@ void jit_helper_set_name_local(EigsChunk *chunk, int idx) {
 
 void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
     if (__builtin_expect(g_trace_hist, 0)) {
-        trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
+        vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
     }
     EnvIC *ic = &chunk->env_ic[idx];
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
@@ -3071,7 +3085,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(g_trace_hist, 0)) {
             const char *nm = (slot < (uint16_t)chunk->local_count && chunk->local_names)
                 ? chunk->local_names[slot] : NULL;
-            trace_assign(nm, g_vm.stack[g_vm.sp - 1]);
+            vm_trace_assign(chunk, nm, g_vm.stack[g_vm.sp - 1]);
         }
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
@@ -3162,7 +3176,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(SET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
         if (__builtin_expect(g_trace_hist, 0)) {
-            trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
+            vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
         }
         EnvIC *ic = &chunk->env_ic[idx];
         Env *start = frame->env;
@@ -3211,7 +3225,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(SET_NAME_LOCAL): {
         uint16_t idx = read_u16(ip); ip += 2;
         if (__builtin_expect(g_trace_hist, 0)) {
-            trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
+            vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
         }
         EnvIC *ic = &chunk->env_ic[idx];
         Env *start = frame->env;
@@ -3250,7 +3264,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * per-iteration loop env and the outer binding never moved). */
         uint16_t idx = read_u16(ip); ip += 2;
         if (__builtin_expect(g_trace_hist, 0)) {
-            trace_assign(chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
+            vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
         }
         EnvIC *ic = &chunk->env_ic[idx];
         Env *target = frame->fn_env;

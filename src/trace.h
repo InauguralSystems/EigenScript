@@ -136,8 +136,26 @@ void trace_line(int line);
 /* Record a name-keyed assignment. The slot is captured by value
  * (NaN-boxed union, POD), so this is safe to call from any opcode
  * handler immediately before or after the store. Phase 1 records
- * numbers verbatim; non-numerics get a type marker only. */
+ * numbers verbatim; non-numerics get a type marker only.
+ *
+ * #830: this is the PRODUCER-FACING entry point and it records
+ * unconditionally. The bytecode compiler is not the only producer of
+ * EigenScript programs — the AOT (sibling `ouroboros` repo) emits C that
+ * calls this directly, an embedder can, and `vm_run_bytecode` /
+ * `sandbox_run` assemble chunks the compiler never saw. None of them can
+ * populate #827's armed-name set, so none of them may be filtered by it:
+ * doing that made every `prev of` / `at`-qualified read on those paths
+ * return null in v0.35.1 — a silent wrong answer. A new producer gets
+ * correct temporal reads by calling this and nothing else.
+ *
+ * trace_assign_filtered() is the narrowed twin, valid ONLY for a caller
+ * running a chunk with EigsChunk.compiler_scanned set: there the compiler's
+ * source scan is what armed the names, so skipping the rest is sound.
+ * Retention is bounded by the pruning in either case (#827 defect B), so
+ * the filter is a per-assign CPU optimization and never a safety property.
+ * When in doubt, call trace_assign. */
 void trace_assign(const char *name, EigsSlot value);
+void trace_assign_filtered(const char *name, EigsSlot value);
 
 /* #262 Phase-3 D2: overwrite the observer snapshot of `name`'s most recent
  * history entry with slot-sourced entropy/dH/last_entropy. Called from
