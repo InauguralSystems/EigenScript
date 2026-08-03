@@ -1,21 +1,546 @@
 # lint: allow-file E003 -- fragment of lib/ui.eigs: the loader binds the shared ui state (_theme, _ui, widget registry, sibling widgets) before this file runs
 # UI Widgets — Viz: chart, bar_chart, gauge, meter, canvas, waveform_view, code_view
 
+# ---- chart: x-y series plot (#819) ----
+#
+# `chart` is a data-coordinate x-y plot, not a y-vs-index strip: every
+# series carries its own optional `x` list, the axes/ticks come from the
+# data range, and the view has a pan/zoom transform on top. A series with
+# no `x` keeps index-x semantics, so a bare y-list still plots as before.
+#
+# Three properties are structural, not options:
+#   - CLIPPED. Every primitive the render path emits is clipped to the
+#     widget — series and markers to the plot rect (software Liang-Barsky
+#     per segment, plus gfx_clip for the real renderer), tick/legend text
+#     through the measured-width clipper. Data that leaves the view, at
+#     any pan or zoom, cannot paint over the surrounding chrome (#823).
+#   - THEME-KEYED. Nothing here hardcodes a color: plot_bg / plot_grid /
+#     plot_axis / plot_border / plot_series come off the active theme, so
+#     an app that restyles the chrome restyles the data surface too (#820).
+#   - INCREMENTAL. add_point / add_xy extend the cached data bounds in
+#     O(1); render rescans only the points appended since the last frame.
+#     A live plot at frame rate does not re-walk its history. Replacing or
+#     shortening a series' data is detected by the per-series scanned
+#     count and forces one full rescan.
+
 define chart(id, x, y, w, h) as:
     return {
         "type": "chart",
         "id": id,
         "x": x, "y": y, "w": w, "h": h,
         "series": [],
+        "markers": [],
         "x_label": "",
         "y_label": "",
+        # Range: an explicit non-null bound always wins. Otherwise
+        # auto_scale 1 derives it from the data (y padded by pad_frac),
+        # auto_scale 0 falls back to 0..1.
         "auto_scale": 1,
-        "y_min": 0,
-        "y_max": 1,
+        "x_min": null,
+        "x_max": null,
+        "y_min": null,
+        "y_max": null,
+        "pad_frac": 0.1,
         "grid": 1,
+        "axes": 1,
+        "legend": 1,
+        "ticks_x": 5,
+        "ticks_y": 4,
+        # x and y units equal per pixel — a circle looks circular.
+        "fixed_aspect": 0,
+        # View transform: pan is in data units, zoom is a scale about the
+        # panned centre. chart_reset_view restores 0/0/1.
+        "pan_x": 0.0,
+        "pan_y": 0.0,
+        "zoom": 1.0,
+        "interactive": 1,
+        "hover_enabled": 1,
+        "pad_left": 44,
+        "pad_right": 8,
+        "pad_top": 8,
+        "pad_bottom": 26,
         "hover_index": -1,
-        "visible": 1
+        "hover_series": -1,
+        "bg": null,
+        # dispatch's wheel path calls this before the scroll_panel walk.
+        "on_wheel": _wheel_chart,
+        "visible": 1,
+        # Incremental bounds cache — private, maintained by _chart_scan.
+        # (the per-series scan marks live on the series dicts)
+        "_have_bounds": 0,
+        "_bx0": 0, "_bx1": 1, "_by0": 0, "_by1": 1
     }
+
+# A series is a plain dict, so a consumer can also write the literal.
+# `xs` null means index-x; `color` null takes the theme's series palette
+# by position. style: "line" (default), "points", "both".
+define chart_series(label, xs, ys, color) as:
+    return {
+        "label": label,
+        "x": xs,
+        "data": ys,
+        "color": color,
+        "style": "line",
+        "point_r": 2,
+        "_scanned": 0,
+        "_last_y": null
+    }
+
+define chart_add_series(ch, s) as:
+    append of [ch.series, s]
+    return (len of ch.series) - 1
+
+# kind: "vline" (at data x), "hline" (at data y), "point" (at x,y).
+define chart_marker(kind, x, y, label, color) as:
+    return {"kind": kind, "x": x, "y": y, "label": label, "color": color}
+
+define chart_add_marker(ch, m) as:
+    append of [ch.markers, m]
+    return (len of ch.markers) - 1
+
+# Incremental append. add_point keeps index-x (the historical helper);
+# add_xy places the sample at a data coordinate. Both extend the cached
+# bounds in O(1) — no rescan, no rebuild.
+define add_point(ch, series_idx, value) as:
+    if series_idx < 0:
+        return null
+    if series_idx >= (len of ch.series):
+        return null
+    local s is ch.series[series_idx]
+    local idx is len of s.data
+    append of [s.data, value]
+    if s.x != null:
+        append of [s.x, idx]
+    _chart_extend of [ch, series_idx, idx, value]
+
+define add_xy(ch, series_idx, x, y) as:
+    if series_idx < 0:
+        return null
+    if series_idx >= (len of ch.series):
+        return null
+    local s is ch.series[series_idx]
+    if s.x == null:
+        s.x is []
+        local n is len of s.data
+        for i in range of n:
+            append of [s.x, i]
+    append of [s.x, x]
+    append of [s.data, y]
+    _chart_extend of [ch, series_idx, x, y]
+
+# Rolling window for live data: keep only the newest max_n samples. The
+# dropped points can only have widened the bounds, so this marks the
+# cache stale rather than trying to shrink it in place.
+define chart_trim(ch, series_idx, max_n) as:
+    if series_idx < 0:
+        return null
+    if series_idx >= (len of ch.series):
+        return null
+    local s is ch.series[series_idx]
+    local n is len of s.data
+    if n <= max_n:
+        return null
+    s.data is list_slice of [s.data, n - max_n, n]
+    if s.x != null:
+        s.x is list_slice of [s.x, n - max_n, n]
+    chart_invalidate of ch
+
+# Widen the cached bounds by one sample and record that it is accounted
+# for, so the render-time scan does not revisit it. The bookkeeping lives
+# on the SERIES dict, not on the chart: a series the consumer replaced
+# wholesale is a fresh dict with no marks, which is exactly the signal
+# that its history has never been scanned.
+define _chart_extend(ch, si, vx, vy) as:
+    local s is ch.series[si]
+    if s._scanned == null:
+        return null
+    if ch._have_bounds == 0:
+        return null
+    s._scanned is s._scanned + 1
+    s._last_y is vy
+    if vx < ch._bx0:
+        ch._bx0 is vx
+    if vx > ch._bx1:
+        ch._bx1 is vx
+    if vy < ch._by0:
+        ch._by0 is vy
+    if vy > ch._by1:
+        ch._by1 is vy
+
+# Forget the bounds cache. Bounds can only widen incrementally, so any
+# edit that could NARROW them — rewriting a data list in place with the
+# same length, dropping samples by hand — must say so. add_point, add_xy,
+# chart_trim, a replaced series dict and a replaced series list are all
+# detected without this; it is the escape hatch for everything else.
+define chart_invalidate(ch) as:
+    ch._have_bounds is 0
+    for si in range of (len of ch.series):
+        ch.series[si]._scanned is 0
+
+# Scan whatever the incremental path has not already accounted for.
+# One full rescan is forced when any series is new, has shrunk, or no
+# longer ends where the cache last saw it — which is what keeps
+# `ch.series is [...]` and `s.data is [...]` correct.
+define _chart_scan(ch) as:
+    local ns is len of ch.series
+    local full is 0
+    if ch._have_bounds == 0:
+        full is 1
+    for si in range of ns:
+        local s is ch.series[si]
+        local sc is s._scanned
+        if sc == null:
+            full is 1
+        elif (len of s.data) < sc:
+            full is 1
+        elif sc > 0:
+            if s.data[sc - 1] != s._last_y:
+                full is 1
+    if full == 1:
+        for si in range of ns:
+            ch.series[si]._scanned is 0
+        ch._have_bounds is 0
+    for si in range of ns:
+        local s is ch.series[si]
+        local n is len of s.data
+        local start is s._scanned
+        if n > start:
+            local xs is s.x
+            for di in range of [start, n]:
+                local vx is di
+                if xs != null:
+                    vx is xs[di]
+                local vy is s.data[di]
+                if ch._have_bounds == 0:
+                    ch._bx0 is vx
+                    ch._bx1 is vx
+                    ch._by0 is vy
+                    ch._by1 is vy
+                    ch._have_bounds is 1
+                else:
+                    if vx < ch._bx0:
+                        ch._bx0 is vx
+                    if vx > ch._bx1:
+                        ch._bx1 is vx
+                    if vy < ch._by0:
+                        ch._by0 is vy
+                    if vy > ch._by1:
+                        ch._by1 is vy
+            s._scanned is n
+            s._last_y is s.data[n - 1]
+
+# The resolved DATA range — auto-scale + explicit overrides, before
+# fixed-aspect correction and before pan/zoom.
+define chart_bounds(ch) as:
+    _chart_scan of ch
+    local bx0 is 0
+    local bx1 is 1
+    local by0 is 0
+    local by1 is 1
+    if ch.auto_scale != 0 and ch._have_bounds == 1:
+        bx0 is ch._bx0
+        bx1 is ch._bx1
+        by0 is ch._by0
+        by1 is ch._by1
+        if by1 == by0:
+            by0 is by0 - 1
+            by1 is by1 + 1
+        local pf is ch.pad_frac
+        if pf == null:
+            pf is 0
+        local pad is (by1 - by0) * pf
+        by0 is by0 - pad
+        by1 is by1 + pad
+        if bx1 == bx0:
+            bx0 is bx0 - 1
+            bx1 is bx1 + 1
+    if ch.x_min != null:
+        bx0 is ch.x_min
+    if ch.x_max != null:
+        bx1 is ch.x_max
+    if ch.y_min != null:
+        by0 is ch.y_min
+    if ch.y_max != null:
+        by1 is ch.y_max
+    if bx1 <= bx0:
+        bx1 is bx0 + 1
+    if by1 <= by0:
+        by1 is by0 + 1
+    return {"x0": bx0, "x1": bx1, "y0": by0, "y1": by1}
+
+define _chart_plot_rect(ch, ax, ay) as:
+    local pw is ch.w - ch.pad_left - ch.pad_right
+    local ph is ch.h - ch.pad_top - ch.pad_bottom
+    if pw < 1:
+        pw is 1
+    if ph < 1:
+        ph is 1
+    return [ax + ch.pad_left, ay + ch.pad_top, pw, ph]
+
+# _layout caches absolute positions; _render_chart restamps them, so a
+# headless consumer that never runs a layout pass still gets the same
+# transform the renderer used.
+define _chart_origin(ch) as:
+    local ox is ch.x
+    local oy is ch.y
+    if ch._ax != null:
+        ox is ch._ax
+    if ch._ay != null:
+        oy is ch._ay
+    return [ox, oy]
+
+# The VISIBLE window plus the plot rect it maps onto: everything the
+# data<->pixel transform needs, in one dict. This is the seam a consumer
+# reads instead of re-deriving the geometry.
+define chart_view(ch) as:
+    local o is _chart_origin of ch
+    local r is _chart_plot_rect of [ch, o[0], o[1]]
+    local b is chart_bounds of ch
+    local x0 is b.x0
+    local x1 is b.x1
+    local y0 is b.y0
+    local y1 is b.y1
+    if ch.fixed_aspect == 1:
+        # Equalize data units per pixel on both axes by growing the axis
+        # that is currently denser — never shrinking, so no data leaves.
+        local upx is (x1 - x0) / r[2]
+        local upy is (y1 - y0) / r[3]
+        local u is upx
+        if upy > u:
+            u is upy
+        local ax0 is (x0 + x1) / 2
+        local ay0 is (y0 + y1) / 2
+        x0 is ax0 - u * r[2] / 2
+        x1 is ax0 + u * r[2] / 2
+        y0 is ay0 - u * r[3] / 2
+        y1 is ay0 + u * r[3] / 2
+    local z is ch.zoom
+    if z == null:
+        z is 1.0
+    if z <= 0:
+        z is 1.0
+    local px is ch.pan_x
+    if px == null:
+        px is 0
+    local py is ch.pan_y
+    if py == null:
+        py is 0
+    if z == 1.0 and px == 0 and py == 0:
+        # Untransformed view returns the bounds verbatim: recentring by
+        # +-half-span is float-lossy, and the default case should not pay
+        # for a transform it is not using.
+        return {
+            "x0": x0, "x1": x1, "y0": y0, "y1": y1,
+            "px": r[0], "py": r[1], "pw": r[2], "ph": r[3]
+        }
+    local cx is (x0 + x1) / 2 + px
+    local cy is (y0 + y1) / 2 + py
+    local hw is (x1 - x0) / 2 / z
+    local hh is (y1 - y0) / 2 / z
+    return {
+        "x0": cx - hw, "x1": cx + hw,
+        "y0": cy - hh, "y1": cy + hh,
+        "px": r[0], "py": r[1], "pw": r[2], "ph": r[3]
+    }
+
+define _chart_map(v, dx, dy) as:
+    local sx is v.px + (dx - v.x0) / (v.x1 - v.x0) * v.pw
+    local sy is v.py + v.ph - (dy - v.y0) / (v.y1 - v.y0) * v.ph
+    return [sx, sy]
+
+# Data coordinate -> absolute screen pixel (unrounded, so a consumer can
+# do its own sub-pixel work).
+define chart_to_pixel(ch, dx, dy) as:
+    return _chart_map of [(chart_view of ch), dx, dy]
+
+# Absolute screen pixel -> data coordinate.
+define chart_from_pixel(ch, sx, sy) as:
+    local v is chart_view of ch
+    local dx is v.x0 + (sx - v.px) / v.pw * (v.x1 - v.x0)
+    local dy is v.y0 + (v.py + v.ph - sy) / v.ph * (v.y1 - v.y0)
+    return [dx, dy]
+
+define chart_reset_view(ch) as:
+    ch.pan_x is 0.0
+    ch.pan_y is 0.0
+    ch.zoom is 1.0
+
+# Pan by a PIXEL delta (a drag): the data under the cursor follows it.
+define chart_pan_by(ch, dpx, dpy) as:
+    local v is chart_view of ch
+    ch.pan_x is ch.pan_x - dpx / v.pw * (v.x1 - v.x0)
+    ch.pan_y is ch.pan_y + dpy / v.ph * (v.y1 - v.y0)
+
+# Zoom about an ANCHOR pixel: the data point under (sx, sy) stays under
+# (sx, sy). This is why the widget owns zoom — inside lib/ui it can read
+# the pointer out of the private _ui state, so a consumer never has to
+# shadow mousemove to answer "where was the cursor?" (#822).
+define chart_zoom_at(ch, factor, sx, sy) as:
+    local before is chart_from_pixel of [ch, sx, sy]
+    local z is ch.zoom * factor
+    if z < 0.001:
+        z is 0.001
+    if z > 100000:
+        z is 100000
+    ch.zoom is z
+    local after is chart_from_pixel of [ch, sx, sy]
+    ch.pan_x is ch.pan_x + (before[0] - after[0])
+    ch.pan_y is ch.pan_y + (before[1] - after[1])
+
+# ---- Ticks ----
+
+define _chart_nice_step(span, target) as:
+    if span <= 0:
+        return 1
+    local t is target
+    if t == null:
+        t is 4
+    if t < 1:
+        t is 1
+    local raw is span / t
+    if raw <= 0:
+        return 1
+    local mag is 1.0
+    loop while mag * 10 <= raw:
+        mag is mag * 10
+    loop while mag > raw:
+        mag is mag / 10
+    local nrm is raw / mag
+    local mult is 1
+    if nrm > 5:
+        mult is 10
+    elif nrm > 2:
+        mult is 5
+    elif nrm > 1:
+        mult is 2
+    return mag * mult
+
+# Round tick values covering [v0, v1] at a 1/2/5-times-power-of-ten step.
+# Values are computed as k * step (never accumulated) so a long axis does
+# not drift off the round numbers it is supposed to be labelling.
+define chart_ticks(v0, v1, target) as:
+    local out is []
+    local step is _chart_nice_step of [v1 - v0, target]
+    if step <= 0:
+        return out
+    local k is ceil of (v0 / step)
+    local guard is 0
+    loop while (k * step) <= v1 and guard < 512:
+        append of [out, k * step]
+        k is k + 1
+        guard is guard + 1
+    return out
+
+define _chart_fmt(v, step) as:
+    local s is abs of step
+    local d is 0
+    if s > 0:
+        loop while s < 1 and d < 6:
+            s is s * 10
+            d is d + 1
+    local m is pow of [10, d]
+    local r is (round of (v * m)) / m
+    if r == 0:
+        return "0"
+    return f"{r}"
+
+# ---- Clipped primitives ----
+# Liang-Barsky: the segment is clipped to the rect BEFORE it is drawn, so
+# the containment holds in the headless suite too, not only in a renderer
+# that honours gfx_clip. Returns null when the segment misses entirely.
+
+define _clip_seg(x0, y0, x1, y1, rx, ry, rw, rh) as:
+    local t0 is 0.0
+    local t1 is 1.0
+    local dx is x1 - x0
+    local dy is y1 - y0
+    local ps is [0 - dx, dx, 0 - dy, dy]
+    local qs is [x0 - rx, rx + rw - x0, y0 - ry, ry + rh - y0]
+    for i in range of 4:
+        local p is ps[i]
+        local q is qs[i]
+        if p == 0:
+            if q < 0:
+                return null
+        else:
+            local rr is q / p
+            if p < 0:
+                if rr > t1:
+                    return null
+                if rr > t0:
+                    t0 is rr
+            else:
+                if rr < t0:
+                    return null
+                if rr < t1:
+                    t1 is rr
+    return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy]
+
+# r is [x, y, w, h] of the plot area; the clip box is one pixel short on
+# each far edge so a floored endpoint still lands inside the rect. The
+# clamp after the floor is not belt-and-braces: an intersection parameter
+# is a division, so an endpoint that is mathematically ON the boundary
+# comes back as ry - 1e-13 and floors to one pixel OUTSIDE. That drew a
+# series segment one row above the plot area before the clamp existed.
+define _chart_line(x0, y0, x1, y1, r, c) as:
+    local s is _clip_seg of [x0, y0, x1, y1, r[0], r[1], r[2] - 1, r[3] - 1]
+    if s == null:
+        return null
+    local ax0 is _clampi of [(floor of s[0]), r[0], r[0] + r[2] - 1]
+    local ay0 is _clampi of [(floor of s[1]), r[1], r[1] + r[3] - 1]
+    local ax1 is _clampi of [(floor of s[2]), r[0], r[0] + r[2] - 1]
+    local ay1 is _clampi of [(floor of s[3]), r[1], r[1] + r[3] - 1]
+    gfx_line of [ax0, ay0, ax1, ay1, c[0], c[1], c[2]]
+
+define _clampi(v, lo, hi) as:
+    if v < lo:
+        return lo
+    if v > hi:
+        return hi
+    return v
+
+# Sample marks are drawn as rects intersected with the plot area rather
+# than circles, so a point at the very edge is truncated instead of
+# spilling its radius outside.
+define _chart_dot(x, y, rad, r, c) as:
+    local x0 is (floor of x) - rad
+    local y0 is (floor of y) - rad
+    local ix0 is max of [x0, r[0]]
+    local iy0 is max of [y0, r[1]]
+    local ix1 is min of [x0 + rad * 2 + 1, r[0] + r[2]]
+    local iy1 is min of [y0 + rad * 2 + 1, r[1] + r[3]]
+    if ix1 <= ix0:
+        return null
+    if iy1 <= iy0:
+        return null
+    gfx_rect of [ix0, iy0, ix1 - ix0, iy1 - iy0, c[0], c[1], c[2]]
+
+# Text inside a rect: dropped when it cannot fit vertically, truncated by
+# MEASURED width when it cannot fit horizontally (#823 — a label must
+# never be discovered running off the widget in a screenshot).
+define _chart_text(x, y, txt, c, scale, r) as:
+    if txt == null:
+        return null
+    if (len of txt) == 0:
+        return null
+    if y < r[1]:
+        return null
+    if y + (text_height of scale) > r[1] + r[3]:
+        return null
+    local tx is x
+    if tx < r[0]:
+        tx is r[0]
+    local avail is r[0] + r[2] - tx
+    if avail <= 0:
+        return null
+    _draw_text_clipped of [tx, y, avail, txt, c, scale]
+
+define _chart_series_color(ch, si) as:
+    local s is ch.series[si]
+    if s.color != null:
+        return s.color
+    local pal is _theme_color of ["plot_series", [[80, 140, 220]]]
+    return pal[si % (len of pal)]
 
 define bar_chart(id, x, y, w, h, labels, values, on_click) as:
     return {
@@ -98,90 +623,139 @@ define code_view(id, x, y, w, h, text) as:
     }
 
 define _render_chart(widget, ax, ay) as:
-    # Background
-    gfx_rect of [ax, ay, widget.w, widget.h, 25, 25, 35]
-    gfx_rrect of [ax, ay, widget.w, 1, 0, 40, 40, 55]
-    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, 40, 40, 55]
-    # Compute y range
-    chart_min is widget.y_min
-    chart_max is widget.y_max
-    if widget.auto_scale == 1 and (len of widget.series) > 0:
-        chart_min is 999999
-        chart_max is -999999
-        for si in range of (len of widget.series):
-            sd is widget.series[si].data
-            for di in range of (len of sd):
-                if sd[di] < chart_min:
-                    chart_min is sd[di]
-                if sd[di] > chart_max:
-                    chart_max is sd[di]
-        if chart_min == chart_max:
-            chart_min is chart_min - 1
-            chart_max is chart_max + 1
-        pad is (chart_max - chart_min) * 0.1
-        chart_min is chart_min - pad
-        chart_max is chart_max + pad
-    y_range is chart_max - chart_min
-    if y_range == 0:
-        y_range is 1
-    plot_x is ax + 40
-    plot_y is ay + 4
-    plot_w is widget.w - 56
-    plot_h is widget.h - 24
-    # Grid lines
+    # Restamp the layout cache so chart_view (used by hover, pan/zoom and
+    # any consumer) resolves against exactly the rect being drawn.
+    widget._ax is ax
+    widget._ay is ay
+    local bg is widget.bg
+    if bg == null:
+        bg is _theme_color of ["plot_bg", [25, 25, 35]]
+    local gcol is _theme_color of ["plot_grid", [40, 40, 55]]
+    local acol is _theme_color of ["plot_axis", [70, 70, 95]]
+    local bcol is _theme_color of ["plot_border", [40, 40, 55]]
+    local dim is _theme.text_dim
+    local txt is _theme.text_color
+    # The widget rect — everything below stays inside it.
+    local wr is [ax, ay, widget.w, widget.h]
+    gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
+    local v is chart_view of widget
+    local r is [v.px, v.py, v.pw, v.ph]
+    local xstep is _chart_nice_step of [v.x1 - v.x0, widget.ticks_x]
+    local ystep is _chart_nice_step of [v.y1 - v.y0, widget.ticks_y]
+    # Grid + tick labels
     if widget.grid == 1:
-        for gi in range of 5:
-            gy is plot_y + floor of (gi * plot_h / 4)
-            gfx_line of [plot_x, gy, plot_x + plot_w, gy, 40, 40, 55]
-            # Y label
-            gval is chart_max - gi * y_range / 4
-            gfx_text of [ax + 2, gy - 3, f"{floor of gval}", _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
-    # Axis labels
-    if (len of widget.x_label) > 0:
-        gfx_text of [plot_x + floor of (plot_w / 2) - floor of ((text_width of [widget.x_label, 1]) / 2), ay + widget.h - 10, widget.x_label, _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
-    # Series polylines
+        local xt is chart_ticks of [v.x0, v.x1, widget.ticks_x]
+        for i in range of (len of xt):
+            local gp is _chart_map of [v, xt[i], v.y0]
+            _chart_line of [gp[0], v.py, gp[0], v.py + v.ph, r, gcol]
+            local lb is _chart_fmt of [xt[i], xstep]
+            local lw is text_width of [lb, 1]
+            local lx is (floor of gp[0]) - floor of (lw / 2)
+            if lx < ax + 1:
+                lx is ax + 1
+            if lx + lw > ax + widget.w - 1:
+                lx is ax + widget.w - 1 - lw
+            _chart_text of [lx, v.py + v.ph + 3, lb, dim, 1, wr]
+        local yt is chart_ticks of [v.y0, v.y1, widget.ticks_y]
+        for i in range of (len of yt):
+            local gp is _chart_map of [v, v.x0, yt[i]]
+            _chart_line of [v.px, gp[1], v.px + v.pw, gp[1], r, gcol]
+            local lb is _chart_fmt of [yt[i], ystep]
+            _chart_text of [ax + 2, (floor of gp[1]) - 3, lb, dim, 1, [ax, ay, widget.pad_left - 4, widget.h]]
+    # Axis lines at data zero — the reference a phase portrait is read against
+    if widget.axes == 1:
+        local zp is _chart_map of [v, 0, 0]
+        _chart_line of [zp[0], v.py, zp[0], v.py + v.ph, r, acol]
+        _chart_line of [v.px, zp[1], v.px + v.pw, zp[1], r, acol]
+    # Series + markers: software-clipped per primitive, and gfx_clip'd as
+    # well so the real renderer enforces it independently.
+    gfx_clip of [v.px, v.py, v.pw, v.ph]
     for si in range of (len of widget.series):
-        s is widget.series[si]
-        c is s.color
-        n is len of s.data
-        if n > 1:
-            prev_x is plot_x
-            prev_sy is plot_y + plot_h - floor of ((s.data[0] - chart_min) / y_range * plot_h)
-            for di in range of n:
-                frac_x is di / (n - 1)
-                sx is plot_x + floor of (frac_x * plot_w)
-                frac_y is (s.data[di] - chart_min) / y_range
-                sy is plot_y + plot_h - floor of (frac_y * plot_h)
-                if di > 0:
-                    gfx_line of [prev_x, prev_sy, sx, sy, c[0], c[1], c[2]]
-                prev_x is sx
-                prev_sy is sy
+        local s is widget.series[si]
+        local c is _chart_series_color of [widget, si]
+        local style is s.style
+        if style == null:
+            style is "line"
+        local pr is s.point_r
+        if pr == null:
+            pr is 2
+        local xs is s.x
+        local n is len of s.data
+        local lastx is 0
+        local lasty is 0
+        local have is 0
+        for di in range of n:
+            local vx is di
+            if xs != null:
+                vx is xs[di]
+            local p is _chart_map of [v, vx, s.data[di]]
+            if have == 1:
+                if style != "points":
+                    _chart_line of [lastx, lasty, p[0], p[1], r, c]
+            if style != "line":
+                _chart_dot of [p[0], p[1], pr, r, c]
+            lastx is p[0]
+            lasty is p[1]
+            have is 1
+    for mi in range of (len of widget.markers):
+        local m is widget.markers[mi]
+        local mc is m.color
+        if mc == null:
+            mc is acol
+        local mlab is m.label
+        if m.kind == "hline":
+            local mp is _chart_map of [v, v.x0, m.y]
+            _chart_line of [v.px, mp[1], v.px + v.pw, mp[1], r, mc]
+            _chart_text of [v.px + 3, (floor of mp[1]) - (text_height of 1) - 2, mlab, mc, 1, r]
+        elif m.kind == "point":
+            local mp is _chart_map of [v, m.x, m.y]
+            _chart_dot of [mp[0], mp[1], 3, r, mc]
+            _chart_text of [(floor of mp[0]) + 5, (floor of mp[1]) - (text_height of 1), mlab, mc, 1, r]
+        else:
+            local mp is _chart_map of [v, m.x, v.y0]
+            _chart_line of [mp[0], v.py, mp[0], v.py + v.ph, r, mc]
+            _chart_text of [(floor of mp[0]) + 2, v.py + 1, mlab, mc, 1, r]
+    # Hovered sample: a mark plus its data coordinate
+    if widget.hover_series >= 0 and widget.hover_series < (len of widget.series):
+        local hs is widget.series[widget.hover_series]
+        if widget.hover_index >= 0 and widget.hover_index < (len of hs.data):
+            local hy is hs.data[widget.hover_index]
+            local hx is widget.hover_index
+            if hs.x != null:
+                hx is hs.x[widget.hover_index]
+            local hp is _chart_map of [v, hx, hy]
+            local hc is _chart_series_color of [widget, widget.hover_series]
+            _chart_dot of [hp[0], hp[1], 3, r, hc]
+            local ht is f"{_chart_fmt of [hx, xstep]}, {_chart_fmt of [hy, ystep]}"
+            _chart_text of [(floor of hp[0]) + 6, (floor of hp[1]) - (text_height of 1) - 2, ht, txt, 1, r]
     # Legend
-    lx is plot_x + 4
-    for si in range of (len of widget.series):
-        s is widget.series[si]
-        c is s.color
-        gfx_rrect of [lx, plot_y + 2, 8, 8, 2, c[0], c[1], c[2]]
-        gfx_text of [lx + 12, plot_y + 2, s.label, _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], 1]
-        lx is lx + (text_width of [s.label, 1]) + 20
-    # Hover tooltip
-    if widget.hover_index >= 0:
+    if widget.legend == 1:
+        local lgx is v.px + 4
         for si in range of (len of widget.series):
-            s is widget.series[si]
-            if widget.hover_index < (len of s.data):
-                val is s.data[widget.hover_index]
-                n is len of s.data
-                if n > 1:
-                    hx is plot_x + floor of (widget.hover_index / (n - 1) * plot_w)
-                else:
-                    hx is plot_x
-                hy is plot_y + plot_h - floor of ((val - chart_min) / y_range * plot_h)
-                gfx_circle of [hx, hy, 3, s.color[0], s.color[1], s.color[2]]
-                gfx_text of [hx + 6, hy - 8, f"{floor of (val * 100) / 100}", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], 1]
+            local s is widget.series[si]
+            local c is _chart_series_color of [widget, si]
+            local lab is s.label
+            if lab == null:
+                lab is ""
+            _chart_dot of [lgx + 4, v.py + 6, 3, r, c]
+            _chart_text of [lgx + 12, v.py + 2, lab, txt, 1, r]
+            lgx is lgx + (text_width of [lab, 1]) + 20
+    gfx_clip of null
+    # Axis captions
+    if (len of widget.x_label) > 0:
+        local xw is text_width of [widget.x_label, 1]
+        _chart_text of [v.px + floor of ((v.pw - xw) / 2), ay + widget.h - (text_height of 1) - 2, widget.x_label, dim, 1, wr]
+    if (len of widget.y_label) > 0:
+        _chart_text of [ax + 2, ay + 1, widget.y_label, dim, 1, wr]
+    # Border
+    gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
+    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
 
 define _render_bar_chart(widget, ax, ay) as:
-    # Background
-    gfx_rect of [ax, ay, widget.w, widget.h, 25, 25, 35]
+    # Background — theme-keyed (#820), current values as the defaults
+    bar_bg is _theme_color of ["plot_bg", [25, 25, 35]]
+    bar_border is _theme_color of ["plot_border", [40, 40, 55]]
+    gfx_rect of [ax, ay, widget.w, widget.h, bar_bg[0], bar_bg[1], bar_bg[2]]
     n is len of widget.values
     if n > 0:
         bar_area_h is widget.h - 30
@@ -220,8 +794,8 @@ define _render_bar_chart(widget, ax, ay) as:
                 lw is text_width of [lt, 1]
                 gfx_text of [bx + floor of ((bar_w - lw) / 2), ay + widget.h - 12, lt, _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
     # Border
-    gfx_rrect of [ax, ay, widget.w, 1, 0, 40, 40, 55]
-    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, 40, 40, 55]
+    gfx_rrect of [ax, ay, widget.w, 1, 0, bar_border[0], bar_border[1], bar_border[2]]
+    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bar_border[0], bar_border[1], bar_border[2]]
 
 define _render_gauge(widget, ax, ay) as:
     cx is ax + floor of (widget.w / 2)
@@ -293,11 +867,14 @@ define _render_canvas(widget, ax, ay) as:
         widget.on_paint of [widget, ax, ay]
 
 define _render_waveform_view(widget, ax, ay) as:
-    # Background
-    gfx_rect of [ax, ay, widget.w, widget.h, 18, 18, 26]
+    # Background — theme-keyed (#820), current values as the defaults
+    wv_bg is _theme_color of ["wave_bg", [18, 18, 26]]
+    wv_center is _theme_color of ["wave_center", [35, 35, 45]]
+    wv_border is _theme_color of ["wave_border", [35, 35, 45]]
+    gfx_rect of [ax, ay, widget.w, widget.h, wv_bg[0], wv_bg[1], wv_bg[2]]
     mid_y is ay + floor of (widget.h / 2)
     # Center line
-    gfx_line of [ax, mid_y, ax + widget.w, mid_y, 35, 35, 45]
+    gfx_line of [ax, mid_y, ax + widget.w, mid_y, wv_center[0], wv_center[1], wv_center[2]]
     # Selection highlight. The fill is deliberately faint (alpha 30), so
     # a selection spanning the whole visible range would be a uniform
     # tint with no visible boundary — imperceptible (select-all looked
@@ -351,8 +928,8 @@ define _render_waveform_view(widget, ax, ay) as:
         if px >= 0 and px < widget.w:
             gfx_line of [ax + px, ay, ax + px, ay + widget.h, 255, 80, 80]
     # Border
-    gfx_rrect of [ax, ay, widget.w, 1, 0, 35, 35, 45]
-    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, 35, 35, 45]
+    gfx_rrect of [ax, ay, widget.w, 1, 0, wv_border[0], wv_border[1], wv_border[2]]
+    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, wv_border[0], wv_border[1], wv_border[2]]
 
 define _render_code_view(widget, ax, ay) as:
     # Background
@@ -394,26 +971,91 @@ define _render_code_view(widget, ax, ay) as:
         sb_y is ay + floor of (widget.scroll_y * (widget.h - sb_h) / (total_h - widget.h))
         gfx_rrect of [ax + widget.w - 6, sb_y, 4, sb_h, 2, 80, 80, 100]
 
+# Nearest sample in PIXEL space — with a data-coordinate x the samples
+# are no longer evenly spaced, so an index-from-x formula would point at
+# the wrong one. Costs one pass over the plotted points; a live plot with
+# a long history sets hover_enabled to 0.
 define _mousemove_chart(hit, root, mx, my) as:
-    abs_x is hit._ax
-    plot_x is abs_x + 40
-    plot_w is hit.w - 56
-    rel_x is mx - plot_x
-    if rel_x >= 0 and plot_w > 0 and (len of hit.series) > 0:
-        max_n is 0
-        for si in range of (len of hit.series):
-            if (len of hit.series[si].data) > max_n:
-                max_n is len of hit.series[si].data
-        if max_n > 1:
-            hit.hover_index is floor of (rel_x / plot_w * (max_n - 1) + 0.5)
-            if hit.hover_index < 0:
-                hit.hover_index is 0
-            if hit.hover_index >= max_n:
-                hit.hover_index is max_n - 1
-        else:
-            hit.hover_index is 0
-    else:
-        hit.hover_index is -1
+    hit.hover_index is -1
+    hit.hover_series is -1
+    if hit.hover_enabled == 0:
+        return null
+    local v is chart_view of hit
+    if mx < v.px:
+        return null
+    if mx > v.px + v.pw:
+        return null
+    if my < v.py:
+        return null
+    if my > v.py + v.ph:
+        return null
+    local best is -1
+    local bsi is -1
+    local bd is 0 - 1
+    for si in range of (len of hit.series):
+        local s is hit.series[si]
+        local xs is s.x
+        local n is len of s.data
+        for di in range of n:
+            local vx is di
+            if xs != null:
+                vx is xs[di]
+            local p is _chart_map of [v, vx, s.data[di]]
+            local ddx is p[0] - mx
+            local ddy is p[1] - my
+            local d2 is ddx * ddx + ddy * ddy
+            if bd < 0:
+                bd is d2
+                best is di
+                bsi is si
+            elif d2 < bd:
+                bd is d2
+                best is di
+                bsi is si
+    # Snap radius 20px — past that the pointer is not on any sample.
+    if bd >= 0:
+        if bd <= 400:
+            hit.hover_index is best
+            hit.hover_series is bsi
+
+# Drag to pan. The chart claims the pointer so every following mousemove
+# and the terminating mouseup route here (#567).
+define _mousedown_chart(hit, root, mx, my, ev) as:
+    if hit.interactive == 0:
+        return null
+    _ui.drag_widget is hit
+    _ui.drag_ox is mx
+    _ui.drag_oy is my
+
+define _drag_chart(w, ev) as:
+    local dx is ev.x - _ui.drag_ox
+    local dy is ev.y - _ui.drag_oy
+    _ui.drag_ox is ev.x
+    _ui.drag_oy is ev.y
+    chart_pan_by of [w, dx, dy]
+
+# Wheel to zoom about the cursor. dispatch hands the wheel to the widget
+# under the pointer, and the pointer itself lives in the private _ui
+# state — reachable from here, so a consumer never shadows mousemove to
+# get it (#822). ev.mx/ev.my are preferred when an event carries them.
+define _wheel_chart(w, ev) as:
+    if w.interactive == 0:
+        return null
+    local mx is _ui.last_mouse_x
+    local my is _ui.last_mouse_y
+    if ev.mx != null:
+        mx is ev.mx
+    if ev.my != null:
+        my is ev.my
+    local d is ev.y
+    if d == null:
+        return null
+    if d == 0:
+        return null
+    local f is 1.0 + 0.2 * d
+    if d < 0:
+        f is 1.0 / (1.0 - 0.2 * d)
+    chart_zoom_at of [w, f, mx, my]
 
 define _mousemove_bar_chart(hit, root, mx, my) as:
     abs_x is hit._ax
@@ -462,6 +1104,7 @@ define _mousedown_bar_chart(hit, root, mx, my, ev) as:
 
 define _clear_hover_chart(widget) as:
     widget.hover_index is -1
+    widget.hover_series is -1
 
 define _clear_hover_bar_chart(widget) as:
     widget.hover_index is -1
@@ -487,8 +1130,9 @@ define _scroll_code_view(widget, dx, dy) as:
 _register_widget of ["chart", {
     "render": _render_chart,
     "hit_test": null,
-    "on_mousedown": null,
+    "on_mousedown": _mousedown_chart,
     "on_mousemove": _mousemove_chart,
+    "on_drag": _drag_chart,
     "clear_hover": _clear_hover_chart,
     "clear_pressed": null,
     "scroll": null,

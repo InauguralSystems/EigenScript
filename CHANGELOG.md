@@ -4,6 +4,58 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`lib/ui`'s `chart` is now an x-y plot (#819, closes #820).** Four
+  consumers converged on the same missing capability — dynamics' phase
+  portrait, eigen-sheet's recomputing 2D charts, EigenMiniSat's
+  counters-over-time with restart markers, iLambdaAi's multi-run loss
+  overlays — each of which was about to hand-roll it on a `canvas`.
+  Rather than a second chart type, `chart` was generalized in place: a
+  series carries its own optional `x` list (null keeps index-x, so a bare
+  y-list plots exactly as before), the axes/ticks come from the data
+  range with per-axis explicit overrides, `fixed_aspect` equalizes data
+  units per pixel so a circle stays circular, `markers` overlay vlines /
+  hlines / labelled points at data coordinates, and the view has a
+  pan/zoom transform — drag to pan, wheel to zoom **about the cursor**.
+  That last one is why the widget owns zoom: the pointer position lives
+  in the toolkit's private `_ui` state, so a consumer doing this itself
+  has to shadow every `mousemove` (#822); inside `lib/ui` it is just a
+  read. New surface: `chart_series`, `chart_add_series`, `chart_marker`,
+  `chart_add_marker`, `add_xy`, `chart_trim`, `chart_invalidate`,
+  `chart_bounds`, `chart_view`, `chart_to_pixel`, `chart_from_pixel`,
+  `chart_ticks`, `chart_pan_by`, `chart_zoom_at`, `chart_reset_view`.
+  Two properties are structural rather than optional:
+  - **Clipped.** These are live views of data that leaves the window, so
+    every primitive is clipped to the widget: segments through a
+    Liang–Barsky clip against the plot rect *before* they are drawn,
+    marks as intersected rects, tick/legend/marker text truncated to
+    measured width. `gfx_clip` is set for the real renderer too, but the
+    containment is a property of the render code — which is what lets
+    `tests/test_ui.eigs` prove it headlessly by recording every stubbed
+    `gfx_*` call and checking its extent, at extreme pan and extreme
+    zoom, with a planted unclipped primitive proving the probe is live.
+    (Clamping the clipped endpoints after `floor` is load-bearing: an
+    intersection parameter is a division, so an endpoint mathematically
+    *on* the boundary came back as `ry - 1e-13` and floored one pixel
+    outside — a series segment drawn one row above the plot area.)
+  - **Incremental.** `add_point`/`add_xy` widen the cached data bounds in
+    O(1) and the render-time scan visits only samples appended since the
+    last frame, so a live plot at frame rate never re-walks its history.
+    A series that is new, has shrunk, or no longer ends where the cache
+    last saw it forces one full rescan; `chart_invalidate` covers the
+    one case O(1) detection cannot see (a same-length in-place rewrite
+    ending on the same sample).
+
+  #820 lands with it: `chart`, `bar_chart` and `waveform_view` now read
+  `plot_bg`/`plot_grid`/`plot_axis`/`plot_border`/`plot_series` and
+  `wave_bg`/`wave_center`/`wave_border` off the theme instead of
+  hardcoding them, with the current values as the defaults — so a themed
+  app restyles the data surfaces, not just the chrome around them. A
+  hand-built theme dict predating those keys falls back rather than
+  failing. `add_point` moved from `lib/ui.eigs` to `lib/ui_w_viz.eigs`
+  alongside the widget it belongs to.
+
 ### Fixed
 
 - **The global env is composed through one registration seam, and the

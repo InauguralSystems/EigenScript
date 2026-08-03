@@ -12,6 +12,17 @@ define _point_in_rect(px, py, x, y, w, h) as:
         return 1
     return 0
 
+# ---- Theme lookup ----
+# Apps build custom themes by copying a built-in dict and overwriting
+# keys; a hand-rolled dict predating a key would read null and crash the
+# render. Every theme key added after a widget shipped goes through this.
+
+define _theme_color(key, fallback) as:
+    local c is _theme[key]
+    if c == null:
+        return fallback
+    return c
+
 # ---- Text measurement ----
 # Real pixel metrics via gfx_text_width / gfx_text_height when the runtime
 # has them (#593: proportional TTF metrics when SDL2_ttf + a font are

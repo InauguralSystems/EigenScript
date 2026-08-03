@@ -537,6 +537,60 @@ tree walk and hit-tested before it, so it sits above whatever it covers
 no matter where the bar lives in the tree — the z-order a shell used to
 hand-roll by adding every `menu` last to the root.
 
+**`chart(id, x, y, w, h)` is an x-y plot** (#819) — data coordinates on
+both axes, not y-vs-index. Everything else is set on the returned dict.
+
+| Call | What it does |
+|---|---|
+| `chart_series(label, xs, ys, color)` | Build a series. `xs` null keeps index-x, so a bare y-list plots as before. `color` null takes the theme's `plot_series` palette by position. Set `.style` to `"line"` (default), `"points"` or `"both"`, and `.point_r` for the mark size |
+| `chart_add_series(ch, s)` | Append a series; returns its index |
+| `chart_marker(kind, x, y, label, color)` | Build an overlay marker: `"vline"` at a data x, `"hline"` at a data y, `"point"` at (x, y). `label` may be `""` |
+| `chart_add_marker(ch, m)` | Append a marker; returns its index |
+| `add_point(ch, si, y)` | Append one sample at the next index-x position |
+| `add_xy(ch, si, x, y)` | Append one sample at a data coordinate (promotes an index-x series, backfilling its positions) |
+| `chart_trim(ch, si, max_n)` | Keep only the newest `max_n` samples — the rolling window for a live plot |
+| `chart_invalidate(ch)` | Forget the bounds cache (see below) |
+| `chart_bounds(ch)` | The resolved DATA range `{x0, x1, y0, y1}` — auto-scale plus explicit overrides, before fixed-aspect and pan/zoom |
+| `chart_view(ch)` | The VISIBLE window plus the plot rect: `{x0, x1, y0, y1, px, py, pw, ph}`. This is the seam to read instead of re-deriving the geometry |
+| `chart_to_pixel(ch, dx, dy)` / `chart_from_pixel(ch, sx, sy)` | Data ⇄ absolute screen pixel, unrounded |
+| `chart_ticks(v0, v1, target)` | Round tick values covering `[v0, v1]` at a 1/2/5×10ⁿ step |
+| `chart_pan_by(ch, dpx, dpy)` / `chart_zoom_at(ch, factor, sx, sy)` / `chart_reset_view(ch)` | The view transform, by pixel delta and about an anchor pixel |
+
+Range: an explicit non-null `x_min`/`x_max`/`y_min`/`y_max` always wins;
+otherwise `auto_scale` 1 (the default) derives the range from the data,
+padding y by `pad_frac` (0.1). `fixed_aspect` 1 makes one data unit the
+same number of pixels on both axes — a circle stays circular — by
+*growing* the denser axis, so nothing is pushed out of view.
+
+**Interaction is built in.** `interactive` (default 1) gives drag-to-pan
+and wheel-to-zoom-about-the-cursor. The widget reads the pointer out of
+the toolkit's own state, so a consumer never has to shadow `mousemove`
+to answer "where was the cursor when the user scrolled?" (#822).
+`hover_index`/`hover_series` report the nearest sample *in pixel space*
+(data-coordinate samples are not evenly spaced, so an index-from-x
+formula would pick the wrong one); that scan is one pass over the
+plotted points, so a long live history sets `hover_enabled` to 0.
+
+**Live data is incremental.** `add_point`/`add_xy` widen the cached data
+bounds in O(1) and the render-time scan only visits samples appended
+since the last frame — appending at frame rate never re-walks the
+history. A series that is new, has shrunk, or no longer ends where the
+cache last saw it forces one full rescan, which covers `ch.series is
+[…]`, `s.data is […]`, and `chart_trim`. The one case that cannot be
+detected in O(1) is rewriting a data list in place with the same length
+*and* the same final sample — call `chart_invalidate of ch` there.
+
+**It is clipped and theme-keyed by construction.** No data, at any pan or
+zoom, can paint outside the widget rect: segments are clipped to the plot
+rect before they are drawn (so the containment is a property of the
+render code, not of the renderer) and `gfx_clip` is set as well; tick,
+legend and marker text is truncated to measured width rather than
+overflowing. Colors come from the theme keys `plot_bg`, `plot_grid`,
+`plot_axis`, `plot_border` and the `plot_series` palette — shared with
+`bar_chart`, while `waveform_view` uses `wave_bg`/`wave_center`/
+`wave_border` (#820). A theme dict predating those keys falls back to the
+built-in defaults instead of failing.
+
 Notes on widget state, where the toolkit could otherwise shadow yours:
 
 - **`label` measures itself.** Its `w`/`h` come from its text and scale,
