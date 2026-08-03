@@ -281,6 +281,18 @@ typedef struct EigsChunk {
      * as Value/env refcounts. */
     int      refcount;
 
+    /* #830: 1 when this chunk came out of the bytecode compiler, which
+     * scanned its source for temporal queries and armed the names they can
+     * reach (trace_arm_history_name/all). ONLY such a chunk may use the
+     * armed-name filter in trace_assign_filtered — the filter's soundness
+     * is exactly that scan. A chunk assembled from a descriptor
+     * (vm_run_bytecode / sandbox_run) was never scanned, so its assignments
+     * go through the unfiltered trace_assign and record every name.
+     * Default 0 (unfiltered) is the conservative direction: forgetting to
+     * stamp a compiler-produced chunk costs recording work, while wrongly
+     * stamping an unscanned one is a silent wrong answer. */
+    uint8_t  compiler_scanned;
+
     uint8_t *code;              /* bytecode array */
     int      code_len;
     int      code_cap;

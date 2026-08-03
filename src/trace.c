@@ -303,7 +303,7 @@ static void hist_drop(HistoryEntry *h) {
     if (h->has_prev_value) slot_decref(h->prev_value);
 }
 
-static void prev_record_assign(const char *name, EigsSlot value) {
+static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     if (!eigs_current || !name) return;
     if (g_prev_count * PREV_LOAD_DEN >= g_prev_cap * PREV_LOAD_NUM) {
         prev_grow();
@@ -314,12 +314,18 @@ static void prev_record_assign(const char *name, EigsSlot value) {
         e->name = name;
         g_prev_count++;
     }
-    /* #827 defect A: names no temporal query can name record nothing. */
-    if (__builtin_expect(e->armed_gen != g_arm_gen, 0)) {
-        e->armed_gen = g_arm_gen;
-        e->armed = (uint8_t)(g_arm_all || arm_set_has(name));
+    /* #827 defect A: names no temporal query can name record nothing.
+     * #830: only for a caller whose chunk the bytecode compiler scanned —
+     * `filtered`. An unscanned producer (the AOT's aot_trace_assign, an
+     * embedder, hand-assembled bytecode) never fed the armed-name set, so
+     * applying it there drops assignments its own temporal reads then miss. */
+    if (filtered) {
+        if (__builtin_expect(e->armed_gen != g_arm_gen, 0)) {
+            e->armed_gen = g_arm_gen;
+            e->armed = (uint8_t)(g_arm_all || arm_set_has(name));
+        }
+        if (!e->armed) return;
     }
-    if (!e->armed) return;
 
     if (e->has_current) {
         /* Shift current -> prev; drop the old prev. */
@@ -1259,11 +1265,11 @@ static void write_slot(EigsSlot s) {
     tp_puts("<unknown>");
 }
 
-void trace_assign(const char *name, EigsSlot value) {
+static void trace_assign_ex(const char *name, EigsSlot value, int filtered) {
     /* Prev-map update runs regardless of EIGS_TRACE — `prev of x` is a
      * language feature, not a tape feature. The tape write below is
      * still gated on a tape (file or sink) being open. */
-    prev_record_assign(name, value);
+    prev_record_assign(name, value, filtered);
 
     if (!trace_out_active()) return;
     if (!name) name = "?";
@@ -1289,6 +1295,24 @@ void trace_assign(const char *name, EigsSlot value) {
     write_slot(value);
     tp_putc('\n');
     g_line_dirty = 1;
+}
+
+/* #830: the public, producer-facing entry point — an explicit "record this
+ * assignment" request, honoured unconditionally. Every producer that is not
+ * the bytecode compiler (the AOT's emitted C, an embedder, a hand-assembled
+ * chunk) reaches the history through here and needs no arming ritual it has
+ * no way to perform. */
+void trace_assign(const char *name, EigsSlot value) {
+    trace_assign_ex(name, value, 0);
+}
+
+/* The narrowed twin, for callers running a chunk the bytecode compiler
+ * scanned (EigsChunk.compiler_scanned): #827's armed-name set is a valid
+ * per-assign CPU filter exactly there, because that scan is what populated
+ * it. Retention is bounded by the suffix-minima pruning either way — this is
+ * an optimization, never a safety property. */
+void trace_assign_filtered(const char *name, EigsSlot value) {
+    trace_assign_ex(name, value, 1);
 }
 
 /* ----- Full-fidelity writer for nondet records.

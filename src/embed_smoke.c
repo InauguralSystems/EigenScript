@@ -14,6 +14,12 @@
 #include <sys/time.h>
 
 #include "eigs_embed.h"
+/* #830: the trace seam an ALTERNATIVE PRODUCER uses. The AOT (sibling
+ * `ouroboros` repo) emits C that includes this same header off the runtime's
+ * src/ and drives the history directly — no bytecode compiler anywhere in the
+ * process. Reached here by quoted include, exactly as an out-of-tree producer
+ * reaches it. */
+#include "trace.h"
 
 static int failures = 0;
 
@@ -80,6 +86,45 @@ static EigsValue *host_add(EigsValue *arg) {
 int main(void) {
     EigsState *st = eigs_open();
     CHECK(st != NULL, "eigs_open");
+
+    /* --- #830: temporal reads from a NON-COMPILER PRODUCER. -----------
+     * This is the AOT's exact shape, and it runs FIRST on purpose: not one
+     * line of EigenScript source has been compiled yet, so nothing has armed
+     * a history name — which is precisely the state an AOT-compiled binary
+     * (and any embedder driving the trace seam) lives in for its whole run.
+     * #827 filtered the history on that armed-name set, so v0.35.1 dropped
+     * every assignment here and answered `null` to every `prev of` /
+     * `at`-qualified read in an AOT binary. It shipped, and the suite stayed
+     * green, because nothing tested a producer other than the compiler.
+     *
+     * Must stay ahead of the spawn tests below: `spawn` widens the armed set
+     * to the wildcard (trace_arm_history_all_mt), which would mask the bug.
+     *
+     * The name is one pointer used for both the record and the query — the
+     * prev-table is keyed by pointer identity, which is what "interned name"
+     * means at this seam, and what the AOT gets from C literal pooling. */
+    {
+        static const char *const NM = "aot_x";
+        EigsSlot s, out;
+        int line_save = g_trace_current_line;
+
+        g_trace_current_line = 10;
+        s.d = 11.0; trace_assign(NM, s);
+        g_trace_current_line = 20;
+        s.d = 22.0; trace_assign(NM, s);
+
+        CHECK(trace_query_prev(NM, &out) && out.d == 11.0,
+              "#830: prev of a name recorded by a non-compiler producer");
+        /* TEMPORAL-BACKWARD: at 15 the answer is the line-10 assignment. */
+        CHECK(trace_query_at(0, NM, 15, &out) && out.d == 11.0,
+              "#830: what-at from a non-compiler producer (line-10 value)");
+        CHECK(trace_query_at(0, NM, 99, &out) && out.d == 22.0,
+              "#830: what-at past the last non-compiler assignment");
+        CHECK(trace_query_at(2, NM, 99, &out) && out.d == 2.0,
+              "#830: when-at counts non-compiler assignments");
+
+        g_trace_current_line = line_save;
+    }
 
     /* --- Eval a script that defines a global. ------------------------ */
     EigsValue *r = eigs_eval_string("x is 5\ny is x * 7\ny");

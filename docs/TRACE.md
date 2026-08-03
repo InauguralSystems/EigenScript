@@ -301,6 +301,35 @@ in-run time travel.
   naming a name (the REPL, `record_history of 1`). Arming only ever widens
   within a session — a name armed mid-run by `eval` starts recording from
   that point, the same edge the whole-program gate already had.
+- **Arming is an optimization, and it applies only to the bytecode
+  compiler's own chunks** (#830). The narrowing above is sound because a
+  compile-time scan enumerated the names; nothing else in the process can
+  populate that set. The bytecode compiler is *not* the only producer of
+  EigenScript programs, though — the AOT (sibling `ouroboros` repo) emits C
+  that calls `trace_assign` directly, an embedder can drive the same seam,
+  and `vm_run_bytecode` / `sandbox_run` assemble a chunk from a descriptor.
+  v0.35.1 filtered those producers on a set they never fed, so their
+  assignments recorded nothing and every `prev of` / `at`-qualified read
+  answered `null` — a silent wrong answer, in a public release, that the
+  whole suite missed because no test exercised a non-compiler producer.
+  The rule now follows the chunk's provenance:
+
+  - `trace_assign(name, slot)` is the producer-facing entry point and
+    **records unconditionally**. Any new producer gets correct temporal
+    reads by calling it and nothing else; there is no arming ritual to
+    remember, and no way to be silently wrong by forgetting one.
+  - `trace_assign_filtered(name, slot)` is the narrowed twin, used only by
+    the VM/JIT assignment hooks and only when the running chunk carries
+    `EigsChunk.compiler_scanned` — i.e. the compiler produced it and armed
+    its names. A descriptor-assembled chunk does not carry it, so it
+    records every name.
+
+  Retention is bounded by the pruning below in either case, so nothing here
+  can bring back the unbounded growth #827 fixed: this filter has only ever
+  been a per-assign CPU saving. Coverage lives in
+  `tests/test_temporal_producers.eigs` (suite `[70e]`, the descriptor
+  producer) and `src/embed_smoke.c` (`make embed-smoke`, the AOT's exact
+  C-level shape, with no source compiled anywhere in the process).
 - When the compiled program contains a `where`/`why`/`how ... at`
   query, each history entry also stamps an observer snapshot
   (entropy, dH) at assign time, so the observer-derived

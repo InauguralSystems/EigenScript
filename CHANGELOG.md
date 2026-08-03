@@ -4,6 +4,61 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Temporal reads work again for producers that are not the bytecode
+  compiler (#830).** #827 narrowed the assignment history to an armed-name
+  set — and that set is populated only by `src/compiler.c`. The bytecode
+  compiler is not the only producer of EigenScript programs: the AOT
+  (sibling `ouroboros` repo) emits C and links the runtime without ever
+  running the compiler, an embedder can drive the trace seam directly, and
+  `vm_run_bytecode` / `sandbox_run` assemble a chunk from a descriptor. On
+  all of those, nothing armed, `trace_assign` became a silent no-op, and
+  every history-backed read — `prev of x`, `prev of x at L`, and the
+  `at`-qualified `what/who/when/where/why/how` — returned `null` instead of
+  the value. Three lines reproduce it (`x is 1` / `x is 5` /
+  `print of (prev of x)`): v0.34.0 answered `1` on both the VM and the AOT,
+  v0.35.1 answered `1` on the VM and `null` on the AOT. A **silent wrong
+  answer**, shipped in a public release, that ouroboros's AOT differential
+  caught (6 of 60 programs red) and this repo's own suite did not — because
+  no test anywhere asked a temporal question through a non-compiler
+  producer. Bare interrogatives read observer state, so they were
+  unaffected, which is exactly why everything stayed green.
+
+  The fix follows the chunk's provenance rather than a process-global mode.
+  `trace_assign()` is the producer-facing entry point and now records
+  unconditionally — a new producer is correct by calling it and nothing
+  else. The narrowing moved to `trace_assign_filtered()`, used by the
+  VM/JIT hooks only for a chunk carrying the new
+  `EigsChunk.compiler_scanned` stamp, i.e. one the compiler produced and
+  whose names it therefore armed. #827's dead-code optimization is kept in
+  full on the compiled path (its `dead` case still sits at the
+  no-temporal-query floor), and because retention is bounded by the
+  suffix-minima pruning regardless of how many names are armed, arming was
+  only ever a per-assign CPU filter — the memory gate
+  (`tests/test_temporal_memory.sh`, suite `[70d]`) is unchanged at 2,944 kB
+  flat, and its planted fault still takes it to 90,496 kB.
+
+  The same defect reached hand-assembled bytecode: with recording on, a
+  `vm_run_bytecode` descriptor asking `prev of` about its own name answered
+  `1` at v0.34.0 and `null` at v0.35.1. That is fixed by the same rule.
+  (A *separate*, pre-#827 gap remains: a descriptor containing temporal
+  opcodes cannot turn recording on by itself, so it still answers `null`
+  when the host program has no temporal query of its own — #831; it is not
+  a v0.35.1 regression.)
+
+  New coverage for the whole producer class, which is the half of this bug
+  that let it ship: `tests/test_temporal_producers.eigs` (suite `[70e]`)
+  drives `prev of` / `at` / `when at` through `vm_run_bytecode`, and
+  `src/embed_smoke.c` (`make embed-smoke`, a CI gate) does it at the C
+  level in the AOT's exact shape — `trace_assign` then `trace_query_prev`
+  with no EigenScript source compiled anywhere in the process. Both fail
+  against the pre-fix binary. Verified end to end against the real
+  consumer: ouroboros's AOT differential harness goes 54/60 -> **60/60**.
+  (ouroboros's own `EIGS_REF` bump also needs its `aot/build.sh` `CORE`
+  list to pick up `src/builtins_host.c` — tracked in ouroboros#88, and it
+  lands there with the bump, not here.)
+
 ## [0.35.1] - 2026-08-03
 
 ### Fixed

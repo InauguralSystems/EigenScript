@@ -2323,6 +2323,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     case AST_FUNC: {
         /* Compile function body into nested chunk */
         EigsChunk *fn_chunk = chunk_new(node->data.func.name);
+        fn_chunk->compiler_scanned = 1;   /* #830: this scan armed its names */
         fn_chunk->param_count = node->data.func.param_count;
         fn_chunk->first_default = node->data.func.first_default;
         fn_chunk->src = c->chunk->src;           /* #407: share the unit's blob */
@@ -2417,6 +2418,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
     case AST_LAMBDA: {
         EigsChunk *fn_chunk = chunk_new("<lambda>");
+        fn_chunk->compiler_scanned = 1;   /* #830: this scan armed its names */
         fn_chunk->param_count = node->data.lambda.param_count;
         fn_chunk->first_default = node->data.lambda.param_count;  /* lambdas don't support defaults */
         fn_chunk->src = c->chunk->src;           /* #407: share the unit's blob */
@@ -3010,6 +3012,10 @@ static void compile_block(Compiler *c, ASTNode **stmts, int count) {
 
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     EigsChunk *chunk = chunk_new("<module>");
+    /* #830: the arming below is compile-time evidence about THIS chunk, so
+     * only this chunk (and the fn chunks compiled under it) may use the
+     * armed-name filter. See EigsChunk.compiler_scanned in vm.h. */
+    chunk->compiler_scanned = 1;
     /* #407: retain the unit's source for runtime-error caret excerpts.
      * Owned copy — callers free their buffers while closures can keep
      * chunks alive indefinitely. Nested fn chunks share the blob. */

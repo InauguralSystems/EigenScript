@@ -1,0 +1,82 @@
+# test_temporal_producers.eigs — temporal reads from a NON-COMPILER PRODUCER (#830).
+#
+# The bytecode compiler is not the only producer of EigenScript programs. The
+# AOT (sibling `ouroboros` repo) emits C that calls the runtime's trace_assign
+# directly; an embedder can do the same; and `vm_run_bytecode` / `sandbox_run`
+# assemble a chunk from a descriptor the compiler never saw. #827 gated the
+# assignment history on an armed-name set that ONLY src/compiler.c populates,
+# so on every one of those paths recording became a silent no-op and each
+# `prev of` / `at`-qualified read answered `null` instead of the value.
+#
+# It shipped in v0.35.1 and the whole suite stayed green, because no test
+# anywhere asked a temporal question through a producer that is not the
+# compiler. This file is that missing coverage.
+#
+# The C-level twin (the AOT's actual shape: trace_assign + trace_query_prev
+# with no source ever compiled) is in src/embed_smoke.c, `make embed-smoke`.
+#
+# NOTE the precondition below: recording has to be ON for the VM's assignment
+# hooks to run at all. A descriptor still cannot turn it on by itself — that
+# is #831, an older gap that reproduces on v0.34.0 too and is out of scope
+# here.
+
+load_file of "lib/test.eigs"
+
+# ---- opcode numbers (src/vm.h enum order), as an external producer hardcodes
+# them. See tests/test_vm_run_bytecode.eigs for the ABI-stamp contract.
+ABI is 1
+CONST is 0
+SET_NAME_LOCAL is 27
+POP is 35
+RETURN is 40
+LINE is 68
+INTERROGATE_NAMED is 76
+INTERROGATE_NAMED_AT is 77
+
+# ---- the control: the compiled path. `prev of armed_elsewhere` in THIS source
+# is what turns history recording on at all, and it arms exactly one name.
+#
+# That name must never be one a descriptor below uses. The armed-name set is
+# keyed by the identifiers the compiler READS, so if the two collided the
+# compiler would arm the descriptor's name for it and the tests below would
+# pass with the bug still present. The descriptors deliberately use "tmp830",
+# a string this file's source never mentions outside a constant pool.
+armed_elsewhere is 1
+armed_elsewhere is 2
+prev_armed is prev of armed_elsewhere
+assert_eq of [prev_armed, 1, "control: the compiled path answers prev"]
+
+# ---- the regression: same question, asked by an assembled chunk.
+#   LINE 10; tmp830 is 11; LINE 20; tmp830 is 22; prev of tmp830   -> 11
+prevcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+             LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
+             INTERROGATE_NAMED,6,0,1,0, RETURN]
+got_prev is vm_run_bytecode of [ABI, prevcode, [11, "tmp830", 22]]
+assert_eq of [got_prev, 11, "#830: prev of a descriptor-assigned name (was null)"]
+
+# ...and the `at` qualifier, which is TEMPORAL-BACKWARD rather than line-keyed:
+# at L=15 the answer is the line-10 assignment — the most recent one stamped at
+# or before 15 — and at L=99 it is the line-20 one.
+atcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+           LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
+           CONST,3,0, INTERROGATE_NAMED_AT,0,0,1,0, RETURN]
+got_at15 is vm_run_bytecode of [ABI, atcode, [11, "tmp830", 22, 15]]
+assert_eq of [got_at15, 11, "#830: what-at on a descriptor-assigned name (was null)"]
+got_at99 is vm_run_bytecode of [ABI, atcode, [11, "tmp830", 22, 99]]
+assert_eq of [got_at99, 22, "#830: what-at past the last assignment"]
+
+# `when is x at L` — the (line -> count) histogram, fed by the same record. A
+# FRESH name: the prev-table is per-thread and outlives each vm_run_bytecode
+# call, so re-running the chunks above would keep adding to "tmp830"'s counts.
+whencode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+             LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
+             CONST,3,0, INTERROGATE_NAMED_AT,2,0,1,0, RETURN]
+got_when is vm_run_bytecode of [ABI, whencode, [11, "tmp830w", 22, 99]]
+assert_eq of [got_when, 2, "#830: when-at counts descriptor assignments (was 0)"]
+
+# ---- Note on the other half of #827: that a name no temporal query names is
+# still not recorded (defect A's narrowing) is NOT assertable from source — by
+# construction, writing the question arms the name. Its gate is the memory
+# bound in tests/test_temporal_memory.sh (suite [70d]), which must stay green.
+
+test_summary of null
