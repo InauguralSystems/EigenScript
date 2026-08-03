@@ -3526,6 +3526,18 @@ Value* builtin_spawn(Value *arg) {
      * READ it (the value is already published to all workers via the first
      * write's happens-before through their pthread_create). */
     if (!g_vm_multithreaded) g_vm_multithreaded = 1;
+    /* #827: #739's per-thread history is filtered by a PROCESS-global armed-name
+     * set that the compiler grows. Single-threaded that is fine (compile, then
+     * run), but a worker calling eval/load_file compiles concurrently with other
+     * workers recording assignments — a realloc of the name array under a
+     * reader is a use-after-free, not just a torn read. So the last
+     * single-threaded act before the first spawn is to widen to the wildcard,
+     * permanently: from here the filter reads only the two ints (the same
+     * benign shape as g_trace_hist itself) and the name array is never touched
+     * again. Costs nothing that matters — the history is bounded either way
+     * now; the narrowing is a per-assign CPU optimization for the
+     * single-threaded long-running programs #827 was actually about. */
+    trace_arm_history_all_mt();
     int pc_rc = pthread_create(&h->tid, NULL, thread_entry, h);
     if (pc_rc != 0) {
         /* The thread never started. Returning a live-looking handle here

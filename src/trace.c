@@ -191,11 +191,18 @@ static int arm_set_has(const char *name) {
     return 0;
 }
 
-void trace_arm_history_all(void) {
-    g_trace_hist = 1;
+/* Widen to the wildcard WITHOUT enabling recording. Separate from
+ * trace_arm_history_all because `spawn` calls it: a program with no temporal
+ * query must not start recording just because it made a thread. */
+void trace_arm_history_all_mt(void) {
     if (g_arm_all) return;
     g_arm_all = 1;
     g_arm_gen++;
+}
+
+void trace_arm_history_all(void) {
+    g_trace_hist = 1;
+    trace_arm_history_all_mt();
 }
 
 void trace_arm_history_name(const char *name) {

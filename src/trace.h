@@ -66,8 +66,20 @@ extern int g_trace_hist;
  * set only ever grows within a session.
  *
  * trace_history_disable() — the `record_history of 0` opt-out; clears both
- * g_trace_hist and g_trace_obs_hist. */
+ * g_trace_hist and g_trace_obs_hist.
+ *
+ * trace_arm_history_all_mt() — widen to the wildcard WITHOUT enabling
+ * recording. `spawn` calls this as its last single-threaded act: the armed-name
+ * set is process-global and the compiler grows it, so a worker running
+ * eval/load_file would realloc it under another worker reading it (a UAF, not
+ * a torn read). After widening, the filter reads only two ints and the name
+ * array is never touched again. A program with no temporal query must not
+ * start recording just because it made a thread, hence the separate entry
+ * point. The narrowing is a per-assign CPU optimization for the
+ * single-threaded long-running programs #827 was about; the history is
+ * bounded either way. */
 void trace_arm_history_all(void);
+void trace_arm_history_all_mt(void);
 void trace_arm_history_name(const char *name);
 void trace_history_disable(void);
 

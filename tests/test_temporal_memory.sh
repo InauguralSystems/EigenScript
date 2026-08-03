@@ -46,8 +46,21 @@ FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
-if ! [ -x /usr/bin/time ]; then
-    echo "  SKIP: /usr/bin/time not available (peak RSS unmeasurable)"
+# GNU time only. BSD/macOS `/usr/bin/time` has no `-f` and no `%M`, and its
+# maxrss units differ, so probe the exact invocation rather than the platform
+# name — a Linux box without GNU time skips for the same reason.
+if ! /usr/bin/time -f "PEAK_KB %M" true >/dev/null 2>&1; then
+    echo "  SKIP: GNU /usr/bin/time -f not available (peak RSS unmeasurable)"
+    echo "TEMPORAL_MEM: 0 passed, 0 failed (skipped)"
+    exit 0
+fi
+
+# Linux only: the thresholds below are calibrated against Linux VmRSS
+# accounting, and `ulimit -v` (the safety belt that turns a regression into a
+# failed test instead of a dead box) is a no-op on macOS. Same platform
+# reasoning as test_http_rss_growth.sh.
+if [ ! -r /proc/self/status ]; then
+    echo "  SKIP: /proc not available (RSS accounting differs on this platform)"
     echo "TEMPORAL_MEM: 0 passed, 0 failed (skipped)"
     exit 0
 fi
@@ -115,8 +128,8 @@ N_BIG=1600000
 # a reverted fix hits it and dies instead of thrashing the box.
 peak_kb() {
     local prog="$1" n="$2" out rc
-    out=$( ulimit -v 1500000; N="$n" /usr/bin/time -f "PEAK_KB %M" \
-               "$EIGS" "$prog" 2>&1 >/dev/null )
+    out=$( ulimit -v 1500000 2>/dev/null || true
+           N="$n" /usr/bin/time -f "PEAK_KB %M" "$EIGS" "$prog" 2>&1 >/dev/null )
     rc=$?
     if [ $rc -ne 0 ]; then
         echo "" ; return 1

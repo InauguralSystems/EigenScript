@@ -2829,6 +2829,7 @@ TMEM_OUTPUT=$(bash "$TESTS_DIR/test_temporal_memory.sh" 2>&1); TMEM_RC=$?
 echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|SKIP|baseline|dead|live|at_live)"
 TMEM_N=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: \([0-9]*\) passed.*/\1/p')
 TMEM_F=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: [0-9]* passed, \([0-9]*\) failed.*/\1/p')
+TMEM_N=${TMEM_N:-0}; TMEM_F=${TMEM_F:-0}
 TOTAL=$((TOTAL + TMEM_N + TMEM_F))
 PASS=$((PASS + TMEM_N))
 FAIL=$((FAIL + TMEM_F))
