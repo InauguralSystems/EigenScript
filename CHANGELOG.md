@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-08-04
+
 ### Added
 
 - **`timeline` — lane-based event timeline widget (#842).** The fleet UI
