@@ -1766,6 +1766,71 @@ assert_eq of [_outside of [0, 0, 200, 100], 0, "a bare y-list series stays insid
 _gfx_log is []
 
 # ============================================================
+# 26. code_view styled spans (#838)
+# ============================================================
+
+print of "--- code_view Styled Span Tests (#838) ---"
+
+# Stub metrics: 6 px/char at scale 1, so columns land at 6*col.
+cvs is code_view of ["cvs", 0, 0, 300, 100, "abc\ndef"]
+cvs.line_numbers is 0
+assert_eq of [len of cvs.spans, 0, "code_view starts with no spans"]
+
+# No spans: rendering records no span rects beyond the background/border
+_gfx_rec is 1
+_gfx_log is []
+_render_code_view of [cvs, 0, 0]
+_gfx_rec is 0
+base_rects is 0
+for i in range of (len of _gfx_log):
+    if _gfx_log[i][0] == "rect":
+        base_rects is base_rects + 1
+
+# Span over "de" (offsets 4..6 — line 2 starts at offset 4): bg rect at
+# the line-2 text origin, 2 chars wide; fg redraw of exactly "de".
+cvs.spans is [{"start": 4, "end": 6, "bg": [11, 22, 33], "fg": [44, 55, 66]}]
+_gfx_rec is 1
+_gfx_log is []
+_render_code_view of [cvs, 0, 0]
+_gfx_rec is 0
+span_rect is null
+span_text is null
+for i in range of (len of _gfx_log):
+    e is _gfx_log[i]
+    if e[0] == "rect":
+        if (e[1])[4] == 11 and (e[1])[5] == 22 and (e[1])[6] == 33:
+            span_rect is e[1]
+    if e[0] == "text":
+        if (e[1])[2] == "de":
+            span_text is e[1]
+assert_true of [span_rect != null, "span bg rect recorded in the span color"]
+assert_eq of [span_rect[0], 4, "span bg starts at the text origin (col 0, gutter off)"]
+assert_eq of [span_rect[2], 12, "span bg is 2 chars wide (6 px/char stub)"]
+assert_true of [span_text != null, "span fg redraw covers exactly the span text"]
+assert_eq of [span_text[0], 4, "span fg redraw at the span x"]
+
+# Cross-line span clips to each line: "bc" on line 1, "d" on line 2
+cvs.spans is [{"start": 1, "end": 5, "bg": [11, 22, 33], "fg": null}]
+_gfx_rec is 1
+_gfx_log is []
+_render_code_view of [cvs, 0, 0]
+_gfx_rec is 0
+srects is []
+for i in range of (len of _gfx_log):
+    e is _gfx_log[i]
+    if e[0] == "rect":
+        if (e[1])[4] == 11:
+            append of [srects, e[1]]
+assert_eq of [len of srects, 2, "cross-line span paints one rect per touched line"]
+r0 is srects[0]
+assert_eq of [r0[0], 10, "line-1 segment starts at col 1"]
+assert_eq of [r0[2], 12, "line-1 segment covers 'bc'"]
+r1 is srects[1]
+assert_eq of [r1[0], 4, "line-2 segment starts at col 0"]
+assert_eq of [r1[2], 6, "line-2 segment covers 'd'"]
+_gfx_log is []
+
+# ============================================================
 # Summary
 # ============================================================
 

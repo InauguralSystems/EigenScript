@@ -619,6 +619,11 @@ define code_view(id, x, y, w, h, text) as:
         "text": text,
         "scroll_y": 0,
         "line_numbers": 1,
+        # #838: styled ranges — [{"start", "end", "bg", "fg"}] with
+        # absolute half-open byte offsets into `text`. bg paints a rect
+        # behind the range, fg recolors its glyphs; either may be null.
+        # Empty = exactly the pre-#838 rendering.
+        "spans": [],
         "visible": 1
     }
 
@@ -935,18 +940,24 @@ define _render_code_view(widget, ax, ay) as:
     # Background
     gfx_rect of [ax, ay, widget.w, widget.h, 20, 20, 30]
     gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
-    # Split text into lines by scanning for newline
+    # Split text into lines by scanning for newline; line_offs keeps each
+    # line's absolute start offset so span offsets (#838) map to columns.
     lines is []
+    line_offs is []
     cur is ""
+    cur_off is 0
     src is widget.text
     for ci in range of (len of src):
         ch is substr of [src, ci, 1]
         if ch == "\n":
             append of [lines, cur]
+            append of [line_offs, cur_off]
             cur is ""
+            cur_off is ci + 1
         else:
             cur is cur + ch
     append of [lines, cur]
+    append of [line_offs, cur_off]
     line_h is _theme.char_h + 4
     gutter_w is 0
     if widget.line_numbers == 1:
@@ -957,7 +968,50 @@ define _render_code_view(widget, ax, ay) as:
             if widget.line_numbers == 1:
                 ln_text is f"{li + 1}"
                 gfx_text of [ax + 4, ly, ln_text, _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
-            _draw_text_clipped of [ax + gutter_w + 4, ly, widget.w - gutter_w - 8, lines[li], _theme.text_color, 1]
+            # #838 span backgrounds — under the text
+            local tx is ax + gutter_w + 4
+            local tmaxw is widget.w - gutter_w - 8
+            local sps is widget.spans
+            local ls is line_offs[li]
+            local le is ls + (len of lines[li])
+            if sps != null:
+                for si in range of (len of sps):
+                    local s is sps[si]
+                    local a0 is s.start
+                    local a1 is s.end
+                    if a0 < ls:
+                        a0 is ls
+                    if a1 > le:
+                        a1 is le
+                    if a0 < a1:
+                        local bgc is s.bg
+                        if bgc != null:
+                            local pre is substr of [lines[li], 0, a0 - ls]
+                            local seg is substr of [lines[li], a0 - ls, a1 - a0]
+                            local sx is tx + (text_width of [pre, 1])
+                            local sw is text_width of [seg, 1]
+                            if sx < ax + widget.w - 4 and sx + sw > ax:
+                                gfx_rect of [sx, ly - 1, sw, line_h - 1, bgc[0], bgc[1], bgc[2]]
+            _draw_text_clipped of [tx, ly, tmaxw, lines[li], _theme.text_color, 1]
+            # #838 span foregrounds — recolor glyphs over the base text
+            # (monospace, so the overdraw is position-exact)
+            if sps != null:
+                for si in range of (len of sps):
+                    local s is sps[si]
+                    local a0 is s.start
+                    local a1 is s.end
+                    if a0 < ls:
+                        a0 is ls
+                    if a1 > le:
+                        a1 is le
+                    if a0 < a1:
+                        local fgc is s.fg
+                        if fgc != null:
+                            local pre is substr of [lines[li], 0, a0 - ls]
+                            local seg is substr of [lines[li], a0 - ls, a1 - a0]
+                            local sx is tx + (text_width of [pre, 1])
+                            local sxw is text_width of [pre, 1]
+                            _draw_text_clipped of [sx, ly, tmaxw - sxw, seg, fgc, 1]
     gfx_clip of null
     # Border
     gfx_rrect of [ax, ay, widget.w, 1, 0, 35, 35, 45]
