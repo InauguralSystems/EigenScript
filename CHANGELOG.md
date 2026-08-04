@@ -6,6 +6,19 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **`hex_view` — memory/byte-grid viewer (#850).** The rung-5 companion
+  to the dock: a hex editor view (address gutter, 16 bytes per row,
+  ASCII column) over a `reader(addr)` callback — a pure reader of any
+  byte source (emulator bus, file buffer, store page) that never copies
+  the memory and reads only visible bytes per frame (#828 awareness).
+  Consumer-dict highlights under hex and ASCII, an accent cursor,
+  gesture-only `on_select` (`hex_set_cursor` from code is silent), wheel
+  scroll, `hex_view_metrics`/`hex_view_addr_at` as the geometry seams,
+  `hex_*` theme keys in all three themes with fallbacks, whole-row
+  software containment. Contract consumers in the suite: the DMG#53
+  debugger memory panel and a record-inspector shape;
+  `examples/ui_hex.eigs` is the runnable demo.
+
 - **`dock` — multi-panel workspace layout (#848).** The fleet UI ladder's
   first "surface + tool panels" capability (every prior app is
   single-surface): a center widget surrounded by west/east panel stacks

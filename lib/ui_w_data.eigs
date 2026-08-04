@@ -494,3 +494,201 @@ _register_widget of ["grid", {
     "container": 0,
     "focusable": 1
 }]
+
+# ---- hex_view: memory/byte-grid viewer (#850) ----
+#
+# A classic hex editor view — address gutter, N bytes per row in hex, an
+# ASCII column — over a READER CALLBACK: `reader(addr) -> 0..255` (or
+# null/-1 for unmapped), so the widget is a pure reader of ANY byte
+# source (an emulator bus, a file buffer, a store page) and never copies
+# or owns the memory. First consumer: DMG#53's debugger memory panel;
+# the second contract shape is a file/record inspector (tidelog,
+# eigen-files). Only VISIBLE bytes are read, once per frame (#828
+# awareness: ~bytes_per_row * visible_rows calls, no per-frame lists).
+#
+# Highlights are consumer dicts {start, end, style} (absolute half-open
+# byte ranges; style = a THEME KEY string or [r, g, b]) painted behind
+# both the hex cells and the ASCII column. `cursor` (absolute addr or
+# null) marks one byte in accent. `on_select(w, addr)` fires ONLY on a
+# user click (the #842 gesture contract — hex_set_cursor from code is
+# silent). Everything renders under gfx_clip and through the
+# measured-width clipper (#823); theme keys hex_bg / hex_addr /
+# hex_text / hex_ascii / hex_cursor with fallbacks.
+
+define hex_view(id, x, y, w, h, reader, size) as:
+    return {
+        "type": "hex_view",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "reader": reader,
+        "size": size,
+        # Displayed address of byte 0 (a DMG WRAM view sets 0xC000).
+        "base": 0,
+        "addr_nibbles": 4,
+        "bytes_per_row": 16,
+        "scroll_y": 0,
+        "highlights": [],
+        "cursor": null,
+        "on_select": null,
+        "hover_addr": -1,
+        "visible": 1
+    }
+
+# Cursor seam: silent by contract; on_select reports USER clicks only.
+define hex_set_cursor(hv, addr) as:
+    hv.cursor is addr
+
+# Geometry shared by render, hit-testing and the tests: cell/gutter
+# metrics derived from the measured monospace glyph size.
+define hex_view_metrics(hv) as:
+    local cw is text_width of ["0", 1]
+    local row_h is (text_height of 1) + 4
+    local gutter is (hv.addr_nibbles * cw) + 10
+    local cell_w is (cw * 2) + 4
+    local bpr is hv.bytes_per_row
+    local half_gap is 6
+    local hex_w is bpr * cell_w + half_gap
+    local ascii_x is gutter + hex_w + 8
+    return {"cw": cw, "row_h": row_h, "gutter": gutter,
+            "cell_w": cell_w, "half_gap": half_gap,
+            "hex_w": hex_w, "ascii_x": ascii_x, "bpr": bpr}
+
+# Absolute screen (mx, my) -> byte addr, or -1 (gutter, gaps, ascii
+# column and out-of-range all miss). The seam a test/consumer reads.
+define hex_view_addr_at(hv, mx, my) as:
+    local ox is hv.x
+    local oy is hv.y
+    if hv._ax != null:
+        ox is hv._ax
+    if hv._ay != null:
+        oy is hv._ay
+    local m is hex_view_metrics of hv
+    local row is floor of ((my - oy - 2 + hv.scroll_y) / m.row_h)
+    if row < 0:
+        return 0 - 1
+    local rel is mx - ox - m.gutter
+    if rel < 0:
+        return 0 - 1
+    local half is floor of (m.bpr / 2)
+    if rel >= half * m.cell_w:
+        rel is rel - m.half_gap
+    if rel < 0:
+        return 0 - 1
+    local col is floor of (rel / m.cell_w)
+    if col < 0 or col >= m.bpr:
+        return 0 - 1
+    local addr is row * m.bpr + col
+    if addr >= hv.size:
+        return 0 - 1
+    return addr
+
+define _hex_style_color(st) as:
+    if (type of st) == "str":
+        return _theme_color of [st, _theme.accent]
+    return st
+
+define _render_hex_view(widget, ax, ay) as:
+    widget._ax is ax
+    widget._ay is ay
+    local bg is _theme_color of ["hex_bg", (_theme_color of ["plot_bg", [22, 22, 32]])]
+    local acol is _theme_color of ["hex_addr", _theme.text_dim]
+    local tcol is _theme_color of ["hex_text", _theme.text_color]
+    local ascol is _theme_color of ["hex_ascii", _theme.text_dim]
+    local ccol is _theme_color of ["hex_cursor", _theme.accent]
+    local bcol is _theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])]
+    gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
+    gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+    local m is hex_view_metrics of widget
+    local bpr is m.bpr
+    local half is floor of (bpr / 2)
+    local nrows is ceil of (widget.size / bpr)
+    local r0 is floor of (widget.scroll_y / m.row_h)
+    if r0 < 0:
+        r0 is 0
+    local rn is r0 + (ceil of (widget.h / m.row_h)) + 1
+    if rn > nrows:
+        rn is nrows
+    for ri in range of [r0, rn]:
+        local ry is ay + 2 + ri * m.row_h - widget.scroll_y
+        local addr0 is ri * bpr
+        # Whole rows only (the #819/#842 software-containment
+        # discipline): a partial row at either edge is skipped rather
+        # than left for gfx_clip to crop — the widget's own primitives
+        # never leave its rect even in a renderer without clipping.
+        if ry < ay + 1 or ry + m.row_h > ay + widget.h - 1:
+            continue
+        _draw_text_clipped of [ax + 4, ry, m.gutter - 6, (hex of [widget.base + addr0, widget.addr_nibbles]), acol, 1]
+        for ci in range of bpr:
+            local addr is addr0 + ci
+            if addr < widget.size:
+                local cx is ax + m.gutter + ci * m.cell_w
+                if ci >= half:
+                    cx is cx + m.half_gap
+                # Highlights under the cell (and mirrored under ASCII).
+                local axx is ax + m.ascii_x + ci * m.cw
+                for hi in range of (len of widget.highlights):
+                    local hl is widget.highlights[hi]
+                    if addr >= hl.start and addr < hl.end:
+                        local hc is _hex_style_color of (hl.style)
+                        gfx_rect of [cx - 1, ry - 1, m.cell_w - 2, m.row_h - 1, hc[0], hc[1], hc[2]]
+                        gfx_rect of [axx, ry - 1, m.cw, m.row_h - 1, hc[0], hc[1], hc[2]]
+                if widget.cursor != null:
+                    if addr == widget.cursor:
+                        gfx_rrect of [cx - 2, ry - 2, m.cell_w, m.row_h, 0, ccol[0], ccol[1], ccol[2]]
+                local b is widget.reader of addr
+                if b == null or b < 0:
+                    _draw_text_clipped of [cx, ry, m.cell_w, "..", acol, 1]
+                else:
+                    _draw_text_clipped of [cx, ry, m.cell_w, (hex of [b, 2]), tcol, 1]
+                    local ch is "."
+                    if b >= 32 and b <= 126:
+                        ch is chr of b
+                    _draw_text_clipped of [axx, ry, m.cw, ch, ascol, 1]
+    gfx_clip of null
+    gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
+    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
+    # Scrollbar (the table idiom)
+    local total_h is nrows * m.row_h
+    if total_h > widget.h:
+        local sb_h is floor of (widget.h * widget.h / total_h)
+        if sb_h < 16:
+            sb_h is 16
+        local sb_y is ay + floor of (widget.scroll_y * (widget.h - sb_h) / (total_h - widget.h))
+        gfx_rrect of [ax + widget.w - 6, sb_y, 4, sb_h, 2, 80, 80, 100]
+
+define _mousemove_hex_view(hit, root, mx, my) as:
+    hit.hover_addr is hex_view_addr_at of [hit, mx, my]
+
+define _mousedown_hex_view(hit, root, mx, my, ev) as:
+    local addr is hex_view_addr_at of [hit, mx, my]
+    if addr >= 0:
+        hit.cursor is addr
+        if hit.on_select != null:
+            hit.on_select of [hit, addr]
+
+define _clear_hover_hex_view(widget) as:
+    widget.hover_addr is 0 - 1
+
+define _scroll_hex_view(widget, dx, dy) as:
+    local m is hex_view_metrics of widget
+    local nrows is ceil of (widget.size / widget.bytes_per_row)
+    widget.scroll_y is widget.scroll_y + dy
+    if widget.scroll_y < 0:
+        widget.scroll_y is 0
+    local max_sy is nrows * m.row_h - widget.h
+    if max_sy < 0:
+        max_sy is 0
+    if widget.scroll_y > max_sy:
+        widget.scroll_y is max_sy
+
+_register_widget of ["hex_view", {
+    "render": _render_hex_view,
+    "hit_test": null,
+    "on_mousedown": _mousedown_hex_view,
+    "on_mousemove": _mousemove_hex_view,
+    "clear_hover": _clear_hover_hex_view,
+    "clear_pressed": null,
+    "scroll": _scroll_hex_view,
+    "container": 0,
+    "focusable": 1
+}]
