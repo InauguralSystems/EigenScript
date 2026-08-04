@@ -494,7 +494,14 @@ static void handle_launch(int rseq, const char *msg) {
 
 /* ---- main loop ---------------------------------------------------- */
 
-int main(void) {
+int main(int argc, char **argv) {
+    /* #825: let the suite (and a human) ask which runtime version this
+     * binary was linked against, so a stale eigsdap after a VERSION bump
+     * is reported as one skew line instead of 18 tape-gate refusals. */
+    if (argc > 1 && strcmp(argv[1], "--version") == 0) {
+        printf("%s\n", EIGENSCRIPT_VERSION);
+        return 0;
+    }
     /* Like --step (main.c): a pure tape reader, but the trajectory
      * classifier reads the observer thresholds through the attached
      * EigsState — without one, the first classify is a NULL deref. */

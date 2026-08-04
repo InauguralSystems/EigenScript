@@ -46,6 +46,30 @@ LSP_BINARY  := $(SRC_DIR)/eigenlsp
 DAP_SOURCES := $(SRC_DIR)/eigsdap.c $(SRC_DIR)/tape_read.c $(filter-out $(CLI_ONLY),$(SOURCES))
 DAP_BINARY  := $(SRC_DIR)/eigsdap
 
+# Aux binaries that ALREADY exist on disk are version-checked by `make`/
+# `make test` and relinked on skew (#825): after a VERSION bump a stale
+# eigsdap records/reads tapes under the old version string and the #411
+# gate correctly refuses them — reported as 18 unexplained DAP behavioral
+# failures on every release cut. The refresh triggers ONLY on version
+# skew (`--version` vs VERSION; a pre-#825 binary prints nothing and so
+# also refreshes) — NOT on source drift, which would tax every dev-loop
+# `make` with two full aux recompiles; an explicit `make dap`/`make lsp`
+# tracks full source/header staleness via the real file targets below.
+# Fresh checkouts (CI) have no aux binaries and build nothing extra.
+AUX_PRESENT := $(wildcard $(LSP_BINARY) $(DAP_BINARY))
+define AUX_REFRESH
+	@for b in $(AUX_PRESENT); do \
+		v="$$($$b --version </dev/null 2>/dev/null)"; \
+		if [ "$$v" != "$(VERSION)" ]; then \
+			echo "refreshing $$b ($${v:-pre-#825} -> $(VERSION))"; \
+			case $$b in \
+				*eigsdap) $(MAKE) --no-print-directory dap ;; \
+				*eigenlsp) $(MAKE) --no-print-directory lsp ;; \
+			esac; \
+		fi; \
+	done
+endef
+
 .PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
@@ -144,6 +168,7 @@ print-%:
 	@echo '$($*)'
 
 all: build
+	$(AUX_REFRESH)
 
 build: build/release/eigenscript
 	$(call RELINK,release)
@@ -178,6 +203,7 @@ gfx: build/gfx/eigenscript
 	@echo "EigenScript $(VERSION) (gfx) built. Binary: $$(du -sh build/gfx/eigenscript | cut -f1)"
 
 test: build
+	$(AUX_REFRESH)
 	cd tests && bash run_all_tests.sh
 
 install-gfx: gfx lsp
@@ -219,7 +245,11 @@ $(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_host.c
 		tools/gen_lsp_builtin_index.sh
 	bash tools/gen_lsp_builtin_index.sh
 
-lsp: $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h
+# Real file targets (#825): rebuilt when their sources, any header, the
+# Makefile, or VERSION change — so `make` after a VERSION bump relinks
+# them instead of leaving version-skewed binaries for the #411 tape gate
+# to refuse. `lsp`/`dap` stay as the phony entry points.
+$(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION
 	$(CC) $(CFLAGS) -o $(LSP_BINARY) $(LSP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -228,7 +258,9 @@ lsp: $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h
 		$(LDFLAGS)
 	@echo "EigenScript LSP $(VERSION) built. Binary: $$(du -sh $(LSP_BINARY) | cut -f1)"
 
-dap:
+lsp: $(LSP_BINARY)
+
+$(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -236,6 +268,8 @@ dap:
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
 	@echo "EigenScript DAP $(VERSION) built. Binary: $$(du -sh $(DAP_BINARY) | cut -f1)"
+
+dap: $(DAP_BINARY)
 
 jit-smoke:
 	$(CC) -Wall -Wextra -Werror=switch -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm

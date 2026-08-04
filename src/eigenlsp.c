@@ -1831,7 +1831,13 @@ static void handle_message(const char *json) {
  * MAIN
  * ================================================================ */
 
-int main(void) {
+int main(int argc, char **argv) {
+    /* #825: report the linked runtime version so `make` can detect a
+     * version-skewed binary and refresh it. */
+    if (argc > 1 && strcmp(argv[1], "--version") == 0) {
+        printf("%s\n", EIGENSCRIPT_VERSION);
+        return 0;
+    }
     fprintf(stderr, "[LSP] EigenScript Language Server %s starting\n", EIGENSCRIPT_VERSION);
     EigsState *eigs_st = eigs_state_new();
     eigs_thread_attach(eigs_st);
