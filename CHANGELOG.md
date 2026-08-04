@@ -21,6 +21,20 @@ All notable changes to EigenScript are documented here.
   eddy's interleaving explorer (eddy#6) — each have a shape-mapping test
   in the suite; `examples/ui_timeline.eigs` is the runnable demo.
 
+### Fixed
+
+- **`make` keeps `eigsdap`/`eigenlsp` fresh across a VERSION bump (#825).**
+  `make`/`make test` now version-check any aux binary present on disk and
+  relink it on skew — so the release cut's VERSION commit can no longer
+  leave a stale `eigsdap` whose tapes the #411 version gate then refuses
+  (reported as 18 unexplained DAP behavioral failures on three consecutive
+  cuts). The refresh triggers only on version skew, not source drift (no
+  dev-loop tax); an explicit `make dap`/`make lsp` now tracks full
+  source/header staleness via real file targets instead of always
+  recompiling. `eigsdap --version` / `eigenlsp --version` print the linked
+  runtime version, and `test_dap.sh` fails fast naming the actual cause
+  ("stale binary; run `make dap`") on any remaining skew.
+
 ## [0.36.0] - 2026-08-04
 
 ### Added

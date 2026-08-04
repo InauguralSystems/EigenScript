@@ -26,4 +26,15 @@ if [ ! -x "$DAP" ]; then
     exit 0
 fi
 
+# #825: a version-skewed eigsdap makes the #411 tape gate refuse every
+# tape and the 18 downstream failures blame DAP behavior. Name the real
+# cause up front. (An eigsdap predating --version prints nothing on the
+# EOF'd stdin and skips this check.)
+DAP_VER="$("$DAP" --version </dev/null 2>/dev/null)"
+EIGS_VER="$("$EIGS" --version 2>/dev/null)"
+if [ -n "$DAP_VER" ] && [ "$DAP_VER" != "$EIGS_VER" ]; then
+    echo "  FAIL: eigsdap is $DAP_VER but the runtime is $EIGS_VER — stale binary; run 'make dap' (#825)"
+    exit 1
+fi
+
 EIGSDAP="$DAP" EIGENSCRIPT="$EIGS" python3 "$TESTS_DIR/test_dap.py"
