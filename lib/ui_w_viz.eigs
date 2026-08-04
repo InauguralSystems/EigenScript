@@ -1,5 +1,5 @@
 # lint: allow-file E003 -- fragment of lib/ui.eigs: the loader binds the shared ui state (_theme, _ui, widget registry, sibling widgets) before this file runs
-# UI Widgets — Viz: chart, bar_chart, gauge, meter, canvas, waveform_view, code_view
+# UI Widgets — Viz: chart, bar_chart, gauge, meter, canvas, waveform_view, code_view, timeline
 
 # ---- chart: x-y series plot (#819) ----
 #
@@ -1181,6 +1181,540 @@ define _scroll_code_view(widget, dx, dy) as:
     if widget.scroll_y > max_sy:
         widget.scroll_y is max_sy
 
+# ---- timeline: lane-based event timeline (#842) ----
+#
+# N horizontal lanes over a shared time axis. Items are plain dicts the
+# consumer hands over: markers {t, lane, kind} are point events, spans
+# {t0, t1, lane, kind} are extents (a role held from t0..t1, a task
+# running). The widget renders lanes/marks/spans/cursor, period — no
+# domain semantics; deriving spans from a domain's event stream is the
+# consumer's mapping (liferaft#18 roles, eddy#6 schedules).
+#
+# The chart's three structural properties hold here too:
+#   - CLIPPED (#823): every primitive is intersected with the widget /
+#     body rect in software before it is drawn, plus gfx_clip for the
+#     real renderer. Data at any pan/zoom cannot paint over the chrome.
+#   - THEME-KEYED (#820): nothing hardcodes a color — tl_bg, tl_ruler_bg,
+#     tl_lane_alt, tl_lane_line, tl_label, tl_cursor, tl_border and the
+#     tl_kinds palette come off the active theme (with fallbacks, so a
+#     theme dict predating the keys still renders). timeline_style keys
+#     an item KIND to a theme role by name, resolved at render time.
+#   - ALLOCATION-LEAN (#828 awareness): the render path computes the
+#     time->pixel scale once per frame and places items with inline
+#     arithmetic — no per-item list allocation per frame. Appends widen
+#     a cached time range in O(1); render never re-walks the history.
+#
+# Interaction (the chart idiom from #819/#822): drag in the BODY pans,
+# wheel zooms about the cursor, drag in the RULER strip scrubs — sets
+# tl.cursor and fires on_scrub(tl, t). A consumer sets/reads tl.cursor
+# directly (null hides it); that is the seed-replay / anomaly scrubber
+# seam.
+#
+# Extra fields on lane and item dicts pass through untouched, so a
+# consumer can carry its whole source record (detail/term/verdict) on
+# the item and read it back from tl.hover_item.
+
+define timeline(id, x, y, w, h) as:
+    return {
+        "type": "timeline",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "lanes": [],
+        "markers": [],
+        "spans": [],
+        # kind -> theme key string or [r, g, b] (timeline_style)
+        "kind_style": {},
+        # Range: explicit non-null bounds win; otherwise derived from
+        # the items (markers' t, spans' t0/t1).
+        "t_min": null,
+        "t_max": null,
+        # Scrubber: a time, or null = hidden. on_scrub(tl, t) fires on
+        # ruler click/drag AFTER tl.cursor is updated.
+        "cursor": null,
+        "on_scrub": null,
+        # View transform, x-axis only: pan is in time units, zoom is a
+        # scale about the panned centre. timeline_reset_view restores.
+        "pan_t": 0.0,
+        "zoom": 1.0,
+        "interactive": 1,
+        "hover_enabled": 1,
+        "hover_item": null,
+        # Geometry: lane-label gutter, ruler strip, lane height.
+        # lane_h null fits all lanes into the body (min 4 px each).
+        "pad_left": 64,
+        "pad_right": 6,
+        "lane_h": null,
+        "marker_w": 2,
+        "on_wheel": _wheel_timeline,
+        "visible": 1,
+        # Incremental time-bounds cache — private (_tl_scan).
+        "_have_bounds": 0,
+        "_bt0": 0, "_bt1": 1,
+        "_scan_m": 0,
+        "_scan_s": 0,
+        # Drag gesture: "" | "pan" | "scrub" (_mousedown_timeline).
+        "_drag_mode": ""
+    }
+
+# A lane is a plain dict; items address it by its id, so liferaft's
+# numeric node ids and eddy's task-name strings both map without a
+# translation table. Extra fields pass through.
+define timeline_lane(id, label) as:
+    return {"id": id, "label": label}
+
+define timeline_add_lane(tl, lane) as:
+    append of [tl.lanes, lane]
+    return (len of tl.lanes) - 1
+
+# Lane id -> lane index, or -1. Linear scan: lane counts are small
+# (nodes / tasks), and item ingestion is one-time, not per-frame.
+define timeline_lane_index(tl, lane_id) as:
+    for i in range of (len of tl.lanes):
+        if tl.lanes[i].id == lane_id:
+            return i
+    return 0 - 1
+
+# Item builders — sugar over the plain dict shape; a consumer can also
+# write the literal (and stash extra fields on it either way).
+define timeline_marker(t, lane, kind) as:
+    return {"t": t, "lane": lane, "kind": kind, "label": null, "color": null}
+
+define timeline_span(t0, t1, lane, kind) as:
+    return {"t0": t0, "t1": t1, "lane": lane, "kind": kind, "label": null, "color": null}
+
+define timeline_add_marker(tl, m) as:
+    append of [tl.markers, m]
+    # O(1) widen only when everything before this append is already
+    # accounted for — an item the consumer appended DIRECTLY leaves a
+    # counter gap, and _tl_scan picks that tail up at the next bounds
+    # read instead of it being silently skipped.
+    if tl._have_bounds == 1 and tl._scan_m == (len of tl.markers) - 1:
+        tl._scan_m is len of tl.markers
+        _tl_widen of [tl, m.t, m.t]
+    return (len of tl.markers) - 1
+
+define timeline_add_span(tl, s) as:
+    append of [tl.spans, s]
+    if tl._have_bounds == 1 and tl._scan_s == (len of tl.spans) - 1:
+        tl._scan_s is len of tl.spans
+        _tl_widen of [tl, s.t0, s.t1]
+    return (len of tl.spans) - 1
+
+# Key an item KIND to a color. `style` is either a THEME KEY string —
+# resolved through the active theme at render time, so a theme switch
+# restyles the kinds too — or an [r, g, b] literal for a consumer that
+# owns its palette.
+define timeline_style(tl, kind, style) as:
+    tl.kind_style[kind] is style
+
+# Cursor seam: set (or null to hide) and read tl.cursor. Setting it via
+# code does NOT fire on_scrub — that callback reports the USER gesture;
+# a consumer driving the cursor programmatically already knows the value.
+define timeline_set_cursor(tl, t) as:
+    tl.cursor is t
+
+# O(1) widen of the cached time range (the counters are maintained by
+# the add_* callers, which know exactly what they accounted for).
+define _tl_widen(tl, ta, tb) as:
+    if ta < tl._bt0:
+        tl._bt0 is ta
+    if tb > tl._bt1:
+        tl._bt1 is tb
+
+# Forget the bounds cache — the escape hatch for edits the incremental
+# path cannot see (rewriting an item's t in place, dropping items).
+# Replaced/shrunk item lists are detected without this.
+define timeline_invalidate(tl) as:
+    tl._have_bounds is 0
+    tl._scan_m is 0
+    tl._scan_s is 0
+
+define _tl_scan(tl) as:
+    local nm is len of tl.markers
+    local ns is len of tl.spans
+    if nm < tl._scan_m:
+        tl._have_bounds is 0
+    if ns < tl._scan_s:
+        tl._have_bounds is 0
+    if tl._have_bounds == 0:
+        tl._scan_m is 0
+        tl._scan_s is 0
+    for mi in range of [tl._scan_m, nm]:
+        local m is tl.markers[mi]
+        if tl._have_bounds == 0:
+            tl._bt0 is m.t
+            tl._bt1 is m.t
+            tl._have_bounds is 1
+        else:
+            if m.t < tl._bt0:
+                tl._bt0 is m.t
+            if m.t > tl._bt1:
+                tl._bt1 is m.t
+    for si in range of [tl._scan_s, ns]:
+        local s is tl.spans[si]
+        if tl._have_bounds == 0:
+            tl._bt0 is s.t0
+            tl._bt1 is s.t1
+            tl._have_bounds is 1
+        else:
+            if s.t0 < tl._bt0:
+                tl._bt0 is s.t0
+            if s.t1 > tl._bt1:
+                tl._bt1 is s.t1
+    tl._scan_m is nm
+    tl._scan_s is ns
+
+# The resolved DATA time range — auto + explicit overrides, before
+# pan/zoom.
+define timeline_bounds(tl) as:
+    _tl_scan of tl
+    local t0 is 0
+    local t1 is 1
+    if tl._have_bounds == 1:
+        t0 is tl._bt0
+        t1 is tl._bt1
+    if tl.t_min != null:
+        t0 is tl.t_min
+    if tl.t_max != null:
+        t1 is tl.t_max
+    if t1 <= t0:
+        t1 is t0 + 1
+    return {"t0": t0, "t1": t1}
+
+define _tl_origin(tl) as:
+    local ox is tl.x
+    local oy is tl.y
+    if tl._ax != null:
+        ox is tl._ax
+    if tl._ay != null:
+        oy is tl._ay
+    return [ox, oy]
+
+# The VISIBLE window plus the geometry it maps onto — the seam a
+# consumer reads instead of re-deriving the transform:
+#   t0, t1          visible time range (after pan/zoom)
+#   px, py, pw, ph  the lane BODY rect (right of the label gutter,
+#                   below the ruler)
+#   rx, ry, rw, rh  the time RULER strip (scrub target)
+#   lane_h          per-lane pixel height
+define timeline_view(tl) as:
+    local o is _tl_origin of tl
+    local rh is (text_height of 1) + 6
+    if rh > tl.h:
+        rh is tl.h
+    local px is o[0] + tl.pad_left
+    local pw is tl.w - tl.pad_left - tl.pad_right
+    if pw < 1:
+        pw is 1
+    local py is o[1] + rh
+    local ph is tl.h - rh
+    if ph < 1:
+        ph is 1
+    local nl is len of tl.lanes
+    local lh is tl.lane_h
+    if lh == null:
+        if nl > 0:
+            lh is floor of (ph / nl)
+        else:
+            lh is ph
+    if lh < 4:
+        lh is 4
+    local b is timeline_bounds of tl
+    local t0 is b.t0
+    local t1 is b.t1
+    local z is tl.zoom
+    if z == null:
+        z is 1.0
+    if z <= 0:
+        z is 1.0
+    local pt is tl.pan_t
+    if pt == null:
+        pt is 0
+    if z != 1.0 or pt != 0:
+        local ct is (t0 + t1) / 2 + pt
+        local hw is (t1 - t0) / 2 / z
+        t0 is ct - hw
+        t1 is ct + hw
+    return {
+        "t0": t0, "t1": t1,
+        "px": px, "py": py, "pw": pw, "ph": ph,
+        "rx": px, "ry": o[1], "rw": pw, "rh": rh,
+        "lane_h": lh
+    }
+
+# Time -> absolute screen x (unrounded), and back.
+define timeline_to_pixel(tl, t) as:
+    local v is timeline_view of tl
+    return v.px + (t - v.t0) / (v.t1 - v.t0) * v.pw
+
+define timeline_from_pixel(tl, sx) as:
+    local v is timeline_view of tl
+    return v.t0 + (sx - v.px) / v.pw * (v.t1 - v.t0)
+
+# Absolute screen y -> lane index, or -1 outside every lane band.
+define timeline_lane_at(tl, sy) as:
+    local v is timeline_view of tl
+    if sy < v.py:
+        return 0 - 1
+    local li is floor of ((sy - v.py) / v.lane_h)
+    if li >= (len of tl.lanes):
+        return 0 - 1
+    return li
+
+define timeline_reset_view(tl) as:
+    tl.pan_t is 0.0
+    tl.zoom is 1.0
+
+# Pan by a PIXEL delta (a drag): the item under the cursor follows it.
+define timeline_pan_by(tl, dpx) as:
+    local v is timeline_view of tl
+    tl.pan_t is tl.pan_t - dpx / v.pw * (v.t1 - v.t0)
+
+# Zoom about an ANCHOR pixel: the time under sx stays under sx.
+define timeline_zoom_at(tl, factor, sx) as:
+    local before is timeline_from_pixel of [tl, sx]
+    local z is tl.zoom * factor
+    if z < 0.001:
+        z is 0.001
+    if z > 100000:
+        z is 100000
+    tl.zoom is z
+    local after is timeline_from_pixel of [tl, sx]
+    tl.pan_t is tl.pan_t + (before - after)
+
+# Kind color resolution: an explicit item color wins; a timeline_style
+# entry (theme key string, or literal rgb) is next; otherwise the
+# tl_kinds palette by the kind's position in kind_style-then-first-use
+# order — stable within a frame because it hashes the kind name.
+define _tl_kind_color(tl, kind, explicit) as:
+    if explicit != null:
+        return explicit
+    local st is tl.kind_style[kind]
+    if st != null:
+        if (type of st) == "str":
+            return _theme_color of [st, _theme.accent]
+        return st
+    local pal is _theme_color of ["tl_kinds", (_theme_color of ["plot_series", [[80, 140, 220]]])]
+    local hsum is 0
+    local ks is f"{kind}"
+    for ci in range of (len of ks):
+        hsum is hsum + (ord of (substr of [ks, ci, 1]))
+    return pal[hsum % (len of pal)]
+
+define _render_timeline(widget, ax, ay) as:
+    widget._ax is ax
+    widget._ay is ay
+    local bg is _theme_color of ["tl_bg", (_theme_color of ["plot_bg", [25, 25, 35]])]
+    local rbg is _theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])]
+    local altc is _theme_color of ["tl_lane_alt", (_theme_color of ["plot_grid", [40, 40, 55]])]
+    local linec is _theme_color of ["tl_lane_line", (_theme_color of ["plot_border", [40, 40, 55]])]
+    local labc is _theme_color of ["tl_label", _theme.text_dim]
+    local curc is _theme_color of ["tl_cursor", _theme.accent]
+    local bcol is _theme_color of ["tl_border", (_theme_color of ["plot_border", [40, 40, 55]])]
+    local dim is _theme.text_dim
+    local wr is [ax, ay, widget.w, widget.h]
+    gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
+    local v is timeline_view of widget
+    local r is [v.px, v.py, v.pw, v.ph]
+    # The one time->x transform for the whole frame — every item below
+    # is placed with inline arithmetic off these two numbers (#828).
+    local tspan is v.t1 - v.t0
+    if tspan <= 0:
+        tspan is 1
+    local xscale is v.pw / tspan
+    local nl is len of widget.lanes
+    # Lane bands, separators and gutter labels — under the grid/items.
+    for li in range of nl:
+        local ly is v.py + li * v.lane_h
+        if ly < v.py + v.ph:
+            local lh is v.lane_h
+            if ly + lh > v.py + v.ph:
+                lh is v.py + v.ph - ly
+            if li % 2 == 1:
+                gfx_rect of [v.px, ly, v.pw, lh, altc[0], altc[1], altc[2]]
+            _chart_line of [v.px, ly, v.px + v.pw, ly, r, linec]
+            local lab is widget.lanes[li].label
+            if lab == null:
+                lab is f"{widget.lanes[li].id}"
+            _chart_text of [ax + 2, ly + 2, lab, labc, 1, [ax, ay, widget.pad_left - 4, widget.h]]
+    # Ruler strip and time grid: background, ticks, tick labels.
+    gfx_rect of [v.rx, v.ry, v.rw, v.rh, rbg[0], rbg[1], rbg[2]]
+    local tstep is _chart_nice_step of [tspan, 6]
+    local ticks is chart_ticks of [v.t0, v.t1, 6]
+    for ti in range of (len of ticks):
+        local tx is v.px + (ticks[ti] - v.t0) * xscale
+        _chart_line of [tx, v.ry, tx, v.ry + v.rh - 1, [v.rx, v.ry, v.rw, v.rh], linec]
+        _chart_line of [tx, v.py, tx, v.py + v.ph, r, linec]
+        _chart_text of [(floor of tx) + 2, v.ry + 2, (_chart_fmt of [ticks[ti], tstep]), dim, 1, [v.rx, v.ry, v.rw, v.rh]]
+    # Items: gfx_clip for the real renderer, software intersect per
+    # primitive for the containment property itself.
+    gfx_clip of [v.px, v.py, v.pw, v.ph]
+    local bx1 is v.px + v.pw
+    for si in range of (len of widget.spans):
+        local s is widget.spans[si]
+        local sli is timeline_lane_index of [widget, s.lane]
+        if sli >= 0:
+            local sy is v.py + sli * v.lane_h + 2
+            local sh is v.lane_h - 4
+            if sh < 1:
+                sh is 1
+            local sx0 is v.px + (s.t0 - v.t0) * xscale
+            local sx1 is v.px + (s.t1 - v.t0) * xscale
+            if sx0 < v.px:
+                sx0 is v.px
+            if sx1 > bx1:
+                sx1 is bx1
+            if sx1 > sx0 and sy < v.py + v.ph and sy + sh > v.py:
+                local isy is sy
+                local ish is sh
+                if isy < v.py:
+                    ish is ish - (v.py - isy)
+                    isy is v.py
+                if isy + ish > v.py + v.ph:
+                    ish is v.py + v.ph - isy
+                local sc is _tl_kind_color of [widget, s.kind, s.color]
+                gfx_rect of [(floor of sx0), isy, (floor of sx1) - (floor of sx0), ish, sc[0], sc[1], sc[2]]
+                if s.label != null:
+                    _chart_text of [(floor of sx0) + 2, isy + 1, s.label, _theme.text_color, 1, [(floor of sx0), isy, (floor of sx1) - (floor of sx0), ish]]
+    local mw is widget.marker_w
+    if mw == null:
+        mw is 2
+    for mi in range of (len of widget.markers):
+        local m is widget.markers[mi]
+        local mli is timeline_lane_index of [widget, m.lane]
+        if mli >= 0:
+            local mx is v.px + (m.t - v.t0) * xscale
+            if mx >= v.px and mx < bx1:
+                local my is v.py + mli * v.lane_h + 1
+                local mh is v.lane_h - 2
+                if mh < 1:
+                    mh is 1
+                if my < v.py + v.ph and my + mh > v.py:
+                    local imy is my
+                    local imh is mh
+                    if imy < v.py:
+                        imh is imh - (v.py - imy)
+                        imy is v.py
+                    if imy + imh > v.py + v.ph:
+                        imh is v.py + v.ph - imy
+                    local mc is _tl_kind_color of [widget, m.kind, m.color]
+                    local imx is floor of mx
+                    local imw is mw
+                    if imx + imw > bx1:
+                        imw is bx1 - imx
+                    gfx_rect of [imx, imy, imw, imh, mc[0], mc[1], mc[2]]
+    gfx_clip of null
+    # Cursor/scrubber: a rule across the body plus a handle in the ruler.
+    if widget.cursor != null:
+        local cx is v.px + (widget.cursor - v.t0) * xscale
+        if cx >= v.px and cx < bx1:
+            local fcx is floor of cx
+            _chart_line of [fcx, v.py, fcx, v.py + v.ph, r, curc]
+            local hx is fcx - 2
+            if hx < v.rx:
+                hx is v.rx
+            local hw is 5
+            if hx + hw > v.rx + v.rw:
+                hw is v.rx + v.rw - hx
+            gfx_rect of [hx, v.ry, hw, v.rh, curc[0], curc[1], curc[2]]
+    # Border
+    gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
+    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
+
+# Scrub helper shared by mousedown and drag: clamp the pointer to the
+# body, update the cursor, then report the gesture.
+define _tl_scrub_to(tl, sx) as:
+    local v is timeline_view of tl
+    local cx is sx
+    if cx < v.px:
+        cx is v.px
+    if cx > v.px + v.pw:
+        cx is v.px + v.pw
+    tl.cursor is v.t0 + (cx - v.px) / v.pw * (v.t1 - v.t0)
+    if tl.on_scrub != null:
+        tl.on_scrub of [tl, tl.cursor]
+
+# Ruler press = scrub; body press = pan. Both claim the pointer so the
+# following mousemoves and the terminating mouseup route here (#567).
+define _mousedown_timeline(hit, root, mx, my, ev) as:
+    if hit.interactive == 0:
+        return null
+    local v is timeline_view of hit
+    _ui.drag_widget is hit
+    _ui.drag_ox is mx
+    _ui.drag_oy is my
+    if my < v.py:
+        hit._drag_mode is "scrub"
+        _tl_scrub_to of [hit, mx]
+    else:
+        hit._drag_mode is "pan"
+
+define _drag_timeline(w, ev) as:
+    if w._drag_mode == "scrub":
+        _tl_scrub_to of [w, ev.x]
+        return null
+    local dx is ev.x - _ui.drag_ox
+    _ui.drag_ox is ev.x
+    _ui.drag_oy is ev.y
+    timeline_pan_by of [w, dx]
+
+# Wheel zooms about the pointer, read from the event or the toolkit's
+# cached position (#822) — never from consumer-shadowed state.
+define _wheel_timeline(w, ev) as:
+    if w.interactive == 0:
+        return null
+    local mx is _ui.last_mouse_x
+    if ev.mx != null:
+        mx is ev.mx
+    local d is ev.y
+    if d == null:
+        return null
+    if d == 0:
+        return null
+    local f is 1.0 + 0.2 * d
+    if d < 0:
+        f is 1.0 / (1.0 - 0.2 * d)
+    timeline_zoom_at of [w, f, mx]
+
+# Hover reports the ITEM DICT under the pointer (markers win over spans,
+# later items over earlier), so a consumer reads back whatever fields it
+# stashed on the item. One pass over the items; a long history sets
+# hover_enabled 0.
+define _mousemove_timeline(hit, root, mx, my) as:
+    hit.hover_item is null
+    if hit.hover_enabled == 0:
+        return null
+    local v is timeline_view of hit
+    if mx < v.px or mx > v.px + v.pw:
+        return null
+    if my < v.py or my > v.py + v.ph:
+        return null
+    local li is timeline_lane_at of [hit, my]
+    if li < 0:
+        return null
+    local tspan is v.t1 - v.t0
+    if tspan <= 0:
+        tspan is 1
+    local xscale is v.pw / tspan
+    local found is null
+    for si in range of (len of hit.spans):
+        local s is hit.spans[si]
+        if (timeline_lane_index of [hit, s.lane]) == li:
+            local sx0 is v.px + (s.t0 - v.t0) * xscale
+            local sx1 is v.px + (s.t1 - v.t0) * xscale
+            if mx >= sx0 and mx <= sx1:
+                found is s
+    for mi in range of (len of hit.markers):
+        local m is hit.markers[mi]
+        if (timeline_lane_index of [hit, m.lane]) == li:
+            local mmx is v.px + (m.t - v.t0) * xscale
+            if (abs of (mmx - mx)) <= 3:
+                found is m
+    hit.hover_item is found
+
+define _clear_hover_timeline(widget) as:
+    widget.hover_item is null
+
 _register_widget of ["chart", {
     "render": _render_chart,
     "hit_test": null,
@@ -1263,6 +1797,19 @@ _register_widget of ["code_view", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": _scroll_code_view,
+    "container": 0,
+    "focusable": 1
+}]
+
+_register_widget of ["timeline", {
+    "render": _render_timeline,
+    "hit_test": null,
+    "on_mousedown": _mousedown_timeline,
+    "on_mousemove": _mousemove_timeline,
+    "on_drag": _drag_timeline,
+    "clear_hover": _clear_hover_timeline,
+    "clear_pressed": null,
+    "scroll": null,
     "container": 0,
     "focusable": 1
 }]

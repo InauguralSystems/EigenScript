@@ -1831,6 +1831,431 @@ assert_eq of [r1[2], 6, "line-2 segment covers 'd'"]
 _gfx_log is []
 
 # ============================================================
+# 27. timeline: lane-based event timeline (#842)
+# ============================================================
+
+print of "--- Timeline Lane Widget Tests (#842) ---"
+
+define _record_render_tl(w, ax, ay) as:
+    _gfx_log is []
+    _gfx_rec is 1
+    _render_timeline of [w, ax, ay]
+    _gfx_rec is 0
+    return len of _gfx_log
+
+# ---- Constructor ----
+tlw is timeline of ["tlw", 0, 0, 400, 200]
+assert_eq of [tlw.type, "timeline", "timeline type"]
+assert_eq of [len of tlw.lanes, 0, "timeline starts with no lanes"]
+assert_eq of [len of tlw.markers, 0, "timeline starts with no markers"]
+assert_eq of [len of tlw.spans, 0, "timeline starts with no spans"]
+assert_eq of [tlw.cursor, null, "timeline cursor hidden by default"]
+assert_eq of [tlw.zoom, 1.0, "timeline zoom default 1"]
+assert_eq of [tlw.pan_t, 0.0, "timeline pan default 0"]
+assert_eq of [tlw.t_min, null, "timeline t_min null means auto"]
+assert_true of [tlw.on_wheel != null, "timeline owns wheel input for cursor-anchored zoom"]
+
+# ---- Lanes and items are plain builders; extra fields pass through ----
+ln0 is timeline_lane of [0, "node 0"]
+assert_eq of [ln0.id, 0, "timeline_lane id"]
+assert_eq of [ln0.label, "node 0", "timeline_lane label"]
+assert_eq of [timeline_add_lane of [tlw, ln0], 0, "timeline_add_lane returns the index"]
+timeline_add_lane of [tlw, timeline_lane of [1, "node 1"]]
+timeline_add_lane of [tlw, timeline_lane of ["c", "node c"]]
+assert_eq of [timeline_lane_index of [tlw, 1], 1, "lanes address by numeric id"]
+assert_eq of [timeline_lane_index of [tlw, "c"], 2, "lanes address by string id too"]
+assert_eq of [timeline_lane_index of [tlw, "missing"], 0 - 1, "an unknown lane id is -1"]
+
+mk0 is timeline_marker of [10, 0, "commit"]
+assert_eq of [mk0.t, 10, "timeline_marker t"]
+assert_eq of [mk0.lane, 0, "timeline_marker lane"]
+assert_eq of [mk0.kind, "commit", "timeline_marker kind"]
+mk0.detail is "cmd=7"
+assert_eq of [timeline_add_marker of [tlw, mk0], 0, "timeline_add_marker returns the index"]
+assert_eq of [tlw.markers[0].detail, "cmd=7", "extra fields on an item pass through untouched"]
+sp0 is timeline_span of [0, 50, 1, "leader"]
+assert_eq of [sp0.t0, 0, "timeline_span t0"]
+assert_eq of [sp0.t1, 50, "timeline_span t1"]
+assert_eq of [timeline_add_span of [tlw, sp0], 0, "timeline_add_span returns the index"]
+
+# ---- Bounds: auto from the items, explicit overrides win ----
+tb is timeline_bounds of tlw
+assert_eq of [tb.t0, 0, "auto time range lower bound from the items"]
+assert_eq of [tb.t1, 50, "auto time range covers the span's t1"]
+timeline_add_marker of [tlw, timeline_marker of [80, "c", "crash"]]
+assert_eq of [(timeline_bounds of tlw).t1, 80, "an appended marker widens the bound in O(1)"]
+tlw.t_min is 10
+tlw.t_max is 60
+tb2 is timeline_bounds of tlw
+assert_eq of [tb2.t0, 10, "explicit t_min overrides auto"]
+assert_eq of [tb2.t1, 60, "explicit t_max overrides auto"]
+tlw.t_min is null
+tlw.t_max is null
+# In-place edits are the escape hatch's job, replaced lists are detected.
+tlw.markers[1].t is 200
+assert_eq of [(timeline_bounds of tlw).t1, 80, "an in-place t edit is not seen without invalidate"]
+timeline_invalidate of tlw
+assert_eq of [(timeline_bounds of tlw).t1, 200, "timeline_invalidate re-walks the items"]
+tlw.markers is [timeline_marker of [5, 0, "send"]]
+assert_eq of [(timeline_bounds of tlw).t1, 50, "a replaced item list forces a rescan"]
+# An item appended DIRECTLY (not via add_marker) leaves a counter gap
+# that the next bounds read scans — it is never silently skipped, even
+# when an add_marker lands after it and widens in O(1).
+append of [tlw.markers, timeline_marker of [300, 0, "direct"]]
+timeline_add_marker of [tlw, timeline_marker of [7, 0, "send"]]
+assert_eq of [(timeline_bounds of tlw).t1, 300, "a directly-appended item is scanned, not skipped"]
+tlw.markers is [timeline_marker of [5, 0, "send"]]
+timeline_invalidate of tlw
+
+# ---- View geometry and the time <-> pixel seam ----
+# 400x200 at (0,0), stub metrics: ruler_h = 7 + 6 = 13, body x = 64,
+# w = 400 - 64 - 6 = 330, y = 13, h = 187; 3 lanes -> lane_h = 62.
+tv is timeline_view of tlw
+assert_eq of [tv.px, 64, "body rect x = pad_left"]
+assert_eq of [tv.py, 13, "body rect starts under the ruler"]
+assert_eq of [tv.pw, 330, "body rect width"]
+assert_eq of [tv.ph, 187, "body rect height"]
+assert_eq of [tv.rh, 13, "ruler height from the text metrics"]
+assert_eq of [tv.ry, 0, "ruler sits at the widget top"]
+assert_eq of [tv.lane_h, 62, "lane_h auto-fits the lanes into the body"]
+tlw.t_min is 0
+tlw.t_max is 100
+tpx is timeline_to_pixel of [tlw, 50]
+assert_near of [tpx, 229, 0.000001, "the time midpoint maps to the body centre"]
+assert_near of [timeline_from_pixel of [tlw, tpx], 50, 0.000001, "pixel -> time round trips"]
+assert_eq of [timeline_lane_at of [tlw, 13], 0, "the first body row is lane 0"]
+assert_eq of [timeline_lane_at of [tlw, 13 + 62], 1, "one lane_h down is lane 1"]
+assert_eq of [timeline_lane_at of [tlw, 5], 0 - 1, "the ruler strip is no lane"]
+assert_eq of [timeline_lane_at of [tlw, 13 + 62 * 3], 0 - 1, "below the last lane is no lane"]
+tlfixed is timeline of ["tlf", 0, 0, 400, 200]
+timeline_add_lane of [tlfixed, timeline_lane of [0, "a"]]
+tlfixed.lane_h is 20
+assert_eq of [(timeline_view of tlfixed).lane_h, 20, "an explicit lane_h overrides auto-fit"]
+
+# ---- Pan and zoom (the chart idiom) ----
+t_before is timeline_from_pixel of [tlw, 100]
+timeline_pan_by of [tlw, 30]
+t_after is timeline_from_pixel of [tlw, 130]
+assert_near of [t_after, t_before, 0.000001, "drag-pan carries the time under the cursor"]
+timeline_reset_view of tlw
+assert_eq of [tlw.pan_t, 0.0, "timeline_reset_view clears pan"]
+assert_eq of [tlw.zoom, 1.0, "timeline_reset_view restores zoom"]
+anchor_t is timeline_from_pixel of [tlw, 150]
+timeline_zoom_at of [tlw, 2.0, 150]
+assert_eq of [tlw.zoom, 2.0, "timeline_zoom_at scales the zoom"]
+assert_near of [(timeline_from_pixel of [tlw, 150]), anchor_t, 0.000001, "the time under the anchor pixel does not move"]
+zv is timeline_view of tlw
+assert_near of [zv.t1 - zv.t0, 50, 0.000001, "zoom 2 halves the visible time span"]
+timeline_reset_view of tlw
+
+# ---- Cursor / scrubber seam ----
+timeline_set_cursor of [tlw, 42]
+assert_eq of [tlw.cursor, 42, "timeline_set_cursor sets, tl.cursor reads back"]
+timeline_set_cursor of [tlw, null]
+assert_eq of [tlw.cursor, null, "a null cursor hides the scrubber"]
+
+# ---- Interaction through the real dispatch path ----
+tlroot is panel of ["tlroot", 0, 0, 500, 300]
+tld is timeline of ["tld", 0, 0, 400, 200]
+timeline_add_lane of [tld, timeline_lane of [0, "n0"]]
+timeline_add_lane of [tld, timeline_lane of [1, "n1"]]
+tld.t_min is 0
+tld.t_max is 100
+add_child of [tlroot, tld]
+_layout of [tlroot, 0, 0]
+scrub_log is []
+define _on_scrub_probe(w, t) as:
+    append of [scrub_log, t]
+tld.on_scrub is _on_scrub_probe
+# Ruler press scrubs: cursor lands on the pressed time, on_scrub fires.
+dispatch of [tlroot, {"type": "mousedown", "x": 229, "y": 5, "button": 1}]
+assert_true of [_ui.drag_widget != null, "a ruler press claims the pointer"]
+assert_eq of [tld._drag_mode, "scrub", "a ruler press starts a scrub gesture"]
+assert_near of [tld.cursor, 50, 0.000001, "the scrub press puts the cursor at the pressed time"]
+assert_eq of [len of scrub_log, 1, "on_scrub fired on the press"]
+assert_near of [scrub_log[0], 50, 0.000001, "on_scrub receives the scrubbed time"]
+dispatch of [tlroot, {"type": "mousemove", "x": 262, "y": 5}]
+assert_near of [tld.cursor, 60, 0.000001, "dragging in scrub mode follows the pointer"]
+assert_eq of [len of scrub_log, 2, "on_scrub fires per scrub move"]
+dispatch of [tlroot, {"type": "mousemove", "x": 5000, "y": 5}]
+assert_near of [tld.cursor, 100, 0.000001, "a scrub past the edge clamps to the visible window"]
+dispatch of [tlroot, {"type": "mouseup", "x": 262, "y": 5, "button": 1}]
+assert_eq of [_ui.drag_widget, null, "mouseup releases the scrub capture"]
+# Body press pans; the cursor and on_scrub are untouched. (The stubbed
+# gfx_ticks never advances, so consecutive presses on one widget would
+# read as a double-click — reset the click memory between gestures.)
+_ui.last_click_id is ""
+n_scrubs is len of scrub_log
+p_before is timeline_from_pixel of [tld, 100]
+dispatch of [tlroot, {"type": "mousedown", "x": 100, "y": 100, "button": 1}]
+assert_eq of [tld._drag_mode, "pan", "a body press starts a pan gesture"]
+dispatch of [tlroot, {"type": "mousemove", "x": 130, "y": 100}]
+assert_near of [(timeline_from_pixel of [tld, 130]), p_before, 0.000001, "a body drag pans the window with the cursor"]
+dispatch of [tlroot, {"type": "mouseup", "x": 130, "y": 100, "button": 1}]
+assert_eq of [len of scrub_log, n_scrubs, "a pan gesture never fires on_scrub"]
+timeline_reset_view of tld
+# Wheel zooms about the cached pointer (#822).
+dispatch of [tlroot, {"type": "mousemove", "x": 150, "y": 100}]
+tw_before is timeline_from_pixel of [tld, 150]
+dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 1}]
+assert_true of [tld.zoom > 1.0, "a wheel over the timeline zooms in"]
+assert_near of [(timeline_from_pixel of [tld, 150]), tw_before, 0.000001, "wheel zoom is anchored on the pointer"]
+dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 0 - 1}]
+assert_near of [tld.zoom, 1.0, 0.000001, "an opposite wheel step returns to the original zoom"]
+timeline_reset_view of tld
+# interactive 0 opts out of all three gestures.
+tld.interactive is 0
+_ui.last_click_id is ""
+dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 1}]
+assert_eq of [tld.zoom, 1.0, "interactive 0 disables wheel zoom"]
+dispatch of [tlroot, {"type": "mousedown", "x": 229, "y": 5, "button": 1}]
+assert_eq of [_ui.drag_widget, null, "interactive 0 disables scrub and pan"]
+tld.interactive is 1
+
+# ---- Hover reports the item dict itself ----
+hv_tl is timeline of ["hv_tl", 0, 0, 400, 200]
+hv_tl._ax is 0
+hv_tl._ay is 0
+timeline_add_lane of [hv_tl, timeline_lane of [0, "n0"]]
+timeline_add_lane of [hv_tl, timeline_lane of [1, "n1"]]
+hv_tl.t_min is 0
+hv_tl.t_max is 100
+hsp is timeline_span of [20, 60, 0, "leader"]
+hsp.term is 3
+timeline_add_span of [hv_tl, hsp]
+hmk is timeline_marker of [40, 1, "commit"]
+hmk.detail is "committed=5"
+timeline_add_marker of [hv_tl, hmk]
+hvv is timeline_view of hv_tl
+# t=40 -> x = 64 + 40/100*330 = 196; lane 0 row / lane 1 row centres.
+_mousemove_timeline of [hv_tl, null, 196, hvv.py + 5]
+assert_true of [hv_tl.hover_item != null, "hover inside a span finds it"]
+assert_eq of [hv_tl.hover_item.kind, "leader", "hover reports the span dict"]
+assert_eq of [hv_tl.hover_item.term, 3, "consumer fields ride along on the hover item"]
+_mousemove_timeline of [hv_tl, null, 196, hvv.py + hvv.lane_h + 5]
+assert_true of [hv_tl.hover_item != null, "hover near a marker finds it"]
+assert_eq of [hv_tl.hover_item.detail, "committed=5", "the marker's consumer fields ride along too"]
+_mousemove_timeline of [hv_tl, null, 300, hvv.py + hvv.lane_h + 5]
+assert_eq of [hv_tl.hover_item, null, "hover over empty timeline space is null"]
+_mousemove_timeline of [hv_tl, null, 196, hvv.py + 5]
+_clear_hover_timeline of hv_tl
+assert_eq of [hv_tl.hover_item, null, "clear_hover clears the item"]
+hv_tl.hover_enabled is 0
+_mousemove_timeline of [hv_tl, null, 196, hvv.py + 5]
+assert_eq of [hv_tl.hover_item, null, "hover_enabled 0 skips the item scan"]
+
+# ---- Clipped by construction (#823 discipline) ----
+clip_tl is timeline of ["clip_tl", 10, 20, 300, 150]
+timeline_add_lane of [clip_tl, timeline_lane of [0, "a lane label long enough to overflow the gutter"]]
+timeline_add_lane of [clip_tl, timeline_lane of [1, "b"]]
+clip_tl.t_min is 0
+clip_tl.t_max is 10
+# Items far outside the window in both directions, plus spans crossing it.
+timeline_add_span of [clip_tl, timeline_span of [0 - 500, 900, 0, "wild"]]
+timeline_add_span of [clip_tl, timeline_span of [0 - 40, 0 - 20, 1, "left"]]
+timeline_add_marker of [clip_tl, timeline_marker of [0 - 90, 0, "far_left"]]
+timeline_add_marker of [clip_tl, timeline_marker of [400, 1, "far_right"]]
+timeline_add_marker of [clip_tl, timeline_marker of [5, 0, "inside"]]
+wlab is timeline_span of [1, 9, 1, "labelled"]
+wlab.label is "a span label much longer than the span box it sits in"
+timeline_add_span of [clip_tl, wlab]
+timeline_set_cursor of [clip_tl, 5]
+n_tl_prims is _record_render_tl of [clip_tl, 10, 20]
+assert_true of [n_tl_prims > 10, "the timeline clipping probe rendered something"]
+assert_eq of [_outside of [10, 20, 300, 150], 0, "#842 no primitive is drawn outside the timeline rect"]
+# Extreme pan and zoom keep the containment.
+clip_tl.pan_t is 100000
+_record_render_tl of [clip_tl, 10, 20]
+assert_eq of [_outside of [10, 20, 300, 150], 0, "#842 an extreme pan draws nothing outside the rect"]
+clip_tl.pan_t is 0.0
+clip_tl.zoom is 5000
+_record_render_tl of [clip_tl, 10, 20]
+assert_eq of [_outside of [10, 20, 300, 150], 0, "#842 an extreme zoom draws nothing outside the rect"]
+clip_tl.zoom is 0.0001
+_record_render_tl of [clip_tl, 10, 20]
+assert_eq of [_outside of [10, 20, 300, 150], 0, "#842 an extreme zoom-out draws nothing outside the rect"]
+timeline_reset_view of clip_tl
+# A cursor way outside the window paints nothing.
+timeline_set_cursor of [clip_tl, 100000]
+_record_render_tl of [clip_tl, 10, 20]
+assert_eq of [_outside of [10, 20, 300, 150], 0, "#842 an off-window cursor stays inside the rect"]
+timeline_set_cursor of [clip_tl, 5]
+# The renderer clip rect is set for the item pass and cleared after.
+_record_render_tl of [clip_tl, 10, 20]
+assert_true of [(_count_kind of "clip") >= 2, "#842 the render sets and clears a renderer clip rect"]
+tl_clip_last is null
+for ci in range of (len of _gfx_log):
+    if _gfx_log[ci][0] == "clip":
+        tl_clip_last is _gfx_log[ci][1]
+assert_eq of [tl_clip_last, null, "#842 the renderer clip rect is cleared before the render returns"]
+
+# ---- Theme keying: kinds resolve through the theme (#820 discipline) ----
+tl_theme is timeline of ["tl_theme", 0, 0, 300, 100]
+timeline_add_lane of [tl_theme, timeline_lane of [0, "a"]]
+tl_theme.t_min is 0
+tl_theme.t_max is 10
+timeline_add_span of [tl_theme, timeline_span of [2, 8, 0, "run"]]
+saved_theme is theme of null
+set_theme of (theme_light of null)
+_record_render_tl of [tl_theme, 0, 0]
+lt is theme of null
+tl_bg_ok is 0
+for bi in range of (len of _gfx_log):
+    if _gfx_log[bi][0] == "rect":
+        ba is _gfx_log[bi][1]
+        if ba[0] == 0 and ba[1] == 0 and ba[2] == 300 and ba[3] == 100:
+            if ba[4] == lt.tl_bg[0] and ba[5] == lt.tl_bg[1] and ba[6] == lt.tl_bg[2]:
+                tl_bg_ok is 1
+assert_eq of [tl_bg_ok, 1, "#842 the timeline background comes from the theme, not a literal"]
+set_theme of saved_theme
+# A kind styled to a THEME KEY resolves through the active theme.
+timeline_style of [tl_theme, "run", "tl_cursor"]
+dtc is (theme of null).tl_cursor
+assert_eq of [(_tl_kind_color of [tl_theme, "run", null])[0], dtc[0], "timeline_style maps a kind to a theme role by key"]
+# A literal rgb style and an explicit item color both win.
+timeline_style of [tl_theme, "run", [9, 8, 7]]
+assert_eq of [(_tl_kind_color of [tl_theme, "run", null])[0], 9, "timeline_style accepts a literal rgb too"]
+assert_eq of [(_tl_kind_color of [tl_theme, "run", [1, 2, 3]])[0], 1, "an explicit item color overrides the style"]
+# An unstyled kind takes a stable palette slot off the theme.
+k1 is _tl_kind_color of [tl_theme, "commit", null]
+k2 is _tl_kind_color of [tl_theme, "commit", null]
+assert_eq of [k1[0], k2[0], "an unstyled kind keeps a stable palette color"]
+dpal is (theme of null).tl_kinds
+in_pal is 0
+for pi in range of (len of dpal):
+    if dpal[pi][0] == k1[0] and dpal[pi][1] == k1[1] and dpal[pi][2] == k1[2]:
+        in_pal is 1
+assert_eq of [in_pal, 1, "the unstyled kind color comes from the theme's tl_kinds palette"]
+# A theme dict predating the tl_* keys still renders (fallback defaults).
+dt2 is theme of null
+old_theme2 is {}
+for k in ["bg", "text_color", "text_dim", "accent", "font_scale", "char_h", "char_w", "focus_ring", "radius_sm", "disabled_overlay"]:
+    old_theme2[k] is dt2[k]
+set_theme of old_theme2
+assert_eq of [_record_render_tl of [tl_theme, 0, 0] > 0, 1, "#842 a theme dict without the tl keys falls back instead of crashing"]
+set_theme of saved_theme
+
+# ---- Consumer contract 1: a liferaft-shaped record list maps in ----
+# cluster.viz records are {t, node, kind, role, term, detail} (liferaft#18).
+# The widget carries lanes/marks/spans only; deriving role spans from the
+# role field is the consumer mapping, done here exactly as the visualizer
+# front-end would.
+lr_records is [
+    {"t": 0, "node": 0, "kind": "election_start", "role": "candidate", "term": 1, "detail": "prev_term=0"},
+    {"t": 2, "node": 1, "kind": "vote", "role": "follower", "term": 1, "detail": "for=0 granted=1"},
+    {"t": 3, "node": 0, "kind": "election_won", "role": "leader", "term": 1, "detail": "votes=2"},
+    {"t": 5, "node": 0, "kind": "send", "role": "leader", "term": 1, "detail": "to=1 rpc=append_entries lat=2"},
+    {"t": 7, "node": 1, "kind": "recv", "role": "follower", "term": 1, "detail": "from=0 rpc=append_entries"},
+    {"t": 8, "node": 1, "kind": "append", "role": "follower", "term": 1, "detail": "loglen=1"},
+    {"t": 9, "node": 2, "kind": "drop", "role": "follower", "term": 1, "detail": "to=0 rpc=append_entries"},
+    {"t": 11, "node": 0, "kind": "commit", "role": "leader", "term": 1, "detail": "committed=1"},
+    {"t": 13, "node": 2, "kind": "crash", "role": "follower", "term": 1, "detail": ""},
+    {"t": 16, "node": 0, "kind": "stepdown", "role": "follower", "term": 2, "detail": "prev_term=1"},
+    {"t": 18, "node": 2, "kind": "restart", "role": "follower", "term": 1, "detail": ""}
+]
+lr_tl is timeline of ["lr", 0, 0, 640, 240]
+for ni in range of 3:
+    timeline_add_lane of [lr_tl, timeline_lane of [ni, f"node {ni}"]]
+# Consumer mapping: every record is a marker (record carried along);
+# role transitions become lane spans (role held from its start to the
+# next transition, or to the end of the run).
+lr_role_start is {}
+lr_role_name is {}
+lr_end is 0
+for ri in range of (len of lr_records):
+    rec is lr_records[ri]
+    m is timeline_marker of [rec.t, rec.node, rec.kind]
+    m.rec is rec
+    timeline_add_marker of [lr_tl, m]
+    nk is f"{rec.node}"
+    if lr_role_name[nk] == null:
+        lr_role_name[nk] is rec.role
+        lr_role_start[nk] is rec.t
+    elif rec.role != lr_role_name[nk]:
+        rs is timeline_span of [lr_role_start[nk], rec.t, rec.node, lr_role_name[nk]]
+        timeline_add_span of [lr_tl, rs]
+        lr_role_name[nk] is rec.role
+        lr_role_start[nk] is rec.t
+    if rec.t > lr_end:
+        lr_end is rec.t
+for ni2 in range of 3:
+    nk2 is f"{ni2}"
+    if lr_role_name[nk2] != null:
+        timeline_add_span of [lr_tl, timeline_span of [lr_role_start[nk2], lr_end, ni2, lr_role_name[nk2]]]
+assert_eq of [len of lr_tl.markers, 11, "every liferaft record maps to a marker"]
+assert_true of [(len of lr_tl.spans) >= 4, "role transitions map to lane spans"]
+lrb is timeline_bounds of lr_tl
+assert_eq of [lrb.t0, 0, "the liferaft time range starts at the first record"]
+assert_eq of [lrb.t1, 18, "and ends at the last"]
+# Role kinds keyed to theme roles — the consumer's one styling call.
+timeline_style of [lr_tl, "leader", "accent"]
+timeline_style of [lr_tl, "candidate", "tl_cursor"]
+timeline_style of [lr_tl, "follower", "text_dim"]
+n_lr is _record_render_tl of [lr_tl, 0, 0]
+assert_true of [n_lr > 20, "the liferaft-shaped timeline renders"]
+assert_eq of [_outside of [0, 0, 640, 240], 0, "the liferaft-shaped timeline stays inside its rect"]
+# The scrubber seam the seed-replay UI needs: set, read, and hover reads
+# the original record back off the item.
+timeline_set_cursor of [lr_tl, 11]
+assert_eq of [lr_tl.cursor, 11, "the replay scrubber position reads back"]
+lr_tl._ax is 0
+lr_tl._ay is 0
+lrv is timeline_view of lr_tl
+lr_x is timeline_to_pixel of [lr_tl, 11]
+_mousemove_timeline of [lr_tl, null, lr_x, lrv.py + 5]
+assert_true of [lr_tl.hover_item != null, "hovering the commit marker finds it"]
+assert_eq of [lr_tl.hover_item.rec.detail, "committed=1", "the original liferaft record rides on the item"]
+
+# ---- Consumer contract 2: an eddy-shaped schedule maps in ----
+# Per-task schedule lanes (eddy#6): who ran when (spans), yields and
+# sleeps (markers), virtual time on the axis, verdict as a styled kind.
+ed_sched is [
+    {"task": "client", "runs": [[0, 4], [9, 12]], "yields": [4], "sleeps": [12]},
+    {"task": "server", "runs": [[4, 9], [12, 15]], "yields": [9], "sleeps": []},
+    {"task": "checker", "runs": [[15, 17]], "yields": [], "sleeps": []}
+]
+ed_tl is timeline of ["ed", 0, 0, 640, 200]
+for ti in range of (len of ed_sched):
+    row is ed_sched[ti]
+    timeline_add_lane of [ed_tl, timeline_lane of [row.task, row.task]]
+    for ri in range of (len of row.runs):
+        seg is row.runs[ri]
+        timeline_add_span of [ed_tl, timeline_span of [seg[0], seg[1], row.task, "run"]]
+    for yi in range of (len of row.yields):
+        timeline_add_marker of [ed_tl, timeline_marker of [row.yields[yi], row.task, "yield"]]
+    for si2 in range of (len of row.sleeps):
+        timeline_add_marker of [ed_tl, timeline_marker of [row.sleeps[si2], row.task, "sleep"]]
+# Verdict marker on the checker lane, graded through a theme role.
+vmk is timeline_marker of [17, "checker", "verdict_reject"]
+vmk.verdict is "rejected: stale read at t=12"
+timeline_add_marker of [ed_tl, vmk]
+timeline_style of [ed_tl, "run", "accent"]
+timeline_style of [ed_tl, "verdict_reject", "focus_ring"]
+assert_eq of [len of ed_tl.lanes, 3, "one lane per task"]
+assert_eq of [len of ed_tl.spans, 5, "every run segment maps to a span"]
+assert_eq of [len of ed_tl.markers, 4, "yields, sleeps and the verdict map to markers"]
+assert_eq of [(timeline_bounds of ed_tl).t1, 17, "the schedule's virtual-time range is covered"]
+n_ed is _record_render_tl of [ed_tl, 0, 0]
+assert_true of [n_ed > 10, "the eddy-shaped timeline renders"]
+assert_eq of [_outside of [0, 0, 640, 200], 0, "the eddy-shaped timeline stays inside its rect"]
+# The anomaly scrubber: same seam.
+timeline_set_cursor of [ed_tl, 12]
+assert_eq of [ed_tl.cursor, 12, "the anomaly scrubber position reads back"]
+
+# ---- A few-thousand-item timeline renders (sanity, recording off) ----
+big_tl is timeline of ["big", 0, 0, 800, 300]
+for bi2 in range of 8:
+    timeline_add_lane of [big_tl, timeline_lane of [bi2, f"lane {bi2}"]]
+for ii in range of 3000:
+    timeline_add_marker of [big_tl, timeline_marker of [ii, ii % 8, "send"]]
+for ii in range of 500:
+    timeline_add_span of [big_tl, timeline_span of [ii * 4, ii * 4 + 3, ii % 8, "run"]]
+_render_timeline of [big_tl, 0, 0]
+assert_eq of [(timeline_bounds of big_tl).t1, 2999, "a 3500-item timeline renders and its bounds are right"]
+
+_gfx_log is []
+
+# ============================================================
 # Summary
 # ============================================================
 

@@ -1,0 +1,90 @@
+# ============================================================
+# Timeline lane widget demo — #842
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/ui_timeline.eigs
+#
+# A lane-based event timeline over a small Raft-flavored event stream
+# (the shape liferaft's cluster visualizer records): three node lanes,
+# role spans, point-event markers, and the scrubber.
+#
+#   - drag in the lane body      = pan the time window
+#   - wheel                      = zoom about the cursor (#822)
+#   - drag in the time ruler     = scrub; the label follows on_scrub
+#   - hover an item              = its detail in the status label
+#
+# Escape quits.
+
+import ui
+
+WINDOW_W is 800
+WINDOW_H is 360
+
+gfx_open of [WINDOW_W, WINDOW_H, "timeline widget (#842)"]
+
+root is ui.panel of ["root", 0, 0, WINDOW_W, WINDOW_H]
+tl is ui.timeline of ["tl", 10, 10, WINDOW_W - 20, WINDOW_H - 60]
+ui.add_child of [root, tl]
+
+sb is ui.label of ["sb", 10, WINDOW_H - 38, "drag body = pan | wheel = zoom | drag ruler = scrub | hover = inspect | Esc quits"]
+ui.add_child of [root, sb]
+
+# ---- Lanes: one per node ----
+for i in range of 3:
+    ui.timeline_add_lane of [tl, ui.timeline_lane of [i, f"node {i}"]]
+
+# ---- Items: role spans + event markers (the consumer's mapping) ----
+ui.timeline_add_span of [tl, ui.timeline_span of [0, 12, 0, "candidate"]]
+ui.timeline_add_span of [tl, ui.timeline_span of [12, 70, 0, "leader"]]
+ui.timeline_add_span of [tl, ui.timeline_span of [0, 100, 1, "follower"]]
+ui.timeline_add_span of [tl, ui.timeline_span of [0, 45, 2, "follower"]]
+ui.timeline_add_span of [tl, ui.timeline_span of [60, 100, 2, "follower"]]
+
+events is [
+    [0, 0, "election_start", "prev_term=0"],
+    [8, 1, "vote", "for=0 granted=1"],
+    [10, 2, "vote", "for=0 granted=1"],
+    [12, 0, "election_won", "votes=3"],
+    [20, 0, "send", "to=1 rpc=append_entries"],
+    [24, 1, "recv", "from=0 rpc=append_entries"],
+    [26, 1, "append", "loglen=1"],
+    [30, 2, "drop", "to=0 rpc=append_entries"],
+    [38, 0, "commit", "committed=1"],
+    [45, 2, "crash", ""],
+    [60, 2, "restart", ""],
+    [82, 0, "client_apply", "cmd=set x 7"]
+]
+for ei in range of (len of events):
+    e is events[ei]
+    m is ui.timeline_marker of [e[0], e[1], e[2]]
+    m.detail is e[3]
+    ui.timeline_add_marker of [tl, m]
+
+# ---- Kinds keyed to theme roles ----
+ui.timeline_style of [tl, "leader", "accent"]
+ui.timeline_style of [tl, "candidate", "tl_cursor"]
+ui.timeline_style of [tl, "follower", "tl_lane_line"]
+ui.timeline_style of [tl, "crash", "focus_ring"]
+
+# ---- The scrubber seam ----
+ui.timeline_set_cursor of [tl, 38]
+
+# lint: allow W002 -- callback signature
+define on_scrub_demo(w, t) as:
+    sb.text is f"scrub: t = {floor of t}"
+tl.on_scrub is on_scrub_demo
+
+# lint: allow W002 -- callback signature
+define on_key(root_w, ev) as:
+    return 0
+
+# lint: allow W002 -- callback signature
+define on_tick(dt) as:
+    if tl.hover_item != null:
+        local hi is tl.hover_item
+        if hi.detail != null:
+            sb.text is f"{hi.kind}: {hi.detail}"
+        else:
+            sb.text is f"{hi.kind}"
+
+ui.app_loop of [root, on_key, on_tick]
+gfx_close of null
