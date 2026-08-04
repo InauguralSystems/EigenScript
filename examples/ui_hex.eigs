@@ -1,0 +1,59 @@
+# ============================================================
+# hex_view memory viewer demo — #850
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/ui_hex.eigs
+#
+# A 512-byte "memory" with an embedded ASCII message, viewed through
+# hex_view's reader callback (the widget never copies the memory).
+#
+#   - wheel                = scroll
+#   - click a byte         = select (the status line follows on_select)
+#   - the message range is highlighted; spot it in the ASCII column
+#
+# Escape quits.
+
+import ui
+
+WIN_W is 560
+WIN_H is 400
+
+gfx_open of [WIN_W, WIN_H, "hex viewer (#850)"]
+
+# ---- the "memory": a pattern + an embedded message ----
+mem is []
+for i in range of 512:
+    append of [mem, (i * 7) % 256]
+msg is "EigenScript hex_view"
+for i in range of (len of msg):
+    mem[64 + i] is ord of (substr of [msg, i, 1])
+
+define reader(addr) as:
+    return mem[addr]
+
+root is ui.panel of ["root", 0, 0, WIN_W, WIN_H]
+hv is ui.hex_view of ["hv", 10, 10, WIN_W - 20, WIN_H - 50, reader, 512]
+hv.base is 0xC000
+append of [hv.highlights, {"start": 64, "end": 64 + (len of msg), "style": "focus_ring"}]
+ui.add_child of [root, hv]
+
+sb is ui.label of ["sb", 10, WIN_H - 30, "wheel = scroll | click a byte = select | Esc quits"]
+ui.add_child of [root, sb]
+
+# Display address = base + addr.
+define hex_of_addr(w, addr) as:
+    return hex of [w.base + addr, w.addr_nibbles]
+
+# lint: allow W002 -- callback signature
+define on_select_demo(w, addr) as:
+    local b is reader of addr
+    sb.text is f"selected {hex_of_addr of [w, addr]} = {hex of [b, 2]} ({b})"
+hv.on_select is on_select_demo
+
+# lint: allow W002 -- callback signature
+define on_key(ev) as:
+    if ev.key == "escape":
+        return 0
+    return 1
+
+ui.app_loop of [root, on_key, null]
+gfx_close of null

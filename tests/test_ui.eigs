@@ -2400,6 +2400,99 @@ set_theme of saved_theme
 _gfx_log is []
 
 # ============================================================
+# hex_view — memory/byte-grid viewer (#850)
+# ============================================================
+
+define _record_render_hex(w, ax, ay) as:
+    _gfx_log is []
+    _gfx_rec is 1
+    _render_hex_view of [w, ax, ay]
+    _gfx_rec is 0
+    return len of _gfx_log
+
+# ---- Consumer contract 1: the DMG#53 memory panel shape ----
+# A reader over an emulator-bus-like byte list; WRAM display base.
+hx_mem is []
+for i in range of 512:
+    append of [hx_mem, (i * 7) % 256]
+define _hx_reader(addr) as:
+    return hx_mem[addr]
+hx is hex_view of ["hx", 0, 0, 460, 200, _hx_reader, 512]
+hx.base is 0xC000
+hxm is hex_view_metrics of hx
+assert_true of [hxm.gutter > 0, "the address gutter has measured width"]
+
+# The reader is only consulted for VISIBLE bytes: count calls per frame.
+hx_reads is {"n": 0}
+define _hx_counting_reader(addr) as:
+    hx_reads.n is hx_reads.n + 1
+    return hx_mem[addr]
+hx.reader is _hx_counting_reader
+n_hx is _record_render_hex of [hx, 0, 0]
+assert_true of [n_hx > 50, "the memory panel renders"]
+assert_eq of [_outside of [0, 0, 460, 200], 0, "the hex view stays inside its rect"]
+hx_visible_rows is (ceil of (200 / hxm.row_h)) + 1
+assert_true of [hx_reads.n <= hx_visible_rows * 16, "only visible bytes are read (#828)"]
+hx.reader is _hx_reader
+
+# Address mapping round-trips through the geometry seam.
+hx._ax is 0
+hx._ay is 0
+hx_a0 is hex_view_addr_at of [hx, hxm.gutter + 2, 4]
+assert_eq of [hx_a0, 0, "the first cell maps to addr 0"]
+hx_a17 is hex_view_addr_at of [hx, hxm.gutter + hxm.cell_w + 2, 4 + hxm.row_h]
+assert_eq of [hx_a17, 17, "row 1 col 1 maps to addr 17"]
+assert_eq of [hex_view_addr_at of [hx, 2, 4], 0 - 1, "the gutter maps to no addr"]
+
+# Click selects (gesture-only on_select) and scrolling clamps.
+hx_sel is {"n": 0, "addr": 0 - 1}
+# lint: allow W002 -- callback signature
+define _hx_on_select(w, addr) as:
+    hx_sel.n is hx_sel.n + 1
+    hx_sel.addr is addr
+hx.on_select is _hx_on_select
+dispatch of [hx, {"type": "mousedown", "button": 1, "x": hxm.gutter + 2, "y": 4}]
+assert_eq of [hx_sel.n, 1, "a cell click fires on_select"]
+assert_eq of [hx_sel.addr, 0, "with the clicked addr"]
+assert_eq of [hx.cursor, 0, "and moves the cursor"]
+hex_set_cursor of [hx, 33]
+assert_eq of [hx_sel.n, 1, "hex_set_cursor is silent"]
+assert_eq of [hx.cursor, 33, "but the cursor moved"]
+_scroll_hex_view of [hx, 0, 100000]
+hx_nrows is ceil of (512 / 16)
+assert_eq of [hx.scroll_y, hx_nrows * hxm.row_h - 200, "scroll clamps at the last row"]
+_scroll_hex_view of [hx, 0, 0 - 100000]
+assert_eq of [hx.scroll_y, 0, "and at the top"]
+
+# Highlights: byte ranges under hex AND ascii; unmapped bytes render.
+append of [hx.highlights, {"start": 4, "end": 8, "style": "accent"}]
+n_hx2 is _record_render_hex of [hx, 0, 0]
+assert_true of [n_hx2 > n_hx, "highlight rects add primitives"]
+
+# ---- Consumer contract 2: a record-inspector shape (tidelog-like) ----
+# A CBOR-ish record with unmapped tail; ASCII column shows the text.
+hx_rec is [0xA2, 0x64, 0x6E, 0x61, 0x6D, 0x65, 0x63, 0x65, 0x64, 0x64, 0x79]
+define _hx_rec_reader(addr) as:
+    if addr < (len of hx_rec):
+        return hx_rec[addr]
+    return 0 - 1
+hr is hex_view of ["hr", 0, 0, 460, 60, _hx_rec_reader, 16]
+n_hr is _record_render_hex of [hr, 0, 0]
+assert_true of [n_hr > 10, "the record-inspector shape renders (incl. unmapped tail)"]
+assert_eq of [_outside of [0, 0, 460, 60], 0, "and stays inside its rect"]
+
+# ---- A theme dict without the hex keys falls back ----
+dt4 is theme of null
+old_theme4 is {}
+for k in ["bg", "text_color", "text_dim", "accent", "font_scale", "char_h", "char_w", "focus_ring", "radius_sm", "disabled_overlay"]:
+    old_theme4[k] is dt4[k]
+set_theme of old_theme4
+assert_true of [(_record_render_hex of [hr, 0, 0]) > 0, "#850 a theme dict without the hex keys falls back instead of crashing"]
+set_theme of saved_theme
+
+_gfx_log is []
+
+# ============================================================
 # Summary
 # ============================================================
 
