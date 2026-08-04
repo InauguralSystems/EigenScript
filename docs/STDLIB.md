@@ -591,6 +591,14 @@ overflowing. Colors come from the theme keys `plot_bg`, `plot_grid`,
 `wave_border` (#820). A theme dict predating those keys falls back to the
 built-in defaults instead of failing.
 
+**`code_view` takes styled spans** (#838): set `cv.spans` to a list of
+`{"start", "end", "bg", "fg"}` dicts — absolute half-open byte offsets
+into `cv.text` — and the range gets a background rect behind its glyphs
+and/or a foreground recolor over them (either color may be null; a span
+crossing lines clips per line). An empty list renders exactly as before,
+so the field is inert on consumers that never set it. This is the
+match/syntax-highlighting seam for the EigenRegex tester and eigen-edit.
+
 Notes on widget state, where the toolkit could otherwise shadow yours:
 
 - **`label` measures itself.** Its `w`/`h` come from its text and scale,
