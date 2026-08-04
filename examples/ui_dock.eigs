@@ -1,0 +1,75 @@
+# ============================================================
+# Dock workspace layout demo — #848
+# ============================================================
+# Run: make gfx && ./src/eigenscript examples/ui_dock.eigs
+#
+# A debugger-shaped workspace (the DMG#53 chrome, #848): a center surface
+# surrounded by titled tool panels.
+#
+#   - drag a region edge (the thin bars)  = resize the region
+#   - click a panel title                 = collapse / expand it
+#   - the status line reports each layout gesture (on_layout)
+#
+# Escape quits.
+
+import ui
+
+WIN_W is 900
+WIN_H is 560
+
+gfx_open of [WIN_W, WIN_H, "dock workspace (#848)"]
+
+root is ui.panel of ["root", 0, 0, WIN_W, WIN_H]
+dk is ui.dock of ["dk", 10, 10, WIN_W - 20, WIN_H - 50]
+ui.add_child of [root, dk]
+
+# Center: a painted surface standing in for the app's main view.
+# lint: allow W002 -- callback signature
+define paint_center(w, ax, ay) as:
+    gfx_rect of [ax, ay, w.w, w.h, 18, 18, 26]
+    local step is 24
+    local yy is 0
+    loop while yy < w.h:
+        local xx is 0
+        loop while xx < w.w:
+            if ((xx / step) + (yy / step)) % 2 == 0:
+                gfx_rect of [ax + xx, ay + yy, step, step, 24, 24, 34]
+            xx is xx + step
+        yy is yy + step
+    gfx_text of [ax + 12, ay + 12, "center surface", 120, 160, 220, 2]
+
+center is ui.canvas of ["center", 0, 0, 10, 10, paint_center, null]
+ui.dock_set_center of [dk, center]
+
+regs is ui.label of ["regs", 0, 0, "AF=01B0 BC=0013 DE=00D8 HL=014D"]
+regs.auto_size is 0
+ui.dock_add of [dk, "west", ui.dock_panel of ["registers", regs]]
+watch is ui.label of ["watch", 0, 0, "watch: (empty)"]
+watch.auto_size is 0
+ui.dock_add of [dk, "west", ui.dock_panel of ["watch", watch]]
+
+tiles is ui.label of ["tiles", 0, 0, "tile viewer"]
+tiles.auto_size is 0
+ui.dock_add of [dk, "east", ui.dock_panel of ["tiles", tiles]]
+
+dis is ui.code_view of ["dis", 0, 0, 10, 10, "0100  nop\n0101  jp 0150\n0150  di"]
+ui.dock_add of [dk, "south", ui.dock_panel of ["disassembly", dis]]
+memv is ui.code_view of ["memv", 0, 0, 10, 10, "C000  00 11 22 33"]
+ui.dock_add of [dk, "south", ui.dock_panel of ["memory", memv]]
+
+sb is ui.label of ["sb", 10, WIN_H - 30, "drag an edge = resize | click a title = collapse | Esc quits"]
+ui.add_child of [root, sb]
+
+# lint: allow W002 -- callback signature
+define on_layout_demo(w) as:
+    sb.text is f"layout gesture: west={floor of w.west_w} east={floor of w.east_w} south={floor of w.south_h}"
+dk.on_layout is on_layout_demo
+
+# lint: allow W002 -- callback signature
+define on_key(ev) as:
+    if ev.key == "escape":
+        return 0
+    return 1
+
+ui.app_loop of [root, on_key, null]
+gfx_close of null

@@ -2256,6 +2256,150 @@ assert_eq of [(timeline_bounds of big_tl).t1, 2999, "a 3500-item timeline render
 _gfx_log is []
 
 # ============================================================
+# dock — multi-panel workspace layout (#848)
+# ============================================================
+
+define _record_render_dock(w, ax, ay) as:
+    _gfx_log is []
+    _gfx_rec is 1
+    _render_dock of [w, ax, ay]
+    _gfx_rec is 0
+    return len of _gfx_log
+
+# ---- Consumer contract 1: the DMG#53 debugger shape ----
+# Center = the LCD surface; west = registers + OAM; east = tiles;
+# south = disassembly + memory.
+dk is dock of ["dk", 0, 0, 800, 500]
+dk_lcd is canvas of ["lcd", 0, 0, 10, 10, null, null]
+dock_set_center of [dk, dk_lcd]
+dk_regs is label of ["regs", 0, 0, "AF=0000"]
+dk_regs.auto_size is 0
+dk_oam is label of ["oam", 0, 0, "OAM"]
+dk_oam.auto_size is 0
+dk_p_regs is dock_add of [dk, "west", dock_panel of ["registers", dk_regs]]
+dk_p_oam is dock_add of [dk, "west", dock_panel of ["oam", dk_oam]]
+dk_tiles is canvas of ["tiles", 0, 0, 10, 10, null, null]
+dk_p_tiles is dock_add of [dk, "east", dock_panel of ["tiles", dk_tiles]]
+dk_dis is code_view of ["dis", 0, 0, 10, 10, "nop"]
+dk_memv is code_view of ["memv", 0, 0, 10, 10, "00"]
+dock_add of [dk, "south", dock_panel of ["disassembly", dk_dis]]
+dock_add of [dk, "south", dock_panel of ["memory", dk_memv]]
+
+dkv is dock_view of dk
+dk_th is dkv.title_h
+assert_eq of [dkv.center[0], 205, "center starts after west + handle"]
+assert_eq of [dkv.center[2], 390, "center width is the remainder"]
+assert_eq of [dkv.center[3], 335, "north band leaves room for south + handle"]
+assert_eq of [dkv.west[2], 200, "west region takes west_w"]
+assert_eq of [dkv.south[3], 160, "south region takes south_h"]
+assert_eq of [len of dkv.panels.west, 2, "west stacks two panels"]
+wp0 is dkv.panels.west[0]
+wp1 is dkv.panels.west[1]
+assert_eq of [wp0.body[1], dk_th, "first west body sits under its title"]
+assert_eq of [wp0.body[3], wp1.body[3], "expanded west panels share the stack evenly"]
+sp0 is dkv.panels.south[0]
+sp1 is dkv.panels.south[1]
+assert_eq of [sp0.title[2] + sp1.title[2], 800, "south columns tile the full width"]
+
+# The dock stamps its children's geometry on layout.
+_layout of [dk, 0, 0]
+assert_eq of [dk_lcd._ax, 205, "the center widget is stamped into the center rect"]
+assert_eq of [dk_lcd.w, 390, "and sized to it"]
+assert_eq of [dk_regs._ay, dk_th, "a west panel's widget is stamped under its title"]
+assert_eq of [dk_regs.w, 200, "and sized to the region width"]
+
+# ---- Interaction: handle drag resizes (gesture-only on_layout) ----
+dk_layouts is {"n": 0}
+# lint: allow W002 -- callback signature
+define _dk_on_layout(w) as:
+    dk_layouts.n is dk_layouts.n + 1
+dk.on_layout is _dk_on_layout
+
+dispatch of [dk, {"type": "mousedown", "button": 1, "x": 202, "y": 100}]
+dispatch of [dk, {"type": "mousemove", "x": 260, "y": 100}]
+assert_eq of [dk.west_w, 260, "dragging the west handle resizes the region"]
+assert_eq of [dk_layouts.n, 1, "the drag fired on_layout"]
+dispatch of [dk, {"type": "mousemove", "x": 10, "y": 100}]
+assert_eq of [dk.west_w, 60, "the resize clamps at min_size"]
+dispatch of [dk, {"type": "mouseup", "button": 1, "x": 10, "y": 100}]
+dk_n_after_drag is dk_layouts.n
+
+# Programmatic layout changes are silent.
+dk.west_w is 200
+dock_set_collapsed of [dk, dk_p_oam, 1]
+assert_eq of [dk_layouts.n, dk_n_after_drag, "programmatic sizing/collapse fires no on_layout"]
+dock_set_collapsed of [dk, dk_p_oam, 0]
+
+# ---- Interaction: title click toggles collapse ----
+_layout of [dk, 0, 0]
+dkv2 is dock_view of dk
+wp1t is dkv2.panels.west[1].title
+dispatch of [dk, {"type": "mousedown", "button": 1, "x": wp1t[0] + 4, "y": wp1t[1] + 4}]
+assert_eq of [dk_p_oam.collapsed, 1, "a title click collapses the panel"]
+assert_eq of [dk_layouts.n, dk_n_after_drag + 1, "and fires on_layout (a gesture)"]
+_layout of [dk, 0, 0]
+assert_eq of [dk_oam.visible, 0, "a collapsed panel's widget is invisible"]
+dkv3 is dock_view of dk
+assert_eq of [dkv3.panels.west[1].body, null, "and has no body rect"]
+assert_true of [dkv3.panels.west[0].body[3] > wp0.body[3], "the expanded sibling reclaims the space"]
+# The collapsed panel's title MOVED (the sibling grew) — click where the
+# view says it is now, not where it was.
+wp1t2 is dkv3.panels.west[1].title
+dispatch of [dk, {"type": "mousedown", "button": 1, "x": wp1t2[0] + 4, "y": wp1t2[1] + 4}]
+assert_eq of [dk_p_oam.collapsed, 0, "a second click expands it again"]
+_layout of [dk, 0, 0]
+
+# ---- Routing: a click in the center reaches the hosted widget ----
+dk_center_hits is {"n": 0}
+# lint: allow W002 -- callback signature
+define _dk_on_mouse(w, ev) as:
+    if ev.type == "mousedown":
+        dk_center_hits.n is dk_center_hits.n + 1
+dk_lcd.on_mouse is _dk_on_mouse
+dispatch of [dk, {"type": "mousedown", "button": 1, "x": 300, "y": 100}]
+assert_eq of [dk_center_hits.n, 1, "a center click routes to the hosted widget"]
+
+# ---- Containment: the rendered dock stays inside its rect ----
+# (Clear focus first: the clicked canvas's focus ring draws 2px outside
+# its rect and is cropped by the dock's gfx_clip in the real renderer —
+# the raw-extent oracle here cannot see clip records.)
+_ui.focused_widget is null
+n_dk is _record_render_dock of [dk, 0, 0]
+assert_true of [n_dk > 10, "the debugger-shaped dock renders"]
+assert_eq of [_outside of [0, 0, 800, 500], 0, "the dock stays inside its rect"]
+
+# ---- Consumer contract 2: a studio workspace shape ----
+# Center = editor surface; west = a browser; south = a mixer strip.
+st is dock of ["st", 0, 0, 640, 400]
+st_ed is canvas of ["ed", 0, 0, 10, 10, null, null]
+dock_set_center of [st, st_ed]
+st_br is label of ["br", 0, 0, "browser"]
+st_br.auto_size is 0
+dock_add of [st, "west", dock_panel of ["browser", st_br]]
+st_mx is label of ["mx", 0, 0, "mixer"]
+st_mx.auto_size is 0
+dock_add of [st, "south", dock_panel of ["mixer", st_mx]]
+stv is dock_view of st
+assert_eq of [stv.east, null, "an empty region takes no space"]
+assert_eq of [stv.center[0] + stv.center[2], 640, "the center reaches the east edge"]
+_layout of [st, 0, 0]
+assert_eq of [st_mx._ay, stv.panels.south[0].body[1], "the mixer is stamped into the south body"]
+n_st is _record_render_dock of [st, 0, 0]
+assert_true of [n_st > 5, "the studio-shaped dock renders"]
+assert_eq of [_outside of [0, 0, 640, 400], 0, "the studio-shaped dock stays inside its rect"]
+
+# ---- A theme dict without the dock keys falls back ----
+dt3 is theme of null
+old_theme3 is {}
+for k in ["bg", "text_color", "text_dim", "accent", "font_scale", "char_h", "char_w", "focus_ring", "radius_sm", "disabled_overlay"]:
+    old_theme3[k] is dt3[k]
+set_theme of old_theme3
+assert_true of [(_record_render_dock of [st, 0, 0]) > 0, "#848 a theme dict without the dock keys falls back instead of crashing"]
+set_theme of saved_theme
+
+_gfx_log is []
+
+# ============================================================
 # Summary
 # ============================================================
 

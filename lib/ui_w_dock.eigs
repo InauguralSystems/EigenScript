@@ -1,0 +1,415 @@
+# lint: allow-file E003 -- fragment of lib/ui.eigs: the loader binds the shared ui state (_theme, _ui, widget registry, sibling widgets) before this file runs
+# UI Widgets — Dock: multi-panel workspace layout (#848)
+#
+# `dock` is a layout container for tool-window chrome: a CENTER widget
+# (the app's primary surface) surrounded by up to three REGIONS — west,
+# east (vertical stacks of titled panels) and south (a horizontal row of
+# titled panels) — with drag-to-resize region edges and per-panel
+# collapse. Every existing app is single-surface; this is the first
+# toolkit capability for the "surface + tool panels" shape (DMG#53's
+# emulator debugger is contract consumer 1; a DeslanStudio-style
+# browser/mixer/editor workspace is contract consumer 2 — both mapped in
+# tests/test_ui.eigs).
+#
+# The #819/#842 structural properties hold:
+#   - CLIPPED (#823): every hosted widget renders under gfx_clip of its
+#     body rect and the title text goes through the measured-width
+#     clipper — panel content cannot paint over the chrome in the real
+#     renderer, at any region size. (The dock cannot software-clip a
+#     hosted widget's own primitives the way chart/timeline clip their
+#     items; it stamps each child's rect to fit and #823 applies to the
+#     child itself.)
+#   - THEME-KEYED (#820): dock_bg / dock_title_bg / dock_title_fg /
+#     dock_handle / dock_border come off the active theme (with
+#     fallbacks, so a theme dict predating the keys still renders).
+#   - GEOMETRY AS A SEAM: dock_view(dk) returns the full computed
+#     geometry (region rects, per-panel title/body rects, handle rects,
+#     the center rect) — consumers and tests read it instead of
+#     re-deriving layout math.
+#
+# Interaction (gesture contracts): dragging a region HANDLE claims the
+# pointer (#567) and resizes west_w/east_w/south_h clamped to min_size
+# and a minimum center; clicking a panel TITLE toggles its collapse.
+# `on_layout(dk)` fires ONLY on those user gestures — setting sizes or
+# `collapsed` from code is silent (the #842 rule: a consumer driving the
+# layout programmatically already knows).
+#
+# The dock OWNS its children's geometry: each layout pass stamps the
+# hosted widgets' x/y/w/h from the computed rects, and a collapsed
+# panel's widget is made invisible (excluded from render, hit-testing
+# and the focus walk). All hosted widgets also live in dk.children, so
+# the generic container recursion (hover clear, focus list) covers them
+# without dock-specific special cases.
+
+define dock(id, x, y, w, h) as:
+    return {
+        "type": "dock",
+        "id": id,
+        "x": x, "y": y, "w": w, "h": h,
+        "children": [],
+        # region -> [panel...]; a panel is {"title", "widget",
+        # "collapsed"} (dock_panel). Extra fields pass through.
+        "panels": {"west": [], "east": [], "south": []},
+        "center": null,
+        "west_w": 200,
+        "east_w": 200,
+        "south_h": 160,
+        "handle_w": 5,
+        "min_size": 60,
+        "min_center": 100,
+        # Fires ONLY on a user gesture (handle drag / title click).
+        "on_layout": null,
+        "interactive": 1,
+        "visible": 1,
+        # Drag gesture: "" | "west" | "east" | "south".
+        "_drag_region": ""
+    }
+
+define dock_panel(title, widget) as:
+    return {"title": title, "widget": widget, "collapsed": 0}
+
+define dock_add(dk, region, p) as:
+    append of [dk.panels[region], p]
+    append of [dk.children, p.widget]
+    return p
+
+define dock_set_center(dk, widget) as:
+    dk.center is widget
+    append of [dk.children, widget]
+    return widget
+
+# Collapse/expand from code — silent by contract (no on_layout). The
+# hosted widget's visibility tracks it on the next layout pass.
+define dock_set_collapsed(dk, p, v) as:
+    p.collapsed is v
+
+define _dock_title_h() as:
+    return (text_height of 1) + 6
+
+define _dock_origin(dk) as:
+    local ox is dk.x
+    local oy is dk.y
+    if dk._ax != null:
+        ox is dk._ax
+    if dk._ay != null:
+        oy is dk._ay
+    return [ox, oy]
+
+# The whole computed geometry, in ABSOLUTE pixels (after the layout
+# cache; before a layout pass it resolves against x/y). Regions with no
+# panels take no space and report null rects.
+#   {west, east, south, center: [x,y,w,h]|null,
+#    hw, he, hs: handle rects|null, title_h,
+#    panels: {region: [{p, title: rect, body: rect|null}...]}}
+define dock_view(dk) as:
+    local o is _dock_origin of dk
+    local ox is o[0]
+    local oy is o[1]
+    local th is _dock_title_h of null
+    local hw is dk.handle_w
+    local n_w is len of dk.panels.west
+    local n_e is len of dk.panels.east
+    local n_s is len of dk.panels.south
+    local ww is 0
+    if n_w > 0:
+        ww is dk.west_w
+    local ew is 0
+    if n_e > 0:
+        ew is dk.east_w
+    local sh is 0
+    if n_s > 0:
+        sh is dk.south_h
+    # North band height (west/east/center share it; south spans below).
+    local nh is dk.h - sh
+    if sh > 0:
+        nh is nh - hw
+    if nh < 1:
+        nh is 1
+    local cx is ox + ww
+    if ww > 0:
+        cx is cx + hw
+    local cw is dk.w - ww - ew
+    if ww > 0:
+        cw is cw - hw
+    if ew > 0:
+        cw is cw - hw
+    if cw < 1:
+        cw is 1
+    local v is {
+        "west": null, "east": null, "south": null,
+        "center": [cx, oy, cw, nh],
+        "hw": null, "he": null, "hs": null,
+        "title_h": th,
+        "panels": {"west": [], "east": [], "south": []}
+    }
+    if n_w > 0:
+        v.west is [ox, oy, ww, nh]
+        v.hw is [ox + ww, oy, hw, nh]
+    if n_e > 0:
+        v.east is [ox + dk.w - ew, oy, ew, nh]
+        v.he is [ox + dk.w - ew - hw, oy, hw, nh]
+    if n_s > 0:
+        v.south is [ox, oy + dk.h - sh, dk.w, sh]
+        v.hs is [ox, oy + dk.h - sh - hw, dk.w, hw]
+    # Vertical stacks: expanded panels share the region height left after
+    # every title bar; a collapsed panel is just its title bar.
+    for reg in ["west", "east"]:
+        local ps is dk.panels[reg]
+        local n is len of ps
+        if n > 0:
+            local rr is v[reg]
+            local n_open is 0
+            for i in range of n:
+                if ps[i].collapsed == 0:
+                    n_open is n_open + 1
+            local body_total is rr[3] - n * th
+            if body_total < 0:
+                body_total is 0
+            local share is 0
+            if n_open > 0:
+                share is floor of (body_total / n_open)
+            local y is rr[1]
+            for i in range of n:
+                local p is ps[i]
+                local pe is {"p": p, "title": [rr[0], y, rr[2], th], "body": null}
+                y is y + th
+                if p.collapsed == 0:
+                    local bh is share
+                    if bh > 0:
+                        pe.body is [rr[0], y, rr[2], bh]
+                        y is y + bh
+                append of [v.panels[reg], pe]
+    # South row: panels side by side, equal widths, title above body.
+    local ns2 is len of dk.panels.south
+    if ns2 > 0:
+        local sr is v.south
+        local colw is floor of (sr[2] / ns2)
+        local x is sr[0]
+        for i in range of ns2:
+            local p is dk.panels.south[i]
+            local cw2 is colw
+            if i == ns2 - 1:
+                cw2 is sr[0] + sr[2] - x
+            local pe is {"p": p, "title": [x, sr[1], cw2, th], "body": null}
+            if p.collapsed == 0:
+                local bh2 is sr[3] - th
+                if bh2 > 0:
+                    pe.body is [x, sr[1] + th, cw2, bh2]
+            append of [v.panels.south, pe]
+            x is x + cw2
+    return v
+
+# Layout hook (ui_layout.eigs): stamp every hosted widget's rect from
+# the computed geometry and sync collapsed -> invisible, then recurse.
+define _layout_dock(dk) as:
+    local o is _dock_origin of dk
+    local v is dock_view of dk
+    if dk.center != null:
+        local c is dk.center
+        local cr is v.center
+        c.x is cr[0] - o[0]
+        c.y is cr[1] - o[1]
+        c.w is cr[2]
+        c.h is cr[3]
+        _layout of [c, o[0], o[1]]
+    for reg in ["west", "east", "south"]:
+        local pes is v.panels[reg]
+        for i in range of (len of pes):
+            local pe is pes[i]
+            local hosted is pe.p.widget
+            if pe.p.collapsed == 1 or pe.body == null:
+                hosted.visible is 0
+            else:
+                hosted.visible is 1
+                hosted.x is pe.body[0] - o[0]
+                hosted.y is pe.body[1] - o[1]
+                hosted.w is pe.body[2]
+                hosted.h is pe.body[3]
+                _layout of [hosted, o[0], o[1]]
+
+define _render_dock(widget, ax, ay) as:
+    widget._ax is ax
+    widget._ay is ay
+    local bg is _theme_color of ["dock_bg", (_theme_color of ["panel_bg", [30, 30, 42]])]
+    local tbg is _theme_color of ["dock_title_bg", (_theme_color of ["tl_ruler_bg", [40, 40, 55]])]
+    local tfg is _theme_color of ["dock_title_fg", _theme.text_color]
+    local hcol is _theme_color of ["dock_handle", (_theme_color of ["panel_border", [60, 60, 80]])]
+    local bcol is _theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])]
+    gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
+    local v is dock_view of widget
+    # Center
+    if widget.center != null and widget.center.visible == 1:
+        local cr is v.center
+        gfx_clip of [cr[0], cr[1], cr[2], cr[3]]
+        # render() adds the child's own x/y — pass the DOCK origin.
+        render of [widget.center, ax, ay]
+        gfx_clip of null
+    # Panels: title bar (collapse marker + clipped title), then the
+    # hosted widget under its body clip.
+    for reg in ["west", "east", "south"]:
+        local pes is v.panels[reg]
+        for i in range of (len of pes):
+            local pe is pes[i]
+            local tr is pe.title
+            gfx_rect of [tr[0], tr[1], tr[2], tr[3], tbg[0], tbg[1], tbg[2]]
+            local mark is "-"
+            if pe.p.collapsed == 1:
+                mark is "+"
+            local lab is f"{mark} {pe.p.title}"
+            local avail is tr[2] - 8
+            if avail > 0:
+                _draw_text_clipped of [tr[0] + 4, tr[1] + 3, avail, lab, tfg, 1]
+            if pe.body != null:
+                local hosted is pe.p.widget
+                if hosted.visible == 1:
+                    local br is pe.body
+                    gfx_clip of [br[0], br[1], br[2], br[3]]
+                    render of [hosted, ax, ay]
+                    gfx_clip of null
+    # Handles (accented while THIS dock holds the pointer), then the
+    # border.
+    local dragging is 0
+    if _ui.drag_widget != null:
+        if _ui.drag_widget.id == widget.id:
+            dragging is 1
+    for hr in [v.hw, v.he, v.hs]:
+        if hr != null:
+            local hc is hcol
+            if dragging == 1:
+                hc is _theme.accent
+            gfx_rect of [hr[0], hr[1], hr[2], hr[3], hc[0], hc[1], hc[2]]
+    gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
+    gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
+
+define _dock_in(r, mx, my) as:
+    if r == null:
+        return 0
+    if mx >= r[0] and mx < r[0] + r[2] and my >= r[1] and my < r[1] + r[3]:
+        return 1
+    return 0
+
+# Handle hit-test with slop: the visual bar is handle_w (~5px) thin, a
+# hard target for a real pointer (found by real-input acceptance — the
+# xdotool drag missed it). The grab zone extends 3px each side; visuals
+# stay thin.
+define _dock_in_handle(r, mx, my, horiz) as:
+    if r == null:
+        return 0
+    local sx is 3
+    local sy is 0
+    if horiz == 1:
+        sx is 0
+        sy is 3
+    if mx >= r[0] - sx and mx < r[0] + r[2] + sx and my >= r[1] - sy and my < r[1] + r[3] + sy:
+        return 1
+    return 0
+
+# Hit-testing: handles and title bars belong to the dock itself (so the
+# press routes to _mousedown_dock); a point in a visible body or the
+# center recurses into the hosted widget.
+define _hit_test_dock(widget, ax, ay, mx, my) as:
+    if (_point_in_rect of [mx, my, ax, ay, widget.w, widget.h]) == 0:
+        return null
+    local v is dock_view of widget
+    if (_dock_in_handle of [v.hw, mx, my, 0]) == 1 or (_dock_in_handle of [v.he, mx, my, 0]) == 1 or (_dock_in_handle of [v.hs, mx, my, 1]) == 1:
+        return widget
+    for reg in ["west", "east", "south"]:
+        local pes is v.panels[reg]
+        for i in range of (len of pes):
+            local pe is pes[i]
+            if (_dock_in of [pe.title, mx, my]) == 1:
+                return widget
+            if pe.body != null and (_dock_in of [pe.body, mx, my]) == 1:
+                local r is _hit_test of [pe.p.widget, ax, ay, mx, my]
+                if r != null:
+                    return r
+                return widget
+    if widget.center != null and (_dock_in of [v.center, mx, my]) == 1:
+        local rc is _hit_test of [widget.center, ax, ay, mx, my]
+        if rc != null:
+            return rc
+    return widget
+
+define _mousedown_dock(hit, root, mx, my, ev) as:
+    if hit.interactive == 0:
+        return null
+    local v is dock_view of hit
+    if (_dock_in_handle of [v.hw, mx, my, 0]) == 1:
+        hit._drag_region is "west"
+        _ui.drag_widget is hit
+        return null
+    if (_dock_in_handle of [v.he, mx, my, 0]) == 1:
+        hit._drag_region is "east"
+        _ui.drag_widget is hit
+        return null
+    if (_dock_in_handle of [v.hs, mx, my, 1]) == 1:
+        hit._drag_region is "south"
+        _ui.drag_widget is hit
+        return null
+    for reg in ["west", "east", "south"]:
+        local pes is v.panels[reg]
+        for i in range of (len of pes):
+            local pe is pes[i]
+            if (_dock_in of [pe.title, mx, my]) == 1:
+                pe.p.collapsed is 1 - pe.p.collapsed
+                if hit.on_layout != null:
+                    hit.on_layout of hit
+                return null
+
+# Handle drag: resize the gripped region, clamped so every region keeps
+# min_size and the center keeps min_center. Gesture-only on_layout.
+define _drag_dock(w, ev) as:
+    local o is _dock_origin of w
+    local reg is w._drag_region
+    if reg == "":
+        return null
+    local hw is w.handle_w
+    if reg == "west":
+        local nw is ev.x - o[0]
+        local maxw is w.w - w.min_center - hw
+        if (len of w.panels.east) > 0:
+            maxw is maxw - w.east_w - hw
+        if nw < w.min_size:
+            nw is w.min_size
+        if nw > maxw:
+            nw is maxw
+        w.west_w is nw
+    elif reg == "east":
+        local ne is o[0] + w.w - ev.x
+        local maxe is w.w - w.min_center - hw
+        if (len of w.panels.west) > 0:
+            maxe is maxe - w.west_w - hw
+        if ne < w.min_size:
+            ne is w.min_size
+        if ne > maxe:
+            ne is maxe
+        w.east_w is ne
+    elif reg == "south":
+        local ns is o[1] + w.h - ev.y
+        local maxs is w.h - w.min_center - hw
+        if ns < w.min_size:
+            ns is w.min_size
+        if ns > maxs:
+            ns is maxs
+        w.south_h is ns
+    if w.on_layout != null:
+        w.on_layout of w
+
+define _clear_pressed_dock(widget) as:
+    widget._drag_region is ""
+
+_register_widget of ["dock", {
+    "render": _render_dock,
+    "hit_test": _hit_test_dock,
+    "on_mousedown": _mousedown_dock,
+    "on_mousemove": null,
+    "on_drag": _drag_dock,
+    "clear_hover": null,
+    "clear_pressed": _clear_pressed_dock,
+    "scroll": null,
+    "container": 1,
+    "focusable": 0,
+    # One widget id, many click targets (handles, panel titles): rapid
+    # clicks on different targets must not read as a double-click.
+    "no_dblclick": 1
+}]

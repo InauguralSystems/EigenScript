@@ -479,7 +479,8 @@ pattern for cross-file module state), `lib/ui_layout.eigs`,
 widget families `lib/ui_w_basic.eigs`, `lib/ui_w_button.eigs`,
 `lib/ui_w_container.eigs`, `lib/ui_w_data.eigs`,
 `lib/ui_w_dialog.eigs`, `lib/ui_w_input.eigs`, `lib/ui_w_menu.eigs`,
-`lib/ui_w_slider.eigs`, `lib/ui_w_special.eigs`, `lib/ui_w_viz.eigs`.
+`lib/ui_w_slider.eigs`, `lib/ui_w_special.eigs`, `lib/ui_w_viz.eigs`,
+`lib/ui_w_dock.eigs`.
 Start from `lib/ui.eigs`'s header; the modules document their own
 widget signatures.
 
@@ -507,6 +508,7 @@ module header for the full argument list):
 | `ui_w_viz` | `chart`, `bar_chart`, `gauge`, `meter`, `canvas`, `waveform_view`, `code_view`, `timeline` |
 | `ui_w_dialog` | `dialog`, `file_dialog`, `color_picker`, `property_editor` |
 | `ui_w_special` | `splitter`, `piano_keyboard` |
+| `ui_w_dock` | `dock`, `dock_panel`, `dock_add`, `dock_set_center`, `dock_set_collapsed`, `dock_view` |
 
 **`dialog` is a container** (#575): `add_child of [dlg, w]` mounts any
 widget inside it, positioned relative to the dialog's own top-left. The

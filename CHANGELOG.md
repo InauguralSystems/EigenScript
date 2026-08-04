@@ -4,6 +4,24 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`dock` — multi-panel workspace layout (#848).** The fleet UI ladder's
+  first "surface + tool panels" capability (every prior app is
+  single-surface): a center widget surrounded by west/east panel stacks
+  and a south panel row, with titled collapsible panels, drag-to-resize
+  region edges (pointer-claiming, clamped to `min_size`/`min_center`),
+  and `dock_view` exposing the full computed geometry as a consumer/test
+  seam. Theme-keyed (`dock_*` keys in all three built-in themes, with
+  fallbacks), children clipped via `gfx_clip`, `on_layout` fires only on
+  user gestures (programmatic sizing/collapse is silent). Registry
+  entries can now opt out of double-click detection (`no_dblclick`) — a
+  widget whose one id hosts many click targets (the dock's handles and
+  titles) must not have a rapid second click on a different target
+  swallowed as a double-click. Contract consumers mapped in the suite:
+  the DMG#53 emulator-debugger shape and a studio workspace shape;
+  `examples/ui_dock.eigs` is the runnable demo.
+
 ## [0.37.0] - 2026-08-04
 
 ### Added
