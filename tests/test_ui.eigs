@@ -591,6 +591,22 @@ wcv.on_wheel is null
 dispatch of [wroot, {"type": "wheel", "x": 0, "y": -3}]
 assert_eq of [wsp.scroll_y, 60, "wheel falls through to scroll_panel when unconsumed"]
 
+# ev.mx/ev.my carry the pointer on the wheel event itself (#822): the
+# hit test anchors there even when the tracked position is stale —
+# park the tracked pointer OFF the canvas, then wheel with mx/my ON it.
+wcv.on_wheel is cv_on_wheel
+wheel_seen is []
+dispatch of [wroot, {"type": "mousemove", "x": 380, "y": 280}]
+dispatch of [wroot, {"type": "wheel", "x": 0, "y": -2, "mx": 50, "my": 50, "ctrl": 0}]
+assert_eq of [len of wheel_seen, 2, "wheel with mx/my hits the widget under mx/my, not the stale pointer"]
+assert_eq of [wheel_seen[0], -2, "ev.x/ev.y stay the scroll deltas when mx/my present"]
+
+# A following wheel WITHOUT mx/my uses the position the last carrying
+# event refreshed — the fallback path stays coherent after #822.
+wheel_seen is []
+dispatch of [wroot, {"type": "wheel", "x": 0, "y": -1}]
+assert_eq of [len of wheel_seen, 2, "wheel without mx/my falls back to the refreshed tracked position"]
+
 # ============================================================
 # 11. scroll_panel child _ax/_ay account for scroll offset (#569)
 # ============================================================

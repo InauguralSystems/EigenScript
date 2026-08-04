@@ -12,7 +12,8 @@
 #   - modifiers (#568): ctrl+click toggles a clip in/out of the
 #     selection instead of replacing it (ev.ctrl on mouse events).
 #   - wheel (#569): wheel pans the view; ctrl+wheel zooms at the cursor
-#     (cursor tracked from hover mousemoves — also new in #567).
+#     (the wheel event carries the pointer as ev.mx/ev.my, #822; hover
+#     tracking remains only as the fallback).
 #
 # Escape quits.
 
@@ -129,14 +130,20 @@ define on_tl_wheel(w, ev) as:
     if ev.ctrl != null:
         ctrl is ev.ctrl
     if ctrl == 1:
-        # #569 + #568: ctrl+wheel = zoom at the cursor
-        local anchor is px_to_beat of last_mx
+        # #569 + #568: ctrl+wheel = zoom at the cursor. #822: the wheel
+        # event itself carries the pointer (ev.mx/ev.my) — correct even
+        # for a wheel arriving before any motion event; the hover-tracked
+        # last_mx is only the fallback for events without it.
+        local zx is last_mx
+        if ev.mx != null:
+            zx is ev.mx - w._ax
+        local anchor is px_to_beat of zx
         px_per_beat is px_per_beat * (1.0 + 0.1 * ev.y)
         if px_per_beat < 4:
             px_per_beat is 4
         if px_per_beat > 200:
             px_per_beat is 200
-        view_x is anchor - last_mx / px_per_beat
+        view_x is anchor - zx / px_per_beat
         status is f"zoom: {floor of px_per_beat} px/beat"
     else:
         # plain wheel = pan
