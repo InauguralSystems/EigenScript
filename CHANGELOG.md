@@ -4,6 +4,46 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-08-04
+
+### Added
+
+- **Wheel events carry the pointer as `ev.mx`/`ev.my` (#822).** A wheel
+  event's `x`/`y` are the scroll deltas, so "where was the cursor when
+  the user scrolled?" was unanswerable without shadowing every hover
+  `mousemove` — a workaround that is wrong for the first wheel arriving
+  before any motion (scroll-on-focus, precision-scroll devices).
+  `gfx_poll` now attaches the pointer position at decode time via
+  `SDL_GetMouseState` (version-independent; the wheel event's own
+  `mouseX`/`mouseY` fields exist only from SDL 2.26 and would widen the
+  hand-declared event struct — the #599 misalignment class). `dispatch`
+  prefers the carried position for its wheel hit test and refreshes the
+  tracked pointer from it; synthesized events without the fields keep
+  the old path, so headless tests and older embedders are unaffected.
+  First consumers: dynamics' cursor-anchored zoom (which ships the
+  shadow workaround today), the EigenRegex live tester, DMG's debugger
+  chrome, eigen-sheet's viewport.
+
+- **`code_view` takes styled spans (#838).** `cv.spans` is a list of
+  `{"start", "end", "bg", "fg"}` dicts — absolute half-open byte
+  offsets into `cv.text`. `bg` paints a rect behind the range, `fg`
+  recolors its glyphs over the base text (the font is monospace, so the
+  overdraw is position-exact), a span crossing lines clips per line,
+  and either color may be null. An empty list renders byte-identically
+  to before, so the field is inert on consumers that never set it —
+  which let the EigenRegex tester (match/group + Pike-VM pc
+  highlighting) merge against the previous release with the field
+  riding along dark. eigen-edit's syntax highlighting is the second
+  consumer of the same seam.
+
+### CI
+
+- **The uniform `-Werror=switch` invariant is gated (#817, #836).**
+  `tools/werror_switch_check.sh` dry-runs every compiling target and
+  asserts every emitted compile line carries the flag, with a planted-
+  fault self-test and a match-count floor so the gate cannot rot into a
+  vacuous pass. (Contributed follow-up to #817's flag rollout.)
+
 ## [0.35.2] - 2026-08-03
 
 ### Fixed
