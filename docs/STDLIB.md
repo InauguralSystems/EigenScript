@@ -630,6 +630,11 @@ drag mousemove plus the terminating mouseup (branch on `ev.type`;
 `release_drag of null` abandons a capture early). Setting `on_wheel`
 (`fn(w, ev)`, `ev.x`/`ev.y` are scroll deltas) on any widget consumes
 wheel input under the cursor before the `scroll_panel` walk sees it.
+Wheel events from `gfx_poll` also carry the pointer position as
+`ev.mx`/`ev.my` (#822), so a widget can zoom about the cursor without
+shadowing `mousemove`; `dispatch` prefers them for its own hit test and
+falls back to the last tracked position when a synthesized event omits
+them.
 Drag handling for the built-in draggable types goes through the widget
 registry's `on_drag` entry, so a registered custom type can supply its
 own.

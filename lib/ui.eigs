@@ -19,8 +19,9 @@
 #     pointer with claim_drag — every drag mousemove plus the
 #     terminating mouseup. Branch on ev.type.
 #   - on_wheel(w, ev): set the field on any widget to consume wheel
-#     input under the cursor (ev.x/ev.y are the scroll deltas) before
-#     the scroll_panel walk sees it.
+#     input under the cursor (ev.x/ev.y are the scroll deltas;
+#     ev.mx/ev.my the pointer position, #822) before the scroll_panel
+#     walk sees it.
 #   - registry "on_drag" entry: per-type drag handler `fn(w, ev)` used
 #     by the built-in draggable types; a registered custom type may
 #     provide its own instead of on_mouse.
@@ -797,9 +798,18 @@ define dispatch(root, ev) as:
 
     # Scroll wheel — a widget under the cursor exposing on_wheel gets
     # first crack at the raw event (#569: ev.x/ev.y are the scroll
-    # deltas; shift/ctrl/alt ride along); otherwise the scrollable walk
-    # handles it as before.
+    # deltas; #822: ev.mx/ev.my the pointer; shift/ctrl/alt ride
+    # along); otherwise the scrollable walk handles it as before.
     if ev.type == "wheel":
+        # #822: a wheel event from gfx_poll carries the pointer as
+        # ev.mx/ev.my. Prefer it over the tracked position — which is
+        # stale for a wheel arriving before any mousemove — and refresh
+        # the tracked state from it. Synthesized events without mx/my
+        # (headless tests, older embedders) keep the tracked-state path.
+        if ev.mx != null:
+            _ui.last_mouse_x is ev.mx
+        if ev.my != null:
+            _ui.last_mouse_y is ev.my
         local whit is _hit_test of [root, 0, 0, _ui.last_mouse_x, _ui.last_mouse_y]
         if whit != null and whit.on_wheel != null:
             whit.on_wheel of [whit, ev]

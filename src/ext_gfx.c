@@ -96,6 +96,7 @@ static int (*p_SDL_RenderDrawPoint)(SDL_Renderer*, int, int);
 static void (*p_SDL_RenderPresent)(SDL_Renderer*);
 static int (*p_SDL_PollEvent)(SDL_Event*);
 static int (*p_SDL_GetModState)(void);
+static Uint32 (*p_SDL_GetMouseState)(int*, int*);
 static Uint32 (*p_SDL_GetTicks)(void);
 static void (*p_SDL_Delay)(Uint32);
 static int (*p_SDL_RenderSetClipRect)(SDL_Renderer*, const SDL_Rect*);
@@ -158,6 +159,7 @@ static int load_sdl2(void) {
     #undef LOAD
     /* Optional symbols — NULL is fine */
     p_SDL_GetModState = dlsym(g_sdl_lib, "SDL_GetModState");
+    p_SDL_GetMouseState = dlsym(g_sdl_lib, "SDL_GetMouseState");
     p_SDL_RenderSetClipRect = dlsym(g_sdl_lib, "SDL_RenderSetClipRect");
     p_SDL_CreateTexture = dlsym(g_sdl_lib, "SDL_CreateTexture");
     p_SDL_DestroyTexture = dlsym(g_sdl_lib, "SDL_DestroyTexture");
@@ -644,6 +646,18 @@ Value* builtin_gfx_poll(Value *arg) {
             dict_set_owned(d, "type", make_str("wheel"));
             dict_set_owned(d, "x", make_num(ev.wheel.x));
             dict_set_owned(d, "y", make_num(ev.wheel.y));
+            /* #822: x/y are scroll DELTAS. Carry the pointer as mx/my so
+             * a consumer can zoom about the cursor without shadowing
+             * mousemove (stale before the first motion event). Queried
+             * via SDL_GetMouseState — the wheel event's own mouseX/mouseY
+             * fields exist only from SDL 2.26 and would widen the
+             * hand-declared struct (the #599 misalignment class). */
+            if (p_SDL_GetMouseState) {
+                int wmx = 0, wmy = 0;
+                p_SDL_GetMouseState(&wmx, &wmy);
+                dict_set_owned(d, "mx", make_num(wmx));
+                dict_set_owned(d, "my", make_num(wmy));
+            }
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_WINDOWEVENT:
