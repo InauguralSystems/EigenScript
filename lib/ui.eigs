@@ -79,6 +79,7 @@ load_file of "lib/ui_w_data.eigs"
 load_file of "lib/ui_w_viz.eigs"
 load_file of "lib/ui_w_dialog.eigs"
 load_file of "lib/ui_w_special.eigs"
+load_file of "lib/ui_w_dock.eigs"
 load_file of "lib/ui_focus.eigs"
 load_file of "lib/ui_dnd.eigs"
 
@@ -753,7 +754,16 @@ define dispatch(root, ev) as:
         # and the selection is swallowed. Picking from a popup is never a
         # double-click.
         now is gfx_ticks of null
-        if (_has_open_popup of hit) == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
+        # A registry entry may opt OUT of double-click detection
+        # (no_dblclick: 1). A widget whose one id hosts many distinct
+        # click targets — the dock's handles and panel titles (#848; the wider audit is #847) —
+        # must not have the second rapid click on a DIFFERENT target
+        # swallowed as a double-click on the same id.
+        dbl_ok is 1
+        dbl_entry is _widget_registry[hit.type]
+        if dbl_entry != null and dbl_entry.no_dblclick == 1:
+            dbl_ok is 0
+        if dbl_ok == 1 and (_has_open_popup of hit) == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
             if hit.type == "editable_label":
                 _start_editing of hit
             elif hit.on_dblclick != null:

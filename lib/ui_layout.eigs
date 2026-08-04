@@ -30,6 +30,12 @@ define _layout(widget, ox, oy) as:
         _layout_box of [widget, 0]
     elif widget.type == "toolbar":
         _layout_toolbar of widget
+    elif widget.type == "dock":
+        # The dock owns its children's geometry: the hook stamps every
+        # hosted widget's rect from dock_view and recurses itself
+        # (lib/ui_w_dock.eigs), so the generic container walk below
+        # must not lay them out first at stale positions.
+        _layout_dock of widget
     else:
         # Recurse into containers but don't reposition their children
         if _is_container of widget.type:
