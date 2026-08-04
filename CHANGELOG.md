@@ -4,6 +4,23 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`timeline` — lane-based event timeline widget (#842).** The fleet UI
+  ladder's shared widget: N labelled lanes over a time axis, items as
+  plain dicts (markers `{t, lane, kind}`, spans `{t0, t1, lane, kind}`,
+  extra fields pass through to `hover_item`), drag-to-pan +
+  wheel-zoom-about-the-cursor in the body, drag-to-scrub in the ruler
+  with an `on_scrub` callback and a settable/readable `cursor` — the
+  seed-replay/anomaly scrubber seam. Theme-keyed by construction (new
+  `tl_*` keys incl. the `tl_kinds` palette in all three built-in themes,
+  with fallbacks; `timeline_style` keys item kinds to theme roles),
+  clipped by construction (#823 discipline, proved on recorded
+  primitives), and allocation-lean per frame (#828 awareness). The two
+  contract consumers — liferaft's cluster visualizer (liferaft#18) and
+  eddy's interleaving explorer (eddy#6) — each have a shape-mapping test
+  in the suite; `examples/ui_timeline.eigs` is the runnable demo.
+
 ## [0.36.0] - 2026-08-04
 
 ### Added

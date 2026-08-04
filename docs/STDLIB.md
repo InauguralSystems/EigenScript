@@ -504,7 +504,7 @@ module header for the full argument list):
 | `ui_w_slider` | `slider`, `vslider`, `knob`, `scrollbar` |
 | `ui_w_menu` | `dropdown`, `menu`, `menu_bar`, `radio_group`, `tabs` |
 | `ui_w_data` | `table`, `tree`, `item_list`, `grid` |
-| `ui_w_viz` | `chart`, `bar_chart`, `gauge`, `meter`, `canvas`, `waveform_view`, `code_view` |
+| `ui_w_viz` | `chart`, `bar_chart`, `gauge`, `meter`, `canvas`, `waveform_view`, `code_view`, `timeline` |
 | `ui_w_dialog` | `dialog`, `file_dialog`, `color_picker`, `property_editor` |
 | `ui_w_special` | `splitter`, `piano_keyboard` |
 
@@ -598,6 +598,57 @@ and/or a foreground recolor over them (either color may be null; a span
 crossing lines clips per line). An empty list renders exactly as before,
 so the field is inert on consumers that never set it. This is the
 match/syntax-highlighting seam for the EigenRegex tester and eigen-edit.
+
+**`timeline(id, x, y, w, h)` is a lane-based event timeline** (#842) — N
+horizontal labelled lanes over a shared time axis, built for event
+streams and schedules (the liferaft cluster visualizer and eddy's
+interleaving explorer are the two contract consumers). Items are plain
+dicts: **markers** `{t, lane, kind}` are point events, **spans**
+`{t0, t1, lane, kind}` are extents (a role held from t0..t1, a task
+running). Items address lanes by lane **id** — numeric node ids and
+task-name strings both work — and any extra fields on a lane or item
+dict pass through untouched, so a consumer can carry its whole source
+record on the item and read it back from `tl.hover_item`. The widget
+renders lanes/marks/spans/cursor, period: deriving spans from a domain's
+event stream is the consumer's mapping.
+
+| Call | What it does |
+|---|---|
+| `timeline_lane(id, label)` / `timeline_add_lane(tl, lane)` | Build/append a lane; add returns its index. `label` null falls back to the id |
+| `timeline_lane_index(tl, lane_id)` | Lane id → index, `-1` when unknown |
+| `timeline_marker(t, lane, kind)` / `timeline_add_marker(tl, m)` | Build/append a point event; add returns its index and widens the cached time range in O(1) |
+| `timeline_span(t0, t1, lane, kind)` / `timeline_add_span(tl, s)` | Build/append an extent; same O(1) bounds behavior |
+| `timeline_style(tl, kind, style)` | Key an item KIND to a color: a **theme key string** (resolved through the active theme at render time, so theme switches restyle the kinds) or an `[r, g, b]` literal. An explicit `item.color` wins; an unstyled kind takes a stable slot off the theme's `tl_kinds` palette |
+| `timeline_set_cursor(tl, t)` | Move the scrubber (`null` hides it); read it back from `tl.cursor`. Programmatic moves do NOT fire `on_scrub` — that callback reports the user gesture |
+| `timeline_bounds(tl)` | The resolved DATA time range `{t0, t1}` — auto from the items, explicit `t_min`/`t_max` override |
+| `timeline_view(tl)` | The VISIBLE window plus the geometry it maps onto: `{t0, t1, px, py, pw, ph, rx, ry, rw, rh, lane_h}` (body rect, ruler strip, per-lane height). The seam to read instead of re-deriving the transform |
+| `timeline_to_pixel(tl, t)` / `timeline_from_pixel(tl, sx)` | Time ⇄ absolute screen x, unrounded |
+| `timeline_lane_at(tl, sy)` | Absolute screen y → lane index, `-1` outside every lane band |
+| `timeline_pan_by(tl, dpx)` / `timeline_zoom_at(tl, factor, sx)` / `timeline_reset_view(tl)` | The view transform, by pixel delta and about an anchor pixel |
+| `timeline_invalidate(tl)` | Forget the time-bounds cache — the escape hatch for in-place item edits (replaced/shrunk item lists are detected without it) |
+
+**Interaction is the chart idiom** (#819/#822): drag in the lane BODY
+pans, wheel zooms about the pointer (read from the event or the
+toolkit's cached position — never consumer-shadowed state), and drag in
+the time RULER strip **scrubs** — `tl.cursor` follows the pointer
+(clamped to the visible window) and `on_scrub(tl, t)` fires per move.
+That ruler-scrub/cursor seam is what a seed-replay or anomaly scrubber
+sits on. `interactive` 0 disables all three gestures. Hover sets
+`tl.hover_item` to the item dict under the pointer (markers win over
+spans); `hover_enabled` 0 skips the scan for a long history.
+
+**It is clipped, theme-keyed and allocation-lean by construction.** No
+item, at any pan or zoom, paints outside the widget rect — every
+primitive is software-intersected with the body rect before it is drawn,
+plus `gfx_clip` for the real renderer (#823 discipline). Colors come
+from the theme keys `tl_bg`, `tl_ruler_bg`, `tl_lane_alt`,
+`tl_lane_line`, `tl_label`, `tl_cursor`, `tl_border` and the `tl_kinds`
+palette, with fallbacks so a theme dict predating those keys still
+renders (#820). The render path computes the time→pixel scale once per
+frame and places items with inline arithmetic — no per-item list
+allocation per frame, and appends never re-walk the history (#828
+awareness); a few-thousand-item timeline renders headlessly in the
+suite.
 
 Notes on widget state, where the toolkit could otherwise shadow yours:
 
