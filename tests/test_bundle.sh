@@ -96,8 +96,10 @@ B=$(cd / && "$APP/out2" --replay 2>&1); RB=$?
 # format trades that for simplicity — the tape inside carries its own
 # version header.)
 OFF=$(tail -c 24 "$APP/out" | od -A n -t u8 -N 8 | tr -d ' ')
-head -c $((OFF + 20)) "$APP/out" > "$APP/torn"
-tail -c +$((OFF + 22)) "$APP/out" >> "$APP/torn"
+# +24 skips the #882 head magic, so this stays an ENTRY-level tear (a byte
+# lost inside the first entry) rather than a head-magic mismatch.
+head -c $((OFF + 24 + 20)) "$APP/out" > "$APP/torn"
+tail -c +$((OFF + 24 + 22)) "$APP/out" >> "$APP/torn"
 chmod +x "$APP/torn"
 (cd / && "$APP/torn" > /dev/null 2>&1); RC=$?
 [ "$RC" -eq 3 ] \
@@ -115,6 +117,50 @@ BASE=$(wc -c < "$EIGS" | tr -d ' ')
 [ "$S3" -lt $((BASE * 2)) ] \
     && ok "re-bundle stays runtime-sized (no archive accretion)" \
     || fail "re-bundle stays runtime-sized (no archive accretion)" "base=$BASE out3=$S3"
+
+# ---- 8. #882: a TRUNCATED bundle refuses instead of silently starting the
+# REPL at exit 0. This is the normal failure mode for the one artifact of
+# this project designed to be copied and downloaded, and the exit code is
+# what every automated consumer keys on:
+#     ./myapp && echo "deployed"      # used to print "deployed"
+cp "$APP/out" "$APP/trunc"
+SZ=$(wc -c < "$APP/trunc" | tr -d ' ')
+head -c $((SZ - 50)) "$APP/out" > "$APP/trunc"
+chmod +x "$APP/trunc"
+TOUT=$(cd / && "$APP/trunc" < /dev/null 2>&1); RC=$?
+[ "$RC" -eq 3 ] \
+    && ok "truncated bundle refuses with exit 3 (was: REPL, exit 0)" \
+    || fail "truncated bundle refuses with exit 3" "rc=$RC out=$TOUT"
+case "$TOUT" in
+    *"truncated or damaged"*) ok "truncated bundle names the cause" ;;
+    *) fail "truncated bundle names the cause" "out=$TOUT" ;;
+esac
+
+# ---- 9. a bundle whose trailer survived but was corrupted in place
+cp "$APP/out" "$APP/zeroed"
+SZ=$(wc -c < "$APP/zeroed" | tr -d ' ')
+printf '\0\0\0\0\0\0\0\0' | dd of="$APP/zeroed" bs=1 seek=$((SZ - 8)) conv=notrunc status=none
+chmod +x "$APP/zeroed"
+(cd / && "$APP/zeroed" < /dev/null > /dev/null 2>&1); RC=$?
+[ "$RC" -eq 3 ] \
+    && ok "bundle with a zeroed trailer magic refuses with exit 3" \
+    || fail "bundle with a zeroed trailer magic refuses with exit 3" "rc=$RC"
+
+# ---- 10. the plain interpreter must NOT be misdetected as a damaged bundle.
+# The head magic is stored XOR-obfuscated precisely so its plaintext is not
+# in the runtime image; without that, every `eigenscript` start would find
+# this constant inside itself and refuse. Both entry paths:
+echo 'print of "plain-ok"' > "$APP/plain.eigs"
+POUT=$("$EIGS" "$APP/plain.eigs" 2>&1); RC=$?
+[ "$RC" -eq 0 ] && [ "$POUT" = "plain-ok" ] \
+    && ok "plain interpreter runs a script normally" \
+    || fail "plain interpreter runs a script normally" "rc=$RC out=$POUT"
+
+ROUT=$(echo 'print of "repl-ok"' | "$EIGS" 2>&1); RC=$?
+case "$ROUT" in
+    *repl-ok*) ok "plain interpreter still starts the REPL (no false refusal)" ;;
+    *) fail "plain interpreter still starts the REPL" "rc=$RC out=$ROUT" ;;
+esac
 
 echo "BUNDLE: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

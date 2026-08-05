@@ -45,9 +45,44 @@
 #include <unistd.h>
 
 #define BUNDLE_MAGIC   "EIGSBNDL"
-#define BUNDLE_FMT     1u
+#define BUNDLE_FMT     2u
 #define BUNDLE_TAPE    ".eigs_bundle.tape"
 #define TRAILER_SIZE   24
+#define BUNDLE_HEAD_LEN 24
+
+/* #882: a head magic at the START of the archive region, so a bundle whose
+ * trailer is gone is still recognizable AS a bundle.
+ *
+ * A truncated bundle used to be indistinguishable from a plain interpreter:
+ * read_trailer found no magic at EOF, selfexec returned 0, and main() carried
+ * on with no script argument — which starts the REPL and exits 0. So
+ * `./myapp && echo deployed` printed "deployed" for a corrupt binary, and a
+ * bundle is the one artifact of this project designed to be COPIED and
+ * DOWNLOADED, where truncation is the normal failure mode. That also
+ * contradicted the contract's "never report success on failure", and the tape
+ * layer next door already refuses every damaged input with exit 3 (#411).
+ *
+ * Stored XOR-0x5A so the PLAINTEXT never appears in the runtime image's
+ * rodata — otherwise a plain interpreter would find this very constant inside
+ * itself and declare itself a damaged bundle. The bundle carries the runtime
+ * image verbatim, so the only plaintext occurrence in a real bundle is the
+ * one the writer emitted. */
+static const unsigned char BUNDLE_HEAD_OBF[BUNDLE_HEAD_LEN] = {
+    0x25, 0x1f, 0x13, 0x1d, 0x09, 0x77, 0x18, 0x0f, 0x14, 0x1e, 0x16, 0x1f,
+    0x77, 0x1b, 0x08, 0x19, 0x12, 0x13, 0x0c, 0x1f, 0x77, 0x2c, 0x68, 0x5a
+};
+
+static void bundle_head_magic(unsigned char out[BUNDLE_HEAD_LEN]) {
+    for (size_t i = 0; i < BUNDLE_HEAD_LEN; i++)
+        out[i] = (unsigned char)(BUNDLE_HEAD_OBF[i] ^ 0x5A);
+}
+
+/* Refuse loudly, exit 3 — the same contract the tape layer uses for a damaged
+ * tape (docs/TRACE.md), so a corrupt artifact never looks like a clean run. */
+static void bundle_refuse(const char *what) {
+    fprintf(stderr, "bundle: %s — refusing to run (docs/BUNDLE.md)\n", what);
+    exit(3);
+}
 
 /* ---- own-executable path (Linux readlink; argv0 fallback for macOS,
  * which is how the suite invokes bundles anyway: an explicit path) ---- */
@@ -56,6 +91,34 @@ static int own_exe_path(const char *argv0, char *out, size_t cap) {
     if (n > 0 && n < (ssize_t)cap) { out[n] = '\0'; return 1; }
     if (argv0 && strchr(argv0, '/') && realpath(argv0, out)) return 1;
     return 0;
+}
+
+/* #882: linear scan for the head magic. Only reached when the trailer probe
+ * failed AND no script argument was given, i.e. on the REPL path — a plain
+ * interpreter start, which is interactive, so an ~800 KB read is invisible.
+ * Takes the FIRST occurrence: the writer emits it immediately after the
+ * runtime image, so anything matching later is inside the payload. */
+static int bundle_scan_for_head(FILE *f) {
+    unsigned char want[BUNDLE_HEAD_LEN];
+    bundle_head_magic(want);
+    if (fseek(f, 0, SEEK_SET) != 0) return 0;
+
+    unsigned char buf[65536];
+    /* Overlap by BUNDLE_HEAD_LEN-1 so a magic straddling a chunk boundary is
+     * still found. */
+    size_t carry = 0;
+    for (;;) {
+        size_t got = fread(buf + carry, 1, sizeof(buf) - carry, f);
+        size_t have = carry + got;
+        if (have >= BUNDLE_HEAD_LEN) {
+            for (size_t i = 0; i + BUNDLE_HEAD_LEN <= have; i++)
+                if (buf[i] == want[0] && memcmp(buf + i, want, BUNDLE_HEAD_LEN) == 0)
+                    return 1;
+        }
+        if (got == 0) return 0;
+        carry = (have >= BUNDLE_HEAD_LEN - 1) ? BUNDLE_HEAD_LEN - 1 : have;
+        memmove(buf, buf + have - carry, carry);
+    }
 }
 
 /* ---- trailer probe: returns 1 and fills off/count if `f` is a bundle */
@@ -69,9 +132,11 @@ static int read_trailer(FILE *f, uint64_t *off, uint32_t *count) {
     memcpy(count, t + 8,  4);
     memcpy(&fmt,  t + 12, 4);
     if (fmt != BUNDLE_FMT) {
+        /* #882: the magic matched, so this IS a bundle — returning 0 dropped
+         * it into the REPL at exit 0. A version mismatch is a refusal. */
         fprintf(stderr, "bundle: archive format v%u, this binary reads v%u — "
                 "re-bundle on this version\n", fmt, BUNDLE_FMT);
-        return 0;
+        exit(3);
     }
     return 1;
 }
@@ -197,6 +262,15 @@ int eigs_bundle_create(const char *argv0, const char *script,
     uint64_t archive_off = img_end;
     uint32_t count = 0;
 
+    /* #882: mark the start of the archive region. This is what survives a
+     * truncation that takes the trailer with it, and is the only thing that
+     * can tell a damaged bundle from a plain interpreter. */
+    {
+        unsigned char head[BUNDLE_HEAD_LEN];
+        bundle_head_magic(head);
+        ok = ok && fwrite(head, 1, BUNDLE_HEAD_LEN, out) == BUNDLE_HEAD_LEN;
+    }
+
     /* 1. the script — ALWAYS the first entry, archived by basename */
     const char *base = strrchr(script, '/');
     base = base ? base + 1 : script;
@@ -313,7 +387,24 @@ int eigs_bundle_selfexec(int *argc, char ***argv) {
     if (!f) return 0;
 
     uint64_t off; uint32_t count;
-    if (!read_trailer(f, &off, &count)) { fclose(f); return 0; }
+    if (!read_trailer(f, &off, &count)) {
+        /* #882: no trailer. Either a plain interpreter (correct: fall through
+         * to normal CLI handling) or a bundle whose trailer was truncated
+         * away — which used to land in the REPL and exit 0, so a corrupt
+         * artifact was indistinguishable from a successful run.
+         *
+         * The head magic separates them, but finding it needs a linear scan,
+         * so this runs ONLY when we would otherwise start the REPL (no script
+         * argument). `eigenscript script.eigs` — the hot path, and every
+         * suite invocation — pays nothing. A damaged bundle invoked WITH
+         * arguments therefore still behaves as an interpreter; the shipped
+         * form (`./myapp`) is the case that matters and is covered. */
+        if (*argc < 2 && bundle_scan_for_head(f))
+            bundle_refuse("archive header found but the trailer is missing or "
+                          "unreadable — the file is truncated or damaged");
+        fclose(f);
+        return 0;
+    }
 
     const char *tmp = getenv("TMPDIR");
     snprintf(g_bundle_tmpdir, sizeof(g_bundle_tmpdir),
@@ -329,7 +420,21 @@ int eigs_bundle_selfexec(int *argc, char ***argv) {
     char tape_path[4600];
     tape_path[0] = '\0';
 
-    fseek(f, (long)off, SEEK_SET);
+    /* #882: the trailer said the archive starts here; check that it does.
+     * Catches a trailer that survived while the region it points at did not. */
+    {
+        unsigned char want[BUNDLE_HEAD_LEN], got[BUNDLE_HEAD_LEN];
+        bundle_head_magic(want);
+        if (fseek(f, (long)off, SEEK_SET) != 0 ||
+            fread(got, 1, BUNDLE_HEAD_LEN, f) != BUNDLE_HEAD_LEN ||
+            memcmp(want, got, BUNDLE_HEAD_LEN) != 0) {
+            fclose(f);
+            bundle_refuse("archive header missing at the offset the trailer names "
+                          "— the file is damaged");
+        }
+    }
+
+    fseek(f, (long)(off + BUNDLE_HEAD_LEN), SEEK_SET);
     for (uint32_t i = 0; i < count; i++) {
         uint32_t plen;
         uint64_t size;

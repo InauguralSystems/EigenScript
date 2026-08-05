@@ -51,9 +51,53 @@ Appended after the runtime image (little-endian, x86-64 — the same
 assumption the JIT makes):
 
 ```
+head:    24-byte archive magic                     (fmt 2, #882)
 entry*:  [u32 path_len][path][u64 size][bytes]     (first entry = the script)
-trailer: [u64 archive_off][u32 count][u32 fmt=1]["EIGSBNDL"]
+trailer: [u64 archive_off][u32 count][u32 fmt=2]["EIGSBNDL"]
 ```
+
+## Damaged bundles refuse (#882)
+
+A bundle is the one artifact here designed to be **copied and
+downloaded**, so truncation is its normal failure mode — and the exit
+code is what every automated consumer keys on:
+
+```sh
+./myapp && echo "deployed"
+```
+
+A bundle whose trailer had been truncated away used to be
+indistinguishable from a plain interpreter: no magic at EOF, so startup
+fell through to ordinary CLI handling, found no script argument, started
+the **REPL**, and exited **0**. That printed "deployed" for a corrupt
+binary, and contradicted the contract's "never report success on
+failure" while the tape layer next door already refused every damaged
+input with exit 3.
+
+The `head` magic is what makes the two separable: it sits at the start
+of the archive region and survives a truncation that takes the trailer.
+Startup decides:
+
+| state | behavior |
+|---|---|
+| no head, no trailer | plain interpreter — unchanged |
+| head + valid trailer | run the bundle — unchanged |
+| head, trailer missing/unreadable | **refuse, exit 3** |
+| valid trailer, head absent at its offset | **refuse, exit 3** |
+| trailer names a format this binary can't read | **refuse, exit 3** (was: REPL at exit 0) |
+
+Two implementation notes worth knowing before touching this:
+
+- The head magic is stored in the runtime **XOR-obfuscated**, so its
+  plaintext never appears in the image's rodata. Without that, every
+  plain `eigenscript` start would find the constant inside itself and
+  declare itself a damaged bundle.
+- Finding the head without a trailer needs a linear scan, so that scan
+  runs **only** when startup would otherwise open the REPL (no script
+  argument). `eigenscript script.eigs` — the hot path and every suite
+  invocation — pays nothing. The consequence is that a damaged bundle
+  invoked *with* arguments still behaves as an interpreter; the shipped
+  form (`./myapp`) is the case that matters.
 
 A torn archive (misparsing entry headers) refuses with exit 3 rather
 than running garbage. There are no per-entry checksums — a flipped bit
