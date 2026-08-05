@@ -6,6 +6,48 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **`math_flags` / `clear_math_flags` — the numeric clamps are no longer
+  undetectable (#865).** "Finite by construction" (NaN → 0, overflow →
+  ±1e308) keeps a program running, which is the point, but it kept it
+  running with a *plausible* number and no way to tell. Two consequences
+  the contract never mentioned: reassociation silently changes a result
+  by 292 orders of magnitude — `(1e300 * 1e300) / 1e300` is `1e8`, which
+  passes any sanity check a caller applies, while `1e300 * (1e300 /
+  1e300)` is `1e300` — and a saturated value compares equal to itself
+  under further growth, so no in-language predicate could distinguish
+  "this is 1e308" from "this overflowed". NaN was worse: it collapses to
+  `0`, indistinguishable from a real zero.
+  The fix is IEEE-754's own answer, sticky exception flags. Arithmetic
+  results are **unchanged** — the finite invariant is load-bearing for
+  the JIT's bail comparison, the observer's entropy, `str of`, and the
+  JSON encoders, so abandoning it is a far larger change than the defect
+  warrants — but every clamp now sets a bit you can read:
+
+  ```eigenscript
+  clear_math_flags of null
+  result is risky of xs
+  if (math_flags of null).overflow:
+      print of "a value saturated; this result is contaminated"
+  ```
+
+  Set inside `num_guard`'s existing clamp branches, so the arithmetic
+  fast path is untouched and all ~54 call sites are covered at once. The
+  JIT needs no mirror: it already bails to the interpreter on any result
+  past `EIGS_NUM_MAX` (including ±Inf/NaN), so the interpreter's
+  `num_guard` runs and the flag cannot go tier-dependent.
+  String conversion is a route too, and it was the quietest case of
+  all: `num of "nan"` is `0` and `num of "inf"` is `1e308`, so a data
+  column containing either parsed to a plausible number with nothing to
+  check. Both now set a bit.
+  The audit also turned up **three more undocumented domain
+  substitutions**, all of which now set `invalid`: `log of 0` returns
+  `log(1e-10)` = `-23.025850929940457` (the one the issue named),
+  `sqrt of -1` returns `0` — indistinguishable from `sqrt of 0` — and
+  `asin`/`acos` silently clamp an out-of-range argument, so `asin of 5`
+  answers `asin of 1`. Their values are unchanged; only the silence is.
+  Documented in the Numbers promise, including the associativity trade,
+  so it is visible rather than discovered.
+
 - **`gfx_read` — pixel readback, the render-decode oracle primitive
   (#823).** `gfx_read of [x, y]` returns the back-buffer pixel as
   `[r, g, b]` (call after drawing, before `gfx_present`). Containment
@@ -104,46 +146,6 @@ All notable changes to EigenScript are documented here.
   `grid`'s row-label gutter — opt out via their registry entry
   (`"clip": 0`). Proved twice: on recorded clip state in the stubbed
   suite and on real pixels in section [132], each with a planted fault.
-
-### Added
-
-- **`math_flags` / `clear_math_flags` — the numeric clamps are no longer
-  undetectable (#865).** "Finite by construction" (NaN → 0, overflow →
-  ±1e308) keeps a program running, which is the point, but it kept it
-  running with a *plausible* number and no way to tell. Two consequences
-  the contract never mentioned: reassociation silently changes a result
-  by 292 orders of magnitude — `(1e300 * 1e300) / 1e300` is `1e8`, which
-  passes any sanity check a caller applies, while `1e300 * (1e300 /
-  1e300)` is `1e300` — and a saturated value compares equal to itself
-  under further growth, so no in-language predicate could distinguish
-  "this is 1e308" from "this overflowed". NaN was worse: it collapses to
-  `0`, indistinguishable from a real zero.
-  The fix is IEEE-754's own answer, sticky exception flags. Arithmetic
-  results are **unchanged** — the finite invariant is load-bearing for
-  the JIT's bail comparison, the observer's entropy, `str of`, and the
-  JSON encoders, so abandoning it is a far larger change than the defect
-  warrants — but every clamp now sets a bit you can read:
-
-  ```eigenscript
-  clear_math_flags of null
-  result is risky of xs
-  if (math_flags of null).overflow:
-      print of "a value saturated; this result is contaminated"
-  ```
-
-  Set inside `num_guard`'s existing clamp branches, so the arithmetic
-  fast path is untouched and all ~54 call sites are covered at once. The
-  JIT needs no mirror: it already bails to the interpreter on any result
-  past `EIGS_NUM_MAX` (including ±Inf/NaN), so the interpreter's
-  `num_guard` runs and the flag cannot go tier-dependent.
-  The audit also turned up **three more undocumented domain
-  substitutions**, all of which now set `invalid`: `log of 0` returns
-  `log(1e-10)` = `-23.025850929940457` (the one the issue named),
-  `sqrt of -1` returns `0` — indistinguishable from `sqrt of 0` — and
-  `asin`/`acos` silently clamp an out-of-range argument, so `asin of 5`
-  answers `asin of 1`. Their values are unchanged; only the silence is.
-  Documented in the Numbers promise, including the associativity trade,
-  so it is visible rather than discovered.
 
 ### Changed
 

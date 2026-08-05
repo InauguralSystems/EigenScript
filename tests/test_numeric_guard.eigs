@@ -113,17 +113,40 @@ assert of [(math_flags of null).overflow == 1, "NG25 the flag survives later cle
 clear_math_flags of null
 assert of [(math_flags of null).overflow == 0, "NG25 and clears on request"]
 
-# `invalid` is the domain-clamp bit, and in practice that is its ONLY source:
-# num_guard's NaN branch is unreachable from pure EigenScript arithmetic,
-# because there is no way to obtain an Inf to combine (an over-range literal
-# is capped before it is ever an operand, and `x / 0` warns and yields 0
-# without producing a NaN). That branch stays as a guard for values arriving
-# through the embed API. So an over-range literal in an expression is capped
-# and quiet, not a NaN:
+# A NaN cannot be produced by ARITHMETIC here — there is no way to obtain an
+# Inf to combine (an over-range literal is capped before it is ever an
+# operand, and `x / 0` warns and yields 0 without producing a NaN). So an
+# over-range literal in an expression is capped and quiet:
 clear_math_flags of null
 capped_operand is 0.0 * 1e400
 assert of [capped_operand == 0, "NG26 an over-range literal is capped before use"]
 assert of [(math_flags of null).invalid == 0, "NG26 and produces no NaN to collapse"]
+
+# But a NaN DOES arrive from outside arithmetic — string conversion is the
+# in-language route, and it was the quietest case of all: `num of "nan"` is 0
+# and `num of "inf"` is 1e308, so a data file with either in a column parsed
+# to a plausible number with nothing to check. Both now set a bit. (Values
+# arriving through the embed API take the same num_guard path.)
+clear_math_flags of null
+parsed_nan is num of "nan"
+assert of [parsed_nan == 0, "NG30 num of \"nan\" still collapses to 0"]
+assert of [(math_flags of null).invalid == 1, "NG30 and is no longer confusable with a real 0"]
+
+clear_math_flags of null
+parsed_inf is num of "inf"
+assert of [parsed_inf == CAP, "NG30 num of \"inf\" still saturates"]
+assert of [(math_flags of null).overflow == 1, "NG30 and is no longer confusable with a real 1e308"]
+
+# A plain unparseable string is 0 by the documented parse rule, not a clamp.
+clear_math_flags of null
+parsed_junk is num of "abc"
+assert of [parsed_junk == 0, "NG30 num of a non-numeric string is 0"]
+assert of [(math_flags of null).invalid == 0, "NG30 which is a parse result, not a clamp"]
+
+clear_math_flags of null
+parsed_ok is num of "42"
+assert of [parsed_ok == 42, "NG30 an ordinary parse is exact"]
+assert of [(math_flags of null).invalid + (math_flags of null).overflow == 0, "NG30 and clean"]
 
 # The domain clamps are substitutions, not the two clamps the contract named.
 # Each keeps its value and each now says so.

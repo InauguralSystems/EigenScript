@@ -122,11 +122,13 @@ examples (executed by the suite).
   returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
   negative `x` (returns 0, otherwise indistinguishable from
   `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).
-  Both bits are sticky until `clear_math_flags`, so bracket a
-  computation the way you would on an FPU. `num_guard`'s NaN branch
-  also sets `invalid`, but it is unreachable from pure EigenScript
-  arithmetic — there is no way to obtain an Inf to combine — and exists
-  for values arriving through the embed API.
+  `invalid` is also set when a NaN is collapsed, which arithmetic
+  cannot produce (there is no way to obtain an Inf to combine) but
+  string conversion can: `num of "nan"` is `0` and `num of "inf"` is
+  `1e308`, so a data column containing either used to parse to a
+  plausible number with nothing to check. Both bits are sticky until
+  `clear_math_flags`, so bracket a computation the way you would on an
+  FPU.
 - **Saturation is not associative, and that is not detectable from the
   value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
   1e300)` is `1e300`. The first overflowed and came back down, and
