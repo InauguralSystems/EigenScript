@@ -775,6 +775,26 @@ static inline uint32_t read_u32(uint8_t *ip) {
 
 /* is_truthy declared in eigenscript.h */
 
+#if !EIGENSCRIPT_FREESTANDING
+/* #821: import-collision diagnostic dedup — one warning per module name
+ * per process (an import statement re-resolves on every execution, and a
+ * collided name imported from several files would otherwise repeat the
+ * same line). Process-lifetime by design: still-reachable at exit, which
+ * LeakSanitizer does not report. Main-thread only, like the module cache. */
+static int import_collision_first_report(const char *name) {
+    static char **warned = NULL;
+    static size_t warned_n = 0, warned_cap = 0;
+    for (size_t i = 0; i < warned_n; i++)
+        if (strcmp(warned[i], name) == 0) return 0;
+    if (warned_n == warned_cap) {
+        warned_cap = warned_cap ? warned_cap * 2 : 8;
+        warned = xrealloc_array(warned, warned_cap, sizeof(char *));
+    }
+    warned[warned_n++] = xstrdup(name);
+    return 1;
+}
+#endif
+
 /* Iterator state: stored as a list [iterable, index] */
 static Value *make_iter_state(Value *iterable) {
     Value *state = make_list(3);
@@ -5215,7 +5235,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!source) {
             char request[4096];
             char path_buf[8192];
-            snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
 
             extern int resolve_eigenscript_file_from(const char *base, const char *name,
                                                       char *out, size_t outlen);
@@ -5229,20 +5248,48 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                                            ? g_import_resolve_dir
                                            : g_script_dir;
 
-            if (!resolve_eigenscript_file_from(resolve_base, request,
-                                                path_buf, sizeof(path_buf))) {
-                /* Not a stdlib module — fall back to a user module:
-                 * <name>.eigs resolved against the per-file resolve base
-                 * (and the other standard locations the chain tries). */
-                snprintf(request, sizeof(request), "%.1024s.eigs", name);
-                if (!resolve_eigenscript_file_from(resolve_base, request,
-                                                    path_buf, sizeof(path_buf))) {
-                    rt_error(EK_IO, current_line, "import: module '%s' not found "
-                                  "(tried lib/%s.eigs and %s.eigs)", name, name, name);
-                    vm_push(make_null());
-                    DISPATCH();
-                }
+            /* #821: PROJECT-FIRST resolution. The user module `<name>.eigs`
+             * (script-relative, plus the chain's other locations and the
+             * eigs_modules walk) is tried BEFORE the stdlib's
+             * `lib/<name>.eigs`. The stdlib namespace grows over time, so
+             * under stdlib-first a new stdlib module could silently capture
+             * an existing project's import (dynamics' physics.eigs,
+             * F-DYN-8). Both requests are always probed: a name matching
+             * both is a collision worth a diagnostic whichever way
+             * resolution goes. */
+            char stdlib_buf[8192];
+            snprintf(request, sizeof(request), "%.1024s.eigs", name);
+            int user_hit = resolve_eigenscript_file_from(resolve_base, request,
+                                                          path_buf, sizeof(path_buf));
+            snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
+            int stdlib_hit = resolve_eigenscript_file_from(resolve_base, request,
+                                                            stdlib_buf, sizeof(stdlib_buf));
+
+            if (!user_hit && !stdlib_hit) {
+                rt_error(EK_IO, current_line, "import: module '%s' not found "
+                              "(tried %s.eigs and lib/%s.eigs)", name, name, name);
+                vm_push(make_null());
+                DISPATCH();
             }
+            if (user_hit && stdlib_hit &&
+                import_collision_first_report(name)) {
+                /* Same-file double hit is possible (e.g. a chain step that
+                 * resolves both request shapes to one path after symlinks) —
+                 * only a genuinely forked resolution is a collision. */
+                char ureal[8192], sreal[8192];
+                if (!realpath(path_buf, ureal))
+                    snprintf(ureal, sizeof(ureal), "%s", path_buf);
+                if (!realpath(stdlib_buf, sreal))
+                    snprintf(sreal, sizeof(sreal), "%s", stdlib_buf);
+                if (strcmp(ureal, sreal) != 0)
+                    fprintf(stderr, "Warning: import '%s' matches both a "
+                            "project file and a stdlib module — using '%s', "
+                            "shadowing '%s' (project-first; rename the file "
+                            "to use the stdlib module)\n",
+                            name, ureal, sreal);
+            }
+            if (!user_hit)
+                memcpy(path_buf, stdlib_buf, sizeof(path_buf));
 
             /* Module cache: canonicalize to absolute path so two different
              * importers (different cwds, different relative paths) hash to

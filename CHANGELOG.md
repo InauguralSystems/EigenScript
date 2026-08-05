@@ -4,6 +4,20 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **import resolution is project-first, and a stdlib collision warns
+  (#821).** `import name` now tries `name.eigs` (script-relative, plus
+  the chain's other locations and the `eigs_modules` walk) **before**
+  the stdlib's `lib/name.eigs` — previously stdlib-first, so a project
+  file sharing a stdlib module's name was silently shadowed and every
+  member access on the intended module read `null` (dynamics'
+  `physics.eigs`, F-DYN-8; the stdlib namespace grows, so any consumer
+  was one new stdlib module away from silent capture). A name matching
+  both now prints a one-line stderr warning (once per name per process)
+  naming the file used and the file shadowed. Sweep of the repo and all
+  15 consumer repos found zero imports whose resolution flips.
+
 ### Fixed
 
 - **ui: dispatch no longer swallows the rapid second click on widgets

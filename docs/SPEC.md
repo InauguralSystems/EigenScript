@@ -961,10 +961,18 @@ with code 1:
 ## Modules
 
 `import name` loads a module into a **namespace**: it executes
-`lib/name.eigs` (the standard library) or, failing that, `name.eigs`
-resolved relative to the script — and binds the module's top-level
-definitions as a dict named `name`. Nothing leaks into the global
-scope; names starting with `_` stay private to the module.
+`name.eigs` resolved relative to the script (the project) or, failing
+that, `lib/name.eigs` (the standard library) — and binds the module's
+top-level definitions as a dict named `name`. Nothing leaks into the
+global scope; names starting with `_` stay private to the module.
+
+Resolution is **project-first** (#821): a `name.eigs` beside the
+importing file wins over a stdlib module of the same name. The stdlib
+namespace grows over release to release, so the other order would let a
+new stdlib module silently capture an existing project's import. When a
+name matches **both**, the runtime prints a one-line warning to stderr
+(once per name per process) naming the file used and the file shadowed
+— rename the project file if the stdlib module is the one you want.
 
 ```eigenscript
 import math
