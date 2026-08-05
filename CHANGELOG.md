@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-08-04
+
 ### Added
 
 - **`hex_view` — memory/byte-grid viewer (#850).** The rung-5 companion
