@@ -822,17 +822,14 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
         return -1;
     switch (v->type) {
         case VAL_NUM: {
-            double n = v->data.num;
-            /* #816: magnitude BEFORE the narrowing cast (same class as
-             * #695) — converting a double beyond int's range is UB, and
-             * the old `n == (int)n && fabs(n) < 1e15` order ran the cast
-             * first. The bound is int's own range: integral values beyond
-             * it never took the %d path anyway (the equality failed), so
-             * output is unchanged and the cast is now always defined. */
-            if (fabs(n) < 2147483648.0 && n == (int)n)
-                strbuf_append_fmt(out, "%d", (int)n);
-            else
-                strbuf_append_fmt(out, "%.15g", n);
+            /* #875: one shared rule with `str of` — exact integers to 2^53
+             * bare, otherwise the shortest round-tripping form. The local
+             * %d fast path stopped at 2^31 and handed everything above it
+             * to %.15g, so integer IDs between 2^31 and 2^53 came back as a
+             * different number. */
+            char nb[32];
+            eigs_num_text(nb, sizeof(nb), v->data.num);
+            strbuf_append(out, nb);
             break;
         }
         case VAL_STR: {
@@ -1350,14 +1347,9 @@ Value* builtin_json_build(Value *arg) {
         strbuf_append_n(&out, ": ", 2);
         Value *val = arg->data.list.items[i + 1];
         if (val->type == VAL_NUM) {
-            double d = val->data.num;
-            /* #816: range BEFORE the cast — same class as the other two
-             * encoder sites; this variant shape was caught by the new
-             * float-cast-overflow gate in CI, not by pattern-grep. */
-            if (d >= -1e9 && d <= 1e9 && d == (double)(int)d)
-                strbuf_append_fmt(&out, "%d", (int)d);
-            else
-                strbuf_append_fmt(&out, "%.15g", d);
+            char nb[32];                              /* #875: the shared rule */
+            eigs_num_text(nb, sizeof(nb), val->data.num);
+            strbuf_append(&out, nb);
         } else if (val->type == VAL_NULL) {
             strbuf_append(&out, "null");
         } else if (val->type == VAL_JSON_RAW) {
@@ -2231,12 +2223,7 @@ Value* builtin_json_path(Value *arg) {
     }
     if (current->type == VAL_NUM) {
         char buf[64];
-        double d = current->data.num;
-        /* #816: range before the cast (see json_build above). */
-        if (fabs(d) < 1e9 && d == (double)(int)d)
-            snprintf(buf, sizeof(buf), "%d", (int)d);
-        else
-            snprintf(buf, sizeof(buf), "%.15g", d);
+        eigs_num_text(buf, sizeof(buf), current->data.num);   /* #875 */
         val_decref(root);
         return make_str(buf);
     }

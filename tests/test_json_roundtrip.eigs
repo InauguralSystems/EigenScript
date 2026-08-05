@@ -40,4 +40,47 @@ assert of [(json_encode of 1e300) == "1e+300", "1e300 encodes, cast never runs (
 rtb is json_decode of json_encode of {"n": 1e300}
 assert of [rtb.n == 1e300, "1e300 round-trips through encode/decode (#816)"]
 
+
+# ---- #875: JSON is a LOSSLESS round-trip for every double ----
+# LANGUAGE_CONTRACT.md:108 promises `num of (str of x) == x`. The three JSON
+# encoders each carried their own %.15g — one digit short of the 17 a double
+# needs — so a value written as JSON and read back was a different number.
+# Every encoder now shares `str of`'s rule, so all three must agree with it
+# AND with themselves.
+hard is [3.141592653589793, 0.1, 0.30000000000000004, 2.718281828459045,
+         1.7976931348623157e308, 5e-324, 1.0000000000000002,
+         0 - 3.141592653589793, 1e-7, 123456789.123456789]
+for v in hard:
+    enc is json_encode of v
+    assert of [(json_decode of enc) == v, "encode round-trips exactly"]
+    assert of [enc == (str of v), "json_encode agrees with str of"]
+    b is json_decode of (json_build of [["v", v]])
+    assert of [b.v == v, "json_build round-trips exactly"]
+    doc is json_encode of {"v": v}
+    assert of [(num of (json_path of [doc, "v"])) == v, "json_path round-trips exactly"]
+
+# The named case from the issue.
+pi is 3.141592653589793
+assert of [(json_encode of pi) == "3.141592653589793", "pi keeps all 16 digits"]
+assert of [(json_decode of (json_encode of pi)) == pi, "pi survives the round-trip"]
+
+# Integers between the old %d fast path (2^31) and 2^53 went through %.15g
+# too, so an integer ID came back as a DIFFERENT integer: 1234567890123456
+# encoded as 1.23456789012346e+15 and decoded as 1234567890123460.
+# Round magnitudes are the ones that need the exact-integer fast path: the
+# %.15g..%.17g escalation is happy to print 1e15 for 1000000000000000 (it
+# round-trips), so only the integer branch keeps an exact integer looking
+# like one. The ragged values below cover the escalation itself.
+big_ints is [1234567890123456, 9007199254740992, 9007199254740991,
+             4503599627370496, 0 - 9007199254740992,
+             1000000000000000, 100000000000000000 / 100, 4000000000]
+for n in big_ints:
+    enc is json_encode of n
+    assert of [(contains of [enc, "e+"]) == 0, "an exact integer never encodes in exponent form"]
+    assert of [(json_decode of enc) == n, "an exact integer round-trips"]
+    assert of [enc == (str of n), "integer encoding agrees with str of"]
+
+assert of [(json_encode of 1234567890123456) == "1234567890123456", "16-digit integer is exact"]
+assert of [(json_build of [["id", 1234567890123456]]) == "{\"id\": 1234567890123456}", "json_build keeps integer IDs exact"]
+
 print of "json roundtrip: all passed"

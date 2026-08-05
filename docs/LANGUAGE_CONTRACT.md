@@ -107,10 +107,15 @@ examples (executed by the suite).
   yields 0.
 - `str of` produces the shortest representation that round-trips back to
   the same double; `num of (str of x) == x`.
+- **Every producer of number text obeys that same rule** — `str of`,
+  `json_encode`, `json_build`, `json_path`, and the SIGUSR1 observer dump
+  all share one implementation (`eigs_num_text`), so a JSON round-trip
+  returns the same double and `json_encode of x` equals `str of x` for
+  every number (#875).
 - `%` follows the dividend's sign (C semantics): `-7 % 3 == -1`.
 
 **Status:** Enforced — `tests/test_number_format.eigs`,
-`tests/test_numeric_guard.eigs`.
+`tests/test_numeric_guard.eigs`, `tests/test_json_roundtrip.eigs`.
 
 ## Strings
 
