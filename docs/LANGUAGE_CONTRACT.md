@@ -105,6 +105,35 @@ examples (executed by the suite).
 - Finite by construction: no NaN, no Infinity. NaN-producing operations
   return 0; overflow saturates at ±1e308; division by zero warns and
   yields 0.
+- **Every clamp is recorded.** The finite invariant keeps a program
+  running, but it keeps it running with a plausible number, so the
+  clamps are readable as sticky status flags — IEEE-754's own model
+  (`fetestexcept`) — rather than being undetectable (#865):
+
+  ```eigenscript
+  clear_math_flags of null
+  result is risky of xs
+  if (math_flags of null).overflow:
+      print of "a value saturated; this result is contaminated"
+  ```
+
+  `overflow` is set by the ±1e308 clamp. `invalid` is set by the
+  out-of-domain substitutions: `log of x` for `x <= 1e-10` (which
+  returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
+  negative `x` (returns 0, otherwise indistinguishable from
+  `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).
+  Both bits are sticky until `clear_math_flags`, so bracket a
+  computation the way you would on an FPU. `num_guard`'s NaN branch
+  also sets `invalid`, but it is unreachable from pure EigenScript
+  arithmetic — there is no way to obtain an Inf to combine — and exists
+  for values arriving through the embed API.
+- **Saturation is not associative, and that is not detectable from the
+  value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
+  1e300)` is `1e300`. The first overflowed and came back down, and
+  `1e8` will pass any plausibility check a caller applies. The results
+  are what the finite invariant requires — the `overflow` flag is how
+  you tell. Stated here because the trade should be visible rather than
+  discovered.
 - `str of` produces the shortest representation that round-trips back to
   the same double; `num of (str of x) == x`.
 - **Every producer of number text obeys that same rule** — `str of`,
@@ -115,7 +144,8 @@ examples (executed by the suite).
 - `%` follows the dividend's sign (C semantics): `-7 % 3 == -1`.
 
 **Status:** Enforced — `tests/test_number_format.eigs`,
-`tests/test_numeric_guard.eigs`, `tests/test_json_roundtrip.eigs`.
+`tests/test_numeric_guard.eigs` (NG20–NG30 cover the flags),
+`tests/test_json_roundtrip.eigs`.
 
 ## Strings
 

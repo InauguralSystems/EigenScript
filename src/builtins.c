@@ -772,6 +772,42 @@ Value* builtin_classify(Value *arg) {
     return out;
 }
 
+/* ---- #865: sticky numeric status ----
+ *
+ * The finite-number invariant (NaN -> 0, overflow -> +/-1e308) keeps a
+ * program running, which is the point, but it kept it running with a
+ * plausible number and no way to tell. Two consequences the contract did not
+ * mention: reassociation silently changes a result by 292 orders of magnitude
+ * ((1e300*1e300)/1e300 is 1e8, not 1e300), and an overflowed value compares
+ * equal to itself under further growth, so no in-language predicate could
+ * distinguish "this is 1e308" from "this overflowed".
+ *
+ * These are IEEE-754's sticky exception flags. The results are unchanged —
+ * the finite invariant is load-bearing for the JIT's bail comparison, the
+ * observer's entropy, `str of`, and the JSON encoders — but the clamp is no
+ * longer undetectable. Bracket a computation the way you would an FPU:
+ *
+ *     clear_math_flags of null
+ *     result is risky_computation of xs
+ *     if (math_flags of null).overflow:
+ *         ...
+ */
+Value* builtin_math_flags(Value *arg) {
+    (void)arg;
+    Value *d = make_dict(2);
+    Value *ov = make_num((g_math_flags & EIGS_MATH_OVERFLOW) ? 1 : 0);
+    Value *iv = make_num((g_math_flags & EIGS_MATH_INVALID) ? 1 : 0);
+    dict_set_owned(d, "overflow", ov);
+    dict_set_owned(d, "invalid", iv);
+    return d;
+}
+
+Value* builtin_clear_math_flags(Value *arg) {
+    (void)arg;
+    g_math_flags = 0;
+    return make_null();
+}
+
 Value* builtin_type(Value *arg) {
     if (!arg) return make_str("none");
     switch (arg->type) {
@@ -1874,16 +1910,24 @@ Value* builtin_tan(Value *arg) {
 Value* builtin_asin(Value *arg) {
     if (!arg || arg->type != VAL_NUM) return make_num(0);
     double x = arg->data.num;
-    if (x < -1.0) x = -1.0;
-    if (x > 1.0) x = 1.0;
+    /* #865: an out-of-domain argument is clamped, so `asin of 5` answers
+     * `asin of 1` with no signal. The clamp stays; the invalid bit records it. */
+    if (x < -1.0 || x > 1.0) {
+        g_math_flags |= EIGS_MATH_INVALID;
+        x = (x < -1.0) ? -1.0 : 1.0;
+    }
     return make_num(asin(x));
 }
 
 Value* builtin_acos(Value *arg) {
     if (!arg || arg->type != VAL_NUM) return make_num(0);
     double x = arg->data.num;
-    if (x < -1.0) x = -1.0;
-    if (x > 1.0) x = 1.0;
+    /* #865: an out-of-domain argument is clamped, so `acos of 5` answers
+     * `acos of 1` with no signal. The clamp stays; the invalid bit records it. */
+    if (x < -1.0 || x > 1.0) {
+        g_math_flags |= EIGS_MATH_INVALID;
+        x = (x < -1.0) ? -1.0 : 1.0;
+    }
     return make_num(acos(x));
 }
 
@@ -5816,6 +5860,8 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "observe", make_builtin(builtin_observe));
     env_set_local_owned(env, "classify", make_builtin(builtin_classify));
     env_set_local_owned(env, "type", make_builtin(builtin_type));
+    env_set_local_owned(env, "math_flags", make_builtin(builtin_math_flags));            /* #865 */
+    env_set_local_owned(env, "clear_math_flags", make_builtin(builtin_clear_math_flags));
     env_set_local_owned(env, "json_encode", make_builtin(builtin_json_encode));
     env_set_local_owned(env, "json_decode", make_builtin(builtin_json_decode));
     env_set_local_owned(env, "coalesce", make_builtin(builtin_coalesce));

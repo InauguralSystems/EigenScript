@@ -671,6 +671,12 @@ struct EigsThread {
     struct Env   *last_obs_slot_env;
     int           last_obs_slot_idx;
     int           unobserved_depth;
+    /* #865: sticky numeric status, IEEE-754's own model (fetestexcept).
+     * Saturation and NaN-collapse keep a program running with a plausible
+     * number and no way to tell it happened; these bits make it detectable.
+     * Set only on the clamp branches, so the arithmetic fast path is
+     * unchanged. Sticky until clear_math_flags. */
+    unsigned      math_flags;
     /* Dynamic caller scope for env-aware builtins (env_get/env_set
      * polymorphic dispatch needs to know "who called me"). */
     struct Env   *builtin_call_env;
@@ -806,6 +812,7 @@ extern __thread EigsThread *eigs_current;
 #define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
+#define g_math_flags        (eigs_current->math_flags)
 #define g_builtin_call_env  (eigs_current->builtin_call_env)
 #define g_vm                  (*eigs_current->vm)
 #define g_loop_stall_count    (eigs_current->loop_stall_count)
@@ -970,10 +977,24 @@ void free_value(Value *v);
  * All numeric operations route through this guard.
  * NaN -> 0; values escaping the finite number line saturate at
  * +/-EIGS_NUM_MAX instead of becoming Infinity. */
+/* #865: sticky status bits for the two clamps below. The finite invariant
+ * keeps a program running past an overflow with a plausible-looking number,
+ * and nothing in the language could tell that apart from a real result:
+ * (1e300 * 1e300) / 1e300 is 1e8, which passes any sanity check a caller
+ * applies, and a NaN collapses to 0, which is indistinguishable from a real
+ * zero. IEEE-754 solved exactly this with sticky exception flags, so these
+ * are those: set on the clamp, readable with `math_flags`, reset with
+ * `clear_math_flags`. Bracket a computation with clear/check the way you
+ * would an FPU. */
+#define EIGS_MATH_OVERFLOW 1u   /* a value saturated at +/-EIGS_NUM_MAX */
+#define EIGS_MATH_INVALID  2u   /* a NaN was collapsed, or a domain clamp fired */
+
 static inline double num_guard(double x) {
-    if (x != x) return 0.0;                        /* NaN */
-    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;     /* +Inf or overflow */
-    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;   /* -Inf or underflow */
+    /* Fast path unchanged: the flag writes live only on the clamp branches,
+     * which a program that does not overflow never takes. */
+    if (x != x) { g_math_flags |= EIGS_MATH_INVALID; return 0.0; }        /* NaN */
+    if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; return EIGS_NUM_MAX; }
+    if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; return -EIGS_NUM_MAX; }
     return x;
 }
 
