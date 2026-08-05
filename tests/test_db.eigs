@@ -186,10 +186,13 @@ if live:
     assert of [zero_took == 0, "DB21 SQL 0 is falsy in an if"]
 
     # 2. NULL is distinguishable from the empty string.
-    assert of [(type of d.unknown) == "null", "DB22 SQL NULL decodes to null"]
-    assert of [(type of d.ntext) == "null", "DB22 a NULL text column decodes to null"]
+    assert of [(type of d.unknown) == "none", "DB22 SQL NULL decodes to null"]
+    assert of [(type of d.ntext) == "none", "DB22 a NULL text column decodes to null"]
     assert of [d.empty == "", "DB22 an empty string stays an empty string"]
     assert of [(type of d.empty) == "str", "DB22 an empty string is still a str"]
+    # The claim in its plainest form: the two used to be one value.
+    assert of [(d.ntext == d.empty) == 0, "DB22 a NULL text column is NOT the empty string"]
+    assert of [(d.ntext == null) == 1, "DB22 a NULL column compares equal to null"]
 
     # 3. Numbers are numbers — ordering and arithmetic, not text.
     assert of [(type of d.n) == "num", "DB23 an int column decodes to num"]
@@ -199,7 +202,7 @@ if live:
 
     # db_query_value applies the SAME mapping (one classifier, no drift).
     assert of [(db_query_value of "SELECT false") == 0, "DB24 db_query_value types booleans"]
-    assert of [(type of (db_query_value of "SELECT null::int")) == "null", "DB24 db_query_value returns null for SQL NULL"]
+    assert of [(type of (db_query_value of "SELECT null::int")) == "none", "DB24 db_query_value returns null for SQL NULL"]
     assert of [(type of (db_query_value of "SELECT ''")) == "str", "DB24 db_query_value keeps '' a str"]
     assert of [(db_query_value of "SELECT 7::float8") == 7, "DB24 db_query_value types floats"]
     # NaN would become 0 through make_num's num_guard — a silently wrong
