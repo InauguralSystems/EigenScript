@@ -681,10 +681,69 @@ Requires full build with libpq. PostgreSQL client.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `db_connect` | `db_connect of null` | Connect via DATABASE_URL env var |
-| `db_query_value` | `db_query_value of sql` or `db_query_value of [sql, p1, p2]` | Execute query, return first value with optional params |
-| `db_execute` | `db_execute of sql` or `db_execute of [sql, p1, p2]` | Execute command with optional params |
-| `db_query_json` | `db_query_json of sql` or `db_query_json of [sql, p1, p2]` | Execute query, return all rows as JSON with optional params |
+| `db_connect` | `db_connect of null` | Connect via DATABASE_URL env var; returns a status JSON, never raises |
+| `db_query_value` | `db_query_value of sql` or `db_query_value of [sql, p1, p2]` | Execute query, return row 0 col 0 typed by its SQL type; `null` for SQL NULL, `""` for no rows |
+| `db_execute` | `db_execute of sql` or `db_execute of [sql, p1, p2]` | Execute command with optional params; returns `"ok"` |
+| `db_query_json` | `db_query_json of sql` or `db_query_json of [sql, p1, p2]` | Execute query, return all rows as a JSON array of objects, each value typed by its SQL type |
+
+### Failures raise (#888)
+
+`db_connect` is the only one that reports by return value — it hands back
+`{"status": ...}` so a program can probe for a database without a `try`.
+Every other db builtin **raises** a catchable `io` error when the statement
+fails or there is no connection, carrying libpq's own first line
+(`ERROR:  relation "orders" does not exist`). A genuinely empty result is
+still `[]` / `""`, and only that.
+
+They used to return `[]` / `""` for a syntax error, a missing table, a
+revoked permission *and* an empty table alike, so a reporting script kept
+printing "0 rows" forever after a schema change and a migration that did
+nothing looked healthy in CI.
+
+```eigenscript
+try:
+    rows is json_decode of (db_query_json of "SELECT * FROM orders")
+catch e:
+    print of ("query failed: " + e.message)   # e.kind is "io"
+```
+
+### SQL types survive the trip (#887)
+
+Values carry their column's SQL type rather than arriving as strings:
+
+| SQL type | Arrives as | Note |
+|---|---|---|
+| NULL (any column type) | `null` | Distinct from `""` — checked before the type |
+| `boolean` | `true` / `false` → `1` / `0` | `if row.is_admin:` means what it reads as |
+| `smallint`, `integer`, `bigint`, `oid` | number | `bigint` past 2^53 **raises** — see below |
+| `real`, `double precision` | number | `NaN`/`Infinity` arrive as strings; JSON has no literal for them |
+| `numeric` | **string** | Deliberate — see below |
+| everything else | string | text, date, uuid, json, … unchanged |
+
+The mapping is a function of the column's SQL type alone, never of the
+row's value: a column that decoded as a number for row 1 and a string for
+row 100 would break `row.n + 1` on data rather than on schema.
+
+**`numeric` stays a string.** It is PostgreSQL's arbitrary-precision decimal
+— the money type — and an EigenScript number is a binary double, which
+cannot hold `numeric(38,10)` or even `0.1` exactly. Preserving the digits
+is the safe default; `SELECT amount::float8` is the one-token opt-in to a
+number when approximate is fine. Note `avg()` and `sum(numeric)` return
+`numeric`, so those want the cast; `count(*)` and `sum(integer)` return
+`bigint` and are already numbers.
+
+**A `bigint` past 2^53 raises** instead of silently rounding, naming the
+column and the fix:
+
+```
+Error line 3: db: column 'id' value 9007199254740993 exceeds the exact-integer
+range of a number (2^53); select it as text (id::text) to keep the digits
+```
+
+Before this, every value was a string: SQL `false` arrived as `"f"`, which
+is a non-empty string and therefore **truthy**, so `if row.is_admin:` passed
+for a non-admin; NULL and `''` were both `""`; and `9 > 10` was true because
+`'9' > '1'`.
 
 ## Optional: Model Extension
 

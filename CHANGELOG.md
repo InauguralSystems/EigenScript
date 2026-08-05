@@ -130,6 +130,36 @@ All notable changes to EigenScript are documented here.
   `str of` over the hard doubles and the exact-integer band, validated
   with a planted fault in each half (the precision escalation and the
   integer bound are independently load-bearing).
+- **DB results carry their SQL type, and DB failures raise (#887,
+  #888).** Two defects in one function, both silent. `db_query_json`
+  emitted every column as a JSON string, so SQL `false` arrived as
+  `"f"` — a non-empty string, therefore **truthy** — and
+  `if row.is_admin:` passed for a non-admin; NULL and `''` were both
+  `""` with no way to tell them apart; and `9 > 10` held because `'9' >
+  '1'`. And every failure — syntax error, missing table, revoked
+  permission, dead connection — returned `[]`, the same value a
+  successful query over an empty table returns, so a reporting script
+  kept printing "0 rows" forever after a schema change.
+  Now: `PQgetisnull` → `null` (checked before the type), `boolean` →
+  `true`/`false`, the exact-integer and float types → JSON numbers,
+  everything else → strings, through **one classifier shared with
+  `db_query_value`** so the two cannot drift. Failures raise a catchable
+  `io` error carrying libpq's own first line; a genuinely empty result
+  is still `[]`/`""` and only that. `db_connect` still reports by return
+  value, so probing for a database needs no `try`.
+  Two calls documented in `docs/BUILTINS.md`: **`numeric` stays a
+  string** (arbitrary-precision decimal cannot round-trip through a
+  binary double — silently rounding money is the defect class this
+  fixes; `::float8` is the opt-in), and a **`bigint` past 2^53 raises**
+  naming the column and the fix (`id::text`) rather than rounding a
+  primary key. `bigint` is a number rather than a string because
+  `count(*)` and `sum(integer)` return it — leaving it text would have
+  left the bug unfixed for most real numeric queries. The mapping is a
+  function of the column's SQL type alone, never of the row's value.
+  `tests/test_db.eigs` gained the no-connection raise checks (they run
+  wherever the extension is compiled in — previously the whole file was
+  effectively inert without a server) plus DB18–DB26 against the live
+  CI postgres service.
 
 - **chart renders 1.5× faster at high point counts (#828).** The series
   hot loop called `_chart_map` — a fresh 2-element list — per plotted

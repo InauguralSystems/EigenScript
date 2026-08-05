@@ -72,7 +72,7 @@ below are the contract.)
 | `value` | right type, unacceptable value | `index must be an integer, got 1.5`, `chr of 0`, invalid channel |
 | `index_range` | index/slice outside bounds | `index 10 out of range (list length 3)` |
 | `parse` | runtime-surfaced parse/compile failure | `eval: parse error in code string`, `import: parse errors in 'm'` |
-| `io` | the outside world failed | `import: cannot read 'm'`, `store_open: cannot create`, thread-create failure |
+| `io` | the outside world failed | `import: cannot read 'm'`, `store_open: cannot create`, thread-create failure, `db: query failed: ERROR:  relation "orders" does not exist` |
 | `limit` | engine resource cap hit | `call stack overflow`, `store_put: record too large`, route table full |
 | `sandbox` | sandbox policy denial or budget | `blocked in sandbox`, `sandbox memory budget exceeded` |
 | `interrupt` | host-requested abort (`eigs_abort`) | `aborted` |
