@@ -305,6 +305,35 @@ All notable changes to EigenScript are documented here.
   the same file — so it parsed as `(floor of (lo + hi)) / 2` and raised
   `index must be an integer, got 1.5`. Now `a[floor of ((lo + hi) / 2)]`.
 
+- **A corrupted `--bundle` executable refuses instead of silently
+  starting the REPL at exit 0 (#882).** A bundle is the one artifact of
+  this project designed to be copied and downloaded, so truncation is
+  its normal failure mode — and a truncated bundle was
+  *indistinguishable* from a plain interpreter: no magic at EOF, so
+  startup fell through to ordinary CLI handling, found no script
+  argument, opened the REPL, and exited 0. `./myapp && echo deployed`
+  printed "deployed" for a corrupt binary. That contradicted the
+  contract's "never report success on failure" while the tape layer next
+  door already refused every damaged input with exit 3.
+  Nothing at EOF can separate the two once the trailer is gone, so the
+  archive gained a 24-byte **head magic** at its start (fmt 1 → 2),
+  which survives truncation. Startup now refuses with exit 3 on: head
+  present but trailer missing/unreadable, valid trailer whose named
+  offset has no head, and — newly — a trailer naming a format this
+  binary cannot read, which previously printed a message and then fell
+  through to the REPL at exit 0 anyway.
+  Two implementation notes, both load-bearing: the head magic is stored
+  **XOR-obfuscated** in the runtime so its plaintext is not in the
+  image's rodata — otherwise every plain `eigenscript` start would find
+  the constant inside itself and refuse, bricking the interpreter — and
+  the linear scan that finds a head without a trailer runs **only** when
+  startup would otherwise open the REPL, so `eigenscript script.eigs`
+  and every suite invocation pay nothing. The documented consequence is
+  that a damaged bundle invoked *with* arguments still behaves as an
+  interpreter; the shipped form (`./myapp`) is the case that matters.
+  `tests/test_bundle.sh` covers all four states including the
+  no-false-positive checks on the plain binary.
+
 - **vm_run_bytecode/sandbox_run: an assembled chunk's temporal opcodes
   now turn history recording on themselves (#831).** `g_trace_hist` was
   set only by the bytecode compiler's source scan, so a descriptor
