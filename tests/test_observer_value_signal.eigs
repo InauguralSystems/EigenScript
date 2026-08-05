@@ -53,15 +53,17 @@ define run_climb() as:
 
 local pass is 1
 
-# Case 1: slow oscillation. Entropy is blind here (does not flag it as
-# oscillating); the value channel must NOT report it settled.
+# Case 1: slow oscillation. #861: `report` now routes numerics to the value
+# channel, so BOTH surfaces flag it — the blindness this case originally
+# demonstrated lives on only in the explicit entropy channel, pinned below
+# via classify (it is the reason the routing exists).
 local r1 is run_osc of (0.6)
 local ent1 is r1[0]
 local val1 is r1[1]
 print of ("slow-osc: report=" + ent1 + " report_value=" + val1)
-if ent1 == "oscillating":
+if not (ent1 == val1):
     pass is 0
-    print of "FAIL: entropy channel unexpectedly flagged the slow oscillation"
+    print of "FAIL: report and report_value disagree on a numeric binding (#861 unification)"
 if (val1 == "converged") or (val1 == "stable"):
     pass is 0
     print of ("FAIL: value channel falsely settled on a sustained oscillation: " + val1)

@@ -25,6 +25,61 @@ a **window** of the last `N` observations rather than the instantaneous
 runtime simplified five of the six to single-step checks, which flickered
 under noise — see "Pointwise behavior replaced" in each section.)
 
+## Which channel answers (#861)
+
+The predicate words and `report` are **routed**: a binding whose most
+recent observed assignment is **numeric** answers from the **value
+channel** — the classifier below, over relative steps `Δv/(1+|v|)`; every
+other binding (strings, containers) answers from the **entropy channel**,
+the windowed formulas in "The six predicates". `report_value of x` is the
+value-channel classifier by name (identical to the routed words on a
+numeric binding — the two surfaces cannot disagree); `classify of
+[t, "entropy"]` reaches the entropy classifier by name. The entropy
+MEASUREMENT — `where`, `why`, `how`, trajectory snapshots, container
+folds, the tape — is unchanged everywhere.
+
+Why: entropy is a function of `|x|` alone, so any clause on it is a
+clause on magnitude. Measured against 27 analytically-known sequences
+(`tests/test_convergence_oracle.eigs`), the entropy channel scored 19/27
+— `converged` fired across the whole region `|x| ∈ [77, 1e307]` (a
+geometric runaway certified at `x ≈ 2.9e5`), could never fire for limits
+in `[~0.013, 76]` (Newton's method to `sqrt(2)` was uncertifiable), and
+gave the same computation targeting 5000, 5 and 0.005 three different
+verdicts. The value channel scores 25/27; the two misses are the
+irreducible tolerance floor, not defects (see the honesty bound below).
+
+**The numeric definitions** (window `N = 10` relative steps
+`rel = Δv/(1+|v|)`, raw steps `Δv` kept alongside — #422):
+
+| band | fires when |
+|---|---|
+| `converged` | full window, every `\|rel\| < dh_zero`, raw guards clean |
+| `stable` | full window, every `\|rel\| < dh_small`, no strong consecutive sign flips |
+| `equilibrium` | full window, `\|mean(rel)\| < dh_zero`, `variance(rel) < dh_zero²` |
+| `improving` | ≥ 4 samples, **monotone** raw steps whose mean *and* max contract to ≤ 0.7× the older half — a summable (geometric-class) tail, genuinely closing on a limit |
+| `diverging` | value at the saturation ceiling (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
+| `oscillating` | ≥ 4 deadband sign-flips of `rel`; or non-vanishing raw alternation (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
+
+The quiescent lattice on this route: `converged ⊂ equilibrium` and
+`converged ⊂ stable` (all-under-deadband satisfies all three). The rest
+bands exclude the raw structure tests; the motion bands are mutually
+exclusive. `report` resolves the canonical priority `oscillating →
+diverging → improving → converged → equilibrium → stable → moving`.
+
+**The honesty bound.** `converged` is a **stopping criterion, not a
+proof**: it means *settled at the deadband* — every recent step below the
+tolerance — which is the strongest claim a finite window supports.
+Vanishing steps do not imply a limit (the harmonic series' steps vanish;
+its sum does not), so a slow-enough divergence will eventually read
+`stable` and, at extreme patience, `converged`; and a slowly-converging
+sequence reads `converged` while still `~1e-2` from its limit (corpus
+cases 6 and 8). The deadband is the tolerance knob:
+`set_observer_thresholds of [dh_zero, dh_small, h_low]` — `dh_zero` is
+the settle tolerance, `dh_small` the small-motion band; the raw
+STRUCTURE tests are deliberately threshold-free (a perpetual ±5 swing is
+an oscillation at any tolerance). `h_low` affects only the entropy
+route.
+
 ## Inputs
 
 Every predicate reads the same observer state on the most recently
@@ -73,12 +128,13 @@ FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating
 
 If the window does not yet hold enough samples, **every predicate returns
 `false`** — "we haven't seen enough yet to claim anything." The minimum is
-`N` for the full-window predicates (`converged`, `stable`, `equilibrium`)
-and `3` for the trajectory predicates (`improving`, `diverging`,
-`oscillating`). A two-write program can never report any predicate true;
-this is the single most important difference from the old pointwise rule,
-which fired on the first step. **One exception**: `diverging` fires at the
-numeric ceiling regardless of window fill — see the saturation rule below.
+`N` for the rest bands (`converged`, `stable`, `equilibrium`) on both
+routes, `4` for the value route's motion bands (the half-split needs two
+samples per half) and `3` for the entropy route's. A two-write program can
+never report any predicate true; this is the single most important
+difference from the old pointwise rule, which fired on the first step.
+**One exception**: `diverging` fires at the numeric ceiling regardless of
+window fill — see the saturation rule below.
 
 ## Opaque rule (#708): function-valued bindings
 
@@ -110,27 +166,20 @@ as **diverging, and in no rest band**:
 
 | predicate | at the ceiling |
 |---|---|
-| `converged`, `equilibrium`, `stable` | forced `false` — the rest bands |
-| `improving` | forced `false` (see below) |
+| `converged`, `equilibrium`, `stable`, `improving` | forced `false` — a value at the clamp is not resting or approaching |
 | `diverging` | forced `true`, **including on a partial window** |
-| `oscillating` | unchanged — evaluated normally |
+| `oscillating` | evaluated normally — a value flipping `±1e308` reads as the oscillation it is, and `report`'s priority resolves it to `oscillating` |
 
-Note that a *pure* sign-flip at the ceiling (`z is 0 - z` at `1e308`) is
-invisible to the entropy channel — `H(x) ≡ H(−x)`, so `dH` is 0 and
-`oscillating` stays false; `report` answers `diverging` while
-`report_value` answers `oscillating`. That disagreement is the entropy
-signal's blind spot (#862), not the saturation rule.
-
-and `report` / `report_value` both answer `diverging`. `improving` is
-gated because `H` decreases as `|x|` grows past 1, so a runaway climbing
-toward the ceiling shows a run of negative `dH` — leaving it open would
-just move the wrong answer one band over, since `report` tries `improving`
-before `converged`. `oscillating` is left alone so a value flipping
-`±1e308` still reads as the oscillation it is.
+Since #861 both `report` and `report_value` run the same classifier, so
+they agree here by construction. (The `H(x) ≡ H(−x)` blindness that once
+made them disagree at the ceiling — #862 — still exists in the entropy
+SIGNAL, but no numeric classification reads it anymore; it is visible
+only through `classify of [t, "entropy"]` and for non-numeric bindings,
+whose values have no ceiling.)
 
 `diverging` is claimed before the partial-window guard because the
 evidence is the value's *position*, not the shape of the (flattened)
-window — this is the one place a predicate fires on fewer than 3 samples.
+window — this is the one place a predicate fires on fewer than 4 samples.
 
 **A literal `±1e308` that never overflowed reads `diverging` too.** The
 runtime cannot distinguish a saturated value from one deliberately
@@ -163,16 +212,20 @@ All six predicates are now windowed (the #202 series is complete):
 The "Pointwise behavior replaced" note under each predicate records the
 single-step rule that the windowed version superseded.
 
-All six predicates above (and `report`) classify the trajectory of
-**`entropy(value)`**. `report_value of x` (#294) is a sibling that runs the
-same windowed logic on the **value's own** relative step `Δv/(1+|x|)` instead
-of its entropy — answering "has the number stopped moving" rather than "how
-determined is it." It is the right tool when the value oscillates in a
-flat-entropy region (where the entropy signal reads `stable`); see
-[`docs/OBSERVER.md`](OBSERVER.md) ("Two signals"). Vocabulary:
-`oscillating`/`converged`/`stable`/`moving`/`equilibrium`.
+Since #861 the kinds dispatch by route: a numeric binding answers from
+the value-channel definitions in "Which channel answers" above; the
+windowed-entropy formulas in the next section serve non-numeric bindings
+and the explicit `classify of [t, "entropy"]` channel. `report_value of
+x` (#294) is the value-channel classifier by name — on a numeric binding
+it and the predicate words are one classifier and cannot disagree.
 
-## The six predicates
+## The six predicates — the ENTROPY route
+
+**These formulas classify the trajectory of `entropy(value)`. Since #861
+they answer only for non-numeric bindings (strings, containers) and the
+explicit entropy channel; numeric bindings use the value-channel
+definitions above.** The traces and design notes are kept because the
+mechanics still run — on the signal they were always sound for.
 
 ### `converged` (kind 0)
 
@@ -440,22 +493,29 @@ rather than stated only here — which is how it survived.
 
 ## Canonical examples
 
-### Iterating at a low-entropy value → `converged`
+### A held constant certifies — at any magnitude
 
 ```eigenscript
 x is 1000000
 for i in range of 12:
-    x is 1000000   # same value 12 times → window fills with dH=0
+    x is 1000000   # same value 12 times → window fills with zero steps
 if converged:
-    print of "converged"   # YES — full quiet window AND low entropy (large magnitude)
+    print of "converged"   # YES — and the same holds for 5, 42, or 0.005
 ```
 
-### Newton's sqrt on an information-rich fixed point → `equilibrium`
+Before #861, whether a constant could certify depended on its magnitude
+(`entropy < h_low` admitted only `|x| > ~76` and `|x| < ~0.013`). The
+value route reads motion, so magnitude is irrelevant.
 
-`sqrt(2)` settles to `1.41421…` and `dH → 0`, so the window goes quiet and
-zero-mean — but `1.41421…` is information-rich (`entropy >= h_low`), so it
-reports `equilibrium`, not `converged`. See
-`tests/test_windowed_converged.eigs` WC4.
+### Newton's sqrt certifies `converged` (#861)
+
+`sqrt(2)` settles to `1.41421…`; once a full window of relative steps sits
+under the deadband it reports **`converged`** — the textbook example of
+convergence is certifiable. (Before #861 the `entropy < h_low` clause
+blocked every limit in `[~0.013, 76]`, and this section documented the
+blindness as intended behavior: "it reports `equilibrium`, not
+`converged`." See `tests/test_windowed_converged.eigs` WC4, now pinned to
+the certification.)
 
 ### Short trajectories never fire
 
@@ -502,26 +562,31 @@ more than one binding is observed in scope.
 
 ### Gentle, monotonic convergence
 
-`loop while not converged` reads as the obvious convergence idiom, and it
-is correct — but only for a value that converges *gently and
-monotonically*. Three properties of the entropy model surprise real solvers
-(all surfaced building `dynamics`, the observer-heavy dynamical-systems lab
-that is the first heavy consumer of the windowed predicates; findings
-F-DYN-2 and F-DYN-6). Every trace below is a real run.
+`loop while not converged` reads as the obvious convergence idiom, and
+since #861 it is correct for any numeric value that actually settles —
+gently, steeply, oscillating on the way in, at any magnitude. What
+remains worth knowing: the tolerance semantics (settled ≠ arrived), the
+observation-cadence rule, and the divergent-input guard. Every trace
+below is a real run.
 
 ### Regime tracks per-step `dH`, not distance to the limit
 
-A predicate classifies the *trajectory* by `|dH|` against `dh_zero` /
-`dh_small`. A quantity that is still moving but observed in tiny per-step
-increments has `|dH| < dh_zero` and reads settled — `equilibrium` or even
-`converged` — while still far from its limit:
+A predicate classifies the *trajectory* by its steps against the
+deadband. A quantity that is still moving but observed in tiny per-step
+increments has every relative step under `dh_zero` and reads settled —
+while still far from its limit:
 
 ```eigenscript
 x is 100.0
 for i in range of 20:
-    x is x * 0.999        # genuine motion, but each step is tiny
-report of x               # "converged"  — yet x is still ~98, not ~0
+    x is x * 0.999        # genuine motion, but each step is ~0.1%
+report of x               # "converged"  — settled AT THE DEADBAND; x is ~98, not ~0
 ```
+
+This is the tolerance semantics, not a defect: `converged` means every
+recent step is below the tolerance, and per-step motion of 0.1% at the
+default `dh_zero = 0.001` is exactly the boundary. Tighten the deadband
+(`set_observer_thresholds`) or fix the cadence:
 
 The lesson is about **observation cadence**: observe at a rate matched to
 the dynamics, not once per micro-step. The robust pattern is to advance the
@@ -531,133 +596,79 @@ runs `SUB` integration substeps `unobserved`, then observes once per frame
 — without this, a damped oscillator, a diverging one, and a steady
 oscillation all read `equilibrium` alike).
 
-### Entropy peaks at `|value| = 1`, so a shrinking value can read `diverging`
+### The entropy-peak artifacts are gone from numeric classification (#861)
 
-Entropy is the binary entropy of `p = 1/(1+|x|)`
-(`compute_entropy_impl`, eigenscript.c): it is **highest at `|x| = 1`**,
-where it reaches the maximum `1.0` — the *horizon* — and falls toward 0 as
-`|x| → 0` or `|x| → ∞`. It is exactly `0` at `|x| = 0`, the home point,
-which is the formula's own limit there. (Before #412 the runtime
-special-cased `|x| == 1.0` to entropy `0`, the opposite of the formula's
-value; that special case is gone — see
-[OBSERVER.md](OBSERVER.md#settled-decisions-formerly-rough-edges). `0` and
-`1` are the two ends of the scale, not two names for the same thing.)
-So a value decaying from a large magnitude *toward* 1
-has **rising** entropy — `dH > 0` — and reads `diverging`, not `improving`,
-even though it is "getting smaller":
+Entropy is the binary entropy of `p = 1/(1+|x|)` — highest at `|x| = 1`
+(the *horizon*), falling toward 0 as `|x| → 0` or `|x| → ∞`. On the old
+entropy route this made a value shrinking toward 1 read `diverging`
+(rising H) and a runaway growing from 1 read `improving` (falling H) —
+both artifacts of the signal, not the motion. The value route reads the
+motion:
 
 ```eigenscript
 x is 100.0
 for i in range of 13:
-    x is x * 0.7          # 100 → ~1: entropy climbs 0.10 → ~1.0
-report of x               # "diverging"  (rising information content)
+    x is x * 0.7          # 100 → ~1: steps contracting toward a limit
+report of x               # "improving"
 ```
-
-The mirror case matters more, because it is what a runaway looks like: a
-value *growing* away from 1 has **falling** entropy — `dH < 0` — and reads
-`improving`, the opposite of what is happening to it.
 
 ```eigenscript
 x is 1.0
 for i in range of 13:
-    x is x * 1.43         # 1 → ~105: entropy falls ~1.0 → 0.10
-report of x               # "improving"  (falling information content)
+    x is x * 1.43         # 1 → ~105: non-vanishing same-sign steps
+report of x               # "diverging"
 ```
 
-Both readings are the entropy signal doing exactly what it is defined to
-do; neither is a statement about magnitude. This is why the value channel
-(`report_value of x`) exists, and why `improving` is force-cleared once a
-runaway reaches the saturation ceiling (see the saturation rule above) —
-otherwise the wrong answer merely moves one band over.
+The formula and its horizon property are unchanged in the MEASUREMENT
+(`where is x` at `1.0` is still the maximum) and still classify
+non-numeric bindings; `H(x) ≡ H(1/x) ≡ H(−x)` (#862) remains a blind
+spot of that signal, reachable via `classify of [t, "entropy"]`.
 
-Do not equate "value decreasing" with `improving`/`converging`. The
-observer measures information content, not magnitude; "more determined"
-means lower entropy, which for `|x| > 1` means moving *away* from 1.
+### An iterative residual certifies directly (#861)
 
-### A fast residual settles at `equilibrium`, not `converged`
+A residual that decays into rest now reads `converged` once its window
+settles — the pre-#861 behavior this section used to document (Gauss-
+Seidel's residual pinned at `equilibrium` forever, `loop while not
+converged` running to the cap on a solved system) was the dead zone.
+`dynamics/solve.eigs`' solvers exit through the predicate itself.
 
-`converged` is the strict band — on top of `equilibrium`'s zero-mean motion
-it requires every `|dH| < dh_zero` *and* low entropy across the whole
-window. A value **held** at a low-entropy constant from the start reaches
-it (a value pinned at `0.0` for ten observations reports `converged`). But
-a residual that *decays* into rest does **not**: empirically it reads
-`equilibrium` and stays there — the real Gauss-Seidel residual below holds
-`equilibrium` even once `change == 0`, verified out to iteration 25, long
-after its window has gone quiet. The settling *history*, not just the final
-value, decides `converged` vs `equilibrium` — so for an iterative residual,
-do not wait for `converged`; treat `equilibrium` as settled too. Real
-Gauss-Seidel on a 3×3 system `Ax = b` (`dynamics/solve.eigs`):
+### Mid-swing samples read `oscillating`, then certify
 
-```
-# observing the residual `change`, report per iteration:
-  iter 1   change=0.921875       report=stable
-  iter 4   change=0.00854…       report=stable
-  iter 7   change=1.67e-05       report=stable
-  iter 8   change=2.09e-06       report=equilibrium   <- solved (x ≈ [1,1,1])
-  iter 9+  change → 0            report=equilibrium   (stays equilibrium, even
-                                                       at change == 0 — never
-                                                       reaches "converged")
-```
+A residual swinging toward its limit (PageRank power iteration) reads
+`oscillating` while the swings dominate and certifies once a full window
+sits under the deadband. The pre-#861 flicker — a single spurious
+`equilibrium` at iteration 2, requiring a debounce-and-hold recipe — came
+from the entropy signal's instantaneous fallback; the routed classifier
+does not produce it.
 
-So `loop while not converged` here **never terminates** — it runs to the
-iteration cap on a system solved by iteration 8 (the recipe below fixes
-this).
-
-### An oscillatory residual flickers settled mid-swing
-
-A residual swinging toward its limit (PageRank power iteration) shows a
-*single* `equilibrium` reading mid-swing, well before it is actually
-settled. Real PageRank on a 3-node graph (`dynamics/solve.eigs`):
-
-```
-  iter 2   change=0.1667   report=equilibrium   <- transient! true answer
-                                                    is ~25 iters away
-  iter 4   change=0.0833   report=stable
-  iter 5   change=0.0417   report=stable
-  ...      (stable / equilibrium / improving alternate as it swings) ...
-  iter 27  change=4.07e-05 report=equilibrium   <- genuinely settled
-```
-
-A naive "stop on the first settled reading" quits at iteration 2 with
-`change ≈ 0.17` — completely wrong. The fix is to **debounce**: require the
-settled reading to *hold* for several consecutive iterations; a transient
-blip resets the count.
-
-### Robust convergence-loop recipe
-
-Combine the two fixes — settled = `converged` OR `equilibrium`, plus a hold
-counter. This is exactly what `dynamics/solve.eigs` uses across Jacobi,
-Gauss-Seidel, power iteration, and PageRank (`HOLD = 3`):
+### Convergence-loop recipe
 
 ```eigenscript
-define settled(status) as:
-    if status == "converged":
-        return 1
-    if status == "equilibrium":
-        return 1
-    return 0
-
-hold is 0
-it is 0
-loop while hold < 3:                # require the settled reading to hold 3×
-    # advance the system, then assign the residual you test (`change`) LAST,
-    # immediately before `report` — a bare predicate / report reads the most
-    # recently assigned top-level value (see Inputs: `g_last_observer`), so an
-    # intervening assignment repoints it.
-    change is next_residual of state
-    status is report of change
-    if (settled of status) == 1:
-        hold is hold + 1
-    else:
-        hold is 0
-    it is it + 1
-    if it >= max_iters:             # always keep an absolute cap as a backstop
-        hold is 3
+loop while not (converged of x):   # named form: reads x, whatever else is assigned
+    x is next_step of x
 ```
 
-Use the bare `loop while not converged` only for a value you know converges
-gently and monotonically; for any iterative residual, reach for the
-settled-plus-hold form above.
+Two cases still deserve a guard:
+
+- **Input that may genuinely diverge.** `converged` (correctly) never
+  fires on a runaway. The bare form (`loop while not converged`) carries
+  the observer stall backstop — ~100 quiet iterations end the loop with
+  `__loop_exit__ == "stalled"` — but the **named** form deliberately does
+  not (it must not false-halt on the global alias), so give it an
+  absolute cap:
+
+```eigenscript
+it is 0
+loop while not (converged of x):
+    x is next_step of x
+    it is it + 1
+    if it >= max_iters:
+        throw of "did not settle"
+```
+
+- **Tolerance tighter than the default.** `converged` fires at the
+  deadband (`dh_zero`, default 0.1% relative). For a tighter answer,
+  lower it first: `set_observer_thresholds of [1e-6, 1e-5, 0.1]`.
 
 ## Cost
 

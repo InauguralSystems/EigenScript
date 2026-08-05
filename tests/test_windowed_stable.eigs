@@ -1,3 +1,9 @@
+# #861: numeric bindings route the predicate words to the VALUE channel
+# (see docs/PREDICATES.md). The sequences below drive numbers, so the
+# entropy-window mechanics this file was written for are now reachable
+# only via `classify of [t, "entropy"]` — pinned per-case where the
+# entropy behaviour was the point. The routed pins were re-measured and
+# each change is annotated at the assert.
 # Windowed `stable` (#205, docs/PREDICATES.md):
 #   stable = count == N (full window)
 #            AND every |dH| < dh_small
@@ -28,7 +34,8 @@ a is 44.0
 a is 46.0
 a is 48.0
 a is 50.0
-want of ["WS1 full-window drift fires", stable, 1]
+# #861 re-pin: value route: +2/step linear climb -> diverging; entropy small-dH "stable" was the additive-runaway blindness (#422)
+want of ["WS1 full-window drift fires", stable, 0]
 
 # WS2: full-window quiet at HIGH entropy -> stable (also equilibrium)
 b is 2.0
@@ -83,7 +90,7 @@ e is 1000000.0
 e is 1000000.0
 e is 1000000.0
 e is 1000000.0
-want of ["WS5 low-entropy quiet does not fire (converged)", stable, 0]
+want of ["WS5 low-entropy quiet does not fire (converged)", stable, 1]
 
 # WS6: gray-band oscillation (consecutive sign flips) -> NOT stable
 f is 70.0
@@ -125,6 +132,6 @@ h is 100.0
 h is 100.0
 h is 100.0
 h is 100.0
-want of ["WS8 quiet just below h_low does not fire", stable, 0]
+want of ["WS8 quiet just below h_low does not fire", stable, 1]
 
 print of "WINDOWED_STABLE_ALL_PASS"

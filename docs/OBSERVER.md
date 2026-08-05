@@ -138,8 +138,18 @@ you put the thresholds — see [Resolution](#resolution).
 
 ### Two signals: entropy vs. value (`report` vs. `report_value`)
 
-`report`/the bare predicates classify the trajectory of **`entropy(value)`** —
-the information content, not the number. That is the right signal for "how
+**Since #861 the predicate words and `report` ROUTE: numeric bindings
+answer from the value channel described below; non-numeric bindings (and
+the explicit `classify of [t, "entropy"]`) answer from the entropy
+channel.** The routing exists because of everything this section
+documents — the entropy signal's lossiness for "has the value settled"
+was measured at 19/27 against an analytic convergence corpus, vs 25/27
+for the value channel (`tests/test_convergence_oracle.eigs`). The
+paragraphs below describe the two signals themselves; where they say
+`report` reads entropy, that is now true only for non-numeric bindings.
+
+`report`/the bare predicates historically classified the trajectory of
+**`entropy(value)`** — the information content, not the number. That is the right signal for "how
 *determined* is this value," but it is a *lossy proxy* for "has this value
 *settled*": because `where` is non-monotonic (the watershed below), the
 entropy signal goes flat in mid-magnitude regions, so a real value oscillation
@@ -321,14 +331,14 @@ point, not an accident:
   not a snapshot raises `type_mismatch` — a bare value silently classifying as
   "no trajectory" is exactly the hole the snapshot exists to close.
 
-- **Convergence is detected on the value channel, not entropy.** A
-  monotonically *exploding* value has falling-then-flat entropy, so `report`
-  labels a runaway solver `converged` (measured: `grow` = `x*1.5` for 40 steps
-  → `report` = `converged`). Only `report_value` keeps a converging solver and a
-  diverging one apart — same run reads `moving`. This is the [`report` vs
-  `report_value`](#two-signals-entropy-vs-value-report-vs-report_value)
-  distinction made load-bearing: a contract the entropy signal would silently
-  pass.
+- **Convergence is detected on the value channel — now by every surface
+  (#861).** A monotonically *exploding* value has falling-then-flat
+  entropy, so the old entropy-routed `report` labeled a runaway solver
+  `converged` (measured: `grow` = `x*1.5` for 40 steps). Since #861
+  `report` and the predicate words route numerics to the value channel,
+  so the same run reads `diverging` on every surface — the distinction
+  this bullet used to warn about is now enforced by the runtime rather
+  than left to the caller's channel choice.
 
 - **Contract-convergence means "settled to the step deadband" (`dh_zero`,
   default `1e-3`), not arbitrary precision.** Newton reaches machine-epsilon

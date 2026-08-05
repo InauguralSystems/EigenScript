@@ -1120,14 +1120,18 @@ print of converged
 1
 ```
 
-(The starting value matters: the predicate reads the observed value's
-entropy, which is highest for magnitudes near 1 and low for both tiny
-and huge magnitudes — a loop seeded with an already-low-entropy value
-like `100` converges immediately.)
+For a **numeric** binding the predicates classify the value's own
+trajectory (#861): the observed signal is the relative step
+`Δv/(1+|v|)` — the standard mixed-tolerance stopping criterion, with
+the settle deadband as the tolerance — so the starting value and the
+limit's magnitude do not matter. A loop converging to `5`, `5000` or
+`0.005` certifies identically. Non-numeric bindings (strings,
+containers) classify their entropy trajectory as before; the entropy
+MEASUREMENT (`where is x`) is unchanged for everything.
 
-**Convergence-halting is opt-in.** A `loop while` is auto-halted on
-observer convergence (a settled, high-entropy value for ~100 iterations)
-**only when its condition is observer-based** — i.e. references a
+**Convergence-halting is opt-in.** A `loop while` is auto-halted on a
+quiet observer trajectory (~100 iterations without motion, at any
+entropy) **only when its condition is observer-based** — i.e. references a
 predicate, as in `loop while not converged`. A plain loop whose
 condition is an ordinary expression (`loop while i < n`,
 `loop while not done`) is **never** halted by the observer; it runs until
@@ -1136,9 +1140,15 @@ explicitly armed sandbox budget (`sandbox_run`'s `max_iter`); ordinary
 execution never truncates a loop. This keeps loop termination
 compositional: a plain loop can't be cut short by what its body — or a
 function it calls — happens to assign to the global observer.
+The division of labour (#861): `converged` ends an observer loop when the
+value settles at the deadband; `stalled` ends it when 100 quiet
+iterations pass without certification (a runaway pinned at the
+saturation ceiling, sub-deadband drift); `__loop_exit__` records which
+one happened.
 
-**`report of x`** names the most specific band true of the same entropy
-trajectory, resolving `oscillating` → `diverging` → `improving` →
+**`report of x`** names the most specific band true of the same
+trajectory the predicates read (value channel for numerics, entropy
+otherwise — #861), resolving `oscillating` → `diverging` → `improving` →
 `converged` → `equilibrium` → `stable`. At a full window it agrees with the
 bare predicates by construction: it either names a band whose predicate is
 true, or — when a full window matches none of them — returns `moving`. The
@@ -1222,15 +1232,25 @@ diverging
 0
 ```
 
-**The value channel** (`report_value of x`) classifies the value's own
-trajectory rather than its entropy, over a 10-sample window of relative
-steps `Δv/(1+|v|)` — labels `oscillating`, `diverging`, `converged`,
-`stable`, `moving`, `equilibrium`. Two raw-step rules (#422) run before the
-relative verdicts: non-vanishing same-sign steps are `diverging` (an
-additive runaway whose relative step vanishes is still unbounded), and
-non-vanishing alternating steps are `oscillating` (a perpetual oscillation
-below the relative deadband is still an oscillation); decaying steps settle
-as usual.
+**The value channel** (`report_value of x`) is, since #861, the same
+classifier the predicate words and `report` use on numeric bindings —
+the two surfaces cannot disagree about one trajectory. Over a 10-sample
+window of relative steps `Δv/(1+|v|)`: `converged` is a full window all
+under the settle deadband; `stable` all under the small-motion band;
+`equilibrium` zero-mean, variance under deadband²; `improving` monotone
+steps contracting geometrically (a summable tail — genuinely closing on
+a limit); `diverging` the #422 raw rule (non-vanishing same-sign steps —
+an additive runaway whose relative step vanishes is still unbounded) or
+a value at the saturation ceiling; `oscillating` deadband sign-flips,
+non-vanishing alternation (a perpetual oscillation below the deadband is
+still an oscillation), or window-scale folding (net travel small against
+path length — a sinusoid sampled slower than its half-period).
+`converged` is a **stopping criterion, not a proof**: vanishing steps do
+not imply a limit (the harmonic series' steps vanish; its sum does not
+converge), so it means *settled at the deadband* — the strongest claim a
+finite window supports. The deadband is the tolerance knob
+(`set_observer_thresholds`); the structure rules are deliberately
+threshold-free.
 
 **Trajectories cross call boundaries as snapshots** (#421). Observer state
 is binding-identity — a value passed to a function arrives with no history —

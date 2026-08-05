@@ -326,9 +326,15 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))
 sqrt(2) = 1.414213562373095
 ```
 
-`converged` reads the loop's last-assigned value and is true once its trend has
-flattened. (Use it inside a function so the loop gets a fresh binding to watch —
-see `examples/observer_vs_boilerplate.eigs`.) The next section is *why* this
+`converged` reads the loop's last-assigned value and fires once a full
+window of its relative steps sits under the settle deadband — the standard
+mixed-tolerance stopping criterion, built in (#861). This run exits
+through the predicate itself in 13 iterations; the deadband is the
+tolerance (`set_observer_thresholds`), and an input that genuinely
+diverges ends via the observer's stall backstop with
+`__loop_exit__ == "stalled"` instead of hanging or lying. (Use the loop
+inside a function so it gets a fresh binding to watch — see
+`examples/observer_vs_boilerplate.eigs`.) The next section is *why* this
 works; you can reach for it long before you need the theory.
 
 ## What has no equivalent elsewhere: the observer

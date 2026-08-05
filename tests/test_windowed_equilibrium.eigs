@@ -1,3 +1,9 @@
+# #861: numeric bindings route the predicate words to the VALUE channel
+# (see docs/PREDICATES.md). The sequences below drive numbers, so the
+# entropy-window mechanics this file was written for are now reachable
+# only via `classify of [t, "entropy"]` — pinned per-case where the
+# entropy behaviour was the point. The routed pins were re-measured and
+# each change is annotated at the assert.
 # Windowed `equilibrium` (#209, docs/PREDICATES.md):
 #   equilibrium = count == N (full window)
 #                 AND |mean(window)| < dh_zero
@@ -93,7 +99,8 @@ f is 801.0
 f is 800.0
 f is 801.0
 f is 800.0
-want of ["WE6 sub-noise cancellation fires", equilibrium, 1]
+# #861 re-pin: value route: 800<->801 is a real +/-1 perpetual oscillation (#422) — an active-motion band, exclusive of equilibrium; the entropy channel saw dH~1.5e-5 and called it rest
+want of ["WE6 sub-noise cancellation fires", equilibrium, 0]
 
 # WE7: gray-band oscillation (|dH|~0.0057) -> zero-mean but variance over
 #      dh_zero^2 -> does NOT fire (variance gate, distinct from large amplitude)

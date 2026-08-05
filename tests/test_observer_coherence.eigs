@@ -34,8 +34,14 @@ i is 0
 loop while i < 12:
     y is 1.0
     i is i + 1
-check of ["flat run AT 1.0 is equilibrium, not converged", (report of y) == "equilibrium"]
-check of ["converged predicate stays false at the horizon", (converged of y) == 0]
+# #861: a constant at 1.0 is SETTLED — the value route certifies it like any
+# other constant. #412's horizon insight survives where it belongs: in the
+# MEASUREMENT — entropy(1.0) is still the formula maximum (checked below) —
+# but it no longer vetoes the settle verdict, which is about motion, not
+# information content.
+check of ["flat run AT 1.0 certifies converged (value route)", (report of y) == "converged"]
+check of ["converged predicate fires at the horizon too", (converged of y) == 1]
+check of ["the horizon property lives in the measurement: H(1.0) is max", (where is y) == 1.0]
 
 # a genuine convergence to the home region still classifies converged
 c is 100.0

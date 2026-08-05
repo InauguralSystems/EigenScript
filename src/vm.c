@@ -1728,8 +1728,24 @@ int eigs_loop_stall_step(Env *e) {
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
         double dH, ent;
+        /* #861: quiet trajectory at ANY entropy. The old `ent >= h_low`
+         * clause existed because a quiet LOW-entropy trajectory used to be
+         * `converged`'s territory — the entropy-channel predicate fired
+         * there (often wrongly: that was the [77, 1e307] permissive region)
+         * and the stall only needed to cover the high-entropy remainder.
+         * With the predicates routed to the value channel, `converged`
+         * fires exactly where the VALUE settles, at any magnitude — and a
+         * runaway that saturates (or drifts forever below the deadband)
+         * now correctly never certifies. Those trajectories are entropy-
+         * quiet at LOW entropy, which the old clause excluded, so a bare
+         * `loop while not converged` around a runaway would spin forever
+         * (#772 removed the unconditional cap). The honest contract:
+         * `converged` ends the loop when the value settles; `stalled` ends
+         * it when the observer has watched 100 quiet iterations without
+         * certifying — and __loop_exit__ says which one happened. */
         if (obs_stall_trajectory(&dH, &ent)
-            && fabs(dH) < g_obs_dh_zero && ent >= g_obs_h_low) {
+            && fabs(dH) < g_obs_dh_zero) {
+            (void)ent;
             g_loop_stall_count++;
             if (g_loop_stall_count >= 100) {
                 g_loop_exit_reason = "stalled";
@@ -5198,8 +5214,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int should_exit = 0;
         if (g_unobserved_depth == 0) {
             double dH, ent;
+            /* #861: quiet at ANY entropy — mirrors eigs_loop_stall_step
+             * (see the rationale there). The routed `converged` now owns
+             * every genuine settle; the stall is the catch-all for quiet
+             * trajectories the predicate refuses (saturated runaways,
+             * sub-deadband drift), which live at LOW entropy. */
             if (obs_stall_trajectory(&dH, &ent)
-                && fabs(dH) < g_obs_dh_zero && ent >= g_obs_h_low) {
+                && fabs(dH) < g_obs_dh_zero) {
+                (void)ent;
                 g_loop_stall_count++;
                 if (g_loop_stall_count >= 100) {
                     g_loop_exit_reason = "stalled";

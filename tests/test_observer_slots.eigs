@@ -38,7 +38,10 @@ loop while i < 14:
     observer_slots.feed of [3, v]
     v is v * 0.6
     i is i + 1
-check of ["entropy-rising signal diverges", observer_slots.is_diverging of (3), 1]
+# #861: v*0.6 shrinking toward ~0.32 is a CONTRACTING approach — the value
+# route reads improving, not diverging (the old expectation was the
+# entropy-rising artifact: H grows as |x| falls toward 1).
+check of ["shrinking-toward-1 signal is not diverging", observer_slots.is_diverging of (3), 0]
 
 # independence: slot 0's verdict survived slot 1's activity
 check of ["slot 0 verdict independent of slot 1", observer_slots.is_stable of (0), 1]
@@ -70,12 +73,14 @@ loop while i < 14:
     i is i + 1
 check of ["verdict reads the slot regime (improving)", observer_slots.verdict of (4), "improving"]
 check of ["verdict agrees with is_diverging (0)", observer_slots.is_diverging of (4), 0]
-# slot 5: wedged constant -> equilibrium, which also satisfies stable
+# slot 5: wedged constant -> converged (#861: the value route certifies a
+# settled value at ANY magnitude — 9.0 was in the entropy dead zone, where
+# `converged` could never fire and "equilibrium" was the strongest label)
 i is 0
 loop while i < 14:
     observer_slots.feed of [5, 9.0]
     i is i + 1
-check of ["verdict on a wedged constant is equilibrium", observer_slots.verdict of (5), "equilibrium"]
+check of ["verdict on a wedged constant is converged", observer_slots.verdict of (5), "converged"]
 check of ["...and that same slot reads stable", observer_slots.is_stable of (5), 1]
 vcaught is 0
 try:

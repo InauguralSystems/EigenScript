@@ -344,7 +344,7 @@ RA_OUTPUT=$(./eigenscript ../tests/test_report_alignment.eigs 2>&1)
 
 RA1_D=$(echo "$RA_OUTPUT" | grep -A2 'RA1:' | tail -2 | head -1)
 RA1_R=$(echo "$RA_OUTPUT" | grep -A2 'RA1:' | tail -1)
-check "RA1 diverging predicate" "$RA1_D" "1"
+check "RA1 diverging predicate" "$RA1_D" "1"     # #861: linear runaway, raw same-sign
 check "RA1 report=diverging" "$RA1_R" "diverging"
 
 RA2_I=$(echo "$RA_OUTPUT" | grep -A2 'RA2:' | tail -2 | head -1)
@@ -364,52 +364,48 @@ check "RA4 report=oscillating" "$RA4_R" "oscillating"
 
 RA5_E=$(echo "$RA_OUTPUT" | grep -A2 'RA5:' | tail -2 | head -1)
 RA5_R=$(echo "$RA_OUTPUT" | grep -A2 'RA5:' | tail -1)
-check "RA5 equilibrium predicate" "$RA5_E" "1"
+check "RA5 equilibrium predicate" "$RA5_E" "1"   # #861: balanced jitter, NOT converged
 check "RA5 report=equilibrium" "$RA5_R" "equilibrium"
 echo ""
 
-echo "[6/15] Halting: Bounded Descent (4 checks)"
+echo "[6/15] Halting: Runaway Loop Contract (4 checks, #861)"
 HD_OUTPUT=$(./eigenscript ../tests/test_halting_descent.eigs 2>&1)
 
+# #861: the runaway loop's honest contract — the stall backstop ends it
+# after ~100 quiet-entropy iterations (was: exit at ~13 via the entropy
+# defect certifying a doubling runaway as converged).
 HD_ITERS=$(echo "$HD_OUTPUT" | grep -A1 'HD1:' | tail -1)
 TOTAL=$((TOTAL + 1))
-if [ -n "$HD_ITERS" ] && [ "$HD_ITERS" -gt 0 ] 2>/dev/null && [ "$HD_ITERS" -lt 50 ] 2>/dev/null; then
-    echo "  PASS: HD1 loop terminated in $HD_ITERS iterations"
+if [ -n "$HD_ITERS" ] && [ "$HD_ITERS" -ge 100 ] 2>/dev/null && [ "$HD_ITERS" -lt 150 ] 2>/dev/null; then
+    echo "  PASS: HD1 runaway loop stalled out in $HD_ITERS iterations"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: HD1 loop iteration count (got '$HD_ITERS')"
+    echo "  FAIL: HD1 loop iteration count (got '$HD_ITERS', want 100..149)"
     FAIL=$((FAIL + 1))
 fi
 
 HD_REPORT=$(echo "$HD_OUTPUT" | grep -A2 'HD1:' | tail -1)
-check "HD2 final report=converged" "$HD_REPORT" "converged"
+check "HD2 final report=diverging" "$HD_REPORT" "diverging"
 
-HD_H=$(echo "$HD_OUTPUT" | grep -A3 'HD1:' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ -n "$HD_H" ]; then
-    echo "  PASS: HD3 final entropy reported ($HD_H)"
-    PASS=$((PASS + 1))
-else
-    echo "  FAIL: HD3 final entropy empty"
-    FAIL=$((FAIL + 1))
-fi
+HD_EXIT=$(echo "$HD_OUTPUT" | grep -A3 'HD1:' | tail -1)
+check "HD3 __loop_exit__=stalled" "$HD_EXIT" "stalled"
 
 HD_DH=$(echo "$HD_OUTPUT" | grep -A4 'HD1:' | tail -1)
 TOTAL=$((TOTAL + 1))
-if echo "$HD_DH" | grep -q '^-'; then
-    echo "  PASS: HD4 final dH is negative ($HD_DH)"
+if [ -n "$HD_DH" ]; then
+    echo "  PASS: HD4 final dH reported ($HD_DH)"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: HD4 final dH should be negative (got '$HD_DH')"
+    echo "  FAIL: HD4 final dH empty"
     FAIL=$((FAIL + 1))
 fi
 echo ""
 
-echo "[7/15] Halting: Stall Detection (5 checks)"
+echo "[7/15] Halting: Settled Constant (5 checks, #861)"
 HS_OUTPUT=$(./eigenscript ../tests/test_halting_stall.eigs 2>&1)
 
 HS_CONV=$(echo "$HS_OUTPUT" | grep -A1 'HS1:' | tail -1)
-check "HS1 converged=0 at moderate H" "$HS_CONV" "0"
+check "HS1 converged=1 at moderate H (#861: dead zone gone)" "$HS_CONV" "1"
 
 HS_EQ=$(echo "$HS_OUTPUT" | grep -A2 'HS1:' | tail -1)
 check "HS2 equilibrium=1 at dH~0" "$HS_EQ" "1"
@@ -428,20 +424,20 @@ HS_DH=$(echo "$HS_OUTPUT" | grep -A2 'HS2:' | tail -1)
 check "HS4 dH~0" "$HS_DH" "0"
 
 HS_REPORT=$(echo "$HS_OUTPUT" | grep -A3 'HS2:' | tail -1)
-check "HS5 report=equilibrium" "$HS_REPORT" "equilibrium"
+check "HS5 report=converged (#861)" "$HS_REPORT" "converged"
 echo ""
 
 echo "[8/15] Stable Band (4 checks)"
 SB_OUTPUT=$(./eigenscript ../tests/test_stable_band.eigs 2>&1)
 
 SB1_S=$(echo "$SB_OUTPUT" | grep -A1 'SB1:' | tail -1)
-check "SB1 stable=1" "$SB1_S" "1"
+check "SB1 stable=0 (#861: linear drift is diverging)" "$SB1_S" "0"
 
 SB1_R=$(echo "$SB_OUTPUT" | grep -A2 'SB1:' | tail -1)
-check "SB1 report=stable" "$SB1_R" "stable"
+check "SB1 report=diverging (#861)" "$SB1_R" "diverging"
 
 SB2_S=$(echo "$SB_OUTPUT" | grep -A1 'SB2:' | tail -1)
-check "SB2 stable=0 (converged)" "$SB2_S" "0"
+check "SB2 stable=1 (#861: converged implies stable)" "$SB2_S" "1"
 
 SB2_R=$(echo "$SB_OUTPUT" | grep -A2 'SB2:' | tail -1)
 check "SB2 report=converged" "$SB2_R" "converged"
@@ -456,7 +452,7 @@ check "WC2 full N quiet window converges" "$WC2" "1"
 WC3=$(echo "$WC_OUTPUT" | grep -A1 'WC3:' | tail -1)
 check "WC3 single transient breaks convergence" "$WC3" "0"
 WC4=$(echo "$WC_OUTPUT" | grep -A2 'WC4:' | tail -1)
-check "WC4 newton sqrt reaches equilibrium not converged" "$WC4" "converged=0 equilibrium=1"
+check "WC4 newton sqrt CERTIFIES converged (#861: dead zone gone)" "$WC4" "converged=1 equilibrium=1"
 WC5=$(echo "$WC_OUTPUT" | grep -A1 'WC5:' | tail -1)
 check "WC5 rebind-from-temp loop converges (issue #260)" "$WC5" "converged=1 equilibrium=1"
 echo ""
@@ -540,7 +536,7 @@ echo "[11/15] Loop Exit Reason (3 checks)"
 LE_OUTPUT=$(./eigenscript ../tests/test_loop_exit.eigs 2>&1)
 
 LE1_EXIT=$(echo "$LE_OUTPUT" | grep -A1 'LE1:' | tail -1)
-check "LE1 exit=normal" "$LE1_EXIT" "normal"
+check "LE1 runaway exit=stalled (#861: false-converged exit gone)" "$LE1_EXIT" "stalled"
 
 LE1_ITERS=$(echo "$LE_OUTPUT" | grep -A2 'LE1:' | tail -1)
 TOTAL=$((TOTAL + 1))
@@ -553,7 +549,7 @@ else
 fi
 
 LE2_EXIT=$(echo "$LE_OUTPUT" | grep -A1 'LE2:' | tail -1)
-check "LE2 exit=stalled" "$LE2_EXIT" "stalled"
+check "LE2 constant exit=normal (#861: converged fires, no stall needed)" "$LE2_EXIT" "normal"
 echo ""
 
 echo "[Structural Equality] (15 checks)"

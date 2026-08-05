@@ -1,6 +1,9 @@
 print of "=== LOOP EXIT TEST ==="
 
-print of "--- LE1: Normal exit ---"
+# #861: the doubling loop is a genuine runaway — it now exits via the STALL
+# backstop (the old "normal" exit was the entropy defect certifying it as
+# converged). The constant loop in LE2 is the one that exits normally now.
+print of "--- LE1: Runaway exits via stall ---"
 x is 1
 x is 100
 loop while not converged:
@@ -9,7 +12,7 @@ print of __loop_exit__
 print of __loop_iterations__
 
 print of ""
-print of "--- LE2: Stall exit ---"
+print of "--- LE2: Constant certifies converged, exits normally ---"
 y is 42
 y is 42
 loop while not converged:

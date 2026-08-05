@@ -93,11 +93,13 @@ echo "$OUT" | grep -Eq '^msg = "hello"  \(1 assign\)' \
 
 # ---- 5. THE ACCEPTANCE CHECK (#418): step back and watch the label flip.
 #         At the end conv is [converged]; 40 steps earlier it is still
-#         mid-descent -> [moving]. Same binding, same tape, different moment.
+#         mid-descent -> [improving] (#861: the halving steps are contracting,
+#         which the routed classifier names; pre-#861 the mid-flight label
+#         was the residual "moving"). Same binding, same tape, different moment.
 OUT=$(drive "s 200" "b 40" p q)
-echo "$OUT" | grep -Eq "^conv = .*\[moving\]" \
-    && ok "stepping back flips conv's label converged -> moving" \
-    || fail "stepping back flips conv's label converged -> moving"
+echo "$OUT" | grep -Eq "^conv = .*\[improving\]" \
+    && ok "stepping back flips conv's label converged -> improving" \
+    || fail "stepping back flips conv's label converged -> improving"
 
 # ---- 6. breakpoints: br + c stops only on that line; rc goes back
 OUT=$(drive "br 7" c c rc q)
@@ -116,7 +118,7 @@ echo "$OUT" | grep -q "line 8" && echo "$OUT" | grep -q "line 1" \
 OUT=$(drive "s 200" "t conv" q)
 echo "$OUT" | grep -q "^conv: 31 assigns" \
     && echo "$OUT" | grep -q "earlier assign(s) elided" \
-    && echo "$OUT" | grep -Eq "\[moving\]" \
+    && echo "$OUT" | grep -Eq "\[improving\]" \
     && echo "$OUT" | grep -Eq "\[converged\]" \
     && ok "trajectory view shows running classification" \
     || fail "trajectory view shows running classification"

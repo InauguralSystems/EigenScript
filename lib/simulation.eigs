@@ -44,14 +44,21 @@ define simulate_to_equilibrium(step_fn, state, max_steps) as:
 
 # ---- analyze_stability: classify behavior of a time series via observer ----
 define analyze_stability(time_series) as:
-    tracker is 0
+    # #861: seed from the first element — `tracker is 0` planted an artificial
+    # 0 -> first-value jump whose step dominated the whole 10-sample window,
+    # so a constant series read "moving" for its entire life.
+    tracker is time_series[0]
     statuses is []
 
-    for i in range of (len of time_series):
+    local i is 1
+    loop while i < (len of time_series):
         tracker is time_series[i]
         append of [statuses, report of tracker]
+        i is i + 1
 
-    phase_counts is {"improving": 0, "diverging": 0, "stable": 0, "equilibrium": 0, "oscillating": 0, "converged": 0}
+    # "moving" (#735) and "opaque" (#708) postdate this map; without them a
+    # label the observer actually answers was silently dropped from the vote.
+    phase_counts is {"improving": 0, "diverging": 0, "stable": 0, "equilibrium": 0, "oscillating": 0, "converged": 0, "moving": 0, "opaque": 0}
     for i in range of (len of statuses):
         s is statuses[i]
         if has_key of [phase_counts, s]:
