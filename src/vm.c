@@ -865,7 +865,11 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * the allocation reach abort(). Cumulative over the run (snippets are short, so
  * cumulative ~= peak); generous default, overridable via sandbox_run's max_bytes
  * arg. No-op outside a budgeted sandbox (active=0), so normal runs pay nothing.
- * Plain process globals: sandbox_run is synchronous and single-threaded.
+ * The three counters are per-THREAD (EigsThread fields reached through the
+ * g_sandbox_* macros), not the plain process globals this note used to claim:
+ * two threads — or two EigsStates — running sandbox_run concurrently keep
+ * separate budgets, and nothing here needs a lock. The save/restore around the
+ * run is what makes NESTING compose, not what makes it thread-safe.
  *
  * Charged at: zeros, fill, buffer, range, concat — the size-controlled list/
  * tensor allocators (the issue's vectors) — plus the zlib codecs (inflate/
