@@ -239,6 +239,37 @@ static inline void eigs_observe_safepoint(Env *e) {
 /* Classify an observer slot's trajectory by predicate kind (0..5), matching the
  * bare OP_PREDICATE dispatch. Shared by the named OP_PREDICATE_SLOT/NAME ops,
  * which read a SPECIFIC binding's slot instead of the global last-observed one. */
+/* #871: a predicate asked inside an `unobserved:` block cannot be answered.
+ *
+ * The block suppresses observer updates, and its depth is DYNAMIC — it covers
+ * every function called from inside it. So a caller adding a performance
+ * annotation silently changed a callee's answer (a settle loop returned -1
+ * instead of 22), and a bare `loop while not converged` inside one never
+ * terminated: the predicate could not become true, and the stall backstop that
+ * would have ended the loop is gated on the same depth.
+ *
+ * Returning `false` forever is the worst available answer — the predicate is
+ * being asked a question the runtime structurally cannot answer, so it says
+ * so. This is checked in the opcode handlers rather than inside
+ * vm_slot_predicate because a binding assigned inside the block has no `used`
+ * slot at all, so the classifier is never reached on exactly the path that
+ * hangs. Returns 1 when it raised.
+ *
+ * NOT fixed by ungating the stall backstop instead: that check treats a frozen
+ * trajectory as "quiet", so ungating it would exit every legitimate
+ * `unobserved:` loop after 100 iterations — including the accumulator loop
+ * README.md:189 measures at 2.7x. With the predicate raising, the hang is
+ * unreachable and the backstop's gate is no longer load-bearing here. */
+static int vm_pred_unobserved(uint16_t kind, int line) {
+    if (g_unobserved_depth == 0) return 0;
+    rt_error(EK_VALUE, line,
+             "%s: the observer is off inside an 'unobserved:' block, so this "
+             "predicate has no trajectory to classify — the block's depth is "
+             "dynamic, so it also covers functions called from inside it",
+             eigs_predicate_name(kind));
+    return 1;
+}
+
 static int vm_slot_predicate(const ObserverSlot *s, uint16_t kind) {
     switch (kind) {
     case 0: return observer_slot_converged(s);
@@ -2703,6 +2734,8 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
                 frame->try_count--; \
                 uint8_t *_catch_ip = frame->try_handlers[frame->try_count].catch_ip; \
                 int _catch_bp = frame->try_handlers[frame->try_count].catch_bp; \
+                g_unobserved_depth = \
+                    frame->try_handlers[frame->try_count].unobs_depth;  /* #871 */ \
                 frame->is_try = (frame->try_count > 0); \
                 while (g_vm.sp > _catch_bp) val_decref(vm_pop()); \
                 vm_push(vm_take_error_value()); \
@@ -4571,6 +4604,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         g_try_depth++;
         frame->try_handlers[frame->try_count].catch_ip = ip + catch_offset;
         frame->try_handlers[frame->try_count].catch_bp = g_vm.sp;
+        frame->try_handlers[frame->try_count].unobs_depth = g_unobserved_depth;  /* #871 */
         frame->try_count++;
         frame->is_try = 1;
         DISPATCH();
@@ -5131,6 +5165,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * only on the slot, an operand with no live slot has no trajectory →
          * the predicate is false. */
         uint16_t kind = read_u16(ip); ip += 2;
+        if (vm_pred_unobserved(kind, current_line)) {     /* #871 */
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
         int result = 0;
         const ObserverSlot *s =
             vm_slot_value_opaque(g_last_obs_slot_env, g_last_obs_slot_idx)
@@ -5151,6 +5189,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * OP_PREDICATE reads. An unobserved/empty slot is false. */
         uint16_t kind = read_u16(ip); ip += 2;
         uint16_t slot = read_u16(ip); ip += 2;
+        if (vm_pred_unobserved(kind, current_line)) {     /* #871 */
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
         Env *e = frame->fn_env;
         int result = 0;
         const ObserverSlot *ps_l = env_obs_slot(e, (int)slot);
@@ -5167,6 +5209,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * its slot (mirrors REPORT_NAME). Undefined name raises like GET_NAME. */
         uint16_t kind = read_u16(ip); ip += 2;
         uint16_t name_idx = read_u16(ip); ip += 2;
+        if (vm_pred_unobserved(kind, current_line)) {     /* #871 */
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
         const char *name = chunk->const_interns[name_idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }

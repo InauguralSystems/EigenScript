@@ -1277,7 +1277,11 @@ diverging
 ```
 
 `unobserved:` blocks (and `loop` bodies inside them) skip observer
-updates entirely — use them for hot numeric loops:
+updates entirely — use them for hot numeric loops. The depth is
+dynamic, so it covers functions called from inside the block; an
+observer predicate asked anywhere under one **raises**, because there is
+no trajectory for it to classify (a performance annotation must not
+change an answer):
 
 ```eigenscript
 total is 0

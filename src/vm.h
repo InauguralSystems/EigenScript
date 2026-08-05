@@ -461,7 +461,12 @@ typedef struct {
      * compiler rejects source that nests deeper than MAX_TRY_HANDLERS; the
      * VM re-checks because untrusted chunks (vm_run_bytecode / sandbox_run)
      * reach TRY_BEGIN without going through the compiler at all (#726). */
-    struct { uint8_t *catch_ip; int catch_bp; } try_handlers[MAX_TRY_HANDLERS];
+    /* #871: unobs_depth is g_unobserved_depth as it stood when this handler
+     * was registered. An error unwinding INTO the catch skips every
+     * OP_UNOBSERVED_END between the raise and here, so without restoring it
+     * the runtime depth stays elevated and the observer silently stops
+     * recording for the rest of the process. */
+    struct { uint8_t *catch_ip; int catch_bp; int unobs_depth; } try_handlers[MAX_TRY_HANDLERS];
     int        try_count;       /* number of active try handlers */
     /* Saved loop-stall globals (so a callee's loops don't inherit caller's
      * accumulated stall count / iteration count). Scoped per call frame. */

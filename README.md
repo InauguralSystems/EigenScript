@@ -194,6 +194,24 @@ nothing; `--lint` flags a block with no plain-variable assignments as
 W020. Note the depth is global rather than lexical: a function *called*
 inside the block runs unobserved too.
 
+Because the depth is dynamic, an interrogation inside the block — or
+inside anything it calls — has no trajectory to classify. Rather than
+answer `false` forever, **an observer predicate raises inside an
+`unobserved:` block** (#871):
+
+```
+Error line 4: converged: the observer is off inside an 'unobserved:'
+block, so this predicate has no trajectory to classify — the block's
+depth is dynamic, so it also covers functions called from inside it
+```
+
+That is what keeps the annotation a *performance* knob: it cannot
+silently change an answer. Before it raised, wrapping a call in
+`unobserved:` made a settle loop return `-1` instead of `22`, and a bare
+`loop while not converged` inside one never terminated at all — the
+predicate could not become true, and the stall backstop that would have
+ended the loop is gated on the same depth.
+
 ### Tensor Math
 
 ```eigenscript
