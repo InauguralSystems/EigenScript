@@ -107,6 +107,30 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **JSON is a lossless round-trip for every number (#875).** The
+  contract promises `num of (str of x) == x`. That held for `str of` and
+  for nothing else: `json_encode`, `json_build` and `json_path` each
+  carried their own `%.15g` — one digit short of the 17 a double can
+  need — so a value written as JSON and read back was a **different
+  number**, silently, in the primary serialization format
+  (`3.141592653589793` → `3.14159265358979`). Each also had its own
+  integer fast path with its own bound (2^31, 1e9, 1e9), so every
+  integer between it and 2^53 went through `%.15g` too: an ID of
+  `1234567890123456` encoded as `1.23456789012346e+15` and decoded as
+  `1234567890123460`. There were **four** hand-copies of the
+  number→text rule (the fourth in the SIGUSR1 observer dump); there is
+  now one, `eigs_num_text`, and `str of` calls it as well — so
+  `json_encode of x == str of x` for every number and a fifth copy
+  cannot appear with a fifth rule. One output change falls out of the
+  unification: an exact integer below 2^53 renders bare rather than in
+  exponent form, so `json_build of ["v", 1.23e15]` is now
+  `{"v": 1230000000000000}` — 16 characters, matching `str of`, and
+  still nothing like the 22-char fixed-point blob #725 removed.
+  `tests/test_json_roundtrip.eigs` pins all three encoders against
+  `str of` over the hard doubles and the exact-integer band, validated
+  with a planted fault in each half (the precision escalation and the
+  integer bound are independently load-bearing).
+
 - **chart renders 1.5× faster at high point counts (#828).** The series
   hot loop called `_chart_map` — a fresh 2-element list — per plotted
   point per frame; at 4,000 points that allocation was ~37% of the frame

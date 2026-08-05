@@ -1841,6 +1841,38 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
 
 int values_equal(Value *a, Value *b) { return values_equal_impl(a, b, 0); }
 
+/* THE number->text rule, in one place (#875).
+ *
+ * LANGUAGE_CONTRACT.md:108 promises `num of (str of x) == x`. That held for
+ * `str of` and for nothing else: the three JSON encoders each carried their
+ * own `%.15g`, one digit short of the 17 a double needs, so a value written
+ * as JSON and read back was a DIFFERENT number — silently, in the primary
+ * serialization format. They also each had their own integer fast path with
+ * a different bound (2^31, 1e9, 1e9), so every integer between that bound
+ * and 2^53 went through `%.15g` too: 1234567890123456 encoded as
+ * 1.23456789012346e+15 and decoded as 1234567890123460.
+ *
+ * Every producer of number text now calls this, so a fourth copy cannot
+ * appear with a fourth rule. Writes at most 32 bytes. */
+void eigs_num_text(char *buf, size_t nbuf, double n) {
+    /* Exact integers up to 2^53 (the largest integer all doubles represent
+     * exactly) print without a decimal point or exponent. The magnitude test
+     * runs BEFORE the cast — casting an out-of-range double is UB (#816). */
+    if (fabs(n) < 9007199254740992.0 && n == (long long)n) {
+        snprintf(buf, nbuf, "%lld", (long long)n);
+        return;
+    }
+    /* Otherwise the shortest representation that round-trips: try 15..17
+     * significant digits and stop at the first that parses back to the same
+     * double. %.6g (the old `str of` default) silently truncated every float
+     * to 6 figures — lossy for the numerical/STEM workloads this language
+     * targets — and %.15g loses the 17th digit a double can need. */
+    for (int prec = 15; prec <= 17; prec++) {
+        snprintf(buf, nbuf, "%.*g", prec, n);
+        if (strtod(buf, NULL) == n) return;
+    }
+}
+
 char* value_to_string(Value *v) {
     if (!v) return xstrdup("null");
     if (g_vts_depth > 64) return xstrdup("[...]");
@@ -1848,22 +1880,7 @@ char* value_to_string(Value *v) {
     switch (v->type) {
         case VAL_NULL: return xstrdup("null");
         case VAL_NUM: {
-            double n = v->data.num;
-            /* Exact integers up to 2^53 (the largest integer all doubles
-             * represent exactly) print without a decimal point or exponent. */
-            if (fabs(n) < 9007199254740992.0 && n == (long long)n) {
-                snprintf(buf, sizeof(buf), "%lld", (long long)n);
-            } else {
-                /* Shortest representation that round-trips: try 15..17
-                 * significant digits and stop at the first that parses back
-                 * to the same double. %.6g (the old default) silently
-                 * truncated every float to 6 figures — lossy for the
-                 * numerical/STEM workloads this language targets. */
-                for (int prec = 15; prec <= 17; prec++) {
-                    snprintf(buf, sizeof(buf), "%.*g", prec, n);
-                    if (strtod(buf, NULL) == n) break;
-                }
-            }
+            eigs_num_text(buf, sizeof(buf), v->data.num);
             return xstrdup(buf);
         }
         case VAL_STR: return xstrdup(v->data.str);

@@ -1172,6 +1172,10 @@ int is_truthy(Value *v);
  * identity for functions/builtins; no cross-type coercion). */
 int values_equal(Value *a, Value *b);
 char* value_to_string(Value *v);
+/* #875: THE number->text rule. Every producer of number text calls this —
+ * `str of`, all three JSON encoders, the SIGUSR1 observer dump — so a copy
+ * with a different precision cannot reappear. Needs 32 bytes. */
+void eigs_num_text(char *buf, size_t nbuf, double n);
 void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 

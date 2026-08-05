@@ -73,20 +73,10 @@ void eigs_sigusr1_handler(int sig) {
     g_eigs_sigusr1_pending = 1;
 }
 
-/* Number formatting mirrors value_to_string's VAL_NUM case: exact integers
- * print bare, anything else shortest round-trip %.15g..%.17g. The range
- * check runs BEFORE the long long cast — casting an out-of-range double is
- * UB and this path sees arbitrary user values under UBSan. */
+/* #875: the shared number->text rule (eigs_num_text) — this was a fourth
+ * hand-copy of it. Allocation-free, as this path requires. */
 static void obs_dump_num(double n, char *buf, size_t nbuf) {
-    if (fabs(n) < 9007199254740992.0 && n == (long long)n) {
-        snprintf(buf, nbuf, "%lld", (long long)n);
-    } else {
-        for (int prec = 15; prec <= 17; prec++) {
-            snprintf(buf, nbuf, "%.*g", prec, n);
-            double back = strtod(buf, NULL);
-            if (memcmp(&back, &n, sizeof back) == 0) break;
-        }
-    }
+    eigs_num_text(buf, nbuf, n);
 }
 
 /* Compact, bounded rendering of a slot's value: numbers inline, strings
