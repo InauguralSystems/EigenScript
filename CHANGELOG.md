@@ -149,6 +149,35 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **`null.field` and `null["k"]` raise instead of yielding `null`
+  (#872).** The contract makes dict-miss-returns-`null` a deliberate
+  decision — a missing key is a lookup miss, not a logic error — but
+  that rationale covers a *dict*, and `null` was the one non-dict type
+  on which field access silently succeeded. So a typo'd config path
+  propagated through arbitrary depth (`cfg.databse.host` → `null` →
+  `null`) and surfaced somewhere unrelated, or nowhere. Walking through
+  a miss now fails at the miss. A dict's own miss is unchanged and still
+  `null`, on purpose. Fifteen access sites in `vm.c` carried the
+  `!= VAL_NULL` exemption; all of them are gone, and the full suite
+  passes unchanged — nothing depended on the absorption.
+
+- **A discarded interrogative is a compile error (#869).** `what is 42`
+  reads as an assignment, parses as a question about the literal `42`,
+  and had **no effect at all**: the program ran to completion at rc=0
+  with nothing on stderr. Only `--lint` caught it, and `what`, `when`
+  and `where` are plausible variable names in exactly the domains this
+  language targets. Every neighbouring mistake is loud — an unresolved
+  name is fatal, `break` outside a loop is a compile error — so this was
+  the odd one out.
+  The check keys on the **discard**, not on the syntax, which is what
+  makes it safe: the REPL and `eval` compile a unit whose last statement
+  *is* the result, so `what is x` typed at the REPL still answers `=> 5`
+  and interrogatives in expression position are untouched. Only a value
+  nobody can read is refused. (A discarded interrogative as a unit's
+  final statement is therefore still lint-only.) The interrogative word
+  table is now shared between lint and the compiler rather than
+  duplicated.
+
 - **JSON is a lossless round-trip for every number (#875).** The
   contract promises `num of (str of x) == x`. That held for `str of` and
   for nothing else: `json_encode`, `json_build` and `json_path` each
@@ -269,6 +298,12 @@ All notable changes to EigenScript are documented here.
   both now prints a one-line stderr warning (once per name per process)
   naming the file used and the file shadowed. Sweep of the repo and all
   15 consumer repos found zero imports whose resolution flips.
+
+- **`LANGUAGE_CONTRACT.md`'s recommended midpoint index raised (#867).**
+  The Indexing promise recommended `a[floor of (lo + hi) / 2]`, but `of`
+  binds tighter than `/` — per the precedence table 25 lines above in
+  the same file — so it parsed as `(floor of (lo + hi)) / 2` and raised
+  `index must be an integer, got 1.5`. Now `a[floor of ((lo + hi) / 2)]`.
 
 - **vm_run_bytecode/sandbox_run: an assembled chunk's temporal opcodes
   now turn history recording on themselves (#831).** `g_trace_hist` was

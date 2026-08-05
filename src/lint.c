@@ -1451,10 +1451,7 @@ static void check_stdlib_shadow(ASTNode *ast, const char *path,
  * nodes sitting directly in a statement list, so an interrogative used
  * inside an expression (`print of (why is x)`) is never reached. */
 
-static const char *interrog_word(int kind) {
-    static const char *words[] = {"what", "who", "when", "where", "why", "how"};
-    return (kind >= 0 && kind <= 5) ? words[kind] : "prev";
-}
+#define interrog_word(kind) eigs_interrogative_word(kind)   /* #869: one table */
 
 /* #736: the same silent no-op through the other door. `report of x` /
  * `observe of x` / `report_value of x` / `trajectory of x` over an IDENT are

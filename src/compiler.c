@@ -189,6 +189,7 @@ static void name_set_remove(NameSet *s, const char *name) {
 static void compile_node(Compiler *c, ASTNode *node);
 static void compile_node_inner(Compiler *c, ASTNode *node);
 static void compile_block(Compiler *c, ASTNode **stmts, int count);
+static void check_discarded_interrogative(ASTNode *stmt);   /* #869 */
 
 /* ---- Loop-context stack (#335/#336) ----
  * Push/pop are strictly balanced within each AST_LOOP/AST_FOR case, so the
@@ -2007,8 +2008,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     case AST_PROGRAM: {
         for (int i = 0; i < node->data.program.count; i++) {
             compile_node(c, node->data.program.stmts[i]);
-            if (i + 1 < node->data.program.count)
+            if (i + 1 < node->data.program.count) {
+                check_discarded_interrogative(node->data.program.stmts[i]);  /* #869 */
                 emit(c, OP_POP, node->line);
+            }
         }
         break;
     }
@@ -3018,6 +3021,36 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     }
 }
 
+/* #869: a statement whose value is about to be thrown away. For an
+ * interrogative that is always a mistake — `what is 42` reads as an
+ * assignment, parses as a question about the literal 42, and had NO effect at
+ * all: the program ran to completion, rc=0, with no diagnostic on stderr.
+ * Only lint caught it. Every neighbouring mistake in the language is loud (an
+ * unresolved name is fatal, `break` outside a loop is a compile error), so
+ * this was the odd one out.
+ *
+ * The DISCARD is the signal, which is why the check lives here and not in the
+ * parser: the REPL and `eval` compile a unit whose LAST statement is the
+ * result, so `what is x` typed at the REPL still answers, and only a value
+ * nobody can read is refused. (A discarded interrogative as a unit's final
+ * statement is therefore not caught here — lint's W019 still flags it.)
+ *
+ * Called from both statement loops: AST_PROGRAM (a script's or REPL line's top
+ * level) and compile_block (every nested body). */
+static void check_discarded_interrogative(ASTNode *stmt) {
+    if (!stmt || stmt->type != AST_INTERROGATE) return;
+    int k = stmt->data.interrogate.kind;
+    if (k < 0 || k > 5) return;          /* `prev of x` — lint W019 covers it */
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+        "'%s is ...' is an interrogative, not an assignment — question words "
+        "cannot be assigned with 'is', and this statement's result is discarded",
+        eigs_interrogative_word(k));
+    fprintf(stderr, "Compile error line %d: %s\n", stmt->line, msg);
+    eigs_record_first_error(stmt->line, msg);
+    g_parse_errors++;
+}
+
 static void compile_block(Compiler *c, ASTNode **stmts, int count) {
     if (count == 0) {
         emit(c, OP_NULL, 0);
@@ -3032,8 +3065,10 @@ static void compile_block(Compiler *c, ASTNode **stmts, int count) {
                     i + 1, count, stmts[i]->line,
                     depth_after - depth_before, depth_before, depth_after);
         }
-        if (i + 1 < count)
+        if (i + 1 < count) {
+            check_discarded_interrogative(stmts[i]);
             emit(c, OP_POP, stmts[i]->line);
+        }
     }
 }
 

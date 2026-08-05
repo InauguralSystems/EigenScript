@@ -1216,6 +1216,8 @@ void eigenscript_set_args(int argc, char **argv);
  * when uncaught. Declared here so extension TUs (ext_store, etc.) can route
  * argument/operation failures through the same strict channel as the VM. */
 const char* val_type_name(ValType t);
+/* #869: interrogative word for an AST_INTERROGATE kind (lint + compiler). */
+const char* eigs_interrogative_word(int kind);
 /* #406: the closed error-kind vocabulary. Every built-in runtime error
  * carries exactly one of these; `catch` binds it as the dict's "kind"
  * string (err_kind_name). The set is CLOSED by design — the same

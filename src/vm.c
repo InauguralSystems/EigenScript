@@ -1138,7 +1138,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
             }
             return;
         }
-        if (target->type != VAL_NULL) {
+        {
             rt_error(EK_TYPE, g_vm.current_line,
                 "cannot index %s", val_type_name(target->type));
         }
@@ -1175,7 +1175,7 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
         }
         return;
     }
-    if (target && target->type != VAL_NULL) {
+    if (target) {
         const char *key = chunk->const_interns[name_idx];
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot access field '%s' on %s",
@@ -1221,7 +1221,7 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                     }
                     return;
                 }
-            } else if (dict && dict->type != VAL_NULL) {
+            } else if (dict) {
                 const char *key = chunk->const_interns[name_idx];
                 rt_error(EK_TYPE, g_vm.current_line,
                     "cannot access field '%s' on %s",
@@ -1232,7 +1232,7 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                 "index %d out of range (list length %d)",
                 i, target->data.list.count);
         }
-    } else if (target && target->type != VAL_NULL) {
+    } else if (target) {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
     }
@@ -1312,7 +1312,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
             vm_push(v);
             return;
         }
-    } else if (target->type != VAL_NULL) {
+    } else {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot access field '%s' on %s",
             key, val_type_name(target->type));
@@ -1918,7 +1918,7 @@ void jit_helper_index_set(void) {
         }
     } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
         dict_set(target, idx->data.str, val);
-    } else if (target->type != VAL_NULL) {
+    } else {
         rt_error(EK_TYPE, g_vm.current_line, "cannot index %s for assignment", val_type_name(target->type));
     }
     val_decref(target); val_decref(idx);
@@ -2016,7 +2016,7 @@ void jit_helper_index_get(void) {
             rt_error(EK_INDEX, g_vm.current_line,
                 "buffer index %d out of range (length %d)",
                 i, target->data.buffer.count);
-    } else if (target->type != VAL_NULL) {
+    } else {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
     }
@@ -4080,7 +4080,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 result = make_num(target->data.buffer.data[i]);
             else
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
-        } else if (target->type != VAL_NULL) {
+        } else {
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
         }
         val_decref(target); val_decref(idx);
@@ -4175,7 +4175,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             dict_set(target, idx->data.str, val);
-        } else if (target->type != VAL_NULL) {
+        } else {
             rt_error(EK_TYPE, current_line, "cannot index %s for assignment", val_type_name(target->type));
         }
         val_decref(target); val_decref(idx);
@@ -4205,7 +4205,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 vm_push(v);
                 DISPATCH();
             }
-        } else if (target->type != VAL_NULL) {
+        } else {
             rt_error(EK_TYPE, current_line, "cannot access field '%s' on %s",
                 key, val_type_name(target->type));
         }
@@ -4274,7 +4274,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             } else {
                 vm_push_slot(slot_null());
             }
-        } else if (target && target->type != VAL_NULL) {
+        } else if (target) {
             const char *key = chunk->const_interns[name_idx];
             rt_error(EK_TYPE, current_line, "cannot access field '%s' on %s",
                 key, val_type_name(target->type));
@@ -4360,9 +4360,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 }
                 DISPATCH();
             }
-            if (target->type != VAL_NULL) {
-                rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
-            }
+            rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
         }
         vm_push_slot(slot_null());
         DISPATCH();
@@ -4396,7 +4394,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         }
                         DISPATCH();
                     }
-                } else if (dict && dict->type != VAL_NULL) {
+                } else if (dict) {
                     const char *key = chunk->const_interns[name_idx];
                     rt_error(EK_TYPE, current_line, "cannot access field '%s' on %s",
                         key, val_type_name(dict->type));
@@ -4405,7 +4403,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
             }
-        } else if (target && target->type != VAL_NULL) {
+        } else if (target) {
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
         }
         vm_push_slot(slot_null());
@@ -4447,7 +4445,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
             }
-        } else if (target && target->type != VAL_NULL) {
+        } else if (target) {
             rt_error(EK_TYPE, current_line, "cannot index %s for assignment",
                           val_type_name(target->type));
         }

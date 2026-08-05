@@ -203,6 +203,14 @@ const char* tok_type_name(TokType t) {
     }
 }
 
+/* #869: the interrogative words, in AST_INTERROGATE kind order. Shared by
+ * lint's W019 and the compiler's discarded-statement check so the two cannot
+ * name different words for the same kind. */
+const char* eigs_interrogative_word(int kind) {
+    static const char *words[] = {"what", "who", "when", "where", "why", "how"};
+    return (kind >= 0 && kind <= 5) ? words[kind] : "prev";
+}
+
 const char* val_type_name(ValType t) {
     switch (t) {
         case VAL_NUM: return "num";
