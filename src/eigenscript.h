@@ -913,6 +913,7 @@ void free_weight_val(Value *v);
 
 Value* make_num(double n);
 Value* promote_if_arena(Value *v);
+Value* make_num_permanent(double n);   /* heap-only make_num (#873 store paths) */
 void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
 Value* make_str_owned(char *s);

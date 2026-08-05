@@ -218,7 +218,10 @@ arena_mark of null       # save allocation point
 arena_reset of null      # reclaim all transient allocations
 ```
 
-Bounded computation for constrained environments.
+Bounded computation for constrained environments. Values that escape the
+scope are safe: anything stored into a binding or a container that
+outlives the window is promoted to the heap at the store (#873) — the
+arena reclaims only the unstored intermediates.
 
 ## Standard Library
 

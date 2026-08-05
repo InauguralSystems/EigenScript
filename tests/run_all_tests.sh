@@ -688,6 +688,13 @@ check "AO3 tensor save/load roundtrip" "$AO3_V" "21"
 AO4_C=$(echo "$AO_OUTPUT" | grep -A1 'AO4:' | tail -1)
 check "AO4 num_copy new local survives reset" "$AO4_C" "99.5"
 
+# #873: values escaping an arena_mark…arena_reset scope must deep-promote
+# at every store seam (binding, local slot, dict field, append, indexed
+# store, set_at/insert_at/copy_into) — a stomp loop overwrites the
+# reclaimed region so a dangling reference reads WRONG, not lucky.
+check_eigs_suite "arena escape containment (#873 — list deep-promote at every store seam)" \
+    "test_arena_escape.eigs" "All tests passed" 18
+
 check_eigs_suite "reduction builtins dot/sum/norm (vs explicit loop + edge cases)" \
     "test_dot.eigs" "DOT_OK" 1
 echo ""

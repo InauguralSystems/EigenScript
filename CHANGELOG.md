@@ -25,6 +25,25 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Memory corruption: values escaping an `arena_mark`…`arena_reset`
+  scope (#873).** `promote_if_arena` copied only numbers and strings to
+  the heap on store; a LIST escaping the scope became a dangling
+  reference into memory the next `arena_mark` handed back out — silent
+  wrong values, type confusion, and (via `append` into a heap list) a
+  `free(): invalid pointer` abort, all reachable from pure EigenScript
+  and invisible to ASan. Fixed at every store seam: `promote_if_arena`
+  now deep-promotes lists (recursively; lists are the only
+  arena-capable container), and the append / indexed-store /
+  `OP_SET_LOCAL` / `set_at` / `list_insert_at` / `copy_into` paths
+  promote arena values landing in heap containers (num fast paths
+  heap-force under an open window). The JIT is gated off while an arena
+  window is open — entry, OSR, and a deep-bail when a builtin opens one
+  mid-thunk — because emitted stores don't promote; arena scopes run
+  interpreted. Escaping a stored value is now *documented, safe
+  behavior*: the arena reclaims only unstored intermediates.
+  `tests/test_arena_escape.eigs` pins all seams under a stomp loop that
+  overwrites the reclaimed region, plus an OSR-threshold hot variant.
+
 - **[62] audio capture no longer flakes on an opened-but-silent device
   (#876).** A real capture device that opens but delivers no samples in
   the bounded poll (suspended/held source) failed two checks — and the

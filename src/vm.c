@@ -1462,7 +1462,11 @@ int jit_helper_iter_next(void) {
         idx_v->data.num = (double)(idx + 1);
     } else {
         val_decref(idx_v);
-        state->data.list.items[1] = make_num(idx + 1);
+        /* #873: heap-force when the state list must outlive an active
+         * arena window (mark left open across the loop back-edge). */
+        state->data.list.items[1] =
+            (g_arena.active && !state->arena) ? make_num_permanent(idx + 1)
+                                              : make_num(idx + 1);
     }
     vm_push(elem);
     return 0;
@@ -1811,7 +1815,13 @@ void jit_helper_index_set(void) {
                     existing->data.num = val_s.d;
                 } else {
                     val_decref(existing);
-                    target->data.list.items[i] = make_num(val_s.d);
+                    /* #873: inside an arena window a plain make_num is
+                     * arena-backed — stored into a HEAP list it dangles
+                     * after arena_reset. Heap-force for heap targets. */
+                    target->data.list.items[i] =
+                        (g_arena.active && !target->arena)
+                            ? make_num_permanent(val_s.d)
+                            : make_num(val_s.d);
                 }
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
@@ -1831,9 +1841,20 @@ void jit_helper_index_set(void) {
         if (!vm_index_is_int(idx->data.num, &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         } else if (vm_index_resolve(&i, target->data.list.count)) {
+            /* #873: promote an arena value stored into a heap list —
+             * same contract as list_append / the env store paths. */
+            if (__builtin_expect(val->arena && !target->arena, 0)) {
+                Value *promoted = promote_if_arena(val);
+                if (promoted != val) {
+                    val_decref(target->data.list.items[i]);
+                    target->data.list.items[i] = promoted;
+                    goto _idx_assign_stored;
+                }
+            }
             val_incref(val);
             val_decref(target->data.list.items[i]);
             target->data.list.items[i] = val;
+            _idx_assign_stored:;
         } else {
             rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
         }
@@ -2119,6 +2140,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
             return 0;
         if (fn_chunk->jit_state != 2 || !fn_chunk->jit_code) return 1;
         if (g_task_sched) return 1;   /* #533: task code runs interpreted */
+        if (g_arena.active) return 1; /* #873: arena scopes run interpreted */
         /* #728: a running thunk can flip the flag mid-flight (spawn is a
          * builtin, reachable via the VAL_BUILTIN path below) — after that,
          * don't enter NESTED thunks: their epilogues write the shared
@@ -2147,7 +2169,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
                     env_rebind_param_slot(call_env, 0,
                         g_vm.stack[g_vm.sp - 1]);
                 } else {
-                    Value *arg_list = make_list(argc);
+                    Value *arg_list = make_list_heap(argc);  /* #873: bound as a param slot — heap so it cannot dangle (and no deep-promote cost) */
                     for (int i = 0; i < argc; i++)
                         list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
                     env_rebind_param_slot(call_env, 0,
@@ -2177,7 +2199,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
                     fn_val->data.fn.params[0], ph,
                     g_vm.stack[g_vm.sp - 1]);
             } else {
-                Value *arg_list = make_list(argc);
+                Value *arg_list = make_list_heap(argc);  /* #873: bound as a param slot — heap so it cannot dangle (and no deep-promote cost) */
                 for (int i = 0; i < argc; i++)
                     list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
                 vm_bind_fresh_param(call_env, 0,
@@ -2276,6 +2298,15 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     }
     if (!consumes_arg && result != arg) val_decref(arg);
     vm_push(result);
+    if (__builtin_expect(g_arena.active, 0)) {
+        /* #873: the builtin just opened an arena window (arena_mark).
+         * The caller thunk's inline stores don't arena-promote, so hand
+         * the rest of this chunk to the interpreter. The call completed
+         * and the top frame is the caller — fix its ip past the CALL
+         * and deep-bail, mirroring the g_has_error path above. */
+        g_vm.frames[g_vm.frame_count - 1].ip = caller_chunk->code + resume_off;
+        return 2;
+    }
     return 0;
 }
 
@@ -3124,9 +3155,26 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     }
                 }
             }
+            /* #873: promote an arena value before it lands in an env
+             * slot — module-chunk slots are immortal and fn-local slots
+             * can outlive the arena window via parked envs/closures.
+             * Same incref/arena-promotion contract as
+             * env_bind_fresh_param_slot / env_rebind_param_slot. */
+            if (__builtin_expect(slot_is_ptr(tos), 0)) {
+                Value *tv = slot_as_ptr(tos);
+                if (__builtin_expect(tv && tv->arena, 0)) {
+                    Value *promoted = promote_if_arena(tv);
+                    if (promoted && promoted != tv) {
+                        slot_decref(e->values[slot]);
+                        e->values[slot] = slot_from_value(promoted);
+                        goto _set_local_arena_done;
+                    }
+                }
+            }
             slot_incref(tos);
             slot_decref(e->values[slot]);
             e->values[slot] = tos;
+            _set_local_arena_done:;
         } else {
             /* #348: an out-of-range slot used to DROP the write silently
              * (the assigned variable simply never existed). Compiler-emitted
@@ -3352,8 +3400,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * check: a blocking task_recv's placeholder null flowed on as the
          * received message and the leaked suspend flag fired at a random
          * later call site — state corruption after ~OSR-threshold
-         * iterations (first seen as liferaft node tasks dying en masse). */
-        if (!g_vm_multithreaded && !g_task_sched) {
+         * iterations (first seen as liferaft node tasks dying en masse).
+         * #873: nor inside an open arena window — thunk stores don't
+         * arena-promote (see the fresh-entry gate). */
+        if (!g_vm_multithreaded && !g_task_sched && !g_arena.active) {
         chunk->back_edge_count++;
 
         /* OSR trigger. For "called once, loops a lot" chunks (the gauntlet
@@ -3619,7 +3669,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         env_rebind_param_slot(call_env, 0,
                             g_vm.stack[g_vm.sp - 1]);
                     } else {
-                        Value *arg_list = make_list(argc);
+                        Value *arg_list = make_list_heap(argc);  /* #873: bound as a param slot — heap so it cannot dangle (and no deep-promote cost) */
                         for (int i = 0; i < argc; i++)
                             list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
                         env_rebind_param_slot(call_env, 0,
@@ -3653,7 +3703,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         fn_val->data.fn.params[0], ph,
                         g_vm.stack[g_vm.sp - 1]);
                 } else {
-                    Value *arg_list = make_list(argc);
+                    Value *arg_list = make_list_heap(argc);  /* #873: bound as a param slot — heap so it cannot dangle (and no deep-promote cost) */
                     for (int i = 0; i < argc; i++)
                         list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
                     vm_bind_fresh_param(call_env, 0,
@@ -3723,7 +3773,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * write/write on both (TSan gate: test_spawn_jit_warm.eigs).
              * Workers interpret shared chunks instead, matching the OSR
              * gate at CASE(JUMP_BACK). */
-            if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched) {
+            /* #873: nor inside an open arena window — emitted stores
+             * don't arena-promote; arena scopes run interpreted. */
+            if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
+                !g_arena.active) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* jit_helper_return popped fn_chunk's frame but left
@@ -4017,7 +4070,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         existing->data.num = val_s.d;
                     } else {
                         val_decref(existing);
-                        target->data.list.items[i] = make_num(val_s.d);
+                        /* #873: heap-force into heap targets while an
+                         * arena window is open (mirror of
+                         * jit_helper_index_set). */
+                        target->data.list.items[i] =
+                            (g_arena.active && !target->arena)
+                                ? make_num_permanent(val_s.d)
+                                : make_num(val_s.d);
                     }
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
@@ -4037,9 +4096,20 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!vm_index_is_int(idx->data.num, &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             } else if (vm_index_resolve(&i, target->data.list.count)) {
+                /* #873: promote an arena value stored into a heap list
+                 * (mirror of jit_helper_index_set's general arm). */
+                if (__builtin_expect(val->arena && !target->arena, 0)) {
+                    Value *promoted = promote_if_arena(val);
+                    if (promoted != val) {
+                        val_decref(target->data.list.items[i]);
+                        target->data.list.items[i] = promoted;
+                        goto _interp_idx_stored;
+                    }
+                }
                 val_incref(val);
                 val_decref(target->data.list.items[i]);
                 target->data.list.items[i] = val;
+                _interp_idx_stored:;
             } else {
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
             }
@@ -4388,7 +4458,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 idx_v->data.num = (double)(idx + 1);
             } else {
                 val_decref(idx_v);
-                state->data.list.items[1] = make_num(idx + 1);
+                state->data.list.items[1] =
+                    (g_arena.active && !state->arena)
+                        ? make_num_permanent(idx + 1)   /* #873 */
+                        : make_num(idx + 1);
             }
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_num + immediate-
@@ -5617,7 +5690,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * #728 MT gate — see the OP_CALL hook). */
             if (fn_chunk->jit_state == 0 && !g_vm_multithreaded && !g_task_sched)
                 jit_try_compile_chunk(fn_chunk);
-            if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched) {
+            if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
+                !g_arena.active) {   /* #873: see the OP_CALL hook */
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.
