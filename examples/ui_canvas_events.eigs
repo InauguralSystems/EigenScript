@@ -202,6 +202,5 @@ define on_key(ev) as:
 define on_tick(r) as:
     sb.text is status
 
-ui._layout of [root, 0, 0]
 ui.app_loop of [root, on_key, on_tick]
 gfx_close of null

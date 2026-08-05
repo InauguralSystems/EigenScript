@@ -66,6 +66,32 @@ All notable changes to EigenScript are documented here.
   stated honestly in the gate header: its compile lines name sources via
   `$SOURCES` variables the recognizer cannot tell from a link line.
 
+- **The sandbox memory budget now covers the zlib codecs (#292
+  follow-up).** `inflate`/`deflate` (and their `zlib_*` duals) are on
+  the `sandbox_run` allowlist but charged nothing against `max_bytes`,
+  so an allowlisted call allocated straight past the cap that exists to
+  protect the host from untrusted code: a 9,732-byte compressed blob
+  decompressed to a 10M-element list (~800 MB of `Value`s) inside a
+  sandbox capped at 8 MiB — measured 853 MiB peak RSS, against 13 MiB
+  for the charged `zeros` control under the same budget. The `{ok:0}`
+  arrived only after the memory was already taken. Every other
+  allocator makes the caller *name* a size, which is what the charge
+  reads; a compressed blob names nothing and amplifies ~1000x, so the
+  "bounded by loop-iteration cap × per-op size" reasoning that covers
+  the remaining uncharged allocators does not hold for these. Both the
+  codec's own output buffer (charged as it grows) and the list built
+  from it are now charged. Behavior outside a budgeted `sandbox_run` is
+  unchanged — `sandbox_charge` is a no-op there.
+
+- **`sandbox_run` no longer blames a callable for a result it merely
+  could not scan.** The boundary scan is node/depth budgeted and fails
+  closed — correct — but every exhaustion was reported as `sandbox
+  result contains a callable`, so a large list of plain numbers was
+  attributed to a function that was never in the result. Budget
+  exhaustion now reports that it could not scan the result; the literal
+  claim is reserved for an actual sighting. Still refuses in both
+  cases.
+
 - **Widget drawing is contained (#823).** `render` now wraps every
   widget's draw in a clip of its own rect intersected with its
   ancestors' — `canvas` `on_paint` included, so a paint callback can no

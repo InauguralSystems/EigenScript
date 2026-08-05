@@ -865,14 +865,26 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * the allocation reach abort(). Cumulative over the run (snippets are short, so
  * cumulative ~= peak); generous default, overridable via sandbox_run's max_bytes
  * arg. No-op outside a budgeted sandbox (active=0), so normal runs pay nothing.
- * Plain process globals: sandbox_run is synchronous and single-threaded.
+ * The three counters are per-THREAD (EigsThread fields reached through the
+ * g_sandbox_* macros), not the plain process globals this note used to claim:
+ * two threads — or two EigsStates — running sandbox_run concurrently keep
+ * separate budgets, and nothing here needs a lock. The save/restore around the
+ * run is what makes NESTING compose, not what makes it thread-safe.
  *
  * Charged at: zeros, fill, buffer, range, concat — the size-controlled list/
- * tensor allocators (the issue's vectors). NOT yet charged: zeros_like (mirrors
- * an already-charged input), matmul output (per-call capped at 10M elems; its
- * inputs are charged), and the text_builder growth path — all bounded by the
- * loop-iteration cap × per-op size, not the byte budget. Extending the budget to
- * them is a one-line sandbox_charge() at each; left out to match #292's scope. */
+ * tensor allocators (the issue's vectors) — plus the zlib codecs (inflate/
+ * deflate and their zlib_* duals): both the codec's own output buffer and the
+ * list of Values built from it. The codecs are the case that breaks the
+ * "bounded by loop-iteration cap × per-op size" reasoning the rest of this
+ * note relies on: every other allocator makes the caller NAME a size, which is
+ * what the charge reads, while a compressed blob names nothing and amplifies
+ * ~1000x. Uncharged, a 9 KB input decompressed to ~800 MB of Values inside an
+ * 8 MiB sandbox (measured 853 MiB peak RSS vs 13 MiB for the charged `zeros`
+ * control). NOT yet charged: zeros_like (mirrors an already-charged input),
+ * matmul output (per-call capped at 10M elems; its inputs are charged), and the
+ * text_builder growth path — those genuinely are bounded by the loop-iteration
+ * cap × per-op size. Extending the budget to them is a one-line
+ * sandbox_charge() at each; left out to match #292's scope. */
 int sandbox_charge(size_t bytes) {
     if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant

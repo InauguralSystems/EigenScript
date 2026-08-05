@@ -74,7 +74,21 @@ no_fn_escape is (r_fn["ok"] == 0) and ((type of r_fn["result"]) != "fn")
 r_imp is sandbox_run of [[ABI, [IMPORT,0,0, RETURN], ["math"], [], 0, "<mod>", []], 1000]
 no_import is (r_imp["ok"] == 0) and (r_imp["error"]["kind"] == "sandbox")
 
-if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and allow_ok and no_writethrough and no_fn_escape and no_import:
+# (g) A RESULT TOO BIG TO SCAN IS NOT "A CALLABLE". The boundary scan is
+# node/depth budgeted and fails CLOSED, which is right — but it used to report
+# every budget exhaustion as "sandbox result contains a callable", so a large
+# list of plain numbers was blamed on a function that was never in the result.
+# Both branches are pinned here: the honest message for an unscannable result,
+# and the literal claim only when a callable is genuinely present.
+r_big is sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["range", 200000]], 1000000, 268435456]
+big_msg is r_big["error"]["message"]
+big_unscannable is (r_big["ok"] == 0) and (r_big["error"]["kind"] == "sandbox") and ((index_of of [big_msg, "too large to scan"]) >= 0)
+
+r_fn is sandbox_run of [[ABI, [GET_NAME,0,0, RETURN], ["len"]], 1000]
+fn_msg is r_fn["error"]["message"]
+fn_named is (r_fn["ok"] == 0) and ((index_of of [fn_msg, "contains a callable"]) >= 0)
+
+if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and allow_ok and no_writethrough and no_fn_escape and no_import and big_unscannable and fn_named:
     print of "SANDBOX_ALLOW_OK"
 else:
     print of "SANDBOX_ALLOW_FAIL"
