@@ -3760,7 +3760,11 @@ static Value *eigs_json_lint_allow_for(const char *path) {
     char *js = read_file_util(jsonpath, &sz);
     if (!js) return NULL;
     int pos = 0;
-    Value *j = eigs_json_parse_value(js, &pos);
+    /* #797: through the fresh-parse root, never the raw parser — a stale
+     * g_json_parse_err from an unrelated earlier parse in this thread made
+     * this well-formed document decode empty, silently dropping every
+     * allow-list entry (the seventh root missed by #777's sweep of six). */
+    Value *j = eigs_json_parse_root(js, &pos);
     free(js);
     if (!j) return NULL;
 
