@@ -157,7 +157,7 @@ static int db_require_conn(void) {
 
 /* The largest integer a double represents exactly. A bigint past this cannot
  * round-trip through an EigenScript number. */
-#define DB_EXACT_INT_MAX 9007199254740992.0
+#define DB_EXACT_INT_MAX 9007199254740992LL
 
 typedef enum { DBT_STR, DBT_NUM, DBT_BOOL } DbColType;
 
@@ -199,10 +199,15 @@ static DbColType db_classify(unsigned int oid) {
 static int db_check_exact_int(unsigned int oid, const char *text, const char *colname) {
     if (oid != DB_OID_INT8 && oid != DB_OID_INT4 && oid != DB_OID_INT2 && oid != DB_OID_OID)
         return 1;
+    /* strtoLL, not strtod: converting to a double FIRST rounds 9007199254740993
+     * to exactly 2^53, so a strtod-based comparison cannot see the one thing
+     * this check exists to detect. (It shipped that way to CI once — the live
+     * postgres job is what caught it.) An out-of-int64 literal saturates at
+     * LLONG_MAX, which is past the bound, so it still raises. */
     char *end = NULL;
-    double d = strtod(text, &end);
+    long long v = strtoll(text, &end, 10);
     if (end == text) return 1;            /* not a plain integer literal; leave it */
-    if (d > DB_EXACT_INT_MAX || d < -DB_EXACT_INT_MAX) {
+    if (v > DB_EXACT_INT_MAX || v < -DB_EXACT_INT_MAX) {
         rt_error(EK_VALUE, 0,
                  "db: column '%s' value %s exceeds the exact-integer range of a "
                  "number (2^53); select it as text (%s::text) to keep the digits",
