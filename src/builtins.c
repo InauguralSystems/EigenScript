@@ -2884,17 +2884,30 @@ static int sandbox_name_allowed(const char *name) {
  * the fail-closed direction: an unwalkable result is refused, not trusted. */
 #define SANDBOX_RESULT_MAX_DEPTH 32
 #define SANDBOX_RESULT_MAX_NODES 100000
-static int sandbox_value_has_callable(Value *v, int depth, long *budget) {
+/* Returns 1 if the result contains — or cannot be shown NOT to contain — a
+ * callable. Fails closed on an exhausted node/depth budget, but sets
+ * `*unverified` when that is why, because the two are different facts and the
+ * caller reports them differently: a 10M-element list of numbers is not "a
+ * callable crossing the boundary", it just outruns the scan. Blaming a
+ * callable there sends the caller hunting for a function that was never in
+ * the result. */
+static int sandbox_value_has_callable(Value *v, int depth, long *budget,
+                                      int *unverified) {
     if (!v) return 0;
     if (v->type == VAL_FN || v->type == VAL_BUILTIN) return 1;
-    if (depth > SANDBOX_RESULT_MAX_DEPTH || --(*budget) <= 0) return 1;
+    if (depth > SANDBOX_RESULT_MAX_DEPTH || --(*budget) <= 0) {
+        *unverified = 1;
+        return 1;
+    }
     if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++)
-            if (sandbox_value_has_callable(v->data.list.items[i], depth + 1, budget))
+            if (sandbox_value_has_callable(v->data.list.items[i], depth + 1,
+                                           budget, unverified))
                 return 1;
     } else if (v->type == VAL_DICT) {
         for (int i = 0; i < v->data.dict.count; i++)
-            if (sandbox_value_has_callable(v->data.dict.vals[i], depth + 1, budget))
+            if (sandbox_value_has_callable(v->data.dict.vals[i], depth + 1,
+                                           budget, unverified))
                 return 1;
     }
     return 0;
@@ -3029,15 +3042,21 @@ Value* builtin_sandbox_run(Value *arg) {
      * Drop the result and report it as a sandbox denial — same {kind, message,
      * line} shape as any other refusal, so a grading ladder sees it. */
     long scan_budget = SANDBOX_RESULT_MAX_NODES;
-    if (ok && result && sandbox_value_has_callable(result, 0, &scan_budget)) {
+    int scan_unverified = 0;
+    if (ok && result &&
+        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified)) {
         val_decref(result);
         result = NULL;
         ok = 0;
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_SANDBOX)));
         dict_set_owned(ev, "message",
-                       make_str("sandbox result contains a callable; "
-                                "functions cannot cross the sandbox boundary"));
+                       make_str(scan_unverified
+                                ? "sandbox result too large to scan for "
+                                  "callables (exceeds the result node/depth "
+                                  "budget); refusing to cross the boundary"
+                                : "sandbox result contains a callable; "
+                                  "functions cannot cross the sandbox boundary"));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
     }
@@ -4821,6 +4840,15 @@ static int zlib_bytes_arg(Value *arg, const char *who,
 /* Wrap a finished byte buffer as the list-of-ints result value (the
  * read_bytes shape). Takes ownership of nothing; caller still frees. */
 static Value *zlib_bytes_result(const unsigned char *buf, unsigned long n) {
+    /* #292: the result is `n` fresh number Values at sizeof(Value)+sizeof(Value*)
+     * each — ~80 bytes per decompressed BYTE. Charging only the codec's own
+     * output buffer would therefore miss 98% of the cost, so charge the list
+     * here too, with the same accounting range/zeros use. Without this an
+     * allowlisted `inflate` allocates straight past max_bytes: the budget
+     * bounds allocators the caller has to *name* a size for, and a compressed
+     * blob names nothing. */
+    if (!sandbox_charge((size_t)n * (sizeof(Value) + sizeof(Value *))))
+        return make_null();
     Value *result = make_list((int)n);
     for (unsigned long i = 0; i < n; i++)
         list_append_owned(result, make_num((double)buf[i]));
@@ -4845,6 +4873,15 @@ static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
     }
     size_t cap = src_n * 3 + 64;
     if (cap > EIGS_INFLATE_MAX_OUT) cap = EIGS_INFLATE_MAX_OUT;
+    /* #292: charge the codec's own buffer as it grows, so a bomb is refused
+     * before the memory is touched rather than after. EIGS_INFLATE_MAX_OUT
+     * bounds this at 256 MiB, which is the *default* whole-run budget — a
+     * caller that lowered max_bytes must not be overrun by one call. */
+    if (!sandbox_charge(cap)) {
+        inflateEnd(&zs);
+        free(src);
+        return make_null();
+    }
     unsigned char *out = xmalloc(cap);
     int zrc = Z_OK;
     for (;;) {
@@ -4858,6 +4895,12 @@ static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
             if (cap >= EIGS_INFLATE_MAX_OUT) break; /* limit raise below */
             size_t ncap = cap * 2;
             if (ncap > EIGS_INFLATE_MAX_OUT) ncap = EIGS_INFLATE_MAX_OUT;
+            if (!sandbox_charge(ncap - cap)) {   /* #292: charge the delta */
+                inflateEnd(&zs);
+                free(out);
+                free(src);
+                return make_null();
+            }
             out = xrealloc(out, ncap);
             cap = ncap;
         }
@@ -4915,6 +4958,14 @@ static Value *zlib_deflate_impl(const char *who, int window_bits, Value *arg) {
         return make_null();
     }
     uLong bound = deflateBound(&zs, (uLong)src_n);
+    /* #292: deflate amplifies far less than inflate (bound ~= src_n), but the
+     * budget should account for every codec buffer, not just the dangerous
+     * one — an uncharged allocator is a gap whether or not it is exploitable. */
+    if (!sandbox_charge((size_t)bound)) {
+        deflateEnd(&zs);
+        free(src);
+        return make_null();
+    }
     unsigned char *out = xmalloc(bound > 0 ? bound : 1);
     size_t pos = 0;
     int zrc = Z_OK;

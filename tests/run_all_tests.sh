@@ -2688,15 +2688,15 @@ ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1)
 rm -f "$ZLIB_PROBE_FILE"
 
 if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
-    echo "[124] DEFLATE Codecs (#684, 22 checks)"
+    echo "[124] DEFLATE Codecs (#684, 24 checks)"
     INF_OUTPUT=$(./eigenscript ../tests/test_inflate.eigs 2>&1); INF_OUTPUT_RC=$?
     if rc_ok "$INF_OUTPUT_RC" "$INF_OUTPUT" && echo "$INF_OUTPUT" | grep -q "DEFLATE_ALL_PASS"; then
-        TOTAL=$((TOTAL + 22))
-        PASS=$((PASS + 22))
-        echo "  PASS: all 22 inflate/deflate checks"
+        TOTAL=$((TOTAL + 24))
+        PASS=$((PASS + 24))
+        echo "  PASS: all 24 inflate/deflate checks"
     else
-        TOTAL=$((TOTAL + 22))
-        FAIL=$((FAIL + 22))
+        TOTAL=$((TOTAL + 24))
+        FAIL=$((FAIL + 24))
         echo "  FAIL: inflate/deflate tests"
         echo "$INF_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
     fi

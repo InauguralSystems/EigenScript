@@ -126,6 +126,31 @@ catch e6:
     c22 is 1
 check of ["D22 zlib_deflate null arg caught", c22, 1]
 
+# D23/D24 (#292): inflate is on the sandbox allowlist, so its allocations must
+# be charged against max_bytes. They were not — a ~9 KB bomb decompressed to a
+# 10M-element list (~800 MB of Values) inside an 8 MiB sandbox, measured at
+# 853 MiB peak RSS vs 13 MiB for the charged `zeros` control. The budget only
+# ever bounded allocators the caller must NAME a size for; a compressed blob
+# names nothing, so amplification walked straight past it. Both the codec's own
+# output buffer and the list built from it are now charged.
+SB_GET_NAME is 25
+SB_CONST is 0
+SB_CALL is 39
+SB_RETURN is 40
+SB_ABI is 1
+
+sb_src is buffer of 2000000
+sb_blob is deflate of sb_src
+sb_desc is [SB_ABI, [SB_GET_NAME,0,0, SB_CONST,1,0, SB_CALL,1,0, SB_RETURN], ["inflate", sb_blob]]
+
+# Refused under a budget far smaller than the decompressed result...
+sb_small is sandbox_run of [sb_desc, 1000000, 65536]
+check of ["D23 sandboxed inflate charged against max_bytes", sb_small["ok"], 0]
+
+# ...and the codecs are untouched outside a budgeted sandbox.
+sb_round is inflate of sb_blob
+check of ["D24 inflate unaffected outside the sandbox", len of sb_round, 2000000]
+
 if fails == 0:
     print of "DEFLATE_ALL_PASS"
 if fails > 0:
