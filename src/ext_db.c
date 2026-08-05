@@ -278,6 +278,15 @@ Value* builtin_db_query_value(Value *arg) {
             break;
         case DBT_NUM:
             if (!db_check_exact_int(oid, text, colname)) { PQclear(res); return make_str(""); }
+            /* Same rule as the JSON emitter: float4/float8 can be NaN /
+             * Infinity / -Infinity, and make_num's num_guard would turn
+             * those into 0 and 1e308 — a silently wrong number. Hand back
+             * the text so the caller sees what the column holds. */
+            if (text[0] == 'N' || text[0] == 'I' ||
+                (text[0] == '-' && text[1] == 'I')) {
+                result = make_str(text);
+                break;
+            }
             result = make_num(strtod(text, NULL));
             break;
         case DBT_STR:

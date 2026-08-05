@@ -202,6 +202,11 @@ if live:
     assert of [(type of (db_query_value of "SELECT null::int")) == "null", "DB24 db_query_value returns null for SQL NULL"]
     assert of [(type of (db_query_value of "SELECT ''")) == "str", "DB24 db_query_value keeps '' a str"]
     assert of [(db_query_value of "SELECT 7::float8") == 7, "DB24 db_query_value types floats"]
+    # NaN would become 0 through make_num's num_guard — a silently wrong
+    # number — so it comes back as text on both paths.
+    assert of [(db_query_value of "SELECT 'NaN'::float8") == "NaN", "DB24 NaN stays text, not 0"]
+    nan_row is (json_decode of (db_query_json of "SELECT 'NaN'::float8 AS x"))[0]
+    assert of [nan_row.x == "NaN", "DB24 NaN stays text in JSON too"]
 
     # numeric stays a STRING on purpose: it is arbitrary-precision decimal and
     # a binary double cannot hold it. ::float8 is the documented opt-in.
