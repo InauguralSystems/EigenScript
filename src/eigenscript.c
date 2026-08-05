@@ -945,6 +945,18 @@ int observer_slot_stable(const ObserverSlot *s) {
     return 1;
 }
 
+/* #871: the predicate vocabulary, in kind order. The parser derives a kind as
+ * `TOK_CONVERGED + k` (parser.c:842) and vm_slot_predicate switches on the same
+ * k, so this table is the one place the words live — lint's W016 reads it too,
+ * rather than keeping a second copy that could drift out of order. */
+static const char *EIGS_PREDICATE_NAMES[6] = {
+    "converged", "stable", "improving", "oscillating", "diverging", "equilibrium"
+};
+
+const char* eigs_predicate_name(unsigned kind) {
+    return kind < 6 ? EIGS_PREDICATE_NAMES[kind] : "predicate";
+}
+
 /* Slot mirror of builtin_report — same priority order and partial-window
  * fallback, reading the slot trajectory instead of a Value's. */
 /* The entropy-channel report — the classifier for non-numeric bindings, and

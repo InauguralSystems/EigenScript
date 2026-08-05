@@ -2039,16 +2039,13 @@ static void check_outer_mutation(ASTNode *ast, LintContext *ctx) {
  * #262 aliasing workaround, not a bare read). Sites that mean the bare read
  * deliberately carry `# lint: allow W016` (#399). */
 
-static const char *W016_PREDICATE_NAMES[] = {
-    "converged", "stable", "improving", "oscillating", "diverging", "equilibrium"
-};
 
 static void w016_scan(ASTNode *n, LintContext *ctx) {
     if (!n) return;
     switch (n->type) {
         case AST_PREDICATE: {
             int k = n->data.predicate.kind;
-            const char *nm = (k >= 0 && k < 6) ? W016_PREDICATE_NAMES[k] : "predicate";
+            const char *nm = (k >= 0) ? eigs_predicate_name((unsigned)k) : "predicate";
             lint_warn(ctx, n->line, "W016",
                 "bare '%s' reads the last-observed binding (an invisible "
                 "alias) — write '%s of <var>'", nm, nm);

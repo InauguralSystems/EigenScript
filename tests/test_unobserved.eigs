@@ -50,4 +50,151 @@ g.z is 5
 g.z is g.z + 1
 assert_eq of [g.z, 6, "observed mutation still works"]
 
+# ---- #871: a predicate inside `unobserved:` RAISES ----
+# The block's depth is dynamic, so it also covers callees. Before this, a
+# caller adding a performance annotation silently changed a callee's answer,
+# and a bare `loop while not converged` inside one never terminated at all:
+# the predicate could not become true, and the stall backstop that would have
+# ended the loop is gated on the same depth. Returning false forever is the
+# worst available answer, so the predicate says it cannot answer.
+
+define settle as:
+    x is 5.0
+    k is 0
+    loop while not (converged of x):
+        x is x * 0.5
+        k is k + 1
+        if k > 60:
+            return 0 - 1
+    return k
+
+# Observed, the callee works and returns a real iteration count.
+normal is settle of 0
+assert of [normal > 0, "UO-871 the callee terminates and answers when observed"]
+
+# Called from inside an unobserved: block, it raises instead of answering
+# with the silently-wrong -1 it used to return.
+caught is 0
+kind is ""
+msg is ""
+try:
+    unobserved:  # lint: allow W020 -- the call is the point, not a speedup
+        settle of 0
+catch e:
+    caught is 1
+    kind is e.kind
+    msg is e.message
+assert of [caught == 1, "UO-871 a predicate in a callee under unobserved raises"]
+assert of [kind == "value", "UO-871 kind is value"]
+assert of [(contains of [msg, "converged"]) == 1, "UO-871 message names the predicate"]
+assert of [(contains of [msg, "unobserved"]) == 1, "UO-871 message names the block"]
+assert of [(contains of [msg, "dynamic"]) == 1, "UO-871 message explains the transitive scope"]
+
+# The message names the predicate that was actually asked, not a fixed word.
+caught2 is 0
+msg2 is ""
+try:
+    unobserved:  # lint: allow W020 -- ditto
+        w is 1.0
+        w is w + 1.0
+        if diverging of w:
+            w is 0
+catch e:
+    caught2 is 1
+    msg2 is e.message
+assert of [caught2 == 1, "UO-871 a direct named predicate raises too"]
+assert of [(contains of [msg2, "diverging"]) == 1, "UO-871 message names THAT predicate"]
+
+# A bare predicate (no operand) is the third opcode and raises as well.
+caught3 is 0
+try:
+    unobserved:  # lint: allow W020 -- ditto
+        q is 2.0
+        q is q * 2.0
+        if stable:
+            q is 0
+catch e:
+    caught3 is 1
+assert of [caught3 == 1, "UO-871 a bare predicate raises too"]
+
+# Non-predicate work inside unobserved is unaffected — the block is still a
+# performance annotation for everything that does not ask the observer.
+acc is 0
+unobserved:
+    for i in range of 100:
+        acc is acc + i
+assert_eq of [acc, 4950, "UO-871 ordinary unobserved work is untouched"]
+
+# And once the block is left, predicates answer again.
+after is settle of 0
+assert of [after > 0, "UO-871 predicates work again after the block"]
+
+# ---- #871: leaving an `unobserved:` block by ANY edge restores the depth ----
+# g_unobserved_depth is a runtime counter that only OP_UNOBSERVED_END
+# decrements, and the compiler emitted that opcode on the fallthrough edge
+# only. So a return / break / continue out of the block, or an error caught
+# outside it, left the depth elevated for the rest of the PROCESS: the
+# observer silently stopped recording, and every later `report` answered
+# "equilibrium" about a value that was plainly moving. Four separate silent
+# deaths of the observer, none of which produced any diagnostic.
+#
+# The probe: a value that IS moving must report as moving.
+define moving_probe as:
+    y is 3.0
+    y is y * 0.5
+    y is y * 0.5
+    return report of y
+
+assert of [(moving_probe of 0) == "moving", "UO-871L baseline: a moving value reports moving"]
+
+# 1. an error caught OUTSIDE the block
+try:
+    unobserved:  # lint: allow W020 -- the unwind is the point
+        pair is [1, 2]
+        boom is pair[99]
+catch e:
+    boom_kind is e.kind
+assert of [(moving_probe of 0) == "moving", "UO-871L a caught error does not kill the observer"]
+
+# 2. `return` from inside the block
+define returns_from_inside as:
+    unobserved:  # lint: allow W020 -- ditto
+        return 1
+    return 0
+assert of [(returns_from_inside of 0) == 1, "UO-871L return from inside the block still returns"]
+assert of [(moving_probe of 0) == "moving", "UO-871L return does not kill the observer"]
+
+# 3. `break` out of the block
+for bi in range of 3:
+    unobserved:  # lint: allow W020 -- ditto
+        if bi == 0:
+            break
+assert of [(moving_probe of 0) == "moving", "UO-871L break does not kill the observer"]
+
+# 4. `continue` out of the block
+for ci in range of 3:
+    unobserved:  # lint: allow W020 -- ditto
+        if ci == 0:
+            continue
+assert of [(moving_probe of 0) == "moving", "UO-871L continue does not kill the observer"]
+
+# 5. nested blocks unwind all the way out, not one level
+define nested_return as:
+    unobserved:  # lint: allow W020 -- ditto
+        unobserved:  # lint: allow W020 -- ditto
+            return 7
+    return 0
+assert of [(nested_return of 0) == 7, "UO-871L nested return still returns"]
+assert of [(moving_probe of 0) == "moving", "UO-871L nested return restores every level"]
+
+# 6. and the block still WORKS after all that — it is not stuck off either.
+seen_inside is ""
+m is 9.0
+unobserved:  # lint: allow W020 -- checking the block is still functional
+    m is m * 0.5
+    m is m * 0.5
+    seen_inside is report of m
+assert of [seen_inside == "equilibrium", "UO-871L the block still suppresses observation"]
+assert of [(moving_probe of 0) == "moving", "UO-871L and normal observation resumes after it"]
+
 test_summary of null

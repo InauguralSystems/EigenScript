@@ -160,6 +160,46 @@ All notable changes to EigenScript are documented here.
   wherever the extension is compiled in — previously the whole file was
   effectively inert without a server) plus DB18–DB26 against the live
   CI postgres service.
+- **An observer predicate inside `unobserved:` raises instead of
+  answering `false` forever (#871).** The block's depth is *dynamic* —
+  it covers every function called from inside it — so a caller adding a
+  performance annotation silently changed a callee's answer (a settle
+  loop returned `-1` instead of `22`), and a bare
+  `loop while not converged` inside one **never terminated**: the
+  predicate could not become true, and the stall backstop that would
+  have ended the loop is gated on the same depth, so both mechanisms
+  that could have saved it failed for the same reason at the same
+  moment. A predicate asked under an `unobserved:` block is being asked
+  a question the runtime structurally cannot answer, and now says so —
+  naming the predicate, the block, and the transitive scope. Everything
+  that does not interrogate the observer is untouched, so the block
+  remains the performance knob it is documented to be.
+  Deliberately *not* fixed by ungating the stall backstop instead: that
+  check reads a frozen trajectory as "quiet", so ungating it would exit
+  every legitimate `unobserved:` loop after 100 iterations — including
+  the accumulator loop README.md:189 measures at 2.7x. With the
+  predicate raising, the hang is unreachable. And `unobserved:` was left
+  dynamic rather than made lexical, because lexical scoping would
+  exclude callees, which is most of what a hot region does.
+
+### Fixed
+
+- **`unobserved:` leaked its depth on every exit edge but one, silently
+  killing the observer for the rest of the process (#871, found while
+  fixing it).** `g_unobserved_depth` is a runtime counter that only
+  `OP_UNOBSERVED_END` decrements, and the compiler emitted that opcode
+  on the fallthrough edge only. A `return`, `break`, or `continue` out
+  of the block — or **any error caught outside it** — left the depth
+  elevated permanently: from then on the observer recorded nothing, and
+  every `report` answered `equilibrium` about a value that was plainly
+  moving. Four independent silent deaths of the runtime's central
+  mechanism, none producing a diagnostic. Fixed the way #726 fixed the
+  identical disease in `g_try_depth`: `break`/`continue`/`return` now
+  emit the `OP_UNOBSERVED_END`s for every block they jump out of
+  (per-loop baselines for the first two), and a `try` handler records
+  the depth at registration and restores it when an error unwinds into
+  the catch. `tests/test_unobserved.eigs` pins all four edges plus
+  nesting, with a moving-value probe.
 
 - **chart renders 1.5× faster at high point counts (#828).** The series
   hot loop called `_chart_map` — a fresh 2-element list — per plotted
@@ -187,8 +227,6 @@ All notable changes to EigenScript are documented here.
   both now prints a one-line stderr warning (once per name per process)
   naming the file used and the file shadowed. Sweep of the repo and all
   15 consumer repos found zero imports whose resolution flips.
-
-### Fixed
 
 - **vm_run_bytecode/sandbox_run: an assembled chunk's temporal opcodes
   now turn history recording on themselves (#831).** `g_trace_hist` was

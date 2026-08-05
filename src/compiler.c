@@ -30,6 +30,9 @@ typedef struct {
     int  continue_target;
     int  scope_depth;
     int  has_fresh_env; /* 1 if loop emits OP_LOOP_ENV_FRESH per iteration (for-loops) */
+    int  unobs_depth_at_entry; /* #871: c->unobs_depth when the loop opened —
+                              * break/continue leave every `unobserved:` block
+                              * they jump out of, exactly as they leave `try`. */
     int  try_depth_at_entry; /* c->try_depth when the loop opened — break/continue
                               * must emit one OP_TRY_END per try block they jump
                               * out of, or the handler stays registered (#726) */
@@ -92,6 +95,11 @@ typedef struct Compiler {
                                      * normal name-call path honors the user
                                      * binding, and the builtin fallback is
                                      * semantically identical (fail-open). */
+    int               unobs_depth;  /* #871: lexical `unobserved:` nesting here.
+                                     * g_unobserved_depth is a runtime counter
+                                     * that only UNOBSERVED_END decrements, so
+                                     * every non-fallthrough exit must emit its
+                                     * own — same disease as #726's try_depth. */
     int               try_depth;    /* #726: lexical `try` nesting at this point in
                                      * THIS function's body (a nested AST_FUNC gets
                                      * its own Compiler, so it restarts at 0 —
@@ -193,6 +201,7 @@ static LoopCtx *loop_push(Compiler *c) {
     }
     LoopCtx *lp = xcalloc(1, sizeof(LoopCtx));
     lp->try_depth_at_entry = c->try_depth;
+    lp->unobs_depth_at_entry = c->unobs_depth;
     c->loops[c->loop_depth++] = lp;
     return lp;
 }
@@ -2256,6 +2265,13 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * (#726). Mirrors the loop-env cleanup below. */
             for (int t = c->try_depth; t > lp->try_depth_at_entry; t--)
                 emit(c, OP_TRY_END, node->line);
+            /* #871: and leave every `unobserved:` block being jumped out of.
+             * Without this the runtime depth stayed elevated for the rest of
+             * the PROCESS — the observer silently stopped recording, so every
+             * later `report` read `equilibrium` on a moving value and every
+             * predicate answered about a frozen trajectory. */
+            for (int u = c->unobs_depth; u > lp->unobs_depth_at_entry; u--)
+                emit(c, OP_UNOBSERVED_END, node->line);
             /* Clean up loop env before jumping out, but ONLY if the loop allocated
              * a per-iteration env. While-loops don't — emitting OP_LOOP_ENV_END
              * there would free the surrounding env (often the global one). */
@@ -2290,6 +2306,13 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * ran, so try_count climbed until it pinned at the cap. */
             for (int t = c->try_depth; t > lp->try_depth_at_entry; t--)
                 emit(c, OP_TRY_END, node->line);
+            /* #871: and leave every `unobserved:` block being jumped out of.
+             * Without this the runtime depth stayed elevated for the rest of
+             * the PROCESS — the observer silently stopped recording, so every
+             * later `report` read `equilibrium` on a moving value and every
+             * predicate answered about a frozen trajectory. */
+            for (int u = c->unobs_depth; u > lp->unobs_depth_at_entry; u--)
+                emit(c, OP_UNOBSERVED_END, node->line);
             /* End this iteration's env before jumping back, exactly as break
              * does below — the back-edge target sits BEFORE the per-iteration
              * OP_LOOP_ENV_FRESH, so without this the env is never torn down:
@@ -2484,6 +2507,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * every later uncaught error in the process (#726). */
         for (int t = c->try_depth; t > 0; t--)
             emit(c, OP_TRY_END, node->line);
+        /* #871: same for `unobserved:` — a `return` from inside one leaked the
+         * runtime depth permanently and killed the observer process-wide. */
+        for (int u = c->unobs_depth; u > 0; u--)
+            emit(c, OP_UNOBSERVED_END, node->line);
         emit(c, node->data.ret.expr ? OP_RETURN : OP_RETURN_NULL, node->line);
         break;
     }
@@ -2930,8 +2957,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             name_set_free(&interrogated_here);
         }
         emit(c, OP_UNOBSERVED_BEGIN, node->line);
+        c->unobs_depth++;                                     /* #871 */
         /* Unobserved block body is stored as block.stmts */
         compile_block(c, node->data.block.stmts, node->data.block.count);
+        c->unobs_depth--;
         emit(c, OP_UNOBSERVED_END, node->line);
         break;
     }

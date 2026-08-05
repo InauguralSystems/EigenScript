@@ -1220,6 +1220,8 @@ typedef enum {
     EK_USER,              /* `throw` — catch binds the thrown value, not a dict */
 } ErrKind;
 const char* err_kind_name(ErrKind k);
+/* #871: predicate word for a kind (parser/VM/lint share this table). */
+const char* eigs_predicate_name(unsigned kind);
 void rt_error(ErrKind kind, int line, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
 char* read_file_util(const char *path, long *out_size);
