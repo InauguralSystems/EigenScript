@@ -1441,6 +1441,30 @@ else
     echo "  FAIL: import tests"
     echo "$IM_OUTPUT" | grep -i "FAIL\|assert\|error" | head -5
 fi
+
+# #821: stdlib-shadowing collision diagnostic. Resolution is project-first
+# (asserted inside test_import.eigs); the warning is stderr-only, so it is
+# asserted here: exactly ONE line for a collided name however many import
+# statements execute (warn-once dedup), and NO line when only the stdlib
+# matches. Runs in a temp dir so the probe cannot touch tree state.
+SH821_DIR=$(mktemp -d)
+SH821_BIN="$PWD/eigenscript"
+printf 'MARKER is 42\n' > "$SH821_DIR/physics.eigs"
+printf 'import physics\nimport physics\nprint of physics.MARKER\n' > "$SH821_DIR/shadow.eigs"
+printf 'import math\nprint of (math.abs of -5)\n' > "$SH821_DIR/clean.eigs"
+SH821_ERR=$(cd "$SH821_DIR" && "$SH821_BIN" shadow.eigs 2>&1 >/dev/null)
+SH821_WARNS=$(printf '%s\n' "$SH821_ERR" | grep -c "Warning: import 'physics'")
+SH821_CLEAN=$(cd "$SH821_DIR" && "$SH821_BIN" clean.eigs 2>&1 >/dev/null | grep -c "Warning: import")
+TOTAL=$((TOTAL + 2))
+if [ "$SH821_WARNS" = "1" ] && [ "$SH821_CLEAN" = "0" ]; then
+    PASS=$((PASS + 2))
+    echo "  PASS: import collision warning (#821: once on shadow, none clean)"
+else
+    FAIL=$((FAIL + 2))
+    echo "  FAIL: import collision warning (#821) — shadow warnings=$SH821_WARNS (want 1), clean warnings=$SH821_CLEAN (want 0)"
+    printf '%s\n' "$SH821_ERR" | head -3
+fi
+rm -rf "$SH821_DIR"
 echo ""
 
 # [38] Pattern matching

@@ -41,8 +41,8 @@ import format
 result is format.fmt_num of [3.14159, 2]
 assert_eq of [result, "3.14", "import format.fmt_num"]
 
-# --- User modules: when lib/<name>.eigs doesn't exist, import falls
-# back to <name>.eigs resolved relative to the script. Same namespacing.
+# --- User modules: <name>.eigs resolved relative to the script is tried
+# FIRST, before the stdlib's lib/<name>.eigs (#821). Same namespacing.
 # (The suite runs from src/, so the script dir is ../tests.)
 write_text of ["../tests/tmp_user_module.eigs", "FACTOR is 7\ndefine scaled(x) as:\n    return x * FACTOR\n"]
 import tmp_user_module
@@ -57,6 +57,17 @@ import tmp_priv_module
 assert_eq of [has_key of [tmp_priv_module, "visible"], 1, "public name exported"]
 assert_eq of [has_key of [tmp_priv_module, "_secret"], 0, "_name stays private"]
 rm of "../tests/tmp_priv_module.eigs"
+
+# --- #821: a project file with a stdlib module's name wins (project-first).
+# Before #821, `import physics` here silently bound the stdlib's
+# lib/physics.eigs and every member access on the intended module read
+# null (dynamics F-DYN-8). The collision warning itself is asserted at
+# the shell level in run_all_tests.sh (it goes to stderr).
+write_text of ["../tests/physics.eigs", "SHADOW_MARKER is 821\n"]
+import physics
+assert_eq of [has_key of [physics, "SHADOW_MARKER"], 1, "project file shadows stdlib (#821)"]
+assert_eq of [physics.SHADOW_MARKER, 821, "shadowing module's own binding read"]
+rm of "../tests/physics.eigs"
 
 # Missing module raises a catchable error naming both tried paths.
 import_err is ""
