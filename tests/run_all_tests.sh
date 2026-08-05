@@ -2872,6 +2872,14 @@ echo ""
 # src/embed_smoke.c, gated by `make embed-smoke` in CI.
 check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_temporal_producers.eigs "All tests passed" 5
 
+# [70f] #831 — the other half: a descriptor must turn recording ON itself.
+# [70e] proves reads work once recording is on, but its own source contains the
+# `prev of` that arms it. Here the host program has NO temporal query anywhere,
+# so every answer exists only if the descriptor assembler's bytecode walk
+# (chunk_arm_temporal) armed the chunk's names — pre-fix, all of these were
+# null, on every version back to v0.34.0.
+check_eigs_suite "descriptor arms its own history recording (#831)" test_temporal_producers_unarmed.eigs "All tests passed" 5
+
 # [98] Cross-thread channel dict-key survival (#293).
 echo "[98] Cross-thread Channel Dict Keys (7 checks)"
 XCD_OUTPUT=$(./eigenscript ../tests/test_chan_dict_xthread.eigs 2>&1); XCD_OUTPUT_RC=$?

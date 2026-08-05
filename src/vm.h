@@ -631,6 +631,10 @@ const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
 int        chunk_verify(EigsChunk *chunk);
+/* #831: arm history recording for the temporal opcodes an assembled chunk
+ * contains (the compiler's source scan, replayed over verified bytecode).
+ * Only call on a chunk tree chunk_verify accepted. */
+void       chunk_arm_temporal(const EigsChunk *chunk);
 
 /* Compiler */
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
