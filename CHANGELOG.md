@@ -25,6 +25,14 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **[62] audio capture no longer flakes on an opened-but-silent device
+  (#876).** A real capture device that opens but delivers no samples in
+  the bounded poll (suspended/held source) failed two checks — and the
+  section lump-counts, so the suite reported 38 failures for an
+  environment condition. The delivery-dependent checks now SKIP with the
+  count held constant (the file's existing no-device convention); a
+  delivering device still runs every check against the real driver.
+
 - **The freestanding profile now enforces switch exhaustiveness
   (#835).** `tools/freestanding_check.sh` was a third compile mechanism
   alongside the Makefile and `build.sh`, and neither of its hand-written
@@ -53,6 +61,21 @@ All notable changes to EigenScript are documented here.
   suite and on real pixels in section [132], each with a planted fault.
 
 ### Changed
+
+- **chart renders 1.5× faster at high point counts (#828).** The series
+  hot loop called `_chart_map` — a fresh 2-element list — per plotted
+  point per frame; at 4,000 points that allocation was ~37% of the frame
+  (ceiling-probed), and under armed temporal history those lists are
+  pinned (#827 amplifier, +3.9 MB/frame in the dynamics bifurcation
+  consumer). The loop now inlines the mapping as scalar arithmetic with
+  the view factors hoisted; every other `_chart_map` site (ticks,
+  markers, hover) is cold and keeps the readable form. Measured n=5
+  medians, 4,000-point points-style series under `SDL_VIDEODRIVER=dummy`:
+  62.7 → 42.6 ms/frame (~87% of the probed ceiling). A [63] check pins
+  the inline mapping to `chart_to_pixel`'s exact floored pixels.
+  Also added `chart_vline(x, label, color)` / `chart_hline(y, label,
+  color)` — the same markers without the dead coordinate the generic
+  `chart_marker` forces callers to invent.
 
 - **import resolution is project-first, and a stdlib collision warns
   (#821).** `import name` now tries `name.eigs` (script-relative, plus

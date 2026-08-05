@@ -2562,6 +2562,51 @@ dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
 assert_eq of [dcel.editing, 1, "#847 editable_label double-click still starts editing"]
 
 # ============================================================
+# #828 — chart hot-loop scalar mapping + vline/hline constructors
+# ============================================================
+print of "--- #828 chart scalar mapping + vline/hline ---"
+
+# The inlined scalar mapping must land points where _chart_map does:
+# render a 2-point series (both strictly interior, so the square dot is
+# not edge-clipped) and assert each recorded dot rect sits at
+# chart_to_pixel's answer for the same data coords. _chart_dot draws a
+# rect at (floor(sx) - pr, floor(sy) - pr) sized 2*pr+1.
+sm_ch is chart of ["sm_ch", 0, 0, 300, 200]
+sm_s is chart_series of ["s", [2.5, 7.5], [4.0, 6.0], [9, 9, 9]]
+sm_s.style is "points"
+chart_add_series of [sm_ch, sm_s]
+sm_ch.x_min is 0.0
+sm_ch.x_max is 10.0
+sm_ch.y_min is 0.0
+sm_ch.y_max is 10.0
+_gfx_log is []
+_gfx_rec is 1
+_render_chart of [sm_ch, 0, 0]
+_gfx_rec is 0
+sm_exp1 is chart_to_pixel of [sm_ch, 2.5, 4.0]
+sm_exp2 is chart_to_pixel of [sm_ch, 7.5, 6.0]
+sm_hits is 0
+for smi in range of (len of _gfx_log):
+    if _gfx_log[smi][0] == "rect":
+        local sa is _gfx_log[smi][1]
+        if sa[4] == 9 and sa[5] == 9 and sa[6] == 9 and sa[2] == 5 and sa[3] == 5:
+            if (sa[0] == (floor of sm_exp1[0]) - 2) and (sa[1] == (floor of sm_exp1[1]) - 2):
+                sm_hits is sm_hits + 1
+            elif (sa[0] == (floor of sm_exp2[0]) - 2) and (sa[1] == (floor of sm_exp2[1]) - 2):
+                sm_hits is sm_hits + 1
+assert_eq of [sm_hits, 2, "#828 inlined scalar mapping lands both points exactly where chart_to_pixel says"]
+
+# vline/hline constructors: only the live coordinate is taken.
+sm_v is chart_vline of [3.5, "vee", [1, 2, 3]]
+assert_eq of [sm_v.kind, "vline", "#828 chart_vline kind"]
+assert_eq of [sm_v.x, 3.5, "#828 chart_vline x passthrough"]
+assert_eq of [sm_v.label, "vee", "#828 chart_vline label"]
+sm_h is chart_hline of [0.25, "aych", null]
+assert_eq of [sm_h.kind, "hline", "#828 chart_hline kind"]
+assert_eq of [sm_h.y, 0.25, "#828 chart_hline y passthrough"]
+assert_eq of [(chart_add_marker of [sm_ch, sm_v]), 0, "#828 chart_add_marker accepts a chart_vline"]
+
+# ============================================================
 # #823 — widget drawing is contained (clip stack + render() clip)
 # ============================================================
 # A stubbed gfx layer cannot crop, so containment is proved the same way

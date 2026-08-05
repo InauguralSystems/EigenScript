@@ -94,6 +94,15 @@ define chart_add_series(ch, s) as:
 define chart_marker(kind, x, y, label, color) as:
     return {"kind": kind, "x": x, "y": y, "label": label, "color": color}
 
+# vline/hline take only the coordinate they use — the generic
+# chart_marker forces the caller to invent the ignored one, and a wrong
+# value there is silently accepted (#828). Same marker representation.
+define chart_vline(x, label, color) as:
+    return chart_marker of ["vline", x, 0, label, color]
+
+define chart_hline(y, label, color) as:
+    return chart_marker of ["hline", 0, y, label, color]
+
 define chart_add_marker(ch, m) as:
     append of [ch.markers, m]
     return (len of ch.markers) - 1
@@ -675,6 +684,18 @@ define _render_chart(widget, ax, ay) as:
     # Series + markers: software-clipped per primitive, and gfx_clip'd as
     # well so the real renderer enforces it independently.
     ui_clip_push of [v.px, v.py, v.pw, v.ph]
+    # Per-point mapping is inlined SCALAR in this loop (#828): _chart_map
+    # returns a fresh 2-element list, and one list per plotted point per
+    # frame was ~37% of the frame at 4,000 points (and an amplifier for
+    # #827 pinning under armed history). The view factors are hoisted so
+    # the loop body is pure scalar arithmetic; every other _chart_map
+    # site is cold (ticks, markers, hover) and keeps the readable form.
+    local mx0 is v.x0
+    local my0 is v.y0
+    local mxk is v.pw / (v.x1 - v.x0)
+    local myk is v.ph / (v.y1 - v.y0)
+    local mpx is v.px
+    local mpyh is v.py + v.ph
     for si in range of (len of widget.series):
         local s is widget.series[si]
         local c is _chart_series_color of [widget, si]
@@ -685,7 +706,8 @@ define _render_chart(widget, ax, ay) as:
         if pr == null:
             pr is 2
         local xs is s.x
-        local n is len of s.data
+        local sd is s.data
+        local n is len of sd
         local lastx is 0
         local lasty is 0
         local have is 0
@@ -693,14 +715,15 @@ define _render_chart(widget, ax, ay) as:
             local vx is di
             if xs != null:
                 vx is xs[di]
-            local p is _chart_map of [v, vx, s.data[di]]
+            local psx is mpx + (vx - mx0) * mxk
+            local psy is mpyh - (sd[di] - my0) * myk
             if have == 1:
                 if style != "points":
-                    _chart_line of [lastx, lasty, p[0], p[1], r, c]
+                    _chart_line of [lastx, lasty, psx, psy, r, c]
             if style != "line":
-                _chart_dot of [p[0], p[1], pr, r, c]
-            lastx is p[0]
-            lasty is p[1]
+                _chart_dot of [psx, psy, pr, r, c]
+            lastx is psx
+            lasty is psy
             have is 1
     for mi in range of (len of widget.markers):
         local m is widget.markers[mi]
