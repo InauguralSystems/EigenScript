@@ -216,15 +216,60 @@ void* health_thread(void *arg) {
  * HTTP BUILTINS
  * ================================================================ */
 
+/* #877: no route slot takes a callback. Every slot — method, path, kind,
+ * body/source — is stringified into the route table, and VAL_FN/VAL_BUILTIN
+ * are the only value types with no sensible rendering: they produce the debug
+ * reprs `<fn name>` / `<builtin>`. Dicts, lists, numbers, buffers and
+ * text-builders all stringify to something a client can use, so this is the
+ * whole of the class. The trap is foreseeable from the signature alone —
+ * `handler` means "callback" in every mainstream framework, while here it is
+ * a literal body — and the failure is silent AND remote-visible: a live
+ * endpoint answers 200 with `<fn hello>` and nothing is logged. */
+static int route_slot_is_callable(const Value *v) {
+    return v && (v->type == VAL_FN || v->type == VAL_BUILTIN);
+}
+
 Value* builtin_http_route(Value *arg) {
     /* #356: registration failures must raise — the return value is never
      * checked, so a silent make_null() means the route just never exists. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        rt_error(EK_TYPE, 0, "http_route requires [method, path, handler...] (3+ elements)");
+        rt_error(EK_TYPE, 0, "http_route requires [method, path, body...] (3+ elements)");
         return make_null();
     }
     if (g_server.route_count >= MAX_ROUTES) {
         rt_error(EK_LIMIT, 0, "http_route: route table full (max %d routes)", MAX_ROUTES);
+        return make_null();
+    }
+
+    /* #877: reject callables BEFORE anything is allocated or stored. rt_error
+     * sets the error flag and returns rather than unwinding, so raising after
+     * the value_to_string calls below would strand method/path in a route slot
+     * that route_count never reaches — a leak on the error path. Registration
+     * time is also the right moment: the error lands on the line the author
+     * wrote, before the socket is listening, instead of on a client request. */
+    for (int i = 0; i < 2; i++) {
+        if (route_slot_is_callable(arg->data.list.items[i])) {
+            rt_error(EK_TYPE, 0, "http_route: %s must be a string, not a function",
+                     i == 0 ? "method" : "path");
+            return make_null();
+        }
+    }
+    if (arg->data.list.count >= 4) {
+        if (route_slot_is_callable(arg->data.list.items[2])) {
+            rt_error(EK_TYPE, 0, "http_route: kind must be a string, not a function "
+                                 "(expected \"code\" or \"static\")");
+            return make_null();
+        }
+        if (route_slot_is_callable(arg->data.list.items[3])) {
+            rt_error(EK_TYPE, 0, "http_route: the code form's source must be a string of "
+                                 "EigenScript source, not a function — "
+                                 "http_route of [method, path, \"code\", \"return 42\"]");
+            return make_null();
+        }
+    } else if (route_slot_is_callable(arg->data.list.items[2])) {
+        rt_error(EK_TYPE, 0, "http_route: body must be a value, not a function — pass a "
+                             "literal body (\"pong\"), or use the code form: "
+                             "http_route of [method, path, \"code\", \"<source>\"]");
         return make_null();
     }
 

@@ -57,21 +57,26 @@ define http_post_json(url, data) as:
 # Server helpers (require http extension builtins)
 # ============================================================
 
-# ---- route_get: register a GET handler ----
-define route_get(path, handler) as:
-    http_route of ["GET", path, handler]
+# #877: the parameter is a literal response BODY, not a callback. These
+# wrappers used to name it `handler`, which is what invites passing a
+# function — http_route now raises on one rather than serving `<fn name>`.
+# For per-request logic use the code form: http_route of [m, p, "code", src].
 
-# ---- route_post: register a POST handler ----
-define route_post(path, handler) as:
-    http_route of ["POST", path, handler]
+# ---- route_get: register a GET route with a literal body ----
+define route_get(path, body) as:
+    http_route of ["GET", path, body]
 
-# ---- route_authed_get: register an authenticated GET handler ----
-define route_authed_get(path, handler) as:
-    http_route_authed of ["GET", path, handler]
+# ---- route_post: register a POST route with a literal body ----
+define route_post(path, body) as:
+    http_route of ["POST", path, body]
 
-# ---- route_authed_post: register an authenticated POST handler ----
-define route_authed_post(path, handler) as:
-    http_route_authed of ["POST", path, handler]
+# ---- route_authed_get: authenticated GET route with a literal body ----
+define route_authed_get(path, body) as:
+    http_route_authed of ["GET", path, body]
+
+# ---- route_authed_post: authenticated POST route with a literal body ----
+define route_authed_post(path, body) as:
+    http_route_authed of ["POST", path, body]
 
 # ---- json_response: build a JSON response string ----
 define json_response(data) as:

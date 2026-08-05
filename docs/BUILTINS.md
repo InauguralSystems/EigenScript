@@ -567,8 +567,8 @@ axis. Three controls bound it:
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `http_route` | `http_route of [method, path, handler]` or `[method, path, "code", source]` | Register route handler (literal body or per-request `code` source) |
-| `http_route_authed` | `http_route_authed of [method, path, handler]` or `[method, path, "code", source]` | Register authenticated route; auth source published via `shared_set of ["require_auth", "<source>"]` |
+| `http_route` | `http_route of [method, path, body]` or `[method, path, "code", source]` | Register a route. `body` is a literal response body, **not** a callback — passing a function raises (#877); use the `code` form for per-request logic |
+| `http_route_authed` | `http_route_authed of [method, path, body]` or `[method, path, "code", source]` | Register authenticated route; auth source published via `shared_set of ["require_auth", "<source>"]` |
 | `http_static` | `http_static of [prefix, directory]` | Serve static files (realpath-confined to `directory`) |
 | `http_early_bind` | `http_early_bind of null` | Pre-bind socket and start health thread |
 | `http_serve` | `http_serve of port` | Start blocking HTTP server |
