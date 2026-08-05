@@ -763,10 +763,18 @@ define dispatch(root, ev) as:
         dbl_entry is _widget_registry[hit.type]
         if dbl_entry != null and dbl_entry.no_dblclick == 1:
             dbl_ok is 0
+        # #847: only a widget that DECLARED a double-click meaning — an
+        # on_dblclick handler, or editable_label's edit trigger — may
+        # consume the second click. For every other widget the rapid
+        # second mousedown is a real action (piano retrigger, checkbox
+        # re-toggle, a different sub-target under the same id) and falls
+        # through to the registry on_mousedown below.
+        if dbl_ok == 1 and hit.type != "editable_label" and hit.on_dblclick == null:
+            dbl_ok is 0
         if dbl_ok == 1 and (_has_open_popup of hit) == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
             if hit.type == "editable_label":
                 _start_editing of hit
-            elif hit.on_dblclick != null:
+            else:
                 hit.on_dblclick of hit
             _ui.last_click_id is ""
             _ui.last_click_time is 0

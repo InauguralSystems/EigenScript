@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **ui: dispatch no longer swallows the rapid second click on widgets
+  without a declared double-click meaning (#847).** The double-click
+  branch consumed any second mousedown on the same id inside 400ms —
+  even when the widget had no `on_dblclick` and wasn't an
+  `editable_label` — so the click never reached the registry
+  `on_mousedown` (piano double-tap retrigger, checkbox re-toggle, a
+  second target under one dock id). The default is now inverted: only
+  widgets that declared a double-click meaning consume the second
+  click; everything else falls through. The `no_dblclick` registry
+  opt-out (#848) remains as a type-level veto.
+
 ## [0.38.0] - 2026-08-04
 
 ### Added
