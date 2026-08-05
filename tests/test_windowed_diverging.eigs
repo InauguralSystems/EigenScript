@@ -1,3 +1,9 @@
+# #861: numeric bindings route the predicate words to the VALUE channel
+# (see docs/PREDICATES.md). The sequences below drive numbers, so the
+# entropy-window mechanics this file was written for are now reachable
+# only via `classify of [t, "entropy"]` — pinned per-case where the
+# entropy behaviour was the point. The routed pins were re-measured and
+# each change is annotated at the assert.
 # Windowed `diverging` (#208, docs/PREDICATES.md) — mirror of `improving`:
 #   diverging = count >= 3
 #               AND sum(window) > 0           (NET entropy ascent, magnitude-aware)
@@ -25,7 +31,8 @@ a is 9.0
 a is 5.0
 a is 3.0
 d1 is diverging
-want of ["WD1 monotone clean ascent fires", d1, 1]
+# #861 re-pin: value route: 499->3 with steps contracting 400->2 is a genuine approach -> improving; the ENTROPY ascent reads "diverging" only on the entropy channel (pinned via classify below)
+want of ["WD1 monotone clean ascent fires", d1, 0]
 
 # WD2: noisy ascent with down-ticks still fires — net up AND majority (4/6)
 #      genuine ascents. Proportional vote tolerates the bounces.
@@ -37,7 +44,8 @@ b is 40.0
 b is 5.0
 b is 3.0
 d2 is diverging
-want of ["WD2 noisy ascent, net+majority, fires", d2, 1]
+# #861 re-pin: value route: bouncing -> oscillating
+want of ["WD2 noisy ascent, net+majority, fires", d2, 0]
 
 # WD3: net entropy FELL despite several ascent steps -> does NOT fire.
 #      Magnitude mirror of the anti-lie guard: most steps tick up but the value
@@ -60,7 +68,8 @@ e is 54.0
 e is 52.0
 e is 50.0
 d4 is diverging
-want of ["WD4 gray-band steady ascent does not fire", d4, 0]
+# #861 re-pin: value route AGREES here for the right reason: -2/step is a linear runaway toward -inf (raw non-vanishing same-sign), where the entropy channel called it gray-band "stable"
+want of ["WD4 gray-band steady ascent does not fire", d4, 1]
 
 # WD5: net UP but only a MINORITY (2/5) of steps are genuine ascents -> does
 #      NOT fire. Proves the proportional vote gates independently of sum>0.
@@ -96,5 +105,18 @@ k is 50.0
 k is 3.0
 d8 is diverging
 want of ["WD8 count < 3 does not fire", d8, 0]
+
+
+# #861: entropy-window mechanics — WD1 is the canonical entropy-ascent (value
+# decay toward 1) case; its entropy label must stay "diverging".
+wd1e is 499.0
+wd1e is 99.0
+wd1e is 19.0
+wd1e is 9.0
+wd1e is 5.0
+wd1e is 3.0
+elabel is classify of [(trajectory of wd1e), "entropy"]
+assert of [elabel == "diverging", f"WD1e entropy channel lost its diverging verdict: {elabel}"]
+print of "  PASS: WD1e entropy channel still reads diverging via classify"
 
 print of "WINDOWED_DIVERGING_ALL_PASS"

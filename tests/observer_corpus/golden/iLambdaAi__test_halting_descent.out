@@ -1,8 +1,8 @@
 === HALTING: BOUNDED DESCENT TEST ===
 --- HD1: Entropy strictly decreases each iteration ---
-20
-converged
-2.3617382852898424e-06
--2.1710030211783986e-06
+110
+diverging
+8.730003786945632e-33
+-8.575929391394651e-33
 
 === BOUNDED DESCENT COMPLETE ===

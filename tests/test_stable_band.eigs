@@ -1,6 +1,9 @@
 print of "=== STABLE BAND TEST ==="
 
-print of "--- SB1: Stable is reachable (full-window small drift, moderate H) ---"
+# #861: a +2/step climb is a linear runaway on the value route (raw
+# non-vanishing same-sign — the #422 additive class the entropy gray band
+# hid). stable=0, report=diverging.
+print of "--- SB1: steady linear drift reads diverging (was entropy-stable) ---"
 x is 30
 x is 32
 x is 34
@@ -22,7 +25,9 @@ print of where is x
 print of why is x
 
 print of ""
-print of "--- SB2: Converged is NOT stable (needs full window) ---"
+# #861: the routed quiescent lattice — converged implies stable (all steps
+# under the deadband satisfies both).
+print of "--- SB2: converged implies stable (routed lattice) ---"
 y is 1000000
 y is 1000000
 y is 1000000

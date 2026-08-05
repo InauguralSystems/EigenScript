@@ -1,79 +1,76 @@
+# Report-predicate alignment (#861: routed semantics). Each case drives a
+# VALUE trajectory that genuinely produces the band, then checks the bare
+# predicate and `report` agree — the full-window agreement guarantee,
+# exercised state by state. (The pre-#861 version drove ENTROPY shapes:
+# "diverging" meant entropy rising — a value shrinking toward 1 — which the
+# value route correctly refuses to call divergence.)
 print of "=== REPORT-PREDICATE ALIGNMENT TEST ==="
 print of "Verifies report of x agrees with predicate vocabulary"
 print of ""
 
-print of "--- RA1: Diverging (windowed ascent #208: needs count>=3) ---"
-x is 1000000
-x is 1000
-x is 100
-x is 10
-x is 2
-d1 is diverging
-r1 is report of x
-print of d1
-print of r1
-
+# RA1: diverging — a linear runaway (constant +7 steps, raw non-vanishing
+# same-sign: the #422 additive class).
+print of "--- RA1: Diverging (linear runaway, raw same-sign steps) ---"
+a is 10.0
+i is 0
+loop while i < 12:
+    a is a + 7.0
+    i is i + 1
+print of (str of (diverging of a))
+print of (report of a)
 print of ""
-print of "--- RA2: Improving (windowed descent #207: needs count>=3) ---"
-y is 0.5
-y is 1.0
-y is 5.0
-y is 100.0
-y is 1000000
-i2 is improving
-r2 is report of y
-print of i2
-print of r2
 
+# RA2: improving — steps contracting geometrically toward a limit, not yet
+# under the settle deadband.
+print of "--- RA2: Improving (contracting approach, not yet settled) ---"
+b is 400.0
+i is 0
+loop while i < 8:
+    b is 100.0 + (b - 100.0) * 0.7
+    i is i + 1
+print of (str of (improving of b))
+print of (report of b)
 print of ""
-print of "--- RA3: Converged (low H basin, dH~0, full window) ---"
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-z is 1000000
-c3 is converged
-r3 is report of z
-print of c3
-print of r3
 
+# RA3: converged — a settled decay (full window under the deadband).
+print of "--- RA3: Converged (settled decay) ---"
+c is 100.0
+i is 0
+loop while i < 30:
+    c is c * 0.5
+    i is i + 1
+print of (str of (converged of c))
+print of (report of c)
 print of ""
-print of "--- RA4: Oscillating (windowed #206: needs >=4 dH sign flips) ---"
-w is 1000000
-w is 0.5
-w is 1000000
-w is 0.5
-w is 1000000
-w is 0.5
-w is 1000000
-o4 is oscillating
-r4 is report of w
-print of o4
-print of r4
 
+# RA4: oscillating — deadband-crossing sign flips.
+print of "--- RA4: Oscillating (sign-flipping steps) ---"
+d is 5.0
+i is 0
+loop while i < 12:
+    d is 0.0 - d
+    i is i + 1
+print of (str of (oscillating of d))
+print of (report of d)
 print of ""
-print of "--- RA5: Equilibrium (windowed #209: full window at rest, moderate H) ---"
-v is 42
-v is 42
-v is 42
-v is 42
-v is 42
-v is 42
-v is 42
-v is 42
-v is 42
-v is 42
-v is 42
-e5 is equilibrium
-r5 is report of v
-print of e5
-print of r5
 
+# RA5: equilibrium WITHOUT converged — zero-mean jitter whose variance is
+# under dh_zero^2 while at least one step exceeds dh_zero. The one rest
+# band that is not implied by converged, constructed directly.
+print of "--- RA5: Equilibrium (balanced jitter, not converged) ---"
+e is 50.0
+e is 50.0765
+e is 50.0867
+e is 50.0969
+e is 50.1071
+e is 50.1173
+e is 50.0408
+e is 50.0306
+e is 50.0204
+e is 50.0102
+e is 50.0
+print of (str of (equilibrium of e))
+print of (report of e)
 print of ""
+
 print of "=== REPORT-PREDICATE ALIGNMENT COMPLETE ==="

@@ -128,18 +128,25 @@ t743 is [d743]
 
 # Warm-up loop: __loop_iterations__ is undefined until a loop has run, so
 # this one exists to establish the baseline the two measured loops subtract.
+# #861: the three loops DECAY (x*0.5) so they exit normally via the routed
+# `converged` — the old doubling form only "terminated" through the entropy
+# defect, and under honest semantics it stalls, which RESETS the cumulative
+# counter and breaks the delta bookkeeping this case measures. The decaying
+# variable is each body's LAST assignment: the bare predicate reads the
+# last-observed binding, and a counter assigned after it would repoint the
+# alias at a +1 climb that never converges.
 w743 is 1
 w743 is 100
 loop while not converged:
-    w743 is w743 * 2
+    w743 is w743 * 0.5
 plain_before is __loop_iterations__
 
 plain_n is 0
 p743 is 1
 p743 is 100
 loop while not converged:
-    p743 is p743 * 2
     plain_n is plain_n + 1
+    p743 is p743 * 0.5
 plain_delta is __loop_iterations__ - plain_before
 
 disp_before is __loop_iterations__
@@ -147,9 +154,9 @@ disp_n is 0
 v743 is 1
 v743 is 100
 loop while not converged:
-    v743 is v743 * 2
     disp_n is disp_n + 1
     junk743 is dispatch of [t743, 0, v743]
+    v743 is v743 * 0.5
 disp_delta is __loop_iterations__ - disp_before
 
 check of ["plain loop contributes its own iteration count", plain_delta == plain_n]

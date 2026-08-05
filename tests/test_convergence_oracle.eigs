@@ -11,17 +11,24 @@
 # POSIX, the C compiler). The observer is the one original
 # component, so it had nothing to be wrong against.
 #
-# THIS TEST PINS A DEFECT BASELINE, NOT A TARGET.
-# The scores below are what the predicates currently get right.
-# The entropy channel — which `converged` and `report` actually
-# use — is wrong on 8 of 27 sequences. That is #861, still open.
+# Since #861 the predicate words and `report` route numeric
+# bindings to the VALUE channel (the mixed-tolerance stopping
+# criterion), so both columns below read the same classifier and
+# score 25/27. The two remaining misses — cases 6 and 8 — are the
+# IRREDUCIBLE tolerance gap: their steps have fallen below the
+# settle deadband while the value is still ~1e-2 from the limit.
+# "Settled at the deadband" is the strongest claim a finite
+# window can make (case 9, harmonic, is the proof that vanishing
+# steps do not imply a limit), so those two are the documented
+# floor, not defects to fix.
 #
 # Two things are pinned: the aggregate scores AND the per-case
 # band each channel reports. Either moving in EITHER direction
-# fails, so an improvement must land as a deliberate, reviewed
-# edit here rather than silently shifting the meaning of a green
-# suite. Both are needed — the scores alone are too coarse (see
-# the note above EXPECT_E).
+# fails, so a semantics change must land as a deliberate,
+# reviewed edit here rather than silently shifting the meaning
+# of a green suite. Both are needed — the scores alone are too
+# coarse: a planted h_low change once moved two bands while both
+# aggregates held.
 #
 # Run standalone:  ./src/eigenscript tests/test_convergence_oracle.eigs
 # ============================================================
@@ -161,17 +168,18 @@ TRUTH is [0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
 
 # The pinned baseline. Change these ONLY with a measurement and a
 # reason in the commit message.
-EXPECT_ENTROPY_OK is 19
+EXPECT_ENTROPY_OK is 25
 EXPECT_VALUE_OK is 25
 
-# Per-case verdicts, pinned. The aggregate scores above are NOT sufficient on
-# their own: they collapse each case to converged/not-converged, so a real
-# semantics change can move individual bands while the totals hold. Measured —
-# raising h_low 0.1 -> 0.5 (a change that makes `hold 10` certify converged)
-# flips cases 7 and 13 from `stable` to `moving` and leaves both scores at
-# 19/27 and 25/27. Pinning the bands catches what the counts cannot.
-EXPECT_E is ["", "converged", "equilibrium", "converged", "equilibrium", "equilibrium", "equilibrium", "stable", "equilibrium", "stable", "stable", "stable", "stable", "stable", "converged", "converged", "equilibrium", "oscillating", "moving", "oscillating", "oscillating", "converged", "oscillating", "equilibrium", "oscillating", "converged", "equilibrium", "converged"]
-EXPECT_V is ["", "converged", "converged", "converged", "converged", "converged", "converged", "oscillating", "converged", "stable", "stable", "stable", "stable", "diverging", "diverging", "diverging", "oscillating", "oscillating", "moving", "oscillating", "moving", "oscillating", "oscillating", "converged", "oscillating", "converged", "converged", "converged"]
+# Per-case verdicts, pinned. The aggregate scores are NOT sufficient on their
+# own: they collapse each case to converged/not-converged, so a semantics
+# change can move individual bands while the totals hold (measured against
+# the pre-routing pins: an h_low change flipped two bands with both scores
+# unmoved). Since #861 routes both surfaces through one numeric classifier,
+# EXPECT_E and EXPECT_V are identical BY CONSTRUCTION — a divergence between
+# them means the unification broke.
+EXPECT_E is ["", "converged", "converged", "converged", "converged", "converged", "converged", "oscillating", "converged", "stable", "stable", "stable", "stable", "diverging", "diverging", "diverging", "oscillating", "oscillating", "oscillating", "oscillating", "oscillating", "oscillating", "oscillating", "converged", "oscillating", "converged", "converged", "converged"]
+EXPECT_V is ["", "converged", "converged", "converged", "converged", "converged", "converged", "oscillating", "converged", "stable", "stable", "stable", "stable", "diverging", "diverging", "diverging", "oscillating", "oscillating", "oscillating", "oscillating", "oscillating", "oscillating", "oscillating", "converged", "oscillating", "converged", "converged", "converged"]
 
 fp is 0
 fn is 0
@@ -220,8 +228,8 @@ for id in range of 27:
         flag is "  <-"
     print of f"{i}  entropy={r[0]}  value={r[3]}  truth={want}{flag} {NAMES[i]}"
 print of ""
-print of f"ENTROPY CHANNEL (what converged/report use): correct={ok}/27  FP={fp}  FN={fn}"
-print of f"VALUE CHANNEL   (report_value)             : correct={vok}/27  FP={vfp}  FN={vfn}"
+print of f"PREDICATES (converged / report, routed):   correct={ok}/27  FP={fp}  FN={fn}"
+print of f"report_value (same classifier since #861): correct={vok}/27  FP={vfp}  FN={vfn}"
 print of f"precision = {tp}/{firings} of firings were real"
 print of f"recall    = {tp}/{positives} of real convergences detected"
 print of ""
@@ -229,12 +237,12 @@ print of ""
 pass is 1
 if ok != EXPECT_ENTROPY_OK:
     pass is 0
-    print of f"FAIL: entropy channel scored {ok}/27, pinned baseline is {EXPECT_ENTROPY_OK}/27."
+    print of f"FAIL: predicates scored {ok}/27, pinned baseline is {EXPECT_ENTROPY_OK}/27."
     print of "      A move in EITHER direction is a semantics change — update the"
     print of "      baseline deliberately, with the measurement, or find the regression."
 if vok != EXPECT_VALUE_OK:
     pass is 0
-    print of f"FAIL: value channel scored {vok}/27, pinned baseline is {EXPECT_VALUE_OK}/27."
+    print of f"FAIL: report_value scored {vok}/27, pinned baseline is {EXPECT_VALUE_OK}/27."
 if band_drift != 0:
     pass is 0
     print of f"FAIL: {band_drift} per-case band(s) moved (listed above). The aggregate"

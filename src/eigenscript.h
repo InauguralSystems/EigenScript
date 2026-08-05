@@ -272,6 +272,13 @@ typedef struct ObserverSlot {
                                  * relative normalization erases */
     uint8_t v_window_head, v_window_count;
     uint8_t v_used;             /* 1 once a numeric value has been recorded */
+    uint8_t v_last;             /* #861: 1 iff the MOST RECENT observed
+                                 * assignment was numeric. The predicates and
+                                 * `report` route to the value channel exactly
+                                 * when this is set — a binding rebound from
+                                 * number to string falls back to the entropy
+                                 * channel instead of answering from a stale
+                                 * numeric trajectory. */
 } ObserverSlot;
 
 struct Env {
@@ -376,6 +383,9 @@ int  observer_slot_stable(const struct ObserverSlot *s);
 /* Classify a slot into a report band (mirrors builtin_report's priority).
  * Returns a static string; NULL if the slot is unusable. */
 const char *observer_slot_report(const struct ObserverSlot *s);
+/* The entropy-channel classifier without #861 routing — for the explicit
+ * `classify of [t, "entropy"]` channel and non-numeric bindings. */
+const char *observer_slot_report_entropy(const struct ObserverSlot *s);
 /* #294 value-signal report: classify the binding's VALUE trajectory (not its
  * entropy) — "oscillating"/"converged"/"stable"/"moving"/"equilibrium". */
 const char *observer_slot_report_value(const struct ObserverSlot *s);

@@ -43,4 +43,4 @@ diana: index 3
 frank: index -1
 
 --- convergence with safety limit ---
-Converged at step 219 x=0.0013227249887463285
+Converged at step 176 x=0.012004788991027214

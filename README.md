@@ -159,11 +159,13 @@ epsilon / remembered-previous / max-iteration boilerplate every numeric loop in
 Python or JS hand-rolls — see
 [docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-boilerplate-you-stop-writing).
 
-> **What `improving` and the rest actually mean.** EigenScript's observer
-> rests on a specific idea — a value locating itself *from the inside*,
-> with no external goal — so the trajectory words don't always match a
-> naive "smaller is better" reading. The full model, including the
-> resolution knob (`set_observer_thresholds`), is in
+> **What `improving` and the rest actually mean.** For numbers the
+> trajectory words read the value's own motion (#861): `converged` is the
+> standard stopping criterion — steps settled under a tolerance — and
+> `improving` means the steps are contracting toward a limit. For
+> non-numeric values the observer's entropy reading applies — a value
+> locating itself *from the inside*, with no external goal. The full
+> model, including the resolution knob (`set_observer_thresholds`), is in
 > [docs/OBSERVER.md](docs/OBSERVER.md); the precise predicate semantics
 > (what `converged` requires, how it differs from `equilibrium`, the
 > N-step window) are in [docs/PREDICATES.md](docs/PREDICATES.md).

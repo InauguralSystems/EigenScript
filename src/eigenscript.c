@@ -449,33 +449,42 @@ static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
  * only non-shrinking steps (a linear runaway's constant Δv, a polynomial
  * or geometric runaway's growing Δv) sum without bound. The 1e-9 slack
  * absorbs fp rounding in the two half-sums for exactly-constant steps. */
+/* #861: the raw tests run on PARTIAL windows too, from 4 samples (2+2 after
+ * the half split). The motion bands have always been early-warning — the
+ * entropy trajectory predicates fired from 3 samples — and requiring a full
+ * 10-window here would mean a 6-step monotone runaway answers `diverging`
+ * false where the old semantics said true. The full-window requirement
+ * stays where it belongs: on the REST bands, which certify. */
 static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
-    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    size_t cnt = s->v_window_count;
+    if (cnt < 4) return 0;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
-    size_t half = OBSERVER_WINDOW_N / 2;
+    size_t half = cnt / 2;
     double recent = 0.0, older = 0.0;
-    for (size_t i = 0; i < half; i++)          recent += fabs(observer_slot_vr_get(s, i));
-    for (size_t i = half; i < OBSERVER_WINDOW_N; i++) older += fabs(observer_slot_vr_get(s, i));
+    for (size_t i = 0; i < half; i++)        recent += fabs(observer_slot_vr_get(s, i));
+    for (size_t i = half; i < cnt; i++)      older  += fabs(observer_slot_vr_get(s, i));
     recent /= (double)half;
-    older  /= (double)(OBSERVER_WINDOW_N - half);
+    older  /= (double)(cnt - half);
     if (older <= floor_eps || recent <= floor_eps) return 0;
     return recent >= older * (1.0 - 1e-9);
 }
 
 static int observer_slot_raw_diverging(const ObserverSlot *s) {
     if (!observer_slot_raw_nonvanishing(s)) return 0;
+    size_t cnt = s->v_window_count;
     double first = observer_slot_vr_get(s, 0);
-    for (size_t i = 1; i < OBSERVER_WINDOW_N; i++)
+    for (size_t i = 1; i < cnt; i++)
         if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
     return 1;
 }
 
 static int observer_slot_raw_oscillating(const ObserverSlot *s) {
     if (!observer_slot_raw_nonvanishing(s)) return 0;
+    size_t cnt = s->v_window_count;
     const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
     int flips = 0;
-    for (size_t i = 0; i + 1 < OBSERVER_WINDOW_N; i++) {
+    for (size_t i = 0; i + 1 < cnt; i++) {
         double a = observer_slot_vr_get(s, i);
         double b = observer_slot_vr_get(s, i + 1);
         if (a * b < 0.0 && fabs(a) > floor_eps && fabs(b) > floor_eps) flips++;
@@ -495,6 +504,7 @@ void observer_slot_record_value(ObserverSlot *s, double v) {
     }
     s->last_value = v;
     s->v_used = 1;
+    s->v_last = 1;   /* #861: this binding's current trajectory is numeric */
 }
 
 /* #694: grow e->obs to cover `idx`. Defined with the #607 module-env MT
@@ -533,6 +543,13 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
     if (newval && newval->type == VAL_NUM) {
         ObserverSlot *s = env_obs_slot(e, idx);
         if (s) observer_slot_record_value(s, newval->data.num);
+    } else {
+        /* #861: a non-numeric assignment ends the numeric trajectory's claim
+         * on this binding — predicates fall back to the entropy channel until
+         * a number is assigned again (the recorded windows are kept, matching
+         * report_value's documented history semantics). */
+        ObserverSlot *s = env_obs_slot(e, idx);
+        if (s) s->v_last = 0;
     }
 }
 
@@ -586,8 +603,269 @@ static int observer_slot_saturated(const ObserverSlot *s) {
     return (s && s->v_used && fabs(s->last_value) >= EIGS_NUM_MAX) ? 1 : 0;
 }
 
+/* ==== #861: the numeric predicate family — the value channel as the ====
+ * ==== authority for numeric bindings.                               ====
+ *
+ * The entropy channel cannot be a convergence detector for numbers. H is a
+ * function of |x| alone, so any clause on H is a clause on MAGNITUDE: the
+ * `entropy < h_low` term in `converged` made every |x| > ~76 a permissive
+ * region (a geometric runaway certified `converged` at x ~= 2.9e5) and
+ * every limit in [~0.013, 76] a dead zone (Newton's method to sqrt(2)
+ * could never certify). Measured by tests/test_convergence_oracle.eigs:
+ * entropy channel 19/27 against analytic ground truth, value channel
+ * 25/27. The same computation targeting 5000, 5 and 0.005 got three
+ * different verdicts from the entropy channel — the units decided.
+ *
+ * The value channel's relative step Δv/(1+|v|) is the standard numerical
+ * stopping criterion (|Δx| <= atol + rtol·|x| with atol = rtol), which is
+ * what `converged` should have meant all along. So: when a binding's most
+ * recent observed assignment is numeric (v_last), the six predicate words
+ * and `report` read the value trajectory below. Non-numeric bindings
+ * (strings, containers) keep the entropy classifiers — entropy is the only
+ * signal they have, and none of the measured failures involve them.
+ *
+ * The entropy MEASUREMENT is untouched: `where`/`why`/`how`, trajectory
+ * snapshots, container folds, and the tape all record exactly what they
+ * recorded before. This routes classification; it does not change what is
+ * measured. (The tape/DAP/step surfaces already classified from the value
+ * channel — tape_classify_at has called observer_slot_report_value since
+ * it existed — so live `report` used to disagree with `--step` on the
+ * same trajectory. It no longer does.)
+ *
+ * Honesty bound, documented in PREDICATES.md: vanishing steps do not
+ * imply a limit (the harmonic series' steps vanish; its sum does not
+ * converge), so `converged` is a STOPPING CRITERION — "settled at the
+ * deadband" — not a proof. No finite-window detector can do better. */
+
+/* Window flags: every |rel step| under dh_zero / dh_small. */
+static void obs_num_flags(const ObserverSlot *s, int *all_zero, int *all_small) {
+    size_t cnt = s->v_window_count;
+    *all_zero = 1; *all_small = 1;
+    for (size_t i = 0; i < cnt; i++) {
+        double w = fabs(observer_slot_v_get(s, i));
+        if (w >= g_obs_dh_zero)  *all_zero = 0;
+        if (w >= g_obs_dh_small) *all_small = 0;
+    }
+}
+
+/* Relative-step sign-flip oscillation — the head test report_value has
+ * always run (flips above the deadband, >= FLIPS of them). */
+static int obs_num_rel_oscillating(const ObserverSlot *s) {
+    size_t cnt = s->v_window_count;
+    if (cnt < 3) return 0;
+    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    int flips = 0;
+    for (size_t i = 0; i + 1 < cnt; i++) {
+        double a = observer_slot_v_get(s, i);
+        double b = observer_slot_v_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) flips++;
+    }
+    return (flips >= FLIPS) ? 1 : 0;
+}
+
+/* Bounded oscillation at the WINDOW scale (#861): a sinusoid sampled a few
+ * times per period flips step-sign only at each half-period — 2 reversals
+ * per period, under the FLIPS threshold the per-sample tests use — so the
+ * canonical oscillator read "moving". The defining property that separates
+ * oscillation from drift is that the path folds back on itself: net travel
+ * is small against path length. Full window, motion above the fp floor
+ * (non-vanishing — a damped approach falls through to the settle bands),
+ * at least 2 direction reversals, and |net| <= 0.3 x path. The 0.3 bound:
+ * a pure sampled sinusoid nets ~0 over any full window; a drift-with-
+ * wiggle nets ~its path and stays out. */
+static int obs_num_bounded_oscillating(const ObserverSlot *s) {
+    size_t cnt = s->v_window_count;
+    if (cnt < OBSERVER_WINDOW_N) return 0;
+    /* No non-vanishing gate here, deliberately: an underdamped oscillator's
+     * x DECAYS while oscillating, and its oscillation is the fact worth
+     * reporting mid-flight. The handoff to the settle bands is the all-under-
+     * deadband guard below — cos's fixed-point iteration alternates sign all
+     * the way down, and once its steps sit under dh_zero it is SETTLED, not
+     * oscillating (the corpus's case 5 caught exactly that misfire). */
+    {
+        int az, asm_;
+        obs_num_flags(s, &az, &asm_);
+        if (az) return 0;
+    }
+    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+    double net = 0.0, path = 0.0, prev = 0.0;
+    int reversals = 0, have_prev = 0;
+    for (size_t i = 0; i < cnt; i++) {
+        double d = observer_slot_vr_get(s, i);
+        net += d;
+        path += fabs(d);
+        if (fabs(d) > floor_eps) {
+            if (have_prev && d * prev < 0.0) reversals++;
+            prev = d;
+            have_prev = 1;
+        }
+    }
+    if (path <= floor_eps) return 0;
+    return (reversals >= 2 && fabs(net) <= 0.3 * path) ? 1 : 0;
+}
+
+static int obs_num_oscillating(const ObserverSlot *s) {
+    return obs_num_rel_oscillating(s) || observer_slot_raw_oscillating(s)
+        || obs_num_bounded_oscillating(s);
+}
+
+/* Divergence: position at the saturation ceiling (claimed before the window
+ * guard — the evidence is where the value IS, and the clamp has already
+ * flattened the window), or the #422 raw test: non-vanishing same-sign
+ * steps sum without bound no matter how small Δv/|v| looks. */
+static int obs_num_diverging(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 1;
+    return observer_slot_raw_diverging(s);
+}
+
+/* Improving: the step magnitudes are CONTRACTING — recent-half mean |Δv|
+ * at most CONTRACT x the older-half mean. Contraction at any ratio < 1
+ * per step means the remaining travel is a summable (geometric-class)
+ * tail: the trajectory is genuinely closing on a limit, which is what
+ * "improving" should claim for a number. The 0.7 half-window bar (~0.93
+ * per step over a 10-window) is what separates that class from
+ * harmonic-family stagnation, whose step ratio -> 1: harmonic's half-
+ * window ratio at n=60 is ~0.91 and rising toward 1, so it stays outside
+ * the band instead of being promised a limit it does not have. */
+static int obs_num_improving(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 0;
+    size_t cnt = s->v_window_count;
+    if (cnt < 4) return 0;                       /* early-warning band: same
+                                                  * 4-sample floor as the raw
+                                                  * tests, not the rest bands'
+                                                  * full window */
+    int all_zero, all_small;
+    obs_num_flags(s, &all_zero, &all_small);
+    if (all_zero) return 0;                      /* already settled -> converged's claim */
+    if (obs_num_oscillating(s)) return 0;        /* motion bands are exclusive */
+    /* Monotone: every raw step shares one sign. "Improving" claims a clean
+     * approach toward a limit; measurement jitter (mixed signs) can land a
+     * chance half-window contraction — a lab sensor reading 45.2, 44.8,
+     * 44.9, 44.7, 44.85 flickered into `improving` on its final step and
+     * broke a trailing-rest count. A genuine approach (Newton, geometric
+     * decay) is monotone; a damped oscillation belongs to `oscillating`. */
+    {
+        double first = observer_slot_vr_get(s, 0);
+        for (size_t i = 1; i < cnt; i++)
+            if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
+    }
+    const double CONTRACT = 0.7;
+    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+    size_t half = cnt / 2;
+    double recent = 0.0, older = 0.0, recent_max = 0.0, older_max = 0.0;
+    for (size_t i = 0; i < half; i++) {
+        double m = fabs(observer_slot_vr_get(s, i));
+        recent += m;
+        if (m > recent_max) recent_max = m;
+    }
+    for (size_t i = half; i < cnt; i++) {
+        double m = fabs(observer_slot_vr_get(s, i));
+        older += m;
+        if (m > older_max) older_max = m;
+    }
+    recent /= (double)half;
+    older  /= (double)(cnt - half);
+    if (older <= floor_eps) return 0;            /* nothing to contract from */
+    if (recent <= floor_eps) return 0;           /* motion already died — the
+                                                  * quiescent bands' claim, not
+                                                  * "improving": improving means
+                                                  * STILL MOVING and contracting */
+    /* Both the mean AND the largest step must contract. The mean alone is
+     * alignment-sensitive: a period-4 cycle (0, +27, 0, -27, ...) can land
+     * two spikes in the recent half and three in the older, "contracting"
+     * the mean by chance. A cycle's largest step never shrinks; a genuine
+     * geometric approach shrinks its largest step along with its mean. */
+    return (recent <= older * CONTRACT && recent_max <= older_max * CONTRACT) ? 1 : 0;
+}
+
+/* Converged: the mixed-tolerance stopping criterion — a full window of
+ * relative steps all under the settle deadband — with the raw-step
+ * structure tests as guards (a linear runaway's Δv/(1+|v|) vanishes while
+ * its raw steps do not). */
+static int obs_num_converged(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 0;
+    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    int all_zero, all_small;
+    obs_num_flags(s, &all_zero, &all_small);
+    if (!all_zero) return 0;
+    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    return 1;
+}
+
+/* Equilibrium: balanced motion — window mean ~ 0 and variance under the
+ * deadband², individual steps possibly larger. converged => equilibrium
+ * (all-under-deadband forces both), preserving the quiescent lattice. */
+static int obs_num_equilibrium(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 0;
+    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    double sum = 0.0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_v_get(s, i);
+    double mean = sum / (double)OBSERVER_WINDOW_N;
+    if (fabs(mean) >= g_obs_dh_zero) return 0;
+    double var = 0.0;
+    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+        double d = observer_slot_v_get(s, i) - mean;
+        var += d * d;
+    }
+    var /= (double)OBSERVER_WINDOW_N;
+    return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
+}
+
+/* Stable: small motion — every relative step under dh_small, no strong
+ * consecutive sign flips. May carry steady drift (harmonic-class vanishing
+ * steps live here: real motion, no certified limit). converged => stable. */
+static int obs_num_stable(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 0;
+    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    int all_zero, all_small;
+    obs_num_flags(s, &all_zero, &all_small);
+    if (!all_small) return 0;
+    for (size_t i = 0; i + 1 < OBSERVER_WINDOW_N; i++) {
+        double a = observer_slot_v_get(s, i);
+        double b = observer_slot_v_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
+    }
+    return 1;
+}
+
+/* Numeric `report`: the canonical priority order over the family above,
+ * `moving` for a full window in no band, and report_value's historical
+ * partial-window fallback preserved verbatim. */
+static const char *obs_num_report(const ObserverSlot *s) {
+    if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
+    size_t cnt = s->v_window_count;
+    if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
+    if (obs_num_oscillating(s)) return "oscillating";
+    if (obs_num_diverging(s))   return "diverging";
+    if (obs_num_improving(s))   return "improving";   /* partial-capable, like
+                                                       * the two bands above */
+    if (cnt >= OBSERVER_WINDOW_N) {
+        if (obs_num_converged(s))   return "converged";
+        if (obs_num_equilibrium(s)) return "equilibrium";
+        if (obs_num_stable(s))      return "stable";
+        return "moving";
+    }
+    int all_zero, all_small;
+    obs_num_flags(s, &all_zero, &all_small);
+    (void)all_zero;
+    if (all_small) return "stable";
+    return "moving";
+}
+
+/* Route: value channel iff the most recent observed assignment was numeric. */
+static int obs_route_num(const ObserverSlot *s) {
+    return s && s->v_used && s->v_last;
+}
+
+/* Public predicates: dispatch numeric bindings to the value-channel family
+ * above (#861); everything else keeps the entropy classifiers below. The
+ * saturation gates that #889 put on the entropy bodies are gone — a live
+ * numeric binding always routes to the value channel, where the family
+ * handles saturation itself, so the entropy route can no longer see one. */
 int observer_slot_converged(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 0;                     /* #861 */
+    if (obs_route_num(s)) return obs_num_converged(s);
     if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
     for (size_t i = 0; i < OBSERVER_WINDOW_N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
@@ -595,7 +873,7 @@ int observer_slot_converged(const ObserverSlot *s) {
 }
 
 int observer_slot_equilibrium(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 0;                     /* #861 */
+    if (obs_route_num(s)) return obs_num_equilibrium(s);
     if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
     double sum = 0.0;
     for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_window_get(s, i);
@@ -613,12 +891,7 @@ int observer_slot_equilibrium(const ObserverSlot *s) {
 /* Slot mirrors of the remaining four windowed predicates — identical logic to
  * the observer_*(Value*) versions above, reading the slot's window/entropy. */
 int observer_slot_improving(const ObserverSlot *s) {
-    /* #861: H decreases as |x| grows past 1, so a runaway climbing toward the
-     * ceiling shows a run of negative dH — "improving" — right up until it
-     * pins and the window flattens to "converged". Both readings describe the
-     * clamp, not the trajectory. `report` tries improving before converged,
-     * so leaving this ungated just moves the wrong answer one band over. */
-    if (observer_slot_saturated(s)) return 0;
+    if (obs_route_num(s)) return obs_num_improving(s);
     size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int down = 0;
@@ -631,10 +904,7 @@ int observer_slot_improving(const ObserverSlot *s) {
 }
 
 int observer_slot_diverging(const ObserverSlot *s) {
-    /* #861: claimed before the window guard — the evidence is the value's
-     * position at the ceiling, not the shape of the (flattened) window, so
-     * this must answer on a partial window too. */
-    if (observer_slot_saturated(s)) return 1;
+    if (obs_route_num(s)) return obs_num_diverging(s);
     size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int up = 0;
@@ -647,6 +917,7 @@ int observer_slot_diverging(const ObserverSlot *s) {
 }
 
 int observer_slot_oscillating(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_oscillating(s);
     size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < 3) return 0;
     const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
@@ -660,7 +931,7 @@ int observer_slot_oscillating(const ObserverSlot *s) {
 }
 
 int observer_slot_stable(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 0;                     /* #861 */
+    if (obs_route_num(s)) return obs_num_stable(s);
     size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < OBSERVER_WINDOW_N) return 0;
     if (s->entropy < g_obs_h_low) return 0;
@@ -676,7 +947,10 @@ int observer_slot_stable(const ObserverSlot *s) {
 
 /* Slot mirror of builtin_report — same priority order and partial-window
  * fallback, reading the slot trajectory instead of a Value's. */
-const char *observer_slot_report(const ObserverSlot *s) {
+/* The entropy-channel report — the classifier for non-numeric bindings, and
+ * the explicit `classify of [t, "entropy"]` channel. Routed callers go
+ * through observer_slot_report below. */
+const char *observer_slot_report_entropy(const ObserverSlot *s) {
     if (!s) return NULL;
     if (observer_slot_oscillating(s)) return "oscillating";
     if (observer_slot_diverging(s))   return "diverging";
@@ -702,55 +976,26 @@ const char *observer_slot_report(const ObserverSlot *s) {
     return "stable";
 }
 
-/* #294 value-signal report. Classifies the binding's VALUE trajectory using the
- * SAME windowed logic and thresholds as the entropy report above — only the
- * observed signal differs (relative value-deltas, not entropy-deltas). This is
- * the point of the experiment: the windowed approach is sound; the entropy
- * SIGNAL is a lossy proxy that goes blind to value-oscillation in flat-entropy
- * regions. Oscillation is detected by sign-flips (scale-free); settling by the
- * relative-step magnitude (so thresholds mean the same across value scales). */
-const char *observer_slot_report_value(const ObserverSlot *s) {
-    if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
-    size_t cnt = s->v_window_count;
-    if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
-    if (cnt >= 3) {
-        const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;  /* same as entropy channel */
-        int flips = 0;
-        for (size_t i = 0; i + 1 < cnt; i++) {
-            double a = observer_slot_v_get(s, i);
-            double b = observer_slot_v_get(s, i + 1);
-            if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) flips++;
-        }
-        if (flips >= FLIPS) return "oscillating";
-    }
-    /* #422: the raw-step structure tests run BEFORE the relative verdicts —
-     * relative normalization is exactly what hides these two classes. A
-     * sub-deadband perpetual oscillation (x → -x seeded tiny, or a fixed
-     * absolute swing around a large offset) is 'oscillating'; non-vanishing
-     * same-sign steps (a linear/polynomial runaway whose Δv/|v| → 0) are
-     * 'diverging' — the value channel's first use of that label. */
-    if (observer_slot_raw_oscillating(s)) return "oscillating";
-    /* #861: the value channel goes blind at the ceiling for the same reason
-     * the entropy channel does — past EIGS_NUM_MAX the relative step is
-     * exactly 0, so `all_zero` below reads "converged". #422 closed on the
-     * reasoning that this channel catches fixed-relative-step growth; that
-     * holds only while the value can still grow. Placed after the oscillation
-     * tests to keep this channel's own priority order (oscillating before
-     * diverging), so a value flipping ±EIGS_NUM_MAX still reads
-     * "oscillating" here — the entropy channel cannot see that flip at all
-     * (H(x) ≡ H(−x), #862) and answers "diverging". */
-    if (observer_slot_saturated(s))       return "diverging";
-    if (observer_slot_raw_diverging(s))   return "diverging";
-    int all_zero = 1, all_small = 1;
-    for (size_t i = 0; i < cnt; i++) {
-        double w = fabs(observer_slot_v_get(s, i));
-        if (w >= g_obs_dh_zero)  all_zero = 0;
-        if (w >= g_obs_dh_small) all_small = 0;
-    }
-    if (cnt >= OBSERVER_WINDOW_N && all_zero) return "converged";
-    if (all_small) return "stable";
-    return "moving";
+/* #861: `report` routes exactly as the predicates do — the value channel for
+ * a binding whose latest observed assignment is numeric, entropy otherwise.
+ * At a full window it agrees with the bare predicates by construction on
+ * BOTH routes (each route's report tests that route's own family in the
+ * canonical priority order). */
+const char *observer_slot_report(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_report(s);
+    return observer_slot_report_entropy(s);
 }
+
+/* #294 value-signal report — since #861 this is the numeric classifier
+ * itself, shared with `report`/the predicates on numeric bindings, so the
+ * explicit `report_value of x` surface and the routed words can never
+ * disagree about the same trajectory. The old body lives on as
+ * obs_num_report; the historical head cases (no trajectory / one value →
+ * "equilibrium") and the partial-window fallback are preserved there. */
+const char *observer_slot_report_value(const ObserverSlot *s) {
+    return obs_num_report(s);
+}
+
 
 /* ---- #711: query-time entropy — the current-state channel. -------------
  * The stored slot entropy is a snapshot taken at the last ASSIGNMENT, so an

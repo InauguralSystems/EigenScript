@@ -1,3 +1,9 @@
+# #861: numeric bindings route the predicate words to the VALUE channel
+# (see docs/PREDICATES.md). The sequences below drive numbers, so the
+# entropy-window mechanics this file was written for are now reachable
+# only via `classify of [t, "entropy"]` — pinned per-case where the
+# entropy behaviour was the point. The routed pins were re-measured and
+# each change is annotated at the assert.
 # Windowed `oscillating` (#206, docs/PREDICATES.md):
 #   oscillating = count >= 3
 #                 AND sign_flip_count(window) >= FLIPS   (FLIPS = ceil(N/3) = 4)
@@ -66,7 +72,8 @@ e is 800.0
 e is 801.0
 e is 800.0
 o5 is oscillating
-want of ["WO5 sub-noise wobble does not fire", o5, 0]
+# #861 re-pin: value route: 800<->801 is a REAL +/-1 perpetual oscillation — "sub-noise" only to the entropy signal (H is flat out there, the #294 blindness). #422 pins this class as oscillating; the entropy label (equilibrium-ish) is preserved via classify below
+want of ["WO5 sub-noise wobble does not fire", o5, 1]
 
 # WO6: monotone descent — no flips at all
 f is 3.0

@@ -1,3 +1,9 @@
+# #861: numeric bindings route the predicate words to the VALUE channel
+# (see docs/PREDICATES.md). The sequences below drive numbers, so the
+# entropy-window mechanics this file was written for are now reachable
+# only via `classify of [t, "entropy"]` — pinned per-case where the
+# entropy behaviour was the point. The routed pins were re-measured and
+# each change is annotated at the assert.
 # Windowed `improving` (#207, docs/PREDICATES.md) — hybrid rule:
 #   improving = count >= 3
 #               AND sum(window) < 0           (NET entropy descent, magnitude-aware)
@@ -23,7 +29,8 @@ a is 19.0
 a is 99.0
 a is 499.0
 i1 is improving
-want of ["WI1 monotone clean descent fires", i1, 1]
+# #861 re-pin: value route: growth 3->499 is a linear/geometric runaway -> diverging; the ENTROPY descent this case drove reads "improving" only on the entropy channel (pinned via classify below for WI1)
+want of ["WI1 monotone clean descent fires", i1, 0]
 
 # WI2: noisy descent with bounces still fires — net down AND majority (4/6)
 #      genuine descents. The old absolute bounce cap rejected this; the
@@ -36,7 +43,8 @@ b is 200.0
 b is 60.0
 b is 4000.0
 i2 is improving
-want of ["WI2 noisy descent, net+majority, fires", i2, 1]
+# #861 re-pin: value route: wild bouncing (4 deadband sign-flips) -> oscillating
+want of ["WI2 noisy descent, net+majority, fires", i2, 0]
 
 # WI3: net entropy ROSE despite several descent steps -> does NOT fire.
 #      Guards against the magnitude-blind failure: most steps tick down but the
@@ -95,5 +103,18 @@ h is 50.0
 h is 9999.0
 i8 is improving
 want of ["WI8 count < 3 does not fire", i8, 0]
+
+
+# #861: keep the entropy-window mechanics covered — WI1 is the canonical
+# entropy-descent (value growth) case; its entropy label must stay "improving".
+wi1e is 3.0
+wi1e is 5.0
+wi1e is 9.0
+wi1e is 19.0
+wi1e is 99.0
+wi1e is 499.0
+elabel is classify of [(trajectory of wi1e), "entropy"]
+assert of [elabel == "improving", f"WI1e entropy channel lost its improving verdict: {elabel}"]
+print of "  PASS: WI1e entropy channel still reads improving via classify"
 
 print of "WINDOWED_IMPROVING_ALL_PASS"

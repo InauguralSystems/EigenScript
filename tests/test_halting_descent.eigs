@@ -1,5 +1,11 @@
-print of "=== HALTING: BOUNDED DESCENT TEST ==="
-print of "--- HD1: Entropy strictly decreases each iteration ---"
+print of "=== HALTING: RUNAWAY LOOP CONTRACT (#861) ==="
+print of "--- HD1: bare-predicate loop around a runaway exits via STALL ---"
+# Pre-#861 this loop "terminated" via the defect: H(x) fell under h_low as x
+# doubled, every clause of the entropy `converged` was met, and the loop
+# exited after ~13 iterations reporting the canonical instability as
+# converged. Now `converged` (value-routed) refuses a runaway, and the
+# stall backstop ends the loop after 100 quiet-entropy iterations with the
+# honest exit reason.
 
 counter is 0
 x is 10
@@ -11,8 +17,8 @@ loop while not converged:
 
 print of counter
 print of report of x
-print of where is x
+print of __loop_exit__
 print of why is x
 
 print of ""
-print of "=== BOUNDED DESCENT COMPLETE ==="
+print of "=== RUNAWAY LOOP CONTRACT COMPLETE ==="

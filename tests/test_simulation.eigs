@@ -36,7 +36,11 @@ print of ("  phases: " + (str of analysis.phases))
 print of "--- analyze_stability (constant) ---"
 constant is [5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
 analysis2 is analyze_stability of constant
-assert_eq of [analysis2.dominant, "equilibrium", "constant series is equilibrium"]
+# #861: fed one-by-one, a 10-element constant series yields 9 observed steps —
+# one short of the certifying window — so the honest dominant is the partial-
+# window rest label "stable" (converged needs the full 10). The old
+# "equilibrium" came from the entropy channel's instantaneous fallback.
+assert_eq of [analysis2.dominant, "stable", "constant series reads stable (partial-window rest)"]
 print of ("  dominant: " + analysis2.dominant)
 
 # ---- analyze_stability on converging series ----
