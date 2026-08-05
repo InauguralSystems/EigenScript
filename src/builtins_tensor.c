@@ -322,9 +322,22 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     return make_num(0.0);
 }
 
-static double op_sqrt(double x) { return (x < 0) ? 0.0 : sqrt(x); }
+/* #865: `sqrt of -1` returns 0, which is indistinguishable from `sqrt of 0`.
+ * Like the log clamp below, the substituted value stays and the invalid bit
+ * records that the argument was out of domain. */
+static double op_sqrt(double x) {
+    if (x < 0) { g_math_flags |= EIGS_MATH_INVALID; return 0.0; }
+    return sqrt(x);
+}
 static double op_exp(double x) { return num_guard(exp(x)); }
-static double op_log_safe(double x) { return num_guard(log(x > 1e-10 ? x : 1e-10)); }
+/* #865: `log of 0` returns log(1e-10) = -23.025850929940457, an undocumented
+ * substitution that is neither of the two clamps the Numbers promise covers.
+ * The value stays (kernels depend on it), but the invalid bit now says the
+ * argument was out of domain and the answer is a stand-in. */
+static double op_log_safe(double x) {
+    if (!(x > 1e-10)) { g_math_flags |= EIGS_MATH_INVALID; return num_guard(log(1e-10)); }
+    return num_guard(log(x));
+}
 static double op_neg(double x) { return -x; }
 
 /* ==== BUILTIN: sqrt ==== */
@@ -434,8 +447,10 @@ Value* builtin_tensor_log_softmax(Value *arg) {
     double *flat = tensor_to_flat(tensor, &rows, &cols);
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
-    for (int i = 0; i < rows * cols; i++)
+    for (int i = 0; i < rows * cols; i++) {
+        if (!(flat[i] > 1e-10)) g_math_flags |= EIGS_MATH_INVALID;   /* #865 */
         flat[i] = log(flat[i] > 1e-10 ? flat[i] : 1e-10);
+    }
     Value *result;
     if (rows == 1)
         result = flat_to_tensor_1d(flat, cols);

@@ -49,6 +49,8 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `str` | `str of value` | Convert to string representation |
 | `num` | `num of value` | Convert to number (parse string or coerce) |
 | `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
+| `math_flags` | `math_flags of null` | Sticky numeric status: `{overflow, invalid}` — 1 when a clamp has fired since the last `clear_math_flags` (#865) |
+| `clear_math_flags` | `clear_math_flags of null` | Reset both status bits |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |

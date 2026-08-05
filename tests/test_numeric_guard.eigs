@@ -64,4 +64,117 @@ unobserved:
     unobserved_inf is 1e309
 assert of [unobserved_inf == CAP, "NG19 unobserved reassignment literal caps"]
 
+
+# ---- #865: the clamps are recorded, not silent ----
+# The finite invariant keeps a program running, which is the point, but it kept
+# it running with a plausible number and no way to tell. Reassociation changes
+# a result by 292 orders of magnitude, and a saturated value compares equal to
+# itself under further growth — so nothing in the language could distinguish
+# "this is 1e308" from "this overflowed". These are IEEE-754's sticky flags.
+
+clear_math_flags of null
+f0 is math_flags of null
+assert of [f0.overflow == 0, "NG20 flags start clear"]
+assert of [f0.invalid == 0, "NG20 invalid starts clear"]
+
+# Ordinary arithmetic never sets them.
+ordinary is (2.5 * 4.0) + (1.0 / 8.0)
+f1 is math_flags of null
+assert of [f1.overflow == 0, "NG21 ordinary arithmetic sets no flag"]
+assert of [f1.invalid == 0, "NG21 ordinary arithmetic sets no invalid flag"]
+
+# Saturation sets overflow.
+clear_math_flags of null
+sat is 1e308 * 10
+assert of [sat == CAP, "NG22 saturation still saturates (result unchanged)"]
+assert of [(math_flags of null).overflow == 1, "NG22 saturation is now detectable"]
+
+# The associativity case from the issue: the RESULT is unchanged and still
+# implausible-looking-but-plausible, and it is now flagged.
+clear_math_flags of null
+reassoc is (1e300 * 1e300) / 1e300
+assert of [reassoc == 100000000, "NG23 reassociated result is unchanged"]
+assert of [(math_flags of null).overflow == 1, "NG23 but the contamination is visible"]
+
+# The other association order neither overflows nor flags.
+clear_math_flags of null
+other is 1e300 * (1e300 / 1e300)
+assert of [other == 1e300, "NG24 the other order is exact"]
+assert of [(math_flags of null).overflow == 0, "NG24 and sets no flag"]
+
+# Flags are STICKY across statements until cleared — that is what makes
+# clear/compute/check work the way it does on an FPU.
+clear_math_flags of null
+sticky is 1e308 * 10
+a is 1
+b is 2
+c is a + b
+assert of [(math_flags of null).overflow == 1, "NG25 the flag survives later clean arithmetic"]
+clear_math_flags of null
+assert of [(math_flags of null).overflow == 0, "NG25 and clears on request"]
+
+# A NaN cannot be produced by ARITHMETIC here — there is no way to obtain an
+# Inf to combine (an over-range literal is capped before it is ever an
+# operand, and `x / 0` warns and yields 0 without producing a NaN). So an
+# over-range literal in an expression is capped and quiet:
+clear_math_flags of null
+capped_operand is 0.0 * 1e400
+assert of [capped_operand == 0, "NG26 an over-range literal is capped before use"]
+assert of [(math_flags of null).invalid == 0, "NG26 and produces no NaN to collapse"]
+
+# But a NaN DOES arrive from outside arithmetic — string conversion is the
+# in-language route, and it was the quietest case of all: `num of "nan"` is 0
+# and `num of "inf"` is 1e308, so a data file with either in a column parsed
+# to a plausible number with nothing to check. Both now set a bit. (Values
+# arriving through the embed API take the same num_guard path.)
+clear_math_flags of null
+parsed_nan is num of "nan"
+assert of [parsed_nan == 0, "NG30 num of \"nan\" still collapses to 0"]
+assert of [(math_flags of null).invalid == 1, "NG30 and is no longer confusable with a real 0"]
+
+clear_math_flags of null
+parsed_inf is num of "inf"
+assert of [parsed_inf == CAP, "NG30 num of \"inf\" still saturates"]
+assert of [(math_flags of null).overflow == 1, "NG30 and is no longer confusable with a real 1e308"]
+
+# A plain unparseable string is 0 by the documented parse rule, not a clamp.
+clear_math_flags of null
+parsed_junk is num of "abc"
+assert of [parsed_junk == 0, "NG30 num of a non-numeric string is 0"]
+assert of [(math_flags of null).invalid == 0, "NG30 which is a parse result, not a clamp"]
+
+clear_math_flags of null
+parsed_ok is num of "42"
+assert of [parsed_ok == 42, "NG30 an ordinary parse is exact"]
+assert of [(math_flags of null).invalid + (math_flags of null).overflow == 0, "NG30 and clean"]
+
+# The domain clamps are substitutions, not the two clamps the contract named.
+# Each keeps its value and each now says so.
+clear_math_flags of null
+l0 is log of 0
+assert of [(math_flags of null).invalid == 1, "NG27 log of 0 flags invalid"]
+clear_math_flags of null
+lok is log of 1
+assert of [lok == 0, "NG27 log of 1 is 0"]
+assert of [(math_flags of null).invalid == 0, "NG27 an in-domain log is clean"]
+
+clear_math_flags of null
+s_neg is sqrt of (0 - 1)
+assert of [s_neg == 0, "NG28 sqrt of a negative still returns 0"]
+assert of [(math_flags of null).invalid == 1, "NG28 and is no longer confusable with sqrt of 0"]
+clear_math_flags of null
+s_ok is sqrt of 4
+assert of [s_ok == 2, "NG28 an in-domain sqrt is exact"]
+assert of [(math_flags of null).invalid == 0, "NG28 and clean"]
+
+clear_math_flags of null
+a5 is asin of 5
+assert of [(math_flags of null).invalid == 1, "NG29 asin of an out-of-domain argument flags"]
+clear_math_flags of null
+ah is asin of 0.5
+assert of [(math_flags of null).invalid == 0, "NG29 an in-domain asin is clean"]
+clear_math_flags of null
+ac is acos of (0 - 9)
+assert of [(math_flags of null).invalid == 1, "NG29 acos clamps and flags"]
+
 print of "All numeric-guard tests passed"
