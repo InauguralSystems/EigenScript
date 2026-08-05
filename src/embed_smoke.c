@@ -12,6 +12,7 @@
 #include <string.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include "eigs_embed.h"
 /* #830: the trace seam an ALTERNATIVE PRODUCER uses. The AOT (sibling
@@ -20,6 +21,10 @@
  * process. Reached here by quoted include, exactly as an out-of-tree producer
  * reaches it. */
 #include "trace.h"
+/* #797: the lint + raw-JSON-parse symbols. The full internal header
+ * coexists with eigs_embed.h here exactly as it does for an in-process
+ * embedder that links the runtime and lints project files itself. */
+#include "eigenscript.h"
 
 static int failures = 0;
 
@@ -479,6 +484,43 @@ int main(void) {
           strcmp(eigs_value_as_string(r), "CAUGHT") == 0,
           "try/catch still works after a script called exit (#739)");
     if (r) eigs_value_release(r);
+
+    /* --- #797: the lint allow-list parses FRESH. ----------------------
+     * eigs_json_lint_allow_for was the seventh lenient parse root missed
+     * by #777's sweep: it read g_json_parse_err left set by an UNRELATED
+     * earlier parse in the same thread, decoded the well-formed allow-list
+     * to an empty dict, and warning suppression silently stopped applying.
+     * Unreachable from the CLI (one file, one process, no prior parse) —
+     * this embedder shape is the only consumer that can hit it. */
+    {
+        char dir797[] = "/tmp/eigs797_XXXXXX";
+        CHECK(mkdtemp(dir797) != NULL, "#797: mkdtemp");
+        char pj[512], pe[512];
+        snprintf(pj, sizeof pj, "%s/eigs.json", dir797);
+        snprintf(pe, sizeof pe, "%s/t.eigs", dir797);
+        FILE *f = fopen(pj, "w");
+        fputs("{\"lint\": {\"allow\": {\"t.eigs\": [\"W001\"]}}}\n", f);
+        fclose(f);
+        f = fopen(pe, "w");
+        fputs("unusedtop797 is 1\nprint of \"hi\"\n", f);
+        fclose(f);
+
+        CHECK(eigenscript_lint(pe, 0, 1) == 0,
+              "#797: allow-list suppresses W001 before any other parse");
+
+        int jpos797 = 0;
+        Value *bad797 = eigs_json_parse_value("{nope", &jpos797);
+        /* The lenient parser repairs what it can and may return a partial
+         * value — the poison is the thread-local error flag it leaves set
+         * (static in builtins.c, so not assertable here; that it IS set is
+         * what makes the next CHECK fail without the lint.c fix). */
+        if (bad797) val_decref(bad797);
+
+        CHECK(eigenscript_lint(pe, 0, 1) == 0,
+              "#797: allow-list still suppresses after an unrelated failed parse");
+
+        remove(pj); remove(pe); rmdir(dir797);
+    }
 
     /* Leave a recv-blocked, never-joined worker for eigs_close to reap — this
      * hangs (or leaks/UAFs) unless eigs_close drains (close+wake+join, #303). */

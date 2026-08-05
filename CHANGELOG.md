@@ -17,6 +17,16 @@ All notable changes to EigenScript are documented here.
   click; everything else falls through. The `no_dblclick` registry
   opt-out (#848) remains as a type-level veto.
 
+- **lint: the eigs.json allow-list parses fresh (#797).**
+  `eigs_json_lint_allow_for` was the seventh lenient JSON parse root
+  missed by #777's sweep: it never cleared `g_json_parse_err`, so a
+  stale flag from an unrelated earlier parse in the same thread made
+  the well-formed allow-list decode to an empty dict and warning
+  suppression silently stopped applying. Unreachable from the CLI (one
+  file, one process); bit embedders linting after a failed JSON parse.
+  Now routed through `eigs_json_parse_root`; regression test in
+  `embed_smoke` (the only consumer shape that can hit it).
+
 ## [0.38.0] - 2026-08-04
 
 ### Added
