@@ -874,8 +874,8 @@ Client helpers only allow `http://` and `https://` URLs; rejected URLs return `[
 |----------|-----------|-------------|
 | `http_get` | `http_get of url` | GET request |
 | `http_post_json` | `http_post_json of [url, data]` | POST JSON |
-| `route_get` | `route_get of [path, handler]` | Register GET route |
-| `route_post` | `route_post of [path, handler]` | Register POST route |
+| `route_get` | `route_get of [path, body]` | Register GET route with a literal body (not a callback — see `http_route`) |
+| `route_post` | `route_post of [path, body]` | Register POST route with a literal body (not a callback — see `http_route`) |
 | `json_response` | `json_response of data` | Build JSON response |
 | `text_response` | `text_response of string` | Build text response |
 | `error_response` | `error_response of [code, msg]` | Build error response |

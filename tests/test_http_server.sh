@@ -764,6 +764,75 @@ kill "$SRV3_PID" 2>/dev/null || true
 wait "$SRV3_PID" 2>/dev/null || true
 rm -f "$SRV3" "$TAPE3" /tmp/eigs_http_srv3_$$.log
 
+# ---- #877: a callable in any route slot raises at REGISTRATION ------------
+# http_route's third element is a response body, not a callback — but the
+# signature names it `handler`, so reaching for it with framework habits is
+# foreseeable. It used to stringify: a live endpoint answered 200 with the
+# debug repr `<fn hello>`, silently and remote-visibly. VAL_FN/VAL_BUILTIN are
+# the only value types with no sensible body rendering, so they are the whole
+# of the class; dicts/lists/numbers must still register.
+SRV4=$(mktemp /tmp/eigs_http_srv4_XXXXXX.eigs)
+cat > "$SRV4" <<'EIGS'
+define hello as:
+    return "hi"
+slots is [["GET", "/f", hello],           # 3-el body: a function
+          ["GET", "/b", len],             # 3-el body: a builtin
+          ["GET", "/c", "code", hello],   # 4-el code form: source
+          [hello, "/m", "x"],             # method
+          ["GET", hello, "x"],            # path
+          ["GET", "/k", hello, "src"]]    # 4-el kind
+for s in slots:
+    try:
+        http_route of s
+        print of "REGISTERED-A-CALLABLE"
+    catch e:
+        print of ("raised: " + e["kind"])
+# Every non-callable body still registers.
+print of (http_route of ["GET", "/ok", "pong"])
+print of (http_route of ["GET", "/co", "code", "return 42"])
+print of (http_route of ["GET", "/d", {"a": 1}])
+print of (http_route of ["GET", "/n", 42])
+EIGS
+OUT4=$("$EIGS" "$SRV4" 2>&1)
+RAISED=$(printf '%s\n' "$OUT4" | grep -c '^raised: type_mismatch')
+REGD=$(printf '%s\n' "$OUT4" | grep -c '^route registered')
+if [ "$RAISED" = "6" ] && [ "$REGD" = "4" ]; then
+    ok "HS35 every callable route slot raises; every valid body still registers"
+else
+    fail "HS35 callable route slots (#877)" \
+         "raised=$RAISED (want 6) registered=$REGD (want 4); output: $OUT4"
+fi
+if printf '%s\n' "$OUT4" | grep -q 'REGISTERED-A-CALLABLE'; then
+    fail "HS35 a callable slot registered silently" "output: $OUT4"
+else
+    ok "HS35 no callable slot registers silently"
+fi
+
+# The error must land at registration, before the socket is listening — so an
+# uncaught one aborts the program and http_serve is never reached.
+PORT4=$(pick_port)
+SRV5=$(mktemp /tmp/eigs_http_srv5_XXXXXX.eigs)
+cat > "$SRV5" <<EIGS
+define hello as:
+    return "hi"
+http_route of ["GET", "/fn", hello]
+print of "UNREACHABLE-SERVE"
+http_serve of $PORT4
+EIGS
+# `timeout` is load-bearing, not belt-and-braces: if this guard ever regresses,
+# http_serve IS reached and serves forever, so an unbounded run would HANG the
+# suite instead of failing it. Verified against a planted fault — without the
+# guard this block reports rc=124 and fails, in ~5s.
+OUT5=$(timeout 5 "$EIGS" "$SRV5" 2>&1); RC5=$?
+if [ "$RC5" = "124" ]; then
+    fail "HS35 callable body reached http_serve — server ran until killed" "output: $OUT5"
+elif [ "$RC5" != "0" ] && ! printf '%s\n' "$OUT5" | grep -q 'UNREACHABLE-SERVE'; then
+    ok "HS35 an uncaught callable body aborts before http_serve (rc=$RC5)"
+else
+    fail "HS35 callable body did not stop startup" "rc=$RC5 output: $OUT5"
+fi
+rm -f "$SRV4" "$SRV5"
+
 echo "HTTP_SERVER: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then exit 1; fi
 exit 0
