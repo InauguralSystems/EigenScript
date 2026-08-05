@@ -1,8 +1,14 @@
 # Database extension tests.
 # Runs only when the binary is compiled with EIGENSCRIPT_EXT_DB=1
-# (gated by run_all_tests.sh). Tests exercise the "no-DATABASE_URL" /
-# "no-connection" safety paths. Real-DB tests are a TODO and should be
-# added behind an env-var gate when a Postgres instance is available.
+# (gated by run_all_tests.sh).
+#
+# Two halves:
+#   * the no-connection half runs EVERYWHERE the db extension is compiled in,
+#     and covers #888 — a DB failure raises instead of returning the same
+#     value a successful empty query returns;
+#   * the live half (DB09+) needs a real server via DATABASE_URL — the CI
+#     postgres service container provides one — and covers #887, the SQL
+#     type -> EigenScript value mapping.
 
 # ---- db_connect: without DATABASE_URL returns a well-formed status JSON.
 # NOTE: Some CI environments DO set DATABASE_URL, so we accept either the
@@ -11,65 +17,112 @@ conn is db_connect of null
 has_status is (contains of [conn, "status"])
 assert of [has_status == 1, "DB01 db_connect returns JSON containing 'status'"]
 
-# ---- db_query_value: without a live connection returns ""
-# (If a connection happens to be live, this still succeeds since COUNT(*) of
-# nonexistent table returns "" on error too.)
-v is db_query_value of "SELECT 1 FROM _eigs_no_such_table_XXXXX"
-assert of [v == "", "DB02 db_query_value on bad table returns empty string"]
+live is (contains of [conn, "connected"]) == 1
 
-# ---- db_query_value: non-string arg returns ""
-v_bad is db_query_value of 42
-assert of [v_bad == "", "DB03 db_query_value non-string returns empty string"]
+# ---- #888: a query without a connection RAISES. It used to return "",
+# which is also what a successful query over an empty table returns.
+if not live:
+    c02 is 0
+    m02 is ""
+    k02 is ""
+    try:
+        db_query_value of "SELECT 1"
+    catch e:
+        c02 is 1
+        m02 is e.message
+        k02 is e.kind
+    assert of [c02 == 1, "DB02 db_query_value without a connection raises"]
+    assert of [(contains of [m02, "not connected"]) == 1, "DB02 message names the cause"]
+    assert of [k02 == "io", "DB02 kind is io"]
 
-# ---- db_query_json: bad/empty query returns "[]"
-j is db_query_json of "SELECT 1 FROM _eigs_no_such_table_XXXXX"
-assert of [j == "[]", "DB04 db_query_json on bad table returns '[]'"]
+    c04 is 0
+    m04 is ""
+    try:
+        db_query_json of "SELECT 1"
+    catch e:
+        c04 is 1
+        m04 is e.message
+    assert of [c04 == 1, "DB04 db_query_json without a connection raises"]
+    assert of [(contains of [m04, "not connected"]) == 1, "DB04 message names the cause"]
 
-j_bad is db_query_json of 42
-assert of [j_bad == "[]", "DB05 db_query_json non-string returns '[]'"]
+    c08 is 0
+    try:
+        db_execute of "SELECT 1"
+    catch e:
+        c08 is 1
+    assert of [c08 == 1, "DB08 db_execute without a connection raises"]
+else:
+    print of "no-connection checks skipped (a live DATABASE_URL is set)"
 
-# ---- Parameterized SELECT forms.
-# Without a live DB these should keep the same safe empty result. With a live
-# DB they prove SELECT helpers route params through PQexecParams.
-v_param is db_query_value of ["SELECT $1::text", "safe-param"]
-if (contains of [conn, "connected"]) == 1:
+# ---- A malformed call is a program bug and must not look like a result.
+# These raise whether or not a connection exists (the arg never reaches SQL).
+c03 is 0
+m03 is ""
+k03 is ""
+try:
+    db_query_value of 42
+catch e:
+    c03 is 1
+    m03 is e.message
+    k03 is e.kind
+assert of [c03 == 1, "DB03 db_query_value on a non-string arg raises"]
+assert of [k03 == "type_mismatch", "DB03 kind is type_mismatch"]
+
+c05 is 0
+try:
+    db_query_json of 42
+catch e:
+    c05 is 1
+assert of [c05 == 1, "DB05 db_query_json on a non-string arg raises"]
+
+c05b is 0
+try:
+    db_execute of null
+catch e:
+    c05b is 1
+assert of [c05b == 1, "DB05b db_execute on a null arg raises"]
+
+# ---- Parameterized SELECT forms route params through PQexecParams.
+if live:
+    v_param is db_query_value of ["SELECT $1::text", "safe-param"]
     assert of [v_param == "safe-param", "DB06 db_query_value supports params"]
-else:
-    assert of [v_param == "", "DB06 db_query_value param form is safe without DB"]
-
-j_param is db_query_json of ["SELECT $1::text AS value", "safe-json"]
-if (contains of [conn, "connected"]) == 1:
+    j_param is db_query_json of ["SELECT $1::text AS value", "safe-json"]
     assert of [(contains of [j_param, "safe-json"]) == 1, "DB07 db_query_json supports params"]
-else:
-    assert of [j_param == "[]", "DB07 db_query_json param form is safe without DB"]
 
-# ---- db_execute: null/bad arg returns 'error' or 'no_db'
-# (Depends on whether a connection happens to be active in the env.)
-e is db_execute of null
-is_safe is ((e == "error") or (e == "no_db"))
-assert of [is_safe == 1, "DB08 db_execute null returns 'error' or 'no_db'"]
-
-# ---- Live-DB table round-trip (runs only with a real connection — the
-# CI postgres service container provides one via DATABASE_URL). Covers
-# db_execute's COMMAND_OK path, parameterized INSERT, multi-row
-# db_query_json assembly, and db_query_value over a real table.
-if (contains of [conn, "connected"]) == 1:
+# ---- Live-DB table round-trip. Covers db_execute's COMMAND_OK path,
+# parameterized INSERT, multi-row db_query_json assembly, db_query_value
+# over a real table, and the #887 type mapping.
+if live:
     db_execute of "DROP TABLE IF EXISTS eigs_ci_smoke"
     c1 is db_execute of "CREATE TABLE eigs_ci_smoke (id INT, name TEXT)"
     assert of [c1 == "ok", "DB09 CREATE TABLE returns ok"]
     i1 is db_execute of ["INSERT INTO eigs_ci_smoke VALUES ($1, $2)", 1, "alpha"]
     assert of [i1 == "ok", "DB10 parameterized INSERT returns ok"]
     db_execute of ["INSERT INTO eigs_ci_smoke VALUES ($1, $2)", 2, "beta"]
+    # COUNT(*) is int8 -> a real number now, not the string "2".
     n is db_query_value of "SELECT COUNT(*) FROM eigs_ci_smoke"
-    assert of [n == "2", "DB11 COUNT over real table"]
+    assert of [n == 2, "DB11 COUNT over real table is a number"]
+    assert of [(type of n) == "num", "DB11 COUNT is typed num"]
     one is db_query_value of ["SELECT name FROM eigs_ci_smoke WHERE id = $1", 2]
     assert of [one == "beta", "DB12 parameterized SELECT value"]
     rows is db_query_json of "SELECT id, name FROM eigs_ci_smoke ORDER BY id"
     decoded is json_decode of rows
     assert of [(len of decoded) == 2, "DB13 query_json returns both rows"]
     assert of [decoded[0].name == "alpha", "DB14 query_json field value"]
-    bad is db_execute of "THIS IS NOT SQL"
-    assert of [bad == "error", "DB15 malformed SQL returns error"]
+
+    # ---- #888: a malformed statement raises and carries libpq's text ----
+    c15 is 0
+    m15 is ""
+    k15 is ""
+    try:
+        db_execute of "THIS IS NOT SQL"
+    catch e:
+        c15 is 1
+        m15 is e.message
+        k15 is e.kind
+    assert of [c15 == 1, "DB15 malformed SQL raises"]
+    assert of [k15 == "io", "DB15 kind is io"]
+    assert of [(contains of [m15, "syntax error"]) == 1, "DB15 message carries libpq's text"]
 
     # ---- #356: param validation raises instead of silently proceeding ----
     q17 is ["SELECT $1", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
@@ -93,6 +146,84 @@ if (contains of [conn, "connected"]) == 1:
         m17a is e
     assert of [c17a == 1, "DB17 list param raises"]
     assert of [(contains of [m17a.message, "not a string or number"]) == 1, "DB17 message names the type rule"]
+
+    # ---- #888: a failed query is distinguishable from an empty result ----
+    empty is db_query_json of "SELECT id FROM eigs_ci_smoke WHERE id = 999"
+    assert of [empty == "[]", "DB18 a genuinely empty result set is still []"]
+
+    c19 is 0
+    m19 is ""
+    try:
+        db_query_json of "SELECT * FROM _eigs_no_such_table_XXXXX"
+    catch e:
+        c19 is 1
+        m19 is e.message
+    assert of [c19 == 1, "DB19 a missing table raises rather than returning []"]
+    assert of [(contains of [m19, "does not exist"]) == 1, "DB19 message names the missing relation"]
+
+    c20 is 0
+    try:
+        db_query_json of "SELECT nonsense syntax FROM FROM"
+    catch e:
+        c20 is 1
+    assert of [c20 == 1, "DB20 a syntax error raises rather than returning []"]
+
+    # ---- #887: SQL types survive the trip ----
+    t is db_query_json of "SELECT true AS yes, false AS no, null::boolean AS unknown, 0 AS zero, null::text AS ntext, '' AS empty, 42 AS n"
+    d is (json_decode of t)[0]
+
+    # 1. false is FALSY. It used to arrive as "f" — a non-empty string, and
+    # every non-empty string is truthy, so `if row.flag:` was inverted.
+    assert of [d.yes == 1, "DB21 SQL true decodes to 1"]
+    assert of [d.no == 0, "DB21 SQL false decodes to 0"]
+    took is 0
+    if d.no:
+        took is 1
+    assert of [took == 0, "DB21 SQL false is falsy in an if"]
+    zero_took is 0
+    if d.zero:
+        zero_took is 1
+    assert of [zero_took == 0, "DB21 SQL 0 is falsy in an if"]
+
+    # 2. NULL is distinguishable from the empty string.
+    assert of [(type of d.unknown) == "null", "DB22 SQL NULL decodes to null"]
+    assert of [(type of d.ntext) == "null", "DB22 a NULL text column decodes to null"]
+    assert of [d.empty == "", "DB22 an empty string stays an empty string"]
+    assert of [(type of d.empty) == "str", "DB22 an empty string is still a str"]
+
+    # 3. Numbers are numbers — ordering and arithmetic, not text.
+    assert of [(type of d.n) == "num", "DB23 an int column decodes to num"]
+    assert of [(d.n + 1) == 43, "DB23 arithmetic works on a numeric column"]
+    ord_rows is json_decode of (db_query_json of "SELECT 9 AS a, 10 AS b")
+    assert of [ord_rows[0].a < ord_rows[0].b, "DB23 numbers order numerically, not lexicographically"]
+
+    # db_query_value applies the SAME mapping (one classifier, no drift).
+    assert of [(db_query_value of "SELECT false") == 0, "DB24 db_query_value types booleans"]
+    assert of [(type of (db_query_value of "SELECT null::int")) == "null", "DB24 db_query_value returns null for SQL NULL"]
+    assert of [(type of (db_query_value of "SELECT ''")) == "str", "DB24 db_query_value keeps '' a str"]
+    assert of [(db_query_value of "SELECT 7::float8") == 7, "DB24 db_query_value types floats"]
+
+    # numeric stays a STRING on purpose: it is arbitrary-precision decimal and
+    # a binary double cannot hold it. ::float8 is the documented opt-in.
+    num_row is (json_decode of (db_query_json of "SELECT 1.10::numeric AS m, 1.10::float8 AS f"))[0]
+    assert of [(type of num_row.m) == "str", "DB25 numeric stays a string (exact digits preserved)"]
+    assert of [num_row.m == "1.10", "DB25 numeric keeps its scale"]
+    assert of [(type of num_row.f) == "num", "DB25 ::float8 is the opt-in to a number"]
+
+    # An exact-integer column past 2^53 RAISES rather than silently rounding.
+    c26 is 0
+    m26 is ""
+    try:
+        db_query_json of "SELECT 9007199254740993::bigint AS big"
+    catch e:
+        c26 is 1
+        m26 is e.message
+    assert of [c26 == 1, "DB26 a bigint past 2^53 raises instead of rounding"]
+    assert of [(contains of [m26, "big"]) == 1, "DB26 message names the column"]
+    assert of [(contains of [m26, "::text"]) == 1, "DB26 message names the fix"]
+    # ...and the boundary itself is fine.
+    ok53 is (json_decode of (db_query_json of "SELECT 9007199254740992::bigint AS big"))[0]
+    assert of [ok53.big == 9007199254740992, "DB26 2^53 itself is representable"]
 
     db_execute of "DROP TABLE eigs_ci_smoke"
 else:
