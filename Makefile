@@ -88,7 +88,7 @@ endef
 VERDEF   := -DEIGENSCRIPT_VERSION='"$(VERSION)"'
 DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
 MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
-ASAN_FLAGS := -fsanitize=address,undefined -Werror=switch -g -O1
+ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow -Werror=switch -g -O1
 
 SRC_V_release := $(SOURCES)
 FLAGS_release := $(CFLAGS) $(DEFS_OFF) $(VERDEF)

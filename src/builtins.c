@@ -820,7 +820,13 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
     switch (v->type) {
         case VAL_NUM: {
             double n = v->data.num;
-            if (n == (int)n && fabs(n) < 1e15)
+            /* #816: magnitude BEFORE the narrowing cast (same class as
+             * #695) — converting a double beyond int's range is UB, and
+             * the old `n == (int)n && fabs(n) < 1e15` order ran the cast
+             * first. The bound is int's own range: integral values beyond
+             * it never took the %d path anyway (the equality failed), so
+             * output is unchanged and the cast is now always defined. */
+            if (fabs(n) < 2147483648.0 && n == (int)n)
                 strbuf_append_fmt(out, "%d", (int)n);
             else
                 strbuf_append_fmt(out, "%.15g", n);

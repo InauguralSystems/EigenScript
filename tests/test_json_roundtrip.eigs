@@ -30,4 +30,14 @@ ne is json_encode of nested
 assert of [contains of [ne, "\"inner\""], "nested dict encode"]
 assert of [contains of [ne, "99"], "nested dict value encode"]
 
+
+# #816: encode at and beyond int's range — the guard must range-check
+# before the narrowing cast. Output pinned at the boundary.
+assert of [(json_encode of 2147483647) == "2147483647", "INT_MAX encodes via int path (#816)"]
+assert of [(json_encode of 2147483648) == "2147483648", "2^31 encodes correctly past the int path (#816)"]
+assert of [(json_encode of (0 - 2147483648)) == "-2147483648", "int min boundary encodes (#816)"]
+assert of [(json_encode of 1e300) == "1e+300", "1e300 encodes, cast never runs (#816)"]
+rtb is json_decode of json_encode of {"n": 1e300}
+assert of [rtb.n == 1e300, "1e300 round-trips through encode/decode (#816)"]
+
 print of "json roundtrip: all passed"
