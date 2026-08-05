@@ -4261,15 +4261,17 @@ fi
 rm -rf "$CONT_DIR"
 echo ""
 
-# [99i] Uniform -Werror=switch gate (#817 follow-up). Dry-runs every
-# compiling Makefile target and asserts every emitted compile line carries
-# the flag; --selftest proves the checker catches each planted fault shape
-# (and that a zero-line audit is a hard failure, not a silent pass).
-echo "[99i] werror-switch compile-line gate (#817)"
+# [99i] Uniform -Werror=switch gate (#817 follow-up; #835 extended it to
+# compile-bearing shell scripts). Dry-runs every compiling Makefile target
+# plus the audited scripts (tools/freestanding_check.sh) and asserts every
+# emitted compile line carries the flag; --selftest proves the checker
+# catches each planted fault shape (and that a zero-line audit is a hard
+# failure, not a silent pass).
+echo "[99i] werror-switch compile-line gate (#817/#835)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/werror_switch_check.sh" && bash "$TESTS_DIR/../tools/werror_switch_check.sh" --selftest >/dev/null; then
     PASS=$((PASS + 1))
-    echo "  PASS: every dry-run compile line carries -Werror=switch (gate self-test green)"
+    echo "  PASS: every dry-run + audited-script compile line carries -Werror=switch (gate self-test green)"
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a compile line lacks -Werror=switch, or the gate self-test broke (see lines above)"
