@@ -949,14 +949,21 @@ void free_value(Value *v);
  * Acquire-release decrement: release ensures writes are visible before the
  * refcount store; acquire ensures the thread that sees 0 observes all prior
  * writes before calling free_value. */
+/* The saturation ceiling: the largest magnitude a user number can hold.
+ * #861: three sites must agree on this or the observer goes blind to the
+ * boundary the arithmetic clamps to — num_guard below, the JIT's bail
+ * comparison (jit.c), and observer_slot_saturated (eigenscript.c). It was
+ * a bare literal in all three; one macro so they cannot drift apart. */
+#define EIGS_NUM_MAX 1e308
+
 /* Numeric invariant: EigenScript has no NaN or Infinity.
  * All numeric operations route through this guard.
  * NaN -> 0; values escaping the finite number line saturate at
- * +/-1e308 instead of becoming Infinity. */
+ * +/-EIGS_NUM_MAX instead of becoming Infinity. */
 static inline double num_guard(double x) {
-    if (x != x) return 0.0;            /* NaN */
-    if (x > 1e308) return 1e308;       /* +Inf or overflow */
-    if (x < -1e308) return -1e308;     /* -Inf or underflow */
+    if (x != x) return 0.0;                        /* NaN */
+    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;     /* +Inf or overflow */
+    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;   /* -Inf or underflow */
     return x;
 }
 

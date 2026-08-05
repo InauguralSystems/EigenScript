@@ -3406,6 +3406,12 @@ check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK"
 # deadband-normalized settledness gradient.
 check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All tests passed" 10
 
+# #861: the saturation ceiling is not a rest state. A runaway clamped to
+# +/-1e308 used to satisfy every clause of `converged` in BOTH channels —
+# the canonical instability reported as maximal stability. Pins the refusal
+# AND that everything below the ceiling classifies exactly as before.
+check_eigs_suite "observer saturation ceiling (#861)" test_observer_saturation.eigs "OBSERVER_SATURATION_ALL_PASS" 1
+
 # #571: the entropy walk is visited-once — cyclic/shared container graphs
 # complete (two back-edges used to be ~2^32 subtree walks). Since #685 the
 # walk stops at a reference, so cycles and DAG sharing cannot be traversed

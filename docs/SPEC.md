@@ -1196,6 +1196,32 @@ opaque
 0
 ```
 
+**The saturation ceiling is not a rest state** (#861). Overflow saturates
+at `±1e308` (*Numbers*, above), which turns an unbounded trajectory into a
+fixed point: the dH window fills with zeros and the entropy of `1e308`
+falls under the low-entropy threshold, so a runaway satisfies every clause
+of `converged`. The window really is quiet — the quiet is an artifact of
+the clamp, produced *after* the evidence of divergence was destroyed. So a
+binding sitting at `±1e308` is `diverging` in both channels and in no rest
+band: `converged`, `equilibrium`, `stable`, and `improving` are all false.
+A binding assigned a literal `±1e308` that never overflowed reads
+`diverging` too — the runtime cannot distinguish the two, and this is the
+direction that fails loudly. Below the ceiling nothing changes:
+
+```eigenscript
+z is 2.0
+i is 0
+loop while i < 20:
+    z is z * z
+    i is i + 1
+print of report of z
+print of (converged of z)
+```
+```output
+diverging
+0
+```
+
 **The value channel** (`report_value of x`) classifies the value's own
 trajectory rather than its entropy, over a 10-sample window of relative
 steps `Δv/(1+|v|)` — labels `oscillating`, `diverging`, `converged`,
