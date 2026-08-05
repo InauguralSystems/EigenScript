@@ -27,6 +27,18 @@ All notable changes to EigenScript are documented here.
   Now routed through `eigs_json_parse_root`; regression test in
   `embed_smoke` (the only consumer shape that can hit it).
 
+- **json/store encode: magnitude checked before the double→int narrowing
+  cast (#816).** `store_json_encode`, the builtin `json_encode`,
+  `json_build`, and the json-path number formatter ran
+  `(int)n` before the range guard — UB for any number beyond int's range
+  (`store_put of [db, {"n": 1e300}]` reached it); correct output was a
+  hardware accident (x86-64 `cvttsd2si`). Same class as #695. The guard
+  now checks int's own range first, so the cast is always defined and
+  the encoded bytes are unchanged. `make asan` now also compiles with
+  `-fsanitize=float-cast-overflow` — GCC's `undefined` set does not
+  include it, which is why the existing sanitizer gate was silent on
+  this class.
+
 ## [0.38.0] - 2026-08-04
 
 ### Added

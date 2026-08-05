@@ -820,7 +820,13 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
     switch (v->type) {
         case VAL_NUM: {
             double n = v->data.num;
-            if (n == (int)n && fabs(n) < 1e15)
+            /* #816: magnitude BEFORE the narrowing cast (same class as
+             * #695) — converting a double beyond int's range is UB, and
+             * the old `n == (int)n && fabs(n) < 1e15` order ran the cast
+             * first. The bound is int's own range: integral values beyond
+             * it never took the %d path anyway (the equality failed), so
+             * output is unchanged and the cast is now always defined. */
+            if (fabs(n) < 2147483648.0 && n == (int)n)
                 strbuf_append_fmt(out, "%d", (int)n);
             else
                 strbuf_append_fmt(out, "%.15g", n);
@@ -1342,7 +1348,10 @@ Value* builtin_json_build(Value *arg) {
         Value *val = arg->data.list.items[i + 1];
         if (val->type == VAL_NUM) {
             double d = val->data.num;
-            if (d == (double)(int)d && d >= -1e9 && d <= 1e9)
+            /* #816: range BEFORE the cast — same class as the other two
+             * encoder sites; this variant shape was caught by the new
+             * float-cast-overflow gate in CI, not by pattern-grep. */
+            if (d >= -1e9 && d <= 1e9 && d == (double)(int)d)
                 strbuf_append_fmt(&out, "%d", (int)d);
             else
                 strbuf_append_fmt(&out, "%.15g", d);
@@ -2220,7 +2229,8 @@ Value* builtin_json_path(Value *arg) {
     if (current->type == VAL_NUM) {
         char buf[64];
         double d = current->data.num;
-        if (d == (double)(int)d && fabs(d) < 1e9)
+        /* #816: range before the cast (see json_build above). */
+        if (fabs(d) < 1e9 && d == (double)(int)d)
             snprintf(buf, sizeof(buf), "%d", (int)d);
         else
             snprintf(buf, sizeof(buf), "%.15g", d);

@@ -219,6 +219,21 @@ rm of "/tmp/eigs_store_short.db"
 rm of "/tmp/eigs_store_badmagic.db"
 rm of "/tmp/eigs_store_badver.db"
 
+# #816: number encoding at and beyond int's range. The old guard ran the
+# double->int cast BEFORE the magnitude check (UB past int's range; the
+# fixed order checks first). These pin the output at the boundary — int
+# path below 2^31, %.15g at and above it, huge magnitudes intact.
+bdb is store_open of "/tmp/eigs816_bounds.db"
+bk is store_put of [bdb, "nums", {"imax": 2147483647, "past": 2147483648, "imin": 0 - 2147483648, "huge": 1e300, "nhuge": 0 - 1e300}]
+bn is store_get of [bdb, "nums", bk]
+assert_eq of [bn.imax, 2147483647, "INT_MAX round-trips (#816)"]
+assert_eq of [bn.past, 2147483648, "2^31 (past int) round-trips (#816)"]
+assert_eq of [bn.imin, 0 - 2147483648, "int min boundary round-trips (#816)"]
+assert_eq of [bn.huge, 1e300, "1e300 round-trips, cast never runs (#816)"]
+assert_eq of [bn.nhuge, 0 - 1e300, "-1e300 round-trips (#816)"]
+store_close of bdb
+rm of "/tmp/eigs816_bounds.db"
+
 # Clean up
 rm of "/tmp/test_eigenstore.db"
 
