@@ -1,0 +1,129 @@
+# #861 — the observer refuses to certify rest at the saturation ceiling.
+#
+# num_guard clamps everything escaping the finite number line to +/-1e308, so a
+# geometric runaway becomes a fixed point: the dH window fills with zeros and
+# H(1e308) falls under h_low. Every clause of `converged` is then legitimately
+# satisfied — while the evidence of divergence was destroyed before the
+# observer sampled it. Both channels used to answer with the STRONGEST rest
+# band on the canonical instability; #422 had recorded that case as caught.
+#
+# The contract pinned here: a binding sitting at +/-1e308 is `diverging` in
+# both channels and in NO rest band, and everything below the ceiling is
+# classified exactly as before.
+
+pass is 1
+
+define fail(msg) as:
+    pass is 0
+    print of ("FAIL: " + msg)
+    return 0
+
+# The issue's repro: z = z*z from 2.0 reaches the ceiling in ~6 steps and is
+# pinned for the remaining 14.
+define run_runaway() as:
+    local z is 2.0
+    local k is 0
+    loop while k < 20:
+        z is z * z
+        k is k + 1
+    return [report of z, report_value of z, converged of z, diverging of z,
+            stable of z, equilibrium of z, improving of z, z]
+
+# Same runaway with the sign flipped every step — pins at -1e308.
+define run_negative() as:
+    local z is 0 - 2.0
+    local k is 0
+    loop while k < 20:
+        z is z * z * (0 - 1.0)
+        k is k + 1
+    return [report of z, diverging of z, z]
+
+# Geometric decay — genuinely settles, and must still be certified.
+define run_converge() as:
+    local x is 100.0
+    local k is 0
+    loop while k < 30:
+        x is x * 0.5
+        k is k + 1
+    return [report of x, converged of x]
+
+# One decade below the ceiling, held constant: unsaturated, so the rest bands
+# stay available. This is what keeps the gate tight to the boundary rather
+# than to "large".
+define run_below_ceiling() as:
+    local b is 1e307
+    local k is 0
+    loop while k < 12:
+        b is 1e307
+        k is k + 1
+    return [report of b, converged of b]
+
+# A literal at the ceiling that never overflowed. The runtime cannot tell this
+# apart from a saturated value (that indistinguishability is #865), so it reads
+# `diverging` too — deliberately the loud direction.
+define run_literal_ceiling() as:
+    local c is 1e308
+    local k is 0
+    loop while k < 12:
+        c is 1e308
+        k is k + 1
+    return [report of c, converged of c]
+
+# --- Case 1: the runaway is diverging in both channels, and in no rest band.
+r is run_runaway of null
+print of ("runaway: report=" + r[0] + " report_value=" + r[1] + " value=" + (str of r[7]))
+if not (r[7] == 1e308):
+    fail of "runaway did not reach the saturation ceiling — repro no longer valid"
+if not (r[0] == "diverging"):
+    fail of ("entropy channel: expected 'diverging', got " + r[0])
+if not (r[1] == "diverging"):
+    fail of ("value channel: expected 'diverging', got " + r[1])
+if not (r[2] == 0):
+    fail of "converged certified a saturated value"
+if not (r[3] == 1):
+    fail of "diverging did not claim a saturated value"
+if not (r[4] == 0):
+    fail of "stable certified a saturated value"
+if not (r[5] == 0):
+    fail of "equilibrium certified a saturated value"
+if not (r[6] == 0):
+    fail of "improving claimed a saturated value"
+
+# --- Case 2: the negative ceiling behaves identically.
+n is run_negative of null
+print of ("negative: report=" + n[0] + " value=" + (str of n[2]))
+if not (n[2] == (0 - 1e308)):
+    fail of "negative runaway did not reach -1e308"
+if not (n[0] == "diverging"):
+    fail of ("negative ceiling: expected 'diverging', got " + n[0])
+if not (n[1] == 1):
+    fail of "diverging did not claim the negative ceiling"
+
+# --- Case 3: genuine convergence is untouched (the non-regression half).
+c is run_converge of null
+print of ("decay: report=" + c[0])
+if not (c[0] == "converged"):
+    fail of ("geometric decay lost its 'converged' verdict, got " + c[0])
+if not (c[1] == 1):
+    fail of "converged predicate lost a genuine convergence"
+
+# --- Case 4: below the ceiling the rest bands remain available.
+b is run_below_ceiling of null
+print of ("below-ceiling: report=" + b[0])
+if not (b[0] == "converged"):
+    fail of ("1e307 constant should still converge, got " + b[0])
+if not (b[1] == 1):
+    fail of "converged predicate rejected an unsaturated constant"
+
+# --- Case 5: a literal at the ceiling reads diverging, by design.
+l is run_literal_ceiling of null
+print of ("literal-ceiling: report=" + l[0])
+if not (l[0] == "diverging"):
+    fail of ("literal at the ceiling: expected 'diverging', got " + l[0])
+if not (l[1] == 0):
+    fail of "converged certified a literal at the ceiling"
+
+if pass == 1:
+    print of "OBSERVER_SATURATION_ALL_PASS"
+else:
+    print of "SOME TESTS FAILED"

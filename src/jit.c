@@ -2379,11 +2379,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
 
     uint8_t *w = code;
 
-    /* Bit pattern of 1e308 — the maximum finite value num_guard allows.
-     * Any addsd/subsd result whose magnitude bits exceed this (incl.
-     * ±Inf / NaN) bails to the slow interpreter path. */
+    /* Bit pattern of EIGS_NUM_MAX — the maximum finite value num_guard
+     * allows. Any addsd/subsd result whose magnitude bits exceed this
+     * (incl. ±Inf / NaN) bails to the slow interpreter path. */
     uint64_t max_normal_bits;
-    { double d = 1e308; memcpy(&max_normal_bits, &d, 8); }
+    { double d = EIGS_NUM_MAX; memcpy(&max_normal_bits, &d, 8); }
 
     /* Bail-jump rel32 patch sites collected during body emission and
      * resolved against the epilogue once we know its address. */

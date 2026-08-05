@@ -77,7 +77,8 @@ If the window does not yet hold enough samples, **every predicate returns
 and `3` for the trajectory predicates (`improving`, `diverging`,
 `oscillating`). A two-write program can never report any predicate true;
 this is the single most important difference from the old pointwise rule,
-which fired on the first step.
+which fired on the first step. **One exception**: `diverging` fires at the
+numeric ceiling regardless of window fill — see the saturation rule below.
 
 ## Opaque rule (#708): function-valued bindings
 
@@ -93,6 +94,57 @@ size/average terms they always did, and no numeric trajectory measures
 differently. The check reads the binding's current value at ask time —
 rebind `f` to a number and its numeric trajectory (which was recorded
 all along) answers normally again.
+
+## Saturation rule (#861): bindings at the numeric ceiling
+
+Overflow saturates at `±1e308` (`num_guard`, the "finite by construction"
+rule), which turns an unbounded trajectory into a **fixed point**. Once a
+runaway pins there, `dH` is exactly 0 in the entropy channel and the
+relative step is exactly 0 in the value channel, and `H(1e308)` sits far
+under `h_low` — so every clause of `converged` is *legitimately* satisfied.
+The window really is quiet. The quiet is an artifact of the clamp, formed
+after the evidence of divergence was already destroyed.
+
+So a binding whose last observed number has `|value| >= 1e308` is treated
+as **diverging, and in no rest band**:
+
+| predicate | at the ceiling |
+|---|---|
+| `converged`, `equilibrium`, `stable` | forced `false` — the rest bands |
+| `improving` | forced `false` (see below) |
+| `diverging` | forced `true`, **including on a partial window** |
+| `oscillating` | unchanged — evaluated normally |
+
+Note that a *pure* sign-flip at the ceiling (`z is 0 - z` at `1e308`) is
+invisible to the entropy channel — `H(x) ≡ H(−x)`, so `dH` is 0 and
+`oscillating` stays false; `report` answers `diverging` while
+`report_value` answers `oscillating`. That disagreement is the entropy
+signal's blind spot (#862), not the saturation rule.
+
+and `report` / `report_value` both answer `diverging`. `improving` is
+gated because `H` decreases as `|x|` grows past 1, so a runaway climbing
+toward the ceiling shows a run of negative `dH` — leaving it open would
+just move the wrong answer one band over, since `report` tries `improving`
+before `converged`. `oscillating` is left alone so a value flipping
+`±1e308` still reads as the oscillation it is.
+
+`diverging` is claimed before the partial-window guard because the
+evidence is the value's *position*, not the shape of the (flattened)
+window — this is the one place a predicate fires on fewer than 3 samples.
+
+**A literal `±1e308` that never overflowed reads `diverging` too.** The
+runtime cannot distinguish a saturated value from one deliberately
+assigned the ceiling (#865: the saturated value compares equal to itself
+under further growth, so no in-language predicate separates them). Of the
+two possible errors this is the loud one: a diverging solver that reports
+`converged` returns `1e308` *as an answer*, while a deliberate ceiling
+constant reported as `diverging` is a visible false alarm. Below the
+ceiling nothing changes — `1e307` held constant still converges.
+
+As with the opaque rule, the entropy *constants* are untouched: this is a
+classification gate, not a change to what entropy measures. It lives with
+the predicates rather than in the VM (contrast #708, which must read the
+binding), so the tape, DAP, and step surfaces inherit it.
 
 ## Implementation status
 
@@ -306,7 +358,12 @@ the most specific via its priority order.
 - `improving` and `diverging` require opposite net trends, so at most one
   fires.
 - `oscillating` requires ≥ `FLIPS` sign changes, which a window with a
-  monotone net trend (improving/diverging) cannot have.
+  monotone net trend (improving/diverging) cannot have. (At the numeric
+  ceiling `diverging` is forced true from the value's *position* rather
+  than the window's trend, so it is the one case where both can hold at
+  once: a trajectory that moves in and out of the ceiling and lands on it
+  has real `dH` sign changes AND a saturated last value. `report`'s
+  priority order resolves that to `oscillating`, the more specific claim.)
 - `stable` requires every `|dH| < dh_small`; `improving`/`diverging`
   require ≥ 60% of steps to *clear* `dh_small` in one direction, so a
   uniformly small-motion (gray-band) window is `stable` with a
@@ -495,6 +552,23 @@ for i in range of 13:
     x is x * 0.7          # 100 → ~1: entropy climbs 0.10 → ~1.0
 report of x               # "diverging"  (rising information content)
 ```
+
+The mirror case matters more, because it is what a runaway looks like: a
+value *growing* away from 1 has **falling** entropy — `dH < 0` — and reads
+`improving`, the opposite of what is happening to it.
+
+```eigenscript
+x is 1.0
+for i in range of 13:
+    x is x * 1.43         # 1 → ~105: entropy falls ~1.0 → 0.10
+report of x               # "improving"  (falling information content)
+```
+
+Both readings are the entropy signal doing exactly what it is defined to
+do; neither is a statement about magnitude. This is why the value channel
+(`report_value of x`) exists, and why `improving` is force-cleared once a
+runaway reaches the saturation ceiling (see the saturation rule above) —
+otherwise the wrong answer merely moves one band over.
 
 Do not equate "value decreasing" with `improving`/`converging`. The
 observer measures information content, not magnitude; "more determined"

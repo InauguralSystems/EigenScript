@@ -558,7 +558,36 @@ void observer_slot_reset(Env *e) {
     e->obs_cap = 0;
 }
 
+/* #861: a numeric binding pinned at the saturation ceiling (±EIGS_NUM_MAX,
+ * where num_guard clamps everything that escapes the finite number line) is
+ * not evidence of rest — it is the ABSENCE of evidence. A geometric runaway
+ * reaches the ceiling and stays there, so the dH window fills with zeros and
+ * H(EIGS_NUM_MAX) falls under h_low: every clause of `converged` is
+ * legitimately satisfied while the trajectory it describes was destroyed
+ * before the observer sampled it. The window really is quiet; the quiet is an
+ * artifact of the clamp.
+ *
+ * So the rest bands (converged/equilibrium/stable) and `improving` refuse a
+ * saturated binding, and `diverging` claims it: under the "finite by
+ * construction" rule this value has, by the contract's own definition,
+ * escaped the finite number line. A binding assigned a literal ±EIGS_NUM_MAX
+ * that never overflowed reads `diverging` too — the runtime genuinely cannot
+ * tell the two apart (that indistinguishability is #865), and this is the
+ * direction that fails loudly. A diverging solver reporting `converged` hands
+ * back EIGS_NUM_MAX as an answer; the reverse is a visible false alarm.
+ *
+ * Keyed on the slot's own last observed number, not the env's current value:
+ * that keeps the check at the same layer as the windows it guards, so the
+ * tape/DAP/step surfaces (which build an ObserverSlot without an Env) get it
+ * for free. Contrast #708's opaque band, which must sit in vm.c because
+ * value-is-a-function is only answerable from the binding. The entropy
+ * constants are deliberately untouched — same discipline as #708. */
+static int observer_slot_saturated(const ObserverSlot *s) {
+    return (s && s->v_used && fabs(s->last_value) >= EIGS_NUM_MAX) ? 1 : 0;
+}
+
 int observer_slot_converged(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 0;                     /* #861 */
     if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
     for (size_t i = 0; i < OBSERVER_WINDOW_N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
@@ -566,6 +595,7 @@ int observer_slot_converged(const ObserverSlot *s) {
 }
 
 int observer_slot_equilibrium(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 0;                     /* #861 */
     if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
     double sum = 0.0;
     for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_window_get(s, i);
@@ -583,6 +613,12 @@ int observer_slot_equilibrium(const ObserverSlot *s) {
 /* Slot mirrors of the remaining four windowed predicates — identical logic to
  * the observer_*(Value*) versions above, reading the slot's window/entropy. */
 int observer_slot_improving(const ObserverSlot *s) {
+    /* #861: H decreases as |x| grows past 1, so a runaway climbing toward the
+     * ceiling shows a run of negative dH — "improving" — right up until it
+     * pins and the window flattens to "converged". Both readings describe the
+     * clamp, not the trajectory. `report` tries improving before converged,
+     * so leaving this ungated just moves the wrong answer one band over. */
+    if (observer_slot_saturated(s)) return 0;
     size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int down = 0;
@@ -595,6 +631,10 @@ int observer_slot_improving(const ObserverSlot *s) {
 }
 
 int observer_slot_diverging(const ObserverSlot *s) {
+    /* #861: claimed before the window guard — the evidence is the value's
+     * position at the ceiling, not the shape of the (flattened) window, so
+     * this must answer on a partial window too. */
+    if (observer_slot_saturated(s)) return 1;
     size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int up = 0;
@@ -620,6 +660,7 @@ int observer_slot_oscillating(const ObserverSlot *s) {
 }
 
 int observer_slot_stable(const ObserverSlot *s) {
+    if (observer_slot_saturated(s)) return 0;                     /* #861 */
     size_t cnt = s ? s->dh_window_count : 0;
     if (cnt < OBSERVER_WINDOW_N) return 0;
     if (s->entropy < g_obs_h_low) return 0;
@@ -689,6 +730,16 @@ const char *observer_slot_report_value(const ObserverSlot *s) {
      * same-sign steps (a linear/polynomial runaway whose Δv/|v| → 0) are
      * 'diverging' — the value channel's first use of that label. */
     if (observer_slot_raw_oscillating(s)) return "oscillating";
+    /* #861: the value channel goes blind at the ceiling for the same reason
+     * the entropy channel does — past EIGS_NUM_MAX the relative step is
+     * exactly 0, so `all_zero` below reads "converged". #422 closed on the
+     * reasoning that this channel catches fixed-relative-step growth; that
+     * holds only while the value can still grow. Placed after the oscillation
+     * tests to keep this channel's own priority order (oscillating before
+     * diverging), so a value flipping ±EIGS_NUM_MAX still reads
+     * "oscillating" here — the entropy channel cannot see that flip at all
+     * (H(x) ≡ H(−x), #862) and answers "diverging". */
+    if (observer_slot_saturated(s))       return "diverging";
     if (observer_slot_raw_diverging(s))   return "diverging";
     int all_zero = 1, all_small = 1;
     for (size_t i = 0; i < cnt; i++) {

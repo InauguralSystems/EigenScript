@@ -400,6 +400,27 @@ print of (diagnose of (trajectory of r))
 diverging
 ```
 
+One difference to carry across when you port numeric code: EigenScript has
+no `Infinity`, so an overflow that Python would show you as `inf` saturates
+at `±1e308` instead (see [SPEC.md](SPEC.md), *Numbers*). A clamped value
+stops moving, which would make a runaway look like the calmest possible
+trajectory — so the observer treats the ceiling as evidence of divergence,
+not of rest (#861). Keep the runaway above going and the verdict holds:
+
+```eigenscript
+r is 1.0
+i is 0
+loop while i < 2000:
+    r is r * 2.0
+    i is i + 1
+print of (report of r)
+print of (converged of r)
+```
+```output
+diverging
+0
+```
+
 ## Before / after: porting checklist
 
 Transformations you will apply constantly when porting Python code:
