@@ -34,6 +34,7 @@
     X(gfx_circle, builtin_gfx_circle) \
     X(gfx_rrect, builtin_gfx_rrect) \
     X(gfx_clip, builtin_gfx_clip) \
+    X(gfx_read, builtin_gfx_read) \
     X(gfx_present, builtin_gfx_present) \
     X(gfx_poll, builtin_gfx_poll) \
     X(gfx_ticks, builtin_gfx_ticks) \

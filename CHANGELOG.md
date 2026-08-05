@@ -4,6 +4,40 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`gfx_read` — pixel readback, the render-decode oracle primitive
+  (#823).** `gfx_read of [x, y]` returns the back-buffer pixel as
+  `[r, g, b]` (call after drawing, before `gfx_present`). Containment
+  and rendering claims can now be proved on real pixels in-process —
+  the stubbed suite cannot crop, and #599/F-DYN-12 both showed a green
+  stubbed suite over a broken real render. Works under
+  `SDL_VIDEODRIVER=dummy`, so suite section [132] runs the real SDL
+  software renderer in CI with no display. Renderer pixels are a
+  nondeterministic input (font raster, driver), so it records/replays
+  on the trace tape like `audio_stream_queued`.
+- **`ui_clip_push` / `ui_clip_pop` (lib/ui_draw.eigs)** — a nesting
+  clip stack over `gfx_clip`: push INTERSECTS with the current clip,
+  pop restores the parent clip instead of clearing it. Exported for
+  custom paint routines; every internal lib/ui clip site migrated off
+  raw `gfx_clip` set/clear pairs (a child's clear used to wipe its
+  parent's clip).
+
+### Fixed
+
+- **Widget drawing is contained (#823).** `render` now wraps every
+  widget's draw in a clip of its own rect intersected with its
+  ancestors' — `canvas` `on_paint` included, so a paint callback can no
+  longer draw over surrounding chrome (dynamics F-DYN-12 clipped
+  manually; no consumer has to), and label overflow is defined: a label
+  wider than its column crops at the column edge instead of rendering
+  past the panel and off the window (measure with `text_width` to size
+  deliberately). Widgets whose render legitimately leaves the rect —
+  `dropdown`/`combobox` open lists, `menu`, `dialog`'s dim overlay,
+  `grid`'s row-label gutter — opt out via their registry entry
+  (`"clip": 0`). Proved twice: on recorded clip state in the stubbed
+  suite and on real pixels in section [132], each with a planted fault.
+
 ### Changed
 
 - **import resolution is project-first, and a stdlib collision warns

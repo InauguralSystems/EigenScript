@@ -138,10 +138,10 @@ define _render_statusbar(widget, ax, ay) as:
 
 define _render_scroll_panel(widget, ax, ay) as:
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius, widget.bg, widget.border]
-    gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+    ui_clip_push of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
     for i in range of (len of widget.children):
         render of [widget.children[i], ax - widget.scroll_x, ay - widget.scroll_y]
-    gfx_clip of null
+    ui_clip_pop of null
     # Vertical scrollbar
     if widget.content_h > widget.h:
         sb_h is floor of (widget.h * widget.h / widget.content_h)

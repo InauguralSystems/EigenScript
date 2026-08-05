@@ -48,6 +48,58 @@ define text_height(scale) as:
         return gfx_text_height of scale
     return 7 * scale
 
+# ---- Clip stack (#823) ----
+# Widget drawing is contained: render() pushes every widget's rect around
+# its render function, so a child's clip is always INTERSECTED with its
+# ancestors' and popping restores the parent clip instead of clearing it
+# (a raw `gfx_clip of null` inside a clipped parent wipes the parent's
+# clip — the nesting bug this stack exists to end). gfx_clip is the
+# backend primitive; these are the only callers in lib/ui. State lives in
+# a dict because module functions cannot rebind loader globals (#373) —
+# field writes cross the boundary, bare assignment does not. The stack
+# list is slot-reused via depth (no pop builtin; append grows it to the
+# deepest nesting seen and it stays there).
+
+_clip is {"depth": 0, "stack": []}
+
+define ui_clip_push(x, y, w, h) as:
+    local x2 is x + w
+    local y2 is y + h
+    if _clip.depth > 0:
+        local top is _clip.stack[_clip.depth - 1]
+        if top[0] > x:
+            x is top[0]
+        if top[1] > y:
+            y is top[1]
+        if top[0] + top[2] < x2:
+            x2 is top[0] + top[2]
+        if top[1] + top[3] < y2:
+            y2 is top[1] + top[3]
+    local cw is x2 - x
+    local ch is y2 - y
+    if cw < 0:
+        cw is 0
+    if ch < 0:
+        ch is 0
+    if _clip.depth < (len of _clip.stack):
+        _clip.stack[_clip.depth] is [x, y, cw, ch]
+    else:
+        append of [_clip.stack, [x, y, cw, ch]]
+    _clip.depth is _clip.depth + 1
+    gfx_clip of [x, y, cw, ch]
+    return null
+
+define ui_clip_pop() as:
+    if _clip.depth == 0:
+        return null
+    _clip.depth is _clip.depth - 1
+    if _clip.depth > 0:
+        local top is _clip.stack[_clip.depth - 1]
+        gfx_clip of [top[0], top[1], top[2], top[3]]
+    else:
+        gfx_clip of null
+    return null
+
 # ---- Drawing primitives ----
 
 define _draw_box(x, y, w, h, bg, border) as:

@@ -1,0 +1,94 @@
+# ============================================================
+# #823 containment — render-decode oracle against the REAL renderer
+# ============================================================
+# The stubbed suite proves containment on recorded clip state; a stub
+# cannot crop, so that claim is about the render code, not the renderer
+# (the #599 lesson). This driver is the other half: the real ext_gfx.c
+# SDL pipeline draws a canvas whose on_paint deliberately escapes its
+# rect and a label wider than its column, then gfx_read decodes the
+# actual back-buffer pixels — escape pixels must not exist. Runs under
+# SDL_VIDEODRIVER=dummy (the software renderer rasterises and reads
+# back without a display), probe-gated in the runner like [120].
+#
+# Planted fault: the same scene re-rendered with canvas's registry clip
+# opted out MUST turn the escape probe red — an oracle that has never
+# failed on a planted fault is not evidence.
+
+load_file of "lib/test.eigs"
+
+opened is gfx_open of [400, 300, "containment-oracle-823"]
+if opened == 0:
+    print of "SKIP: gfx_open failed (no SDL2)"
+    exit of 0
+
+load_file of "lib/ui.eigs"
+
+define _is_rogue(px) as:
+    if px == null:
+        return 0
+    if px[0] == 200 and px[1] == 30 and px[2] == 30:
+        return 1
+    return 0
+
+# Bright label text: count "yellowish" so TTF antialiasing (blended
+# glyph edges) and the bitmap font both register.
+define _is_yellowish(px) as:
+    if px == null:
+        return 0
+    if px[0] > 128 and px[1] > 128 and px[2] < 100:
+        return 1
+    return 0
+
+define _count_yellow(x0, y0, x1, y1) as:
+    local n is 0
+    local yy is y0
+    loop while yy < y1:
+        local xx is x0
+        loop while xx < x1:
+            if (_is_yellowish of (gfx_read of [xx, yy])) == 1:
+                n is n + 1
+            xx is xx + 2
+        yy is yy + 2
+    return n
+
+# on_paint deliberately escapes: fills far beyond the widget rect.
+define _rogue_paint(w, ax, ay) as:
+    gfx_rect of [ax - 40, ay - 40, 300, 250, 200, 30, 30]
+
+cv is canvas of ["cv", 50, 50, 100, 80, _rogue_paint, null]
+
+pn is panel of ["pn", 10, 150, 120, 60]
+lb is label of ["lb", 4, 8, "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"]
+lb.color is [255, 255, 0]
+add_child of [pn, lb]
+
+define _draw_scene() as:
+    gfx_clear of [9, 9, 9]
+    render of [cv, 0, 0]
+    render of [pn, 0, 0]
+
+# ---- Contained render: escape pixels must not exist ----
+_draw_scene of null
+assert_true of [(_is_rogue of (gfx_read of [60, 60])) == 1, "#823 rogue paint IS visible inside the canvas rect"]
+assert_true of [(_is_rogue of (gfx_read of [30, 30])) == 0, "#823 no rogue pixel above-left of the canvas rect"]
+assert_true of [(_is_rogue of (gfx_read of [200, 60])) == 0, "#823 no rogue pixel right of the canvas rect"]
+assert_true of [(_is_rogue of (gfx_read of [60, 145])) == 0, "#823 no rogue pixel below the canvas rect"]
+
+# The overflow claim is not vacuous: the label must actually be wider
+# than the panel that crops it.
+assert_true of [lb.w > 116, "#823 the label really is wider than its panel"]
+# Label really drew inside its panel...
+assert_true of [(_count_yellow of [14, 152, 128, 208]) > 0, "#823 label text IS visible inside its panel"]
+# ...and stops at the panel's right edge (x = 130).
+assert_eq of [_count_yellow of [132, 152, 200, 208], 0, "#823 no label pixel past the panel's right edge"]
+
+# ---- Planted fault: opting canvas out of the clip must go red ----
+_widget_registry["canvas"].clip is 0
+_draw_scene of null
+assert_true of [(_is_rogue of (gfx_read of [30, 30])) == 1, "#823 planted fault: with the clip disabled the escape probe DOES see rogue pixels"]
+_widget_registry["canvas"].clip is null
+_draw_scene of null
+assert_true of [(_is_rogue of (gfx_read of [30, 30])) == 0, "#823 restoring the registration restores containment"]
+
+gfx_close of null
+test_summary of null

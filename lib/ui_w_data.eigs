@@ -138,7 +138,7 @@ define _render_table(widget, ax, ay) as:
     # Rows
     body_y is ay + widget.header_h
     body_h is widget.h - widget.header_h
-    gfx_clip of [ax + 1, body_y, widget.w - 2, body_h]
+    ui_clip_push of [ax + 1, body_y, widget.w - 2, body_h]
     for ri in range of (len of widget.rows):
         ry is body_y - widget.scroll_y + ri * widget.row_h
         if ry + widget.row_h > body_y and ry < body_y + body_h:
@@ -163,7 +163,7 @@ define _render_table(widget, ax, ay) as:
                     cell_text is f"{row[ci]}"
                 _draw_text_clipped of [cx + 6, ry + 4, col.width - 12, cell_text, row_tc, _theme.font_scale]
                 cx is cx + col.width
-    gfx_clip of null
+    ui_clip_pop of null
     # Scrollbar
     total_h is (len of widget.rows) * widget.row_h
     if total_h > body_h:
@@ -176,7 +176,7 @@ define _render_table(widget, ax, ay) as:
 define _render_tree(widget, ax, ay) as:
     # Background
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, _theme.panel_bg, _theme.panel_border]
-    gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+    ui_clip_push of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
     flat is []
     _flatten_tree of [widget.nodes, 0, flat]
     for fi in range of (len of flat):
@@ -201,7 +201,7 @@ define _render_tree(widget, ax, ay) as:
                     gfx_text of [ax + indent - 12, iy + 4, ">", _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], _theme.font_scale]
             # Node text
             _draw_text_clipped of [ax + indent, iy + 4, widget.w - indent - 8, fe.node.text, ntc, _theme.font_scale]
-    gfx_clip of null
+    ui_clip_pop of null
     # Scrollbar
     total_h is (len of flat) * widget.item_h
     if total_h > widget.h:
@@ -214,7 +214,7 @@ define _render_tree(widget, ax, ay) as:
 define _render_item_list(widget, ax, ay) as:
     # Background
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, _theme.panel_bg, _theme.panel_border]
-    gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+    ui_clip_push of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
     for i in range of (len of widget.items):
         iy is ay - widget.scroll_y + i * widget.item_h
         if iy + widget.item_h > ay and iy < ay + widget.h:
@@ -230,7 +230,7 @@ define _render_item_list(widget, ax, ay) as:
     if widget.reorder_insert >= 0:
         ri_y is ay - widget.scroll_y + widget.reorder_insert * widget.item_h
         gfx_rect of [ax + 2, ri_y - 1, widget.w - 4, 2, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
-    gfx_clip of null
+    ui_clip_pop of null
     # Scrollbar
     total_h is (len of widget.items) * widget.item_h
     if total_h > widget.h:
@@ -484,6 +484,11 @@ _register_widget of ["item_list", {
 }]
 
 _register_widget of ["grid", {
+    # clip 0: the row-label gutter is documented to draw LEFT of the
+    # grid's x, outside its own bounds (docs/STDLIB.md) — the #823
+    # containment clip would erase it. Fold the gutter into the rect
+    # before removing this opt-out.
+    "clip": 0,
     "render": _render_grid,
     "hit_test": null,
     "on_mousedown": _mousedown_grid,
@@ -597,7 +602,7 @@ define _render_hex_view(widget, ax, ay) as:
     local ccol is _theme_color of ["hex_cursor", _theme.accent]
     local bcol is _theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])]
     gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
-    gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+    ui_clip_push of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
     local m is hex_view_metrics of widget
     local bpr is m.bpr
     local half is floor of (bpr / 2)
@@ -644,7 +649,7 @@ define _render_hex_view(widget, ax, ay) as:
                     if b >= 32 and b <= 126:
                         ch is chr of b
                     _draw_text_clipped of [axx, ry, m.cw, ch, ascol, 1]
-    gfx_clip of null
+    ui_clip_pop of null
     gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
     gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
     # Scrollbar (the table idiom)
