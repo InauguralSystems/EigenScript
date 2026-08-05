@@ -3412,6 +3412,15 @@ check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All t
 # AND that everything below the ceiling classifies exactly as before.
 check_eigs_suite "observer saturation ceiling (#861)" test_observer_saturation.eigs "OBSERVER_SATURATION_ALL_PASS" 1
 
+# #861: the convergence predicates scored against an EXTERNAL oracle — 27
+# sequences whose behaviour is known analytically, no implementation
+# consulted. This is the one component in the project that never had a
+# reference to be wrong against, and it is wrong: the entropy channel that
+# `converged`/`report` use scores 19/27 (3 false positives, 5 false
+# negatives). The baseline is PINNED and fails on a move in either
+# direction, so the defect cannot drift and a fix cannot land silently.
+check_eigs_suite "convergence oracle baseline (#861)" test_convergence_oracle.eigs "CONVERGENCE_ORACLE_BASELINE_HELD" 1
+
 # #571: the entropy walk is visited-once — cyclic/shared container graphs
 # complete (two back-edges used to be ~2^32 subtree walks). Since #685 the
 # walk stops at a reference, so cycles and DAG sharing cannot be traversed
