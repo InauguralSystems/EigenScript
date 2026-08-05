@@ -559,6 +559,7 @@ both axes, not y-vs-index. Everything else is set on the returned dict.
 | `chart_series(label, xs, ys, color)` | Build a series. `xs` null keeps index-x, so a bare y-list plots as before. `color` null takes the theme's `plot_series` palette by position. Set `.style` to `"line"` (default), `"points"` or `"both"`, and `.point_r` for the mark size |
 | `chart_add_series(ch, s)` | Append a series; returns its index |
 | `chart_marker(kind, x, y, label, color)` | Build an overlay marker: `"vline"` at a data x, `"hline"` at a data y, `"point"` at (x, y). `label` may be `""` |
+| `chart_vline(x, label, color)` / `chart_hline(y, label, color)` | The same markers without the coordinate their kind ignores (#828) — `chart_marker`'s generic form makes the caller invent a dead `y`/`x`, silently accepted. Same representation; add with `chart_add_marker` |
 | `chart_add_marker(ch, m)` | Append a marker; returns its index |
 | `add_point(ch, si, y)` | Append one sample at the next index-x position |
 | `add_xy(ch, si, x, y)` | Append one sample at a data coordinate (promotes an index-x series, backfilling its positions) |
