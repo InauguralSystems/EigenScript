@@ -2780,6 +2780,11 @@ Value* builtin_vm_run_bytecode(Value *arg) {
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
     EigsChunk *chunk = vm_build_chunk_desc(arg, 1);
     if (!chunk) return make_null();
+    /* #831: the compiler's temporal scan is what turns history recording on,
+     * and it never saw this chunk — arm from the verified bytecode instead,
+     * or the chunk's own `prev of` / `at` reads answer null whenever the
+     * host program happens to contain no temporal query. */
+    chunk_arm_temporal(chunk);
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
     Value *result = vm_execute(chunk, target);
     chunk_free(chunk);
@@ -2939,6 +2944,9 @@ Value* builtin_sandbox_run(Value *arg) {
         dict_set_owned(out, "error", ev);
         return out;
     }
+    /* #831: same as vm_run_bytecode — the temporal opcodes in an assembled
+     * chunk must arm recording themselves; the compiler never scanned it. */
+    chunk_arm_temporal(chunk);
 
     /* SEALED restricted env. The parent link is NULL, not g_global_env: the
      * sandbox env is a root, and the allowed builtins are COPIED into it.

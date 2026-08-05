@@ -20,6 +20,23 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **vm_run_bytecode/sandbox_run: an assembled chunk's temporal opcodes
+  now turn history recording on themselves (#831).** `g_trace_hist` was
+  set only by the bytecode compiler's source scan, so a descriptor
+  containing `prev`/`at` interrogate opcodes recorded nothing and its
+  own temporal reads answered null — unless the HOST program's text
+  happened to contain a temporal query, a relationship no bytecode
+  producer (ouroboros codegen, iLambdaAi's vendored copy) can reason
+  about. The descriptor assembler now replays the compiler's scan over
+  the verified bytecode (`chunk_arm_temporal`, recursing into nested
+  function chunks): per-name arming for `prev` (kind 6) and every
+  `at`-qualified form, observer-state capture for where/why/how-at, and
+  the wildcard on a `state_at` reference. Pay-for-what-you-use — a
+  chunk with no temporal opcode arms nothing, so temporal-free
+  producers keep recording off. Reproduced back to v0.34.0 (not a
+  regression; split from #830, whose provenance rule fixed the
+  filtering half). New suite `[70f]`.
+
 - **ui: dispatch no longer swallows the rapid second click on widgets
   without a declared double-click meaning (#847).** The double-click
   branch consumed any second mousedown on the same id inside 400ms —

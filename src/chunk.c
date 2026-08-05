@@ -5,6 +5,7 @@
 #include "eigenscript.h"
 #include "vm.h"
 #include "jit.h"
+#include "trace.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -588,6 +589,48 @@ int chunk_verify(EigsChunk *chunk) {
     free(is_start);
     free(targets);
     return ok;
+}
+
+/* #831: descriptor-assembled chunks bypass the compiler's source scan — the
+ * only thing that turns history recording on (g_trace_hist) and arms the
+ * queried names — so an assembled chunk's own `prev of` / `at` reads answered
+ * null unless the HOST program's text happened to contain a temporal query,
+ * a relationship no bytecode producer can reason about. This walk is the
+ * assembler's twin of that scan: it steps the code stream (chunk_verify has
+ * already pinned every opcode and operand in bounds — call this only on a
+ * verified chunk) and arms exactly what compiling the same program would:
+ *   OP_INTERROGATE_NAMED, kind 6 (`prev`)  -> arm that name
+ *   OP_INTERROGATE_NAMED_AT, any kind      -> arm that name; the observer
+ *     kinds (3-5: where/why/how) also need observer-state capture
+ *   OP_GET_NAME of "state_at"              -> wildcard (queries every name)
+ * Pay-for-what-you-use: a chunk with no temporal opcode arms nothing, so
+ * temporal-free vm_run_bytecode users keep recording off. */
+void chunk_arm_temporal(const EigsChunk *chunk) {
+    const uint8_t *code = chunk->code;
+    int n = chunk->code_len, i = 0;
+    while (i < n) {
+        uint8_t op = code[i];
+        if (op == OP_LINE) { i += 1 + 4; continue; }
+        VerifyRole roles[3];
+        int nops = op_verify_operands(op, roles);
+        if (op == OP_INTERROGATE_NAMED || op == OP_INTERROGATE_NAMED_AT) {
+            int kind = code[i + 1] | (code[i + 2] << 8);
+            int name_idx = code[i + 3] | (code[i + 4] << 8);
+            /* VR_NAME (verified) guarantees a string constant. */
+            if (op == OP_INTERROGATE_NAMED_AT || kind == 6) {
+                trace_arm_history_name(chunk->constants[name_idx]->data.str);
+                if (op == OP_INTERROGATE_NAMED_AT && kind >= 3 && kind <= 5)
+                    g_trace_obs_hist = 1;
+            }
+        } else if (op == OP_GET_NAME) {
+            int name_idx = code[i + 1] | (code[i + 2] << 8);
+            if (strcmp(chunk->constants[name_idx]->data.str, "state_at") == 0)
+                trace_arm_history_all();
+        }
+        i += 1 + 2 * nops;
+    }
+    for (int f = 0; f < chunk->fn_count; f++)
+        chunk_arm_temporal(chunk->functions[f]);
 }
 
 /* ---- #366: leaf-accessor scan ----

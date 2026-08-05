@@ -1,0 +1,75 @@
+# test_temporal_producers_unarmed.eigs — a descriptor must arm history ITSELF (#831).
+#
+# test_temporal_producers.eigs (suite [70e], #830) proves temporal reads work
+# from an assembled chunk once recording is on — but its control section turns
+# recording on by containing a `prev of` in its own compiled source. #831 is
+# the other half: `g_trace_hist` was set only by the bytecode compiler's source
+# scan, so when the HOST program contains no temporal query of its own, an
+# assembled chunk's history-reading opcodes answered null. The host program's
+# TEXT decided whether a descriptor's temporal reads worked — a relationship no
+# bytecode producer can reason about.
+#
+# THIS FILE MUST NEVER CONTAIN A SOURCE-LEVEL TEMPORAL QUERY (no prev-of, no
+# at-qualified interrogative, no reference to the state-at builtin outside a
+# constant pool). That absence is the test's precondition: every temporal
+# answer below exists only if the descriptor assembler's own walk
+# (chunk_arm_temporal, src/chunk.c) armed the names. Word-matches in comments
+# are fine — the compiler scans the AST, not the text.
+
+load_file of "lib/test.eigs"
+
+# ---- opcode numbers (src/vm.h enum order), hardcoded as an external producer
+# would. See tests/test_vm_run_bytecode.eigs for the ABI-stamp contract.
+ABI is 1
+CONST is 0
+GET_NAME is 25
+SET_NAME_LOCAL is 27
+POP is 35
+CLOSURE is 38
+CALL is 39
+RETURN is 40
+RETURN_NULL is 41
+LINE is 68
+INTERROGATE_NAMED is 76
+INTERROGATE_NAMED_AT is 77
+
+# ---- the #831 repro: assign twice, ask prev — with nothing anywhere else
+# turning recording on. Answered null before the assembler-side arming.
+#   LINE 10; tmp831 is 11; LINE 20; tmp831 is 22; prev of tmp831 -> 11
+prevcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+             LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
+             INTERROGATE_NAMED,6,0,1,0, RETURN]
+got_prev is vm_run_bytecode of [ABI, prevcode, [11, "tmp831", 22]]
+assert_eq of [got_prev, 11, "#831: prev in a descriptor arms itself (was null)"]
+
+# ---- the at-qualified form (kind 0 = what), both sides of the line boundary.
+# Fresh name per test: the prev-table is per-thread and outlives each call.
+atcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+           LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
+           CONST,3,0, INTERROGATE_NAMED_AT,0,0,1,0, RETURN]
+got_at15 is vm_run_bytecode of [ABI, atcode, [11, "tmp831a", 22, 15]]
+assert_eq of [got_at15, 11, "#831: what-at in a descriptor arms itself (was null)"]
+got_at99 is vm_run_bytecode of [ABI, atcode, [11, "tmp831a", 22, 99]]
+assert_eq of [got_at99, 22, "#831: what-at past the last assignment"]
+
+# ---- the temporal opcode buried in a NESTED function chunk: the arming walk
+# must recurse into functions[], not just scan the module chunk.
+q_desc is [[LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+            LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
+            INTERROGATE_NAMED,6,0,1,0, RETURN, RETURN_NULL],
+           [11, "tmp831n", 22], [], 0, "q831", []]
+mod_code is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, POP, GET_NAME,0,0, CALL,0,0, RETURN]
+got_nested is vm_run_bytecode of [ABI, mod_code, ["q831"], [q_desc], 0, "<module>", []]
+assert_eq of [got_nested, 11, "#831: prev inside a nested function chunk"]
+
+# ---- a state-at reference (GET_NAME of the builtin's name) forces the
+# wildcard, exactly as the compiler's scan does for a source-level reference.
+# LAST deliberately: after this the wildcard is on for the rest of the process,
+# so it must not mask a per-name arming failure in the tests above.
+stcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+           GET_NAME,2,0, CONST,3,0, CALL,1,0, RETURN]
+st is vm_run_bytecode of [ABI, stcode, [5, "tmp831s", "state_at", 30]]
+got_st is st["tmp831s"]
+assert_eq of [got_st, 5, "#831: state-at reference in a descriptor arms the wildcard"]
+
+test_summary of null
