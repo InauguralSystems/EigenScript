@@ -1104,8 +1104,33 @@ Value* promote_if_arena(Value *v) {
          * and a heap VAL_NULL leaks via slot_bridge_wrap's pointer-drop. */
         return v;
     }
-    /* Lists, dicts, functions: leave as-is (complex deep copy).
-     * Callers should avoid storing arena-allocated complex types. */
+    if (v->type == VAL_LIST) {
+        /* #873: an arena list stored into a binding or heap container
+         * outlives arena_reset as a dangling reference — silent wrong
+         * values, type confusion, even free() aborts when a decref
+         * walks the stale pointer. Deep-promote instead: a fresh heap
+         * list; arena children promote recursively (fresh rc=1,
+         * adopted), heap children are shared (incref'd). Arena lists
+         * are acyclic at promotion time — building a cycle requires
+         * mutating through a binding, and binding stores promote — so
+         * the recursion terminates. Aliasing between two references to
+         * the same UNBOUND arena temporary is not preserved (each
+         * promotes to its own copy); observing that would require a
+         * binding, which promotes. Lists are the only arena-capable
+         * container: make_dict/make_fn/buffers/text builders are
+         * heap-only constructors and never carry v->arena. */
+        Value *h = make_list_heap(v->data.list.count);
+        for (int i = 0; i < v->data.list.count; i++) {
+            Value *c = v->data.list.items[i];
+            Value *pc = promote_if_arena(c);
+            if (pc == c) val_incref(pc);
+            h->data.list.items[i] = pc;
+        }
+        h->data.list.count = v->data.list.count;
+        return h;
+    }
+    /* Remaining types (dict/fn/builtin/buffer/text builder) are
+     * heap-only at construction; an arena flag on one is unreachable. */
     return v;
 }
 
@@ -1419,6 +1444,19 @@ void list_append(Value *list, Value *item) {
             list->data.list.items = xrealloc_array(list->data.list.items, new_cap, sizeof(Value*));
         }
         list->data.list.capacity = new_cap;
+    }
+    /* #873: an arena item appended into a HEAP list dangles after
+     * arena_reset (the abort repro: decref of the stale pointer corrupts
+     * the allocator). Promote on the way in — same contract as the env
+     * and dict store paths. Arena-into-arena stays raw (both die at
+     * reset), heap-into-arena keeps the documented leak-side sharp edge
+     * (test_arena_ownership). */
+    if (__builtin_expect(item && item->arena && !list->arena, 0)) {
+        Value *promoted = promote_if_arena(item);
+        if (promoted != item) {
+            list->data.list.items[list->data.list.count++] = promoted;
+            return;
+        }
     }
     list->data.list.items[list->data.list.count++] = item;
     val_incref(item);

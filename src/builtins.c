@@ -3089,9 +3089,19 @@ Value* builtin_copy_into(Value *arg) {
     if (!dest || dest->type != VAL_LIST || !src || src->type != VAL_LIST) return make_null();
     if (offset < 0) return make_null();
     for (int i = 0; i < src->data.list.count && offset + i < dest->data.list.count; i++) {
-        val_incref(src->data.list.items[i]);
+        Value *item = src->data.list.items[i];
+        /* #873: promote arena items landing in a heap destination. */
+        if (item && item->arena && !dest->arena) {
+            Value *promoted = promote_if_arena(item);
+            if (promoted != item) {
+                val_decref(dest->data.list.items[offset + i]);
+                dest->data.list.items[offset + i] = promoted;
+                continue;
+            }
+        }
+        val_incref(item);
         val_decref(dest->data.list.items[offset + i]);
-        dest->data.list.items[offset + i] = src->data.list.items[i];
+        dest->data.list.items[offset + i] = item;
     }
     return dest;
 }
@@ -3303,6 +3313,15 @@ Value* builtin_set_at(Value *arg) {
         int idx;
         if (!at_index(arg->data.list.items[1], list->data.list.count, "set_at", &idx))
             return make_null();
+        /* #873: promote an arena value stored into a heap list. */
+        if (val && val->arena && !list->arena) {
+            Value *promoted = promote_if_arena(val);
+            if (promoted != val) {
+                val_decref(list->data.list.items[idx]);
+                list->data.list.items[idx] = promoted;
+                return list;
+            }
+        }
         val_incref(val);
         val_decref(list->data.list.items[idx]);
         list->data.list.items[idx] = val;
@@ -3327,6 +3346,15 @@ Value* builtin_set_at(Value *arg) {
         int col;
         if (!at_index(arg->data.list.items[2], rowv->data.list.count, "set_at col", &col))
             return make_null();
+        /* #873: promote an arena value stored into a heap row. */
+        if (val && val->arena && !rowv->arena) {
+            Value *promoted = promote_if_arena(val);
+            if (promoted != val) {
+                val_decref(rowv->data.list.items[col]);
+                rowv->data.list.items[col] = promoted;
+                return list;
+            }
+        }
         val_incref(val);
         val_decref(rowv->data.list.items[col]);
         rowv->data.list.items[col] = val;
@@ -5452,6 +5480,15 @@ Value* builtin_list_insert_at(Value *arg) {
     list_append(list, old_last);
     memmove(&list->data.list.items[idx + 1], &list->data.list.items[idx],
             (count - idx) * sizeof(Value *));
+    /* #873: promote an arena value inserted into a heap list. */
+    if (val && val->arena && !list->arena) {
+        Value *promoted = promote_if_arena(val);
+        if (promoted != val) {
+            list->data.list.items[idx] = promoted;
+            val_decref(old_last);
+            return list;
+        }
+    }
     val_incref(val);
     list->data.list.items[idx] = val;
     val_decref(old_last);

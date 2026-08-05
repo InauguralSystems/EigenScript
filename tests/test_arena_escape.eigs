@@ -1,0 +1,131 @@
+# ============================================================
+# #873 — values escaping an arena_mark…arena_reset scope
+# ============================================================
+# promote_if_arena copied only numbers and strings to the heap on store;
+# a LIST escaping the scope became a dangling reference into memory the
+# next arena_mark handed back out — silent wrong values, type confusion,
+# and (through the append seam) free() aborts. These tests pin every
+# store seam: named binding, local slot, dict field, heap-list append,
+# heap-list indexed store — plus the two repros from the issue, under a
+# deliberate stomp loop that overwrites the reclaimed region.
+
+load_file of "lib/test.eigs"
+
+define _stomp() as:
+    arena_mark of null
+    local j1 is [8, 8, 8, 8, 8, 8, 8, 8]
+    local j2 is "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    local j3 is 111111.0
+    arena_reset of null
+    return null
+
+# ---- Issue repro 1: the documented loop shape, one value escaping ----
+escaped is null
+i is 0
+loop while i < 40:
+    arena_mark of null
+    tmp is [100 + i, 200 + i, 300 + i]
+    if i == 0:
+        escaped is tmp
+    scratch is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    arena_reset of null
+    i is i + 1
+assert_eq of [escaped[0], 100, "#873 escaped list keeps iteration-0 values (was iteration 39's)"]
+assert_eq of [escaped[1], 200, "#873 escaped list element 1 intact"]
+assert_eq of [escaped[2], 300, "#873 escaped list element 2 intact"]
+
+# ---- Issue repro 2: type confusion (tag overwritten) ----
+escaped2 is null
+i2 is 0
+loop while i2 < 80:
+    arena_mark of null
+    if i2 == 0:
+        escaped2 is [11, 22, 33, 44, 55, 66, 77, 88]
+    else:
+        s2 is "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        n2 is 1.5
+    arena_reset of null
+    i2 is i2 + 1
+assert_eq of [type of escaped2, "list", "#873 escaped binding keeps its TYPE"]
+assert_eq of [escaped2[7], 88, "#873 escaped list content intact after 79 stomp scopes"]
+
+# ---- Nested list escape (recursive promotion) ----
+nested is null
+arena_mark of null
+nested is [[1, 2], [3, [4, 5]]]
+arena_reset of null
+_stomp of null
+assert_eq of [nested[1][1][1], 5, "#873 nested arena lists promote recursively"]
+
+# ---- Append seam: arena values into a HEAP list (was free() abort) ----
+ys is []
+arena_mark of null
+append of [ys, 77]
+append of [ys, [6, 7, 8]]
+arena_reset of null
+_stomp of null
+assert_eq of [ys[0], 77, "#873 arena num appended into a heap list survives reset"]
+assert_eq of [ys[1][2], 8, "#873 arena list appended into a heap list survives reset"]
+
+# ---- Indexed-store seam: xs[i] is <arena value> ----
+xs is [1, 2, 3]
+arena_mark of null
+xs[0] is 42
+xs[1] is [9, 9]
+arena_reset of null
+_stomp of null
+assert_eq of [xs[0], 42, "#873 indexed num store into a heap list survives reset"]
+assert_eq of [xs[1][0], 9, "#873 indexed list store into a heap list survives reset"]
+
+# ---- Dict-field seam ----
+d is {}
+arena_mark of null
+d.k is [5, 6]
+arena_reset of null
+_stomp of null
+assert_eq of [d.k[1], 6, "#873 arena list stored into a dict field survives reset"]
+
+# ---- Builtin store seams: set_at (1D + 2D), insert_at, copy_into ----
+sa is [0, 0, 0]
+grid_l is [[0, 0], [0, 0]]
+ia is [1, 3]
+ci is [0, 0, 0, 0]
+arena_mark of null
+set_at of [sa, 1, [4, 5]]
+set_at of [grid_l, 1, 0, [6, 7]]
+list_insert_at of [ia, 1, [2, 2]]
+copy_into of [ci, 1, [[3, 3], 4]]
+arena_reset of null
+_stomp of null
+assert_eq of [sa[1][1], 5, "#873 set_at 1D promotes an arena value into a heap list"]
+assert_eq of [grid_l[1][0][1], 7, "#873 set_at 2D promotes into a heap row"]
+assert_eq of [ia[1][0], 2, "#873 insert_at promotes an arena value into a heap list"]
+assert_eq of [ci[1][0], 3, "#873 copy_into promotes arena items into a heap destination"]
+assert_eq of [ci[2], 4, "#873 copy_into promotes arena nums too"]
+
+# ---- Function-local slot seam (returned after two stomp scopes) ----
+define f_local(k) as:
+    arena_mark of null
+    local ll is [k, k + 1]
+    arena_reset of null
+    _stomp of null
+    return ll[0]
+
+assert_eq of [f_local of 3, 3, "#873 fn-local arena list promotes at the slot store"]
+
+# ---- Hot-loop variant: same shape run enough to cross JIT thresholds.
+# The JIT's inline stores don't arena-promote, so JIT entry/OSR are gated
+# off while an arena window is open (#873); this loop proves the gated
+# path stays correct at OSR-triggering iteration counts.
+hot_escaped is null
+hi is 0
+loop while hi < 12000:
+    arena_mark of null
+    htmp is [1000 + hi, hi]
+    if hi == 0:
+        hot_escaped is htmp
+    arena_reset of null
+    hi is hi + 1
+assert_eq of [hot_escaped[0], 1000, "#873 escape stays correct across OSR-threshold iterations"]
+
+test_summary of null
